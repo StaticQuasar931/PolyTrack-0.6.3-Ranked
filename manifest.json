@@ -1,0 +1,24 @@
+{
+	"name": "PolyTrack 0.6.3 · Static Ranked",
+	"short_name": "PolyTrack",
+	"description": "Race 88 tracks, save personal bests and climb community rankings.",
+	"icons": [
+		{
+			"src": "images/cover512x512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
+		{
+			"src": "images/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any"
+		}
+	],
+	"background_color": "#28346a",
+	"theme_color": "#28346a",
+	"start_url": "./index.html",
+	"orientation": "any",
+	"display_override": ["fullscreen", "standalone", "minimal-ui"],
+	"display": "fullscreen"
+}

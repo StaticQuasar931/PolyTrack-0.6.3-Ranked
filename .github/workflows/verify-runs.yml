@@ -1,0 +1,57 @@
+name: Verify PolyTrack runs
+on:
+  # GitHub must wake a runner to query Firestore; normal and event work share the same due gate.
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: polytrack-run-verifier
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Check for due verification work
+        id: queue
+        timeout-minutes: 2
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+        run: node tools/verifier/run.mjs --check
+      - name: Install pinned verifier dependencies
+        if: steps.queue.outputs.has_work == 'true'
+        run: npm ci --prefix tools/verifier --ignore-scripts
+      - name: Test verifier safeguards
+        if: steps.queue.outputs.has_work == 'true'
+        run: |
+          npm test --prefix tools/verifier
+          node --test tools/verifier/events.test.mjs workers/ranked/test/events.test.js workers/ranked/test/event-canonical.test.js
+      - name: Install Chromium
+        if: steps.queue.outputs.has_work == 'true'
+        working-directory: tools/verifier
+        run: npx playwright install --with-deps chromium
+      - name: Allow the pinned browser sandbox on Ubuntu
+        if: steps.queue.outputs.has_work == 'true'
+        working-directory: tools/verifier
+        run: |
+          BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
+          test -x "$BROWSER"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
+          node -e "(async()=>{const {chromium}=require('playwright');const browser=await chromium.launch({executablePath:chromium.executablePath(),chromiumSandbox:true,headless:true});await browser.close();console.log('Sandboxed browser startup passed.')})().catch(error=>{console.error(error);process.exit(1)})"
+      # Up to four bounded rounds; events run first, normal work borrows only unused slots.
+      - name: Verify queued runs
+        timeout-minutes: 10
+        if: steps.queue.outputs.has_work == 'true'
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+        run: node tools/verifier/run.mjs --drain

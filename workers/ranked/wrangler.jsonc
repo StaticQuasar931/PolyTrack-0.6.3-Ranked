@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "polytrack-ranked-worker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-30",
+  "secrets": {
+    "required": [
+      "FIREBASE_CLIENT_EMAIL",
+      "FIREBASE_PRIVATE_KEY",
+      "ADMIN_REBUILD_TOKEN"
+    ]
+  },
+  "vars": {
+    "FIREBASE_PROJECT_ID": "polytrack-052",
+    "ALLOWED_ORIGINS": "https://staticquasar931.github.io,http://localhost:8080,http://127.0.0.1:8080",
+    "BETA_CUTOFF_MS": "1788656400000",
+    "RANKED_WRITES_ENABLED": "true",
+    "MULTIPLAYER_ENABLED": "true",
+    "EVENTS_ENABLED": "true",
+    "EVENT_CAPACITY_JSON": "{\"policyVersion\":\"event-200-v1\",\"entrants\":200,\"admissionsPerPeriod\":2048,\"replayBytesPerPeriod\":16777216,\"minIntervalMs\":5000,\"verificationsPerDay\":1536}"
+  },
+  "ratelimits": [
+    {"name":"EVENT_RATE_LIMITER","namespace_id":"6213","simple":{"limit":60,"period":60}},
+    {
+      "name": "PB_NOTIFY_RATE_LIMITER",
+      "namespace_id": "6211",
+      "simple": { "limit": 12, "period": 60 }
+    },
+    {
+      "name": "REFRESH_RATE_LIMITER",
+      "namespace_id": "6212",
+      "simple": { "limit": 4, "period": 60 }
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *", "*/5 * * * *", "2-59/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  }
+}

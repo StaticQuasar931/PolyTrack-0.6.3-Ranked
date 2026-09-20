@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#202d60">
+
+    <title>PolyTrack 0.6.3 | Static Ranked Community Edition</title>
+
+    <meta name="description" content="Play PolyTrack 0.6.3 with persistent Community Ranked, saved personal best replays, accurate car previews, daily goals and cross-network private multiplayer.">
+    <meta name="keywords" content="PolyTrack 0.6.3, PolyTrack ranked, PolyTrack multiplayer, racing game, unblocked racing game, StaticQuasar931">
+    <meta name="author" content="Kodub; community additions by StaticQuasar931">
+    <meta property="og:title" content="PolyTrack 0.6.3 · Static Ranked">
+    <meta property="og:description" content="Race 88 tracks, save personal bests, climb community rankings and challenge friends.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="PolyTrack 0.6.3 Static Ranked">
+    <meta property="og:url" content="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/">
+    <meta property="og:image" content="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/images/cover1920x1080.png">
+    <meta property="og:image:width" content="1920">
+    <meta property="og:image:height" content="1080">
+    <meta property="og:image:alt" content="PolyTrack racing game">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="PolyTrack 0.6.3 · Static Ranked">
+    <meta name="twitter:description" content="Race 88 tracks, save personal bests and climb community rankings.">
+    <meta name="twitter:image" content="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/images/cover1920x1080.png">
+    <link rel="canonical" href="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/">
+    <link rel="icon" type="image/svg+xml" href="./images/icon.svg">
+    <link rel="shortcut icon" type="image/svg+xml" href="./images/icon.svg">
+    <link rel="apple-touch-icon" href="./images/icon.svg">
+
+    <link rel="preload" href="./forced_square.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link rel="preload" href="./images/logo.svg" as="image" type="image/svg+xml">
+    <link rel="preload" href="./images/discord.svg" as="image" type="image/svg+xml">
+    <link rel="manifest" href="./manifest.json">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QXB7CHLEDT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-QXB7CHLEDT');
+    </script>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"VideoGame","name":"PolyTrack 0.6.3 Community Ranked","url":"https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/","description":"A community PolyTrack edition with persistent rankings, saved personal-best replays, daily goals and private multiplayer.","genre":["Racing","Time trial"],"gamePlatform":["Web browser","Windows","Android","iOS"],"creator":{"@type":"Organization","name":"Kodub"},"contributor":{"@type":"Person","name":"StaticQuasar931"},"isAccessibleForFree":true}
+    </script>
+
+    <style>
+      @font-face{font-family:ForcedSquare;src:url('./forced_square.woff2') format('woff2');font-display:swap}
+      :root{
+        --brand:#9ad0ff;
+      }
+      html, body{ margin:0; height:100%; background:#000; color:#eaf4ff; font-family:ForcedSquare,system-ui,sans-serif; }
+      body{ overflow:hidden; }
+
+      #staticMenu{
+        position:fixed; left:12px; top:12px; z-index:9999;
+        display:none; gap:0; align-items:stretch; user-select:none;
+        padding:0;
+        color:#dceaff;
+        font-size:11px; animation:menuEnter .28s ease .08s both;
+        font-family: ForcedSquare, system-ui, sans-serif !important;
+        font-weight: 700 !important;
+        letter-spacing: .1px;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      #staticMenu a{
+        display:flex;align-items:center;
+        min-height:28px;padding:0 10px;
+        color:#eaf4ff;
+        background:rgba(30,45,91,.9);
+        border-left:3px solid #86c9ff;
+        clip-path:polygon(0 0,100% 0,calc(100% - 6px) 100%,0 100%);
+        letter-spacing:.55px;
+        font-weight:normal !important;
+        text-decoration:none;
+        font-family: ForcedSquare, system-ui, sans-serif !important;
+      }
+      @keyframes menuEnter{ from{opacity:0; transform:translateY(-8px)} to{opacity:1; transform:translateY(0)} }
+
+      @media (max-width:600px){
+        #staticMenu{ left:8px;top:8px;font-size:12px }
+        #staticMenu a{min-height:27px;padding:0 8px}
+      }
+    </style>
+
+    <script>
+      window.POLYTRACK_TURN_BROKER_URL='https://polytrack-turn-broker.staticquasar931.workers.dev/turn';
+      window.POLYTRACK_RANKED_BROKER_URL='https://polytrack-ranked-worker.staticquasar931.workers.dev';
+    </script>
+    <script defer="defer" src="./error_screen.bundle.js"></script>
+    <script defer="defer" src="./polytrack_062_patch.js"></script>
+    <script defer="defer" src="./main.bundle.js"></script>
+  </head>
+
+  <body>
+    <canvas id="screen"></canvas>
+    <div id="ui"></div>
+    <div id="transition-layer"></div>
+
+    <div id="staticMenu" role="region" aria-label="StaticQuasar menu">
+      <a href="https://sites.google.com/view/staticquasar931/gm3z" target="_blank" rel="noopener">STATIC / GAMES</a>
+    </div>
+
+    <script>
+      window.addEventListener('beforeunload', (event) => {
+        if (!window.__polytrackMultiplayerSessionActive) return;
+        event.preventDefault();
+        event.returnValue = '';
+      });
+
+      (function(){
+        const idsToToggle = ["staticMenu"];
+        let seq = [];
+        const target = ["y","u","i"];
+        function toggle(){
+          idsToToggle.forEach(id => {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const isHidden = (el.style.display === "none" || getComputedStyle(el).display === "none");
+            el.style.display = isHidden ? "flex" : "none";
+          });
+        }
+        window.addEventListener("keydown", e => {
+          seq.push(String(e.key || "").toLowerCase());
+          if (seq.length > 3) seq.shift();
+          if (seq.join("") === target.join("")) toggle();
+        });
+      })();
+    </script>
+
+    <noscript>PolyTrack 0.6.3 Ranked requires JavaScript. Race 17 official and 71 bundled community tracks, save personal best replays, and compete in StaticQuasar931 community rankings.</noscript>
+    <script>
+      (function(){
+        const menu = document.getElementById('staticMenu');
+        if (!menu) return;
+
+        function isVisible(el){
+          if (!el) return false;
+          const style = getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || '1') < 0.05) return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 20 && rect.height > 20;
+        }
+
+        function inLobby(){
+          const menuRoot = document.querySelector('.menu-ui, .menu');
+          const mainButtons = document.querySelector('.main-buttons-container');
+          const play = mainButtons && Array.from(mainButtons.querySelectorAll('button,a')).find((button)=>/play/i.test(`${button.textContent||''} ${Array.from(button.querySelectorAll('img')).map((image)=>image.src||'').join(' ')}`));
+          return isVisible(menuRoot) && isVisible(mainButtons) && isVisible(play);
+        }
+
+        function syncLobbyWidgets(){
+          const lobby = inLobby();
+          const extrasEnabled = localStorage.getItem('polytrack-0.6.2-lobby-extras') !== '0';
+          menu.style.display = lobby && extrasEnabled ? 'flex' : 'none';
+        }
+
+        syncLobbyWidgets();
+        setInterval(syncLobbyWidgets, 250);
+        const observer = new MutationObserver(syncLobbyWidgets);
+        observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['class','style'] });
+        window.addEventListener('focus', syncLobbyWidgets);
+        window.addEventListener('sq-preferences-changed', syncLobbyWidgets);
+      })();
+    </script>
+  </body>
+</html>

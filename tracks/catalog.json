@@ -1,0 +1,709 @@
+{
+  "gameVersion": "0.6.3",
+  "tracks": [
+    {
+      "id": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+      "name": "Summer 1",
+      "type": "official",
+      "trackUrl": "tracks/official/summer1.track",
+      "thumbnail": "tracks/official/thumbnails/summer1.png",
+      "environment": 0
+    },
+    {
+      "id": "7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0",
+      "name": "Summer 2",
+      "type": "official",
+      "trackUrl": "tracks/official/summer2.track",
+      "thumbnail": "tracks/official/thumbnails/summer2.png",
+      "environment": 0
+    },
+    {
+      "id": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
+      "name": "Summer 3",
+      "type": "official",
+      "trackUrl": "tracks/official/summer3.track",
+      "thumbnail": "tracks/official/thumbnails/summer3.png",
+      "environment": 0
+    },
+    {
+      "id": "93c7363dfea7fb09ca1d23b72cad5df43a30841d41c8ff25fb544c85bb03c7ae",
+      "name": "Summer 4",
+      "type": "official",
+      "trackUrl": "tracks/official/summer4.track",
+      "thumbnail": "tracks/official/thumbnails/summer4.png",
+      "environment": 0
+    },
+    {
+      "id": "7603aaeffa1989a649dfaa8e1804bed4481b49df233e377687d0669899566e52",
+      "name": "Summer 5",
+      "type": "official",
+      "trackUrl": "tracks/official/summer5.track",
+      "thumbnail": "tracks/official/thumbnails/summer5.png",
+      "environment": 0
+    },
+    {
+      "id": "c117823cf6788e3247b9ee63a0c091c07352bbe352c650a7790dc6718148c2fa",
+      "name": "Summer 6",
+      "type": "official",
+      "trackUrl": "tracks/official/summer6.track",
+      "thumbnail": "tracks/official/thumbnails/summer6.png",
+      "environment": 0
+    },
+    {
+      "id": "e4bcaca3a583bb0eb62a700a69d14e89c852f0c5bf740fca76e0519ebdfc9ab1",
+      "name": "Summer 7",
+      "type": "official",
+      "trackUrl": "tracks/official/summer7.track",
+      "thumbnail": "tracks/official/thumbnails/summer7.png",
+      "environment": 0
+    },
+    {
+      "id": "7239b17057127936907a805b0caa5d8c6f6c97eca9bdabf1a5312dce479629b7",
+      "name": "Winter 1",
+      "type": "official",
+      "trackUrl": "tracks/official/winter1.track",
+      "thumbnail": "tracks/official/thumbnails/winter1.png",
+      "environment": 1
+    },
+    {
+      "id": "99864b635d1891d22e17eb9267527a07a92c49c0f02893729fa2ded90e3ca0f9",
+      "name": "Winter 2",
+      "type": "official",
+      "trackUrl": "tracks/official/winter2.track",
+      "thumbnail": "tracks/official/thumbnails/winter2.png",
+      "environment": 1
+    },
+    {
+      "id": "a5341fe706097cff2a3812a3fc0d87399254557328351ae8e5c882700fc1a196",
+      "name": "Winter 3",
+      "type": "official",
+      "trackUrl": "tracks/official/winter3.track",
+      "thumbnail": "tracks/official/thumbnails/winter3.png",
+      "environment": 1
+    },
+    {
+      "id": "7d134c939df80c676a258266201beedd3b93572d5603f3ff4339ff8679803715",
+      "name": "Winter 4",
+      "type": "official",
+      "trackUrl": "tracks/official/winter4.track",
+      "thumbnail": "tracks/official/thumbnails/winter4.png",
+      "environment": 1
+    },
+    {
+      "id": "2fe4bd46b0075cc25fc770ce50adbb68447cf493c999635bb272d231811dd264",
+      "name": "Winter 5",
+      "type": "official",
+      "trackUrl": "tracks/official/winter5.track",
+      "thumbnail": "tracks/official/thumbnails/winter5.png",
+      "environment": 1
+    },
+    {
+      "id": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
+      "name": "Desert 1",
+      "type": "official",
+      "trackUrl": "tracks/official/desert1.track",
+      "thumbnail": "tracks/official/thumbnails/desert1.png",
+      "environment": 2
+    },
+    {
+      "id": "88647ea04145fbbbb19b55f1590e038fb0378acb2571110f02cb545cc46b0d57",
+      "name": "Desert 2",
+      "type": "official",
+      "trackUrl": "tracks/official/desert2.track",
+      "thumbnail": "tracks/official/thumbnails/desert2.png",
+      "environment": 2
+    },
+    {
+      "id": "2806030c503abb41a1a26fa9a570888be14296172bb273798ef0ad87a108a2ec",
+      "name": "Desert 3",
+      "type": "official",
+      "trackUrl": "tracks/official/desert3.track",
+      "thumbnail": "tracks/official/thumbnails/desert3.png",
+      "environment": 2
+    },
+    {
+      "id": "4697ea67b18c3f49b30a3d8884602115536650bc5435c88e3732e64d21a72d33",
+      "name": "Desert 4",
+      "type": "official",
+      "trackUrl": "tracks/official/desert4.track",
+      "thumbnail": "tracks/official/thumbnails/desert4.png",
+      "environment": 2
+    },
+    {
+      "id": "e5d084e06db4ab71196fea44efeceb23c8561266a78669c324a38f92581fe2db",
+      "name": "Desert 5",
+      "type": "official",
+      "trackUrl": "tracks/official/desert5.track",
+      "thumbnail": "tracks/official/thumbnails/desert5.png",
+      "environment": 2
+    },
+    {
+      "id": "fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778",
+      "name": "Rolling Hills Racer",
+      "type": "community",
+      "trackUrl": "tracks/community/rolling_hills_racer.track",
+      "thumbnail": "tracks/community/thumbnails/rolling_hills_racer.png",
+      "environment": 0
+    },
+    {
+      "id": "387aab2d3400ebf74b5a780d15c911cdc695053b94be3e7ad23f6ae313b2471c",
+      "name": "La Infinita",
+      "type": "community",
+      "trackUrl": "tracks/community/la_infinita.track",
+      "thumbnail": "tracks/community/thumbnails/la_infinita.png",
+      "environment": 1
+    },
+    {
+      "id": "a680fa81e6a4b9dec06b4197833f0a96334a275faf387d495c9c674ffd6b8686",
+      "name": "Oyasumi",
+      "type": "community",
+      "trackUrl": "tracks/community/oyasumi.track",
+      "thumbnail": "tracks/community/thumbnails/oyasumi.png",
+      "environment": 0
+    },
+    {
+      "id": "439f1c61263987365996667f99d65f899ec482dfe21c64edcd9a1b1ae5b4a0a9",
+      "name": "Zenith",
+      "type": "community",
+      "trackUrl": "tracks/community/zenith.track",
+      "thumbnail": "tracks/community/thumbnails/zenith.png",
+      "environment": 0
+    },
+    {
+      "id": "dc7783fef2a5fbb7a2d75b9c6fdd6a9d600b833d47c6274374ea4388c707517a",
+      "name": "𝔚𝔦𝔫𝔱𝔢𝔯𝔱𝔦𝔡𝔢",
+      "type": "community",
+      "trackUrl": "tracks/community/wintertide.track",
+      "thumbnail": "tracks/community/thumbnails/wintertide.png",
+      "environment": 1
+    },
+    {
+      "id": "f40d385d5e97e00a166a9a05d19789d8f2bf3621a8c1c8919c8bec41ab6347ab",
+      "name": "The CrossFades",
+      "type": "community",
+      "trackUrl": "tracks/community/the_crossfades.track",
+      "thumbnail": "tracks/community/thumbnails/the_crossfades.png",
+      "environment": 0
+    },
+    {
+      "id": "d57a81355f36d5ef0bd2c063d251baf6d28401c275a8b3e3a62e0ae5071a2559",
+      "name": "Out of Bounds",
+      "type": "community",
+      "trackUrl": "tracks/community/out_of_bounds.track",
+      "thumbnail": "tracks/community/thumbnails/out_of_bounds.png",
+      "environment": 0
+    },
+    {
+      "id": "225fad12335dadc12b60bfa1b31369b1026d8a084fd4670583870fb3b71f7ec0",
+      "name": "Solaris",
+      "type": "community",
+      "trackUrl": "tracks/community/solaris.track",
+      "thumbnail": "tracks/community/thumbnails/solaris.png",
+      "environment": 2
+    },
+    {
+      "id": "0338f449b9948f06c03ffc2ab3ab6cf551fd08a9f2c09a16156b93ef52dd4411",
+      "name": "݁˖.˚ Evanescent Bliss. ݁₊˚ .",
+      "type": "community",
+      "trackUrl": "tracks/community/evanescent_bliss.track",
+      "thumbnail": "tracks/community/thumbnails/evanescent_bliss.png",
+      "environment": 0
+    },
+    {
+      "id": "27c3384de80b1bed23f1ea15316abe62c8cca33e955805f23d461803f6dee8d4",
+      "name": "𐌀𐌕𐌋𐌀𐌍𐌕𐌉𐌔",
+      "type": "community",
+      "trackUrl": "tracks/community/atlantis.track",
+      "thumbnail": "tracks/community/thumbnails/atlantis.png",
+      "environment": 0
+    },
+    {
+      "id": "d9bc51ec180bc46558e079c7949ba10b9ade52078c4c145f217a6a8543df2377",
+      "name": "Tucks Factory",
+      "type": "community",
+      "trackUrl": "tracks/community/tucks_factory.track",
+      "thumbnail": "tracks/community/thumbnails/tucks_factory.png",
+      "environment": 0
+    },
+    {
+      "id": "5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e",
+      "name": "Apostle",
+      "type": "community",
+      "trackUrl": "tracks/community/apostle.track",
+      "thumbnail": "tracks/community/thumbnails/apostle.png",
+      "environment": 2
+    },
+    {
+      "id": "1783b7b6c30e7fddf7ffb7c8a4a8a3b65c1ef6ec317d908d6eb05e6c905a57f6",
+      "name": "Stardust",
+      "type": "community",
+      "trackUrl": "tracks/community/stardust.track",
+      "thumbnail": "tracks/community/thumbnails/stardust.png",
+      "environment": 0
+    },
+    {
+      "id": "ddfe00045807e2786552d1e31e1363384c365487180f65d4eff1aa41e334a8e8",
+      "name": "Overclocked",
+      "type": "community",
+      "trackUrl": "tracks/community/overclocked.track",
+      "thumbnail": "tracks/community/thumbnails/overclocked.png",
+      "environment": 0
+    },
+    {
+      "id": "4058e3616fbd79b848e70037adde4f12b4413011050aaf1c9d875cdbe2e33d68",
+      "name": "Amberbound",
+      "type": "community",
+      "trackUrl": "tracks/community/amberbound.track",
+      "thumbnail": "tracks/community/thumbnails/amberbound.png",
+      "environment": 0
+    },
+    {
+      "id": "2ec74a179c8aba94354e3c6dee2a2920bedd7d84adf4d0a691f4a7453afdb1e8",
+      "name": "The Eldritch Estate",
+      "type": "community",
+      "trackUrl": "tracks/community/the_eldritch_estate.track",
+      "thumbnail": "tracks/community/thumbnails/the_eldritch_estate.png",
+      "environment": 0
+    },
+    {
+      "id": "76e1920a3ca015033a0b21156848def2c248c95d97ccf4aab2312a0302beefe0",
+      "name": "Star Bound",
+      "type": "community",
+      "trackUrl": "tracks/community/star_bound.track",
+      "thumbnail": "tracks/community/thumbnails/star_bound.png",
+      "environment": 2
+    },
+    {
+      "id": "81cede50724b1ee0c2ebcef973c37d620680766bd75771c5ae2728b8732c7a66",
+      "name": "Natsu",
+      "type": "community",
+      "trackUrl": "tracks/community/natsu.track",
+      "thumbnail": "tracks/community/thumbnails/natsu.png",
+      "environment": 0
+    },
+    {
+      "id": "76269faf38e8726671c05b2b9044f7aa3e66c4313cb4fa5d0fbb23fc8524fe9e",
+      "name": "Lenore",
+      "type": "community",
+      "trackUrl": "tracks/community/lenore.track",
+      "thumbnail": "tracks/community/thumbnails/lenore.png",
+      "environment": 0
+    },
+    {
+      "id": "151f12fd3ebc8942f7aaef669024a0fc149bc220f370753efe14d9371acc9c87",
+      "name": "sandy lanes II",
+      "type": "community",
+      "trackUrl": "tracks/community/sandy_lanes_ii.track",
+      "thumbnail": "tracks/community/thumbnails/sandy_lanes_ii.png",
+      "environment": 2
+    },
+    {
+      "id": "f9283607ecec9c89583205cf08715c8f504cc271eec51209bb6fc0cc37ddc915",
+      "name": "Planet 97",
+      "type": "community",
+      "trackUrl": "tracks/community/planet_97.track",
+      "thumbnail": "tracks/community/thumbnails/planet_97.png",
+      "environment": 0
+    },
+    {
+      "id": "64bf7efaed2a47dfb03a6b152e3aef637ac251b68a725a28352f3376ff1384d7",
+      "name": "Marvelous Marble",
+      "type": "community",
+      "trackUrl": "tracks/community/marvelous_marble.track",
+      "thumbnail": "tracks/community/thumbnails/marvelous_marble.png",
+      "environment": 0
+    },
+    {
+      "id": "520c4f511821ced30b99bceafbb02e6b7531e867126b0756e68d5e157691ef2f",
+      "name": "Arx Lucida",
+      "type": "community",
+      "trackUrl": "tracks/community/arx_lucida.track",
+      "thumbnail": "tracks/community/thumbnails/arx_lucida.png",
+      "environment": 0
+    },
+    {
+      "id": "315c9e95c567cce4feca78f5ad6e8d08d0a22dac0d56061af567b43eea3d4fa8",
+      "name": "Koselig",
+      "type": "community",
+      "trackUrl": "tracks/community/koselig.track",
+      "thumbnail": "tracks/community/thumbnails/koselig.png",
+      "environment": 1
+    },
+    {
+      "id": "a8913b96daceb5b615fe45aad2bb104e04eb7db140242934657111e1d1f55b89",
+      "name": "Sky Bound",
+      "type": "community",
+      "trackUrl": "tracks/community/sky_bound.track",
+      "thumbnail": "tracks/community/thumbnails/sky_bound.png",
+      "environment": 0
+    },
+    {
+      "id": "66f43b2d2a17f3cee05a127040ca409795058510bd3d1ac7eee224512ec532f5",
+      "name": "ShardMir",
+      "type": "community",
+      "trackUrl": "tracks/community/shardmir.track",
+      "thumbnail": "tracks/community/thumbnails/shardmir.png",
+      "environment": 2
+    },
+    {
+      "id": "fcbba504800751b0fb404a7cd1c9591befdf688ad5451ab2bc1f3651590cc5fc",
+      "name": "𝔖𝔱𝔢𝔦𝔫𝔴𝔞𝔩𝔩𝔟𝔲𝔯𝔤",
+      "type": "community",
+      "trackUrl": "tracks/community/steinwallburg.track",
+      "thumbnail": "tracks/community/thumbnails/steinwallburg.png",
+      "environment": 0
+    },
+    {
+      "id": "9ba44e8eafd0158e7e1f63e7d609db308c53f337b79e86bd0b630225451eef34",
+      "name": "𝕻𝖆𝖗𝖆𝖉𝖎𝖘𝖊 𝕻𝖆𝖑𝖆𝖈𝖊",
+      "type": "community",
+      "trackUrl": "tracks/community/paradise_palace.track",
+      "thumbnail": "tracks/community/thumbnails/paradise_palace.png",
+      "environment": 0
+    },
+    {
+      "id": "b3889905b6df31cbe302e58e975988385607771605bf6e8e8e8e31b3d2dc8aa1",
+      "name": "Sunken Glyphs",
+      "type": "community",
+      "trackUrl": "tracks/community/sunken_glyphs.track",
+      "thumbnail": "tracks/community/thumbnails/sunken_glyphs.png",
+      "environment": 0
+    },
+    {
+      "id": "3cd94552b12fb3a8ac45ca3a5e21a882b71b31c788989b396ab382afc69414ac",
+      "name": "Grimspyre",
+      "type": "community",
+      "trackUrl": "tracks/community/grimspyre.track",
+      "thumbnail": "tracks/community/thumbnails/grimspyre.png",
+      "environment": 0
+    },
+    {
+      "id": "3125a5f98c3b43cf1e2604e25e8504bffd714ea5843200fa8ddf0b4c58842f16",
+      "name": "Magenta Mines",
+      "type": "community",
+      "trackUrl": "tracks/community/magenta_mines.track",
+      "thumbnail": "tracks/community/thumbnails/magenta_mines.png",
+      "environment": 0
+    },
+    {
+      "id": "a2137c20c03ad1848098b47f70417cc0b0bf169010c825dc6fb82f37066808a0",
+      "name": "Cruising Altitude",
+      "type": "community",
+      "trackUrl": "tracks/community/cruising_altitude.track",
+      "thumbnail": "tracks/community/thumbnails/cruising_altitude.png",
+      "environment": 1
+    },
+    {
+      "id": "d03b9f7c10c95f40eed389458be51bdf2437febd5673d028da134e59e503c10b",
+      "name": "Termite Terror",
+      "type": "community",
+      "trackUrl": "tracks/community/termite_terror.track",
+      "thumbnail": "tracks/community/thumbnails/termite_terror.png",
+      "environment": 2
+    },
+    {
+      "id": "f68a709a296a60f6e6f73a2da670f95aca424be0f2fda5d6b608ece71f339b7c",
+      "name": "4 seasons",
+      "type": "community",
+      "trackUrl": "tracks/community/4_seasons.track",
+      "thumbnail": "tracks/community/thumbnails/4_seasons.png",
+      "environment": 1
+    },
+    {
+      "id": "a1f41dc9e884d5d4b1b6025158d70f0934dc4d892076e6c4b32dc3f3846b882e",
+      "name": "Lost at sea",
+      "type": "community",
+      "trackUrl": "tracks/community/lost_at_sea.track",
+      "thumbnail": "tracks/community/thumbnails/lost_at_sea.png",
+      "environment": 0
+    },
+    {
+      "id": "b430aad5e481caa4588e30f46352b876b62f1ba0cf7730a15efd026c91a8f32e",
+      "name": "Frosted Fjords 寒い",
+      "type": "community",
+      "trackUrl": "tracks/community/frosted_fjords.track",
+      "thumbnail": "tracks/community/thumbnails/frosted_fjords.png",
+      "environment": 1
+    },
+    {
+      "id": "95d8f7cbe11053dbdfaeeb2f3c3d8f53f0d45fb6abeb411a74949a4cf52f427f",
+      "name": "〜✧〜Ḽevitation〜✧〜",
+      "type": "community",
+      "trackUrl": "tracks/community/levitation.track",
+      "thumbnail": "tracks/community/thumbnails/levitation.png",
+      "environment": 0
+    },
+    {
+      "id": "409f26b9faf55bd0ad748177bf85ebdcfc0ddd572190e7f464f38b4a60587b7e",
+      "name": "Frozen Ramparts",
+      "type": "community",
+      "trackUrl": "tracks/community/frozen_ramparts.track",
+      "thumbnail": "tracks/community/thumbnails/frozen_ramparts.png",
+      "environment": 1
+    },
+    {
+      "id": "c1a2c5aef1029d7bbf946f08cd087dd25bad6e019a41694a48a0024c27627dc8",
+      "name": "Tangled Cliffs",
+      "type": "community",
+      "trackUrl": "tracks/community/tangled_cliffs.track",
+      "thumbnail": "tracks/community/thumbnails/tangled_cliffs.png",
+      "environment": 0
+    },
+    {
+      "id": "9e53d03f4efe86834c49ce202b528d769d9aa7a6e17732d0fc56440463956a1b",
+      "name": "Sludge Pipe Circuit",
+      "type": "community",
+      "trackUrl": "tracks/community/sludge_pipe_circuit.track",
+      "thumbnail": "tracks/community/thumbnails/sludge_pipe_circuit.png",
+      "environment": 0
+    },
+    {
+      "id": "b77ec520a40c4b38d3d7d653b747b1f8627c98709096568db22cd1bfec534ba6",
+      "name": "Zealot",
+      "type": "community",
+      "trackUrl": "tracks/community/zealot.track",
+      "thumbnail": "tracks/community/thumbnails/zealot.png",
+      "environment": 1
+    },
+    {
+      "id": "9f827673c4132828009237a03e12ead73eae87504b4708a79c6cc0858212262d",
+      "name": "Shrouded Oasis",
+      "type": "community",
+      "trackUrl": "tracks/community/shrouded_oasis.track",
+      "thumbnail": "tracks/community/thumbnails/shrouded_oasis.png",
+      "environment": 2
+    },
+    {
+      "id": "9acd9aef650c4ccc41bb01f72ed44dfaa13f2e4404d2e3466f09cc1adcd9a9c0",
+      "name": "⚙︎Cogware⚙︎",
+      "type": "community",
+      "trackUrl": "tracks/community/cogware.track",
+      "thumbnail": "tracks/community/thumbnails/cogware.png",
+      "environment": 0
+    },
+    {
+      "id": "62d9989187e4508f7866e7b30aa187ddbee2595df21ff5988d7fec3589f9048d",
+      "name": "Land of the Rising Sun",
+      "type": "community",
+      "trackUrl": "tracks/community/land_of_the_rising_sun.track",
+      "thumbnail": "tracks/community/thumbnails/land_of_the_rising_sun.png",
+      "environment": 0
+    },
+    {
+      "id": "b36162623435dc90a54f57590d2baa9f2d67a51cb12c393531f4b6d5e5528ebf",
+      "name": "Midas Metropolis",
+      "type": "community",
+      "trackUrl": "tracks/community/midas_metropolis.track",
+      "thumbnail": "tracks/community/thumbnails/midas_metropolis.png",
+      "environment": 2
+    },
+    {
+      "id": "74ae56c0f278a19f3b69f3903198c7b9de09981133205856b53bf6bdf8db4211",
+      "name": "Frozen In Time",
+      "type": "community",
+      "trackUrl": "tracks/community/frozen_in_time.track",
+      "thumbnail": "tracks/community/thumbnails/frozen_in_time.png",
+      "environment": 1
+    },
+    {
+      "id": "9f4597449906aa0c2baf9a4737406385c829533e64e9e972b25b4189f4593a54",
+      "name": "Winterfell",
+      "type": "community",
+      "trackUrl": "tracks/community/winterfell.track",
+      "thumbnail": "tracks/community/thumbnails/winterfell.png",
+      "environment": 1
+    },
+    {
+      "id": "28b658c7d10eb8b5de6f465e034e87e40f70b37e4534d8c37d1f2af06b5a36d7",
+      "name": "Launch Control",
+      "type": "community",
+      "trackUrl": "tracks/community/launch_control.track",
+      "thumbnail": "tracks/community/thumbnails/launch_control.png",
+      "environment": 0
+    },
+    {
+      "id": "470af92ed4c0a6f62028d7dea4dbc7765d1db16a3698d6a0c271be582a20a7c6",
+      "name": "Fractured Shores",
+      "type": "community",
+      "trackUrl": "tracks/community/fractured_shores.track",
+      "thumbnail": "tracks/community/thumbnails/fractured_shores.png",
+      "environment": 0
+    },
+    {
+      "id": "a6b990137e404c9ef2cb4399c463acbed8ebfa3bb82ab5315027118604c4ec03",
+      "name": "Starry Tropisx",
+      "type": "community",
+      "trackUrl": "tracks/community/starry_tropisx.track",
+      "thumbnail": "tracks/community/thumbnails/starry_tropisx.png",
+      "environment": 2
+    },
+    {
+      "id": "35fe02bf18312713c05528f0b7b8fd15c83dac50bcdcbd373040a16e8bfcc138",
+      "name": "Flying Dreams",
+      "type": "community",
+      "trackUrl": "tracks/community/flying_dreams.track",
+      "thumbnail": "tracks/community/thumbnails/flying_dreams.png",
+      "environment": 0
+    },
+    {
+      "id": "18b69f54f119cfb2867abded9a1574f0799a750ef94aa744d9ec8ef6b4d565ae",
+      "name": "Ghost City",
+      "type": "community",
+      "trackUrl": "tracks/community/ghost_city.track",
+      "thumbnail": "tracks/community/thumbnails/ghost_city.png",
+      "environment": 0
+    },
+    {
+      "id": "5ea46b3ae268a0196dcc59dabe88926400b56e29814658bfed06a284f837cefd",
+      "name": "MOS ESPA",
+      "type": "community",
+      "trackUrl": "tracks/community/mos_espa.track",
+      "thumbnail": "tracks/community/thumbnails/mos_espa.png",
+      "environment": 0
+    },
+    {
+      "id": "ab8e1c13ddf394102be1cb04adcff8411127f1e7140a216d27a94fc19b7d0428",
+      "name": "Joenail Jones",
+      "type": "community",
+      "trackUrl": "tracks/community/joenail_jones.track",
+      "thumbnail": "tracks/community/thumbnails/joenail_jones.png",
+      "environment": 2
+    },
+    {
+      "id": "86335d78d1a06d3dc81d80f84b8ac2e8f6359e9a206826e2c36f7d3f4351bea4",
+      "name": "Anubis",
+      "type": "community",
+      "trackUrl": "tracks/community/anubis.track",
+      "thumbnail": "tracks/community/thumbnails/anubis.png",
+      "environment": 2
+    },
+    {
+      "id": "a510bbd3341f2992a12db8a3780cb8943b6087538345d58d16602d6129742df0",
+      "name": "Natsujō",
+      "type": "community",
+      "trackUrl": "tracks/community/natsujo.track",
+      "thumbnail": "tracks/community/thumbnails/natsujo.png",
+      "environment": 0
+    },
+    {
+      "id": "8cf99166f12cbb56a9df4e022a0e9b8c78973adb929dbf1e265ebb9f99f01163",
+      "name": "Arabica",
+      "type": "community",
+      "trackUrl": "tracks/community/arabica.track",
+      "thumbnail": "tracks/community/thumbnails/arabica.png",
+      "environment": 2
+    },
+    {
+      "id": "33d99aad2ad5cef45b1d3afb8735c5229cfd98ac7cc24916e0da7283f7a545ce",
+      "name": "Hyperion's Sanctuary",
+      "type": "community",
+      "trackUrl": "tracks/community/hyperions_sanctuary.track",
+      "thumbnail": "tracks/community/thumbnails/hyperions_sanctuary.png",
+      "environment": 1
+    },
+    {
+      "id": "5c00f2c90bcf8230183484225d1a417e45b0ad310379acfafd4c8f1dc7345dd7",
+      "name": "Winter Hollow",
+      "type": "community",
+      "trackUrl": "tracks/community/winter_hollow.track",
+      "thumbnail": "tracks/community/thumbnails/winter_hollow.png",
+      "environment": 1
+    },
+    {
+      "id": "009fad7fcc215022c6b2dbb2b6de622f07cd88d4930b8e2b6a6b74c1f5de9e44",
+      "name": "Clay temples",
+      "type": "community",
+      "trackUrl": "tracks/community/clay_temples.track",
+      "thumbnail": "tracks/community/thumbnails/clay_temples.png",
+      "environment": 2
+    },
+    {
+      "id": "1ad53694ee3e96aea27afa7b64d5c29d115de88a17b69cf3fe3f5609c52b040b",
+      "name": "Las Calles",
+      "type": "community",
+      "trackUrl": "tracks/community/las_calles.track",
+      "thumbnail": "tracks/community/thumbnails/las_calles.png",
+      "environment": 2
+    },
+    {
+      "id": "2ed125037366052871fbb97da6e1bda49cfeb471f6b9c8fa799d520bdb3683e2",
+      "name": "DESERT STALLION",
+      "type": "community",
+      "trackUrl": "tracks/community/desert_stallion.track",
+      "thumbnail": "tracks/community/thumbnails/desert_stallion.png",
+      "environment": 2
+    },
+    {
+      "id": "f79b1d863d50f9e3b4489988698065c6d775ff3ec90bf91085bad05ad5ec8316",
+      "name": "Last Remnant",
+      "type": "community",
+      "trackUrl": "tracks/community/last_remnant.track",
+      "thumbnail": "tracks/community/thumbnails/last_remnant.png",
+      "environment": 2
+    },
+    {
+      "id": "27429a1d1bf05770851e3919af70f47c6cd7a269c67032b084fb4345f6c271ce",
+      "name": "lu muvimento",
+      "type": "community",
+      "trackUrl": "tracks/community/lu_muvimento.track",
+      "thumbnail": "tracks/community/thumbnails/lu_muvimento.png",
+      "environment": 0
+    },
+    {
+      "id": "f5c327cf09b90e4de8c3c1f9c910dbb7988cf15485d2e4beec3cc03aef408c5c",
+      "name": "90*RESET",
+      "type": "community",
+      "trackUrl": "tracks/community/90_reset.track",
+      "thumbnail": "tracks/community/thumbnails/90_reset.png",
+      "environment": 0
+    },
+    {
+      "id": "7451c2128cb96bc28195cf0ca0f83a46c3b55d78d434232d9de085dd1cf0ab36",
+      "name": "Opal Palace - Repolished",
+      "type": "community",
+      "trackUrl": "tracks/community/opal_palace_ii.track",
+      "thumbnail": "tracks/community/thumbnails/opal_palace_ii.png",
+      "environment": 1
+    },
+    {
+      "id": "af6ef508e1f6e47a462a6998b950ef535d1e8a38fe67ead891bf5f2de1346f43",
+      "name": "Re : Akina",
+      "type": "community",
+      "trackUrl": "tracks/community/re_akina.track",
+      "thumbnail": "tracks/community/thumbnails/re_akina.png",
+      "environment": 0
+    },
+    {
+      "id": "089f2aebcfe4f24d8dda3a8a630172d2bd13793e78c5247adfaa760743a377e1",
+      "name": "Sandline Ultimatum",
+      "type": "community",
+      "trackUrl": "tracks/community/sandline_ultimatum.track",
+      "thumbnail": "tracks/community/thumbnails/sandline_ultimatum.png",
+      "environment": 2
+    },
+    {
+      "id": "5e40f730509204c77e9c610839ed43addddbe0f8aa007168447f7fde38583905",
+      "name": "Malformations",
+      "type": "community",
+      "trackUrl": "tracks/community/malformations.track",
+      "thumbnail": "tracks/community/thumbnails/malformations.png",
+      "environment": 2
+    },
+    {
+      "id": "191737cc4d1b74949e992d99371e5c7f5fc446a716af571c6e5449b23e9f4558",
+      "name": "Snow Park",
+      "type": "community",
+      "trackUrl": "tracks/community/snow_park.track",
+      "thumbnail": "tracks/community/thumbnails/snow_park.png",
+      "environment": 1
+    },
+    {
+      "id": "39bd3fa6c3c769b298c219aee7561af35a6d856bfee14b46b0b48499e7a57ed5",
+      "name": "concrete jungle",
+      "type": "community",
+      "trackUrl": "tracks/community/concrete_jungle.track",
+      "thumbnail": "tracks/community/thumbnails/concrete_jungle.png",
+      "environment": 0
+    }
+  ]
+}

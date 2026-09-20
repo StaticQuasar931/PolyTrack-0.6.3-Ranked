@@ -1,0 +1,10 @@
+{
+  "engineDigest": "246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578",
+  "review": "Existing simulation logic retained. Worker adds getFinishes and changes version handshake. Native Car, Recording, Track and Physics modules retain token structure with minifier identifier renames; Physics handshake changes to 0.6.3. Existing native track IDs unchanged. New completion proofs must use the new pin. Historical proofs are accepted only for reviewed digests with exact replay and PB bindings.",
+  "unchangedPhysicsAssets": {
+    "polytrack_physics.wasm": "d4ef02676973d41afc34b23b5248f6950b35dc4cc7e3047e3a9c6bd88e4c180e",
+    "lib/polytrack_physics.js": "42815d83ab6929d7eafd7e98835905f40e147e031fc5f87dfb90c35f002df54a"
+  },
+  "priorDigest": "32bfe32b8680597d9f1322dbcbb19242be38bee9ab243a379f5e449c3f4030fd",
+  "trackCount": 89
+}

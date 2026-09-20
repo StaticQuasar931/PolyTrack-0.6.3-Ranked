@@ -1,0 +1,1346 @@
+[
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/desert1.track",
+    "id": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
+    "parts": 2051,
+    "spanX": 108,
+    "spanZ": 76
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/desert2.track",
+    "id": "88647ea04145fbbbb19b55f1590e038fb0378acb2571110f02cb545cc46b0d57",
+    "parts": 2230,
+    "spanX": 132,
+    "spanZ": 124
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/desert3.track",
+    "id": "2806030c503abb41a1a26fa9a570888be14296172bb273798ef0ad87a108a2ec",
+    "parts": 2831,
+    "spanX": 48,
+    "spanZ": 248
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/desert4.track",
+    "id": "4697ea67b18c3f49b30a3d8884602115536650bc5435c88e3732e64d21a72d33",
+    "parts": 2162,
+    "spanX": 280,
+    "spanZ": 172
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/desert5.track",
+    "id": "e5d084e06db4ab71196fea44efeceb23c8561266a78669c324a38f92581fe2db",
+    "parts": 2954,
+    "spanX": 216,
+    "spanZ": 96
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer1.track",
+    "id": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+    "parts": 679,
+    "spanX": 128,
+    "spanZ": 84
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer2.track",
+    "id": "7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0",
+    "parts": 1087,
+    "spanX": 68,
+    "spanZ": 68
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer3.track",
+    "id": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
+    "parts": 1422,
+    "spanX": 244,
+    "spanZ": 76
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer4.track",
+    "id": "93c7363dfea7fb09ca1d23b72cad5df43a30841d41c8ff25fb544c85bb03c7ae",
+    "parts": 3392,
+    "spanX": 208,
+    "spanZ": 140
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer5.track",
+    "id": "7603aaeffa1989a649dfaa8e1804bed4481b49df233e377687d0669899566e52",
+    "parts": 2947,
+    "spanX": 232,
+    "spanZ": 156
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer6.track",
+    "id": "c117823cf6788e3247b9ee63a0c091c07352bbe352c650a7790dc6718148c2fa",
+    "parts": 1123,
+    "spanX": 180,
+    "spanZ": 120
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/summer7.track",
+    "id": "e4bcaca3a583bb0eb62a700a69d14e89c852f0c5bf740fca76e0519ebdfc9ab1",
+    "parts": 2080,
+    "spanX": 32,
+    "spanZ": 80
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/winter1.track",
+    "id": "7239b17057127936907a805b0caa5d8c6f6c97eca9bdabf1a5312dce479629b7",
+    "parts": 676,
+    "spanX": 88,
+    "spanZ": 108
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/winter2.track",
+    "id": "99864b635d1891d22e17eb9267527a07a92c49c0f02893729fa2ded90e3ca0f9",
+    "parts": 3331,
+    "spanX": 148,
+    "spanZ": 328
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/winter3.track",
+    "id": "a5341fe706097cff2a3812a3fc0d87399254557328351ae8e5c882700fc1a196",
+    "parts": 2587,
+    "spanX": 100,
+    "spanZ": 168
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/winter4.track",
+    "id": "7d134c939df80c676a258266201beedd3b93572d5603f3ff4339ff8679803715",
+    "parts": 1366,
+    "spanX": 108,
+    "spanZ": 124
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/official/winter5.track",
+    "id": "2fe4bd46b0075cc25fc770ce50adbb68447cf493c999635bb272d231811dd264",
+    "parts": 2622,
+    "spanX": 144,
+    "spanZ": 56
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/4_seasons.track",
+    "id": "f68a709a296a60f6e6f73a2da670f95aca424be0f2fda5d6b608ece71f339b7c",
+    "parts": 14071,
+    "spanX": 284,
+    "spanZ": 432
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/90_reset.track",
+    "id": "f5c327cf09b90e4de8c3c1f9c910dbb7988cf15485d2e4beec3cc03aef408c5c",
+    "parts": 2910,
+    "spanX": 176,
+    "spanZ": 226
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/amberbound.track",
+    "id": "4058e3616fbd79b848e70037adde4f12b4413011050aaf1c9d875cdbe2e33d68",
+    "parts": 7638,
+    "spanX": 188,
+    "spanZ": 208
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/anubis.track",
+    "id": "86335d78d1a06d3dc81d80f84b8ac2e8f6359e9a206826e2c36f7d3f4351bea4",
+    "parts": 12639,
+    "spanX": 342,
+    "spanZ": 320
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/apostle.track",
+    "id": "5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e",
+    "parts": 41892,
+    "spanX": 220,
+    "spanZ": 304
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/arabica.track",
+    "id": "8cf99166f12cbb56a9df4e022a0e9b8c78973adb929dbf1e265ebb9f99f01163",
+    "parts": 9151,
+    "spanX": 109,
+    "spanZ": 206
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/arx_lucida.track",
+    "id": "520c4f511821ced30b99bceafbb02e6b7531e867126b0756e68d5e157691ef2f",
+    "parts": 45733,
+    "spanX": 572,
+    "spanZ": 580
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/asguardia.track",
+    "id": "5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572",
+    "parts": 51679,
+    "spanX": 162,
+    "spanZ": 205
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/clay_temples.track",
+    "id": "009fad7fcc215022c6b2dbb2b6de622f07cd88d4930b8e2b6a6b74c1f5de9e44",
+    "parts": 5808,
+    "spanX": 168,
+    "spanZ": 200
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/cogware.track",
+    "id": "9acd9aef650c4ccc41bb01f72ed44dfaa13f2e4404d2e3466f09cc1adcd9a9c0",
+    "parts": 37921,
+    "spanX": 420,
+    "spanZ": 272
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/concrete_jungle.track",
+    "id": "39bd3fa6c3c769b298c219aee7561af35a6d856bfee14b46b0b48499e7a57ed5",
+    "parts": 4431,
+    "spanX": 134,
+    "spanZ": 185
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/cruising_altitude.track",
+    "id": "a2137c20c03ad1848098b47f70417cc0b0bf169010c825dc6fb82f37066808a0",
+    "parts": 27086,
+    "spanX": 396,
+    "spanZ": 536
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/desert_stallion.track",
+    "id": "2ed125037366052871fbb97da6e1bda49cfeb471f6b9c8fa799d520bdb3683e2",
+    "parts": 6323,
+    "spanX": 472,
+    "spanZ": 330
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/flying_dreams.track",
+    "id": "35fe02bf18312713c05528f0b7b8fd15c83dac50bcdcbd373040a16e8bfcc138",
+    "parts": 32078,
+    "spanX": 461,
+    "spanZ": 357
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/fractured_shores.track",
+    "id": "470af92ed4c0a6f62028d7dea4dbc7765d1db16a3698d6a0c271be582a20a7c6",
+    "parts": 6290,
+    "spanX": 206,
+    "spanZ": 117
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/frosted_fjords.track",
+    "id": "b430aad5e481caa4588e30f46352b876b62f1ba0cf7730a15efd026c91a8f32e",
+    "parts": 6913,
+    "spanX": 243,
+    "spanZ": 312
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/frozen_in_time.track",
+    "id": "74ae56c0f278a19f3b69f3903198c7b9de09981133205856b53bf6bdf8db4211",
+    "parts": 8437,
+    "spanX": 283,
+    "spanZ": 257
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/frozen_ramparts.track",
+    "id": "409f26b9faf55bd0ad748177bf85ebdcfc0ddd572190e7f464f38b4a60587b7e",
+    "parts": 10374,
+    "spanX": 326,
+    "spanZ": 206
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/ghost_city.track",
+    "id": "18b69f54f119cfb2867abded9a1574f0799a750ef94aa744d9ec8ef6b4d565ae",
+    "parts": 10917,
+    "spanX": 308,
+    "spanZ": 473
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/grimspyre.track",
+    "id": "3cd94552b12fb3a8ac45ca3a5e21a882b71b31c788989b396ab382afc69414ac",
+    "parts": 17842,
+    "spanX": 276,
+    "spanZ": 360
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/hyperions_sanctuary.track",
+    "id": "33d99aad2ad5cef45b1d3afb8735c5229cfd98ac7cc24916e0da7283f7a545ce",
+    "parts": 11537,
+    "spanX": 488,
+    "spanZ": 377
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/joenail_jones.track",
+    "id": "ab8e1c13ddf394102be1cb04adcff8411127f1e7140a216d27a94fc19b7d0428",
+    "parts": 1486,
+    "spanX": 87,
+    "spanZ": 123
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/koselig.track",
+    "id": "315c9e95c567cce4feca78f5ad6e8d08d0a22dac0d56061af567b43eea3d4fa8",
+    "parts": 14362,
+    "spanX": 284,
+    "spanZ": 348
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/land_of_the_rising_sun.track",
+    "id": "62d9989187e4508f7866e7b30aa187ddbee2595df21ff5988d7fec3589f9048d",
+    "parts": 29823,
+    "spanX": 660,
+    "spanZ": 564
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/last_remnant.track",
+    "id": "f79b1d863d50f9e3b4489988698065c6d775ff3ec90bf91085bad05ad5ec8316",
+    "parts": 2282,
+    "spanX": 56,
+    "spanZ": 96
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/las_calles.track",
+    "id": "1ad53694ee3e96aea27afa7b64d5c29d115de88a17b69cf3fe3f5609c52b040b",
+    "parts": 2974,
+    "spanX": 136,
+    "spanZ": 106
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/launch_control.track",
+    "id": "28b658c7d10eb8b5de6f465e034e87e40f70b37e4534d8c37d1f2af06b5a36d7",
+    "parts": 8923,
+    "spanX": 216,
+    "spanZ": 234
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/lenore.track",
+    "id": "76269faf38e8726671c05b2b9044f7aa3e66c4313cb4fa5d0fbb23fc8524fe9e",
+    "parts": 39388,
+    "spanX": 617,
+    "spanZ": 797
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/levitation.track",
+    "id": "95d8f7cbe11053dbdfaeeb2f3c3d8f53f0d45fb6abeb411a74949a4cf52f427f",
+    "parts": 38920,
+    "spanX": 452,
+    "spanZ": 775
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/lost_at_sea.track",
+    "id": "a1f41dc9e884d5d4b1b6025158d70f0934dc4d892076e6c4b32dc3f3846b882e",
+    "parts": 16984,
+    "spanX": 360,
+    "spanZ": 244
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/lu_muvimento.track",
+    "id": "27429a1d1bf05770851e3919af70f47c6cd7a269c67032b084fb4345f6c271ce",
+    "parts": 16304,
+    "spanX": 266,
+    "spanZ": 67
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/magenta_mines.track",
+    "id": "3125a5f98c3b43cf1e2604e25e8504bffd714ea5843200fa8ddf0b4c58842f16",
+    "parts": 6655,
+    "spanX": 215,
+    "spanZ": 171
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/malformations.track",
+    "id": "5e40f730509204c77e9c610839ed43addddbe0f8aa007168447f7fde38583905",
+    "parts": 4253,
+    "spanX": 164,
+    "spanZ": 156
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/marvelous_marble.track",
+    "id": "64bf7efaed2a47dfb03a6b152e3aef637ac251b68a725a28352f3376ff1384d7",
+    "parts": 20809,
+    "spanX": 576,
+    "spanZ": 437
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/midas_metropolis.track",
+    "id": "b36162623435dc90a54f57590d2baa9f2d67a51cb12c393531f4b6d5e5528ebf",
+    "parts": 12967,
+    "spanX": 178,
+    "spanZ": 255
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/mos_espa.track",
+    "id": "5ea46b3ae268a0196dcc59dabe88926400b56e29814658bfed06a284f837cefd",
+    "parts": 21572,
+    "spanX": 500,
+    "spanZ": 355
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/natsu.track",
+    "id": "81cede50724b1ee0c2ebcef973c37d620680766bd75771c5ae2728b8732c7a66",
+    "parts": 19216,
+    "spanX": 270,
+    "spanZ": 249
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/natsujo.track",
+    "id": "a510bbd3341f2992a12db8a3780cb8943b6087538345d58d16602d6129742df0",
+    "parts": 9190,
+    "spanX": 190,
+    "spanZ": 200
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/opal_palace_ii.track",
+    "id": "7451c2128cb96bc28195cf0ca0f83a46c3b55d78d434232d9de085dd1cf0ab36",
+    "parts": 3800,
+    "spanX": 64,
+    "spanZ": 164
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/overclocked.track",
+    "id": "ddfe00045807e2786552d1e31e1363384c365487180f65d4eff1aa41e334a8e8",
+    "parts": 45455,
+    "spanX": 247,
+    "spanZ": 391
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/paradise_palace.track",
+    "id": "9ba44e8eafd0158e7e1f63e7d609db308c53f337b79e86bd0b630225451eef34",
+    "parts": 9708,
+    "spanX": 408,
+    "spanZ": 364
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/planet_97.track",
+    "id": "f9283607ecec9c89583205cf08715c8f504cc271eec51209bb6fc0cc37ddc915",
+    "parts": 9659,
+    "spanX": 427,
+    "spanZ": 273
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/re_akina.track",
+    "id": "af6ef508e1f6e47a462a6998b950ef535d1e8a38fe67ead891bf5f2de1346f43",
+    "parts": 11317,
+    "spanX": 368,
+    "spanZ": 528
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/rolling_hills_racer.track",
+    "id": "fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778",
+    "parts": 1756,
+    "spanX": 352,
+    "spanZ": 140
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/sandline_ultimatum.track",
+    "id": "089f2aebcfe4f24d8dda3a8a630172d2bd13793e78c5247adfaa760743a377e1",
+    "parts": 2339,
+    "spanX": 232,
+    "spanZ": 121
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/sandy_lanes_ii.track",
+    "id": "151f12fd3ebc8942f7aaef669024a0fc149bc220f370753efe14d9371acc9c87",
+    "parts": 22145,
+    "spanX": 465,
+    "spanZ": 333
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/shardmir.track",
+    "id": "66f43b2d2a17f3cee05a127040ca409795058510bd3d1ac7eee224512ec532f5",
+    "parts": 29272,
+    "spanX": 728,
+    "spanZ": 380
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/shrouded_oasis.track",
+    "id": "9f827673c4132828009237a03e12ead73eae87504b4708a79c6cc0858212262d",
+    "parts": 9182,
+    "spanX": 210,
+    "spanZ": 167
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/sky_bound.track",
+    "id": "a8913b96daceb5b615fe45aad2bb104e04eb7db140242934657111e1d1f55b89",
+    "parts": 18567,
+    "spanX": 436,
+    "spanZ": 699
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/sludge_pipe_circuit.track",
+    "id": "9e53d03f4efe86834c49ce202b528d769d9aa7a6e17732d0fc56440463956a1b",
+    "parts": 18133,
+    "spanX": 181,
+    "spanZ": 188
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/snow_park.track",
+    "id": "191737cc4d1b74949e992d99371e5c7f5fc446a716af571c6e5449b23e9f4558",
+    "parts": 11606,
+    "spanX": 220,
+    "spanZ": 240
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/stardust.track",
+    "id": "1783b7b6c30e7fddf7ffb7c8a4a8a3b65c1ef6ec317d908d6eb05e6c905a57f6",
+    "parts": 32262,
+    "spanX": 1264,
+    "spanZ": 568
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/starry_tropisx.track",
+    "id": "a6b990137e404c9ef2cb4399c463acbed8ebfa3bb82ab5315027118604c4ec03",
+    "parts": 38519,
+    "spanX": 248,
+    "spanZ": 275
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/star_bound.track",
+    "id": "76e1920a3ca015033a0b21156848def2c248c95d97ccf4aab2312a0302beefe0",
+    "parts": 24680,
+    "spanX": 380,
+    "spanZ": 448
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/steinwallburg.track",
+    "id": "fcbba504800751b0fb404a7cd1c9591befdf688ad5451ab2bc1f3651590cc5fc",
+    "parts": 21581,
+    "spanX": 241,
+    "spanZ": 450
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/sunken_glyphs.track",
+    "id": "b3889905b6df31cbe302e58e975988385607771605bf6e8e8e8e31b3d2dc8aa1",
+    "parts": 14029,
+    "spanX": 420,
+    "spanZ": 253
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/tangled_cliffs.track",
+    "id": "c1a2c5aef1029d7bbf946f08cd087dd25bad6e019a41694a48a0024c27627dc8",
+    "parts": 19678,
+    "spanX": 195,
+    "spanZ": 229
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/termite_terror.track",
+    "id": "d03b9f7c10c95f40eed389458be51bdf2437febd5673d028da134e59e503c10b",
+    "parts": 3340,
+    "spanX": 239,
+    "spanZ": 216
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/the_eldritch_estate.track",
+    "id": "2ec74a179c8aba94354e3c6dee2a2920bedd7d84adf4d0a691f4a7453afdb1e8",
+    "parts": 38275,
+    "spanX": 644,
+    "spanZ": 564
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/winterfell.track",
+    "id": "9f4597449906aa0c2baf9a4737406385c829533e64e9e972b25b4189f4593a54",
+    "parts": 74711,
+    "spanX": 193,
+    "spanZ": 174
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/winter_hollow.track",
+    "id": "5c00f2c90bcf8230183484225d1a417e45b0ad310379acfafd4c8f1dc7345dd7",
+    "parts": 4919,
+    "spanX": 60,
+    "spanZ": 121
+  },
+  {
+    "folder": "Polytrack 0.6.2",
+    "name": "tracks/community/zealot.track",
+    "id": "b77ec520a40c4b38d3d7d653b747b1f8627c98709096568db22cd1bfec534ba6",
+    "parts": 28308,
+    "spanX": 592,
+    "spanZ": 484
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/desert1.track",
+    "id": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
+    "parts": 2051,
+    "spanX": 108,
+    "spanZ": 76
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/desert2.track",
+    "id": "88647ea04145fbbbb19b55f1590e038fb0378acb2571110f02cb545cc46b0d57",
+    "parts": 2230,
+    "spanX": 132,
+    "spanZ": 124
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/desert3.track",
+    "id": "2806030c503abb41a1a26fa9a570888be14296172bb273798ef0ad87a108a2ec",
+    "parts": 2831,
+    "spanX": 48,
+    "spanZ": 248
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/desert4.track",
+    "id": "4697ea67b18c3f49b30a3d8884602115536650bc5435c88e3732e64d21a72d33",
+    "parts": 2162,
+    "spanX": 280,
+    "spanZ": 172
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/desert5.track",
+    "id": "e5d084e06db4ab71196fea44efeceb23c8561266a78669c324a38f92581fe2db",
+    "parts": 2954,
+    "spanX": 216,
+    "spanZ": 96
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer1.track",
+    "id": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+    "parts": 679,
+    "spanX": 128,
+    "spanZ": 84
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer2.track",
+    "id": "7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0",
+    "parts": 1087,
+    "spanX": 68,
+    "spanZ": 68
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer3.track",
+    "id": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
+    "parts": 1422,
+    "spanX": 244,
+    "spanZ": 76
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer4.track",
+    "id": "93c7363dfea7fb09ca1d23b72cad5df43a30841d41c8ff25fb544c85bb03c7ae",
+    "parts": 3392,
+    "spanX": 208,
+    "spanZ": 140
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer5.track",
+    "id": "7603aaeffa1989a649dfaa8e1804bed4481b49df233e377687d0669899566e52",
+    "parts": 2947,
+    "spanX": 232,
+    "spanZ": 156
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer6.track",
+    "id": "c117823cf6788e3247b9ee63a0c091c07352bbe352c650a7790dc6718148c2fa",
+    "parts": 1123,
+    "spanX": 180,
+    "spanZ": 120
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/summer7.track",
+    "id": "e4bcaca3a583bb0eb62a700a69d14e89c852f0c5bf740fca76e0519ebdfc9ab1",
+    "parts": 2080,
+    "spanX": 32,
+    "spanZ": 80
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/winter1.track",
+    "id": "7239b17057127936907a805b0caa5d8c6f6c97eca9bdabf1a5312dce479629b7",
+    "parts": 676,
+    "spanX": 88,
+    "spanZ": 108
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/winter2.track",
+    "id": "99864b635d1891d22e17eb9267527a07a92c49c0f02893729fa2ded90e3ca0f9",
+    "parts": 3331,
+    "spanX": 148,
+    "spanZ": 328
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/winter3.track",
+    "id": "a5341fe706097cff2a3812a3fc0d87399254557328351ae8e5c882700fc1a196",
+    "parts": 2587,
+    "spanX": 100,
+    "spanZ": 168
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/winter4.track",
+    "id": "7d134c939df80c676a258266201beedd3b93572d5603f3ff4339ff8679803715",
+    "parts": 1366,
+    "spanX": 108,
+    "spanZ": 124
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/official/winter5.track",
+    "id": "2fe4bd46b0075cc25fc770ce50adbb68447cf493c999635bb272d231811dd264",
+    "parts": 2622,
+    "spanX": 144,
+    "spanZ": 56
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/4_seasons.track",
+    "id": "f68a709a296a60f6e6f73a2da670f95aca424be0f2fda5d6b608ece71f339b7c",
+    "parts": 14071,
+    "spanX": 284,
+    "spanZ": 432
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/90_reset.track",
+    "id": "f5c327cf09b90e4de8c3c1f9c910dbb7988cf15485d2e4beec3cc03aef408c5c",
+    "parts": 2910,
+    "spanX": 176,
+    "spanZ": 226
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/amberbound.track",
+    "id": "4058e3616fbd79b848e70037adde4f12b4413011050aaf1c9d875cdbe2e33d68",
+    "parts": 7638,
+    "spanX": 188,
+    "spanZ": 208
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/anubis.track",
+    "id": "86335d78d1a06d3dc81d80f84b8ac2e8f6359e9a206826e2c36f7d3f4351bea4",
+    "parts": 12639,
+    "spanX": 342,
+    "spanZ": 320
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/apostle.track",
+    "id": "5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e",
+    "parts": 41892,
+    "spanX": 220,
+    "spanZ": 304
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/arabica.track",
+    "id": "8cf99166f12cbb56a9df4e022a0e9b8c78973adb929dbf1e265ebb9f99f01163",
+    "parts": 9151,
+    "spanX": 109,
+    "spanZ": 206
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/arx_lucida.track",
+    "id": "520c4f511821ced30b99bceafbb02e6b7531e867126b0756e68d5e157691ef2f",
+    "parts": 45733,
+    "spanX": 572,
+    "spanZ": 580
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/asguardia.track",
+    "id": "5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572",
+    "parts": 51679,
+    "spanX": 162,
+    "spanZ": 205
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/atlantis.track",
+    "id": "27c3384de80b1bed23f1ea15316abe62c8cca33e955805f23d461803f6dee8d4",
+    "parts": 27322,
+    "spanX": 906,
+    "spanZ": 1160
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/clay_temples.track",
+    "id": "009fad7fcc215022c6b2dbb2b6de622f07cd88d4930b8e2b6a6b74c1f5de9e44",
+    "parts": 5808,
+    "spanX": 168,
+    "spanZ": 200
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/cogware.track",
+    "id": "9acd9aef650c4ccc41bb01f72ed44dfaa13f2e4404d2e3466f09cc1adcd9a9c0",
+    "parts": 37921,
+    "spanX": 420,
+    "spanZ": 272
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/concrete_jungle.track",
+    "id": "39bd3fa6c3c769b298c219aee7561af35a6d856bfee14b46b0b48499e7a57ed5",
+    "parts": 4431,
+    "spanX": 134,
+    "spanZ": 185
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/cruising_altitude.track",
+    "id": "a2137c20c03ad1848098b47f70417cc0b0bf169010c825dc6fb82f37066808a0",
+    "parts": 27086,
+    "spanX": 396,
+    "spanZ": 536
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/desert_stallion.track",
+    "id": "2ed125037366052871fbb97da6e1bda49cfeb471f6b9c8fa799d520bdb3683e2",
+    "parts": 6323,
+    "spanX": 472,
+    "spanZ": 330
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/evanescent_bliss.track",
+    "id": "0338f449b9948f06c03ffc2ab3ab6cf551fd08a9f2c09a16156b93ef52dd4411",
+    "parts": 10996,
+    "spanX": 700,
+    "spanZ": 351
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/flying_dreams.track",
+    "id": "35fe02bf18312713c05528f0b7b8fd15c83dac50bcdcbd373040a16e8bfcc138",
+    "parts": 32078,
+    "spanX": 461,
+    "spanZ": 357
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/fractured_shores.track",
+    "id": "470af92ed4c0a6f62028d7dea4dbc7765d1db16a3698d6a0c271be582a20a7c6",
+    "parts": 6290,
+    "spanX": 206,
+    "spanZ": 117
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/frosted_fjords.track",
+    "id": "b430aad5e481caa4588e30f46352b876b62f1ba0cf7730a15efd026c91a8f32e",
+    "parts": 6913,
+    "spanX": 243,
+    "spanZ": 312
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/frozen_in_time.track",
+    "id": "74ae56c0f278a19f3b69f3903198c7b9de09981133205856b53bf6bdf8db4211",
+    "parts": 8437,
+    "spanX": 283,
+    "spanZ": 257
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/frozen_ramparts.track",
+    "id": "409f26b9faf55bd0ad748177bf85ebdcfc0ddd572190e7f464f38b4a60587b7e",
+    "parts": 10374,
+    "spanX": 326,
+    "spanZ": 206
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/ghost_city.track",
+    "id": "18b69f54f119cfb2867abded9a1574f0799a750ef94aa744d9ec8ef6b4d565ae",
+    "parts": 10917,
+    "spanX": 308,
+    "spanZ": 473
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/grimspyre.track",
+    "id": "3cd94552b12fb3a8ac45ca3a5e21a882b71b31c788989b396ab382afc69414ac",
+    "parts": 17842,
+    "spanX": 276,
+    "spanZ": 360
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/hyperions_sanctuary.track",
+    "id": "33d99aad2ad5cef45b1d3afb8735c5229cfd98ac7cc24916e0da7283f7a545ce",
+    "parts": 11537,
+    "spanX": 488,
+    "spanZ": 377
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/joenail_jones.track",
+    "id": "ab8e1c13ddf394102be1cb04adcff8411127f1e7140a216d27a94fc19b7d0428",
+    "parts": 1486,
+    "spanX": 87,
+    "spanZ": 123
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/koselig.track",
+    "id": "315c9e95c567cce4feca78f5ad6e8d08d0a22dac0d56061af567b43eea3d4fa8",
+    "parts": 14362,
+    "spanX": 284,
+    "spanZ": 348
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/land_of_the_rising_sun.track",
+    "id": "62d9989187e4508f7866e7b30aa187ddbee2595df21ff5988d7fec3589f9048d",
+    "parts": 29823,
+    "spanX": 660,
+    "spanZ": 564
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/last_remnant.track",
+    "id": "f79b1d863d50f9e3b4489988698065c6d775ff3ec90bf91085bad05ad5ec8316",
+    "parts": 2282,
+    "spanX": 56,
+    "spanZ": 96
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/las_calles.track",
+    "id": "1ad53694ee3e96aea27afa7b64d5c29d115de88a17b69cf3fe3f5609c52b040b",
+    "parts": 2974,
+    "spanX": 136,
+    "spanZ": 106
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/launch_control.track",
+    "id": "28b658c7d10eb8b5de6f465e034e87e40f70b37e4534d8c37d1f2af06b5a36d7",
+    "parts": 8923,
+    "spanX": 216,
+    "spanZ": 234
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/la_infinita.track",
+    "id": "387aab2d3400ebf74b5a780d15c911cdc695053b94be3e7ad23f6ae313b2471c",
+    "parts": 57857,
+    "spanX": 316,
+    "spanZ": 240
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/lenore.track",
+    "id": "76269faf38e8726671c05b2b9044f7aa3e66c4313cb4fa5d0fbb23fc8524fe9e",
+    "parts": 39388,
+    "spanX": 617,
+    "spanZ": 797
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/levitation.track",
+    "id": "95d8f7cbe11053dbdfaeeb2f3c3d8f53f0d45fb6abeb411a74949a4cf52f427f",
+    "parts": 38920,
+    "spanX": 452,
+    "spanZ": 775
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/lost_at_sea.track",
+    "id": "a1f41dc9e884d5d4b1b6025158d70f0934dc4d892076e6c4b32dc3f3846b882e",
+    "parts": 16984,
+    "spanX": 360,
+    "spanZ": 244
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/lu_muvimento.track",
+    "id": "27429a1d1bf05770851e3919af70f47c6cd7a269c67032b084fb4345f6c271ce",
+    "parts": 16304,
+    "spanX": 266,
+    "spanZ": 67
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/magenta_mines.track",
+    "id": "3125a5f98c3b43cf1e2604e25e8504bffd714ea5843200fa8ddf0b4c58842f16",
+    "parts": 6655,
+    "spanX": 215,
+    "spanZ": 171
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/malformations.track",
+    "id": "5e40f730509204c77e9c610839ed43addddbe0f8aa007168447f7fde38583905",
+    "parts": 4253,
+    "spanX": 164,
+    "spanZ": 156
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/marvelous_marble.track",
+    "id": "64bf7efaed2a47dfb03a6b152e3aef637ac251b68a725a28352f3376ff1384d7",
+    "parts": 20809,
+    "spanX": 576,
+    "spanZ": 437
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/midas_metropolis.track",
+    "id": "b36162623435dc90a54f57590d2baa9f2d67a51cb12c393531f4b6d5e5528ebf",
+    "parts": 12967,
+    "spanX": 178,
+    "spanZ": 255
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/mos_espa.track",
+    "id": "5ea46b3ae268a0196dcc59dabe88926400b56e29814658bfed06a284f837cefd",
+    "parts": 21572,
+    "spanX": 500,
+    "spanZ": 355
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/natsu.track",
+    "id": "81cede50724b1ee0c2ebcef973c37d620680766bd75771c5ae2728b8732c7a66",
+    "parts": 19216,
+    "spanX": 270,
+    "spanZ": 249
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/natsujo.track",
+    "id": "a510bbd3341f2992a12db8a3780cb8943b6087538345d58d16602d6129742df0",
+    "parts": 9190,
+    "spanX": 190,
+    "spanZ": 200
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/opal_palace_ii.track",
+    "id": "7451c2128cb96bc28195cf0ca0f83a46c3b55d78d434232d9de085dd1cf0ab36",
+    "parts": 3800,
+    "spanX": 64,
+    "spanZ": 164
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/out_of_bounds.track",
+    "id": "d57a81355f36d5ef0bd2c063d251baf6d28401c275a8b3e3a62e0ae5071a2559",
+    "parts": 58048,
+    "spanX": 871,
+    "spanZ": 516
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/overclocked.track",
+    "id": "ddfe00045807e2786552d1e31e1363384c365487180f65d4eff1aa41e334a8e8",
+    "parts": 45455,
+    "spanX": 247,
+    "spanZ": 391
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/oyasumi.track",
+    "id": "a680fa81e6a4b9dec06b4197833f0a96334a275faf387d495c9c674ffd6b8686",
+    "parts": 40667,
+    "spanX": 398,
+    "spanZ": 304
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/paradise_palace.track",
+    "id": "9ba44e8eafd0158e7e1f63e7d609db308c53f337b79e86bd0b630225451eef34",
+    "parts": 9708,
+    "spanX": 408,
+    "spanZ": 364
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/planet_97.track",
+    "id": "f9283607ecec9c89583205cf08715c8f504cc271eec51209bb6fc0cc37ddc915",
+    "parts": 9659,
+    "spanX": 427,
+    "spanZ": 273
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/re_akina.track",
+    "id": "af6ef508e1f6e47a462a6998b950ef535d1e8a38fe67ead891bf5f2de1346f43",
+    "parts": 11317,
+    "spanX": 368,
+    "spanZ": 528
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/rolling_hills_racer.track",
+    "id": "fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778",
+    "parts": 1756,
+    "spanX": 352,
+    "spanZ": 140
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/sandline_ultimatum.track",
+    "id": "089f2aebcfe4f24d8dda3a8a630172d2bd13793e78c5247adfaa760743a377e1",
+    "parts": 2339,
+    "spanX": 232,
+    "spanZ": 121
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/sandy_lanes_ii.track",
+    "id": "151f12fd3ebc8942f7aaef669024a0fc149bc220f370753efe14d9371acc9c87",
+    "parts": 22145,
+    "spanX": 465,
+    "spanZ": 333
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/shardmir.track",
+    "id": "66f43b2d2a17f3cee05a127040ca409795058510bd3d1ac7eee224512ec532f5",
+    "parts": 29272,
+    "spanX": 728,
+    "spanZ": 380
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/shrouded_oasis.track",
+    "id": "9f827673c4132828009237a03e12ead73eae87504b4708a79c6cc0858212262d",
+    "parts": 9182,
+    "spanX": 210,
+    "spanZ": 167
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/sky_bound.track",
+    "id": "a8913b96daceb5b615fe45aad2bb104e04eb7db140242934657111e1d1f55b89",
+    "parts": 18567,
+    "spanX": 436,
+    "spanZ": 699
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/sludge_pipe_circuit.track",
+    "id": "9e53d03f4efe86834c49ce202b528d769d9aa7a6e17732d0fc56440463956a1b",
+    "parts": 18133,
+    "spanX": 181,
+    "spanZ": 188
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/snow_park.track",
+    "id": "191737cc4d1b74949e992d99371e5c7f5fc446a716af571c6e5449b23e9f4558",
+    "parts": 11606,
+    "spanX": 220,
+    "spanZ": 240
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/solaris.track",
+    "id": "225fad12335dadc12b60bfa1b31369b1026d8a084fd4670583870fb3b71f7ec0",
+    "parts": 11424,
+    "spanX": 356,
+    "spanZ": 408
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/stardust.track",
+    "id": "1783b7b6c30e7fddf7ffb7c8a4a8a3b65c1ef6ec317d908d6eb05e6c905a57f6",
+    "parts": 32262,
+    "spanX": 1264,
+    "spanZ": 568
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/starry_tropisx.track",
+    "id": "a6b990137e404c9ef2cb4399c463acbed8ebfa3bb82ab5315027118604c4ec03",
+    "parts": 38519,
+    "spanX": 248,
+    "spanZ": 275
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/star_bound.track",
+    "id": "76e1920a3ca015033a0b21156848def2c248c95d97ccf4aab2312a0302beefe0",
+    "parts": 24680,
+    "spanX": 380,
+    "spanZ": 448
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/steinwallburg.track",
+    "id": "fcbba504800751b0fb404a7cd1c9591befdf688ad5451ab2bc1f3651590cc5fc",
+    "parts": 21581,
+    "spanX": 241,
+    "spanZ": 450
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/sunken_glyphs.track",
+    "id": "b3889905b6df31cbe302e58e975988385607771605bf6e8e8e8e31b3d2dc8aa1",
+    "parts": 14029,
+    "spanX": 420,
+    "spanZ": 253
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/tangled_cliffs.track",
+    "id": "c1a2c5aef1029d7bbf946f08cd087dd25bad6e019a41694a48a0024c27627dc8",
+    "parts": 19678,
+    "spanX": 195,
+    "spanZ": 229
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/termite_terror.track",
+    "id": "d03b9f7c10c95f40eed389458be51bdf2437febd5673d028da134e59e503c10b",
+    "parts": 3340,
+    "spanX": 239,
+    "spanZ": 216
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/the_crossfades.track",
+    "id": "f40d385d5e97e00a166a9a05d19789d8f2bf3621a8c1c8919c8bec41ab6347ab",
+    "parts": 36297,
+    "spanX": 668,
+    "spanZ": 524
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/the_eldritch_estate.track",
+    "id": "2ec74a179c8aba94354e3c6dee2a2920bedd7d84adf4d0a691f4a7453afdb1e8",
+    "parts": 38275,
+    "spanX": 644,
+    "spanZ": 564
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/tucks_factory.track",
+    "id": "d9bc51ec180bc46558e079c7949ba10b9ade52078c4c145f217a6a8543df2377",
+    "parts": 8727,
+    "spanX": 112,
+    "spanZ": 190
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/winterfell.track",
+    "id": "9f4597449906aa0c2baf9a4737406385c829533e64e9e972b25b4189f4593a54",
+    "parts": 74711,
+    "spanX": 193,
+    "spanZ": 174
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/wintertide.track",
+    "id": "dc7783fef2a5fbb7a2d75b9c6fdd6a9d600b833d47c6274374ea4388c707517a",
+    "parts": 20879,
+    "spanX": 412,
+    "spanZ": 444
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/winter_hollow.track",
+    "id": "5c00f2c90bcf8230183484225d1a417e45b0ad310379acfafd4c8f1dc7345dd7",
+    "parts": 4919,
+    "spanX": 60,
+    "spanZ": 121
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/zealot.track",
+    "id": "b77ec520a40c4b38d3d7d653b747b1f8627c98709096568db22cd1bfec534ba6",
+    "parts": 28308,
+    "spanX": 592,
+    "spanZ": 484
+  },
+  {
+    "folder": "PolyTrack 0.6.3 Ranked",
+    "name": "tracks/community/zenith.track",
+    "id": "439f1c61263987365996667f99d65f899ec482dfe21c64edcd9a1b1ae5b4a0a9",
+    "parts": 50108,
+    "spanX": 895,
+    "spanZ": 544
+  }
+]
