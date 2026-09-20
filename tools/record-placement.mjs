@@ -1,6 +1,9 @@
 const BADGE_ATTRIBUTE = 'data-record-placement';
 const HOST_CLASS = 'sq-record-placement-host';
 const STYLE_ID = 'sqRecordPlacementStyle';
+const NORMALIZED_TRACKS = new WeakMap();
+const PREPARED_AUTHORITATIVE_PLACEMENTS = new WeakSet();
+const OVERALL_PLACEMENT_CACHE = new WeakMap();
 
 export const RECORD_PLACEMENT_SETTINGS = Object.freeze({
   enabled: 'polytrack-0.6.2-pb-podiums',
@@ -41,14 +44,21 @@ function resultIsExcluded(row) {
 
 function normalizeTracks(value) {
   const input = typeof value === 'function' ? value() : value;
+  if (input && typeof input === 'object' && NORMALIZED_TRACKS.has(input)) {
+    return NORMALIZED_TRACKS.get(input);
+  }
+  let tracks;
   if (input instanceof Map) {
-    return Array.from(input, ([id, track]) => ({ ...(track || {}), id: String(track?.id || id || '') }));
+    tracks = Array.from(input, ([id, track]) => ({ ...(track || {}), id: String(track?.id || id || '') }));
+  } else if (Array.isArray(input)) {
+    tracks = input.map(track => ({ ...(track || {}), id: String(track?.id || '') }));
+  } else if (input && typeof input === 'object') {
+    tracks = Object.entries(input).map(([id, track]) => ({ ...(track || {}), id: String(track?.id || id || '') }));
+  } else {
+    tracks = [];
   }
-  if (Array.isArray(input)) return input.map(track => ({ ...(track || {}), id: String(track?.id || '') }));
-  if (input && typeof input === 'object') {
-    return Object.entries(input).map(([id, track]) => ({ ...(track || {}), id: String(track?.id || id || '') }));
-  }
-  return [];
+  if (input && typeof input === 'object') NORMALIZED_TRACKS.set(input, tracks);
+  return tracks;
 }
 
 function snapshotAt(snapshots, trackId) {
@@ -58,6 +68,126 @@ function snapshotAt(snapshots, trackId) {
 
 function normalizePolicy(value) {
   return value === 'verified' ? 'verified' : 'all';
+}
+
+function placementView(rows) {
+  const byAccount = new Map();
+  let rank = 0;
+  let priorTime = -1;
+  rows.forEach((row, index) => {
+    if (row.timeMs !== priorTime) rank = index + 1;
+    priorTime = row.timeMs;
+    byAccount.set(row.accountId, Object.freeze({ row, rank }));
+  });
+  return Object.freeze({ fieldSize: rows.length, byAccount });
+}
+
+function placementFromSummary(row, accountId, revision) {
+  const trackId = String(row?.trackId || '');
+  const rank = Number(row?.rank);
+  const fieldSize = Number(row?.fieldSize);
+  const timeMs = timeOf(row);
+  if (!trackId || trackId.length > 128 || /[\u0000-\u001f\u007f]/.test(trackId)) return null;
+  if (!Number.isSafeInteger(rank) || rank < 1) return null;
+  if (!Number.isSafeInteger(fieldSize) || fieldSize < rank) return null;
+  if (!timeMs || resultIsExcluded(row) || row.localPending === true || row.local === true) return null;
+  const podium = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : 'placed';
+  return Object.freeze({
+    trackId,
+    accountId,
+    rank,
+    fieldSize,
+    timeMs,
+    label: `${rank}/${fieldSize}`,
+    podium,
+    verified: row.runVerified === true,
+    revision,
+    policy: row.policy === 'verified' ? 'verified' : 'all',
+    authoritative: true,
+    source: 'overall-snapshot'
+  });
+}
+
+function overallPlacementRevision(snapshot) {
+  const revision = Math.max(
+    revisionOf(snapshot),
+    Number(snapshot?.builtRevision || 0),
+    Number(snapshot?.serverUpdatedAt || 0),
+    Number(snapshot?.updatedAt || 0)
+  );
+  return Number.isSafeInteger(revision) && revision > 0 ? revision : 0;
+}
+
+function overallSummaryRows(entry) {
+  const rows = [
+    ...(Array.isArray(entry?.resultSamples) ? entry.resultSamples : []),
+    ...(Array.isArray(entry?.bestTracks) ? entry.bestTracks : []),
+    ...(Array.isArray(entry?.weightedResults) ? entry.weightedResults : []),
+    ...(Array.isArray(entry?.opportunityTracks) ? entry.opportunityTracks : []),
+    entry?.strongestTrack,
+    entry?.worstTrack,
+    entry?.improvementTrack
+  ].filter(Boolean);
+  if (entry?.bestTrackId) {
+    rows.push({
+      trackId: entry.bestTrackId,
+      rank: entry.bestTrackRank,
+      fieldSize: entry.bestTrackField,
+      timeMs: entry.bestTrackTimeMs
+    });
+  }
+  return rows;
+}
+
+export function preparePolyTrackOverallPlacements(snapshot, accountId, options = {}) {
+  const id = String(accountId || '').trim();
+  const empty = () => {
+    const placements = new Map();
+    PREPARED_AUTHORITATIVE_PLACEMENTS.add(placements);
+    return placements;
+  };
+  if (!snapshot || typeof snapshot !== 'object' || !id) return empty();
+
+  const expectedAlgorithmVersion = String(options.expectedAlgorithmVersion || options.algorithmVersion || '');
+  const minSchemaVersion = Number(options.minSchemaVersion || options.schemaVersion || 0);
+  const cacheKey = `${id}|${expectedAlgorithmVersion}|${minSchemaVersion}|${options.authoritative === true}`;
+  const cached = OVERALL_PLACEMENT_CACHE.get(snapshot)?.get(cacheKey);
+  if (cached) return cached;
+
+  const source = String(snapshot.source || '');
+  const revision = overallPlacementRevision(snapshot);
+  const trusted = Boolean(
+    (options.authoritative === true || snapshot.authoritative === true) &&
+    !/local|fallback|pending/i.test(source) &&
+    revision > 0 &&
+    (!expectedAlgorithmVersion || !snapshot.algorithmVersion || snapshot.algorithmVersion === expectedAlgorithmVersion) &&
+    (!minSchemaVersion || !snapshot.schemaVersion || Number(snapshot.schemaVersion) >= minSchemaVersion)
+  );
+  const matches = trusted && Array.isArray(snapshot.entries)
+    ? snapshot.entries.filter(entry => accountIdOf(entry) === id)
+    : [];
+  const placements = new Map();
+  const conflicted = new Set();
+  if (matches.length === 1) {
+    for (const row of overallSummaryRows(matches[0])) {
+      const placement = placementFromSummary(row, id, revision);
+      if (!placement || conflicted.has(placement.trackId)) continue;
+      const prior = placements.get(placement.trackId);
+      if (!prior) {
+        placements.set(placement.trackId, placement);
+        continue;
+      }
+      if (prior.rank !== placement.rank || prior.fieldSize !== placement.fieldSize || prior.timeMs !== placement.timeMs || prior.policy !== placement.policy) {
+        placements.delete(placement.trackId);
+        conflicted.add(placement.trackId);
+      }
+    }
+  }
+  PREPARED_AUTHORITATIVE_PLACEMENTS.add(placements);
+  let byKey = OVERALL_PLACEMENT_CACHE.get(snapshot);
+  if (!byKey) OVERALL_PLACEMENT_CACHE.set(snapshot, byKey = new Map());
+  byKey.set(cacheKey, placements);
+  return placements;
 }
 
 export function readRecordPlacementSettings(storage = globalThis.localStorage) {
@@ -125,24 +255,27 @@ export function normalizeAuthoritativeSnapshot(snapshot, trackId, options = {}) 
     rows.push(Object.freeze({ accountId, timeMs, runVerified: row.runVerified === true }));
   }
   rows.sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
+  const frozenRows = Object.freeze(rows);
   return Object.freeze({
     trackId: String(trackId),
     revision,
     algorithmVersion: String(snapshot.algorithmVersion || ''),
-    rows: Object.freeze(rows)
+    rows: frozenRows,
+    views: Object.freeze({
+      all: placementView(frozenRows),
+      verified: placementView(Object.freeze(rows.filter(row => row.runVerified)))
+    })
   });
 }
 
 function placementFromNormalized(snapshot, accountId, policy) {
   const id = String(accountId || '').trim();
   if (!id || !snapshot?.rows?.length) return null;
-  const rows = normalizePolicy(policy) === 'verified'
-    ? snapshot.rows.filter(row => row.runVerified)
-    : snapshot.rows;
-  const ownRow = rows.find(row => row.accountId === id);
-  if (!ownRow) return null;
-  const rank = 1 + rows.filter(row => row.timeMs < ownRow.timeMs).length;
-  const fieldSize = rows.length;
+  const view = snapshot.views?.[normalizePolicy(policy)];
+  const found = view?.byAccount.get(id);
+  if (!found) return null;
+  const { row: ownRow, rank } = found;
+  const fieldSize = view.fieldSize;
   const podium = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : 'placed';
   return Object.freeze({
     trackId: snapshot.trackId,
@@ -155,6 +288,14 @@ function placementFromNormalized(snapshot, accountId, policy) {
     verified: ownRow.runVerified,
     revision: snapshot.revision
   });
+}
+
+function placementFromPublished(placements, trackId, accountId, policy) {
+  if (!PREPARED_AUTHORITATIVE_PLACEMENTS.has(placements)) return null;
+  const placement = placements.get(trackId);
+  if (!placement || placement.accountId !== String(accountId || '').trim()) return null;
+  if (normalizePolicy(policy) !== placement.policy) return null;
+  return placement;
 }
 
 export function parseDisplayedRecordTime(value) {
@@ -188,6 +329,15 @@ export function createRecordPlacementModel(options = {}) {
   const highestRevision = new Map();
   const invalidatedThrough = new Map();
   const accepted = new Map();
+  const normalizedSnapshots = new WeakMap();
+
+  function normalizeSnapshot(raw, trackId) {
+    if (!raw || typeof raw !== 'object') return normalizeAuthoritativeSnapshot(raw, trackId, options);
+    let byTrack = normalizedSnapshots.get(raw);
+    if (!byTrack) normalizedSnapshots.set(raw, byTrack = new Map());
+    if (!byTrack.has(trackId)) byTrack.set(trackId, normalizeAuthoritativeSnapshot(raw, trackId, options));
+    return byTrack.get(trackId);
+  }
 
   function invalidate(trackIds, throughRevision) {
     const ids = trackIds == null
@@ -202,34 +352,27 @@ export function createRecordPlacementModel(options = {}) {
     }
   }
 
-  function update({ tracks, snapshots, accountId, policy = 'all' }) {
+  function update({ tracks, snapshots, accountId, policy = 'all', authoritativePlacements, tracksNormalized = false }) {
     const placements = new Map();
-    for (const track of normalizeTracks(tracks)) {
+    for (const track of tracksNormalized ? tracks : normalizeTracks(tracks)) {
       const trackId = String(track.id || '');
       if (!trackId) continue;
       const raw = snapshotAt(snapshots, trackId);
       if (raw == null) {
         if (accepted.has(trackId)) invalidate(trackId);
-        continue;
+      } else {
+        const revision = revisionOf(raw);
+        const highest = Number(highestRevision.get(trackId) || 0);
+        if (revision && revision >= highest) {
+          highestRevision.set(trackId, Math.max(highest, revision));
+          const normalized = normalizeSnapshot(raw, trackId);
+          const floor = Number(invalidatedThrough.get(trackId) || 0);
+          if (!normalized || normalized.revision <= floor) accepted.delete(trackId);
+          else accepted.set(trackId, normalized);
+        }
       }
-
-      const revision = revisionOf(raw);
-      const highest = Number(highestRevision.get(trackId) || 0);
-      if (revision && revision < highest) {
-        const placement = placementFromNormalized(accepted.get(trackId), accountId, policy);
-        if (placement) placements.set(trackId, placement);
-        continue;
-      }
-      if (revision) highestRevision.set(trackId, Math.max(highest, revision));
-
-      const normalized = normalizeAuthoritativeSnapshot(raw, trackId, options);
-      const floor = Number(invalidatedThrough.get(trackId) || 0);
-      if (!normalized || normalized.revision <= floor) {
-        accepted.delete(trackId);
-        continue;
-      }
-      accepted.set(trackId, normalized);
-      const placement = placementFromNormalized(normalized, accountId, policy);
+      const placement = placementFromNormalized(accepted.get(trackId), accountId, policy)
+        || placementFromPublished(authoritativePlacements, trackId, accountId, policy);
       if (placement) placements.set(trackId, placement);
     }
     return placements;
@@ -255,7 +398,19 @@ function ensureStyle(document) {
 
 function clearDom(document) {
   document?.querySelectorAll?.(`[${BADGE_ATTRIBUTE}]`).forEach(node => node.remove());
-  document?.querySelectorAll?.(`.${HOST_CLASS}`).forEach(node => node.classList.remove(HOST_CLASS));
+  document?.querySelectorAll?.(`.${HOST_CLASS}`).forEach(node => removeClass(node, HOST_CLASS));
+}
+
+function addClass(node, className) {
+  if (!node?.classList) return;
+  if (typeof node.classList.contains === 'function' && node.classList.contains(className)) return;
+  node.classList.add(className);
+}
+
+function removeClass(node, className) {
+  if (!node?.classList) return;
+  if (typeof node.classList.contains === 'function' && !node.classList.contains(className)) return;
+  node.classList.remove(className);
 }
 
 function renderDom(document, tracks, placements, options) {
@@ -278,7 +433,7 @@ function renderDom(document, tracks, placements, options) {
       : parseDisplayedRecordTime(displayedRecordText(record));
     if (!placement || !Number.isSafeInteger(Number(displayedTime)) || Number(displayedTime) !== placement.timeMs) {
       badge?.remove();
-      record.classList.remove(HOST_CLASS);
+      removeClass(record, HOST_CLASS);
       continue;
     }
     const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}`;
@@ -292,18 +447,19 @@ function renderDom(document, tracks, placements, options) {
       record.appendChild(badge);
     }
     badge.dataset.signature = signature;
-    badge.className = `sq-record-placement ${placement.podium}`;
+    const className = `sq-record-placement ${placement.podium}`;
+    if (badge.className !== className) badge.className = className;
     badge.textContent = placement.label;
     badge.title = `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
     badge.setAttribute('aria-label', badge.title);
-    record.classList.add(HOST_CLASS);
+    addClass(record, HOST_CLASS);
     retained.add(badge);
   }
   document.querySelectorAll(`[${BADGE_ATTRIBUTE}]`).forEach(badge => {
     if (retained.has(badge)) return;
     const host = badge.parentElement;
     badge.remove();
-    host?.classList?.remove(HOST_CLASS);
+    removeClass(host, HOST_CLASS);
   });
 }
 
@@ -318,6 +474,16 @@ export function installRecordPlacement(options = {}) {
   const addedStyle = options.render ? false : ensureStyle(document);
   let destroyed = false;
   let lastState = null;
+  const preparedSnapshots = new WeakMap();
+
+  function prepareSnapshot(raw, trackId) {
+    if (raw == null || !options.prepareSnapshot) return raw;
+    if (!raw || typeof raw !== 'object') return options.prepareSnapshot(raw, trackId);
+    let byTrack = preparedSnapshots.get(raw);
+    if (!byTrack) preparedSnapshots.set(raw, byTrack = new Map());
+    if (!byTrack.has(trackId)) byTrack.set(trackId, options.prepareSnapshot(raw, trackId));
+    return byTrack.get(trackId);
+  }
 
   function render(placements, state) {
     if (options.render) options.render(placements, state);
@@ -331,7 +497,7 @@ export function installRecordPlacement(options = {}) {
     const snapshots = new Map();
     for (const track of tracks) {
       const raw = snapshotAt(rawSnapshots, track.id);
-      snapshots.set(track.id, options.prepareSnapshot ? options.prepareSnapshot(raw, track.id) : raw);
+      snapshots.set(track.id, prepareSnapshot(raw, track.id));
     }
     const storedSettings = readRecordPlacementSettings(options.storage);
     const bridgeSettings = typeof options.readSettings === 'function' ? options.readSettings() || {} : {};
@@ -341,7 +507,8 @@ export function installRecordPlacement(options = {}) {
     settings.enabled = settings.enabled !== false;
     settings.policy = normalizePolicy(settings.policy);
     const accountId = String(resolveValue(input, 'accountId', options.readAccountId) || '').trim();
-    lastState = { tracks, snapshots, accountId, policy: settings.policy };
+    const authoritativePlacements = resolveValue(input, 'authoritativePlacements', options.readAuthoritativePlacements);
+    lastState = { tracks, snapshots, accountId, policy: settings.policy, authoritativePlacements, tracksNormalized: true };
     const placements = settings.enabled ? model.update(lastState) : new Map();
     render(placements, { ...lastState, settings });
     return placements;

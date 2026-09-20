@@ -70,16 +70,23 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
 
 async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents}) {
   const now = Date.now();
-  const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: VERIFICATION_COLLECTION}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
-  const docs = (query || []).filter(x => x.document).map(x => ({...x.document, data: decode({mapValue: {fields: x.document.fields || {}}})}));
-  const prioritized = await prioritizeNormal(db, docs, now);
-  const {jobs: selectedJobs, canonicalAttempts, selectionConflicts} = await selectNormal(db, prioritized, now);
-  // Normal selection is unleased: unprocessed bindings remain in their queue.
-  let jobs = selectedJobs.slice(0, NORMAL_JOB_LIMIT);
-  // Share the unchanged total native budget; reserve at least four slots for events.
-  const eventLimit = TOTAL_JOB_LIMIT - jobs.length;
+  // Events must get their reservation before normal canonical reads/commits. Otherwise
+  // normal selection can spend the request budget and strand both sources.
+  const eventLimit = TOTAL_JOB_LIMIT - NORMAL_JOB_LIMIT;
   const events = await eventRun(db, root, {limit: eventLimit, intakeLimit: TOTAL_JOB_LIMIT, canSpend:db.canSpend});
   if (!Number.isInteger(events.checked) || events.checked<0 || events.checked>eventLimit) throw Error('Invalid event native count');
+  let selectedJobs = [], canonicalAttempts = 0, selectionConflicts = 0;
+  if (events.checked < TOTAL_JOB_LIMIT) {
+    const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: VERIFICATION_COLLECTION}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
+    const docs = (query || []).filter(x => x.document).map(x => ({...x.document, data: decode({mapValue: {fields: x.document.fields || {}}})}));
+    const prioritized = await prioritizeNormal(db, docs, now);
+    const selected = await selectNormal(db, prioritized, now);
+    selectedJobs = selected.jobs;
+    canonicalAttempts = selected.canonicalAttempts;
+    selectionConflicts = selected.selectionConflicts;
+  }
+  // Normal selection is unleased: unprocessed bindings remain in their queue.
+  let jobs = selectedJobs.slice(0, NORMAL_JOB_LIMIT);
   // Events get their reserved work first; only unused slots can be borrowed.
   if(borrowUnusedEvents)jobs=selectedJobs.slice(0,TOTAL_JOB_LIMIT-events.checked);
   // Each normal publication can make five requests on each of three conflict attempts.

@@ -426,12 +426,12 @@ test('event work processes with normal queue empty without invoking normal physi
     validateEngine:async()=>{calls.push('pin');},
     connectDatabase:async()=>({call:async()=>{calls.push('normal-query');return [];}}),
     eventRun:async(_,root,options)=>{
-      assert.equal(options.limit,16);assert.equal(options.intakeLimit,16);
+      assert.equal(options.limit,4);assert.equal(options.intakeLimit,16);
       assert.equal(root,path.resolve(fileURLToPath(new URL('../..',import.meta.url))));
       calls.push('event');return {checked:1,consumed:1,rejected:false,archived:null,results:[]};
     },
     verifyNormal:async()=>{throw Error('No normal simulation expected');}});
-  assert.deepEqual(calls,['pin','normal-query','event']);
+  assert.deepEqual(calls,['pin','event','normal-query']);
 });
 
 test('mixed backlog reserves twelve normal simulations and four event jobs', async () => {
@@ -509,7 +509,7 @@ test('shared budget gives events unused normal capacity without exceeding sixtee
       },verifyNormal:async(_,jobs)=>{simulated=jobs.length;return jobs;},
       publishNormal:async()=>({reasons:{}})});
     assert.equal(simulated,Math.min(12,count));
-    assert.equal(reserved,16-simulated);assert.ok(reserved>=4);assert.equal(reserved+simulated,16);
+    assert.equal(reserved,4);assert.equal(reserved+simulated<=16,true);
   }
 });
 

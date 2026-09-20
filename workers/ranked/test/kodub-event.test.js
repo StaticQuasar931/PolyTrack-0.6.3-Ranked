@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { KODUB_METADATA_URL, provisionKodubEvent } from '../src/kodub-event.js';
+import { eventPeriod, publicEventPeriod } from '../src/events.js';
 
 const root = 'https://vps.kodub.com/v6';
 const now = Date.UTC(2026, 8, 20, 12);
@@ -30,6 +31,9 @@ const capacity = { policyVersion: 'kodub-reviewed-v1', entrants: 200, admissions
 function fixture(overrides = {}) {
   const calls = [];
   const reads = [];
+  const documents = new Map();
+  if (overrides.existing) documents.set(`0.6.2_event_periods/kodub_${endsAt}`, overrides.existing);
+  if (overrides.softBinding) documents.set('0.6.2_event_soft_targets/kodub_la_riviera_57597_v1', overrides.softBinding);
   let created;
   const payloads = new Map([
     [KODUB_METADATA_URL, Response.json(overrides.metadata || metadata)],
@@ -39,7 +43,10 @@ function fixture(overrides = {}) {
   ]);
   const runtime = {
     now: () => now,
-    store: { transaction: async operation => operation({ get: async path => { reads.push(path); return overrides.existing || null; } }) },
+    store: { transaction: async operation => operation({
+      get: async path => { reads.push(path); return documents.get(path) || null; },
+      create: async (path, value) => { if (documents.has(path)) throw Error('already_exists'); documents.set(path, structuredClone(value)); },
+    }) },
     service: { createPeriod: async (period, options) => { created = { period, options }; } },
   };
   const fetch = async (url, init) => {
@@ -48,7 +55,7 @@ function fixture(overrides = {}) {
     if (!response) throw Error('unexpected_url');
     return response;
   };
-  return { runtime, fetch, calls, reads, created: () => created };
+  return { runtime, fetch, calls, reads, documents, created: () => created };
 }
 
 test('provisions one immutable Kodub period from exact official endpoints', async () => {
@@ -80,6 +87,46 @@ test('provisions one immutable Kodub period from exact official endpoints', asyn
   assert.equal(period.kodub.officialEndTime, period.endsAt);
   assert(Object.isFrozen(period));
   assert(Object.isFrozen(period.kodub));
+});
+
+test('La Riviera uses the private 57597ms soft target without exposing it in public period metadata', async () => {
+  const laRiviera = structuredClone(metadata);
+  laRiviera.current.name = 'La Riviera';
+  laRiviera.current.author = 'Kodub';
+  const f = fixture({ metadata: laRiviera, leaderboard: {
+    total: 4, entries: [{ frames: 50000, verifiedState: 1 }], userEntry: null } });
+  await provisionKodubEvent(f.runtime, { capacity, fetch: f.fetch });
+  const period = f.created().period;
+  assert.equal(period.targetMs, 57597);
+  assert.equal(period.kodub.officialFastestVerifiedMs, 50000);
+  assert.equal(period.kodub.privateSoftScoring, true);
+  assert.deepEqual(period.kodub.privateSoftScoringBinding, {
+    periodId: `kodub_${endsAt}`, trackId, trackCodeHash: assetId, officialEndTime: endsAt, targetMs: 57597 });
+  const claimed = f.documents.get('0.6.2_event_soft_targets/kodub_la_riviera_57597_v1');
+  assert.deepEqual(claimed, period.kodub.privateSoftScoringBinding);
+  assert.equal(eventPeriod(period).targetMs, 57597);
+  const published = publicEventPeriod(period);
+  assert.equal('targetMs' in published, false);
+  assert.equal(JSON.stringify(published).includes('57597'), false);
+  assert.equal(JSON.stringify(published).includes('privateSoftScoring'), false);
+});
+
+test('a later same-name week cannot reuse La Riviera private soft scoring', async () => {
+  const firstMetadata = structuredClone(metadata);
+  firstMetadata.current.name = 'La Riviera'; firstMetadata.current.author = 'Kodub';
+  const first = fixture({ metadata: firstMetadata, leaderboard: {
+    total: 4, entries: [{ frames: 50000, verifiedState: 1 }], userEntry: null } });
+  await provisionKodubEvent(first.runtime, { capacity, fetch: first.fetch });
+  const claimed = first.documents.get('0.6.2_event_soft_targets/kodub_la_riviera_57597_v1');
+  const laterMetadata = structuredClone(firstMetadata);
+  laterMetadata.current.endTime = new Date(endsAt + 86400000).toISOString();
+  const later = fixture({ metadata: laterMetadata, softBinding: claimed, leaderboard: {
+    total: 4, entries: [{ frames: 50000, verifiedState: 1 }], userEntry: null } });
+  await provisionKodubEvent(later.runtime, { capacity, fetch: later.fetch });
+  const period = later.created().period;
+  assert.equal(period.targetMs, 50000);
+  assert.equal(period.kodub.privateSoftScoring, undefined);
+  assert.equal('targetMs' in publicEventPeriod(period), true);
 });
 
 test('an exact existing period returns after one bounded read without refetching mutable inputs', async () => {

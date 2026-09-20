@@ -28,13 +28,15 @@ test('playback resource limits stay equal to verifier decoder limits',async()=>{
  const {default:verifier}=await import('../tools/verifier/replay.cjs');for(const [name,value] of Object.entries(EVENT_REPLAY_LIMITS))assert.equal(value,verifier.LIMITS[name],name);
 });
 
-test('published event replay binds period, account, exact time and content hash before native playback',async()=>{
+test('published waiting replay binds run, period, account, exact time and content hash before native playback',async()=>{
  const {preparePublishedEventGhost}=await import('./public-replay.mjs');
  const {createHash}=await import('node:crypto');const f=fixture();
  const period={id:f.session.periodId,trackId:f.session.trackId};
- const entry={accountId:f.session.accountId,timeMs:f.row.timeMs,name:'Other racer'};
- const row={...f.row,runId:'a'.repeat(64),replayHash:createHash('sha256').update(f.row.replay).digest('hex')};
+ const runId='a'.repeat(64),entry={accountId:f.session.accountId,runId,timeMs:f.row.timeMs,name:'Other racer',pending:true};
+ const row={...f.row,runId,replayHash:createHash('sha256').update(f.row.replay).digest('hex'),
+  verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-recording'};
  const options={require:f.require,row,period,entry,viewer:'c'.repeat(64)};
  const ghost=await preparePublishedEventGhost(options);assert.equal(ghost.isSelf,false);assert.equal(ghost.nickname,'Other racer');assert.equal(ghost.time.numberOfFrames,20000);
- for(const change of [{accountId:'d'.repeat(64)},{periodId:'another'},{timeMs:19999},{frames:19999},{runId:''},{replayHash:'0'.repeat(64)}])await assert.rejects(preparePublishedEventGhost({...options,row:{...row,...change}}));
+ for(const change of [{runId:'d'.repeat(64)},{replayHash:'0'.repeat(64)},{accountId:'d'.repeat(64)},{periodId:'another'}])
+  await assert.rejects(preparePublishedEventGhost({...options,row:{...row,...change}}));
 });

@@ -7,7 +7,7 @@ import { PERMANENT_ROLLING_HILLS as R, PermanentRollingHillsError, derivePermane
 
 const entry = (accountId, timeMs, extra = {}) => ({ accountId, trackId: R.trackId, timeMs, frames: timeMs,
   raceTimeFrames: timeMs, runVerified: true, integrityVerified: true, replayHash: 'a'.repeat(64),
-  name: accountId, carStyle: 'recorded-style', ...extra });
+  pbAt: 100, name: accountId, carStyle: 'recorded-style', ...extra });
 const snapshot = (entries = [entry('first', 10000), entry('second', 20000)]) => ({ trackId: R.trackId,
   algorithmVersion: R.algorithmVersion, schemaVersion: R.minimumSchemaVersion, revision: 7, sourceRevision: 7,
   signature: 'valid_snapshot_signature', builtAt: 100, updatedAt: 200, complete: true,
@@ -22,6 +22,8 @@ test('permanent Rolling Hills derives live first-place scoring only from explici
   assert.equal(result.targetPolicy, 'live-fastest-physics-verified');
   assert.deepEqual(result.entries.map(row => [row.accountId, row.rp]), [['first', 1001], ['second', 500]]);
   assert(result.entries.every(row => row.physicsVerified && row.replayIntegrityVerified));
+  assert.deepEqual(result.contributions, { normalRp: true, eventRp: true });
+  assert(result.entries.every(row => row.runAgeMs === 100 && row.eventRpContribution === row.rp && row.normalRpEligible));
 });
 
 test('permanent Rolling Hills fails closed for missing, partial, stale or unverified snapshots', async () => {
@@ -45,6 +47,7 @@ test('combined EventRP preserves earned finite RP and labels the moving permanen
     totalEntries: finiteEntries.length, updatedAt: 150 }, rolling);
   const second = combined.entries.find(row => row.accountId === 'second');
   assert.equal(second.finiteEventRp, 900); assert.equal(second.permanentRollingHillsRp, 500); assert.equal(second.rp, 1400);
+  assert.equal(second.rollingHillsRunAgeMs, 100); assert.equal(second.rollingHillsEventRpContribution, 500);
   assert.equal(second.events, 3); assert.equal(combined.eventRpComplete, true);
   assert.equal(combined.dynamicComponents.permanentRollingHills.targetPolicy, 'live-fastest-physics-verified');
   assert.throws(() => mergePermanentRollingIntoTotals({ entries: finiteEntries, updatedAt: 150 }, rolling),

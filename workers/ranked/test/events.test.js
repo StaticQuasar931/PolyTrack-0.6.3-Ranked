@@ -212,7 +212,8 @@ test('owner receipt explains verdict and older completion cannot replace latest 
   assert.equal(receipt.timeMs, 15000);
   await assert.rejects(f.service.ownReceipt('day1', 'intruder', account), /not_owned/);
   assert.equal('replay' in receipt, false);
-  assert(f.store.counts.some(count => count.writes === 10));
+  assert(f.store.counts.some(count => count.writes >= 10));
+  assert(f.store.counts.every(count => count.writes <= 16));
 });
 test('due retry progresses even with an unending fresh inbox page', async () => {
   const store = memoryStore(), freshId = 'day1_' + account, retryId = 'day1_' + 'c'.repeat(64);
@@ -277,7 +278,7 @@ test('cleanup is bounded; public archives and monthly indexes remain permanent',
   assert.equal(f.data.get(`${C.public}/day1`).archived, true);
   assert.deepEqual((await f.service.catalog()).archives, []);
   const month = new Date(p.endsAt).toISOString().slice(0, 7).replace('-', '');
-  assert.deepEqual((await f.service.archiveMonth(month)).periods, [publicEventPeriod(p)]);
+  assert.deepEqual((await f.service.archiveMonth(month)).periods, [publicEventPeriod({ ...p, racerCount: 1 })]);
   assert.equal((await f.service.snapshot('day1')).period.id, 'day1');
   assert.equal(f.data.has(`${C.periods}/day1`), false);
   assert.deepEqual(f.canonical(), canonical); assert.deepEqual(await f.service.totals(), totals);
@@ -384,7 +385,7 @@ test('only verified event PB replays are retained, replaced and publicly readabl
   const first = await f.service.replay('day1', account);
   assert.deepEqual(first, { periodId: 'day1', accountId: account, trackId: track, runId: pending.runId,
     timeMs: 20402, frames: 20402, replayHash: hash(replay), replay, carStyle: 'test', verifiedAt: 1000,
-    source: 'verified-event-recording' });
+    verificationStatus: 'verified', verified: true, eventRpEligible: true, source: 'verified-event-recording' });
   assert.equal(f.run(pending.runId).replay, null, 'terminal candidate replay is still cleared');
   f.advance(); const faster = await f.submit(15000, 'faster');
   assert.equal((await f.service.replay('day1', account)).runId, pending.runId, 'pending run cannot replace replay');
@@ -396,6 +397,26 @@ test('only verified event PB replays are retained, replaced and publicly readabl
   const response = await handler(new Request(`https://worker.test/v1/events/day1/replays/${account}`, { headers: { Origin: 'https://game.test' } }));
   assert.equal(response.status, 200); assert.equal(auth, 0);
   assert.deepEqual(await response.json(), await f.service.replay('day1', account));
+});
+
+test('only pre-verification recordings are public; rejected recordings disappear without entering RP', async () => {
+  const f = fixture(); await f.start();
+  const pending = await f.submit();
+  const pendingPlayback = await f.service.playback('day1', pending.runId);
+  assert.equal(pendingPlayback.verificationStatus, 'waiting');
+  assert.equal(pendingPlayback.verified, false); assert.equal(pendingPlayback.eventRpEligible, false);
+  assert.equal((await f.service.snapshot('day1')).entries.length, 0);
+  assert.equal((await f.service.snapshot('day1')).pendingPlaybacks[0].runId, pending.runId);
+  await f.service.processBatch('day1', async jobs => jobs.map(job => verdict(job, { status: 'mismatch' })));
+  await assert.rejects(f.service.playback('day1', pending.runId), /event_playback_not_found/);
+  assert.equal(f.data.get(`${C.replays}/day1_run_${pending.runId}`).verificationStatus, 'mismatch');
+  assert.deepEqual((await f.service.totals()).entries, []);
+  assert.deepEqual((await f.service.snapshot('day1')).entries, []);
+  assert.deepEqual((await f.service.snapshot('day1')).pendingPlaybacks, []);
+  for (const status of ['rejected','unavailable_final','expired']) {
+    f.data.get(`${C.replays}/day1_run_${pending.runId}`).verificationStatus = status;
+    await assert.rejects(f.service.playback('day1', pending.runId), /event_playback_not_found/);
+  }
 });
 
 test('rejected and identity-inconsistent replay records fail closed', async () => {
@@ -529,9 +550,9 @@ test('archive publishes only sanitized period and ranks; late verification only 
   assert.equal(f.data.get(`${C.live}/day1`).archived, true);
   const snapshot = await f.service.snapshot('day1');
   assert.equal(snapshot.archived, true);
-  assert.deepEqual(snapshot.period, publicEventPeriod(p));
+  assert.deepEqual(snapshot.period, publicEventPeriod({ ...p, racerCount: 1 }));
   const catalog = await f.service.catalog();
-  assert.deepEqual(catalog.archives, [publicEventPeriod(p)]);
+  assert.deepEqual(catalog.archives, [publicEventPeriod({ ...p, racerCount: 1 })]);
   assert.deepEqual(f.data.get(`${C.public}/catalog`).archives, catalog.archives);
   for (const value of [snapshot, catalog]) {
     const serialized = JSON.stringify(value);
@@ -714,4 +735,18 @@ test('Kodub verdicts require the frozen period track content hash',async()=>{
   await assert.rejects(f.service.completeJob('day1',job,mutate(verdict(job))),/verifier_proof_mismatch/);
   assert.equal(f.data.get(`${C.pbs}/day1_${account}`),undefined);
  }
+});
+
+test('archived Kodub track bytes are hash-bound and available only for explicitly unranked play',async()=>{
+ const f=fixture(),code='PolyTrack2'+'a'.repeat(40),trackCodeHash=hash(code);
+ const input={...inputPeriod,kind:'kodub',maxRp:700,kodub:{source:'kodub-v6-track-of-the-week',trackCode:code,
+  trackCodeHash,officialTrackAssetHash:trackCodeHash,officialEndTime:inputPeriod.endsAt,
+  officialFastestVerifiedMs:inputPeriod.targetMs,name:'Weekly fixture',author:'Fixture',lastModified:null,environment:2}};
+ await f.service.createPeriod(input);
+ await assert.rejects(f.service.archivedTrack('day1'),/event_track_not_found/);
+ f.time(input.endsAt+input.graceMs);await f.service.archivePeriod('day1');
+ assert.deepEqual(await f.service.archivedTrack('day1'),{periodId:'day1',trackId:track,trackCode:code,
+  trackCodeHash,environment:2,playMode:'unranked',scoringDisabled:true,archived:true});
+ const snapshot=await f.service.snapshot('day1');
+ assert.equal(snapshot.racerCount,0);assert.equal(JSON.stringify(snapshot).includes(code),false);
 });

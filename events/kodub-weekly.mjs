@@ -41,23 +41,23 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
   const unavailable=group.querySelector('.sq-kodub-unavailable');
   if(unavailable){
     const valid=selection&&now<Date.parse(selection.endTime);
-    unavailable.hidden=!!(valid&&card);
-    unavailable.querySelector('small').textContent=valid?'Loading weekly selection...':'No current track available. Reload to retry.';
+    if(unavailable.hidden!==!!(valid&&card))unavailable.hidden=!!(valid&&card);
+    const note=unavailable.querySelector('small'),text=valid?'Loading weekly selection...':'No current track available. Reload to retry.';if(note.textContent!==text)note.textContent=text;
   }
   if(!card)return;
   if (!selection || now >= Date.parse(selection.endTime)) { card.hidden=true; return; }
   const identity=selection.trackId+'@'+selection.endTime;
   if(card.dataset.kodubIdentity && card.dataset.kodubIdentity!==identity){card.hidden=true;return;}
   for(const old of group.querySelectorAll('.sq-kodub-weekly'))if(old!==card)old.remove();
-  card.dataset.kodubIdentity=identity;
-  card.hidden=false;
+  if(card.dataset.kodubIdentity!==identity)card.dataset.kodubIdentity=identity;
+  if(card.hidden)card.hidden=false;
   if (card.parentElement !== group) {
     const section=card.parentElement;
     const heading=group.querySelector(':scope > .sq-featured-heading');
     if(heading)heading.after(card);else group.prepend(card);
     if (section.querySelector('.group-title')) section.hidden=true;
   }
-  card.classList.add('sq-kodub-weekly');
+  if(!card.classList.contains('sq-kodub-weekly'))card.classList.add('sq-kodub-weekly');
   const button=card.querySelector(':scope > button');
   if (button && !button.querySelector('.sq-kodub-label')) {
     const label=document.createElement('small');label.className='sq-kodub-label';label.textContent='WEEKLY SPOTLIGHT';

@@ -6,7 +6,9 @@ import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeT
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
 const COMMUNITY_TRACK = '5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e';
 const CUSTOM_TRACK = 'f'.repeat(64);
-const validRun = (row) => ({ replay: 'structural-replay', replayHash: 'a'.repeat(64), raceTimeFrames: row.timeMs, uploadId: 123, integrityVerified: true, ...row });
+const validRun = (row) => ({ replay: 'structural-replay', replayHash: 'a'.repeat(64), raceTimeFrames: row.timeMs, uploadId: 123, integrityVerified: true, runVerified: true, ...row });
+const acceptedVerdict = row => ({key:verificationKey(row),status:'verified',verifierVersion:VERIFIER_VERSION,engineDigest:VERIFIER_ENGINE_DIGEST});
+const verifiedEntries = (rows, trackId) => computeTrackEntries(rows, trackId, {}, Object.fromEntries(rows.map(row => [row.accountId, acceptedVerdict(row)])));
 
 test('solo tracks have zero weight and populated official tracks gain weight', () => {
   assert.equal(trackWeightParts(TRACK, 1).finalWeight, 0);
@@ -24,6 +26,8 @@ test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none', overridePodium: true }, { raceCount: 8 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, false), false);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, true), true);
+  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'target'},{raceCount:100}),false);
+  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'target'},{cosmeticUnlocks:['emblem:target']}),true);
   const fullDesign={version:4,theme:'forest',accent:'violet',finish:'carbon',plate:'bar',edge:'dashed',stage:'storm',stageTint:'pink',stripe:'circuit',emblem:'flame',title:'trackGrinder',badge:'none',favoriteTrackId:TRACK,overridePodium:false};
   assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:7}),false);
   assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:8}),true);
@@ -66,7 +70,7 @@ test('track entries retain one fastest PB per account without cloning racers', (
 });
 
 test('overall rank is deterministic and preserves rank duration only when unchanged', () => {
-  const board = { trackId: TRACK, entries: computeTrackEntries([
+  const board = { trackId: TRACK, entries: verifiedEntries([
     validRun({ accountId: 'a', trackId: TRACK, timeMs: 29000, createdAt: 1 }),
     validRun({ accountId: 'b', trackId: TRACK, timeMs: 29500, createdAt: 2 }),
     validRun({ accountId: 'c', trackId: TRACK, timeMs: 31000, createdAt: 3 })
@@ -86,7 +90,7 @@ test('rank titles require breadth even when three finishes are strong', () => {
       rank: index + 1,
       weight: 1,
       timeMs: 20000 + index
-      ,integrityVerified: true
+      ,integrityVerified: true, runVerified: true
     }))
   }));
   const specialist = computeOverall(boards).find((entry) => entry.userId === 'specialist');
@@ -104,7 +108,7 @@ test('maximum snapshots stay below a conservative Firestore document budget', ()
       weight: 4.5,
       timeMs: 20000 + racerIndex,
       pbAt: 1780000000000,
-      integrityVerified: true
+      integrityVerified: true, runVerified: true
     }))
   }));
   const entries = computeOverall(boards);
@@ -151,7 +155,7 @@ test('rejects notification for a result owned by another Firebase user', async (
 });
 
 test('cosmetic saves update the public overall snapshot before background propagation', async () => {
-  let overallWrite='';const guardedPaths=[];
+  let overallWrite='',entitlementFields=null;const guardedPaths=[];
   const accountId='cosmetic-racer';
   const response=await handleRequest(new Request('https://ranked.example/v1/profile/cosmetics',{
     method:'POST',
@@ -161,13 +165,14 @@ test('cosmetic saves update the public overall snapshot before background propag
     ALLOWED_ORIGINS:'https://staticquasar931.github.io',
     __TEST_UID:'signed-in-user',
     __TEST_FIRESTORE:async(path,init={})=>{
-      if(path===':commit'){for(const write of JSON.parse(init.body).writes){guardedPaths.push(write.currentDocument.updateTime);if(write.update.name.includes('s1_leaderboards_overall'))overallWrite=JSON.stringify(write.update);}return {writeResults:[{updateTime:'2026-09-09T00:00:00Z'}]};}
+      if(path===':commit'){for(const write of JSON.parse(init.body).writes){guardedPaths.push(write.currentDocument.updateTime);if(write.update.name.includes('cosmetic_entitlements'))entitlementFields=write.update.fields;if(write.update.name.includes('s1_leaderboards_overall'))overallWrite=JSON.stringify(write.update);}return {writeResults:[{updateTime:'2026-09-09T00:00:00Z'}]};}
       if(init.method==='PATCH'){
         if(path.includes('profiles_public')||path.includes('s1_leaderboards_overall'))guardedPaths.push(path);
         if(path.includes('s1_leaderboards_overall'))overallWrite=String(init.body||'');
         return {};
       }
       if(path===':runQuery')return [];
+      if(path.includes('cosmetic_entitlements'))return entitlementFields?{updateTime:'2026-09-09T00:00:00Z',fields:entitlementFields}:null;
       if(path.includes('profiles_public'))return {updateTime:'2026-09-05T00:00:00Z',fields:{accountId:{stringValue:accountId},ownerUid:{stringValue:'signed-in-user'},name:{stringValue:'Racer'},nickname:{stringValue:'Racer'},carStyle:{stringValue:'style'},isVerifier:{booleanValue:false},updatedAt:{integerValue:'1'}}};
       if(path.includes('s1_leaderboards_overall'))return {updateTime:'2026-09-05T00:00:00Z',fields:{
         revision:{integerValue:'7'},
@@ -179,11 +184,12 @@ test('cosmetic saves update the public overall snapshot before background propag
     }
   });
   assert.equal(response.status,202);
-  assert.equal((await response.json()).accepted,true);
+  const payload=await response.json();
+  assert.equal(payload.accepted,true);
+  assert.equal(payload.betaEntitlement.source,'open-beta-release');
   assert.match(overallWrite,/profileCosmetics/);
   assert.match(overallWrite,/circuit/);
-  assert.equal(guardedPaths.length,2);
-  for(const version of guardedPaths)assert.equal(version,'2026-09-05T00:00:00Z');
+  assert.deepEqual(guardedPaths,[undefined,'2026-09-05T00:00:00Z','2026-09-05T00:00:00Z']);
 });
 
 test('accepts an owned hash mismatch as pending without granting integrity verification', async () => {
@@ -258,24 +264,27 @@ test('structurally invalid runs are excluded from track snapshots', () => {
 });
 
 test('pending runs remain visible per track but cannot affect Overall RP', () => {
-  const entries=computeTrackEntries([
+  const rows=[
     validRun({accountId:'verified',trackId:TRACK,timeMs:21000,createdAt:1}),
+    validRun({accountId:'verified-two',trackId:TRACK,timeMs:22000,createdAt:1}),
     validRun({accountId:'pending',trackId:TRACK,timeMs:20000,createdAt:2,integrityVerified:false})
-  ],TRACK);
-  assert.deepEqual(entries.map((entry)=>entry.accountId),['pending','verified']);
+  ];
+  const entries=computeTrackEntries(rows,TRACK,{}, {verified:acceptedVerdict(rows[0]),'verified-two':acceptedVerdict(rows[1])});
+  assert.deepEqual(entries.map((entry)=>entry.accountId),['pending','verified','verified-two']);
   assert.equal(entries[0].validationState,'pending');
   assert.equal(entries[0].verifiedState,0);
-  assert.equal(entries[1].verifiedState,0);
+  assert.equal(entries[1].verifiedState,1);
   const overall=computeOverall([{trackId:TRACK,entries}]);
   assert.equal(overall.some((entry)=>entry.userId==='pending'),false);
+  assert.deepEqual(overall.map(entry=>entry.userId).sort(),['verified','verified-two']);
 });
 
 test('average placement is the literal mean finishing place', () => {
-  const firstTrack=computeTrackEntries([
+  const firstTrack=verifiedEntries([
     validRun({accountId:'average-racer',trackId:TRACK,timeMs:20000,createdAt:1}),
     validRun({accountId:'other-a',trackId:TRACK,timeMs:21000,createdAt:2})
   ],TRACK);
-  const secondTrack=computeTrackEntries([
+  const secondTrack=verifiedEntries([
     validRun({accountId:'other-b',trackId:COMMUNITY_TRACK,timeMs:19000,createdAt:3}),
     validRun({accountId:'other-c',trackId:COMMUNITY_TRACK,timeMs:20000,createdAt:4}),
     validRun({accountId:'average-racer',trackId:COMMUNITY_TRACK,timeMs:21000,createdAt:5})
@@ -293,7 +302,7 @@ test('competitive average excludes custom and fields smaller than five', () => {
       rank: index + 1,
       weight: 2,
       timeMs: 20000 + index,
-      integrityVerified: true,
+      integrityVerified: true, runVerified: true,
     })),
   });
   const racer = computeOverall([
@@ -315,7 +324,7 @@ test('track wins count every eligible recognized first place', () => {
       rank: index + 1,
       weight: 2,
       timeMs: 20000 + index,
-      integrityVerified: true,
+      integrityVerified: true, runVerified: true,
     })),
   });
   const racer = computeOverall([
@@ -431,9 +440,18 @@ function wire(value){
  if(typeof value==='number')return {doubleValue:value};
  return {stringValue:String(value)};
 }
+function unwire(value){
+ if(value?.mapValue)return Object.fromEntries(Object.entries(value.mapValue.fields||{}).map(([key,item])=>[key,unwire(item)]));
+ if(value?.arrayValue)return (value.arrayValue.values||[]).map(unwire);
+ if(value&&'integerValue'in value)return Number(value.integerValue);
+ if(value&&'doubleValue'in value)return Number(value.doubleValue);
+ if(value&&'booleanValue'in value)return value.booleanValue;
+ if(value&&'nullValue'in value)return null;
+ return value?.stringValue;
+}
 test('200-racer entitlement initialization uses one atomic batch within the Free request budget',async()=>{
  let requests=0,commit;
- const boards=[TRACK,COMMUNITY_TRACK,'7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0'].map(trackId=>({trackId,entries:Array.from({length:200},(_,i)=>({accountId:'racer-'+i,rank:i+1,timeMs:20000+i,weight:3,integrityVerified:true}))}));
+ const boards=[TRACK,COMMUNITY_TRACK,'7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0'].map(trackId=>({trackId,entries:Array.from({length:200},(_,i)=>({accountId:'racer-'+i,rank:i+1,timeMs:20000+i,weight:3,integrityVerified:true,runVerified:true}))}));
  const result=await rebuildOverall({__TEST_FIRESTORE:async(path,init={})=>{
   requests++;
   if(path===':commit'){commit=JSON.parse(init.body);return {};}
@@ -441,7 +459,7 @@ test('200-racer entitlement initialization uses one atomic batch within the Free
   if(path.includes('s1_release_meta'))return {fields:wire({dirty:true,revision:10}).mapValue.fields,updateTime:'2026-09-09T00:00:00Z'};
   return null;
  }},true);
- assert.equal(result.racers,200);assert.equal(commit.writes.length,202);assert.equal(requests,5);
+  assert.equal(result.racers,200);assert.equal(commit.writes.length,203);assert.equal(requests,6);
  assert.ok(commit.writes.slice(0,200).every(w=>w.update.name.includes('cosmetic_entitlements')&&!w.currentDocument));
  assert.equal(commit.writes.at(-1).currentDocument.updateTime,'2026-09-09T00:00:00Z');
  assert.ok(JSON.stringify(commit).length<10*1024*1024);
@@ -620,7 +638,7 @@ test('empty bootstrap completes without scanning canonical results', async () =>
 test('200-racer 78-track indexed planner envelope exceeds one Firestore document without removing existing summaries', t => {
   const boards = Array.from({length: 78}, (_, i) => ({trackId: i.toString(16).padStart(64, '0'),
     entries: Array.from({length: 200}, (_, r) => ({accountId: 'racer-'+r, name: 'Racer '+r,
-      timeMs: 20000+r, pbAt: 1780000000000, integrityVerified: true}))}));
+      timeMs: 20000+r, pbAt: 1780000000000, integrityVerified: true, runVerified: true}))}));
   const entries = computeOverall(boards);
   const resultTracks = boards.map(b => b.trackId).sort();
   const envelope = {resultTracks, entries: entries.map(entry => {
@@ -703,13 +721,160 @@ function overallFixture(boards) {
     }
     return documents.get(p) || null;
   }};
-  return {env, calls, commits, setFailCommit: value => {failCommit = value;}, snapshot: () => snapshot,
+  return {env, calls, commits, documents, setFailCommit: value => {failCommit = value;}, snapshot: () => snapshot,
     sidecar: () => documents.get('/0.6.2_s1_leaderboards_overall/main_results')?.fields};
 }
 
+test('overall completeness reports the exact full racer count when only publication is truncated', async () => {
+  const boards=[{trackId:TRACK,complete:true,entries:Array.from({length:250},(_,index)=>({accountId:`racer-${index}`,
+    timeMs:20000+index,integrityVerified:true,runVerified:true}))}];
+  const f=overallFixture(boards);
+  await rebuildOverall(f.env,true);
+  const saved=unwire({mapValue:{fields:f.snapshot()}});
+  assert.equal(saved.entries.length,200);
+  assert.equal(saved.publishedEntries,200);
+  assert.equal(saved.totalEntries,250);
+  assert.equal(saved.totalEntriesExact,true);
+  assert.equal(saved.complete,false);
+  const meta=unwire({mapValue:{fields:f.documents.get('/0.6.2_s1_release_meta/current').fields}});
+  assert.equal(meta.dirty,false);
+  assert.equal(meta.overallIncompleteReason,'publication-limit');
+  assert.equal(meta.overallRetryPending,false);
+});
+
+test('source-incomplete overall gets one delayed retry per revision, then stops retrying', async () => {
+  const boards=[{trackId:TRACK,complete:false,entries:Array.from({length:200},(_,index)=>({accountId:`racer-${index}`,
+    timeMs:20000+index,integrityVerified:true,runVerified:true}))}];
+  const f=overallFixture(boards);
+  await rebuildOverall(f.env,true);
+  const saved=unwire({mapValue:{fields:f.snapshot()}});
+  assert.equal(saved.complete,false);
+  assert.equal(saved.totalEntries,200);
+  assert.equal(saved.totalEntriesExact,false);
+  const metaPath='/0.6.2_s1_release_meta/current';
+  let metaDocument=f.documents.get(metaPath);
+  let meta=unwire({mapValue:{fields:metaDocument.fields}});
+  assert.equal(meta.dirty,true);
+  assert.equal(meta.overallIncompleteReason,'source-track-incomplete');
+  assert.equal(meta.overallIncompleteObservations,1);
+  assert.equal(meta.overallRetryPending,true);
+  assert.equal(meta.overallRetryExhausted,false);
+
+  metaDocument.fields.lastOverallBuildAt=wire(0);
+  await rebuildOverall(f.env,false);
+  metaDocument=f.documents.get(metaPath);
+  meta=unwire({mapValue:{fields:metaDocument.fields}});
+  assert.equal(meta.dirty,false);
+  assert.equal(meta.overallIncompleteObservations,2);
+  assert.equal(meta.overallRetryPending,false);
+  assert.equal(meta.overallRetryExhausted,true);
+
+  const commitsAfterRetry=f.commits.length;
+  assert.deepEqual(await rebuildOverall(f.env,false),{rebuilt:false,reason:'clean',revision:0});
+  assert.equal(f.commits.length,commitsAfterRetry);
+});
+
+test('a prior server beta badge is retained with immutable source metadata without restarting migration', async () => {
+  const boards=[{trackId:TRACK,entries:[
+    {accountId:'beta-racer',timeMs:20000,integrityVerified:true,runVerified:true},
+    {accountId:'other',timeMs:21000,integrityVerified:true,runVerified:true}
+  ]}];
+  let commit;
+  const prior={entries:[{userId:'beta-racer',badges:{betaTester:true}}],revision:4,sourceRevision:4,updatedAt:1700000000000};
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':runQuery')return boards.map(board=>({document:{fields:wire(board).mapValue.fields}}));
+    if(path===':batchGet')return [];
+    if(path===':commit'){commit=JSON.parse(init.body);return {};}
+    if(path.includes('s1_leaderboards_overall/main'))return {fields:wire(prior).mapValue.fields,updateTime:'v1'};
+    if(path.includes('s1_release_meta'))return {fields:wire({dirty:true,revision:5}).mapValue.fields,updateTime:'v1'};
+    return null;
+  }};
+  await rebuildOverall(env,true);
+  const main=commit.writes.find(write=>write.update.name.endsWith('/0.6.2_s1_leaderboards_overall/main'));
+  const saved=unwire({mapValue:{fields:main.update.fields}});
+  const beta=saved.entries.find(entry=>entry.userId==='beta-racer');
+  assert.equal(beta.badges.betaTester,true);
+  assert.deepEqual(beta.betaEntitlement,{id:'beta-tester',source:'ranked-overall-snapshot',sourceRevision:4,issuedAt:1700000000000,cutoffAt:0});
+  const entitlement=commit.writes.find(write=>write.update.name.endsWith('/0.6.2_s1_cosmetic_entitlements/beta-racer'));
+  assert.deepEqual(unwire({mapValue:{fields:entitlement.update.fields}}).serverIssued.beta,beta.betaEntitlement);
+});
+
+test('a legacy server entitlement retains beta for a returning racer absent from the prior top 200', async () => {
+  const boards=[{trackId:TRACK,entries:[
+    {accountId:'returning-beta',timeMs:20000,integrityVerified:true,runVerified:true},
+    {accountId:'other',timeMs:21000,integrityVerified:true,runVerified:true}
+  ]}];
+  let commit;
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':runQuery')return boards.map(board=>({document:{fields:wire(board).mapValue.fields}}));
+    if(path===':batchGet')return [{found:{name:'projects/test/databases/(default)/documents/0.6.2_s1_cosmetic_entitlements/returning-beta',
+      fields:wire({badge:['auto','betaTester']}).mapValue.fields,updateTime:'2026-09-01T00:00:00Z'}}];
+    if(path===':commit'){commit=JSON.parse(init.body);return {};}
+    if(path.includes('s1_release_meta'))return {fields:wire({dirty:true,revision:5}).mapValue.fields,updateTime:'v1'};
+    return null;
+  }};
+  await rebuildOverall(env,true);
+  const main=commit.writes.find(write=>write.update.name.endsWith('/0.6.2_s1_leaderboards_overall/main'));
+  const beta=unwire({mapValue:{fields:main.update.fields}}).entries.find(entry=>entry.userId==='returning-beta');
+  assert.equal(beta.badges.betaTester,true);
+  assert.equal(beta.betaEntitlement.source,'legacy-cosmetic-entitlement');
+  assert.equal(beta.betaEntitlement.issuedAt,Date.parse('2026-09-01T00:00:00Z'));
+});
+
+test('open beta defaults on and server-issues beta to current racers without migration', async () => {
+  const boards=[{trackId:TRACK,entries:[
+    {accountId:'new-063-racer',timeMs:20000,integrityVerified:true,runVerified:true},
+    {accountId:'other',timeMs:21000,integrityVerified:true,runVerified:true}
+  ]}];
+  let commit;
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':runQuery')return boards.map(board=>({document:{fields:wire(board).mapValue.fields}}));
+    if(path===':batchGet')return [];
+    if(path===':commit'){commit=JSON.parse(init.body);return {};}
+    if(path.includes('s1_release_meta'))return {fields:wire({dirty:true,revision:7}).mapValue.fields,updateTime:'v1'};
+    return null;
+  }};
+  await rebuildOverall(env,true);
+  const main=commit.writes.find(write=>write.update.name.endsWith('/0.6.2_s1_leaderboards_overall/main'));
+  const saved=unwire({mapValue:{fields:main.update.fields}});
+  const beta=saved.entries.find(entry=>entry.userId==='new-063-racer');
+  assert.equal(saved.betaPolicy.open,true);
+  assert.equal(beta.badges.betaTester,true);
+  assert.equal(beta.betaEntitlement.source,'open-beta-release');
+  assert.equal(beta.betaEntitlement.sourceRevision,7);
+  assert.ok(beta.betaEntitlement.issuedAt>0);
+});
+
+test('closing open beta excludes new racers but retains persisted server entitlement', async () => {
+  const boards=[{trackId:TRACK,entries:[
+    {accountId:'retained-beta',timeMs:20000,integrityVerified:true,runVerified:true},
+    {accountId:'after-close',timeMs:21000,integrityVerified:true,runVerified:true}
+  ]}];
+  const persisted={id:'beta-tester',source:'open-beta-release',sourceRevision:6,issuedAt:1700000000000,cutoffAt:0};
+  let commit;
+  const env={OPEN_BETA_ENABLED:'false',__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':runQuery')return boards.map(board=>({document:{fields:wire(board).mapValue.fields}}));
+    if(path===':batchGet')return [{found:{name:'projects/test/databases/(default)/documents/0.6.2_s1_cosmetic_entitlements/retained-beta',
+      fields:wire({serverIssued:{beta:persisted}}).mapValue.fields,updateTime:'2026-09-01T00:00:00Z'}}];
+    if(path===':commit'){commit=JSON.parse(init.body);return {};}
+    if(path.includes('s1_release_meta'))return {fields:wire({dirty:true,revision:8}).mapValue.fields,updateTime:'v1'};
+    return null;
+  }};
+  await rebuildOverall(env,true);
+  const main=commit.writes.find(write=>write.update.name.endsWith('/0.6.2_s1_leaderboards_overall/main'));
+  const saved=unwire({mapValue:{fields:main.update.fields}});
+  const retained=saved.entries.find(entry=>entry.userId==='retained-beta');
+  const fresh=saved.entries.find(entry=>entry.userId==='after-close');
+  assert.equal(saved.betaPolicy.open,false);
+  assert.deepEqual(retained.betaEntitlement,persisted);
+  assert.equal(retained.badges.betaTester,true);
+  assert.equal(fresh.betaEntitlement,null);
+  assert.equal(fresh.badges,null);
+});
+
 test('planner packs all finishes losslessly without changing rankings or persisting full arrays', async () => {
   const boards = [TRACK, COMMUNITY_TRACK, CUSTOM_TRACK].map((trackId, i) => ({trackId, entries:
-    ['racer', 'other'].map((accountId, r) => ({accountId, name: accountId, timeMs: 20000+r+i, pbAt: 1780000000000+i, integrityVerified: true}))}));
+    ['racer', 'other'].map((accountId, r) => ({accountId, name: accountId, timeMs: 20000+r+i, pbAt: 1780000000000+i, integrityVerified: true, runVerified: true}))}));
   const old = computeOverall(boards);
   const full = computeOverall(boards, old, new Set(), {includePlannerResults: true});
   const stripped = full.map(({resultSamples, ...entry}) => entry);
@@ -772,7 +937,7 @@ function entropyBoards(seed) {
     entries: users.map(user => ({...user, countryCode: 'US', carStyle: 'standard',
       timeMs: 10000+Math.floor(random()*290000), pbAt: 1700000000000+Math.floor(random()*100000000000),
       totalPlaytimeMs: Math.floor(random()*1000000000), accountCreatedAt: 1600000000000,
-      integrityVerified: true}))}));
+      integrityVerified: true, runVerified: true}))}));
 }
 
 test('high-entropy 200 by 78 planner compression benchmark publishes every result inline or in one bounded sidecar', async t => {
@@ -854,14 +1019,20 @@ test('cold recovery cron fits the fifty-subrequest budget with four bootstrap an
 
 test('overall bundle explicitly reports the existing 100-board query boundary without trimming its fetched baseline',async()=>{
   const boards=Array.from({length:101},(_,i)=>({trackId:String(i).padStart(64,'0'),entries:
-    ['racer','other'].map((accountId,r)=>({accountId,name:accountId,timeMs:20000+r,pbAt:1780000000000,integrityVerified:true}))}));
+    ['racer','other'].map((accountId,r)=>({accountId,name:accountId,timeMs:20000+r,pbAt:1780000000000,integrityVerified:true,runVerified:true}))}));
   const f=overallFixture(boards);
   await rebuildOverall(f.env,true);
   const saved=f.snapshot();
   assert.equal(saved.resultBoardCount.integerValue,'100');
   assert.equal(saved.resultBoardLimit.integerValue,'100');
   assert.equal(saved.resultBoardLimitReached.booleanValue,true);
+  assert.equal(saved.complete.booleanValue,false);
+  assert.equal(saved.totalEntriesExact.booleanValue,false);
   assert.equal(saved.resultCoverage.stringValue,'snapshot_boards');
+  const meta=unwire({mapValue:{fields:f.documents.get('/0.6.2_s1_release_meta/current').fields}});
+  assert.equal(meta.dirty,true);
+  assert.equal(meta.overallIncompleteReason,'board-query-limit');
+  assert.equal(meta.overallRetryPending,true);
   const decoded=await unpackPlanner({resultBundle:saved.resultBundle.stringValue});
   assert.equal(decoded.resultTracks.length,100);
   assert.ok(decoded.entries.every(row=>JSON.parse(row.resultData).length===100));

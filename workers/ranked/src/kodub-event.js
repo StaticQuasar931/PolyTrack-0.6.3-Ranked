@@ -11,6 +11,8 @@ const HEX = /^[a-f0-9]{64}$/;
 const TRACK_CODE = /^PolyTrack[0-9A-Za-z+/_=-]+$/;
 const APP_ORIGIN = 'https://app-polytrack.kodub.com';
 const APP_REFERER = `${APP_ORIGIN}/`;
+const LA_RIVIERA_SOFT_TARGET_MS = 57597;
+const LA_RIVIERA_BINDING_ID = 'kodub_la_riviera_57597_v1';
 
 export const KODUB_METADATA_URL = `${WEEKLY_ROOT}?version=${VERSION}`;
 
@@ -106,13 +108,49 @@ async function sha256(value) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function softTargetBinding(periodId, trackId, trackCodeHash, officialEndTime) {
+  return Object.freeze({ periodId, trackId, trackCodeHash, officialEndTime, targetMs: LA_RIVIERA_SOFT_TARGET_MS });
+}
+
+function sameSoftTargetBinding(left, right) {
+  return left?.periodId === right.periodId && left.trackId === right.trackId &&
+    left.trackCodeHash === right.trackCodeHash && left.officialEndTime === right.officialEndTime &&
+    left.targetMs === LA_RIVIERA_SOFT_TARGET_MS;
+}
+
+async function readSoftTargetBinding(runtime) {
+  const binding = await runtime.store.transaction(tx => tx.get(`${EVENT_COLLECTIONS.softTargets}/${LA_RIVIERA_BINDING_ID}`));
+  if (!binding) return null;
+  if (!HEX.test(binding.trackId || '') || !HEX.test(binding.trackCodeHash || '') ||
+      !/^kodub_\d+$/.test(binding.periodId || '') || !Number.isSafeInteger(binding.officialEndTime) ||
+      binding.periodId !== `kodub_${binding.officialEndTime}` || binding.targetMs !== LA_RIVIERA_SOFT_TARGET_MS) {
+    invalid('kodub_soft_target_binding_corrupt');
+  }
+  return Object.freeze({ ...binding });
+}
+
+async function claimSoftTargetBinding(runtime, binding) {
+  await runtime.store.transaction(async tx => {
+    const target = `${EVENT_COLLECTIONS.softTargets}/${LA_RIVIERA_BINDING_ID}`;
+    const existing = await tx.get(target);
+    if (existing) {
+      if (!sameSoftTargetBinding(existing, binding)) invalid('kodub_soft_target_binding_conflict');
+      return;
+    }
+    await tx.create(target, binding);
+  });
+}
+
 async function readExistingPeriod(runtime, id, trackId, endsAt) {
   const existing = await runtime.store.transaction(tx => tx.get(`${EVENT_COLLECTIONS.periods}/${id}`));
   if (!existing) return null;
   const kodub = existing.kodub;
   if (existing.id !== id || existing.kind !== 'kodub' || existing.trackId !== trackId || existing.endsAt !== endsAt ||
       !kodub || kodub.source !== 'kodub-v6-track-of-the-week' || kodub.officialEndTime !== endsAt ||
-      kodub.officialFastestVerifiedMs !== existing.targetMs || !HEX.test(kodub.trackCodeHash || '') ||
+      (!kodub.privateSoftScoring && kodub.officialFastestVerifiedMs !== existing.targetMs ||
+        kodub.privateSoftScoring === true && (kodub.name !== 'La Riviera' || existing.targetMs !== LA_RIVIERA_SOFT_TARGET_MS ||
+          !sameSoftTargetBinding(kodub.privateSoftScoringBinding, softTargetBinding(id, trackId, kodub.trackCodeHash, endsAt)))) ||
+      !HEX.test(kodub.trackCodeHash || '') ||
       typeof kodub.trackCode !== 'string' || !TRACK_CODE.test(kodub.trackCode) ||
       kodub.trackCodeHash !== kodub.officialTrackAssetHash) {
     invalid('kodub_existing_period_mismatch');
@@ -134,7 +172,10 @@ export async function provisionKodubEvent(runtime, { capacity, fetch: fetcher = 
   const { current, startsAt, endsAt, trackAssetHash } = metadata;
   const id = `kodub_${endsAt}`;
   const existing = await readExistingPeriod(runtime, id, current.trackId, endsAt);
-  if (existing) return { created: null, existing: id, period: existing };
+  if (existing) {
+    if (existing.kodub.privateSoftScoring === true) await claimSoftTargetBinding(runtime, existing.kodub.privateSoftScoringBinding);
+    return { created: null, existing: id, period: existing };
+  }
   const trackAsset = `${metadata.trackUrl}?version=${VERSION}`;
   const leaderboardUrl = `${ROOT}/leaderboard?version=${VERSION}&trackId=${current.trackId}&skip=0&amount=1&onlyVerified=true`;
   const trackBytes = await fetchBytes(fetcher, trackAsset, MAX_TRACK_BYTES, 'text/plain');
@@ -144,9 +185,17 @@ export async function provisionKodubEvent(runtime, { capacity, fetch: fetcher = 
   if (trackCode.length < 32 || !TRACK_CODE.test(trackCode)) invalid('invalid_kodub_track_code');
   const trackCodeHash = await sha256(trackCode);
   if (trackCodeHash !== trackAssetHash) invalid('kodub_track_asset_hash_mismatch');
-  const targetMs = validateLeaderboard(decodeJson(
+  const officialFastestVerifiedMs = validateLeaderboard(decodeJson(
     await fetchBytes(fetcher, leaderboardUrl, 16384, 'application/json'), 'invalid_kodub_leaderboard'
   ));
+  // The title is only a one-time discovery fallback. Once claimed, all future
+  // decisions bind to this exact immutable period/track/content identity.
+  const candidateBinding = softTargetBinding(id, current.trackId, trackCodeHash, endsAt);
+  const titleCandidate = current.name === 'La Riviera' && current.author === 'Kodub';
+  const claimedBinding = titleCandidate ? await readSoftTargetBinding(runtime) : null;
+  const privateSoftScoring = titleCandidate &&
+    (!claimedBinding || sameSoftTargetBinding(claimedBinding, candidateBinding));
+  const targetMs = privateSoftScoring ? LA_RIVIERA_SOFT_TARGET_MS : officialFastestVerifiedMs;
 
   const kodub = Object.freeze({
     source: 'kodub-v6-track-of-the-week',
@@ -154,11 +203,12 @@ export async function provisionKodubEvent(runtime, { capacity, fetch: fetcher = 
     trackCodeHash,
     officialTrackAssetHash: trackAssetHash,
     officialEndTime: endsAt,
-    officialFastestVerifiedMs: targetMs,
+    officialFastestVerifiedMs,
     name: current.name,
     author: current.author,
     lastModified: current.lastModified,
     environment: current.environment,
+    ...(privateSoftScoring ? { privateSoftScoring: true, privateSoftScoringBinding: candidateBinding } : {}),
   });
   const period = Object.freeze({
     id,
@@ -175,6 +225,7 @@ export async function provisionKodubEvent(runtime, { capacity, fetch: fetcher = 
     kodub,
   });
   await runtime.service.createPeriod(period, { currentUtc: true });
+  if (privateSoftScoring) await claimSoftTargetBinding(runtime, candidateBinding);
   return { created: period.id, period };
 }
 

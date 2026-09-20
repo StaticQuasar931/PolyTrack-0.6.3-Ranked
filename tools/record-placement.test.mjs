@@ -6,6 +6,7 @@ import {
   normalizeAuthoritativeSnapshot,
   parseDisplayedRecordTime,
   preparePolyTrackCachedSnapshot,
+  preparePolyTrackOverallPlacements,
   readRecordPlacementSettings
 } from './record-placement.mjs';
 
@@ -223,7 +224,81 @@ test('raw canonical fallback is not trusted without explicit completeness metada
   assert.equal(preparePolyTrackCachedSnapshot(fallback, { algorithmVersion: 'rank-v1', schemaVersion: 5 }).authoritative, false);
 });
 
+test('published Overall summaries fill uncached tracks without fabricating rank or field size', () => {
+  const overall = {
+    source: 'edge',
+    revision: 12,
+    algorithmVersion: 'rank-v1',
+    schemaVersion: 5,
+    entries: [{
+      userId: 'me',
+      resultSamples: [
+        { trackId: 'official-track', rank: 2, fieldSize: 11, timeMs: 12345 },
+        { trackId: 'community-track', rank: 7, fieldSize: 29, timeMs: 67890 }
+      ]
+    }]
+  };
+  const options = { authoritative: true, expectedAlgorithmVersion: 'rank-v1', minSchemaVersion: 5 };
+  const prepared = preparePolyTrackOverallPlacements(overall, 'me', options);
+  assert.equal(prepared.get('official-track').label, '2/11');
+  assert.equal(prepared.get('community-track').label, '7/29');
+  assert.equal(preparePolyTrackOverallPlacements(overall, 'me', options), prepared, 'the unchanged Overall snapshot is normalized once');
+
+  const api = installRecordPlacement({
+    autoUpdate: false,
+    tracks: new Map([
+      ['official-track', { name: 'Summer 1', type: 'official' }],
+      ['community-track', { name: 'Rolling Hills Racer', type: 'community' }]
+    ]),
+    expectedAlgorithmVersion: 'rank-v1',
+    render() {}
+  });
+  const placements = api.update({ accountId: 'me', snapshots: {}, authoritativePlacements: prepared });
+  assert.equal(placements.get('official-track').label, '2/11');
+  assert.equal(placements.get('community-track').label, '7/29');
+  assert.equal(api.update({ accountId: 'me', policy: 'verified', snapshots: {}, authoritativePlacements: prepared }).size, 0,
+    'an all-runs published rank cannot be relabeled as a verified-only rank');
+});
+
+test('Overall fallback rejects untrusted, local, conflicting, and malformed summaries', () => {
+  const entry = {
+    accountId: 'me',
+    resultSamples: [{ trackId: TRACK, rank: 2, fieldSize: 5, timeMs: 12345 }]
+  };
+  const base = { source: 'edge', revision: 2, entries: [entry] };
+  assert.equal(preparePolyTrackOverallPlacements(base, 'me').size, 0);
+  assert.equal(preparePolyTrackOverallPlacements({ ...base, source: 'local' }, 'me', { authoritative: true }).size, 0);
+  assert.equal(preparePolyTrackOverallPlacements({ ...base, entries: [entry, entry] }, 'me', { authoritative: true }).size, 0);
+  assert.equal(preparePolyTrackOverallPlacements({
+    ...base,
+    entries: [{ ...entry, bestTracks: [{ trackId: TRACK, rank: 3, fieldSize: 5, timeMs: 12345 }] }]
+  }, 'me', { authoritative: true }).size, 0);
+  assert.equal(preparePolyTrackOverallPlacements({
+    ...base,
+    entries: [{ accountId: 'me', resultSamples: [{ trackId: TRACK, rank: 6, fieldSize: 5, timeMs: 12345 }] }]
+  }, 'me', { authoritative: true }).size, 0);
+});
+
+test('snapshot preparation is cached across repeated reconciliation passes', () => {
+  const raw = snapshot([row('me', 1000)], 4);
+  let prepares = 0;
+  const api = installRecordPlacement({
+    autoUpdate: false,
+    tracks: new Map([[TRACK, { name: 'Track A' }]]),
+    expectedAlgorithmVersion: 'rank-v1',
+    prepareSnapshot(value) {
+      prepares++;
+      return value;
+    },
+    render() {}
+  });
+  api.update({ accountId: 'me', snapshots: new Map([[TRACK, raw]]) });
+  api.update({ accountId: 'me', snapshots: new Map([[TRACK, raw]]) });
+  assert.equal(prepares, 1);
+});
+
 test('native record time parser accepts minute-second-millisecond only', () => {
+  assert.equal(parseDisplayedRecordTime('00:12.345'), 12345);
   assert.equal(parseDisplayedRecordTime('0:12.345'), 12345);
   assert.equal(parseDisplayedRecordTime('PB 2:03.4'), 123400);
   assert.equal(parseDisplayedRecordTime('No record'), null);
@@ -329,5 +404,98 @@ test('DOM renderer does not badge No record or a stale displayed PB time', () =>
   record.textContent = '0:01.000';
   api.update({ accountId: 'me', snapshots });
   assert(record.child);
+  api.destroy();
+});
+
+test('native official and community cards badge cached and Overall placements without idle class churn', () => {
+  function nativeCard(name, recordText) {
+    const classes = new Set();
+    const mutations = [];
+    const record = {
+      child: null,
+      textContent: recordText,
+      classList: {
+        contains: value => classes.has(value),
+        add(value) { classes.add(value); mutations.push(['add', value]); },
+        remove(value) { classes.delete(value); mutations.push(['remove', value]); }
+      },
+      querySelector: () => record.child,
+      appendChild(node) { record.child = node; node.parentElement = record; }
+    };
+    const button = { querySelector: selector => selector === '.record,.personal-best' ? record : null };
+    const title = { textContent: name, closest: selector => selector === 'button' ? button : null };
+    return { title, record, classes, mutations };
+  }
+
+  const official = nativeCard('Summer 1', '00:12.345');
+  const community = nativeCard('Rolling Hills Racer', '01:07.890');
+  const emptyCards = Array.from({ length: 55 }, (_, index) => nativeCard(`No PB ${index}`, 'No record'));
+  const cards = [official, community, ...emptyCards];
+  const styles = new Map();
+  const document = {
+    head: { appendChild: node => styles.set(node.id, node) },
+    getElementById: id => styles.get(id) || null,
+    createElement: tag => ({
+      tag,
+      dataset: {},
+      className: '',
+      textContent: '',
+      parentElement: null,
+      setAttribute(name, value) { this[name] = value; },
+      remove() {
+        if (this.parentElement?.child === this) this.parentElement.child = null;
+        styles.delete(this.id);
+      }
+    }),
+    querySelectorAll(selector) {
+      if (selector === '.track-title p') return cards.map(card => card.title);
+      if (selector === '[data-record-placement]') return cards.map(card => card.record.child).filter(Boolean);
+      if (selector === '.sq-record-placement-host') return cards.filter(card => card.classes.has('sq-record-placement-host')).map(card => card.record);
+      return [];
+    }
+  };
+  const tracks = new Map([
+    ['official-track', { name: 'Summer 1', type: 'official' }],
+    ['community-track', { name: 'Rolling Hills Racer', type: 'community' }],
+    ...emptyCards.map((_, index) => [`empty-${index}`, { name: `No PB ${index}`, type: 'community' }])
+  ]);
+  const overall = preparePolyTrackOverallPlacements({
+    source: 'edge',
+    revision: 8,
+    entries: [{ accountId: 'me', resultSamples: [{ trackId: 'community-track', rank: 3, fieldSize: 21, timeMs: 67890 }] }]
+  }, 'me', { authoritative: true });
+  const officialSnapshot = {
+    ...snapshot([
+      { accountId: 'first', userId: 'first', trackId: 'official-track', timeMs: 10000 },
+      { accountId: 'me', userId: 'me', trackId: 'official-track', timeMs: 12345 }
+    ], 7),
+    entries: [
+      { accountId: 'first', userId: 'first', trackId: 'official-track', timeMs: 10000 },
+      { accountId: 'me', userId: 'me', trackId: 'official-track', timeMs: 12345 }
+    ]
+  };
+  const api = installRecordPlacement({
+    autoUpdate: false,
+    document,
+    tracks,
+    expectedAlgorithmVersion: 'rank-v1'
+  });
+  const input = {
+    accountId: 'me',
+    snapshots: new Map([['official-track', officialSnapshot]]),
+    authoritativePlacements: overall
+  };
+  api.update(input);
+  assert.equal(official.record.child.textContent, '2/2');
+  assert.equal(community.record.child.textContent, '3/21');
+  assert.equal(official.mutations.length, 1);
+  assert.equal(community.mutations.length, 1);
+  assert.equal(emptyCards.reduce((sum, card) => sum + card.mutations.length, 0), 0);
+
+  for (let pass = 0; pass < 16; pass++) api.update(input);
+  assert.equal(official.mutations.length, 1);
+  assert.equal(community.mutations.length, 1);
+  assert.equal(emptyCards.reduce((sum, card) => sum + card.mutations.length, 0), 0,
+    'unbadged native records must not receive no-op class removals');
   api.destroy();
 });

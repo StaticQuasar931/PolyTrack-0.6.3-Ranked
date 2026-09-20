@@ -37,7 +37,8 @@ function eligibleEntry(entry) {
     integer(timeMs, 1) && timeMs <= 300000 && frames === timeMs &&
     (entry.frames == null || entry.raceTimeFrames == null || entry.frames === entry.raceTimeFrames) &&
     entry.runVerified === true && entry.integrityVerified === true &&
-    typeof entry.replayHash === 'string' && /^[a-f0-9]{64}$/i.test(entry.replayHash) ? { accountId, timeMs, frames } : null;
+    typeof entry.replayHash === 'string' && /^[a-f0-9]{64}$/i.test(entry.replayHash) ?
+    { accountId, timeMs, frames, runAt: integer(entry.pbAt, 1) ? entry.pbAt : integer(entry.createdAt, 1) ? entry.createdAt : 0 } : null;
 }
 
 export function derivePermanentRollingHills(snapshot) {
@@ -53,14 +54,17 @@ export function derivePermanentRollingHills(snapshot) {
   }
   if (!eligible.length) fail('permanent_rolling_hills_no_verified_entries');
   const targetMs = Math.min(...eligible.map(row => row.timeMs));
-  const rows = eligible.map(({ source, accountId, timeMs, frames }) => ({
-    accountId, trackId: PERMANENT_ROLLING_HILLS.trackId, timeMs, frames,
-    rp: Math.min(PERMANENT_ROLLING_HILLS.maxRp,
-      Number(BigInt(PERMANENT_ROLLING_HILLS.maxRp) * BigInt(targetMs) / BigInt(timeMs))),
+  const rows = eligible.map(({ source, accountId, timeMs, frames, runAt }) => {
+    const rp = Math.min(PERMANENT_ROLLING_HILLS.maxRp,
+      Number(BigInt(PERMANENT_ROLLING_HILLS.maxRp) * BigInt(targetMs) / BigInt(timeMs)));
+    return {
+    accountId, trackId: PERMANENT_ROLLING_HILLS.trackId, timeMs, frames, rp,
+    eventRpContribution: rp, normalRpEligible: true, runAt,
+    runAgeMs: runAt ? Math.max(0, snapshot.updatedAt - runAt) : null,
     name: string(source.name || source.nickname, 24) || 'Racer', countryCode: string(source.countryCode, 8).toUpperCase(),
     carStyle: string(source.carStyle, 256), replayHash: source.replayHash.toLowerCase(),
     physicsVerified: true, replayIntegrityVerified: true
-  })).sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
+  };}).sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
   let rank = 0;
   const entries = rows.map((row, index) => {
     if (!index || row.timeMs !== rows[index - 1].timeMs) rank = index + 1;
@@ -69,7 +73,8 @@ export function derivePermanentRollingHills(snapshot) {
   return { id: PERMANENT_ROLLING_HILLS.id, kind: 'permanent', trackId: PERMANENT_ROLLING_HILLS.trackId,
     scoreVersion: PERMANENT_ROLLING_HILLS.scoreVersion, targetPolicy: 'live-fastest-physics-verified',
     targetMs, maxRp: PERMANENT_ROLLING_HILLS.maxRp, sourceRevision: snapshot.sourceRevision,
-    sourceSignature: snapshot.signature, updatedAt: snapshot.updatedAt, complete: true, entries };
+    sourceSignature: snapshot.signature, updatedAt: snapshot.updatedAt, complete: true,
+    contributions: { normalRp: true, eventRp: true }, entries };
 }
 
 export async function readPermanentRollingHills(request) {
@@ -92,7 +97,8 @@ export function mergePermanentRollingIntoTotals(finite, rolling) {
   for (const row of rolling.entries) {
     const prior = merged.get(row.accountId) || { accountId: row.accountId, name: row.name, events: 0, finiteEventRp: 0 };
     merged.set(row.accountId, { ...prior, name: prior.name || row.name, carStyle: prior.carStyle || row.carStyle,
-      permanentRollingHillsRp: row.rp, rollingHillsTimeMs: row.timeMs });
+      permanentRollingHillsRp: row.rp, rollingHillsTimeMs: row.timeMs,
+      rollingHillsRunAgeMs: row.runAgeMs, rollingHillsEventRpContribution: row.eventRpContribution });
   }
   const sorted = [...merged.values()].map(row => ({ ...row,
     rp: row.finiteEventRp + row.permanentRollingHillsRp,

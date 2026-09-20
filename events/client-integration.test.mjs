@@ -14,7 +14,7 @@ const repo=process.env.EVENT_TEST_REPO||path.resolve(path.dirname(fileURLToPath(
 const patch=fs.readFileSync(path.join(repo,'polytrack_062_patch.js'),'utf8');
 function section(start,end){const a=patch.indexOf(start),b=patch.indexOf(end,a+start.length);assert(a>=0&&b>a,'production source boundary exists');return patch.slice(a,b).trim();}
 const focus=section('  function focusTrackFromRanked(','  function trackSummaryLine(');
-const entry=section('  function ensureEventEntry(){','  function __pt062WebpackRequire(');
+const entry=section('  function ensureEventEntryContents(){','  function __pt062WebpackRequire(');
 const QUEUE='polytrack-062-events-v1-queue';
 const id='a'.repeat(64);
 const run=(attemptId='one',timeMs=20000)=>({accountId:id,trackId:id,periodId:'daily-fixture',attemptId,timeMs,frames:timeMs,replay:'AAAA',carStyle:'',endsAt:Date.now()+3600000});
@@ -87,7 +87,7 @@ test('closing the dialog while Race event waits cancels the pending entry',async
  assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'closing the dialog must cancel the pending race request');
 });
 
-test('monthly archives open stored periods outside the recent catalog',async t=>{const p=await fixture(t);await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('[data-event-month]').fill('2026-08');await p.locator('[data-event-month-go]').click();await p.locator('[data-event-id="old-event"]').click();await p.locator('[data-event-race][disabled]').waitFor();assert.match(await p.locator('.sq-events-dialog main').innerText(),/Fixture track/);});
+test('monthly archives open stored periods outside the recent catalog',async t=>{const p=await fixture(t);await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill('2026-08');await p.getByRole('button',{name:'View month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('[data-event-race][disabled]').waitFor();assert.match(await p.locator('.sq-events-dialog main').innerText(),/Fixture track/);});
 test('a pending cloud event PB is visible on a device without its local record',async t=>{const p=await fixture(t,{receipt:{accountId:id,attemptId:'another-device',timeMs:18000,status:'waiting'}});await p.locator('#open').click();await p.locator('[data-event-id]').click();const text=await p.locator('.sq-events-dialog main').innerText();assert.match(text,/18000/);assert.match(text,/submitted/);assert.match(text,/Waiting for replay verification/);});
 
 test('native event template shows a new local finish immediately as pending, never normal PB',async t=>{
@@ -282,7 +282,8 @@ test('Ranked visibility imports event module once even without any track group',
 
 test('finish overlay shows event placement and never invents placement without a snapshot',async t=>{
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);
- await p.evaluate(()=>{car.finish(20000);const end=document.createElement('div');end.className='time-announcer-ui';document.body.append(end);ui.tick();});
- assert.match(await p.locator('.sq-event-finish-place').innerText(),/Provisional event place: 1 \/ 1/);
- assert.match(await p.locator('.sq-event-finish-place').innerText(),/replay verification/);
+ await p.evaluate(()=>{car.finish(20000);const end=document.createElement('div');end.className='time-announcer-ui';end.innerHTML='<div class="current"><div class="time">00:20.000</div><div class="position-dash">-</div><div class="position"></div></div>';document.body.append(end);ui.tick();});
+ assert.equal(await p.locator('.time-announcer-ui .position').innerText(),'1');
+ assert.match(await p.locator('.time-announcer-ui .position').getAttribute('title'),/provisional/);
+ assert.equal(await p.locator('.sq-event-finish-place').count(),0);
 });

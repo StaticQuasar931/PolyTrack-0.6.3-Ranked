@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test-synthetic.cjs test-cleanup.cjs queue.test.mjs events.test.mjs kodub-track.test.cjs test-limits.cjs throughput.test.mjs",
+    "test": "node --test test-synthetic.cjs test-cleanup.cjs queue.test.mjs events.test.mjs kodub-track.test.cjs test-limits.cjs throughput.test.mjs diagnostics/report.test.mjs diagnostics/html.test.mjs",
+    "diagnose": "node diagnose.mjs",
     "verify": "node run.mjs",
     "test:native-limits": "node --test test-native-limits.cjs"
   },

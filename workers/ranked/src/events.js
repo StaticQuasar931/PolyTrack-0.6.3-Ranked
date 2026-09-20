@@ -11,6 +11,8 @@ export const EVENT_COLLECTIONS = Object.freeze({
   owners: '0.6.2_event_owners', quotas: '0.6.2_event_quotas',
   runs: '0.6.2_event_runs', queues: '0.6.2_event_queues',
   pbs: '0.6.2_event_pbs', replays: '0.6.2_event_replays', live: '0.6.2_event_public', archives: '0.6.2_event_archives',
+  archiveTracks: '0.6.2_event_archive_tracks',
+  softTargets: '0.6.2_event_soft_targets',
   sessions: '0.6.2_event_sessions', inbox: '0.6.2_event_inbox', history: '0.6.2_event_public',
   cursors: '0.6.2_event_cursors', retries: '0.6.2_event_retries', totals: '0.6.2_event_totals', overall: '0.6.2_event_public',
   public: '0.6.2_event_public',
@@ -43,8 +45,10 @@ function receiptTime(value) {
 }
 function text(value, max) { return typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : ''; }
 export function publicEventPeriod(p) {
+  const privateSoftTarget = p.kind === 'kodub' && p.kodub?.privateSoftScoring === true;
   return { ...(p.kind==='kodub'?{trackName:p.kodub?.name||p.trackName,author:p.kodub?.author||p.author,targetPolicy:'official-fastest-verified-at-import'}:{}),id: p.id, trackId: p.trackId, startsAt: p.startsAt, endsAt: p.endsAt,
-    graceMs: p.graceMs, maxRp: p.maxRp, targetMs: p.targetMs, kind: p.kind || 'custom',
+    graceMs: p.graceMs, maxRp: p.maxRp, ...(!privateSoftTarget && p.targetMs != null ? { targetMs: p.targetMs } : {}), kind: p.kind || 'custom',
+    ...(int(p.racerCount) ? { racerCount: p.racerCount } : {}),
     entrantLimit: p.capacity?.entrants ?? p.entrantLimit,
     label: text(p.label, 80) || `${p.kind === 'weekly' ? 'Weekly' : p.kind === 'daily' ? 'Daily' : 'Event'} ${new Date(p.startsAt).toISOString().slice(0, 10)}` };
 }
@@ -77,8 +81,14 @@ export function eventPeriod(input) {
   if(p.kind==='kodub'){
     const k=input.kodub;
     demand(p.maxRp===700,'kodub_rp_cap');
-    demand(k?.source==='kodub-v6-track-of-the-week'&&typeof k.trackCode==='string'&&k.trackCode.length>=32&&k.trackCode.length<=524288&&/^PolyTrack[0-9A-Za-z_-]+$/.test(k.trackCode)&&HEX.test(k.trackCodeHash||'')&&k.officialEndTime===p.endsAt&&k.officialFastestVerifiedMs===p.targetMs,'invalid_kodub_binding');
-    p.kodub=Object.freeze({source:k.source,trackCode:k.trackCode,trackCodeHash:k.trackCodeHash,officialTrackAssetHash:hex(k.officialTrackAssetHash),officialEndTime:k.officialEndTime,officialFastestVerifiedMs:k.officialFastestVerifiedMs,name:text(k.name,256),author:text(k.author,256),lastModified:k.lastModified,environment:k.environment});
+    const privateSoftScoring = k?.privateSoftScoring === true;
+    const softBinding = k?.privateSoftScoringBinding;
+    demand(k?.source==='kodub-v6-track-of-the-week'&&typeof k.trackCode==='string'&&k.trackCode.length>=32&&k.trackCode.length<=524288&&/^PolyTrack[0-9A-Za-z+/_=-]+$/.test(k.trackCode)&&HEX.test(k.trackCodeHash||'')&&k.officialEndTime===p.endsAt&&int(k.officialFastestVerifiedMs,1,L.timeMs)&&
+      (!privateSoftScoring&&k.officialFastestVerifiedMs===p.targetMs||privateSoftScoring&&text(k.name,256)==='La Riviera'&&p.targetMs===57597&&
+        softBinding?.periodId===p.id&&softBinding.trackId===p.trackId&&softBinding.trackCodeHash===k.trackCodeHash&&
+        softBinding.officialEndTime===p.endsAt&&softBinding.targetMs===p.targetMs),'invalid_kodub_binding');
+    p.kodub=Object.freeze({source:k.source,trackCode:k.trackCode,trackCodeHash:k.trackCodeHash,officialTrackAssetHash:hex(k.officialTrackAssetHash),officialEndTime:k.officialEndTime,officialFastestVerifiedMs:k.officialFastestVerifiedMs,name:text(k.name,256),author:text(k.author,256),lastModified:k.lastModified,environment:k.environment,
+      ...(privateSoftScoring ? { privateSoftScoring: true, privateSoftScoringBinding: Object.freeze({ ...softBinding }) } : {})});
   }
   demand(p.eligibility === 'best-submitted-during-period', 'event_freshness_policy_unapproved');
   return Object.freeze(p);
@@ -109,6 +119,21 @@ export function eventLeaderboard(period, rows) {
 function binding(run) {
   return JSON.stringify([EVENT_VERSION, run.periodBinding, run.runId, run.ownerUid, run.accountId,
     run.attemptId, run.sessionId, run.trackId, run.timeMs, run.replayHash, run.receivedAt]);
+}
+function pendingPlaybackEntry(run) {
+  return { accountId: run.accountId, runId: run.runId, timeMs: run.timeMs, name: text(run.name, 24) || 'Racer',
+    carStyle: typeof run.carStyle === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(run.carStyle) ? run.carStyle : '',
+    submittedAt: run.receivedAt, verificationStatus: 'waiting', pending: true, verified: false,
+    eventRpEligible: false, source: 'pending-event-playback' };
+}
+function upsertPlayback(rows, candidate, limit) {
+  const existing = Array.isArray(rows) ? rows : [];
+  return [...existing.filter(row => row.accountId !== candidate.accountId), candidate]
+    .sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId)).slice(0, limit);
+}
+function visiblePendingPlaybacks(rows) {
+  return (Array.isArray(rows) ? rows : []).filter(row => row?.verificationStatus === 'waiting' && row.pending === true &&
+    row.verified === false && row.eventRpEligible === false && HEX.test(row.runId || '') && HEX.test(row.accountId || ''));
 }
 function canonicalTime(row) {
   if (!row) return null;
@@ -184,7 +209,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const rows = [...catalog.periods, { ...publicEventPeriod(p), enabled: p.enabled, archived: false }];
         await tx.set(catalogPath, { periods: rows });
         await tx.set(publicPath, publicEventCatalog(rows, stamp()));
-        await tx.set(livePath, { period: publicEventPeriod(p), entries: [], archived: false, updatedAt: stamp() });
+        await tx.set(livePath, { period: publicEventPeriod(p), entries: [], pendingPlaybacks: [], racerCount: 0, archived: false, updatedAt: stamp() });
         return p;
       });
     },
@@ -255,6 +280,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         demand(queue.slots.length < L.queued, 'event_queue_capacity', 429);
         demand(queue.replayBytes + replay.length <= p.capacity.replayBytesPerPeriod, 'event_replay_capacity', 429);
         demand(quota || queue.entrants < p.capacity.entrants, 'event_entrant_capacity', 429);
+        const livePath = path(C.live, periodId), board = await tx.get(livePath);
         const run = { runId, periodId, periodBinding: periodBinding(p), ownerUid, accountId, trackId, attemptId, sessionId,
           timeMs, frames: timeMs, replay, replayHash, carStyle, name: text(profile.name || profile.nickname, 24) || 'Racer',
           receivedAt, status: 'waiting', attempts: 0 };
@@ -262,13 +288,19 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         run.eventKey = binding(run);
         if (!owner) await tx.create(ownerPath, { ownerUid, accountId, createdAt: stamp() });
         await tx.create(runPath, run);
+        await tx.create(path(C.replays, `${periodId}_run_${runId}`), { periodId, accountId, trackId, runId,
+          timeMs, replayHash, replay, carStyle, periodBinding: run.periodBinding, submittedAt: receivedAt,
+          verificationStatus: 'waiting', verified: false, eventRpEligible: false, eventRpAwarded: false });
         await tx.set(quotaPath, { ownerUid, accountId, count: (quota?.count || 0) + 1, lastAt: receivedAt });
         await tx.set(queuePath, { ...queue, runIds: [...(queue.runIds || []), runId],
           subjects: quota ? queue.subjects : [...(queue.subjects || []), { accountId, ownerHash }],
           admitted: queue.admitted + 1, replayBytes: queue.replayBytes + replay.length, entrants: queue.entrants + (quota ? 0 : 1),
           slots: [...queue.slots, { runId, notBefore: receivedAt, attempts: 0, lease: null, leaseUntil: 0 }] });
         if (!receipt || timeMs < receipt.timeMs || clockRecovery) await tx.set(receiptPath,
-          { ownerUid, accountId, periodId, attemptId, timeMs, status: 'waiting', reason: '', updatedAt: stamp() });
+          { ownerUid, accountId, periodId, attemptId, runId, timeMs, status: 'waiting', reason: '', updatedAt: stamp() });
+        const pendingPlaybacks = upsertPlayback(board?.pendingPlaybacks || board?.playbacks, pendingPlaybackEntry(run), p.capacity.entrants);
+        await tx.set(livePath, { ...(board || {}), period: publicEventPeriod(p), entries: board?.entries || [], pendingPlaybacks,
+          racerCount: queue.entrants + (quota ? 0 : 1), archived: false, updatedAt: stamp() });
         if (inboxDocument) await tx.set(cursorPath, { receivedAt: cursorReceipt, attemptId, status: 'waiting', runId });
         return { runId, status: 'waiting', duplicate: false };
       });
@@ -327,19 +359,56 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           row.accountId === accountId && row.timeMs === retained.timeMs), 'event_replay_identity_mismatch', 503);
         return { periodId, accountId, trackId: retained.trackId, runId: retained.runId,
           timeMs: retained.timeMs, frames: retained.timeMs, replayHash: retained.replayHash, replay: retained.replay,
-          carStyle: retained.carStyle, verifiedAt: retained.verifiedAt, source: 'verified-event-recording' };
+          carStyle: retained.carStyle, verifiedAt: retained.verifiedAt, verificationStatus: 'verified', verified: true,
+          eventRpEligible: true, source: 'verified-event-recording' };
+      });
+    },
+    async playback(periodId, runId) {
+      id(periodId); hex(runId);
+      return store.transaction(async tx => {
+        const retained = await tx.get(path(C.replays, `${periodId}_run_${runId}`));
+        demand(retained, 'event_playback_not_found', 404);
+        demand(retained.verificationStatus === 'waiting' && retained.verified === false && retained.eventRpEligible === false,
+          'event_playback_not_found', 404);
+        const p = await readPeriod(tx, periodId);
+        demand(retained.periodId === periodId && retained.runId === runId && HEX.test(retained.accountId || '') &&
+          retained.trackId === p.trackId && retained.periodBinding === periodBinding(p) && int(retained.timeMs, 1, L.timeMs) &&
+          HEX.test(retained.replayHash || '') && typeof retained.replay === 'string' && retained.replay.length > 0 &&
+          retained.replay.length <= L.replayCharacters && await hash(retained.replay) === retained.replayHash &&
+          typeof retained.carStyle === 'string' && retained.carStyle.length <= 256,
+        'event_playback_corrupt', 503);
+        return { periodId, accountId: retained.accountId, trackId: retained.trackId, runId,
+          timeMs: retained.timeMs, frames: retained.timeMs, replayHash: retained.replayHash, replay: retained.replay,
+          carStyle: retained.carStyle, submittedAt: retained.submittedAt, verificationStatus: 'waiting', pending: true,
+          verified: false, eventRpEligible: false, source: 'pending-event-recording' };
+      });
+    },
+    async archivedTrack(periodId) {
+      id(periodId);
+      return store.transaction(async tx => {
+        const asset = await tx.get(path(C.archiveTracks, periodId));
+        demand(asset, 'event_track_not_found', 404);
+        demand(asset.periodId === periodId && HEX.test(asset.trackId || '') && HEX.test(asset.trackCodeHash || '') &&
+          typeof asset.trackCode === 'string' && asset.trackCode.length >= 32 && asset.trackCode.length <= 524288 &&
+          /^PolyTrack[0-9A-Za-z+/_=-]+$/.test(asset.trackCode) && await hash(asset.trackCode) === asset.trackCodeHash,
+        'event_track_corrupt', 503);
+        return { periodId, trackId: asset.trackId, trackCode: asset.trackCode, trackCodeHash: asset.trackCodeHash,
+          environment: asset.environment, playMode: 'unranked', scoringDisabled: true, archived: true };
       });
     },
     // No GET route exposes private candidates, leases, UIDs or proofs.
     async snapshot(periodId) {
       return store.transaction(async tx => {
         const history = await tx.get(path(C.history, id(periodId)));
-        if (history?.archived === true) return { period: history.period, entries: history.entries, archived: true, updatedAt: history.archivedAt };
+        if (history?.archived === true) return { period: history.period, entries: history.entries,
+          pendingPlaybacks: [], racerCount: history.racerCount ?? history.entries?.length ?? 0,
+          archived: true, updatedAt: history.archivedAt };
         const p = await readPeriod(tx, periodId), at = stamp();
         demand(at >= p.startsAt && at < p.endsAt + p.graceMs, 'event_not_public', 404);
         demand(!await tx.get(path(C.archives, periodId)), 'event_not_public', 404);
         const board = await tx.get(path(C.live, periodId));
-        return { period: publicEventPeriod(p), archived: false, updatedAt: board?.updatedAt || 0,
+        return { period: publicEventPeriod({ ...p, racerCount: board?.racerCount || 0 }), archived: false, updatedAt: board?.updatedAt || 0,
+          racerCount: board?.racerCount || 0, pendingPlaybacks: visiblePendingPlaybacks(board?.pendingPlaybacks || board?.playbacks),
           state: at < p.endsAt ? 'open' : 'settling', entries: eventLeaderboard(p, board?.entries || []) };
       });
     },
@@ -399,6 +468,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const eventOpen = !archived && at < p.endsAt + p.graceMs;
         const eventPath = path(C.pbs, `${periodId}_${run.accountId}`), eventPb = await tx.get(eventPath);
         const replayPath = path(C.replays, `${periodId}_${run.accountId}`), retainedReplay = await tx.get(replayPath);
+        const playbackPath = path(C.replays, `${periodId}_run_${run.runId}`), retainedPlayback = await tx.get(playbackPath);
         const livePath = path(C.live, periodId), board = await tx.get(livePath);
         const normalPath = path(C.canonical, `${run.accountId}_${run.trackId}`), canonical = await tx.get(normalPath);
         const totalPath = path(C.totals, run.accountId), priorTotal = await tx.get(totalPath);
@@ -408,6 +478,8 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         if (eventPb) demand(eventPb.ownerUid === run.ownerUid && eventPb.accountId === run.accountId && eventPb.periodId === periodId && int(eventPb.timeMs, 1), 'event_pb_corrupt', 503);
         if (retainedReplay) demand(retainedReplay.periodId === periodId && retainedReplay.accountId === run.accountId &&
           retainedReplay.trackId === run.trackId, 'event_replay_corrupt', 503);
+        demand(retainedPlayback?.periodId === periodId && retainedPlayback.runId === run.runId &&
+          retainedPlayback.replayHash === run.replayHash, 'event_playback_corrupt', 503);
         const verified = result.status === 'verified';
         const eventImproved = verified && eventOpen && (!eventPb || run.timeMs < eventPb.timeMs);
         const oldTime = canonicalTime(canonical), canonicalDeferred = p.kind!=='kodub' && verified && oldTime === undefined;
@@ -418,6 +490,9 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           status: result.status, checkedAt: at, reason: text(result.reason, 100) };
         let entries;
         if (eventImproved) entries = eventLeaderboard(p, [...(board?.entries || []).filter(e => e.accountId !== run.accountId), run]);
+        const priorPending = board?.pendingPlaybacks || board?.playbacks;
+        const pendingPlaybacks = status === 'waiting' ? upsertPlayback(priorPending, pendingPlaybackEntry(run), p.capacity.entrants) :
+          visiblePendingPlaybacks(priorPending).filter(row => row.runId !== run.runId);
         if (canonicalImproved) {
           const profilePath = path(C.profiles, run.accountId), profile = await tx.get(profilePath);
           demand(profile?.ownerUid === run.ownerUid && profile.accountId === run.accountId, 'profile_owner_changed', 409);
@@ -445,8 +520,14 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           await tx.set(replayPath, { periodId, accountId: run.accountId, trackId: run.trackId, runId: run.runId,
             timeMs: run.timeMs, replayHash: run.replayHash, replay: run.replay, carStyle: run.carStyle,
             periodBinding: run.periodBinding, verifiedAt: at });
-          await tx.set(livePath, { periodId, period: publicEventPeriod(p), entries, archived: false, updatedAt: at });
+          await tx.set(livePath, { ...(board || {}), periodId, period: publicEventPeriod({ ...p, racerCount: board?.racerCount || 0 }),
+            entries, pendingPlaybacks, racerCount: board?.racerCount || 0, archived: false, updatedAt: at });
+        } else if (eventOpen) {
+          await tx.set(livePath, { ...(board || {}), periodId, period: publicEventPeriod({ ...p, racerCount: board?.racerCount || 0 }),
+            entries: board?.entries || [], pendingPlaybacks, racerCount: board?.racerCount || 0, archived: false, updatedAt: at });
         }
+        await tx.patch(playbackPath, { verificationStatus: status, verified, eventRpEligible: verified && eventOpen,
+          eventRpAwarded: eventImproved, verifiedAt: verified ? at : null });
         await tx.patch(path(C.runs, run.runId), { status, attempts: slot.attempts, proof, replay: retry ? run.replay : null,
           eventImproved, canonicalImproved, canonicalDeferred, completedAt: at });
         if (receipt?.attemptId === run.attemptId && receipt.timeMs === run.timeMs) await tx.patch(receiptPath,
@@ -528,20 +609,25 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const catalogPath = path(C.catalog, 'main'), catalog = await tx.get(catalogPath);
         const publicPath = path(C.public, 'catalog'); await tx.get(publicPath);
         const historyPath = path(C.history, periodId), priorHistory = await tx.get(historyPath);
+        const archiveTrackPath = path(C.archiveTracks, periodId), priorArchiveTrack = await tx.get(archiveTrackPath);
+        const racerCount = queue?.entrants || board?.racerCount || 0;
+        const publicPeriod = publicEventPeriod({ ...p, racerCount });
         const month = new Date(p.endsAt).toISOString().slice(0, 7).replace('-', '');
         const monthPath = path(C.public, 'archive_' + month), monthIndex = await tx.get(monthPath);
-        const monthPeriods = [...(monthIndex?.periods || []).filter(row => row.id !== periodId), publicEventPeriod(p)]
+        const monthPeriods = [...(monthIndex?.periods || []).filter(row => row.id !== periodId), publicPeriod]
           .sort((a, b) => b.endsAt - a.endsAt || a.id.localeCompare(b.id));
         demand(monthPeriods.length <= 120, 'archive_month_capacity', 503);
         const entries = eventLeaderboard(p, board?.entries || []);
         // Remaining candidates remain private, explicitly unscored at cutoff.
-        await tx.create(archivePath, { period: p, archivedAt: at, entries,
+        await tx.create(archivePath, { period: p, archivedAt: at, entries, racerCount,
           unresolvedRunIds: queue?.slots.map(s => s.runId) || [], settled: queue?.slots.length === 0, cleanupCursor: 0 });
-        await tx.set(historyPath, { periodId, period: publicEventPeriod(p), archived: true, updatedAt: at,
-          archivedAt: at, entries, winner: entries[0] || null });
+        await tx.set(historyPath, { periodId, period: publicPeriod, archived: true, updatedAt: at,
+          archivedAt: at, racerCount, entries, pendingPlaybacks: [], winner: entries[0] || null });
+        if (p.kind === 'kodub' && !priorArchiveTrack) await tx.create(archiveTrackPath, { periodId, trackId: p.trackId,
+          trackCode: p.kodub.trackCode, trackCodeHash: p.kodub.trackCodeHash, environment: p.kodub.environment, archivedAt: at });
         await tx.set(monthPath, { month, periods: monthPeriods, updatedAt: at });
         if (catalog) {
-          const rows = catalog.periods.map(row => row.id === periodId ? { ...row, archived: true } : row);
+          const rows = catalog.periods.map(row => row.id === periodId ? { ...row, racerCount, archived: true } : row);
           await tx.set(catalogPath, { ...catalog, periods: rows });
           await tx.set(publicPath, publicEventCatalog(rows, at));
         }
@@ -592,7 +678,7 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
         demand(await allowRequest({ request, ownerUid: null }) === true, 'event_ingress_limit', 429);
         return respond(200, url.pathname.endsWith('/totals') ? await service.totals() : await service.catalog());
       }
-      const match = /^\/v1\/events\/([A-Za-z0-9_-]{1,64})\/(snapshot|runs|receipt|replays)(?:\/([a-f0-9]{64}|close))?$/.exec(url.pathname);
+      const match = /^\/v1\/events\/([A-Za-z0-9_-]{1,64})\/(snapshot|runs|receipt|replays|playbacks|track)(?:\/([a-f0-9]{64}|close))?$/.exec(url.pathname);
       demand(match, 'not_found', 404);
       if (request.method === 'OPTIONS') {
         headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
@@ -600,10 +686,10 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
         return new Response(null, { status: 204, headers });
       }
       const [, periodId, resource, runId] = match;
-      demand((request.method === 'GET' && (resource === 'receipt' && !runId || resource === 'snapshot' && !runId || resource === 'runs' && runId || resource === 'replays' && runId)) ||
+      demand((request.method === 'GET' && (resource === 'receipt' && !runId || resource === 'snapshot' && !runId || resource === 'runs' && runId || resource === 'replays' && runId || resource === 'playbacks' && runId || resource === 'track' && !runId)) ||
         request.method === 'POST' && (resource === 'runs' && !runId), 'not_found', 404);
       let ownerUid = null;
-      if (!['snapshot', 'replays'].includes(resource)) {
+      if (!['snapshot', 'replays', 'playbacks', 'track'].includes(resource)) {
         try { ownerUid = uid(await authenticate(request)); } catch { throw new EventError('authentication_failed', 401); }
       }
       demand(await allowRequest({ request, ownerUid }) === true, 'event_ingress_limit', 429);
@@ -613,6 +699,7 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
       }
       return respond(200, resource === 'receipt' ? await service.ownReceipt(periodId, ownerUid, url.searchParams.get('accountId')) :
         resource === 'snapshot' ? await service.snapshot(periodId) : resource === 'replays' ? await service.replay(periodId, runId) :
+          resource === 'playbacks' ? await service.playback(periodId, runId) : resource === 'track' ? await service.archivedTrack(periodId) :
           await service.status(periodId, ownerUid, runId));
     } catch (error) { return respond(error instanceof EventError ? error.status : 503, { error: error instanceof EventError ? error.code : 'events_unavailable' }); }
   };

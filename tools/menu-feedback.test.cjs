@@ -1,0 +1,7 @@
+const fs=require('node:fs'),vm=require('node:vm'),test=require('node:test'),assert=require('node:assert/strict');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../polytrack_062_patch.js'),'utf8');
+const start=source.indexOf('  function withoutUiFeedback('),end=source.indexOf('  let reconcileScheduled',start);
+function harness(){const counts={disconnect:0,observe:0};const context={uiPassDepth:0,uiObserverOptions:{},document:{body:{}},observer:{disconnect(){counts.disconnect++;},observe(){counts.observe++;}}};vm.createContext(context);vm.runInContext(source.slice(start,end),context);return {context,counts};}
+test('nested menu reconciliation suspends observation only once',()=>{const {context:c,counts}=harness();assert.equal(c.withoutUiFeedback(()=>c.withoutUiFeedback(()=>7)),7);assert.deepEqual(counts,{disconnect:1,observe:1});assert.equal(c.uiPassDepth,0);});
+test('menu observation is restored if reconciliation throws',()=>{const {context:c,counts}=harness();assert.throws(()=>c.withoutUiFeedback(()=>{throw Error('fixture');}),/fixture/);assert.equal(counts.observe,1);assert.equal(c.uiPassDepth,0);});
+test('retired shortcut labels and lobby toggles are not offered',()=>{assert.doesNotMatch(source,/settingsToggle\('Show shortcut labels|settingsToggle\('Lobby links and widgets|function ensureLobbyHotkeyHints/);assert.doesNotMatch(source,/info.appendChild\(privacy\)/);});

@@ -43,6 +43,7 @@ export async function drainVerification({runRound,requests,now=()=>performance.n
     const normalProgress=round.processed>Number(round.deferred||0)+Number(round.superseded||0);
     const eventProgress=round.events.checked>0||round.events.consumed>0;
     const pruned=round.processed===0&&round.canonicalAttempts>0&&round.selectionConflicts===0;
+    if (round.events.budgetDeferred && !normalProgress && !eventProgress && !pruned) {stop='budget_deferred';break;}
     if(!normalProgress&&!eventProgress&&!pruned) {stop='no_progress';break;}
   }
   const summary={rounds:rounds.length,processed:rounds.reduce((n,r)=>n+r.processed,0),

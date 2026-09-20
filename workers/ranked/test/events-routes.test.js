@@ -43,7 +43,7 @@ test('actual Worker routes accept seven-field run without session and publish ma
     ...(body ? { body: JSON.stringify(body) } : {}) });
   const body = { accountId, trackId, attemptId: 'native1', timeMs: 20402, frames: 20402, replay: 'AAAA', carStyle: '' };
   const response = await handleRequest(request('d_test/runs', body), env);
-  assert.equal(response.status, 202); assert.equal((await response.json()).status, 'waiting');
+  assert.equal(response.status, 202); const accepted = await response.json(); assert.equal(accepted.status, 'waiting');
   assert.equal(data.get(`${C.queues}/d_test`).admitted, 1);
   const receipt = await (await handleRequest(request('d_test/receipt?accountId=' + accountId), env)).json();
   assert.equal(receipt.attemptId, 'native1'); assert.equal(receipt.status, 'waiting');
@@ -52,6 +52,12 @@ test('actual Worker routes accept seven-field run without session and publish ma
   assert.deepEqual((await (await handleRequest(request('totals'), env)).json()).entries, []);
   const snapshot = await (await handleRequest(request('d_test/snapshot'), env)).json();
   assert.equal(snapshot.period.id, period.id); assert.deepEqual(snapshot.entries, []);
+  assert.equal(snapshot.racerCount, 1); assert.equal(snapshot.pendingPlaybacks[0].runId, accepted.runId);
+  assert.equal(snapshot.pendingPlaybacks[0].source, 'pending-event-playback');
+  const pendingPlayback = await (await handleRequest(request(`d_test/playbacks/${accepted.runId}`), env)).json();
+  assert.equal(pendingPlayback.verificationStatus, 'waiting'); assert.equal(pendingPlayback.verified, false);
+  assert.equal(pendingPlayback.eventRpEligible, false); assert.equal(pendingPlayback.replay, 'AAAA');
+  assert.equal(pendingPlayback.pending, true); assert.equal(pendingPlayback.source, 'pending-event-recording');
   assert.equal((await handleRequest(request('d_test/sessions', body), env)).status, 404);
   assert.equal((await handleRequest(request('catalog'), { ...env, EVENTS_ENABLED: 'false' })).status, 503);
   // Exercise the production adapter, not the memoryStore core fixture. Native
@@ -65,7 +71,7 @@ test('actual Worker routes accept seven-field run without session and publish ma
     timeMs: job.timeMs, replayHash: job.replayHash, engineDigest: VERIFIER_ENGINE_DIGEST,
     binding, status: 'verified', reason: 'native_exact_finish' });
   assert.equal(published.canonicalImproved, true); assert.equal(published.eventImproved, true);
-  assert.deepEqual(commits.at(-1), { reads: 13, writes: 10 });
+  assert.deepEqual(commits.at(-1), { reads: 14, writes: 11 });
   assert(commits.every(c => c.reads <= 16 && c.writes <= 16));
   assert.equal(data.get(`${C.receipts}/d_test_${accountId}`).status, 'verified');
   assert.equal(data.get(`${C.profiles}/${accountId}`).pbCount, 1);

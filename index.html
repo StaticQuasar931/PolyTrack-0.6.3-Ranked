@@ -41,7 +41,7 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', 'G-QXB7CHLEDT');
+      gtag('config', 'G-QXB7CHLEDT', {cookie_domain: location.hostname});
     </script>
     <script type="application/ld+json">
       {"@context":"https://schema.org","@type":"VideoGame","name":"PolyTrack 0.6.3 Community Ranked","url":"https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/","description":"A community PolyTrack edition with persistent rankings, saved personal-best replays, daily goals and private multiplayer.","genre":["Racing","Time trial"],"gamePlatform":["Web browser","Windows","Android","iOS"],"creator":{"@type":"Organization","name":"Kodub"},"contributor":{"@type":"Person","name":"StaticQuasar931"},"isAccessibleForFree":true}
@@ -154,18 +154,50 @@
           return isVisible(menuRoot) && isVisible(mainButtons) && isVisible(play);
         }
 
+        const uiRoot = document.getElementById('ui');
+        let syncQueued = false;
+        let visualObserver;
+
         function syncLobbyWidgets(){
           const lobby = inLobby();
-          const extrasEnabled = localStorage.getItem('polytrack-0.6.2-lobby-extras') !== '0';
-          menu.style.display = lobby && extrasEnabled ? 'flex' : 'none';
+          const display = lobby ? 'flex' : 'none';
+          if (menu.style.display !== display) menu.style.display = display;
+        }
+
+        function queueSync(){
+          if (syncQueued) return;
+          syncQueued = true;
+          const flush = () => {
+            syncQueued = false;
+            syncLobbyWidgets();
+            bindVisualObserver();
+          };
+          if (typeof queueMicrotask === 'function') queueMicrotask(flush);
+          else Promise.resolve().then(flush);
+        }
+
+        function bindVisualObserver(){
+          if (!visualObserver) return;
+          visualObserver.disconnect();
+          [document.querySelector('.menu-ui, .menu'), document.querySelector('.main-buttons-container')]
+            .filter(Boolean)
+            .forEach((target) => visualObserver.observe(target, {
+              subtree: true,
+              attributes: true,
+              attributeFilter: ['class', 'style', 'hidden', 'aria-hidden']
+            }));
         }
 
         syncLobbyWidgets();
-        setInterval(syncLobbyWidgets, 250);
-        const observer = new MutationObserver(syncLobbyWidgets);
-        observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['class','style'] });
-        window.addEventListener('focus', syncLobbyWidgets);
-        window.addEventListener('sq-preferences-changed', syncLobbyWidgets);
+        const structureObserver = new MutationObserver(queueSync);
+        structureObserver.observe(uiRoot || document.body, {
+          subtree: true,
+          childList: true
+        });
+        visualObserver = new MutationObserver(queueSync);
+        bindVisualObserver();
+        window.addEventListener('focus', queueSync);
+        window.addEventListener('sq-preferences-changed', queueSync);
       })();
     </script>
   </body>

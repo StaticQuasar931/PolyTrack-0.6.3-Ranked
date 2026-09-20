@@ -126,3 +126,16 @@ test('client declaration owns one replay request counter', () => {
   assert.match(source, /selectedGhost=null,replayRequest=0;const replayCache=new Map\(\)/);
   assert.match(selectReplaySource, /const token=\+\+replayRequest/);
 });
+
+test('waiting replay selection requests exact run and isolates verified cache',async()=>{
+ const h=harness(),calls=[];
+ const row={...racer('racer',1400,'Racer'),pending:true,runId:'a'.repeat(64)};
+ h.bridge.readReplay=async(...args)=>{calls.push(args);return payload(row);};
+ await h.selectReplay(period,row);
+ assert.deepEqual(calls[0],[period.id,'racer',row.runId]);
+ assert.equal(h.selected().ghost.racerId,'racer');
+ assert.match(h.messages.at(-1),/unverified/);
+ await h.selectReplay(period,{...row,pending:false,runId:undefined});
+ assert.equal(calls.length,2);
+ assert.equal(calls[1][2],null);
+});

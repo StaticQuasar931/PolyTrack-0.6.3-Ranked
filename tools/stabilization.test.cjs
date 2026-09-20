@@ -506,3 +506,14 @@ test('filtered native navigation uses visible index while rows keep full-field r
 test('known solo result has zero weight, unlike a missing result',()=>{const weight=run('knownFinishWeight');assert.equal(weight({rank:1,fieldSize:1}),0);assert.equal(weight({}),null);});
 
 for(const direction of [1,-1])test('known zero weight sorts before missing in direction '+direction,()=>{const rows=run('sortProfileFinishes',{profileSort:'weight',profileSortDirection:direction,knownFinishWeight:r=>r.weight})([{weight:null},{weight:0},{weight:2}]);assert.deepEqual(Array.from(rows,r=>r.weight),direction===1?[0,2,null]:[2,0,null]);});
+
+test('owner cosmetics require explicit server-issued unlocks',()=>{
+ const unlocked=run('cosmeticUnlocked');assert.equal(unlocked('unlock:emblem:target',{raceCount:999,rank:1}),false);
+ assert.equal(unlocked('unlock:emblem:target',{cosmeticUnlocks:['emblem:target']}),true);
+ assert.equal(unlocked('unlock:stripe:overdrive',{cosmeticUnlocks:['emblem:target']}),false);
+});
+test('earned cosmetic hover preserves reason and award date',()=>{
+ const unlocked=run('cosmeticUnlocked');const reason=run('cosmeticUnlockReason',{cosmeticUnlocked:unlocked});
+ assert.match(reason('unlock:stripe:overdrive',{}),/3 distinct official or Rolling Hills/);
+ assert.match(reason('unlock:emblem:target',{cosmeticUnlocks:['emblem:target'],serverAchievements:{beatOwner:{unlocks:[{cosmeticId:'emblem:target',unlockedAt:1000000000000}]}}}),/Permanently earned on/);
+});

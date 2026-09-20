@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),test=require('node:test'),asse
 const source=fs.readFileSync(path.join(__dirname,'..','polytrack_062_patch.js'),'utf8');
 function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert(start>=0,name);const tail=source.slice(start),end=tail.indexOf('\n  }');assert(end>0,name);return tail.slice(0,end+4);}
 function setup(saved=null){
- const elements=new Map(),ctx={console,Date,Map,Set,Number,Promise,overallCategory:'events',overallPage:0,OVERALL_PAGE_SIZE:15,overallEntriesCache:[],eventTotalsSnapshot:null,eventTotalsRequest:null,eventTotalsState:{status:'idle',checkedAt:0},EVENT_TOTALS_CACHE_KEY:'test',readJsonStorage:()=>saved,writeJsonStorage:(_k,v)=>{saved=v;},cleanUserId:x=>String(x),withTimeout:p=>p,renderEntries:()=>{},updateRankedFreshness:()=>{},eventCloudRead:async()=>({entries:[],updatedAt:1}),document:{getElementById:id=>elements.get(id),querySelector:()=>null,querySelectorAll:()=>[]},window:{},syncCategorySelect:()=>{},hydrateOverallCarModels:()=>{},escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('"','&quot;'),safeDisplayName:x=>x,formatRp:String,activeRankedAccountId:()=>'',racerCosmeticClasses:()=>'',carModelPreview:()=>'',countryFlagMarkup:()=>'',profileBadgeMarkup:()=>'',ageLabel:String};
+ const elements=new Map(),ctx={console,Date,Map,Set,Number,Promise,overallCategory:'events',overallPage:0,OVERALL_PAGE_SIZE:15,overallEntriesCache:[],rankedFilterResult:null,eventTotalsSnapshot:null,eventTotalsRequest:null,eventTotalsState:{status:'idle',checkedAt:0},EVENT_TOTALS_CACHE_KEY:'test',readJsonStorage:()=>saved,writeJsonStorage:(_k,v)=>{saved=v;},cleanUserId:x=>String(x),withTimeout:p=>p,renderEntries:()=>{},updateRankedFreshness:()=>{},eventCloudRead:async()=>({entries:[],updatedAt:1}),document:{getElementById:id=>elements.get(id),querySelector:()=>null,querySelectorAll:()=>[]},window:{},syncCategorySelect:()=>{},hydrateOverallCarModels:()=>{},escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('"','&quot;'),safeDisplayName:x=>x,formatRp:String,formatRaceTime:value=>`${value}ms`,durationLabel:value=>`${value}ms`,activeRankedAccountId:()=>'',racerCosmeticClasses:()=>'',carModelPreview:()=>'',countryFlagMarkup:()=>'',profileBadgeMarkup:()=>'',ageLabel:String};
  vm.createContext(ctx);for(const name of ['normalizeEventTotals','savedEventTotals','fetchEventTotals','sortedEventEntries','renderEventEntryRow','renderEventEntries','updateEventFreshness','sortedOverallEntries','currentLeaderboardCount','updateOverallPager','changeOverallPage'])vm.runInContext(extract(name),ctx);
  return {ctx,elements,getSaved:()=>saved};
 }
@@ -17,6 +17,16 @@ test('unknown event metrics stay null, zero points remain zero, malformed snapsh
  const {ctx}=setup();const result=ctx.normalizeEventTotals({updatedAt:0,entries:[{accountId:'a',rank:null,rp:null,events:null},row('b',0,2)]});
  assert.equal(result.entries[0].rp,null);assert.equal(result.entries[1].rp,0);
  for(const entries of [[row(),row()],[row('a','20')],[{...row(),rank:0}],[{...row(),events:-1}]])assert.throws(()=>ctx.normalizeEventTotals({updatedAt:1,entries}));
+});
+test('Rolling Hills totals preserve bounded optional contribution, time and advancing run age',()=>{
+ const updatedAt=Date.now()-5000,{ctx}=setup({updatedAt,entries:[]});
+ const valid=ctx.normalizeEventTotals({updatedAt,entries:[{...row(),rollingHillsRunAgeMs:1000,rollingHillsEventRpContribution:500,permanentRollingHillsRp:500,rollingHillsTimeMs:20000}]}).entries[0];
+ assert.equal(valid.rollingHillsRunAgeMs,1000);assert.equal(valid.rollingHillsEventRpContribution,500);assert.equal(valid.permanentRollingHillsRp,500);assert.equal(valid.rollingHillsTimeMs,20000);
+ ctx.eventTotalsSnapshot={updatedAt,entries:[valid]};const html=ctx.renderEventEntryRow(valid,0);
+ assert.match(html,/Rolling Hills/);assert.match(html,/\+500 Event RP/);assert.match(html,/20000ms/);assert.match(html,/run [5-9]\d{3}ms old/);
+ const invalid=ctx.normalizeEventTotals({updatedAt,entries:[{...row('b'),rollingHillsRunAgeMs:-1,rollingHillsEventRpContribution:1002,permanentRollingHillsRp:'500',rollingHillsTimeMs:0}]}).entries[0];
+ assert.equal(invalid.rollingHillsRunAgeMs,null);assert.equal(invalid.rollingHillsEventRpContribution,null);assert.equal(invalid.permanentRollingHillsRp,null);assert.equal(invalid.rollingHillsTimeMs,null);
+ assert.doesNotMatch(ctx.renderEventEntryRow(invalid,0),/Rolling Hills/);
 });
 test('one shared totals read, correct public endpoint, refresh cache and no per-racer reads',async()=>{
  const {ctx,getSaved}=setup();let calls=0,release;ctx.eventCloudRead=(...args)=>{calls++;assert.deepEqual(args,['/v1/events/totals','0.6.2_event_public','totals']);return new Promise(resolve=>release=resolve);};

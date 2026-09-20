@@ -84,6 +84,12 @@ A hard cap of four hundred Firestore HTTP requests applies to processing, includ
 
 The request cap is NOT a billed-document quota or a free-tier guarantee: queries can return multiple documents, commits can contain multiple writes, and other Workers/clients share project quotas. Native jobs are a maximum, not a target to fill regardless of cost. A deterministic in-memory 64-run backlog using the real selector, publisher and idle event coordinator processed 43 normal jobs in three rounds and 287 requests, left 21 waiting, and stopped at the reserve. This is a test fixture, not measured production throughput. Additional conflict retries, event work, or slow physics reduce throughput safely.
 
+## Private diagnostics sidecar
+
+`node tools/verifier/diagnose.mjs` is a bounded, read-only admin report. With `FIREBASE_VERIFIER_SERVICE_ACCOUNT` already set in the process environment, `node tools/verifier/diagnose.mjs --html=verifier-report.html` writes a readable local table with search. It reads at most eight pending queue documents, 64 recent normal audit records, and 32 recent event runs by default, with hard maximums of 16 queue documents, 128 audit records, and 64 event runs. Use `--track-id` for one exact queue plus track-filtered history, `--due-only` for currently due work, `--history-limit` or `--event-limit` to tune bounded history, `--summary=<path>` to explain a saved drain summary, and `--json` for parent tooling. The report joins actual run submission time, private audit checked time, event received time, and existing leaderboard snapshots to show people, runs, tracks, verified state, published place where available, wait age, and verification latency. It never reads default credential files and never emits replay data, hashes, UIDs, names, credentials, or proof payloads. HTML output stays local and is not added to GitHub job summaries, public routes, or the events UI.
+
+The report also makes the scheduler diagnosis explicit: four event native slots are attempted first, normal selection has twelve reserved slots, and only unused event slots can be borrowed. A historical `budgetDeferred` plus `no_progress` result is identified as the old misleading stop classification; current drains use `budget_deferred` when budget exhaustion is the reason to stop.
+
 ## Restart the existing workflow after this update
 
 This is not another migration. Do not reset queues, player data, event periods, or season scores.

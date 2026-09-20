@@ -74,6 +74,14 @@ test('empty, conflict-only and superseded-only work cannot repeatedly drain the 
   }
 });
 
+test('budget-deferred event work gets an explicit safe stop', async () => {
+  const result = await drainVerification({now:()=>0, requests:()=>0, log:quiet,
+    runRound:async()=>round({processed:0, verified:0, canonicalAttempts:0,
+      events:{checked:0, consumed:0, budgetDeferred:true}})});
+  assert.equal(result.rounds, 1);
+  assert.equal(result.stop, 'budget_deferred');
+});
+
 test('bounded pruning and event intake count as progress without claiming verification',async()=>{
   for(const report of [round({processed:0,verified:0,canonicalAttempts:16}),
     round({processed:0,verified:0,canonicalAttempts:0,events:{checked:0,consumed:1}})]){
@@ -112,19 +120,19 @@ function integration(eventChecks,normalCount=16) {
 test('drain reuses one authenticated pinned connection, rereads queue, and borrows idle event slots',async()=>{
   const f=integration(0);const result=await runVerifier(f.options);
   assert.equal(f.pins,1);assert.equal(f.connections,1);assert.equal(result.processed,64);
-  assert.deepEqual(f.order,Array.from({length:4},()=>['query','events','normal:16','publish']).flat());
+  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','normal:16','publish']).flat());
   assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT'in f.options.env,false);
 });
 
 test('sustained events get first chance and four reserved simulations on every round',async()=>{
   const f=integration(4);const result=await runVerifier(f.options);
   assert.equal(result.processed,48);assert.equal(result.eventChecked,16);
-  assert.deepEqual(f.order,Array.from({length:4},()=>['query','events','normal:12','publish']).flat());
+  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','normal:12','publish']).flat());
   assert.equal(result.processed+result.eventChecked,64);
 });
 
 test('partial event capacity and event-only workloads share unchanged sixteen-job round bound',async()=>{
-  for(const [events,normal,expected]of [[2,16,56],[8,8,32],[16,0,0]]){
+  for(const [events,normal,expected]of [[2,16,56],[4,8,32],[4,0,0]]){
     const f=integration(events,normal);const result=await runVerifier(f.options);
     assert.equal(result.processed,expected);assert.equal(result.eventChecked,events*4);
     assert.ok(result.processed+result.eventChecked<=64);

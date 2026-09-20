@@ -3,6 +3,7 @@ import { eventWorkerHandler, eventWorkerMaintenance } from './events-worker.js';
 import {packPlannerResults, plannerDocumentBytes, PLANNER_BUNDLE_VERSION, PLANNER_PUBLICATION_VERSION} from './planner-results.js';
 export {packPlannerResults} from './planner-results.js';
 import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
+import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PROJECT_ID = 'polytrack-052';
@@ -12,11 +13,13 @@ const AVERAGE_PLACEMENT_VERSION = 2;
 const DERIVED_METRICS_VERSION = 2;
 const INTEGRITY_STATE_VERSION = 1;
 const PROFILE_COSMETICS_VERSION = 4;
+const COSMETIC_ENTITLEMENT_VERSION = 3;
 const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
 const TRACK_LIMIT = 500;
 const REBUILD_COOLDOWN_MS = 5 * 60 * 1000;
+const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
 const MIGRATION_TRACK_BATCH = 4;
 const MIGRATION_BADGE_BATCH = 25;
@@ -42,8 +45,8 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   edge: new Set(['accent', 'wide', 'none', 'double', 'dashed']),
   stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium']),
   stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono']),
-  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta']),
-  emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown']),
+  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive']),
+  emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
   badge: new Set(['auto', 'member', 'none', 'betaTester'])
 });
@@ -91,11 +94,31 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
   if (tracks >= 8) { allowed.theme.add('forest'); allowed.theme.add('ember'); allowed.theme.add('crimson'); allowed.accent.add('violet'); allowed.accent.add('ice'); allowed.finish.add('carbon'); allowed.plate.add('bar'); allowed.edge.add('dashed'); allowed.stage.add('night'); allowed.stage.add('storm'); allowed.stageTint.add('pink'); allowed.stageTint.add('mono'); allowed.stripe.add('grid'); allowed.stripe.add('circuit'); allowed.stripe.add('scan'); allowed.stripe.add('blocks'); allowed.emblem.add('flame'); allowed.emblem.add('twinStars'); allowed.title.add('trackGrinder'); }
   if (podium) { allowed.theme.add('podium'); allowed.finish.add('horizon'); allowed.stage.add('podium'); allowed.stripe.add('gold'); allowed.emblem.add('crown'); allowed.title.add('podiumRegular'); }
   if (betaTester) { allowed.theme.add('beta'); allowed.stripe.add('beta'); allowed.badge.add('betaTester'); allowed.title.add('betaRacer'); }
+  const serverUnlocks = new Set(Array.isArray(entry.cosmeticUnlocks) ? entry.cosmeticUnlocks : []);
+  for (const stage of BEAT_OWNER_STAGES) {
+    if (!serverUnlocks.has(stage.cosmeticId)) continue;
+    const [kind, id] = stage.cosmeticId.split(':');
+    if (allowed[kind] && PROFILE_COSMETIC_OPTIONS[kind]?.has(id)) allowed[kind].add(id);
+  }
   return allowed.theme.has(value.theme) && allowed.accent.has(value.accent) && allowed.finish.has(value.finish) && allowed.plate.has(value.plate) && allowed.edge.has(value.edge) && allowed.stage.has(value.stage) && allowed.stageTint.has(value.stageTint) && allowed.stripe.has(value.stripe) && allowed.emblem.has(value.emblem) && allowed.title.has(value.title) && allowed.badge.has(value.badge);
 }
 function cosmeticEntitlement(entry={},beta=false){
   const defaults=sanitizeProfileCosmetics({});
-  return Object.fromEntries(Object.entries(PROFILE_COSMETIC_OPTIONS).map(([kind,values])=>[kind,[...values].filter(value=>profileCosmeticsUnlocked({...defaults,[kind]:value},entry,beta))]));
+  return {
+    ...Object.fromEntries(Object.entries(PROFILE_COSMETIC_OPTIONS).map(([kind,values])=>[kind,[...values].filter(value=>profileCosmeticsUnlocked({...defaults,[kind]:value},entry,beta))])),
+    serverIssued: {
+      version: SERVER_ACHIEVEMENT_VERSION,
+      cosmeticUnlocks: Array.isArray(entry.cosmeticUnlocks) ? entry.cosmeticUnlocks : [],
+      beta: entry.betaEntitlement || null,
+      achievements: entry.serverAchievements || null
+    }
+  };
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
 }
 
 const LEGACY_COMMUNITY_IDS = new Set(['5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572']);
@@ -269,6 +292,24 @@ async function readDocument(env, collection, id) {
   return payload ? { id, data: decodeFields(payload.fields || {}), updateTime: payload.updateTime || '' } : null;
 }
 
+async function readDocuments(env, collection, ids) {
+  const unique = [...new Set(ids.map(id => safeText(id, 128)).filter(Boolean))];
+  if (!unique.length) return new Map();
+  const base = documentBase(env).replace('https://firestore.googleapis.com/v1/', '');
+  const payload = await firestoreRequest(env, ':batchGet', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents: unique.map(id => `${base}/${collection}/${id}`) })
+  });
+  const output = new Map();
+  for (const item of Array.isArray(payload) ? payload : []) {
+    const document = item?.found;
+    if (!document) continue;
+    const id = decodeURIComponent(String(document.name || '').split('/').pop());
+    output.set(id, { id, data: decodeFields(document.fields || {}), updateTime: document.updateTime || '' });
+  }
+  return output;
+}
+
 async function writeDocument(env, collection, id, data, updateTime = '') {
   if(updateTime){
     const result=await commitDocuments(env,[{collection,id,data,prior:{updateTime}}]);
@@ -410,6 +451,65 @@ function betaCutoff(env) {
   return Math.max(0, Number(env.BETA_CUTOFF_MS || 0));
 }
 
+function openBetaEnabled(env) {
+  const configured = safeText(env.OPEN_BETA_ENABLED ?? 'true', 16).trim().toLowerCase();
+  return configured === 'true' || configured === '1';
+}
+
+function validBetaEntitlement(value) {
+  const source = safeText(value?.source, 64);
+  const sourceRevision = Math.max(0, Number(value?.sourceRevision || 0));
+  const issuedAt = Math.max(0, Number(value?.issuedAt || 0));
+  if (!['open-beta-release', 'release-migration', 'ranked-overall-snapshot', 'legacy-cosmetic-entitlement'].includes(source) || !sourceRevision || !issuedAt) return null;
+  return { id: 'beta-tester', source, sourceRevision, issuedAt,
+    cutoffAt: Math.max(0, Number(value?.cutoffAt || 0)) };
+}
+
+function betaEntitlementFor(accountId, priorEntry, priorEntitlement, migration, priorSnapshot, openBetaIssue) {
+  const preserved = validBetaEntitlement(priorEntitlement?.data?.serverIssued?.beta || priorEntry?.betaEntitlement);
+  if (preserved) return preserved;
+  const migrationIds = new Set([...(migration?.awardedBadgeIds || []), ...(migration?.pendingBadges || [])]
+    .map(value => safeText(value, 128)).filter(Boolean));
+  if (migrationIds.has(accountId)) return {
+    id: 'beta-tester', source: 'release-migration', sourceRevision: Math.max(1, Number(migration.migrationVersion || MIGRATION_VERSION)),
+    issuedAt: Math.max(1, Number(migration.completedAt || migration.updatedAt || migration.createdAt || priorSnapshot?.updatedAt || Date.now())),
+    cutoffAt: Math.max(0, Number(migration.cutoffAt || 0))
+  };
+  if (Array.isArray(priorEntitlement?.data?.badge) && priorEntitlement.data.badge.includes('betaTester')) return {
+    id: 'beta-tester', source: 'legacy-cosmetic-entitlement', sourceRevision: 2,
+    issuedAt: Math.max(1, Date.parse(priorEntitlement.updateTime || '') || Number(priorSnapshot?.updatedAt || Date.now())),
+    cutoffAt: 0
+  };
+  if (priorEntry?.badges?.betaTester === true) return {
+    id: 'beta-tester', source: 'ranked-overall-snapshot',
+    sourceRevision: Math.max(1, Number(priorSnapshot?.sourceRevision || priorSnapshot?.revision || 1)),
+    issuedAt: Math.max(1, Number(priorSnapshot?.updatedAt || priorEntry?.latestPbAt || Date.now())),
+    cutoffAt: 0
+  };
+  if (openBetaIssue) return {
+    id: 'beta-tester', source: 'open-beta-release', sourceRevision: openBetaIssue.sourceRevision,
+    issuedAt: openBetaIssue.issuedAt, cutoffAt: 0
+  };
+  return null;
+}
+
+async function ensureProfileBetaEntitlement(env, accountId) {
+  const document = await readDocument(env, '0.6.2_s1_cosmetic_entitlements', accountId);
+  const preserved = validBetaEntitlement(document?.data?.serverIssued?.beta);
+  if (preserved || !openBetaEnabled(env)) return preserved;
+  const beta = {id: 'beta-tester', source: 'open-beta-release', sourceRevision: 1, issuedAt: Date.now(), cutoffAt: 0};
+  const baseline = cosmeticEntitlement({betaEntitlement: beta}, true);
+  const prior = document?.data || {};
+  const include = (kind, value) => [...new Set([...(baseline[kind] || []), ...(Array.isArray(prior[kind]) ? prior[kind] : []), value])];
+  const data = {...baseline, ...prior,
+    theme: include('theme', 'beta'), stripe: include('stripe', 'beta'),
+    badge: include('badge', 'betaTester'), title: include('title', 'betaRacer'),
+    serverIssued: {...baseline.serverIssued, ...(prior.serverIssued || {}), beta}
+  };
+  await commitDocuments(env, [{collection: '0.6.2_s1_cosmetic_entitlements', id: accountId, data, prior: document}]);
+  return beta;
+}
+
 export function computeTrackEntries(rows, trackId, env = {}, verdicts = {}) {
   const best = new Map();
   for (const row of rows) {
@@ -522,9 +622,10 @@ function finishSummary(finish) {
 
 export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds = new Set(), {includePlannerResults = false} = {}) {
   const users = new Map();
+  const prior = new Map((priorEntries || []).map((entry) => [entry.userId, entry]));
   for (const board of trackDocuments) {
     const trackId = safeText(board.trackId, 80);
-    const entries = rankTrustedTrackEntries((Array.isArray(board.entries) ? board.entries : []).filter((entry) => entry.integrityVerified === true), trackId);
+    const entries = rankTrustedTrackEntries((Array.isArray(board.entries) ? board.entries : []).filter((entry) => entry.integrityVerified === true && entry.runVerified === true), trackId);
     if (!trackId || entries.length < 2) continue;
     for (const entry of entries) {
       const accountId = safeText(entry.accountId || entry.userId, 128);
@@ -544,14 +645,14 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
       user.latestPbAt = Math.max(user.latestPbAt, Number(entry.pbAt || 0));
       const created = Number(entry.accountCreatedAt || entry.createdAt || 0);
       if (created) user.accountCreatedAt = user.accountCreatedAt ? Math.min(user.accountCreatedAt, created) : created;
-      user.betaTester ||= entry.betaTester === true || betaTesterIds.has(accountId);
+      user.betaTester ||= betaTesterIds.has(accountId) || prior.get(accountId)?.badges?.betaTester === true;
       const type = trackType(trackId);
       user[`${type}Count`] += 1;
       user.finishes.push({ trackId, rank, fieldSize, weight, placementCost: cost, contribution: Math.max(0, (100 - cost) * weight), improvementValue: cost * weight, timeMs: raceTime(entry), pbAt: Number(entry.pbAt || 0), type, competition: Number(entry.competition || 1) });
       users.set(accountId, user);
     }
   }
-  const rows = [...users.values()].map((user) => {
+  const allRows = [...users.values()].map((user) => {
     const played = user.finishes.length;
     const byCost = [...user.finishes].sort((a, b) => a.placementCost - b.placementCost || b.weight - a.weight);
     const bestTen = byCost.slice(0, 10);
@@ -588,16 +689,18 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
       ...(includePlannerResults ? {resultSamples: user.finishes} : {}),
       timingVersion: 2, badges: user.betaTester ? { betaTester: true } : null
     };
-  }).sort((a, b) => Number(a.provisional) - Number(b.provisional) || a.score - b.score || b.raceCount - a.raceCount || a.userId.localeCompare(b.userId)).slice(0, OVERALL_LIMIT);
-  const prior = new Map((priorEntries || []).map((entry) => [entry.userId, entry]));
+  }).sort((a, b) => Number(a.provisional) - Number(b.provisional) || a.score - b.score || b.raceCount - a.raceCount || a.userId.localeCompare(b.userId));
+  const rows = allRows.slice(0, OVERALL_LIMIT);
   const now = Date.now();
   let ranked = 0;
-  return rows.map((row) => {
+  const output = rows.map((row) => {
     const rank = row.provisional ? 0 : ++ranked;
     const previous = prior.get(row.userId);
     const changed = previous && Number(previous.rank) > 0 && rank > 0 ? Number(previous.rank) - rank : 0;
     return { ...row, rank, movement: changed, movementAt: changed ? now : Number(previous?.movementAt || 0), rankSince: previous && Number(previous.rank) === rank ? Number(previous.rankSince || now) : now, scoreDelta: previous ? Number(row.score - Number(previous.score || 0)) : 0 };
   });
+  Object.defineProperty(output, 'totalEntries', { value: allRows.length, enumerable: false });
+  return output;
 }
 
 async function prepareVerification(env, trackId, rows, complete = false) {
@@ -742,16 +845,37 @@ export async function rebuildOverall(env, force = false) {
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   const now = Date.now();
-  const metricsOutdated = Number(meta.plannerPublicationVersion || 0) < PLANNER_PUBLICATION_VERSION || Number(meta.plannerBundleVersion || 0) < PLANNER_BUNDLE_VERSION || Number(meta.cosmeticEntitlementVersion||0)<2 || Number(meta.averagePlacementVersion || 0) < AVERAGE_PLACEMENT_VERSION || Number(meta.derivedMetricsVersion || 0) < DERIVED_METRICS_VERSION;
+  const metricsOutdated = Number(meta.plannerPublicationVersion || 0) < PLANNER_PUBLICATION_VERSION || Number(meta.plannerBundleVersion || 0) < PLANNER_BUNDLE_VERSION || Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION || Number(meta.averagePlacementVersion || 0) < AVERAGE_PLACEMENT_VERSION || Number(meta.derivedMetricsVersion || 0) < DERIVED_METRICS_VERSION;
   if (!force && !metricsOutdated && (!meta.dirty || now - Number(meta.lastOverallBuildAt || 0) < REBUILD_COOLDOWN_MS)) return { rebuilt: false, reason: meta.dirty ? 'cooldown' : 'clean', revision: Number(meta.builtRevision || 0) };
   const boards = (await runQuery(env, COLLECTIONS.track, null, 100)).map((document) => document.data);
   const priorDoc = await readDocument(env, COLLECTIONS.overall, 'main');
   const prior = priorDoc?.data || {};
+  const revision = Number(meta.revision || 0);
   const migration = (await readDocument(env, COLLECTIONS.jobs, 'release_migration'))?.data || {};
   const betaTesterIds = new Set([...(migration.awardedBadgeIds || []),...(migration.pendingBadges || [])].map((value) => safeText(value, 128)).filter(Boolean));
-  const computedEntries = computeOverall(boards, prior.entries || [], betaTesterIds, {includePlannerResults: true});
+  const computedBase = computeOverall(boards, prior.entries || [], betaTesterIds, {includePlannerResults: true});
+  const priorEntitlements = await readDocuments(env, '0.6.2_s1_cosmetic_entitlements', computedBase.map(row => row.userId));
+  const priorById = new Map((prior.entries || []).map(row => [row.userId, row]));
+  const priorIssuedById = new Map(computedBase.map(row => {
+    const oldEntry = priorById.get(row.userId) || {};
+    const serverIssued = priorEntitlements.get(row.userId)?.data?.serverIssued || {};
+    return [row.userId, { ...oldEntry, ...(serverIssued.achievements ? {serverAchievements: serverIssued.achievements} : {}) }];
+  }));
+  const aggregated = aggregateServerAchievements(computedBase, boards, priorIssuedById, {
+    eligibleTrackIds: [...OFFICIAL_IDS, ...COMMUNITY_IDS, ...LEGACY_COMMUNITY_IDS],
+    beatOwnerTrackIds: [...OFFICIAL_IDS, SPECIAL_ROLLING_HILLS_TRACK_ID],
+    ownerPublicId: OWNER_PUBLIC_ID,
+    now
+  });
+  const migrationSource = {...migration, cutoffAt: betaCutoff(env)};
+  const openBetaIssue = openBetaEnabled(env) ? {sourceRevision: Math.max(1, revision), issuedAt: now} : null;
+  const computedEntries = aggregated.entries.map(row => {
+    const oldEntry = priorById.get(row.userId) || {};
+    const betaEntitlement = betaEntitlementFor(row.userId, oldEntry, priorEntitlements.get(row.userId), migrationSource, prior, openBetaIssue);
+    return {...row, betaEntitlement, badges: betaEntitlement ? {betaTester:true} : null};
+  });
   const entries = computedEntries.map(({resultSamples, ...entry}) => entry);
-  const trackSummaries = boards.map((board) => ({...board,entries:rankTrustedTrackEntries((Array.isArray(board.entries)?board.entries:[]).filter((entry)=>entry.integrityVerified===true),safeText(board.trackId,80))})).filter((board) => board.entries.length >= 2).map((board) => {
+  const trackSummaries = boards.map((board) => ({...board,entries:rankTrustedTrackEntries((Array.isArray(board.entries)?board.entries:[]).filter((entry)=>entry.integrityVerified===true&&entry.runVerified===true),safeText(board.trackId,80))})).filter((board) => board.entries.length >= 2).map((board) => {
     const leader = board.entries[0] || {};
     return {
       trackId: safeText(board.trackId, 80),
@@ -770,15 +894,30 @@ export async function rebuildOverall(env, force = false) {
       }
     };
   }).filter((summary) => summary.trackId).sort((a, b) => b.weight - a.weight || b.fieldSize - a.fieldSize || a.trackId.localeCompare(b.trackId));
-  const priorById=new Map((prior.entries||[]).map(row=>[row.userId,row]));
   const entitlementWrites=[];
   for(const row of entries){
-    const allowance=cosmeticEntitlement(row,betaTesterIds.has(row.userId));
-    const old=priorById.get(row.userId);
-    if(Number(meta.cosmeticEntitlementVersion||0)<2||!old||JSON.stringify(allowance)!==JSON.stringify(cosmeticEntitlement(old,old.badges?.betaTester===true)))entitlementWrites.push({collection:'0.6.2_s1_cosmetic_entitlements',id:row.userId,data:allowance,unconditional:true});
+    const allowance=cosmeticEntitlement(row,row.badges?.betaTester===true);
+    const old=priorEntitlements.get(row.userId)?.data;
+    if(Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION||!old||stableJson(allowance)!==stableJson(old))entitlementWrites.push({collection:'0.6.2_s1_cosmetic_entitlements',id:row.userId,data:allowance,unconditional:true});
   }
-  const revision = Number(meta.revision || 0);
-  const snapshot = { entries, trackSummaries, updatedAt: now, builtAt: now, seededBy: 'polytrack-ranked-worker', revision, builtRevision: revision, sourceRevision: revision, algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: DERIVED_METRICS_VERSION, entryLimit: OVERALL_LIMIT, trackLimit: TRACK_LIMIT };
+  const totalEntries = Number(computedBase.totalEntries || entries.length);
+  const sourceTracksComplete = boards.length < 100 && boards.every(board => board?.complete === true);
+  const sourceIncomplete = !sourceTracksComplete;
+  const sameIncompleteRevision = Number(meta.overallIncompleteRevision ?? -1) === revision;
+  const priorIncompleteObservations = sameIncompleteRevision ? Math.max(0, Number(meta.overallIncompleteObservations || 0)) : 0;
+  const incompleteObservations = sourceIncomplete ? priorIncompleteObservations + 1 : 0;
+  const incompleteRetryPending = sourceIncomplete && incompleteObservations <= OVERALL_INCOMPLETE_RETRY_LIMIT;
+  const overallIncompleteReason = boards.length >= 100 ? 'board-query-limit'
+    : sourceIncomplete ? 'source-track-incomplete'
+      : totalEntries > OVERALL_LIMIT ? 'publication-limit' : '';
+  const snapshot = { entries, trackSummaries, complete: sourceTracksComplete && totalEntries <= OVERALL_LIMIT,
+    totalEntries, totalEntriesExact: sourceTracksComplete, publishedEntries: entries.length,
+    authorityAudit: aggregated.audit, betaPolicy: {version: 1, open: openBetaEnabled(env), config: 'OPEN_BETA_ENABLED'},
+    updatedAt: now, builtAt: now, seededBy: 'polytrack-ranked-worker',
+    revision, builtRevision: revision, sourceRevision: revision, algorithmVersion: ALGORITHM_VERSION,
+    schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION,
+    derivedMetricsVersion: DERIVED_METRICS_VERSION, serverAchievementVersion: SERVER_ACHIEVEMENT_VERSION,
+    entryLimit: OVERALL_LIMIT, trackLimit: TRACK_LIMIT };
   const packed = await packPlannerResults(computedEntries, snapshot, {boardCount: boards.length, boardLimit: 100});
   const resultWrites = [];
   if (packed.resultBundleStatus === 'sidecar') {
@@ -792,7 +931,12 @@ export async function rebuildOverall(env, force = false) {
     Object.assign(snapshot, packed);
   }
   if (plannerDocumentBytes(snapshot) >= 1048576) throw Error('OVERALL_DOCUMENT_CAP');
-  await commitDocuments(env,[...entitlementWrites,...resultWrites,{collection:COLLECTIONS.overall,id:'main',prior:priorDoc,data: snapshot},{collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data: { ...meta, plannerPublicationVersion:PLANNER_PUBLICATION_VERSION, plannerBundleVersion:PLANNER_BUNDLE_VERSION, cosmeticEntitlementVersion:2, dirty: false, revision, builtRevision: revision, lastOverallBuildAt: now, updatedAt: now, algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: DERIVED_METRICS_VERSION, rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false' }}]);
+  await commitDocuments(env,[...entitlementWrites,...resultWrites,{collection:COLLECTIONS.overall,id:'main',prior:priorDoc,data: snapshot},{collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data: { ...meta, plannerPublicationVersion:PLANNER_PUBLICATION_VERSION, plannerBundleVersion:PLANNER_BUNDLE_VERSION, cosmeticEntitlementVersion:COSMETIC_ENTITLEMENT_VERSION, serverAchievementVersion:SERVER_ACHIEVEMENT_VERSION,
+    dirty: incompleteRetryPending, overallComplete: snapshot.complete, overallSourceComplete: sourceTracksComplete,
+    overallIncompleteReason, overallIncompleteRevision: sourceIncomplete ? revision : 0,
+    overallIncompleteObservations: incompleteObservations, overallRetryPending: incompleteRetryPending,
+    overallRetryExhausted: sourceIncomplete && !incompleteRetryPending,
+    revision, builtRevision: revision, lastOverallBuildAt: now, updatedAt: now, algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: DERIVED_METRICS_VERSION, rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false' }}]);
   return { rebuilt: true, revision, racers: entries.length, tracks: trackSummaries.length };
 }
 
@@ -803,6 +947,7 @@ async function notifyProfile(request, env, context, uid, body) {
   if (!profile || profile.data.ownerUid !== uid || safeText(profile.data.accountId, 128) !== accountId) {
     return json(request.headers.get('Origin') || '', env, 403, { error: 'profile_not_owned' });
   }
+  const betaEntitlement = await ensureProfileBetaEntitlement(env, accountId);
   const results = await runQuery(env, COLLECTIONS.raceResults, { field: 'accountId', value: accountId }, 100);
   const identity = {
     accountId,
@@ -819,7 +964,7 @@ async function notifyProfile(request, env, context, uid, body) {
   const existingDoc=await readDocument(env,COLLECTIONS.jobs,jobId);
   const existing=existingDoc?.data||{};
   if (existing.signature === signature && (!Array.isArray(existing.pendingTrackIds) || existing.pendingTrackIds.length === 0)) {
-    return json(request.headers.get('Origin') || '', env, 200, { accepted: true, accountId, queued: 0, unchanged: true });
+    return json(request.headers.get('Origin') || '', env, 200, { accepted: true, accountId, queued: 0, unchanged: true, betaEntitlement });
   }
   const pendingTrackIds = existing.signature === signature
     ? [...new Set([...(existing.pendingTrackIds || []), ...trackIds])]
@@ -827,7 +972,7 @@ async function notifyProfile(request, env, context, uid, body) {
   const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active: pendingTrackIds.length > 0, accountId, identity, signature, pendingTrackIds, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now() },existingDoc?.updateTime||'');
   const task = processProfileJob(env, jobId, { kind: 'profile', active: true, accountId, identity, signature, pendingTrackIds },written?.updateTime||'');
   if (context.waitUntil) context.waitUntil(task.catch((error) => console.error('Deferred profile job failed', String(error?.message || error))));
-  return json(request.headers.get('Origin') || '', env, 202, { accepted: true, accountId, queued: pendingTrackIds.length });
+  return json(request.headers.get('Origin') || '', env, 202, { accepted: true, accountId, queued: pendingTrackIds.length, betaEntitlement });
 }
 
 async function updateProfileCosmetics(request, env, context, uid, body) {
@@ -838,6 +983,7 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
   if (!profile || profile.data.ownerUid !== uid || safeText(profile.data.accountId, 128) !== accountId) {
     return json(origin, env, 403, { error: 'profile_not_owned' });
   }
+  const issuedBeta = await ensureProfileBetaEntitlement(env, accountId);
   const cosmetics = sanitizeProfileCosmetics(body.cosmetics);
   if(profile.data.cosmeticsSyncedAt && JSON.stringify(cosmetics)!==JSON.stringify(sanitizeProfileCosmetics(profile.data.profileCosmetics)))return json(origin,env,409,{error:'cosmetics_superseded'});
   const [overall, badge] = await Promise.all([
@@ -845,7 +991,7 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
     readDocument(env, COLLECTIONS.badges, accountId)
   ]);
   const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
-  const betaTester = badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
+  const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
   if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) return json(origin, env, 403, { error: 'cosmetic_locked' });
   await writeDocument(env, COLLECTIONS.profiles, accountId, { ...profile.data, profileCosmetics: cosmetics, updatedAt: Date.now() }, profile.updateTime);
   if (overall?.data && Array.isArray(overall.data.entries)) {
@@ -891,12 +1037,13 @@ async function processCosmeticJobs(env) {
       continue;
     }
     const cosmetics = sanitizeProfileCosmetics(job.data.cosmetics);
+    const issuedBeta = await ensureProfileBetaEntitlement(env, accountId);
     const [overall, badge] = await Promise.all([
       readDocument(env, COLLECTIONS.overall, 'main'),
       readDocument(env, COLLECTIONS.badges, accountId)
     ]);
     const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
-    const betaTester = badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
+    const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
     if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) {
       await writeDocument(env, COLLECTIONS.cosmeticJobs, job.id, { ...job.data, active: false, error: 'cosmetic_locked', completedAt: Date.now() },job.updateTime);
       continue;
@@ -1026,7 +1173,7 @@ export async function handleRequest(request, env, context = {}) {
   if (path === '/v1/kodub-weekly' || path.startsWith('/v1/kodub-weekly/')) return kodubWeekly(request,responseHeaders(origin,env),context);
   if (request.method === 'GET' && path === '/v1/status') {
     const meta = (await readDocument(env, COLLECTIONS.meta, 'current').catch(() => null))?.data || {};
-    return json(origin, env, 200, { service: 'polytrack-ranked', algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: Number(meta.derivedMetricsVersion || 0), currentDerivedMetricsVersion: DERIVED_METRICS_VERSION, rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false', revision: Number(meta.revision || 0), builtRevision: Number(meta.builtRevision || 0), dirty: meta.dirty === true, pendingRevisions: Math.max(0, Number(meta.revision || 0) - Number(meta.builtRevision || 0)), updatedAt: Number(meta.updatedAt || 0) });
+    return json(origin, env, 200, { service: 'polytrack-ranked', algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: Number(meta.derivedMetricsVersion || 0), currentDerivedMetricsVersion: DERIVED_METRICS_VERSION, openBetaEnabled: openBetaEnabled(env), rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false', revision: Number(meta.revision || 0), builtRevision: Number(meta.builtRevision || 0), dirty: meta.dirty === true, pendingRevisions: Math.max(0, Number(meta.revision || 0) - Number(meta.builtRevision || 0)), updatedAt: Number(meta.updatedAt || 0) });
   }
   if (request.method === 'GET' && path === '/v1/snapshot/overall') return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
   if (request.method === 'GET' && path === '/v1/snapshot/track') {
