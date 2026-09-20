@@ -22,6 +22,10 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   const tabs=await page.locator('.community-track-versions>.button').all();
   assert.equal((await tabs[0].boundingBox()).width,(await tabs[1].boundingBox()).width);
  }
+ const image=await page.locator('.sq-kodub-weekly>button>img').evaluate(e=>({fit:getComputedStyle(e).objectFit,height:e.getBoundingClientRect().height}));
+ assert.equal(image.fit,'contain');assert.equal(image.height,148);
+ const decoration=await page.locator('.sq-kodub-weekly>button').evaluate(e=>({border:getComputedStyle(e).borderTopWidth,shadow:getComputedStyle(e).boxShadow}));
+ assert.equal(decoration.border,'0px');assert.equal(decoration.shadow,'none');
  await page.locator('.community-track-group').evaluate(e=>e.classList.add('hidden'));
  assert.equal(await page.locator('.sq-event-card').first().isVisible(),true);
  }finally{await browser.close();}
