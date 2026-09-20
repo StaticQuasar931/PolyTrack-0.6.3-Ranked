@@ -37,7 +37,14 @@ export async function loadKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.
 
 export function combineKodubCard(document, group, selection, now=Date.now()) {
   const card = document.querySelector('.track-selection-ui .track.track-of-the-week:not(.sq-kodub-weekly)') || document.querySelector('.track-selection-ui .sq-kodub-weekly');
-  if (!card || !group) return;
+  if(!group)return;
+  const unavailable=group.querySelector('.sq-kodub-unavailable');
+  if(unavailable){
+    const valid=selection&&now<Date.parse(selection.endTime);
+    unavailable.hidden=!!(valid&&card);
+    unavailable.querySelector('small').textContent=valid?'Loading weekly selection...':'No current track available. Reload to retry.';
+  }
+  if(!card)return;
   if (!selection || now >= Date.parse(selection.endTime)) { card.hidden=true; return; }
   const identity=selection.trackId+'@'+selection.endTime;
   if(card.dataset.kodubIdentity && card.dataset.kodubIdentity!==identity){card.hidden=true;return;}
@@ -46,7 +53,8 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
   card.hidden=false;
   if (card.parentElement !== group) {
     const section=card.parentElement;
-    group.prepend(card);
+    const heading=group.querySelector(':scope > .sq-featured-heading');
+    if(heading)heading.after(card);else group.prepend(card);
     if (section.querySelector('.group-title')) section.hidden=true;
   }
   card.classList.add('sq-kodub-weekly');
@@ -56,5 +64,3 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
     button.prepend(label);
   }
 }
-
-

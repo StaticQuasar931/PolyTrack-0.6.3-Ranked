@@ -4,11 +4,24 @@ import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
-const ROLLING_HILLS_TRACK='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
 const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function ensureFeaturedSection(document){
+  const nav=document.querySelector('.track-selection-ui .community-track-versions');
+  if(!nav)return null;
+  let section=nav.parentElement.querySelector(':scope > .sq-featured-events');
+  if(!section){
+    section=document.createElement('section');section.className='sq-featured-events sq-event-track-group';
+    section.setAttribute('aria-label','Featured events');
+    const heading=document.createElement('h2');heading.className='sq-featured-heading';heading.textContent='Featured events';section.append(heading);
+    const unavailable=document.createElement('div');unavailable.className='sq-kodub-unavailable';unavailable.textContent="Kodub's Track of the Week";
+    const note=document.createElement('small');note.textContent='Loading weekly selection...';unavailable.append(note);section.append(unavailable);
+    nav.before(section);
+  }
+  return section;
+}
 export function installEvents(bridge){
   const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
   let statusText='';
@@ -287,31 +300,27 @@ export function installEvents(bridge){
       }
       button.removeAttribute('aria-disabled');if(period)knownPeriods.set(period.id,period);
     }
-    const group=document.querySelector('.track-selection-ui img[src="tracks/community/thumbnails/rolling_hills_racer.png"]')?.closest('.community-track-group');
-    if(group)group.classList.add('sq-event-track-group');
-    const rolling=activePeriods().filter(p=>p.kind==='weekly'&&p.trackId===ROLLING_HILLS_TRACK);
-    for(const button of group?.querySelectorAll(':scope > .track > button')||[]){
-      const period=rolling.length===1&&button.querySelector('.track-title p')?.textContent.trim()===info(ROLLING_HILLS_TRACK).name?rolling[0]:null;
-      const label=button.querySelector('.sq-event-native-label');
-      if(!period){delete button.dataset.nativeWeeklyEvent;label?.remove();continue;}
-      button.dataset.nativeWeeklyEvent=period.id;
-      if(!label){const note=document.createElement('small');note.className='sq-event-native-label';note.textContent='Weekly event + normal PB';button.append(note);}
-    }
+    const group=ensureFeaturedSection(document);
     if(group?.getClientRects().length)void loadCatalog().catch(()=>{});
     if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
     if(group&&activePeriods().length){
-      let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
+      let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}if(!row.dataset.bound){row.dataset.bound='true';row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
       const signature=activePeriods().map(p=>p.id).join('|');if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(activePeriods());}
-    }else if(group){group.querySelector('.sq-event-track-buttons')?.remove();}
+    }else if(group){
+      let row=group.querySelector('.sq-event-track-buttons');
+      if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}
+      if(row.dataset.periods!=='unavailable'){
+        row.dataset.periods='unavailable';row.replaceChildren();
+        for(const kind of ['weekly','daily']){const button=document.createElement('button');button.className='button sq-event-card';button.type='button';
+          const title=document.createElement('strong');title.textContent=kind==='weekly'?'Weekly event':'Daily event';
+          const note=document.createElement('small');note.textContent='No active event available';button.append(title,note);button.onclick=()=>void open();row.append(button);}
+      }
+    }
     const session=sessions.current()||eventIntent;if(document.body.classList.contains('sq-event-active')!==!!session)document.body.classList.toggle('sq-event-active',!!session);
     syncNativeBoard(session);
   }
   document.addEventListener('click',e=>{
     const button=e.target.closest?.('button');if(!button)return;
-    if(e.isTrusted&&button.matches('.sq-event-track-group > .track > button[data-native-weekly-event]')){
-      const matches=activePeriods().filter(p=>p.id===button.dataset.nativeWeeklyEvent&&p.kind==='weekly'&&p.trackId===ROLLING_HILLS_TRACK);
-      if(matches.length===1){e.preventDefault();e.stopImmediatePropagation();void race(matches[0],{direct:true});return;}
-    }
     if(button.matches('#overallLeaderboardPanel .weekly-cup .competition-feature-button,#overallLeaderboardPanel .daily-card .competition-feature-button')){
       e.preventDefault();e.stopImmediatePropagation();const period=activePeriods().find(p=>p.id===button.dataset.eventId&&p.kind===button.dataset.eventKind);if(period)void race(period,{direct:true});else void open();return;
     }
@@ -321,5 +330,5 @@ export function installEvents(bridge){
   },true);
   window.addEventListener('online',()=>void flush());
   window.addEventListener('storage',event=>{if(event.key===QUEUE){hasPending=read(QUEUE,[]).length>0;void flush();}if(event.key===PROFILE_CACHE)profilesAt=0;if(event.key===BEST){bestRecords=read(BEST,{});lastInline='';}});
-  return {open,openEvent,totals,tick,flush,getOwnReplay,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
+  return {featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
 }

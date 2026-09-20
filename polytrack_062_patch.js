@@ -101,16 +101,11 @@
   }
   function ensureEventEntry(){
     if(!eventQueueChecked){eventQueueChecked=true;try{if(JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').length)void ensureEventUi().then(ui=>ui.flush()).catch(()=>{setTimeout(()=>{eventQueueChecked=false;},60000);});}catch{}}
-    const group=document.querySelector('.track-selection-ui img[src="tracks/community/thumbnails/rolling_hills_racer.png"]')?.closest('.community-track-group');
-    // 0.6.3 uses version tabs instead of the old named group-title rows.
+    const nav=document.querySelector('.track-selection-ui .community-track-versions');
+    const group=eventUi?.featuredSection?.();
     if(group)kodubAdapter?.combineKodubCard(document,group,nativeWeeklySelection);
-    if(group)group.classList.add('sq-event-track-group');
-    if(group&&!group.querySelector('.sq-events-entry')){
-      const button=document.createElement('button');button.className='button sq-events-entry';button.type='button';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');
-      button.addEventListener('click',event=>{event.stopPropagation();ensureEventUi().then(ui=>ui.open()).catch(()=>{button.textContent='Events unavailable · retry';});});group.append(button);
-    }
     const ranked=document.getElementById('overallLeaderboardPanel');
-    if((group&&isElementVisible(group)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
+    if((nav&&isElementVisible(nav)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
     eventUi?.tick();
   }
 

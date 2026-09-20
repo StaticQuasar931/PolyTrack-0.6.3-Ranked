@@ -5,6 +5,14 @@ events. It uses the native track info/play flow, not event sessions or Event RP.
 No official leaderboard entries or player tokens are imported. The new weekly
 track is not automatically admitted to the trusted Ranked track registry.
 
+## Menu Layout
+
+The community menu has two separate sections: a full-width Featured events area
+(Kodub weekly, our weekly event, our daily event), then the community version
+buttons and their normal tracks below. Changing a version never hides the featured
+area. Rolling Hills stays in its normal version group and does not implicitly
+start an event. Unavailable event slots show a status instead of disappearing.
+
 ## Retrieval
 
 - The client reads `events/kodub/current.json` as a local fallback.
