@@ -67,3 +67,10 @@ activation or browser errors. No scores were submitted by these tests.
 Cloudflare requires the supported `manual` redirect mode with explicit status
 checking rather than Node's `error` option; see
 [Workers Request documentation](https://developers.cloudflare.com/workers/runtime-apis/request/).
+
+
+## Four-card layout and pending scoring change
+
+The Events row now contains the larger Kodub spotlight, permanent Rolling Hills Racer, weekly event and daily event. It scrolls horizontally on narrow screens. The six version buttons below have equal widths; the native StaticQuasar931 node is hidden rather than deleted to preserve game lookups.
+
+Requested scoring policy, NOT yet activated: Kodub up to 700 Event RP using an official first-place benchmark frozen at event creation and Kodub's own endTime. Rolling Hills up to 1001 Event RP permanently, alongside normal RP, with its target awaiting the owner. Do not silently use an arbitrary target, give everyone maximum points, or reset the permanent standings. Existing backend daily/weekly scoring is unchanged. Dynamic trusted-track replay verification and separate server-owned periods remain required before activation.

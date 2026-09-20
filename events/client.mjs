@@ -14,11 +14,23 @@ export function ensureFeaturedSection(document){
   let section=nav.parentElement.querySelector(':scope > .sq-featured-events');
   if(!section){
     section=document.createElement('section');section.className='sq-featured-events sq-event-track-group';
-    section.setAttribute('aria-label','Featured events');
-    const heading=document.createElement('h2');heading.className='sq-featured-heading';heading.textContent='Featured events';section.append(heading);
+    section.setAttribute('aria-label','Events');
+    const heading=document.createElement('h2');heading.className='sq-featured-heading';heading.textContent='Events';section.append(heading);
     const unavailable=document.createElement('div');unavailable.className='sq-kodub-unavailable';unavailable.textContent="Kodub's Track of the Week";
     const note=document.createElement('small');note.textContent='Loading weekly selection...';unavailable.append(note);section.append(unavailable);
     nav.before(section);
+  }
+  const rolling=document.querySelector('.track-selection-ui img[src*="rolling_hills_racer"]')?.closest('.track');
+  if(rolling&&rolling.parentElement!==section){
+    rolling.classList.add('sq-permanent-track');section.append(rolling);
+    const note=document.createElement('small');note.className='sq-permanent-note';
+    note.textContent='Normal RP active / 1001 Event RP pending target';rolling.querySelector(':scope > button')?.append(note);
+  }
+  const custom=[...nav.querySelectorAll('button')].find(button=>button.textContent.trim()==='StaticQuasar931');
+  if(custom){
+    // Retain the native node so existing track-launch lookups can still use it.
+    if(custom.classList.contains('selected'))[...nav.querySelectorAll('button')].find(button=>button.textContent.trim()==='0.6.3')?.click();
+    custom.hidden=true;custom.setAttribute('aria-hidden','true');custom.tabIndex=-1;
   }
   return section;
 }
@@ -302,7 +314,7 @@ export function installEvents(bridge){
     }
     const group=ensureFeaturedSection(document);
     if(group?.getClientRects().length)void loadCatalog().catch(()=>{});
-    if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
+    if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='All results';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
     if(group&&activePeriods().length){
       let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}if(!row.dataset.bound){row.dataset.bound='true';row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
       const signature=activePeriods().map(p=>p.id).join('|');if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(activePeriods());}

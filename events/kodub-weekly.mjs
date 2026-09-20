@@ -60,7 +60,8 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
   card.classList.add('sq-kodub-weekly');
   const button=card.querySelector(':scope > button');
   if (button && !button.querySelector('.sq-kodub-label')) {
-    const label=document.createElement('small');label.className='sq-kodub-label';label.textContent="Kodub's Track of the Week";
+    const label=document.createElement('small');label.className='sq-kodub-label';label.textContent='WEEKLY SPOTLIGHT';
     button.prepend(label);
+    const cycle=document.createElement('small');cycle.className='sq-kodub-cycle';cycle.textContent="Kodub schedule / separate weekly reset";button.querySelector('.track-of-the-week-info')?.append(cycle);
   }
 }

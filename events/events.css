@@ -147,3 +147,30 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{width:48%;padding:12px;justify-content:center}
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info>.title{white-space:normal}
 }
+
+/* Four permanent slots; narrow screens preserve legibility with row scrolling. */
+#ui .track-selection-ui .sq-featured-events{grid-template-columns:minmax(320px,1.65fr) repeat(3,minmax(190px,1fr));gap:14px!important;overflow-x:auto;scrollbar-width:thin;padding-bottom:18px}
+#ui .track-selection-ui .sq-featured-events>.sq-kodub-weekly,#ui .track-selection-ui .sq-featured-events>.sq-kodub-unavailable{grid-column:1;grid-row:2}
+#ui .track-selection-ui .sq-featured-events>.sq-permanent-track{grid-column:2;grid-row:2;width:100%!important;max-width:none!important;margin:0!important}
+#ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card{grid-row:2}
+#ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%!important;height:241px!important;margin:0!important;padding:14px!important;box-sizing:border-box;white-space:normal;font-size:22px}
+#ui .track-selection-ui .sq-permanent-track>.button>img:not(.environment){max-width:100%;height:110px;object-fit:contain}
+#ui .track-selection-ui .sq-permanent-note{font-size:14px;color:#b9d9ff}
+#ui .track-selection-ui .sq-featured-events .sq-event-card{padding:12px;gap:10px;overflow:hidden}
+#ui .track-selection-ui .sq-featured-events .sq-event-card strong{font-size:22px;line-height:1.1;white-space:normal}
+#ui .track-selection-ui .sq-featured-events .sq-event-thumb{height:90px;flex-basis:90px}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{display:flex;flex-direction:column;align-items:stretch;padding:30px 0 8px!important;border:2px solid #e9c777;background:linear-gradient(135deg,#303350,#151e3e 65%);box-shadow:inset 0 0 25px #eac97518}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){width:100%!important;height:76px!important;max-height:76px!important;flex:0 0 76px;object-fit:cover}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{width:100%;padding:6px 12px;justify-content:flex-start}
+#ui .track-selection-ui .sq-kodub-weekly .sq-kodub-label{color:#ffe5a4;letter-spacing:1.5px;font-size:14px}
+#ui .track-selection-ui .sq-kodub-cycle{font-size:12px;line-height:16px;color:#ffe5a4}
+#ui .track-selection-ui .community-track-versions>.button{flex:1 0 0!important;min-width:90px!important;padding:10px!important}
+#ui .track-selection-ui .community-track-versions>.button[hidden]{display:none!important}
+
+#ui .track-selection-ui .sq-permanent-track .track-title{width:100%;height:auto;flex-shrink:0}
+#ui .track-selection-ui .sq-permanent-track .track-title p{white-space:normal!important;text-overflow:clip!important;overflow:visible!important;font-size:20px!important;line-height:23px!important}
+#ui .track-selection-ui .sq-featured-events .sq-event-card{position:relative;padding:12px!important;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:8px!important}
+#ui .track-selection-ui .sq-featured-events .sq-event-card>span:last-child{display:flex!important;position:static!important;flex-direction:column!important;gap:4px!important;width:100%}
+#ui .track-selection-ui .sq-featured-events .sq-event-card small{display:block!important;position:static!important;font-size:12px!important;line-height:15px!important;white-space:normal!important}
+#ui .track-selection-ui .sq-featured-events .sq-event-card strong{position:static!important;font-size:19px!important;line-height:22px!important}
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-thumb{position:static!important;order:0;height:70px!important;flex:0 0 70px!important;width:100%!important}
