@@ -65,9 +65,14 @@ test('actual Worker routes accept seven-field run without session and publish ma
     timeMs: job.timeMs, replayHash: job.replayHash, engineDigest: VERIFIER_ENGINE_DIGEST,
     binding, status: 'verified', reason: 'native_exact_finish' });
   assert.equal(published.canonicalImproved, true); assert.equal(published.eventImproved, true);
-  assert.deepEqual(commits.at(-1), { reads: 12, writes: 9 });
+  assert.deepEqual(commits.at(-1), { reads: 13, writes: 10 });
   assert(commits.every(c => c.reads <= 16 && c.writes <= 16));
   assert.equal(data.get(`${C.receipts}/d_test_${accountId}`).status, 'verified');
   assert.equal(data.get(`${C.profiles}/${accountId}`).pbCount, 1);
   assert.equal(data.get(`${C.canonical}/${accountId}_${trackId}`).timeMs, 20402);
+  const retained = await (await handleRequest(request(`d_test/replays/${accountId}`), env)).json();
+  assert.equal(retained.periodId, 'd_test'); assert.equal(retained.accountId, accountId);
+  assert.equal(retained.trackId, trackId); assert.equal(retained.timeMs, 20402); assert.equal(retained.replay, 'AAAA');
+  assert.equal(retained.frames, retained.timeMs); assert.equal(retained.carStyle, '');
+  assert.equal(retained.source, 'verified-event-recording');
 });

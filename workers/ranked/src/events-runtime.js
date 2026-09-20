@@ -11,7 +11,8 @@ export const eventReceiptRetry = code => ['event_queue_capacity', 'event_replay_
 export async function cleanupEvents(runtime) {
   const doc = await runtime.request('/' + C.catalog + '/main');
   const periods = doc ? decode(doc).periods || [] : [], at = runtime.now();
-  const target = periods.find(p => p.archived && (p.cleaned && p.extrasCleaned ? at >= p.endsAt + L.retentionMs : at >= p.endsAt + p.graceMs + 7 * 86400000));
+  const target = periods.find(p => p.archived && (!p.cleaned ? at >= p.endsAt + p.graceMs + 7 * 86400000 :
+    !p.extrasCleaned || at >= p.endsAt + L.retentionMs));
   if (target?.cleaned && !target.extrasCleaned) {
     // Rejected/non-admitted entrants are absent from queue.subjects. Sweep their
     // inbox/status/cursor/retry records too, one bounded collection page at a time.
@@ -34,6 +35,27 @@ export async function cleanupEvents(runtime) {
         { ...p, cleanupPhase: phase + 1, extrasCleaned: phase === 3 } : p) });
     });
     return { cleanup: true, deleted: docs.length };
+  }
+  if (target?.cleaned && target.extrasCleaned && !target.replaysCleaned) {
+    const collection = C.replays;
+    const prefix = `projects/${runtime.projectId}/databases/(default)/documents/${collection}/${target.id}_`;
+    const rows = await post(runtime, ':runQuery', { structuredQuery: { from: [{ collectionId: collection }],
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+      startAt: { before: true, values: [{ referenceValue: prefix }] },
+      endAt: { before: true, values: [{ referenceValue: prefix + '~' }] }, limit: 8 } });
+    if (!Array.isArray(rows)) throw Error('Unexpected event replay cleanup response');
+    const docs = rows.filter(row => row.document).map(row => row.document);
+    await runtime.store.transaction(async tx => {
+      const catalogPath = C.catalog + '/main', catalog = await tx.get(catalogPath);
+      const current = catalog.periods.find(p => p.id === target.id);
+      if (!current || !current.cleaned || !current.extrasCleaned || current.replaysCleaned) return;
+      const paths = docs.map(d => collection + '/' + d.name.split('/').at(-1));
+      for (const path of paths) await tx.get(path);
+      for (const path of paths) await tx.delete(path);
+      if (!docs.length) await tx.set(catalogPath, { ...catalog, periods: catalog.periods.map(p => p.id === target.id ?
+        { ...p, replaysCleaned: true } : p) });
+    });
+    return { replayCleanup: true, deleted: docs.length };
   }
   return target ? runtime.service.cleanupPeriod(target.id) : { idle: true };
 }

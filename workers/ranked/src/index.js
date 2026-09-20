@@ -489,14 +489,16 @@ async function persistTrackSnapshot(env, trackId, entries, prior = null) {
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   await commitDocuments(env, [
-    {collection:COLLECTIONS.track,id:trackId,prior,data:{trackId,entries,updatedAt:now,builtAt:now,schemaVersion:TRACK_SCHEMA_VERSION,algorithmVersion:ALGORITHM_VERSION,revision,sourceRevision:revision,signature}},
+    {collection:COLLECTIONS.track,id:trackId,prior,data:{trackId,entries,complete:entries.length<TRACK_LIMIT,totalEntries:entries.length,updatedAt:now,builtAt:now,schemaVersion:TRACK_SCHEMA_VERSION,algorithmVersion:ALGORITHM_VERSION,revision,sourceRevision:revision,signature}},
     {collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data:{...meta,algorithmVersion:ALGORITHM_VERSION,schemaVersion:TRACK_SCHEMA_VERSION,dirty:true,revision:Math.max(Number(meta.revision||0)+1,revision),builtRevision:Number(meta.builtRevision||0),lastPbAt:now,updatedAt:now,rankedWritesEnabled:String(env.RANKED_WRITES_ENABLED)!=='false',multiplayerEnabled:String(env.MULTIPLAYER_ENABLED)!=='false'}}
   ]);
   return { changed: true, entries, revision };
 }
 
 export function trackSnapshotIsCurrent(snapshot, signature) {
-  return snapshot?.signature === signature
+  return Array.isArray(snapshot?.entries) && snapshot?.complete === (snapshot?.entries?.length < TRACK_LIMIT)
+    && snapshot.totalEntries === snapshot.entries.length
+    && snapshot?.signature === signature
     && snapshot.algorithmVersion === ALGORITHM_VERSION
     && Number(snapshot.schemaVersion || 0) >= TRACK_SCHEMA_VERSION;
 }

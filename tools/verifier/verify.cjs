@@ -6,10 +6,11 @@ const { execFile } = require('node:child_process');
 const { LIMITS, sha256, checkJob } = require('./replay.cjs');
 const { snapshot, serve } = require('./assets.cjs');
 const { geometryDecision } = require('./geometry.cjs');
+const { normalizeTrustedTracks } = require('./kodub-track.cjs');
 
 const VERIFIER_VERSION = 'polytrack-native-bounded-v1';
 const trace = message => { if (process.env.VERIFIER_DEBUG === '1') process.stderr.write(`[verifier] ${message}\n`); };
-const verifierFingerprint = sha256(['verify.cjs', 'assets.cjs', 'replay.cjs', 'geometry.cjs', 'track-geometry.json'].map(name => name + '\n' + fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\r\n?/g, '\n')).join('\n'));
+const verifierFingerprint = sha256(['verify.cjs', 'assets.cjs', 'replay.cjs', 'geometry.cjs', 'kodub-track.cjs', 'track-geometry.json'].map(name => name + '\n' + fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\r\n?/g, '\n')).join('\n'));
 
 function duration(name, maximum) {
   const raw = process.env[name];
@@ -44,6 +45,7 @@ function verdict(job, status, reason, engine, track, extra = {}) {
     ...input, status, reason,
     trackGeometry: track?.geometry ?? null, geometryPolicy: track?.geometryPolicy ?? null,
     engineDigest: binding.engineDigest,
+    trackContentHash: binding.trackContentHash,
     engineFingerprint: binding.engineDigest,
     boundinputfingerprint: fingerprint,
     boundInputFingerprint: fingerprint,
@@ -157,7 +159,7 @@ async function bounded(operation, session, wallMs, cpuMs) {
   }
 }
 
-async function initialize(session, engine, origin) {
+async function initialize(session, engine, origin, trustedTracks = []) {
   const context = await session.browser.newContext({ serviceWorkers: 'block', viewport: { width: 800, height: 600 } });
   session.context = context;
   await context.route('**/*', route => {
@@ -189,33 +191,51 @@ async function initialize(session, engine, origin) {
   trace('page loaded; awaiting trusted Init');
   await page.waitForFunction(() => globalThis.__trustedInit && globalThis.__vrRequire);
   await page.evaluate(() => { for (const worker of __workers) worker.terminate(); __workers.length = 0; });
-  const tracks = [...engine.files].filter(([name, file]) => name.startsWith('tracks/') && name.endsWith('.track') && file.bytes.length <= LIMITS.trackBytes)
-    .map(([name, file]) => ({ name, hash: file.hash, text: file.bytes.toString('utf8').trim() }));
+  // Explicit trusted tracks precede static artifacts so a matching native ID
+  // remains bound to the server-captured event bytes and expected hash.
+  const tracks = [...trustedTracks, ...[...engine.files]
+    .filter(([name, file]) => name.startsWith('tracks/') && name.endsWith('.track') && file.bytes.length <= LIMITS.trackBytes)
+    .map(([name, file]) => ({ name, hash: file.hash, text: file.bytes.toString('utf8').trim(), trusted: false }))];
   const catalog = await page.evaluate(({ tracks }) => {
     const Track = __vrRequire(9117).A;
     globalThis.__tracks = new Map();
+    const claimed = new Set();
     const result = [];
     for (const source of tracks) {
+      const expectedId = source.expectedId || null;
+      if (expectedId && claimed.has(expectedId)) continue;
+      if (expectedId) claimed.add(expectedId);
       try {
         const track = Track.fromExportString(source.text)?.trackData;
-        if (!track) continue;
+        if (!track) {
+          if (expectedId) result.push({ id: null, lookupId: expectedId, name: source.name, hash: source.hash,
+            trusted: true, reason: 'trusted_track_decode_failed', geometry: null });
+          continue;
+        }
         const id = track.getId();
+        const lookupId = expectedId || id;
+        if (!expectedId && claimed.has(lookupId)) continue;
+        if (!expectedId) claimed.add(lookupId);
         const bounds = track.getBounds();
         const spanX = bounds.max.x - bounds.min.x;
         const spanZ = bounds.max.y - bounds.min.y;
         let reason = null;
-        if (!track.getStartTransform()) reason = 'track_missing_start';
-        // Duplicates with identical native geometry use the first sorted committed path.
-        if (__tracks.has(id)) continue;
-        __tracks.set(id, track);
-        result.push({ id, name: source.name, hash: source.hash, reason, geometry: {parts: track.numberOfParts, spanX, spanZ} });
-      } catch { /* A malformed trusted artifact is not evidence against any player. */ }
+        if (expectedId && id !== expectedId) reason = 'track_identity_mismatch';
+        else if (!track.getStartTransform()) reason = 'track_missing_start';
+        if (!reason) __tracks.set(lookupId, track);
+        result.push({ id, lookupId, name: source.name, hash: source.hash, trusted: source.trusted === true,
+          reason, geometry: {parts: track.numberOfParts, spanX, spanZ} });
+      } catch {
+        if (expectedId) result.push({ id: null, lookupId: expectedId, name: source.name, hash: source.hash,
+          trusted: true, reason: 'trusted_track_decode_failed', geometry: null });
+      }
     }
     return result;
   }, { tracks });
   return new Map(catalog.map(track => {
-    const decision = geometryDecision(track, engine.engineFingerprint);
-    return [track.id, {...track, ...decision, reason: track.reason || decision.reason}];
+    const decision = track.geometry ? geometryDecision(track, engine.engineFingerprint) :
+      { reason: 'trusted_track_decode_failed', geometryPolicy: 'rejected' };
+    return [track.lookupId, {...track, ...decision, reason: track.reason || decision.reason}];
   }));
 }
 
@@ -240,7 +260,7 @@ async function simulate(session, job) {
   }, { trackId: job.trackId, replay: job.replay, timeMs: job.timeMs });
 }
 
-async function verifyBatch(root, jobs) {
+async function verifyBatch(root, jobs, trustedTracks) {
   if (!Array.isArray(jobs) || jobs.length > LIMITS.jobs) throw new TypeError(`jobs must be an array of at most ${LIMITS.jobs} jobs`);
   if (jobs.length === 0) return [];
   // Copy now so a caller cannot replace a PB input during an await.
@@ -261,6 +281,7 @@ async function verifyBatch(root, jobs) {
     if (pin.engineDigest !== engine.engineFingerprint || sha256(JSON.stringify(pin.files)) !== pin.engineDigest) throw Error('engine_pin_mismatch');
     if (JSON.stringify(pin.tracks) !== JSON.stringify(engine.tracks)) throw Error('track_pin_mismatch');
     if (process.env.VERIFIER_ENGINE_DIGEST && process.env.VERIFIER_ENGINE_DIGEST !== engine.engineFingerprint) throw Error('engine_pin_mismatch');
+    const trusted = normalizeTrustedTracks(trustedTracks, new Set(jobs.map(job => job.trackId)));
     for (let i = 0; i < jobs.length; i++) {
       try { checkJob(jobs[i]); pending.push(i); }
       catch (error) { output[i] = verdict(jobs[i], error.status || 'unavailable', error.reason || 'input_validation_failed', engine); }
@@ -280,7 +301,7 @@ async function verifyBatch(root, jobs) {
     trace('browser connected');
     session.system = await session.browser.newBrowserCDPSession();
     trace('CPU monitor connected');
-    const init = await bounded(() => initialize(session, engine, host.origin), session, wallMs, cpuMs);
+    const init = await bounded(() => initialize(session, engine, host.origin, trusted), session, wallMs, cpuMs);
     const catalog = init.value;
     trace(`initialized ${catalog.size} trusted tracks`);
     for (const index of pending) {
@@ -327,4 +348,4 @@ async function verifyBatch(root, jobs) {
 }
 
 module.exports = { verifyBatch, VERIFIER_VERSION, verifierFingerprint,
-  _internals: { bounded, terminate, initialize, browserEnvironment, waitForExit } };
+  _internals: { bounded, terminate, initialize, browserEnvironment, waitForExit, verdict } };

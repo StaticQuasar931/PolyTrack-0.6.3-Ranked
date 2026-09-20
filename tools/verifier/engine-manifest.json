@@ -3,7 +3,7 @@
   "source": "PolyTrack 0.6.3 Ranked migration; locally audited native track identities and event hooks",
   "normalization": "UTF-8 .js/.json/.svg/.track: CRLF and CR to LF; other bytes unchanged",
   "algorithm": "sha256(JSON.stringify(files)); files sorted by ASCII path",
-  "engineDigest": "246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578",
+  "engineDigest": "46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3",
   "files": {
     "112.bundle.js": "9640418566cc0bcd129dd4e13d0dd3e8cb444190a3575c7bd231fd280035d4aa",
     "168.bundle.js": "22e32a325b0d7c62ef3cc0dce5b8427f20f56b0d673b0404677e819e8a136a44",
@@ -364,7 +364,7 @@
     "lib/draco/draco_decoder.wasm": "c55a594e8ffd18426d36b27fea9618af3df5e173640a3e56d46f09d76f0574f2",
     "lib/draco/draco_wasm_wrapper.js": "e48669f00f35e13e9829a9330e07d40e7bde6eb6dcaa925e3a39c6b286c10950",
     "lib/polytrack_physics.js": "42815d83ab6929d7eafd7e98835905f40e147e031fc5f87dfb90c35f002df54a",
-    "main.bundle.js": "6edf36145d8b5c0f67a566ac34452a9cbe50dd7f7e8a38c13fcbddf226e6a921",
+    "main.bundle.js": "3ced66fa3b2fe95a4a504f3123010eb0ef64f1ad3e35cd125069777a2821ddb7",
     "models/blocks.glb": "97f94c63813aa1b5a65a8dde395ff76d98a8996dcd55829c539ea2929048c1ce",
     "models/car.glb": "8646a65ae2bd9b4b406fa541673cd13db6bb6f26c3fd4069e8d7227d8bbda9dc",
     "models/garage.glb": "d996271d55680d53a7f89433bdb49e5505ba600bf7b94f91520a993a5385a36c",

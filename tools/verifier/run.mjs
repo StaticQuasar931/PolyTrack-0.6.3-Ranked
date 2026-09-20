@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {connect, decode} from './firestore.mjs';
-import {selectJobs, publishResults} from './runner.mjs';
+import {QUEUE_CANDIDATE_LIMIT, prioritizeQueueDocuments, selectJobs, publishResults} from './runner.mjs';
 import {budgetDatabase, drainVerification, DRAIN_LIMITS} from './throughput.mjs';
 import {VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
 export const NORMAL_JOB_LIMIT = 12;
@@ -46,7 +46,8 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
 
 export async function runVerifier({check = false, drain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
   validateEngine = validateEnginePin, log = console.log, eventCheck = checkEvents,
-  eventRun = runEvents, selectNormal = selectJobs, verifyNormal = simulate, publishNormal = publishResults} = {}) {
+  eventRun = runEvents, prioritizeNormal = prioritizeQueueDocuments, selectNormal = selectJobs,
+  verifyNormal = simulate, publishNormal = publishResults} = {}) {
   // Preflight never loads or hashes physics assets. Actual processing still pins the engine first.
   if (!check) await validateEngine();
   const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
@@ -54,7 +55,7 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
   const db = await connectDatabase(raw);
   delete env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
   if (check) return checkForWork(db, {env, log, eventCheck});
-  const roundOptions={env,log,eventRun,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents};
+  const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents};
   if (!drain) return runRound(db,roundOptions);
   const bounded=budgetDatabase(db);
   const summary=await drainVerification({requests:bounded.requests,now:clock,log,
@@ -67,10 +68,12 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
   return summary;
 }
 
-async function runRound(db,{env,log,eventRun,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents}) {
-  const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: VERIFICATION_COLLECTION}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(Date.now())}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}], limit: 2}});
+async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents}) {
+  const now = Date.now();
+  const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: VERIFICATION_COLLECTION}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
   const docs = (query || []).filter(x => x.document).map(x => ({...x.document, data: decode({mapValue: {fields: x.document.fields || {}}})}));
-  const {jobs: selectedJobs, canonicalAttempts, selectionConflicts} = await selectNormal(db, docs);
+  const prioritized = await prioritizeNormal(db, docs, now);
+  const {jobs: selectedJobs, canonicalAttempts, selectionConflicts} = await selectNormal(db, prioritized, now);
   // Normal selection is unleased: unprocessed bindings remain in their queue.
   let jobs = selectedJobs.slice(0, NORMAL_JOB_LIMIT);
   // Share the unchanged total native budget; reserve at least four slots for events.

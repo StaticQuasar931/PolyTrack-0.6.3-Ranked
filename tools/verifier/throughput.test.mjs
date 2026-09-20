@@ -96,7 +96,9 @@ function integration(eventChecks,normalCount=16) {
   return {order,get connections(){return connections;},get pins(){return pins;},options:{
     env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic-secret-never-logged'},drain:true,clock:()=>0,log:quiet,
     validateEngine:async()=>{pins++;},connectDatabase:async()=>{connections++;return {
-      call:async(path,body)=>{assert.equal(path,':runQuery');assert.equal(body.structuredQuery.limit,2);order.push('query');return [];}};},
+      call:async(path,body)=>{assert.equal(path,':runQuery');
+        if(body.structuredQuery.limit===8)order.push('query');else assert.equal(body.structuredQuery.limit,2);
+        return [];}};},
     selectNormal:async()=>({jobs:Array.from({length:normalCount},(_,i)=>({resultId:`round-${selected++}-job-${i}`})),
       canonicalAttempts:normalCount,selectionConflicts:0}),
     eventRun:async(_,__,options)=>{order.push('events');assert.ok(options.limit>=4);assert.equal(options.intakeLimit,16);
@@ -169,7 +171,7 @@ test('real selection and atomic publisher drain fresh tracks within actual reque
     if(path===':runQuery') {
       const q=body.structuredQuery;
       if(q.from[0].collectionId!==VERIFICATION_COLLECTION)return [];
-      assert.equal(q.limit,2);
+      assert.equal(q.limit,8);
       const due=Number(q.where.fieldFilter.value.integerValue);
       return [...docs].filter(([key,doc])=>key.startsWith(VERIFICATION_COLLECTION+'/')&&doc.data.notBefore<=due)
         .sort((a,b)=>a[1].data.notBefore-b[1].data.notBefore||a[0].localeCompare(b[0]))

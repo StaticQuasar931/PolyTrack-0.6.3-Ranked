@@ -16,10 +16,53 @@ test('served tracks rotate behind already due tracks',()=>assert.equal(queueStat
 test('terminal-only and pruned-empty queues cannot starve waiting tracks',()=>{const now=1234,terminal=completedSlot(pendingSlot(row),{status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST},now);const boards=[queueState({racer:terminal},now),queueState({},now),queueState({racer:pendingSlot(row)},now)];assert.deepEqual(boards.map(b=>b.notBefore),[NEVER,NEVER,now]);assert.equal(boards.filter(b=>b.notBefore<=now).length,1);});
 
 
-import {selectJobs, publishResults, isConflict} from './runner.mjs';
+import {prioritizeQueueDocuments, selectJobs, publishResults, isConflict, TRACK_AGING_MS} from './runner.mjs';
 const queueDoc = (trackId, rows) => ({updateTime: 'v1', data: {trackId,
   slots: Object.fromEntries(rows.map(r => [r.accountId, pendingSlot({...r, trackId})]))}});
 const fakeWrite = (collection, id, data, prior) => ({collection, id, data, prior});
+
+test('track scheduling prefers weight while reserving an aged queue and uses one summary read', async () => {
+  const now = 10 * TRACK_AGING_MS;
+  const docs = [queueDoc('old-low', [row]), queueDoc('recent-high', [row]), queueDoc('recent-medium', [row])];
+  docs[0].data.notBefore = now - TRACK_AGING_MS;
+  docs[1].data.notBefore = docs[2].data.notBefore = now;
+  const weight = new Map([['old-low', 1], ['recent-high', 9], ['recent-medium', 4]]);
+  let calls = 0;
+  const db = {get: async (collection, id) => {
+    calls++; assert.equal(collection, '0.6.2_s1_leaderboards_overall'); assert.equal(id, 'main');
+    return {data: {trackSummaries: [...weight].map(([trackId, value]) => ({trackId, weight: value}))}};
+  }};
+  assert.deepEqual((await prioritizeQueueDocuments(db, docs, now)).map(doc => doc.data.trackId),
+    ['old-low', 'recent-high', 'recent-medium']);
+  docs[0].data.notBefore = now;
+  assert.deepEqual((await prioritizeQueueDocuments(db, docs, now)).map(doc => doc.data.trackId),
+    ['recent-high', 'recent-medium', 'old-low']);
+  assert.equal(calls, 2);
+  const fallback = await prioritizeQueueDocuments({get: async () => { throw Error('optional read failed'); }}, docs, now);
+  assert.equal(fallback, docs);
+});
+
+test('selection reserves the least recently checked run, then fastest runs, and fills sparse tracks', async () => {
+  const now = 100000;
+  const rows = Array.from({length: 9}, (_, index) => ({...row, accountId: 'racer-' + index,
+    timeMs: 1000 + index * 1000, frames: 1000 + index * 1000, uploadId: index + 1}));
+  const first = queueDoc('track-a', rows);
+  first.data.slots['racer-8'].checkedAt = 1;
+  for (let index = 0; index < 8; index++) first.data.slots['racer-' + index].checkedAt = now;
+  const sparse = [first, queueDoc('track-b', [{...row, accountId: 'other'}]),
+    queueDoc('track-c', [{...row, accountId: 'third'}])];
+  const canonical = new Map();
+  for (const doc of sparse) for (const slot of Object.values(doc.data.slots)) {
+    const parsed = JSON.parse(slot.key);
+    canonical.set(slot.resultId, {data: {accountId: slot.accountId, trackId: doc.data.trackId,
+      timeMs: parsed[4], frames: parsed[5], uploadId: parsed[6], replayHash: parsed[7]}});
+  }
+  const result = await selectJobs({get: async (_, id) => canonical.get(id), write: fakeWrite, call: async () => {}}, sparse, now);
+  assert.equal(result.jobs[0].accountId, 'racer-8');
+  assert.deepEqual(result.jobs.slice(1, 8).map(job => job.timeMs), [1000, 2000, 3000, 4000, 5000, 6000, 7000]);
+  assert.deepEqual(result.jobs.slice(8).map(job => job.trackId), ['track-b', 'track-c']);
+  assert.equal(result.canonicalAttempts, 10);
+});
 
 test('runner bounds missing canonical lookups to eight per track and sixteen total', async () => {
   const rows = Array.from({length: 500}, (_, i) => ({...row, accountId: 'r'+i}));

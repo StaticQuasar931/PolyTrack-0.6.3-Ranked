@@ -57,7 +57,7 @@ async function boot(page,queue){return page.evaluate(async({entry,queue,QUEUE})=
  const invoke=eval('('+entry+')');for(let i=0;i<100;i++)invoke();await Promise.resolve();Storage.prototype.getItem=prior;return {calls,flushes,reads};
  },{entry,queue,QUEUE});}
 test('real Ranked navigation clears event capture; explicit event launch keeps it',async t=>{
- assert.match(patch,/openTrack:id=>focusTrackFromRanked\(id,\{event:true\}\)/);
+ assert.match(patch,/focusTrackFromRanked\(id,\{event:true\}\)/);
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));
  await p.waitForFunction(()=>submits.length===1);await p.evaluate(()=>window.car=null);await p.locator('#ranked').click();await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(19000));
  assert.deepEqual(await p.evaluate(()=>({active:document.body.classList.contains('sq-event-active'),times:submits.map(r=>r.timeMs)})),{active:false,times:[20000]});
@@ -116,7 +116,7 @@ test('native integrity decorator keeps published event rows verified and local r
  assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.pending').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .sq-integrity-label').innerText(),'');
 });
 test('ended event launches are removed while unavailable slots remain visible',async t=>{const p=await fixture(t);await showLiveRail(p);assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),1);await p.evaluate(async()=>{bridgeFixture.readCatalog=async()=>({periods:[],archives:[]});await ui.refreshCatalog(true);ui.tick();});assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),0);assert.equal(await p.locator('.sq-event-track-buttons .sq-event-card').count(),2);assert.match(await p.locator('.sq-event-track-buttons').innerText(),/No active event available/);assert.equal(await p.locator('.sq-events-entry').count(),1);await p.locator('.sq-event-track-buttons .sq-event-card').first().click();assert.equal(await p.locator('.sq-events-overlay').count(),1);});
-test('native event view labels a matching rejected attempt as not scored',async t=>{const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);await p.evaluate(()=>{bridgeFixture.readOwnStatus=async()=>({attemptId:submits[0].attemptId,timeMs:20000,status:'mismatch'});});await p.locator('.sq-event-refresh').click();await p.waitForFunction(()=>document.querySelector('.sq-event-board .verified-state').textContent.includes('Not scored'));assert.match(await p.locator('.sq-event-board').innerText(),/No points were added/);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),0);});
+test('native event view hides a matching rejected attempt from public standings',async t=>{const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);await p.evaluate(()=>{bridgeFixture.readOwnStatus=async()=>({attemptId:submits[0].attemptId,timeMs:20000,status:'mismatch'});});await p.locator('.sq-event-refresh').click();await p.waitForFunction(()=>document.querySelector('.sq-event-board').textContent.includes('No points were added'));assert.equal(await p.locator('.sq-event-board .verified-state').count(),0);assert.match(await p.locator('.sq-event-board').innerText(),/No points were added/);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),0);});
 test('leaving event preserves native opponent controls and listeners',async t=>{const p=await fixture(t);await p.evaluate(()=>{const target=document.querySelector('.opponents-container');const button=document.createElement('button');button.textContent='Original opponent';button.onclick=()=>window.opponentClicked=true;target.append(button);window.originalOpponent=button;});await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>originalOpponent.isConnected),true);await p.locator('button',{hasText:'Original opponent'}).click();assert.equal(await p.evaluate(()=>opponentClicked),true);});
 
 async function sharedTrackPeriods(p){await p.evaluate(async()=>{
@@ -229,14 +229,14 @@ test('event bridge rejects duplicate native launches until the first launch is c
   start(context,()=>invokes++,()=>current);try{start(context,()=>invokes++,()=>true);}catch{rejected=true;}
   const first=window.__pt062PrepareEventRace(id,null);start(context,()=>invokes++,()=>current);current=false;start(context,()=>invokes++,()=>true);
   return {invokes,rejected,first,last:window.__pt062PrepareEventRace(id,null)};
- },eventBridge),{invokes:3,rejected:true,first:{ownGhost:null},last:{ownGhost:null}});
+ },eventBridge),{invokes:3,rejected:true,first:{ownGhost:null,opponents:[]},last:{ownGhost:null,opponents:[]}});
 });
 test('actual event bridge permits native click once and rejects stale launch context',async t=>{
  const p=await fixture(t);await addNativePlay(p);await p.evaluate(source=>{
   const activeRankedAccountId=()=>id;window.__pt062NativeEventLaunchVersion=1;
   bridgeFixture.startEventRace=eval('(()=>{'+source+';return startEventRace})()');
   document.querySelector('.side-panel .play').onclick=()=>{window.nativeEvent=window.__pt062PrepareEventRace(id,null);};
- },eventBridge);await enter(p);await p.locator('.side-panel .play').click();assert.deepEqual(await p.evaluate(()=>nativeEvent),{ownGhost:null});
+ },eventBridge);await enter(p);await p.locator('.side-panel .play').click();assert.deepEqual(await p.evaluate(()=>nativeEvent),{ownGhost:null,opponents:[]});
  assert.equal(await p.evaluate(()=>window.__pt062PrepareEventRace(id,null)),false,'launch policy is consumed, not sticky');
  assert.equal(await p.evaluate(()=>{
   let current=true;bridgeFixture.startEventRace({periodId:'daily-fixture',trackId:id,accountId:id,endsAt:Date.now()+10000},()=>{},()=>current);current=false;
@@ -278,4 +278,11 @@ test('Ranked visibility imports event module once even without any track group',
   const panel=document.createElement('div');panel.id='overallLeaderboardPanel';panel.textContent='Ranked';panel.style.display='none';document.body.append(panel);
   const invoke=eval('('+source+')');invoke();const hidden=calls;panel.style.display='block';for(let i=0;i<100;i++)invoke();await Promise.resolve();return {hidden,visible:calls};
  },entry),{hidden:0,visible:1});
+});
+
+test('finish overlay shows event placement and never invents placement without a snapshot',async t=>{
+ const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);
+ await p.evaluate(()=>{car.finish(20000);const end=document.createElement('div');end.className='time-announcer-ui';document.body.append(end);ui.tick();});
+ assert.match(await p.locator('.sq-event-finish-place').innerText(),/Provisional event place: 1 \/ 1/);
+ assert.match(await p.locator('.sq-event-finish-place').innerText(),/replay verification/);
 });

@@ -1,10 +1,11 @@
-export const VERIFIER_ENGINE_DIGEST = '246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578';
+export const VERIFIER_ENGINE_DIGEST = '46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3';
 export const VERIFIER_VERSION = 'polytrack-native-bounded-v1';
 export const VERIFICATION_COLLECTION = '0.6.2_s1_verification';
 // Compatibility is explicitly reviewed per engine, never inherited by future pins.
 export const PRE_GHOST_PROOF_ENGINE = '895eeacbdfdd5f68b9db92c502af620709539c5211782809f610c1a76e60785d';
-const REVIEWED_063_ENGINE = '246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578';
+export const PRE_REPLAY_UI_PROOF_ENGINE = '246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578';
 const REVIEWED_GHOST_ENGINE = '32bfe32b8680597d9f1322dbcbb19242be38bee9ab243a379f5e449c3f4030fd';
+const REVIEWED_REPLAY_UI_ENGINE = '46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3';
 export function verificationKey(row) { return boundVerificationKey(row, VERIFIER_ENGINE_DIGEST); }
 function boundVerificationKey(row, engineDigest) {
   return JSON.stringify([VERIFIER_VERSION,engineDigest,String(row.accountId||row.userId||''),String(row.trackId||''),Number(row.timeMs),Number(row.raceTimeFrames||row.frames||0),Number(row.uploadId||row.id||0),String(row.replayHash||'').toLowerCase()]);
@@ -13,7 +14,9 @@ export function hasAcceptedVerifiedProof(row, verdict) {
   const digest = verdict?.engineDigest;
   const compatible = digest === VERIFIER_ENGINE_DIGEST ||
     VERIFIER_ENGINE_DIGEST === REVIEWED_GHOST_ENGINE && digest === PRE_GHOST_PROOF_ENGINE ||
-    VERIFIER_ENGINE_DIGEST === REVIEWED_063_ENGINE && [REVIEWED_GHOST_ENGINE, PRE_GHOST_PROOF_ENGINE].includes(digest);
+    VERIFIER_ENGINE_DIGEST === PRE_REPLAY_UI_PROOF_ENGINE && [REVIEWED_GHOST_ENGINE, PRE_GHOST_PROOF_ENGINE].includes(digest) ||
+    VERIFIER_ENGINE_DIGEST === REVIEWED_REPLAY_UI_ENGINE &&
+      [PRE_REPLAY_UI_PROOF_ENGINE, REVIEWED_GHOST_ENGINE, PRE_GHOST_PROOF_ENGINE].includes(digest);
   if (row.frames != null && row.raceTimeFrames != null && row.frames !== row.raceTimeFrames) return false;
   return compatible && verdict?.status === 'verified' && verdict.verifierVersion === VERIFIER_VERSION &&
     verdict.key === boundVerificationKey(row, digest);

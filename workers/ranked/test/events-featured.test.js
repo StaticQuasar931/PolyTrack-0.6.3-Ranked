@@ -5,6 +5,7 @@ import {eventWorkerMaintenance} from '../src/events-worker.js';
 import {EVENT_COLLECTIONS as C} from '../src/events.js';
 import {eventEncode,eventDecode} from '../src/events-store.js';
 import {utcEventCandidates} from '../src/events-runtime.js';
+import {KODUB_METADATA_URL} from '../src/kodub-event.js';
 const rolling='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 const official='a'.repeat(64), at=Date.parse('2026-09-14T00:00:00Z');
 const capacity={policyVersion:'test',entrants:200,admissionsPerPeriod:2048,replayBytesPerPeriod:16777216,minIntervalMs:5000,verificationsPerDay:1536};
@@ -14,7 +15,7 @@ function fixture(target,existing=false) {
   const data=new Map([[C.periods+'/'+daily.id,{id:daily.id,trackId:official}],
     [C.archives+'/w_20260907',{entries:[{rp:123}],archived:true}]]);
   if(existing)data.set(C.periods+'/'+weekly.id,{id:weekly.id,trackId:official,targetMs:12345});
-  const calls=[],lookups=[],writes=[];
+  const calls=[],lookups=[],writes=[],fetches=[];
   const request=async(path,init)=>{
     calls.push(path);
     if(path===':beginTransaction')return {transaction:'fixture'};
@@ -31,9 +32,10 @@ function fixture(target,existing=false) {
     return data.has(key)?{name:'projects/polytrack-052/databases/(default)/documents/'+key,
       updateTime:'2026-09-14T00:00:00Z',fields:eventEncode(data.get(key)).mapValue.fields}:null;
   };
-  return {data,calls,lookups,writes,weekly,daily,run:()=>eventWorkerMaintenance({EVENTS_ENABLED:'true',
+  const fetch=async(url,init)=>{fetches.push({url,init});return new Response('unavailable',{status:503});};
+  return {data,calls,lookups,writes,fetches,weekly,daily,run:()=>eventWorkerMaintenance({EVENTS_ENABLED:'true',
     EVENT_WEEKLY_TRACK_ID:rolling,EVENT_CAPACITY_JSON:JSON.stringify(capacity)},
-    {request,officialIds:[official],allIds:[rolling,official],at,now:()=>at,
+    {request,officialIds:[official],allIds:[rolling,official],fetch,at,now:()=>at,
       targetForTrack:async id=>{lookups.push(id);return target;}})};
 }
 test('daily and weekly stay in disjoint registries across dates',()=>{
@@ -52,6 +54,7 @@ test('official weekly waits for legitimate target and never falls back to anothe
     assert.equal(result.created,null);assert.equal(result.reason,'no_verified_target_in_bounded_scan');
     assert.deepEqual(f.lookups,[official]);assert.equal(f.data.has(C.periods+'/'+f.weekly.id),false);
     assert.ok(f.writes.every(p=>p.startsWith(C.cursors+'/')));assert.ok(f.calls.length<=8);
+    assert.deepEqual(f.fetches.map(call=>call.url),[KODUB_METADATA_URL]);
   }
 });
 test('official weekly uses trusted lookup target and preserves archive and normal score collections',async()=>{
@@ -60,11 +63,14 @@ test('official weekly uses trusted lookup target and preserves archive and norma
   const period=f.data.get(C.periods+'/'+f.weekly.id);
   assert.equal(period.trackId,official);assert.equal(period.targetMs,21000);assert.equal(period.maxRp,500);
   assert.equal(period.kind,'weekly');assert.equal(period.eligibility,'best-submitted-during-period');
+  assert.deepEqual(f.fetches.map(call=>call.url),[KODUB_METADATA_URL]);
   assert.deepEqual(f.data.get(C.archives+'/w_20260907'),archive);
   assert.ok(!f.writes.some(p=>p.startsWith(C.archives+'/')||p.startsWith(C.canonical+'/')||p.startsWith(C.totals+'/')));
   f.lookups.length=0;f.writes.length=0;await f.run();assert.deepEqual(f.lookups,[]);assert.deepEqual(f.writes,[]);
+  assert.deepEqual(f.fetches.map(call=>call.url),[KODUB_METADATA_URL,KODUB_METADATA_URL]);
 });
 test('new featured configuration never changes an existing weekly period',async()=>{
   const f=fixture(19997,true),before=structuredClone([...f.data]);await f.run();
   assert.deepEqual([...f.data],before);assert.deepEqual(f.lookups,[]);assert.deepEqual(f.writes,[]);
+  assert.deepEqual(f.fetches.map(call=>call.url),[KODUB_METADATA_URL]);
 });

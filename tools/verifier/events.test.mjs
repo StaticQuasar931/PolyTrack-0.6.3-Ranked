@@ -11,7 +11,8 @@ function fixture(counts, inboxCount = 0, unavailable = false) {
       const count = Math.min(counts[period], limit); counts[period] -= count;
       if (!count) return [];
       batches.push({ period, count });
-      return verify(Array.from({ length: count }, (_, i) => ({ resultId: `${period}_${counts[period]}_${i}` })));
+      const jobs = Array.from({ length: count }, (_, i) => ({ resultId: `${period}_${counts[period]}_${i}` }));
+      return verify(jobs, { id: period, kind: 'custom', trackId: 'a'.repeat(64) });
     }, archivePeriod: async () => assert.fail('unexpected archive')
   }};
   const options = { verifyBatch: async (_root, jobs) => { native += jobs.length; return jobs.map(j => ({ ...j, reason: unavailable ? 'engine_unavailable' : 'native_exact_finish' })); },
@@ -57,6 +58,47 @@ test('engine unavailable stops subsequent batches and preserves native reason', 
   const result = await runEventCoordinator(f.runtime, '/repo', f.options);
   assert.equal(result.checked, 4); assert.equal(f.batches.length, 1);
   assert(result.results.every(r => r.reason === 'engine_unavailable'));
+});
+test('Kodub periods forward only the trusted period descriptor', async () => {
+  const trackId = 'a'.repeat(64), codeHash = 'b'.repeat(64), code = 'PolyTrack2ABC';
+  const period = { id: 'kodub_period', kind: 'kodub', trackId,
+    kodub: { trackCode: code, trackCodeHash: codeHash } };
+  const jobs = [{ resultId: 'kodub_result', trackId }];
+  let calls = 0, invocation;
+  const runtime = { service: {
+    processBatch: async (_periodId, verify, limit) => {
+      assert(limit <= 4);
+      if (calls++) return [];
+      return verify(jobs, period);
+    },
+    archivePeriod: async () => assert.fail('unexpected archive'),
+  } };
+  const result = await runEventCoordinator(runtime, '/repo', {
+    consumeInbox: async () => ({ consumed: 0 }),
+    readWork: async () => ({ periodIds: [period.id], archiveId: null }),
+    verifyBatch: async (...args) => {
+      invocation = args;
+      return jobs.map(job => ({ ...job, reason: 'native_exact_finish' }));
+    },
+  });
+  assert.equal(result.checked, 1);
+  assert.deepEqual(invocation, ['/repo', jobs, [{ trackId, code, codeHash }]]);
+});
+test('Kodub periods reject mismatched leased job tracks before verification', async () => {
+  const trackId = 'a'.repeat(64);
+  const period = { id: 'kodub_period', kind: 'kodub', trackId,
+    kodub: { trackCode: 'PolyTrack2ABC', trackCodeHash: 'b'.repeat(64) } };
+  const runtime = { service: {
+    processBatch: async (_periodId, verify) => verify([
+      { resultId: 'kodub_result', trackId: 'c'.repeat(64) },
+    ], period),
+    archivePeriod: async () => assert.fail('unexpected archive'),
+  } };
+  await assert.rejects(runEventCoordinator(runtime, '/repo', {
+    consumeInbox: async () => ({ consumed: 0 }),
+    readWork: async () => ({ periodIds: [period.id], archiveId: null }),
+    verifyBatch: async () => assert.fail('mismatched job must not reach verifier'),
+  }), /Kodub verifier period mismatch/);
 });
 test('intake alternates retry priority even under sustained fresh traffic', async () => {
   const f = fixture({}, 100), priorities = [];

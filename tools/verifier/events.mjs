@@ -37,7 +37,11 @@ export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_
     // Existing adapter has no retries; each transaction uses at most sixteen reads.
     if (!canSpend(128)) { budgetDeferred = true; break; }
     const periodId = pending.shift();
-    const published = await r.service.processBatch(periodId, jobs => verifyBatch(root, jobs), Math.min(4, limit - checked));
+    const published = await r.service.processBatch(periodId, (jobs,period)=>{
+        if(period.kind!=='kodub')return verifyBatch(root,jobs);
+        if(!jobs.every(job=>job.trackId===period.trackId))throw Error('Kodub verifier period mismatch');
+        return verifyBatch(root,jobs,[{trackId:period.trackId,code:period.kodub.trackCode,codeHash:period.kodub.trackCodeHash}]);
+      }, Math.min(4, limit - checked));
     checked += published.length; results.push(...published);
     if (published.some(result => result.reason === 'engine_unavailable')) break;
     if (published.length) pending.push(periodId);

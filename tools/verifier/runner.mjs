@@ -2,6 +2,53 @@ import crypto from 'node:crypto';
 import {queueState, reconciledSlot, completedSlot} from './queue.mjs';
 import {VERIFICATION_COLLECTION, verificationKey, legacyTimingFrames} from '../../workers/ranked/src/verification.js';
 
+export const QUEUE_CANDIDATE_LIMIT = 8;
+export const TRACK_AGING_MS = 3600000;
+const OVERALL_COLLECTION = '0.6.2_s1_leaderboards_overall';
+const NORMAL_SELECTION_LIMIT = 16;
+const PER_TRACK_SELECTION_LIMIT = 8;
+
+export async function prioritizeQueueDocuments(db, docs, now = Date.now()) {
+  if (!Array.isArray(docs) || docs.length < 2) return Array.isArray(docs) ? docs : [];
+  const trackIds = docs.map(doc => String(doc.data?.trackId || ''));
+  if (trackIds.some(trackId => !/^[A-Za-z0-9_-]{1,80}$/.test(trackId))) return docs;
+  let overall;
+  try { overall = await db.get(OVERALL_COLLECTION, 'main'); }
+  catch { return docs; }
+  if (!overall?.data || !Array.isArray(overall.data.trackSummaries)) return docs;
+  const weights = new Map();
+  for (const row of overall.data.trackSummaries) {
+    const trackId = String(row?.trackId || ''), weight = Number(row?.weight);
+    if (/^[A-Za-z0-9_-]{1,80}$/.test(trackId) && Number.isFinite(weight) && weight >= 0) weights.set(trackId, weight);
+  }
+  const decorated = docs.map((doc, index) => ({doc, index, trackId: trackIds[index],
+    dueAt: Number(doc.data?.notBefore || 0), weight: weights.get(trackIds[index]) || 0}));
+  decorated.sort((a, b) => b.weight - a.weight || a.dueAt - b.dueAt || a.trackId.localeCompare(b.trackId));
+  const oldest = docs[0], oldestDueAt = Number(oldest.data?.notBefore || 0);
+  if (Number.isFinite(oldestDueAt) && now - oldestDueAt >= TRACK_AGING_MS) {
+    const index = decorated.findIndex(row => row.doc === oldest);
+    if (index > 0) decorated.unshift(...decorated.splice(index, 1));
+  }
+  return decorated.map(row => row.doc);
+}
+
+function schedulingTime(slot) {
+  try {
+    const value = JSON.parse(String(slot?.key || ''))?.[4];
+    return Number.isSafeInteger(value) && value > 0 ? value : Number.MAX_SAFE_INTEGER;
+  } catch { return Number.MAX_SAFE_INTEGER; }
+}
+
+function dueSlots(slots, now) {
+  const due = Object.values(slots).filter(slot => ['waiting', 'unavailable'].includes(slot.status) &&
+    Number(slot.retryAt || 0) <= now);
+  const fastest = [...due].sort((a, b) => schedulingTime(a) - schedulingTime(b) ||
+    String(a.accountId).localeCompare(String(b.accountId)));
+  const oldest = [...due].sort((a, b) => Number(a.checkedAt || 0) - Number(b.checkedAt || 0) ||
+    String(a.accountId).localeCompare(String(b.accountId)))[0];
+  return oldest ? [oldest, ...fastest.filter(slot => slot !== oldest)] : fastest;
+}
+
 export function isConflict(error) {
   return ['ABORTED', 'FAILED_PRECONDITION', 'ALREADY_EXISTS'].includes(error.code) || [409, 412].includes(Number(error.status)) || /(?:^|\s)(409|412)(?:$|\s)/.test(String(error.message));
 }
@@ -9,13 +56,14 @@ export function isConflict(error) {
 export async function selectJobs(db, docs, now = Date.now()) {
   const jobs = [];
   let canonicalAttempts = 0, selectionConflicts = 0;
-  for (const doc of docs.slice(0, 2)) {
+  for (const doc of docs) {
+    if (jobs.length >= NORMAL_SELECTION_LIMIT || canonicalAttempts >= NORMAL_SELECTION_LIMIT) break;
     const slots = {...doc.data.slots};
     const selected = [];
     let changed = false, attempts = 0;
-    for (const slot of Object.values(slots)) {
-      if (selected.length >= 8 || attempts >= 8 || canonicalAttempts >= 16) break;
-      if (!['waiting', 'unavailable'].includes(slot.status) || Number(slot.retryAt || 0) > now) continue;
+    for (const slot of dueSlots(slots, now)) {
+      if (selected.length >= PER_TRACK_SELECTION_LIMIT || attempts >= PER_TRACK_SELECTION_LIMIT ||
+          canonicalAttempts >= NORMAL_SELECTION_LIMIT || jobs.length + selected.length >= NORMAL_SELECTION_LIMIT) break;
       attempts++; canonicalAttempts++;
       const canonical = await db.get('0.6.2_race_results', slot.resultId);
       const updated = reconciledSlot(slot, canonical?.data);

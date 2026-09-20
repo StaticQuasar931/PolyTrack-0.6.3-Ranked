@@ -46,8 +46,9 @@
     const pending=pendingEventLaunch;if(!pending)return false;
     pendingEventLaunch=null;
     if(multiplayer!=null||pending.context.trackId!==trackId||pending.context.accountId!==activeRankedAccountId()||Date.now()>=pending.context.endsAt||!pending.isCurrent())throw Error('Event launch context changed');
-    return {ownGhost:pending.context.ownGhost||null};
+    return {ownGhost:pending.context.ownGhost||null,opponents:pending.context.opponents||[]};
   };
+  window.__pt062ResumeEventRace=(trackId,invokeNative)=>eventUi?.resumeRace(trackId,invokeNative)||false;
   function startEventRace(context,invokeNative,isCurrent){
     if(context.ownGhost&&window.__pt062NativeEventGhostVersion!==1)throw Error('Reload the game to use your event PB ghost.');
     if(window.__pt062NativeEventLaunchVersion!==1||typeof invokeNative!=='function'||typeof isCurrent!=='function')throw Error('Native event launch is unavailable');
@@ -71,9 +72,17 @@
     if(eventUi)return eventUi;if(eventUiPromise)return eventUiPromise;
     eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
-      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:db,openTrack:id=>focusTrackFromRanked(id,{event:true}),startEventRace,openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
+      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:db,openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button)throw Error('Weekly track is unavailable');button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
         readCatalog:()=>eventCloudRead('/v1/events/catalog','0.6.2_event_public','catalog'),
         readSnapshot:id=>eventCloudRead('/v1/events/'+encodeURIComponent(id)+'/snapshot','0.6.2_event_public',id),
+        readReplay:async(periodId,accountId)=>{
+          if(!/^[A-Za-z0-9_-]{1,64}$/.test(periodId)||!/^[a-f0-9]{64}$/.test(accountId))throw Error('Invalid replay identity');
+          const response=await fetch(rankedBrokerUrl()+'/v1/events/'+encodeURIComponent(periodId)+'/replays/'+accountId,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+          if(!response.ok)throw Error('Replay unavailable. Older event recordings may not have been retained.');
+          if(Number(response.headers.get('content-length'))>70000)throw Error('Replay response too large');
+          const text=await response.text();if(text.length>70000)throw Error('Replay response too large');return JSON.parse(text);
+        },
+        readPermanent:async()=>{const response=await fetch(rankedBrokerUrl()+'/v1/events/permanent-rolling-hills/snapshot',{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error('Permanent event standings unavailable');return response.json();},
         readTotals:()=>eventCloudRead('/v1/events/totals','0.6.2_event_public','totals'),
         readArchiveMonth:async month=>{if(!/^\d{4}-\d{2}$/.test(month))throw Error('Invalid archive month');const database=await db();const result=await database.collection('0.6.2_event_public').doc('archive_'+month.replace('-','')).get();return result.exists?result.data():{periods:[]};},
         readOwnStatus:async(periodId,accountId)=>{if(!/^[a-f0-9]{64}$/.test(accountId))return null;const database=await db();const result=await database.collection('0.6.2_event_receipts').doc(periodId+'_'+accountId).get();return result.exists?result.data():null;},
@@ -438,8 +447,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function writeTrackSnapshotCache(trackId,entries,serverUpdatedAt=0,meta={}){
     const id=String(trackId||'').slice(0,80); if(!id) return;
     const store=trackSnapshotStore();
-    const normalizedEntries=applyCanonicalTrackWeight(id,entries).slice(0,500);
-    store[id]={entries:normalizedEntries,fetchedAt:Date.now(),serverUpdatedAt:Number(serverUpdatedAt||0)||0,revision:Number(meta.revision||0)||0,sourceRevision:Number(meta.sourceRevision||meta.revision||0)||0,algorithmVersion:String(meta.algorithmVersion||RANK_MODEL),schemaVersion:Number(meta.schemaVersion||TRACK_CACHE_SCHEMA),source:String(meta.source||'cloud'),checkedAt:Number(meta.checkedAt||0)};
+    const input=Array.isArray(entries)?entries:[];
+    const normalizedEntries=applyCanonicalTrackWeight(id,input).slice(0,500);
+    const hasComplete=typeof meta.complete==='boolean';
+    const declaredTotal=Number(meta.totalEntries);
+    const hasDeclaredTotal=meta.totalEntries!=null&&Number.isSafeInteger(declaredTotal)&&declaredTotal>=0;
+    const complete=hasComplete&&meta.complete===true&&hasDeclaredTotal&&declaredTotal===input.length&&normalizedEntries.length===input.length;
+    store[id]={entries:normalizedEntries,fetchedAt:Date.now(),serverUpdatedAt:Number(serverUpdatedAt||0)||0,revision:Number(meta.revision||0)||0,sourceRevision:Number(meta.sourceRevision||meta.revision||0)||0,algorithmVersion:String(meta.algorithmVersion||RANK_MODEL),schemaVersion:Number(meta.schemaVersion||TRACK_CACHE_SCHEMA),source:String(meta.source||'cloud'),checkedAt:Number(meta.checkedAt||0),...(hasComplete?{complete}:{}),...(hasDeclaredTotal?{totalEntries:declaredTotal}:{})};
     const ids=Object.keys(store).sort((a,b)=>Number(store[b]?.fetchedAt||0)-Number(store[a]?.fetchedAt||0));
     for(const staleId of ids.length<=18?[]:ids.slice(18)) delete store[staleId];
     writeJsonStorage(TRACK_CACHE_KEY,store);
@@ -1753,30 +1767,34 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  function decoratePersonalBestPodiums(){
-    document.querySelectorAll('.sq-pb-podium,.sq-pb-ranked').forEach((node)=>node.classList.remove('sq-pb-podium','sq-pb-ranked','gold','silver','bronze'));
-    document.querySelectorAll('.sq-pb-medal').forEach((node)=>node.remove());
-    if(localStorage.getItem('polytrack-0.6.2-pb-podiums')==='0')return;
-    const accountId=activeRankedAccountId();
-    const store=trackSnapshotStore();
-    for(const title of document.querySelectorAll('.track-title p')){
-      const info=Array.from(TRACK_CATALOG.values()).find((track)=>track.name.trim().toLowerCase()===String(title.textContent||'').trim().toLowerCase());
-      if(!info)continue;
-      const rows=Array.isArray(store[info.id]?.entries)?store[info.id].entries:[];
-      const rank=rows.findIndex((row)=>cleanUserId(row.accountId||row.userId)===accountId)+1;
-      const medal=medalForRank(rank,rows.length,info.id);
-      const trackButton=title.closest('button');
-      const personalBest=trackButton?.querySelector('.record')||trackButton?.querySelector('.personal-best');
-      if(rank<1||!personalBest)continue;
-      personalBest.classList.add('sq-pb-ranked');
-      if(medal)personalBest.classList.add('sq-pb-podium',medal);
-      const badge=document.createElement('span');
-      badge.className=`sq-pb-medal ${medal||'placed'}`;
-      const dataAge=store[info.id]?.serverUpdatedAt||store[info.id]?.fetchedAt||0;
-      badge.title=`#${rank} out of ${rows.length} ranked drivers${dataAge?` · leaderboard ${ageLabel(dataAge)}`:''}`;
-      badge.innerHTML=`${medal?`<img src="${medalIcon(medal)}" alt="">`:''}#${rank}`;
-      personalBest.appendChild(badge);
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs',eventsModuleUrl).href;
+  let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
+  function ensureRecordPlacementUi(){
+    if(recordPlacementUi)return Promise.resolve(recordPlacementUi);
+    if(!recordPlacementUiPromise){
+      recordPlacementUiPromise=import(recordPlacementModuleUrl).then((module)=>{
+        recordPlacementUi=module.installRecordPlacement({
+          autoUpdate:false,
+          document,
+          storage:localStorage,
+          tracks:()=>TRACK_CATALOG,
+          readSnapshots:trackSnapshotStore,
+          readAccountId:activeRankedAccountId,
+          expectedAlgorithmVersion:RANK_MODEL,
+          minSchemaVersion:TRACK_CACHE_SCHEMA,
+          prepareSnapshot:(snapshot)=>module.preparePolyTrackCachedSnapshot(snapshot,{algorithmVersion:RANK_MODEL,schemaVersion:TRACK_CACHE_SCHEMA})
+        });
+        return recordPlacementUi;
+      });
     }
+    return recordPlacementUiPromise;
+  }
+  function decoratePersonalBestPodiums(){
+    void ensureRecordPlacementUi().then((ui)=>ui.update()).catch((error)=>{
+      if(recordPlacementWarningShown)return;
+      recordPlacementWarningShown=true;
+      log('warn','[RANKED-PLACEMENT] Badge module unavailable',String(error&&(error.message||error)));
+    });
   }
 
   function ensureReturningPlayerNotice(){
@@ -1804,6 +1822,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const fontScale=Math.max(85,Math.min(125,Number(localStorage.getItem('polytrack-0.6.2-ui-font-scale')||100)||100));
     document.documentElement.style.setProperty('--sq-ui-scale',String(fontScale/100));
     if (extrasWereHidden !== !showExtras) window.dispatchEvent(new Event('sq-preferences-changed'));
+    recordPlacementUi?.update();
   }
 
   function settingsToggle(label, storageKey, defaultEnabled=true, inverted=false){
@@ -2050,6 +2069,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     grid.appendChild(settingsToggle('Full menu animations','polytrack-0.6.2-reduced-effects',true,true));
     grid.appendChild(settingsToggle('Lobby links and widgets','polytrack-0.6.2-lobby-extras',true));
     grid.appendChild(settingsToggle('PB podium colors and places','polytrack-0.6.2-pb-podiums',true));
+    grid.appendChild(settingsToggle('Verified placement field only','polytrack-0.6.2-pb-podiums-verified-only',false));
 
     grid.appendChild(settingsToggle('Expanded Ranked details','polytrack-0.6.2-compact-ranked',true,true));
     grid.appendChild(settingsToggle('Public racer codes in Ranked','polytrack-0.6.2-show-racer-codes',true));
@@ -2743,7 +2763,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         }
         entries=applyCanonicalTrackWeight(safeTrackId,entries).slice(0,500);
         if(data.fromCache)throw new Error('Firestore returned saved data, not a cloud check');
-        writeTrackSnapshotCache(safeTrackId,entries,data.updatedAt||Date.now(),{revision:data.revision,sourceRevision:data.sourceRevision,algorithmVersion:data.algorithmVersion,schemaVersion:data.schemaVersion,source,checkedAt:Date.now()});
+        writeTrackSnapshotCache(safeTrackId,entries,data.updatedAt||Date.now(),{revision:data.revision,sourceRevision:data.sourceRevision,algorithmVersion:data.algorithmVersion,schemaVersion:data.schemaVersion,source,checkedAt:Date.now(),complete:data.complete,totalEntries:data.totalEntries});
         if(loadGeneration===trackLoadGeneration)currentTrackLoadState={trackId:safeTrackId,status:'cloud',fetchedAt:Number(data.updatedAt||0)||Date.now(),checkedAt:Date.now(),nextRefreshAt:Date.now()+TRACK_REFRESH_MS};
       }
     } catch (error) {
@@ -3495,6 +3515,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       attempts++;
       const title=[...document.querySelectorAll('.track-title p')].find((node)=>node.textContent.trim()===info.name);
       const button=title?.closest('button');
+      if(button&&event){button.click();return;}
       if(button){
         button.scrollIntoView({behavior:document.documentElement.classList.contains('sq-reduced-effects')?'auto':'smooth',block:'center'});
         button.classList.add('rank-track-focus');
@@ -5820,7 +5841,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   let reconcileScheduled = false;
   const RECONCILE_MIN_GAP_MS=120;
   let lastReconcileAt=0;
-  const observer = new MutationObserver(() => {
+  let eventFrame=0;
+  const observer = new MutationObserver((records) => {
+    if(!eventFrame&&records.some(record=>record.type==='childList'&&record.addedNodes.length)){eventFrame=requestAnimationFrame(()=>{eventFrame=0;ensureEventEntry();});}
     if (reconcileScheduled) return;
     reconcileScheduled = true;
     const wait=Math.max(0,RECONCILE_MIN_GAP_MS-(Date.now()-lastReconcileAt));
@@ -5833,6 +5856,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
   function boot(){
     install();
+    void ensureEventUi().then(()=>ensureEventEntry()).catch(()=>{});
     observer.observe(document.body || document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['class','style'] });
     setInterval(()=>{if(document.visibilityState==='visible')reconcileUI();}, 1800);
     setTimeout(()=>db().then(()=>flushRankedNotificationQueue()).catch(()=>{}),2500);

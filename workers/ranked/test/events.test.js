@@ -65,6 +65,11 @@ function verdict(job, override = {}) {
     binding: { resultId: job.resultId, timeMs: job.timeMs, trackId: job.trackId, nativeTrackId: job.trackId,
       replayHash: job.replayHash, actualReplayHash: job.replayHash, engineDigest: engine, verifierVersion: version }, ...override };
 }
+function kodubVerdict(job, trackContentHash) {
+  const result = verdict(job);
+  result.binding.trackContentHash = trackContentHash;
+  return result;
+}
 function memoryStore() {
   const data = new Map(), counts = []; let serial = Promise.resolve(), failPath = null;
   return { data, counts, fail: value => { failPath = value; }, transaction(fn) {
@@ -207,7 +212,7 @@ test('owner receipt explains verdict and older completion cannot replace latest 
   assert.equal(receipt.timeMs, 15000);
   await assert.rejects(f.service.ownReceipt('day1', 'intruder', account), /not_owned/);
   assert.equal('replay' in receipt, false);
-  assert(f.store.counts.some(count => count.writes === 9));
+  assert(f.store.counts.some(count => count.writes === 10));
 });
 test('due retry progresses even with an unending fresh inbox page', async () => {
   const store = memoryStore(), freshId = 'day1_' + account, retryId = 'day1_' + 'c'.repeat(64);
@@ -255,6 +260,7 @@ test('cleanup is bounded; public archives and monthly indexes remain permanent',
   let result;
   for (let i = 0; i < 5; i++) { result = await f.service.cleanupPeriod('day1'); assert((result.deleted || 0) <= 8); if (result.cleaned) break; }
   assert.equal(result.cleaned, true);
+  assert.equal(f.data.has(`${C.replays}/day1_${account}`), true, 'verified replay outlives transient cleanup');
   assert.equal(f.data.has(`${C.queues}/day1`), false);
   assert.equal(f.data.get(`${C.public}/day1`).archived, true);
   assert.deepEqual(f.canonical(), canonical); assert.deepEqual(await f.service.totals(), totals);
@@ -264,6 +270,9 @@ test('cleanup is bounded; public archives and monthly indexes remain permanent',
   assert.equal(f.data.get(`${C.catalog}/main`).periods.some(row => row.id === 'day1'), true);
   // Only the completed bounded supplemental sweep unlocks metadata pruning.
   f.data.get(`${C.catalog}/main`).periods.find(row => row.id === 'day1').extrasCleaned = true;
+  assert.equal((await f.service.cleanupPeriod('day1')).replaysPending, true);
+  f.data.delete(`${C.replays}/day1_${account}`);
+  f.data.get(`${C.catalog}/main`).periods.find(row => row.id === 'day1').replaysCleaned = true;
   assert.equal((await f.service.cleanupPeriod('day1')).purged, true);
   assert.equal(f.data.get(`${C.public}/day1`).archived, true);
   assert.deepEqual((await f.service.catalog()).archives, []);
@@ -290,6 +299,29 @@ test('cleanup sweeps rejected inbox records absent from admitted subject registr
   assert.equal(store.data.has(key), false);
   await cleanupEvents(runtime);
   assert.equal(store.data.get(`${C.catalog}/main`).periods[0].cleanupPhase, 1);
+});
+test('retained replay cleanup is bounded to eight documents per maintenance unit', async () => {
+  const store = memoryStore(), endedAt = 1000;
+  store.data.set(`${C.catalog}/main`, { periods: [{ id: 'old', archived: true, cleaned: true, extrasCleaned: true,
+    endsAt: endedAt, graceMs: 0 }] });
+  const replayKeys = Array.from({ length: 10 }, (_, i) => `${C.replays}/old_${String(i).padStart(64, '0')}`);
+  for (const key of replayKeys) store.data.set(key, { replay: 'AAAA' });
+  const document = key => ({ name: `projects/polytrack-052/databases/(default)/documents/${key}`,
+    fields: eventEncode(store.data.get(key)).mapValue.fields });
+  const runtime = { store, projectId: 'polytrack-052', now: () => endedAt + L.retentionMs,
+    request: async (route, init) => {
+      if (route === `/${C.catalog}/main`) return document(`${C.catalog}/main`);
+      if (route === ':runQuery') {
+        const query = JSON.parse(init.body).structuredQuery;
+        assert.equal(query.from[0].collectionId, C.replays); assert.equal(query.limit, 8);
+        return replayKeys.filter(key => store.data.has(key)).slice(0, 8).map(key => ({ document: document(key) }));
+      }
+      throw Error('unexpected request');
+    } };
+  assert.deepEqual(await cleanupEvents(runtime), { replayCleanup: true, deleted: 8 });
+  assert.deepEqual(await cleanupEvents(runtime), { replayCleanup: true, deleted: 2 });
+  assert.deepEqual(await cleanupEvents(runtime), { replayCleanup: true, deleted: 0 });
+  assert.equal(store.data.get(`${C.catalog}/main`).periods[0].replaysCleaned, true);
 });
 test('target fallback performs at most two lookups and never invents a target', async () => {
   const at = Date.UTC(2026, 8, 12), officialIds = ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)];
@@ -342,6 +374,37 @@ test('non-all-time PB receives separate verified event PB without changing canon
   assert.equal((await f.service.snapshot('day1')).entries[0].rp, 490);
   assert.equal(f.run(intake.runId).status, 'verified');
   assert.equal(f.run(intake.runId).timeMs, 20402);
+});
+
+test('only verified event PB replays are retained, replaced and publicly readable', async () => {
+  const f = fixture(); await f.start();
+  const pending = await f.submit();
+  await assert.rejects(f.service.replay('day1', account), /event_replay_not_found/);
+  await f.publish();
+  const first = await f.service.replay('day1', account);
+  assert.deepEqual(first, { periodId: 'day1', accountId: account, trackId: track, runId: pending.runId,
+    timeMs: 20402, frames: 20402, replayHash: hash(replay), replay, carStyle: 'test', verifiedAt: 1000,
+    source: 'verified-event-recording' });
+  assert.equal(f.run(pending.runId).replay, null, 'terminal candidate replay is still cleared');
+  f.advance(); const faster = await f.submit(15000, 'faster');
+  assert.equal((await f.service.replay('day1', account)).runId, pending.runId, 'pending run cannot replace replay');
+  await f.publish();
+  assert.equal((await f.service.replay('day1', account)).runId, faster.runId);
+  let auth = 0;
+  const handler = createEventHandler({ service: f.service, authenticate: async () => { auth++; return 'unused'; },
+    allowedOrigins: new Set(['https://game.test']), allowRequest: async () => true, enabled: () => true });
+  const response = await handler(new Request(`https://worker.test/v1/events/day1/replays/${account}`, { headers: { Origin: 'https://game.test' } }));
+  assert.equal(response.status, 200); assert.equal(auth, 0);
+  assert.deepEqual(await response.json(), await f.service.replay('day1', account));
+});
+
+test('rejected and identity-inconsistent replay records fail closed', async () => {
+  const rejected = fixture(); await rejected.start(); await rejected.submit();
+  await rejected.service.processBatch('day1', async jobs => jobs.map(job => verdict(job, { status: 'mismatch' })));
+  await assert.rejects(rejected.service.replay('day1', account), /event_replay_not_found/);
+  const f = fixture(); await f.start(); await f.submit(); await f.publish();
+  f.data.get(`${C.replays}/day1_${account}`).trackId = 'c'.repeat(64);
+  await assert.rejects(f.service.replay('day1', account), /event_replay_corrupt/);
 });
 
 test('faster event promotes canonical atomically preserving metadata; no client score trust', async () => {
@@ -450,6 +513,7 @@ test('canonical promotion, event PB, snapshot and receipt roll back together on 
 
 test('archive publishes only sanitized period and ranks; late verification only advances normal PB', async () => {
   const f = fixture(); await f.start(); await f.submit(20402); await f.publish();
+  const retainedReplay = structuredClone(await f.service.replay('day1', account));
   f.time(p.endsAt - 1); await f.submit(15000, 'late-verification');
   f.time(p.endsAt + p.graceMs - 1); const [job] = await f.service.leaseJobs('day1');
   await assert.rejects(f.service.archivePeriod('day1'), /settlement_open/);
@@ -460,6 +524,7 @@ test('archive publishes only sanitized period and ranks; late verification only 
   const result = await f.service.completeJob('day1', job, verdict(job));
   assert.equal(result.eventImproved, false); assert(result.canonicalImproved);
   assert.deepEqual(f.data.get(`${C.archives}/day1`), archive);
+  assert.deepEqual(await f.service.replay('day1', account), retainedReplay);
   assert.equal((await f.service.archivePeriod('day1')).duplicate, true);
   assert.equal(f.data.get(`${C.live}/day1`).archived, true);
   const snapshot = await f.service.snapshot('day1');
@@ -491,6 +556,7 @@ test('HTTP is off by default and has no verifier/admin/archive endpoint', async 
   const status = await handler(request('/v1/events/day1/runs/' + body.runId));
   assert.equal(status.status, 200); assert.equal(status.headers.get('Cache-Control'), 'no-store');
   assert(!JSON.stringify(await status.json()).includes(replay));
+  assert.equal((await handler(request('/v1/events/day1/replays/' + account))).status, 404);
   assert.equal((await handler(new Request('https://worker.test/v1/events/day1/snapshot', { headers: { Origin: 'https://evil.test' } }))).status, 403);
 });
 
@@ -618,4 +684,34 @@ test('previous launch-engine period compatibility never accepts obsolete proofs,
   f.data.get(`${C.periods}/day1`).engineDigest='d'.repeat(64);
   await assert.rejects(f.service.snapshot('day1'),/event_version_unavailable/);
   assert.equal(eventPeriod({...inputPeriod,engineDigest:'895eeacbdfdd5f68b9db92c502af620709539c5211782809f610c1a76e60785d'}).engineDigest,engine);
+});
+
+test('Kodub period keeps trusted code private and awards event points without normal PB promotion',async()=>{
+ const f=fixture();await f.service.bindOwner('user1',account);
+ const code='PolyTrack2'+'a'.repeat(40);
+ const input={...inputPeriod,kind:'kodub',maxRp:700,kodub:{source:'kodub-v6-track-of-the-week',trackCode:code,trackCodeHash:hash(code),officialTrackAssetHash:'e'.repeat(64),officialEndTime:inputPeriod.endsAt,officialFastestVerifiedMs:inputPeriod.targetMs,name:'Weekly fixture',author:'Fixture',lastModified:null,environment:0}};
+ await f.service.createPeriod(input);f.time(1000);await f.submit();
+ let trusted;await f.service.processBatch('day1',async(jobs,period)=>{trusted=period;return jobs.map(job=>kodubVerdict(job,input.kodub.trackCodeHash));});
+ assert.equal(trusted.kodub.trackCode,code);assert.equal(f.canonical(),undefined);
+ const board=await f.service.snapshot('day1');assert.equal(board.period.kind,'kodub');assert.equal(board.period.trackName,'Weekly fixture');assert.equal(board.entries[0].rp,343);assert.equal('kodub' in board.period,false);
+ assert(!JSON.stringify(await f.service.catalog()).includes(code));
+ assert.throws(()=>eventPeriod({...input,maxRp:500}),/kodub_rp_cap/);
+ assert.throws(()=>eventPeriod({...input,kodub:{...input.kodub,officialEndTime:1}}),/invalid_kodub_binding/);
+});
+
+test('Kodub verdicts require the frozen period track content hash',async()=>{
+ const code='PolyTrack2'+'a'.repeat(40),trackCodeHash=hash(code);
+ const input={...inputPeriod,kind:'kodub',maxRp:700,kodub:{source:'kodub-v6-track-of-the-week',trackCode:code,trackCodeHash,officialTrackAssetHash:trackCodeHash,officialEndTime:inputPeriod.endsAt,officialFastestVerifiedMs:inputPeriod.targetMs,name:'Weekly fixture',author:'Fixture',lastModified:null,environment:0}};
+ const mutations=[
+  proof=>proof,
+  proof=>{proof.binding.trackContentHash='f'.repeat(64);return proof;},
+  proof=>{proof.binding.trackContentHash=trackCodeHash;proof.trackContentHash=null;return proof;},
+  proof=>{proof.binding.trackContentHash=trackCodeHash;proof.trackContentHash='f'.repeat(64);return proof;},
+ ];
+ for(const mutate of mutations){
+  const f=fixture();await f.service.bindOwner('user1',account);await f.service.createPeriod(input);f.time(1000);await f.submit();
+  const [job]=await f.service.leaseJobs('day1');
+  await assert.rejects(f.service.completeJob('day1',job,mutate(verdict(job))),/verifier_proof_mismatch/);
+  assert.equal(f.data.get(`${C.pbs}/day1_${account}`),undefined);
+ }
 });

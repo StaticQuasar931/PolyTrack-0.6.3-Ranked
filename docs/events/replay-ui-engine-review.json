@@ -1,0 +1,10 @@
+{
+  "previousEngine": "246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578",
+  "currentEngine": "46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3",
+  "changedAssets": [
+    "main.bundle.js"
+  ],
+  "scope": "Native event opponent separation, track-scoped Watch bridge, and event replay-to-race return hook. No physics, worker, WASM, track decoder or track assets changed.",
+  "trackPinsUnchanged": true,
+  "geometryPinsReusedBecausePhysicsAndTracksUnchanged": true
+}

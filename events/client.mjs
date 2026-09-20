@@ -1,3 +1,5 @@
+import {preparePublishedEventGhost} from './public-replay.mjs';
+import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs';
 import {installFinishCapture} from './native-finish.mjs';
@@ -7,6 +9,7 @@ const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapsho
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
 const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
+const eventName=kind=>kind==='kodub'?'Kodub weekly':kind==='weekly'?'Weekly':kind==='daily'?'Daily':'Event';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function ensureFeaturedSection(document){
   const nav=document.querySelector('.track-selection-ui .community-track-versions');
@@ -24,7 +27,7 @@ export function ensureFeaturedSection(document){
   if(rolling&&rolling.parentElement!==section){
     rolling.classList.add('sq-permanent-track');section.append(rolling);
     const note=document.createElement('small');note.className='sq-permanent-note';
-    note.textContent='Normal RP active / 1001 Event RP pending target';rolling.querySelector(':scope > button')?.append(note);
+    note.textContent='Normal RP + up to 1001 Event RP / No reset';rolling.querySelector(':scope > button')?.append(note);
   }
   const custom=[...nav.querySelectorAll('button')].find(button=>button.textContent.trim()==='StaticQuasar931');
   if(custom){
@@ -36,16 +39,23 @@ export function ensureFeaturedSection(document){
 }
 export function installEvents(bridge){
   const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
-  let statusText='';
+  let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
   const cache=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
   const activePeriods=()=>Array.isArray(catalog.periods)?catalog.periods.filter(p=>p.enabled!==false&&!p.archived&&p.startsAt<=now()&&p.endsAt>now()):[];
-  const info=id=>bridge.trackInfo(id);
+  const info=id=>{const p=[...knownPeriods.values(),...(catalog.periods||[]),...(catalog.archives||[])].find(p=>p.trackId===id&&p.trackName);return p?{...bridge.trackInfo(id),name:p.trackName}:bridge.trackInfo(id);};
   const time=ms=>Number.isFinite(ms)&&ms>0?bridge.formatTime(ms):'No event time';
   const localBest=period=>bestRecords[period.id+'_'+bridge.accountId()];
   const displayName=row=>bridge.displayName?.(row.accountId,row.name)||row.name||'Racer';
   const reset=p=>new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(p.endsAt)+' Local';
   function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();return value;}
+  async function loadPermanent(){
+    if(typeof bridge.readPermanent!=='function'||permanentFetching||now()-permanentAt<120000)return;
+    permanentAt=now();permanentFetching=bridge.readPermanent().then(value=>{
+      if(value?.id!=='permanent-rolling-hills'||value.complete!==true||!Array.isArray(value.entries)||value.maxRp!==1001)throw Error('Incomplete permanent event standings');
+      if(!permanent||value.sourceRevision>=permanent.sourceRevision){permanent=value;cacheWrite(STORE+'-permanent',value);}
+    }).catch(()=>{}).finally(()=>{permanentFetching=null;tick();});
+  }
   async function loadCatalog(force=false){
     if(fetching)return fetching;if(!force&&catalogAt&&now()-catalogAt<120000)return catalog;
     fetching=bridge.readCatalog().then(storeCatalog).catch(error=>{catalogAt=now();if(!catalog.periods?.length)throw error;return catalog;}).finally(()=>fetching=null);
@@ -56,7 +66,7 @@ export function installEvents(bridge){
     const candidate=cache.get(period.id)||read(STORE+'-'+period.id,null),saved=valid(candidate)?candidate:null;
     if(!force&&saved&&now()-saved.fetchedAt<120000)return saved;
     try{const value=await bridge.readSnapshot(period.id);if(!valid(value))throw Error('Invalid event snapshot');const current=cache.get(period.id)||saved;if(valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
-    catch(error){if(saved)return {...saved,saved:true};throw error;}
+    catch(error){if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
   }
   function message(text){statusText=text;for(const status of document.querySelectorAll('.sq-event-status,.sq-event-inline-status'))status.textContent=text;}
   async function flush(){
@@ -73,6 +83,7 @@ export function installEvents(bridge){
   }
   function captured(run){
     const eventRun=sessions.finish(run);if(!eventRun)return;
+    latestFinish=eventRun;
     const best=bestRecords,key=eventRun.periodId+'_'+eventRun.accountId;
     if(best[key]&&best[key].timeMs<=eventRun.timeMs)return;
     write(QUEUE,keepEventBest(read(QUEUE,[]),eventRun));hasPending=true;
@@ -84,7 +95,7 @@ export function installEvents(bridge){
     if(capture)return;
     const require=bridge.require();if(!require)throw Error('The game is still loading. Try again.');
     const binding=installNativeLocalBinding({require,onError:()=>{if(sessions.current())message('Event recording is not ready. Reopen this event and restart the race.');}});
-    try{capture=installFinishCapture({Car:binding.Car,bindCar:car=>{const context=binding.bindCar(car);if(context)sessions.bind(context);return context;},validateFinish:binding.validateFinish,onFinish:captured,onError:()=>message('Event recording could not be captured. Your normal PB still saves.')});}
+    try{capture=installFinishCapture({Car:binding.Car,bindCar:car=>{const context=binding.bindCar(car);if(context){latestFinish=null;sessions.bind(context);}return context;},validateFinish:binding.validateFinish,onFinish:captured,onError:()=>message('Event recording could not be captured. Your normal PB still saves.')});}
     catch(error){binding.stop();throw error;}
   }
   async function race(period,{direct=false}={}){
@@ -92,7 +103,7 @@ export function installEvents(bridge){
     shell();selected=period;body('<p role="status">Opening event...</p><p>You can cancel with Close. Your saved PBs are unchanged.</p>');message('Preparing event racing.');
     const attempt=++entryRequest,accountId=bridge.accountId();
     let timer;
-    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();eventIntent=sessions.enter(period,bridge.accountId());close();message('Opening event track...');bridge.openTrack(period.trackId);tick();void refreshNativeEventData(period,sessions.current());return true;}
+    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();eventIntent=sessions.enter(period,bridge.accountId());close();message('Opening event track...');nativeOpenPermit=true;try{bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
     catch(error){if(attempt===entryRequest)message(error.message);return false;}finally{clearTimeout(timer);}
   }
   async function openEvent({kind,trackId}={}){
@@ -100,7 +111,7 @@ export function installEvents(bridge){
     shell();selectView('home');selected=null;const token=++requestId;
     body('<p>Checking the live event assignment...</p>');
     try{
-      if(!['daily','weekly'].includes(kind)||!/^[a-f0-9]{64}$/.test(trackId||''))throw Error('Invalid event assignment.');
+      if(!['daily','weekly','kodub'].includes(kind)||!/^[a-f0-9]{64}$/.test(trackId||''))throw Error('Invalid event assignment.');
       await loadCatalog();if(!dialog||token!==requestId)return false;
       const matches=activePeriods().filter(p=>p.kind===kind&&p.trackId===trackId);
       if(matches.length!==1){body('<p>No unique active '+escape(kind)+' event is assigned to this track. The featured track may differ from the live event.</p>');return false;}
@@ -116,9 +127,15 @@ export function installEvents(bridge){
     dialog.querySelector('[data-event-close]').focus();
   }
   const body=html=>{if(!dialog)return;const main=dialog.querySelector('main');const restore=main.contains(document.activeElement);main.innerHTML=html;if(restore)dialog.querySelector('[data-event-close]').focus({preventScroll:true});};
-  function cards(periods){periods.forEach(p=>knownPeriods.set(p.id,p));return periods.map(p=>`<button type="button" class="sq-event-card" data-event-id="${escape(p.id)}"><span class="sq-event-thumb">${bridge.thumbnail(p.trackId)}</span><span><small>${escape(p.kind==='daily'?'DAILY EVENT':p.kind==='weekly'?'WEEKLY EVENT':p.label||'EVENT')}</small><strong>${escape(info(p.trackId).name)}</strong><span>Up to ${Number(p.maxRp)||0} Event RP</span>${Number.isInteger(p.entrantLimit)?`<small>Up to ${p.entrantLimit} racers</small>`:''}<small>${now()<p.endsAt?'Ends':'Ended'} ${escape(reset(p))}</small></span></button>`).join('');}
+  function recordMarkup(period){
+    const {rows}=eventDisplayRows(period),own=rows.find(row=>row.accountId===bridge.accountId());
+    if(!own)return 'No record';
+    const visible=rows.filter(row=>!row.pending),place=!own.pending&&localStorage.getItem('polytrack-0.6.2-pb-podiums')!=='0';
+    return '<time>'+time(own.timeMs)+'</time>'+(place?'<span class="sq-event-place '+(['','gold','silver','bronze'][own.rank]||'')+'">'+own.rank+'/'+visible.length+'</span>':own.pending?' <small>Pending</small>':'');
+  }
+  function cards(periods){periods.forEach(p=>knownPeriods.set(p.id,p));return periods.map(p=>`<button type="button" class="sq-event-card" data-event-id="${escape(p.id)}" data-event-kind="${escape(p.kind)}"><span class="sq-event-thumb">${bridge.thumbnail(p.trackId)}</span><div class="sq-event-record">${recordMarkup(p)}</div><span><small>${escape(p.kind==='daily'?'DAILY EVENT':p.kind==='weekly'?'WEEKLY EVENT':p.label||'EVENT')}</small><strong>${escape(info(p.trackId).name)}</strong><span>Up to ${Number(p.maxRp)||0} Event RP</span>${Number.isInteger(p.entrantLimit)?`<small>Up to ${p.entrantLimit} racers</small>`:''}<small>${now()<p.endsAt?'Ends':'Ended'} ${escape(reset(p))}</small></span></button>`).join('');}
   function selectView(view){entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
-  async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<p>Race through an event card to set an event time. A faster event PB also improves your normal PB. Use one racer profile per event.</p><div class="sq-event-cards">'+(cards(activePeriods())||'<p>No events are open right now.</p>')+'</div>');message('Event RP is separate from Overall RP.');}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
+  async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<p>Race through an event card to set an event time. Daily and weekly event PBs can also improve normal PBs. Kodub weekly earns Event RP only. Rolling Hills earns both through its normal verified PB. Use one racer profile per event.</p><div class="sq-event-cards">'+(cards(activePeriods())||'<p>No events are open right now.</p>')+'</div>');message('Event RP is separate from Overall RP.');}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
   function receiptText(receipt,local,period){
     if(period&&Date.now()>=period.endsAt+(period.graceMs||0)&&receipt?.status==='waiting')return 'This event closed before the run could be scored.';
     if(local&&(local.timeMs<receipt?.timeMs||local.attemptId&&receipt?.attemptId!==local.attemptId&&(!receipt||local.timeMs<=receipt.timeMs)))return 'Event PB saved on this device. Waiting for its cloud status.';
@@ -141,7 +158,7 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null;
-  let launching=false,nativePlayPermit=false;
+  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0;const replayCache=new Map();
   const carImages=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function cachedCarStyle(row,period){
     if(!profilesAt||now()-profilesAt>=120000){profilesAt=now();profileStyles=new Map();const saved=read(PROFILE_CACHE,null);for(const entry of (Array.isArray(saved?.entries)?saved.entries:[]).slice(0,1000))profileStyles.set(entry.accountId||entry.userId,entry.carStyle);}
@@ -183,14 +200,52 @@ export function installEvents(bridge){
       image.src=src;image.alt='Cached profile car';
     });
   }
+  async function selectReplay(period,row){
+    const session=sessions.current(),viewer=bridge.accountId();if(!session||session.periodId!==period.id||row.pending||typeof bridge.readReplay!=='function')return;
+    const token=++replayRequest;message('Loading event replay...');
+    try{
+      const key=period.id+'_'+row.accountId+'_'+row.timeMs;
+      let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId);
+      if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
+      const ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});
+      if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
+      if(replayCache.size>=8)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
+      selectedGhost={periodId:period.id,accountId:viewer,ghost};
+      message('Replay ready: '+displayName(row)+'. Play to race this ghost.');
+      if(nativeView)nativeView.signature='';tick();
+    }catch(error){if(token===replayRequest&&sessions.current()===session&&bridge.accountId()===viewer)message(error.message||'Event replay unavailable.');}
+  }
+  function raceGhosts(session){
+    const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
+    if(replay)try{ownGhost=prepareOwnEventGhost({require:bridge.require(),row:replay,session,best:bestRecords[session.periodId+'_'+session.accountId]});}catch{}
+    const selected=selectedGhost?.periodId===session.periodId&&selectedGhost.accountId===session.accountId?selectedGhost.ghost:null;
+    if(selected?.isSelf)ownGhost=selected;
+    return {ownGhost,opponents:selected&&!selected.isSelf?[selected]:[]};
+  }
+  function resumeRace(trackId,invokeNative){
+    if(!eventIntent&&!sessions.current())return false;
+    const session=sessions.current();
+    if(!session||session.trackId!==trackId||session.accountId!==bridge.accountId()){message('This event replay cannot start a race after its event closes or racer changes.');return true;}
+    try{bridge.startEventRace({...session,...raceGhosts(session)},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
+    return true;
+  }
+  function watchEvent(){
+    const session=sessions.current();if(!session||session.accountId!==bridge.accountId())return;
+    const {ownGhost,opponents}=raceGhosts(session),ghosts=[...(ownGhost?[ownGhost]:[]),...opponents];
+    if(!ghosts.length){message('Select an event replay first, or set a local event PB.');return;}
+    try{bridge.watchEvent?.(session,ghosts);}catch(error){message(error.message||'Event replay could not open.');}
+  }
   async function playEvent(){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;
     if(typeof bridge.startEventRace!=='function'){message('Event Play is unavailable: safe event race launch is not connected. Normal PB ghosts will not be used.');return;}
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
     if(replay)try{ownGhost=prepareOwnEventGhost({require:bridge.require(),row:replay,session,best:bestRecords[session.periodId+'_'+session.accountId]});}catch{message('Saved event replay cannot be played safely. Starting without a ghost.');}
-    const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
-    launching=true;if(!replay||ownGhost)message(ownGhost?'Starting with your local event PB ghost...':'Starting event race...');
-    try{await bridge.startEventRace({...session,ownGhost},()=>{
+    const opponent=selectedGhost?.periodId===session.periodId&&selectedGhost.accountId===session.accountId?selectedGhost.ghost:null;
+    if(opponent?.isSelf)ownGhost=opponent;
+    const opponents=opponent&&!opponent.isSelf?[opponent]:[];
+    const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||selectedGhost?.ghost===ownGhost||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+    launching=true;message(opponents.length?'Starting with the selected event ghost...':ownGhost?'Starting with your event PB ghost...':'Starting event race...');
+    try{await bridge.startEventRace({...session,ownGhost,opponents},()=>{
       if(sessions.current()!==session||bridge.accountId()!==session.accountId)throw Error('Event launch context changed');
       const play=nativeView?.root.querySelector('.side-panel button.play');if(!play)throw Error('Native Play is unavailable');
       nativePlayPermit=true;try{play.click();}finally{nativePlayPermit=false;}
@@ -218,7 +273,8 @@ export function installEvents(bridge){
     const rows=entries.map(row=>({...row,pending:false}));
     const local=localBest(period),receipt=ownReceipts.get(period.id+'_'+accountId);
     const remote=receipt&&['waiting','verified'].includes(receipt.status)&&Number.isSafeInteger(receipt.timeMs)&&receipt.timeMs>0?receipt:null;
-    const provisional=local&&(!remote||local.timeMs<=remote.timeMs)?local:remote;
+    const rejectedLocal=local&&receipt?.attemptId===local.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status);
+    const provisional=!rejectedLocal&&local&&(!remote||local.timeMs<=remote.timeMs)?local:remote;
     const published=rows.find(row=>row.accountId===accountId);
     if(provisional&&(!published||provisional.timeMs<published.timeMs)){
       const at=rows.findIndex(row=>row.accountId===accountId);if(at>=0)rows.splice(at,1);
@@ -264,20 +320,20 @@ export function installEvents(bridge){
       };
     }
     const view=nativeView;
-    if(view.watch)view.watch.disabled=true;
-    view.opponentsNote.textContent=bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Own event PB replay saved locally. Play uses it if valid. Other event replays are unavailable.':'No playable local event PB replay. Normal PB ghosts are not used.';
+    if(view.watch)view.watch.disabled=typeof bridge.watchEvent!=='function'||!(getOwnReplay(period.id)||selectedGhost?.periodId===period.id&&selectedGhost.accountId===accountId);
+    view.opponentsNote.textContent=selectedGhost?.periodId===period.id?'Selected ghost: '+selectedGhost.ghost.nickname:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select a published racer to load their replay.':'Select a published racer to load an event ghost. Normal PB ghosts are not used.';
 
     const {rows,board}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     const styles=rows.map(row=>cachedCarStyle(row,period));
     const signature=JSON.stringify([rows,styles,typeof window.BT,view.page,board?.saved,statusDescription]);if(signature===view.signature)return;view.signature=signature;
-    view.board.querySelector('h3').textContent=(period.kind==='weekly'?'Weekly':'Daily')+' event';
+    view.board.querySelector('h3').textContent=eventName(period.kind)+' event';
     view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(board?.saved?' - saved standings':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     const container=view.board.querySelector('.container');container.replaceChildren();
     for(const row of rows.slice(view.page*20,view.page*20+20)){
-      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;button.tabIndex=-1;button.setAttribute('aria-disabled','true');
-      button.title=row.pending?'Saved event time; not yet in published standings':'Published event result. Opponent replay is not available.';
+      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;const playable=!row.pending&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
+      button.title=row.pending?'Saved event time; not yet in published standings':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.innerHTML='<div class="image-container"><img class="show" src="images/car_thumbnail_placeholder.png"></div><div class="left"><p class="position"></p><p class="event-time"></p></div><div class="right"><div class="name-container"><span class="name"></span></div><p class="verified-state"></p></div>';
       button.querySelector('.position').textContent=row.pending?'--':String(row.rank||'--');button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
@@ -293,7 +349,20 @@ export function installEvents(bridge){
     for(const [icon,text] of [['timer',mine?time(mine.timeMs):'---'],['trophy',mine?(mine.pending?(mine.unscored?'Not scored':'Waiting'):String(mine.rank||'---')):'---']]){const line=document.createElement('div'),image=document.createElement('img');image.src='images/'+icon+'.svg';line.append(image,document.createTextNode(text));view.pb.append(line);}
   }
 
+  function syncFinishPlace(){
+    const root=document.querySelector('.time-announcer-ui'),session=sessions.current()||eventIntent;
+    if(!root||!latestFinish||!session||latestFinish.periodId!==session.periodId||latestFinish.accountId!==bridge.accountId())return;
+    const board=cache.get(session.periodId)||read(STORE+'-'+session.periodId,null);
+    const place=eventFinishPlace({board,...latestFinish});
+    let label=root.querySelector('.sq-event-finish-place');
+    if(!label){label=document.createElement('div');label.className='sq-event-finish-place';label.setAttribute('role','status');root.append(label);}
+    const text=place?(place.provisional?'Provisional event place: ':'Event place: ')+place.rank+' / '+place.fieldSize+(place.saved?' (saved standings)':''):'Event place pending standings';
+    const detail=place?.provisional?'Compared with published event times. Points require replay verification.':'Only this event counts here, not the normal track leaderboard.';
+    const signature=text+'|'+detail;if(label.dataset.result===signature)return;label.dataset.result=signature;
+    label.replaceChildren(document.createTextNode(text));const note=document.createElement('small');note.textContent=detail;label.append(note);
+  }
   function tick(){
+    syncFinishPlace();
     void flush();
     const ranked=document.getElementById('overallLeaderboardPanel');
     if(ranked?.getClientRects().length&&getComputedStyle(ranked).display!=='none')void loadCatalog().catch(()=>{});
@@ -313,17 +382,39 @@ export function installEvents(bridge){
       button.removeAttribute('aria-disabled');if(period)knownPeriods.set(period.id,period);
     }
     const group=ensureFeaturedSection(document);
-    if(group?.getClientRects().length)void loadCatalog().catch(()=>{});
+    const kodubCard=group?.querySelector('.sq-kodub-weekly'),kodubIdentity=kodubCard?.dataset.kodubIdentity;
+    if(kodubCard&&kodubIdentity){
+      const [trackId,endTime]=kodubIdentity.split('@'),p=activePeriods().find(p=>p.kind==='kodub'&&p.trackId===trackId&&p.endsAt===Date.parse(endTime));
+      kodubCard.dataset.eventTrack=trackId;kodubCard.dataset.eventId=p?.id||'';
+      const infoNode=kodubCard.querySelector('.track-of-the-week-info');
+      if(infoNode){
+        let reward=infoNode.querySelector('.sq-kodub-reward');if(!reward){reward=document.createElement('small');reward.className='sq-kodub-reward';infoNode.append(reward);}
+        const text=p?'Up to 700 Event RP':'Event scoring awaiting official import';if(reward.textContent!==text)reward.textContent=text;
+        const pb=infoNode.querySelector('.personal-best');if(pb){const html=p?recordMarkup(p):'No record';if(pb.dataset.eventRecord!==html){pb.dataset.eventRecord=html;pb.innerHTML=html;}}
+      }
+    }
+    if(group?.getClientRects().length){void loadCatalog().catch(()=>{});void loadPermanent();}
+    const permanentNote=group?.querySelector('.sq-permanent-note');
+    if(permanentNote){
+      const own=permanent?.entries?.find(row=>row.accountId===bridge.accountId());
+      const text=own?'Normal RP + '+own.rp+' / 1001 Event RP / No reset':'Normal RP + up to 1001 Event RP / No reset';
+      if(permanentNote.textContent!==text)permanentNote.textContent=text;
+      permanentNote.title='Both rewards use your normal physics-verified personal best. Event RP follows the fastest verified Rolling Hills time; repeated runs do not stack.';
+    }
     if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='All results';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
     if(group&&activePeriods().length){
       let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}if(!row.dataset.bound){row.dataset.bound='true';row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
-      const signature=activePeriods().map(p=>p.id).join('|');if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(activePeriods());}
+      const featured=activePeriods().filter(p=>['weekly','daily'].includes(p.kind)).sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind));const signature=JSON.stringify(featured.map(p=>[p.id,p.trackId,p.endsAt,p.maxRp,recordMarkup(p),bridge.accountId()]));if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(featured);
+        for(const kind of ['weekly','daily'])if(!featured.some(p=>p.kind===kind)){
+          const button=document.createElement('button');button.className='button sq-event-card';button.type='button';button.dataset.eventKind=kind;
+          button.innerHTML='<strong>'+eventName(kind)+' event</strong><small>No active event available</small>';button.onclick=()=>void open();row.append(button);
+        }}
     }else if(group){
       let row=group.querySelector('.sq-event-track-buttons');
       if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}
       if(row.dataset.periods!=='unavailable'){
         row.dataset.periods='unavailable';row.replaceChildren();
-        for(const kind of ['weekly','daily']){const button=document.createElement('button');button.className='button sq-event-card';button.type='button';
+        for(const kind of ['weekly','daily']){const button=document.createElement('button');button.className='button sq-event-card';button.type='button';button.dataset.eventKind=kind;
           const title=document.createElement('strong');title.textContent=kind==='weekly'?'Weekly event':'Daily event';
           const note=document.createElement('small');note.textContent='No active event available';button.append(title,note);button.onclick=()=>void open();row.append(button);}
       }
@@ -333,14 +424,20 @@ export function installEvents(bridge){
   }
   document.addEventListener('click',e=>{
     const button=e.target.closest?.('button');if(!button)return;
+    if(button.closest('.sq-kodub-weekly')&&!nativeOpenPermit){
+      e.preventDefault();e.stopImmediatePropagation();const card=button.closest('.sq-kodub-weekly');
+      const period=activePeriods().find(p=>p.id===card.dataset.eventId&&p.kind==='kodub');
+      if(period)void race(period,{direct:true});else void openEvent({kind:'kodub',trackId:card.dataset.eventTrack});return;
+    }
     if(button.matches('#overallLeaderboardPanel .weekly-cup .competition-feature-button,#overallLeaderboardPanel .daily-card .competition-feature-button')){
       e.preventDefault();e.stopImmediatePropagation();const period=activePeriods().find(p=>p.id===button.dataset.eventId&&p.kind===button.dataset.eventKind);if(period)void race(period,{direct:true});else void open();return;
     }
+    if(button.matches('.track-info-ui .side-panel button.watch')&&(nativeView||eventIntent||sessions.current())){e.preventDefault();e.stopImmediatePropagation();watchEvent();return;}
     if(button.matches('.track-info-ui .side-panel button.play')&&(nativeView||eventIntent||sessions.current())&&!nativePlayPermit){e.preventDefault();e.stopImmediatePropagation();void playEvent();return;}
     if(button.closest('.sq-events-overlay,.sq-event-inline,.sq-event-board,.sq-events-entry,.sq-event-track-buttons'))return;
     if(e.isTrusted&&(button.querySelector('.track-title')||/^(Back|Exit|Multiplayer)$/.test(button.textContent.trim()))){entryRequest++;sessions.leave();eventIntent=null;tick();}
   },true);
   window.addEventListener('online',()=>void flush());
   window.addEventListener('storage',event=>{if(event.key===QUEUE){hasPending=read(QUEUE,[]).length>0;void flush();}if(event.key===PROFILE_CACHE)profilesAt=0;if(event.key===BEST){bestRecords=read(BEST,{});lastInline='';}});
-  return {featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
+  return {featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
 }

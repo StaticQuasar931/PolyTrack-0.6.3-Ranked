@@ -10,7 +10,7 @@ export const EVENT_COLLECTIONS = Object.freeze({
   periods: '0.6.2_event_periods', catalog: '0.6.2_event_catalog',
   owners: '0.6.2_event_owners', quotas: '0.6.2_event_quotas',
   runs: '0.6.2_event_runs', queues: '0.6.2_event_queues',
-  pbs: '0.6.2_event_pbs', live: '0.6.2_event_public', archives: '0.6.2_event_archives',
+  pbs: '0.6.2_event_pbs', replays: '0.6.2_event_replays', live: '0.6.2_event_public', archives: '0.6.2_event_archives',
   sessions: '0.6.2_event_sessions', inbox: '0.6.2_event_inbox', history: '0.6.2_event_public',
   cursors: '0.6.2_event_cursors', retries: '0.6.2_event_retries', totals: '0.6.2_event_totals', overall: '0.6.2_event_public',
   public: '0.6.2_event_public',
@@ -43,7 +43,7 @@ function receiptTime(value) {
 }
 function text(value, max) { return typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : ''; }
 export function publicEventPeriod(p) {
-  return { id: p.id, trackId: p.trackId, startsAt: p.startsAt, endsAt: p.endsAt,
+  return { ...(p.kind==='kodub'?{trackName:p.kodub?.name||p.trackName,author:p.kodub?.author||p.author,targetPolicy:'official-fastest-verified-at-import'}:{}),id: p.id, trackId: p.trackId, startsAt: p.startsAt, endsAt: p.endsAt,
     graceMs: p.graceMs, maxRp: p.maxRp, targetMs: p.targetMs, kind: p.kind || 'custom',
     entrantLimit: p.capacity?.entrants ?? p.entrantLimit,
     label: text(p.label, 80) || `${p.kind === 'weekly' ? 'Weekly' : p.kind === 'daily' ? 'Daily' : 'Event'} ${new Date(p.startsAt).toISOString().slice(0, 10)}` };
@@ -71,9 +71,15 @@ export function eventPeriod(input) {
   demand(int(p.startsAt, 1) && int(p.endsAt, p.startsAt + 1) && p.endsAt - p.startsAt <= L.durationMs, 'invalid_period_window');
   demand(int(p.graceMs, 0, L.graceMs) && int(p.endsAt + p.graceMs + L.retentionMs), 'invalid_settlement');
   demand(int(p.targetMs, 1, L.timeMs) && int(p.maxRp, 1, L.maxRp), 'invalid_scoring');
-  demand(['daily','weekly','custom'].includes(p.kind), 'invalid_event_kind');
+  demand(['daily','weekly','custom','kodub'].includes(p.kind), 'invalid_event_kind');
   demand(p.kind !== 'daily' || p.maxRp === 100, 'daily_rp_cap');
   demand(p.kind !== 'weekly' || p.maxRp === 500, 'weekly_rp_cap');
+  if(p.kind==='kodub'){
+    const k=input.kodub;
+    demand(p.maxRp===700,'kodub_rp_cap');
+    demand(k?.source==='kodub-v6-track-of-the-week'&&typeof k.trackCode==='string'&&k.trackCode.length>=32&&k.trackCode.length<=524288&&/^PolyTrack[0-9A-Za-z_-]+$/.test(k.trackCode)&&HEX.test(k.trackCodeHash||'')&&k.officialEndTime===p.endsAt&&k.officialFastestVerifiedMs===p.targetMs,'invalid_kodub_binding');
+    p.kodub=Object.freeze({source:k.source,trackCode:k.trackCode,trackCodeHash:k.trackCodeHash,officialTrackAssetHash:hex(k.officialTrackAssetHash),officialEndTime:k.officialEndTime,officialFastestVerifiedMs:k.officialFastestVerifiedMs,name:text(k.name,256),author:text(k.author,256),lastModified:k.lastModified,environment:k.environment});
+  }
   demand(p.eligibility === 'best-submitted-during-period', 'event_freshness_policy_unapproved');
   return Object.freeze(p);
 }
@@ -111,7 +117,7 @@ function canonicalTime(row) {
   if (!int(row.timeMs, 1) || raw !== row.timeMs || row.frames != null && row.frames !== raw) return undefined;
   return raw;
 }
-function validVerdict(run, result) {
+function validVerdict(run, result, period) {
   demand(['verified', 'mismatch', 'unavailable'].includes(result?.status), 'invalid_verifier_status', 502);
   const expectedId = run.runId || run.resultId;
   demand(result.resultId === expectedId && result.trackId === run.trackId && result.timeMs === run.timeMs &&
@@ -122,6 +128,12 @@ function validVerdict(run, result) {
       b.verifierVersion === VERIFIER_VERSION && b.resultId === expectedId && b.trackId === run.trackId &&
       b.nativeTrackId === run.trackId && b.timeMs === run.timeMs && b.replayHash === run.replayHash &&
       b.actualReplayHash === run.replayHash, 'verifier_proof_mismatch', 502);
+    if (period?.kind === 'kodub') {
+      const expectedTrackHash = period.kodub?.trackCodeHash;
+      demand(HEX.test(expectedTrackHash || '') && b.trackContentHash === expectedTrackHash &&
+        (!Object.prototype.hasOwnProperty.call(result, 'trackContentHash') || result.trackContentHash === expectedTrackHash),
+      'verifier_proof_mismatch', 502);
+    }
   }
 }
 
@@ -280,7 +292,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
       });
     },
     async totals() {
-      return await store.transaction(tx => tx.get(path(C.public, 'totals'))) || { entries: [], updatedAt: 0 };
+      return await store.transaction(tx => tx.get(path(C.public, 'totals'))) || { entries: [], updatedAt: 0,complete:true,totalEntries:0 };
     },
     async ownReceipt(periodId, ownerUid, accountId) {
       uid(ownerUid); id(periodId); hex(accountId);
@@ -296,7 +308,29 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
       demand(typeof month === 'string' && /^\d{4}(0[1-9]|1[0-2])$/.test(month), 'invalid_archive_month');
       return await store.transaction(tx => tx.get(path(C.public, 'archive_' + month))) || { month, periods: [], updatedAt: 0 };
     },
-    // No GET route exposes archives, candidate replays, leases, UIDs or proofs.
+    async replay(periodId, accountId) {
+      id(periodId); hex(accountId);
+      return store.transaction(async tx => {
+        const retained = await tx.get(path(C.replays, `${periodId}_${accountId}`));
+        demand(retained, 'event_replay_not_found', 404);
+        const p = await readPeriod(tx, periodId);
+        const archive = await tx.get(path(C.archives, periodId));
+        const board = await tx.get(path(C.live, periodId));
+        demand(retained.periodId === periodId && retained.accountId === accountId && retained.trackId === p.trackId &&
+          retained.periodBinding === periodBinding(p) && typeof retained.runId === 'string' && HEX.test(retained.runId) &&
+          int(retained.timeMs, 1, L.timeMs) && typeof retained.replayHash === 'string' && HEX.test(retained.replayHash) &&
+          typeof retained.replay === 'string' && retained.replay.length > 0 &&
+          retained.replay.length <= L.replayCharacters && await hash(retained.replay) === retained.replayHash &&
+          typeof retained.carStyle === 'string' && retained.carStyle.length <= 256 &&
+          int(retained.verifiedAt, 1), 'event_replay_corrupt', 503);
+        demand(board && board.archived === !!archive && (board.entries || []).some(row =>
+          row.accountId === accountId && row.timeMs === retained.timeMs), 'event_replay_identity_mismatch', 503);
+        return { periodId, accountId, trackId: retained.trackId, runId: retained.runId,
+          timeMs: retained.timeMs, frames: retained.timeMs, replayHash: retained.replayHash, replay: retained.replay,
+          carStyle: retained.carStyle, verifiedAt: retained.verifiedAt, source: 'verified-event-recording' };
+      });
+    },
+    // No GET route exposes private candidates, leases, UIDs or proofs.
     async snapshot(periodId) {
       return store.transaction(async tx => {
         const history = await tx.get(path(C.history, id(periodId)));
@@ -358,12 +392,13 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const queuePath = path(C.queues, periodId), queue = await tx.get(queuePath);
         const slot = queue.slots.find(s => s.runId === run.runId);
         demand(slot?.lease === job.lease && at < slot.leaseUntil, 'event_lease_lost', 409);
-        validVerdict(run, result);
+        validVerdict(run, result, p);
         demand(await hash(run.replay) === run.replayHash, 'event_replay_integrity', 503);
         await checkOwner(tx, run.ownerUid, run.accountId);
         const archived = await tx.get(path(C.archives, periodId));
         const eventOpen = !archived && at < p.endsAt + p.graceMs;
         const eventPath = path(C.pbs, `${periodId}_${run.accountId}`), eventPb = await tx.get(eventPath);
+        const replayPath = path(C.replays, `${periodId}_${run.accountId}`), retainedReplay = await tx.get(replayPath);
         const livePath = path(C.live, periodId), board = await tx.get(livePath);
         const normalPath = path(C.canonical, `${run.accountId}_${run.trackId}`), canonical = await tx.get(normalPath);
         const totalPath = path(C.totals, run.accountId), priorTotal = await tx.get(totalPath);
@@ -371,10 +406,12 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const receiptPath = path(C.receipts, `${periodId}_${run.accountId}`), receipt = await tx.get(receiptPath);
         if (canonical) demand(canonical.ownerUid === run.ownerUid && canonical.accountId === run.accountId && canonical.trackId === run.trackId, 'canonical_owner_mismatch', 409);
         if (eventPb) demand(eventPb.ownerUid === run.ownerUid && eventPb.accountId === run.accountId && eventPb.periodId === periodId && int(eventPb.timeMs, 1), 'event_pb_corrupt', 503);
+        if (retainedReplay) demand(retainedReplay.periodId === periodId && retainedReplay.accountId === run.accountId &&
+          retainedReplay.trackId === run.trackId, 'event_replay_corrupt', 503);
         const verified = result.status === 'verified';
         const eventImproved = verified && eventOpen && (!eventPb || run.timeMs < eventPb.timeMs);
-        const oldTime = canonicalTime(canonical), canonicalDeferred = verified && oldTime === undefined;
-        const canonicalImproved = verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
+        const oldTime = canonicalTime(canonical), canonicalDeferred = p.kind!=='kodub' && verified && oldTime === undefined;
+        const canonicalImproved = p.kind!=='kodub' && verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
         const retry = result.status === 'unavailable' && at < p.endsAt + p.graceMs + 7 * 86400000 && slot.attempts < L.verificationAttempts;
         const status = retry ? 'waiting' : result.status === 'unavailable' ? 'unavailable_final' : result.status;
         const proof = { key: run.eventKey, verifierVersion: VERIFIER_VERSION, engineDigest: result.engineDigest || null,
@@ -402,9 +439,12 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
             return { accountId: row.accountId, name: row.name, rp: row.rp, events: row.events, rank };
           });
           await tx.set(totalPath, total);
-          await tx.set(overallPath, { entries: totals, updatedAt: at });
+          await tx.set(overallPath, { entries: totals, updatedAt: at, complete:totals.length<200&&overall?.complete!==false,totalEntries:totals.length });
           await tx.set(eventPath, { periodId, accountId: run.accountId, ownerUid: run.ownerUid,
             trackId: run.trackId, timeMs: run.timeMs, runId: run.runId, replayHash: run.replayHash, rp: eventRp(p, run.timeMs) });
+          await tx.set(replayPath, { periodId, accountId: run.accountId, trackId: run.trackId, runId: run.runId,
+            timeMs: run.timeMs, replayHash: run.replayHash, replay: run.replay, carStyle: run.carStyle,
+            periodBinding: run.periodBinding, verifiedAt: at });
           await tx.set(livePath, { periodId, period: publicEventPeriod(p), entries, archived: false, updatedAt: at });
         }
         await tx.patch(path(C.runs, run.runId), { status, attempts: slot.attempts, proof, replay: retry ? run.replay : null,
@@ -422,12 +462,14 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
       if (!jobs.length) return [];
       // No internal secrets or ownership data cross into the simulation runner.
       const inputs = jobs.map(({ lease, eventKey, ...input }) => input);
-      const results = await verifyBatch(inputs);
+      const trustedPeriod=await store.transaction(tx=>readPeriod(tx,periodId));
+      demand(jobs.every(job=>job.trackId===trustedPeriod.trackId),'verifier_period_mismatch',503);
+      const results = await verifyBatch(inputs,trustedPeriod);
       demand(Array.isArray(results) && results.length === jobs.length && new Set(results.map(r => r?.resultId)).size === jobs.length,
         'incomplete_verifier_batch', 502);
       for (const job of jobs) {
         const result = results.find(r => r?.resultId === job.resultId);
-        validVerdict(job, result); // Validate all identities before publishing any.
+        validVerdict(job, result, trustedPeriod); // Validate all identities before publishing any.
       }
       const published = [];
       for (const job of jobs) {
@@ -448,6 +490,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         demand(catalogEntry, 'event_cleanup_catalog_required', 409);
         if (archive.cleaned && !catalogEntry.extrasCleaned) return { cleaned: true, extrasPending: true };
         if (archive.cleaned && at < p.endsAt + L.retentionMs) return { cleaned: true };
+        if (archive.cleaned && !catalogEntry.replaysCleaned) return { cleaned: true, replaysPending: true };
         const publicCatalogPath = path(C.public, 'catalog');
         if (archive.cleaned) {
           await tx.get(publicCatalogPath);
@@ -549,7 +592,7 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
         demand(await allowRequest({ request, ownerUid: null }) === true, 'event_ingress_limit', 429);
         return respond(200, url.pathname.endsWith('/totals') ? await service.totals() : await service.catalog());
       }
-      const match = /^\/v1\/events\/([A-Za-z0-9_-]{1,64})\/(snapshot|runs|receipt)(?:\/([a-f0-9]{64}|close))?$/.exec(url.pathname);
+      const match = /^\/v1\/events\/([A-Za-z0-9_-]{1,64})\/(snapshot|runs|receipt|replays)(?:\/([a-f0-9]{64}|close))?$/.exec(url.pathname);
       demand(match, 'not_found', 404);
       if (request.method === 'OPTIONS') {
         headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
@@ -557,10 +600,10 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
         return new Response(null, { status: 204, headers });
       }
       const [, periodId, resource, runId] = match;
-      demand((request.method === 'GET' && (resource === 'receipt' && !runId || resource === 'snapshot' && !runId || resource === 'runs' && runId)) ||
+      demand((request.method === 'GET' && (resource === 'receipt' && !runId || resource === 'snapshot' && !runId || resource === 'runs' && runId || resource === 'replays' && runId)) ||
         request.method === 'POST' && (resource === 'runs' && !runId), 'not_found', 404);
       let ownerUid = null;
-      if (resource !== 'snapshot') {
+      if (!['snapshot', 'replays'].includes(resource)) {
         try { ownerUid = uid(await authenticate(request)); } catch { throw new EventError('authentication_failed', 401); }
       }
       demand(await allowRequest({ request, ownerUid }) === true, 'event_ingress_limit', 429);
@@ -568,7 +611,9 @@ export function createEventHandler({ service, authenticate, allowedOrigins, allo
         const body = await boundedBody(request);
         return respond(202, await service.submit(periodId, ownerUid, body));
       }
-      return respond(200, resource === 'receipt' ? await service.ownReceipt(periodId, ownerUid, url.searchParams.get('accountId')) : resource === 'snapshot' ? await service.snapshot(periodId) : await service.status(periodId, ownerUid, runId));
+      return respond(200, resource === 'receipt' ? await service.ownReceipt(periodId, ownerUid, url.searchParams.get('accountId')) :
+        resource === 'snapshot' ? await service.snapshot(periodId) : resource === 'replays' ? await service.replay(periodId, runId) :
+          await service.status(periodId, ownerUid, runId));
     } catch (error) { return respond(error instanceof EventError ? error.status : 503, { error: error instanceof EventError ? error.code : 'events_unavailable' }); }
   };
 }

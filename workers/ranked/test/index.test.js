@@ -37,7 +37,7 @@ test('unchanged track signatures are rewritten when schema or algorithm is obsol
   const signature = 'same-content';
   assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 4, algorithmVersion: 'participation-v8-s1' }, signature), false);
   assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 5, algorithmVersion: 'old-algorithm' }, signature), false);
-  assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 5, algorithmVersion: 'participation-v8-s1' }, signature), true);
+  assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 5, algorithmVersion: 'participation-v8-s1',entries:[],complete:true,totalEntries:0 }, signature), true);
 });
 
 test('track types use the exact registry instead of treating every hash as community', () => {

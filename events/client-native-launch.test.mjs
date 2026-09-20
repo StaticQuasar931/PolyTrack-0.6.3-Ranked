@@ -24,3 +24,15 @@ test('native event launch skips normal record lookup; ordinary launch still read
  assert.equal(read(true,records,0,track),null);assert.equal(reads,0);
  assert.equal(read(false,records,0,track),saved);assert.equal(reads,1);
 });
+
+test('selected opponent never replaces native personal-best comparison',()=>{
+ const code=native.match(/if\(eventRace\)\{const ownGhost=eventRace\.ownGhost\|\|null;.*?f=null\}/)?.[0];assert(code);
+ const run=new Function('eventRace','let c,M,f;'+code+';return {c,M}');
+ const own={time:20000,recording:'own'},opponent={time:18000,recording:'other'};
+ const result=run({ownGhost:own,opponents:[opponent]});assert.deepEqual(result.c,[own,opponent]);assert.equal(result.M.recording,'own');
+ const withoutOwn=run({opponents:[opponent]});assert.deepEqual(withoutOwn.c,[opponent]);assert.equal(withoutOwn.M,null);
+});
+test('event Watch is attached to live track UI and replay return restores event policy',()=>{
+ assert(native.includes('__pt062EventWatch={version:1,trackId:u,open:ghosts=>'));
+ assert(native.includes('window.__pt062ResumeEventRace?.(t.getId(),()=>J(e,t,n,i,null,!1))'));
+});
