@@ -34,15 +34,12 @@
   const eventsModuleUrl=new URL('./events/client.mjs',document.currentScript?.src||location.href).href;
   let eventUi=null,eventUiPromise=null,eventQueueChecked=false,eventModuleRetryAt=0;
   let pendingEventLaunch=null;
-  let nativeWeeklySelection=null,weeklyAdapterPromise=null;
+  let nativeWeeklySelection=null,kodubAdapter=null;
   async function nativeWeeklyFeed(){
-    const ui=await ensureEventUi();
-    if(!weeklyAdapterPromise)weeklyAdapterPromise=import(new URL('./weekly-native.mjs',eventsModuleUrl).href).then(module=>{
-      module.installWeeklyEventNavigation(document,()=>nativeWeeklySelection,options=>ui.openEvent(options));return module;
-    }).catch(error=>{weeklyAdapterPromise=null;throw error;});
-    const [adapter,catalog]=await Promise.all([weeklyAdapterPromise,ui.refreshCatalog()]);
-    const response=adapter.weeklyNativeResponse(catalog,trackInfo,new URL('../',eventsModuleUrl).href);
-    nativeWeeklySelection=response.current?{trackId:response.current.trackId,endsAt:Date.parse(response.current.endTime)}:null;
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs',eventsModuleUrl).href);
+    await ensureEventUi();
+    const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl()});
+    nativeWeeklySelection=response.current;
     return response;
   }
   window.__pt062PrepareEventRace=function(trackId,multiplayer){
@@ -106,10 +103,7 @@
     if(!eventQueueChecked){eventQueueChecked=true;try{if(JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').length)void ensureEventUi().then(ui=>ui.flush()).catch(()=>{setTimeout(()=>{eventQueueChecked=false;},60000);});}catch{}}
     const group=document.querySelector('.track-selection-ui img[src="tracks/community/thumbnails/rolling_hills_racer.png"]')?.closest('.community-track-group');
     // 0.6.3 uses version tabs instead of the old named group-title rows.
-    if(group){
-      const weeklySection=document.querySelector('.community-track-versions')?.previousElementSibling;
-      if(weeklySection?.querySelector('.group-title'))weeklySection.style.display='none';
-    }
+    if(group)kodubAdapter?.combineKodubCard(document,group,nativeWeeklySelection);
     if(group)group.classList.add('sq-event-track-group');
     if(group&&!group.querySelector('.sq-events-entry')){
       const button=document.createElement('button');button.className='button sq-events-entry';button.type='button';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');

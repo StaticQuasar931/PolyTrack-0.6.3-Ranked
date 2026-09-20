@@ -94,12 +94,32 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 #ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-card{height:210px;min-height:210px}
 #ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-thumb{height:120px;flex-basis:120px}
 }
-/* Version tabs are a navigation strip, never a full-height image panel. */
-#ui .track-selection-ui .community-track-versions{display:flex!important;flex-wrap:nowrap!important;align-items:stretch!important;flex:0 0 64px!important;height:64px!important;min-height:64px!important;max-height:64px!important;overflow-x:auto;overflow-y:hidden;margin:16px 0!important;scrollbar-width:thin}
-#ui .track-selection-ui .community-track-versions>.button{flex:0 0 auto!important;width:auto!important;min-width:100px!important;max-width:none!important;height:64px!important;min-height:64px!important;margin:0!important;padding:10px 20px!important;font-size:24px!important;white-space:nowrap;box-sizing:border-box}
+/* Keep the native image-navigation scale while bounding mobile height. */
+#ui .track-selection-ui .community-track-versions{display:flex!important;flex-wrap:nowrap!important;align-items:stretch!important;flex:0 0 88px!important;height:88px!important;min-height:88px!important;max-height:88px!important;overflow-x:auto;overflow-y:hidden;margin:16px 0!important;scrollbar-width:thin}
+#ui .track-selection-ui .community-track-versions>.button{flex:1 0 auto!important;width:auto!important;min-width:120px!important;max-width:none!important;height:88px!important;min-height:88px!important;margin:0!important;padding:12px 20px!important;font-size:34px!important;white-space:nowrap;box-sizing:border-box}
 @media(max-width:650px){
-#ui .track-selection-ui .community-track-versions{flex-basis:52px!important;height:52px!important;min-height:52px!important;max-height:52px!important;margin:10px 0!important}
-#ui .track-selection-ui .community-track-versions>.button{height:52px!important;min-height:52px!important;font-size:20px!important;min-width:88px!important;padding:8px 14px!important}
+#ui .track-selection-ui .community-track-versions{flex-basis:68px!important;height:68px!important;min-height:68px!important;max-height:68px!important;margin:10px 0!important}
+#ui .track-selection-ui .community-track-versions>.button{height:68px!important;min-height:68px!important;font-size:26px!important;min-width:108px!important;padding:10px 16px!important}
 }
 #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions){display:block!important;width:100%!important;min-width:0;box-sizing:border-box}
 #ui .track-selection-ui .community-track-group.sq-event-track-group{width:100%!important;min-width:0;box-sizing:border-box;margin-top:16px!important}
+
+/* Kodub stays a native, non-event track alongside our separately scored cards. */
+#ui .track-selection-ui .sq-event-track-group>.sq-kodub-weekly{grid-column:span 2;min-width:0}
+#ui .track-selection-ui .sq-event-track-group>.sq-kodub-weekly[hidden]{display:none!important}
+#ui .track-selection-ui .sq-kodub-weekly>.button{position:relative;height:241px!important;min-height:241px;box-sizing:border-box;overflow:hidden;padding-top:30px!important}
+#ui .track-selection-ui .sq-kodub-weekly .sq-kodub-label{position:absolute;top:7px;left:12px;right:12px;font-size:16px;text-align:left;z-index:2;color:#fff}
+#ui .track-selection-ui .sq-kodub-weekly .track-of-the-week-info{min-width:0;max-width:100%;box-sizing:border-box}
+#ui .track-selection-ui .sq-kodub-weekly .title{overflow-wrap:anywhere}
+@media(max-width:650px){#ui .track-selection-ui .sq-kodub-weekly>.button{height:241px!important} }
+#ui .track-selection-ui .track.sq-kodub-weekly>.button{display:flex;flex-direction:column;align-items:stretch;gap:0}
+#ui .track-selection-ui .track.sq-kodub-weekly>.button>img:not(.environment){width:100%!important;height:94px!important;max-height:94px!important;padding:0!important;flex:0 0 94px;object-fit:contain;background:#12204a}
+#ui .track-selection-ui .track.sq-kodub-weekly>.button>.thumbnail-background{display:none}
+#ui .track-selection-ui .track.sq-kodub-weekly>.button>.track-of-the-week-info{padding:5px 12px;flex:1;justify-content:flex-start;gap:1px}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.title{font-size:22px;line-height:24px}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.author{font-size:13px;line-height:15px;opacity:.85}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.time-remaining{font-size:17px;line-height:20px;margin-top:2px}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.date-range{font-size:13px;line-height:15px;opacity:.85}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.personal-best{margin-top:0}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.personal-best>div{font-size:13px;line-height:15px}
+#ui .track-selection-ui .track.sq-kodub-weekly .track-of-the-week-info>.personal-best>div>img{width:14px;height:14px}
