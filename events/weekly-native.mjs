@@ -3,7 +3,7 @@
 export function weeklyNativeResponse(catalog, trackInfo, baseUrl, now = Date.now()) {
   const empty = {serverTime:new Date(now).toISOString(),current:null};
   const active = (Array.isArray(catalog?.periods) ? catalog.periods : []).filter(p =>
-    p?.kind === 'weekly' && p.enabled === true && !p.archived &&
+    p?.kind === 'weekly' && p.enabled !== false && !p.archived &&
     Number.isSafeInteger(p.startsAt) && Number.isSafeInteger(p.endsAt) && p.startsAt <= now && now < p.endsAt);
   if (active.length !== 1) return empty;
   const period = active[0], track = trackInfo(period.trackId);

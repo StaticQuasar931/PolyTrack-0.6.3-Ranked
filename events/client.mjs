@@ -14,7 +14,7 @@ export function installEvents(bridge){
   let statusText='';
   const cache=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
-  const activePeriods=()=>Array.isArray(catalog.periods)?catalog.periods.filter(p=>p.startsAt<=now()&&p.endsAt>now()):[];
+  const activePeriods=()=>Array.isArray(catalog.periods)?catalog.periods.filter(p=>p.enabled!==false&&!p.archived&&p.startsAt<=now()&&p.endsAt>now()):[];
   const info=id=>bridge.trackInfo(id);
   const time=ms=>Number.isFinite(ms)&&ms>0?bridge.formatTime(ms):'No event time';
   const localBest=period=>bestRecords[period.id+'_'+bridge.accountId()];
@@ -287,22 +287,22 @@ export function installEvents(bridge){
       }
       button.removeAttribute('aria-disabled');if(period)knownPeriods.set(period.id,period);
     }
-    const title=[...document.querySelectorAll('.track-selection-ui .group-title')].find(e=>e.textContent.trim()==='StaticQuasar931');
-    if(title)title.parentElement.classList.add('sq-event-track-group');
+    const group=document.querySelector('.track-selection-ui img[src="tracks/community/thumbnails/rolling_hills_racer.png"]')?.closest('.community-track-group');
+    if(group)group.classList.add('sq-event-track-group');
     const rolling=activePeriods().filter(p=>p.kind==='weekly'&&p.trackId===ROLLING_HILLS_TRACK);
-    for(const button of title?.parentElement.querySelectorAll(':scope > .track > button')||[]){
+    for(const button of group?.querySelectorAll(':scope > .track > button')||[]){
       const period=rolling.length===1&&button.querySelector('.track-title p')?.textContent.trim()===info(ROLLING_HILLS_TRACK).name?rolling[0]:null;
       const label=button.querySelector('.sq-event-native-label');
       if(!period){delete button.dataset.nativeWeeklyEvent;label?.remove();continue;}
       button.dataset.nativeWeeklyEvent=period.id;
       if(!label){const note=document.createElement('small');note.className='sq-event-native-label';note.textContent='Weekly event + normal PB';button.append(note);}
     }
-    if(title?.getClientRects().length)void loadCatalog().catch(()=>{});
-    if(title&&!title.parentElement.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});title.parentElement.append(button);}
-    if(title&&activePeriods().length){
-      let row=title.parentElement.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';title.parentElement.append(row);row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
+    if(group?.getClientRects().length)void loadCatalog().catch(()=>{});
+    if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
+    if(group&&activePeriods().length){
+      let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
       const signature=activePeriods().map(p=>p.id).join('|');if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(activePeriods());}
-    }else if(title){title.parentElement.querySelector('.sq-event-track-buttons')?.remove();}
+    }else if(group){group.querySelector('.sq-event-track-buttons')?.remove();}
     const session=sessions.current()||eventIntent;if(document.body.classList.contains('sq-event-active')!==!!session)document.body.classList.toggle('sq-event-active',!!session);
     syncNativeBoard(session);
   }

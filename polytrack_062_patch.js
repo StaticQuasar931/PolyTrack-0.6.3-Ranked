@@ -104,14 +104,19 @@
   }
   function ensureEventEntry(){
     if(!eventQueueChecked){eventQueueChecked=true;try{if(JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').length)void ensureEventUi().then(ui=>ui.flush()).catch(()=>{setTimeout(()=>{eventQueueChecked=false;},60000);});}catch{}}
-    const title=[...document.querySelectorAll('.track-selection-ui .group-title')].find(node=>node.textContent.trim()==='StaticQuasar931');
-    if(title)title.parentElement.classList.add('sq-event-track-group');
-    if(title&&!title.parentElement.querySelector('.sq-events-entry')){
+    const group=document.querySelector('.track-selection-ui img[src="tracks/community/thumbnails/rolling_hills_racer.png"]')?.closest('.community-track-group');
+    // 0.6.3 uses version tabs instead of the old named group-title rows.
+    if(group){
+      const weeklySection=document.querySelector('.community-track-versions')?.previousElementSibling;
+      if(weeklySection?.querySelector('.group-title'))weeklySection.style.display='none';
+    }
+    if(group)group.classList.add('sq-event-track-group');
+    if(group&&!group.querySelector('.sq-events-entry')){
       const button=document.createElement('button');button.className='button sq-events-entry';button.type='button';button.textContent='Events';button.setAttribute('aria-label','Browse events and past results');
-      button.addEventListener('click',event=>{event.stopPropagation();ensureEventUi().then(ui=>ui.open()).catch(()=>{button.textContent='Events unavailable · retry';});});title.parentElement.append(button);
+      button.addEventListener('click',event=>{event.stopPropagation();ensureEventUi().then(ui=>ui.open()).catch(()=>{button.textContent='Events unavailable · retry';});});group.append(button);
     }
     const ranked=document.getElementById('overallLeaderboardPanel');
-    if((title&&isElementVisible(title)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
+    if((group&&isElementVisible(group)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
     eventUi?.tick();
   }
 
@@ -1756,13 +1761,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function ensureWeeklyTrackHighlight(){
-    const weeklyName=weeklyCup().track.name.trim().toLowerCase();
-    document.querySelectorAll('.sq-weekly-title').forEach((title)=>title.classList.remove('sq-weekly-title'));
-    if(localStorage.getItem('polytrack-0.6.2-featured-highlight')==='0')return;
-    for(const title of document.querySelectorAll('.track-title p')){
-      if(String(title.textContent||'').trim().toLowerCase()!==weeklyName)continue;
-      title.closest('.track-title')?.classList.add('sq-weekly-title');
-    }
+    // Events have separate cards; never decorate the ordinary version of a track.
+    document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
   function decoratePersonalBestPodiums(){
     document.querySelectorAll('.sq-pb-podium,.sq-pb-ranked').forEach((node)=>node.classList.remove('sq-pb-podium','sq-pb-ranked','gold','silver','bronze'));
@@ -2061,7 +2061,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     grid.appendChild(settingsToggle('Full menu animations','polytrack-0.6.2-reduced-effects',true,true));
     grid.appendChild(settingsToggle('Lobby links and widgets','polytrack-0.6.2-lobby-extras',true));
     grid.appendChild(settingsToggle('PB podium colors and places','polytrack-0.6.2-pb-podiums',true));
-    grid.appendChild(settingsToggle('Featured track highlight','polytrack-0.6.2-featured-highlight',true));
+
     grid.appendChild(settingsToggle('Expanded Ranked details','polytrack-0.6.2-compact-ranked',true,true));
     grid.appendChild(settingsToggle('Public racer codes in Ranked','polytrack-0.6.2-show-racer-codes',true));
     grid.appendChild(settingsSecretInput('Multiplayer Discord code','polytrack-0.6.2-turn-backup-code'));

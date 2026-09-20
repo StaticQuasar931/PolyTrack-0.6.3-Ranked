@@ -99,7 +99,7 @@ test('native event template shows a new local finish immediately as pending, nev
  await p.evaluate(()=>ui.leave());assert.equal(await p.locator('.sq-event-board').count(),0);assert.equal(await p.locator('.sq-event-personal').count(),0);assert.equal(await p.locator('.side-panel .personal-best').innerText(),'9999');
 });
 test('visible Static group loads catalog once, hidden group does not load',async t=>{
- const p=await fixture(t);await p.evaluate(()=>{const host=document.createElement('div');host.className='track-selection-ui';host.style.display='none';host.innerHTML='<div><div class="group-title">StaticQuasar931</div></div>';document.body.append(host);ui.tick();});assert.equal(await p.evaluate(()=>catalogReads),0);
+ const p=await fixture(t);await p.evaluate(()=>{const host=document.createElement('div');host.className='track-selection-ui';host.style.display='none';host.innerHTML='<div class="community-track-group"><img src="tracks/community/thumbnails/rolling_hills_racer.png"></div>';document.body.append(host);ui.tick();});assert.equal(await p.evaluate(()=>catalogReads),0);
  await p.evaluate(()=>{document.querySelector('.track-selection-ui').style.display='block';ui.tick();});await p.waitForFunction(()=>catalogReads===1);await p.evaluate(()=>{for(let i=0;i<100;i++)ui.tick();});assert.equal(await p.evaluate(()=>catalogReads),1);assert.equal(await p.locator('.sq-event-track-group').count(),1);
 });
 test('Event RP delegates to normal Ranked hook after closing event dialog',async t=>{
@@ -107,7 +107,7 @@ test('Event RP delegates to normal Ranked hook after closing event dialog',async
 });
 test('event reset labels explicitly use Local',async t=>{const p=await fixture(t);await p.locator('#open').click();await p.locator('.sq-events-overlay [data-event-id]').click();assert.match(await p.locator('.sq-events-dialog main').innerText(),/Local/);});
 
-async function showLiveRail(p){await p.evaluate(()=>{const host=document.createElement('div');host.className='track-selection-ui';host.innerHTML='<div><div class="group-title">StaticQuasar931</div></div>';document.body.append(host);ui.tick();});await p.waitForFunction(()=>catalogReads===1);await p.evaluate(()=>ui.tick());}
+async function showLiveRail(p){await p.evaluate(()=>{const host=document.createElement('div');host.className='track-selection-ui';host.innerHTML='<div class="community-track-group"><img src="tracks/community/thumbnails/rolling_hills_racer.png"></div>';document.body.append(host);ui.tick();});await p.waitForFunction(()=>catalogReads===1);await p.evaluate(()=>ui.tick());}
 test('live rail card enters native event screen directly without opening a modal',async t=>{const p=await fixture(t);await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.car);assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.locator('.sq-event-board').count(),1);await p.evaluate(()=>car.finish(21000));assert.match(await p.locator('.sq-event-personal').innerText(),/21000/);});
 test('direct live-card entry is cancelled when leaving during readiness',async t=>{const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.resolveReady);await p.evaluate(()=>{ui.leave();resolveReady();});await p.waitForTimeout(450);assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false);assert.equal(await p.locator('.sq-event-board').count(),0);});
 test('native integrity decorator keeps published event rows verified and local rows pending',async t=>{
@@ -258,7 +258,7 @@ test('Ranked footer replaces legacy targets with exact catalog assignments witho
 test('trusted Static Rolling Hills Racer card enters only its registered live weekly event; synthetic click cannot recurse',async t=>{
  const p=await fixture(t);await sharedTrackPeriods(p);await p.evaluate(()=>{
   const trackId='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';periods.forEach(p=>p.trackId=trackId);bridgeFixture.require()(9117).A.prototype.getId=()=>trackId;
-  bridgeFixture.trackInfo=()=>({name:'Rolling Hills Racer'});const host=document.createElement('div');host.className='track-selection-ui';host.innerHTML='<div><div class="group-title">StaticQuasar931</div><div class="track"><button id="rolling"><span class="track-title"><p>Rolling Hills Racer</p></span></button></div></div>';document.body.append(host);
+  bridgeFixture.trackInfo=()=>({name:'Rolling Hills Racer'});const host=document.createElement('div');host.className='track-selection-ui';host.innerHTML='<div class="community-track-group"><img src="tracks/community/thumbnails/rolling_hills_racer.png"><div class="track"><button id="rolling"><span class="track-title"><p>Rolling Hills Racer</p></span></button></div></div>';document.body.append(host);
   window.nativeSelections=0;document.querySelector('#rolling').onclick=()=>{nativeSelections++;window.car=makeCar();};bridgeFixture.openTrack=()=>document.querySelector('#rolling').click();ui.tick();
  });
  assert.match(await p.locator('#rolling').innerText(),/Weekly event \+ normal PB/);await p.locator('#rolling').click();await p.waitForFunction(()=>!!window.car);assert.equal(await p.evaluate(()=>nativeSelections),1);

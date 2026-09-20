@@ -18,3 +18,5 @@ test('cloud metadata cannot substitute track names, files, thumbnails or game co
  const current=response([{...period,name:'cloud name',trackUrl:'javascript:alert(1)',thumbnail:'https://evil.test'}]).current;
  assert.equal(current.name,'Summer 1');assert.match(current.thumbnailUrl,/example\.test\/new-repo\/tracks\/official/);
 });
+
+test('public catalog periods need no private enabled field',()=>{const {enabled,...publicPeriod}=period;assert.equal(response([publicPeriod]).current.trackId,id);});

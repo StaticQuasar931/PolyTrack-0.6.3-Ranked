@@ -78,3 +78,28 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .track-info-ui>.sq-event-board>.pages,.track-info-ui>.sq-event-board>.button-wrapper{flex:0 0 44px!important;min-height:44px!important;height:44px!important;padding:0!important;box-sizing:border-box!important}
 .track-info-ui>.sq-event-board>.pages button,.track-info-ui>.sq-event-board>.button-wrapper button{margin:0!important;box-sizing:border-box!important}
 }
+
+/* 0.6.3: one compact native group, including the separate daily/weekly cards. */
+#ui .track-selection-ui .community-track-group.sq-event-track-group:not(.hidden){display:grid!important;grid-template-columns:repeat(auto-fit,minmax(180px,216px));gap:16px!important;align-items:start;padding-top:56px;position:relative}
+#ui .track-selection-ui .community-track-group.sq-event-track-group.hidden{display:none!important}
+#ui .track-selection-ui .community-track-group.sq-event-track-group>.track{width:100%!important;max-width:none!important;margin:0!important;flex:none}
+#ui .track-selection-ui .community-track-group.sq-event-track-group>.track>.button{width:100%!important;max-width:none!important;margin:0!important}
+#ui .track-selection-ui .community-track-group.sq-event-track-group>.sq-event-track-buttons{display:contents!important}
+#ui .track-selection-ui .community-track-group.sq-event-track-group>.sq-event-track-buttons:before{display:none}
+#ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-card{width:100%;min-width:0;max-width:none;margin:0;height:241px;min-height:241px}
+#ui .track-selection-ui .community-track-group.sq-event-track-group>.sq-events-entry{top:4px;right:0;height:40px;min-height:40px;font-size:18px}
+#ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-card:focus-visible{outline:3px solid #fff;outline-offset:3px}
+@media(max-width:650px){
+#ui .track-selection-ui .community-track-group.sq-event-track-group:not(.hidden){grid-template-columns:repeat(2,minmax(0,1fr));gap:12px!important}
+#ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-card{height:210px;min-height:210px}
+#ui .track-selection-ui .community-track-group.sq-event-track-group .sq-event-thumb{height:120px;flex-basis:120px}
+}
+/* Version tabs are a navigation strip, never a full-height image panel. */
+#ui .track-selection-ui .community-track-versions{display:flex!important;flex-wrap:nowrap!important;align-items:stretch!important;flex:0 0 64px!important;height:64px!important;min-height:64px!important;max-height:64px!important;overflow-x:auto;overflow-y:hidden;margin:16px 0!important;scrollbar-width:thin}
+#ui .track-selection-ui .community-track-versions>.button{flex:0 0 auto!important;width:auto!important;min-width:100px!important;max-width:none!important;height:64px!important;min-height:64px!important;margin:0!important;padding:10px 20px!important;font-size:24px!important;white-space:nowrap;box-sizing:border-box}
+@media(max-width:650px){
+#ui .track-selection-ui .community-track-versions{flex-basis:52px!important;height:52px!important;min-height:52px!important;max-height:52px!important;margin:10px 0!important}
+#ui .track-selection-ui .community-track-versions>.button{height:52px!important;min-height:52px!important;font-size:20px!important;min-width:88px!important;padding:8px 14px!important}
+}
+#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions){display:block!important;width:100%!important;min-width:0;box-sizing:border-box}
+#ui .track-selection-ui .community-track-group.sq-event-track-group{width:100%!important;min-width:0;box-sizing:border-box;margin-top:16px!important}
