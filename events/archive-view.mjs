@@ -4,6 +4,7 @@ const KIND_LABELS = Object.freeze({
   kodub: 'Kodub weekly',
   custom: 'Event'
 });
+const PERMANENT_ROLLING_ID = 'permanent-rolling-hills';
 
 function finiteInteger(value, fallback = 0) {
   return Number.isSafeInteger(value) ? value : fallback;
@@ -24,6 +25,32 @@ function isPending(row) {
   return row.pending === true || row.status === 'pending';
 }
 
+function racerIdentity(row, index) {
+  return typeof row.accountId === 'string' && row.accountId ? `account:${row.accountId}` : `anonymous:${index}`;
+}
+
+function dedupeVerifiedEntries(snapshot) {
+  const best = new Map();
+  for (const [index, row] of validEntries(snapshot).entries()) {
+    if (isPending(row)) continue;
+    const key = racerIdentity(row, index);
+    const prior = best.get(key);
+    const time = Number.isFinite(row.timeMs) && row.timeMs > 0 ? row.timeMs : Number.POSITIVE_INFINITY;
+    const priorTime = Number.isFinite(prior?.timeMs) && prior.timeMs > 0 ? prior.timeMs : Number.POSITIVE_INFINITY;
+    if (!prior || time < priorTime) best.set(key, row);
+  }
+  const rows = [...best.values()].sort((a, b) => {
+    const aTime = Number.isFinite(a.timeMs) && a.timeMs > 0 ? a.timeMs : Number.POSITIVE_INFINITY;
+    const bTime = Number.isFinite(b.timeMs) && b.timeMs > 0 ? b.timeMs : Number.POSITIVE_INFINITY;
+    return aTime - bTime || String(a.accountId || '').localeCompare(String(b.accountId || ''));
+  });
+  let rank = 0;
+  return rows.map((row, index) => {
+    if (!index || row.timeMs !== rows[index - 1].timeMs) rank = index + 1;
+    return Object.freeze({ ...row, rank });
+  });
+}
+
 function safeCount(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
@@ -35,16 +62,17 @@ function declaredRacerCount(value) {
 
 export function archivePeriodCounts(period, snapshot) {
   const entries = validEntries(snapshot);
-  const verifiedEntries = entries.filter(row => !isPending(row));
+  const verifiedEntries = dedupeVerifiedEntries(snapshot);
+  const uniqueRacers = new Set(entries.map(racerIdentity));
   const racers = declaredRacerCount(snapshot) ?? declaredRacerCount(snapshot?.period) ??
-    declaredRacerCount(period) ?? (snapshot ? entries.length : null);
-  return Object.freeze({ racers, verified: snapshot ? verifiedEntries.length : null, verifiedEntries });
+    declaredRacerCount(period) ?? (snapshot ? uniqueRacers.size : null);
+  return Object.freeze({ racers, verified: snapshot ? verifiedEntries.length : null, verifiedEntries, winner: verifiedEntries[0] || null });
 }
 
 export function normalizeArchivePeriods(periods) {
   const unique = new Map();
   for (const value of Array.isArray(periods) ? periods : []) {
-    if (!value || typeof value.id !== 'string' || !value.id) continue;
+    if (!value || typeof value.id !== 'string' || !value.id || value.id === PERMANENT_ROLLING_ID || value.kind === 'permanent') continue;
     const period = {
       ...value,
       kind: KIND_LABELS[value.kind] ? value.kind : 'custom',
@@ -52,10 +80,19 @@ export function normalizeArchivePeriods(periods) {
       endsAt: finiteInteger(value.endsAt),
       maxRp: Math.max(0, finiteInteger(value.maxRp))
     };
+    if (period.endsAt <= 0) continue;
     const prior = unique.get(period.id);
-    if (!prior || period.endsAt >= prior.endsAt) unique.set(period.id, period);
+    if (!prior || period.endsAt > prior.endsAt) unique.set(period.id, period);
+    else if (period.endsAt === prior.endsAt) unique.set(period.id, { ...prior, ...period });
   }
   return [...unique.values()].sort((a, b) => b.endsAt - a.endsAt || a.id.localeCompare(b.id));
+}
+
+export function catalogArchivePeriods(catalog, now = Date.now()) {
+  const periods = Array.isArray(catalog?.periods) ? catalog.periods : [];
+  const archives = Array.isArray(catalog?.archives) ? catalog.archives : [];
+  const ended = periods.filter(period => period?.archived === true || Number.isSafeInteger(period?.endsAt) && period.endsAt <= now);
+  return normalizeArchivePeriods([...ended, ...archives]);
 }
 
 export function paginateArchivePeriods(periods, page = 1, pageSize = 12) {
@@ -269,6 +306,11 @@ export function mountArchiveView(root, options = {}) {
       appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}`);
       count.append(document.createTextNode(' | '));
       appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified`);
+      if (counts.winner) {
+        count.append(document.createTextNode(' | '));
+        const winnerName = typeof counts.winner.name === 'string' && counts.winner.name ? counts.winner.name : 'Racer';
+        appendText(document, count, 'span', 'sq-archive-winner', `Winner ${winnerName} ${formatTime(counts.winner.timeMs)}`);
+      }
       renderRows(document, results, counts.verifiedEntries, formatTime, options.accountId || '');
       renderStats(document, stats, periods, snapshots);
     };

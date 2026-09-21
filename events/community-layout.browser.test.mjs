@@ -13,7 +13,7 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  for(const [width,height] of [[1366,768],[390,844],[768,1024]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
-  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=650?116:96);assert(featured.y+featured.height<=nav.y);assert.equal(featured.width,nav.width);
+  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=650?116:96);assert(featured.y+featured.height<=nav.y);assert(nav.width>featured.width,"Version navigation spans beyond the inset event cards");assert.equal(Math.round(nav.width),width);
   assert(featured.x+featured.width<=width+1,'Section must fit the page');
   const rects=[];for(const card of await page.locator('.sq-kodub-weekly,.sq-permanent-track,.sq-event-card').all())rects.push(await card.boundingBox());
   assert.equal(rects.length,4);for(const rect of rects)assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1,'Every event card stays in the section');
@@ -35,7 +35,7 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
  assert(artwork.x+artwork.width<=info.x,'Artwork must be left of the details');
  assert.equal((await page.locator('.sq-kodub-weekly>button').boundingBox()).height,288);
- assert.equal(image.fit,'cover');assert.equal(image.height,288);
+ assert.equal(image.fit,'contain');assert.equal(image.height,288);
  const decoration=await page.locator('.sq-kodub-weekly>button').evaluate(e=>({border:getComputedStyle(e).borderTopWidth,shadow:getComputedStyle(e).boxShadow}));
  assert.equal(decoration.border,'0px');assert.equal(decoration.shadow,'none');
  await page.locator('.community-track-group').evaluate(e=>e.classList.add('hidden'));

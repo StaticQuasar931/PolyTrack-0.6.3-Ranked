@@ -68,7 +68,7 @@ test('provisions one immutable Kodub period from exact official endpoints', asyn
     `${root}/trackOfTheWeek/track/${assetId}?version=0.6.3`,
     `${root}/leaderboard?version=0.6.3&trackId=${trackId}&skip=0&amount=1&onlyVerified=true`,
   ]);
-  assert(f.calls.every(([, init]) => init.method === 'GET' && init.redirect === 'error'));
+  assert(f.calls.every(([, init]) => init.method === 'GET' && init.redirect === 'manual'));
   assert(f.calls.every(([, init]) => init.headers.Origin === 'https://app-polytrack.kodub.com' &&
     init.headers.Referer === 'https://app-polytrack.kodub.com/'));
   assert.deepEqual(f.calls.map(([, init]) => init.headers.Accept), ['application/json', 'text/plain', 'application/json']);
@@ -87,6 +87,19 @@ test('provisions one immutable Kodub period from exact official endpoints', asyn
   assert.equal(period.kodub.officialEndTime, period.endsAt);
   assert(Object.isFrozen(period));
   assert(Object.isFrozen(period.kodub));
+});
+
+test('manual redirect responses are rejected without following or provisioning', async () => {
+  const f = fixture();
+  f.fetch = async (url, init) => {
+    f.calls.push([url, init]);
+    return new Response(null, { status: 302, headers: { Location: 'https://evil.test/kodub' } });
+  };
+  await assert.rejects(provisionKodubEvent(f.runtime, { capacity, fetch: f.fetch }), /kodub_upstream_failed/);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0][0], KODUB_METADATA_URL);
+  assert.equal(f.calls[0][1].redirect, 'manual');
+  assert.equal(f.created(), undefined);
 });
 
 test('La Riviera uses the private 57597ms soft target without exposing it in public period metadata', async () => {

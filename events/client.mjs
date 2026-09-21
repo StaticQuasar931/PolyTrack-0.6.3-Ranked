@@ -1,4 +1,4 @@
-import {mountArchiveView} from './archive-view.mjs';
+import {archivePeriodCounts,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest} from './session.mjs';
@@ -7,6 +7,14 @@ import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
+const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+const PERMANENT_ROLLING=Object.freeze({id:'permanent-rolling-hills',kind:'permanent',trackId:ROLLING_TRACK_ID,trackName:'Rolling Hills Racer',maxRp:1001,permanent:true});
+export function liveTimedEventPeriods(periods,at=Date.now()){
+  const unique=new Map();
+  for(const period of (Array.isArray(periods)?periods:[]))if(period?.id&&period.id!==PERMANENT_ROLLING.id&&period.kind!=='permanent'&&period.enabled!==false&&!period.archived&&period.startsAt<=at&&period.endsAt>at&&!unique.has(period.id))unique.set(period.id,period);
+  const order={kodub:0,weekly:1,daily:2};
+  return [...unique.values()].sort((a,b)=>(order[a.kind]??3)-(order[b.kind]??3)||a.endsAt-b.endsAt||String(a.id).localeCompare(String(b.id)));
+}
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
 const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
@@ -90,7 +98,8 @@ export function installEvents(bridge){
   let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
   const cache=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
-  const activePeriods=()=>Array.isArray(catalog.periods)?catalog.periods.filter(p=>p.enabled!==false&&!p.archived&&p.startsAt<=now()&&p.endsAt>now()):[];
+  const activePeriods=()=>liveTimedEventPeriods(catalog.periods,now());
+  const livePeriods=activePeriods;
   const info=id=>{const p=[...knownPeriods.values(),...(catalog.periods||[]),...(catalog.archives||[])].find(p=>p.trackId===id&&p.trackName);return p?{...bridge.trackInfo(id),name:p.trackName}:bridge.trackInfo(id);};
   const periodName=period=>eventTrackName(period,info);
   const time=ms=>Number.isFinite(ms)&&ms>0?bridge.formatTime(ms):'No event time';
@@ -99,11 +108,15 @@ export function installEvents(bridge){
   const reset=p=>new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(p.endsAt)+' Local';
   function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();return value;}
   async function loadPermanent(){
-    if(typeof bridge.readPermanent!=='function'||permanentFetching||now()-permanentAt<120000)return;
+    if(typeof bridge.readPermanent!=='function')return permanent;
+    if(permanentFetching)return permanentFetching;
+    if(now()-permanentAt<120000)return permanent;
     permanentAt=now();permanentFetching=bridge.readPermanent().then(value=>{
       if(value?.id!=='permanent-rolling-hills'||value.complete!==true||!Array.isArray(value.entries)||value.maxRp!==1001)throw Error('Incomplete permanent event standings');
       if(!permanent||value.sourceRevision>=permanent.sourceRevision){permanent=value;cacheWrite(STORE+'-permanent',value);}
-    }).catch(()=>{}).finally(()=>{permanentFetching=null;tick();});
+      return permanent;
+    }).catch(()=>permanent).finally(()=>{permanentFetching=null;tick();});
+    return permanentFetching;
   }
   async function loadCatalog(force=false){
     if(fetching)return fetching;if(!force&&catalogAt&&now()-catalogAt<120000)return catalog;
@@ -171,7 +184,7 @@ export function installEvents(bridge){
   function shell(){
     if(dialog)return;
     returnFocus=document.activeElement;dialog=document.createElement('div');dialog.className='sq-events-overlay';dialog.innerHTML='<section class="sq-events-dialog" role="dialog" aria-modal="true" aria-labelledby="sqEventsTitle"><header><h2 id="sqEventsTitle">Events</h2><button type="button" class="button" data-event-close>Close</button></header><nav><button type="button" class="button" data-event-home>Live events</button><button type="button" class="button" data-event-totals>Event RP</button><button type="button" class="button" data-event-archives>Past events</button></nav><p class="sq-event-status" role="status" aria-live="polite"></p><main></main></section>';document.body.append(dialog);
-    dialog.addEventListener('click',e=>{if(e.target===dialog||e.target.closest('[data-event-close]'))return close();if(e.target.closest('[data-event-home]'))void open();if(e.target.closest('[data-event-totals]'))void totals();if(e.target.closest('[data-event-archives]'))void archives();if(e.target.closest('[data-event-month-go]'))void archives(dialog.querySelector('[data-event-month]').value);const card=e.target.closest('[data-event-id]');if(card){const period=knownPeriods.get(card.dataset.eventId)||[...(catalog.periods||[]),...(catalog.archives||[])].find(p=>p.id===card.dataset.eventId);if(period)void openPeriod(period);}if(e.target.closest('[data-event-race]')&&selected)void race(selected);if(e.target.closest('[data-event-refresh]')&&selected)void openPeriod(selected,true);if(e.target.closest('[data-event-practice]')&&selected)void importArchived(selected);});
+    dialog.addEventListener('click',e=>{if(e.target===dialog||e.target.closest('[data-event-close]'))return close();if(e.target.closest('[data-event-home]'))void open();if(e.target.closest('[data-event-totals]'))void totals();if(e.target.closest('[data-event-archives]'))void archives();if(e.target.closest('[data-event-month-go]'))void archives(dialog.querySelector('[data-event-month]').value);if(e.target.closest('[data-event-permanent]'))return void openPermanent();const card=e.target.closest('[data-event-id]');if(card){const period=knownPeriods.get(card.dataset.eventId)||[...(catalog.periods||[]),...(catalog.archives||[])].find(p=>p.id===card.dataset.eventId);if(period)void openPeriod(period);}if(e.target.closest('[data-event-race]')&&selected)void race(selected);if(e.target.closest('[data-event-refresh]')&&selected&&now()<selected.endsAt)void openPeriod(selected,true);if(e.target.closest('[data-event-practice]')&&selected)void practice(selected);});
     dialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();}if(e.key==='Tab'){const buttons=[...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled])')].filter(e=>e.getClientRects().length);const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
     dialog.querySelector('[data-event-close]').focus();
   }
@@ -186,9 +199,14 @@ export function installEvents(bridge){
     const presentation=eventPlacementPresentation(displayedRecordPlacement(period,own,board));
     return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.pending?' <small>Pending</small>':'');
   }
-  function cards(periods){periods.forEach(p=>knownPeriods.set(p.id,p));return periods.map(p=>`<button type="button" class="sq-event-card" data-event-id="${escape(p.id)}" data-event-kind="${escape(p.kind)}"><span class="sq-event-thumb">${bridge.thumbnail(p.trackId)}</span><div class="sq-event-record">${recordMarkup(p)}</div><span><small>${escape(p.kind==='daily'?'DAILY EVENT':p.kind==='weekly'?'WEEKLY EVENT':p.label||'EVENT')}</small><strong>${escape(periodName(p))}</strong><span>Up to ${Number(p.maxRp)||0} Event RP</span>${Number.isInteger(p.entrantLimit)?`<small>Up to ${p.entrantLimit} racers</small>`:''}<small>${now()<p.endsAt?'Ends':'Ended'} ${escape(reset(p))}</small></span></button>`).join('');}
+  function cards(periods){periods.forEach(p=>knownPeriods.set(p.id,p));return periods.map(p=>`<button type="button" class="sq-event-card" data-event-id="${escape(p.id)}" data-event-kind="${escape(p.kind)}"><span class="sq-event-thumb">${bridge.thumbnail(p.trackId)}</span><div class="sq-event-record">${recordMarkup(p)}</div><span><small>${escape(p.kind==='daily'?'DAILY EVENT':p.kind==='weekly'?'WEEKLY EVENT':p.kind==='kodub'?'KODUB WEEKLY':p.label||'EVENT')}</small><strong>${escape(periodName(p))}</strong><span>Up to ${Number(p.maxRp)||0} Event RP</span>${Number.isInteger(p.entrantLimit)?`<small>Up to ${p.entrantLimit} racers</small>`:''}<small>${now()<p.endsAt?'Ends':'Ended'} ${escape(reset(p))}</small></span></button>`).join('');}
+  function permanentCard(){
+    const counts=archivePeriodCounts(PERMANENT_ROLLING,permanent),own=counts.verifiedEntries.find(row=>row.accountId===bridge.accountId());
+    const record=own?'<time>'+time(own.timeMs)+'</time><small>'+Number(own.rp||0)+' Event RP</small>':'No record';
+    return `<button type="button" class="sq-event-card sq-event-permanent" data-event-permanent><span class="sq-event-thumb">${bridge.thumbnail(ROLLING_TRACK_ID)}</span><div class="sq-event-record">${record}</div><span><small>PERMANENT EVENT</small><strong>Rolling Hills Racer</strong><span>Normal RP + up to 1001 Event RP</span><small>No reset</small></span></button>`;
+  }
   function selectView(view){entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
-  async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<p>Race through an event card to set an event time. Daily and weekly event PBs can also improve normal PBs. Kodub weekly earns Event RP only. Rolling Hills earns both through its normal verified PB. Use one racer profile per event.</p><div class="sq-event-cards">'+(cards(activePeriods())||'<p>No events are open right now.</p>')+'</div>');message('Event RP is separate from Overall RP.');}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
+  async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await Promise.all([loadCatalog(),loadPermanent()]);if(!dialog||token!==requestId)return;body('<p>Race through an event card to set an event time. Daily and weekly event PBs can also improve normal PBs. Kodub weekly earns Event RP only. Rolling Hills earns both through its normal verified PB. Use one racer profile per event.</p><div class="sq-event-cards">'+cards(livePeriods())+permanentCard()+'</div>');message('Event RP is separate from Overall RP.');}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
   function receiptText(receipt,local,period){
     if(period&&Date.now()>=period.endsAt+(period.graceMs||0)&&receipt?.status==='waiting')return 'This event closed before the run could be scored.';
     if(local&&(local.timeMs<receipt?.timeMs||local.attemptId&&receipt?.attemptId!==local.attemptId&&(!receipt||local.timeMs<=receipt.timeMs)))return 'Event PB saved on this device. Waiting for its cloud status.';
@@ -197,7 +215,36 @@ export function installEvents(bridge){
     return labels[receipt.status==='rejected'?receipt.reason:receipt.status]||'This submission could not be scored. Your normal PB is safe.';
   }
   function rows(entries){return entries.map(row=>`<li><b>#${Number(row.rank)||''}</b><span>${escape(displayName(row))}${row.accountId===bridge.accountId()?' <strong class="sq-event-you">YOU</strong>':''}</span><time>${time(row.timeMs)}</time><strong>${Number(row.rp)||0} RP</strong></li>`).join('');}
-  async function openPeriod(period,force=false){shell();selectView(now()<period.endsAt?'home':'archives');selected=period;const token=++requestId;body('<p>Loading event standings...</p>');try{const board=await snapshot(period,force);const receipt=await bridge.readOwnStatus?.(period.id,bridge.accountId()).catch(()=>null);if(!dialog||token!==requestId)return;period=board.period;selected=period;ownReceipts.set(period.id+'_'+bridge.accountId(),receipt);const local=localBest(period),published=board.entries.find(row=>row.accountId===bridge.accountId());const submitted=receipt&&['waiting','verified'].includes(receipt.status)&&Number.isSafeInteger(receipt.timeMs)&&receipt.timeMs>0?receipt:null;const provisional=local&&(!submitted||local.timeMs<=submitted.timeMs)?local:submitted;const isLocal=provisional&&(!published||provisional.timeMs<published.timeMs);const best=isLocal?provisional:published;body(`<div class="sq-event-heading"><span class="sq-event-thumb">${bridge.thumbnail(period.trackId)}</span><div><h3>${escape(periodName(period))}</h3><p>${escape(reset(period))} · ${now()<period.endsAt?'Open':'Closed'}</p><p>Your event PB: <b>${time(best?.timeMs)}</b> ${best?(isLocal?(provisional===local?'(saved on this device)':'(submitted)'):'(published)'):''}</p></div></div><div class="sq-event-actions"><button class="button" type="button" data-event-race ${now()>=period.endsAt?'disabled':''}>Race event</button><button class="button" type="button" data-event-refresh>Refresh standings</button>${period.kind==='kodub'&&now()>=period.endsAt?'<button class="button" type="button" data-event-practice>Import for practice</button>':''}</div>${receiptText(receipt,local,period)?`<p class="sq-event-receipt" role="status">${escape(receiptText(receipt,local,period))}</p>`:''}<p class="${board.saved?'sq-event-saved':''}">${board.saved?'Saved standings':board.archived?'Final standings':now()>=period.endsAt?'Finalizing standings':'Published standings'} · Only verified event runs earn points.</p><ol class="sq-event-results">${rows(board.entries)||'<li>No verified event times yet.</li>'}</ol>`);message('Event RP = target time ÷ your time × maximum points, capped at the maximum.');}catch{if(token===requestId)body('<p>Event standings are unavailable. Please try again later.</p>');}}
+  async function openPermanent(){
+    shell();selectView('home');selected=PERMANENT_ROLLING;const token=++requestId;body('<p>Loading permanent standings...</p>');
+    await loadPermanent();if(!dialog||token!==requestId)return;
+    if(!permanent){body('<p>Permanent event standings are unavailable. Normal Rolling Hills racing still works.</p>');return;}
+    const counts=archivePeriodCounts(PERMANENT_ROLLING,permanent),leader=counts.winner?` · Current leader ${escape(displayName(counts.winner))} ${time(counts.winner.timeMs)}`:'';
+    body(`<div class="sq-event-heading"><span class="sq-event-thumb">${bridge.thumbnail(ROLLING_TRACK_ID)}</span><div><h3>Rolling Hills Racer</h3><p>Permanent event · No reset</p><p>${counts.racers} ${counts.racers===1?'racer':'racers'}${leader}</p></div></div><div class="sq-event-actions"><button class="button" type="button" data-event-practice>Race track</button></div><p>Verified Rolling Hills personal bests earn normal RP and Event RP.</p><ol class="sq-event-results">${rows(counts.verifiedEntries)||'<li>No verified event times yet.</li>'}</ol>`);
+    message('Rolling Hills uses the normal track and leaderboard.');
+  }
+  async function openPeriod(period,force=false){
+    shell();const closed=now()>=period.endsAt;selectView(closed?'archives':'home');selected=period;const token=++requestId;body('<p>Loading event standings...</p>');
+    try{
+      const board=await snapshot(period,force&&!closed),receipt=await bridge.readOwnStatus?.(period.id,bridge.accountId()).catch(()=>null);
+      if(!dialog||token!==requestId)return;
+      period=board.period;selected=period;ownReceipts.set(period.id+'_'+bridge.accountId(),receipt);
+      const local=localBest(period),published=board.entries.find(row=>row.accountId===bridge.accountId());
+      const submitted=receipt&&['waiting','verified'].includes(receipt.status)&&Number.isSafeInteger(receipt.timeMs)&&receipt.timeMs>0?receipt:null;
+      const provisional=local&&(!submitted||local.timeMs<=submitted.timeMs)?local:submitted;
+      const isLocal=provisional&&(!published||provisional.timeMs<published.timeMs),best=isLocal?provisional:published;
+      const actions=closed?'<button class="button" type="button" data-event-practice>Practice track</button>':'<button class="button" type="button" data-event-race>Race event</button><button class="button" type="button" data-event-refresh>Refresh standings</button>';
+      const counts=closed?archivePeriodCounts(period,board):null,standings=counts?counts.verifiedEntries:board.entries;
+      const winner=counts?.winner?` · Winner ${escape(displayName(counts.winner))} ${time(counts.winner.timeMs)}`:'';
+      const archiveMeta=counts?`<p>${counts.racers} ${counts.racers===1?'racer':'racers'}${winner}</p>`:'';
+      body(`<div class="sq-event-heading"><span class="sq-event-thumb">${bridge.thumbnail(period.trackId)}</span><div><h3>${escape(periodName(period))}</h3><p>${escape(reset(period))} · ${closed?'Closed':'Open'}</p>${archiveMeta}<p>Your event PB: <b>${time(best?.timeMs)}</b> ${best?(isLocal?(provisional===local?'(saved on this device)':'(submitted)'):'(published)'):''}</p></div></div><div class="sq-event-actions">${actions}</div>${receiptText(receipt,local,period)?`<p class="sq-event-receipt" role="status">${escape(receiptText(receipt,local,period))}</p>`:''}<p class="${board.saved?'sq-event-saved':''}">${board.saved?'Saved standings':board.archived?'Final standings':closed?'Finalizing standings':'Published standings'} · Only verified event runs earn points.</p><ol class="sq-event-results">${rows(standings)||'<li>No verified event times yet.</li>'}</ol>`);
+      message(closed?'Final standings. Practice runs do not submit to the expired event.':'Only verified event runs earn Event RP.');
+    }catch{if(token===requestId)body('<p>Event standings are unavailable. Please try again later.</p>');}
+  }
+  async function practice(period){
+    if(period.kind==='kodub'||period.kind==='custom')return importArchived(period);
+    entryRequest++;sessions.leave();eventIntent=null;close();message('Opening normal practice.');nativeOpenPermit=true;try{bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();
+  }
   async function importArchived(period){
     const token=++requestId;message('Loading archived track for custom-track practice...');
     try{const code=await bridge.readArchivedTrack(period);if(token!==requestId||!dialog)return;close();bridge.importTrackCode(code);}
@@ -209,7 +256,7 @@ export function installEvents(bridge){
     try{
       let periods;
       if(month){if(!/^\d{4}-\d{2}$/.test(month))throw Error('Choose a month');const key=STORE+'-archive-'+month;try{const data=await bridge.readArchiveMonth(month);if(!Array.isArray(data?.periods))throw Error('Invalid archive');periods=data.periods;cacheWrite(key,periods);}catch(error){periods=read(key,null);if(!periods)throw error;}}
-      else{await loadCatalog();periods=catalog.archives||[];}
+      else{await loadCatalog();periods=catalogArchivePeriods(catalog,now());}
       if(!dialog||token!==requestId)return;
       const value=month||new Date().toISOString().slice(0,7);
       body('');

@@ -19,15 +19,27 @@ const fail = code => { throw new PermanentRollingHillsError(code); };
 const integer = (value, min = 0) => Number.isSafeInteger(value) && value >= min;
 const string = (value, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : '';
 
-function completeSnapshot(snapshot) {
+function snapshotIdentityValid(snapshot) {
   return snapshot && snapshot.trackId === PERMANENT_ROLLING_HILLS.trackId &&
     snapshot.algorithmVersion === PERMANENT_ROLLING_HILLS.algorithmVersion &&
     integer(snapshot.schemaVersion, PERMANENT_ROLLING_HILLS.minimumSchemaVersion) &&
     integer(snapshot.revision, 1) && snapshot.sourceRevision === snapshot.revision &&
     typeof snapshot.signature === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(snapshot.signature) &&
-    integer(snapshot.builtAt, 1) && integer(snapshot.updatedAt, 1) && Array.isArray(snapshot.entries) &&
-    snapshot.complete === true && snapshot.totalEntries === snapshot.entries.length &&
-    snapshot.entries.length < PERMANENT_ROLLING_HILLS.entryLimit;
+    integer(snapshot.builtAt, 1) && integer(snapshot.updatedAt, 1) && Array.isArray(snapshot.entries);
+}
+
+function normalizeCompleteSnapshot(snapshot) {
+  if (!snapshotIdentityValid(snapshot) || snapshot.entries.length >= PERMANENT_ROLLING_HILLS.entryLimit) return null;
+  if (snapshot.complete === true && snapshot.totalEntries === snapshot.entries.length) {
+    return { ...snapshot, completenessSource: 'explicit-snapshot-metadata' };
+  }
+  // The pre-metadata publisher stamped every row with the exact size of the
+  // bounded field it ranked. Require unanimous row-level proof before
+  // reconstructing the omitted document metadata.
+  if (snapshot.complete != null || snapshot.totalEntries != null || !snapshot.entries.length ||
+      !snapshot.entries.every(row => row?.fieldSize === snapshot.entries.length)) return null;
+  return { ...snapshot, complete: true, totalEntries: snapshot.entries.length,
+    completenessSource: 'legacy-exact-field-size' };
 }
 
 function eligibleEntry(entry) {
@@ -42,10 +54,11 @@ function eligibleEntry(entry) {
 }
 
 export function derivePermanentRollingHills(snapshot) {
-  if (!completeSnapshot(snapshot)) fail('permanent_rolling_hills_snapshot_incomplete');
+  const completeSnapshot = normalizeCompleteSnapshot(snapshot);
+  if (!completeSnapshot) fail('permanent_rolling_hills_snapshot_incomplete');
   const eligible = [];
   const seen = new Set();
-  for (const source of snapshot.entries) {
+  for (const source of completeSnapshot.entries) {
     const identity = eligibleEntry(source);
     if (!identity) continue;
     if (seen.has(identity.accountId)) fail('permanent_rolling_hills_duplicate_account');
@@ -60,7 +73,7 @@ export function derivePermanentRollingHills(snapshot) {
     return {
     accountId, trackId: PERMANENT_ROLLING_HILLS.trackId, timeMs, frames, rp,
     eventRpContribution: rp, normalRpEligible: true, runAt,
-    runAgeMs: runAt ? Math.max(0, snapshot.updatedAt - runAt) : null,
+    runAgeMs: runAt ? Math.max(0, completeSnapshot.updatedAt - runAt) : null,
     name: string(source.name || source.nickname, 24) || 'Racer', countryCode: string(source.countryCode, 8).toUpperCase(),
     carStyle: string(source.carStyle, 256), replayHash: source.replayHash.toLowerCase(),
     physicsVerified: true, replayIntegrityVerified: true
@@ -72,8 +85,10 @@ export function derivePermanentRollingHills(snapshot) {
   });
   return { id: PERMANENT_ROLLING_HILLS.id, kind: 'permanent', trackId: PERMANENT_ROLLING_HILLS.trackId,
     scoreVersion: PERMANENT_ROLLING_HILLS.scoreVersion, targetPolicy: 'live-fastest-physics-verified',
-    targetMs, maxRp: PERMANENT_ROLLING_HILLS.maxRp, sourceRevision: snapshot.sourceRevision,
-    sourceSignature: snapshot.signature, updatedAt: snapshot.updatedAt, complete: true,
+    targetMs, maxRp: PERMANENT_ROLLING_HILLS.maxRp, sourceRevision: completeSnapshot.sourceRevision,
+    sourceSignature: completeSnapshot.signature, updatedAt: completeSnapshot.updatedAt, complete: true,
+    totalEntries: entries.length, sourceTotalEntries: completeSnapshot.totalEntries,
+    sourceCompleteness: completeSnapshot.completenessSource,
     contributions: { normalRp: true, eventRp: true }, entries };
 }
 

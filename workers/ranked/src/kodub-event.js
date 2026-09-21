@@ -50,7 +50,7 @@ async function fetchBytes(fetcher, url, limit, accept) {
   const response = await fetcher(url, {
     method: 'GET',
     headers: { Accept: accept, Origin: APP_ORIGIN, Referer: APP_REFERER },
-    redirect: 'error',
+    redirect: 'manual',
     signal: AbortSignal.timeout(8000),
   });
   return boundedBytes(response, limit);

@@ -451,3 +451,41 @@ body.sq-event-active .track-info-ui{background:#1b2854}
  #ui .track-selection-ui .sq-featured-events .sq-event-card>span:last-child>span{font-size:13px!important;line-height:16px!important}
  #ui .track-selection-ui .sq-featured-events .sq-event-card small:last-child{font-size:11px!important;line-height:14px!important;max-height:28px;overflow:hidden}
 }
+
+/* Full-bleed version navigation; content keeps its own native gutters. */
+#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions){padding-left:0!important;padding-right:0!important;--sq-track-gutter:60px}
+#ui .track-selection-ui .tracks-container>.wrapper>.community-track-versions{width:100%!important;margin-left:0!important;margin-right:0!important}
+#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{width:calc(100% - 2 * var(--sq-track-gutter))!important;margin-left:var(--sq-track-gutter)!important;margin-right:var(--sq-track-gutter)!important}
+#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.community-track-group{padding-left:var(--sq-track-gutter);padding-right:var(--sq-track-gutter);box-sizing:border-box}
+@media(max-width:650px){#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions){--sq-track-gutter:16px}}
+
+/* Supporting events use the same artwork-left, details-right reading order. */
+@media(min-width:1081px){
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card{grid-template-columns:minmax(0,42fr) minmax(0,58fr);grid-template-rows:24px 64px 38px minmax(0,1fr);gap:8px!important;padding:14px 10px!important;text-align:left}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track>.button:before,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card small:first-child{grid-column:2;grid-row:1;text-align:left;font-size:12px!important;letter-spacing:0}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card strong{grid-column:2;grid-row:2;text-align:left;font-size:18px!important;line-height:22px!important}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p{width:auto!important;padding:0!important;white-space:normal!important;font-size:18px!important;line-height:22px!important}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track>.button>img.thumbnail,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-thumb{grid-column:1;grid-row:1/-1;align-self:center;height:160px!important;max-height:160px!important;padding:0!important;width:100%!important;max-width:100%!important}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record{grid-column:2;grid-row:3;font-size:16px!important;text-align:left;white-space:normal;height:auto!important}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-note,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card>span:last-child{grid-column:2;grid-row:4;text-align:left}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card>span:last-child>span{grid-column:2;grid-row:4;font-size:14px!important;line-height:18px!important;text-align:left}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card small:last-child{grid-column:2;grid-row:4;font-size:12px!important;text-align:left}
+}
+@media(min-width:1081px){
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card{grid-template-rows:24px 64px 38px 42px minmax(0,1fr)}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p{text-align:left!important}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card small:last-child{grid-row:5;align-self:start}
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-note{grid-row:4/6;align-self:start;text-align:left!important}
+}
+/* Preserve the complete weekly artwork instead of cropping its title. */
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){object-fit:contain!important;background:var(--button-color,#142252)}
+#ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title,
+#ui .track-selection-ui .sq-featured-events .sq-event-card strong{align-self:start}
+#ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p{margin:0!important}

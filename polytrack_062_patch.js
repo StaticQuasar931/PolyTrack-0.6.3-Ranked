@@ -740,17 +740,16 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return {...parts,finalWeight:saved??parts.finalWeight,estimated:saved===null};
   }
   function rankedWeightTitle(trackId,fieldSize,total=false,finish=null){
-    if(total)return 'Total weight combines eligible tracks. Solo tracks score zero, and larger fields keep gaining value with diminishing returns.';
+    if(total)return 'Total weight summarizes eligible Ranked track results.';
     const parts=finishWeightParts(finish||{trackId,fieldSize});
     const typeLabel=parts.type==='official'?'Official':parts.type==='community'?'Community':'Custom';
-    if(parts.field<2)return `No Ranked weight: this track needs at least two racers. ${typeLabel} base multiplier is ${parts.base.toFixed(1)}x.`;
-    const modifiers=Math.abs(parts.competition-1)>.001?` Time-spread factor ${parts.competition.toFixed(2)}x.`:'';
-    return `${typeLabel} base ${parts.base.toFixed(1)}x; ${parts.field} racers create ${parts.baseWeight.toFixed(2)}x base field weight.${modifiers} Final weight ${parts.finalWeight.toFixed(2)}x${parts.estimated?' estimated from available field data':''}.`;
+    if(parts.field<2)return `Ranked weight is unavailable until this ${typeLabel.toLowerCase()} track has at least two racers.`;
+    return `${typeLabel} track weight reflects the published field and competitiveness${parts.estimated?' using the available field data':''}.`;
   }
   const LEADERBOARD_USAGE_KEY='polytrack-0.6.2-leaderboard-arcade-v1';
   const PLAYTIME_KEY='polytrack-0.6.2-active-playtime-v1';
   const LEADERBOARD_LABELS={events:'Event RP',overall:'Overall RP',casual:'Casual RP',skill:'Best 10 skill',consistency:'All-track depth',pbs:'PBs set',playtime:'Active time',veterans:'Racing longest',rising:'Rising racers',wins:'Track wins',medals:'Podium points',tracks:'Tracks completed',weight:'Total track weight',average:'Average place',competitiveAverage:'Competitive average',podiumRate:'Podium rate',topTracks:'Top Tracks',official:'Official tracks',community:'Community tracks'};
-  const LEADERBOARD_INFO={events:'Lifetime points from verified event PBs. Higher is better. Event RP is separate from Overall RP.',overall:'Your combined Ranked score. Lower is better.',casual:'Permanent Casual RP: 100 points for each distinct recognized track completed with physics verification. Higher is better. This nondecreasing total is separate from Overall RP.',average:'Your literal average finishing place across every eligible Ranked result.',competitiveAverage:'Average place on recognized tracks with at least five racers. Custom and small-field tracks are excluded.',tracks:'Number of distinct Ranked tracks completed.',medals:'Podium points on recognized tracks with at least five racers: 9 for first, 3 for second, 1 for third.',rising:'Progress adjusted for how recently the racer joined and how many Ranked tracks they completed.',topTracks:'Tracks ordered by their current Ranked weight.',skill:'Weighted average of each racer’s best ten results. Lower is better.',consistency:'Weighted performance across all eligible results with weak outliers limited. Lower is better.',wins:'First-place finishes on recognized tracks with at least five racers.',podiumRate:'Eligible podium finishes divided by eligible tracks. At least three eligible tracks are required.',weight:'Combined weight of all eligible completed tracks.',pbs:'Accepted personal-best improvements saved to Ranked.',playtime:'Visible active play time saved with PB updates.',veterans:'Time since the racer’s earliest saved Ranked result.'};
+  const LEADERBOARD_INFO={events:'Lifetime points from verified event PBs. Higher is better. Event RP is separate from Overall RP.',overall:'Your combined Ranked score. Lower is better.',casual:'Permanent Casual RP from distinct recognized tracks completed with physics verification. Higher is better. This nondecreasing total is separate from Overall RP.',average:'Your literal average finishing place across every eligible Ranked result.',competitiveAverage:'Average place on recognized tracks with at least five racers. Custom and small-field tracks are excluded.',tracks:'Number of distinct Ranked tracks completed.',medals:'Podium points from recognized tracks with sufficiently populated fields.',rising:'Progress adjusted for how recently the racer joined and how many Ranked tracks they completed.',topTracks:'Tracks ordered by their current Ranked weight.',skill:'Weighted average of each racer’s best ten results. Lower is better.',consistency:'Weighted performance across all eligible results with weak outliers limited. Lower is better.',wins:'First-place finishes on recognized tracks with at least five racers.',podiumRate:'Eligible podium finishes divided by eligible tracks. At least three eligible tracks are required.',weight:'Combined weight of all eligible completed tracks.',pbs:'Accepted personal-best improvements saved to Ranked.',playtime:'Visible active play time saved with PB updates.',veterans:'Time since the racer’s earliest saved Ranked result.'};
   const PROFILE_COSMETICS_KEY='polytrack-0.6.2-profile-cosmetics-v1';
   const PROFILE_COSMETIC_OPTIONS={
     theme:[['classic','PolyTrack blue',0],['cyan','Electric cyan',0],['ocean','Deep ocean',0],['ice','Ice blue',0],['mono','Monochrome',0],['sunset','Sunset',3],['neon','Neon arcade',3],['forest','Forest',8],['ember','Ember',8],['crimson','Crimson',8],['podium','Champion','podium'],['beta','Beta neon','beta']],
@@ -1744,6 +1743,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function setUnofficialMessage(){
     const warning = document.querySelector('.menu-ui .warning-message, .menu .warning-message');
     if (!warning) return;
+    warning.style.position = 'relative';
+    warning.style.top = '-32px';
     const lang = getUiLanguage();
     const existingLink = warning.querySelector('a[href="https://www.kodub.com/games/polytrack"]');
     const existingText = warning.textContent || '';
@@ -2403,14 +2404,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     renderEntries();
     updateRankedFreshness();
     if(selected==='events')void fetchEventTotals();
-    else if(!overallEntriesCache.length)void openPanel();
+    else if(!overallEntriesCache.length)void openRankedPanel();
   }
 
   function ensurePanel(){
     if (document.getElementById('overallLeaderboardPanel')) return;
     const panel = document.createElement('div');
     panel.id = 'overallLeaderboardPanel';
-    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP is 68% best-ten skill, 20% diminishing track coverage, and 12% protected all-track depth.</p></section><section><b>Track weight</b><p>Every screen uses the same track value: type multiplier, diminishing field size, and the track's time spread. Official tracks use 1.6x, community 1.0x, and custom 0.6x. Solo tracks score zero.</p></section><section><b>Eligibility</b><p>One or two eligible tracks are provisional. Three populated tracks establish a Ranked position.</p></section><section><b>Podium points</b><p>Recognized tracks with at least five drivers award 9 for first, 3 for second, and 1 for third. Podium rate requires three eligible tracks.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
+    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP combines strong finishes, track coverage, and consistency.</p></section><section><b>Track weight</b><p>Track weight reflects the track type, the published field, and how competitive its results are.</p></section><section><b>Eligibility</b><p>Early results are provisional. Completing enough populated tracks establishes a Ranked position.</p></section><section><b>Podium points</b><p>Top-three finishes on recognized, sufficiently populated tracks can earn podium points.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
     document.body.appendChild(panel);
     void ensureRankedFiltersUi();
     panel.addEventListener('click', (event)=>{
@@ -2434,7 +2435,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if (copy) {
         navigator.clipboard?.writeText(copy.dataset.label || '').then(()=>{ copy.textContent='CODE COPIED'; setTimeout(()=>{ if(copy.isConnected) copy.textContent=copy.dataset.label||'RACER CODE'; },1200); }).catch(()=>{});
       }
-      if (event.target.closest?.('[data-rank-retry]')) openPanel(true);
+      if (event.target.closest?.('[data-rank-retry]')) void openRankedPanel(true);
       if (event.target.closest?.('#overallFreshness')) requestRankedRefresh();
       if (event.target.closest?.('#overallPrevPage')) changeOverallPage(-1);
       if (event.target.closest?.('#overallNextPage')) changeOverallPage(1);
@@ -3306,7 +3307,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
     if(overallCategory==='weight'){
       const weighted=normalizedFinishSamples(entry).filter(Boolean).sort((a,b)=>((100-rankedPlacementCost(b.rank,b.fieldSize))*(knownFinishWeight(b)||0))-((100-rankedPlacementCost(a.rank,a.fieldSize))*(knownFinishWeight(a)||0)));
-      return weighted.length?weighted.slice(0,2).map((finish,index)=>{const info=trackInfo(finish.trackId);const parts=finishWeightParts(finish);return `<span class="overall-best-line" data-track-id="${escapeHtml(finish.trackId)}" title="${escapeHtml(rankedWeightTitle(finish.trackId,finish.fieldSize,false,finish))}"><b>${index?'Next weight':'Top weight'}</b> ${escapeHtml(info.name)} <em>${parts.finalWeight.toFixed(2)}x</em></span>`;}).join(''):'No weighted tracks yet';
+      return weighted.length?weighted.slice(0,2).map((finish,index)=>{const info=trackInfo(finish.trackId);return `<span class="overall-best-line" data-track-id="${escapeHtml(finish.trackId)}" title="${escapeHtml(rankedWeightTitle(finish.trackId,finish.fieldSize,false,finish))}"><b>${index?'Next weight':'Top weight'}</b> ${escapeHtml(info.name)}</span>`;}).join(''):'No weighted tracks yet';
     }
     if(overallCategory==='tracks'||overallCategory==='official'||overallCategory==='community'){
       const wanted=overallCategory==='official'?'official':overallCategory==='community'?'community':'';
@@ -3499,6 +3500,17 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return rankedFilterResult;
     }finally{rankedFiltersSyncing=false;}
   }
+  function syncRankedFilterRowsSafely(rows){
+    try{return syncRankedFilterRows(rows);}
+    catch(error){
+      rankedFiltersUi=null;
+      rankedFilterResult=null;
+      const root=document.getElementById('overallFilterPanel');
+      if(root)root.textContent='Saved filters are unavailable.';
+      log('warn','[RANKED-FILTERS] Filter render disabled after an error',String(error&&(error.message||error)));
+      return null;
+    }
+  }
   function ensureRankedFiltersUi(){
     const root=document.getElementById('overallFilterPanel');
     if(!root||rankedFiltersUi)return Promise.resolve(rankedFiltersUi);
@@ -3594,7 +3606,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     el.title='Lifetime Event RP, separate from Overall RP. Saved event standings never expire.';
     el.dataset.old=String(Boolean(saved&&Date.now()-saved.updatedAt>7200000));
   }
-  window.__pt062OpenRankedEvents=function(){ensurePanel();overallCategory='events';overallPage=0;return openPanel();};
+  window.__pt062OpenRankedEvents=function(){overallCategory='events';overallPage=0;return openRankedPanel();};
 
   function loadedTrackRankingRows(){
     if(overallTrackSummariesCache.length){
@@ -3640,7 +3652,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const runnerUpLine=runnerUp?'#2 '+escapeHtml(safeDisplayName(runnerUp.name||runnerUp.nickname,runnerUp.accountId||runnerUp.userId))+' · '+formatRaceTime(entryTimeMs(runnerUp)):'Runner-up not loaded';
     const viewerLine=leaderIsViewer?runnerUpLine:viewer?`<span class="overall-track-you">YOU</span> #${viewerIndex+1} of ${snapshot.entries.length} · ${formatRaceTime(entryTimeMs(viewer))}`:'Your result is not loaded on this device';
     const pbDate=pbTimestamp(row.leader)?`PB ${formatLocalPbDate(row.leader)}`:`Track data changed ${age}`;
-    return `<div class="overall-entry overall-track-entry track-type-${escapeHtml(row.type)} ${index===0?'top-1':index===1?'top-2':index===2?'top-3':''}" data-track-id="${escapeHtml(row.trackId)}" tabindex="0" role="button" aria-label="Open ${escapeHtml(row.name)}" style="animation-delay:${(index*.03).toFixed(3)}s"><span class="overall-rank">#${index+1}</span><span class="overall-name">${trackThumbnailMarkup(row.trackId)}<span class="overall-name-label"><span class="overall-name-main">${escapeHtml(row.name)}</span><span class="overall-racer-meta"><span class="track-type-label ${escapeHtml(row.type)}">${escapeHtml(row.type)}</span><span>${row.fieldSize} racers</span><span>${weightParts.baseWeight.toFixed(2)}x base field</span></span></span></span><div class="overall-mid">${movementMarkup(row.categoryMovement,row.categorySince,index+1)}<div class="overall-best"><span class="overall-best-line"><b>${leaderLine}</b></span><span class="overall-best-line">${viewerLine}</span><span class="overall-best-line muted">${escapeHtml(pbDate)}</span></div></div><div class="overall-stats" title="${escapeHtml(rankedWeightTitle(row.trackId,row.fieldSize,false,{...row.leader,trackId:row.trackId,fieldSize:row.fieldSize,weight:row.weight}))}"><div class="overall-score">${row.weight.toFixed(2)}x</div><div class="overall-score-unit">FINAL WEIGHT</div></div></div>`;
+    return `<div class="overall-entry overall-track-entry track-type-${escapeHtml(row.type)} ${index===0?'top-1':index===1?'top-2':index===2?'top-3':''}" data-track-id="${escapeHtml(row.trackId)}" tabindex="0" role="button" aria-label="Open ${escapeHtml(row.name)}" style="animation-delay:${(index*.03).toFixed(3)}s"><span class="overall-rank">#${index+1}</span><span class="overall-name">${trackThumbnailMarkup(row.trackId)}<span class="overall-name-label"><span class="overall-name-main">${escapeHtml(row.name)}</span><span class="overall-racer-meta"><span class="track-type-label ${escapeHtml(row.type)}">${escapeHtml(row.type)}</span><span>${row.fieldSize} racers</span></span></span></span><div class="overall-mid">${movementMarkup(row.categoryMovement,row.categorySince,index+1)}<div class="overall-best"><span class="overall-best-line"><b>${leaderLine}</b></span><span class="overall-best-line">${viewerLine}</span><span class="overall-best-line muted">${escapeHtml(pbDate)}</span></div></div><div class="overall-stats" title="${escapeHtml(rankedWeightTitle(row.trackId,row.fieldSize,false,{...row.leader,trackId:row.trackId,fieldSize:row.fieldSize,weight:row.weight}))}"><div class="overall-score">${row.weight.toFixed(2)}x</div><div class="overall-score-unit">TRACK WEIGHT</div></div></div>`;
   }
   function racerAgeDays(entry){
     const created=Math.max(0,Number(entry?.accountCreatedAt||0)||0);
@@ -4298,9 +4310,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const weight=hasPlacement?knownFinishWeight(finish):null;
       const parts=hasPlacement?finishWeightParts(finish):null;
       const impact=weight===null?null:weight===0?0:Number(finish.contribution||0)||Math.max(0,(100-rankedPlacementCost(finish.rank,finish.fieldSize))*weight);
-      const typeText=info.type==='official'?'Official · 1.6x type':info.type==='community'?'Community · 1.0x type':'Custom · 0.6x type';
+      const typeText=info.type==='official'?'Official':info.type==='community'?'Community':'Custom';
       const weightTitle=hasPlacement?rankedWeightTitle(finish.trackId,finish.fieldSize,false,finish):'Load this track leaderboard to calculate field weight.';
-      return `<button class="profile-track-row track-type-${escapeHtml(info.type)} ${hasPlacement?'':'is-null'}" type="button" data-track-id="${escapeHtml(finish.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${place}. ${weight===null?'Weight not loaded':`Final weight ${weight.toFixed(2)}`}."><span class="profile-track-visual">${trackThumbnailMarkup(finish.trackId)}</span><span class="profile-track-name"><b>${escapeHtml(info.name)}</b><small class="track-type-label ${escapeHtml(info.type)}">${typeText}${hasPlacement?` · ${finish.fieldSize} racers`:''}</small><small>${impact===null?'Contribution not loaded':`${impact.toFixed(1)} contribution index`}</small></span><span class="profile-track-weight" title="${escapeHtml(weightTitle)}"><b>${weight===null?'N/A':`${weight.toFixed(2)}x`}</b><small>${parts?`${parts.baseWeight.toFixed(2)}x base field`:'Weight not loaded'}</small><small>${escapeHtml(finish.cachedAt?'Changed '+age:finish.local?'Local PB':'Saved snapshot')}</small></span><span class="profile-track-result ${kind||''}">${kind?`<img src="${medalIcon(kind)}" alt="${kind} medal">`:''}<b>${place}</b><small>${hasPlacement?`${finish.fieldSize} drivers`:'Open leaderboard to load'}</small></span><time>${finish.timeMs?`${formatRaceTime(finish.timeMs)}${pbTimestamp(finish)?`<small>PB ${escapeHtml(formatLocalPbDate(finish))}</small>`:''}`:'Time not loaded'}</time></button>`;
+      return `<button class="profile-track-row track-type-${escapeHtml(info.type)} ${hasPlacement?'':'is-null'}" type="button" data-track-id="${escapeHtml(finish.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${place}. ${weight===null?'Weight not loaded':'Ranked weight available'}."><span class="profile-track-visual">${trackThumbnailMarkup(finish.trackId)}</span><span class="profile-track-name"><b>${escapeHtml(info.name)}</b><small class="track-type-label ${escapeHtml(info.type)}">${typeText}${hasPlacement?` · ${finish.fieldSize} racers`:''}</small><small>${impact===null?'Contribution not loaded':'Ranked contribution available'}</small></span><span class="profile-track-weight" title="${escapeHtml(weightTitle)}"><b>${weight===null?'N/A':'Ranked'}</b><small>${parts?'Weight available':'Weight not loaded'}</small><small>${escapeHtml(finish.cachedAt?'Changed '+age:finish.local?'Local PB':'Saved snapshot')}</small></span><span class="profile-track-result ${kind||''}">${kind?`<img src="${medalIcon(kind)}" alt="${kind} medal">`:''}<b>${place}</b><small>${hasPlacement?`${finish.fieldSize} drivers`:'Open leaderboard to load'}</small></span><time>${finish.timeMs?`${formatRaceTime(finish.timeMs)}${pbTimestamp(finish)?`<small>PB ${escapeHtml(formatLocalPbDate(finish))}</small>`:''}`:'Time not loaded'}</time></button>`;
     }).join(''):'<div class="profile-track-empty"><strong>Track times are not loaded on this device</strong><span>The complete snapshot statistics above are still available. Open track leaderboards to add exact times and full result rows without bulk-reading every track.</span></div>';
     const rankIndex=overallEntriesCache.findIndex((row)=>cleanUserId(row.userId)===cleanUserId(entry.userId));
     const above=rankIndex>0?overallEntriesCache[rankIndex-1]:null;
@@ -4394,7 +4406,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return;
     }
     const baseEntries = sortedOverallEntries();
-    const filterResult=syncRankedFilterRows(baseEntries);
+    const filterResult=syncRankedFilterRowsSafely(baseEntries);
     if(filterResult?.available&&FILTERABLE_RANKED_CATEGORIES.has(filterResult.filter?.category)&&filterResult.filter.category!==overallCategory){
       overallCategory=filterResult.filter.category;recordLeaderboardUse(overallCategory);refreshLeaderboardArcade();syncCategorySelect(document);overallPage=0;renderEntries();return;
     }
@@ -4445,7 +4457,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     lastRankedManualRefreshAt=Date.now();
     writeJsonStorage(OVERALL_REBUILD_BACKOFF_KEY,0);
     overallLoadState.nextRefreshAt=0;
-    openPanel(true);
+    void openRankedPanel(true);
   }
   function updateWeightedTrackInsights(entries){
     const el=document.getElementById('overallOpportunities'); if(!el) return;
@@ -4527,6 +4539,25 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(!saved?.entries?.length)renderEntries([],overallLoadState);
       updateRankedFreshness();
       log('warn','[FB408] Ranked panel load timed out',String(error&&(error.message||error)));
+    }
+  }
+
+  function rankedPanelOpenFailed(error){
+    const panel=document.getElementById('overallLeaderboardPanel');
+    const list=panel?.querySelector('#overallLeaderboardList');
+    if(panel)panel.style.display='flex';
+    if(list)list.innerHTML='<div class="overall-empty"><strong>Ranked could not finish opening</strong><span>A local display error interrupted this view. Your saved results are unchanged.</span><button class="button" type="button" data-rank-retry>Retry</button></div>';
+    log('error','[RANKED-UI] Ranked panel open failed',String(error&&(error.message||error)));
+    return null;
+  }
+  function openRankedPanel(forceRefresh=false){
+    try{
+      ensurePanel();
+      const panel=document.getElementById('overallLeaderboardPanel');
+      if(panel)panel.style.display='flex';
+      return Promise.resolve(openPanel(forceRefresh)).catch(rankedPanelOpenFailed);
+    }catch(error){
+      return Promise.resolve(rankedPanelOpenFailed(error));
     }
   }
 
@@ -5461,6 +5492,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (!rankingsSpawnedOnce && !rankedSpawnTimer) scheduleRankedSpawnFallback(button,container);
   }
 
+  function handleRankedButtonClick(event){
+    event.preventDefault();
+    event.stopPropagation();
+    void openRankedPanel();
+  }
+
   function injectRankingsButton(){
     const container = document.querySelector('.main-buttons-container');
     if (!container) return;
@@ -5473,7 +5510,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const existing = container.querySelectorAll('button.button-image');
       button.style.animationDelay = '0s';
       container.appendChild(button);
-      button.addEventListener('click', (event)=>{ event.preventDefault(); event.stopPropagation(); openPanel(); });
+      button.addEventListener('click',handleRankedButtonClick);
       rankingsButtonRef = button;
       if (isElementVisible(container) && !rankingsSpawnedOnce) scheduleRankedSpawnFallback(button,container);
     }
@@ -5969,16 +6006,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     syncIntegrityStateLabels();
   }
 
-  function hideVerifiedOnlyToggle(){
-    const candidates = Array.from(document.querySelectorAll('label,button,div,span'));
-    for (const el of candidates) {
-      const text = (el.textContent || '').trim().toLowerCase();
-      if (text === 'verified only' || text.includes('verified only')) {
-        el.style.display = 'none';
-      }
-    }
-  }
-
   function runStatus(entry){
     // A replay checksum is not proof that the race obeyed the game physics.
     if(entry?.localPending===true)return 'local';
@@ -6115,7 +6142,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
     ensureSettingsEnhancements();
     syncMultiplayerRelayPanel();
-    hideVerifiedOnlyToggle();
     syncIntegrityStateLabels();
     decorateNativeLeaderboardCosmetics();
     ensureReturningPlayerNotice();
@@ -6197,7 +6223,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     let racer=rank>0?rows[rank-1]:null;
     if(!racer||visibleName&&safeDisplayName(racer.nickname||racer.name||'',racer.accountId||racer.userId)!==visibleName)racer=rows.find((row)=>safeDisplayName(row.nickname||row.name||'',row.accountId||row.userId)===visibleName)||racer;
     const userId=cleanUserId(racer?.accountId||racer?.userId||''); if(!userId)return;
-    await openPanel(false);
+    await openRankedPanel(false);
     if(overallEntriesCache.some((entry)=>cleanUserId(entry.userId||entry.accountId)===userId))openRankedProfile(userId);
     else{
       const panel=document.getElementById('overallLeaderboardPanel');

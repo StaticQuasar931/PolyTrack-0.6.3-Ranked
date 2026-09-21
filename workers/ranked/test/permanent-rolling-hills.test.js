@@ -24,6 +24,30 @@ test('permanent Rolling Hills derives live first-place scoring only from explici
   assert(result.entries.every(row => row.physicsVerified && row.replayIntegrityVerified));
   assert.deepEqual(result.contributions, { normalRp: true, eventRp: true });
   assert(result.entries.every(row => row.runAgeMs === 100 && row.eventRpContribution === row.rp && row.normalRpEligible));
+  assert.equal(result.totalEntries, 2);
+  assert.equal(result.sourceTotalEntries, 4);
+  assert.equal(result.sourceCompleteness, 'explicit-snapshot-metadata');
+});
+
+test('legacy Rolling Hills snapshot rebuilds omitted completeness only from unanimous bounded field-size proof', () => {
+  const entries = [entry('first', 10000, { fieldSize: 2 }), entry('second', 20000, { fieldSize: 2 })];
+  const legacy = snapshot(entries);
+  delete legacy.complete;
+  delete legacy.totalEntries;
+  legacy.revision = 18;
+  legacy.sourceRevision = 18;
+  const result = derivePermanentRollingHills(legacy);
+  assert.equal(result.complete, true);
+  assert.equal(result.totalEntries, 2);
+  assert.equal(result.sourceTotalEntries, 2);
+  assert.equal(result.sourceRevision, 18);
+  assert.equal(result.sourceCompleteness, 'legacy-exact-field-size');
+  for (const invalid of [
+    { ...legacy, entries: [entries[0], { ...entries[1], fieldSize: 3 }] },
+    { ...legacy, complete: false },
+    { ...legacy, totalEntries: 2 },
+    { ...legacy, entries: entries.map(({ fieldSize, ...row }) => row) },
+  ]) assert.throws(() => derivePermanentRollingHills(invalid), /snapshot_incomplete/);
 });
 
 test('permanent Rolling Hills fails closed for missing, partial, stale or unverified snapshots', async () => {
