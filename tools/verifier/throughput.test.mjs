@@ -17,6 +17,17 @@ test('fast backlog drains at most four rounds and sixty-four normal attempts',as
   assert.equal(result.stop,'round_limit');assert.equal(result.countsComplete,true);
 });
 
+test('drain summary aggregates waiting reasons and distinguishes cap from workflow run number',async()=>{
+  let calls=0;
+  const result=await drainVerification({now:()=>0,requests:()=>calls*20,log:quiet,
+    runRound:async()=>{calls++;return round({reasons:{missing_trusted_track:2,scan_work_limit:1},
+      unavailable:3,verified:13});}});
+  assert.equal(result.rounds,4);
+  assert.equal(result.stop,'round_limit');
+  assert.deepEqual(result.reasons,{missing_trusted_track:8,scan_work_limit:4});
+  assert.equal(result.unavailable,12);
+});
+
 test('slow rounds stop before predicted time plus finish reserve exceeds admission window',async()=>{
   let clock=0,calls=0;
   const result=await drainVerification({now:()=>clock,requests:()=>10,log:quiet,
@@ -155,6 +166,7 @@ test('workflow bounds drain wall time while preserving gates, permissions and na
   assert.match(step,/timeout-minutes: 10/);assert.match(step,/run.mjs --drain/);
   assert.match(step,/if: steps.queue.outputs.has_work == 'true'/);
   assert.match(workflow,/timeout-minutes: 15/);assert.match(workflow,/contents: read/);
+  assert.match(workflow,/cache: npm/);assert.match(workflow,/cache-dependency-path: tools\/verifier\/package-lock\.json/);
   assert.equal(DRAIN_LIMITS.rounds*16,64);assert.equal(DRAIN_LIMITS.requests,400);
   assert.doesNotMatch(workflow,/--no-sandbox/);
 });

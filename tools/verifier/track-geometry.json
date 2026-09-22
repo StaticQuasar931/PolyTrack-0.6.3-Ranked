@@ -713,6 +713,14 @@
       "parts": 50108,
       "spanX": 895,
       "spanZ": 544
+    },
+    {
+      "id": "5c891c15c754987ff7e1358000f265d26aa959716c443dec80f668762c3d83d7",
+      "name": "trusted/5c891c15c754987ff7e1358000f265d26aa959716c443dec80f668762c3d83d7.track",
+      "hash": "aa5e949dbd8e18caab0fc3697f9ef10c72cf1d5acccfd0b9d618663f35131542",
+      "parts": 42781,
+      "spanX": 607,
+      "spanZ": 588
     }
   ]
 }

@@ -13,6 +13,9 @@ const id = 'a'.repeat(64);
 const realCode = fs.readFileSync(path.join(__dirname, '../../tracks/community/4_seasons.track'), 'utf8').trim();
 const realV1Code = fs.readFileSync(path.join(__dirname, '../../tracks/community/90_reset.track'), 'utf8').trim();
 const descriptor = { trackId: id, code: realCode, codeHash: sha256(realCode) };
+const laRivieraId = '5c891c15c754987ff7e1358000f265d26aa959716c443dec80f668762c3d83d7';
+const laRivieraCode = fs.readFileSync(path.join(__dirname, '../../events/kodub/assets/aa5e949dbd8e18caab0fc3697f9ef10c72cf1d5acccfd0b9d618663f35131542.track'), 'utf8');
+const laRiviera = {trackId: laRivieraId, code: laRivieraCode, codeHash: sha256(laRivieraCode)};
 
 function packedValue(bytes, bit) {
   const byte = Math.floor(bit / 8);
@@ -74,6 +77,16 @@ test('real exported track is decoded and counted within existing caps', () => {
   const legacy = trackInternals.preflightTrackCode(realV1Code);
   assert.equal(legacy.version, 1);
   assert(legacy.parts > 0 && legacy.parts <= LIMITS.trackParts);
+});
+
+test('La Riviera part-cap exception requires the exact reviewed ID and content hash', () => {
+  assert.throws(() => trackInternals.preflightTrackCode(laRivieraCode), /trusted_track_part_limit/);
+  const [source] = normalizeTrustedTracks([laRiviera], new Set([laRivieraId]));
+  assert.equal(source.expectedId, laRivieraId);
+  assert.equal(source.hash, laRiviera.codeHash);
+  assert.equal(trackInternals.preflightTrackCode(laRivieraCode, 42781).parts, 42781);
+  const unreviewedId = 'b'.repeat(64);
+  assert.throws(() => normalizeTrustedTracks([{...laRiviera, trackId: unreviewedId}], new Set([unreviewedId])), /trusted_track_part_limit/);
 });
 
 test('job-supplied code is never admitted implicitly', () => {
@@ -165,4 +178,44 @@ test('native catalog enforces exact identity, start, geometry, and bounds for tr
   assert.equal(catalog.get(ids[3]).reason, 'track_missing_start');
   delete globalThis.__vrRequire;
   delete globalThis.__tracks;
+});
+
+test('La Riviera matches only its pinned native identity, hash, and measured geometry', async () => {
+  class Track {
+    static fromExportString(text) {
+      if (text !== laRivieraCode) return null;
+      return {trackData: {
+        getId: () => laRivieraId,
+        getStartTransform: () => ({}),
+        getBounds: () => ({min: {x: 0, y: 0}, max: {x: 607, y: 588}}),
+        numberOfParts: 42781,
+      }};
+    }
+  }
+  const page = {
+    on() {}, addInitScript: async () => {}, goto: async () => {}, waitForFunction: async () => {},
+    evaluate: async (operation, argument) => {
+      if (!argument) return null;
+      globalThis.__vrRequire = () => ({A: Track});
+      return operation(argument);
+    },
+  };
+  const context = {route: async () => {}, routeWebSocket: async () => {}, newPage: async () => page};
+  const session = {browser: {newContext: async () => context}};
+  const geometry = require('./track-geometry.json');
+  const catalog = await _internals.initialize(session,
+    {files: new Map(), engineFingerprint: geometry.engineDigest}, 'http://127.0.0.1', [{
+      expectedId: laRivieraId, name: `trusted/${laRivieraId}.track`, hash: laRiviera.codeHash,
+      text: laRivieraCode, trusted: true,
+    }]);
+  const track = catalog.get(laRivieraId);
+  assert.equal(track.reason, null);
+  assert.equal(track.geometryPolicy, 'reviewed-pinned');
+  assert.deepEqual(track.geometry, {parts: 42781, spanX: 607, spanZ: 588});
+  const forgedCatalog = await _internals.initialize(session,
+    {files: new Map(), engineFingerprint: geometry.engineDigest}, 'http://127.0.0.1', [{
+      expectedId: laRivieraId, name: `trusted/${laRivieraId}.track`, hash: 'b'.repeat(64),
+      text: laRivieraCode, trusted: true,
+    }]);
+  assert.equal(forgedCatalog.get(laRivieraId).reason, 'track_geometry_limit');
 });

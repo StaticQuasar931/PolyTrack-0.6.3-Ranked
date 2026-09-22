@@ -46,6 +46,19 @@ test('UTC daily uses community and weekly uses official without overlap', () => 
   assert.equal(day.endsAt - day.startsAt, 86400000);
   assert.equal(week.endsAt - week.startsAt, 7 * 86400000);
 });
+test('UTC daily rotation avoids consecutive community track repeats when alternatives exist', () => {
+  const community = ['community-a', 'community-b', 'community-c'];
+  let previous = null;
+  for (let day = 1; day <= 365; day += 1) {
+    const at = Date.UTC(2026, 0, day);
+    const [daily] = utcEventCandidates(at, ['official'], [...community, 'official']);
+    assert(community.includes(daily.trackId));
+    if (previous !== null) assert.notEqual(daily.trackId, previous, new Date(at).toISOString());
+    previous = daily.trackId;
+  }
+  const [singleTrack] = utcEventCandidates(Date.UTC(2026, 0, 2), ['official'], ['community', 'official']);
+  assert.equal(singleTrack.trackId, 'community');
+});
 test('inbox projection scans strictly after timestamp plus document name, bounded to one', async () => {
   const cursor = { receivedAt: { __firestoreTimestamp: '2026-09-12T00:00:00.123456Z' }, name: 'projects/test/documents/inbox/a' };
   let query;

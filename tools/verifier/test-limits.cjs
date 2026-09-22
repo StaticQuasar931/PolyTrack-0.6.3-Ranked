@@ -26,16 +26,18 @@ function recording(channels) {
 
 test('reviewed geometry matches committed track bytes and the pinned native engine', () => {
   assert.equal(reviewed.engineDigest, manifest.engineDigest);
-  assert.equal(reviewed.tracks.length,89);
-  assert.equal(new Set(reviewed.tracks.map(t=>t.id)).size,89);
+  assert.equal(reviewed.tracks.length,90);
+  assert.equal(new Set(reviewed.tracks.map(t=>t.id)).size,90);
   for (const t of reviewed.tracks) {
-    const hash=sha256(canonicalBytes(t.name,fs.readFileSync(path.join(root,t.name))));
+    const trusted=t.name.startsWith('trusted/');
+    const assetPath=trusted?path.join(root,'events/kodub/assets',t.hash+'.track'):path.join(root,t.name);
+    const hash=sha256(canonicalBytes(t.name,fs.readFileSync(assetPath)));
     assert.equal(hash,t.hash,t.name);
-    assert.equal(manifest.tracks[t.name],t.hash,t.name);
+    if(!trusted)assert.equal(manifest.tracks[t.name],t.hash,t.name);
   }
 });
 
-test('all 17 official tracks fit unchanged defaults; only 28 exact reviewed community tracks need exceptions', () => {
+test('17 official tracks fit defaults; 28 community and one trusted asset use exact exceptions', () => {
   let exceptions=0,official=0;
   for (const t of reviewed.tracks) {
     const decision=geometryDecision({...t,geometry:t},reviewed.engineDigest);
@@ -43,7 +45,9 @@ test('all 17 official tracks fit unchanged defaults; only 28 exact reviewed comm
     if(t.name.startsWith('tracks/official/')) {official++;assert.equal(decision.geometryPolicy,'default');}
     if(t.parts>LIMITS.trackParts) {exceptions++;assert.equal(decision.geometryPolicy,'reviewed-pinned');}
   }
-  assert.equal(official,17);assert.equal(exceptions,28);
+  assert.equal(official,17);assert.equal(exceptions,29);
+  assert.equal(reviewed.tracks.filter(t=>t.parts>LIMITS.trackParts&&t.name.startsWith('tracks/community/')).length,28);
+  assert.equal(reviewed.tracks.filter(t=>t.name.startsWith('trusted/')).length,1);
   assert.equal(Math.max(...reviewed.tracks.map(t=>t.parts)),74711);
   assert.equal(Math.max(...reviewed.tracks.flatMap(t=>[t.spanX,t.spanZ])),1264);
   assert.equal(LIMITS.trackParts,20000);assert.equal(LIMITS.trackSpan,2048);

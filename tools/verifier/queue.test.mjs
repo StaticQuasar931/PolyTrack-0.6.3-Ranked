@@ -11,6 +11,15 @@ test('unavailable work retries with a bounded daily backoff',()=>{let slot=pendi
 test('Firestore round trip preserves timestamps, decimals and zero',()=>{const x={time:new Date('2026-09-10T00:00:00.000Z'),score:1.52,zero:0,none:null};assert.deepEqual(decode(encode(x)),x);});
 
 test('infrastructure failure never consumes player attempts',()=>{const slot=completedSlot(pendingSlot(row),{status:'unavailable',reason:'isolate_terminated'},100);assert.equal(slot.attempts,0);assert.equal(slot.retryAt,3600100);});
+test('missing trusted tracks and scan limits remain waiting with explicit bounded retry',()=>{
+  for(const reason of ['missing_trusted_track','scan_work_limit']) {
+    const slot=completedSlot(pendingSlot(row),{status:'unavailable',reason},100);
+    assert.equal(slot.status,'unavailable');
+    assert.equal(slot.attempts,1);
+    assert.equal(slot.retryAt,86400100);
+    assert.equal(queueState({racer:slot},100).notBefore,86400100);
+  }
+});
 test('served tracks rotate behind already due tracks',()=>assert.equal(queueState({racer:pendingSlot(row)},1234).notBefore,1234));
 
 test('terminal-only and pruned-empty queues cannot starve waiting tracks',()=>{const now=1234,terminal=completedSlot(pendingSlot(row),{status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST},now);const boards=[queueState({racer:terminal},now),queueState({},now),queueState({racer:pendingSlot(row)},now)];assert.deepEqual(boards.map(b=>b.notBefore),[NEVER,NEVER,now]);assert.equal(boards.filter(b=>b.notBefore<=now).length,1);});
@@ -519,6 +528,7 @@ test('event-only coordinator test is independent of checkout name and working di
   const sourceRoot=fileURLToPath(new URL('../..',import.meta.url));
   const files=['tools/verifier/queue.test.mjs','tools/verifier/queue.mjs','tools/verifier/run.mjs',
     'tools/verifier/runner.mjs','tools/verifier/firestore.mjs','tools/verifier/throughput.mjs',
+    'tools/verifier/weekly-track.mjs',
     'workers/ranked/src/verification.js','workers/ranked/package.json'];
   // Copy only coordinator source. No credentials, engine assets, browser, or network are needed.
   const env=Object.fromEntries(['PATH','Path','SystemRoot','SYSTEMROOT','WINDIR','TEMP','TMP','TMPDIR','HOME','USERPROFILE']

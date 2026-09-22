@@ -216,6 +216,18 @@ test('new-track projection recomputes weight when a second racer becomes three',
  const next=ctx.projectedFinish({trackId:'a',fieldSize:2,weight:old},1,3);
  assert.ok(next.weight>old);assert.equal(next.weight,ctx.rankedTrackWeightParts('a',3,1,1).finalWeight);
 });
+test('local planner gives only permanent Rolling Hills the official-baseline weight',()=>{
+ const rolling='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+ const official='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
+ const community='5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e';
+ const ctx={trackInfo:id=>({type:id===official?'official':id===community||id===rolling?'community':'custom'})};
+ vm.createContext(ctx);vm.runInContext(extract('rankedTrackWeightParts'),ctx);
+ const permanent=ctx.rankedTrackWeightParts(rolling,10),normalCommunity=ctx.rankedTrackWeightParts(community,10);
+ assert.equal(permanent.type,'permanent');assert.equal(permanent.base,1.6);
+ assert.equal(normalCommunity.type,'community');assert.equal(normalCommunity.base,1);
+ assert.equal(ctx.rankedTrackWeightParts(official,10).base,1.6);
+ assert.equal(ctx.rankedTrackWeightParts('private-track',10).base,0.6);
+});
 test('self planner cannot reintroduce stale cached finishes after freshness resolution',()=>{
  assert.doesNotMatch(extract('profileGuideMarkup'),/isSelf\?cachedFinishes/);
 });

@@ -150,8 +150,13 @@ export function utcEventCandidates(at, officialIds, allIds) {
   const monday = day - ((new Date(day).getUTCDay() + 6) % 7) * 86400000;
   const key = ms => new Date(ms).toISOString().slice(0, 10).replaceAll('-', '');
   const communityIds=allIds.filter(id=>!officialIds.includes(id));
+  const dayIndex = communityIds.length ? Number(key(day)) % communityIds.length : -1;
+  const previousDayIndex = communityIds.length ? Number(key(day - 86400000)) % communityIds.length : -1;
+  const dailyTrackIndex = communityIds.length > 1 && dayIndex === previousDayIndex
+    ? (dayIndex + 1) % communityIds.length
+    : dayIndex;
   return [
-    ...(communityIds.length ? [{ id: 'd_' + key(day), kind: 'daily', startsAt: day, endsAt: day + 86400000, maxRp: 100, trackId: communityIds[Number(key(day)) % communityIds.length] }] : []),
+    ...(communityIds.length ? [{ id: 'd_' + key(day), kind: 'daily', startsAt: day, endsAt: day + 86400000, maxRp: 100, trackId: communityIds[dailyTrackIndex] }] : []),
     { id: 'w_' + key(monday), kind: 'weekly', startsAt: monday, endsAt: monday + 7 * 86400000, maxRp: 500, trackId: officialIds[(Number(key(monday)) * 17 + 11) % officialIds.length] }
   ];
 }

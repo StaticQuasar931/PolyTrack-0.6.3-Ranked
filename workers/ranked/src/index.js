@@ -8,9 +8,9 @@ const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/se
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PROJECT_ID = 'polytrack-052';
 const ALGORITHM_VERSION = 'participation-v8-s1';
-const TRACK_SCHEMA_VERSION = 5;
+const TRACK_SCHEMA_VERSION = 6;
 const AVERAGE_PLACEMENT_VERSION = 2;
-const DERIVED_METRICS_VERSION = 2;
+const DERIVED_METRICS_VERSION = 3;
 const INTEGRITY_STATE_VERSION = 1;
 const PROFILE_COSMETICS_VERSION = 4;
 const COSMETIC_ENTITLEMENT_VERSION = 3;
@@ -394,7 +394,8 @@ async function replayIntegrityValid(row) {
 }
 
 function trackType(trackId) {
-  return OFFICIAL_IDS.has(trackId) ? 'official' : (COMMUNITY_IDS.has(trackId) || LEGACY_COMMUNITY_IDS.has(trackId)) ? 'community' : 'custom';
+  return trackId === SPECIAL_ROLLING_HILLS_TRACK_ID ? 'permanent' :
+    OFFICIAL_IDS.has(trackId) ? 'official' : (COMMUNITY_IDS.has(trackId) || LEGACY_COMMUNITY_IDS.has(trackId)) ? 'community' : 'custom';
 }
 
 function median(values, fallback = 0) {
@@ -416,7 +417,7 @@ function competition(entries) {
 export function trackWeightParts(trackId, fieldSize, competitionBoost = 1) {
   const type = trackType(trackId);
   const field = Math.max(0, Number(fieldSize || 0));
-  const base = type === 'official' ? 1.6 : type === 'community' ? 1 : 0.6;
+  const base = type === 'official' || type === 'permanent' ? 1.6 : type === 'community' ? 1 : 0.6;
   const popularity = field < 2 ? 0 : 0.56 * Math.log2(field) * (field - 1) / (field + 8);
   const competitionFactor = Math.max(0.85, Math.min(1.15, Number(competitionBoost || 1)));
   return { type, field, base, popularity, competition: competitionFactor, finalWeight: base * popularity * competitionFactor };
@@ -635,7 +636,7 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
       const weight = Number(entry.weight || 0);
       if (!rank || weight <= 0) continue;
       const cost = placementCost(rank, fieldSize);
-      const user = users.get(accountId) || { userId: accountId, finishes: [], officialCount: 0, communityCount: 0, customCount: 0, pbCount: 0, totalPlaytimeMs: 0, accountCreatedAt: 0, latestPbAt: 0, betaTester: false };
+      const user = users.get(accountId) || { userId: accountId, finishes: [], officialCount: 0, communityCount: 0, permanentCount: 0, customCount: 0, pbCount: 0, totalPlaytimeMs: 0, accountCreatedAt: 0, latestPbAt: 0, betaTester: false };
       Object.assign(user, {
         name: entry.name || user.name || 'Racer', countryCode: entry.countryCode || user.countryCode || '', carId: entry.carId || user.carId || null,
         carColors: entry.carColors || user.carColors || null, carStyle: entry.carStyle || user.carStyle || '', profileCosmetics: sanitizeProfileCosmetics(entry.profileCosmetics || user.profileCosmetics)

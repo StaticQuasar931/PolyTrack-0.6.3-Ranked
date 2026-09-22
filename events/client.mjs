@@ -61,6 +61,11 @@ export function eventPlacementPresentation(place){
   const title=(place.provisional?`Provisional event place #${place.rank} from verified and waiting snapshot records. `:`Verified event place #${place.rank}. `)+'Complete field size is unavailable.';
   return Object.freeze({text:`#${place.rank}${place.provisional?'*':''}`,className:'sq-event-place'+(podium?' '+podium:''),title,ariaLabel:title});
 }
+export function eventOrdinal(rank){
+  if(!Number.isSafeInteger(rank)||rank<=0)return '';
+  const mod100=rank%100,suffix=mod100>=11&&mod100<=13?'th':({1:'st',2:'nd',3:'rd'}[rank%10]||'th');
+  return `${rank}${suffix}`;
+}
 export function eventTrackName(period,lookup){
   const publicName=typeof period?.trackName==='string'?period.trackName.trim():'';
   let catalogName='';try{catalogName=String(lookup?.(period?.trackId)?.name||'').trim();}catch{}
@@ -378,13 +383,14 @@ export function installEvents(bridge){
   }
   function eventDisplayRows(period){
     const accountId=bridge.accountId();
+    const isHash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
     const board=cache.get(period.id)||read(STORE+'-'+period.id,null);
     const validBoard=board?.period?.id===period.id&&board.period.trackId===period.trackId&&Array.isArray(board.entries);
     const entries=validBoard?board.entries:[];
     const rows=entries.map(row=>({...row,pending:false}));
     const pending=validBoard?(board.pendingPlaybacks||board.playbacks):null;
     for(const replay of (Array.isArray(pending)?pending:[])){
-      if(replay.verificationStatus!=='waiting'||replay.verified===true||!/^[a-f0-9]{64}$/.test(replay.runId||'')||!Number.isSafeInteger(replay.timeMs)||replay.timeMs<=0)continue;
+      if(!isHash(replay?.accountId)||replay.verificationStatus!=='waiting'||replay.pending===false||replay.verified===true||replay.eventRpEligible===true||replay.source&&replay.source!=='pending-event-playback'||!isHash(replay.runId)||!Number.isSafeInteger(replay.timeMs)||replay.timeMs<=0)continue;
       const at=rows.findIndex(row=>row.accountId===replay.accountId);
       if(at>=0&&rows[at].timeMs<=replay.timeMs)continue;
       if(at>=0)rows.splice(at,1);
@@ -402,6 +408,7 @@ export function installEvents(bridge){
     }
     for(const row of rows)row.name=displayName(row);
     rows.sort((a,b)=>a.timeMs-b.timeMs||String(a.accountId).localeCompare(String(b.accountId)));
+    let rank=0;for(let index=0;index<rows.length;index++){if(!index||rows[index].timeMs!==rows[index-1].timeMs)rank=index+1;rows[index].rank=rank;}
     return {rows,board};
   }
   function syncNativeBoard(session){
@@ -442,7 +449,10 @@ export function installEvents(bridge){
     if(view.watch)view.watch.disabled=typeof bridge.watchEvent!=='function'||!(getOwnReplay(period.id)||selectedGhost?.periodId===period.id&&selectedGhost.accountId===accountId);
     view.opponentsNote.textContent=selectedGhost?.periodId===period.id?'Selected ghost: '+selectedGhost.ghost.nickname:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select a published racer to load their replay.':'Select a published racer to load an event ghost. Normal PB ghosts are not used.';
 
-    const {rows,board}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId),placement=eventPlacementPresentation(displayedRecordPlacement(period,mine,board));
+    const {rows,board}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId);
+    let place=displayedRecordPlacement(period,mine,board);
+    if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
+    const placement=eventPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     const styles=rows.map(row=>cachedCarStyle(row,period));
     const signature=JSON.stringify([rows,styles,typeof window.BT,view.page,board?.saved,statusDescription,placement]);if(signature===view.signature)return;view.signature=signature;
@@ -454,7 +464,7 @@ export function installEvents(bridge){
       const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
       button.title=row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.innerHTML='<div class="image-container"><img class="show" src="images/car_thumbnail_placeholder.png"></div><div class="left"><p class="position"></p><p class="event-time"></p></div><div class="right"><div class="name-container"><span class="name"></span></div><p class="verified-state"></p></div>';
-      button.querySelector('.position').textContent=row.pending?'--':String(row.rank||'--');button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
+      button.querySelector('.position').textContent=eventOrdinal(row.rank)||'--';button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
       const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.rp)||0)+' Event RP';
       const icon=document.createElement('img');icon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';state.append(icon);container.append(button);
@@ -472,14 +482,14 @@ export function installEvents(bridge){
     const root=document.querySelector('.time-announcer-ui'),session=sessions.current()||eventIntent;
     if(!root||!latestFinish||!session||latestFinish.periodId!==session.periodId||latestFinish.accountId!==bridge.accountId())return;
     const board=cache.get(session.periodId)||read(STORE+'-'+session.periodId,null);
-    const place=eventFinishPlace({board,...latestFinish});
+    const place=eventFinishPlace({board,periodId:session.periodId,trackId:latestFinish.trackId, ...latestFinish});
     root.querySelector('.sq-event-finish-place')?.remove();
     const current=root.querySelector('.current'),position=current?.querySelector('.position');
     if(!position)return;
-    const text=place?String(place.rank):'';
+    const text=place?eventOrdinal(place.rank):'';
     if(position.textContent!==text)position.textContent=text;
     if(current.classList.contains('show-position')!==!!place)current.classList.toggle('show-position',!!place);
-    const detail=place?'Event place '+place.rank+' of '+place.fieldSize+(place.provisional?' (provisional)':''):'';
+    const detail=place?'Event place '+place.rank+(place.fieldSize===null?'':` of ${place.fieldSize}`)+(place.provisional?' (provisional)':''):'';
     if(position.title!==detail)position.title=detail;
   }
   function tick(){

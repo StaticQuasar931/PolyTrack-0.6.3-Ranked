@@ -1,0 +1,24 @@
+/* Keep the single lobby footer branding and suppress the overlapping bundle watermark. */
+#static-more-games-watermark {
+  display: none !important;
+}
+
+.menu-ui > .info {
+  left: 50% !important;
+  right: auto !important;
+  bottom: 8px !important;
+  width: min(900px, calc(100vw - 150px)) !important;
+  transform: translateX(-50%) !important;
+  text-align: center !important;
+  pointer-events: none !important;
+  user-select: text !important;
+  overflow: visible !important;
+}
+
+.menu-ui > .info a {
+  pointer-events: auto;
+}
+
+.ranked-testing-notice {
+  display: none !important;
+}

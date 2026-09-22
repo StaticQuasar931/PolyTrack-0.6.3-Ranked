@@ -13,7 +13,7 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  for(const [width,height] of [[1366,768],[390,844],[768,1024]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
-  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:124);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),width-(width<=700?32:120));assert.equal(Math.round(featured.x),width<=700?16:60);
+  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:width>1000?144:124);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),width-(width<=700?32:120));assert.equal(Math.round(featured.x),width<=700?16:60);
   assert(featured.x+featured.width<=width+1,'Section must fit the page');
   const rects=[];for(const card of await page.locator('.sq-kodub-weekly,.sq-permanent-track,.sq-event-card').all())rects.push(await card.boundingBox());
   assert.equal(rects.length,4);for(const rect of rects)assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1,'Every event card stays in the section');

@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_RANKED_FILTER_PRESETS,
+  RANKED_FILTER_CATEGORIES,
+  RANKED_FILTER_CATEGORY_LABELS,
   deleteRankedFilterPreset,
   filterRankedRows,
   inspectRankedFilterAvailability,
   normalizeRankedFilter,
+  mountRankedFilterPanel,
   readRankedFilterPresets,
   saveRankedFilterPreset,
   validateRankedFilter
@@ -21,11 +24,113 @@ function storage(initial = {}) {
 }
 
 const complete = () => true;
+
+class MockElement {
+  constructor(tag, document) {
+    this.tagName = tag;
+    this.ownerDocument = document;
+    this.children = [];
+    this.style = {};
+    this.dataset = {};
+    this.attributes = {};
+    this.listeners = {};
+    this.className = '';
+    this.classList = { toggle: (name, enabled) => {
+      const classes = new Set(this.className.split(/\s+/).filter(Boolean));
+      if (enabled) classes.add(name); else classes.delete(name);
+      this.className = [...classes].join(' ');
+    } };
+  }
+  append(...nodes) { this.children.push(...nodes); }
+  prepend(...nodes) { this.children.unshift(...nodes); }
+  replaceChildren(...nodes) { this.children = nodes; }
+  setAttribute(name, value) { this.attributes[name] = value; }
+  addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
+  dispatch(name, event = {}) {
+    for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, ...event });
+  }
+  focus() {}
+  get options() { return this.children; }
+  get elements() {
+    return new Proxy({}, { get: (_, name) => {
+      const find = node => node.name === name ? node : node.children.map(find).find(Boolean);
+      return this.children.map(find).find(Boolean);
+    } });
+  }
+}
+
+function mockDocument() {
+  const document = { createElement: tag => new MockElement(tag, document) };
+  return document;
+}
+
+function findElement(root, predicate) {
+  if (predicate(root)) return root;
+  for (const child of root.children) {
+    const found = findElement(child, predicate);
+    if (found) return found;
+  }
+  return null;
+}
+
+test('filter category names match the actual Ranked leaderboard labels', () => {
+  assert.deepEqual(Object.keys(RANKED_FILTER_CATEGORY_LABELS), [...RANKED_FILTER_CATEGORIES]);
+  assert.deepEqual(RANKED_FILTER_CATEGORY_LABELS, {
+    overall: 'Overall RP', average: 'Average place', competitiveAverage: 'Competitive average',
+    tracks: 'Tracks completed', medals: 'Podium points', rising: 'Rising racers', skill: 'Best 10 skill',
+    consistency: 'All-track depth', wins: 'Track wins', podiumRate: 'Podium rate',
+    weight: 'Total track weight', pbs: 'PBs set', playtime: 'Active time',
+    veterans: 'Racing longest', official: 'Official tracks', community: 'Community tracks', casual: 'Casual RP'
+  });
+});
+
 const rows = [
   { userId: 'alpha', rank: 3, trackWins: 5, daysActive: 20, totalPlaytimeMs: 10 * 3600000, raceCount: 12, runVerified: true },
   { userId: 'bravo', rank: 8, trackWins: 2, daysActive: 8, totalPlaytimeMs: 3 * 3600000, raceCount: 6, runVerified: false },
   { userId: 'charlie', rank: 11, trackWins: 8, daysActive: 40, totalPlaytimeMs: 30 * 3600000, raceCount: 20, runVerified: true }
 ];
+
+test('filter panel resolves typed usernames and groups content beneath the summary trigger', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const updates = [];
+  const panel = mountRankedFilterPanel({
+    root,
+    storage: storage(),
+    rows: [
+      { userId: 'alice-id', name: 'Alice Smith', rank: 1 },
+      { userId: 'user-3', name: 'Same Name', rank: 2 },
+      { userId: 'user-4', name: ' same name ', rank: 3 }
+    ],
+    isComplete: metric => metric === 'snapshot' || metric === 'identity' || metric === 'rank' || metric.startsWith('category:'),
+    onChange: result => updates.push(result)
+  });
+  const details = root.children[0];
+  const summary = details.children[0];
+  const content = details.children[1];
+  assert.equal(content.className, 'ranked-filter-content');
+  assert.equal(summary.tagName, 'summary');
+  assert(content.children.some(child => child.className === 'ranked-filter-form'));
+  assert(content.children.some(child => child.className === 'ranked-filter-presets'));
+  assert(content.children.some(child => child.className === 'ranked-filter-status'));
+
+  const input = findElement(content, node => node.name === 'whitelist');
+  input.value = 'Alice Smith';
+  const form = findElement(content, node => node.className === 'ranked-filter-form');
+  form.dispatch('submit');
+  assert.deepEqual(updates.at(-1).filter.whitelist, ['alice-id']);
+  assert.equal(panel.getFilter().whitelist[0], 'alice-id');
+
+  const blacklist = findElement(content, node => node.name === 'blacklist');
+  const status = findElement(content, node => node.className === 'ranked-filter-status');
+  blacklist.value = 'Same Name';
+  form.dispatch('submit');
+  assert.match(status.textContent, /ambiguous/i);
+  assert.deepEqual(panel.getFilter().whitelist, ['alice-id']);
+  blacklist.value = 'Nobody';
+  form.dispatch('submit');
+  assert.match(status.textContent, /No loaded racer matches/);
+});
 
 test('normalization bounds values, public IDs and categories', () => {
   assert.deepEqual(normalizeRankedFilter({

@@ -19,7 +19,13 @@ const METRIC_FIELDS = Object.freeze({
   playtime: ['totalPlaytimeMs'],
   tracksCompleted: ['tracksCompleted', 'raceCount']
 });
-const CATEGORY_LABELS = Object.freeze({ overall: 'Overall RP', casual: 'Casual RP' });
+export const RANKED_FILTER_CATEGORY_LABELS = Object.freeze({
+  overall: 'Overall RP', average: 'Average place', competitiveAverage: 'Competitive average',
+  tracks: 'Tracks completed', medals: 'Podium points', rising: 'Rising racers', skill: 'Best 10 skill',
+  consistency: 'All-track depth', wins: 'Track wins', podiumRate: 'Podium rate',
+  weight: 'Total track weight', pbs: 'PBs set', playtime: 'Active time',
+  veterans: 'Racing longest', official: 'Official tracks', community: 'Community tracks', casual: 'Casual RP'
+});
 
 function own(object, key) {
   return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -41,6 +47,53 @@ function normalizeIds(value) {
     if (seen.size >= 128) break;
   }
   return [...seen];
+}
+
+function normalizedUsername(value) {
+  return typeof value === 'string' ? value.normalize('NFKC').trim().toLocaleLowerCase() : '';
+}
+
+function resolveRankedFilterUserIds(value, rows) {
+  const entries = new Map();
+  const knownIds = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const id = rowId(row);
+    if (!id) continue;
+    knownIds.add(id);
+    const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : '';
+    if (!name) continue;
+    const key = normalizedUsername(name);
+    if (!entries.has(key)) entries.set(key, new Set());
+    entries.get(key).add(id);
+  }
+
+  const ids = new Set();
+  const errors = [];
+  const resolveToken = token => {
+    const candidate = token.trim();
+    if (!candidate) return true;
+    const matches = entries.get(normalizedUsername(candidate));
+    if (matches?.size === 1) { ids.add(matches.values().next().value); return true; }
+    if (matches?.size > 1) { errors.push(`Username "${candidate}" is ambiguous; choose an account from suggestions.`); return true; }
+    if (knownIds.has(candidate)) { ids.add(candidate); return true; }
+    return false;
+  };
+
+  for (const part of (Array.isArray(value) ? value : String(value || '').split(','))) {
+    const candidate = String(part || '').trim();
+    if (!candidate) continue;
+    if (entries.has(normalizedUsername(candidate)) || knownIds.has(candidate)) {
+      if (!resolveToken(candidate)) errors.push(`No loaded racer matches "${candidate}".`);
+      continue;
+    }
+    const parts = candidate.split(/\s+/);
+    if (parts.length > 1 && parts.every(part => knownIds.has(part) || entries.has(normalizedUsername(part)))) {
+      for (const part of parts) resolveToken(part);
+    } else {
+      errors.push(`No loaded racer matches "${candidate}".`);
+    }
+  }
+  return Object.freeze({ ids: Object.freeze([...ids].slice(0, 128)), errors: Object.freeze(errors) });
 }
 
 export function normalizeRankedFilter(input = {}, categories = RANKED_FILTER_CATEGORIES) {
@@ -298,14 +351,23 @@ export function mountRankedFilterPanel(options = {}) {
 
   const panel = document.createElement('details');
   panel.className = 'ranked-filter-panel';
-  addText(document, panel, 'summary', 'Leaderboard filters');
+  const summary = addText(document, panel, 'summary', 'Leaderboard filters');
+  const content = document.createElement('div');
+  content.className = 'ranked-filter-content';
+  panel.append(content);
+  const activeIndicator = addText(document, summary, 'span', 'Inactive', 'ranked-filter-active');
+  activeIndicator.setAttribute('aria-live', 'polite');
+  activeIndicator.style.marginInlineStart = '8px';
+  activeIndicator.style.padding = '2px 6px';
+  activeIndicator.style.borderRadius = '999px';
+  activeIndicator.style.fontSize = '0.75em';
   const form = document.createElement('form');
   form.className = 'ranked-filter-form';
   form.style.display = 'grid';
   form.style.gridTemplateColumns = 'repeat(auto-fit,minmax(150px,1fr))';
   form.style.gap = '8px';
   form.style.padding = '8px 0';
-  panel.append(form);
+  content.append(form);
 
   const categoryLabel = addText(document, form, 'label', 'Category');
   categoryLabel.style.display = 'grid';
@@ -314,7 +376,7 @@ export function mountRankedFilterPanel(options = {}) {
   for (const value of categories) {
     const option = document.createElement('option');
     option.value = value;
-    option.textContent = CATEGORY_LABELS[value] || value.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
+    option.textContent = RANKED_FILTER_CATEGORY_LABELS[value] || value.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
     category.append(option);
   }
   categoryLabel.append(category);
@@ -352,13 +414,40 @@ export function mountRankedFilterPanel(options = {}) {
     metricInputs[metric] = { group, min, max, unavailable };
   }
 
+  const suggestions = new Map();
+  const filterInstanceId = Math.random().toString(36).slice(2);
   const listInputs = {};
-  for (const [name, label] of [['whitelist', 'Only public IDs'], ['blacklist', 'Exclude public IDs']]) {
-    const field = addText(document, form, 'label', label);
+  for (const [name, label] of [['whitelist', 'Only these racers'], ['blacklist', 'Exclude these racers']]) {
+    const field = document.createElement('div');
     field.style.display = 'grid';
-    const input = document.createElement('textarea');
-    input.name = name; input.rows = 2; input.placeholder = 'Comma or space separated'; input.style.resize = 'vertical';
-    field.append(input); listInputs[name] = { field, input };
+    field.style.position = 'relative';
+    const inputId = `ranked-filter-${filterInstanceId}-${name}`;
+    const fieldLabel = addText(document, field, 'label', label);
+    const input = document.createElement('input');
+    input.id = inputId;
+    input.name = name; input.type = 'text'; input.placeholder = 'Username or public ID, comma separated';
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('aria-autocomplete', 'list');
+    fieldLabel.setAttribute('for', inputId);
+    const popup = document.createElement('div');
+    popup.id = `${inputId}-suggestions`;
+    popup.className = 'ranked-filter-user-suggestions';
+    popup.setAttribute('role', 'listbox');
+    popup.hidden = true;
+    input.setAttribute('aria-controls', popup.id);
+    input.setAttribute('aria-expanded', 'false');
+    Object.assign(popup.style, {
+      position: 'absolute', insetInline: '0', top: '100%', zIndex: '20',
+      maxHeight: '180px', overflowY: 'auto', padding: '4px',
+      background: 'var(--ranked-filter-popup-bg, #20242b)',
+      color: 'var(--ranked-filter-popup-fg, #fff)',
+      border: '1px solid var(--ranked-filter-popup-border, #68717d)',
+      borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,.3)'
+    });
+    field.append(input, popup);
+    form.append(field);
+    listInputs[name] = { field, input, popup };
+    suggestions.set(name, popup);
   }
 
   const actions = document.createElement('div');
@@ -376,8 +465,8 @@ export function mountRankedFilterPanel(options = {}) {
   const save = addText(document, presets, 'button', 'Save', 'button'); save.type = 'button';
   const remove = addText(document, presets, 'button', 'Delete', 'button'); remove.type = 'button';
   presets.prepend(presetSelect, presetName);
-  panel.append(presets);
-  const status = addText(document, panel, 'p', '', 'ranked-filter-status');
+  content.append(presets);
+  const status = addText(document, content, 'p', '', 'ranked-filter-status');
   status.setAttribute('role', 'status');
   root.replaceChildren(panel);
 
@@ -404,15 +493,76 @@ export function mountRankedFilterPanel(options = {}) {
     listInputs.blacklist.input.value = value.blacklist.join(', ');
   }
 
+  function getUserSuggestions(query) {
+    const users = new Map();
+    for (const row of rows) {
+      const id = rowId(row);
+      if (!id || users.has(id)) continue;
+      const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : '';
+      users.set(id, name);
+    }
+    const search = normalizedUsername(query);
+    return [...users].filter(([id, name]) => search &&
+      (normalizedUsername(name).includes(search) || id.toLocaleLowerCase().includes(search))).slice(0, 8);
+  }
+
+  function refreshUserSuggestions(name) {
+    const { input, popup } = listInputs[name];
+    const raw = input.value;
+    const prefix = raw.slice(0, raw.lastIndexOf(',') + 1);
+    const query = raw.slice(raw.lastIndexOf(',') + 1).trim();
+    const matches = getUserSuggestions(query);
+    popup.replaceChildren();
+    popup.hidden = !query || !matches.length;
+    input.setAttribute('aria-expanded', String(!popup.hidden));
+    for (const [id, username] of matches) {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.setAttribute('role', 'option');
+      option.textContent = username ? `${username} (${id})` : id;
+      option.style.display = 'block';
+      option.style.width = '100%';
+      option.style.textAlign = 'start';
+      option.style.padding = '6px 8px';
+      option.addEventListener('mousedown', event => event.preventDefault());
+      option.addEventListener('click', () => {
+        input.value = `${prefix}${id}, `;
+        popup.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+        input.focus();
+      });
+      popup.append(option);
+    }
+  }
+
+  function refreshActiveIndicator() {
+    const active = activeMetrics(filter).size > 0 || filter.category !== 'overall';
+    activeIndicator.textContent = active ? 'Filters active' : 'Inactive';
+    activeIndicator.classList.toggle('is-active', active);
+    activeIndicator.style.backgroundColor = active ? 'rgba(67, 176, 112, 0.2)' : 'rgba(128, 128, 128, 0.16)';
+    activeIndicator.setAttribute('aria-label', active ? 'Filters active' : 'No filters active');
+    panel.dataset.active = String(active);
+  }
+
   function readForm() {
     const value = { category: category.value, verification: verification.value };
     for (const [, , minimum, maximum] of ranges) {
       value[minimum] = form.elements[minimum].value;
       value[maximum] = form.elements[maximum].value;
     }
-    value.whitelist = listInputs.whitelist.input.value;
-    value.blacklist = listInputs.blacklist.input.value;
-    return validateRankedFilter(value, categories);
+    const whitelist = resolveRankedFilterUserIds(listInputs.whitelist.input.value, rows);
+    const blacklist = resolveRankedFilterUserIds(listInputs.blacklist.input.value, rows);
+    value.whitelist = whitelist.ids;
+    value.blacklist = blacklist.ids;
+    const checked = validateRankedFilter(value, categories);
+    return Object.freeze({
+      value: checked.value,
+      errors: Object.freeze([
+        ...whitelist.errors.map(error => `Only these racers: ${error}`),
+        ...blacklist.errors.map(error => `Exclude these racers: ${error}`),
+        ...checked.errors
+      ])
+    });
   }
 
   function refreshAvailability() {
@@ -432,12 +582,23 @@ export function mountRankedFilterPanel(options = {}) {
   }
 
   function emit() {
+    refreshActiveIndicator();
     const result = filterRankedRows(rows, filter, { isComplete: options.isComplete, categories });
     status.textContent = result.available
       ? `${result.filteredCount} of ${result.sourceCount} racers shown`
-      : `Filters unavailable: ${[...new Set(result.unavailable.map(item => `${item.metric}: ${item.reason}`))].join('; ')}`;
+      : `${result.unavailable.some(item => item.metric === 'snapshot') ? 'Complete leaderboard snapshot unavailable. Filters were not applied. ' : ''}Filters unavailable: ${[...new Set(result.unavailable.map(item => `${item.metric}: ${item.reason}`))].join('; ')}`;
     options.onChange?.(result);
     return result;
+  }
+
+  for (const [name, controls] of Object.entries(listInputs)) {
+    controls.input.addEventListener('input', () => refreshUserSuggestions(name));
+    controls.input.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        controls.popup.hidden = true;
+        controls.input.setAttribute('aria-expanded', 'false');
+      }
+    });
   }
 
   form.addEventListener('submit', event => {

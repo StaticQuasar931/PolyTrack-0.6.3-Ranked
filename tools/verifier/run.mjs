@@ -4,12 +4,13 @@ import {fileURLToPath} from 'node:url';
 import {connect, decode} from './firestore.mjs';
 import {QUEUE_CANDIDATE_LIMIT, prioritizeQueueDocuments, selectJobs, publishResults} from './runner.mjs';
 import {budgetDatabase, drainVerification, DRAIN_LIMITS} from './throughput.mjs';
+import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
 import {VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
 export const NORMAL_JOB_LIMIT = 12;
 export const TOTAL_JOB_LIMIT = 16;
 const checkEvents = async (db, options) => (await import('./events.mjs')).checkEventWork(db, options);
 const runEvents = async (db, directory, options) => (await import('./events.mjs')).runEventVerification(db, directory, options);
-const simulate = async (directory, jobs) => (await import('./verify.cjs')).verifyBatch(directory, jobs);
+const simulate = async (directory, jobs, trustedTracks) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 async function validateEnginePin() {
   const {snapshot} = await import('./assets.cjs');
@@ -64,7 +65,8 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
     '\n## Bounded drain\n'+JSON.stringify(summary)+'\nLimits: '+DRAIN_LIMITS.rounds+
     ' rounds, 64 total native attempts, '+DRAIN_LIMITS.requests+' Firestore HTTP requests. Request count is not billed document usage. '+
     'Time admission is measured, not a completion guarantee; the workflow step timeout remains the hard stop. '+
-    'Interrupted-round publication counts are incomplete, not zero.\n');
+    'Interrupted-round publication counts are incomplete, not zero. `stop` explains why this invocation ended; a round is not a GitHub workflow run number. '+
+    'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n');
   return summary;
 }
 
@@ -103,7 +105,8 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
     const summary={processed:0,canonicalAttempts,selectionConflicts,events:eventSummary,infrastructureFailure:eventFailure};
     log(JSON.stringify({...summary,message:'No runnable normal verification jobs.'}));return summary;
   }
-  const results = await verifyNormal(root, jobs);
+  const trustedTracks = loadWeeklyTrustedTrack(root, jobs);
+  const results = await verifyNormal(root, jobs, trustedTracks);
   if (results.length !== jobs.length || new Set(results.map(r => r.resultId)).size !== jobs.length) throw Error('Incomplete verifier result set');
   const totals = await publishNormal(db, jobs, results);
   const reasons = totals.reasons;

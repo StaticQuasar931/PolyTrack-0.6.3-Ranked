@@ -2,6 +2,7 @@
 // Explicit opt-in: npm run test:native-limits after installing Chromium. No credentials or remote data.
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const path=require('node:path');
 const zlib=require('node:zlib');
 const {verifyBatch}=require('./verify.cjs');
@@ -16,7 +17,10 @@ test('pinned community exceptions and all official geometry reach bounded native
   let worstWall=0,worstCpu=0;
   for(let start=0;start<tracks.length;start+=LIMITS.jobs){
     const group=tracks.slice(start,start+LIMITS.jobs);
-    const results=await verifyBatch(root,group.map(track=>job(track)));
+    const trusted=group.filter(track=>track.name.startsWith('trusted/')).map(track=>({
+      trackId:track.id,code:fs.readFileSync(path.join(root,'events/kodub/assets',track.hash+'.track'),'utf8'),codeHash:track.hash,
+    }));
+    const results=await verifyBatch(root,group.map(track=>job(track)),trusted);
     for(let i=0;i<group.length;i++){
       const track=group[i],result=results[i];
       assert.equal(result.reason,'native_finish_mismatch',track.name+': '+result.reason);

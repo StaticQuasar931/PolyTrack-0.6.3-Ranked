@@ -5,7 +5,7 @@ export const PERMANENT_ROLLING_HILLS = Object.freeze({
   trackId: 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778',
   collection: '0.6.2_s1_leaderboards_track',
   algorithmVersion: 'participation-v8-s1',
-  minimumSchemaVersion: 5,
+  minimumSchemaVersion: 6,
   scoreVersion: 'rolling-hills-live-verified-v1',
   maxRp: 1001,
   entryLimit: 500

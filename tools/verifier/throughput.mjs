@@ -46,9 +46,17 @@ export async function drainVerification({runRound,requests,now=()=>performance.n
     if (round.events.budgetDeferred && !normalProgress && !eventProgress && !pruned) {stop='budget_deferred';break;}
     if(!normalProgress&&!eventProgress&&!pruned) {stop='no_progress';break;}
   }
+  const reasons={};
+  for (const round of rounds) for (const [reason,count] of Object.entries(round.reasons || {})) {
+    reasons[reason]=(reasons[reason] || 0)+Number(count || 0);
+  }
   const summary={rounds:rounds.length,processed:rounds.reduce((n,r)=>n+r.processed,0),
     eventChecked:rounds.reduce((n,r)=>n+r.events.checked,0),
     verified:rounds.reduce((n,r)=>n+(r.verified||0),0),
+    unavailable:rounds.reduce((n,r)=>n+(r.unavailable||0),0),
+    mismatch:rounds.reduce((n,r)=>n+(r.mismatch||0),0),
+    deferred:rounds.reduce((n,r)=>n+(r.deferred||0),0),
+    superseded:rounds.reduce((n,r)=>n+(r.superseded||0),0),reasons,
     requests:requests(),elapsedMs:now()-started,stop,interruptedRound,
     countsComplete:!interruptedRound};
   log(JSON.stringify({drain:summary}));

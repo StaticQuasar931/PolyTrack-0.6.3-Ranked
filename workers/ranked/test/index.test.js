@@ -41,7 +41,7 @@ test('unchanged track signatures are rewritten when schema or algorithm is obsol
   const signature = 'same-content';
   assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 4, algorithmVersion: 'participation-v8-s1' }, signature), false);
   assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 5, algorithmVersion: 'old-algorithm' }, signature), false);
-  assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 5, algorithmVersion: 'participation-v8-s1',entries:[],complete:true,totalEntries:0 }, signature), true);
+  assert.equal(trackSnapshotIsCurrent({ signature, schemaVersion: 6, algorithmVersion: 'participation-v8-s1',entries:[],complete:true,totalEntries:0 }, signature), true);
 });
 
 test('track types use the exact registry instead of treating every hash as community', () => {
@@ -54,6 +54,25 @@ test('track types use the exact registry instead of treating every hash as commu
   assert.equal(custom.type, 'custom');
   assert.ok(official.finalWeight > community.finalWeight);
   assert.ok(community.finalWeight > custom.finalWeight);
+});
+
+test('Rolling Hills is permanent-weighted in normal Overall RP without changing community scoring', () => {
+  const rolling = 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+  const makeBoard = trackId => verifiedEntries(Array.from({ length: 5 }, (_, index) => validRun({
+    accountId: index === 2 ? 'racer' : `opponent-${index}`,
+    trackId,
+    timeMs: 20000 + index * 1000,
+    createdAt: index + 1
+  })), trackId);
+  const rollingEntries = makeBoard(rolling), communityEntries = makeBoard(COMMUNITY_TRACK);
+  assert.equal(rollingEntries[2].weight, Number((communityEntries[2].weight * 1.6).toFixed(3)));
+
+  const racer = computeOverall([
+    { trackId: rolling, entries: rollingEntries },
+    { trackId: COMMUNITY_TRACK, entries: communityEntries }
+  ]).find(entry => entry.userId === 'racer');
+  assert.equal(racer.communityCount, 1);
+  assert.deepEqual(racer.weightedResults.map(result => result.type).sort(), ['community', 'permanent']);
 });
 
 test('track entries retain one fastest PB per account without cloning racers', () => {
@@ -124,6 +143,24 @@ test('rejects an untrusted origin before touching Firestore', async () => {
   });
   assert.equal(response.status, 403);
   assert.equal(touched, false);
+});
+
+test('profile notify preflight allows the configured school game origin and required headers', async () => {
+  const origin = 'https://school-game.example';
+  const response = await handleRequest(new Request('https://ranked.example/v1/profile/notify', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: origin,
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'authorization,content-type'
+    }
+  }), { ALLOWED_ORIGINS: origin });
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+  assert.equal(response.headers.get('Access-Control-Allow-Methods'), 'GET, POST, OPTIONS');
+  assert.equal(response.headers.get('Access-Control-Allow-Headers'), 'Authorization, Content-Type, X-Admin-Token');
+  assert.equal(response.headers.get('Access-Control-Max-Age'), '600');
 });
 
 test('canonical reconciliation endpoint requires the private admin token', async () => {

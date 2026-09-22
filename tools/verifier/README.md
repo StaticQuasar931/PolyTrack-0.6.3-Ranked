@@ -39,6 +39,9 @@ The Ranked Worker seeds existing season-one track snapshots using a separate boo
 
 Runner selection attempts at most eight canonical lookups per track and sixteen per round, including missing records. Selection conflicts defer only that track. Publication retries conflicts three times with fresh reads, then counts that result as deferred and continues; non-conflict failures still fail the invocation. Publication adds at most 48 further canonical reads per round (sixteen results times three attempts), additionally constrained by drain request reservations. Deferred work stays queued for a later invocation.
 
+## Kodub weekly trusted asset
+Normal queue verification offers the checked-in current weekly Kodub track only to jobs with its exact track ID. The descriptor must point to a SHA-256-named asset whose bytes match that hash; the native decoder must also confirm the expected ID and start transform. Tracks above the default part cap require an exact reviewed ID, hash, native part count, and X/Z span in `track-geometry.json`. The current La Riviera asset is reviewed at 42,781 parts and spans 607 by 588. This does not raise global limits, and a later weekly track does not inherit the exception. The weekly sync updates `events/kodub/**`, not the verifier geometry review.
+
 ## Planner bundle wire
 The overall snapshot optionally includes resultBundle (base64 gzip string), resultBundleVersion: 1, and resultBundleEncoding: "gzip-base64-json-v1". Inflate using DecompressionStream('gzip') and parse JSON to obtain {resultTracks: [trackId, ...], entries: [{userId, resultData}, ...]}. Each resultData is a JSON string of [trackIndex, rank, fieldSize, weight, competition, timeMs, pbAt] tuples. The dictionary is sorted; every eligible finish for each published racer is retained losslessly. Legacy summaries remain unchanged; full temporary resultSamples arrays are stripped before Firestore serialization. No per-racer writes are added.
 

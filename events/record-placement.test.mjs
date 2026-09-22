@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {eventPlacementPresentation,eventRecordPlacement,eventTrackName,readEventPlacementSettings} from './client.mjs';
+import {eventOrdinal,eventPlacementPresentation,eventRecordPlacement,eventTrackName,readEventPlacementSettings} from './client.mjs';
 
 const account=n=>n.toString(16).padStart(64,'0');
 const period={id:'daily-fixture',trackId:'a'.repeat(64),entrantLimit:5};
@@ -36,6 +36,10 @@ test('competition ties and top-three presentation stay deterministic',()=>{
   assert.equal(place.rank,2);assert.equal(eventPlacementPresentation(place).className,'sq-event-place silver');
   assert.equal(eventPlacementPresentation({...place,rank:3}).className,'sq-event-place bronze');
   assert.equal(eventPlacementPresentation({...place,rank:4}).className,'sq-event-place');
+});
+test('native event places use correct ordinal suffixes, including teens',()=>{
+  assert.deepEqual([1,2,3,4,11,12,13,21,22,23].map(eventOrdinal),['1st','2nd','3rd','4th','11th','12th','13th','21st','22nd','23rd']);
+  assert.equal(eventOrdinal(0),'');assert.equal(eventOrdinal(1.5),'');
 });
 
 test('pending placement fails closed for malformed, legacy, duplicate, or over-bound snapshots',()=>{

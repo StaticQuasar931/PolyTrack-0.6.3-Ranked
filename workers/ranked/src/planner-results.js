@@ -60,7 +60,10 @@ export async function packPlannerResults(entries, snapshot, {boardCount = 0, boa
     return {...metadata, resultBundleStatus: 'compression_unavailable'};
   }
   let binary = '';
-  for (const byte of compressed) binary += String.fromCharCode(byte);
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < compressed.length; offset += chunkSize) {
+    binary += String.fromCharCode(...compressed.subarray(offset, offset + chunkSize));
+  }
   const resultBundle = btoa(binary);
   const packed = {...metadata, resultBundleComplete: true, resultBundleStatus: 'complete', resultBundle};
   // Never trim results to meet the budget, and never carry forward a stale bundle.

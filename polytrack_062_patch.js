@@ -698,13 +698,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   const AVERAGE_PLACEMENT_VERSION=2;
   function rankedTrackWeightParts(trackId,fieldSize,competition=1,depthBoost=1){
     const info=trackInfo(trackId);
+    const type=trackId==='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778'?'permanent':info.type;
     const field=Math.max(0,Number(fieldSize||0)||0);
-    const base=info.type==='official'?1.6:info.type==='community'?1:0.6;
+    const base=type==='official'||type==='permanent'?1.6:type==='community'?1:0.6;
     // Preserve diminishing participation growth while restoring a useful spread between populated tracks.
     const popularity=field<2?0:.56*Math.log2(field)*(field-1)/(field+8);
     const competitionFactor=Math.max(.85,Math.min(1.15,Number(competition||1)||1));
     const depthFactor=Math.max(1,Math.min(1.35,Number(depthBoost||1)||1));
-    return {type:info.type,field,base,popularity,competition:competitionFactor,depthBoost:depthFactor,baseWeight:base*popularity,finalWeight:base*popularity*competitionFactor*depthFactor};
+    return {type,field,base,popularity,competition:competitionFactor,depthBoost:depthFactor,baseWeight:base*popularity,finalWeight:base*popularity*competitionFactor*depthFactor};
   }
   function rankedTrackWeight(trackId,fieldSize){
     return rankedTrackWeightParts(trackId,fieldSize).finalWeight;
@@ -1737,6 +1738,20 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     rankedPolish.textContent += 'body.sq-mp-dialog-active .track-selection-ui{visibility:hidden!important;pointer-events:none!important}';
     rankedPolish.textContent += '.multiplayer-ui:has(>.join:not(.hidden),>.host:not(.hidden)){justify-content:flex-start!important}.multiplayer-ui>.join:not(.hidden),.multiplayer-ui>.host:not(.hidden){margin-block:auto!important}.multiplayer-ui>.sq-multiplayer-relay,.multiplayer-ui>.sq-multiplayer-relay.is-collapsed{margin-top:16px!important;margin-bottom:0!important}';
     rankedPolish.textContent += "\n      .cosmetic-emblem-target .overall-name::before,.leaderboard-ui .cosmetic-emblem-target .name::before,.cosmetic-emblem-target .showcase-row::after,.profile-cosmetic-choice.cosmetic-emblem-target .profile-cosmetic-preview::after{content:'\\25CE'}\n      .cosmetic-stripe-overdrive{--sq-stripe-art:repeating-linear-gradient(128deg,transparent 0 30px,var(--fx-accent,#7ee7ff) 31px 34px,transparent 35px 42px);--sq-stripe-size:96px 100%}\n      .profile-cosmetic-choice.cosmetic-stripe-overdrive .profile-cosmetic-preview i{background:repeating-linear-gradient(128deg,#142252 0 16px,#7ee7ff 17px 20px,#142252 21px 27px)}\n";
+    rankedPolish.textContent += `
+      .overall-filter-host{position:relative;z-index:6;flex:0 1 auto;margin-inline:auto;min-width:0}
+      .ranked-filter-panel{position:relative}
+      .ranked-filter-panel>summary{display:flex;align-items:center;justify-content:center;gap:5px;min-height:42px;padding:7px 14px;background:#217d61;color:#fff;border:2px solid #77dfaa;cursor:pointer;font-size:17px;list-style:none;white-space:nowrap}
+      .ranked-filter-panel>summary::-webkit-details-marker{display:none}
+      .ranked-filter-panel[data-active="true"]>summary{background:#a4e38c;color:#102b28;border-color:#efffc1}
+      .ranked-filter-panel>summary:focus-visible{outline:3px solid #fff;outline-offset:2px}
+      .ranked-filter-content{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:30;width:min(700px,calc(100vw - 36px));max-height:calc(100vh - 125px);overflow:auto;box-sizing:border-box;padding:18px;background:#142451;border:2px solid #77dfaa;box-shadow:0 22px 42px rgba(0,0,0,.45)}
+      .ranked-filter-content .ranked-filter-form{padding:0!important}
+      .ranked-filter-content input,.ranked-filter-content select{box-sizing:border-box;max-width:100%;min-height:38px;color:#fff;background:#23396d;border:1px solid #9ab9df;font:15px ForcedSquare,sans-serif}
+      .ranked-filter-content .button{min-height:38px;padding:5px 10px}
+      .ranked-filter-content .ranked-filter-status{margin:10px 0 0;color:#d9e7ff;font-size:14px}
+      @media(max-width:800px){.overall-top{flex-wrap:wrap;gap:8px}.overall-filter-host{order:3;width:100%;margin:0}.ranked-filter-panel>summary{width:100%;box-sizing:border-box}.overall-actions{margin-left:auto}.ranked-filter-content{left:0;transform:none;width:min(700px,calc(100vw - 36px))}}
+    `;
     document.head.appendChild(rankedPolish);
   }
 
@@ -1907,18 +1922,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       recordPlacementWarningShown=true;
       log('warn','[RANKED-PLACEMENT] Badge module unavailable',String(error&&(error.message||error)));
     });
-  }
-
-  function ensureReturningPlayerNotice(){
-    const key='polytrack-0.6.2-ranked-recalculation-notice-v1';
-    if(localStorage.getItem(key)==='1' || document.querySelector('.ranked-testing-notice') || !isStartMenuHotkeyContext()) return;
-    const returning=readLocalRaceRows().length>0 || Boolean(readOverallSnapshotCache()) || Boolean(localStorage.getItem(RECORDING_STORE_KEY));
-    if(!returning) return;
-    const notice=document.createElement('div');
-    notice.className='ranked-testing-notice';
-    notice.innerHTML='<span><strong>Ranked is still being built.</strong> Updates and track changes can move scores when a track receives a new finish. Want your track featured? Submit it in Discord for a chance to join the StaticQuasar931 track tab. Please suggest features and changes in the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</span><button class="button" type="button">Understood</button>';
-    notice.querySelector('button').addEventListener('click',()=>{localStorage.setItem(key,'1');notice.remove();});
-    document.body.appendChild(notice);
   }
 
   function applyUiPreferences(){
@@ -2248,14 +2251,26 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const board=[...document.querySelectorAll('.track-info-ui .leaderboard-ui')].find(isElementVisible);
     if(!board)return false;
     const rows=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
-    const activate=row=>{if(row&&!row.classList.contains('selected')&&row.getAttribute('aria-pressed')!=='true')row.click();};
+    const selected=row=>row.classList.contains('selected')||row.getAttribute('aria-pressed')==='true';
+    const choose=desired=>{
+      if(!desired.length)return false;
+      const wanted=new Set(desired);
+      const same=rows.every(row=>selected(row)===wanted.has(row));
+      for(const row of rows)if(selected(row)&&(same||!wanted.has(row)))row.click();
+      if(!same)for(const row of desired)if(!selected(row))row.click();
+      return true;
+    };
     const key=String(event.key||'').toLowerCase();
     const numeric=/^[0-9]$/.test(key)?(key==='0'?10:Number(key)):null;
-    if(numeric){activate(rows[numeric-1]);}
-    else if(key==='='||key==='+'){rows.slice(0,10).forEach(activate);}
+    if(numeric){const row=rows[numeric-1];if(!row)return false;row.click();}
+    else if(key==='='||key==='+'||event.code==='NumpadAdd'){if(!choose(rows.slice(0,10)))return false;}
     else if(key==='backspace'){
-      rows.slice(0,9).forEach(activate);
-      activate(rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||'')));
+      const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
+      if(!choose([...new Set([...rows.slice(0,9),self].filter(Boolean))]))return false;
+    }else if(key==='-'||event.code==='NumpadSubtract'){
+      const selfIndex=rows.findIndex(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
+      if(selfIndex<=0)return false;
+      rows[selfIndex-1].click();
     }else if(key==='enter'||key===' '||key==='spacebar'){
       const play=document.querySelector('.track-info-ui .side-panel button.play');
       if(!isElementVisible(play))return false;
@@ -2432,7 +2447,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (document.getElementById('overallLeaderboardPanel')) return;
     const panel = document.createElement('div');
     panel.id = 'overallLeaderboardPanel';
-    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP combines strong finishes, track coverage, and consistency.</p></section><section><b>Track weight</b><p>Track weight reflects the track type, the published field, and how competitive its results are.</p></section><section><b>Eligibility</b><p>Early results are provisional. Completing enough populated tracks establishes a Ranked position.</p></section><section><b>Podium points</b><p>Top-three finishes on recognized, sufficiently populated tracks can earn podium points.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
+    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP combines strong finishes, track coverage, and consistency.</p></section><section><b>Track weight</b><p>Track weight reflects the track type, the published field, and how competitive its results are.</p></section><section><b>Eligibility</b><p>Early results are provisional. Completing enough populated tracks establishes a Ranked position.</p></section><section><b>Podium points</b><p>Top-three finishes on recognized, sufficiently populated tracks can earn podium points.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
     document.body.appendChild(panel);
     void ensureRankedFiltersUi();
     panel.addEventListener('click', (event)=>{
@@ -6023,7 +6038,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
     ensureSettingsEnhancements();
     syncMultiplayerRelayPanel();
-    ensureReturningPlayerNotice();
     ensureWeeklyTrackHighlight();
     decoratePersonalBestPodiums();
     syncIntegrityStateLabels();
@@ -6167,7 +6181,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     syncMultiplayerRelayPanel();
     syncIntegrityStateLabels();
     decorateNativeLeaderboardCosmetics();
-    ensureReturningPlayerNotice();
     ensureWeeklyTrackHighlight();
     updateTrackFreshnessBanner();
   }

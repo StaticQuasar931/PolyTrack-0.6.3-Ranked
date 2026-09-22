@@ -5,14 +5,20 @@ import {trackWeightParts} from '../src/index.js';
 import {hasAcceptedVerifiedProof,VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION} from '../src/verification.js';
 const root=new URL('../../../',import.meta.url);
 const tracks=JSON.parse(fs.readFileSync(new URL('tracks/catalog.json',root))).tracks;
-test('all 88 current tracks retain the same client and Worker weight classification',()=>{
+test('Rolling Hills has a permanent official-baseline weight without changing other catalog weights',()=>{
  assert.equal(tracks.length,88);assert.equal(new Set(tracks.map(t=>t.id)).size,88);
- const official=tracks.find(t=>t.type==='official'),community=tracks.find(t=>t.type==='community');
- for(const track of tracks){assert.ok(fs.existsSync(new URL(track.trackUrl,root)),track.name);assert.ok(fs.existsSync(new URL(track.thumbnail,root)),track.name);assert.equal(trackWeightParts(track.id,10).finalWeight,trackWeightParts(track.type==='official'?official.id:community.id,10).finalWeight,track.name);}
+ const official=tracks.find(t=>t.type==='official'),rolling=tracks.find(t=>t.name==='Rolling Hills Racer'),community=tracks.find(t=>t.type==='community'&&t.id!==rolling.id);
+ assert.equal(trackWeightParts(rolling.id,10).type,'permanent');
+ assert.equal(trackWeightParts(rolling.id,10).base,1.6);
+ assert.equal(trackWeightParts(community.id,10).type,'community');
+ assert.equal(trackWeightParts(community.id,10).base,1);
+ assert.equal(trackWeightParts(official.id,10).base,1.6);
+ for(const track of tracks){assert.ok(fs.existsSync(new URL(track.trackUrl,root)),track.name);assert.ok(fs.existsSync(new URL(track.thumbnail,root)),track.name);const expected=track.id===rolling.id?trackWeightParts(official.id,10):trackWeightParts(track.type==='official'?official.id:community.id,10);assert.equal(trackWeightParts(track.id,10).finalWeight,expected.finalWeight,track.name);}
 });
-test('retired Asguardia preserves its community weight rather than becoming custom',()=>{
+test('retired Asguardia preserves its regular community weight rather than becoming custom',()=>{
  const old='5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572';
- assert.equal(trackWeightParts(old,10).finalWeight,trackWeightParts(tracks.find(t=>t.type==='community').id,10).finalWeight);
+ const community=tracks.find(t=>t.type==='community'&&t.name!=='Rolling Hills Racer');
+ assert.equal(trackWeightParts(old,10).finalWeight,trackWeightParts(community.id,10).finalWeight);
  assert.ok(!tracks.some(t=>t.id===old));
 });
 test('the previously deployed exact verification proof remains valid, not a client verified flag',()=>{

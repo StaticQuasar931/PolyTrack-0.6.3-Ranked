@@ -280,10 +280,10 @@ test('Ranked visibility imports event module once even without any track group',
  },entry),{hidden:0,visible:1});
 });
 
-test('finish overlay shows event placement and never invents placement without a snapshot',async t=>{
+test('finish overlay shows ordinal event placement and never invents placement without a snapshot',async t=>{
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);
  await p.evaluate(()=>{car.finish(20000);const end=document.createElement('div');end.className='time-announcer-ui';end.innerHTML='<div class="current"><div class="time">00:20.000</div><div class="position-dash">-</div><div class="position"></div></div>';document.body.append(end);ui.tick();});
- assert.equal(await p.locator('.time-announcer-ui .position').innerText(),'1');
+ assert.equal(await p.locator('.time-announcer-ui .position').innerText(),'1st');
  assert.match(await p.locator('.time-announcer-ui .position').getAttribute('title'),/provisional/);
  assert.equal(await p.locator('.sq-event-finish-place').count(),0);
 });
