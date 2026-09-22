@@ -1741,16 +1741,20 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     rankedPolish.textContent += `
       .overall-filter-host{position:relative;z-index:6;flex:0 1 auto;margin-inline:auto;min-width:0}
       .ranked-filter-panel{position:relative}
-      .ranked-filter-panel>summary{display:flex;align-items:center;justify-content:center;gap:5px;min-height:42px;padding:7px 14px;background:#217d61;color:#fff;border:2px solid #77dfaa;cursor:pointer;font-size:17px;list-style:none;white-space:nowrap}
+      .ranked-filter-panel>summary{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:8px 18px;background:#236a55;color:#fff;border:1px solid #75c9a2;border-radius:5px;cursor:pointer;font-size:18px;list-style:none;white-space:nowrap;box-shadow:0 3px 0 #123d34}
       .ranked-filter-panel>summary::-webkit-details-marker{display:none}
-      .ranked-filter-panel[data-active="true"]>summary{background:#a4e38c;color:#102b28;border-color:#efffc1}
+      .ranked-filter-panel>summary::before{content:'\u2699';font-size:21px;line-height:1}
+      .ranked-filter-panel[data-active="true"]>summary{background:#a4e38c;color:#102b28;border-color:#efffc1;box-shadow:0 3px 0 #608f5e}
       .ranked-filter-panel>summary:focus-visible{outline:3px solid #fff;outline-offset:2px}
-      .ranked-filter-content{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:30;width:min(700px,calc(100vw - 36px));max-height:calc(100vh - 125px);overflow:auto;box-sizing:border-box;padding:18px;background:#142451;border:2px solid #77dfaa;box-shadow:0 22px 42px rgba(0,0,0,.45)}
+      .ranked-filter-content{position:absolute;top:calc(100% + 10px);left:50%;transform:translateX(-50%);z-index:30;width:min(840px,calc(100vw - 36px));max-height:calc(100vh - 125px);overflow:auto;box-sizing:border-box;padding:24px;background:#142451;border:2px solid #77dfaa;border-radius:7px;box-shadow:0 22px 42px rgba(0,0,0,.45)}
       .ranked-filter-content .ranked-filter-form{padding:0!important}
-      .ranked-filter-content input,.ranked-filter-content select{box-sizing:border-box;max-width:100%;min-height:38px;color:#fff;background:#23396d;border:1px solid #9ab9df;font:15px ForcedSquare,sans-serif}
-      .ranked-filter-content .button{min-height:38px;padding:5px 10px}
+      .ranked-filter-content label,.ranked-filter-content legend{font-size:16px;line-height:1.3}
+      .ranked-filter-content fieldset{border:1px solid #526998;border-radius:4px}
+      .ranked-filter-content input,.ranked-filter-content select{box-sizing:border-box;width:100%;max-width:100%;min-height:44px;margin-top:5px;padding:7px 10px;color:#fff;background:#23396d;border:1px solid #9ab9df;border-radius:3px;font:15px ForcedSquare,sans-serif}
+      .ranked-filter-content .button{min-height:44px;padding:7px 14px}
       .ranked-filter-content .ranked-filter-status{margin:10px 0 0;color:#d9e7ff;font-size:14px}
-      @media(max-width:800px){.overall-top{flex-wrap:wrap;gap:8px}.overall-filter-host{order:3;width:100%;margin:0}.ranked-filter-panel>summary{width:100%;box-sizing:border-box}.overall-actions{margin-left:auto}.ranked-filter-content{left:0;transform:none;width:min(700px,calc(100vw - 36px))}}
+      .ranked-filter-content .ranked-filter-scope{margin:8px 0 0;color:#a9c8e4;font-size:13px;line-height:1.4}
+      @media(max-width:800px){.overall-top{flex-wrap:wrap;gap:8px}.overall-filter-host{order:3;width:100%;margin:0}.ranked-filter-panel>summary{width:100%;box-sizing:border-box}.overall-actions{margin-left:auto}.ranked-filter-content{left:0;transform:none;width:min(840px,calc(100vw - 36px));padding:16px}}
     `;
     document.head.appendChild(rankedPolish);
   }
@@ -1787,7 +1791,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (!info) return;
     const lang = getUiLanguage();
     if (info.dataset.fp === BRAND_FP && info.dataset.lang === lang && info.querySelector('.staticFunPill')) {
-      info.style.display = isStartMenuHotkeyContext() ? '' : 'none';
+      info.style.display = isStartMenuHotkeyContext(true) ? '' : 'none';
       return;
     }
     info.dataset.fp = BRAND_FP;
@@ -1803,14 +1807,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const textWrap=document.createElement('span');
     textWrap.className='staticFunText';
     textWrap.style.pointerEvents='none';
-    for(let i=0;i<label.length;i++){
-      const ch=document.createElement('span');
-      ch.className='staticFunChar';
-      ch.textContent=label[i]===' '?' ':label[i];
-      ch.style.animationDelay=`${(i*0.045).toFixed(3)}s, ${(i*0.035).toFixed(3)}s`;
-      ch.style.pointerEvents='none';
-      textWrap.appendChild(ch);
-    }
+    textWrap.textContent=label;
     promo.appendChild(textWrap);
 
     const version = document.createElement('a');
@@ -1830,7 +1827,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     info.appendChild(version);
     info.appendChild(credit);
 
-    info.style.display = isStartMenuHotkeyContext() ? '' : 'none';
+    info.style.display = isStartMenuHotkeyContext(true) ? '' : 'none';
   }
 
   function ensureStaticDiscordLink(){
@@ -2263,7 +2260,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const key=String(event.key||'').toLowerCase();
     const numeric=/^[0-9]$/.test(key)?(key==='0'?10:Number(key)):null;
     if(numeric){const row=rows[numeric-1];if(!row)return false;row.click();}
-    else if(key==='='||key==='+'||event.code==='NumpadAdd'){if(!choose(rows.slice(0,10)))return false;}
+    else if(key==='='||key==='+'||event.code==='NumpadAdd'){
+      const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
+      const desired=rows.slice(0,9);
+      if(self&&!desired.includes(self))desired.push(self);
+      else if(rows[9])desired.push(rows[9]);
+      if(!choose(desired))return false;
+    }
     else if(key==='backspace'){
       const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
       if(!choose([...new Set([...rows.slice(0,9),self].filter(Boolean))]))return false;
@@ -3555,7 +3558,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     rankedFiltersUiPromise=import(rankedFiltersModuleUrl).then(module=>{
       if(!root.isConnected)return null;
       rankedFiltersModule=module;rankedFiltersSyncing=true;
-      try{rankedFiltersUi=module.mountRankedFilterPanel({root,rows:sortedOverallEntries(),isComplete:rankedFilterCompleteness,onChange:handleRankedFilterChange});rankedFilterResult=rankedFiltersUi.initialResult;}
+      try{rankedFiltersUi=module.mountRankedFilterPanel({root,rows:sortedOverallEntries(),isComplete:rankedFilterCompleteness,allowPartial:true,onChange:handleRankedFilterChange});rankedFilterResult=rankedFiltersUi.initialResult;}
       finally{rankedFiltersSyncing=false;}
       renderEntries();return rankedFiltersUi;
     }).catch(error=>{rankedFiltersUiPromise=null;root.textContent='Saved filters are unavailable.';log('warn','[RANKED-FILTERS]',String(error&&(error.message||error)));return null;});
@@ -6234,7 +6237,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     log('info','[MOD201] Display name updated locally; production snapshots remain server-owned',{accountId:safeId});
   }
 
-  function isStartMenuHotkeyContext(){
+  function isStartMenuHotkeyContext(ignoreInputFocus=false){
     const menu = document.querySelector('.menu-ui, .menu');
     if (!isElementVisible(menu)) return false;
     const container = document.querySelector('.main-buttons-container');
@@ -6244,7 +6247,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const rankedPanel = document.getElementById('overallLeaderboardPanel');
     if (rankedPanel && rankedPanel.style.display !== 'none' && isElementVisible(rankedPanel)) return false;
     const profileInputOpen = !!document.querySelector('.profile-menu input:focus, .profile input:focus, input[type="text"]:focus');
-    if (profileInputOpen) return false;
+    if (!ignoreInputFocus && profileInputOpen) return false;
     const overlayCandidates = Array.from(document.querySelectorAll('.settings,.settings-menu,.popup,.dialog,[role="dialog"]'));
     if (overlayCandidates.some((el)=>isElementVisible(el))) return false;
     return true;

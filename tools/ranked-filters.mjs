@@ -169,9 +169,10 @@ function explicitComplete(isComplete, metric, rows) {
   }
 }
 
-export function inspectRankedFilterAvailability(rows, isComplete) {
+export function inspectRankedFilterAvailability(rows, isComplete, options = {}) {
   const source = Array.isArray(rows) ? rows : [];
   const snapshot = explicitComplete(isComplete, 'snapshot', source);
+  const allowPartial = options.allowPartial === true;
   const availability = { snapshot: { available: snapshot, reason: snapshot ? '' : 'Complete snapshot required' } };
   const checks = {
     identity: row => rowId(row) !== null,
@@ -183,11 +184,11 @@ export function inspectRankedFilterAvailability(rows, isComplete) {
     verification: row => verifiedValue(row) !== null
   };
   for (const [metric, hasValue] of Object.entries(checks)) {
-    const declared = snapshot && explicitComplete(isComplete, metric, source);
+    const declared = allowPartial || (snapshot && explicitComplete(isComplete, metric, source));
     const present = source.length > 0 && source.every(hasValue);
     availability[metric] = {
       available: declared && present,
-      reason: !snapshot ? 'Complete snapshot required' : !declared ? 'Metric completeness was not declared' : !present ? 'Metric is unavailable in this snapshot' : ''
+      reason: !declared ? (snapshot ? 'Metric completeness was not declared' : 'Complete snapshot required') : !present ? (allowPartial ? 'Not included in the loaded rankings' : 'Metric is unavailable in this snapshot') : ''
     };
   }
   return Object.freeze(availability);
@@ -223,13 +224,14 @@ function rankedRows(rows) {
 export function filterRankedRows(rows, input, options = {}) {
   const source = Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
   const validation = validateRankedFilter(input, options.categories);
-  const availability = inspectRankedFilterAvailability(source, options.isComplete);
+  const allowPartial = options.allowPartial === true;
+  const availability = inspectRankedFilterAvailability(source, options.isComplete, options);
   const required = activeMetrics(validation.value);
   const hasActiveFilter = required.size > 0 || validation.value.category !== 'overall';
   const unavailable = validation.errors.map(reason => ({ metric: 'filter', reason }));
-  if (hasActiveFilter && !availability.snapshot.available) unavailable.push({ metric: 'snapshot', reason: availability.snapshot.reason });
-  for (const metric of required) if (!availability[metric].available) unavailable.push({ metric, reason: availability[metric].reason });
-  if (hasActiveFilter && !explicitComplete(options.isComplete, `category:${validation.value.category}`, source)) {
+  if (hasActiveFilter && !availability.snapshot.available && !allowPartial) unavailable.push({ metric: 'snapshot', reason: availability.snapshot.reason });
+  for (const metric of required) if (!(allowPartial && metric === 'rank') && !availability[metric].available) unavailable.push({ metric, reason: availability[metric].reason });
+  if (hasActiveFilter && !allowPartial && !explicitComplete(options.isComplete, `category:${validation.value.category}`, source)) {
     unavailable.push({ metric: 'category', reason: `${validation.value.category} category is unavailable in this snapshot` });
   }
   if (unavailable.length) return Object.freeze({
@@ -351,7 +353,7 @@ export function mountRankedFilterPanel(options = {}) {
 
   const panel = document.createElement('details');
   panel.className = 'ranked-filter-panel';
-  const summary = addText(document, panel, 'summary', 'Leaderboard filters');
+  const summary = addText(document, panel, 'summary', 'Filters');
   const content = document.createElement('div');
   content.className = 'ranked-filter-content';
   panel.append(content);
@@ -364,9 +366,9 @@ export function mountRankedFilterPanel(options = {}) {
   const form = document.createElement('form');
   form.className = 'ranked-filter-form';
   form.style.display = 'grid';
-  form.style.gridTemplateColumns = 'repeat(auto-fit,minmax(150px,1fr))';
-  form.style.gap = '8px';
-  form.style.padding = '8px 0';
+  form.style.gridTemplateColumns = 'repeat(auto-fit,minmax(220px,1fr))';
+  form.style.gap = '14px';
+  form.style.padding = '14px 0';
   content.append(form);
 
   const categoryLabel = addText(document, form, 'label', 'Category');
@@ -408,7 +410,7 @@ export function mountRankedFilterPanel(options = {}) {
     const min = addInput(document, pair, minimum, 'Min');
     const max = addInput(document, pair, maximum, 'Max');
     group.append(pair);
-    const unavailable = addText(document, group, 'small', 'Unavailable in this snapshot');
+    const unavailable = addText(document, group, 'small', 'Not included in the loaded rankings');
     unavailable.hidden = true;
     form.append(group);
     metricInputs[metric] = { group, min, max, unavailable };
@@ -468,6 +470,7 @@ export function mountRankedFilterPanel(options = {}) {
   content.append(presets);
   const status = addText(document, content, 'p', '', 'ranked-filter-status');
   status.setAttribute('role', 'status');
+  const scope = addText(document, content, 'p', '', 'ranked-filter-scope');
   root.replaceChildren(panel);
 
   function renderPresets(selected = '') {
@@ -566,9 +569,10 @@ export function mountRankedFilterPanel(options = {}) {
   }
 
   function refreshAvailability() {
-    const available = inspectRankedFilterAvailability(rows, options.isComplete);
+    const available = inspectRankedFilterAvailability(rows, options.isComplete, options);
     for (const [metric, controls] of Object.entries(metricInputs)) {
       controls.group.disabled = !available[metric].available;
+      controls.group.hidden = !available[metric].available;
       controls.unavailable.hidden = available[metric].available;
     }
     const identityAvailable = available.identity.available;
@@ -578,14 +582,16 @@ export function mountRankedFilterPanel(options = {}) {
     }
     verification.options[1].disabled = !available.verification.available;
     verification.title = available.verification.available ? '' : available.verification.reason;
+    scope.textContent = available.snapshot.available ? '' : 'Filters use loaded racers only. Results may change as more racers load.';
+    scope.hidden = available.snapshot.available;
     return available;
   }
 
   function emit() {
     refreshActiveIndicator();
-    const result = filterRankedRows(rows, filter, { isComplete: options.isComplete, categories });
+    const result = filterRankedRows(rows, filter, { isComplete: options.isComplete, categories, allowPartial: options.allowPartial });
     status.textContent = result.available
-      ? `${result.filteredCount} of ${result.sourceCount} racers shown`
+      ? `${result.filteredCount} of ${result.sourceCount} ${result.availability.snapshot.available ? 'racers shown' : 'loaded racers shown'}`
       : `${result.unavailable.some(item => item.metric === 'snapshot') ? 'Complete leaderboard snapshot unavailable. Filters were not applied. ' : ''}Filters unavailable: ${[...new Set(result.unavailable.map(item => `${item.metric}: ${item.reason}`))].join('; ')}`;
     options.onChange?.(result);
     return result;

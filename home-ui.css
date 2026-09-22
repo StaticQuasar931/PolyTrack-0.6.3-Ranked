@@ -13,6 +13,13 @@
   pointer-events: none !important;
   user-select: text !important;
   overflow: visible !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+.menu-ui > .info * {
+  animation: none !important;
+  transition: none !important;
 }
 
 .menu-ui > .info a {

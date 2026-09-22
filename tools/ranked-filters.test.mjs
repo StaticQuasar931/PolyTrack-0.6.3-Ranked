@@ -177,6 +177,30 @@ test('incomplete or missing metrics are unavailable and never treated as zero', 
   assert.equal(inspectRankedFilterAvailability(missing, complete).daysActive.available, false);
 });
 
+test('loaded-results mode keeps username filtering usable on incomplete snapshots', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const updates = [];
+  mountRankedFilterPanel({
+    root, storage: storage(), rows: [
+      { userId: 'alice-id', name: 'Alice Smith', rank: 1 },
+      { userId: 'bob-id', name: 'Bob', rank: 2 }
+    ],
+    isComplete: () => false,
+    allowPartial: true,
+    onChange: result => updates.push(result)
+  });
+  const input = findElement(root, node => node.name === 'whitelist');
+  assert.equal(input.disabled, false);
+  assert.equal(findElement(root, node => node.className === 'ranked-filter-scope').hidden, false);
+  assert.equal(findElement(root, node => node.tagName === 'fieldset').hidden, true);
+  input.value = 'Alice Smith';
+  findElement(root, node => node.className === 'ranked-filter-form').dispatch('submit');
+  assert.equal(updates.at(-1).available, true);
+  assert.deepEqual(updates.at(-1).rows.map(row => row.userId), ['alice-id']);
+  assert.match(findElement(root, node => node.className === 'ranked-filter-status').textContent, /loaded racers/);
+});
+
 test('verified-only requires an explicit boolean for every loaded row', () => {
   const missing = rows.map(row => ({ ...row }));
   delete missing[2].runVerified;

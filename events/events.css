@@ -579,13 +579,17 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 
 /* Match the native version rail scale on wide screens. */
 @media(min-width:1001px){
- #ui .track-selection-ui .community-track-versions{flex:0 0 144px!important;height:144px!important;min-height:144px!important;max-height:144px!important}
- #ui .track-selection-ui .community-track-versions>.button{height:144px!important;min-height:144px!important;font-size:48px!important}
+ #ui .track-selection-ui .community-track-versions{flex:0 0 160px!important;height:160px!important;min-height:160px!important;max-height:160px!important}
+ #ui .track-selection-ui .community-track-versions>.button{height:160px!important;min-height:160px!important;font-size:clamp(42px,3vw,54px)!important}
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
- font-size:clamp(25px,2.1vw,34px)!important;
+ font-size:clamp(26px,2.5vw,42px)!important;
  line-height:1.1!important;
  color:#fff!important;
+}
+@media(min-width:701px) and (max-width:1000px){
+ #ui .track-selection-ui .community-track-versions{height:136px!important;min-height:136px!important;max-height:136px!important}
+ #ui .track-selection-ui .community-track-versions>.button{height:136px!important;min-height:136px!important;font-size:46px!important}
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.author,
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.date-range{
