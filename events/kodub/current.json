@@ -1,14 +1,14 @@
 {
-  "serverTime": "2026-09-20T02:00:12.157Z",
+  "serverTime": "2026-09-22T02:56:43.550Z",
   "current": {
-    "trackId": "5fc79f76ee33a37a0ee8815a5cce75b4686330649c74793630fbfc12c11a2bb3",
-    "name": "going back in time",
-    "author": "✄┈leonnnn2400┈",
-    "lastModified": "2026-09-07T18:16:28.000Z",
+    "trackId": "5c891c15c754987ff7e1358000f265d26aa959716c443dec80f668762c3d83d7",
+    "name": "La Riviera",
+    "author": "Blu3bolt",
+    "lastModified": "2026-09-20T20:52:41.000Z",
     "environment": 0,
-    "endTime": "2026-09-20T20:00:00.000Z",
-    "trackUrl": "assets/8a2b1caa2480351c1c5ac364262b5e31be3c60cf1678806183c6f4e70d74f817.track",
-    "thumbnailUrl": "assets/119474d2731a55d260e45fbcb9fcebfb69e2cc585b8d79751537b2a20ca7f87a.webp",
-    "coverUrl": "assets/28b348f00d8bd1304674b8e33dda7b13b42a4b3259efe1d3ec4e80aa1d275d62.webp"
+    "endTime": "2026-09-27T20:00:00.000Z",
+    "trackUrl": "assets/aa5e949dbd8e18caab0fc3697f9ef10c72cf1d5acccfd0b9d618663f35131542.track",
+    "thumbnailUrl": "assets/1ee50cc80e3bdd13b4163f00f13a3dd1ce2688f9977ebc5e807ed1d63b7605ac.webp",
+    "coverUrl": "assets/f629831ed227d1a9bfccb7a25efa8564b3737e07fda5c7e67fce73ff1965e28c.webp"
   }
 }

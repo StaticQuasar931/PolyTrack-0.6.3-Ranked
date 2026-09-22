@@ -1927,7 +1927,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const showExtras = true;
     const extrasWereHidden = document.documentElement.classList.contains('sq-hide-lobby-extras');
     document.documentElement.classList.toggle('sq-hide-lobby-extras', !showExtras);
-    document.documentElement.classList.toggle('sq-hide-racer-codes', localStorage.getItem('polytrack-0.6.2-show-racer-codes') === '0');
+    document.documentElement.classList.toggle('sq-hide-racer-codes', localStorage.getItem('polytrack-0.6.2-show-racer-codes') !== '1');
     document.documentElement.classList.toggle('sq-hide-pb-podiums', localStorage.getItem('polytrack-0.6.2-pb-podiums') === '0');
     document.documentElement.classList.toggle('sq-compact-ranked', localStorage.getItem('polytrack-0.6.2-compact-ranked') === '1');
     document.documentElement.classList.toggle('sq-plain-racer-themes', localStorage.getItem('polytrack-0.6.2-plain-racer-themes') === '1');
@@ -2176,15 +2176,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     section.id = 'sqRankedSettings';
     section.innerHTML = '<h2>Static Options</h2><p class="sq-settings-note">Accessibility, lobby, and Ranked display options.</p><div class="sq-settings-grid"></div>';
     const grid=section.querySelector('.sq-settings-grid');
-    grid.appendChild(settingsToggle('Menu keyboard shortcuts','polytrack-0.6.2-hotkeys-enabled',true));
-
     grid.appendChild(settingsToggle('Full menu animations','polytrack-0.6.2-reduced-effects',true,true));
 
     grid.appendChild(settingsToggle('PB podium colors and places','polytrack-0.6.2-pb-podiums',true));
     grid.appendChild(settingsToggle('Verified placement field only','polytrack-0.6.2-pb-podiums-verified-only',false));
 
     grid.appendChild(settingsToggle('Expanded Ranked details','polytrack-0.6.2-compact-ranked',true,true));
-    grid.appendChild(settingsToggle('Public racer codes in Ranked','polytrack-0.6.2-show-racer-codes',true));
+    grid.appendChild(settingsToggle('Allow copying public racer ID','polytrack-0.6.2-show-racer-codes',false));
     grid.appendChild(settingsSecretInput('Multiplayer Discord code','polytrack-0.6.2-turn-backup-code'));
     grid.appendChild(settingsRange('UI text size','polytrack-0.6.2-ui-font-scale',85,125,5,100));
     grid.appendChild(settingsToggle('Hide racer designs','polytrack-0.6.2-plain-racer-themes',false));
@@ -2222,7 +2220,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function handleLobbyShortcut(event){
-    if (localStorage.getItem('polytrack-0.6.2-hotkeys-enabled') !== '1' || event.defaultPrevented || event.repeat || event.ctrlKey || event.altKey || event.metaKey || !isStartMenuHotkeyContext()) return false;
+    if (event.defaultPrevented || event.repeat || event.ctrlKey || event.altKey || event.metaKey || !isStartMenuHotkeyContext()) return false;
     const target = event.target;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable) return false;
     const key = String(event.key || '').toLowerCase();
@@ -2241,6 +2239,29 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     event.preventDefault();
     event.stopPropagation();
     return true;
+  }
+
+  function handleTrackLeaderboardShortcut(event){
+    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
+    const target=event.target;
+    if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable)return false;
+    const board=[...document.querySelectorAll('.track-info-ui .leaderboard-ui')].find(isElementVisible);
+    if(!board)return false;
+    const rows=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
+    const activate=row=>{if(row&&!row.classList.contains('selected')&&row.getAttribute('aria-pressed')!=='true')row.click();};
+    const key=String(event.key||'').toLowerCase();
+    const numeric=/^[0-9]$/.test(key)?(key==='0'?10:Number(key)):null;
+    if(numeric){activate(rows[numeric-1]);}
+    else if(key==='='||key==='+'){rows.slice(0,10).forEach(activate);}
+    else if(key==='backspace'){
+      rows.slice(0,9).forEach(activate);
+      activate(rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||'')));
+    }else if(key==='enter'||key===' '||key==='spacebar'){
+      const play=document.querySelector('.track-info-ui .side-panel button.play');
+      if(!isElementVisible(play))return false;
+      play.click();
+    }else return false;
+    event.preventDefault();event.stopPropagation();return true;
   }
 
   let overallDialogReturnFocus=null;
@@ -2425,6 +2446,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if (event.target === panel.querySelector('#overallHelpPopup')) closeRankedDialog(panel.querySelector('#overallHelpPopup'));
       const publicIdButton=event.target.closest?.('[data-copy-public-id]');
       if(publicIdButton){
+        if(localStorage.getItem('polytrack-0.6.2-show-racer-codes')!=='1')return;
         const accountId=cleanUserId(publicIdButton.dataset.copyPublicId);
         if(!/^[a-f0-9]{64}$/.test(accountId))return;
         try{Promise.resolve(navigator.clipboard.writeText(accountId)).then(()=>{publicIdButton.textContent='Public ID copied';},()=>{publicIdButton.textContent='Copy unavailable';publicIdButton.title='Your public ID: '+accountId;});}
@@ -4369,7 +4391,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const profileCosmetics=cosmeticsForEntry(entry);
     const profileTitle=cosmeticTitleText(entry,profileCosmetics);
     const favoriteTrack=profileCosmetics.favoriteTrackId?trackInfo(profileCosmetics.favoriteTrackId):null;
-    const profileIdentityExtras=`<button type="button" class="button" data-copy-public-id="${uid}">Copy public ID</button>${profileTitle?`<span class="profile-racer-title">${escapeHtml(profileTitle)}</span>`:''}${favoriteTrack?`<button type="button" class="profile-favorite-chip" data-track-id="${escapeHtml(favoriteTrack.id)}" aria-label="Open favorite track ${escapeHtml(favoriteTrack.name)}">Favorite · ${escapeHtml(favoriteTrack.name)}</button>`:''}`;
+    const copyPublicId=localStorage.getItem('polytrack-0.6.2-show-racer-codes')==='1'?`<button type="button" class="button" data-copy-public-id="${uid}">Copy public ID</button>`:'';
+    const profileIdentityExtras=`${copyPublicId}${profileTitle?`<span class="profile-racer-title">${escapeHtml(profileTitle)}</span>`:''}${favoriteTrack?`<button type="button" class="profile-favorite-chip" data-track-id="${escapeHtml(favoriteTrack.id)}" aria-label="Open favorite track ${escapeHtml(favoriteTrack.name)}">Favorite · ${escapeHtml(favoriteTrack.name)}</button>`:''}`;
     content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId)}<div class="profile-achievement-row"><span class="profile-achievement-label">ELIGIBLE PODIUMS</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ranked track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">RANKED PROFILE</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}${profileBadges}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?profileCustomizerMarkup(entry):''}<div class="profile-results">${resultCards}</div>${guideMarkup}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Loaded results</h4></div><span>${cachedFinishes.length} loaded on this device · ${Number(entry.raceCount||0)} counted in Ranked</span></header><div class="profile-track-head"><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">If a track leaderboard has not been loaded, its time may not be listed.</p>`;
     applyProfileCosmetics(content.closest('.overall-profile-card'),profileCosmeticDrafts.get(cleanUserId(entry.userId||entry.accountId||''))||cosmeticsForEntry(entry));
     setupRacerStudio(content);
@@ -5978,13 +6001,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function install(){
-    try {
-      const migrationKey = 'polytrack-0.6.2-shortcuts-default-on-v2';
-      if (localStorage.getItem(migrationKey) !== '1') {
-        localStorage.setItem('polytrack-0.6.2-hotkeys-enabled','1');
-        localStorage.setItem(migrationKey,'1');
+    try{
+      const consentMigration='polytrack-0.6.2-public-id-opt-in-v1';
+      if(localStorage.getItem(consentMigration)!=='1'){
+        localStorage.setItem('polytrack-0.6.2-show-racer-codes','0');
+        localStorage.setItem(consentMigration,'1');
       }
-    } catch {}
+    }catch{}
     migrateUnsafeLocalNames();
     ensureStyles();
     applyUiPreferences();
@@ -6233,20 +6256,29 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   let uiPassDepth=0;
-  const uiObserverOptions={childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style']};
+  const uiObserverOptions={childList:true,subtree:true};
+  const RECONCILE_ROOT_SELECTOR='.menu-ui,.menu,.main-buttons-container,.track-selection-ui,.track-info-ui,.leaderboard-ui,.settings-menu-ui,.multiplayer-ui,#overallLeaderboardPanel';
+  function mutationTouchesUi(record){
+    if(record.target?.closest?.(RECONCILE_ROOT_SELECTOR))return true;
+    return [...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches?.(RECONCILE_ROOT_SELECTOR)||node.querySelector?.(RECONCILE_ROOT_SELECTOR)));
+  }
+  function mutationTouchesTrackSelection(record){
+    if(record.target?.closest?.('.track-selection-ui'))return true;
+    return [...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches?.('.track-selection-ui,.community-track-versions')||node.querySelector?.('.track-selection-ui,.community-track-versions')));
+  }
   function withoutUiFeedback(action){
     const outer=uiPassDepth++===0;
     if(outer)observer.disconnect();
     try{return action();}finally{if(--uiPassDepth===0)observer.observe(document.body||document.documentElement,uiObserverOptions);}
   }
   let reconcileScheduled = false;
-  const RECONCILE_MIN_GAP_MS=120;
+  const RECONCILE_MIN_GAP_MS=250;
   let lastReconcileAt=0;
   let eventFrame=0;
   const observer = new MutationObserver((records) => {
-    records=records.filter(record=>record.type==='attributes'?record.oldValue!==record.target.getAttribute(record.attributeName):[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1));
+    records=records.filter(record=>[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1)&&mutationTouchesUi(record));
     if(!records.length)return;
-    if(!eventFrame&&records.some(record=>record.type==='childList'&&record.addedNodes.length)){eventFrame=requestAnimationFrame(()=>{eventFrame=0;ensureEventEntry();});}
+    if(!eventFrame&&records.some(record=>record.addedNodes.length&&mutationTouchesTrackSelection(record))){eventFrame=requestAnimationFrame(()=>{eventFrame=0;ensureEventEntry();});}
     if (reconcileScheduled) return;
     reconcileScheduled = true;
     const wait=Math.max(0,RECONCILE_MIN_GAP_MS-(Date.now()-lastReconcileAt));
@@ -6261,7 +6293,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     install();
     void ensureEventUi().then(()=>ensureEventEntry()).catch(()=>{});
     observer.observe(document.body || document.documentElement, uiObserverOptions);
-    setInterval(()=>{if(document.visibilityState==='visible')reconcileUI();}, 1800);
+    setInterval(()=>{if(document.visibilityState==='visible')reconcileUI();}, 5000);
     setTimeout(()=>db().then(()=>flushRankedNotificationQueue()).catch(()=>{}),2500);
     window.addEventListener('keydown', (event)=>{
       handleModeratorSequence(event);
@@ -6272,6 +6304,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if (help && help.style.display !== 'none') { help.style.display='none'; event.preventDefault(); return; }
         if (panel && panel.style.display !== 'none') { panel.style.display='none'; event.preventDefault(); return; }
       }
+      if(handleTrackLeaderboardShortcut(event))return;
       handleLobbyShortcut(event);
     });
     document.addEventListener('click',async(event)=>{

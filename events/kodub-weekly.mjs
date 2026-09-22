@@ -17,6 +17,9 @@ export async function loadKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.
     const response = await fetcher(new URL('current.json',base),{cache:'no-store',signal:AbortSignal.timeout(4000)});
     if (response.ok) local = localSelection(await response.json(),base,now);
   } catch { /* The live feed can recover a missing or expired local copy. */ }
+  // Same-origin assets work on networks that block workers.dev and avoid a
+  // second native error path. The scheduled capture keeps this copy current.
+  if (local) return {serverTime:new Date(now).toISOString(),current:local};
   if (brokerUrl) try {
     const url = new URL('/v1/kodub-weekly',brokerUrl);
     const response = await fetcher(url,{signal:AbortSignal.timeout(8000)});
@@ -28,9 +31,7 @@ export async function loadKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.
       if (asset.origin !== url.origin || asset.search || asset.hash || asset.username || asset.password ||
           !new RegExp('^/v1/kodub-weekly/'+kind+'/[a-f0-9]{64}$').test(asset.pathname)) throw Error('Invalid mirrored asset');
     }
-    // Use committed assets only when the live selection exactly matches the capture.
-    const same = current && local && ['trackId','endTime','lastModified','name','author','environment'].every(k=>current[k]===local[k]);
-    return {serverTime:new Date(now).toISOString(),current:same?local:current};
+    return {serverTime:new Date(now).toISOString(),current};
   } catch { /* A transient upstream failure must not hide an unexpired capture. */ }
   return {serverTime:new Date(now).toISOString(),current:local};
 }

@@ -172,8 +172,7 @@
             syncLobbyWidgets();
             bindVisualObserver();
           };
-          if (typeof queueMicrotask === 'function') queueMicrotask(flush);
-          else Promise.resolve().then(flush);
+          requestAnimationFrame(flush);
         }
 
         function bindVisualObserver(){

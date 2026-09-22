@@ -72,12 +72,14 @@ export function ensureFeaturedSection(document){
   if(!nav)return null;
   let section=nav.parentElement.querySelector(':scope > .sq-featured-events');
   if(!section){
+    const wrapper=nav.parentElement;wrapper.classList.add('sq-events-layout-pending');
     section=document.createElement('section');section.className='sq-featured-events sq-event-track-group';
     section.setAttribute('aria-label','Events');
     const heading=document.createElement('h2');heading.className='sq-featured-heading';heading.textContent='Events';section.append(heading);
     const unavailable=document.createElement('div');unavailable.className='sq-kodub-unavailable';unavailable.textContent="Kodub's Track of the Week";
     const note=document.createElement('small');note.textContent='Loading weekly selection...';unavailable.append(note);section.append(unavailable);
     nav.before(section);
+    requestAnimationFrame(()=>wrapper.classList.remove('sq-events-layout-pending'));
   }
   const rolling=document.querySelector('.track-selection-ui img[src*="rolling_hills_racer"]')?.closest('.track');
   if(rolling&&rolling.parentElement!==section){

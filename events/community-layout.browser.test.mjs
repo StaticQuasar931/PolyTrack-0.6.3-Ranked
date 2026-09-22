@@ -13,18 +13,19 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  for(const [width,height] of [[1366,768],[390,844],[768,1024]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
-  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=650?116:96);assert(featured.y+featured.height<=nav.y);assert(nav.width>featured.width,"Version navigation spans beyond the inset event cards");assert.equal(Math.round(nav.width),width);
+  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:104);assert(featured.y+featured.height<=nav.y);assert(Math.abs(nav.width-featured.width)<=1,"Events and version navigation use the same full width");assert.equal(Math.round(nav.width),width);
   assert(featured.x+featured.width<=width+1,'Section must fit the page');
   const rects=[];for(const card of await page.locator('.sq-kodub-weekly,.sq-permanent-track,.sq-event-card').all())rects.push(await card.boundingBox());
   assert.equal(rects.length,4);for(const rect of rects)assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1,'Every event card stays in the section');
   assert(rects[0].width>rects[1].width,'Kodub is wider than the supporting cards: '+JSON.stringify({width,rects}));
   for(const rect of rects.slice(2))assert(Math.abs(rect.width-rects[1].width)<=1,'Supporting cards share a coherent native width');
-  if(width>1080)for(const rect of rects)assert.equal(Math.round(rect.y),Math.round(rects[0].y));
+  if(width>1200)for(const rect of rects)assert.equal(Math.round(rect.y),Math.round(rects[0].y));
   else assert(rects.slice(1).every(rect=>rect.y>rects[0].y),'Responsive layouts place supporting cards below Kodub');
   const titleBoxes=[];for(const e of await page.locator('.sq-permanent-track .track-title,.sq-event-card strong').all())titleBoxes.push(await e.boundingBox());
   assert.equal(titleBoxes.length,3);const titleOffset=titleBoxes[0].y-rects[1].y;for(const [index,box] of titleBoxes.entries())assert(Math.abs(box.y-rects[index+1].y-titleOffset)<=1,'Titles align within their cards');
   const rewardBoxes=[];for(const e of await page.locator('.sq-permanent-track .record,.sq-event-card .sq-event-record').all())rewardBoxes.push(await e.boundingBox());
-  assert.equal(rewardBoxes.length,3);const rewardOffset=rewardBoxes[0].y-rects[1].y;for(const [index,box] of rewardBoxes.entries())assert(Math.abs(box.y-rects[index+1].y-rewardOffset)<=1,'Record rows align within their cards');
+  const thumbBoxes=[];for(const e of await page.locator('.sq-permanent-track .thumbnail,.sq-event-card .sq-event-thumb').all())thumbBoxes.push(await e.boundingBox());
+  assert.equal(rewardBoxes.length,3);assert.equal(thumbBoxes.length,3);for(const [index,box] of rewardBoxes.entries()){assert(box.y>=thumbBoxes[index].y+thumbBoxes[index].height-1,'Record row must not overlap its artwork');assert(box.y+box.height<=rects[index+1].y+rects[index+1].height+1,'Record row stays inside its card');}
   if(width>=1366)for(const rect of rects)assert(rect.x+rect.width<=width+1);
   const tabs=await page.locator('.community-track-versions>.button').all();
   assert.equal((await tabs[0].boundingBox()).width,(await tabs[1].boundingBox()).width);
@@ -34,8 +35,8 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  const artwork=await page.locator('.sq-kodub-weekly>button>img').boundingBox();
  const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
  assert(artwork.x+artwork.width<=info.x,'Artwork must be left of the details');
- assert.equal((await page.locator('.sq-kodub-weekly>button').boundingBox()).height,288);
- assert.equal(image.fit,'contain');assert.equal(image.height,288);
+ assert.equal((await page.locator('.sq-kodub-weekly>button').boundingBox()).height,300);
+ assert.equal(image.fit,'cover');assert.equal(image.height,300);
  const decoration=await page.locator('.sq-kodub-weekly>button').evaluate(e=>({border:getComputedStyle(e).borderTopWidth,shadow:getComputedStyle(e).boxShadow}));
  assert.equal(decoration.border,'0px');assert.equal(decoration.shadow,'none');
  await page.locator('.community-track-group').evaluate(e=>e.classList.add('hidden'));

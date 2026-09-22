@@ -7,13 +7,15 @@ const current={trackId:hash,name:'Test track',author:'Author',lastModified:'2026
 const baseUrl='https://game.test/events/client.mjs',brokerUrl='https://broker.test';
 const live={...current,trackUrl:`${brokerUrl}/v1/kodub-weekly/track/${hash}`,thumbnailUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`,coverUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`};
 const response=c=>Response.json({current:c});
-test('uses committed assets for the identical live selection',async()=>{
- const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?response(current):response(live)});
+test('uses an unexpired same-origin capture without probing the broker',async()=>{
+ let brokerReads=0;
+ const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>{if(String(u).includes('current.json'))return response(current);brokerReads++;return response(live);}});
  assert.equal(result.current.trackUrl,`https://game.test/events/kodub/assets/${hash}.track`);
+ assert.equal(brokerReads,0);
 });
-test('new week uses broker assets without requiring a site update',async()=>{
+test('missing capture uses broker assets as recovery',async()=>{
  const next={...live,trackId:'b'.repeat(64),name:'Next'};
- const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?response(current):response(next)});
+ const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?new Response(null,{status:404}):response(next)});
  assert.equal(result.current.name,'Next');assert.equal(result.current.trackUrl,next.trackUrl);
 });
 test('network failure uses unexpired capture, never expired capture',async()=>{
@@ -21,14 +23,10 @@ test('network failure uses unexpired capture, never expired capture',async()=>{
  assert.ok((await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher})).current);
  assert.equal((await loadKodubWeekly({baseUrl,brokerUrl,now:Date.parse(current.endTime),fetcher})).current,null);
 });
-test('authoritative no-selection overrides the capture',async()=>{
- const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?response(current):response(null)});
- assert.equal(result.current,null);
-});
-test('untrusted asset URLs fall back rather than reaching native loader',async()=>{
+test('untrusted recovery asset URLs never reach the native loader',async()=>{
  for(const trackUrl of ['https://evil.test/track',brokerUrl+'/v1/kodub-weekly/track/'+hash+'?redirect=evil']){
-  const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?response(current):response({...live,trackUrl})});
-  assert.ok(result.current.trackUrl.startsWith('https://game.test/'));
+  const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>String(u).includes('current.json')?new Response(null,{status:404}):response({...live,trackUrl})});
+  assert.equal(result.current,null);
  }
 });
 test('metadata and download validation rejects malformed, oversized and HTML assets',async()=>{
