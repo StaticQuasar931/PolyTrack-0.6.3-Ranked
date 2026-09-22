@@ -492,7 +492,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 
 /* Stable final event rail. It is hidden only for the frame in which native nodes move. */
 .sq-events-layout-pending{visibility:hidden!important}
-#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{width:100%!important;margin:0 0 22px!important;padding:0 0 22px!important}
+#ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{width:calc(100% - 120px)!important;margin:0 60px 22px!important;padding:0 0 22px!important}
 #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.community-track-group{padding-left:0!important;padding-right:0!important}
 #ui .track-selection-ui .sq-featured-events{--event-card-height:300px;grid-template-columns:minmax(520px,2fr) repeat(3,minmax(180px,1fr))!important;gap:16px!important;overflow:visible!important}
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{grid-template-columns:minmax(0,1.55fr) minmax(210px,1fr)!important;height:var(--event-card-height)!important;padding:0!important}
@@ -515,8 +515,8 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 #ui .track-selection-ui .sq-featured-events>.sq-permanent-track{grid-column:2!important;grid-row:2!important}
 #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="weekly"]{grid-column:3!important;grid-row:2!important}
 #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"]{grid-column:4!important;grid-row:2!important}
-#ui .track-selection-ui .community-track-versions{width:100%!important;height:104px!important;min-height:104px!important;max-height:104px!important;margin:18px 0!important;overflow:hidden!important}
-#ui .track-selection-ui .community-track-versions>.button{height:104px!important;min-height:104px!important;min-width:0!important;font-size:38px!important;padding:14px!important}
+#ui .track-selection-ui .community-track-versions{width:100%!important;height:124px!important;min-height:124px!important;max-height:124px!important;margin:18px 0!important;overflow:hidden!important}
+#ui .track-selection-ui .community-track-versions>.button{height:124px!important;min-height:124px!important;min-width:0!important;font-size:44px!important;padding:16px!important}
 @media(max-width:1200px){
  #ui .track-selection-ui .sq-featured-events{grid-template-columns:repeat(3,minmax(0,1fr))!important}
  #ui .track-selection-ui .sq-featured-events>.sq-kodub-weekly,#ui .track-selection-ui .sq-featured-events>.sq-kodub-unavailable{grid-column:1/-1!important}
@@ -525,6 +525,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
  #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"]{grid-column:3!important;grid-row:3!important}
 }
 @media(max-width:700px){
+ #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{width:calc(100% - 32px)!important;margin-left:16px!important;margin-right:16px!important}
  #ui .track-selection-ui .sq-featured-events{grid-template-columns:repeat(2,minmax(0,1fr))!important;--event-card-height:260px}
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{grid-template-columns:minmax(0,1.35fr) minmax(150px,1fr)!important}
  #ui .track-selection-ui .sq-featured-events>.sq-permanent-track{grid-column:1!important;grid-row:3!important}
