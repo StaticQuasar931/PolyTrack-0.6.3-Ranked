@@ -26,6 +26,30 @@
   pointer-events: auto;
 }
 
+.menu-ui > .info .staticFunText {
+  background: linear-gradient(90deg, #84baff, #7ee7ff 38%, #b1f1a1 72%, #ffe59a);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+.menu-ui > .info .staticFunPill:hover {
+  transform: none !important;
+}
+
+.menu-ui > .info a:last-child {
+  color: #bed0e8 !important;
+  font-size: 0.85em;
+  text-decoration: none;
+}
+
+.menu-ui > .info a:last-child:hover {
+  color: #fff !important;
+  text-decoration: underline;
+}
+
 .ranked-testing-notice {
   display: none !important;
 }

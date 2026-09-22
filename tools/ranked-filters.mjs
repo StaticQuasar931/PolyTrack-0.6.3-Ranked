@@ -350,6 +350,7 @@ export function mountRankedFilterPanel(options = {}) {
   const storage = options.storage ?? globalThis.localStorage;
   let rows = Array.isArray(options.rows) ? options.rows : [];
   let filter = normalizeRankedFilter(options.initialFilter, categories);
+  let enabled = true;
 
   const panel = document.createElement('details');
   panel.className = 'ranked-filter-panel';
@@ -455,6 +456,8 @@ export function mountRankedFilterPanel(options = {}) {
   const actions = document.createElement('div');
   actions.style.display = 'flex'; actions.style.flexWrap = 'wrap'; actions.style.gap = '6px'; actions.style.alignItems = 'end';
   const apply = addText(document, actions, 'button', 'Apply', 'button'); apply.type = 'submit';
+  const toggle = addText(document, actions, 'button', 'Pause filters', 'button ranked-filter-toggle'); toggle.type = 'button';
+  toggle.setAttribute('aria-pressed', 'true');
   const clear = addText(document, actions, 'button', 'Clear', 'button'); clear.type = 'button';
   form.append(actions);
 
@@ -540,11 +543,13 @@ export function mountRankedFilterPanel(options = {}) {
 
   function refreshActiveIndicator() {
     const active = activeMetrics(filter).size > 0 || filter.category !== 'overall';
-    activeIndicator.textContent = active ? 'Filters active' : 'Inactive';
-    activeIndicator.classList.toggle('is-active', active);
-    activeIndicator.style.backgroundColor = active ? 'rgba(67, 176, 112, 0.2)' : 'rgba(128, 128, 128, 0.16)';
-    activeIndicator.setAttribute('aria-label', active ? 'Filters active' : 'No filters active');
-    panel.dataset.active = String(active);
+    activeIndicator.textContent = !enabled && active ? 'Paused' : active ? 'Filters active' : 'Inactive';
+    activeIndicator.classList.toggle('is-active', enabled && active);
+    activeIndicator.style.backgroundColor = enabled && active ? 'rgba(67, 176, 112, 0.2)' : 'rgba(128, 128, 128, 0.16)';
+    activeIndicator.setAttribute('aria-label', !enabled && active ? 'Filters paused' : active ? 'Filters active' : 'No filters active');
+    panel.dataset.active = String(enabled && active);
+    toggle.textContent = enabled ? 'Pause filters' : 'Resume filters';
+    toggle.setAttribute('aria-pressed', String(enabled));
   }
 
   function readForm() {
@@ -589,8 +594,11 @@ export function mountRankedFilterPanel(options = {}) {
 
   function emit() {
     refreshActiveIndicator();
-    const result = filterRankedRows(rows, filter, { isComplete: options.isComplete, categories, allowPartial: options.allowPartial });
-    status.textContent = result.available
+    const applied = enabled ? filter : { category: filter.category };
+    const result = filterRankedRows(rows, applied, { isComplete: options.isComplete, categories, allowPartial: options.allowPartial });
+    status.textContent = !enabled
+      ? `Filters paused. ${result.sourceCount} loaded racers shown.`
+      : result.available
       ? `${result.filteredCount} of ${result.sourceCount} ${result.availability.snapshot.available ? 'racers shown' : 'loaded racers shown'}`
       : `${result.unavailable.some(item => item.metric === 'snapshot') ? 'Complete leaderboard snapshot unavailable. Filters were not applied. ' : ''}Filters unavailable: ${[...new Set(result.unavailable.map(item => `${item.metric}: ${item.reason}`))].join('; ')}`;
     options.onChange?.(result);
@@ -612,9 +620,11 @@ export function mountRankedFilterPanel(options = {}) {
     const checked = readForm();
     if (checked.errors.length) { status.textContent = checked.errors.join('; '); return; }
     filter = checked.value;
+    enabled = true;
     emit();
   });
-  clear.addEventListener('click', () => { filter = normalizeRankedFilter({}, categories); writeForm(filter); emit(); });
+  toggle.addEventListener('click', () => { enabled = !enabled; emit(); });
+  clear.addEventListener('click', () => { filter = normalizeRankedFilter({}, categories); enabled = true; writeForm(filter); emit(); });
   load.addEventListener('click', () => {
     const preset = readRankedFilterPresets(storage, options.storageKey, categories).find(value => value.id === presetSelect.value);
     if (!preset) { status.textContent = 'Choose a saved preset first.'; return; }

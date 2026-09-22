@@ -1754,6 +1754,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       .ranked-filter-content .button{min-height:44px;padding:7px 14px}
       .ranked-filter-content .ranked-filter-status{margin:10px 0 0;color:#d9e7ff;font-size:14px}
       .ranked-filter-content .ranked-filter-scope{margin:8px 0 0;color:#a9c8e4;font-size:13px;line-height:1.4}
+      #overallDataNotice{padding:7px 24px;background:#3b385c;border-bottom:1px solid #b6a96f;color:#fff2bf;font-size:13px;text-align:center}
+      #overallDataNotice[hidden]{display:none!important}
+      .overall-pager.sq-page-changed .overall-page-status{animation:sqPageNotice .5s ease-out;background:#7ee7ff;color:#0d2349}
+      @keyframes sqPageNotice{from{background:#fff1a0;transform:scale(1.05)}to{background:#7ee7ff;transform:scale(1)}}
+      @media(prefers-reduced-motion:reduce){.overall-pager.sq-page-changed .overall-page-status{animation:none}}
       @media(max-width:800px){.overall-top{flex-wrap:wrap;gap:8px}.overall-filter-host{order:3;width:100%;margin:0}.ranked-filter-panel>summary{width:100%;box-sizing:border-box}.overall-actions{margin-left:auto}.ranked-filter-content{left:0;transform:none;width:min(840px,calc(100vw - 36px));padding:16px}}
     `;
     document.head.appendChild(rankedPolish);
@@ -1820,7 +1825,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     credit.href = 'https://opengameart.org/content/sci-fi-theme-1';
     credit.target = '_blank';
     credit.rel = 'noopener noreferrer';
-    credit.textContent = 'OpenGameArt.org "Sci-fi Theme" by Maou (CC-BY 4.0)';
+    credit.textContent = 'Music: Sci-fi Theme by Maou (CC BY 4.0) - OpenGameArt.org';
 
 
     info.appendChild(promo);
@@ -2243,6 +2248,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
   function handleTrackLeaderboardShortcut(event){
     if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
+    if(isElementVisible(document.getElementById('overallLeaderboardPanel'))||isElementVisible(document.querySelector('.sq-events-dialog')))return false;
     const target=event.target;
     if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable)return false;
     const board=[...document.querySelectorAll('.track-info-ui .leaderboard-ui')].find(isElementVisible);
@@ -2258,6 +2264,19 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return true;
     };
     const key=String(event.key||'').toLowerCase();
+    const pageNumber=shortcutDigit(event);
+    if(event.shiftKey&&pageNumber){void jumpNativeLeaderboardPage(board,pageNumber);event.preventDefault();event.stopPropagation();return true;}
+    const pageDirection=key==='arrowleft'||key==='a'?-1:key==='arrowright'||key==='d'?1:0;
+    if(pageDirection){
+      const pages=board.querySelector(':scope > .pages');
+      const buttons=[...(pages?.querySelectorAll(':scope > button')||[])];
+      const selectedIndex=buttons.findIndex(button=>button.classList.contains('selected'));
+      const numberedOnly=buttons.length>0&&buttons.every(button=>button.classList.contains('page'));
+      const button=numberedOnly?buttons[selectedIndex+pageDirection]:pageDirection<0?buttons[0]:buttons.at(-1);
+      if(!button||button.disabled)return false;
+      nativePageJumpToken++;
+      button.click();event.preventDefault();event.stopPropagation();return true;
+    }
     const numeric=/^[0-9]$/.test(key)?(key==='0'?10:Number(key)):null;
     if(numeric){const row=rows[numeric-1];if(!row)return false;row.click();}
     else if(key==='='||key==='+'||event.code==='NumpadAdd'){
@@ -2280,6 +2299,89 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       play.click();
     }else return false;
     event.preventDefault();event.stopPropagation();return true;
+  }
+
+  function shortcutDigit(event){
+    const code=String(event.code||'');
+    const match=code.match(/^(?:Digit|Numpad)([0-9])$/);
+    const digit=match?Number(match[1]):/^[0-9]$/.test(event.key)?Number(event.key):null;
+    return digit===null?null:digit||10;
+  }
+  function handleOverallLeaderboardShortcut(event){
+    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
+    const target=event.target;
+    if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable||target?.closest?.('#overallFilterPanel'))return false;
+    const panel=document.getElementById('overallLeaderboardPanel');
+    if(!isElementVisible(panel)||isElementVisible(panel.querySelector('#overallProfilePopup'))||isElementVisible(panel.querySelector('#overallHelpPopup')))return false;
+    const key=String(event.key||'').toLowerCase();
+    const page=event.shiftKey?shortcutDigit(event):null;
+    const direction=key==='arrowleft'||key==='a'?-1:key==='arrowright'||key==='d'?1:0;
+    if(page){if(!jumpOverallPage(page))return false;}
+    else if(direction){const before=overallPage;changeOverallPage(direction);if(before===overallPage)return false;}
+    else return false;
+    event.preventDefault();event.stopPropagation();return true;
+  }
+  function handleArchivePageShortcut(event){
+    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
+    const target=event.target;
+    if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable)return false;
+    const nav=[...document.querySelectorAll('.sq-events-dialog .sq-archive-pagination')].find(isElementVisible);
+    if(!nav)return false;
+    const buttons=[...nav.querySelectorAll(':scope > button')];
+    const pageInfo=nav.querySelector('.sq-archive-page-count')?.textContent?.match(/Page\s+(\d+)\s+of\s+(\d+)/i);
+    if(buttons.length<2||!pageInfo)return false;
+    const key=String(event.key||'').toLowerCase();
+    const page=event.shiftKey?shortcutDigit(event):null;
+    const direction=key==='arrowleft'||key==='a'?-1:key==='arrowright'||key==='d'?1:0;
+    if(page&&page<=Number(pageInfo[2])){nav.dispatchEvent(new CustomEvent('sq:page',{detail:{page}}));}
+    else if(direction){const button=direction<0?buttons[0]:buttons.at(-1);if(button.disabled)return false;button.click();}
+    else return false;
+    event.preventDefault();event.stopPropagation();return true;
+  }
+  let nativePageJumpToken=0;
+  async function jumpNativeLeaderboardPage(board,target){
+    const token=++nativePageJumpToken;
+    for(let step=0;step<40&&token===nativePageJumpToken&&isElementVisible(board);step++){
+      const pages=board.querySelector(':scope > .pages');
+      const numbers=[...(pages?.querySelectorAll('button.page')||[])];
+      const current=Number(numbers.find(button=>button.classList.contains('selected'))?.textContent);
+      if(!Number.isSafeInteger(current)||current<1||current===target)return;
+      const highest=Math.max(...numbers.map(button=>Number(button.textContent)||0));
+      const numberedOnly=[...(pages?.querySelectorAll(':scope > button')||[])].every(button=>button.classList.contains('page'));
+      if(numberedOnly&&target>highest)return;
+      const direction=Math.sign(target-current);
+      const candidate=numbers.filter(button=>!button.disabled&&Number(button.textContent)>0&&(Number(button.textContent)-current)*direction>0&&(target-Number(button.textContent))*direction>=0).sort((a,b)=>direction*(Number(b.textContent)-Number(a.textContent)))[0];
+      const buttons=[...(pages?.querySelectorAll(':scope > button')||[])];
+      const next=candidate||(direction<0?buttons[0]:buttons.at(-1));
+      if(!next||next.disabled||next.classList.contains('selected'))return;
+      next.click();
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+    }
+  }
+
+  let officialTrackPrefix='',officialTrackPrefixUntil=0;
+  function handleOfficialTrackShortcut(event){
+    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return false;
+    if(isElementVisible(document.getElementById('overallLeaderboardPanel'))||isElementVisible(document.querySelector('.sq-events-dialog')))return false;
+    const target=event.target;
+    if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable)return false;
+    const selection=document.querySelector('.track-selection-ui');
+    const officialTab=selection?.querySelector(':scope > .image-button-container > .button:first-child');
+    if(!isElementVisible(selection)||!officialTab?.classList.contains('selected')||isElementVisible(document.querySelector('.track-info-ui')))return false;
+    const key=String(event.key||'').toLowerCase();
+    if(['s','w','d'].includes(key)){
+      officialTrackPrefix=key;officialTrackPrefixUntil=Date.now()+1500;
+      return false;
+    }
+    const digit=shortcutDigit(event);
+    if(!digit)return false;
+    const prefix=Date.now()<=officialTrackPrefixUntil?officialTrackPrefix:'';
+    officialTrackPrefix='';officialTrackPrefixUntil=0;
+    const season=prefix==='w'?'winter':prefix==='d'?'desert':'summer';
+    const groups=[...selection.querySelectorAll('.tracks-container .wrapper > div')].filter(group=>isElementVisible(group)&&group.querySelector(':scope > .group-title')?.textContent?.trim().toLowerCase().startsWith(season));
+    const button=groups.flatMap(group=>[...group.querySelectorAll(':scope > .track > button')]).find(button=>button.querySelector('.track-title')?.textContent?.trim().toLowerCase()===`${season} ${digit}`);
+    if(!button||!isElementVisible(button))return false;
+    button.click();event.preventDefault();event.stopPropagation();return true;
   }
 
   let overallDialogReturnFocus=null;
@@ -2452,6 +2554,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     panel.id = 'overallLeaderboardPanel';
     panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP combines strong finishes, track coverage, and consistency.</p></section><section><b>Track weight</b><p>Track weight reflects the track type, the published field, and how competitive its results are.</p></section><section><b>Eligibility</b><p>Early results are provisional. Completing enough populated tracks establishes a Ranked position.</p></section><section><b>Podium points</b><p>Top-three finishes on recognized, sufficiently populated tracks can earn podium points.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
     document.body.appendChild(panel);
+    panel.querySelector('.overall-columns')?.insertAdjacentHTML('beforebegin','<div id="overallDataNotice" role="status" hidden></div>');
     void ensureRankedFiltersUi();
     panel.addEventListener('click', (event)=>{
       if(!event.target.closest?.('[data-category-info]')){
@@ -3672,6 +3775,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return annotateCategoryRanks(rows,'topTracks');
   }
   function currentLeaderboardCount(){
+    if(overallCategory==='events')return sortedEventEntries().length;
     if(overallCategory==='topTracks')return loadedTrackRankingRows().length;
     if(rankedFilterResult?.available&&rankedFilterResult.filter?.category===overallCategory)return rankedFilterResult.rows.length;
     return sortedOverallEntries().length;
@@ -3762,14 +3866,29 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const label=LEADERBOARD_LABELS[overallCategory]||'Overall RP';
     const subset=rankedFilterResult?.available&&rankedFilterResult.filter?.category===overallCategory&&rankedFilterResult.filteredCount<rankedFilterResult.sourceCount;
     if (status) status.textContent = `${label} · ${overallPage + 1}/${totalPages} · ${subset?`filtered ${count}/${rankedFilterResult.sourceCount}`:count} ${overallCategory==='topTracks'?'tracks':'racers'}`;
+    const notice=document.getElementById('overallDataNotice');
+    if(notice){notice.hidden=overallCategory==='events'||overallCategory==='topTracks'||rankedFilterSnapshotMeta.complete||overallEntriesCache.length===0;notice.textContent=notice.hidden?'':`Not all information is saved in this snapshot. Showing ${overallEntriesCache.length} loaded racers.`;}
     syncCategorySelect(document);
     if (previous) previous.disabled = overallPage <= 0;
     if (next) next.disabled = overallPage >= totalPages - 1;
   }
   function changeOverallPage(direction){
     const totalPages = Math.max(1,Math.ceil(currentLeaderboardCount() / OVERALL_PAGE_SIZE));
-    overallPage = Math.max(0,Math.min(totalPages-1,overallPage + Number(direction || 0)));
-    renderEntries();
+    const next=Math.max(0,Math.min(totalPages-1,overallPage + Number(direction || 0)));
+    if(next===overallPage)return;
+    overallPage=next;renderEntries();if(typeof flashOverallPage==='function')flashOverallPage();
+  }
+  function jumpOverallPage(page){
+    const totalPages=Math.max(1,Math.ceil(currentLeaderboardCount()/OVERALL_PAGE_SIZE));
+    if(page<1||page>totalPages||page===overallPage+1)return false;
+    overallPage=page-1;renderEntries();flashOverallPage();return true;
+  }
+  let pageFlashTimer=0;
+  function flashOverallPage(){
+    const pager=document.querySelector('#overallLeaderboardPanel .overall-pager');if(!pager)return;
+    clearTimeout(pageFlashTimer);pager.classList.remove('sq-page-changed');
+    void pager.offsetWidth;pager.classList.add('sq-page-changed');
+    pageFlashTimer=setTimeout(()=>pager.classList.remove('sq-page-changed'),650);
   }
   function focusCurrentRacer(){
     const accountId = activeRankedAccountId();
@@ -6320,7 +6439,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if (help && help.style.display !== 'none') { help.style.display='none'; event.preventDefault(); return; }
         if (panel && panel.style.display !== 'none') { panel.style.display='none'; event.preventDefault(); return; }
       }
+      if(handleArchivePageShortcut(event))return;
+      if(handleOverallLeaderboardShortcut(event))return;
       if(handleTrackLeaderboardShortcut(event))return;
+      if(handleOfficialTrackShortcut(event))return;
       handleLobbyShortcut(event);
     });
     document.addEventListener('click',async(event)=>{

@@ -132,6 +132,30 @@ test('filter panel resolves typed usernames and groups content beneath the summa
   assert.match(status.textContent, /No loaded racer matches/);
 });
 
+test('filters can be paused and resumed without clearing the saved choices', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const updates = [];
+  const panel = mountRankedFilterPanel({
+    root, storage: storage(), rows: [
+      { userId: 'alice', name: 'Alice', rank: 1 },
+      { userId: 'bob', name: 'Bob', rank: 2 }
+    ],
+    initialFilter: { whitelist: ['alice'] },
+    isComplete: () => true,
+    onChange: result => updates.push(result)
+  });
+  const toggle = findElement(root, node => node.className?.includes('ranked-filter-toggle'));
+  assert.equal(updates.at(-1).rows.length, 1);
+  toggle.dispatch('click');
+  assert.equal(updates.at(-1).rows.length, 2);
+  assert.deepEqual(panel.getFilter().whitelist, ['alice']);
+  assert.equal(panel.element.dataset.active, 'false');
+  toggle.dispatch('click');
+  assert.equal(updates.at(-1).rows.length, 1);
+  assert.equal(panel.element.dataset.active, 'true');
+});
+
 test('normalization bounds values, public IDs and categories', () => {
   assert.deepEqual(normalizeRankedFilter({
     category: 'wins', verification: 'bad', winsMin: '-1', winsMax: '9', playtimeHoursMin: '1.5',

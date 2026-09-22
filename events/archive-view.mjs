@@ -363,6 +363,10 @@ export function mountArchiveView(root, options = {}) {
     next.addEventListener('click', () => renderPage(currentPage + 1));
   }
 
+  pagination.addEventListener('sq:page', (event) => {
+    const page = Number(event.detail?.page);
+    if (Number.isSafeInteger(page) && page > 0) renderPage(page);
+  });
   renderPage();
 
   root.replaceChildren(view);
