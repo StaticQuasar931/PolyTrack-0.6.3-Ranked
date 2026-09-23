@@ -424,6 +424,7 @@ export function mountRankedFilterPanel(options = {}) {
     const field = document.createElement('div');
     field.style.display = 'grid';
     field.style.position = 'relative';
+    field.style.gap = '5px';
     const inputId = `ranked-filter-${filterInstanceId}-${name}`;
     const fieldLabel = addText(document, field, 'label', label);
     const input = document.createElement('input');
@@ -441,15 +442,24 @@ export function mountRankedFilterPanel(options = {}) {
     input.setAttribute('aria-expanded', 'false');
     Object.assign(popup.style, {
       position: 'absolute', insetInline: '0', top: '100%', zIndex: '20',
-      maxHeight: '180px', overflowY: 'auto', padding: '4px',
+      maxHeight: '180px', overflowY: 'auto', padding: '6px',
       background: 'var(--ranked-filter-popup-bg, #20242b)',
       color: 'var(--ranked-filter-popup-fg, #fff)',
       border: '1px solid var(--ranked-filter-popup-border, #68717d)',
       borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,.3)'
     });
-    field.append(input, popup);
+    const selected = document.createElement('small');
+    selected.className = 'ranked-filter-selected-users';
+    selected.setAttribute('aria-live', 'polite');
+    selected.style.lineHeight = '1.4';
+    selected.style.padding = '4px 7px';
+    selected.style.borderRadius = '4px';
+    selected.style.background = 'rgba(67, 176, 112, 0.18)';
+    selected.style.fontWeight = '600';
+    selected.hidden = true;
+    field.append(input, selected, popup);
     form.append(field);
-    listInputs[name] = { field, input, popup };
+    listInputs[name] = { field, input, popup, selected };
     suggestions.set(name, popup);
   }
 
@@ -497,9 +507,10 @@ export function mountRankedFilterPanel(options = {}) {
     }
     listInputs.whitelist.input.value = value.whitelist.join(', ');
     listInputs.blacklist.input.value = value.blacklist.join(', ');
+    for (const name of Object.keys(listInputs)) refreshSelectedUsers(name);
   }
 
-  function getUserSuggestions(query) {
+  function loadedUsers() {
     const users = new Map();
     for (const row of rows) {
       const id = rowId(row);
@@ -507,9 +518,23 @@ export function mountRankedFilterPanel(options = {}) {
       const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : '';
       users.set(id, name);
     }
+    return users;
+  }
+
+  function refreshSelectedUsers(name) {
+    const { input, selected } = listInputs[name];
+    const ids = [...new Set([...filter[name], ...resolveRankedFilterUserIds(input.value, rows).ids])];
+    const users = loadedUsers();
+    selected.hidden = !ids.length;
+    selected.textContent = ids.length
+      ? `Selected (${ids.length}): ${ids.slice(0, 3).map(id => users.get(id) ? `${users.get(id)} (${id})` : id).join(', ')}${ids.length > 3 ? `, +${ids.length - 3} more` : ''}`
+      : '';
+  }
+
+  function getUserSuggestions(query) {
     const search = normalizedUsername(query);
-    return [...users].filter(([id, name]) => search &&
-      (normalizedUsername(name).includes(search) || id.toLocaleLowerCase().includes(search))).slice(0, 8);
+    return [...loadedUsers()].filter(([id, name]) => search &&
+      (normalizedUsername(name).includes(search) || id.toLocaleLowerCase().includes(search)));
   }
 
   function refreshUserSuggestions(name) {
@@ -518,23 +543,39 @@ export function mountRankedFilterPanel(options = {}) {
     const prefix = raw.slice(0, raw.lastIndexOf(',') + 1);
     const query = raw.slice(raw.lastIndexOf(',') + 1).trim();
     const matches = getUserSuggestions(query);
+    const selectedIds = new Set([...filter[name], ...resolveRankedFilterUserIds(prefix, rows).ids]);
+    const available = matches.filter(([id]) => !selectedIds.has(id)).slice(0, 8);
+    const selectedMatch = !available.length && (
+      matches.find(([id, username]) => selectedIds.has(id) &&
+        (normalizedUsername(username) === normalizedUsername(query) || id.toLocaleLowerCase() === query.toLocaleLowerCase())) ||
+      (matches.length === 1 && selectedIds.has(matches[0][0]) ? matches[0] : null)
+    );
+    refreshSelectedUsers(name);
     popup.replaceChildren();
-    popup.hidden = !query || !matches.length;
+    popup.hidden = !query || (!available.length && !selectedMatch);
     input.setAttribute('aria-expanded', String(!popup.hidden));
-    for (const [id, username] of matches) {
+    for (const [id, username] of selectedMatch ? [selectedMatch] : available) {
       const option = document.createElement('button');
       option.type = 'button';
       option.setAttribute('role', 'option');
-      option.textContent = username ? `${username} (${id})` : id;
+      const alreadySelected = !!selectedMatch;
+      option.textContent = `${username ? `${username} (${id})` : id}${alreadySelected ? ' - Already selected' : ''}`;
+      option.disabled = alreadySelected;
+      option.setAttribute('aria-selected', String(alreadySelected));
       option.style.display = 'block';
       option.style.width = '100%';
       option.style.textAlign = 'start';
-      option.style.padding = '6px 8px';
+      option.style.padding = '8px 10px';
+      option.style.margin = '0';
+      option.style.opacity = alreadySelected ? '0.7' : '1';
+      if (alreadySelected) option.style.fontWeight = '600';
       option.addEventListener('mousedown', event => event.preventDefault());
       option.addEventListener('click', () => {
-        input.value = `${prefix}${id}, `;
+        if (alreadySelected) return;
+        input.value = `${prefix ? `${prefix.trimEnd()} ` : ''}${id}, `;
         popup.hidden = true;
         input.setAttribute('aria-expanded', 'false');
+        refreshSelectedUsers(name);
         input.focus();
       });
       popup.append(option);
@@ -651,6 +692,11 @@ export function mountRankedFilterPanel(options = {}) {
     initialResult,
     getFilter: () => filter,
     setFilter(value) { filter = normalizeRankedFilter(value, categories); writeForm(filter); return emit(); },
-    update(nextRows) { rows = Array.isArray(nextRows) ? nextRows : []; refreshAvailability(); return emit(); }
+    update(nextRows) {
+      rows = Array.isArray(nextRows) ? nextRows : [];
+      for (const name of Object.keys(listInputs)) refreshSelectedUsers(name);
+      refreshAvailability();
+      return emit();
+    }
   });
 }

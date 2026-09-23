@@ -97,6 +97,8 @@ test('dialog focus enumeration includes summaries and excludes inactive tabs',()
 });
 test('Studio markup retains drafts and offers explicit discard',()=>{
  const body=extract('profileCustomizerMarkup');assert.ok(body.includes('profileCosmeticDrafts.get(accountId)||cosmeticsForEntry(entry)'));assert.ok(body.includes('data-discard-profile-cosmetics'));
+ assert.ok(body.includes('data-cosmetic-podium="classic"'));assert.ok(body.includes('data-cosmetic-podium="own"'));assert.ok(body.includes('data-studio-close'));
+ assert.ok(body.includes('aria-disabled="true"'));assert.ok(body.includes('data-cosmetic-locked="true"'));
 });
 test('favorite search resets its active option and preserves explicit option identities',()=>{
  const body=extract('setupRacerStudio');assert.ok(body.includes("input.dataset.selectedTrackId=id"));assert.ok(body.includes("input.removeAttribute('aria-activedescendant')"));assert.ok(body.includes("selected<0?(e.key==='ArrowDown'?0:buttons.length-1)"));
@@ -129,14 +131,14 @@ test('native status resets when result identity cannot be established',()=>{
 });
 
 
-test('verified filtering preserves full-field weight and sorts waiting self by time',()=>{
+test('verified filtering preserves full-field rank and hides waiting runs',()=>{
  const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});
  const rows=[{accountId:'b',timeMs:2000,runVerified:true,weight:3,fieldSize:20},{accountId:'me',timeMs:1000,runVerified:false,weight:3,fieldSize:20},{accountId:'a',timeMs:2000,runVerified:true,weight:3,fieldSize:20},{accountId:'other',timeMs:500,runVerified:false,weight:3,fieldSize:20}];
- const selected=choose(rows,true,'me');assert.deepEqual(Array.from(selected,x=>x.accountId),['me','a','b']);assert.deepEqual(Array.from(selected,x=>x.position),[2,3,4]);assert.ok(selected.every(x=>x.fieldSize===20&&x.weight===3));
+ const selected=choose(rows,true,'me');assert.deepEqual(Array.from(selected,x=>x.accountId),['a','b']);assert.deepEqual(Array.from(selected,x=>x.position),[3,4]);assert.ok(selected.every(x=>x.fieldSize===20&&x.weight===3));
 });
-test('no verified results shows all waiting racers in deterministic order',()=>{
+test('no verified results leaves verified-only standings empty',()=>{
  const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});
- assert.deepEqual(Array.from(choose([{accountId:'z',timeMs:1000},{accountId:'a',timeMs:1000}],true,'me'),x=>x.accountId),['a','z']);
+ assert.deepEqual(Array.from(choose([{accountId:'z',timeMs:1000},{accountId:'a',timeMs:1000}],true,'me'),x=>x.accountId),[]);
 });
 test('PB normalization retains exact run verification and deterministic ties',()=>{
  const ctx={safePositiveInt:(v,f)=>Number(v)>0?Number(v):f,canonicalRaceTimeMs:x=>x.timeMs,safeDisplayName:x=>x,getLastKnownName:()=>'',__pt062NormalizeStyle:x=>x,__pt062GetRememberedStyle:()=>'',safeRecordingId:x=>x,extractCarId:()=>'',normalizeCarColorId:x=>x,pbTimestamp:x=>x.pbAt||0,buildRecordingId:()=>1};
@@ -504,7 +506,7 @@ test('ease does not use a track snapshot older than the planner result',()=>{
  const snapshot={serverUpdatedAt:100,entries:[{accountId:'me',timeMs:10000},{accountId:'other',timeMs:9000}]};assert.equal(run('plannerEase')({currentRank:2,targetRank:1,cachedAt:200},snapshot,'me'),null);
 });
 
-test('verified filtering never promotes self past a hidden waiting result',()=>{const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose([{accountId:'fast',timeMs:1000},{accountId:'me',timeMs:2000},{accountId:'verified',timeMs:3000,runVerified:true}],true,'me');assert.equal(rows[0].position,2);assert.equal(rows[0].runVerified,undefined);});
+test('verified filtering hides waiting self while preserving the verified full-field position',()=>{const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose([{accountId:'fast',timeMs:1000},{accountId:'me',timeMs:2000},{accountId:'verified',timeMs:3000,runVerified:true}],true,'me');assert.equal(rows.length,1);assert.equal(rows[0].position,3);assert.equal(rows[0].runVerified,true);});
 test('planner data availability excludes empty and non-scoring fields',()=>{const available=run('plannerCategoryAvailability');assert.equal(available([],[]).overall,false);assert.equal(available([],[{fieldSize:1,weight:0}]).wins,false);assert.equal(available([{rank:2,fieldSize:8,weight:2}],[{fieldSize:8,weight:2}]).wins,true);});
 
 test('local-only PB cannot invent a first place without a complete field',()=>{assert.equal(run('localTrackDisplayEntries')('track',[],'me',false).length,0);});
@@ -513,7 +515,9 @@ test('event planner requires matching cached period and computes integer points'
 test('event planner excludes ended events and cannot farm maximum points',()=>{const p={id:'w_x',kind:'weekly',trackId:'t',startsAt:1,endsAt:10,targetMs:10000,maxRp:500};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-w_x':{period:p,entries:[{accountId:'me',timeMs:10000}]}};const fn=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f});assert.equal(fn('me',null,5).length,0);assert.equal(fn('other',null,10).length,0);});
 
 test('local unverified event attempt never hides verified point opportunities',()=>{const p={id:'d_x',kind:'daily',trackId:'t',startsAt:1,endsAt:100,targetMs:20000,maxRp:100};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{'d_x_me':{timeMs:20000}},'polytrack-062-events-v1-d_x':{period:p,entries:[{accountId:'me',timeMs:25000}]}};const rows=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me',null,10);assert.equal(rows[0].gain,20);assert.equal(rows[0].localTime,20000);});
-test('filtered native navigation uses visible index while rows keep full-field rank',()=>{assert.match(source,/userEntry:mine \? \{position:mineIndex\+1,/);const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose(Array.from({length:100},(_,i)=>({accountId:i===99?'me':String(i),timeMs:i+1,runVerified:i===0})),true,'me');assert.equal(rows.length,2);assert.equal(rows[1].rank,100);assert.equal(Math.floor(rows.findIndex(r=>r.accountId==='me')/20),0);});
+test('filtered native navigation uses visible index while rows keep full-field rank',()=>{assert.match(source,/userEntry:mine \? \{position:mineIndex\+1,/);const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose(Array.from({length:100},(_,i)=>({accountId:i===99?'me':String(i),timeMs:i+1,runVerified:i===0||i===49})),true,'me');assert.equal(rows.length,2);assert.equal(rows[1].rank,50);assert.equal(Math.floor(rows.findIndex(r=>r.accountId==='49')/20),0);});
+
+test('local and incomplete track caches require canonical refresh',()=>{const refresh=run('trackCacheNeedsCanonicalRefresh',{TRACK_CACHE_SCHEMA:5,safeRecordingId:x=>x});const base={schemaVersion:5,source:'edge',entries:[{id:'run',timingVersion:2}]};assert.equal(refresh(base),false);assert.equal(refresh({...base,source:'local'}),true);assert.equal(refresh({...base,complete:false}),true);});
 
 test('known solo result has zero weight, unlike a missing result',()=>{const weight=run('knownFinishWeight');assert.equal(weight({rank:1,fieldSize:1}),0);assert.equal(weight({}),null);});
 

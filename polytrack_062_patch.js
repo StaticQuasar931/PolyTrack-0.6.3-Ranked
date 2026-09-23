@@ -469,7 +469,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return cached && Array.isArray(cached.entries) ? cached : null;
   }
   function trackCacheNeedsCanonicalRefresh(cached){
-    return Number(cached?.schemaVersion||0)<TRACK_CACHE_SCHEMA||Boolean(cached?.entries?.some((entry)=>!safeRecordingId(entry.uploadId||entry.id)||Number(entry.timingVersion||0)<2));
+    return cached?.source==='local'||cached?.complete===false||Number(cached?.schemaVersion||0)<TRACK_CACHE_SCHEMA||Boolean(cached?.entries?.some((entry)=>!safeRecordingId(entry.uploadId||entry.id)||Number(entry.timingVersion||0)<2));
   }
   function writeTrackSnapshotCache(trackId,entries,serverUpdatedAt=0,meta={}){
     const id=String(trackId||'').slice(0,80); if(!id) return;
@@ -986,7 +986,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
           ?`<span class="profile-cosmetic-preview np-preview" aria-hidden="true"><b>#8</b><span>RACER</span></span>`
           :`<span class="profile-cosmetic-preview" aria-hidden="true"><i></i></span>`;
         const label=`${name}${unlocked?'':`. Locked. ${lockReason(requirement)}`}`;
-        return `<button type="button" class="profile-cosmetic-choice ${['badge','title'].includes(kind)&&id==='none'?'badge-off-control':''} cosmetic-${dash}-${id} ${current[kind]===id?'selected':''}" data-cosmetic-choice data-cosmetic-kind="${kind}" data-cosmetic-value="${id}" aria-label="${escapeHtml(label)}" aria-pressed="${current[kind]===id}" title="${escapeHtml((unlocked?'Unlocked. ':'Locked. ')+lockReason(requirement))}" ${unlocked?'':'disabled'}>${preview}<b>${escapeHtml(name)}</b>${unlocked?'':`<small>${escapeHtml(note)}</small>`}</button>`;
+        return `<button type="button" class="profile-cosmetic-choice ${['badge','title'].includes(kind)&&id==='none'?'badge-off-control':''} cosmetic-${dash}-${id} ${current[kind]===id?'selected':''}" data-cosmetic-choice data-cosmetic-kind="${kind}" data-cosmetic-value="${id}" aria-label="${escapeHtml(label)}" aria-pressed="${current[kind]===id}" title="${escapeHtml((unlocked?'Unlocked. ':'Locked. ')+lockReason(requirement))}" ${unlocked?'':'data-cosmetic-locked="true" aria-disabled="true"'}>${preview}<b>${escapeHtml(name)}</b>${unlocked?'':`<small>${escapeHtml(note)}</small>`}</button>`;
       }).join('');
       return `<fieldset class="profile-cosmetic-group kind-${kind} variant-${variant}"><legend>${label}</legend><p>${description}</p><div>${choices}</div></fieldset>`;
     };
@@ -995,7 +995,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const previewBadges=profileBadgeMarkup(entry,true,current);
     const showcaseRow=(cls,rank,caption,tag)=>`<div class="showcase-row ${cls}"><strong>#${rank}</strong><span><b>YOUR RACER<span class="showcase-badges" data-cosmetic-badge-preview>${previewBadges}</span></b><small>${caption}</small><span class="showcase-meta"><span class="overall-racer-title" data-cosmetic-title-preview>${escapeHtml(title)}</span></span></span><em>${tag}</em></div>`;
     const livePreview=`<section class="profile-customizer-preview" aria-label="Live public profile preview"><header><b>LIVE PREVIEW</b><small>Your nameplate and car backdrop.</small></header><div class="profile-preview-stage">${carModelPreview(entry.carStyle,entry.carColorId||entry.carColors,accountId)}<span><b>${escapeHtml(safeDisplayName(entry.name||'Racer',accountId))}</b><small class="profile-preview-title" data-cosmetic-title-preview>${escapeHtml(title)}</small></span></div><div class="profile-row-showcase">${showcaseRow('showcase-first',1,'First place','TOP')}${showcaseRow('showcase-other',8,'Seen by others','RACER')}${showcaseRow('showcase-self',8,'Your view','YOU')}</div><div class="profile-customizer-actions"><span role="status" aria-live="polite">Preview changes here. Publish to save and share.</span><button class="button" type="button" data-save-profile-cosmetics data-account-id="${escapeHtml(accountId)}">Publish design</button><button class="button studio-discard" type="button" data-discard-profile-cosmetics>Discard changes</button></div></section>`;
-    const podiumChoice=`<div class="profile-cosmetic-podium"><div><b>TOP THREE ROWS</b><small>Keep the usual gold, silver and bronze, or show your own colors there too.</small></div><button class="button ${current.overridePodium?'selected':''}" type="button" data-cosmetic-podium aria-pressed="${current.overridePodium}">${current.overridePodium?'Use my design':'Keep podium colors'}</button></div>`;
+    const podiumChoice=`<div class="profile-cosmetic-podium"><div><b>TOP THREE ROWS</b><small>Choose which colors appear on your top-three finishes.</small></div><div class="profile-podium-choices" role="group" aria-label="Top-three row colors"><button class="button ${current.overridePodium?'':'selected'}" type="button" data-cosmetic-podium="classic" aria-pressed="${!current.overridePodium}">Podium colors</button><button class="button ${current.overridePodium?'selected':''}" type="button" data-cosmetic-podium="own" aria-pressed="${current.overridePodium}">My design</button></div></div>`;
     const tab=(id,label)=>`<button type="button" class="studio-tab" id="studio-tab-${id}" role="tab" data-studio-tab="${id}" aria-selected="${id==='nameplate'}" tabindex="${id==='nameplate'?0:-1}" aria-controls="studio-panel-${id}">${label}</button>`;
     const panel=(id,body)=>`<div class="studio-panel" id="studio-panel-${id}" role="tabpanel" aria-labelledby="studio-tab-${id}" data-studio-panel="${id}" ${id==='nameplate'?'':'hidden'}>${body}</div>`;
     const nameplate=group('theme','BASE COLORS','The two colors your row is built from.')
@@ -1010,7 +1010,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const identity=group('title','TITLE','Choose an earned title, or hide it.','text')
       +group('badge','BADGE','One badge, shown beside your name.','text')
       +`<fieldset class="profile-cosmetic-group kind-extras variant-text"><legend>EXTRAS</legend><p>Shown on your public profile.</p><div class="profile-extras-grid"><label class="profile-favorite-track"><span><b>FAVORITE TRACK</b><small>Type to search. Shown as a shortcut on your profile.</small></span><input type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sqFavoriteTrackList" data-cosmetic-favorite value="${escapeHtml(favoriteName)}" placeholder="No favorite" aria-label="Favorite track, type to search" autocomplete="off" spellcheck="false"><div id="sqFavoriteTrackList" class="studio-track-options" role="listbox" aria-label="Favorite tracks" hidden></div></label>${podiumChoice}</div></fieldset>`;
-    return `<details class="profile-customizer"><summary><span><b>RACER STUDIO</b><small>Design the leaderboard row and profile everyone else sees</small></span><em class="studio-open-label" aria-hidden="true">Edit</em></summary><div class="profile-customizer-body">${livePreview}<div class="profile-customizer-controls"><div class="studio-tabs" role="tablist" aria-label="Studio sections">${tab('nameplate','NAMEPLATE')}${tab('car','CAR')}${tab('identity','IDENTITY')}</div>${panel('nameplate',nameplate)}${panel('car',car)}${panel('identity',identity)}</div></div></details>`;
+    return `<details class="profile-customizer"><summary><span><b>RACER STUDIO</b><small>Design the leaderboard row and profile everyone else sees</small></span><em class="studio-open-label" aria-hidden="true">Edit</em></summary><div class="profile-customizer-body">${livePreview}<div class="profile-customizer-controls"><div class="studio-tabs" role="tablist" aria-label="Studio sections">${tab('nameplate','NAMEPLATE')}${tab('car','CAR')}${tab('identity','IDENTITY')}</div>${panel('nameplate',nameplate)}${panel('car',car)}${panel('identity',identity)}<button class="button studio-close-bottom" type="button" data-studio-close>Close Racer Studio</button></div></div></details>`;
   }
   let playtimeVisibleAt=document.visibilityState==='visible'?Date.now():0;
   function commitVisiblePlaytime(){
@@ -1760,6 +1760,21 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       @keyframes sqPageNotice{from{background:#fff1a0;transform:scale(1.05)}to{background:#7ee7ff;transform:scale(1)}}
       @media(prefers-reduced-motion:reduce){.overall-pager.sq-page-changed .overall-page-status{animation:none}}
       @media(max-width:800px){.overall-top{flex-wrap:wrap;gap:8px}.overall-filter-host{order:3;width:100%;margin:0}.ranked-filter-panel>summary{width:100%;box-sizing:border-box}.overall-actions{margin-left:auto}.ranked-filter-content{left:0;transform:none;width:min(840px,calc(100vw - 36px));padding:16px}}
+    `;
+    rankedPolish.textContent += `
+      #overallLeaderboardPanel .overall-entry .overall-rank.is-filtered{flex-direction:column;gap:2px;min-width:0;padding:4px 2px;box-sizing:border-box;font-size:20px!important;line-height:1.1;text-align:center;white-space:nowrap}
+      #overallLeaderboardPanel .overall-rank.is-filtered small{display:block;max-width:100%;font-size:9px;font-weight:700;line-height:1.15;letter-spacing:.02em;white-space:normal;overflow-wrap:anywhere;color:#c5e5ff}
+      #overallLeaderboardPanel[data-category="events"] .overall-entry .overall-mid{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;min-width:0}
+      #overallLeaderboardPanel[data-category="events"] .overall-entry .overall-move{margin:0;max-width:100%}
+      #overallLeaderboardPanel[data-category="events"] .overall-entry .overall-best{min-width:0;max-width:100%}
+      .profile-cosmetic-podium .profile-podium-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;width:min(440px,100%);margin-left:auto}
+      .profile-cosmetic-podium .profile-podium-choices .button{min-width:0!important;margin:0!important;white-space:normal}
+      .profile-cosmetic-choice[aria-disabled="true"]{opacity:.62!important;cursor:not-allowed}
+      .studio-close-bottom{width:100%;min-height:48px;margin-top:12px!important}
+      @media(min-width:1101px){#overallLeaderboardPanel .overall-competition{grid-template-columns:minmax(0,1.2fr) minmax(0,.85fr) minmax(0,1fr)!important;gap:12px!important}#overallLeaderboardPanel .overall-competition>div{min-width:0}}
+      @media(min-width:901px) and (max-width:1100px){#overallLeaderboardPanel[data-category="events"] .overall-columns [data-short-label]{font-size:0}#overallLeaderboardPanel[data-category="events"] .overall-columns [data-short-label]::after{content:attr(data-short-label);font-size:14px}}
+      @media(max-width:700px){#overallLeaderboardPanel .overall-entry .overall-rank.is-filtered{font-size:12px!important}#overallLeaderboardPanel .overall-rank.is-filtered small{font-size:8px}}
+      @media(max-width:700px){.profile-cosmetic-podium{flex-wrap:wrap}.profile-cosmetic-podium .profile-podium-choices{width:100%;margin-left:0}}
     `;
     document.head.appendChild(rankedPolish);
   }
@@ -2525,7 +2540,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         copy.setAttribute('role','tooltip');
         control.appendChild(copy);
       }
-      if(info){info.title=tip;info.setAttribute('aria-label',`${label}: ${tip}`);}
+      if(info){info.removeAttribute('title');info.setAttribute('aria-label',`${label}: ${tip}`);}
       if(copy)copy.textContent=tip;
     }
   }
@@ -2609,7 +2624,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(details?.open){event.preventDefault();event.stopPropagation();focusTrackFromRanked(summaryTrack.dataset.summaryTrackId);return;}
       }
       const cosmeticChoice=event.target.closest?.('[data-cosmetic-choice]');
-      if(cosmeticChoice&&!cosmeticChoice.disabled){
+      if(cosmeticChoice?.dataset.cosmeticLocked==='true')return;
+      if(cosmeticChoice){
         const card=cosmeticChoice.closest('.overall-profile-card');
         const entryId=cleanUserId(card?.querySelector('[data-save-profile-cosmetics]')?.dataset.accountId||'');
         const draft={...sanitizeProfileCosmetics(profileCosmeticDrafts.get(entryId)),[cosmeticChoice.dataset.cosmeticKind]:cosmeticChoice.dataset.cosmeticValue};
@@ -2648,14 +2664,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         const card=podiumChoice.closest('.overall-profile-card');
         const entryId=cleanUserId(card?.querySelector('[data-save-profile-cosmetics]')?.dataset.accountId||'');
         const current=sanitizeProfileCosmetics(profileCosmeticDrafts.get(entryId));
-        const draft={...current,overridePodium:!current.overridePodium};
+        const draft={...current,overridePodium:podiumChoice.dataset.cosmeticPodium==='own'};
         profileCosmeticDrafts.set(entryId,draft);
-        podiumChoice.classList.toggle('selected',draft.overridePodium);
-        podiumChoice.setAttribute('aria-pressed',String(draft.overridePodium));
-        podiumChoice.textContent=draft.overridePodium?'Use my design':'Keep podium colors';
+        card.querySelectorAll('[data-cosmetic-podium]').forEach((choice)=>{const selected=(choice.dataset.cosmeticPodium==='own')===draft.overridePodium;choice.classList.toggle('selected',selected);choice.setAttribute('aria-pressed',String(selected));});
         applyProfileCosmetics(card,draft);
         return;
       }
+      const studioClose=event.target.closest?.('[data-studio-close]');
+      if(studioClose){const studio=studioClose.closest('.profile-customizer');studio.open=false;studio.querySelector('summary')?.focus({preventScroll:true});studio.scrollIntoView({block:'nearest'});return;}
       const discard=event.target.closest?.('[data-discard-profile-cosmetics]');
       if(discard){const id=discard.closest('.profile-customizer').querySelector('[data-save-profile-cosmetics]').dataset.accountId;profileCosmeticDrafts.delete(id);openRankedProfile(id);const studio=panel.querySelector('.profile-customizer');studio.open=true;studio.scrollIntoView({block:'start'});studio.querySelector('summary').focus();return;}
       const cosmeticSave=event.target.closest?.('[data-save-profile-cosmetics]');
@@ -2899,9 +2915,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function visibleTrackEntries(entries,onlyVerified,accountId){
     const sorted=[...(entries||[])].sort((a,b)=>canonicalRaceTimeMs(a)-canonicalRaceTimeMs(b)||String(a.accountId||a.userId||'').localeCompare(String(b.accountId||b.userId||'')));
-    const hasVerified=sorted.some(entry=>entry.runVerified===true);
     // A visibility filter must not promote a waiting racer past hidden faster runs.
-    return sorted.map((entry,index)=>({...entry,rank:index+1,position:index+1})).filter(entry=>!onlyVerified||!hasVerified||entry.runVerified===true||String(entry.accountId||entry.userId||'')===String(accountId||''));
+    return sorted.map((entry,index)=>({...entry,rank:index+1,position:index+1})).filter(entry=>!onlyVerified||entry.runVerified===true);
   }
 
   function computeTrackTopEntries(rows, trackId, limit=10){
@@ -3582,7 +3597,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const provisional=Boolean(row.provisional)||races<MIN_RANKED_TRACKS;
       const badgeMarkup=profileBadgeMarkup(row,true);
       const visibleRank=overallCategory==='casual'&&missingValue?null:rank;
-      const rankMarkup=filteredRank&&filteredTotal?`<span class="overall-rank" title="Filtered place #${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank #${preservedGlobalRank}.`:'Global rank unavailable.'}">#${filteredRank}/${filteredTotal}<small>FILTERED${preservedGlobalRank?` · GLOBAL #${preservedGlobalRank}`:''}</small></span>`:`<span class="overall-rank">${visibleRank===null?'N/A':provisional&&!['rising','casual'].includes(overallCategory)?'P':`#${visibleRank}`}</span>`;
+      const rankMarkup=filteredRank&&filteredTotal?`<span class="overall-rank is-filtered" title="Filtered place #${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank #${preservedGlobalRank}.`:'Global rank unavailable.'}">#${filteredRank}/${filteredTotal}<small>FILTERED${preservedGlobalRank?` · GLOBAL #${preservedGlobalRank}`:''}</small></span>`:`<span class="overall-rank">${visibleRank===null?'N/A':provisional&&!['rising','casual'].includes(overallCategory)?'P':`#${visibleRank}`}</span>`;
       return `<div class="overall-entry ${visibleRank===1?'top-1':visibleRank===2?'top-2':visibleRank===3?'top-3':''} ${visibleRank===4?'after-podium':''} ${isSelf?'is-self':''} ${provisional?'is-provisional':''} ${missingValue?'has-missing-value':''} ${racerCosmeticClasses(row)}" data-userid="${safeUserId}" data-category="${escapeHtml(overallCategory)}" tabindex="0" role="button" aria-label="View ${safeName} ranked profile. ${filteredRank&&filteredTotal?`Filtered place ${filteredRank} of ${filteredTotal}. ${preservedGlobalRank?`Global rank ${preservedGlobalRank}.`:''}`:''} ${escapeHtml(categoryUnit)}: ${escapeHtml(categoryDisplay)}." style="animation-delay:${(index*0.03).toFixed(3)}s">${rankMarkup}<span class="overall-name">${carModelPreview(savedCarStyle,row?.carColorId||row?.carColors,safeUserId)}<span class="overall-name-label"><span class="overall-name-main">${safeName}${countryFlagMarkup(row?.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}${badgeMarkup}${provisional?'<span class="overall-provisional-tag">PROVISIONAL</span>':''}</span>${hintText?`<span class="overall-name-hint">${hintText}</span>`:''}<span class="overall-racer-meta">${identityMeta}</span></span></span><div class="overall-mid">${move}<div class="overall-best">${best}</div></div><div class="overall-stats" title="${escapeHtml(scoreTitle)}"><div class="overall-score">${categoryDisplay}</div><div class="overall-score-unit">${categoryUnit}</div></div></div>`;
   }
 
@@ -3728,7 +3743,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const snapshotAt=Number(savedEventTotals()?.updatedAt||0)||0;
     const rollingAge=row.rollingHillsRunAgeMs==null?null:row.rollingHillsRunAgeMs+Math.max(0,Date.now()-snapshotAt);
     const rollingDetails=rollingRp==null&&row.rollingHillsTimeMs==null&&rollingAge==null?'':`<span class="overall-best-line"><b>Rolling Hills</b>${rollingRp==null?'':` +${formatRp(rollingRp)} Event RP`}${row.rollingHillsTimeMs==null?'':` · ${formatRaceTime(row.rollingHillsTimeMs)}`}${rollingAge==null?'':` · run ${durationLabel(rollingAge)} old`}</span>`;
-    return `<div class="overall-entry ${row.rank===1?'top-1':row.rank===2?'top-2':row.rank===3?'top-3':''} ${id===activeRankedAccountId()?'is-self':''} ${racerCosmeticClasses(row)}" data-userid="${escapeHtml(id)}" data-category="events" tabindex="0" role="button" aria-label="View ${name} profile. Event RP: ${escapeHtml(rp)}" style="animation-delay:${(index*.03).toFixed(3)}s"><span class="overall-rank">${rank}</span><span class="overall-name">${row.carStyle?carModelPreview(row.carStyle,row.carColorId||row.carColors,id):''}<span class="overall-name-label"><span class="overall-name-main">${name}${countryFlagMarkup(row.countryCode)}${id===activeRankedAccountId()?'<span class="overall-you-tag">YOU</span>':''}${profileBadgeMarkup(row,true)}</span><span class="overall-racer-meta">${count}</span></span></span><div class="overall-mid"><span class="overall-move flat">${count}</span><div class="overall-best">${rollingDetails||'Verified event PBs only'}</div></div><div class="overall-stats"><div class="overall-score">${rp}</div><div class="overall-score-unit">EVENT RP</div></div></div>`;
+    return `<div class="overall-entry ${row.rank===1?'top-1':row.rank===2?'top-2':row.rank===3?'top-3':''} ${id===activeRankedAccountId()?'is-self':''} ${racerCosmeticClasses(row)}" data-userid="${escapeHtml(id)}" data-category="events" tabindex="0" role="button" aria-label="View ${name} profile. Event RP: ${escapeHtml(rp)}" style="animation-delay:${(index*.03).toFixed(3)}s"><span class="overall-rank">${rank}</span><span class="overall-name">${row.carStyle?carModelPreview(row.carStyle,row.carColorId||row.carColors,id):''}<span class="overall-name-label"><span class="overall-name-main">${name}${countryFlagMarkup(row.countryCode)}${id===activeRankedAccountId()?'<span class="overall-you-tag">YOU</span>':''}${profileBadgeMarkup(row,true)}</span><span class="overall-racer-meta">Verified event PBs</span></span></span><div class="overall-mid"><span class="overall-move flat">${count}</span><div class="overall-best">${rollingDetails||'Lifetime verified events'}</div></div><div class="overall-stats"><div class="overall-score">${rp}</div><div class="overall-score-unit" title="Event RP">ERP</div></div></div>`;
   }
   function renderEventEntries(listEl){
     const rows=sortedEventEntries();updateOverallPager();
@@ -3867,7 +3882,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const subset=rankedFilterResult?.available&&rankedFilterResult.filter?.category===overallCategory&&rankedFilterResult.filteredCount<rankedFilterResult.sourceCount;
     if (status) status.textContent = `${label} · ${overallPage + 1}/${totalPages} · ${subset?`filtered ${count}/${rankedFilterResult.sourceCount}`:count} ${overallCategory==='topTracks'?'tracks':'racers'}`;
     const notice=document.getElementById('overallDataNotice');
-    if(notice){notice.hidden=overallCategory==='events'||overallCategory==='topTracks'||rankedFilterSnapshotMeta.complete||overallEntriesCache.length===0;notice.textContent=notice.hidden?'':`Not all information is saved in this snapshot. Showing ${overallEntriesCache.length} loaded racers.`;}
+    if(notice){
+      const panel=document.getElementById('overallLeaderboardPanel');
+      const loaded=overallEntriesCache.length,total=rankedFilterSnapshotMeta.totalEntries;
+      notice.hidden=panel?.style.display!=='flex'||!FILTERABLE_RANKED_CATEGORIES.has(overallCategory)||rankedFilterSnapshotMeta.complete||loaded===0;
+      notice.textContent=notice.hidden?'':total!=null&&total>loaded?`This snapshot contains ${loaded} of ${total} racers. Rankings and filters may be incomplete.`:`Snapshot completeness is unconfirmed. Showing ${loaded} loaded racers; rankings and filters may be incomplete.`;
+    }
     syncCategorySelect(document);
     if (previous) previous.disabled = overallPage <= 0;
     if (next) next.disabled = overallPage >= totalPages - 1;
@@ -4419,7 +4439,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const previewMarkup=previewRoutes.map((action,index)=>`<span class="route-preview-item" data-summary-track-id="${escapeHtml(action.trackId)}"><span class="route-preview-image">${trackThumbnailMarkup(action.trackId)}</span><span class="route-preview-copy"><b>${index===0?'Best next move':'Also try'}</b><strong>${escapeHtml(trackInfo(action.trackId).name)}</strong><small>${action.currentRank?`#${action.currentRank} → #${action.targetRank}`:`New track · aim for #${action.targetRank}`}</small><small class="guide-weight">${action.weight.toFixed(2)}x weight</small></span></span>`).join('');
     const availability={...plannerCategoryAvailability(simulationFinishes,overallTrackSummariesCache),events:eventRoutes.dataAvailable===true};
     const coverageNote=simulationFinishes.length>=Math.max(0,Number(plannerEntry?.raceCount||0)||0)&&(!rivalMode||snapshotFinishes.length>=Math.max(0,Number(entry?.raceCount||0)||0))?'Results loaded':'More results needed';
-    return `<details class="profile-guide ${strongest?'':'without-carry'}"><summary aria-label="Open detailed route planner">${previewMarkup||'<span><strong>No helpful move found</strong><small>Refresh Ranked or choose another category.</small></span>'}<em class="route-open-label" aria-hidden="true">Full plan</em></summary><div class="profile-guide-body"><header><div><span class="profile-kicker">YOUR PLAN</span><label class="profile-guide-metric">Improve <select data-planner-metric aria-label="Leaderboard to improve">${Object.entries(PLANNER_METRICS).map(([key,label])=>`<option value="${key}" ${plannerMetric===key?'selected':''} ${availability[key]?'':'disabled title="Not enough information at this time"'}>${label}${availability[key]?'':' (not enough data)'}</option>`).join('')}</select></label><label class="profile-guide-metric">Sort by <select data-planner-sort aria-label="Route order"><option value="impact" ${plannerSort==='impact'?'selected':''}>Biggest benefit</option><option value="ease" ${plannerSort==='ease'?'selected':''}>Ease (estimated)</option></select></label><h4>${context}</h4></div><small>${coverageNote} · ${escapeHtml(overallLoadState.serverUpdatedAt?`snapshot changed ${ageLabel(overallLoadState.serverUpdatedAt)}`:'saved profile data')}</small></header><section class="profile-route-priorities"><p class="route-benefit-key" title="100% is the strongest shown route, not a success probability. Estimated ease compares time to gain and typical field spacing, with unknown times last.">Benefit compares these routes. Ease considers time gaps and field spacing.</p>${plannerMetric==='weight'?'<p>Complete new tracks to add weight.</p>':''}<div class="profile-guide-grid">${cards(priority)}</div></section>${carrying.length?`<section class="profile-route-strengths"><h5>Your other strong contributions</h5><p>Track Strength compares each contribution with your highest-weight loaded track.</p><div class="profile-guide-grid compact">${cards(carrying)}</div></section>`:''}</div></details>`;
+    return `<details class="profile-guide ${strongest?'':'without-carry'}"><summary>${previewMarkup||'<span><strong>No helpful move found</strong><small>Refresh Ranked or choose another category.</small></span>'}<em class="route-open-label" aria-hidden="true">Full plan</em></summary><div class="profile-guide-body"><header><div><span class="profile-kicker">YOUR PLAN</span><label class="profile-guide-metric">Improve <select data-planner-metric aria-label="Leaderboard to improve">${Object.entries(PLANNER_METRICS).map(([key,label])=>`<option value="${key}" ${plannerMetric===key?'selected':''} ${availability[key]?'':'disabled title="Not enough information at this time"'}>${label}${availability[key]?'':' (not enough data)'}</option>`).join('')}</select></label><label class="profile-guide-metric">Sort by <select data-planner-sort aria-label="Route order"><option value="impact" ${plannerSort==='impact'?'selected':''}>Biggest benefit</option><option value="ease" ${plannerSort==='ease'?'selected':''}>Ease (estimated)</option></select></label><h4>${context}</h4></div><small>${coverageNote} · ${escapeHtml(overallLoadState.serverUpdatedAt?`snapshot changed ${ageLabel(overallLoadState.serverUpdatedAt)}`:'saved profile data')}</small></header><section class="profile-route-priorities"><p class="route-benefit-key" title="100% is the strongest shown route, not a success probability. Estimated ease compares time to gain and typical field spacing, with unknown times last.">Benefit compares these routes. Ease considers time gaps and field spacing.</p>${plannerMetric==='weight'?'<p>Complete new tracks to add weight.</p>':''}<div class="profile-guide-grid">${cards(priority)}</div></section>${carrying.length?`<section class="profile-route-strengths"><h5>Your other strong contributions</h5><p>Track Strength compares each contribution with your highest-weight loaded track.</p><div class="profile-guide-grid compact">${cards(carrying)}</div></section>`:''}</div></details>`;
   }
   function openRankedProfile(userId){
     const profileContent=document.querySelector('#overallProfileContent');if(profileContent)profileContent.dataset.accountId=cleanUserId(userId);
@@ -4552,8 +4572,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const filterRoot=document.getElementById('overallFilterPanel');
     if(filterRoot)filterRoot.hidden=overallCategory==='events'||overallCategory==='topTracks';
     const columnLabels=document.querySelectorAll('#overallLeaderboardPanel .overall-columns span');
-    const labels=overallCategory==='events'?['Place','Driver','Events','Event RP']:overallCategory==='topTracks'?['Place','Track','Leader & record','Weight']:['Place','Driver','Movement & bests','Score'];
-    columnLabels.forEach((column,index)=>{column.textContent=labels[index]||'';});
+    const labels=overallCategory==='events'?['Place','Driver','Verified events','Event RP']:overallCategory==='topTracks'?['Place','Track','Leader & record','Weight']:['Place','Driver','Movement & bests','Score'];
+    columnLabels.forEach((column,index)=>{column.textContent=labels[index]||'';column.title=labels[index]||'';if(overallCategory==='events'&&index===2)column.dataset.shortLabel='Events';else delete column.dataset.shortLabel;});
     const findMe=document.getElementById('overallFindMeBtn'); if(findMe)findMe.disabled=overallCategory==='topTracks';
     if(overallCategory==='events'){renderEventEntries(listEl);return;}
     if(overallCategory==='topTracks'){

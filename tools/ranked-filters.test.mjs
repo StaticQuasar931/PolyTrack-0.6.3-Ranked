@@ -132,6 +132,123 @@ test('filter panel resolves typed usernames and groups content beneath the summa
   assert.match(status.textContent, /No loaded racer matches/);
 });
 
+test('autocomplete excludes selected IDs and identifies an only selected match', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const updates = [];
+  mountRankedFilterPanel({
+    root, storage: storage(),
+    rows: [
+      { userId: 'alice-id', name: 'Alice', rank: 1 },
+      { userId: 'alicia-id', name: 'Alicia', rank: 2 },
+      { userId: 'bob-id', name: 'Bob', rank: 3 }
+    ],
+    isComplete: () => true,
+    onChange: result => updates.push(result)
+  });
+  const input = findElement(root, node => node.name === 'whitelist');
+  const popup = findElement(root, node => node.className === 'ranked-filter-user-suggestions');
+  const selected = findElement(root, node => node.className === 'ranked-filter-selected-users');
+  assert.equal(selected.hidden, true);
+  assert.equal(findElement(root, node => node.name === 'whitelist').tagName, 'input');
+  const field = findElement(root, node => node.children.includes(input) && node.children.includes(selected));
+  assert(field.children.indexOf(input) < field.children.indexOf(selected));
+  input.value = 'alice-id, ali';
+  input.dispatch('input');
+  assert.equal(popup.hidden, false);
+  assert.deepEqual(popup.children.map(option => option.textContent), ['Alicia (alicia-id)']);
+  assert.match(selected.textContent, /Alice \(alice-id\)/);
+  assert.equal(selected.hidden, false);
+
+  input.value = 'alice-id, Alice';
+  input.dispatch('input');
+  assert.equal(popup.children.length, 1);
+  assert.equal(popup.children[0].disabled, true);
+  assert.match(popup.children[0].textContent, /Already selected/);
+  popup.children[0].dispatch('click');
+  assert.equal(input.value, 'alice-id, Alice');
+
+  input.value = 'alice-id, bob';
+  input.dispatch('input');
+  popup.children[0].dispatch('click');
+  assert.equal(input.value, 'alice-id, bob-id, ');
+  assert.match(selected.textContent, /Bob \(bob-id\)/);
+  findElement(root, node => node.className === 'ranked-filter-form').dispatch('submit');
+  assert.deepEqual(updates.at(-1).filter.whitelist, ['alice-id', 'bob-id']);
+});
+
+test('autocomplete limits actionable results after removing selected IDs', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  mountRankedFilterPanel({
+    root, storage: storage(),
+    rows: Array.from({ length: 12 }, (_, index) => ({ userId: `id-${index}`, name: `Racer ${index}`, rank: index + 1 })),
+    isComplete: () => true
+  });
+  const input = findElement(root, node => node.name === 'whitelist');
+  const popup = findElement(root, node => node.className === 'ranked-filter-user-suggestions');
+  input.value = `${Array.from({ length: 8 }, (_, index) => `id-${index}`).join(', ')}, Racer`;
+  input.dispatch('input');
+  assert.deepEqual(popup.children.map(option => option.textContent), [
+    'Racer 8 (id-8)', 'Racer 9 (id-9)', 'Racer 10 (id-10)', 'Racer 11 (id-11)'
+  ]);
+  assert(popup.children.every(option => !option.disabled));
+});
+
+test('autocomplete marks an initially selected user without a trailing comma', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  mountRankedFilterPanel({
+    root, storage: storage(),
+    rows: [{ userId: 'alice-id', name: 'Alice', rank: 1 }],
+    initialFilter: { whitelist: ['alice-id'] },
+    isComplete: () => true
+  });
+  const input = findElement(root, node => node.name === 'whitelist');
+  const popup = findElement(root, node => node.className === 'ranked-filter-user-suggestions');
+  input.dispatch('input');
+  assert.equal(popup.hidden, false);
+  assert.equal(popup.children[0].disabled, true);
+  assert.match(popup.children[0].textContent, /Already selected/);
+});
+
+test('autocomplete shows an exact selected match when other fuzzy matches are also selected', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  mountRankedFilterPanel({
+    root, storage: storage(),
+    rows: [
+      { userId: 'alice-id', name: 'Alice', rank: 1 },
+      { userId: 'alice-2', name: 'Alice Two', rank: 2 }
+    ],
+    initialFilter: { whitelist: ['alice-id', 'alice-2'] },
+    isComplete: () => true
+  });
+  const input = findElement(root, node => node.name === 'whitelist');
+  const popup = findElement(root, node => node.className === 'ranked-filter-user-suggestions');
+  input.value = 'alice-id, alice-2, Alice';
+  input.dispatch('input');
+  assert.equal(popup.children.length, 1);
+  assert.equal(popup.children[0].disabled, true);
+  assert.match(popup.children[0].textContent, /Alice \(alice-id\).*Already selected/);
+});
+
+test('selected-user summary stays visible when loaded rows change', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const panel = mountRankedFilterPanel({
+    root, storage: storage(),
+    rows: [{ userId: 'alice-id', name: 'Alice', rank: 1 }],
+    initialFilter: { whitelist: ['alice-id'] },
+    isComplete: () => true
+  });
+  const selected = findElement(root, node => node.className === 'ranked-filter-selected-users');
+  assert.match(selected.textContent, /Alice \(alice-id\)/);
+  panel.update([]);
+  assert.equal(selected.hidden, false);
+  assert.match(selected.textContent, /Selected \(1\): alice-id/);
+});
+
 test('filters can be paused and resumed without clearing the saved choices', () => {
   const document = mockDocument();
   const root = new MockElement('root', document);
