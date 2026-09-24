@@ -97,41 +97,25 @@
   display: none !important;
 }
 
-.track-selection-ui .tracks-container.no-group-containers > .sq-extra-tracks-entry {
-  width: 178px;
-  min-width: 178px;
-  height: 202px;
-  min-height: 202px;
-  margin: 8px;
-  padding: 0;
-  align-self: flex-start;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: space-between;
-  text-align: center;
-  color: #fff;
-  background: #17274e;
-  border: 2px solid #f7d375;
-  box-shadow: 0 0 0 2px #5f4d25, 0 5px 0 #0b1d3e;
-  overflow: hidden;
+.track-selection-ui .tracks-container .track.sq-extra-tracks-entry > .button > .thumbnail {
+  object-fit: cover;
+  image-rendering: auto;
 }
-.track-selection-ui .tracks-container.no-group-containers > .sq-extra-tracks-entry:hover {
-  background: #223a68;
-  border-color: #fff0b0;
+.track-selection-ui .sq-extra-tracks-entry .track-title {
+  box-shadow: inset 0 4px #f1c95c;
+  color: #fff4c5;
 }
-.sq-extra-entry-label {display:block;padding:8px 5px;background:#34416a;font-size:18px;line-height:1.2}
-.sq-extra-entry-image {display:block;width:100%;height:118px;object-fit:cover}
-.sq-extra-entry-count {display:block;padding:6px 4px;background:#28385f;color:#ffe9a1;font-size:16px;line-height:1.2}
+.track-selection-ui .sq-extra-tracks-entry .record {
+  box-shadow: inset 0 -4px #f1c95c;
+  color: #ffe7a1;
+}
+.track-selection-ui .sq-extra-tracks-entry > .button:hover .track-title,
+.track-selection-ui .sq-extra-tracks-entry > .button:focus-visible .track-title {
+  background: #66542c;
+}
+.track-selection-ui .sq-extra-tracks-entry > .button:hover .record,
+.track-selection-ui .sq-extra-tracks-entry > .button:focus-visible .record {
+  background: #544728;
+}
 .studio-close-bottom {background:#335f77!important;border:2px solid #98dbe8!important;color:#fff!important}
 .studio-close-bottom:hover {background:#487e98!important}
-
-@media (max-width: 600px) {
-  .track-selection-ui .tracks-container.no-group-containers > .sq-extra-tracks-entry {
-    width: 150px;
-    min-width: 150px;
-    height: 180px;
-    min-height: 180px;
-  }
-  .sq-extra-entry-image {height:98px}
-}

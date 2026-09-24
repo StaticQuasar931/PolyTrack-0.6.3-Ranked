@@ -239,15 +239,17 @@
     (await extraTracksUiPromise).open();
   }
   function ensureExtraTracksEntryContents(){
-    const selection=document.querySelector('.track-selection-ui');const field=selection?.querySelector('.tracks-container.no-group-containers');
-    if(!field||field.querySelector('.sq-extra-tracks-entry'))return;
-    const button=document.createElement('button');button.type='button';button.className='button sq-extra-tracks-entry';
-    const label=document.createElement('span');label.className='sq-extra-entry-label';label.textContent='Extra Tracks';
-    const image=document.createElement('img');image.className='sq-extra-entry-image';image.src='images/community_tracks.jpg';image.alt='';
-    const count=document.createElement('span');count.className='sq-extra-entry-count';count.textContent='Explore tracks';
-    button.append(label,image,count);
+    const selection=document.querySelector('.track-selection-ui');const wrapper=selection?.querySelector('.tracks-container.no-group-containers > .wrapper');
+    if(!wrapper||wrapper.querySelector('.sq-extra-tracks-entry'))return;
+    const card=document.createElement('div');card.className='track sq-extra-tracks-entry';
+    const button=document.createElement('button');button.type='button';button.className='button';
+    const title=document.createElement('div');title.className='track-title';
+    const label=document.createElement('p');label.textContent='Extra Tracks';title.append(label);
+    const image=document.createElement('img');image.className='thumbnail';image.src='images/community_tracks.jpg';image.alt='';
+    const count=document.createElement('div');count.className='record';count.textContent='Explore tracks';
+    button.append(title,image,count);card.append(button);
     button.addEventListener('click',()=>{button.disabled=true;void openExtraTracks().catch(error=>{count.textContent=error.message||'Extra Tracks unavailable';setTimeout(()=>{count.textContent='Explore tracks';},4000);}).finally(()=>{button.disabled=false;});});
-    field.prepend(button);
+    wrapper.prepend(card);
     void loadExtraTracksCatalog().then(entries=>{count.textContent=`${entries.length} tracks`;}).catch(()=>{});
   }
 
