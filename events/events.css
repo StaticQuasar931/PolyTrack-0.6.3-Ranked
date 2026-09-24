@@ -610,3 +610,43 @@ body.sq-event-active .track-info-ui{background:#1b2854}
  line-height:1.25!important;
  color:#a8edc4!important;
 }
+
+/* Final card details override older event-rail experiments above. */
+@media(min-width:1201px){
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
+  font-size:clamp(30px,2.4vw,46px)!important;
+ }
+}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+ display:block!important;
+ margin:0!important;
+ padding:0!important;
+ border:0!important;
+ object-fit:cover!important;
+}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best{
+ margin:5px 0 0!important;
+ min-height:27px;
+ color:#fff!important;
+}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best,
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{
+ font-size:clamp(19px,1.35vw,25px)!important;
+ line-height:1.15!important;
+}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .sq-kodub-reward{
+ display:inline-block;
+ align-self:flex-start;
+ margin-top:3px;
+ padding:5px 9px;
+ background:#245d54;
+ border-left:3px solid #90edb5;
+ color:#e5ffed!important;
+ font-size:clamp(15px,1.1vw,19px)!important;
+}
+#ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title,
+#ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p{
+ text-align:center!important;
+ justify-content:center!important;
+ width:100%!important;
+}

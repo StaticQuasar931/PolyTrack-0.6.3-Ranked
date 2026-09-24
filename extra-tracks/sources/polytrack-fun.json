@@ -1,0 +1,43 @@
+[
+  {
+    "id": "shrouded-oasis",
+    "name": "Shrouded Oasis",
+    "author": "Hiksi (route); BonnieBeans (decoration)",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/totw-shrouded-oasis/",
+    "tags": [
+      "track-of-the-week",
+      "editorial-pick"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/shrouded-oasis.track",
+    "trackId": "a925830af77f1eae9c5c48a08a6d903b866357d11c2d38cd7b18e1957d1668bd"
+  },
+  {
+    "id": "supermassive",
+    "name": "Supermassive",
+    "author": "Leahcim24",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/polytrack-track-of-the-week-supermassive-by-leahcim/",
+    "tags": [
+      "track-of-the-week",
+      "editorial-pick"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/supermassive.track",
+    "trackId": "eb5b5e51102541b6df2d58fd76b5da03e24031b2ca834f498c5c6adfe00d2225"
+  },
+  {
+    "id": "zephyr-grasslands",
+    "name": "Zephyr Grasslands",
+    "author": "Fael (@leaf.mon) and Horse (@giddyuphorse1234)",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/polytrack-custom-track-zephyr-grasslands-play-now/",
+    "tags": [
+      "editorial-pick"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/zephyr-grasslands.track",
+    "trackId": "c99488f39be6676fe92286a0a3c86089be4b9141ccc73f2c4247acead454011a"
+  }
+]

@@ -131,14 +131,14 @@ function integration(eventChecks,normalCount=16) {
 test('drain reuses one authenticated pinned connection, rereads queue, and borrows idle event slots',async()=>{
   const f=integration(0);const result=await runVerifier(f.options);
   assert.equal(f.pins,1);assert.equal(f.connections,1);assert.equal(result.processed,64);
-  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','normal:16','publish']).flat());
+  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','query','normal:16','publish']).flat());
   assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT'in f.options.env,false);
 });
 
 test('sustained events get first chance and four reserved simulations on every round',async()=>{
   const f=integration(4);const result=await runVerifier(f.options);
   assert.equal(result.processed,48);assert.equal(result.eventChecked,16);
-  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','normal:12','publish']).flat());
+  assert.deepEqual(f.order,Array.from({length:4},()=>['events','query','query','normal:12','publish']).flat());
   assert.equal(result.processed+result.eventChecked,64);
 });
 

@@ -16,7 +16,7 @@ export function plannerDocumentBytes(document) {
   return 1024 + size(document);
 }
 
-export async function packPlannerResults(entries, snapshot, {boardCount = 0, boardLimit = 100} = {}) {
+export async function packPlannerResults(entries, snapshot, {boardCount = 0, boardLimit = 100, boardLimitReached = boardCount >= boardLimit} = {}) {
   const metadata = {
     resultBundleVersion: PLANNER_BUNDLE_VERSION,
     resultBundleEncoding: 'gzip-base64-json-v1',
@@ -24,7 +24,7 @@ export async function packPlannerResults(entries, snapshot, {boardCount = 0, boa
     resultBundleStatus: 'invalid_results',
     resultBoardCount: boardCount,
     resultBoardLimit: boardLimit,
-    resultBoardLimitReached: boardCount >= boardLimit,
+    resultBoardLimitReached: boardLimitReached,
     resultCoverage: 'snapshot_boards'
   };
   if (!Array.isArray(entries) || entries.length > 200) return metadata;

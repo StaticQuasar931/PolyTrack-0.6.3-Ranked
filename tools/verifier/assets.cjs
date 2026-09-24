@@ -4,13 +4,16 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const { LIMITS, sha256 } = require('./replay.cjs');
+const { _internals: { preflightTrackCode } } = require('./kodub-track.cjs');
 
 const HOOK = '5220:(e,t,n)=>{"use strict";';
 const PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body><canvas id="screen"></canvas><div id="ui"></div><div id="transition-layer"></div><script src="/main.bundle.js"></script></body></html>';
 const allowed = name => /^(?:\d+|main|simulation_worker)\.bundle\.js$/.test(name)
   || name === 'polytrack_physics.wasm'
   || /^forced_square\.(?:json|ttf|woff2?)$/.test(name)
+  || /^extra-tracks\/track-data\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.track$/.test(name)
   || /^(?:models|images|audio|tracks|lib)\/[A-Za-z0-9_./ -]+\.(?:glb|png|jpg|jpeg|svg|webp|ogg|mp3|track|js|wasm)$/.test(name);
+const isTrack = name => name.startsWith('tracks/') || name.startsWith('extra-tracks/track-data/');
 
 function canonicalBytes(name, raw) {
   if (!/\.(?:js|json|svg|track)$/.test(name)) return raw;
@@ -24,7 +27,7 @@ function snapshot(root) {
     if (depth > 8) throw Error('asset_directory_limit');
     for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
       const name = relative ? relative + '/' + entry.name : entry.name;
-      if (entry.isDirectory() && (relative || /^(models|images|audio|tracks|lib)$/.test(name))) walk(name, depth + 1);
+      if (entry.isDirectory() && (relative || /^(models|images|audio|tracks|lib|extra-tracks)$/.test(name))) walk(name, depth + 1);
       else if (allowed(name)) {
         if (!entry.isFile() || entry.isSymbolicLink()) throw Error('non_regular_asset');
         entries.push(name);
@@ -43,14 +46,15 @@ function snapshot(root) {
     if (stat.size > LIMITS.assetBytes || total > LIMITS.snapshotBytes) throw Error('asset_size_limit');
     const bytes = canonicalBytes(name, fs.readFileSync(absolute));
     if (bytes.length > LIMITS.assetBytes) throw Error('asset_size_limit');
+    if (name.startsWith('extra-tracks/track-data/')) preflightTrackCode(bytes.toString('utf8').trim());
     files.set(name, { bytes, hash: sha256(bytes) });
   }
   for (const required of ['main.bundle.js', 'simulation_worker.bundle.js', 'polytrack_physics.wasm', 'lib/polytrack_physics.js', 'models/car.glb', 'models/road.glb']) {
     if (!files.has(required)) throw Error('missing_engine_asset');
   }
-  const manifest = Object.fromEntries([...files].filter(([name]) => !name.startsWith('tracks/')).map(([name, file]) => [name, file.hash]).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+  const manifest = Object.fromEntries([...files].filter(([name]) => !isTrack(name)).map(([name, file]) => [name, file.hash]).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
   const engineFingerprint = sha256(JSON.stringify(manifest));
-  const tracks = Object.fromEntries([...files].filter(([name]) => name.startsWith('tracks/')).map(([name, file]) => [name, file.hash]));
+  const tracks = Object.fromEntries([...files].filter(([name]) => isTrack(name)).map(([name, file]) => [name, file.hash]));
   const original = files.get('main.bundle.js').bytes.toString('utf8');
   if (original.split(HOOK).length !== 2) throw Error('module_5220_hook_missing_or_ambiguous');
   const hooked = original.replace(HOOK, HOOK + 'globalThis.__vrRequire=n;');

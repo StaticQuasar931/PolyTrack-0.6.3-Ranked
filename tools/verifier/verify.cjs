@@ -194,7 +194,7 @@ async function initialize(session, engine, origin, trustedTracks = []) {
   // Explicit trusted tracks precede static artifacts so a matching native ID
   // remains bound to the server-captured event bytes and expected hash.
   const tracks = [...trustedTracks, ...[...engine.files]
-    .filter(([name, file]) => name.startsWith('tracks/') && name.endsWith('.track') && file.bytes.length <= LIMITS.trackBytes)
+    .filter(([name, file]) => (name.startsWith('tracks/') || name.startsWith('extra-tracks/track-data/')) && name.endsWith('.track') && file.bytes.length <= LIMITS.trackBytes)
     .map(([name, file]) => ({ name, hash: file.hash, text: file.bytes.toString('utf8').trim(), trusted: false }))];
   const catalog = await page.evaluate(({ tracks }) => {
     const Track = __vrRequire(9117).A;

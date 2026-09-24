@@ -49,6 +49,7 @@ class MockElement {
   dispatch(name, event = {}) {
     for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, ...event });
   }
+  click() { this.dispatch('click'); }
   focus() {}
   get options() { return this.children; }
   get elements() {
@@ -117,6 +118,7 @@ test('filter panel resolves typed usernames and groups content beneath the summa
   const input = findElement(content, node => node.name === 'whitelist');
   input.value = 'Alice Smith';
   const form = findElement(content, node => node.className === 'ranked-filter-form');
+  assert.equal(findElement(form, node => node.name === 'category'), null);
   form.dispatch('submit');
   assert.deepEqual(updates.at(-1).filter.whitelist, ['alice-id']);
   assert.equal(panel.getFilter().whitelist[0], 'alice-id');
@@ -156,8 +158,8 @@ test('autocomplete excludes selected IDs and identifies an only selected match',
   input.value = 'alice-id, ali';
   input.dispatch('input');
   assert.equal(popup.hidden, false);
-  assert.deepEqual(popup.children.map(option => option.textContent), ['Alicia (alicia-id)']);
-  assert.match(selected.textContent, /Alice \(alice-id\)/);
+  assert.deepEqual(popup.children.map(option => option.textContent), ['Alicia']);
+  assert.equal(selected.textContent, 'Selected (1): Alice');
   assert.equal(selected.hidden, false);
 
   input.value = 'alice-id, Alice';
@@ -172,7 +174,8 @@ test('autocomplete excludes selected IDs and identifies an only selected match',
   input.dispatch('input');
   popup.children[0].dispatch('click');
   assert.equal(input.value, 'alice-id, bob-id, ');
-  assert.match(selected.textContent, /Bob \(bob-id\)/);
+  assert.match(selected.textContent, /Bob/);
+  assert.doesNotMatch(selected.textContent, /bob-id/);
   findElement(root, node => node.className === 'ranked-filter-form').dispatch('submit');
   assert.deepEqual(updates.at(-1).filter.whitelist, ['alice-id', 'bob-id']);
 });
@@ -190,7 +193,7 @@ test('autocomplete limits actionable results after removing selected IDs', () =>
   input.value = `${Array.from({ length: 8 }, (_, index) => `id-${index}`).join(', ')}, Racer`;
   input.dispatch('input');
   assert.deepEqual(popup.children.map(option => option.textContent), [
-    'Racer 8 (id-8)', 'Racer 9 (id-9)', 'Racer 10 (id-10)', 'Racer 11 (id-11)'
+    'Racer 8', 'Racer 9', 'Racer 10', 'Racer 11'
   ]);
   assert(popup.children.every(option => !option.disabled));
 });
@@ -230,7 +233,7 @@ test('autocomplete shows an exact selected match when other fuzzy matches are al
   input.dispatch('input');
   assert.equal(popup.children.length, 1);
   assert.equal(popup.children[0].disabled, true);
-  assert.match(popup.children[0].textContent, /Alice \(alice-id\).*Already selected/);
+  assert.match(popup.children[0].textContent, /Alice - Already selected/);
 });
 
 test('selected-user summary stays visible when loaded rows change', () => {
@@ -243,10 +246,10 @@ test('selected-user summary stays visible when loaded rows change', () => {
     isComplete: () => true
   });
   const selected = findElement(root, node => node.className === 'ranked-filter-selected-users');
-  assert.match(selected.textContent, /Alice \(alice-id\)/);
+  assert.equal(selected.textContent, 'Selected (1): Alice');
   panel.update([]);
   assert.equal(selected.hidden, false);
-  assert.match(selected.textContent, /Selected \(1\): alice-id/);
+  assert.equal(selected.textContent, 'Selected (1): Unloaded racer');
 });
 
 test('filters can be paused and resumed without clearing the saved choices', () => {
@@ -264,13 +267,32 @@ test('filters can be paused and resumed without clearing the saved choices', () 
   });
   const toggle = findElement(root, node => node.className?.includes('ranked-filter-toggle'));
   assert.equal(updates.at(-1).rows.length, 1);
-  toggle.dispatch('click');
+  panel.togglePaused();
   assert.equal(updates.at(-1).rows.length, 2);
   assert.deepEqual(panel.getFilter().whitelist, ['alice']);
   assert.equal(panel.element.dataset.active, 'false');
+  assert.equal(toggle.textContent, 'Resume filters');
+  panel.setPaused(false);
+  assert.equal(updates.at(-1).rows.length, 1);
+  panel.setPaused(true);
+  assert.equal(updates.at(-1).rows.length, 2);
   toggle.dispatch('click');
   assert.equal(updates.at(-1).rows.length, 1);
   assert.equal(panel.element.dataset.active, 'true');
+});
+
+test('right-clicking the filter summary pauses and resumes without clearing choices', () => {
+  const document = mockDocument();
+  const root = new MockElement('root', document);
+  const panel = mountRankedFilterPanel({root, storage: storage(), rows: [{userId: 'alice', name: 'Alice', rank: 1}], initialFilter: {whitelist: ['alice']}, isComplete: () => true});
+  const summary = findElement(root, node => node.tagName === 'summary');
+  let prevented = 0;
+  summary.dispatch('contextmenu', {preventDefault() { prevented++; }});
+  assert.equal(panel.element.dataset.active, 'false');
+  assert.deepEqual(panel.getFilter().whitelist, ['alice']);
+  summary.dispatch('contextmenu', {preventDefault() { prevented++; }});
+  assert.equal(panel.element.dataset.active, 'true');
+  assert.equal(prevented, 2);
 });
 
 test('normalization bounds values, public IDs and categories', () => {

@@ -1,7 +1,9 @@
 import { verificationKey, verifiedVerdict, VERIFIER_VERSION, VERIFIER_ENGINE_DIGEST } from '../src/verification.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts } from '../src/index.js';
+import {readFileSync} from 'node:fs';
+import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts } from '../src/index.js';
+import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
 const COMMUNITY_TRACK = '5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e';
@@ -54,6 +56,21 @@ test('track types use the exact registry instead of treating every hash as commu
   assert.equal(custom.type, 'custom');
   assert.ok(official.finalWeight > community.finalWeight);
   assert.ok(community.finalWeight > custom.finalWeight);
+});
+
+test('every catalog track has a pinned low-RP native ID', () => {
+  const catalog=JSON.parse(readFileSync(new URL('../../../extra-tracks/catalog.json',import.meta.url),'utf8'));
+  const ids=catalog.map(row=>row.trackId);
+  assert.equal(new Set(ids).size,catalog.length);
+  assert.deepEqual(new Set(ids),EXTRA_TRACK_IDS);
+  for(const id of ids){
+    const parts=trackWeightParts(id,500,1.15);
+    assert.equal(parts.type,'extra');
+    assert.equal(parts.base,0.06);
+    assert.equal(parts.finalWeight,0.06);
+    assert.equal(trackWeightParts(id,1).finalWeight,0);
+  }
+  assert.equal(trackWeightParts(CUSTOM_TRACK,500,1.15).base,0.6);
 });
 
 test('Rolling Hills is permanent-weighted in normal Overall RP without changing community scoring', () => {
@@ -486,6 +503,70 @@ function unwire(value){
  if(value&&'nullValue'in value)return null;
  return value?.stringValue;
 }
+test('Extra queue backfill moves legacy slots atomically in bounded batches',async()=>{
+  const ids=Array.from({length:5},(_,i)=>String(i+1).repeat(64));
+  const state=new Map(ids.map(id=>['0.6.2_s1_verification/'+id,{trackId:id,slots:{racer:{key:'original-'+id,status:'waiting',attempts:2}}}]));
+  const commits=[];
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){
+      const writes=JSON.parse(init.body).writes;commits.push(writes);
+      for(const write of writes){
+        const name=write.delete||write.update.name;
+        const key=name.slice(name.indexOf('/documents/')+'/documents/'.length);
+        if(write.delete)state.delete(key);
+        else state.set(key,unwire({mapValue:{fields:write.update.fields}}));
+      }
+      return {};
+    }
+    const key=path.slice(1);
+    const value=state.get(key);
+    return value?{fields:wire(value).mapValue.fields,updateTime:'2026-09-09T00:00:00Z'}:null;
+  }};
+  assert.deepEqual(await migrateExtraVerificationQueues(env,ids),{moved:4,processed:4,complete:false});
+  assert.deepEqual(await migrateExtraVerificationQueues(env,ids),{moved:1,processed:5,complete:true});
+  assert.deepEqual(await migrateExtraVerificationQueues(env,ids),{moved:0,processed:5,complete:true});
+  assert.equal(commits.length,2);
+  assert.equal(commits[0].filter(write=>write.delete).length,4);
+  for(const id of ids){
+    assert.equal(state.has('0.6.2_s1_verification/'+id),false);
+    assert.equal(state.get('0.6.2_s1_extra_verification/'+id).slots.racer.attempts,2);
+  }
+});
+
+test('default backfill scans the complete registered catalog before marking migration complete',async()=>{
+  const state=new Map(),commits=[];
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){
+      const writes=JSON.parse(init.body).writes;commits.push(writes);
+      for(const write of writes){
+        const key=write.update.name.split('/documents/')[1];
+        state.set(key,unwire({mapValue:{fields:write.update.fields}}));
+      }
+      return {};
+    }
+    const value=state.get(path.slice(1));
+    return value?{fields:wire(value).mapValue.fields,updateTime:'2026-09-09T00:00:00Z'}:null;
+  }};
+  let result;
+  do { result=await migrateExtraVerificationQueues(env); } while(!result.complete);
+  assert.equal(result.processed,EXTRA_TRACK_IDS.size);
+  assert.equal(commits.length,Math.ceil(EXTRA_TRACK_IDS.size/4));
+  const marker=state.get('0.6.2_s1_worker_jobs/extra_verification_queue_migration_v1');
+  assert.equal(marker.complete,true);
+  assert.equal(marker.registry,[...EXTRA_TRACK_IDS].sort().join(','));
+});
+
+test('Extra queue backfill refuses overlapping slots without deleting legacy work',async()=>{
+  const id='a'.repeat(64),writes=[];
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){writes.push(JSON.parse(init.body));return {};}
+    if(path.includes('extra_verification_queue_migration_v1'))return null;
+    if(path.endsWith('/'+id))return {fields:wire({trackId:id,slots:{racer:{key:'proof',status:'verified'}}}).mapValue.fields,updateTime:'t1'};
+    return null;
+  }};
+  await assert.rejects(migrateExtraVerificationQueues(env,[id]),/EXTRA_QUEUE_SLOT_CONFLICT/);
+  assert.equal(writes.length,0);
+});
 test('200-racer entitlement initialization uses one atomic batch within the Free request budget',async()=>{
  let requests=0,commit;
  const boards=[TRACK,COMMUNITY_TRACK,'7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0'].map(trackId=>({trackId,entries:Array.from({length:200},(_,i)=>({accountId:'racer-'+i,rank:i+1,timeMs:20000+i,weight:3,integrityVerified:true,runVerified:true}))}));
@@ -743,9 +824,12 @@ function overallFixture(boards) {
     if (p === ':runQuery') {
       const q = JSON.parse(init.body).structuredQuery;
       assert.equal(q.from[0].collectionId, '0.6.2_s1_leaderboards_track');
-      assert.equal(q.limit, 100);
-      return boards.slice(0,100).map(board => ({document: {name: 'projects/test/databases/(default)/documents/0.6.2_s1_leaderboards_track/'+board.trackId,
-        fields: wire(board).mapValue.fields}}));
+      assert.ok(q.limit===100||q.limit===1);
+      assert.equal(q.orderBy[0].field.fieldPath,'__name__');
+      const base='projects/test/databases/(default)/documents/0.6.2_s1_leaderboards_track/';
+      return boards.map(board=>({document:{name:base+board.trackId,fields:wire(board).mapValue.fields}}))
+        .filter(item=>!q.startAt||item.document.name>q.startAt.values[0].referenceValue)
+        .sort((a,b)=>a.document.name.localeCompare(b.document.name)).slice(0,q.limit);
     }
     if (p === ':commit') {
       commits.push(JSON.parse(init.body).writes);
@@ -1054,25 +1138,40 @@ test('cold recovery cron fits the fifty-subrequest budget with four bootstrap an
 });
 
 
-test('overall bundle explicitly reports the existing 100-board query boundary without trimming its fetched baseline',async()=>{
+test('overall pages beyond 100 boards without truncating normal RP or planner results',async()=>{
   const boards=Array.from({length:101},(_,i)=>({trackId:String(i).padStart(64,'0'),entries:
-    ['racer','other'].map((accountId,r)=>({accountId,name:accountId,timeMs:20000+r,pbAt:1780000000000,integrityVerified:true,runVerified:true}))}));
+    ['racer','other'].map((accountId,r)=>({accountId,name:accountId,timeMs:20000+r,pbAt:1780000000000,integrityVerified:true,runVerified:true})),complete:true}));
   const f=overallFixture(boards);
   await rebuildOverall(f.env,true);
   const saved=f.snapshot();
-  assert.equal(saved.resultBoardCount.integerValue,'100');
-  assert.equal(saved.resultBoardLimit.integerValue,'100');
-  assert.equal(saved.resultBoardLimitReached.booleanValue,true);
-  assert.equal(saved.complete.booleanValue,false);
-  assert.equal(saved.totalEntriesExact.booleanValue,false);
+  assert.equal(saved.resultBoardCount.integerValue,'101');
+  assert.equal(saved.resultBoardLimit.integerValue,'500');
+  assert.equal(saved.resultBoardLimitReached.booleanValue,false);
+  assert.equal(saved.complete.booleanValue,true);
+  assert.equal(saved.totalEntriesExact.booleanValue,true);
   assert.equal(saved.resultCoverage.stringValue,'snapshot_boards');
   const meta=unwire({mapValue:{fields:f.documents.get('/0.6.2_s1_release_meta/current').fields}});
-  assert.equal(meta.dirty,true);
-  assert.equal(meta.overallIncompleteReason,'board-query-limit');
-  assert.equal(meta.overallRetryPending,true);
+  assert.equal(meta.dirty,false);
+  assert.equal(meta.overallIncompleteReason,'');
   const decoded=await unpackPlanner({resultBundle:saved.resultBundle.stringValue});
-  assert.equal(decoded.resultTracks.length,100);
-  assert.ok(decoded.entries.every(row=>JSON.parse(row.resultData).length===100));
+  assert.equal(decoded.resultTracks.length,101);
+  assert.ok(decoded.entries.every(row=>JSON.parse(row.resultData).length===101));
+  assert.equal(f.calls.filter(p=>p===':runQuery').length,2);
+});
+
+test('overall distinguishes an exact 500-board set from a capped 501-board set',async()=>{
+  const boards=Array.from({length:501},(_,i)=>({trackId:String(i).padStart(64,'0'),complete:true,entries:[]}));
+  for(const [count,reached] of [[500,false],[501,true]]){
+    const f=overallFixture(boards.slice(0,count));
+    await rebuildOverall(f.env,true);
+    const saved=unwire({mapValue:{fields:f.snapshot()}});
+    assert.equal(saved.resultBoardCount,500);
+    assert.equal(saved.resultBoardLimit,500);
+    assert.equal(saved.resultBoardLimitReached,reached);
+    assert.equal(saved.complete,!reached);
+    assert.equal(saved.totalEntriesExact,!reached);
+    assert.equal(f.calls.filter(p=>p===':runQuery').length,6);
+  }
 });
 
 

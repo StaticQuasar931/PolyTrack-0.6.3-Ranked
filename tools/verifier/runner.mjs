@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import {queueState, reconciledSlot, completedSlot} from './queue.mjs';
-import {VERIFICATION_COLLECTION, verificationKey, legacyTimingFrames} from '../../workers/ranked/src/verification.js';
+import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationKey, legacyTimingFrames} from '../../workers/ranked/src/verification.js';
 
 export const QUEUE_CANDIDATE_LIMIT = 8;
 export const TRACK_AGING_MS = 3600000;
@@ -53,17 +53,19 @@ export function isConflict(error) {
   return ['ABORTED', 'FAILED_PRECONDITION', 'ALREADY_EXISTS'].includes(error.code) || [409, 412].includes(Number(error.status)) || /(?:^|\s)(409|412)(?:$|\s)/.test(String(error.message));
 }
 
-export async function selectJobs(db, docs, now = Date.now()) {
+export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_SELECTION_LIMIT, lookupLimit = NORMAL_SELECTION_LIMIT, perTrackLimit = PER_TRACK_SELECTION_LIMIT} = {}) {
   const jobs = [];
   let canonicalAttempts = 0, selectionConflicts = 0;
   for (const doc of docs) {
-    if (jobs.length >= NORMAL_SELECTION_LIMIT || canonicalAttempts >= NORMAL_SELECTION_LIMIT) break;
+    if (jobs.length >= jobLimit || canonicalAttempts >= lookupLimit) break;
+    const queueCollection = doc.queueCollection || verificationCollectionForTrack(doc.data.trackId);
+    if (![VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION].includes(queueCollection)) throw Error('Invalid verification queue collection');
     const slots = {...doc.data.slots};
     const selected = [];
     let changed = false, attempts = 0;
     for (const slot of dueSlots(slots, now)) {
-      if (selected.length >= PER_TRACK_SELECTION_LIMIT || attempts >= PER_TRACK_SELECTION_LIMIT ||
-          canonicalAttempts >= NORMAL_SELECTION_LIMIT || jobs.length + selected.length >= NORMAL_SELECTION_LIMIT) break;
+      if (selected.length >= perTrackLimit || attempts >= perTrackLimit ||
+          canonicalAttempts >= lookupLimit || jobs.length + selected.length >= jobLimit) break;
       attempts++; canonicalAttempts++;
       const canonical = await db.get('0.6.2_race_results', slot.resultId);
       const updated = reconciledSlot(slot, canonical?.data);
@@ -71,13 +73,13 @@ export async function selectJobs(db, docs, now = Date.now()) {
       if (!canonical || updated.reason === 'canonical_missing') continue;
       const frames = legacyTimingFrames(canonical.data);
       // This marker is generated here, never trusted from stored canonical fields.
-      selected.push({...canonical.data, resultId: slot.resultId, queueKey: updated.key,
+      selected.push({...canonical.data, resultId: slot.resultId, queueKey: updated.key, queueCollection,
         timeMs: frames ?? canonical.data.timeMs,
         correctionCandidate: frames === null ? null : {frames, originalTimeMs: canonical.data.timeMs}});
     }
     if (changed || selected.length === 0) {
       try {
-        await db.call(':commit', {writes: [db.write(VERIFICATION_COLLECTION, doc.data.trackId,
+        await db.call(':commit', {writes: [db.write(queueCollection, doc.data.trackId,
           {...doc.data, ...queueState(slots, now)}, doc)]});
       } catch (error) {
         if (!isConflict(error)) throw error;
@@ -95,8 +97,10 @@ export async function publishResults(db, jobs, results) {
   for (const result of results) {
     const job = jobs.find(j => j.resultId === result.resultId);
     if (!job) throw Error('Verifier returned unknown job');
+    const queueCollection = job.queueCollection || verificationCollectionForTrack(job.trackId);
+    if (![VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION].includes(queueCollection)) throw Error('Invalid verification queue collection');
     for (let attempt = 0; attempt < 3; attempt++) {
-      const queue = await db.get(VERIFICATION_COLLECTION, job.trackId);
+      const queue = await db.get(queueCollection, job.trackId);
       const current = await db.get('0.6.2_race_results', job.resultId);
       if (!queue || !current || verificationKey(current.data) !== job.queueKey ||
           queue.data.slots?.[job.accountId]?.key !== job.queueKey) {totals.superseded++; break;}
@@ -125,7 +129,7 @@ export async function publishResults(db, jobs, results) {
       const auditId = crypto.createHash('sha256').update(publishedKey).digest('hex');
       const audit = await db.get('0.6.2_s1_verification_audit', auditId);
       const writes = [
-        db.write(VERIFICATION_COLLECTION, job.trackId, {...queue.data, ...queueState(slots)}, queue),
+        db.write(queueCollection, job.trackId, {...queue.data, ...queueState(slots)}, queue),
         db.write('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2', {...state?.data,
           pendingTrackIds: [...new Set([...(state?.data?.pendingTrackIds || []), job.trackId])]}, state),
         db.write('0.6.2_s1_verification_audit', auditId, {resultId: job.resultId,

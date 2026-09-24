@@ -33,6 +33,9 @@
 
   const eventsModuleUrl=new URL('./events/client.mjs',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
+  const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
+  const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
+  let extraTracksCatalogPromise=null,extraTracksUiPromise=null,extraTracksUi=null;
   let eventUi=null,eventUiPromise=null,eventQueueChecked=false,eventModuleRetryAt=0;
   let pendingEventLaunch=null;
   let nativeWeeklySelection=null,kodubAdapter=null;
@@ -134,6 +137,7 @@
     return withoutUiFeedback(ensureEventEntryContents);
   }
   function ensureEventEntryContents(){
+    ensureExtraTracksEntryContents();
     if(!eventQueueChecked){eventQueueChecked=true;try{if(JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').length)void ensureEventUi().then(ui=>ui.flush()).catch(()=>{setTimeout(()=>{eventQueueChecked=false;},60000);});}catch{}}
     const nav=document.querySelector('.track-selection-ui .community-track-versions');
     const group=eventUi?.featuredSection?.();
@@ -141,6 +145,91 @@
     const ranked=document.getElementById('overallLeaderboardPanel');
     if((nav&&isElementVisible(nav)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
     eventUi?.tick();
+  }
+
+  function extraTrackIds(){
+    try{const value=JSON.parse(localStorage.getItem(extraTrackIdsKey)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}
+    catch{return {};}
+  }
+  function extraTrackPersonalBest(entry){
+    const id=entry.trackId||extraTrackIds()[entry.id];if(!/^[a-f0-9]{64}$/.test(id||''))return null;
+    const accountId=activeRankedAccountId();
+    const rows=[...(readTrackSnapshotCache(id)?.entries||[]),...readLocalRaceRows().filter(row=>row.trackId===id)];
+    const own=rows.filter(row=>cleanUserId(row.accountId||row.userId||'')===accountId&&canonicalRaceTimeMs(row)>0)
+      .sort((a,b)=>canonicalRaceTimeMs(a)-canonicalRaceTimeMs(b))[0];
+    return own?{timeMs:canonicalRaceTimeMs(own),place:Number(own.rank||own.position||0)||null}:null;
+  }
+  async function loadExtraTracksCatalog(){
+    if(extraTracksCatalogPromise)return extraTracksCatalogPromise;
+    extraTracksCatalogPromise=fetch(new URL('catalog.json',extraTracksBaseUrl),{headers:{Accept:'application/json'}})
+      .then(response=>{if(!response.ok)throw Error('Extra Tracks catalog is unavailable.');return response.json();})
+      .then(data=>{
+        if(!Array.isArray(data)||data.length>5000)throw Error('Extra Tracks catalog is invalid.');
+        const ids=new Set();
+        return data.filter(entry=>{
+          if(!entry||typeof entry.id!=='string'||!/^[a-z0-9-]{1,80}$/.test(entry.id)||ids.has(entry.id)||!/^[a-f0-9]{64}$/.test(entry.trackId||'')||typeof entry.name!=='string'||!entry.name.trim()||typeof entry.trackPath!=='string'||!/^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath))return false;
+          ids.add(entry.id);return true;
+        });
+      }).catch(error=>{extraTracksCatalogPromise=null;throw error;});
+    return extraTracksCatalogPromise;
+  }
+  async function importExtraTrack(entry){
+    if(!entry||!/^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath||''))throw Error('Track file is unavailable.');
+    const response=await fetch(new URL('../'+entry.trackPath,extraTracksBaseUrl));
+    if(!response.ok||Number(response.headers.get('content-length'))>524288)throw Error('Track file is unavailable or too large.');
+    const code=(await response.text()).trim();
+    if(code.length>524288||!/^PolyTrack[0-9A-Za-z+/_=-]+$/.test(code))throw Error('Track code is invalid.');
+    const decoded=__pt062WebpackRequire()?.(9117)?.A?.fromExportString(code);
+    const trackId=String(decoded?.trackData?.getId?.()||'');
+    if(!/^[a-f0-9]{64}$/.test(trackId))throw Error('Track could not be read by this game version.');
+    if(trackId!==entry.trackId)throw Error('Track code no longer matches the reviewed catalog entry.');
+    const nativeName=String(decoded.trackMetadata?.name||'').trim();
+    const known=extraTrackIds();
+    const customTab=document.querySelector('.track-selection-ui > .image-button-container > button:nth-child(3)');
+    if(customTab&&!customTab.classList.contains('selected'))customTab.click();
+    const matchingCard=[...document.querySelectorAll('.track-selection-ui .tracks-container.no-group-containers .track-title p')]
+      .find(node=>node.textContent.trim()===nativeName)?.closest('button');
+    if(matchingCard&&known[entry.id]!==trackId)throw Error('A different custom track has this name. Rename it before importing.');
+    const saved=known[entry.id]===trackId&&matchingCard;
+    if(saved){saved.click();extraTracksUi?.close();return;}
+    const importButton=[...document.querySelectorAll('.track-selection-ui > .bar > button')].find(button=>button.querySelector('img[src*="import.svg"]'));
+    if(!importButton)throw Error('Open Custom Tracks, then try again.');
+    importButton.click();
+    let dialog=null;
+    for(let attempt=0;attempt<30;attempt++){
+      dialog=document.querySelector('.track-export-ui:not(.hidden)');
+      if(dialog)break;
+      await new Promise(resolve=>setTimeout(resolve,50));
+    }
+    const field=dialog?.querySelector('textarea:not([readonly])');
+    const confirm=[...dialog?.querySelectorAll('button')||[]].find(button=>button.querySelector('img[src*="import.svg"]'));
+    if(!field||!confirm)throw Error('The native importer did not open.');
+    field.value=code;field.dispatchEvent(new Event('input',{bubbles:true}));confirm.click();
+    for(let attempt=0;attempt<60&&dialog?.isConnected;attempt++)await new Promise(resolve=>setTimeout(resolve,50));
+    if(dialog?.isConnected)throw Error('The game did not confirm this track import.');
+    known[entry.id]=trackId;
+    try{localStorage.setItem(extraTrackIdsKey,JSON.stringify(known));}catch{}
+    extraTracksUi?.close();
+  }
+  async function openExtraTracks(){
+    if(extraTracksUi){extraTracksUi.open();return;}
+    if(!extraTracksUiPromise)extraTracksUiPromise=Promise.all([
+      loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs',extraTracksBaseUrl).href)
+    ]).then(([entries,module])=>{
+      extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest});
+      if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css',extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
+      return extraTracksUi;
+    }).finally(()=>{extraTracksUiPromise=null;});
+    (await extraTracksUiPromise).open();
+  }
+  function ensureExtraTracksEntryContents(){
+    const selection=document.querySelector('.track-selection-ui');const bar=selection?.querySelector(':scope > .bar');
+    if(!bar||bar.querySelector('.sq-extra-tracks-entry'))return;
+    const button=document.createElement('button');button.type='button';button.className='button sq-extra-tracks-entry';button.textContent='Extra Tracks';
+    button.addEventListener('click',()=>{button.disabled=true;void openExtraTracks().catch(error=>{button.textContent=error.message||'Extra Tracks unavailable';setTimeout(()=>{button.textContent='Extra Tracks';},4000);}).finally(()=>{button.disabled=false;});});
+    const nativeImport=[...bar.querySelectorAll(':scope > button')].find(node=>node.querySelector('img[src*="import.svg"]'));
+    bar.insertBefore(button,nativeImport||null);
+    void loadExtraTracksCatalog().then(entries=>{button.textContent=`${entries.length} Extra Tracks`;}).catch(()=>{});
   }
 
   function __pt062WebpackRequire(){
@@ -694,18 +783,67 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return {track,result,kind,rank,field:rows.length,age:updatedAt?preciseAgeLabel(updatedAt):'not loaded'};
   }
   const RANK_MODEL='participation-v8-s1';
+  const PINNED_EXTRA_TRACK_IDS=new Set([
+    'a925830af77f1eae9c5c48a08a6d903b866357d11c2d38cd7b18e1957d1668bd',
+    'eb5b5e51102541b6df2d58fd76b5da03e24031b2ca834f498c5c6adfe00d2225',
+    'c99488f39be6676fe92286a0a3c86089be4b9141ccc73f2c4247acead454011a',
+    'c2425afd06b8e73a0b3883b18ccf32a46cc4bc8f832635cb5eb8f8887512f23a',
+    '728b5f5807246b2ffdff4d1c0cad0417940bc8cd9f2b4556d5b3e3d6cd39dc67',
+    '6618350794314083378f113c2231c1d6575ff8ea98eadcf46e7a9f867aef8e1e',
+    '0397a53cbacf1a20754421a060ebe5d1217b6815efe5faeb9703d32b4ce41ff1',
+    '9618a8511550443bcce222605903d152fdb9d05d98dd2ca05f3115bb04b95e92',
+    '82c7f45e535228f32498853772093d611ef99cc7b2d9dc4c143ca2eefbe6d9b2',
+    '851f4520ce6be053f7445ca0cf884be724d26165d3abc64d41762a9d3fab5f9a',
+    '4c2d724b3ae51c8c28f5303de18c3b8f2fb9f570bb68e34f2968bb29c50c3044',
+    'b3d801bd8d1c6481595b985c6bd7ce56ed152f1f4fc611656a9bda22692e59a4',
+    'af9ae5d7548a42a1834568ec576453a07f10ac1d7ba5e7823ea04717c8ba8290',
+    '94442033cbebf0394b4857a76c7fb463fbd6b356b0bdea9bca439d6ecf791feb',
+    '09c9d0989eb1eb344a5a2298277b1de1094881ff853e59e28d611ede3b0aa938',
+    '2571d9e912e9f4595e1c1e6f96a420d0cf78406950f26be06fb20c4cedd21cc1',
+    '26c993731d150bd266ddc5d889f450ba5154ae273b7a8211870b75f5c536ca27',
+    'f67d93f9f424e624b4fc02a9558987c10e03ad222a7b3af370f9be5a31a34695',
+    '4e7518b66c297172994a37bf859d7abb1b5c4335a930ac6d758b703ddacdf000',
+    '9f419563d6cdde1bfbe07ac720c195296b26db2b0802dec395f401cac9674849',
+    '47111746eda57a07f404bdabc24233b3bbd066e9f8348d56d57a7e2131d6a8e8',
+    '7a5ef8b70315fbf7eaa67bf28f3e3b4ae32e95bb2dcb813aa00b1e7c9ee187d7',
+    '552e97c216d810de6e69dc7c848043ffbd764963966aa5eda477c20a9c0a4cae',
+    '5cbda5eb8798ec038ce290209adbe696510e5f1a211d2f76c73e7478e03ada79',
+    'c808b01bf99ace3e7330b07349cf0f9955129491d6b0ab87f394ff51df63fd8c',
+    '0d832c9f23339a27c86fc8e52e7c1e66613f949ae862098db577e3b4dddf5469',
+    '33e19d621d9086fa0e682f6232d2c46f36c25ffaac3c5f86ed8df8cffcf72594',
+    '44358849feb6f259db2f37caf1b4457ae3e29a04e3cb90bb75bdab0069bc4c22',
+    '602faeb5d162d0b4a36fc4df15209b0f61a295beb6a4655f173823a547a4ef03',
+    '57287cee7b796e16239fb6d6ac5a82c07b7b3617256511d0d1f879b2b861f364',
+    '10c8ee69bf009c7db6a135379ac63c7b707838cd8b7756b311fc2ed53e5d08e3',
+    'a0ac2be902274e96679c4c6e6c39330f196bead27cc022e07c6e3cab9be15861',
+    'e67a52442d59b9d8da11aca18ace58304af61c9ed6f38aeeef5a98df110c404e',
+    '2ae763a95555c0f99d4493448e1d6b06992348bf672495a97ab9b0a0bcd23453',
+    '22aae7e5a1d64fa0cd7b8c238a60a85a9d29b204fb14256e6fa6935629563498',
+    'c98dc52c63c85439912203efb7edc41021c09638804beecf6fa8b7ab0818798c',
+    'd0ef259c4f23e46eaba4ff0a71de644761442274e165803ecd1da35568824c28',
+    'a657fdea10071e5b892ac3cee2b1142ba780ef2d5d68fff476c887b5baa30db2',
+    'cfd9906a3dd8b79c4871fda7555dfc5b6361935812dcc4b16bc76c41bf8bc1f5',
+    '36c5bfd53cf316ef8ac8c8d96d080b3e3cfe057f5b6ed2f9e668946effb0eeba',
+    'de44cc3b7cc494c8489fd764740cf5322a5f0e175cbacf39b0d8de151380be9f',
+    '53e1a02ff2619679f9fc9a57780190e3f785f224f9214823ed4a7e934c754789',
+    '0e2c2aef3c95eb21d38b406849ca0536a6d3488b222af1b783282e0152a41cc9',
+    '8b28242f6520c1029155ef09f731b2d795489cfeb3923ff90c0dc05111aa14fc',
+    'eb62fc7c73a114e6a646a0a35422b325bbbd1561edbfa2d22d6c1906a1838b80',
+    '25a1e2a270522330327a865ad3e626a2eb291f738998fb90d60e6ed79b080683',
+  ]);
   const AVERAGE_FINISH_VERSION=2;
   const AVERAGE_PLACEMENT_VERSION=2;
   function rankedTrackWeightParts(trackId,fieldSize,competition=1,depthBoost=1){
     const info=trackInfo(trackId);
-    const type=trackId==='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778'?'permanent':info.type;
+    const type=trackId==='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778'?'permanent':PINNED_EXTRA_TRACK_IDS.has(trackId)?'extra':info.type;
     const field=Math.max(0,Number(fieldSize||0)||0);
-    const base=type==='official'||type==='permanent'?1.6:type==='community'?1:0.6;
+    const base=type==='official'||type==='permanent'?1.6:type==='community'?1:type==='extra'?.06:0.6;
     // Preserve diminishing participation growth while restoring a useful spread between populated tracks.
     const popularity=field<2?0:.56*Math.log2(field)*(field-1)/(field+8);
     const competitionFactor=Math.max(.85,Math.min(1.15,Number(competition||1)||1));
     const depthFactor=Math.max(1,Math.min(1.35,Number(depthBoost||1)||1));
-    return {type,field,base,popularity,competition:competitionFactor,depthBoost:depthFactor,baseWeight:base*popularity,finalWeight:base*popularity*competitionFactor*depthFactor};
+    const weight=base*popularity*competitionFactor*depthFactor;
+    return {type,field,base,popularity,competition:competitionFactor,depthBoost:depthFactor,baseWeight:base*popularity,finalWeight:type==='extra'?Math.min(.06,weight):weight};
   }
   function rankedTrackWeight(trackId,fieldSize){
     return rankedTrackWeightParts(trackId,fieldSize).finalWeight;
@@ -1827,7 +1965,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const textWrap=document.createElement('span');
     textWrap.className='staticFunText';
     textWrap.style.pointerEvents='none';
-    textWrap.textContent=label;
+    for(let i=0;i<label.length;i++){
+      const ch=document.createElement('span');
+      ch.className='staticFunChar';
+      ch.textContent=label[i]===' '?' ':label[i];
+      ch.style.animationDelay=`${(i*0.045).toFixed(3)}s, ${(i*0.035).toFixed(3)}s`;
+      textWrap.appendChild(ch);
+    }
     promo.appendChild(textWrap);
 
     const version = document.createElement('a');

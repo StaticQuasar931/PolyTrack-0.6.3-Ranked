@@ -368,24 +368,13 @@ export function mountRankedFilterPanel(options = {}) {
   form.className = 'ranked-filter-form';
   form.style.display = 'grid';
   form.style.gridTemplateColumns = 'repeat(auto-fit,minmax(220px,1fr))';
-  form.style.gap = '14px';
-  form.style.padding = '14px 0';
+  form.style.gap = '16px';
+  form.style.padding = '16px 0';
   content.append(form);
-
-  const categoryLabel = addText(document, form, 'label', 'Category');
-  categoryLabel.style.display = 'grid';
-  const category = document.createElement('select');
-  category.name = 'category';
-  for (const value of categories) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = RANKED_FILTER_CATEGORY_LABELS[value] || value.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
-    category.append(option);
-  }
-  categoryLabel.append(category);
 
   const verificationLabel = addText(document, form, 'label', 'Runs');
   verificationLabel.style.display = 'grid';
+  verificationLabel.style.gap = '5px';
   const verification = document.createElement('select');
   verification.name = 'verification';
   for (const [value, label] of [['all', 'All'], ['verified', 'Verified only']]) {
@@ -417,14 +406,13 @@ export function mountRankedFilterPanel(options = {}) {
     metricInputs[metric] = { group, min, max, unavailable };
   }
 
-  const suggestions = new Map();
   const filterInstanceId = Math.random().toString(36).slice(2);
   const listInputs = {};
   for (const [name, label] of [['whitelist', 'Only these racers'], ['blacklist', 'Exclude these racers']]) {
     const field = document.createElement('div');
     field.style.display = 'grid';
     field.style.position = 'relative';
-    field.style.gap = '5px';
+    field.style.gap = '7px';
     const inputId = `ranked-filter-${filterInstanceId}-${name}`;
     const fieldLabel = addText(document, field, 'label', label);
     const input = document.createElement('input');
@@ -457,28 +445,39 @@ export function mountRankedFilterPanel(options = {}) {
     selected.style.background = 'rgba(67, 176, 112, 0.18)';
     selected.style.fontWeight = '600';
     selected.hidden = true;
+    input.style.minWidth = '0';
+    input.style.padding = '8px 10px';
     field.append(input, selected, popup);
     form.append(field);
     listInputs[name] = { field, input, popup, selected };
-    suggestions.set(name, popup);
   }
 
   const actions = document.createElement('div');
-  actions.style.display = 'flex'; actions.style.flexWrap = 'wrap'; actions.style.gap = '6px'; actions.style.alignItems = 'end';
+  actions.style.display = 'flex'; actions.style.flexWrap = 'wrap'; actions.style.gap = '10px'; actions.style.alignItems = 'end';
   const apply = addText(document, actions, 'button', 'Apply', 'button'); apply.type = 'submit';
   const toggle = addText(document, actions, 'button', 'Pause filters', 'button ranked-filter-toggle'); toggle.type = 'button';
   toggle.setAttribute('aria-pressed', 'true');
   const clear = addText(document, actions, 'button', 'Clear', 'button'); clear.type = 'button';
+  for (const button of [apply, toggle, clear]) {
+    button.style.minHeight = '36px';
+    button.style.padding = '7px 12px';
+  }
   form.append(actions);
 
   const presets = document.createElement('div');
   presets.className = 'ranked-filter-presets';
-  presets.style.display = 'flex'; presets.style.flexWrap = 'wrap'; presets.style.gap = '6px';
+  presets.style.display = 'flex'; presets.style.flexWrap = 'wrap'; presets.style.gap = '10px';
   const presetSelect = document.createElement('select'); presetSelect.setAttribute('aria-label', 'Saved filter preset');
   const presetName = document.createElement('input'); presetName.maxLength = 32; presetName.placeholder = 'Preset name'; presetName.setAttribute('aria-label', 'Preset name');
   const load = addText(document, presets, 'button', 'Load', 'button'); load.type = 'button';
   const save = addText(document, presets, 'button', 'Save', 'button'); save.type = 'button';
   const remove = addText(document, presets, 'button', 'Delete', 'button'); remove.type = 'button';
+  for (const button of [load, save, remove]) {
+    button.style.minHeight = '36px';
+    button.style.padding = '7px 12px';
+  }
+  presetName.style.minWidth = '0';
+  presetName.style.padding = '8px 10px';
   presets.prepend(presetSelect, presetName);
   content.append(presets);
   const status = addText(document, content, 'p', '', 'ranked-filter-status');
@@ -499,7 +498,6 @@ export function mountRankedFilterPanel(options = {}) {
   }
 
   function writeForm(value) {
-    category.value = value.category;
     verification.value = value.verification;
     for (const [, , minimum, maximum] of ranges) {
       form.elements[minimum].value = value[minimum] ?? '';
@@ -527,13 +525,17 @@ export function mountRankedFilterPanel(options = {}) {
     const users = loadedUsers();
     selected.hidden = !ids.length;
     selected.textContent = ids.length
-      ? `Selected (${ids.length}): ${ids.slice(0, 3).map(id => users.get(id) ? `${users.get(id)} (${id})` : id).join(', ')}${ids.length > 3 ? `, +${ids.length - 3} more` : ''}`
+      ? `Selected (${ids.length}): ${ids.slice(0, 3).map(id => users.get(id) || 'Unloaded racer').join(', ')}${ids.length > 3 ? `, +${ids.length - 3} more` : ''}`
       : '';
+  }
+
+  function looksLikeUserId(query) {
+    return /[_.:-]/.test(query) || /^\S*\d+\S*$/.test(query);
   }
 
   function getUserSuggestions(query) {
     const search = normalizedUsername(query);
-    return [...loadedUsers()].filter(([id, name]) => search &&
+    return [...loadedUsers()].filter(([id, name]) => search && (name || looksLikeUserId(query)) &&
       (normalizedUsername(name).includes(search) || id.toLocaleLowerCase().includes(search)));
   }
 
@@ -559,7 +561,8 @@ export function mountRankedFilterPanel(options = {}) {
       option.type = 'button';
       option.setAttribute('role', 'option');
       const alreadySelected = !!selectedMatch;
-      option.textContent = `${username ? `${username} (${id})` : id}${alreadySelected ? ' - Already selected' : ''}`;
+      const label = username && !looksLikeUserId(query) ? username : id;
+      option.textContent = `${label}${alreadySelected ? ' - Already selected' : ''}`;
       option.disabled = alreadySelected;
       option.setAttribute('aria-selected', String(alreadySelected));
       option.style.display = 'block';
@@ -594,7 +597,7 @@ export function mountRankedFilterPanel(options = {}) {
   }
 
   function readForm() {
-    const value = { category: category.value, verification: verification.value };
+    const value = { category: filter.category, verification: verification.value };
     for (const [, , minimum, maximum] of ranges) {
       value[minimum] = form.elements[minimum].value;
       value[maximum] = form.elements[maximum].value;
@@ -652,6 +655,12 @@ export function mountRankedFilterPanel(options = {}) {
       if (event.key === 'Escape') {
         controls.popup.hidden = true;
         controls.input.setAttribute('aria-expanded', 'false');
+      } else if (event.key === 'Enter' && !controls.popup.hidden) {
+        const first = [...controls.popup.children].find(option => !option.disabled);
+        if (first) {
+          event.preventDefault();
+          first.click();
+        }
       }
     });
   }
@@ -664,8 +673,14 @@ export function mountRankedFilterPanel(options = {}) {
     enabled = true;
     emit();
   });
-  toggle.addEventListener('click', () => { enabled = !enabled; emit(); });
-  clear.addEventListener('click', () => { filter = normalizeRankedFilter({}, categories); enabled = true; writeForm(filter); emit(); });
+  function setPaused(paused) {
+    enabled = !paused;
+    return emit();
+  }
+  function togglePaused() { return setPaused(enabled); }
+  toggle.addEventListener('click', togglePaused);
+  summary.addEventListener('contextmenu', event => { event.preventDefault(); togglePaused(); });
+  clear.addEventListener('click', () => { filter = normalizeRankedFilter({ category: filter.category }, categories); enabled = true; writeForm(filter); emit(); });
   load.addEventListener('click', () => {
     const preset = readRankedFilterPresets(storage, options.storageKey, categories).find(value => value.id === presetSelect.value);
     if (!preset) { status.textContent = 'Choose a saved preset first.'; return; }
@@ -691,6 +706,8 @@ export function mountRankedFilterPanel(options = {}) {
     element: panel,
     initialResult,
     getFilter: () => filter,
+    setPaused,
+    togglePaused,
     setFilter(value) { filter = normalizeRankedFilter(value, categories); writeForm(filter); return emit(); },
     update(nextRows) {
       rows = Array.isArray(nextRows) ? nextRows : [];

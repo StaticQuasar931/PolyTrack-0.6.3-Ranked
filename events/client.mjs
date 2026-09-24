@@ -520,7 +520,7 @@ export function installEvents(bridge){
       const infoNode=kodubCard.querySelector('.track-of-the-week-info');
       if(infoNode){
         let reward=infoNode.querySelector('.sq-kodub-reward');if(!reward){reward=document.createElement('small');reward.className='sq-kodub-reward';infoNode.append(reward);}
-        const text=p?'Up to 700 Event RP':'Event scoring awaiting official import';if(reward.textContent!==text)reward.textContent=text;
+        const text=p?'700 Event RP available':'Event scoring awaiting official import';if(reward.textContent!==text)reward.textContent=text;
         const pb=infoNode.querySelector('.personal-best');if(pb){const html=p?recordMarkup(p):'No record';if(pb.dataset.eventRecord!==html){pb.dataset.eventRecord=html;pb.innerHTML=html;}}
       }
     }

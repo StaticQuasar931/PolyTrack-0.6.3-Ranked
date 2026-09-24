@@ -1,0 +1,182 @@
+[
+  {
+    "id": "dakiu-the-japanese-nordschleife",
+    "name": "Dakiu: The Japanese Nordschleife",
+    "author": "Elixir",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dakiu-the-japanese-nordschleife",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dakiu-the-japanese-nordschleife.track",
+    "description": "Dakiu: The Japanese Nordschleife:\r\nThis track features 46 corners: 2 of them are banked with esses section, tunnel section, pit lane and alt courses that I might add. We got 4 drivers to beat:\r\nBronze: 2:14.210\r\nSilver: 2:10.777\r\nGold: 2:08.565\r\nAnd the author time 28ER:\r\n28ER:2:08.157\r\n\r\nThe best corners ( my favourite ) are :\r\nThe second banked corner\r\nThe long esses\r\nAnd before the under section part",
+    "trackId": "c2425afd06b8e73a0b3883b18ccf32a46cc4bc8f832635cb5eb8f8887512f23a"
+  },
+  {
+    "id": "ims",
+    "name": "IMS",
+    "author": "IndyOwen",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/ims",
+    "tags": [
+      "speedrun",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/ims.track",
+    "description": "A straight forward oval with 4 laps, and has some pretty skillful turns after straightaways. This is based off of Indianapolis Motor Speedway, a real life track I hold dear to my heart.",
+    "trackId": "728b5f5807246b2ffdff4d1c0cad0417940bc8cd9f2b4556d5b3e3d6cd39dc67"
+  },
+  {
+    "id": "just-a-normal-track",
+    "name": "Just A Normal Track...?",
+    "author": "GamingMattie",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/just-a-normal-track",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/just-a-normal-track.track",
+    "description": "Just A Normal Track With Nothing Special About It...",
+    "trackId": "6618350794314083378f113c2231c1d6575ff8ea98eadcf46e7a9f867aef8e1e"
+  },
+  {
+    "id": "monaco-grand-prix",
+    "name": "Monaco Grand Prix",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/monaco-grand-prix",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/monaco-grand-prix.track",
+    "trackId": "0397a53cbacf1a20754421a060ebe5d1217b6815efe5faeb9703d32b4ce41ff1",
+    "description": "\"Attempt\" of building the classic racetrack from Monaco including famous turns like Tabac, the Fairmont Hairpin, and the Nouvelle chicane these track also features lots of famous builds near the track that can be visible while driving it."
+  },
+  {
+    "id": "silverstone-circuit",
+    "name": "Silverstone Circuit",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/silverstone-circuit",
+    "tags": [
+      "racing",
+      "easy"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/silverstone-circuit.track",
+    "trackId": "9618a8511550443bcce222605903d152fdb9d05d98dd2ca05f3115bb04b95e92",
+    "description": "An attempt to build the classic Silverstone circuit which has been an iconic formula one and multyple racing series track it includes maggots, beckets , village , vale and etc but it does not contain the famous buildings alongside the circuit"
+  },
+  {
+    "id": "the-floating-circuit",
+    "name": "The Floating Circuit",
+    "author": "SpeedyCitrus",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-floating-circuit",
+    "tags": [
+      "drift",
+      "easy"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-floating-circuit.track",
+    "trackId": "82c7f45e535228f32498853772093d611ef99cc7b2d9dc4c143ca2eefbe6d9b2",
+    "description": "The Floating Circuit isn't your normal racetrack, it's in the ocean! Have fun, good luck, and I hope it goes swimmingly!"
+  },
+  {
+    "id": "castle-run",
+    "name": "Castle run",
+    "author": "T_thedestroyer",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/castle-run",
+    "tags": [
+      "art",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/castle-run.track",
+    "trackId": "851f4520ce6be053f7445ca0cf884be724d26165d3abc64d41762a9d3fab5f9a",
+    "description": "This is a fun trail where u race trough a castle."
+  },
+  {
+    "id": "the-pit",
+    "name": "The Pit",
+    "author": "Winner",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-pit",
+    "tags": [
+      "technical",
+      "expert"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-pit.track",
+    "trackId": "4c2d724b3ae51c8c28f5303de18c3b8f2fb9f570bb68e34f2968bb29c50c3044",
+    "description": "A tricky track made to be very hard. By some miracle my first attempt at the full track is the 35s on the Leaderboards."
+  },
+  {
+    "id": "press-forward",
+    "name": "Press Forward",
+    "author": "Overdrive",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/press-forward",
+    "tags": [
+      "speedrun",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/press-forward.track",
+    "trackId": "b3d801bd8d1c6481595b985c6bd7ce56ed152f1f4fc611656a9bda22692e59a4",
+    "description": "It is a speedrun that is all about gaining and maintaining speed. One minor slipup may cost you the record!"
+  },
+  {
+    "id": "nature-ruin",
+    "name": "Nature ruin",
+    "author": "Pingu",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/nature-ruin",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/nature-ruin.track",
+    "trackId": "af9ae5d7548a42a1834568ec576453a07f10ac1d7ba5e7823ea04717c8ba8290",
+    "description": "Why are we building more and more concrete into the Nature? All it does ist disturbing and destroying it.\r\nThis Track Starts in the peaceful Nature, and leads in a catastrophic Future where Nature ist Like hell."
+  },
+  {
+    "id": "akira-r1",
+    "name": "Akira (R1)",
+    "author": "Ae86",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/akira-r1",
+    "tags": [
+      "art",
+      "medium"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/akira-r1.track",
+    "trackId": "94442033cbebf0394b4857a76c7fb463fbd6b356b0bdea9bca439d6ecf791feb",
+    "description": "A mountain like terrain with multiple winding roads and a bridge, players start at a tunnel and make their way onto a coast and back to the track. with cherry blossoms and icy mountains and beaches this track includes many natural like landscapes."
+  },
+  {
+    "id": "tower-of-checkpoints",
+    "name": "Tower of Checkpoints",
+    "author": "SG|TheLight",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/tower-of-checkpoints",
+    "tags": [
+      "speedrun",
+      "easy"
+    ],
+    "tier": "curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/tower-of-checkpoints.track",
+    "trackId": "09c9d0989eb1eb344a5a2298277b1de1094881ff853e59e28d611ede3b0aa938",
+    "description": "A roundabout which goes up featuring 1000 checkpoints."
+  }
+]

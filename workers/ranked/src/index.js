@@ -2,8 +2,9 @@ import {kodubWeekly} from './kodub-weekly.js';
 import { eventWorkerHandler, eventWorkerMaintenance } from './events-worker.js';
 import {packPlannerResults, plannerDocumentBytes, PLANNER_BUNDLE_VERSION, PLANNER_PUBLICATION_VERSION} from './planner-results.js';
 export {packPlannerResults} from './planner-results.js';
-import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
+import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
 import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
+import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PROJECT_ID = 'polytrack-052';
@@ -18,6 +19,8 @@ const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
 const TRACK_LIMIT = 500;
+const OVERALL_BOARD_PAGE_SIZE = 100;
+const OVERALL_BOARD_LIMIT = 500;
 const REBUILD_COOLDOWN_MS = 5 * 60 * 1000;
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
@@ -324,11 +327,55 @@ async function writeDocument(env, collection, id, data, updateTime = '') {
 async function commitDocuments(env, documents) {
   return firestoreRequest(env, ':commit', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({writes: documents.map(({collection,id,data,prior,unconditional=false}) => ({
-      update: {name: documentBase(env).replace('https://firestore.googleapis.com/v1/','') + '/' + collection + '/' + id, fields: encodeFields(data)},
+    body: JSON.stringify({writes: documents.map(({collection,id,data,prior,unconditional=false,remove=false}) => ({
+      [remove ? 'delete' : 'update']: remove
+        ? documentBase(env).replace('https://firestore.googleapis.com/v1/','') + '/' + collection + '/' + id
+        : {name: documentBase(env).replace('https://firestore.googleapis.com/v1/','') + '/' + collection + '/' + id, fields: encodeFields(data)},
       ...(unconditional ? {} : {currentDocument: prior ? {updateTime: prior.updateTime} : {exists: false}})
     }))})
   });
+}
+
+export async function migrateExtraVerificationQueues(env, ids = EXTRA_TRACK_IDS) {
+  const trackIds = [...ids].sort();
+  if (trackIds.some(id => !/^[a-f0-9]{64}$/.test(id))) throw Error('INVALID_EXTRA_TRACK_ID');
+  const jobId = 'extra_verification_queue_migration_v1';
+  const prior = await readDocument(env, COLLECTIONS.jobs, jobId);
+  const registry = trackIds.join(',');
+  const cursor = prior?.data?.registry === registry ? Number(prior.data.cursor || 0) : 0;
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > trackIds.length) throw Error('INVALID_EXTRA_QUEUE_CURSOR');
+  if (cursor === trackIds.length) return {moved: 0, processed: cursor, complete: true};
+  const writes = [];
+  let moved = 0;
+  const batch = trackIds.slice(cursor, cursor + 4);
+  for (const trackId of batch) {
+    const core = await readDocument(env, VERIFICATION_COLLECTION, trackId);
+    if (!core) continue;
+    if (core.data.trackId !== trackId) throw Error('EXTRA_QUEUE_ID_MISMATCH');
+    const extra = await readDocument(env, EXTRA_VERIFICATION_COLLECTION, trackId);
+    const slots = {...core.data.slots};
+    for (const [accountId, slot] of Object.entries(extra?.data?.slots || {})) {
+      if (Object.hasOwn(slots, accountId)) throw Error('EXTRA_QUEUE_SLOT_CONFLICT');
+      slots[accountId] = slot;
+    }
+    writes.push({collection: EXTRA_VERIFICATION_COLLECTION, id: trackId, prior: extra,
+      data: {...core.data, ...extra?.data, trackId, slots, ...verificationSchedule(slots), updatedAt: Date.now()}});
+    writes.push({collection: VERIFICATION_COLLECTION, id: trackId, prior: core, remove: true});
+    moved++;
+  }
+  const processed = cursor + batch.length;
+  writes.push({collection: COLLECTIONS.jobs, id: jobId, prior,
+    data: {registry, cursor: processed, complete: processed === trackIds.length, updatedAt: Date.now()}});
+  await commitDocuments(env, writes);
+  return {moved, processed, complete: processed === trackIds.length};
+}
+
+async function requireExtraQueueMigration(env, trackId) {
+  if (verificationCollectionForTrack(trackId) !== EXTRA_VERIFICATION_COLLECTION) return;
+  const marker = await readDocument(env, COLLECTIONS.jobs, 'extra_verification_queue_migration_v1');
+  if (marker?.data?.complete !== true || marker.data.registry !== [...EXTRA_TRACK_IDS].sort().join(',')) {
+    throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED');
+  }
 }
 
 async function runQuery(env, collection, where = null, limit = 500) {
@@ -415,12 +462,44 @@ function competition(entries) {
 }
 
 export function trackWeightParts(trackId, fieldSize, competitionBoost = 1) {
-  const type = trackType(trackId);
+  const type = EXTRA_TRACK_IDS.has(trackId) ? 'extra' : trackType(trackId);
   const field = Math.max(0, Number(fieldSize || 0));
-  const base = type === 'official' || type === 'permanent' ? 1.6 : type === 'community' ? 1 : 0.6;
+  const base = type === 'official' || type === 'permanent' ? 1.6 : type === 'community' ? 1 : type === 'extra' ? 0.06 : 0.6;
   const popularity = field < 2 ? 0 : 0.56 * Math.log2(field) * (field - 1) / (field + 8);
   const competitionFactor = Math.max(0.85, Math.min(1.15, Number(competitionBoost || 1)));
-  return { type, field, base, popularity, competition: competitionFactor, finalWeight: base * popularity * competitionFactor };
+  const weight = base * popularity * competitionFactor;
+  return { type, field, base, popularity, competition: competitionFactor, finalWeight: type === 'extra' ? Math.min(0.06, weight) : weight };
+}
+
+async function runOverallBoardPage(env, afterName = '', limit = OVERALL_BOARD_PAGE_SIZE) {
+  const structuredQuery = {
+    from: [{collectionId: COLLECTIONS.track}], limit,
+    orderBy: [{field: {fieldPath: '__name__'}, direction: 'ASCENDING'}],
+    ...(afterName ? {startAt: {before: false, values: [{referenceValue: afterName}]}} : {})
+  };
+  const payload = await firestoreRequest(env, ':runQuery', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({structuredQuery})
+  });
+  return (Array.isArray(payload) ? payload : []).flatMap(item => item.document ? [{
+    name: item.document.name,
+    data: decodeFields(item.document.fields || {})
+  }] : []);
+}
+
+async function readOverallBoards(env) {
+  const boards = [];
+  let afterName = '';
+  while (boards.length < OVERALL_BOARD_LIMIT) {
+    const page = await runOverallBoardPage(env, afterName);
+    boards.push(...page.map(document => document.data));
+    if (page.length < OVERALL_BOARD_PAGE_SIZE) return {boards, limitReached: false};
+    const lastName = page.at(-1)?.name;
+    if (!lastName || lastName === afterName) throw Error('OVERALL_BOARD_CURSOR_INVALID');
+    afterName = lastName;
+  }
+  const overflow = await runOverallBoardPage(env, afterName, 1);
+  return {boards, limitReached: overflow.length > 0};
 }
 
 function placementCost(rank, fieldSize) {
@@ -706,7 +785,9 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
 
 async function prepareVerification(env, trackId, rows, complete = false) {
   // One queue document per track avoids a verification read per racer on every PB.
-  const prior=await readDocument(env,VERIFICATION_COLLECTION,trackId);
+  await requireExtraQueueMigration(env, trackId);
+  const queueCollection=verificationCollectionForTrack(trackId);
+  const prior=await readDocument(env,queueCollection,trackId);
   const slots=Object.assign(Object.create(null),prior?.data?.slots||{});let changed=false;
   if(complete){const present=new Set(rows.map(row=>safeText(row.accountId||row.userId,128)));for(const id of Object.keys(slots))if(!present.has(id)){delete slots[id];changed=true;}}
   for(const row of rows){
@@ -715,7 +796,7 @@ async function prepareVerification(env, trackId, rows, complete = false) {
     if(slots[id]?.reason==='canonical_missing'||slots[id]?.key!==verificationKey(row)&&!hasAcceptedVerifiedProof(row,slots[id])){slots[id]=pendingSlot(row);changed=true;}
   }
   if(Object.keys(slots).length>TRACK_LIMIT)throw new Error('VERIFICATION_TRACK_CAP');
-  if(changed)await commitDocuments(env,[{collection:VERIFICATION_COLLECTION,id:trackId,prior,data:{trackId,slots,...verificationSchedule(slots),updatedAt:Date.now()}}]);
+  if(changed)await commitDocuments(env,[{collection:queueCollection,id:trackId,prior,data:{trackId,slots,...verificationSchedule(slots),updatedAt:Date.now()}}]);
   return slots;
 }
 
@@ -787,9 +868,11 @@ export async function bootstrapSnapshotVerification(env) {
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(trackId)) throw Error('INVALID_BOOTSTRAP_TRACK');
     const data = decodeFields(board.fields || {});
     if (!Array.isArray(data.entries) || data.entries.length > TRACK_LIMIT) throw Error('INVALID_BOOTSTRAP_BOARD');
-    const queue = await readDocument(env, VERIFICATION_COLLECTION, trackId);
+    await requireExtraQueueMigration(env, trackId);
+    const queueCollection = verificationCollectionForTrack(trackId);
+    const queue = await readDocument(env, queueCollection, trackId);
     const slots = bootstrapSlots(trackId, data.entries, queue?.data?.slots);
-    writes.push({ collection: VERIFICATION_COLLECTION, id: trackId, prior: queue,
+    writes.push({ collection: queueCollection, id: trackId, prior: queue,
       data: { ...queue?.data, trackId, slots, ...verificationSchedule(slots), updatedAt: Date.now() } });
   }
   const complete = boards.length < VERIFICATION_BOOTSTRAP_BATCH;
@@ -848,7 +931,7 @@ export async function rebuildOverall(env, force = false) {
   const now = Date.now();
   const metricsOutdated = Number(meta.plannerPublicationVersion || 0) < PLANNER_PUBLICATION_VERSION || Number(meta.plannerBundleVersion || 0) < PLANNER_BUNDLE_VERSION || Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION || Number(meta.averagePlacementVersion || 0) < AVERAGE_PLACEMENT_VERSION || Number(meta.derivedMetricsVersion || 0) < DERIVED_METRICS_VERSION;
   if (!force && !metricsOutdated && (!meta.dirty || now - Number(meta.lastOverallBuildAt || 0) < REBUILD_COOLDOWN_MS)) return { rebuilt: false, reason: meta.dirty ? 'cooldown' : 'clean', revision: Number(meta.builtRevision || 0) };
-  const boards = (await runQuery(env, COLLECTIONS.track, null, 100)).map((document) => document.data);
+  const {boards, limitReached: boardLimitReached} = await readOverallBoards(env);
   const priorDoc = await readDocument(env, COLLECTIONS.overall, 'main');
   const prior = priorDoc?.data || {};
   const revision = Number(meta.revision || 0);
@@ -902,13 +985,13 @@ export async function rebuildOverall(env, force = false) {
     if(Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION||!old||stableJson(allowance)!==stableJson(old))entitlementWrites.push({collection:'0.6.2_s1_cosmetic_entitlements',id:row.userId,data:allowance,unconditional:true});
   }
   const totalEntries = Number(computedBase.totalEntries || entries.length);
-  const sourceTracksComplete = boards.length < 100 && boards.every(board => board?.complete === true);
+  const sourceTracksComplete = !boardLimitReached && boards.every(board => board?.complete === true);
   const sourceIncomplete = !sourceTracksComplete;
   const sameIncompleteRevision = Number(meta.overallIncompleteRevision ?? -1) === revision;
   const priorIncompleteObservations = sameIncompleteRevision ? Math.max(0, Number(meta.overallIncompleteObservations || 0)) : 0;
   const incompleteObservations = sourceIncomplete ? priorIncompleteObservations + 1 : 0;
   const incompleteRetryPending = sourceIncomplete && incompleteObservations <= OVERALL_INCOMPLETE_RETRY_LIMIT;
-  const overallIncompleteReason = boards.length >= 100 ? 'board-query-limit'
+  const overallIncompleteReason = boardLimitReached ? 'board-query-limit'
     : sourceIncomplete ? 'source-track-incomplete'
       : totalEntries > OVERALL_LIMIT ? 'publication-limit' : '';
   const snapshot = { entries, trackSummaries, complete: sourceTracksComplete && totalEntries <= OVERALL_LIMIT,
@@ -919,7 +1002,9 @@ export async function rebuildOverall(env, force = false) {
     schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION,
     derivedMetricsVersion: DERIVED_METRICS_VERSION, serverAchievementVersion: SERVER_ACHIEVEMENT_VERSION,
     entryLimit: OVERALL_LIMIT, trackLimit: TRACK_LIMIT };
-  const packed = await packPlannerResults(computedEntries, snapshot, {boardCount: boards.length, boardLimit: 100});
+  const packed = await packPlannerResults(computedEntries, snapshot, {
+    boardCount: boards.length, boardLimit: OVERALL_BOARD_LIMIT, boardLimitReached
+  });
   const resultWrites = [];
   if (packed.resultBundleStatus === 'sidecar') {
     const {resultBundle, ...metadata} = packed;
@@ -1199,6 +1284,10 @@ export async function handleRequest(request, env, context = {}) {
     const reconciliation = await reconcileCanonicalChanges(env);
     const overall = await rebuildOverall(env, false);
     return json(origin, env, 200, { bootstrap, reconciliation, overall });
+  }
+  if (path === '/v1/admin/migrate-extra-queues') {
+    if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
+    return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
   if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });

@@ -1,6 +1,12 @@
+import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
+
 export const VERIFIER_ENGINE_DIGEST = '46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3';
 export const VERIFIER_VERSION = 'polytrack-native-bounded-v1';
 export const VERIFICATION_COLLECTION = '0.6.2_s1_verification';
+export const EXTRA_VERIFICATION_COLLECTION = '0.6.2_s1_extra_verification';
+export function verificationCollectionForTrack(trackId) {
+  return EXTRA_TRACK_IDS.has(trackId) ? EXTRA_VERIFICATION_COLLECTION : VERIFICATION_COLLECTION;
+}
 // Compatibility is explicitly reviewed per engine, never inherited by future pins.
 export const PRE_GHOST_PROOF_ENGINE = '895eeacbdfdd5f68b9db92c502af620709539c5211782809f610c1a76e60785d';
 export const PRE_REPLAY_UI_PROOF_ENGINE = '246a1dcdc272cc2c59a1433da3e31b2cd3dfd017ee8235d5288987127a3cf578';

@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {queueState,reconciledSlot,completedSlot,NEVER} from './queue.mjs';
 import {encode,decode} from './firestore.mjs';
-import {pendingSlot,VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
+import {pendingSlot,VERIFIER_ENGINE_DIGEST,VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION,verificationCollectionForTrack} from '../../workers/ranked/src/verification.js';
+import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
+import {createHash} from 'node:crypto';
 const row={accountId:'racer',trackId:'track',timeMs:1000,frames:1000,uploadId:1,replayHash:'a'.repeat(64)};
 test('missing canonical work leaves the due queue instead of looping forever',()=>{const slot=reconciledSlot(pendingSlot(row),null);assert.equal(queueState({racer:slot}).notBefore,NEVER);});
 test('a superseding PB replaces the exact queued binding',()=>{const slot=pendingSlot(row),next={...row,timeMs:900};assert.deepEqual(reconciledSlot(slot,next),pendingSlot(next));});
@@ -335,7 +337,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {checkForWork, runVerifier} from './run.mjs';
 
-test('idle preflight is one projected existence query and emits a no-work summary without physics or writes', async () => {
+test('idle preflight checks both lanes and emits a no-work summary without physics or writes', async () => {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'polytrack-idle-test-'));
   const env={FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic-test-only',
     GITHUB_OUTPUT:path.join(directory,'output'),GITHUB_STEP_SUMMARY:path.join(directory,'summary')};
@@ -348,14 +350,17 @@ test('idle preflight is one projected existence query and emits a no-work summar
         call:async(p,body)=>{calls.push({p,body});return [{readTime:'2026-09-12T00:00:00Z'}];},
         get:async()=>{throw Error('No canonical reads');},write:()=>{throw Error('No writes');}
       };}});
-    assert.equal(connections,1);assert.equal(calls.length,1);
-    assert.equal(calls[0].p,':runQuery');
-    const query=calls[0].body.structuredQuery;
-    assert.equal(query.limit,1);
-    assert.deepEqual(query.select,{fields:[{fieldPath:'notBefore'}]});
-    assert.equal(query.where.fieldFilter.field.fieldPath,'notBefore');
-    assert.equal(query.where.fieldFilter.op,'LESS_THAN_OR_EQUAL');
-    assert.equal(query.orderBy[0].field.fieldPath,'notBefore');
+    assert.equal(connections,1);assert.equal(calls.length,2);
+    assert.deepEqual(calls.map(call=>call.body.structuredQuery.from[0].collectionId),[VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION]);
+    for(const call of calls){
+      assert.equal(call.p,':runQuery');
+      const query=call.body.structuredQuery;
+      assert.equal(query.limit,1);
+      assert.deepEqual(query.select,{fields:[{fieldPath:'notBefore'}]});
+      assert.equal(query.where.fieldFilter.field.fieldPath,'notBefore');
+      assert.equal(query.where.fieldFilter.op,'LESS_THAN_OR_EQUAL');
+      assert.equal(query.orderBy[0].field.fieldPath,'notBefore');
+    }
     assert.equal(result.hasWork,false);
     assert.equal(fs.readFileSync(env.GITHUB_OUTPUT,'utf8'),'has_work=false\n');
     const summary=fs.readFileSync(env.GITHUB_STEP_SUMMARY,'utf8');
@@ -374,16 +379,96 @@ test('preflight detects due work without counting racers and passes a determinis
   let queries=0;
   const result=await checkForWork({call:async(_,body)=>{
     queries++;assert.equal(body.structuredQuery.where.fieldFilter.value.integerValue,'1234');
-    return [{document:{name:'queue/track',fields:{notBefore:{integerValue:'1234'}}}}];
+    return queries===1?[{document:{name:'queue/track',fields:{notBefore:{integerValue:'1234'}}}}]:[];
   }},{now:1234,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
-  assert.deepEqual(result,{hasWork:true,normalHasWork:true,eventHasWork:false,queueQueries:1,returnedDocuments:1});
-  assert.equal(queries,1);
+  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1});
+  assert.equal(queries,2);
+});
+
+test('Extra selection and publication stay in the Extra collection with one lookup',async()=>{
+  const doc=queueDoc('track',[row]);doc.queueCollection=EXTRA_VERIFICATION_COLLECTION;
+  let canonicalReads=0,committed;
+  const db={write:fakeWrite,get:async(collection)=>{
+    if(collection==='0.6.2_race_results'){canonicalReads++;return {data:row};}
+    if(collection===EXTRA_VERIFICATION_COLLECTION)return doc;
+    return null;
+  },call:async(_,body)=>{committed=body.writes;}};
+  const selected=await selectJobs(db,[doc],100,{jobLimit:1,lookupLimit:1,perTrackLimit:1});
+  assert.equal(canonicalReads,1);assert.equal(selected.jobs.length,1);
+  assert.equal(selected.jobs[0].queueCollection,EXTRA_VERIFICATION_COLLECTION);
+  const result={resultId:selected.jobs[0].resultId,status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST};
+  assert.equal((await publishResults(db,selected.jobs,[result])).verified,1);
+  assert.equal(committed[0].collection,EXTRA_VERIFICATION_COLLECTION);
+});
+
+test('Extra-only work wakes preflight while legacy core remains independently visible',async()=>{
+  const seen=[];
+  const result=await checkForWork({call:async(_,body)=>{
+    const collection=body.structuredQuery.from[0].collectionId;seen.push(collection);
+    return collection===EXTRA_VERIFICATION_COLLECTION?[{document:{name:'extra/track',fields:{}}}]:[];
+  }},{now:1234,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
+  assert.deepEqual(seen,[VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION]);
+  assert.equal(result.coreHasWork,false);assert.equal(result.extraHasWork,true);
+  assert.equal(result.hasWork,true);
+  assert.equal(verificationCollectionForTrack('legacy-core-id'),VERIFICATION_COLLECTION);
+});
+
+test('all 46 pinned catalog IDs use the Extra lane',()=>{
+  const ids=[...EXTRA_TRACK_IDS].sort();
+  assert.equal(ids.length,46);
+  assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
+  assert.equal(createHash('sha256').update(ids.join(',')).digest('hex'),
+    '6be72957ec2543099c5317f95c3699b8fbb7b458cca904ad53f50b08f5f65435');
+  assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
+});
+
+test('eight older Extra queues cannot hide core work and Extra selection remains last',async()=>{
+  const queries=[],selections=[],published=[];
+  const extraIds=[...EXTRA_TRACK_IDS];
+  await runVerifier({env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic'},log:()=>{},
+    validateEngine:async()=>{},connectDatabase:async()=>({
+      call:async(_,body)=>{
+        const query=body.structuredQuery,collection=query.from[0].collectionId;
+        queries.push([collection,query.limit]);
+        return Array.from({length:8},(_,i)=>({document:{name:collection+'/'+i,
+          fields:{trackId:{stringValue:collection===EXTRA_VERIFICATION_COLLECTION?extraIds[i]:'core-'+i},notBefore:{integerValue:'1'}}}}));
+      },get:async()=>null,requests:()=>2
+    }),eventRun:async()=>({checked:4,consumed:0,rejected:false,archived:null,results:[]}),
+    selectNormal:async(_,docs,__,limits)=>{
+      const collection=docs[0].queueCollection;
+      selections.push([collection,docs.length,limits.jobLimit,limits.lookupLimit]);
+      const jobs=Array.from({length:limits.jobLimit},(_,i)=>({resultId:collection+'-'+i,queueCollection:collection}));
+      return {jobs,canonicalAttempts:jobs.length,selectionConflicts:0};
+    },verifyNormal:async(_,jobs)=>jobs.map(job=>({resultId:job.resultId,status:'verified'})),
+    publishNormal:async(_,jobs)=>{published.push(...jobs.map(job=>job.queueCollection));return {verified:jobs.length,reasons:{}};}
+  });
+  assert.deepEqual(queries,[[VERIFICATION_COLLECTION,8],[EXTRA_VERIFICATION_COLLECTION,8]]);
+  assert.deepEqual(selections,[[VERIFICATION_COLLECTION,8,11,11],[EXTRA_VERIFICATION_COLLECTION,8,1,1]]);
+  assert.deepEqual(published,[...Array(11).fill(VERIFICATION_COLLECTION),EXTRA_VERIFICATION_COLLECTION]);
+});
+
+test('processing refuses misrouted core or Extra documents until backfill is correct',async()=>{
+  for(const [collection,trackId] of [[VERIFICATION_COLLECTION,[...EXTRA_TRACK_IDS][0]],
+    [EXTRA_VERIFICATION_COLLECTION,'not-registered']]) {
+    let selected=false;
+    await assert.rejects(runVerifier({env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic'},log:()=>{},
+      validateEngine:async()=>{},connectDatabase:async()=>({call:async(_,body)=>
+        body.structuredQuery.from[0].collectionId===collection?
+          [{document:{name:collection+'/'+trackId,fields:{trackId:{stringValue:trackId},notBefore:{integerValue:'1'}}}}]:[],
+      requests:()=>2}),eventRun:async()=>({checked:0,consumed:0,rejected:false,archived:null,results:[]}),
+      selectNormal:async()=>{selected=true;throw Error('Must not select misrouted work');}}),/EXTRA_QUEUE_BACKFILL_REQUIRED/);
+    assert.equal(selected,false);
+  }
 });
 
 test('preflight errors fail closed rather than producing a false empty-queue success',async()=>{
   await assert.rejects(checkForWork({call:async()=>{throw Error('Firestore request failed: 403');}},
     {env:{},log:()=>{throw Error('Must not report no work');}}),/403/);
   await assert.rejects(checkForWork({call:async()=>null},{env:{},log:()=>{}}),/Unexpected verification queue response/);
+  await assert.rejects(checkForWork({call:async(_,body)=>{
+    if(body.structuredQuery.from[0].collectionId===EXTRA_VERIFICATION_COLLECTION)throw Error('Extra queue read failed');
+    return [{document:{}}];
+  }},{env:{},log:()=>{throw Error('Must not report partial work');}}),/Extra queue read failed/);
 });
 
 test('processing mode still validates engine before authentication or queue access',async()=>{
@@ -440,7 +525,7 @@ test('event work processes with normal queue empty without invoking normal physi
       calls.push('event');return {checked:1,consumed:1,rejected:false,archived:null,results:[]};
     },
     verifyNormal:async()=>{throw Error('No normal simulation expected');}});
-  assert.deepEqual(calls,['pin','event','normal-query']);
+  assert.deepEqual(calls,['pin','event','normal-query','normal-query']);
 });
 
 test('mixed backlog reserves twelve normal simulations and four event jobs', async () => {
@@ -472,7 +557,7 @@ test('real event module idle preflight performs five bounded read operations and
     if(p===':runQuery'){assert.equal(body.structuredQuery.limit,1);if(body.structuredQuery.from[0].collectionId!=='0.6.2_event_retries')assert.ok(body.structuredQuery.select);return [];}
     assert.ok(['/0.6.2_event_catalog/main','/0.6.2_event_cursors/scan'].includes(p),p);return null;
   }},{env:{},log:()=>{},now:1234});
-  assert.equal(result.hasWork,false);assert.equal(calls.length,5);
+  assert.equal(result.hasWork,false);assert.equal(calls.length,6);
 });
 
 test('real event queue due with canonical empty wakes workflow without replay reads', async () => {
@@ -502,7 +587,7 @@ test('real default event processor safely handles both queues empty', async () =
       if(p===':runQuery')return [];
       assert.ok(['/0.6.2_event_catalog/main','/0.6.2_event_cursors/scan'].includes(p),p);return null;
     }}),verifyNormal:async()=>{throw Error('No simulation should run');}});
-  assert.equal(requests,8);
+  assert.equal(requests,9);
 });
 
 test('shared budget gives events unused normal capacity without exceeding sixteen total', async () => {
@@ -529,7 +614,7 @@ test('event-only coordinator test is independent of checkout name and working di
   const files=['tools/verifier/queue.test.mjs','tools/verifier/queue.mjs','tools/verifier/run.mjs',
     'tools/verifier/runner.mjs','tools/verifier/firestore.mjs','tools/verifier/throughput.mjs',
     'tools/verifier/weekly-track.mjs',
-    'workers/ranked/src/verification.js','workers/ranked/package.json'];
+    'workers/ranked/src/verification.js','workers/ranked/src/extra-track-ids.js','workers/ranked/package.json'];
   // Copy only coordinator source. No credentials, engine assets, browser, or network are needed.
   const env=Object.fromEntries(['PATH','Path','SystemRoot','SYSTEMROOT','WINDIR','TEMP','TMP','TMPDIR','HOME','USERPROFILE']
     .filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]));

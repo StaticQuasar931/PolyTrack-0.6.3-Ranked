@@ -1,0 +1,734 @@
+[
+  {
+    "id": "shrouded-oasis",
+    "trackId": "a925830af77f1eae9c5c48a08a6d903b866357d11c2d38cd7b18e1957d1668bd",
+    "name": "Shrouded Oasis",
+    "author": "Hiksi (route); BonnieBeans (decoration)",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/totw-shrouded-oasis/",
+    "tags": [
+      "track-of-the-week",
+      "editorial-pick"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/shrouded-oasis.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/shrouded-oasis.png"
+  },
+  {
+    "id": "supermassive",
+    "trackId": "eb5b5e51102541b6df2d58fd76b5da03e24031b2ca834f498c5c6adfe00d2225",
+    "name": "Supermassive",
+    "author": "Leahcim24",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/polytrack-track-of-the-week-supermassive-by-leahcim/",
+    "tags": [
+      "track-of-the-week",
+      "editorial-pick"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/supermassive.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/supermassive.png"
+  },
+  {
+    "id": "zephyr-grasslands",
+    "trackId": "c99488f39be6676fe92286a0a3c86089be4b9141ccc73f2c4247acead454011a",
+    "name": "Zephyr Grasslands",
+    "author": "Fael (@leaf.mon) and Horse (@giddyuphorse1234)",
+    "source": "polytrack.fun",
+    "sourceUrl": "https://polytrack.fun/polytrack-custom-track-zephyr-grasslands-play-now/",
+    "tags": [
+      "editorial-pick"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrack-fun/zephyr-grasslands.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/zephyr-grasslands.png"
+  },
+  {
+    "id": "dakiu-the-japanese-nordschleife",
+    "trackId": "c2425afd06b8e73a0b3883b18ccf32a46cc4bc8f832635cb5eb8f8887512f23a",
+    "name": "Dakiu: The Japanese Nordschleife",
+    "author": "Elixir",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dakiu-the-japanese-nordschleife",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dakiu-the-japanese-nordschleife.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/dakiu-the-japanese-nordschleife.png",
+    "description": "Dakiu: The Japanese Nordschleife: This track features 46 corners: 2 of them are banked with esses section, tunnel section, pit lane and alt courses that I might add. We got 4 drivers to beat: Bronze: 2:14.210 Silver: 2:10.777 Gold: 2:08.565"
+  },
+  {
+    "id": "ims",
+    "trackId": "728b5f5807246b2ffdff4d1c0cad0417940bc8cd9f2b4556d5b3e3d6cd39dc67",
+    "name": "IMS",
+    "author": "IndyOwen",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/ims",
+    "tags": [
+      "speedrun",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/ims.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/ims.png",
+    "description": "A straight forward oval with 4 laps, and has some pretty skillful turns after straightaways. This is based off of Indianapolis Motor Speedway, a real life track I hold dear to my heart."
+  },
+  {
+    "id": "just-a-normal-track",
+    "trackId": "6618350794314083378f113c2231c1d6575ff8ea98eadcf46e7a9f867aef8e1e",
+    "name": "Just A Normal Track...?",
+    "author": "GamingMattie",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/just-a-normal-track",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/just-a-normal-track.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/just-a-normal-track.png",
+    "description": "Just A Normal Track With Nothing Special About It..."
+  },
+  {
+    "id": "monaco-grand-prix",
+    "trackId": "0397a53cbacf1a20754421a060ebe5d1217b6815efe5faeb9703d32b4ce41ff1",
+    "name": "Monaco Grand Prix",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/monaco-grand-prix",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/monaco-grand-prix.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/monaco-grand-prix.png",
+    "description": "\"Attempt\" of building the classic racetrack from Monaco including famous turns like Tabac, the Fairmont Hairpin, and the Nouvelle chicane these track also features lots of famous builds near the track that can be visible while driving it."
+  },
+  {
+    "id": "silverstone-circuit",
+    "trackId": "9618a8511550443bcce222605903d152fdb9d05d98dd2ca05f3115bb04b95e92",
+    "name": "Silverstone Circuit",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/silverstone-circuit",
+    "tags": [
+      "racing",
+      "easy"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/silverstone-circuit.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/silverstone-circuit.png",
+    "description": "An attempt to build the classic Silverstone circuit which has been an iconic formula one and multyple racing series track it includes maggots, beckets , village , vale and etc but it does not contain the famous buildings alongside the circu"
+  },
+  {
+    "id": "the-floating-circuit",
+    "trackId": "82c7f45e535228f32498853772093d611ef99cc7b2d9dc4c143ca2eefbe6d9b2",
+    "name": "The Floating Circuit",
+    "author": "SpeedyCitrus",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-floating-circuit",
+    "tags": [
+      "drift",
+      "easy"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-floating-circuit.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/the-floating-circuit.png",
+    "description": "The Floating Circuit isn't your normal racetrack, it's in the ocean! Have fun, good luck, and I hope it goes swimmingly!"
+  },
+  {
+    "id": "castle-run",
+    "trackId": "851f4520ce6be053f7445ca0cf884be724d26165d3abc64d41762a9d3fab5f9a",
+    "name": "Castle run",
+    "author": "T_thedestroyer",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/castle-run",
+    "tags": [
+      "art",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/castle-run.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/castle-run.png",
+    "description": "This is a fun trail where u race trough a castle."
+  },
+  {
+    "id": "the-pit",
+    "trackId": "4c2d724b3ae51c8c28f5303de18c3b8f2fb9f570bb68e34f2968bb29c50c3044",
+    "name": "The Pit",
+    "author": "Winner",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-pit",
+    "tags": [
+      "technical",
+      "expert"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-pit.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/the-pit.png",
+    "description": "A tricky track made to be very hard. By some miracle my first attempt at the full track is the 35s on the Leaderboards."
+  },
+  {
+    "id": "press-forward",
+    "trackId": "b3d801bd8d1c6481595b985c6bd7ce56ed152f1f4fc611656a9bda22692e59a4",
+    "name": "Press Forward",
+    "author": "Overdrive",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/press-forward",
+    "tags": [
+      "speedrun",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/press-forward.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/press-forward.png",
+    "description": "It is a speedrun that is all about gaining and maintaining speed. One minor slipup may cost you the record!"
+  },
+  {
+    "id": "nature-ruin",
+    "trackId": "af9ae5d7548a42a1834568ec576453a07f10ac1d7ba5e7823ea04717c8ba8290",
+    "name": "Nature ruin",
+    "author": "Pingu",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/nature-ruin",
+    "tags": [
+      "racing",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/nature-ruin.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/nature-ruin.png",
+    "description": "Why are we building more and more concrete into the Nature? All it does ist disturbing and destroying it. This Track Starts in the peaceful Nature, and leads in a catastrophic Future where Nature ist Like hell."
+  },
+  {
+    "id": "akira-r1",
+    "trackId": "94442033cbebf0394b4857a76c7fb463fbd6b356b0bdea9bca439d6ecf791feb",
+    "name": "Akira (R1)",
+    "author": "Ae86",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/akira-r1",
+    "tags": [
+      "art",
+      "medium"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/akira-r1.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/akira-r1.png",
+    "description": "A mountain like terrain with multiple winding roads and a bridge, players start at a tunnel and make their way onto a coast and back to the track. with cherry blossoms and icy mountains and beaches this track includes many natural like land"
+  },
+  {
+    "id": "tower-of-checkpoints",
+    "trackId": "09c9d0989eb1eb344a5a2298277b1de1094881ff853e59e28d611ede3b0aa938",
+    "name": "Tower of Checkpoints",
+    "author": "SG|TheLight",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/tower-of-checkpoints",
+    "tags": [
+      "speedrun",
+      "easy"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/tower-of-checkpoints.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/tower-of-checkpoints.png",
+    "description": "A roundabout which goes up featuring 1000 checkpoints."
+  },
+  {
+    "id": "kacky-26",
+    "trackId": "2571d9e912e9f4595e1c1e6f96a420d0cf78406950f26be06fb20c4cedd21cc1",
+    "name": "Kackiest Kacky #26",
+    "author": "Muril2k10",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/26.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/26.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-26.png"
+  },
+  {
+    "id": "kacky-27",
+    "trackId": "26c993731d150bd266ddc5d889f450ba5154ae273b7a8211870b75f5c536ca27",
+    "name": "Kackiest Kacky #27",
+    "author": "Temp",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/27.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/27.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-27.png"
+  },
+  {
+    "id": "kacky-28",
+    "trackId": "f67d93f9f424e624b4fc02a9558987c10e03ad222a7b3af370f9be5a31a34695",
+    "name": "Kackiest Kacky #28",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/28.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-9"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/28.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-28.png"
+  },
+  {
+    "id": "kacky-29",
+    "trackId": "4e7518b66c297172994a37bf859d7abb1b5c4335a930ac6d758b703ddacdf000",
+    "name": "Kackiest kacky #29",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/29.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/29.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-29.png"
+  },
+  {
+    "id": "kacky-30",
+    "trackId": "9f419563d6cdde1bfbe07ac720c195296b26db2b0802dec395f401cac9674849",
+    "name": "Kackiest kacky #30",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/30.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/30.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-30.png"
+  },
+  {
+    "id": "kacky-31",
+    "trackId": "47111746eda57a07f404bdabc24233b3bbd066e9f8348d56d57a7e2131d6a8e8",
+    "name": "Kackiest Kacky #31",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/31.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/31.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-31.png"
+  },
+  {
+    "id": "kacky-32",
+    "trackId": "7a5ef8b70315fbf7eaa67bf28f3e3b4ae32e95bb2dcb813aa00b1e7c9ee187d7",
+    "name": "Kackiest Kacky #32",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/32.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/32.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-32.png"
+  },
+  {
+    "id": "kacky-33",
+    "trackId": "552e97c216d810de6e69dc7c848043ffbd764963966aa5eda477c20a9c0a4cae",
+    "name": "Kackiest Kacky #33",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/33.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/33.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-33.png"
+  },
+  {
+    "id": "kacky-34",
+    "trackId": "5cbda5eb8798ec038ce290209adbe696510e5f1a211d2f76c73e7478e03ada79",
+    "name": "Kackiest Kacky #34",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/34.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-5"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/34.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-34.png"
+  },
+  {
+    "id": "kacky-35",
+    "trackId": "c808b01bf99ace3e7330b07349cf0f9955129491d6b0ab87f394ff51df63fd8c",
+    "name": "Kackiest Kacky #35",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/35.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-2"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/35.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-35.png"
+  },
+  {
+    "id": "kacky-36",
+    "trackId": "0d832c9f23339a27c86fc8e52e7c1e66613f949ae862098db577e3b4dddf5469",
+    "name": "Kackiest Kacky #36",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/36.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-7"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/36.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-36.png"
+  },
+  {
+    "id": "kacky-37",
+    "trackId": "33e19d621d9086fa0e682f6232d2c46f36c25ffaac3c5f86ed8df8cffcf72594",
+    "name": "Kackiest kacky #37",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/37.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/37.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-37.png"
+  },
+  {
+    "id": "kacky-38",
+    "trackId": "44358849feb6f259db2f37caf1b4457ae3e29a04e3cb90bb75bdab0069bc4c22",
+    "name": "Kackiest Kacky #38",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/38.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/38.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-38.png"
+  },
+  {
+    "id": "kacky-39",
+    "trackId": "602faeb5d162d0b4a36fc4df15209b0f61a295beb6a4655f173823a547a4ef03",
+    "name": "Kackiest Kacky #39",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/39.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-7"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/39.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-39.png"
+  },
+  {
+    "id": "kacky-40",
+    "trackId": "57287cee7b796e16239fb6d6ac5a82c07b7b3617256511d0d1f879b2b861f364",
+    "name": "Kackiest Kacky #40",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/40.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-7"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/40.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-40.png"
+  },
+  {
+    "id": "kacky-41",
+    "trackId": "10c8ee69bf009c7db6a135379ac63c7b707838cd8b7756b311fc2ed53e5d08e3",
+    "name": "kackiest kacky #41",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/41.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-1"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/41.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-41.png"
+  },
+  {
+    "id": "kacky-43",
+    "trackId": "a0ac2be902274e96679c4c6e6c39330f196bead27cc022e07c6e3cab9be15861",
+    "name": "Kackiest Kacky #43",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/43.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-2"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/43.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-43.png"
+  },
+  {
+    "id": "kacky-44",
+    "trackId": "e67a52442d59b9d8da11aca18ace58304af61c9ed6f38aeeef5a98df110c404e",
+    "name": "Kackiest Kacky #44",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/44.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-8"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/44.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-44.png"
+  },
+  {
+    "id": "kacky-47",
+    "trackId": "2ae763a95555c0f99d4493448e1d6b06992348bf672495a97ab9b0a0bcd23453",
+    "name": "Kackiest kacky #47",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/47.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-1"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/47.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-47.png"
+  },
+  {
+    "id": "kacky-48",
+    "trackId": "22aae7e5a1d64fa0cd7b8c238a60a85a9d29b204fb14256e6fa6935629563498",
+    "name": "Kackiest Kacky #48",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/48,.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-5"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/48.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-48.png"
+  },
+  {
+    "id": "kacky-49",
+    "trackId": "c98dc52c63c85439912203efb7edc41021c09638804beecf6fa8b7ab0818798c",
+    "name": "Kackiest Kacky #49",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/49.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-7"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/49.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-49.png"
+  },
+  {
+    "id": "kacky-50",
+    "trackId": "d0ef259c4f23e46eaba4ff0a71de644761442274e165803ecd1da35568824c28",
+    "name": "kackiest kacky #50",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/50.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/50.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-50.png"
+  },
+  {
+    "id": "kacky-51",
+    "trackId": "a657fdea10071e5b892ac3cee2b1142ba780ef2d5d68fff476c887b5baa30db2",
+    "name": "kackiest kacky #51",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/51.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/51.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-51.png"
+  },
+  {
+    "id": "kacky-52",
+    "trackId": "cfd9906a3dd8b79c4871fda7555dfc5b6361935812dcc4b16bc76c41bf8bc1f5",
+    "name": "Kackiest Kacky #52",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/52.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/52.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-52.png"
+  },
+  {
+    "id": "kacky-53",
+    "trackId": "36c5bfd53cf316ef8ac8c8d96d080b3e3cfe057f5b6ed2f9e668946effb0eeba",
+    "name": "Kackiest Kacky #53",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/53.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-5"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/53.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-53.png"
+  },
+  {
+    "id": "kacky-54",
+    "trackId": "de44cc3b7cc494c8489fd764740cf5322a5f0e175cbacf39b0d8de151380be9f",
+    "name": "kackiest kacky #54",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/54.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/54.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-54.png"
+  },
+  {
+    "id": "kacky-55",
+    "trackId": "53e1a02ff2619679f9fc9a57780190e3f785f224f9214823ed4a7e934c754789",
+    "name": "Kackiest kacky #55",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/55.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-4"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/55.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-55.png"
+  },
+  {
+    "id": "kacky-56",
+    "trackId": "0e2c2aef3c95eb21d38b406849ca0536a6d3488b222af1b783282e0152a41cc9",
+    "name": "Kackiest Kacky #56",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/56.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-3"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/56.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-56.png"
+  },
+  {
+    "id": "kacky-57",
+    "trackId": "8b28242f6520c1029155ef09f731b2d795489cfeb3923ff90c0dc05111aa14fc",
+    "name": "Kackiest Kacky #57",
+    "author": "KrogerUber",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/57.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-5"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/57.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-57.png"
+  },
+  {
+    "id": "kacky-59",
+    "trackId": "eb62fc7c73a114e6a646a0a35422b325bbbd1561edbfa2d22d6c1906a1838b80",
+    "name": "Kackiest Kacky #59",
+    "author": "The Kroger",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/59.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-6"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/59.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-59.png"
+  },
+  {
+    "id": "kacky-60",
+    "trackId": "25a1e2a270522330327a865ad3e626a2eb291f738998fb90d60e6ed79b080683",
+    "name": "Kackiest Kacky #60",
+    "author": "Einar",
+    "source": "Kacky Throwback 2 by DoraChad",
+    "sourceUrl": "https://github.com/DoraChad/KackyThrowback2/blob/7bc0f7f26a83a753ced7587900332fc04abdad27/tracks/throwback/60.track",
+    "tags": [
+      "kacky",
+      "throwback",
+      "difficulty-8"
+    ],
+    "tier": "Challenge",
+    "trackPath": "extra-tracks/track-data/kacky/60.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-60.png"
+  }
+]

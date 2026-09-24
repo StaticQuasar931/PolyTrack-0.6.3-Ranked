@@ -5,7 +5,8 @@ import {connect, decode} from './firestore.mjs';
 import {QUEUE_CANDIDATE_LIMIT, prioritizeQueueDocuments, selectJobs, publishResults} from './runner.mjs';
 import {budgetDatabase, drainVerification, DRAIN_LIMITS} from './throughput.mjs';
 import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
-import {VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
+import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
+import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
 export const NORMAL_JOB_LIMIT = 12;
 export const TOTAL_JOB_LIMIT = 16;
 const checkEvents = async (db, options) => (await import('./events.mjs')).checkEventWork(db, options);
@@ -20,29 +21,33 @@ async function validateEnginePin() {
 }
 
 export async function checkForWork(db, {env = process.env, now = Date.now(), log = console.log, eventCheck = checkEvents} = {}) {
-  const rows = await db.call(':runQuery', {structuredQuery: {
-    from: [{collectionId: VERIFICATION_COLLECTION}],
+  const due = async collection => db.call(':runQuery', {structuredQuery: {
+    from: [{collectionId: collection}],
     select: {fields: [{fieldPath: 'notBefore'}]},
     where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}},
     orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}],
     limit: 1
   }});
-  if (!Array.isArray(rows)) throw Error('Unexpected verification queue response');
-  const normalHasWork = rows.some(row => row.document);
+  const coreRows = await due(VERIFICATION_COLLECTION);
+  const extraRows = await due(EXTRA_VERIFICATION_COLLECTION);
+  if (!Array.isArray(coreRows) || !Array.isArray(extraRows)) throw Error('Unexpected verification queue response');
+  const coreHasWork = coreRows.some(row => row.document);
+  const extraHasWork = extraRows.some(row => row.document);
+  const normalHasWork = coreHasWork || extraHasWork;
   const events = await eventCheck(db, {now});
   if (typeof events?.hasWork !== 'boolean') throw Error('Unexpected event queue response');
   const eventHasWork = events.hasWork;
-  const due = normalHasWork || eventHasWork;
-  if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=' + due + '\n');
-  const message = due ? 'Verification work is due; the verifier will re-read current queue state.' :
+  const hasWork = normalHasWork || eventHasWork;
+  if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=' + hasWork + '\n');
+  const message = hasWork ? 'Verification work is due; the verifier will re-read current queue state.' :
     'No verification work is due. Dependency installation, browser setup, and simulation are skipped.';
   log(message);
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '## Verification preflight\n' + message + '\n\n' +
-    'Normal queue: one projected existence query. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
-    (due ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
+    'Core and Extra queues: two projected existence queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
+    (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
       'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));
-  return {hasWork: due, normalHasWork, eventHasWork, queueQueries: 1, returnedDocuments: normalHasWork ? 1 : 0};
+  return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2, returnedDocuments: Number(coreHasWork) + Number(extraHasWork)};
 }
 
 export async function runVerifier({check = false, drain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
@@ -79,13 +84,28 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
   if (!Number.isInteger(events.checked) || events.checked<0 || events.checked>eventLimit) throw Error('Invalid event native count');
   let selectedJobs = [], canonicalAttempts = 0, selectionConflicts = 0;
   if (events.checked < TOTAL_JOB_LIMIT) {
-    const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: VERIFICATION_COLLECTION}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
-    const docs = (query || []).filter(x => x.document).map(x => ({...x.document, data: decode({mapValue: {fields: x.document.fields || {}}})}));
-    const prioritized = await prioritizeNormal(db, docs, now);
-    const selected = await selectNormal(db, prioritized, now);
-    selectedJobs = selected.jobs;
-    canonicalAttempts = selected.canonicalAttempts;
-    selectionConflicts = selected.selectionConflicts;
+    const dueDocs = async collection => {
+      const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: collection}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
+      if (!Array.isArray(query)) throw Error('Unexpected verification queue response');
+      return query.filter(x => x.document).map(x => {
+        const document = {...x.document, queueCollection: collection, data: decode({mapValue: {fields: x.document.fields || {}}})};
+        const registered = EXTRA_TRACK_IDS.has(document.data.trackId);
+        if (registered !== (collection === EXTRA_VERIFICATION_COLLECTION)) {
+          throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED: queue lane does not match trusted track registry');
+        }
+        return document;
+      });
+    };
+    const coreDocs = await dueDocs(VERIFICATION_COLLECTION);
+    const extraDocs = await dueDocs(EXTRA_VERIFICATION_COLLECTION);
+    const capacity = borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT;
+    const coreLimit = capacity - Number(extraDocs.length > 0);
+    const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now), now, {jobLimit: coreLimit, lookupLimit: coreLimit});
+    const extraLimit = Math.min(1, capacity - core.jobs.length, 16 - core.canonicalAttempts);
+    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now), now, {jobLimit: extraLimit, lookupLimit: extraLimit, perTrackLimit: 1}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
+    selectedJobs = [...core.jobs, ...extra.jobs];
+    canonicalAttempts = core.canonicalAttempts + extra.canonicalAttempts;
+    selectionConflicts = core.selectionConflicts + extra.selectionConflicts;
   }
   // Normal selection is unleased: unprocessed bindings remain in their queue.
   let jobs = selectedJobs.slice(0, NORMAL_JOB_LIMIT);

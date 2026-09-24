@@ -72,7 +72,9 @@ test('prior proof requires every exact run field and trusted verdict, never a cl
 });
 test('future repin cannot implicitly inherit proof or immutable-period compatibility',async()=>{
  const fs=await import('node:fs');const future='e'.repeat(64);
- const source=fs.readFileSync(new URL('../src/verification.js',import.meta.url),'utf8').replace("export const VERIFIER_ENGINE_DIGEST = '"+VERIFIER_ENGINE_DIGEST+"'","export const VERIFIER_ENGINE_DIGEST = '"+future+"'");
+ const source=fs.readFileSync(new URL('../src/verification.js',import.meta.url),'utf8')
+   .replace("import { EXTRA_TRACK_IDS } from './extra-track-ids.js';",'const EXTRA_TRACK_IDS = new Set();')
+   .replace("export const VERIFIER_ENGINE_DIGEST = '"+VERIFIER_ENGINE_DIGEST+"'","export const VERIFIER_ENGINE_DIGEST = '"+future+"'");
  const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  for(const proof of [oldCurrent,reviewedGhost,previous,current])assert.equal(module.verifiedVerdict(row,proof),false);
  const compat=fs.readFileSync(new URL('../src/event-engine-compatibility.js',import.meta.url),'utf8').replace("import { VERIFIER_ENGINE_DIGEST } from './verification.js';","const VERIFIER_ENGINE_DIGEST = '"+future+"';");
