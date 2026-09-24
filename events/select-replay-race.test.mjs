@@ -46,7 +46,7 @@ function harness() {
       return { nickname: entry.name, racerId: entry.accountId };
     }
   });
-  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0;const replayCache=new Map();${selectReplaySource};return {selectReplay,selected:()=>selectedGhost};})()`, context);
+  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
   return {
     ...api,
     bridge,
@@ -123,8 +123,24 @@ test('session and account changes still suppress replay selection', async () => 
 });
 
 test('client declaration owns one replay request counter', () => {
-  assert.match(source, /selectedGhost=null,replayRequest=0;const replayCache=new Map\(\)/);
+  assert.match(source, /selectedGhost=null,replayRequest=0;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
   assert.match(selectReplaySource, /const token=\+\+replayRequest/);
+});
+
+test('sequential replay selections accumulate and each one toggles off', async () => {
+  const h = harness();
+  const first = racer('first', 1200, 'First');
+  const second = racer('second', 1300, 'Second');
+  const p1 = h.selectReplay(period, first);
+  h.reads.get('first').resolve(payload(first));
+  await p1;
+  const p2 = h.selectReplay(period, second);
+  h.reads.get('second').resolve(payload(second));
+  await p2;
+  assert.equal(h.selectedCount(), 2);
+  await h.selectReplay(period, first);
+  assert.equal(h.selectedCount(), 1);
+  assert.equal(h.selected().ghost.racerId, 'second');
 });
 
 test('waiting replay selection requests exact run and isolates verified cache',async()=>{

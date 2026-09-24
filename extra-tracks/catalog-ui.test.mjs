@@ -73,6 +73,37 @@ test('mount is hidden until open, paginates exact counts and restores focus', ()
   assert.equal(root.children.length, 0);
 });
 
+test('source counts, suggested tags and the submission dialog stay together', async () => {
+  const { root, api } = fixture([entry(1), entry(2), entry(3)]);
+  api.open();
+  const source = cls(root, 'sq-extra-controls')[0].children[1].children.find(node => node.tagName === 'SELECT');
+  assert.match(source.textContent, /Kacky \(2\)/);
+  assert.match(source.textContent, /Community \(1\)/);
+  const modal = cls(root, 'sq-extra-submission-modal')[0];
+  assert.equal(modal.hidden, true);
+  await click(cls(root, 'sq-extra-submit')[0]);
+  assert.equal(modal.hidden, false);
+  assert.match(cls(root, 'sq-extra-tag-suggestions')[0].textContent, /technical/);
+  await click(cls(root, 'sq-extra-submission-close')[0]);
+  assert.equal(modal.hidden, true);
+  api.destroy();
+});
+
+test('submission explains an API failure and keeps the fallback available', async () => {
+  const { root, api } = fixture([entry(1)], { onSubmit: async () => { throw Error('You already submitted a track today.'); } });
+  api.open();
+  await click(cls(root, 'sq-extra-submit')[0]);
+  const fields = cls(root, 'sq-extra-submission-field');
+  fields[0].children[0].value = 'Test track';
+  fields[1].children[0].value = 'Tester';
+  fields[3].children[0].value = 'PolyTrack' + 'A'.repeat(24);
+  cls(root, 'sq-extra-submission-check')[0].children[0].checked = true;
+  await click(cls(root, 'sq-extra-send')[0]);
+  assert.match(cls(root, 'sq-extra-submission-status')[0].textContent, /already submitted a track today/);
+  assert.equal(cls(root, 'sq-extra-fallback')[0].href.includes('docs.google.com'), true);
+  api.destroy();
+});
+
 test('search, source, tag, curated and completion filters combine and refresh reads new PBs', () => {
   const entries = [entry(1), entry(2), entry(3, { tier: 'Curated', tags: ['technical', 'curated'] })];
   const best = new Map([['track-3', { timeMs: 61234, place: 2 }]]);

@@ -78,7 +78,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   header.append(titleGroup, closeButton);
   dialog.append(header);
   const invitation = make('p', 'sq-extra-invite', 'Made a track? Direct submissions get priority review for this collection. Inclusion and featured placement are not guaranteed.');
-  dialog.append(invitation);
+  const inviteRow = make('div', 'sq-extra-invite-row');
+  const submit = button('Submit a track', 'sq-extra-submit', () => {
+    submissionModal.hidden = false;
+    showStatus('');
+    submitName.focus();
+  });
+  inviteRow.append(invitation, submit);
+  dialog.append(inviteRow);
 
   const controls = make('div', 'sq-extra-controls');
   const searchLabel = make('label', 'sq-extra-field', 'Search tracks');
@@ -116,15 +123,16 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const count = make('p', 'sq-extra-count');
   count.setAttribute('role', 'status');
   count.setAttribute('aria-live', 'polite');
-  const submit = button('Submit a track', 'sq-extra-submit', () => {
-    submission.hidden = !submission.hidden;
-    if (!submission.hidden) submitName.focus();
-  });
-  summary.append(count, submit);
+  summary.append(count);
   dialog.append(summary);
+  const submissionModal = make('div', 'sq-extra-submission-modal');
+  submissionModal.hidden = true;
+  submissionModal.setAttribute('role', 'dialog');
+  submissionModal.setAttribute('aria-modal', 'true');
+  submissionModal.setAttribute('aria-label', 'Submit an Extra Track');
   const submission = make('form', 'sq-extra-submission');
-  submission.hidden = true;
   const submissionTitle = make('h3', '', 'Share your track');
+  const submissionClose = button('Close', 'sq-extra-submission-close', () => { submissionModal.hidden = true; submit.focus(); });
   const formField = (caption, tag, maxLength) => {
     const label = make('label', 'sq-extra-submission-field', caption);
     const input = make(tag);
@@ -133,7 +141,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     submission.append(label);
     return input;
   };
-  submission.append(submissionTitle);
+  submission.append(submissionTitle, submissionClose);
   const submitName = formField('Track name', 'input', 80);
   const submitAuthor = formField('Creator name', 'input', 80);
   const submitDescription = formField('What makes this track worth playing?', 'textarea', 1000);
@@ -145,6 +153,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     submitDifficulty.append(option);
   }
   const submitTags = formField('Style tags (optional, comma separated)', 'input', 120);
+  const tagSuggestions = make('div', 'sq-extra-tag-suggestions');
+  tagSuggestions.setAttribute('aria-label', 'Suggested style tags');
+  submission.append(tagSuggestions);
   const submitSource = formField('Original post URL (optional)', 'input', 300);
   const permissionLabel = make('label', 'sq-extra-submission-check');
   const submitPermission = make('input'); submitPermission.type = 'checkbox';
@@ -156,12 +167,19 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   fallback.href = SUBMIT_URL; fallback.target = '_blank'; fallback.rel = 'noopener noreferrer';
   submissionActions.append(sendSubmission, fallback);
   submission.append(submissionActions);
-  dialog.append(submission);
+  submissionModal.append(submission);
+  submissionModal.addEventListener('click', event => { if (event.target === submissionModal) { submissionModal.hidden = true; submit.focus(); } });
+  overlay.append(submissionModal);
   const status = make('p', 'sq-extra-status');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.hidden = true;
   dialog.append(status);
+  const submissionStatus = make('p', 'sq-extra-submission-status');
+  submissionStatus.setAttribute('role', 'status');
+  submissionStatus.setAttribute('aria-live', 'polite');
+  submissionStatus.hidden = true;
+  submission.append(submissionStatus);
   const list = make('div', 'sq-extra-grid');
   dialog.append(list);
   const pagination = make('nav', 'sq-extra-pagination');
@@ -173,10 +191,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     return (Array.isArray(entries) ? entries : []).filter(entry => entry && typeof entry === 'object' && text(entry.id));
   }
 
-  function options(select, values, allLabel, selected) {
+  function options(select, values, allLabel, selected, counts = null) {
     select.replaceChildren();
     for (const value of ['', ...values]) {
-      const option = make('option', '', value || allLabel);
+      const option = make('option', '', value ? `${value}${counts ? ` (${counts.get(value) || 0})` : ''}` : allLabel);
       option.value = value;
       select.append(option);
     }
@@ -187,6 +205,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     status.textContent = message;
     status.hidden = !message;
     status.className = error ? 'sq-extra-status sq-extra-status-error' : 'sq-extra-status';
+    submissionStatus.textContent = message;
+    submissionStatus.hidden = !message || submissionModal.hidden;
+    submissionStatus.className = error ? 'sq-extra-submission-status sq-extra-status-error' : 'sq-extra-submission-status';
   }
 
   async function submitForm(event) {
@@ -206,9 +227,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     try {
       await onSubmit(payload);
       showStatus('Track received for review. Thanks for sharing it.');
-      submission.hidden = true; submitCode.value = '';
-    } catch {
-      showStatus('Could not send this track. Use the Google Form instead.', true);
+      submissionModal.hidden = true; submitCode.value = ''; submit.focus();
+    } catch (error) {
+      showStatus(`${error?.message || 'Could not send this track.'} You can use the Google Form instead.`, true);
     } finally { pendingAction = false; sendSubmission.disabled = false; }
   }
   submission.addEventListener('submit', submitForm);
@@ -235,6 +256,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
 
   function card(entry, best, loaded) {
     const article = make('article', 'sq-extra-card');
+    if (text(entry.tier).toLowerCase() === 'curated') article.className += ' sq-extra-card-featured';
     const visual = make('div', 'sq-extra-visual');
     const placeholder = make('span', 'sq-extra-placeholder', text(entry.category, 'Custom track').toUpperCase());
     visual.append(placeholder);
@@ -263,7 +285,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }
     const level = difficulty(entry);
     if (level !== null) body.append(make('p', 'sq-extra-difficulty', `Difficulty: ${DIFFICULTY_LABELS[level]}`));
-    const facts = make('p', 'sq-extra-facts', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`);
+    const facts = make('p', 'sq-extra-facts');
+    facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
     const copies = Number.isSafeInteger(entry.sourceCopies) ? entry.sourceCopies : null;
     const plays = Number.isSafeInteger(entry.sourcePlays) ? entry.sourcePlays : null;
     if (copies !== null && copies >= 0) facts.append(make('span', 'sq-extra-plays', `${copies.toLocaleString()} source copies`));
@@ -279,10 +302,21 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function render() {
     if (destroyed) return;
     const all = currentEntries();
-    const sources = [...new Set(all.map(entry => text(entry.source)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const sourceCounts = new Map();
+    for (const entry of all) if (text(entry.source)) sourceCounts.set(entry.source, (sourceCounts.get(entry.source) || 0) + 1);
+    const sources = [...sourceCounts.keys()].sort((a, b) => a.localeCompare(b));
     const tags = [...new Set(all.flatMap(entry => Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)).filter(tag => tag && !/^difficulty-/.test(tag) && !['easy', 'medium', 'hard', 'expert', 'kacky', 'throwback'].includes(tag)) : []))].sort((a, b) => a.localeCompare(b));
-    options(sourceField.select, sources, 'All sources', state.source);
-    options(tagField.select, tags, 'All styles', state.tag);
+    const tagCounts = new Map();
+    for (const entry of all) for (const tag of new Set(entry.tags || [])) if (tags.includes(tag)) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    options(sourceField.select, sources, 'All sources', state.source, sourceCounts);
+    options(tagField.select, tags, 'All styles', state.tag, tagCounts);
+    tagSuggestions.replaceChildren();
+    for (const tag of [...tagCounts].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+      tagSuggestions.append(button(tag[0].replaceAll('-', ' '), '', () => {
+        const selected = new Set(submitTags.value.split(',').map(value => value.trim()).filter(Boolean));
+        selected.add(tag[0]); submitTags.value = [...selected].slice(0, 6).join(', '); submitTags.focus();
+      }));
+    }
     state.source = sourceField.select.value;
     state.tag = tagField.select.value;
     const query = state.search.toLocaleLowerCase();
@@ -332,6 +366,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (!opened || destroyed) return;
     opened = false;
     overlay.hidden = true;
+    submissionModal.hidden = true;
     if (returnFocus?.focus) returnFocus.focus();
   }
 
@@ -348,7 +383,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
 
   function onKeydown(event) {
     if (!opened) return;
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    if (event.key === 'Escape') { event.preventDefault(); if (!submissionModal.hidden) { submissionModal.hidden = true; submit.focus(); } else close(); return; }
+    if (!submissionModal.hidden && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     if (!editing) {
@@ -365,7 +401,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       }
     }
     if (event.key !== 'Tab') return;
-    const focusable = [...dialog.querySelectorAll('button:not([disabled]),input,select,a[href]')].filter(node => !node.hidden);
+    const focusRoot = submissionModal.hidden ? dialog : submissionModal;
+    const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href]')].filter(node => !node.hidden);
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];

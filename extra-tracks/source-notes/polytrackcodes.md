@@ -6,7 +6,7 @@ The user has confirmed written permission to redistribute PolyTrackCodes track c
 
 ## Editorial picks imported
 
-Sixty-six selected codes are listed with creator credit and their individual source-page links in `../sources/polytrackcodes.json`. Every code was checked against its native PolyTrack track ID. Source copy counts, where available, are a snapshot of code-copy activity, not live racer counts; missing counts are left null. The game does not display external links on every card, but the source filter and manifest remain available.
+One hundred nineteen selected codes are listed with creator credit and their individual source-page links in `../sources/polytrackcodes.json`. Every code was checked against its native PolyTrack track ID and bounded geometry. Fifty-three additional codes were imported on 2026-09-23 from the source's per-track endpoint, after excluding duplicates and out-of-bounds geometry. Native thumbnails were generated locally from the decoded tracks; no source artwork was copied. Source copy counts, where available, are a snapshot of code-copy activity, not live racer counts; missing counts are left null. The game does not display external links on every card, but the source filter and manifest remain available.
 
 ## Source terms
 

@@ -350,19 +350,8 @@ export async function migrateExtraVerificationQueues(env, ids = EXTRA_TRACK_IDS)
   let moved = 0;
   const batch = trackIds.slice(cursor, cursor + 4);
   for (const trackId of batch) {
-    const core = await readDocument(env, VERIFICATION_COLLECTION, trackId);
-    if (!core) continue;
-    if (core.data.trackId !== trackId) throw Error('EXTRA_QUEUE_ID_MISMATCH');
-    const extra = await readDocument(env, EXTRA_VERIFICATION_COLLECTION, trackId);
-    const slots = {...core.data.slots};
-    for (const [accountId, slot] of Object.entries(extra?.data?.slots || {})) {
-      if (Object.hasOwn(slots, accountId)) throw Error('EXTRA_QUEUE_SLOT_CONFLICT');
-      slots[accountId] = slot;
-    }
-    writes.push({collection: EXTRA_VERIFICATION_COLLECTION, id: trackId, prior: extra,
-      data: {...core.data, ...extra?.data, trackId, slots, ...verificationSchedule(slots), updatedAt: Date.now()}});
-    writes.push({collection: VERIFICATION_COLLECTION, id: trackId, prior: core, remove: true});
-    moved++;
+    const migration = await legacyExtraQueueWrites(env, trackId);
+    if (migration.length) { writes.push(...migration); moved++; }
   }
   const processed = cursor + batch.length;
   writes.push({collection: COLLECTIONS.jobs, id: jobId, prior,
@@ -371,11 +360,29 @@ export async function migrateExtraVerificationQueues(env, ids = EXTRA_TRACK_IDS)
   return {moved, processed, complete: processed === trackIds.length};
 }
 
+async function legacyExtraQueueWrites(env, trackId) {
+  const core = await readDocument(env, VERIFICATION_COLLECTION, trackId);
+  if (!core) return [];
+  if (core.data.trackId !== trackId) throw Error('EXTRA_QUEUE_ID_MISMATCH');
+  const extra = await readDocument(env, EXTRA_VERIFICATION_COLLECTION, trackId);
+  const slots = {...core.data.slots};
+  for (const [accountId, slot] of Object.entries(extra?.data?.slots || {})) {
+    if (Object.hasOwn(slots, accountId)) throw Error('EXTRA_QUEUE_SLOT_CONFLICT');
+    slots[accountId] = slot;
+  }
+  return [
+    {collection: EXTRA_VERIFICATION_COLLECTION, id: trackId, prior: extra,
+      data: {...core.data, ...extra?.data, trackId, slots, ...verificationSchedule(slots), updatedAt: Date.now()}},
+    {collection: VERIFICATION_COLLECTION, id: trackId, prior: core, remove: true}
+  ];
+}
+
 async function requireExtraQueueMigration(env, trackId) {
   if (verificationCollectionForTrack(trackId) !== EXTRA_VERIFICATION_COLLECTION) return;
   const marker = await readDocument(env, COLLECTIONS.jobs, 'extra_verification_queue_migration_v1');
   if (marker?.data?.complete !== true || marker.data.registry !== [...EXTRA_TRACK_IDS].sort().join(',')) {
-    throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED');
+    const migration = await legacyExtraQueueWrites(env, trackId);
+    if (migration.length) await commitDocuments(env, migration);
   }
 }
 
@@ -1350,6 +1357,23 @@ export default {
   },
   scheduled(_event, env, context) {
     context.waitUntil((async()=>{
+      if (_event.cron === '*/2 * * * *') {
+        let rollingRefreshed = false;
+        try {
+          const rolling = await readDocument(env, COLLECTIONS.track, SPECIAL_ROLLING_HILLS_TRACK_ID);
+          if (rolling?.data?.entries?.length && Number(rolling.data.schemaVersion || 0) < TRACK_SCHEMA_VERSION) {
+            await rebuildTrack(env, SPECIAL_ROLLING_HILLS_TRACK_ID);
+            rollingRefreshed = true;
+          }
+        } catch (error) { console.error('Rolling Hills snapshot refresh failed', String(error?.message || error)); }
+        // Rebuilding a track is read-heavy; leave the rest of this invocation's
+        // Firestore subrequest budget for that work.
+        for (let batch = 0; batch < (rollingRefreshed ? 1 : 4); batch++) {
+          try { if ((await migrateExtraVerificationQueues(env)).complete) break; }
+          catch (error) { console.error('Extra queue recovery failed', String(error?.message || error)); break; }
+        }
+        return;
+      }
       if (_event.cron === '* * * * *') {
         const community = [...COMMUNITY_IDS];
         // Existing TRACK_CATALOG begins with Rolling Hills, then official tracks.

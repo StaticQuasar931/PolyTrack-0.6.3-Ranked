@@ -1130,5 +1130,906 @@
     "category": "Speedrun",
     "sourceCopies": 99,
     "description": "An extremely precise and technical speedrun, to continue the Focus series. Survive the tight hairpins and funky layout, as well as the single pixel jump you must make over the steaming hot lava and geysers underneath you. Don't fall. Don't "
+  },
+  {
+    "id": "banking-boundaries",
+    "trackId": "b4faa36b9a81e2f18003242803285475ad3f09f734a5b6ddaa91bc4a3d81ac75",
+    "name": "Banking Boundaries",
+    "author": "FISHY",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/banking-boundaries",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/banking-boundaries.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 51,
+    "description": "A smooth, flowing, banking track. Starts off with a down hill and blind jump, which transitions into a banking left-hander followed by a choice of left or right. After the split section, players are met with a straight leading into a precis"
+  },
+  {
+    "id": "burn-the-turns",
+    "trackId": "72d1151d551f8117cca576bd1d07f2c7321b0aee8b5d2f99c820239ce0f8cb77",
+    "name": "Burn the Turns",
+    "author": "phantom",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/burn-the-turns",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/burn-the-turns.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 86,
+    "description": "A technical speedrun featuring many short and sharp turns! May the best racer win............. (dot dot dot)"
+  },
+  {
+    "id": "circuit-zandvoort",
+    "trackId": "97412437fd07e49da7c80acfd99044787cb87e464193454db64afe541ab012ab",
+    "name": "circuit zandvoort",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/circuit-zandvoort",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/circuit-zandvoort.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 56,
+    "description": "a recreation of circuit zandvoort. it is a flowing track with satisfying corners that test consistency through the 2 laps. it takes about 2min 25s to complete."
+  },
+  {
+    "id": "sony-fe-500mm-f2-8",
+    "trackId": "4a7720d738b6d86f87f19f83c22950d0d07cdd628c3e35061af6c6a898402922",
+    "name": "Sony FE 500mm f/2.8",
+    "author": "Canon EF 500mm f/4 IS USM II",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/sony-fe-500mm-f2-8",
+    "tags": [
+      "drift"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/sony-fe-500mm-f2-8.track",
+    "difficulty": 4,
+    "category": "Drift",
+    "sourceCopies": 49,
+    "description": "Pour s'exercé les virages"
+  },
+  {
+    "id": "ice-run-hard",
+    "trackId": "8df417facfcc9be979fc965411a788ae29d78f8a623acc57d2ae13f269d09f57",
+    "name": "ice run(hard)🥵",
+    "author": "Ether Lilk🔪🩸",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/ice-run-hard",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/ice-run-hard.track",
+    "difficulty": 8,
+    "category": "Speedrun",
+    "sourceCopies": 115,
+    "description": "really hard"
+  },
+  {
+    "id": "suzuka-circuit",
+    "trackId": "294935375b6330c7a3f9dbd7d2b3a3c647ee3834141815db56e31d8a78429d96",
+    "name": "Suzuka circuit",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/suzuka-circuit",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/suzuka-circuit.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 56,
+    "description": "a recreation of the suzuka f1 circuit. it is a high speed track that has a really nice flow. it is 2 laps and takes about 2min 35s to complete."
+  },
+  {
+    "id": "silverstone-recreation",
+    "trackId": "dd44c7959332354bbd73893eb22985d9f52672b5e70532f59c66a6fcf8260d41",
+    "name": "Silverstone",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/silverstone-recreation",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/silverstone-recreation.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 72,
+    "description": "this is a recreation of silverstone which hosted the first f1 gp. it is upsized so that you czan drive faster which makes it more enjoyable. it it 2 laps of the circuit which has quite realistic times per lap. it is a nice track that if you"
+  },
+  {
+    "id": "snes-rainbow-road",
+    "trackId": "8dfc4d57a3a2642a6691a0c38f6569f71493b03b15601654fe705b6ffc19731a",
+    "name": "SNES rainbow road",
+    "author": "CITRA",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/snes-rainbow-road",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/snes-rainbow-road.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 69,
+    "description": "Your classic SNES rainbow road with colors. (you must drive through the track twice.)"
+  },
+  {
+    "id": "kilfer-1",
+    "trackId": "6fb5f9e4a373a2ca7ad039a8765539bd0c1f6a8508ae8a5735da8d15cf851ac2",
+    "name": "kilfer 1",
+    "author": "vajra",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/kilfer-1",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/kilfer-1.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 52,
+    "description": "A technical speedrun featuring a starting jump with a precise braking point to land before the checkpoint on the following straight. The track then drops onto a shorter straight before entering a tight, boxy chicane, leading into a straight"
+  },
+  {
+    "id": "spa-francorchamps",
+    "trackId": "f91fedc31ddb3e9d8021b945771109389f104d3838fa2fe0473feee8b3b783c9",
+    "name": "spa francorchamps",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/spa-francorchamps",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/spa-francorchamps.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 41,
+    "description": "this is a recreation of spa francorchamps. you will do 2 laps around this high speed track. a few key corners are eau rouge and radillon. you need to take this flat out with the perfect line or you will crash. this track is very satisfying "
+  },
+  {
+    "id": "gba-rainbow-road-best-recreation",
+    "trackId": "3a382c819b73b163f9fde53d426dd973d8c383d67609ff15b06997bc23cc35be",
+    "name": "GBA rainbow road best recreation",
+    "author": "CITRA",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/gba-rainbow-road-best-recreation",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/gba-rainbow-road-best-recreation.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 52,
+    "description": "My best recreation of GBA rainbow road, i kept most of the yellow bounce things and that little shortcut you can take. You must go through the track twice to do it. The hardest section might be the double ramp hops you have to do, because i"
+  },
+  {
+    "id": "power-world",
+    "trackId": "37efb5ae225a551e413e94c3333cadefba80626167984407d381a3d8b9e259f3",
+    "name": "Power world",
+    "author": "Kushalffgjjd",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/power-world",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/power-world.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 55,
+    "description": "An easy lesson time fun track for beginners"
+  },
+  {
+    "id": "a-quick-trip",
+    "trackId": "662b823f61f78c1e5ced29a9a8bc795bc97a7a9dac2f8edfa543e5d15fc501ee",
+    "name": "a quick trip",
+    "author": "coo1zykid45",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/a-quick-trip",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/a-quick-trip.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 53,
+    "description": "a quick trip through three biomes that are full of tricks and turns."
+  },
+  {
+    "id": "super-cool-and-very-hard-track-that-consists-of-the-block-start",
+    "trackId": "9feb4eb9da3b6f02962427f8723fe459a67d3e3f8c96e40d55fee831af7f8f02",
+    "name": "Super cool and very hard track that consists of the block start",
+    "author": "N0 N4M3",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/super-cool-and-very-hard-track-that-consists-of-the-block-start",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/super-cool-and-very-hard-track-that-consists-of-the-block-start.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 222,
+    "description": "This track consists of a start block a checkpoint a end and 3 turns after driving across these blocks you will win its simple very easy and if you dont beat this im gonna be surprised"
+  },
+  {
+    "id": "jumping-cave",
+    "trackId": "f274ae87cee9ff99be99fca398a52b396a224e8866a38759cad3d9f06294ac48",
+    "name": "Jumping cave",
+    "author": "uter1212",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/jumping-cave",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/jumping-cave.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 66,
+    "description": "A speedrun with a lot of drifting and some high speed in the begining with a  jump across the track into a cave with a lot of building blocks. the hardest section is part in the jump at the start because you need to be accurate and in the e"
+  },
+  {
+    "id": "short-and-boring-ii",
+    "trackId": "2ddc222904f8ba4befe7fd5b3ba6f5a7f550dbdab16850c62e34713ff928b593",
+    "name": "Short and Boring II",
+    "author": "~Eärendel~",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/short-and-boring-ii",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/short-and-boring-ii.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 233,
+    "description": "Here is a follow up track of the Short and Boring track series. This track features a technical turn at the beginning followed by a jump, a dropdown to the lower road and a final jump to the finish. Make sure to take the turn wide to gain e"
+  },
+  {
+    "id": "remember-to-respawn",
+    "trackId": "8aa48697eb5db691c2bef90f33b171bb8d3b4147d2181f4d2a8f0fd84c9b1d7c",
+    "name": "remember to respawn:)",
+    "author": "yes try",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/remember-to-respawn",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/remember-to-respawn.track",
+    "difficulty": 10,
+    "category": "Technical",
+    "sourceCopies": 314,
+    "description": "A difficult technical map, featuring tight spaces, difficult jumps, huge loops and more! test your driving skills and don't forget to respawn:)"
+  },
+  {
+    "id": "stunts-1",
+    "trackId": "9138b4bc3315cc94cc572ef03cc92f1d839cc7b53368b2407578f45ff2ba3ace",
+    "name": "stunts_1",
+    "author": "Anonymous",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/stunts-1",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/stunts-1.track",
+    "difficulty": 10,
+    "category": "Stunt",
+    "sourceCopies": 660,
+    "description": "Specifically made to be as difficult as possible, with many jumps requiring max speed, drifts and more. This track can be finished. See https://www.youtube.com/watch?v=I1_MmXfWMVw for proof."
+  },
+  {
+    "id": "hardcore",
+    "trackId": "ed3e0de998f314b01eb3d6dffc7bc3d72d18bd38e7c4b05feb122064456c5969",
+    "name": "Hardcore",
+    "author": "Jainil",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/hardcore",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/hardcore.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 49,
+    "description": "This track features tight corners , jumps and unexpected obstacles. This is my first map btw so expect some error."
+  },
+  {
+    "id": "over-the-noise",
+    "trackId": "7e591ad14f2062b4b3b349051034fd1562eb4ad62c941df08bb1e2eca77d0d44",
+    "name": "over the noise",
+    "author": "harry",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/over-the-noise",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/over-the-noise.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 79,
+    "description": "just a fun track to play"
+  },
+  {
+    "id": "potatoh-inc",
+    "trackId": "d542d006c5cc9f0c8b1271ef7dde8301fc0280a67f6f7640a058cf99e629c107",
+    "name": "Potatoh Inc.",
+    "author": "Jim Potatoh",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/potatoh-inc",
+    "tags": [
+      "art"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/potatoh-inc.track",
+    "difficulty": 7,
+    "category": "Art",
+    "sourceCopies": 88,
+    "description": "Welcome to Potatoh Inc. First, drive through a potatoh field with cars harvesting crops. Then, drive into a factory, round a steep bend, and to the finish."
+  },
+  {
+    "id": "rage-impossible",
+    "trackId": "fdc858a791b276a9ff2fab1ae63ace0eab25684587671993aa55a2355488b38c",
+    "name": "Rage Impossible",
+    "author": "Cheese",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/rage-impossible",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/rage-impossible.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 91,
+    "description": "Go slow and steady, and get ready for unexpected bumps"
+  },
+  {
+    "id": "slow-is-not-bad",
+    "trackId": "1423877f930985485f6b91628a83e337c62b1486d791b2acc65e23552071d74b",
+    "name": "slow is not bad",
+    "author": "Powercraft 62",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/slow-is-not-bad",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/slow-is-not-bad.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 81,
+    "description": "some hard turns ramps go slow to survive"
+  },
+  {
+    "id": "hardcore-desert",
+    "trackId": "e7dc6dc7cecc81e136b72b1a04f485e1ceda2d844dd791b9e669d68be0f8dfaa",
+    "name": "Hardcore Desert",
+    "author": "sceb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/hardcore-desert",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/hardcore-desert.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 56,
+    "description": "Try this short but fun track with two options. Upside down or a banked corner."
+  },
+  {
+    "id": "backwards-super-turny-wall-hit-level",
+    "trackId": "32c7e988c247689afb2fd957051e872aaa2bccdc00a1f120d76d352eb2ffb2e7",
+    "name": "backwards super turny wall hit level",
+    "author": "cool guy",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/backwards-super-turny-wall-hit-level",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/backwards-super-turny-wall-hit-level.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 50,
+    "description": "Get ready for a technical track, involving techniques not usually in levels. Some techs include precise falling, braking, and wall bumps."
+  },
+  {
+    "id": "bridge",
+    "trackId": "a10b2666aec39cb2b0c0d2e79fc14eb3ea463f1055c0bd0832ca3dba27fca736",
+    "name": "bridge",
+    "author": "itsmemusong",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/bridge",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/bridge.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 86,
+    "description": "a long run into a sharp turn into a narrow bridge into the finish"
+  },
+  {
+    "id": "bigguysdeathtrap",
+    "trackId": "80d8535dd5ccc27acc3099db94cf35532c381009f8bb2d2d93622f52a24f620a",
+    "name": "bigguysdeathtrap",
+    "author": "making it an official map",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/bigguysdeathtrap",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/bigguysdeathtrap.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 69,
+    "description": "Tight turns, long straight, ramps going up."
+  },
+  {
+    "id": "dont-fall",
+    "trackId": "bba7ac79916500d7383aac9a83177afdf20013f3b9e1a955c1cca6909fc34b57",
+    "name": "dont fall",
+    "author": "lol",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dont-fall",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dont-fall.track",
+    "difficulty": 10,
+    "category": "Stunt",
+    "sourceCopies": 418,
+    "description": "A short track stat on skinny line and entre a box with one checkpoint that is at end and go back to finished line. try finish it and don't fall through holes"
+  },
+  {
+    "id": "quick-tricks-2",
+    "trackId": "13b047585c784d83eb5222b00a9f2457163fe17627045b4e7be196733e9dfef2",
+    "name": "Quick tricks /2",
+    "author": "3-eb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/quick-tricks-2",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/quick-tricks-2.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 90,
+    "description": "This short track is the second in the Quick tricks series. It brings a variety of options to do the track and is very fun."
+  },
+  {
+    "id": "dirted",
+    "trackId": "aad1acdf031bca3e51bdb315d4baafc9e9cd762757d4061ba1b242f6b118b780",
+    "name": "Dirted",
+    "author": "3-eb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dirted",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dirted.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 76,
+    "description": "Get ready for a wild ride on this custom Poly Track packed with insane stunts, jumps, and tricky walls! Push your driving skills to the limit and see if you can make it through without flying off the track."
+  },
+  {
+    "id": "castle-stonegrey",
+    "trackId": "cb079dc0d79ea9094bb7e7aa4f2735660ebea2ea4526f9cf74221c2bf4b373f1",
+    "name": "Castle Stonegrey",
+    "author": "3-eb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/castle-stonegrey",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/castle-stonegrey.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 85,
+    "description": "Race around this castle themed track. Bounce off the walls back to the floor into a jump and then upside down. This phenomenal track captures every aspect of scenery and racing in Poly Track."
+  },
+  {
+    "id": "thunderbolt",
+    "trackId": "9508c1992b95af06c47193a0ec3f1cc29ab23fc87ebaeb1a619caf60ddddb747",
+    "name": "ThunderBolt",
+    "author": "Speed - E",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/thunderbolt",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/thunderbolt.track",
+    "difficulty": 10,
+    "category": "Technical",
+    "sourceCopies": 142,
+    "description": "A technical speedrun with a tight opening, two blind jumps into banked corners, and a final precision section that rewards late braking. I like how it's very pricision, and if you take the easiest track, you're going to get a long time."
+  },
+  {
+    "id": "pro-testing",
+    "trackId": "3932143b6c7d3df9ffac117320f36f66788fbf1a1cc9533ebc3260b8d19f6e34",
+    "name": "PRO testing",
+    "author": "XL",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/pro-testing",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/pro-testing.track",
+    "difficulty": 10,
+    "category": "Technical",
+    "sourceCopies": 176,
+    "description": "All of “almost” but “possible” types of obstacles before you are a pro! If you complete this below 10 minutes you are a pro."
+  },
+  {
+    "id": "go-up",
+    "trackId": "8032f251b94df65c8be6407ea84bbf11cdacb018504d1626c70e8ae7dee73883",
+    "name": "Go up",
+    "author": "Cac-key",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/go-up",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/go-up.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 93,
+    "description": "The only way to beat this track is to go up. This requires a pretty difficult glitch, so try your best"
+  },
+  {
+    "id": "practice",
+    "trackId": "19fb75e1b82fca913b0727c5ec9584ff5a886dd46dcb595a34ab30af4a915b3a",
+    "name": "Practice",
+    "author": "PolyTrackMASTER",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/practice",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/practice.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 81,
+    "description": "This is a practice track that tests you on your skills: Hard turning, precision jumps, and careful cuts. This track is a challenge to complete but still easy for beginners, try it out!"
+  },
+  {
+    "id": "computer-game",
+    "trackId": "fe49fdc14b0d7e7015b2c9c75e3a645f521bc815045bdb701451c8cc9badeb7a",
+    "name": "Computer game",
+    "author": "Sandyplatapus995",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/computer-game",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/computer-game.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 61,
+    "description": "A technical map that has you drive up through an opening loop into a skid where you then jump and turn through a chicane and drive up a ramp through a Nintendo switch into a blind jump, down a ramp and into a tight skid and drop off, drivin"
+  },
+  {
+    "id": "quick-tricks",
+    "trackId": "f734d5c6f70ef330ce4a45a4c7a173c2cb14fd8f631f1e892e6d9f545fbc15f6",
+    "name": "Quick Tricks",
+    "author": "3-eb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/quick-tricks",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/quick-tricks.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 98,
+    "description": "The first in the Quick Tricks series. Master this short and fun track to perfection with skill and experience. with an upside down jump, this is the best way to start the Quick Tricks series. Who will be the best?"
+  },
+  {
+    "id": "speed-jump",
+    "trackId": "56939d5894edcac2be3c7bdd89174dec11a71cf8be8a14de2cf0d128068fb071",
+    "name": "Speed Jump",
+    "author": "Lumosmaximus",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/speed-jump",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/speed-jump.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 58,
+    "description": "Hard opening turn but after that just go as fast as you can till the jump, then try to land nicely and make sure to not hit a post in the way to the finish."
+  },
+  {
+    "id": "potatoh-land",
+    "trackId": "f38d60f83b9e9fdb5fb2c2894140838f81095ef95a4ced2414c7473d174cccf4",
+    "name": "Potatoh Land",
+    "author": "Jim Potatoh",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/potatoh-land",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/potatoh-land.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 58,
+    "description": "A start with a perfectly timed drift leads into a flowing loop de loop. This leads round to the 1st checkpoint, where the path splits. Make your way through a thin section and up a ramp to the final task. 2 thin beams between you and the fi"
+  },
+  {
+    "id": "skill-issue",
+    "trackId": "0d015b3a7953688ff8417da78d600aa296370daea9a3f0c191c4c07e22b8a867",
+    "name": "skill issue",
+    "author": "BigDawk",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/skill-issue",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/skill-issue.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 47,
+    "description": "need some drift skillz idk (im bad at this) ignore my top 10 at re: akina :)"
+  },
+  {
+    "id": "under-1-minute-challenge",
+    "trackId": "596efd36111e3d9e6108e23f1aa3181cf6d89b64321d2f3c9aaf4eed8064e96b",
+    "name": "Under 1 Minute Challenge",
+    "author": "GamingMattie",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/under-1-minute-challenge",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/under-1-minute-challenge.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 69,
+    "description": "An hard Polytrack track to beat under 1 Minute"
+  },
+  {
+    "id": "grappige-naam",
+    "trackId": "02597bf780177b11c7f84cc2f0d14ed433681d6488fec7befe9415ca8aec2bfe",
+    "name": "grappige naam",
+    "author": "Tisjen",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/grappige-naam",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/grappige-naam.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 31,
+    "description": "you start with a precise diagonal part with a jump than an half looping and another jump and end with a turn and a jump to the finish on the grass"
+  },
+  {
+    "id": "sunset-split",
+    "trackId": "7930c6db708103a8b183be416e26a0d8e4b500518ea579d2e9551ecdd6d052f6",
+    "name": "Sunset Split",
+    "author": "tikitikifunk0326",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/sunset-split",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/sunset-split.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 201,
+    "description": "A race track that starts with a straight, followed by a few small chicanes and a split section — one easy route and one challenging route. The track then loops around, passes above the earlier section, and finishes with a few turns. Players"
+  },
+  {
+    "id": "short-boring-i",
+    "trackId": "ad036ed993f36dbbd51f6c25d0ee234d90eccd399ad4002ee04df2ce584c7a02",
+    "name": "Short & Boring I",
+    "author": "~Eärendel~",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/short-boring-i",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/short-boring-i.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 187,
+    "description": "Here is my first proper attempt at making a track in PolyTrack. The name was one of the first things that came in mind. It is a speedy track with a turn, a split path, a jump, a loop transition and into a dropdown at the very end. It also f"
+  },
+  {
+    "id": "a-loop-and-a-jump",
+    "trackId": "44a8ba2b40db3c79ccc1d56d8e0aeb316668d8cfded96b9c982719ee509f2d33",
+    "name": "a loop and a jump",
+    "author": "itsmemusong",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/a-loop-and-a-jump",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/a-loop-and-a-jump.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 90,
+    "description": "its a loop and a hard jump idk"
+  },
+  {
+    "id": "icy-passage",
+    "trackId": "bbe04266403c58fa25d637d50866dac16674aa32d9858132816f6e726da79f67",
+    "name": "Icy Passage",
+    "author": "bob the builder",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/icy-passage",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/icy-passage.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 97,
+    "description": "Starts of with a jump then a slight left turn. Then a wallride that turns into a jump. the jump is tight to get the checkpoint then a reset sends you into the finish."
+  },
+  {
+    "id": "si",
+    "trackId": "4584d871672c7e299c1e8899e9c9e06c96d091e257a1e55c968a94aa17b5c7c8",
+    "name": "si",
+    "author": "si 67",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/si",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/si.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 74,
+    "description": "a speed, drift and technique track trying to decide the correct track and make the jump well."
+  },
+  {
+    "id": "antarctica-forsteri-circuit",
+    "trackId": "ccddb8950dad7ad478ed96b3d01796090f8346486e52183bd8fda238403cb4ff",
+    "name": "Antarctica Forsteri Circuit",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/antarctica-forsteri-circuit",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/antarctica-forsteri-circuit.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 119,
+    "description": "This track represents the glory of antarctica and famous penguins here we feature chicanes , esses baked corners copy this code to be the winner of Antarctica"
+  },
+  {
+    "id": "midnight-drift",
+    "trackId": "c10381db5baf42d7d25ae26202f96f636d8b8b43062b72923bfd45e5658f7d91",
+    "name": "Midnight Drift",
+    "author": "SG|TheLight",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/midnight-drift",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/midnight-drift.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 83,
+    "description": "A small map which is decorated with a midnight drift which requires good timing for turns and finish."
+  },
+  {
+    "id": "zip",
+    "trackId": "fd7fd29d69431281f65d4d27815e24e7774c3ecf9e0ec1f77d7142d71f34da55",
+    "name": "Zip!",
+    "author": "Shade",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/zip",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/zip.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 81,
+    "description": "A fullspeed track with lots of looping spins."
+  },
+  {
+    "id": "massif-east",
+    "trackId": "0bc1da8fdd183e8c9de585327bd0a257528bd9d3f8e61b6884f32f9f3d7ae98d",
+    "name": "Massif East",
+    "author": "Korona",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/massif-east",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/massif-east.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 67,
+    "description": ">>> Average time to endline = 0:36.000 This course is manageable if you just want to finish it, but very technical if you want to push your limits. You need to manage your braking and acceleration. Pay attention to the angle of the jumps, o"
+  },
+  {
+    "id": "slow-technics",
+    "trackId": "fcd1523d50dd035618ee72f3e2655ede21a0338a2319e630605dd0cc64c184e4",
+    "name": "Slow Technics",
+    "author": "Ander46",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/slow-technics",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/slow-technics.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 50,
+    "description": "A technical track with a fast opening, up onto a ramp, then into a turn, then a split, going back through the way you came, then going a separate way with the last checkpoint, then a straight, into a turn, in a tall vertical where the finis"
+  },
+  {
+    "id": "boxed-in",
+    "trackId": "09d4c14b7ececd26b9efcf147e9b9e922cf9bf7bdc53d7d4884348d4deeb94a7",
+    "name": "B⛶XED IN",
+    "author": "Icarus34",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/boxed-in",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/boxed-in.track",
+    "difficulty": 10,
+    "category": "Technical",
+    "sourceCopies": 292,
+    "description": "Yea its hard."
   }
 ]

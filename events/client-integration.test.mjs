@@ -14,7 +14,7 @@ const repo=process.env.EVENT_TEST_REPO||path.resolve(path.dirname(fileURLToPath(
 const patch=fs.readFileSync(path.join(repo,'polytrack_062_patch.js'),'utf8');
 function section(start,end){const a=patch.indexOf(start),b=patch.indexOf(end,a+start.length);assert(a>=0&&b>a,'production source boundary exists');return patch.slice(a,b).trim();}
 const focus=section('  function focusTrackFromRanked(','  function trackSummaryLine(');
-const entry=section('  function ensureEventEntryContents(){','  function __pt062WebpackRequire(');
+const entry=section('  function ensureEventEntryContents(){','  function extraTrackIds(){');
 const QUEUE='polytrack-062-events-v1-queue';
 const id='a'.repeat(64);
 const run=(attemptId='one',timeMs=20000)=>({accountId:id,trackId:id,periodId:'daily-fixture',attemptId,timeMs,frames:timeMs,replay:'AAAA',carStyle:'',endsAt:Date.now()+3600000});
@@ -54,6 +54,7 @@ async function boot(page,queue){return page.evaluate(async({entry,queue,QUEUE})=
  localStorage.setItem(QUEUE,JSON.stringify(queue));let eventUi=null,eventQueueChecked=false,calls=0,flushes=0,reads=0;
  const prior=Storage.prototype.getItem;Storage.prototype.getItem=function(key){if(key===QUEUE)reads++;return prior.call(this,key);};
  function ensureEventUi(){calls++;return Promise.resolve({flush(){flushes++;},tick(){}});}
+ const ensureExtraTracksEntryContents=()=>{};
  const invoke=eval('('+entry+')');for(let i=0;i<100;i++)invoke();await Promise.resolve();Storage.prototype.getItem=prior;return {calls,flushes,reads};
  },{entry,queue,QUEUE});}
 test('real Ranked navigation clears event capture; explicit event launch keeps it',async t=>{
@@ -182,14 +183,15 @@ test('event car falls back to an account-matched persisted style and native rend
  });await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>fallbackCalls===1);
  await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();await p.evaluate(()=>{for(let i=0;i<30;i++)ui.tick();});assert.equal(await p.evaluate(()=>fallbackCalls),1);
 });
-test('event thumbnail rendering runs at most two jobs concurrently',async t=>{
+test('event thumbnail rendering runs one job at a time',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>s.startsWith('style-')?{serialize:()=>s}:null}}:prior(n);
   window.renderJobs=[];window.activeRenders=0;window.maxRenders=0;window.BT=()=>new Promise(resolve=>{activeRenders++;maxRenders=Math.max(maxRenders,activeRenders);renderJobs.push(()=>{activeRenders--;resolve('');});});
   const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:5},(_,i)=>({accountId:String(i+1).repeat(64),carStyle:'style-'+i,timeMs:20000+i,rank:i+1}))});
- });await enter(p);await p.waitForFunction(()=>renderJobs.length===2);
- for(let count=2;count<=5;count++){await p.waitForFunction(count=>renderJobs.length>=count,count);await p.evaluate(i=>renderJobs[i](),count-2);}
- assert.equal(await p.evaluate(()=>maxRenders),2);
+ });await enter(p);await p.waitForFunction(()=>renderJobs.length===1);
+ await p.evaluate(()=>renderJobs[0]());
+ await p.waitForTimeout(200);
+ assert.equal(await p.evaluate(()=>maxRenders),1);
 });
 test('readiness wait shows cancellable progress and cannot reopen after cancellation',async t=>{
  const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();
@@ -275,6 +277,7 @@ test('Ranked visibility imports event module once even without any track group',
   let eventUi=null,eventUiPromise=null,eventQueueChecked=true,eventModuleRetryAt=0,calls=0;
   const isElementVisible=e=>e.getClientRects().length>0&&getComputedStyle(e).display!=='none';
   const ensureEventUi=()=>{calls++;return Promise.resolve({tick(){}});};
+  const ensureExtraTracksEntryContents=()=>{};
   const panel=document.createElement('div');panel.id='overallLeaderboardPanel';panel.textContent='Ranked';panel.style.display='none';document.body.append(panel);
   const invoke=eval('('+source+')');invoke();const hidden=calls;panel.style.display='block';for(let i=0;i<100;i++)invoke();await Promise.resolve();return {hidden,visible:calls};
  },entry),{hidden:0,visible:1});

@@ -219,7 +219,11 @@
     if(!user)throw Error('Sign in before submitting a track.');
     const token=await user.getIdToken();
     const response=await fetch(rankedBrokerUrl()+'/v1/extra-tracks/submissions',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
-    if(!response.ok)throw Error('Submission unavailable');
+    if(!response.ok){
+      const error=await response.json().catch(()=>({}));
+      const reasons={one_submission_per_day:'You already submitted a track today. Try again tomorrow.',invalid_submission:'Check the track details and export code, then try again.',authentication_failed:'Your sign-in expired. Reload the game and try again.',rate_limited:'Too many submissions right now. Wait a minute and try again.',service_unavailable:'The submission service is temporarily unavailable.'};
+      throw Error(reasons[error.error]||`The submission service returned ${response.status}.`);
+    }
     return response.json();
   }
   async function openExtraTracks(){
@@ -237,10 +241,14 @@
   function ensureExtraTracksEntryContents(){
     const selection=document.querySelector('.track-selection-ui');const field=selection?.querySelector('.tracks-container.no-group-containers');
     if(!field||field.querySelector('.sq-extra-tracks-entry'))return;
-    const button=document.createElement('button');button.type='button';button.className='button sq-extra-tracks-entry';button.textContent='Extra Tracks';
-    button.addEventListener('click',()=>{button.disabled=true;void openExtraTracks().catch(error=>{button.textContent=error.message||'Extra Tracks unavailable';setTimeout(()=>{button.textContent='Extra Tracks';},4000);}).finally(()=>{button.disabled=false;});});
+    const button=document.createElement('button');button.type='button';button.className='button sq-extra-tracks-entry';
+    const label=document.createElement('span');label.className='sq-extra-entry-label';label.textContent='Extra Tracks';
+    const image=document.createElement('img');image.className='sq-extra-entry-image';image.src='images/community_tracks.jpg';image.alt='';
+    const count=document.createElement('span');count.className='sq-extra-entry-count';count.textContent='Explore tracks';
+    button.append(label,image,count);
+    button.addEventListener('click',()=>{button.disabled=true;void openExtraTracks().catch(error=>{count.textContent=error.message||'Extra Tracks unavailable';setTimeout(()=>{count.textContent='Explore tracks';},4000);}).finally(()=>{button.disabled=false;});});
     field.prepend(button);
-    void loadExtraTracksCatalog().then(entries=>{button.textContent=`${entries.length} Extra Tracks`;}).catch(()=>{});
+    void loadExtraTracksCatalog().then(entries=>{count.textContent=`${entries.length} tracks`;}).catch(()=>{});
   }
 
   function __pt062WebpackRequire(){
@@ -1977,13 +1985,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     };
     const lang = getUiLanguage();
     if (info.dataset.fp === BRAND_FP && info.dataset.lang === lang && info.querySelector('.staticFunPill')) {
-      for(const duplicate of [...info.children].slice(3))duplicate.remove();
+      const social=info.querySelector('.social-links');
+      for(const duplicate of [...info.children].slice(3))if(duplicate!==social)duplicate.remove();
       info.style.display = homeVisible() ? '' : 'none';
       return;
     }
+    const nativeSocial=info.querySelector('.social-links');
     info.dataset.fp = BRAND_FP;
     info.dataset.lang = lang;
-    info.innerHTML = '';
+    info.replaceChildren();
     const promo = document.createElement('a');
     promo.href = 'https://sites.google.com/view/staticquasar931/gm3z';
     promo.target = '_blank';
@@ -2019,12 +2029,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     info.appendChild(promo);
     info.appendChild(version);
     info.appendChild(credit);
+    if(nativeSocial)info.appendChild(nativeSocial);
 
     if (window.__sqBrandIntroPlayed) info.classList.add('sq-brand-intro-complete');
     else setTimeout(() => {
       window.__sqBrandIntroPlayed = true;
       info.classList.add('sq-brand-intro-complete');
-    }, 2200);
+    }, Math.max(2200, label.length * 45 + 750));
 
     info.style.display = homeVisible() ? '' : 'none';
   }
@@ -2036,6 +2047,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function syncNativeDiscordVisibility(){
     const lobby=isStartMenuHotkeyContext();
     document.querySelectorAll('a.discord-link,a[href*="kodub.com/discord/polytrack"]').forEach((link)=>{
+      if(link.closest('.menu-ui > .info'))return;
       link.style.display=lobby?'':'none';
     });
   }
