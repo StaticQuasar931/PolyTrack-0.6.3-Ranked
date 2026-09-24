@@ -51,7 +51,7 @@ function harness() {
       return { nickname: entry.name, racerId: entry.accountId };
     }
   });
-  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
+  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,selectEventRange,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
   return {
     ...api,
     bridge,
@@ -85,6 +85,28 @@ test('top event shortcuts load a group and a second press clears it', async () =
   assert.equal(h.selectedCount(), 2);
   h.clearEventGhostSelection('period', 'viewer');
   assert.equal(h.selectedCount(), 0);
+});
+
+test('event range shortcuts load only the inclusive places and toggle the group', async () => {
+  const h = harness();
+  const rows = Array.from({ length: 6 }, (_, index) => racer(`racer-${index + 1}`, 1200 + index * 100, `Racer ${index + 1}`));
+  h.setRows(rows);h.showNativeBoard();
+  const loading = h.selectEventRange(3, 6);
+  for (const row of rows.slice(2, 6)) {
+    while (!h.reads.has(row.accountId)) await new Promise(resolve => setImmediate(resolve));
+    h.reads.get(row.accountId).resolve(payload(row));
+  }
+  await loading;
+  assert.equal(h.selectedCount(), 4);
+  assert.equal(h.reads.size, 4);
+  await h.selectEventRange(3, 6);
+  assert.equal(h.selectedCount(), 0);
+});
+
+test('an empty event group reports unavailable replays instead of a deselection', async () => {
+  const h = harness();h.setRows([]);h.showNativeBoard();
+  await h.selectTopEventRows(3);
+  assert.equal(h.messages.at(-1), 'No playable replays in these places.');
 });
 
 const period = { id: 'period' };
@@ -151,7 +173,7 @@ test('session and account changes still suppress replay selection', async () => 
 });
 
 test('client declaration owns one replay request counter', () => {
-  assert.match(source, /selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
+  assert.match(source, /selectedGhost=null,replayRequest=0,topSelectionToken=0,[^;]+;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
   assert.match(selectReplaySource, /const token=\+\+replayRequest/);
 });
 

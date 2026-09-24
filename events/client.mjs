@@ -273,7 +273,7 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null;
-  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();
+  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),replayCache=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
   const carImages=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function cachedCarStyle(row,period){
     if(!profilesAt||now()-profilesAt>=120000){profilesAt=now();profileStyles=new Map();const saved=read(PROFILE_CACHE,null);for(const entry of (Array.isArray(saved?.entries)?saved.entries:[]).slice(0,1000))profileStyles.set(entry.accountId||entry.userId,entry.carStyle);}
@@ -342,27 +342,30 @@ export function installEvents(bridge){
     selectedGhost=[...selectedGhosts.values()].at(-1)||null;
     if(nativeView)nativeView.signature='';tick();
   }
-  async function selectTopEventRows(count){
+  async function selectEventRows(first,last,fromTop=false){
     const view=nativeView,session=sessions.current(),accountId=bridge.accountId();
     if(!view||!session||session.periodId!==view.periodId||session.accountId!==accountId)return;
     const period=knownPeriods.get(view.periodId)||(catalog.periods||[]).find(row=>row.id===view.periodId);if(!period)return;
-    const top=eventDisplayRows(period).rows.slice(0,count).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
+    const offset=fromTop?0:view.page*20;
+    const chosen=eventDisplayRows(period).rows.slice(offset+first-1,offset+last).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
-    const same=active.length===top.length&&top.every(row=>{const chosen=selectedGhosts.get(row.accountId);return chosen?.periodId===period.id&&chosen.accountId===accountId&&chosen.targetTimeMs===row.timeMs&&chosen.targetRunId===(row.runId||null)&&chosen.targetPending===!!row.pending;});
-    view.page=0;
+    const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
+    if(fromTop)view.page=0;
     clearEventGhostSelection(period.id,accountId);
     if(same){message('Event ghosts unselected.');return;}
     const token=++topSelectionToken;
-    message(`Loading up to ${top.length} event replays...`);
+    message(`Loading up to ${chosen.length} event replays...`);
     let ready=0;
-    for(const row of top){
+    for(const row of chosen){
       if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
       if(await selectReplay(period,row,{silent:true}))ready++;
     }
     if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
-    message(top.length?`${ready} of ${top.length} top event ghosts ready. Play to race them.`:'No playable replays in these places.');
+    message(chosen.length?`${ready} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. Play to race them.`:'No playable replays in these places.');
     if(nativeView)nativeView.signature='';tick();
   }
+  function selectTopEventRows(count){return selectEventRows(1,count,true);}
+  function selectEventRange(first,last){return selectEventRows(first,last,false);}
   function raceGhosts(session){
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
     if(replay)try{ownGhost=prepareOwnEventGhost({require:bridge.require(),row:replay,session,best:bestRecords[session.periodId+'_'+session.accountId]});}catch{}
@@ -453,7 +456,7 @@ export function installEvents(bridge){
       if(!original)return;
       if(statusText==='Opening event track...')message('');
       const board=document.createElement('div');board.className='leaderboard-ui sq-event-board';
-      board.title='1-0 toggles the top 1-10 event ghosts. T then a number does the same. C clears ghosts. Shift + number changes page.';
+      board.title='A number toggles one event ghost. T then a number selects the top group. Hold two numbers for a range. C clears ghosts.';
       // Keep the original instance alive for native disposal and its Back handler.
       board.style.setProperty('display','flex','important');
       board.innerHTML='<h2>Event leaderboard</h2><h3></h3><div class="total-players fade-in"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg"> Back</button><button type="button" class="button sq-event-refresh">Refresh</button></div>';
@@ -593,13 +596,24 @@ export function installEvents(bridge){
     const target=event.target;
     if(['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable)return;
     const board=nativeView.board,rows=[...board.querySelectorAll(':scope > .container > button.main')];
+    if(eventDigitBoard!==board){eventDigitBoard=board;eventDigitsHeld.clear();eventDigitsConsumed.clear();eventTopPrefixUntil=0;eventTopHeld=false;}
     const pages=[...board.querySelectorAll(':scope > .pages > button.page')];
     const code=String(event.code||'').match(/^(?:Digit|Numpad)([0-9])$/);
     const digit=code?Number(code[1])||10:/^[0-9]$/.test(event.key)?Number(event.key)||10:null;
     let action=null;
     if(event.shiftKey&&digit){++topSelectionToken;action=pages[digit-1];}
-    else if(!event.shiftKey&&digit){event.preventDefault();event.stopImmediatePropagation();void selectTopEventRows(digit);return;}
-    else if(event.key==='t'||event.key==='T'){event.preventDefault();event.stopImmediatePropagation();return;}
+    else if(!event.shiftKey&&digit){
+      const identity=/^(?:Digit|Numpad)[0-9]$/.test(event.code||'')?event.code:'digit-'+String(event.key);
+      eventDigitsHeld.set(identity,digit);
+      const held=[...new Set(eventDigitsHeld.values())];
+      if(held.length>=2){
+        eventTopPrefixUntil=0;
+        for(const id of eventDigitsHeld.keys())eventDigitsConsumed.add(id);
+        void selectEventRange(Math.min(...held),Math.max(...held));
+      }
+      event.preventDefault();event.stopImmediatePropagation();return;
+    }
+    else if(event.key==='t'||event.key==='T'){eventTopHeld=true;eventTopPrefixUntil=Date.now()+2500;event.preventDefault();event.stopImmediatePropagation();return;}
     else if(event.key==='c'||event.key==='C'){event.preventDefault();event.stopImmediatePropagation();clearEventGhostSelection(nativeView.periodId,bridge.accountId());message('Event ghosts unselected.');return;}
     else if(['ArrowLeft','a','A','ArrowRight','d','D'].includes(event.key)){
       ++topSelectionToken;
@@ -609,6 +623,21 @@ export function installEvents(bridge){
     if(!action||action.disabled||action.getAttribute('aria-disabled')==='true')return;
     event.preventDefault();event.stopImmediatePropagation();action.click();
   },true);
+  document.addEventListener('keyup',event=>{
+    const key=String(event.key||'').toLowerCase();
+    if(key==='t'&&eventTopHeld){eventTopHeld=false;event.preventDefault();event.stopImmediatePropagation();return;}
+    const identity=/^(?:Digit|Numpad)[0-9]$/.test(event.code||'')?event.code:'digit-'+String(event.key);
+    if(!eventDigitsHeld.has(identity))return;
+    const digit=eventDigitsHeld.get(identity),chord=eventDigitsConsumed.delete(identity),board=eventDigitBoard;
+    eventDigitsHeld.delete(identity);
+    if(board===nativeView?.board&&board?.getClientRects().length&&!dialog&&!chord){
+      if(eventTopHeld||Date.now()<eventTopPrefixUntil)void selectTopEventRows(digit);
+      else{const row=board.querySelectorAll(':scope > .container > button.main')[digit-1];if(row?.getAttribute('aria-disabled')!=='true')row?.click();}
+      eventTopPrefixUntil=0;
+    }
+    event.preventDefault();event.stopImmediatePropagation();
+  },true);
+  window.addEventListener('blur',()=>{eventDigitsHeld.clear();eventDigitsConsumed.clear();eventTopHeld=false;eventTopPrefixUntil=0;});
   document.addEventListener('click',e=>{
     const button=e.target.closest?.('button');if(!button)return;
     if(button.closest('.sq-kodub-weekly')&&!nativeOpenPermit){

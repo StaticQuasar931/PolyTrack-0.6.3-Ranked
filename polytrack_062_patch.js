@@ -2454,7 +2454,48 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return true;
   }
 
-  let nativeTopSelectToken=0;
+  let nativeTopSelectToken=0,nativeTopPrefixUntil=0,nativeTopHeld=false,nativeDigitBoard=null;
+  const nativeDigitsHeld=new Map(),nativeDigitsConsumed=new Set();
+  const nativeRows=board=>[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
+  const nativeRowSelected=row=>row.classList.contains('selected')||row.getAttribute('aria-pressed')==='true';
+  function chooseNativeRows(rows,desired){
+    const wanted=new Set(desired);
+    const same=rows.every(row=>nativeRowSelected(row)===wanted.has(row));
+    for(const row of rows)if(nativeRowSelected(row)&&(same||!wanted.has(row)))row.click();
+    if(!same)for(const row of desired)if(!nativeRowSelected(row))row.click();
+  }
+  function selectTopNativeRows(board,count){
+    const token=++nativeTopSelectToken;
+    void (async()=>{
+      await jumpNativeLeaderboardPage(board,1);
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      if(token!==nativeTopSelectToken||!isElementVisible(board))return;
+      const selectedPage=board.querySelector(':scope > .pages button.page.selected');
+      if(selectedPage&&Number(selectedPage.textContent)!==1)return;
+      const rows=nativeRows(board);
+      chooseNativeRows(rows,rows.slice(0,count));
+    })();
+  }
+  function shortcutDigitKey(event){
+    return /^(?:Digit|Numpad)[0-9]$/.test(event.code||'')?event.code:'digit-'+String(event.key||'');
+  }
+  function handleTrackLeaderboardDigitRelease(event){
+    const key=String(event.key||'').toLowerCase();
+    if(key==='t'){
+      if(!nativeTopHeld)return false;
+      nativeTopHeld=false;event.preventDefault();event.stopPropagation();return true;
+    }
+    const code=shortcutDigitKey(event);
+    if(!nativeDigitsHeld.has(code))return false;
+    const number=nativeDigitsHeld.get(code),chord=nativeDigitsConsumed.delete(code),board=nativeDigitBoard;
+    nativeDigitsHeld.delete(code);
+    if(board?.isConnected&&isElementVisible(board)&&!chord){
+      if(nativeTopHeld||Date.now()<nativeTopPrefixUntil)selectTopNativeRows(board,number);
+      else nativeRows(board)[number-1]?.click();
+      nativeTopPrefixUntil=0;
+    }
+    event.preventDefault();event.stopPropagation();return true;
+  }
   function handleTrackLeaderboardShortcut(event){
     if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
     if(isElementVisible(document.getElementById('overallLeaderboardPanel'))||isElementVisible(document.querySelector('.sq-events-dialog')))return false;
@@ -2463,19 +2504,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const board=[...document.querySelectorAll('.track-info-ui .leaderboard-ui')].find(isElementVisible);
     if(!board)return false;
     if(board.classList.contains('sq-event-board'))return false;
-    const rows=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
-    const selected=row=>row.classList.contains('selected')||row.getAttribute('aria-pressed')==='true';
-    const choose=(available,desired)=>{
-      const wanted=new Set(desired);
-      const same=available.every(row=>selected(row)===wanted.has(row));
-      for(const row of available)if(selected(row)&&(same||!wanted.has(row)))row.click();
-      if(!same)for(const row of desired)if(!selected(row))row.click();
-      return true;
-    };
+    if(nativeDigitBoard!==board){nativeDigitBoard=board;nativeDigitsHeld.clear();nativeDigitsConsumed.clear();nativeTopPrefixUntil=0;nativeTopHeld=false;}
+    const rows=nativeRows(board);
     const key=String(event.key||'').toLowerCase();
     const pageNumber=shortcutDigit(event);
     if(event.shiftKey&&pageNumber){nativeTopSelectToken++;void jumpNativeLeaderboardPage(board,pageNumber);event.preventDefault();event.stopPropagation();return true;}
-    if(key==='t'){event.preventDefault();event.stopPropagation();return true;}
+    if(key==='t'){nativeTopHeld=true;nativeTopPrefixUntil=Date.now()+2500;event.preventDefault();event.stopPropagation();return true;}
     const pageDirection=key==='arrowleft'||key==='a'?-1:key==='arrowright'||key==='d'?1:0;
     if(pageDirection){
       const pages=board.querySelector(':scope > .pages');
@@ -2489,31 +2523,30 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
     const numeric=pageNumber;
     if(numeric){
-      const token=++nativeTopSelectToken;
-      const selectTop=async()=>{
-        await jumpNativeLeaderboardPage(board,1);
-        await new Promise(resolve=>requestAnimationFrame(resolve));
-        if(token!==nativeTopSelectToken||!isElementVisible(board))return;
-        const selectedPage=board.querySelector(':scope > .pages button.page.selected');
-        if(selectedPage&&Number(selectedPage.textContent)!==1)return;
-        const firstPage=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
-        choose(firstPage,firstPage.slice(0,numeric));
-      };
-      void selectTop();
+      const code=shortcutDigitKey(event);
+      nativeDigitsHeld.set(code,numeric);
+      const held=[...new Set(nativeDigitsHeld.values())];
+      if(held.length>=2){
+        nativeTopPrefixUntil=0;
+        for(const id of nativeDigitsHeld.keys())nativeDigitsConsumed.add(id);
+        nativeTopSelectToken++;
+        const low=Math.min(...held),high=Math.max(...held);
+        chooseNativeRows(rows,rows.slice(low-1,high));
+      }
     }
     else if(key==='='||key==='+'||event.code==='NumpadAdd'){
       const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
       const desired=rows.slice(0,9);
       if(self&&!desired.includes(self))desired.push(self);
       else if(rows[9])desired.push(rows[9]);
-      if(!choose(rows,desired))return false;
+      chooseNativeRows(rows,desired);
     }
     else if(key==='backspace'){
       const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
-      if(!choose(rows,[...new Set([...rows.slice(0,9),self].filter(Boolean))]))return false;
+      chooseNativeRows(rows,[...new Set([...rows.slice(0,9),self].filter(Boolean))]);
     }else if(key==='c'){
       nativeTopSelectToken++;
-      for(const row of rows)if(selected(row))row.click();
+      for(const row of rows)if(nativeRowSelected(row))row.click();
     }else if(key==='-'||event.code==='NumpadSubtract'){
       const selfIndex=rows.findIndex(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
       if(selfIndex<=0)return false;
@@ -6675,6 +6708,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(handleOfficialTrackShortcut(event))return;
       handleLobbyShortcut(event);
     });
+    window.addEventListener('keyup',handleTrackLeaderboardDigitRelease);
+    window.addEventListener('blur',()=>{nativeDigitsHeld.clear();nativeDigitsConsumed.clear();nativeTopHeld=false;nativeTopPrefixUntil=0;});
     document.addEventListener('click',async(event)=>{
       const button=event.target.closest?.('[data-planner-event]');if(!button)return;
       event.preventDefault();
