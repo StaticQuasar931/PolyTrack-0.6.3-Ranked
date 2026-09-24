@@ -2454,6 +2454,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return true;
   }
 
+  let nativeTopSelectToken=0;
   function handleTrackLeaderboardShortcut(event){
     if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey)return false;
     if(isElementVisible(document.getElementById('overallLeaderboardPanel'))||isElementVisible(document.querySelector('.sq-events-dialog')))return false;
@@ -2464,17 +2465,17 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(board.classList.contains('sq-event-board'))return false;
     const rows=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
     const selected=row=>row.classList.contains('selected')||row.getAttribute('aria-pressed')==='true';
-    const choose=desired=>{
-      if(!desired.length)return false;
+    const choose=(available,desired)=>{
       const wanted=new Set(desired);
-      const same=rows.every(row=>selected(row)===wanted.has(row));
-      for(const row of rows)if(selected(row)&&(same||!wanted.has(row)))row.click();
+      const same=available.every(row=>selected(row)===wanted.has(row));
+      for(const row of available)if(selected(row)&&(same||!wanted.has(row)))row.click();
       if(!same)for(const row of desired)if(!selected(row))row.click();
       return true;
     };
     const key=String(event.key||'').toLowerCase();
     const pageNumber=shortcutDigit(event);
-    if(event.shiftKey&&pageNumber){void jumpNativeLeaderboardPage(board,pageNumber);event.preventDefault();event.stopPropagation();return true;}
+    if(event.shiftKey&&pageNumber){nativeTopSelectToken++;void jumpNativeLeaderboardPage(board,pageNumber);event.preventDefault();event.stopPropagation();return true;}
+    if(key==='t'){event.preventDefault();event.stopPropagation();return true;}
     const pageDirection=key==='arrowleft'||key==='a'?-1:key==='arrowright'||key==='d'?1:0;
     if(pageDirection){
       const pages=board.querySelector(':scope > .pages');
@@ -2483,21 +2484,36 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const numberedOnly=buttons.length>0&&buttons.every(button=>button.classList.contains('page'));
       const button=numberedOnly?buttons[selectedIndex+pageDirection]:pageDirection<0?buttons[0]:buttons.at(-1);
       if(!button||button.disabled)return false;
-      nativePageJumpToken++;
+      nativeTopSelectToken++;nativePageJumpToken++;
       button.click();event.preventDefault();event.stopPropagation();return true;
     }
-    const numeric=/^[0-9]$/.test(key)?(key==='0'?10:Number(key)):null;
-    if(numeric){const row=rows[numeric-1];if(!row)return false;row.click();}
+    const numeric=pageNumber;
+    if(numeric){
+      const token=++nativeTopSelectToken;
+      const selectTop=async()=>{
+        await jumpNativeLeaderboardPage(board,1);
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        if(token!==nativeTopSelectToken||!isElementVisible(board))return;
+        const selectedPage=board.querySelector(':scope > .pages button.page.selected');
+        if(selectedPage&&Number(selectedPage.textContent)!==1)return;
+        const firstPage=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
+        choose(firstPage,firstPage.slice(0,numeric));
+      };
+      void selectTop();
+    }
     else if(key==='='||key==='+'||event.code==='NumpadAdd'){
       const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
       const desired=rows.slice(0,9);
       if(self&&!desired.includes(self))desired.push(self);
       else if(rows[9])desired.push(rows[9]);
-      if(!choose(desired))return false;
+      if(!choose(rows,desired))return false;
     }
     else if(key==='backspace'){
       const self=rows.find(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
-      if(!choose([...new Set([...rows.slice(0,9),self].filter(Boolean))]))return false;
+      if(!choose(rows,[...new Set([...rows.slice(0,9),self].filter(Boolean))]))return false;
+    }else if(key==='c'){
+      nativeTopSelectToken++;
+      for(const row of rows)if(selected(row))row.click();
     }else if(key==='-'||event.code==='NumpadSubtract'){
       const selfIndex=rows.findIndex(row=>row.classList.contains('is-self')||/\byou\b/i.test(row.textContent||''));
       if(selfIndex<=0)return false;

@@ -273,7 +273,7 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null;
-  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0;const selectedGhosts=new Map(),replayCache=new Map();
+  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();
   const carImages=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function cachedCarStyle(row,period){
     if(!profilesAt||now()-profilesAt>=120000){profilesAt=now();profileStyles=new Map();const saved=read(PROFILE_CACHE,null);for(const entry of (Array.isArray(saved?.entries)?saved.entries:[]).slice(0,1000))profileStyles.set(entry.accountId||entry.userId,entry.carStyle);}
@@ -315,13 +315,13 @@ export function installEvents(bridge){
       image.src=src;image.alt='Cached profile car';
     });
   }
-  async function selectReplay(period,row){
+  async function selectReplay(period,row,{silent=false}={}){
     const session=sessions.current(),viewer=bridge.accountId();if(!session||session.periodId!==period.id||typeof bridge.readReplay!=='function')return;
     const previous=selectedGhosts.get(row.accountId);
     if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
-      ++replayRequest;selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;message('Event ghost unselected.');if(nativeView)nativeView.signature='';tick();return;
+      ++replayRequest;selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');if(nativeView)nativeView.signature='';tick();}return false;
     }
-    const token=++replayRequest;message('Loading event replay...');
+    const token=++replayRequest;if(!silent)message('Loading event replay...');
     try{
       const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
       let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId,row.pending?row.runId:null);
@@ -330,11 +330,38 @@ export function installEvents(bridge){
       if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
       if(replayCache.size>=8)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
       selectedGhost={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
-      if(selectedGhosts.size>=9&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
+      if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
       selectedGhosts.set(row.accountId,selectedGhost);
-      message('Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');
-      if(nativeView)nativeView.signature='';tick();
-    }catch(error){if(token===replayRequest&&sessions.current()===session&&bridge.accountId()===viewer)message(error.message||'Event replay unavailable.');}
+      if(!silent){message('Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');if(nativeView)nativeView.signature='';tick();}
+      return true;
+    }catch(error){if(!silent&&token===replayRequest&&sessions.current()===session&&bridge.accountId()===viewer)message(error.message||'Event replay unavailable.');return false;}
+  }
+  function clearEventGhostSelection(periodId,accountId){
+    ++topSelectionToken;++replayRequest;
+    for(const [id,row] of selectedGhosts)if(row.periodId===periodId&&row.accountId===accountId)selectedGhosts.delete(id);
+    selectedGhost=[...selectedGhosts.values()].at(-1)||null;
+    if(nativeView)nativeView.signature='';tick();
+  }
+  async function selectTopEventRows(count){
+    const view=nativeView,session=sessions.current(),accountId=bridge.accountId();
+    if(!view||!session||session.periodId!==view.periodId||session.accountId!==accountId)return;
+    const period=knownPeriods.get(view.periodId)||(catalog.periods||[]).find(row=>row.id===view.periodId);if(!period)return;
+    const top=eventDisplayRows(period).rows.slice(0,count).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
+    const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
+    const same=active.length===top.length&&top.every(row=>{const chosen=selectedGhosts.get(row.accountId);return chosen?.periodId===period.id&&chosen.accountId===accountId&&chosen.targetTimeMs===row.timeMs&&chosen.targetRunId===(row.runId||null)&&chosen.targetPending===!!row.pending;});
+    view.page=0;
+    clearEventGhostSelection(period.id,accountId);
+    if(same){message('Event ghosts unselected.');return;}
+    const token=++topSelectionToken;
+    message(`Loading up to ${top.length} event replays...`);
+    let ready=0;
+    for(const row of top){
+      if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
+      if(await selectReplay(period,row,{silent:true}))ready++;
+    }
+    if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
+    message(top.length?`${ready} of ${top.length} top event ghosts ready. Play to race them.`:'No playable replays in these places.');
+    if(nativeView)nativeView.signature='';tick();
   }
   function raceGhosts(session){
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
@@ -426,7 +453,7 @@ export function installEvents(bridge){
       if(!original)return;
       if(statusText==='Opening event track...')message('');
       const board=document.createElement('div');board.className='leaderboard-ui sq-event-board';
-      board.title='Number keys choose one event ghost. Shift + number changes page. Left and right arrows change page. Enter starts the race.';
+      board.title='1-0 toggles the top 1-10 event ghosts. T then a number does the same. C clears ghosts. Shift + number changes page.';
       // Keep the original instance alive for native disposal and its Back handler.
       board.style.setProperty('display','flex','important');
       board.innerHTML='<h2>Event leaderboard</h2><h3></h3><div class="total-players fade-in"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg"> Back</button><button type="button" class="button sq-event-refresh">Refresh</button></div>';
@@ -465,7 +492,7 @@ export function installEvents(bridge){
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     const container=view.board.querySelector('.container');container.replaceChildren();
     for(const row of rows.slice(view.page*20,view.page*20+20)){
-      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
+      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>{++topSelectionToken;void selectReplay(period,row);};
       const selectedRow=selectedGhosts.get(row.accountId);const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===row.timeMs&&selectedRow.targetRunId===(row.runId||null)&&selectedRow.targetPending===!!row.pending;
       button.classList.toggle('selected',!!selected);button.setAttribute('aria-pressed',String(!!selected));
       button.title=row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
@@ -570,9 +597,12 @@ export function installEvents(bridge){
     const code=String(event.code||'').match(/^(?:Digit|Numpad)([0-9])$/);
     const digit=code?Number(code[1])||10:/^[0-9]$/.test(event.key)?Number(event.key)||10:null;
     let action=null;
-    if(event.shiftKey&&digit){action=pages[digit-1];}
-    else if(!event.shiftKey&&digit){action=rows[digit-1];}
+    if(event.shiftKey&&digit){++topSelectionToken;action=pages[digit-1];}
+    else if(!event.shiftKey&&digit){event.preventDefault();event.stopImmediatePropagation();void selectTopEventRows(digit);return;}
+    else if(event.key==='t'||event.key==='T'){event.preventDefault();event.stopImmediatePropagation();return;}
+    else if(event.key==='c'||event.key==='C'){event.preventDefault();event.stopImmediatePropagation();clearEventGhostSelection(nativeView.periodId,bridge.accountId());message('Event ghosts unselected.');return;}
     else if(['ArrowLeft','a','A','ArrowRight','d','D'].includes(event.key)){
+      ++topSelectionToken;
       const current=pages.findIndex(button=>button.classList.contains('selected'));
       action=pages[current+(['ArrowLeft','a','A'].includes(event.key)?-1:1)];
     }else if(event.key==='Enter'||event.key===' '){action=nativeView.root.querySelector('.side-panel button.play');}

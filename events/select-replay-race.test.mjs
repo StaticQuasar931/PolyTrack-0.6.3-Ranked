@@ -23,6 +23,7 @@ function harness() {
   let ticks = 0;
   const reads = new Map();
   const messages = [];
+  let displayRows = [];
   const bridge = {
     accountId: () => accountId,
     require: () => ({}),
@@ -38,6 +39,10 @@ function harness() {
     message: value => messages.push(value),
     displayName: row => row.name,
     nativeView: null,
+    knownPeriods: new Map([['period', period]]),
+    catalog: { periods: [period] },
+    eventDisplayRows: () => ({ rows: displayRows }),
+    syncNativeBoard() {},
     tick: () => { ticks++; },
     preparePublishedEventGhost: async ({ row, entry }) => {
       if (row.accountId !== entry.accountId || row.timeMs !== entry.timeMs || row.replayHash !== entry.replayHash) {
@@ -46,7 +51,7 @@ function harness() {
       return { nickname: entry.name, racerId: entry.accountId };
     }
   });
-  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
+  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
   return {
     ...api,
     bridge,
@@ -55,9 +60,32 @@ function harness() {
     session,
     setAccount: value => { accountId = value; },
     setSession: value => { activeSession = value; },
+    setRows: value => { displayRows = value; },
+    showNativeBoard: () => { context.nativeView = { periodId: 'period', page: 0, signature: '' }; },
     ticks: () => ticks
   };
 }
+
+test('top event shortcuts load a group and a second press clears it', async () => {
+  const h = harness();
+  const rows = [racer('first', 1200, 'First'), racer('second', 1300, 'Second'), racer('third', 1400, 'Third')];
+  h.setRows(rows); h.showNativeBoard();
+  const loading = h.selectTopEventRows(3);
+  for (const row of rows) {
+    while (!h.reads.has(row.accountId)) await new Promise(resolve => setImmediate(resolve));
+    h.reads.get(row.accountId).resolve(payload(row));
+  }
+  await loading;
+  assert.equal(h.selectedCount(), 3);
+  assert.match(h.messages.at(-1), /3 of 3 top event ghosts ready/);
+  await h.selectTopEventRows(3);
+  assert.equal(h.selectedCount(), 0);
+  assert.equal(h.messages.at(-1), 'Event ghosts unselected.');
+  await h.selectTopEventRows(2);
+  assert.equal(h.selectedCount(), 2);
+  h.clearEventGhostSelection('period', 'viewer');
+  assert.equal(h.selectedCount(), 0);
+});
 
 const period = { id: 'period' };
 const racer = (accountId, timeMs, name) => ({ accountId, timeMs, name, replayHash: `hash-${accountId}`, pending: false });
@@ -123,7 +151,7 @@ test('session and account changes still suppress replay selection', async () => 
 });
 
 test('client declaration owns one replay request counter', () => {
-  assert.match(source, /selectedGhost=null,replayRequest=0;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
+  assert.match(source, /selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
   assert.match(selectReplaySource, /const token=\+\+replayRequest/);
 });
 
