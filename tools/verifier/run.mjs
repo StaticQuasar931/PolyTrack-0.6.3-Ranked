@@ -101,8 +101,9 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
     const capacity = borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT;
     const coreLimit = capacity - Number(extraDocs.length > 0);
     const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now), now, {jobLimit: coreLimit, lookupLimit: coreLimit});
-    const extraLimit = Math.min(1, capacity - core.jobs.length, 16 - core.canonicalAttempts);
-    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now), now, {jobLimit: extraLimit, lookupLimit: extraLimit, perTrackLimit: 1}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
+    // Extra runs have the last reservation, but can use every slot left idle by core tracks.
+    const extraLimit = Math.max(0, Math.min(capacity - core.jobs.length, capacity - core.canonicalAttempts));
+    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now), now, {jobLimit: extraLimit, lookupLimit: extraLimit}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
     selectedJobs = [...core.jobs, ...extra.jobs];
     canonicalAttempts = core.canonicalAttempts + extra.canonicalAttempts;
     selectionConflicts = core.selectionConflicts + extra.selectionConflicts;
@@ -138,5 +139,5 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await runVerifier({check: process.argv.includes('--check'), drain: process.argv.includes('--drain')});
+  await runVerifier({check: process.argv.includes('--check'), drain: process.argv.includes('--drain'), borrowUnusedEvents: true});
 }

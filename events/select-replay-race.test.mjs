@@ -139,3 +139,15 @@ test('waiting replay selection requests exact run and isolates verified cache',a
  assert.equal(calls.length,2);
  assert.equal(calls[1][2],null);
 });
+
+test('clicking the same event replay again unselects it without another download',async()=>{
+ const h=harness(),row=racer('racer',1400,'Racer');
+ const first=h.selectReplay(period,row);
+ h.reads.get('racer').resolve(payload(row));
+ await first;
+ assert.equal(h.selected().targetAccountId,'racer');
+ await h.selectReplay(period,row);
+ assert.equal(h.selected(),null);
+ assert.match(h.messages.at(-1),/unselected/);
+ assert.equal(h.ticks(),2);
+});

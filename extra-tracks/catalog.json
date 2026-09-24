@@ -12,7 +12,8 @@
     ],
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/shrouded-oasis.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/shrouded-oasis.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/shrouded-oasis.png",
+    "sourceCopies": null
   },
   {
     "id": "supermassive",
@@ -27,7 +28,8 @@
     ],
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/supermassive.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/supermassive.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/supermassive.png",
+    "sourceCopies": null
   },
   {
     "id": "zephyr-grasslands",
@@ -41,7 +43,8 @@
     ],
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/zephyr-grasslands.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/zephyr-grasslands.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/zephyr-grasslands.png",
+    "sourceCopies": null
   },
   {
     "id": "dakiu-the-japanese-nordschleife",
@@ -57,7 +60,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/dakiu-the-japanese-nordschleife.track",
     "thumbnailUrl": "extra-tracks/thumbnails/dakiu-the-japanese-nordschleife.png",
-    "description": "Dakiu: The Japanese Nordschleife: This track features 46 corners: 2 of them are banked with esses section, tunnel section, pit lane and alt courses that I might add. We got 4 drivers to beat: Bronze: 2:14.210 Silver: 2:10.777 Gold: 2:08.565"
+    "description": "Dakiu: The Japanese Nordschleife: This track features 46 corners: 2 of them are banked with esses section, tunnel section, pit lane and alt courses that I might add. We got 4 drivers to beat: Bronze: 2:14.210 Silver: 2:10.777 Gold: 2:08.565",
+    "sourceCopies": 253,
+    "difficulty": 4,
+    "category": "Racing"
   },
   {
     "id": "ims",
@@ -73,7 +79,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/ims.track",
     "thumbnailUrl": "extra-tracks/thumbnails/ims.png",
-    "description": "A straight forward oval with 4 laps, and has some pretty skillful turns after straightaways. This is based off of Indianapolis Motor Speedway, a real life track I hold dear to my heart."
+    "description": "A straight forward oval with 4 laps, and has some pretty skillful turns after straightaways. This is based off of Indianapolis Motor Speedway, a real life track I hold dear to my heart.",
+    "sourceCopies": 177,
+    "difficulty": 4,
+    "category": "Speedrun"
   },
   {
     "id": "just-a-normal-track",
@@ -89,7 +98,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/just-a-normal-track.track",
     "thumbnailUrl": "extra-tracks/thumbnails/just-a-normal-track.png",
-    "description": "Just A Normal Track With Nothing Special About It..."
+    "description": "Just A Normal Track With Nothing Special About It...",
+    "sourceCopies": 141,
+    "difficulty": 4,
+    "category": "Racing"
   },
   {
     "id": "monaco-grand-prix",
@@ -105,7 +117,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/monaco-grand-prix.track",
     "thumbnailUrl": "extra-tracks/thumbnails/monaco-grand-prix.png",
-    "description": "\"Attempt\" of building the classic racetrack from Monaco including famous turns like Tabac, the Fairmont Hairpin, and the Nouvelle chicane these track also features lots of famous builds near the track that can be visible while driving it."
+    "description": "\"Attempt\" of building the classic racetrack from Monaco including famous turns like Tabac, the Fairmont Hairpin, and the Nouvelle chicane these track also features lots of famous builds near the track that can be visible while driving it.",
+    "sourceCopies": 488,
+    "difficulty": 4,
+    "category": "Racing"
   },
   {
     "id": "silverstone-circuit",
@@ -121,7 +136,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/silverstone-circuit.track",
     "thumbnailUrl": "extra-tracks/thumbnails/silverstone-circuit.png",
-    "description": "An attempt to build the classic Silverstone circuit which has been an iconic formula one and multyple racing series track it includes maggots, beckets , village , vale and etc but it does not contain the famous buildings alongside the circu"
+    "description": "An attempt to build the classic Silverstone circuit which has been an iconic formula one and multyple racing series track it includes maggots, beckets , village , vale and etc but it does not contain the famous buildings alongside the circu",
+    "sourceCopies": 277,
+    "difficulty": 2,
+    "category": "Racing"
   },
   {
     "id": "the-floating-circuit",
@@ -137,7 +155,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/the-floating-circuit.track",
     "thumbnailUrl": "extra-tracks/thumbnails/the-floating-circuit.png",
-    "description": "The Floating Circuit isn't your normal racetrack, it's in the ocean! Have fun, good luck, and I hope it goes swimmingly!"
+    "description": "The Floating Circuit isn't your normal racetrack, it's in the ocean! Have fun, good luck, and I hope it goes swimmingly!",
+    "sourceCopies": 330,
+    "difficulty": 2,
+    "category": "Drift"
   },
   {
     "id": "castle-run",
@@ -153,7 +174,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/castle-run.track",
     "thumbnailUrl": "extra-tracks/thumbnails/castle-run.png",
-    "description": "This is a fun trail where u race trough a castle."
+    "description": "This is a fun trail where u race trough a castle.",
+    "sourceCopies": 233,
+    "difficulty": 4,
+    "category": "Art"
   },
   {
     "id": "the-pit",
@@ -169,7 +193,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/the-pit.track",
     "thumbnailUrl": "extra-tracks/thumbnails/the-pit.png",
-    "description": "A tricky track made to be very hard. By some miracle my first attempt at the full track is the 35s on the Leaderboards."
+    "description": "A tricky track made to be very hard. By some miracle my first attempt at the full track is the 35s on the Leaderboards.",
+    "sourceCopies": 145,
+    "difficulty": 8,
+    "category": "Technical"
   },
   {
     "id": "press-forward",
@@ -185,7 +212,8 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/press-forward.track",
     "thumbnailUrl": "extra-tracks/thumbnails/press-forward.png",
-    "description": "It is a speedrun that is all about gaining and maintaining speed. One minor slipup may cost you the record!"
+    "description": "It is a speedrun that is all about gaining and maintaining speed. One minor slipup may cost you the record!",
+    "sourceCopies": null
   },
   {
     "id": "nature-ruin",
@@ -201,7 +229,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/nature-ruin.track",
     "thumbnailUrl": "extra-tracks/thumbnails/nature-ruin.png",
-    "description": "Why are we building more and more concrete into the Nature? All it does ist disturbing and destroying it. This Track Starts in the peaceful Nature, and leads in a catastrophic Future where Nature ist Like hell."
+    "description": "Why are we building more and more concrete into the Nature? All it does ist disturbing and destroying it. This Track Starts in the peaceful Nature, and leads in a catastrophic Future where Nature ist Like hell.",
+    "sourceCopies": 214,
+    "difficulty": 4,
+    "category": "Racing"
   },
   {
     "id": "akira-r1",
@@ -217,7 +248,10 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/akira-r1.track",
     "thumbnailUrl": "extra-tracks/thumbnails/akira-r1.png",
-    "description": "A mountain like terrain with multiple winding roads and a bridge, players start at a tunnel and make their way onto a coast and back to the track. with cherry blossoms and icy mountains and beaches this track includes many natural like land"
+    "description": "A mountain like terrain with multiple winding roads and a bridge, players start at a tunnel and make their way onto a coast and back to the track. with cherry blossoms and icy mountains and beaches this track includes many natural like land",
+    "sourceCopies": 345,
+    "difficulty": 4,
+    "category": "Art"
   },
   {
     "id": "tower-of-checkpoints",
@@ -233,7 +267,982 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrackcodes/tower-of-checkpoints.track",
     "thumbnailUrl": "extra-tracks/thumbnails/tower-of-checkpoints.png",
-    "description": "A roundabout which goes up featuring 1000 checkpoints."
+    "description": "A roundabout which goes up featuring 1000 checkpoints.",
+    "sourceCopies": 409,
+    "difficulty": 2,
+    "category": "Speedrun"
+  },
+  {
+    "id": "spa-f1-belgium",
+    "trackId": "b61695d24bd8d4a0fe6ff7b60bdab4bd39c8a3414825f21ca83cc6e8135de892",
+    "name": "Spa F1  -  Belgium",
+    "author": "007",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/spa-f1-belgium",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/spa-f1-belgium.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 431,
+    "description": "Ten hours to model, just over a minute to finish. The 007 team has worked overnight to finish this 1:1 scale version of the most iconic track in F1 history: SPA. The Eau Rouge is perfect, the gravel pits are right where they should be, the ",
+    "thumbnailUrl": "extra-tracks/thumbnails/spa-f1-belgium.png"
+  },
+  {
+    "id": "karrot-river",
+    "trackId": "c40db246583a088f42add19df56d106aeb3213fd72f8e987938b460bb934fba6",
+    "name": "Karrot RIver",
+    "author": "kkarrot12",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/karrot-river",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/karrot-river.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 347,
+    "description": "Karrot River is a fast-paced Speedrun track featuring high-speed straightaways and massive jump gaps that will test your airtime control. Drivers must navigate tight aerial landings and maintain momentum through a series of precision banked",
+    "thumbnailUrl": "extra-tracks/thumbnails/karrot-river.png"
+  },
+  {
+    "id": "dubai-grand-prix",
+    "trackId": "f51f4890ade50bf17a4c0d82cb567ba60e6b81cfabafc1be286d870a32b617c7",
+    "name": "Dubai Grand Prix",
+    "author": "Sahen523 (convert the bot names from hexadecimal to denary)",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dubai-grand-prix",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dubai-grand-prix.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 334,
+    "description": "This isn't the actual Dubai track; it is a fan-made track that combines fast sections with many twists and turns. Turn 1 is a wide turn into a banked Turn 2, which leads to a heavy-braking Turn 3, and then to a slithering Turn 4 and 5, goin",
+    "thumbnailUrl": "extra-tracks/thumbnails/dubai-grand-prix.png"
+  },
+  {
+    "id": "snake",
+    "trackId": "dd721d5b577ba0a55478ad81d8b631873dc8e7dc799921bdb2d82c499b99bd38",
+    "name": "Snake",
+    "author": "tashiyigejia",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/snake",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/snake.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 320,
+    "description": "A dynamic, multi-path speedrun map featuring a high-speed straightaway that transitions into a long, rhythmic series of flowing S-curves. The track splits into separate routing options, challenging players to choose between precision jump g",
+    "thumbnailUrl": "extra-tracks/thumbnails/snake.png"
+  },
+  {
+    "id": "easter-island",
+    "trackId": "75b415d694df481afdb6a1b9c6bb87fcce62773fa7ad47951c595d6b92d95af0",
+    "name": "Easter Island",
+    "author": "Philr, Karpin",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/easter-island",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/easter-island.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 312,
+    "description": "Join the leaderboard and embark on this breathtaking map of easter island. See the famous Moai while you whizz round the track. The turns, jumps and speed is all coodrinated very well and makes this a phenomenal track. Have fun!",
+    "thumbnailUrl": "extra-tracks/thumbnails/easter-island.png"
+  },
+  {
+    "id": "very-big-ramp",
+    "trackId": "6d81e75586153b482d13cb37abf9a5b035aa5d189a85af841b799fdb46ea3e4c",
+    "name": "Very big ramp",
+    "author": "Pinky pie",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/very-big-ramp",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/very-big-ramp.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 273,
+    "description": "Don’t fall off!",
+    "thumbnailUrl": "extra-tracks/thumbnails/very-big-ramp.png"
+  },
+  {
+    "id": "the-unnamed-track",
+    "trackId": "92091702244647bc23ae7ff2b28c07666f68b73c3ade94b394dfee5c2d1fdeef",
+    "name": "The unnamed track",
+    "author": "yes try",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-unnamed-track",
+    "tags": [
+      "tutorial"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-unnamed-track.track",
+    "difficulty": 4,
+    "category": "Tutorial",
+    "sourceCopies": 271,
+    "description": "Easy map used for practicing sharp turns, full speed, and skills. Good for beginners getting used to the car.",
+    "thumbnailUrl": "extra-tracks/thumbnails/the-unnamed-track.png"
+  },
+  {
+    "id": "inversion-point",
+    "trackId": "f58c020a0f32ea50f40077305b2a2c2921f7d47224a4373917259e85ab7f61f9",
+    "name": "Inversion Point",
+    "author": "tikitikifunk0326",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/inversion-point",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/inversion-point.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 264,
+    "description": "A speedrun where you accelerate as fast as you can, go on a ramp, flip & try to reach the end the fastest!",
+    "thumbnailUrl": "extra-tracks/thumbnails/inversion-point.png"
+  },
+  {
+    "id": "tower-of-jumps",
+    "trackId": "1ae1aae86a880fd623e39921987ba792d71ee0a9c7b5f9d44fc0b1b77504eebd",
+    "name": "Tower of Jumps",
+    "author": "Jam",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/tower-of-jumps",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/tower-of-jumps.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 260,
+    "description": "inspired by the hit roblox game ETOH (eternal towers of hell) and how they create towers of parkour withs special gimicks, this map just has a lot of jumps which is why i called it Tower of Jumps.  Jam from Australia",
+    "thumbnailUrl": "extra-tracks/thumbnails/tower-of-jumps.png"
+  },
+  {
+    "id": "jumper-airlines",
+    "trackId": "6ecc629ac091aadcedd773471030fe64021de1ac169d28e580a91541319bd2bf",
+    "name": "Jumper Airlines",
+    "author": "STARvoid",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/jumper-airlines",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/jumper-airlines.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 253,
+    "description": "A windy jumper map where you have to jump between multiple floating islands with a leap of faith at the end Benchmark time: 49 seconds",
+    "thumbnailUrl": "extra-tracks/thumbnails/jumper-airlines.png"
+  },
+  {
+    "id": "concrete-passage-way",
+    "trackId": "0a72a64df60ac4d8ce75d6684ca048aa1fb24587a670e44d0dff714ba454a686",
+    "name": "Concrete  Passage Way",
+    "author": "Ccat",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/concrete-passage-way",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/concrete-passage-way.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 252,
+    "description": "A fully closed off desert passageway with fast straits and turns.",
+    "thumbnailUrl": "extra-tracks/thumbnails/concrete-passage-way.png"
+  },
+  {
+    "id": "sylvan-speedway",
+    "trackId": "8afde3be59f8ec440e9969675babe4b27304fe6f26e97c6e8ab7b06f62616be4",
+    "name": "Sylvan Speedway",
+    "author": "cool guy",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/sylvan-speedway",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/sylvan-speedway.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 233,
+    "description": "Sylvan Speedway track consisting of tight turns, slopes, and technical jumps. All while taking place in a forest with huge trees and driving over a lake.",
+    "thumbnailUrl": "extra-tracks/thumbnails/sylvan-speedway.png"
+  },
+  {
+    "id": "doubles",
+    "trackId": "f7fbb29c62dc39b772c95a1479d8b2b18bc1671a799eb1808fe2cdf756a2fdff",
+    "name": "Doubles",
+    "author": "ReWard3n",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/doubles",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/doubles.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 229,
+    "description": "A technical track that requires precision and speed conservation skills, with  blind drops and immediate corner entry transitions. This code is meant for players looking for a time trial and wanting to practice their momentum control. Time:",
+    "thumbnailUrl": "extra-tracks/thumbnails/doubles.png"
+  },
+  {
+    "id": "jump",
+    "trackId": "d5f5ceb230895b708a36460bd0b1b8bc04cc4041c136bfdebac900d9b2cc6a8a",
+    "name": "jump.",
+    "author": "naumthekiwi",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/jump",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/jump.track",
+    "difficulty": 4,
+    "category": "Stunt",
+    "sourceCopies": 228,
+    "description": "this is a track with a little rng part, a tunnel, a loop, and a big jump. the hardest section is probably the rng dome at the start.",
+    "thumbnailUrl": "extra-tracks/thumbnails/jump.png"
+  },
+  {
+    "id": "tree",
+    "trackId": "aed61944e94662ab490e319186eef3bff53f4d63d3c00de446ea3a863d2a2112",
+    "name": "Tree",
+    "author": "Sebastion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/tree",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/tree.track",
+    "difficulty": 8,
+    "category": "Speedrun",
+    "sourceCopies": 227,
+    "description": "This track has trees",
+    "thumbnailUrl": "extra-tracks/thumbnails/tree.png"
+  },
+  {
+    "id": "belgian-gp-f1",
+    "trackId": "7b9f5d8aaa3ab84808224e0a5171abc87494af9610cabeff5027ddb9294581b2",
+    "name": "Belgian GP F1",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/belgian-gp-f1",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/belgian-gp-f1.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 222,
+    "description": "the spa francorchamps track is an F1 track in belgium. it is a fan favourite, with a mix of high speed, medium speed and low speed corners. you complete 2 laps of this historic track, which takes about 2min",
+    "thumbnailUrl": "extra-tracks/thumbnails/belgian-gp-f1.png"
+  },
+  {
+    "id": "dutch-gp-f1",
+    "trackId": "9602b5b1dbc125b1b82500ab68edf755694b05d2d4ce8f860695497616188b3e",
+    "name": "Dutch GP F1",
+    "author": "Hyperion",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dutch-gp-f1",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dutch-gp-f1.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 218,
+    "description": "The dutch f1 track. This track has harsh braking points, smooth medium speed corners and long straights.",
+    "thumbnailUrl": "extra-tracks/thumbnails/dutch-gp-f1.png"
+  },
+  {
+    "id": "easy-loops",
+    "trackId": "77d0c9371baa28c824525d17a4af5def04bebb0ca0a3939dc189a6f1d107bbc6",
+    "name": "Easy loops",
+    "author": "Ccat",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/easy-loops",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/easy-loops.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 206,
+    "description": "lots of high-speed banked corners with a small upside down ending",
+    "thumbnailUrl": "extra-tracks/thumbnails/easy-loops.png"
+  },
+  {
+    "id": "gridlock",
+    "trackId": "16bdcdde605d29ac4a8a961cf2ecb38f310630c14235f813fddaa25568ba2d2d",
+    "name": "GridLock",
+    "author": "Ccat",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/gridlock",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/gridlock.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 206,
+    "description": "A technical sprint featuring interconnected loops tight transitions, and long high speed sections. Find the fastest line through the grid and keep your momentum to the finish.",
+    "thumbnailUrl": "extra-tracks/thumbnails/gridlock.png"
+  },
+  {
+    "id": "upside-down-road",
+    "trackId": "7181ba631ab585f7ffd4ae0437aa92557fc84c2ca9a30ab2d91636abe8fe6248",
+    "name": "Upside down road",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/upside-down-road",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/upside-down-road.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 192,
+    "description": "Technical esses and chicane with inverted banked corners can sent your car to the end",
+    "thumbnailUrl": "extra-tracks/thumbnails/upside-down-road.png"
+  },
+  {
+    "id": "drop",
+    "trackId": "237d2abf842dde3c3cfc09edb7e554a8b53356850f58794aebf8966aa7c82799",
+    "name": "Drop",
+    "author": "Foolis",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/drop",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/drop.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 189,
+    "description": "A difficult track with drops and technical turns. Track opens up with a drop into a sharp turn, followed by a mid-air turn that is easy to overshoot.  After a hill, there is a straightaway followed by one last jump to a floating finish.",
+    "thumbnailUrl": "extra-tracks/thumbnails/drop.png"
+  },
+  {
+    "id": "thunder-storm",
+    "trackId": "7ddd470ccca076766421a632821890806c844db2ae739360150d600f5fef06cd",
+    "name": "Thunder Storm",
+    "author": "Speed - E",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/thunder-storm",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/thunder-storm.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 189,
+    "description": "A speedrun that on the first bit make your tyres bounce like crazy then go onto the tricky wallridethen zoom down and then go off a huge drop then crash into the finish line my favourite part is the name and the bounce",
+    "thumbnailUrl": "extra-tracks/thumbnails/thunder-storm.png"
+  },
+  {
+    "id": "the-final-trials-tft",
+    "trackId": "9ba96a66807e1ad0dc25dbc08fb558957232fd4c872441902c3228a8fd52fb31",
+    "name": "The Final Trials (TFT)",
+    "author": "Tuffmangostotr6741 (old account) Guccimorty12 (new account)",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/the-final-trials-tft",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/the-final-trials-tft.track",
+    "difficulty": 8,
+    "category": "Speedrun",
+    "sourceCopies": 189,
+    "description": "Originally known as \"Needed - the final trials\" but later the needed was dropped. Began as a joke series between me and my friend last year where we would make tracks as willingly annoying as possible, from needed 1 to needed 9 (all lost un",
+    "thumbnailUrl": "extra-tracks/thumbnails/the-final-trials-tft.png"
+  },
+  {
+    "id": "hopping",
+    "trackId": "c91b740b8fb2df9266fdd263f49dd9a4951f1ce18285189d1d509fb4f4ea6e88",
+    "name": "hopping",
+    "author": "itsmemusong",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/hopping",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/hopping.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 184,
+    "description": "precise breaking point with checkpoints requiring switching between reverse and forwards movement",
+    "thumbnailUrl": "extra-tracks/thumbnails/hopping.png"
+  },
+  {
+    "id": "neighbor-sleeping",
+    "trackId": "8fa9336b86f3545e69affcff1398929cf23a33a84915c8f7fc86603690ecfd7d",
+    "name": "Neighbor Sleeping!",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/neighbor-sleeping",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/neighbor-sleeping.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 182,
+    "description": "This track is located in a fictional city. It features sharp chicanes, a double-apex corner, and a section where the track narrows across the roof of a building. From there, it drops down into a tight left-hander that leads into a mountain ",
+    "thumbnailUrl": "extra-tracks/thumbnails/neighbor-sleeping.png"
+  },
+  {
+    "id": "doom-city",
+    "trackId": "7c128eaf746e11f30ba32d357a4a39ef58ea1a2f9c3f7d35d2079150a2efe74a",
+    "name": "Doom City",
+    "author": "Nothing",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/doom-city",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/doom-city.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 178,
+    "description": "A pretty evil track with Jumps, Pillars, Banked Corners, and Useless Chicanes",
+    "thumbnailUrl": "extra-tracks/thumbnails/doom-city.png"
+  },
+  {
+    "id": "dustar",
+    "trackId": "a19217bd08760d1920bb59e282cdcb1d3050da2a9ce831823baed42f327f0560",
+    "name": "DUSTAR",
+    "author": "BB BRO ENERGYRACING",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/dustar",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/dustar.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 165,
+    "description": "There are many checkpoints, stunts and jumps you need to do that includes using caution on the part where you have to choose one path and drive on a tightrope and this track is a birthday special in 2026 august.",
+    "thumbnailUrl": "extra-tracks/thumbnails/dustar.png"
+  },
+  {
+    "id": "acrobatics-1",
+    "trackId": "ee4a0b2f71207975ee74f14a831c054aabc5f2d0e9078011bc84d47f452e897a",
+    "name": "Acrobatics 1",
+    "author": "Capygamer12",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/acrobatics-1",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/acrobatics-1.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 164,
+    "description": "A skillbased acrobatic map that tests your sense of trajectory.",
+    "thumbnailUrl": "extra-tracks/thumbnails/acrobatics-1.png"
+  },
+  {
+    "id": "lost-oasis",
+    "trackId": "5e7da3bd93834037cc559fada834199d5f3772207f511c5d40282df63f22dde1",
+    "name": "lost oasis",
+    "author": "*_*",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/lost-oasis",
+    "tags": [
+      "art"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/lost-oasis.track",
+    "difficulty": 4,
+    "category": "Art",
+    "sourceCopies": 162,
+    "description": "drive through an amazing waterfall cave and past and abandoned castle. enjoy this masterpiece!",
+    "thumbnailUrl": "extra-tracks/thumbnails/lost-oasis.png"
+  },
+  {
+    "id": "orbital-mirage",
+    "trackId": "9e33c8a4cbf71801763838d25c542fd1470b1e2b8f5656a92b416e9c0b5b2523",
+    "name": "Orbital Mirage",
+    "author": "SG|TheLight",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/orbital-mirage",
+    "tags": [
+      "art"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/orbital-mirage.track",
+    "difficulty": 4,
+    "category": "Art",
+    "sourceCopies": 154,
+    "description": "A tiny decorated map featuring a blue and purple planet where you have to drive around the orbit to win the map.",
+    "thumbnailUrl": "extra-tracks/thumbnails/orbital-mirage.png"
+  },
+  {
+    "id": "handle-da-jump",
+    "trackId": "fe659e932522505e7be71bfd86f2f2b0ceaf0e81f6f0a34bd874bebcf0a9d137",
+    "name": "Handle da Jump!",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/handle-da-jump",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/handle-da-jump.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 152,
+    "description": "Handle da jump! is a track where you have banked corners and a big jump that sends you to a big platform , afther that you have a technical section with chicanes and blind corners that makes you go to a big straight back to finish in a loop",
+    "thumbnailUrl": "extra-tracks/thumbnails/handle-da-jump.png"
+  },
+  {
+    "id": "gecko-02",
+    "trackId": "8c0e618e3c385896203ed67281517fa12042b157c8e01c9a550e8b448d230810",
+    "name": "Gecko.02",
+    "author": "UnknownMachine",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/gecko-02",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/gecko-02.track",
+    "difficulty": 7,
+    "category": "Technical",
+    "sourceCopies": 151,
+    "description": "Drive nimbly up walls like a gecko. This track features a unique maneuver right at the start, requiring the race car to tilt and soar through the air. What's more, the track demands surgical precision in control, offering very little margin",
+    "thumbnailUrl": "extra-tracks/thumbnails/gecko-02.png"
+  },
+  {
+    "id": "top-gear",
+    "trackId": "4cad02f955b77ff33c42b5e07bc1b9415686cf09766e2fe696ea36f0d3af04fd",
+    "name": "Top Gear",
+    "author": "3-eb",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/top-gear",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/top-gear.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 143,
+    "description": "This 50 second track has brilliant scenery and uses all sorts of nice tricks with jumps at all angles and walls this track gets you speeding all the way to the finish.",
+    "thumbnailUrl": "extra-tracks/thumbnails/top-gear.png"
+  },
+  {
+    "id": "turn",
+    "trackId": "683bf0331d9d8c41d657c957ce58809b2628b2418db256e869c0c1bad8b7429a",
+    "name": "Turn",
+    "author": "Stannabanana",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/turn",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/turn.track",
+    "difficulty": 2,
+    "category": "Technical",
+    "sourceCopies": 139,
+    "description": "A singular precision turn",
+    "thumbnailUrl": "extra-tracks/thumbnails/turn.png"
+  },
+  {
+    "id": "abu-dhabi-gp",
+    "trackId": "3af7326941ee68163a8296103e18f99b6c9e0382db1d2578c253f75830d23a6e",
+    "name": "Abu Dhabi GP",
+    "author": "Oscar Pastry",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/abu-dhabi-gp",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/abu-dhabi-gp.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 137,
+    "description": "The abu Dhabi gp",
+    "thumbnailUrl": "extra-tracks/thumbnails/abu-dhabi-gp.png"
+  },
+  {
+    "id": "baku-city-circuit",
+    "trackId": "482509618c6ee76c4d57111ee4a51ddb3942c3b17bebdcbf51d96ca1ba174db6",
+    "name": "Baku City Circuit",
+    "author": "Oscar Pastry",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/baku-city-circuit",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/baku-city-circuit.track",
+    "difficulty": 7,
+    "category": "Racing",
+    "sourceCopies": 129,
+    "description": "Example A remodel of the baku gp circuit",
+    "thumbnailUrl": "extra-tracks/thumbnails/baku-city-circuit.png"
+  },
+  {
+    "id": "race-track",
+    "trackId": "760a03d48e4fa8803af615b9dfc15b63fcf5445d1dc3362a6e3420695d330349",
+    "name": "Race Track",
+    "author": "JonTuf",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/race-track",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/race-track.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 128,
+    "description": "A race track with two jumps and a lot of amazing turns.",
+    "thumbnailUrl": "extra-tracks/thumbnails/race-track.png"
+  },
+  {
+    "id": "edge-runner-1",
+    "trackId": "cb73df195e1bbc65923953d2255c84b2cc2d2ce1b48fcc9a1e37e54c3f91a066",
+    "name": "Edge runner #1",
+    "author": "anonymous",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/edge-runner-1",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/edge-runner-1.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 125,
+    "description": "My first track. It starts by driving on sideways signs with several turn, followed by a jump onto two wide signs. you then drive onto sideways pillars into the finish, the hardest section.",
+    "thumbnailUrl": "extra-tracks/thumbnails/edge-runner-1.png"
+  },
+  {
+    "id": "speed-park",
+    "trackId": "2567fb06cb35a31cd21737fbdc71106b773cafa2030c4c2d37db0b9e8907b47c",
+    "name": "Speed Park",
+    "author": "Oliver 3",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/speed-park",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/speed-park.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 125,
+    "description": "Tactical first section that transitions into a fast straight and banked corner and then a hard brake into a tactical closing section.",
+    "thumbnailUrl": "extra-tracks/thumbnails/speed-park.png"
+  },
+  {
+    "id": "hardcore-2",
+    "trackId": "9100656e1ed7576e805f22bf7e63333978e06ec8234cdc883b0aa69be8ba034b",
+    "name": "Hardcore",
+    "author": "Jainil",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/hardcore-2",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/hardcore-2.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 125,
+    "description": "This track features tight corners, jumps and many unexpected obstacles.",
+    "thumbnailUrl": "extra-tracks/thumbnails/hardcore-2.png"
+  },
+  {
+    "id": "gap",
+    "trackId": "5acaf395b81dbad3565151e1aaa1d3014fb15fe2b1e9ec14b685601d846738ee",
+    "name": "gap",
+    "author": "itsmemusong",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/gap",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/gap.track",
+    "difficulty": 7,
+    "category": "Speedrun",
+    "sourceCopies": 123,
+    "description": "a long run to a narrow gap requiring precise lifting",
+    "thumbnailUrl": "extra-tracks/thumbnails/gap.png"
+  },
+  {
+    "id": "mario-kart",
+    "trackId": "912ed00e922d0c17fb372f55fedfdbb1a35693d186a57841e723559cb48524a9",
+    "name": "MARIO KART",
+    "author": "kkarrot12",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/mario-kart",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/mario-kart.track",
+    "difficulty": 4,
+    "category": "Speedrun",
+    "sourceCopies": 122,
+    "description": "An artistic interpretation of what a Poly track should look look. Mario kart is cool too i guess.",
+    "thumbnailUrl": "extra-tracks/thumbnails/mario-kart.png"
+  },
+  {
+    "id": "on-a-technicality",
+    "trackId": "834b306ee4973d7c25a594bff34c3b9ab9b7e6929c604abb00ae5c816c9f0f2a",
+    "name": "On a technicality",
+    "author": "Sunlitnettle",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/on-a-technicality",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/on-a-technicality.track",
+    "difficulty": 8,
+    "category": "Technical",
+    "sourceCopies": 120,
+    "description": "A technically challenging map that requires precision, coordination, balance and delicacy. This map utilises triangle pieces to create a tightrope of road, perfect for testing players' intelligence and decision making. It has a highly diffi",
+    "thumbnailUrl": "extra-tracks/thumbnails/on-a-technicality.png"
+  },
+  {
+    "id": "grug",
+    "trackId": "c0ec5b16465d9470d216fad4db5d12d7fa8618911e4fd8b62299460c3ad02873",
+    "name": "GRUG",
+    "author": "GRUD",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/grug",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/grug.track",
+    "difficulty": 8,
+    "category": "Technical",
+    "sourceCopies": 119,
+    "description": "There is a building where you can go inside and there is a a lot of turns, and a lot of jumps.",
+    "thumbnailUrl": "extra-tracks/thumbnails/grug.png"
+  },
+  {
+    "id": "simple-track",
+    "trackId": "d08450db61f7ddc88f080b0b935f0292325ff914a49e9e0789fd8cdf0c08786b",
+    "name": "Simple Track",
+    "author": "AshtonRocksYT",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/simple-track",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/simple-track.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 119,
+    "description": "A simple track that has been generated with the game’s “generate” feature",
+    "thumbnailUrl": "extra-tracks/thumbnails/simple-track.png"
+  },
+  {
+    "id": "first-race-trak-pkb-racing",
+    "trackId": "e145e8a57667383260876f15def0225bbfc9421ae1531a0e9b75130514a6ada6",
+    "name": "First Race Trak -PKB_Racing",
+    "author": "PKB_Racing",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/first-race-trak-pkb-racing",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/first-race-trak-pkb-racing.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 118,
+    "description": "First track with flat out sections, weird turns, and a ton of fun. P.S. the track next to the start finish line is the pit road entry",
+    "thumbnailUrl": "extra-tracks/thumbnails/first-race-trak-pkb-racing.png"
+  },
+  {
+    "id": "snes-mario-circuit-1",
+    "trackId": "a3f86b0343823013e50c43218808a0415377bc948f0db726ac4c8565fc0ed90b",
+    "name": "SNES mario circuit 1",
+    "author": "CITRA",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/snes-mario-circuit-1",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/snes-mario-circuit-1.track",
+    "difficulty": 2,
+    "category": "Racing",
+    "sourceCopies": 111,
+    "description": "SNES mario circuit one, note that i did not add art into it, so it's boring. Also, if it looks wrong, hey, at least i tried. (the image is the real SNES mario circuit 1 track map, you can compare it with my creation, i guess. Anyone know ho",
+    "thumbnailUrl": "extra-tracks/thumbnails/snes-mario-circuit-1.png"
+  },
+  {
+    "id": "heatwave-danger",
+    "trackId": "d281258e85ab4719131c45f27d4d04641b59eb33e33d099fef20f2a03463c8d2",
+    "name": "Heatwave Danger",
+    "author": "Ozzo",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/heatwave-danger",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/heatwave-danger.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 109,
+    "description": "An amazing track with lots of jumps. The track is unique because it combines fun with difficulty and artistic landscaping not many tracks combine all three. The hardest section is a small jump before a corner which you can easily over jump ",
+    "thumbnailUrl": "extra-tracks/thumbnails/heatwave-danger.png"
+  },
+  {
+    "id": "circle",
+    "trackId": "d04710ea38a170a4ea85ec2af5c128904aab77a760bf2f15ec3d4b652dc02a75",
+    "name": "circle",
+    "author": "丂卄卂尺Ҝ",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/circle",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/circle.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 103,
+    "description": "A small circle for speedrunning and just for fun. Enjoy!",
+    "thumbnailUrl": "extra-tracks/thumbnails/circle.png"
+  },
+  {
+    "id": "confusing",
+    "trackId": "180790a792e9eee3262bda9ec7650bd587a58c089ef78e28a612dbb19e748466",
+    "name": "Confusing",
+    "author": "Bobac",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/confusing",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/confusing.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 103,
+    "description": "Confusing is a track where you can find lots of shortcuts with 2 fast hairpins and also two crossing roads try to make the fastest time by finding all shortcuts",
+    "thumbnailUrl": "extra-tracks/thumbnails/confusing.png"
+  },
+  {
+    "id": "sandstorm",
+    "trackId": "42deb0fe4ef04e8479f20f52f471ae9168c428b9bb2705cba76270b270a48136",
+    "name": "Sandstorm",
+    "author": "Disconected",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/sandstorm",
+    "tags": [
+      "technical"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/sandstorm.track",
+    "difficulty": 4,
+    "category": "Technical",
+    "sourceCopies": 102,
+    "description": "A short track with 4 different paths in the begining and a loop",
+    "thumbnailUrl": "extra-tracks/thumbnails/sandstorm.png"
+  },
+  {
+    "id": "side-way-spin",
+    "trackId": "17c46553cccae2974721a63b5561675d40e8bbb1cb1cc551cbb47ff2c1b82967",
+    "name": "side way spin",
+    "author": "lol",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/side-way-spin",
+    "tags": [
+      "stunt"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/side-way-spin.track",
+    "difficulty": 7,
+    "category": "Stunt",
+    "sourceCopies": 101,
+    "description": "keep speed and zoom past a side way converter than go up onto the sky do a loop and end with 2 massive jumps",
+    "thumbnailUrl": "extra-tracks/thumbnails/side-way-spin.png"
+  },
+  {
+    "id": "long-circuit",
+    "trackId": "7e1710bfb382dadcfd8f571ec4149b06dcdcd8e6188c16369e74a42bfc726386",
+    "name": "Long Circuit",
+    "author": "Oscar Pastry",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/long-circuit",
+    "tags": [
+      "racing"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/long-circuit.track",
+    "difficulty": 4,
+    "category": "Racing",
+    "sourceCopies": 99,
+    "description": "A cool circuit with some fun corners and some banking",
+    "thumbnailUrl": "extra-tracks/thumbnails/long-circuit.png"
+  },
+  {
+    "id": "grid-locked",
+    "trackId": "6bbcf60eab85fa9a9821003df38e73378786092f367a6a79af77bea2a33fbc37",
+    "name": "Grid Locked",
+    "author": "007",
+    "source": "polytrackcodes.com",
+    "sourceUrl": "https://www.polytrackcodes.com/tracks/grid-locked",
+    "tags": [
+      "speedrun"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/polytrackcodes/grid-locked.track",
+    "difficulty": 2,
+    "category": "Speedrun",
+    "sourceCopies": 99,
+    "description": "An extremely precise and technical speedrun, to continue the Focus series. Survive the tight hairpins and funky layout, as well as the single pixel jump you must make over the steaming hot lava and geysers underneath you. Don't fall. Don't ",
+    "thumbnailUrl": "extra-tracks/thumbnails/grid-locked.png"
   },
   {
     "id": "kacky-26",
@@ -249,7 +1258,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/26.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-26.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-26.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-27",
@@ -265,7 +1275,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/27.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-27.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-27.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-28",
@@ -281,7 +1292,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/28.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-28.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-28.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-29",
@@ -297,7 +1309,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/29.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-29.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-29.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-30",
@@ -313,7 +1326,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/30.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-30.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-30.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-31",
@@ -329,7 +1343,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/31.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-31.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-31.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-32",
@@ -345,7 +1360,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/32.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-32.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-32.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-33",
@@ -361,7 +1377,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/33.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-33.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-33.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-34",
@@ -377,7 +1394,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/34.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-34.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-34.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-35",
@@ -393,7 +1411,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/35.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-35.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-35.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-36",
@@ -409,7 +1428,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/36.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-36.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-36.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-37",
@@ -425,7 +1445,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/37.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-37.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-37.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-38",
@@ -441,7 +1462,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/38.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-38.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-38.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-39",
@@ -457,7 +1479,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/39.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-39.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-39.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-40",
@@ -473,7 +1496,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/40.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-40.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-40.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-41",
@@ -489,7 +1513,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/41.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-41.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-41.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-43",
@@ -505,7 +1530,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/43.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-43.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-43.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-44",
@@ -521,7 +1547,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/44.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-44.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-44.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-47",
@@ -537,7 +1564,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/47.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-47.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-47.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-48",
@@ -553,7 +1581,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/48.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-48.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-48.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-49",
@@ -569,7 +1598,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/49.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-49.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-49.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-50",
@@ -585,7 +1615,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/50.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-50.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-50.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-51",
@@ -601,7 +1632,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/51.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-51.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-51.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-52",
@@ -617,7 +1649,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/52.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-52.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-52.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-53",
@@ -633,7 +1666,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/53.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-53.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-53.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-54",
@@ -649,7 +1683,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/54.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-54.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-54.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-55",
@@ -665,7 +1700,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/55.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-55.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-55.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-56",
@@ -681,7 +1717,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/56.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-56.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-56.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-57",
@@ -697,7 +1734,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/57.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-57.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-57.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-59",
@@ -713,7 +1751,8 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/59.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-59.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-59.png",
+    "sourceCopies": null
   },
   {
     "id": "kacky-60",
@@ -729,6 +1768,7 @@
     ],
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/60.track",
-    "thumbnailUrl": "extra-tracks/thumbnails/kacky-60.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kacky-60.png",
+    "sourceCopies": null
   }
 ]

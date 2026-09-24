@@ -36,7 +36,9 @@
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   let extraTracksCatalogPromise=null,extraTracksUiPromise=null,extraTracksUi=null;
+  let extraTrackRaceRows=[],extraTrackKnownIds={};
   let eventUi=null,eventUiPromise=null,eventQueueChecked=false,eventModuleRetryAt=0;
+  let lastEventUiTickAt=0;
   let pendingEventLaunch=null;
   let nativeWeeklySelection=null,kodubAdapter=null;
   async function nativeWeeklyFeed(){
@@ -144,7 +146,7 @@
     if(group)kodubAdapter?.combineKodubCard(document,group,nativeWeeklySelection);
     const ranked=document.getElementById('overallLeaderboardPanel');
     if((nav&&isElementVisible(nav)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
-    eventUi?.tick();
+    if(eventUi&&Date.now()-lastEventUiTickAt>1000){lastEventUiTickAt=Date.now();eventUi.tick();}
   }
 
   function extraTrackIds(){
@@ -152,9 +154,9 @@
     catch{return {};}
   }
   function extraTrackPersonalBest(entry){
-    const id=entry.trackId||extraTrackIds()[entry.id];if(!/^[a-f0-9]{64}$/.test(id||''))return null;
+    const id=entry.trackId||extraTrackKnownIds[entry.id];if(!/^[a-f0-9]{64}$/.test(id||''))return null;
     const accountId=activeRankedAccountId();
-    const rows=[...(readTrackSnapshotCache(id)?.entries||[]),...readLocalRaceRows().filter(row=>row.trackId===id)];
+    const rows=[...(readTrackSnapshotCache(id)?.entries||[]),...extraTrackRaceRows.filter(row=>row.trackId===id)];
     const own=rows.filter(row=>cleanUserId(row.accountId||row.userId||'')===accountId&&canonicalRaceTimeMs(row)>0)
       .sort((a,b)=>canonicalRaceTimeMs(a)-canonicalRaceTimeMs(b))[0];
     return own?{timeMs:canonicalRaceTimeMs(own),place:Number(own.rank||own.position||0)||null}:null;
@@ -209,26 +211,35 @@
     if(dialog?.isConnected)throw Error('The game did not confirm this track import.');
     known[entry.id]=trackId;
     try{localStorage.setItem(extraTrackIdsKey,JSON.stringify(known));}catch{}
+    extraTrackKnownIds=known;
     extraTracksUi?.close();
   }
+  async function submitExtraTrack(payload){
+    const user=window.firebase?.auth?.().currentUser;
+    if(!user)throw Error('Sign in before submitting a track.');
+    const token=await user.getIdToken();
+    const response=await fetch(rankedBrokerUrl()+'/v1/extra-tracks/submissions',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
+    if(!response.ok)throw Error('Submission unavailable');
+    return response.json();
+  }
   async function openExtraTracks(){
+    extraTrackRaceRows=readLocalRaceRows();extraTrackKnownIds=extraTrackIds();
     if(extraTracksUi){extraTracksUi.open();return;}
     if(!extraTracksUiPromise)extraTracksUiPromise=Promise.all([
       loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs',extraTracksBaseUrl).href)
     ]).then(([entries,module])=>{
-      extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest});
+      extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest,isLoaded:entry=>extraTrackKnownIds[entry.id]===entry.trackId,onSubmit:submitExtraTrack});
       if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css',extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
       return extraTracksUi;
     }).finally(()=>{extraTracksUiPromise=null;});
     (await extraTracksUiPromise).open();
   }
   function ensureExtraTracksEntryContents(){
-    const selection=document.querySelector('.track-selection-ui');const bar=selection?.querySelector(':scope > .bar');
-    if(!bar||bar.querySelector('.sq-extra-tracks-entry'))return;
+    const selection=document.querySelector('.track-selection-ui');const field=selection?.querySelector('.tracks-container.no-group-containers');
+    if(!field||field.querySelector('.sq-extra-tracks-entry'))return;
     const button=document.createElement('button');button.type='button';button.className='button sq-extra-tracks-entry';button.textContent='Extra Tracks';
     button.addEventListener('click',()=>{button.disabled=true;void openExtraTracks().catch(error=>{button.textContent=error.message||'Extra Tracks unavailable';setTimeout(()=>{button.textContent='Extra Tracks';},4000);}).finally(()=>{button.disabled=false;});});
-    const nativeImport=[...bar.querySelectorAll(':scope > button')].find(node=>node.querySelector('img[src*="import.svg"]'));
-    bar.insertBefore(button,nativeImport||null);
+    field.prepend(button);
     void loadExtraTracksCatalog().then(entries=>{button.textContent=`${entries.length} Extra Tracks`;}).catch(()=>{});
   }
 
@@ -1944,12 +1955,30 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     warning.appendChild(line2);
   }
 
+  let footerVisibilityObserver=null;
+  const footerObserved=new WeakSet();
   function ensurePersistentInfoBranding(){
     const info = document.querySelector('.menu-ui .info, .menu .info');
     if (!info) return;
+    if(!footerVisibilityObserver)footerVisibilityObserver=new MutationObserver(()=>requestAnimationFrame(ensurePersistentInfoBranding));
+    for(const node of document.querySelectorAll('.menu-ui,.menu,.track-selection-ui')){
+      if(footerObserved.has(node))continue;
+      footerObserved.add(node);
+      footerVisibilityObserver.observe(node,{attributes:true,attributeFilter:['class','style']});
+    }
+    if(!footerObserved.has(info)){
+      footerObserved.add(info);
+      footerVisibilityObserver.observe(info,{childList:true});
+    }
+    const homeVisible=()=>{
+      const menu=[...document.querySelectorAll('.menu-ui,.menu')].find(isElementVisible);
+      const buttons=document.querySelector('.main-buttons-container');
+      return !!menu&&isElementVisible(buttons)&&!isElementVisible(document.querySelector('.track-selection-ui'))&&!isElementVisible(document.getElementById('overallLeaderboardPanel'))&&!isElementVisible(document.querySelector('.sq-extra-overlay:not([hidden])'));
+    };
     const lang = getUiLanguage();
     if (info.dataset.fp === BRAND_FP && info.dataset.lang === lang && info.querySelector('.staticFunPill')) {
-      info.style.display = isStartMenuHotkeyContext(true) ? '' : 'none';
+      for(const duplicate of [...info.children].slice(3))duplicate.remove();
+      info.style.display = homeVisible() ? '' : 'none';
       return;
     }
     info.dataset.fp = BRAND_FP;
@@ -1991,7 +2020,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     info.appendChild(version);
     info.appendChild(credit);
 
-    info.style.display = isStartMenuHotkeyContext(true) ? '' : 'none';
+    if (window.__sqBrandIntroPlayed) info.classList.add('sq-brand-intro-complete');
+    else setTimeout(() => {
+      window.__sqBrandIntroPlayed = true;
+      info.classList.add('sq-brand-intro-complete');
+    }, 2200);
+
+    info.style.display = homeVisible() ? '' : 'none';
   }
 
   function ensureStaticDiscordLink(){
@@ -2412,6 +2447,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target?.isContentEditable)return false;
     const board=[...document.querySelectorAll('.track-info-ui .leaderboard-ui')].find(isElementVisible);
     if(!board)return false;
+    if(board.classList.contains('sq-event-board'))return false;
     const rows=[...board.querySelectorAll(':scope > .container > button.main')].filter(isElementVisible);
     const selected=row=>row.classList.contains('selected')||row.getAttribute('aria-pressed')==='true';
     const choose=desired=>{

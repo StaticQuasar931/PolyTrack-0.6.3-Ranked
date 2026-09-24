@@ -413,12 +413,12 @@ test('Extra-only work wakes preflight while legacy core remains independently vi
   assert.equal(verificationCollectionForTrack('legacy-core-id'),VERIFICATION_COLLECTION);
 });
 
-test('all 46 pinned catalog IDs use the Extra lane',()=>{
+test('all 100 pinned catalog IDs use the Extra lane',()=>{
   const ids=[...EXTRA_TRACK_IDS].sort();
-  assert.equal(ids.length,46);
+  assert.equal(ids.length,100);
   assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
   assert.equal(createHash('sha256').update(ids.join(',')).digest('hex'),
-    '6be72957ec2543099c5317f95c3699b8fbb7b458cca904ad53f50b08f5f65435');
+    'f7ff750be86ebfff4081e786fa68fd3f487bbbbcaa49d1669b18cba05e96a628');
   assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
 });
 
@@ -445,6 +445,22 @@ test('eight older Extra queues cannot hide core work and Extra selection remains
   assert.deepEqual(queries,[[VERIFICATION_COLLECTION,8],[EXTRA_VERIFICATION_COLLECTION,8]]);
   assert.deepEqual(selections,[[VERIFICATION_COLLECTION,8,11,11],[EXTRA_VERIFICATION_COLLECTION,8,1,1]]);
   assert.deepEqual(published,[...Array(11).fill(VERIFICATION_COLLECTION),EXTRA_VERIFICATION_COLLECTION]);
+});
+
+test('idle core work lends all available verification slots to Extra runs',async()=>{
+  const ids=[...EXTRA_TRACK_IDS];let selected=0,verified=0;
+  await runVerifier({env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic'},log:()=>{},borrowUnusedEvents:true,
+    validateEngine:async()=>{},connectDatabase:async()=>({
+      call:async(_,body)=>body.structuredQuery.from[0].collectionId===EXTRA_VERIFICATION_COLLECTION?
+        ids.slice(0,6).map((trackId,i)=>({document:{name:'extra/'+i,fields:{trackId:{stringValue:trackId},notBefore:{integerValue:'1'}}}})):[],
+      get:async()=>null,requests:()=>2
+    }),eventRun:async()=>({checked:0,consumed:0,rejected:false,archived:null,results:[]}),
+    selectNormal:async(_,docs,__,limits)=>{if(!docs.length)return {jobs:[],canonicalAttempts:0,selectionConflicts:0};selected=limits.jobLimit;return {jobs:docs.map((doc,i)=>({resultId:'extra-'+i,queueCollection:doc.queueCollection})),canonicalAttempts:docs.length,selectionConflicts:0};},
+    verifyNormal:async(_,jobs)=>jobs.map(job=>({resultId:job.resultId,status:'verified'})),
+    publishNormal:async(_,jobs)=>{verified=jobs.length;return {verified:jobs.length,reasons:{}};}
+  });
+  assert.equal(selected,16);
+  assert.equal(verified,6);
 });
 
 test('processing refuses misrouted core or Extra documents until backfill is correct',async()=>{

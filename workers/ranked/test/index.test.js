@@ -58,7 +58,7 @@ test('track types use the exact registry instead of treating every hash as commu
   assert.ok(community.finalWeight > custom.finalWeight);
 });
 
-test('every catalog track has a pinned low-RP native ID', () => {
+test('every catalog track has a pinned reduced-RP native ID', () => {
   const catalog=JSON.parse(readFileSync(new URL('../../../extra-tracks/catalog.json',import.meta.url),'utf8'));
   const ids=catalog.map(row=>row.trackId);
   assert.equal(new Set(ids).size,catalog.length);
@@ -66,11 +66,23 @@ test('every catalog track has a pinned low-RP native ID', () => {
   for(const id of ids){
     const parts=trackWeightParts(id,500,1.15);
     assert.equal(parts.type,'extra');
-    assert.equal(parts.base,0.06);
-    assert.equal(parts.finalWeight,0.06);
+    assert.equal(parts.base,0.6);
+    assert.ok(parts.finalWeight > 0.06);
     assert.equal(trackWeightParts(id,1).finalWeight,0);
   }
   assert.equal(trackWeightParts(CUSTOM_TRACK,500,1.15).base,0.6);
+});
+
+test('Extra contribution caps at one fifth of the strongest verified normal track', () => {
+  const extraId=[...EXTRA_TRACK_IDS][0];
+  const makeEntries=trackId=>verifiedEntries(Array.from({length:8},(_,index)=>validRun({accountId:index===0?'leader':`opponent-${index}`,trackId,timeMs:20000+index*1000,createdAt:index+1})),trackId);
+  const normal=makeEntries(TRACK),extra=makeEntries(extraId);
+  const leader=computeOverall([{trackId:TRACK,entries:normal},{trackId:extraId,entries:extra}],[],new Set(),{includePlannerResults:true}).find(row=>row.userId==='leader');
+  assert.ok(leader);
+  const normalFinish=leader.resultSamples.find(row=>row.trackId===TRACK);
+  const extraFinish=leader.resultSamples.find(row=>row.trackId===extraId);
+  assert.ok(extraFinish.weight<=normalFinish.weight/5+0.0001);
+  assert.ok(extraFinish.weight>0.06);
 });
 
 test('Rolling Hills is permanent-weighted in normal Overall RP without changing community scoring', () => {
@@ -178,6 +190,24 @@ test('profile notify preflight allows the configured school game origin and requ
   assert.equal(response.headers.get('Access-Control-Allow-Methods'), 'GET, POST, OPTIONS');
   assert.equal(response.headers.get('Access-Control-Allow-Headers'), 'Authorization, Content-Type, X-Admin-Token');
   assert.equal(response.headers.get('Access-Control-Max-Age'), '600');
+});
+
+test('Extra track submission is authenticated, private, and limited to one per day', async () => {
+  const origin='https://staticquasar931.github.io';
+  const input={name:'New track',author:'Creator',description:'Fast corners',code:'PolyTrack'+'A'.repeat(40),difficulty:4,tags:['racing'],sourceUrl:'',permissionGranted:true};
+  let committed=null;
+  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'test-uid',__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){committed=JSON.parse(init.body).writes;return {writeResults:[{}]};}
+    return null;
+  }};
+  const send=()=>handleRequest(new Request('https://ranked.example/v1/extra-tracks/submissions',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(input)}),env);
+  const response=await send();
+  assert.equal(response.status,201);
+  assert.equal(committed.length,1);
+  assert.match(committed[0].update.name,/0\.6\.2_extra_track_submissions\/test-uid_/);
+  assert.deepEqual(committed[0].currentDocument,{exists:false});
+  env.__TEST_FIRESTORE=async(path)=>path.includes('extra_track_submissions')?{fields:{ownerUid:{stringValue:'test-uid'}}}:null;
+  assert.equal((await send()).status,409);
 });
 
 test('canonical reconciliation endpoint requires the private admin token', async () => {

@@ -38,7 +38,8 @@ const COLLECTIONS = Object.freeze({
   badges: '0.6.2_s1_badges',
   meta: '0.6.2_s1_release_meta',
   jobs: '0.6.2_s1_worker_jobs',
-  cosmeticJobs: '0.6.2_s1_cosmetic_jobs'
+  cosmeticJobs: '0.6.2_s1_cosmetic_jobs',
+  extraTrackSubmissions: '0.6.2_extra_track_submissions'
 });
 const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta']),
@@ -464,11 +465,24 @@ function competition(entries) {
 export function trackWeightParts(trackId, fieldSize, competitionBoost = 1) {
   const type = EXTRA_TRACK_IDS.has(trackId) ? 'extra' : trackType(trackId);
   const field = Math.max(0, Number(fieldSize || 0));
-  const base = type === 'official' || type === 'permanent' ? 1.6 : type === 'community' ? 1 : type === 'extra' ? 0.06 : 0.6;
+  const base = type === 'official' || type === 'permanent' ? 1.6 : type === 'community' ? 1 : 0.6;
   const popularity = field < 2 ? 0 : 0.56 * Math.log2(field) * (field - 1) / (field + 8);
   const competitionFactor = Math.max(0.85, Math.min(1.15, Number(competitionBoost || 1)));
   const weight = base * popularity * competitionFactor;
-  return { type, field, base, popularity, competition: competitionFactor, finalWeight: type === 'extra' ? Math.min(0.06, weight) : weight };
+  return { type, field, base, popularity, competition: competitionFactor, finalWeight: weight };
+}
+
+function extraWeightCap(boards) {
+  let strongest = 0;
+  for (const board of boards) {
+    if (EXTRA_TRACK_IDS.has(board?.trackId)) continue;
+    for (const entry of Array.isArray(board?.entries) ? board.entries : []) {
+      if (entry.integrityVerified !== true || entry.runVerified !== true) continue;
+      const weight = Number(entry.weight || 0);
+      if (Number.isFinite(weight) && weight > strongest) strongest = weight;
+    }
+  }
+  return strongest > 0 ? strongest / 5 : 0.2;
 }
 
 async function runOverallBoardPage(env, afterName = '', limit = OVERALL_BOARD_PAGE_SIZE) {
@@ -703,6 +717,7 @@ function finishSummary(finish) {
 export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds = new Set(), {includePlannerResults = false} = {}) {
   const users = new Map();
   const prior = new Map((priorEntries || []).map((entry) => [entry.userId, entry]));
+  const extraCap = extraWeightCap(trackDocuments);
   for (const board of trackDocuments) {
     const trackId = safeText(board.trackId, 80);
     const entries = rankTrustedTrackEntries((Array.isArray(board.entries) ? board.entries : []).filter((entry) => entry.integrityVerified === true && entry.runVerified === true), trackId);
@@ -712,7 +727,7 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
       if (!accountId) continue;
       const rank = Number(entry.rank || 0);
       const fieldSize = entries.length;
-      const weight = Number(entry.weight || 0);
+      const weight = EXTRA_TRACK_IDS.has(trackId) ? Math.min(extraCap, Number(entry.weight || 0)) : Number(entry.weight || 0);
       if (!rank || weight <= 0) continue;
       const cost = placementCost(rank, fieldSize);
       const user = users.get(accountId) || { userId: accountId, finishes: [], officialCount: 0, communityCount: 0, permanentCount: 0, customCount: 0, pbCount: 0, totalPlaytimeMs: 0, accountCreatedAt: 0, latestPbAt: 0, betaTester: false };
@@ -959,13 +974,14 @@ export async function rebuildOverall(env, force = false) {
     return {...row, betaEntitlement, badges: betaEntitlement ? {betaTester:true} : null};
   });
   const entries = computedEntries.map(({resultSamples, ...entry}) => entry);
+  const extraCap = extraWeightCap(boards);
   const trackSummaries = boards.map((board) => ({...board,entries:rankTrustedTrackEntries((Array.isArray(board.entries)?board.entries:[]).filter((entry)=>entry.integrityVerified===true&&entry.runVerified===true),safeText(board.trackId,80))})).filter((board) => board.entries.length >= 2).map((board) => {
     const leader = board.entries[0] || {};
     return {
       trackId: safeText(board.trackId, 80),
-      type: trackType(board.trackId),
+      type: EXTRA_TRACK_IDS.has(board.trackId) ? 'extra' : trackType(board.trackId),
       fieldSize: board.entries.length,
-      weight: Number(leader.weight || 0),
+      weight: EXTRA_TRACK_IDS.has(board.trackId) ? Math.min(extraCap, Number(leader.weight || 0)) : Number(leader.weight || 0),
       recordMs: raceTime(leader),
       updatedAt: Number(board.updatedAt || board.builtAt || now),
       leader: {
@@ -1209,11 +1225,11 @@ async function processMigrationJob(env, supplied = null) {
   return { active: !complete, tracksRemaining: remainingTracks.length, badgesRemaining: pendingBadges.size, processedTracks: next.processedTracks, awardedBadges: next.awardedBadges, migrationVersion: MIGRATION_VERSION };
 }
 
-async function requestBody(request) {
+async function requestBody(request, maxBytes = 2048) {
   const length = Number(request.headers.get('Content-Length') || 0);
-  if (length > 2048) throw new Error('BODY_TOO_LARGE');
+  if (length > maxBytes) throw new Error('BODY_TOO_LARGE');
   const text = await request.text();
-  if (new TextEncoder().encode(text).length > 2048) throw new Error('BODY_TOO_LARGE');
+  if (new TextEncoder().encode(text).length > maxBytes) throw new Error('BODY_TOO_LARGE');
   return text ? JSON.parse(text) : {};
 }
 
@@ -1289,13 +1305,27 @@ export async function handleRequest(request, env, context = {}) {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
-  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics') return json(origin, env, 404, { error: 'not_found' });
+  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/extra-tracks/submissions') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });
   let uid;
   try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, { error: 'authentication_failed' }); }
   if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({ key: uid })).success) return json(origin, env, 429, { error: 'rate_limited', retryAfterSeconds: 60 });
   let body;
-  try { body = await requestBody(request); } catch { return json(origin, env, 400, { error: 'invalid_request' }); }
+  try { body = await requestBody(request, path === '/v1/extra-tracks/submissions' ? 550000 : 2048); } catch { return json(origin, env, 400, { error: 'invalid_request' }); }
+  if (path === '/v1/extra-tracks/submissions') {
+    const name = safeText(body.name, 80), author = safeText(body.author, 80);
+    const description = safeText(body.description, 1000), code = String(body.code || '').trim();
+    const difficulty = Number(body.difficulty);
+    const tags = Array.isArray(body.tags) ? body.tags.slice(0, 6).map(tag => safeText(tag, 24)).filter(Boolean) : [];
+    const sourceUrl = safeText(body.sourceUrl, 300);
+    if (!name || !author || !/^PolyTrack[0-9A-Za-z+/_=-]{20,524280}$/.test(code) || !Number.isInteger(difficulty) || difficulty < 1 || difficulty > 10 || body.permissionGranted !== true || sourceUrl && !/^https:\/\//i.test(sourceUrl)) return json(origin, env, 400, { error: 'invalid_submission' });
+    const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+    const id = `${uid}_${day}`;
+    const prior = await readDocument(env, COLLECTIONS.extraTrackSubmissions, id);
+    if (prior) return json(origin, env, 409, { error: 'one_submission_per_day' });
+    await commitDocuments(env, [{ collection: COLLECTIONS.extraTrackSubmissions, id, data: { ownerUid: uid, name, author, description, code, difficulty, tags, sourceUrl, permissionGranted: true, status: 'pending', createdAt: Date.now() } }]);
+    return json(origin, env, 201, { accepted: true });
+  }
   if (path === '/v1/profile/cosmetics') return updateProfileCosmetics(request, env, context, uid, body);
   if (path === '/v1/profile/notify') return notifyProfile(request, env, context, uid, body);
   const resultId = safeText(body.resultId, 220);
