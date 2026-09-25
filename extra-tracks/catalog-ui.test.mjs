@@ -145,7 +145,9 @@ test('difficulty and imported-only progress filter independently of style tags',
   progress.value = 'loaded'; progress.dispatch('change');
   assert.equal(cls(root, 'sq-extra-count')[0].textContent, '1 of 3 tracks');
   assert.match(cls(root, 'sq-extra-card')[0].textContent, /Track 02/);
-  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Difficulty: Expert/);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Difficulty 7\/10 · Expert/);
+  assert.equal(cls(fields[3], 'sq-extra-filter-count')[0].textContent, '2');
+  assert.equal(cls(fields[4], 'sq-extra-filter-count')[0].textContent, '1');
   assert.match(cls(root, 'sq-extra-card')[0].textContent, /Imported, not completed/);
 });
 
@@ -204,6 +206,16 @@ test('code metadata, credits and actual byte sizes are visible and searchable', 
   api.destroy();
 });
 
+test('oversized local challenge is visibly unranked while keeping the normal import action', () => {
+  const { root, api } = fixture([entry(1, { ranked: false, name: 'Poly Dip 2', sizeBytes: 329716 })]);
+  api.open();
+  assert.equal(cls(root, 'sq-extra-card-unranked').length, 1);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Local challenge · no ranked RP/);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Finishes stay on this device/);
+  assert.equal(cls(root, 'sq-extra-play')[0].textContent, 'Import and play');
+  api.destroy();
+});
+
 test('size sorting uses actual catalog byte sizes and keeps missing sizes last', () => {
   const entries = [
     entry(1, { name: 'Medium', sizeBytes: 20 }),
@@ -215,8 +227,8 @@ test('size sorting uses actual catalog byte sizes and keeps missing sizes last',
   const { root, api } = fixture(entries);
   api.open();
   const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
-  assert.match(sort.textContent, /Largest code/);
-  assert.match(sort.textContent, /Smallest code/);
+  assert.match(sort.textContent, /Largest track/);
+  assert.match(sort.textContent, /Smallest track/);
   const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
   sort.value = 'size-largest'; sort.dispatch('change');
   assert.deepEqual(names(), ['Large', 'Medium', 'Small', 'Invalid', 'Unknown']);

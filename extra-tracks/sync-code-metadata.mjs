@@ -65,7 +65,9 @@ export function readEmbeddedTrackMetadata(code) {
 
 export function addCodeMetadata(entries) {
   return entries.map(entry => {
-    if (!/^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath || '')) {
+    const trustedPath = /^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath || '');
+    const unrankedChallenge = entry.ranked === false && /^extra-tracks\/challenges\/[a-z0-9-]+\.track$/.test(entry.trackPath || '');
+    if (!trustedPath && !unrankedChallenge) {
       throw Error(`Invalid track path: ${entry.id}`);
     }
     const code = fs.readFileSync(path.join(root, entry.trackPath), 'utf8').trim();

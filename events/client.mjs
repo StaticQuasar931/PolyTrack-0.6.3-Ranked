@@ -103,7 +103,7 @@ export function ensureFeaturedSection(document){
 export function installEvents(bridge){
   const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
   let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
-  const cache=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
+  const cache=new Map(),snapshotFetching=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
   const activePeriods=()=>liveTimedEventPeriods(catalog.periods,now());
   const livePeriods=activePeriods;
@@ -134,8 +134,14 @@ export function installEvents(bridge){
     const valid=value=>value&&Array.isArray(value.entries)&&value.period?.id===period.id&&value.period.trackId===period.trackId&&value.period.kind===period.kind&&Number.isSafeInteger(value.updatedAt)&&value.updatedAt>=0;
     const candidate=cache.get(period.id)||read(STORE+'-'+period.id,null),saved=valid(candidate)?candidate:null;
     if(!force&&saved&&now()-saved.fetchedAt<120000)return saved;
-    try{const value=await bridge.readSnapshot(period.id);if(!valid(value))throw Error('Invalid event snapshot');const current=cache.get(period.id)||saved;if(valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
-    catch(error){if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
+    if(snapshotFetching.has(period.id))return snapshotFetching.get(period.id);
+    const pending=(async()=>{
+      try{const value=await bridge.readSnapshot(period.id);if(!valid(value))throw Error('Invalid event snapshot');const current=cache.get(period.id)||saved;if(valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
+      catch(error){if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
+      finally{if(snapshotFetching.get(period.id)===pending)snapshotFetching.delete(period.id);}
+    })();
+    snapshotFetching.set(period.id,pending);
+    return pending;
   }
   function message(text){statusText=text;for(const status of document.querySelectorAll('.sq-event-status,.sq-event-inline-status'))status.textContent=text;}
   async function flush(){

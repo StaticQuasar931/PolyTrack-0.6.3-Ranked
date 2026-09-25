@@ -4,10 +4,15 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function snapshot('),source.indexOf('  function message('));
-function fixture(readSnapshot){const cache=new Map(),saved=new Map();const context={cache,read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>1000000,bridge:{readSnapshot}};return {cache,saved,run:vm.runInNewContext('('+fn+')',context)};}
+function fixture(readSnapshot){const cache=new Map(),snapshotFetching=new Map(),saved=new Map();const context={cache,snapshotFetching,read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>1000000,bridge:{readSnapshot}};return {cache,snapshotFetching,saved,run:vm.runInNewContext('('+fn+')',context)};}
 const period={id:'p',trackId:'a'.repeat(64)};
 const board=at=>({period,entries:[{accountId:'b'.repeat(64),timeMs:20000,rank:1,rp:100}],updatedAt:at});
 test('complete event snapshot replaces atomically without merging entries',async()=>{const f=fixture(async()=>board(20));f.cache.set('p',{...board(10),entries:[{old:true}],fetchedAt:1});const out=await f.run(period,true);assert.equal(out.updatedAt,20);assert.equal(out.entries.length,1);assert.equal(out.entries[0].old,undefined);});
+test('concurrent forced and ordinary reads share one cloud request',async()=>{
+ let calls=0,release;const f=fixture(()=>{calls++;return new Promise(resolve=>{release=()=>resolve(board(20));});});
+ const first=f.run(period,true),second=f.run(period,false);await Promise.resolve();assert.equal(calls,1);
+ release();const [a,b]=await Promise.all([first,second]);assert.equal(a,b);assert.equal(f.cache.get('p'),a);assert.equal(f.snapshotFetching.size,0);
+});
 test('older delayed event response cannot replace a newer cached board',async()=>{const f=fixture(async()=>board(10));const newer={...board(20),fetchedAt:1};f.cache.set('p',newer);assert.equal(await f.run(period,true),newer);assert.equal(f.cache.get('p'),newer);});
 test('offline event read preserves a complete saved board',async()=>{const f=fixture(async()=>{throw Error('offline');});f.saved.set('test-p',{...board(20),fetchedAt:1});const result=await f.run(period,true);assert.equal(result.saved,true);assert.equal(result.updatedAt,20);});
 test('another track or malformed partial response cannot replace saved data',async()=>{for(const value of [{period,updatedAt:30},{...board(30),period:{...period,trackId:'c'.repeat(64)}}]){const f=fixture(async()=>value);f.cache.set('p',{...board(20),fetchedAt:1});assert.equal((await f.run(period,true)).updatedAt,20);assert.equal(f.cache.get('p').updatedAt,20);}});

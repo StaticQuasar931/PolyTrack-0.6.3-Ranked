@@ -3497,7 +3497,8 @@
     "codeName": "Impossible?",
     "codeAuthor": ".-. .- -. -.. --- -- .----",
     "codeModifiedAt": "2026-08-02T10:43:29.000Z",
-    "sizeBytes": 229
+    "sizeBytes": 229,
+    "thumbnailUrl": "extra-tracks/thumbnails/impossible.png"
   },
   {
     "id": "a-totally-normal-track",
@@ -3519,7 +3520,8 @@
     "codeName": "A Totally Normal Track",
     "codeAuthor": "Josegamer2639",
     "codeModifiedAt": "2026-08-07T19:09:02.000Z",
-    "sizeBytes": 1589
+    "sizeBytes": 1589,
+    "thumbnailUrl": "extra-tracks/thumbnails/a-totally-normal-track.png"
   },
   {
     "id": "endless",
@@ -3541,7 +3543,8 @@
     "codeName": "dfghj",
     "codeAuthor": "Anonymous",
     "codeModifiedAt": "2026-09-01T03:11:09.000Z",
-    "sizeBytes": 750
+    "sizeBytes": 750,
+    "thumbnailUrl": "extra-tracks/thumbnails/endless.png"
   },
   {
     "id": "the-most-evil-track-ever",
@@ -3563,7 +3566,8 @@
     "codeName": "The Most Evil Track Ever",
     "codeAuthor": "CCMACARONI",
     "codeModifiedAt": "2026-06-18T10:48:31.000Z",
-    "sizeBytes": 1125
+    "sizeBytes": 1125,
+    "thumbnailUrl": "extra-tracks/thumbnails/the-most-evil-track-ever.png"
   },
   {
     "id": "sanity-braker",
@@ -3585,7 +3589,8 @@
     "codeName": "Sanity Braker",
     "codeAuthor": "Bobac",
     "codeModifiedAt": "2026-08-15T15:45:37.000Z",
-    "sizeBytes": 704
+    "sizeBytes": 704,
+    "thumbnailUrl": "extra-tracks/thumbnails/sanity-braker.png"
   },
   {
     "id": "f1-monaco-gp",
@@ -3607,7 +3612,8 @@
     "codeName": "MONACO",
     "codeAuthor": "Anonymous",
     "codeModifiedAt": "2026-06-26T09:02:36.000Z",
-    "sizeBytes": 3441
+    "sizeBytes": 3441,
+    "thumbnailUrl": "extra-tracks/thumbnails/f1-monaco-gp.png"
   },
   {
     "id": "n-rburgring-nordschleife",
@@ -3629,7 +3635,8 @@
     "codeName": "Nürburgring Nordschleife",
     "codeAuthor": "007",
     "codeModifiedAt": "2026-07-04T15:41:22.000Z",
-    "sizeBytes": 7964
+    "sizeBytes": 7964,
+    "thumbnailUrl": "extra-tracks/thumbnails/n-rburgring-nordschleife.png"
   },
   {
     "id": "silverstone",
@@ -3651,7 +3658,8 @@
     "codeName": "Silverstone",
     "codeAuthor": "007",
     "codeModifiedAt": "2026-07-07T00:41:14.000Z",
-    "sizeBytes": 3233
+    "sizeBytes": 3233,
+    "thumbnailUrl": "extra-tracks/thumbnails/silverstone.png"
   },
   {
     "id": "hades-dare",
@@ -3673,7 +3681,8 @@
     "codeName": "Hades' Dare",
     "codeAuthor": "5peedyCitrus!",
     "codeModifiedAt": "2026-07-30T21:36:54.000Z",
-    "sizeBytes": 6813
+    "sizeBytes": 6813,
+    "thumbnailUrl": "extra-tracks/thumbnails/hades-dare.png"
   },
   {
     "id": "glitch",
@@ -3695,7 +3704,8 @@
     "codeName": "Unnamed Track",
     "codeAuthor": "5peedyCitrus!",
     "codeModifiedAt": "2026-07-13T08:28:23.000Z",
-    "sizeBytes": 2321
+    "sizeBytes": 2321,
+    "thumbnailUrl": "extra-tracks/thumbnails/glitch.png"
   },
   {
     "id": "factory-impossible",
@@ -3717,7 +3727,8 @@
     "codeName": "Factory",
     "codeAuthor": "007",
     "codeModifiedAt": "2026-06-29T18:30:20.000Z",
-    "sizeBytes": 854
+    "sizeBytes": 854,
+    "thumbnailUrl": "extra-tracks/thumbnails/factory-impossible.png"
   },
   {
     "id": "a-long-fall",
@@ -3739,7 +3750,8 @@
     "codeName": "A Long fall",
     "codeAuthor": "Josegamer2639",
     "codeModifiedAt": "2026-08-07T09:32:22.000Z",
-    "sizeBytes": 3192
+    "sizeBytes": 3192,
+    "thumbnailUrl": "extra-tracks/thumbnails/a-long-fall.png"
   },
   {
     "id": "formula-1-shanghai-gran-prix",
@@ -3761,7 +3773,8 @@
     "codeName": "Shanghai",
     "codeAuthor": "Baul",
     "codeModifiedAt": "2026-06-25T13:13:28.000Z",
-    "sizeBytes": 2574
+    "sizeBytes": 2574,
+    "thumbnailUrl": "extra-tracks/thumbnails/formula-1-shanghai-gran-prix.png"
   },
   {
     "id": "mountain-climb",
@@ -3783,7 +3796,8 @@
     "codeName": "Mountain Climb (extended edition)",
     "codeAuthor": "Pingu",
     "codeModifiedAt": "2026-08-15T05:18:55.000Z",
-    "sizeBytes": 15908
+    "sizeBytes": 15908,
+    "thumbnailUrl": "extra-tracks/thumbnails/mountain-climb.png"
   },
   {
     "id": "hightower",
@@ -3805,7 +3819,8 @@
     "codeName": "Hightower",
     "codeAuthor": "TarquinTM",
     "codeModifiedAt": "2026-08-09T03:14:17.000Z",
-    "sizeBytes": 611
+    "sizeBytes": 611,
+    "thumbnailUrl": "extra-tracks/thumbnails/hightower.png"
   },
   {
     "id": "oasis",
@@ -3827,7 +3842,8 @@
     "codeName": "Oasis",
     "codeAuthor": "popm",
     "codeModifiedAt": "2026-08-07T13:04:50.000Z",
-    "sizeBytes": 34985
+    "sizeBytes": 34985,
+    "thumbnailUrl": "extra-tracks/thumbnails/oasis.png"
   },
   {
     "id": "it-can-be-done",
@@ -3849,7 +3865,8 @@
     "codeName": "It Can Be Done",
     "codeAuthor": "Zindyo1",
     "codeModifiedAt": "2026-07-10T19:18:35.000Z",
-    "sizeBytes": 458
+    "sizeBytes": 458,
+    "thumbnailUrl": "extra-tracks/thumbnails/it-can-be-done.png"
   },
   {
     "id": "hed-fug-ii-trial",
@@ -3871,7 +3888,8 @@
     "codeName": "Hed Fug II.  (Trial)",
     "codeAuthor": "H4ck3r",
     "codeModifiedAt": "2026-07-12T22:00:05.000Z",
-    "sizeBytes": 6822
+    "sizeBytes": 6822,
+    "thumbnailUrl": "extra-tracks/thumbnails/hed-fug-ii-trial.png"
   },
   {
     "id": "top-speed-three-seasons-tech",
@@ -3893,7 +3911,8 @@
     "codeName": "Top Speed Three Seasons (Tech)",
     "codeAuthor": "𝓢𝓤𝟕 𝓤𝓛𝓣𝓡𝓐 纽北限量版",
     "codeModifiedAt": "2026-06-14T07:11:01.000Z",
-    "sizeBytes": 2275
+    "sizeBytes": 2275,
+    "thumbnailUrl": "extra-tracks/thumbnails/top-speed-three-seasons-tech.png"
   },
   {
     "id": "tokyo-expressway",
@@ -3915,7 +3934,8 @@
     "codeName": "Suzuka GP",
     "codeAuthor": "007",
     "codeModifiedAt": "2026-06-13T16:20:02.000Z",
-    "sizeBytes": 1401
+    "sizeBytes": 1401,
+    "thumbnailUrl": "extra-tracks/thumbnails/tokyo-expressway.png"
   },
   {
     "id": "hed-fug-trial",
@@ -3937,7 +3957,8 @@
     "codeName": "Hed fug. (Trial)",
     "codeAuthor": "H4ck3r",
     "codeModifiedAt": "2026-06-14T01:17:14.000Z",
-    "sizeBytes": 4429
+    "sizeBytes": 4429,
+    "thumbnailUrl": "extra-tracks/thumbnails/hed-fug-trial.png"
   },
   {
     "id": "greenways",
@@ -3959,7 +3980,8 @@
     "codeName": "Greenways",
     "codeAuthor": "demaw",
     "codeModifiedAt": "2026-08-03T08:27:15.000Z",
-    "sizeBytes": 11278
+    "sizeBytes": 11278,
+    "thumbnailUrl": "extra-tracks/thumbnails/greenways.png"
   },
   {
     "id": "backrooms",
@@ -3981,7 +4003,8 @@
     "codeName": "Backrooms",
     "codeAuthor": "Big Randy",
     "codeModifiedAt": "2026-06-22T02:15:19.000Z",
-    "sizeBytes": 7134
+    "sizeBytes": 7134,
+    "thumbnailUrl": "extra-tracks/thumbnails/backrooms.png"
   },
   {
     "id": "what-the-bounce-02",
@@ -4003,7 +4026,8 @@
     "codeName": "What the Bounce? 02",
     "codeAuthor": "Comrade",
     "codeModifiedAt": "2026-06-17T19:06:32.000Z",
-    "sizeBytes": 300
+    "sizeBytes": 300,
+    "thumbnailUrl": "extra-tracks/thumbnails/what-the-bounce-02.png"
   },
   {
     "id": "round-round",
@@ -4025,7 +4049,8 @@
     "codeName": "Round & Round",
     "codeAuthor": "PolyTrackMASTER",
     "codeModifiedAt": "2026-07-17T20:31:24.000Z",
-    "sizeBytes": 1296
+    "sizeBytes": 1296,
+    "thumbnailUrl": "extra-tracks/thumbnails/round-round.png"
   },
   {
     "id": "tight-fit-2",
@@ -4047,7 +4072,8 @@
     "codeName": "Tight fit 2",
     "codeAuthor": "yi yang",
     "codeModifiedAt": "2026-06-02T10:15:02.000Z",
-    "sizeBytes": 1130
+    "sizeBytes": 1130,
+    "thumbnailUrl": "extra-tracks/thumbnails/tight-fit-2.png"
   },
   {
     "id": "precision-jump",
@@ -4069,7 +4095,8 @@
     "codeName": "Precision Jump",
     "codeAuthor": "Josegamer2639",
     "codeModifiedAt": "2026-08-10T13:58:06.000Z",
-    "sizeBytes": 404
+    "sizeBytes": 404,
+    "thumbnailUrl": "extra-tracks/thumbnails/precision-jump.png"
   },
   {
     "id": "jump-2",
@@ -4091,7 +4118,8 @@
     "codeName": "Jump...? 2",
     "codeAuthor": "5peedyCitrus!",
     "codeModifiedAt": "2026-07-07T01:37:40.000Z",
-    "sizeBytes": 173
+    "sizeBytes": 173,
+    "thumbnailUrl": "extra-tracks/thumbnails/jump-2.png"
   },
   {
     "id": "gecko-01",
@@ -4113,7 +4141,8 @@
     "codeName": "Gecko.01",
     "codeAuthor": "UnknownMachine",
     "codeModifiedAt": "2026-08-16T01:54:32.000Z",
-    "sizeBytes": 596
+    "sizeBytes": 596,
+    "thumbnailUrl": "extra-tracks/thumbnails/gecko-01.png"
   },
   {
     "id": "race",
@@ -4135,7 +4164,8 @@
     "codeName": "Race",
     "codeAuthor": "Jack",
     "codeModifiedAt": "2026-07-10T14:52:49.000Z",
-    "sizeBytes": 251
+    "sizeBytes": 251,
+    "thumbnailUrl": "extra-tracks/thumbnails/race.png"
   },
   {
     "id": "sapphire-stuntway",
@@ -4157,7 +4187,8 @@
     "codeName": "Sapphire Stuntway",
     "codeAuthor": "5peedyCitrus!",
     "codeModifiedAt": "2026-07-22T02:26:51.000Z",
-    "sizeBytes": 2442
+    "sizeBytes": 2442,
+    "thumbnailUrl": "extra-tracks/thumbnails/sapphire-stuntway.png"
   },
   {
     "id": "drift-racing",
@@ -4179,7 +4210,8 @@
     "codeName": "drift racing",
     "codeAuthor": "robertr",
     "codeModifiedAt": "2026-06-23T21:37:51.000Z",
-    "sizeBytes": 1241
+    "sizeBytes": 1241,
+    "thumbnailUrl": "extra-tracks/thumbnails/drift-racing.png"
   },
   {
     "id": "trial",
@@ -4201,7 +4233,8 @@
     "codeName": "trial",
     "codeAuthor": "m@si",
     "codeModifiedAt": "2026-06-20T22:35:37.000Z",
-    "sizeBytes": 854
+    "sizeBytes": 854,
+    "thumbnailUrl": "extra-tracks/thumbnails/trial.png"
   },
   {
     "id": "circular",
@@ -4223,7 +4256,8 @@
     "codeName": "circular",
     "codeAuthor": "naman",
     "codeModifiedAt": "2026-06-26T19:18:25.000Z",
-    "sizeBytes": 1210
+    "sizeBytes": 1210,
+    "thumbnailUrl": "extra-tracks/thumbnails/circular.png"
   },
   {
     "id": "dutch-gp",
@@ -4245,7 +4279,8 @@
     "codeName": "Dutch GP",
     "codeAuthor": "Oscar Pastry",
     "codeModifiedAt": "2026-08-16T04:32:16.000Z",
-    "sizeBytes": 587
+    "sizeBytes": 587,
+    "thumbnailUrl": "extra-tracks/thumbnails/dutch-gp.png"
   },
   {
     "id": "summer-grand-prix",
@@ -4267,7 +4302,8 @@
     "codeName": "summer grand prix",
     "codeAuthor": "asdf",
     "codeModifiedAt": "2026-06-07T04:42:16.000Z",
-    "sizeBytes": 542
+    "sizeBytes": 542,
+    "thumbnailUrl": "extra-tracks/thumbnails/summer-grand-prix.png"
   },
   {
     "id": "antigravity",
@@ -4289,7 +4325,8 @@
     "codeName": "Antigravity",
     "codeAuthor": "5peedyCitrus!",
     "codeModifiedAt": "2026-07-27T21:12:31.000Z",
-    "sizeBytes": 4317
+    "sizeBytes": 4317,
+    "thumbnailUrl": "extra-tracks/thumbnails/antigravity.png"
   },
   {
     "id": "infinite-loop",
@@ -4311,7 +4348,8 @@
     "codeName": "infinite loop",
     "codeAuthor": "Hyperion",
     "codeModifiedAt": "2026-08-15T12:08:05.000Z",
-    "sizeBytes": 790
+    "sizeBytes": 790,
+    "thumbnailUrl": "extra-tracks/thumbnails/infinite-loop.png"
   },
   {
     "id": "dare-to-challenge",
@@ -4333,7 +4371,8 @@
     "codeName": "dare to challenge",
     "codeAuthor": "llllrrygggffjh",
     "codeModifiedAt": "2026-05-11T15:32:37.000Z",
-    "sizeBytes": 1890
+    "sizeBytes": 1890,
+    "thumbnailUrl": "extra-tracks/thumbnails/dare-to-challenge.png"
   },
   {
     "id": "6-seasons",
@@ -4355,6 +4394,30 @@
     "codeName": "6 seasons",
     "codeAuthor": "notthebest",
     "codeModifiedAt": null,
-    "sizeBytes": 19256
+    "sizeBytes": 19256,
+    "thumbnailUrl": "extra-tracks/thumbnails/6-seasons.png"
+  },
+  {
+    "id": "poly-dip-2",
+    "trackId": "586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87",
+    "name": "Poly Dip 2",
+    "author": "Waffles",
+    "source": "Direct submission",
+    "tags": [
+      "challenge",
+      "technical",
+      "large-track"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/challenges/poly-dip-2.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/poly-dip-2.png",
+    "description": "An unusually large custom challenge. The claim that it has never been finished is unverified. Local bests only; runs are not ranked or replay-verified.",
+    "difficulty": 10,
+    "category": "Challenge",
+    "codeName": "Poly Dip 2",
+    "codeAuthor": "Waffles",
+    "codeModifiedAt": null,
+    "sizeBytes": 329716,
+    "ranked": false
   }
 ]

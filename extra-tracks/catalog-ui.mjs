@@ -107,14 +107,17 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       select.append(option);
     }
     label.append(select);
-    return { label, select };
+    const count = make('span', 'sq-extra-filter-count');
+    count.setAttribute('aria-hidden', 'true');
+    label.append(count);
+    return { label, select, count };
   };
   const sourceField = selectField('Source', [['', 'All sources']]);
   const tagField = selectField('Style', [['', 'All styles']]);
-  const difficultyField = selectField('Difficulty', [['', 'Any difficulty'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
+  const difficultyField = selectField('Difficulty', [['', 'Any level'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
   const completionField = selectField('Progress', [['all', 'All tracks'], ['completed', 'Completed'], ['uncompleted', 'Not completed'], ['loaded', 'Imported, not completed']]);
   const sortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
-  if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest code'], ['size-smallest', 'Smallest code']);
+  if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest track'], ['size-smallest', 'Smallest track']);
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry?.sourcePlays) && entry.sourcePlays >= 0)) sortChoices.push(['plays', 'Most chosen']);
   if (typeof getLocalRating === 'function') sortChoices.push(['my-rating', 'My ratings']);
   const sortField = selectField('Sort', sortChoices);
@@ -200,11 +203,16 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function options(select, values, allLabel, selected, counts = null) {
     select.replaceChildren();
     for (const value of ['', ...values]) {
-      const option = make('option', '', value ? `${value}${counts ? ` (${counts.get(value) || 0})` : ''}` : allLabel);
+      const option = make('option', '', value ? `${value}${counts ? ` (${counts.get(value) || 0})` : ''}` : `${allLabel}${counts ? ` (${currentEntries().length})` : ''}`);
       option.value = value;
       select.append(option);
     }
     select.value = values.includes(selected) ? selected : '';
+  }
+
+  function filterCount(field, value) {
+    field.count.textContent = value === null ? '' : Number(value).toLocaleString();
+    field.count.hidden = value === null;
   }
 
   function showStatus(message, error = false) {
@@ -263,6 +271,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function card(entry, best, loaded) {
     const article = make('article', 'sq-extra-card');
     if (text(entry.tier).toLowerCase() === 'curated') article.className += ' sq-extra-card-featured';
+    if (entry.ranked === false) article.className += ' sq-extra-card-unranked';
     const visual = make('div', 'sq-extra-visual');
     const placeholder = make('span', 'sq-extra-placeholder', text(entry.category, 'Custom track').toUpperCase());
     visual.append(placeholder);
@@ -282,6 +291,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const body = make('div', 'sq-extra-card-body');
     const tier = text(entry.tier);
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
+    if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Local challenge · no ranked RP'));
     body.append(make('h3', '', text(entry.name, 'Untitled track')));
     const creditedAuthor = text(entry.author);
     const shownAuthor = displayAuthor(entry);
@@ -299,7 +309,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       body.append(tagList);
     }
     const level = difficulty(entry);
-    if (level !== null) body.append(make('p', 'sq-extra-difficulty', `Difficulty: ${DIFFICULTY_LABELS[level]}`));
+    if (level !== null) body.append(make('p', 'sq-extra-difficulty', `Difficulty ${level}/10 · ${DIFFICULTY_LABELS[level]}`));
+    if(entry.ranked===false)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes stay on this device.'));
     const facts = make('p', 'sq-extra-facts');
     facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
     const copies = Number.isSafeInteger(entry.sourceCopies) ? entry.sourceCopies : null;
@@ -318,14 +329,25 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function render() {
     if (destroyed) return;
     const all = currentEntries();
-    const sourceCounts = new Map();
+    const sourceCounts = new Map(), difficultyCounts = new Map();
     for (const entry of all) if (text(entry.source)) sourceCounts.set(entry.source, (sourceCounts.get(entry.source) || 0) + 1);
+    for (const entry of all) { const level = difficulty(entry); if (level !== null) difficultyCounts.set(String(level), (difficultyCounts.get(String(level)) || 0) + 1); }
     const sources = [...sourceCounts.keys()].sort((a, b) => a.localeCompare(b));
     const tags = [...new Set(all.flatMap(entry => Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)).filter(tag => tag && !/^difficulty-/.test(tag) && !['easy', 'medium', 'hard', 'expert', 'kacky', 'throwback'].includes(tag)) : []))].sort((a, b) => a.localeCompare(b));
     const tagCounts = new Map();
     for (const entry of all) for (const tag of new Set(entry.tags || [])) if (tags.includes(tag)) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
     options(sourceField.select, sources, 'All sources', state.source, sourceCounts);
     options(tagField.select, tags, 'All styles', state.tag, tagCounts);
+    options(difficultyField.select, DIFFICULTY_LABELS.slice(1).map((_, index) => String(index + 1)), 'Any level', state.difficulty, difficultyCounts);
+    // The native select stays keyboard-accessible; the count is visually aligned at its right edge.
+    for (const option of difficultyField.select.children) if (option.value) option.textContent = `${option.value} · ${DIFFICULTY_LABELS[Number(option.value)]} (${difficultyCounts.get(option.value) || 0})`;
+    filterCount(sourceField, state.source ? sourceCounts.get(state.source) || 0 : all.length);
+    filterCount(tagField, state.tag ? tagCounts.get(state.tag) || 0 : all.length);
+    filterCount(difficultyField, state.difficulty ? difficultyCounts.get(state.difficulty) || 0 : all.length);
+    for (const [field, value, fallback] of [[sourceField, state.source, 'All sources'], [tagField, state.tag, 'All styles'], [difficultyField, state.difficulty, 'Any level']]) {
+      const selected = [...field.select.children].find(option => option.value === value);
+      if (selected) selected.textContent = value ? field === difficultyField ? `${value} · ${DIFFICULTY_LABELS[Number(value)]}` : value : fallback;
+    }
     tagSuggestions.replaceChildren();
     for (const tag of [...tagCounts].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
       tagSuggestions.append(button(tag[0].replaceAll('-', ' '), '', () => {
@@ -343,6 +365,18 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       try { rating = typeof getLocalRating === 'function' ? Number(getLocalRating(entry)) : null; } catch { /* Local ratings are optional. */ }
       return { entry, best, loaded, rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null };
     });
+    const progressCounts = new Map([['all', cachedRecords.length], ['completed', 0], ['uncompleted', 0], ['loaded', 0]]);
+    for (const record of cachedRecords) {
+      progressCounts.set(record.best === null ? 'uncompleted' : 'completed', progressCounts.get(record.best === null ? 'uncompleted' : 'completed') + 1);
+      if (record.loaded && record.best === null) progressCounts.set('loaded', progressCounts.get('loaded') + 1);
+    }
+    for (const option of completionField.select.children) {
+      const name = option.value === 'all' ? 'All tracks' : option.value === 'completed' ? 'Completed' : option.value === 'loaded' ? 'Imported, not completed' : 'Not completed';
+      option.textContent = `${name} (${progressCounts.get(option.value) || 0})`;
+    }
+    filterCount(completionField, progressCounts.get(state.completion) || 0);
+    const selectedProgress = [...completionField.select.children].find(option => option.value === state.completion);
+    if (selectedProgress) selectedProgress.textContent = state.completion === 'all' ? 'All tracks' : state.completion === 'completed' ? 'Completed' : state.completion === 'loaded' ? 'Imported, not completed' : 'Not completed';
     const records = cachedRecords.filter(({ entry, best, loaded }) => {
       const entryTags = Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)) : [];
       const searchable = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...entryTags].map(value => text(value).toLocaleLowerCase()).join(' ');
