@@ -26,6 +26,11 @@ function text(value, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function displayAuthor(entry) {
+  const embedded = text(entry.codeAuthor);
+  return embedded && !/^anonymous$/i.test(embedded) ? embedded : text(entry.author, 'Unknown author');
+}
+
 function personalBest(value) {
   const time = typeof value === 'number' ? value : value?.timeMs;
   return Number.isFinite(time) && time > 0 ? time : null;
@@ -109,6 +114,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const difficultyField = selectField('Difficulty', [['', 'Any difficulty'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
   const completionField = selectField('Progress', [['all', 'All tracks'], ['completed', 'Completed'], ['uncompleted', 'Not completed'], ['loaded', 'Imported, not completed']]);
   const sortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
+  if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest code'], ['size-smallest', 'Smallest code']);
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry?.sourcePlays) && entry.sourcePlays >= 0)) sortChoices.push(['plays', 'Most chosen']);
   if (typeof getLocalRating === 'function') sortChoices.push(['my-rating', 'My ratings']);
   const sortField = selectField('Sort', sortChoices);
@@ -276,7 +282,15 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const tier = text(entry.tier);
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
     body.append(make('h3', '', text(entry.name, 'Untitled track')));
-    body.append(make('p', 'sq-extra-author', `By ${text(entry.author, 'Unknown author')}`));
+    const creditedAuthor = text(entry.author);
+    const shownAuthor = displayAuthor(entry);
+    body.append(make('p', 'sq-extra-author', `By ${shownAuthor}`));
+    if (creditedAuthor && shownAuthor !== creditedAuthor && creditedAuthor.toLocaleLowerCase() !== shownAuthor.toLocaleLowerCase()) {
+      body.append(make('p', 'sq-extra-source-credit', `Source credit: ${creditedAuthor}`));
+    }
+    if (entry.codeModifiedAt && Number.isFinite(Date.parse(entry.codeModifiedAt))) {
+      body.append(make('p', 'sq-extra-code-date', `Modified ${new Date(entry.codeModifiedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}`));
+    }
     const tags = Array.isArray(entry.tags) ? entry.tags.filter(tag => text(tag) && !/^difficulty-/.test(tag) && !['easy', 'medium', 'hard', 'expert', 'kacky', 'throwback', 'curated'].includes(tag)) : [];
     if (tags.length) {
       const tagList = make('div', 'sq-extra-tags');
@@ -291,6 +305,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const plays = Number.isSafeInteger(entry.sourcePlays) ? entry.sourcePlays : null;
     if (copies !== null && copies >= 0) facts.append(make('span', 'sq-extra-plays', `${copies.toLocaleString()} source copies`));
     else if (plays !== null && plays >= 0) facts.append(make('span', 'sq-extra-plays', `${plays.toLocaleString()} source plays`));
+    if (Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0) facts.append(make('span', 'sq-extra-size', `${(entry.sizeBytes / 1000).toFixed(1)} KB code`));
     body.append(facts);
     const actions = make('div', 'sq-extra-actions');
     actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
@@ -329,7 +344,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     });
     const records = cachedRecords.filter(({ entry, best, loaded }) => {
       const entryTags = Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)) : [];
-      const searchable = [entry.name, entry.author, entry.source, entry.description, ...entryTags].map(value => text(value).toLocaleLowerCase()).join(' ');
+      const searchable = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...entryTags].map(value => text(value).toLocaleLowerCase()).join(' ');
       // A curator can mark a track by tier or by the curated tag.
       const isCurated = text(entry.tier).toLocaleLowerCase() === 'curated' || entryTags.some(tag => tag.toLocaleLowerCase() === 'curated');
       return (!query || searchable.includes(query)) && (!state.source || entry.source === state.source) &&
@@ -343,7 +358,13 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       if (state.sort === 'plays') return (Number.isSafeInteger(b.entry.sourceCopies) ? b.entry.sourceCopies : Number.isSafeInteger(b.entry.sourcePlays) ? b.entry.sourcePlays : -1) -
         (Number.isSafeInteger(a.entry.sourceCopies) ? a.entry.sourceCopies : Number.isSafeInteger(a.entry.sourcePlays) ? a.entry.sourcePlays : -1) || compare(a.entry.name, b.entry.name);
       if (state.sort === 'my-rating') return (b.rating ?? -1) - (a.rating ?? -1) || compare(a.entry.name, b.entry.name);
-      if (state.sort === 'author') return compare(a.entry.author, b.entry.author) || compare(a.entry.name, b.entry.name);
+      if (state.sort === 'size-largest' || state.sort === 'size-smallest') {
+        const aSize = Number.isSafeInteger(a.entry.sizeBytes) && a.entry.sizeBytes >= 0 ? a.entry.sizeBytes : null;
+        const bSize = Number.isSafeInteger(b.entry.sizeBytes) && b.entry.sizeBytes >= 0 ? b.entry.sizeBytes : null;
+        if (aSize === null || bSize === null) return aSize === bSize ? compare(a.entry.name, b.entry.name) : aSize === null ? 1 : -1;
+        return (state.sort === 'size-largest' ? bSize - aSize : aSize - bSize) || compare(a.entry.name, b.entry.name);
+      }
+      if (state.sort === 'author') return compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
       if (state.sort === 'recommended') return Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
       return compare(a.entry.name, b.entry.name);
     });

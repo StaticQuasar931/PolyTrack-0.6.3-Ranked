@@ -13,7 +13,11 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/shrouded-oasis.track",
     "thumbnailUrl": "extra-tracks/thumbnails/shrouded-oasis.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Shrouded Oasis",
+    "codeAuthor": "Hiksi & BonnieBeans",
+    "codeModifiedAt": null,
+    "sizeBytes": 34572
   },
   {
     "id": "supermassive",
@@ -29,7 +33,11 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/supermassive.track",
     "thumbnailUrl": "extra-tracks/thumbnails/supermassive.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "ȘUPERMASSIVE",
+    "codeAuthor": "Leahċim24",
+    "codeModifiedAt": null,
+    "sizeBytes": 22036
   },
   {
     "id": "zephyr-grasslands",
@@ -44,7 +52,11 @@
     "tier": "Curated",
     "trackPath": "extra-tracks/track-data/polytrack-fun/zephyr-grasslands.track",
     "thumbnailUrl": "extra-tracks/thumbnails/zephyr-grasslands.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Zephyr Grasslands",
+    "codeAuthor": "leaf ft. horse",
+    "codeModifiedAt": null,
+    "sizeBytes": 58036
   },
   {
     "id": "dakiu-the-japanese-nordschleife",
@@ -63,7 +75,11 @@
     "description": "Dakiu: The Japanese Nordschleife: This track features 46 corners: 2 of them are banked with esses section, tunnel section, pit lane and alt courses that I might add. We got 4 drivers to beat: Bronze: 2:14.210 Silver: 2:10.777 Gold: 2:08.565",
     "sourceCopies": 253,
     "difficulty": 4,
-    "category": "Racing"
+    "category": "Racing",
+    "codeName": "Dakiu: The Japanese  nordschleife",
+    "codeAuthor": "ELIXIR (MASTERX)",
+    "codeModifiedAt": "2026-09-17T10:25:36.000Z",
+    "sizeBytes": 16680
   },
   {
     "id": "ims",
@@ -82,7 +98,11 @@
     "description": "A straight forward oval with 4 laps, and has some pretty skillful turns after straightaways. This is based off of Indianapolis Motor Speedway, a real life track I hold dear to my heart.",
     "sourceCopies": 177,
     "difficulty": 4,
-    "category": "Speedrun"
+    "category": "Speedrun",
+    "codeName": "IMS",
+    "codeAuthor": "IndyOwen",
+    "codeModifiedAt": "2026-09-02T18:41:05.000Z",
+    "sizeBytes": 1506
   },
   {
     "id": "just-a-normal-track",
@@ -101,7 +121,11 @@
     "description": "Just A Normal Track With Nothing Special About It...",
     "sourceCopies": 141,
     "difficulty": 4,
-    "category": "Racing"
+    "category": "Racing",
+    "codeName": "Just A Normal Track...?",
+    "codeAuthor": "GamingMattie",
+    "codeModifiedAt": "2026-08-31T18:58:22.000Z",
+    "sizeBytes": 1087
   },
   {
     "id": "monaco-grand-prix",
@@ -120,7 +144,11 @@
     "description": "\"Attempt\" of building the classic racetrack from Monaco including famous turns like Tabac, the Fairmont Hairpin, and the Nouvelle chicane these track also features lots of famous builds near the track that can be visible while driving it.",
     "sourceCopies": 488,
     "difficulty": 4,
-    "category": "Racing"
+    "category": "Racing",
+    "codeName": "Monaco Grand Prix",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-08-24T15:33:00.000Z",
+    "sizeBytes": 5156
   },
   {
     "id": "silverstone-circuit",
@@ -139,7 +167,11 @@
     "description": "An attempt to build the classic Silverstone circuit which has been an iconic formula one and multyple racing series track it includes maggots, beckets , village , vale and etc but it does not contain the famous buildings alongside the circu",
     "sourceCopies": 277,
     "difficulty": 2,
-    "category": "Racing"
+    "category": "Racing",
+    "codeName": "Silverstone Circuit",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-09-08T23:51:25.000Z",
+    "sizeBytes": 4428
   },
   {
     "id": "the-floating-circuit",
@@ -158,7 +190,11 @@
     "description": "The Floating Circuit isn't your normal racetrack, it's in the ocean! Have fun, good luck, and I hope it goes swimmingly!",
     "sourceCopies": 330,
     "difficulty": 2,
-    "category": "Drift"
+    "category": "Drift",
+    "codeName": "The Floating Circuit",
+    "codeAuthor": "5peedyCitrus!",
+    "codeModifiedAt": "2026-07-24T00:01:57.000Z",
+    "sizeBytes": 3604
   },
   {
     "id": "castle-run",
@@ -177,7 +213,11 @@
     "description": "This is a fun trail where u race trough a castle.",
     "sourceCopies": 233,
     "difficulty": 4,
-    "category": "Art"
+    "category": "Art",
+    "codeName": "Castle run",
+    "codeAuthor": "T_thedestroyer",
+    "codeModifiedAt": null,
+    "sizeBytes": 3006
   },
   {
     "id": "the-pit",
@@ -196,7 +236,11 @@
     "description": "A tricky track made to be very hard. By some miracle my first attempt at the full track is the 35s on the Leaderboards.",
     "sourceCopies": 145,
     "difficulty": 8,
-    "category": "Technical"
+    "category": "Technical",
+    "codeName": "The Pit",
+    "codeAuthor": "Winner",
+    "codeModifiedAt": "2026-08-27T18:13:59.000Z",
+    "sizeBytes": 1336
   },
   {
     "id": "press-forward",
@@ -213,7 +257,11 @@
     "trackPath": "extra-tracks/track-data/polytrackcodes/press-forward.track",
     "thumbnailUrl": "extra-tracks/thumbnails/press-forward.png",
     "description": "It is a speedrun that is all about gaining and maintaining speed. One minor slipup may cost you the record!",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Press Forward",
+    "codeAuthor": "Anonymous",
+    "codeModifiedAt": "2026-08-06T07:11:44.000Z",
+    "sizeBytes": 1256
   },
   {
     "id": "nature-ruin",
@@ -232,7 +280,11 @@
     "description": "Why are we building more and more concrete into the Nature? All it does ist disturbing and destroying it. This Track Starts in the peaceful Nature, and leads in a catastrophic Future where Nature ist Like hell.",
     "sourceCopies": 214,
     "difficulty": 4,
-    "category": "Racing"
+    "category": "Racing",
+    "codeName": "Nature ruin",
+    "codeAuthor": "Pingu",
+    "codeModifiedAt": "2026-08-28T06:44:56.000Z",
+    "sizeBytes": 8486
   },
   {
     "id": "akira-r1",
@@ -251,7 +303,11 @@
     "description": "A mountain like terrain with multiple winding roads and a bridge, players start at a tunnel and make their way onto a coast and back to the track. with cherry blossoms and icy mountains and beaches this track includes many natural like land",
     "sourceCopies": 345,
     "difficulty": 4,
-    "category": "Art"
+    "category": "Art",
+    "codeName": "akira (r1)",
+    "codeAuthor": "",
+    "codeModifiedAt": "2026-09-07T04:13:21.000Z",
+    "sizeBytes": 41420
   },
   {
     "id": "tower-of-checkpoints",
@@ -270,7 +326,11 @@
     "description": "A roundabout which goes up featuring 1000 checkpoints.",
     "sourceCopies": 409,
     "difficulty": 2,
-    "category": "Speedrun"
+    "category": "Speedrun",
+    "codeName": "ToC (Tower of Checkpoints)",
+    "codeAuthor": "MIVTT",
+    "codeModifiedAt": "2026-08-18T07:22:44.000Z",
+    "sizeBytes": 4296
   },
   {
     "id": "spa-f1-belgium",
@@ -288,7 +348,11 @@
     "category": "Racing",
     "sourceCopies": 431,
     "description": "Ten hours to model, just over a minute to finish. The 007 team has worked overnight to finish this 1:1 scale version of the most iconic track in F1 history: SPA. The Eau Rouge is perfect, the gravel pits are right where they should be, the ",
-    "thumbnailUrl": "extra-tracks/thumbnails/spa-f1-belgium.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/spa-f1-belgium.png",
+    "codeName": "SPA",
+    "codeAuthor": "007",
+    "codeModifiedAt": "2026-09-01T16:15:50.000Z",
+    "sizeBytes": 34211
   },
   {
     "id": "karrot-river",
@@ -306,7 +370,11 @@
     "category": "Speedrun",
     "sourceCopies": 347,
     "description": "Karrot River is a fast-paced Speedrun track featuring high-speed straightaways and massive jump gaps that will test your airtime control. Drivers must navigate tight aerial landings and maintain momentum through a series of precision banked",
-    "thumbnailUrl": "extra-tracks/thumbnails/karrot-river.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/karrot-river.png",
+    "codeName": "Karrot River",
+    "codeAuthor": "kkarrot12",
+    "codeModifiedAt": "2026-09-07T21:36:39.000Z",
+    "sizeBytes": 10988
   },
   {
     "id": "dubai-grand-prix",
@@ -324,7 +392,11 @@
     "category": "Racing",
     "sourceCopies": 334,
     "description": "This isn't the actual Dubai track; it is a fan-made track that combines fast sections with many twists and turns. Turn 1 is a wide turn into a banked Turn 2, which leads to a heavy-braking Turn 3, and then to a slithering Turn 4 and 5, goin",
-    "thumbnailUrl": "extra-tracks/thumbnails/dubai-grand-prix.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/dubai-grand-prix.png",
+    "codeName": "Dubai Grand Prix",
+    "codeAuthor": "Sahen",
+    "codeModifiedAt": "2026-09-08T16:34:36.000Z",
+    "sizeBytes": 6076
   },
   {
     "id": "snake",
@@ -342,7 +414,11 @@
     "category": "Speedrun",
     "sourceCopies": 320,
     "description": "A dynamic, multi-path speedrun map featuring a high-speed straightaway that transitions into a long, rhythmic series of flowing S-curves. The track splits into separate routing options, challenging players to choose between precision jump g",
-    "thumbnailUrl": "extra-tracks/thumbnails/snake.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/snake.png",
+    "codeName": "Snake",
+    "codeAuthor": "tashiyigejia",
+    "codeModifiedAt": "2026-09-07T01:45:21.000Z",
+    "sizeBytes": 522
   },
   {
     "id": "easter-island",
@@ -360,7 +436,11 @@
     "category": "Speedrun",
     "sourceCopies": 312,
     "description": "Join the leaderboard and embark on this breathtaking map of easter island. See the famous Moai while you whizz round the track. The turns, jumps and speed is all coodrinated very well and makes this a phenomenal track. Have fun!",
-    "thumbnailUrl": "extra-tracks/thumbnails/easter-island.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/easter-island.png",
+    "codeName": "Easter Island",
+    "codeAuthor": "PHILR, Karpin_",
+    "codeModifiedAt": "2026-03-20T12:42:42.000Z",
+    "sizeBytes": 52164
   },
   {
     "id": "very-big-ramp",
@@ -378,7 +458,11 @@
     "category": "Stunt",
     "sourceCopies": 273,
     "description": "Don’t fall off!",
-    "thumbnailUrl": "extra-tracks/thumbnails/very-big-ramp.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/very-big-ramp.png",
+    "codeName": "Very big ramp",
+    "codeAuthor": "Pinky pie",
+    "codeModifiedAt": "2026-08-23T17:54:54.000Z",
+    "sizeBytes": 1779
   },
   {
     "id": "the-unnamed-track",
@@ -396,7 +480,11 @@
     "category": "Tutorial",
     "sourceCopies": 271,
     "description": "Easy map used for practicing sharp turns, full speed, and skills. Good for beginners getting used to the car.",
-    "thumbnailUrl": "extra-tracks/thumbnails/the-unnamed-track.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/the-unnamed-track.png",
+    "codeName": "The unnamed track",
+    "codeAuthor": "yes try",
+    "codeModifiedAt": "2026-08-30T06:41:48.000Z",
+    "sizeBytes": 2948
   },
   {
     "id": "inversion-point",
@@ -414,7 +502,11 @@
     "category": "Speedrun",
     "sourceCopies": 264,
     "description": "A speedrun where you accelerate as fast as you can, go on a ramp, flip & try to reach the end the fastest!",
-    "thumbnailUrl": "extra-tracks/thumbnails/inversion-point.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/inversion-point.png",
+    "codeName": "Inversion Point",
+    "codeAuthor": "tikitikifunk0326",
+    "codeModifiedAt": "2026-08-21T05:49:30.000Z",
+    "sizeBytes": 270
   },
   {
     "id": "tower-of-jumps",
@@ -432,7 +524,11 @@
     "category": "Stunt",
     "sourceCopies": 260,
     "description": "inspired by the hit roblox game ETOH (eternal towers of hell) and how they create towers of parkour withs special gimicks, this map just has a lot of jumps which is why i called it Tower of Jumps.  Jam from Australia",
-    "thumbnailUrl": "extra-tracks/thumbnails/tower-of-jumps.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/tower-of-jumps.png",
+    "codeName": "ToJ (tower of jumps)",
+    "codeAuthor": "Jam",
+    "codeModifiedAt": "2026-08-27T09:13:48.000Z",
+    "sizeBytes": 799
   },
   {
     "id": "jumper-airlines",
@@ -450,7 +546,11 @@
     "category": "Stunt",
     "sourceCopies": 253,
     "description": "A windy jumper map where you have to jump between multiple floating islands with a leap of faith at the end Benchmark time: 49 seconds",
-    "thumbnailUrl": "extra-tracks/thumbnails/jumper-airlines.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/jumper-airlines.png",
+    "codeName": "Jumper Airlines",
+    "codeAuthor": "STARvoid",
+    "codeModifiedAt": "2026-09-09T01:11:07.000Z",
+    "sizeBytes": 1885
   },
   {
     "id": "concrete-passage-way",
@@ -468,7 +568,11 @@
     "category": "Speedrun",
     "sourceCopies": 252,
     "description": "A fully closed off desert passageway with fast straits and turns.",
-    "thumbnailUrl": "extra-tracks/thumbnails/concrete-passage-way.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/concrete-passage-way.png",
+    "codeName": "Concrete Passage Way",
+    "codeAuthor": "Ccat",
+    "codeModifiedAt": "2026-08-30T04:01:37.000Z",
+    "sizeBytes": 1544
   },
   {
     "id": "sylvan-speedway",
@@ -486,7 +590,11 @@
     "category": "Racing",
     "sourceCopies": 233,
     "description": "Sylvan Speedway track consisting of tight turns, slopes, and technical jumps. All while taking place in a forest with huge trees and driving over a lake.",
-    "thumbnailUrl": "extra-tracks/thumbnails/sylvan-speedway.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/sylvan-speedway.png",
+    "codeName": "Sylvan Speedway",
+    "codeAuthor": "cool guy",
+    "codeModifiedAt": "2026-09-03T20:59:19.000Z",
+    "sizeBytes": 13188
   },
   {
     "id": "doubles",
@@ -504,7 +612,11 @@
     "category": "Technical",
     "sourceCopies": 229,
     "description": "A technical track that requires precision and speed conservation skills, with  blind drops and immediate corner entry transitions. This code is meant for players looking for a time trial and wanting to practice their momentum control. Time:",
-    "thumbnailUrl": "extra-tracks/thumbnails/doubles.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/doubles.png",
+    "codeName": "Doubles",
+    "codeAuthor": "ReWard3n",
+    "codeModifiedAt": "2026-09-02T00:41:11.000Z",
+    "sizeBytes": 527
   },
   {
     "id": "jump",
@@ -522,7 +634,11 @@
     "category": "Stunt",
     "sourceCopies": 228,
     "description": "this is a track with a little rng part, a tunnel, a loop, and a big jump. the hardest section is probably the rng dome at the start.",
-    "thumbnailUrl": "extra-tracks/thumbnails/jump.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/jump.png",
+    "codeName": "jump",
+    "codeAuthor": "NAUMtheKIWI",
+    "codeModifiedAt": "2026-06-09T20:17:52.000Z",
+    "sizeBytes": 1603
   },
   {
     "id": "tree",
@@ -540,7 +656,11 @@
     "category": "Speedrun",
     "sourceCopies": 227,
     "description": "This track has trees",
-    "thumbnailUrl": "extra-tracks/thumbnails/tree.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/tree.png",
+    "codeName": "Tree",
+    "codeAuthor": "Sebastion",
+    "codeModifiedAt": "2026-08-17T07:03:10.000Z",
+    "sizeBytes": 2789
   },
   {
     "id": "belgian-gp-f1",
@@ -558,7 +678,11 @@
     "category": "Technical",
     "sourceCopies": 222,
     "description": "the spa francorchamps track is an F1 track in belgium. it is a fan favourite, with a mix of high speed, medium speed and low speed corners. you complete 2 laps of this historic track, which takes about 2min",
-    "thumbnailUrl": "extra-tracks/thumbnails/belgian-gp-f1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/belgian-gp-f1.png",
+    "codeName": "belgian gp F1",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-08-17T08:18:53.000Z",
+    "sizeBytes": 1193
   },
   {
     "id": "dutch-gp-f1",
@@ -576,7 +700,11 @@
     "category": "Technical",
     "sourceCopies": 218,
     "description": "The dutch f1 track. This track has harsh braking points, smooth medium speed corners and long straights.",
-    "thumbnailUrl": "extra-tracks/thumbnails/dutch-gp-f1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/dutch-gp-f1.png",
+    "codeName": "Dutch GP F1",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-08-18T11:39:53.000Z",
+    "sizeBytes": 887
   },
   {
     "id": "easy-loops",
@@ -594,7 +722,11 @@
     "category": "Speedrun",
     "sourceCopies": 206,
     "description": "lots of high-speed banked corners with a small upside down ending",
-    "thumbnailUrl": "extra-tracks/thumbnails/easy-loops.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/easy-loops.png",
+    "codeName": "easy loops",
+    "codeAuthor": "Ccat",
+    "codeModifiedAt": "2026-08-30T08:03:25.000Z",
+    "sizeBytes": 527
   },
   {
     "id": "gridlock",
@@ -612,7 +744,11 @@
     "category": "Speedrun",
     "sourceCopies": 206,
     "description": "A technical sprint featuring interconnected loops tight transitions, and long high speed sections. Find the fastest line through the grid and keep your momentum to the finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/gridlock.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/gridlock.png",
+    "codeName": "GridLock",
+    "codeAuthor": "Ccat",
+    "codeModifiedAt": "2026-09-08T01:41:28.000Z",
+    "sizeBytes": 721
   },
   {
     "id": "upside-down-road",
@@ -630,7 +766,11 @@
     "category": "Technical",
     "sourceCopies": 192,
     "description": "Technical esses and chicane with inverted banked corners can sent your car to the end",
-    "thumbnailUrl": "extra-tracks/thumbnails/upside-down-road.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/upside-down-road.png",
+    "codeName": "upside down road",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-08-16T13:29:14.000Z",
+    "sizeBytes": 433
   },
   {
     "id": "drop",
@@ -648,7 +788,11 @@
     "category": "Stunt",
     "sourceCopies": 189,
     "description": "A difficult track with drops and technical turns. Track opens up with a drop into a sharp turn, followed by a mid-air turn that is easy to overshoot.  After a hill, there is a straightaway followed by one last jump to a floating finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/drop.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/drop.png",
+    "codeName": "drop",
+    "codeAuthor": "Foolis",
+    "codeModifiedAt": "2026-09-13T20:49:24.000Z",
+    "sizeBytes": 1228
   },
   {
     "id": "thunder-storm",
@@ -666,7 +810,11 @@
     "category": "Speedrun",
     "sourceCopies": 189,
     "description": "A speedrun that on the first bit make your tyres bounce like crazy then go onto the tricky wallridethen zoom down and then go off a huge drop then crash into the finish line my favourite part is the name and the bounce",
-    "thumbnailUrl": "extra-tracks/thumbnails/thunder-storm.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/thunder-storm.png",
+    "codeName": "Thunder Storm",
+    "codeAuthor": "Speed - E",
+    "codeModifiedAt": "2026-08-08T05:20:02.000Z",
+    "sizeBytes": 1263
   },
   {
     "id": "the-final-trials-tft",
@@ -684,7 +832,11 @@
     "category": "Speedrun",
     "sourceCopies": 189,
     "description": "Originally known as \"Needed - the final trials\" but later the needed was dropped. Began as a joke series between me and my friend last year where we would make tracks as willingly annoying as possible, from needed 1 to needed 9 (all lost un",
-    "thumbnailUrl": "extra-tracks/thumbnails/the-final-trials-tft.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/the-final-trials-tft.png",
+    "codeName": "Needed - The final trials",
+    "codeAuthor": "tuffmangoestotr6741",
+    "codeModifiedAt": null,
+    "sizeBytes": 16266
   },
   {
     "id": "hopping",
@@ -702,7 +854,11 @@
     "category": "Technical",
     "sourceCopies": 184,
     "description": "precise breaking point with checkpoints requiring switching between reverse and forwards movement",
-    "thumbnailUrl": "extra-tracks/thumbnails/hopping.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/hopping.png",
+    "codeName": "hopping",
+    "codeAuthor": "itsmemusong",
+    "codeModifiedAt": "2026-08-25T01:18:05.000Z",
+    "sizeBytes": 297
   },
   {
     "id": "neighbor-sleeping",
@@ -720,7 +876,11 @@
     "category": "Racing",
     "sourceCopies": 182,
     "description": "This track is located in a fictional city. It features sharp chicanes, a double-apex corner, and a section where the track narrows across the roof of a building. From there, it drops down into a tight left-hander that leads into a mountain ",
-    "thumbnailUrl": "extra-tracks/thumbnails/neighbor-sleeping.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/neighbor-sleeping.png",
+    "codeName": "Neighbor sleeping!",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-09-13T18:40:02.000Z",
+    "sizeBytes": 14285
   },
   {
     "id": "doom-city",
@@ -738,7 +898,11 @@
     "category": "Technical",
     "sourceCopies": 178,
     "description": "A pretty evil track with Jumps, Pillars, Banked Corners, and Useless Chicanes",
-    "thumbnailUrl": "extra-tracks/thumbnails/doom-city.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/doom-city.png",
+    "codeName": "Doom City",
+    "codeAuthor": "Nothing",
+    "codeModifiedAt": "2026-08-30T15:54:19.000Z",
+    "sizeBytes": 3204
   },
   {
     "id": "dustar",
@@ -756,7 +920,11 @@
     "category": "Stunt",
     "sourceCopies": 165,
     "description": "There are many checkpoints, stunts and jumps you need to do that includes using caution on the part where you have to choose one path and drive on a tightrope and this track is a birthday special in 2026 august.",
-    "thumbnailUrl": "extra-tracks/thumbnails/dustar.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/dustar.png",
+    "codeName": "DUSTAR",
+    "codeAuthor": "BB BRO ENERGYRACING",
+    "codeModifiedAt": "2026-08-25T06:58:25.000Z",
+    "sizeBytes": 5869
   },
   {
     "id": "acrobatics-1",
@@ -774,7 +942,11 @@
     "category": "Stunt",
     "sourceCopies": 164,
     "description": "A skillbased acrobatic map that tests your sense of trajectory.",
-    "thumbnailUrl": "extra-tracks/thumbnails/acrobatics-1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/acrobatics-1.png",
+    "codeName": "Acrobatics 1",
+    "codeAuthor": "Capygamer12",
+    "codeModifiedAt": "2026-08-21T06:50:34.000Z",
+    "sizeBytes": 198
   },
   {
     "id": "lost-oasis",
@@ -792,7 +964,11 @@
     "category": "Art",
     "sourceCopies": 162,
     "description": "drive through an amazing waterfall cave and past and abandoned castle. enjoy this masterpiece!",
-    "thumbnailUrl": "extra-tracks/thumbnails/lost-oasis.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/lost-oasis.png",
+    "codeName": "lost oasis",
+    "codeAuthor": "*_*",
+    "codeModifiedAt": "2026-08-20T13:29:38.000Z",
+    "sizeBytes": 59106
   },
   {
     "id": "orbital-mirage",
@@ -810,7 +986,11 @@
     "category": "Art",
     "sourceCopies": 154,
     "description": "A tiny decorated map featuring a blue and purple planet where you have to drive around the orbit to win the map.",
-    "thumbnailUrl": "extra-tracks/thumbnails/orbital-mirage.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/orbital-mirage.png",
+    "codeName": "Orbital Mirage",
+    "codeAuthor": "SG|PolymodLight",
+    "codeModifiedAt": "2026-08-19T14:43:22.000Z",
+    "sizeBytes": 3593
   },
   {
     "id": "handle-da-jump",
@@ -828,7 +1008,11 @@
     "category": "Speedrun",
     "sourceCopies": 152,
     "description": "Handle da jump! is a track where you have banked corners and a big jump that sends you to a big platform , afther that you have a technical section with chicanes and blind corners that makes you go to a big straight back to finish in a loop",
-    "thumbnailUrl": "extra-tracks/thumbnails/handle-da-jump.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/handle-da-jump.png",
+    "codeName": "Handle da jump!",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-09-01T21:09:59.000Z",
+    "sizeBytes": 701
   },
   {
     "id": "gecko-02",
@@ -846,7 +1030,11 @@
     "category": "Technical",
     "sourceCopies": 151,
     "description": "Drive nimbly up walls like a gecko. This track features a unique maneuver right at the start, requiring the race car to tilt and soar through the air. What's more, the track demands surgical precision in control, offering very little margin",
-    "thumbnailUrl": "extra-tracks/thumbnails/gecko-02.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/gecko-02.png",
+    "codeName": "Gekco.02",
+    "codeAuthor": "UnknownMachine",
+    "codeModifiedAt": "2026-08-24T13:58:59.000Z",
+    "sizeBytes": 657
   },
   {
     "id": "top-gear",
@@ -864,7 +1052,11 @@
     "category": "Speedrun",
     "sourceCopies": 143,
     "description": "This 50 second track has brilliant scenery and uses all sorts of nice tricks with jumps at all angles and walls this track gets you speeding all the way to the finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/top-gear.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/top-gear.png",
+    "codeName": "TopGear",
+    "codeAuthor": "3-eb",
+    "codeModifiedAt": "2026-08-30T09:25:05.000Z",
+    "sizeBytes": 10160
   },
   {
     "id": "turn",
@@ -882,7 +1074,11 @@
     "category": "Technical",
     "sourceCopies": 139,
     "description": "A singular precision turn",
-    "thumbnailUrl": "extra-tracks/thumbnails/turn.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/turn.png",
+    "codeName": "Turn",
+    "codeAuthor": "Stannabanana",
+    "codeModifiedAt": "2026-08-30T18:37:47.000Z",
+    "sizeBytes": 123
   },
   {
     "id": "abu-dhabi-gp",
@@ -900,7 +1096,11 @@
     "category": "Racing",
     "sourceCopies": 137,
     "description": "The abu Dhabi gp",
-    "thumbnailUrl": "extra-tracks/thumbnails/abu-dhabi-gp.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/abu-dhabi-gp.png",
+    "codeName": "Abu Dhabi GP",
+    "codeAuthor": "LECLERC",
+    "codeModifiedAt": "2026-08-18T06:24:44.000Z",
+    "sizeBytes": 1254
   },
   {
     "id": "baku-city-circuit",
@@ -918,7 +1118,11 @@
     "category": "Racing",
     "sourceCopies": 129,
     "description": "Example A remodel of the baku gp circuit",
-    "thumbnailUrl": "extra-tracks/thumbnails/baku-city-circuit.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/baku-city-circuit.png",
+    "codeName": "Baku City Circuit",
+    "codeAuthor": "Oscar Pastry",
+    "codeModifiedAt": "2026-08-31T09:08:53.000Z",
+    "sizeBytes": 700
   },
   {
     "id": "race-track",
@@ -936,7 +1140,11 @@
     "category": "Racing",
     "sourceCopies": 128,
     "description": "A race track with two jumps and a lot of amazing turns.",
-    "thumbnailUrl": "extra-tracks/thumbnails/race-track.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/race-track.png",
+    "codeName": "Race Track",
+    "codeAuthor": "JonTuf",
+    "codeModifiedAt": "2026-09-16T11:46:52.000Z",
+    "sizeBytes": 460
   },
   {
     "id": "edge-runner-1",
@@ -954,7 +1162,11 @@
     "category": "Stunt",
     "sourceCopies": 125,
     "description": "My first track. It starts by driving on sideways signs with several turn, followed by a jump onto two wide signs. you then drive onto sideways pillars into the finish, the hardest section.",
-    "thumbnailUrl": "extra-tracks/thumbnails/edge-runner-1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/edge-runner-1.png",
+    "codeName": "edge runner #1",
+    "codeAuthor": "Ghost blade",
+    "codeModifiedAt": "2026-08-16T20:06:12.000Z",
+    "sizeBytes": 261
   },
   {
     "id": "speed-park",
@@ -972,7 +1184,11 @@
     "category": "Technical",
     "sourceCopies": 125,
     "description": "Tactical first section that transitions into a fast straight and banked corner and then a hard brake into a tactical closing section.",
-    "thumbnailUrl": "extra-tracks/thumbnails/speed-park.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/speed-park.png",
+    "codeName": "Speed Park",
+    "codeAuthor": "ol!v3r",
+    "codeModifiedAt": "2026-09-01T14:19:26.000Z",
+    "sizeBytes": 497
   },
   {
     "id": "hardcore-2",
@@ -990,7 +1206,11 @@
     "category": "Speedrun",
     "sourceCopies": 125,
     "description": "This track features tight corners, jumps and many unexpected obstacles.",
-    "thumbnailUrl": "extra-tracks/thumbnails/hardcore-2.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/hardcore-2.png",
+    "codeName": "Hardcore",
+    "codeAuthor": "Jain",
+    "codeModifiedAt": "2026-08-30T09:33:16.000Z",
+    "sizeBytes": 551
   },
   {
     "id": "gap",
@@ -1008,7 +1228,11 @@
     "category": "Speedrun",
     "sourceCopies": 123,
     "description": "a long run to a narrow gap requiring precise lifting",
-    "thumbnailUrl": "extra-tracks/thumbnails/gap.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/gap.png",
+    "codeName": "gap",
+    "codeAuthor": "itsmemusong",
+    "codeModifiedAt": "2026-08-28T10:49:12.000Z",
+    "sizeBytes": 222
   },
   {
     "id": "mario-kart",
@@ -1026,7 +1250,11 @@
     "category": "Speedrun",
     "sourceCopies": 122,
     "description": "An artistic interpretation of what a Poly track should look look. Mario kart is cool too i guess.",
-    "thumbnailUrl": "extra-tracks/thumbnails/mario-kart.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/mario-kart.png",
+    "codeName": "MARIO KART",
+    "codeAuthor": "kkarrot12",
+    "codeModifiedAt": "2026-09-01T01:30:00.000Z",
+    "sizeBytes": 1099
   },
   {
     "id": "on-a-technicality",
@@ -1044,7 +1272,11 @@
     "category": "Technical",
     "sourceCopies": 120,
     "description": "A technically challenging map that requires precision, coordination, balance and delicacy. This map utilises triangle pieces to create a tightrope of road, perfect for testing players' intelligence and decision making. It has a highly diffi",
-    "thumbnailUrl": "extra-tracks/thumbnails/on-a-technicality.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/on-a-technicality.png",
+    "codeName": "i hate this",
+    "codeAuthor": "Sunlitnettle",
+    "codeModifiedAt": "2026-08-25T10:15:56.000Z",
+    "sizeBytes": 589
   },
   {
     "id": "grug",
@@ -1062,7 +1294,11 @@
     "category": "Technical",
     "sourceCopies": 119,
     "description": "There is a building where you can go inside and there is a a lot of turns, and a lot of jumps.",
-    "thumbnailUrl": "extra-tracks/thumbnails/grug.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/grug.png",
+    "codeName": "GRUG",
+    "codeAuthor": "GRUD",
+    "codeModifiedAt": "2026-08-30T18:41:29.000Z",
+    "sizeBytes": 3231
   },
   {
     "id": "simple-track",
@@ -1080,7 +1316,11 @@
     "category": "Racing",
     "sourceCopies": 119,
     "description": "A simple track that has been generated with the game’s “generate” feature",
-    "thumbnailUrl": "extra-tracks/thumbnails/simple-track.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/simple-track.png",
+    "codeName": "Simple Track",
+    "codeAuthor": "AshtonRocksYT",
+    "codeModifiedAt": "2026-08-30T15:48:20.000Z",
+    "sizeBytes": 934
   },
   {
     "id": "first-race-trak-pkb-racing",
@@ -1098,7 +1338,11 @@
     "category": "Racing",
     "sourceCopies": 118,
     "description": "First track with flat out sections, weird turns, and a ton of fun. P.S. the track next to the start finish line is the pit road entry",
-    "thumbnailUrl": "extra-tracks/thumbnails/first-race-trak-pkb-racing.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/first-race-trak-pkb-racing.png",
+    "codeName": "First Race Track -PKB_Racing",
+    "codeAuthor": "PKB_Racing",
+    "codeModifiedAt": "2026-08-27T21:07:49.000Z",
+    "sizeBytes": 573
   },
   {
     "id": "snes-mario-circuit-1",
@@ -1116,7 +1360,11 @@
     "category": "Racing",
     "sourceCopies": 111,
     "description": "SNES mario circuit one, note that i did not add art into it, so it's boring. Also, if it looks wrong, hey, at least i tried. (the image is the real SNES mario circuit 1 track map, you can compare it with my creation, i guess. Anyone know ho",
-    "thumbnailUrl": "extra-tracks/thumbnails/snes-mario-circuit-1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/snes-mario-circuit-1.png",
+    "codeName": "SNES mario circuit 1",
+    "codeAuthor": "CITRA",
+    "codeModifiedAt": "2026-09-15T18:57:22.000Z",
+    "sizeBytes": 784
   },
   {
     "id": "heatwave-danger",
@@ -1134,7 +1382,11 @@
     "category": "Stunt",
     "sourceCopies": 109,
     "description": "An amazing track with lots of jumps. The track is unique because it combines fun with difficulty and artistic landscaping not many tracks combine all three. The hardest section is a small jump before a corner which you can easily over jump ",
-    "thumbnailUrl": "extra-tracks/thumbnails/heatwave-danger.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/heatwave-danger.png",
+    "codeName": "Heatwave Danger",
+    "codeAuthor": "Ozzo",
+    "codeModifiedAt": "2026-09-09T19:10:06.000Z",
+    "sizeBytes": 9157
   },
   {
     "id": "circle",
@@ -1152,7 +1404,11 @@
     "category": "Speedrun",
     "sourceCopies": 103,
     "description": "A small circle for speedrunning and just for fun. Enjoy!",
-    "thumbnailUrl": "extra-tracks/thumbnails/circle.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/circle.png",
+    "codeName": "circle",
+    "codeAuthor": "丂 卄 卂 尺 Ҝ",
+    "codeModifiedAt": "2026-08-17T11:00:32.000Z",
+    "sizeBytes": 171
   },
   {
     "id": "confusing",
@@ -1170,7 +1426,11 @@
     "category": "Speedrun",
     "sourceCopies": 103,
     "description": "Confusing is a track where you can find lots of shortcuts with 2 fast hairpins and also two crossing roads try to make the fastest time by finding all shortcuts",
-    "thumbnailUrl": "extra-tracks/thumbnails/confusing.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/confusing.png",
+    "codeName": "Confusing",
+    "codeAuthor": "Bluetooth",
+    "codeModifiedAt": "2026-07-31T17:35:09.000Z",
+    "sizeBytes": 652
   },
   {
     "id": "sandstorm",
@@ -1188,7 +1448,11 @@
     "category": "Technical",
     "sourceCopies": 102,
     "description": "A short track with 4 different paths in the begining and a loop",
-    "thumbnailUrl": "extra-tracks/thumbnails/sandstorm.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/sandstorm.png",
+    "codeName": "Sandstorm",
+    "codeAuthor": "Disconected",
+    "codeModifiedAt": "2026-09-10T23:00:41.000Z",
+    "sizeBytes": 2059
   },
   {
     "id": "side-way-spin",
@@ -1206,7 +1470,11 @@
     "category": "Stunt",
     "sourceCopies": 101,
     "description": "keep speed and zoom past a side way converter than go up onto the sky do a loop and end with 2 massive jumps",
-    "thumbnailUrl": "extra-tracks/thumbnails/side-way-spin.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/side-way-spin.png",
+    "codeName": "side way spin",
+    "codeAuthor": "lol",
+    "codeModifiedAt": "2026-08-24T20:35:30.000Z",
+    "sizeBytes": 2766
   },
   {
     "id": "long-circuit",
@@ -1224,7 +1492,11 @@
     "category": "Racing",
     "sourceCopies": 99,
     "description": "A cool circuit with some fun corners and some banking",
-    "thumbnailUrl": "extra-tracks/thumbnails/long-circuit.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/long-circuit.png",
+    "codeName": "Long circuit",
+    "codeAuthor": "Oscar Pastry",
+    "codeModifiedAt": "2026-08-18T09:53:34.000Z",
+    "sizeBytes": 541
   },
   {
     "id": "grid-locked",
@@ -1242,7 +1514,11 @@
     "category": "Speedrun",
     "sourceCopies": 99,
     "description": "An extremely precise and technical speedrun, to continue the Focus series. Survive the tight hairpins and funky layout, as well as the single pixel jump you must make over the steaming hot lava and geysers underneath you. Don't fall. Don't ",
-    "thumbnailUrl": "extra-tracks/thumbnails/grid-locked.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/grid-locked.png",
+    "codeName": "GridLocked",
+    "codeAuthor": "007",
+    "codeModifiedAt": "2026-08-29T18:27:25.000Z",
+    "sizeBytes": 367
   },
   {
     "id": "banking-boundaries",
@@ -1260,7 +1536,11 @@
     "category": "Speedrun",
     "sourceCopies": 51,
     "description": "A smooth, flowing, banking track. Starts off with a down hill and blind jump, which transitions into a banking left-hander followed by a choice of left or right. After the split section, players are met with a straight leading into a precis",
-    "thumbnailUrl": "extra-tracks/thumbnails/banking-boundaries.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/banking-boundaries.png",
+    "codeName": "Banking Boundaries",
+    "codeAuthor": "FISHY",
+    "codeModifiedAt": "2026-09-10T23:51:10.000Z",
+    "sizeBytes": 808
   },
   {
     "id": "burn-the-turns",
@@ -1278,7 +1558,11 @@
     "category": "Speedrun",
     "sourceCopies": 86,
     "description": "A technical speedrun featuring many short and sharp turns! May the best racer win............. (dot dot dot)",
-    "thumbnailUrl": "extra-tracks/thumbnails/burn-the-turns.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/burn-the-turns.png",
+    "codeName": "burn the turns",
+    "codeAuthor": "phantom",
+    "codeModifiedAt": "2026-09-14T18:15:46.000Z",
+    "sizeBytes": 997
   },
   {
     "id": "circuit-zandvoort",
@@ -1296,7 +1580,11 @@
     "category": "Technical",
     "sourceCopies": 56,
     "description": "a recreation of circuit zandvoort. it is a flowing track with satisfying corners that test consistency through the 2 laps. it takes about 2min 25s to complete.",
-    "thumbnailUrl": "extra-tracks/thumbnails/circuit-zandvoort.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/circuit-zandvoort.png",
+    "codeName": "circuit zandvoort",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-09-16T13:01:34.000Z",
+    "sizeBytes": 4280
   },
   {
     "id": "sony-fe-500mm-f2-8",
@@ -1314,7 +1602,11 @@
     "category": "Drift",
     "sourceCopies": 49,
     "description": "Pour s'exercé les virages",
-    "thumbnailUrl": "extra-tracks/thumbnails/sony-fe-500mm-f2-8.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/sony-fe-500mm-f2-8.png",
+    "codeName": "Canon EF 500mm",
+    "codeAuthor": "Canon EF 500mm f4 IS USM ii",
+    "codeModifiedAt": "2026-09-14T18:16:14.000Z",
+    "sizeBytes": 530
   },
   {
     "id": "ice-run-hard",
@@ -1332,7 +1624,11 @@
     "category": "Speedrun",
     "sourceCopies": 115,
     "description": "really hard",
-    "thumbnailUrl": "extra-tracks/thumbnails/ice-run-hard.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/ice-run-hard.png",
+    "codeName": "ice run(hard) 🥵",
+    "codeAuthor": "Ether Lilk",
+    "codeModifiedAt": "2026-09-12T23:18:08.000Z",
+    "sizeBytes": 1773
   },
   {
     "id": "suzuka-circuit",
@@ -1350,7 +1646,11 @@
     "category": "Technical",
     "sourceCopies": 56,
     "description": "a recreation of the suzuka f1 circuit. it is a high speed track that has a really nice flow. it is 2 laps and takes about 2min 35s to complete.",
-    "thumbnailUrl": "extra-tracks/thumbnails/suzuka-circuit.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/suzuka-circuit.png",
+    "codeName": "Suzuka circuit",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-09-16T08:47:13.000Z",
+    "sizeBytes": 5441
   },
   {
     "id": "silverstone-recreation",
@@ -1368,7 +1668,11 @@
     "category": "Technical",
     "sourceCopies": 72,
     "description": "this is a recreation of silverstone which hosted the first f1 gp. it is upsized so that you czan drive faster which makes it more enjoyable. it it 2 laps of the circuit which has quite realistic times per lap. it is a nice track that if you",
-    "thumbnailUrl": "extra-tracks/thumbnails/silverstone-recreation.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/silverstone-recreation.png",
+    "codeName": "Silverstone",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-09-15T09:50:13.000Z",
+    "sizeBytes": 6280
   },
   {
     "id": "snes-rainbow-road",
@@ -1386,7 +1690,11 @@
     "category": "Racing",
     "sourceCopies": 69,
     "description": "Your classic SNES rainbow road with colors. (you must drive through the track twice.)",
-    "thumbnailUrl": "extra-tracks/thumbnails/snes-rainbow-road.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/snes-rainbow-road.png",
+    "codeName": "SNES rainbow road",
+    "codeAuthor": "CITRA",
+    "codeModifiedAt": "2026-09-11T19:32:38.000Z",
+    "sizeBytes": 1033
   },
   {
     "id": "kilfer-1",
@@ -1404,7 +1712,11 @@
     "category": "Technical",
     "sourceCopies": 52,
     "description": "A technical speedrun featuring a starting jump with a precise braking point to land before the checkpoint on the following straight. The track then drops onto a shorter straight before entering a tight, boxy chicane, leading into a straight",
-    "thumbnailUrl": "extra-tracks/thumbnails/kilfer-1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/kilfer-1.png",
+    "codeName": "kilfer 1",
+    "codeAuthor": "vajra",
+    "codeModifiedAt": "2026-06-03T13:52:19.000Z",
+    "sizeBytes": 702
   },
   {
     "id": "spa-francorchamps",
@@ -1422,7 +1734,11 @@
     "category": "Technical",
     "sourceCopies": 41,
     "description": "this is a recreation of spa francorchamps. you will do 2 laps around this high speed track. a few key corners are eau rouge and radillon. you need to take this flat out with the perfect line or you will crash. this track is very satisfying ",
-    "thumbnailUrl": "extra-tracks/thumbnails/spa-francorchamps.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/spa-francorchamps.png",
+    "codeName": "spa-francorchamps",
+    "codeAuthor": "Hyperion",
+    "codeModifiedAt": "2026-09-14T10:31:39.000Z",
+    "sizeBytes": 7575
   },
   {
     "id": "gba-rainbow-road-best-recreation",
@@ -1440,7 +1756,11 @@
     "category": "Racing",
     "sourceCopies": 52,
     "description": "My best recreation of GBA rainbow road, i kept most of the yellow bounce things and that little shortcut you can take. You must go through the track twice to do it. The hardest section might be the double ramp hops you have to do, because i",
-    "thumbnailUrl": "extra-tracks/thumbnails/gba-rainbow-road-best-recreation.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/gba-rainbow-road-best-recreation.png",
+    "codeName": "GBA rainbow road",
+    "codeAuthor": "CITRA",
+    "codeModifiedAt": "2026-09-15T17:32:25.000Z",
+    "sizeBytes": 1701
   },
   {
     "id": "power-world",
@@ -1458,7 +1778,11 @@
     "category": "Speedrun",
     "sourceCopies": 55,
     "description": "An easy lesson time fun track for beginners",
-    "thumbnailUrl": "extra-tracks/thumbnails/power-world.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/power-world.png",
+    "codeName": "Power world",
+    "codeAuthor": "Kushalffgjjd",
+    "codeModifiedAt": "2026-09-12T17:50:22.000Z",
+    "sizeBytes": 1942
   },
   {
     "id": "a-quick-trip",
@@ -1476,7 +1800,11 @@
     "category": "Stunt",
     "sourceCopies": 53,
     "description": "a quick trip through three biomes that are full of tricks and turns.",
-    "thumbnailUrl": "extra-tracks/thumbnails/a-quick-trip.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/a-quick-trip.png",
+    "codeName": "the biomes",
+    "codeAuthor": "coo1zykid45",
+    "codeModifiedAt": "2026-09-14T05:58:16.000Z",
+    "sizeBytes": 3313
   },
   {
     "id": "super-cool-and-very-hard-track-that-consists-of-the-block-start",
@@ -1494,7 +1822,11 @@
     "category": "Speedrun",
     "sourceCopies": 222,
     "description": "This track consists of a start block a checkpoint a end and 3 turns after driving across these blocks you will win its simple very easy and if you dont beat this im gonna be surprised",
-    "thumbnailUrl": "extra-tracks/thumbnails/super-cool-and-very-hard-track-that-consists-of-the-block-start.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/super-cool-and-very-hard-track-that-consists-of-the-block-start.png",
+    "codeName": "Super cool insanely hard oval track that consits of a start",
+    "codeAuthor": "N0 N4M3",
+    "codeModifiedAt": "2026-09-09T13:05:38.000Z",
+    "sizeBytes": 222
   },
   {
     "id": "jumping-cave",
@@ -1512,7 +1844,11 @@
     "category": "Speedrun",
     "sourceCopies": 66,
     "description": "A speedrun with a lot of drifting and some high speed in the begining with a  jump across the track into a cave with a lot of building blocks. the hardest section is part in the jump at the start because you need to be accurate and in the e",
-    "thumbnailUrl": "extra-tracks/thumbnails/jumping-cave.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/jumping-cave.png",
+    "codeName": "Jumping cave",
+    "codeAuthor": "uter1212",
+    "codeModifiedAt": "2026-09-09T14:48:46.000Z",
+    "sizeBytes": 1226
   },
   {
     "id": "short-and-boring-ii",
@@ -1530,7 +1866,11 @@
     "category": "Racing",
     "sourceCopies": 233,
     "description": "Here is a follow up track of the Short and Boring track series. This track features a technical turn at the beginning followed by a jump, a dropdown to the lower road and a final jump to the finish. Make sure to take the turn wide to gain e",
-    "thumbnailUrl": "extra-tracks/thumbnails/short-and-boring-ii.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/short-and-boring-ii.png",
+    "codeName": "Short & Boring II",
+    "codeAuthor": "~Eärendel~",
+    "codeModifiedAt": "2026-08-17T17:22:18.000Z",
+    "sizeBytes": 2532
   },
   {
     "id": "remember-to-respawn",
@@ -1548,7 +1888,11 @@
     "category": "Technical",
     "sourceCopies": 314,
     "description": "A difficult technical map, featuring tight spaces, difficult jumps, huge loops and more! test your driving skills and don't forget to respawn:)",
-    "thumbnailUrl": "extra-tracks/thumbnails/remember-to-respawn.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/remember-to-respawn.png",
+    "codeName": "remember to respawn:)",
+    "codeAuthor": "yes try",
+    "codeModifiedAt": "2026-08-30T01:51:36.000Z",
+    "sizeBytes": 1155
   },
   {
     "id": "stunts-1",
@@ -1566,7 +1910,11 @@
     "category": "Stunt",
     "sourceCopies": 660,
     "description": "Specifically made to be as difficult as possible, with many jumps requiring max speed, drifts and more. This track can be finished. See https://www.youtube.com/watch?v=I1_MmXfWMVw for proof.",
-    "thumbnailUrl": "extra-tracks/thumbnails/stunts-1.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/stunts-1.png",
+    "codeName": "stunts_1",
+    "codeAuthor": "Anonymous",
+    "codeModifiedAt": "2026-08-29T13:27:21.000Z",
+    "sizeBytes": 1043
   },
   {
     "id": "hardcore",
@@ -1584,7 +1932,11 @@
     "category": "Speedrun",
     "sourceCopies": 49,
     "description": "This track features tight corners , jumps and unexpected obstacles. This is my first map btw so expect some error.",
-    "thumbnailUrl": "extra-tracks/thumbnails/hardcore.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/hardcore.png",
+    "codeName": "Hardcore",
+    "codeAuthor": "Jain",
+    "codeModifiedAt": "2026-08-30T10:30:39.000Z",
+    "sizeBytes": 542
   },
   {
     "id": "over-the-noise",
@@ -1602,7 +1954,11 @@
     "category": "Technical",
     "sourceCopies": 79,
     "description": "just a fun track to play",
-    "thumbnailUrl": "extra-tracks/thumbnails/over-the-noise.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/over-the-noise.png",
+    "codeName": "abovethenoise",
+    "codeAuthor": "turtl",
+    "codeModifiedAt": "2026-09-01T05:30:39.000Z",
+    "sizeBytes": 1794
   },
   {
     "id": "potatoh-inc",
@@ -1620,7 +1976,11 @@
     "category": "Art",
     "sourceCopies": 88,
     "description": "Welcome to Potatoh Inc. First, drive through a potatoh field with cars harvesting crops. Then, drive into a factory, round a steep bend, and to the finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/potatoh-inc.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/potatoh-inc.png",
+    "codeName": "Potatoh Inc.",
+    "codeAuthor": "Jim Potatoh",
+    "codeModifiedAt": "2026-09-01T16:31:05.000Z",
+    "sizeBytes": 16334
   },
   {
     "id": "rage-impossible",
@@ -1638,7 +1998,11 @@
     "category": "Technical",
     "sourceCopies": 91,
     "description": "Go slow and steady, and get ready for unexpected bumps",
-    "thumbnailUrl": "extra-tracks/thumbnails/rage-impossible.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/rage-impossible.png",
+    "codeName": "Rage Impossible",
+    "codeAuthor": "Cheese",
+    "codeModifiedAt": "2026-08-24T06:13:01.000Z",
+    "sizeBytes": 1195
   },
   {
     "id": "slow-is-not-bad",
@@ -1656,7 +2020,11 @@
     "category": "Racing",
     "sourceCopies": 81,
     "description": "some hard turns ramps go slow to survive",
-    "thumbnailUrl": "extra-tracks/thumbnails/slow-is-not-bad.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/slow-is-not-bad.png",
+    "codeName": "slow is not bad",
+    "codeAuthor": "Power craft 62",
+    "codeModifiedAt": "2026-08-31T20:04:15.000Z",
+    "sizeBytes": 9556
   },
   {
     "id": "hardcore-desert",
@@ -1674,7 +2042,11 @@
     "category": "Speedrun",
     "sourceCopies": 56,
     "description": "Try this short but fun track with two options. Upside down or a banked corner.",
-    "thumbnailUrl": "extra-tracks/thumbnails/hardcore-desert.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/hardcore-desert.png",
+    "codeName": "Hardcore desert",
+    "codeAuthor": "sceb",
+    "codeModifiedAt": "2026-03-21T14:50:27.000Z",
+    "sizeBytes": 1211
   },
   {
     "id": "backwards-super-turny-wall-hit-level",
@@ -1692,7 +2064,11 @@
     "category": "Technical",
     "sourceCopies": 50,
     "description": "Get ready for a technical track, involving techniques not usually in levels. Some techs include precise falling, braking, and wall bumps.",
-    "thumbnailUrl": "extra-tracks/thumbnails/backwards-super-turny-wall-hit-level.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/backwards-super-turny-wall-hit-level.png",
+    "codeName": "backwards super turny wall hit level",
+    "codeAuthor": "cool guy",
+    "codeModifiedAt": "2026-08-31T14:31:23.000Z",
+    "sizeBytes": 316
   },
   {
     "id": "bridge",
@@ -1710,7 +2086,11 @@
     "category": "Speedrun",
     "sourceCopies": 86,
     "description": "a long run into a sharp turn into a narrow bridge into the finish",
-    "thumbnailUrl": "extra-tracks/thumbnails/bridge.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/bridge.png",
+    "codeName": "bridge",
+    "codeAuthor": "itsmemusong",
+    "codeModifiedAt": "2026-09-01T01:11:42.000Z",
+    "sizeBytes": 234
   },
   {
     "id": "bigguysdeathtrap",
@@ -1728,7 +2108,11 @@
     "category": "Stunt",
     "sourceCopies": 69,
     "description": "Tight turns, long straight, ramps going up.",
-    "thumbnailUrl": "extra-tracks/thumbnails/bigguysdeathtrap.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/bigguysdeathtrap.png",
+    "codeName": "bigguy death trap",
+    "codeAuthor": "bigguy67",
+    "codeModifiedAt": "2026-09-01T00:44:12.000Z",
+    "sizeBytes": 1682
   },
   {
     "id": "dont-fall",
@@ -1746,7 +2130,11 @@
     "category": "Stunt",
     "sourceCopies": 418,
     "description": "A short track stat on skinny line and entre a box with one checkpoint that is at end and go back to finished line. try finish it and don't fall through holes",
-    "thumbnailUrl": "extra-tracks/thumbnails/dont-fall.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/dont-fall.png",
+    "codeName": "dont fall",
+    "codeAuthor": "lol",
+    "codeModifiedAt": "2026-08-27T02:32:04.000Z",
+    "sizeBytes": 2104
   },
   {
     "id": "quick-tricks-2",
@@ -1764,7 +2152,11 @@
     "category": "Speedrun",
     "sourceCopies": 90,
     "description": "This short track is the second in the Quick tricks series. It brings a variety of options to do the track and is very fun.",
-    "thumbnailUrl": "extra-tracks/thumbnails/quick-tricks-2.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/quick-tricks-2.png",
+    "codeName": "Quick tricks/2",
+    "codeAuthor": "3-eb",
+    "codeModifiedAt": "2026-08-28T08:20:51.000Z",
+    "sizeBytes": 334
   },
   {
     "id": "dirted",
@@ -1782,7 +2174,11 @@
     "category": "Stunt",
     "sourceCopies": 76,
     "description": "Get ready for a wild ride on this custom Poly Track packed with insane stunts, jumps, and tricky walls! Push your driving skills to the limit and see if you can make it through without flying off the track.",
-    "thumbnailUrl": "extra-tracks/thumbnails/dirted.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/dirted.png",
+    "codeName": "Dirted",
+    "codeAuthor": "3-eb",
+    "codeModifiedAt": "2026-08-28T17:34:35.000Z",
+    "sizeBytes": 1436
   },
   {
     "id": "castle-stonegrey",
@@ -1800,7 +2196,11 @@
     "category": "Speedrun",
     "sourceCopies": 85,
     "description": "Race around this castle themed track. Bounce off the walls back to the floor into a jump and then upside down. This phenomenal track captures every aspect of scenery and racing in Poly Track.",
-    "thumbnailUrl": "extra-tracks/thumbnails/castle-stonegrey.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/castle-stonegrey.png",
+    "codeName": "Castle Stonegrey",
+    "codeAuthor": "3-eb",
+    "codeModifiedAt": "2026-08-28T18:02:03.000Z",
+    "sizeBytes": 19132
   },
   {
     "id": "thunderbolt",
@@ -1818,7 +2218,11 @@
     "category": "Technical",
     "sourceCopies": 142,
     "description": "A technical speedrun with a tight opening, two blind jumps into banked corners, and a final precision section that rewards late braking. I like how it's very pricision, and if you take the easiest track, you're going to get a long time.",
-    "thumbnailUrl": "extra-tracks/thumbnails/thunderbolt.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/thunderbolt.png",
+    "codeName": "ThunderBolt",
+    "codeAuthor": "Speed - E",
+    "codeModifiedAt": "2026-08-29T05:27:53.000Z",
+    "sizeBytes": 1983
   },
   {
     "id": "pro-testing",
@@ -1836,7 +2240,11 @@
     "category": "Technical",
     "sourceCopies": 176,
     "description": "All of “almost” but “possible” types of obstacles before you are a pro! If you complete this below 10 minutes you are a pro.",
-    "thumbnailUrl": "extra-tracks/thumbnails/pro-testing.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/pro-testing.png",
+    "codeName": "PRO testing",
+    "codeAuthor": "XL",
+    "codeModifiedAt": "2026-08-15T08:57:34.000Z",
+    "sizeBytes": 1591
   },
   {
     "id": "go-up",
@@ -1854,7 +2262,11 @@
     "category": "Stunt",
     "sourceCopies": 93,
     "description": "The only way to beat this track is to go up. This requires a pretty difficult glitch, so try your best",
-    "thumbnailUrl": "extra-tracks/thumbnails/go-up.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/go-up.png",
+    "codeName": "Go up",
+    "codeAuthor": "Cac-key",
+    "codeModifiedAt": "2026-08-26T13:25:18.000Z",
+    "sizeBytes": 383
   },
   {
     "id": "practice",
@@ -1872,7 +2284,11 @@
     "category": "Racing",
     "sourceCopies": 81,
     "description": "This is a practice track that tests you on your skills: Hard turning, precision jumps, and careful cuts. This track is a challenge to complete but still easy for beginners, try it out!",
-    "thumbnailUrl": "extra-tracks/thumbnails/practice.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/practice.png",
+    "codeName": "Practice",
+    "codeAuthor": "PolyTrackMASTER",
+    "codeModifiedAt": "2026-08-25T17:36:24.000Z",
+    "sizeBytes": 314
   },
   {
     "id": "computer-game",
@@ -1890,7 +2306,11 @@
     "category": "Technical",
     "sourceCopies": 61,
     "description": "A technical map that has you drive up through an opening loop into a skid where you then jump and turn through a chicane and drive up a ramp through a Nintendo switch into a blind jump, down a ramp and into a tight skid and drop off, drivin",
-    "thumbnailUrl": "extra-tracks/thumbnails/computer-game.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/computer-game.png",
+    "codeName": "Computer game",
+    "codeAuthor": "Sandyplatapus995",
+    "codeModifiedAt": "2026-08-26T01:01:26.000Z",
+    "sizeBytes": 1688
   },
   {
     "id": "quick-tricks",
@@ -1908,7 +2328,11 @@
     "category": "Speedrun",
     "sourceCopies": 98,
     "description": "The first in the Quick Tricks series. Master this short and fun track to perfection with skill and experience. with an upside down jump, this is the best way to start the Quick Tricks series. Who will be the best?",
-    "thumbnailUrl": "extra-tracks/thumbnails/quick-tricks.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/quick-tricks.png",
+    "codeName": "Quick tricks",
+    "codeAuthor": "3-eb",
+    "codeModifiedAt": "2026-08-25T18:18:19.000Z",
+    "sizeBytes": 369
   },
   {
     "id": "speed-jump",
@@ -1926,7 +2350,11 @@
     "category": "Speedrun",
     "sourceCopies": 58,
     "description": "Hard opening turn but after that just go as fast as you can till the jump, then try to land nicely and make sure to not hit a post in the way to the finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/speed-jump.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/speed-jump.png",
+    "codeName": "In Progress",
+    "codeAuthor": "Lumosmaximus",
+    "codeModifiedAt": "2026-03-25T15:12:32.000Z",
+    "sizeBytes": 4493
   },
   {
     "id": "potatoh-land",
@@ -1944,7 +2372,11 @@
     "category": "Technical",
     "sourceCopies": 58,
     "description": "A start with a perfectly timed drift leads into a flowing loop de loop. This leads round to the 1st checkpoint, where the path splits. Make your way through a thin section and up a ramp to the final task. 2 thin beams between you and the fi",
-    "thumbnailUrl": "extra-tracks/thumbnails/potatoh-land.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/potatoh-land.png",
+    "codeName": "Potatoh Land",
+    "codeAuthor": "Jim Potatoh",
+    "codeModifiedAt": "2026-08-25T18:51:34.000Z",
+    "sizeBytes": 1744
   },
   {
     "id": "skill-issue",
@@ -1962,7 +2394,11 @@
     "category": "Speedrun",
     "sourceCopies": 47,
     "description": "need some drift skillz idk (im bad at this) ignore my top 10 at re: akina :)",
-    "thumbnailUrl": "extra-tracks/thumbnails/skill-issue.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/skill-issue.png",
+    "codeName": "skill issue",
+    "codeAuthor": "bigDawk",
+    "codeModifiedAt": "2026-08-26T09:58:35.000Z",
+    "sizeBytes": 786
   },
   {
     "id": "under-1-minute-challenge",
@@ -1980,7 +2416,11 @@
     "category": "Speedrun",
     "sourceCopies": 69,
     "description": "An hard Polytrack track to beat under 1 Minute",
-    "thumbnailUrl": "extra-tracks/thumbnails/under-1-minute-challenge.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/under-1-minute-challenge.png",
+    "codeName": "Under 1 Minute Challenge",
+    "codeAuthor": "GamingMattie",
+    "codeModifiedAt": "2026-08-26T19:04:57.000Z",
+    "sizeBytes": 845
   },
   {
     "id": "grappige-naam",
@@ -1998,7 +2438,11 @@
     "category": "Speedrun",
     "sourceCopies": 31,
     "description": "you start with a precise diagonal part with a jump than an half looping and another jump and end with a turn and a jump to the finish on the grass",
-    "thumbnailUrl": "extra-tracks/thumbnails/grappige-naam.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/grappige-naam.png",
+    "codeName": "grappige naam",
+    "codeAuthor": "Tisjen",
+    "codeModifiedAt": "2026-08-25T18:50:36.000Z",
+    "sizeBytes": 400
   },
   {
     "id": "sunset-split",
@@ -2016,7 +2460,11 @@
     "category": "Racing",
     "sourceCopies": 201,
     "description": "A race track that starts with a straight, followed by a few small chicanes and a split section — one easy route and one challenging route. The track then loops around, passes above the earlier section, and finishes with a few turns. Players",
-    "thumbnailUrl": "extra-tracks/thumbnails/sunset-split.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/sunset-split.png",
+    "codeName": "Sunset Split",
+    "codeAuthor": "tikitikifunk0326",
+    "codeModifiedAt": "2026-08-21T03:06:31.000Z",
+    "sizeBytes": 1511
   },
   {
     "id": "short-boring-i",
@@ -2034,7 +2482,11 @@
     "category": "Speedrun",
     "sourceCopies": 187,
     "description": "Here is my first proper attempt at making a track in PolyTrack. The name was one of the first things that came in mind. It is a speedy track with a turn, a split path, a jump, a loop transition and into a dropdown at the very end. It also f",
-    "thumbnailUrl": "extra-tracks/thumbnails/short-boring-i.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/short-boring-i.png",
+    "codeName": "Short & Boring I",
+    "codeAuthor": "~Eärendel~",
+    "codeModifiedAt": "2026-08-16T12:43:33.000Z",
+    "sizeBytes": 1208
   },
   {
     "id": "a-loop-and-a-jump",
@@ -2052,7 +2504,11 @@
     "category": "Technical",
     "sourceCopies": 90,
     "description": "its a loop and a hard jump idk",
-    "thumbnailUrl": "extra-tracks/thumbnails/a-loop-and-a-jump.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/a-loop-and-a-jump.png",
+    "codeName": "a loop and a jump",
+    "codeAuthor": "itsmemusong",
+    "codeModifiedAt": "2026-08-18T06:28:55.000Z",
+    "sizeBytes": 286
   },
   {
     "id": "icy-passage",
@@ -2070,7 +2526,11 @@
     "category": "Stunt",
     "sourceCopies": 97,
     "description": "Starts of with a jump then a slight left turn. Then a wallride that turns into a jump. the jump is tight to get the checkpoint then a reset sends you into the finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/icy-passage.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/icy-passage.png",
+    "codeName": "icy passage",
+    "codeAuthor": "fastr",
+    "codeModifiedAt": "2026-08-17T20:44:38.000Z",
+    "sizeBytes": 699
   },
   {
     "id": "si",
@@ -2088,7 +2548,11 @@
     "category": "Technical",
     "sourceCopies": 74,
     "description": "a speed, drift and technique track trying to decide the correct track and make the jump well.",
-    "thumbnailUrl": "extra-tracks/thumbnails/si.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/si.png",
+    "codeName": "si",
+    "codeAuthor": "si 67",
+    "codeModifiedAt": "2026-08-18T14:52:42.000Z",
+    "sizeBytes": 683
   },
   {
     "id": "antarctica-forsteri-circuit",
@@ -2106,7 +2570,11 @@
     "category": "Racing",
     "sourceCopies": 119,
     "description": "This track represents the glory of antarctica and famous penguins here we feature chicanes , esses baked corners copy this code to be the winner of Antarctica",
-    "thumbnailUrl": "extra-tracks/thumbnails/antarctica-forsteri-circuit.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/antarctica-forsteri-circuit.png",
+    "codeName": "Antarctica Forsteri Circuit",
+    "codeAuthor": "Bobac",
+    "codeModifiedAt": "2026-08-18T21:08:47.000Z",
+    "sizeBytes": 4219
   },
   {
     "id": "midnight-drift",
@@ -2124,7 +2592,11 @@
     "category": "Speedrun",
     "sourceCopies": 83,
     "description": "A small map which is decorated with a midnight drift which requires good timing for turns and finish.",
-    "thumbnailUrl": "extra-tracks/thumbnails/midnight-drift.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/midnight-drift.png",
+    "codeName": "Midnight Drift",
+    "codeAuthor": "SG|PolymodLight",
+    "codeModifiedAt": "2026-08-18T11:50:32.000Z",
+    "sizeBytes": 2238
   },
   {
     "id": "zip",
@@ -2142,7 +2614,11 @@
     "category": "Racing",
     "sourceCopies": 81,
     "description": "A fullspeed track with lots of looping spins.",
-    "thumbnailUrl": "extra-tracks/thumbnails/zip.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/zip.png",
+    "codeName": "Zip!",
+    "codeAuthor": "Shade",
+    "codeModifiedAt": "2026-08-10T22:25:43.000Z",
+    "sizeBytes": 6740
   },
   {
     "id": "massif-east",
@@ -2160,7 +2636,11 @@
     "category": "Technical",
     "sourceCopies": 67,
     "description": ">>> Average time to endline = 0:36.000 This course is manageable if you just want to finish it, but very technical if you want to push your limits. You need to manage your braking and acceleration. Pay attention to the angle of the jumps, o",
-    "thumbnailUrl": "extra-tracks/thumbnails/massif-east.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/massif-east.png",
+    "codeName": "MASSIF EAST",
+    "codeAuthor": "Korona",
+    "codeModifiedAt": "2026-08-16T17:45:33.000Z",
+    "sizeBytes": 12595
   },
   {
     "id": "slow-technics",
@@ -2178,7 +2658,11 @@
     "category": "Technical",
     "sourceCopies": 50,
     "description": "A technical track with a fast opening, up onto a ramp, then into a turn, then a split, going back through the way you came, then going a separate way with the last checkpoint, then a straight, into a turn, in a tall vertical where the finis",
-    "thumbnailUrl": "extra-tracks/thumbnails/slow-technics.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/slow-technics.png",
+    "codeName": "Slow Technics",
+    "codeAuthor": "Anonymous",
+    "codeModifiedAt": "2026-08-20T12:27:03.000Z",
+    "sizeBytes": 453
   },
   {
     "id": "boxed-in",
@@ -2196,7 +2680,11 @@
     "category": "Technical",
     "sourceCopies": 292,
     "description": "Yea its hard.",
-    "thumbnailUrl": "extra-tracks/thumbnails/boxed-in.png"
+    "thumbnailUrl": "extra-tracks/thumbnails/boxed-in.png",
+    "codeName": "B⛶XED IN",
+    "codeAuthor": "Icarus34",
+    "codeModifiedAt": "2026-08-16T12:03:34.000Z",
+    "sizeBytes": 1190
   },
   {
     "id": "kacky-26",
@@ -2213,7 +2701,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/26.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-26.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #26",
+    "codeAuthor": "Muril2k10",
+    "codeModifiedAt": "2026-09-13T00:13:07.000Z",
+    "sizeBytes": 4866
   },
   {
     "id": "kacky-27",
@@ -2230,7 +2722,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/27.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-27.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #27",
+    "codeAuthor": "Temp",
+    "codeModifiedAt": "2026-09-13T00:18:54.000Z",
+    "sizeBytes": 1536
   },
   {
     "id": "kacky-28",
@@ -2247,7 +2743,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/28.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-28.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #28",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:21:41.000Z",
+    "sizeBytes": 1157
   },
   {
     "id": "kacky-29",
@@ -2264,7 +2764,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/29.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-29.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest kacky #29",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:23:04.000Z",
+    "sizeBytes": 1435
   },
   {
     "id": "kacky-30",
@@ -2281,7 +2785,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/30.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-30.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest kacky #30",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:24:16.000Z",
+    "sizeBytes": 1920
   },
   {
     "id": "kacky-31",
@@ -2298,7 +2806,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/31.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-31.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #31",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:25:24.000Z",
+    "sizeBytes": 1297
   },
   {
     "id": "kacky-32",
@@ -2315,7 +2827,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/32.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-32.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #32",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:27:54.000Z",
+    "sizeBytes": 796
   },
   {
     "id": "kacky-33",
@@ -2332,7 +2848,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/33.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-33.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #33",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-20T18:23:44.000Z",
+    "sizeBytes": 2479
   },
   {
     "id": "kacky-34",
@@ -2349,7 +2869,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/34.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-34.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #34",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T15:47:19.000Z",
+    "sizeBytes": 1114
   },
   {
     "id": "kacky-35",
@@ -2366,7 +2890,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/35.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-35.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #35",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-20T18:33:11.000Z",
+    "sizeBytes": 986
   },
   {
     "id": "kacky-36",
@@ -2383,7 +2911,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/36.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-36.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #36",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-12T18:26:05.000Z",
+    "sizeBytes": 613
   },
   {
     "id": "kacky-37",
@@ -2400,7 +2932,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/37.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-37.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest kacky #37",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-20T18:07:30.000Z",
+    "sizeBytes": 2349
   },
   {
     "id": "kacky-38",
@@ -2417,7 +2953,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/38.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-38.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #38",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T14:41:02.000Z",
+    "sizeBytes": 3587
   },
   {
     "id": "kacky-39",
@@ -2434,7 +2974,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/39.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-39.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #39",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:34:38.000Z",
+    "sizeBytes": 651
   },
   {
     "id": "kacky-40",
@@ -2451,7 +2995,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/40.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-40.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #40",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-20T18:37:11.000Z",
+    "sizeBytes": 682
   },
   {
     "id": "kacky-41",
@@ -2468,7 +3016,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/41.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-41.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "kackiest kacky #41",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-20T18:10:09.000Z",
+    "sizeBytes": 991
   },
   {
     "id": "kacky-43",
@@ -2485,7 +3037,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/43.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-43.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #43",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-20T18:15:17.000Z",
+    "sizeBytes": 1769
   },
   {
     "id": "kacky-44",
@@ -2502,7 +3058,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/44.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-44.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #44",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:38:32.000Z",
+    "sizeBytes": 1058
   },
   {
     "id": "kacky-47",
@@ -2519,7 +3079,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/47.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-47.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest kacky #47",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-20T18:18:25.000Z",
+    "sizeBytes": 550
   },
   {
     "id": "kacky-48",
@@ -2536,7 +3100,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/48.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-48.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #48",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:43:50.000Z",
+    "sizeBytes": 806
   },
   {
     "id": "kacky-49",
@@ -2553,7 +3121,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/49.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-49.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #49",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-20T18:25:49.000Z",
+    "sizeBytes": 410
   },
   {
     "id": "kacky-50",
@@ -2570,7 +3142,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/50.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-50.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "kackiest kacky #50",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-20T18:35:10.000Z",
+    "sizeBytes": 2383
   },
   {
     "id": "kacky-51",
@@ -2587,7 +3163,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/51.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-51.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "kackiest kacky #51",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:48:19.000Z",
+    "sizeBytes": 2424
   },
   {
     "id": "kacky-52",
@@ -2604,7 +3184,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/52.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-52.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #52",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:51:08.000Z",
+    "sizeBytes": 2960
   },
   {
     "id": "kacky-53",
@@ -2621,7 +3205,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/53.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-53.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #53",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:52:17.000Z",
+    "sizeBytes": 2356
   },
   {
     "id": "kacky-54",
@@ -2638,7 +3226,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/54.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-54.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "kackiest kacky #54",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:53:26.000Z",
+    "sizeBytes": 2892
   },
   {
     "id": "kacky-55",
@@ -2655,7 +3247,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/55.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-55.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest kacky #55",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:54:18.000Z",
+    "sizeBytes": 1326
   },
   {
     "id": "kacky-56",
@@ -2672,7 +3268,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/56.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-56.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #56",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T00:55:10.000Z",
+    "sizeBytes": 3992
   },
   {
     "id": "kacky-57",
@@ -2689,7 +3289,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/57.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-57.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #57",
+    "codeAuthor": "KrogerUber",
+    "codeModifiedAt": "2026-09-13T00:55:58.000Z",
+    "sizeBytes": 512
   },
   {
     "id": "kacky-59",
@@ -2706,7 +3310,11 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/59.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-59.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #59",
+    "codeAuthor": "The Kroger",
+    "codeModifiedAt": "2026-09-13T00:57:01.000Z",
+    "sizeBytes": 879
   },
   {
     "id": "kacky-60",
@@ -2723,6 +3331,10 @@
     "tier": "Challenge",
     "trackPath": "extra-tracks/track-data/kacky/60.track",
     "thumbnailUrl": "extra-tracks/thumbnails/kacky-60.png",
-    "sourceCopies": null
+    "sourceCopies": null,
+    "codeName": "Kackiest Kacky #60",
+    "codeAuthor": "Einar",
+    "codeModifiedAt": "2026-09-13T01:05:31.000Z",
+    "sizeBytes": 583
   }
 ]

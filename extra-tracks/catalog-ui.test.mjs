@@ -187,6 +187,51 @@ test('sort, callbacks and attribution use the original entry and safe links', as
   assert.equal(cls(root, 'sq-extra-overlay')[0].hidden, true);
 });
 
+test('code metadata, credits and actual byte sizes are visible and searchable', () => {
+  const { root, api } = fixture([entry(1, {
+    author: 'Site account', codeName: 'Code title', codeAuthor: 'Track maker',
+    codeModifiedAt: '2026-09-17T10:25:36.000Z', sizeBytes: 16680
+  })]);
+  api.open();
+  const card = cls(root, 'sq-extra-card')[0];
+  assert.match(card.textContent, /By Track maker/);
+  assert.match(card.textContent, /Source credit: Site account/);
+  assert.match(card.textContent, /Modified Sep 17, 2026/);
+  assert.match(card.textContent, /16\.7 KB code/);
+  const search = tag(cls(root, 'sq-extra-field')[0], 'input')[0];
+  search.value = 'Track maker'; search.dispatch('input');
+  assert.equal(cls(root, 'sq-extra-card').length, 1);
+  api.destroy();
+});
+
+test('size sorting uses actual catalog byte sizes and keeps missing sizes last', () => {
+  const entries = [
+    entry(1, { name: 'Medium', sizeBytes: 20 }),
+    entry(2, { name: 'Small', sizeBytes: 4 }),
+    entry(3, { name: 'Large', sizeBytes: 80 }),
+    entry(4, { name: 'Unknown' }),
+    entry(5, { name: 'Invalid', sizeBytes: -1 })
+  ];
+  const { root, api } = fixture(entries);
+  api.open();
+  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  assert.match(sort.textContent, /Largest code/);
+  assert.match(sort.textContent, /Smallest code/);
+  const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
+  sort.value = 'size-largest'; sort.dispatch('change');
+  assert.deepEqual(names(), ['Large', 'Medium', 'Small', 'Invalid', 'Unknown']);
+  sort.value = 'size-smallest'; sort.dispatch('change');
+  assert.deepEqual(names(), ['Small', 'Medium', 'Large', 'Invalid', 'Unknown']);
+  api.destroy();
+});
+
+test('size sorting is omitted when code byte sizes are unavailable', () => {
+  const { root, api } = fixture([entry(1), entry(2, { sizeBytes: '12' }), entry(3, { sizeBytes: -1 })]);
+  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  assert.doesNotMatch(sort.textContent, /Largest code|Smallest code/);
+  api.destroy();
+});
+
 test('async callback failures stay visible without closing or throwing', async () => {
   const { root, api } = fixture([entry(1)], {
     onPlay: async () => { throw new Error('private importer detail'); }
