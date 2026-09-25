@@ -118,7 +118,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const completionField = selectField('Progress', [['all', 'All tracks'], ['completed', 'Completed'], ['uncompleted', 'Not completed'], ['loaded', 'Imported, not completed']]);
   const sortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest track'], ['size-smallest', 'Smallest track']);
-  if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry?.sourcePlays) && entry.sourcePlays >= 0)) sortChoices.push(['plays', 'Most chosen']);
+  if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry?.sourcePlays) && entry.sourcePlays >= 0)) sortChoices.push(['plays', 'Most plays']);
   if (typeof getLocalRating === 'function') sortChoices.push(['my-rating', 'My ratings']);
   const sortField = selectField('Sort', sortChoices);
   const curatedLabel = make('label', 'sq-extra-check');

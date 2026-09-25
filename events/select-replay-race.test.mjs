@@ -21,6 +21,7 @@ function harness() {
   let activeSession = session;
   let accountId = 'viewer';
   let ticks = 0;
+  let prepares = 0;
   const reads = new Map();
   const messages = [];
   let displayRows = [];
@@ -45,13 +46,14 @@ function harness() {
     syncNativeBoard() {},
     tick: () => { ticks++; },
     preparePublishedEventGhost: async ({ row, entry }) => {
+      prepares++;
       if (row.accountId !== entry.accountId || row.timeMs !== entry.timeMs || row.replayHash !== entry.replayHash) {
         throw Error('Published replay hash does not match standings.');
       }
       return { nickname: entry.name, racerId: entry.accountId };
     }
   });
-  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,selectEventRange,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
+  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,selectEventRange,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
   return {
     ...api,
     bridge,
@@ -62,7 +64,8 @@ function harness() {
     setSession: value => { activeSession = value; },
     setRows: value => { displayRows = value; },
     showNativeBoard: () => { context.nativeView = { periodId: 'period', page: 0, signature: '' }; },
-    ticks: () => ticks
+    ticks: () => ticks,
+    prepares: () => prepares
   };
 }
 
@@ -215,5 +218,16 @@ test('clicking the same event replay again unselects it without another download
  await h.selectReplay(period,row);
  assert.equal(h.selected(),null);
  assert.match(h.messages.at(-1),/unselected/);
- assert.equal(h.ticks(),2);
+  assert.equal(h.ticks(),2);
+});
+
+test('reselecting a validated event replay does not parse it again',async()=>{
+ const h=harness(),row=racer('racer',1400,'Racer');
+ const first=h.selectReplay(period,row);
+ h.reads.get('racer').resolve(payload(row));
+ await first;
+ await h.selectReplay(period,row);
+ await h.selectReplay(period,row);
+ assert.equal(h.prepares(),1);
+ assert.equal(h.selected().ghost.racerId,'racer');
 });

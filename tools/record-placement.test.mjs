@@ -407,6 +407,39 @@ test('DOM renderer does not badge No record or a stale displayed PB time', () =>
   api.destroy();
 });
 
+test('a new local PB can show a clearly estimated loaded-field place until publication', () => {
+  const classes = new Set();
+  const record = {
+    child: null,
+    textContent: '0:00.900',
+    classList: { add: value => classes.add(value), remove: value => classes.delete(value) },
+    querySelector: () => record.child,
+    appendChild(node) { this.child = node; node.parentElement = this; }
+  };
+  const title = { textContent: 'Track A', closest: () => ({ querySelector: () => record }) };
+  const styles = new Map();
+  const document = {
+    head: { appendChild: node => styles.set(node.id, node) },
+    getElementById: id => styles.get(id) || null,
+    createElement: () => ({ dataset: {}, setAttribute(name, value) { this[name] = value; }, remove() { if (this.parentElement) this.parentElement.child = null; } }),
+    querySelectorAll: selector => selector === '.track-title p' ? [title] : selector === '[data-record-placement]' && record.child ? [record.child] : []
+  };
+  const snapshots = { [TRACK]: snapshot([row('me', 1000), row('other', 1100)], 4) };
+  const api = installRecordPlacement({
+    autoUpdate: false,
+    document,
+    tracks: [{ id: TRACK, name: 'Track A' }],
+    expectedAlgorithmVersion: 'rank-v1',
+    estimatePlacement: (trackId, timeMs, accountId) => ({ trackId, timeMs, accountId, rank: 1, fieldSize: 2, revision: 4, estimated: true, label: '~1/2' })
+  });
+  api.update({ accountId: 'me', snapshots, policy: 'all' });
+  assert.equal(record.child?.textContent, '~1/2');
+  assert.match(record.child?.title || '', /Estimated/);
+  api.update({ accountId: 'me', snapshots, policy: 'verified' });
+  assert.equal(record.child, null);
+  api.destroy();
+});
+
 test('native official and community cards badge cached and Overall placements without idle class churn', () => {
   function nativeCard(name, recordText) {
     const classes = new Set();

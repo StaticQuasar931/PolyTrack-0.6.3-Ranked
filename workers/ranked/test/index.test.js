@@ -19,24 +19,31 @@ test('solo tracks have zero weight and populated official tracks gain weight', (
 
 test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.deepEqual(sanitizeProfileCosmetics({ theme: 'script', stage: 'night', stripe: 'cyan', badge: 'admin' }), {
-    version: 4, theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'night', stageTint: 'natural', stripe: 'cyan', emblem: 'none', title: 'auto', badge: 'auto', favoriteTrackId: '', overridePodium: false
+    version: 5, theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'night', stageTint: 'natural', stripe: 'cyan', emblem: 'none', title: 'auto', badge: 'auto', favoriteTrackId: '', overridePodium: false
   });
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ocean', stage: 'aqua', stripe: 'cyan', badge: 'auto' }, { raceCount: 0 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'slate', stripe: 'apex', badge: 'auto' }, { raceCount: 0 }), true);
-  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 3 }), true);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 3 }), false);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 5 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none' }, { raceCount: 7 }), false);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none', overridePodium: true }, { raceCount: 8 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, false), false);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, true), true);
   assert.equal(profileCosmeticsUnlocked({version:4,emblem:'target'},{raceCount:100}),false);
   assert.equal(profileCosmeticsUnlocked({version:4,emblem:'target'},{cosmeticUnlocks:['emblem:target']}),true);
-  const fullDesign={version:4,theme:'forest',accent:'violet',finish:'carbon',plate:'bar',edge:'dashed',stage:'storm',stageTint:'pink',stripe:'circuit',emblem:'flame',title:'trackGrinder',badge:'none',favoriteTrackId:TRACK,overridePodium:false};
+  const fullDesign={version:5,theme:'forest',accent:'violet',finish:'carbon',plate:'bar',edge:'dashed',stage:'storm',stageTint:'pink',stripe:'circuit',emblem:'flame',title:'trackGrinder',badge:'none',favoriteTrackId:TRACK,overridePodium:false};
   assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:7}),false);
-  assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:8}),true);
+  assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:8}),false);
+  assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:12}),true);
   assert.equal(sanitizeProfileCosmetics({...fullDesign,favoriteTrackId:CUSTOM_TRACK}).favoriteTrackId,'');
-  assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar',edge:'accent'},{raceCount:8}),true);
+  assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar',edge:'accent',stage:'night'},{raceCount:8}),true);
   assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar'},{raceCount:3}),false);
   assert.equal(sanitizeProfileCosmetics({plate:'admin',edge:'</style>'}).plate,'block');
+  assert.equal(profileCosmeticsUnlocked({emblem2:'star',nameFont:'racing'},{raceCount:4}),false);
+  assert.equal(profileCosmeticsUnlocked({emblem2:'star',nameFont:'racing'},{raceCount:5}),true);
+  assert.equal(profileCosmeticsUnlocked({emblem2:'flag',nameFont:'serif'},{raceCount:12}),true);
+  assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:20,pbCount:9}),false);
+  assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:3,pbCount:10}),true);
 });
 
 test('unchanged track signatures are rewritten when schema or algorithm is obsolete', () => {
@@ -58,10 +65,10 @@ test('track types use the exact registry instead of treating every hash as commu
   assert.ok(community.finalWeight > custom.finalWeight);
 });
 
-test('every catalog track has a pinned reduced-RP native ID', () => {
+test('every ranked catalog track has a pinned reduced-RP native ID', () => {
   const catalog=JSON.parse(readFileSync(new URL('../../../extra-tracks/catalog.json',import.meta.url),'utf8'));
-  const ids=catalog.map(row=>row.trackId);
-  assert.equal(new Set(ids).size,catalog.length);
+  const ids=catalog.filter(row=>row.ranked!==false).map(row=>row.trackId);
+  assert.equal(new Set(ids).size,ids.length);
   assert.deepEqual(new Set(ids),EXTRA_TRACK_IDS);
   for(const id of ids){
     const parts=trackWeightParts(id,500,1.15);

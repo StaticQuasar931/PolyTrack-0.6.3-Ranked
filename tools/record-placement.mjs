@@ -391,6 +391,7 @@ function ensureStyle(document) {
 [${BADGE_ATTRIBUTE}].gold{background:#8a6818;color:#fff2a4;border-color:#ffe27a}
 [${BADGE_ATTRIBUTE}].silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
 [${BADGE_ATTRIBUTE}].bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
+[${BADGE_ATTRIBUTE}].estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
 `;
   document.head.appendChild(style);
   return true;
@@ -413,7 +414,7 @@ function removeClass(node, className) {
   node.classList.remove(className);
 }
 
-function renderDom(document, tracks, placements, options) {
+function renderDom(document, tracks, placements, options, state) {
   if (!document?.querySelectorAll) return;
   const byName = new Map(tracks.filter(track => track.id && track.name).map(track => [String(track.name).trim().toLowerCase(), track.id]));
   const titles = document.querySelectorAll(options.titleSelector || '.track-title p');
@@ -426,17 +427,20 @@ function renderDom(document, tracks, placements, options) {
       ? options.findRecordElement(title, trackId)
       : title.closest?.('button')?.querySelector?.('.record,.personal-best');
     if (!record) continue;
-    const placement = placements.get(trackId);
+    let placement = placements.get(trackId);
     let badge = record.querySelector?.(`[${BADGE_ATTRIBUTE}]`) || null;
     const displayedTime = options.readDisplayedTime
       ? options.readDisplayedTime(record, trackId)
       : parseDisplayedRecordTime(displayedRecordText(record));
+    if (Number.isSafeInteger(Number(displayedTime)) && Number(displayedTime) > 0 && (!placement || Number(displayedTime) !== placement.timeMs) && state?.settings?.policy !== 'verified') {
+      placement = options.estimatePlacement?.(trackId, Number(displayedTime), state.accountId) || null;
+    }
     if (!placement || !Number.isSafeInteger(Number(displayedTime)) || Number(displayedTime) !== placement.timeMs) {
       badge?.remove();
       removeClass(record, HOST_CLASS);
       continue;
     }
-    const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}`;
+    const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}|${Number(placement.estimated)}`;
     if (badge?.dataset?.signature === signature) {
       retained.add(badge);
       continue;
@@ -447,10 +451,10 @@ function renderDom(document, tracks, placements, options) {
       record.appendChild(badge);
     }
     badge.dataset.signature = signature;
-    const className = `sq-record-placement ${placement.podium}`;
+    const className = `sq-record-placement ${placement.estimated?'estimated':placement.podium}`;
     if (badge.className !== className) badge.className = className;
     badge.textContent = placement.label;
-    badge.title = `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
+    badge.title = placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
     badge.setAttribute('aria-label', badge.title);
     addClass(record, HOST_CLASS);
     retained.add(badge);
@@ -487,7 +491,7 @@ export function installRecordPlacement(options = {}) {
 
   function render(placements, state) {
     if (options.render) options.render(placements, state);
-    else renderDom(document, state.tracks, placements, options);
+    else renderDom(document, state.tracks, placements, options, state);
   }
 
   function update(input = {}) {

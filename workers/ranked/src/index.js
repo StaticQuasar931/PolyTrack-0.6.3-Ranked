@@ -13,8 +13,8 @@ const TRACK_SCHEMA_VERSION = 6;
 const AVERAGE_PLACEMENT_VERSION = 2;
 const DERIVED_METRICS_VERSION = 3;
 const INTEGRITY_STATE_VERSION = 1;
-const PROFILE_COSMETICS_VERSION = 4;
-const COSMETIC_ENTITLEMENT_VERSION = 3;
+const PROFILE_COSMETICS_VERSION = 5;
+const COSMETIC_ENTITLEMENT_VERSION = 4;
 const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
@@ -51,13 +51,17 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono']),
   stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive']),
   emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
+  emblem2: new Set(['none', 'star', 'bolt', 'flag']),
+  nameFont: new Set(['classic', 'clean', 'racing', 'serif']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
   badge: new Set(['auto', 'member', 'none', 'betaTester'])
 });
 
 export function sanitizeProfileCosmetics(value) {
   const source = value && typeof value === 'object' ? value : {};
-  const legacy = Number(source.version || 0) < PROFILE_COSMETICS_VERSION;
+  const legacy = Number(source.version || 0) < 2;
+  const emblem2 = PROFILE_COSMETIC_OPTIONS.emblem2.has(source.emblem2) ? source.emblem2 : 'none';
+  const nameFont = PROFILE_COSMETIC_OPTIONS.nameFont.has(source.nameFont) ? source.nameFont : 'classic';
   return {
     version: PROFILE_COSMETICS_VERSION,
     theme: PROFILE_COSMETIC_OPTIONS.theme.has(source.theme) ? source.theme : 'classic',
@@ -69,6 +73,8 @@ export function sanitizeProfileCosmetics(value) {
     stageTint: PROFILE_COSMETIC_OPTIONS.stageTint.has(source.stageTint) ? source.stageTint : 'natural',
     stripe: PROFILE_COSMETIC_OPTIONS.stripe.has(source.stripe) ? source.stripe : 'standard',
     emblem: PROFILE_COSMETIC_OPTIONS.emblem.has(source.emblem) ? source.emblem : 'none',
+    ...(emblem2 === 'none' ? {} : { emblem2 }),
+    ...(nameFont === 'classic' ? {} : { nameFont }),
     title: PROFILE_COSMETIC_OPTIONS.title.has(source.title) ? source.title : 'auto',
     badge: legacy ? 'auto' : (PROFILE_COSMETIC_OPTIONS.badge.has(source.badge) ? source.badge : 'auto'),
     favoriteTrackId: OFFICIAL_IDS.has(safeText(source.favoriteTrackId, 80)) || COMMUNITY_IDS.has(safeText(source.favoriteTrackId, 80)) || LEGACY_COMMUNITY_IDS.has(safeText(source.favoriteTrackId, 80)) ? safeText(source.favoriteTrackId, 80) : '',
@@ -91,11 +97,17 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
     stageTint: new Set(['natural', 'blue', 'teal']),
     stripe: new Set(['standard', 'cyan', 'apex']),
     emblem: new Set(['none', 'bolt', 'star', 'diamond']),
+    emblem2: new Set(['none']),
+    nameFont: new Set(['classic', 'clean']),
     title: new Set(['auto', 'none']),
     badge: new Set(['auto', 'member', 'none'])
   };
-  if (tracks >= 3) { allowed.theme.add('sunset'); allowed.theme.add('neon'); allowed.accent.add('coral'); allowed.accent.add('pink'); allowed.finish.add('gloss'); allowed.plate.add('notch'); allowed.edge.add('double'); allowed.stage.add('grid'); allowed.stage.add('horizon'); allowed.stage.add('dunes'); allowed.stageTint.add('gold'); allowed.stageTint.add('red'); allowed.stripe.add('sunset'); allowed.stripe.add('chevron'); allowed.stripe.add('split'); allowed.emblem.add('flag'); allowed.title.add('contender'); allowed.title.add('pbHunter'); }
-  if (tracks >= 8) { allowed.theme.add('forest'); allowed.theme.add('ember'); allowed.theme.add('crimson'); allowed.accent.add('violet'); allowed.accent.add('ice'); allowed.finish.add('carbon'); allowed.plate.add('bar'); allowed.edge.add('dashed'); allowed.stage.add('night'); allowed.stage.add('storm'); allowed.stageTint.add('pink'); allowed.stageTint.add('mono'); allowed.stripe.add('grid'); allowed.stripe.add('circuit'); allowed.stripe.add('scan'); allowed.stripe.add('blocks'); allowed.emblem.add('flame'); allowed.emblem.add('twinStars'); allowed.title.add('trackGrinder'); }
+  if (tracks >= 3) { allowed.theme.add('sunset'); allowed.accent.add('coral'); allowed.finish.add('gloss'); allowed.edge.add('double'); allowed.stage.add('grid'); allowed.stageTint.add('gold'); allowed.stripe.add('chevron'); allowed.emblem.add('flag'); allowed.title.add('contender'); }
+  if (tracks >= 5) { allowed.theme.add('neon'); allowed.accent.add('pink'); allowed.plate.add('notch'); allowed.stage.add('horizon'); allowed.stage.add('dunes'); allowed.stageTint.add('red'); allowed.stripe.add('sunset'); allowed.stripe.add('split'); allowed.emblem2.add('star'); allowed.nameFont.add('racing'); }
+  if (tracks >= 8) { allowed.theme.add('forest'); allowed.accent.add('violet'); allowed.finish.add('carbon'); allowed.plate.add('bar'); allowed.edge.add('dashed'); allowed.stage.add('night'); allowed.stageTint.add('pink'); allowed.stripe.add('grid'); allowed.stripe.add('circuit'); allowed.emblem.add('flame'); allowed.emblem.add('twinStars'); allowed.emblem2.add('bolt'); allowed.title.add('trackGrinder'); }
+  if (tracks >= 12) { allowed.theme.add('ember'); allowed.accent.add('ice'); allowed.stage.add('storm'); allowed.stageTint.add('mono'); allowed.stripe.add('scan'); allowed.emblem2.add('flag'); allowed.nameFont.add('serif'); }
+  if (tracks >= 16) { allowed.theme.add('crimson'); allowed.stripe.add('blocks'); }
+  if (Number(entry.pbCount||0) >= 10) allowed.title.add('pbHunter');
   if (podium) { allowed.theme.add('podium'); allowed.finish.add('horizon'); allowed.stage.add('podium'); allowed.stripe.add('gold'); allowed.emblem.add('crown'); allowed.title.add('podiumRegular'); }
   if (betaTester) { allowed.theme.add('beta'); allowed.stripe.add('beta'); allowed.badge.add('betaTester'); allowed.title.add('betaRacer'); }
   const serverUnlocks = new Set(Array.isArray(entry.cosmeticUnlocks) ? entry.cosmeticUnlocks : []);
@@ -104,7 +116,7 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
     const [kind, id] = stage.cosmeticId.split(':');
     if (allowed[kind] && PROFILE_COSMETIC_OPTIONS[kind]?.has(id)) allowed[kind].add(id);
   }
-  return allowed.theme.has(value.theme) && allowed.accent.has(value.accent) && allowed.finish.has(value.finish) && allowed.plate.has(value.plate) && allowed.edge.has(value.edge) && allowed.stage.has(value.stage) && allowed.stageTint.has(value.stageTint) && allowed.stripe.has(value.stripe) && allowed.emblem.has(value.emblem) && allowed.title.has(value.title) && allowed.badge.has(value.badge);
+  return allowed.theme.has(value.theme) && allowed.accent.has(value.accent) && allowed.finish.has(value.finish) && allowed.plate.has(value.plate) && allowed.edge.has(value.edge) && allowed.stage.has(value.stage) && allowed.stageTint.has(value.stageTint) && allowed.stripe.has(value.stripe) && allowed.emblem.has(value.emblem) && allowed.emblem2.has(value.emblem2||'none') && allowed.nameFont.has(value.nameFont||'classic') && allowed.title.has(value.title) && allowed.badge.has(value.badge);
 }
 function cosmeticEntitlement(entry={},beta=false){
   const defaults=sanitizeProfileCosmetics({});

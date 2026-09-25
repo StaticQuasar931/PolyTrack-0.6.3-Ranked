@@ -279,7 +279,7 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null;
-  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),replayCache=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
+  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
   const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function validCachedCarStyle(style){
     if(validatedCarStyles.has(style))return validatedCarStyles.get(style);
@@ -332,20 +332,22 @@ export function installEvents(bridge){
     const session=sessions.current(),viewer=bridge.accountId();if(!session||session.periodId!==period.id||typeof bridge.readReplay!=='function')return;
     const previous=selectedGhosts.get(row.accountId);
     if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
-      ++replayRequest;selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');if(nativeView)nativeView.signature='';tick();}return false;
+      ++replayRequest;selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
     }
     const token=++replayRequest;if(!silent)message('Loading event replay...');
     try{
       const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
       let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId,row.pending?row.runId:null);
       if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
-      const ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});
+      const ghostKey=key+'_'+viewer;
+      let ghost=preparedGhosts.get(ghostKey);
+      if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>8)preparedGhosts.delete(preparedGhosts.keys().next().value);}
       if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
       if(replayCache.size>=8)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
       selectedGhost={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
       selectedGhosts.set(row.accountId,selectedGhost);
-      if(!silent){message('Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');if(nativeView)nativeView.signature='';tick();}
+      if(!silent){message('Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');tick();}
       return true;
     }catch(error){if(!silent&&token===replayRequest&&sessions.current()===session&&bridge.accountId()===viewer)message(error.message||'Event replay unavailable.');return false;}
   }
@@ -353,7 +355,7 @@ export function installEvents(bridge){
     ++topSelectionToken;++replayRequest;
     for(const [id,row] of selectedGhosts)if(row.periodId===periodId&&row.accountId===accountId)selectedGhosts.delete(id);
     selectedGhost=[...selectedGhosts.values()].at(-1)||null;
-    if(nativeView)nativeView.signature='';tick();
+    tick();
   }
   async function selectEventRows(first,last,fromTop=false){
     const view=nativeView,session=sessions.current(),accountId=bridge.accountId();
@@ -375,7 +377,7 @@ export function installEvents(bridge){
     }
     if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
     message(chosen.length?`${ready} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. Play to race them.`:'No playable replays in these places.');
-    if(nativeView)nativeView.signature='';tick();
+    tick();
   }
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
   function selectEventRange(first,last){return selectEventRows(first,last,false);}
@@ -485,7 +487,7 @@ export function installEvents(bridge){
       board.querySelector('.back').onclick=()=>{const back=original.querySelector('button.back');entryRequest++;sessions.leave();eventIntent=null;tick();back?.click();};
       board.querySelector('.sq-event-refresh').onclick=async()=>{
         const button=board.querySelector('.sq-event-refresh');button.disabled=true;
-        carImages.clear();profilesAt=0;
+        profilesAt=0;
         try{await snapshot(period,true);const receipt=await bridge.readOwnStatus?.(period.id,accountId).catch(()=>null);if(nativeView!==view||bridge.accountId()!==accountId||sessions.current()!==session)return;ownReceipts.set(period.id+'_'+accountId,receipt);view.signature='';syncNativeBoard(session);}
         catch{if(nativeView===view)message('Event standings could not refresh. Your saved event PB is unchanged.');}
         finally{button.disabled=false;}
@@ -502,13 +504,25 @@ export function installEvents(bridge){
     const placement=eventPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     const styles=rows.map(row=>cachedCarStyle(row,period));
-    const signature=JSON.stringify([rows,styles,typeof window.BT,view.page,board?.saved,statusDescription,placement,[...selectedGhosts.values()].map(row=>[row.targetAccountId,row.targetTimeMs,row.targetRunId,row.targetPending])]);if(signature===view.signature)return;view.signature=signature;
+    const signature=JSON.stringify([rows,styles,typeof window.BT,view.page,board?.saved,placement]);
+    if(signature===view.signature){
+      for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
+        const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
+        const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===Number(button.dataset.eventTime)&&selectedRow.targetRunId===(button.dataset.eventRunId||null)&&selectedRow.targetPending===(button.dataset.eventPending==='true');
+        button.classList.toggle('selected',selected);
+        if(button.getAttribute('aria-pressed')!==String(selected))button.setAttribute('aria-pressed',String(selected));
+      }
+      const status=view.board.querySelector('.sq-event-inline-status');
+      if(status&&status.textContent!==statusDescription)status.textContent=statusDescription;
+      return;
+    }
+    view.signature=signature;
     view.board.querySelector('h3').textContent=eventName(period.kind)+' event';
     view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(board?.saved?' - saved standings':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     const container=view.board.querySelector('.container');container.replaceChildren();
-    for(const row of rows.slice(view.page*20,view.page*20+20)){
-      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>{++topSelectionToken;void selectReplay(period,row);};
+    for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
+      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>{++topSelectionToken;void selectReplay(period,row);};
       const selectedRow=selectedGhosts.get(row.accountId);const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===row.timeMs&&selectedRow.targetRunId===(row.runId||null)&&selectedRow.targetPending===!!row.pending;
       button.classList.toggle('selected',!!selected);button.setAttribute('aria-pressed',String(!!selected));
       button.title=row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
@@ -517,7 +531,7 @@ export function installEvents(bridge){
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
       const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.rp)||0)+' Event RP';
       const icon=button.querySelector('.checkmark');icon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';icon.alt=row.pending?'Unverified recording':'Verified replay';container.append(button);
-      renderCachedCar(button,styles[rows.indexOf(row)]);
+      renderCachedCar(button,styles[view.page*20+index]);
     }
     if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent='No event times yet. Play to set your event PB.';container.append(empty);}
     const status=document.createElement('p');status.className='sq-event-inline-status';status.setAttribute('role','status');status.textContent=statusDescription;container.append(status);

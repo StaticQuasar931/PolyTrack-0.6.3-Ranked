@@ -171,6 +171,8 @@ test('sort, callbacks and attribution use the original entry and safe links', as
   const { root, api } = fixture([dangerous, popular], { onPlay: async item => { played.push(item); } });
   api.open();
   const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  assert.match(sort.textContent, /Most plays/);
+  assert.doesNotMatch(sort.textContent, /Most chosen/);
   sort.value = 'plays'; sort.dispatch('change');
   assert.match(cls(root, 'sq-extra-card')[0].textContent, /Track 02/);
   assert.equal(cls(root, 'sq-extra-visual')[0].children.filter(node => node.tagName === 'IMG').length, 1);
@@ -293,6 +295,10 @@ test('Escape closes menu and CSS defines narrow responsive layout', () => {
   assert.match(css, /@media\(max-width:850px\)/);
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.sq-extra-overlay\[hidden\]\{display:none!important\}/);
+  assert.match(css, /\.sq-extra-visual img\{[^}]*object-fit:contain/);
+  assert.match(css, /\.sq-extra-visual img\{[^}]*width:100%;height:100%;max-width:100%/);
+  assert.match(css, /\.sq-extra-grid\{[^}]*gap:12px/);
+  assert.match(css, /\.sq-extra-card\{[^}]*linear-gradient/);
   const image = cls(root, 'sq-extra-visual')[0].children.find(node => node.tagName === 'IMG');
   assert.equal(image.loading, 'lazy');
   assert.equal(image.decoding, 'async');
