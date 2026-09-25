@@ -49,6 +49,7 @@ export async function packPlannerResults(entries, snapshot, {boardCount = 0, boa
   const resultTracks = [...tracks].sort();
   const trackIndex = new Map(resultTracks.map((id, i) => [id, i]));
   const payload = {resultTracks, entries: entries.map(entry => ({userId: entry.userId,
+    ...(Number.isSafeInteger(entry.extraCount) && entry.extraCount > 0 ? {extraCount: entry.extraCount} : {}),
     resultData: JSON.stringify(entry.resultSamples.map(sample => [trackIndex.get(sample.trackId),
       sample.rank, sample.fieldSize, sample.weight, sample.competition, sample.timeMs, sample.pbAt])
       .sort((a, b) => a[0] - b[0]))}))};

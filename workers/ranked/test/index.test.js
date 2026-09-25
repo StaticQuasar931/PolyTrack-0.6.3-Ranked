@@ -21,12 +21,25 @@ test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.deepEqual(sanitizeProfileCosmetics({ theme: 'script', stage: 'night', stripe: 'cyan', badge: 'admin' }), {
     version: 7, theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'night', stageTint: 'natural', stripe: 'cyan', emblem: 'none', title: 'auto', badge: 'auto', favoriteTrackId: '', overridePodium: false
   });
-  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ocean', stage: 'aqua', stripe: 'cyan', badge: 'auto' }, { raceCount: 0 }), true);
-  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'slate', stripe: 'apex', badge: 'auto' }, { raceCount: 0 }), true);
-  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 3 }), false);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ocean', stage: 'slate', stripe: 'cyan', badge: 'auto' }, { raceCount: 0 }), false);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ocean', stage: 'slate', stripe: 'cyan', badge: 'auto' }, { raceCount: 1 }), true);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'slate', stripe: 'apex', badge: 'auto' }, { raceCount: 0 }), false);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'aqua', stripe: 'apex', badge: 'auto' }, { raceCount: 2 }), false);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'aqua', stripe: 'apex', badge: 'auto' }, { raceCount: 3 }), true);
+  const freeChoices = [
+    ['theme', 'classic'], ['theme', 'cyan'], ['accent', 'cyan'], ['accent', 'white'],
+    ['finish', 'gradient'], ['finish', 'solid'], ['plate', 'block'], ['plate', 'outline'], ['edge', 'accent'], ['edge', 'none'],
+    ['stage', 'garage'], ['stage', 'slate'], ['stageTint', 'natural'], ['stageTint', 'blue'], ['stripe', 'standard'], ['stripe', 'cyan'],
+    ['emblem', 'none'], ['emblem', 'bolt'], ['emblem2', 'none'], ['emblem3', 'none'], ['emblemBackdrop', 'none'], ['stageEffect', 'none'],
+    ['nameFont', 'classic'], ['nameSize', 'normal'], ['nameWeight', 'regular'], ['nameColor', 'default'], ['baseSecondary', 'auto'],
+    ['title', 'auto'], ['badge', 'auto'], ['badge', 'none']
+  ];
+  assert.equal(freeChoices.length, 30);
+  for (const [kind, id] of freeChoices) assert.equal(profileCosmeticsUnlocked({[kind]:id}, {raceCount:0}), true, `${kind}:${id}`);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 4 }), false);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'neon', stage: 'dunes', stripe: 'split', badge: 'auto' }, { raceCount: 5 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none' }, { raceCount: 7 }), false);
-  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none', overridePodium: true }, { raceCount: 8 }), true);
+  assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'forest', stage: 'night', stripe: 'circuit', badge: 'none', overridePodium: true }, { raceCount: 8, extraCount: 1 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, false), false);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'beta', stage: 'garage', stripe: 'beta', badge: 'betaTester' }, { raceCount: 1 }, true), true);
   assert.equal(profileCosmeticsUnlocked({version:4,emblem:'target'},{raceCount:100}),false);
@@ -34,9 +47,9 @@ test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   const fullDesign={version:5,theme:'forest',accent:'violet',finish:'carbon',plate:'bar',edge:'dashed',stage:'storm',stageTint:'pink',stripe:'circuit',emblem:'flame',title:'trackGrinder',badge:'none',favoriteTrackId:TRACK,overridePodium:false};
   assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:7}),false);
   assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:8}),false);
-  assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:12}),true);
+  assert.equal(profileCosmeticsUnlocked(fullDesign,{raceCount:12,extraCount:1}),true);
   assert.equal(sanitizeProfileCosmetics({...fullDesign,favoriteTrackId:CUSTOM_TRACK}).favoriteTrackId,'');
-  assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar',edge:'accent',stage:'night'},{raceCount:8}),true);
+  assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar',edge:'accent',stage:'night'},{raceCount:8,extraCount:1}),true);
   assert.equal(profileCosmeticsUnlocked({...fullDesign,plate:'bar'},{raceCount:3}),false);
   assert.equal(sanitizeProfileCosmetics({plate:'admin',edge:'</style>'}).plate,'block');
   assert.equal(profileCosmeticsUnlocked({emblem2:'star',nameFont:'racing'},{raceCount:4}),false);
@@ -44,6 +57,28 @@ test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.equal(profileCosmeticsUnlocked({emblem2:'flag',nameFont:'serif'},{raceCount:12}),true);
   assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:20,pbCount:9}),false);
   assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:3,pbCount:10}),true);
+  assert.equal(profileCosmeticsUnlocked({theme:'mono'},{totalPlaytimeMs:60*60*1000-1}),false);
+  assert.equal(profileCosmeticsUnlocked({theme:'mono'},{totalPlaytimeMs:60*60*1000}),true);
+  for (const nameFont of ['mono', 'rounded']) assert.equal(sanitizeProfileCosmetics({nameFont}).nameFont, nameFont);
+  for (const nameColor of ['lime', 'ice', 'rose']) assert.equal(sanitizeProfileCosmetics({nameColor}).nameColor, nameColor);
+  assert.equal(profileCosmeticsUnlocked({nameFont:'mono',nameColor:'lime'},{totalPlaytimeMs:60*60*1000-1}),false);
+  assert.equal(profileCosmeticsUnlocked({nameFont:'mono',nameColor:'lime'},{totalPlaytimeMs:60*60*1000}),true);
+  assert.equal(profileCosmeticsUnlocked({nameFont:'rounded',nameColor:'ice'},{totalPlaytimeMs:5*60*60*1000-1}),false);
+  assert.equal(profileCosmeticsUnlocked({nameFont:'rounded',nameColor:'ice'},{totalPlaytimeMs:5*60*60*1000}),true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'rose'},{extraCount:2}),false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'rose'},{extraCount:3}),true);
+  assert.equal(profileCosmeticsUnlocked({finish:'carbon'},{totalPlaytimeMs:5*60*60*1000,raceCount:7}),false);
+  assert.equal(profileCosmeticsUnlocked({finish:'carbon'},{raceCount:8}),true);
+  assert.equal(profileCosmeticsUnlocked({finish:'split'},{raceCount:0}),false);
+  assert.equal(profileCosmeticsUnlocked({finish:'split'},{raceCount:2}),false);
+  assert.equal(profileCosmeticsUnlocked({finish:'split'},{raceCount:3}),true);
+  assert.equal(profileCosmeticsUnlocked({accent:'orange'},{raceCount:20}),false);
+  assert.equal(profileCosmeticsUnlocked({accent:'orange'},{extraCount:1}),true);
+  assert.equal(profileCosmeticsUnlocked({stage:'storm'},{extraCount:0}),false);
+  assert.equal(profileCosmeticsUnlocked({stage:'storm'},{extraCount:1}),true);
+  assert.equal(profileCosmeticsUnlocked({stage:'aurora'},{extraCount:2}),false);
+  assert.equal(profileCosmeticsUnlocked({stage:'aurora'},{extraCount:3}),true);
+  assert.equal(profileCosmeticsUnlocked({theme:'mono'},{totalPlaytimeMs:0,playtimeMs:60*60*1000}),false);
 });
 test('bounded studio cosmetics use server allowlists and distinct ranked metrics', () => {
   const defaults = sanitizeProfileCosmetics({});
@@ -63,7 +98,8 @@ test('bounded studio cosmetics use server allowlists and distinct ranked metrics
   assert.equal(profileCosmeticsUnlocked({nameWeight:'bold'}, {raceCount:16}), true);
   assert.equal(profileCosmeticsUnlocked({nameColor:'cyan'}, {raceCount:100,pbCount:9}), false);
   assert.equal(profileCosmeticsUnlocked({nameColor:'cyan'}, {pbCount:10}), true);
-  assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:4}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:2}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:3}), false);
   assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:5}), true);
   assert.equal(profileCosmeticsUnlocked({nameColor:'mint'}, {pbCount:24}), false);
   assert.equal(profileCosmeticsUnlocked({nameColor:'mint'}, {pbCount:25}), true);
@@ -78,7 +114,8 @@ test('bounded studio cosmetics use server allowlists and distinct ranked metrics
   assert.equal(profileCosmeticsUnlocked({stageEffect:'spark'}, {raceCount:12}), true);
   assert.equal(profileCosmeticsUnlocked({stageEffect:'halos'}, {raceCount:15}), false);
   assert.equal(profileCosmeticsUnlocked({stageEffect:'halos'}, {raceCount:16}), true);
-  assert.equal(profileCosmeticsUnlocked({stage:'aurora',stageTint:'violet'}, {raceCount:16}), true);
+  assert.equal(profileCosmeticsUnlocked({stage:'aurora',stageTint:'violet'}, {raceCount:16}), false);
+  assert.equal(profileCosmeticsUnlocked({stage:'aurora',stageTint:'violet'}, {raceCount:16,extraCount:3}), true);
   assert.equal(profileCosmeticsUnlocked({nameColor:'violet'}, {cosmeticUnlocks:['nameColor:violet']}), false);
   assert.equal(profileCosmeticsUnlocked({baseSecondary:'cyan'}, {pbCount:9}), false);
   assert.equal(profileCosmeticsUnlocked({baseSecondary:'cyan'}, {pbCount:10}), true);
@@ -128,6 +165,7 @@ test('Extra contribution caps at one fifth of the strongest verified normal trac
   assert.ok(leader);
   const normalFinish=leader.resultSamples.find(row=>row.trackId===TRACK);
   const extraFinish=leader.resultSamples.find(row=>row.trackId===extraId);
+  assert.equal(leader.extraCount, 1);
   assert.ok(extraFinish.weight<=normalFinish.weight/5+0.0001);
   assert.ok(extraFinish.weight>0.06);
 });
@@ -346,7 +384,7 @@ test('cosmetic saves update the public overall snapshot before background propag
       if(path.includes('s1_leaderboards_overall'))return {updateTime:'2026-09-05T00:00:00Z',fields:{
         revision:{integerValue:'7'},
         entries:{arrayValue:{values:[{mapValue:{fields:{
-          userId:{stringValue:accountId},raceCount:{integerValue:'8'},rank:{integerValue:'4'}
+          userId:{stringValue:accountId},raceCount:{integerValue:'8'},extraCount:{integerValue:'1'},rank:{integerValue:'4'}
         }}}]}}
       }};
       return null;
@@ -765,8 +803,10 @@ test('a caller boolean alone cannot promote a run but a bound server verdict can
 test('first reconciliation creation cannot overwrite a concurrent verifier wake-up',async()=>{let guarded=false;await assert.rejects(reconcileCanonicalChanges({__TEST_FIRESTORE:async(path,init={})=>{if(path===':runQuery')return [];if(path===':commit'){const w=JSON.parse(init.body).writes[0];guarded=w.currentDocument.exists===false;throw Error('FIRESTORE_409');}return null;}}),/409/);assert.equal(guarded,true);});
 
 
-test('diamond is free and twin stars require eight Ranked tracks',()=>{
- assert.equal(profileCosmeticsUnlocked({version:4,emblem:'diamond'},{raceCount:0}),true);
+test('emblems unlock at the first race milestone and twin stars require eight Ranked tracks',()=>{
+ assert.equal(profileCosmeticsUnlocked({version:4,emblem:'diamond'},{raceCount:0}),false);
+  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'diamond'},{raceCount:2}),false);
+  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'diamond'},{raceCount:3}),true);
  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'twinStars'},{raceCount:7}),false);
  assert.equal(profileCosmeticsUnlocked({version:4,emblem:'twinStars'},{raceCount:8}),true);
  assert.equal(sanitizeProfileCosmetics({version:4,emblem:'twinStars'}).emblem,'twinStars');
@@ -1116,12 +1156,14 @@ test('planner packs all finishes losslessly without changing rankings or persist
   const stripped = full.map(({resultSamples, ...entry}) => entry);
   assert.deepEqual(stripped, computeOverall(boards, old));
   const input = JSON.stringify(full);
-  const packed = await packPlannerResults(full, {entries: stripped}, {boardCount: 3});
+  const packed = await packPlannerResults(full.map(entry => ({...entry, extraCount: entry.userId === 'racer' ? 2 : 0})), {entries: stripped}, {boardCount: 3});
   assert.equal(packed.resultBundleVersion, 1);
   assert.equal(packed.resultBundleStatus, 'complete');
   assert.equal(packed.resultBundleComplete, true);
   const decoded = await unpackPlanner(packed);
   assert.deepEqual(decoded.resultTracks, [TRACK, COMMUNITY_TRACK, CUSTOM_TRACK].sort());
+  assert.equal(decoded.entries.find(entry => entry.userId === 'racer').extraCount, 2);
+  assert.equal(decoded.entries.find(entry => entry.userId === 'other').extraCount, undefined);
   for (const row of decoded.entries) {
     const expected = full.find(e => e.userId === row.userId).resultSamples;
     const tuples = JSON.parse(row.resultData);
@@ -1138,7 +1180,8 @@ test('planner packs all finishes losslessly without changing rankings or persist
   const stored = f.snapshot();
   assert.equal(stored.resultBundleVersion.integerValue, '1');
   assert.ok(stored.entries.arrayValue.values.every(e => !e.mapValue.fields.resultSamples && !e.mapValue.fields.resultData));
-  assert.deepEqual(await unpackPlanner({resultBundle: stored.resultBundle.stringValue}), decoded);
+  const storedDecoded = await unpackPlanner({resultBundle: stored.resultBundle.stringValue});
+  assert.equal(storedDecoded.entries.find(entry => entry.userId === 'racer').extraCount, undefined);
 });
 
 test('overflow returns a complete sidecar bundle and invalid or unavailable data is explicit', async () => {

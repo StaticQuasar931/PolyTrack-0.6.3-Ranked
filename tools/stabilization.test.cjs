@@ -16,6 +16,21 @@ test('Racer Studio choices and Worker allowlists stay aligned',()=>{
  for(const [kind,options] of Object.entries(client))assert.equal(JSON.stringify(options.map(([id])=>id).sort()),JSON.stringify(Array.from(server[kind]||[]).sort()),kind);
  assert.match(source,/return \{version:7,\.\.\.Object\.fromEntries/);
 });
+test('Racer Studio starts with 30 choices and honors trusted Extra and playtime progress',()=>{
+ const clientBlock=source.match(/  const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\});\r?\n  const profileCosmeticDrafts=/)?.[1];
+ const options=vm.runInNewContext('('+clientBlock+')');
+ assert.equal(Object.values(options).flat().filter(([, ,requirement])=>requirement===0).length,30);
+ const unlocked=run('cosmeticUnlocked');
+ assert.equal(unlocked('extra:1',{extraCount:0}),false);
+ assert.equal(unlocked('extra:1',{extraCount:1}),true);
+ assert.equal(unlocked('playtime:3600000',{totalPlaytimeMs:3599999}),false);
+ assert.equal(unlocked('playtime:3600000',{totalPlaytimeMs:3600000}),true);
+});
+test('Studio shortcuts avoid inputs and Ranked removes full-screen blur',()=>{
+ assert.match(extract('setupRacerStudio'),/studio\.addEventListener\('keydown'/);
+ assert.match(extract('setupRacerStudio'),/e\.target\.closest\('input,textarea,select/);
+ assert.match(source,/#overallLeaderboardPanel\{backdrop-filter:none!important\}/);
+});
 for(const direction of [1,-1])test(`profile unknown results sort last in direction ${direction}`,()=>{
  const ctx={profileSort:'time',profileSortDirection:direction,knownFinishWeight:x=>x.weight,trackInfo:()=>({name:'track'})};
  const result=run('sortProfileFinishes',ctx)([{timeMs:null},{timeMs:2000},{timeMs:1000},{timeMs:undefined}]);
