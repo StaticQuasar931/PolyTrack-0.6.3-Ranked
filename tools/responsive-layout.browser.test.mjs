@@ -54,16 +54,20 @@ test('injected menu footer and Ranked panel fit desktop, phone, and iPad sizes',
   }
 });
 
-test('large track-info panel leaves the lower Back control unobscured', async () => {
+test('track-info panel background reaches the bottom in fullscreen and windowed layouts', async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage({viewport: {width: 2800, height: 1920}});
-    await page.setContent('<style>body{margin:0}.track-info-ui{position:absolute;inset:0;display:flex;height:100%}.track-info-ui>.side-panel{display:flex;flex-direction:column;width:400px;min-height:0;margin-left:50px;background:#192a50}.track-info-ui>.side-panel>.button.play{margin-top:auto;height:100px}.back-control{position:absolute;left:50px;bottom:0;width:180px;height:60px}</style><div class="track-info-ui"><section class="side-panel"><h2>Track info</h2><div class="thumbnail"></div><button class="button play">Play</button></section></div><button class="back-control">Back</button>');
+    await page.setContent('<style>html,body{height:100%;margin:0}.track-info-ui{position:absolute;inset:0;display:flex;height:100%}.track-info-ui>.side-panel{display:flex;flex-direction:column;width:400px;min-height:0;margin-left:50px;background:#192a50}.track-info-ui>.side-panel>.button.play{margin-top:auto;height:100px}</style><div class="track-info-ui"><section class="side-panel"><h2>Track info</h2><div class="thumbnail"></div><button class="button play">Play</button></section></div>');
     await page.addStyleTag({content: css});
-    const panel = await page.locator('.track-info-ui>.side-panel').boundingBox();
-    const back = await page.locator('.back-control').boundingBox();
-    assert.ok(panel && back);
-    assert.ok(panel.y + panel.height <= back.y, 'track info ends above the Back control');
+    for (const [width, height] of [[2800, 1920], [1920, 1080]]) {
+      await page.setViewportSize({width, height});
+      const panel = await page.locator('.track-info-ui>.side-panel').boundingBox();
+      const play = await page.locator('.track-info-ui>.side-panel>.play').boundingBox();
+      assert.ok(panel && play);
+      assert.equal(Math.round(panel.y + panel.height), height, `panel fills ${width}x${height}`);
+      assert.ok(play.y + play.height <= panel.y + panel.height, 'Play stays inside the panel');
+    }
   } finally {
     await browser.close();
   }
