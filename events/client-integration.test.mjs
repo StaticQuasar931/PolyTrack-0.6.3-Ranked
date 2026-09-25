@@ -193,6 +193,17 @@ test('event leaderboard validates each cached car style once across repeated men
  await p.evaluate(()=>{for(let i=0;i<60;i++)ui.tick();});
  assert.deepEqual(await p.evaluate(()=>deserializeCalls),Array.from({length:5},(_,i)=>'menu-style-'+i));
 });
+test('unchanged event opponents do not mutate the native side panel on repeated ticks',async t=>{
+ const p=await fixture(t);await enter(p);await p.locator('.sq-event-opponents').waitFor();
+ const mutations=await p.evaluate(async()=>{
+  const note=document.querySelector('.sq-event-opponents');let changes=0;
+  const observer=new MutationObserver(records=>{changes+=records.length;});
+  observer.observe(note,{childList:true,characterData:true,subtree:true});
+  for(let i=0;i<30;i++)ui.tick();
+  await Promise.resolve();observer.disconnect();return changes;
+ });
+ assert.equal(mutations,0);
+});
 test('event thumbnail rendering runs one job at a time',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>s.startsWith('style-')?{serialize:()=>s}:null}}:prior(n);

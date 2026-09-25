@@ -2,6 +2,20 @@ const fs=require('node:fs');const vm=require('node:vm');const test=require('node
 const source=fs.readFileSync(require('node:path').join(__dirname,'..','polytrack_062_patch.js'),'utf8');
 function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert.ok(start>=0,name);const tail=source.slice(start);const end=tail.indexOf('\n  }');assert.ok(end>0,name);return tail.slice(0,end+4);}
 function run(name,context={}){context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
+test('rounded durations expose exact days, hours and minutes',()=>{
+ assert.equal(run('preciseDurationLabel')(90061000),'1 day, 1 hour, 1 minute');
+ assert.equal(run('preciseDurationLabel')(7200000),'2 hours');
+});
+test('Racer Studio choices and Worker allowlists stay aligned',()=>{
+ const worker=fs.readFileSync(require('node:path').join(__dirname,'..','workers','ranked','src','index.js'),'utf8');
+ const clientBlock=source.match(/  const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\});\r?\n  const profileCosmeticDrafts=/)?.[1];
+ const workerBlock=worker.match(/const PROFILE_COSMETIC_OPTIONS = Object\.freeze\((\{[\s\S]*?\})\);\r?\n\r?\nexport function sanitizeProfileCosmetics/)?.[1];
+ assert.ok(clientBlock);assert.ok(workerBlock);
+ const client=vm.runInNewContext('('+clientBlock+')');
+ const server=vm.runInNewContext('('+workerBlock+')');
+ for(const [kind,options] of Object.entries(client))assert.equal(JSON.stringify(options.map(([id])=>id).sort()),JSON.stringify(Array.from(server[kind]||[]).sort()),kind);
+ assert.match(source,/return \{version:7,\.\.\.Object\.fromEntries/);
+});
 for(const direction of [1,-1])test(`profile unknown results sort last in direction ${direction}`,()=>{
  const ctx={profileSort:'time',profileSortDirection:direction,knownFinishWeight:x=>x.weight,trackInfo:()=>({name:'track'})};
  const result=run('sortProfileFinishes',ctx)([{timeMs:null},{timeMs:2000},{timeMs:1000},{timeMs:undefined}]);

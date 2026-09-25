@@ -659,6 +659,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(hours<24) return `${hours}h`;
     return `${Math.floor(hours/24)}d`;
   }
+  function preciseDurationLabel(milliseconds){
+    const minutes=Math.max(0,Math.floor(Number(milliseconds||0)/60000));
+    const days=Math.floor(minutes/1440),hours=Math.floor(minutes%1440/60),remaining=minutes%60;
+    if(!minutes)return `${Math.max(0,Math.floor(Number(milliseconds||0)/1000))} seconds`;
+    return [days?`${days} day${days===1?'':'s'}`:'',hours?`${hours} hour${hours===1?'':'s'}`:'',remaining?`${remaining} minute${remaining===1?'':'s'}`:''].filter(Boolean).join(', ');
+  }
   function preciseAgeLabel(timestamp){
     return ageLabel(timestamp);
   }
@@ -939,14 +945,21 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     theme:[['classic','PolyTrack blue',0],['cyan','Electric cyan',0],['ocean','Deep ocean',0],['ice','Ice blue',0],['mono','Monochrome',0],['sunset','Sunset',3],['neon','Neon arcade',5],['forest','Forest',8],['ember','Ember',12],['crimson','Crimson',16],['podium','Champion','podium'],['beta','Beta neon','beta']],
     accent:[['cyan','Cyan',0],['white','White',0],['lime','Lime',0],['gold','Gold',0],['orange','Orange',0],['coral','Coral',3],['pink','Pink',5],['violet','Violet',8],['ice','Ice',12]],
     finish:[['gradient','Gradient',0],['solid','Solid',0],['split','Split',0],['gloss','Gloss',3],['carbon','Carbon',8],['horizon','Horizon','podium']],
-    stage:[['garage','Original garage',0],['slate','Solid slate',0],['aqua','Aqua glow',0],['grid','Starting grid',3],['horizon','Sunset road',5],['dunes','Desert dunes',5],['night','Night city',8],['storm','Electric storm',12],['podium','Podium lights','podium']],
-    stageTint:[['natural','Natural',0],['blue','Blue',0],['teal','Teal',0],['gold','Gold',3],['red','Red',5],['pink','Pink',8],['mono','Mono',12]],
+    stage:[['garage','Original garage',0],['slate','Solid slate',0],['aqua','Aqua glow',0],['grid','Starting grid',3],['horizon','Sunset road',5],['dunes','Desert dunes',5],['night','Night city',8],['storm','Electric storm',12],['sunrise','Sunrise sprint',12],['aurora','Aurora road',16],['podium','Podium lights','podium']],
+    stageTint:[['natural','Natural',0],['blue','Blue',0],['teal','Teal',0],['gold','Gold',3],['red','Red',5],['pink','Pink',8],['mono','Mono',12],['orange','Orange',12],['violet','Violet',16]],
+    stageEffect:[['none','None',0],['speed','Speed streaks',5],['spark','Sparks',12],['halos','Halos',16]],
     plate:[['block','Block',0],['solid','Filled',0],['outline','Outline',0],['notch','Notch',5],['bar','Under bar',8]],
     edge:[['accent','Accent bar',0],['wide','Wide bar',0],['none','No bar',0],['double','Double bar',3],['dashed','Dashed bar',8]],
     stripe:[['standard','Clean',0],['cyan','Speed lines',0],['apex','Apex slash',0],['chevron','Chevrons',3],['sunset','Sunset split',5],['split','Color split',5],['grid','Grid',8],['circuit','Circuit',8],['scan','Scan lines',12],['blocks','Race blocks',16],['gold','Gold rush','podium'],['beta','Beta pulse','beta'],['overdrive','Overdrive','unlock:stripe:overdrive']],
     emblem:[['none','None',0],['bolt','Bolt',0],['star','Star',0],['diamond','Diamond',0],['twinStars','Twin stars',8],['flag','Finish flag',3],['flame','Flame',8],['crown','Crown','podium'],['target','Target breaker','unlock:emblem:target']],
-    emblem2:[['none','None',0],['star','Second star',5],['bolt','Second bolt',8],['flag','Second flag',12]],
-    nameFont:[['classic','PolyTrack',0],['clean','Clean',0],['racing','Racing',5],['serif','Classic serif',12]],
+    emblem2:[['none','None',0],['star','Second star',5],['bolt','Second bolt',8],['flag','Second flag',12],['diamond','Second diamond','pb:25'],['flame','Second flame','pb:50'],['crown','Second crown','wins:1']],
+    emblem3:[['none','None',0],['chevron','Chevron',12],['wings','Wings',16],['laurel','Laurel','wins:1']],
+    emblemBackdrop:[['none','None',0],['disc','Disc',12],['shield','Shield',16],['hex','Hexagon','wins:1']],
+    nameFont:[['classic','PolyTrack',0],['clean','Clean',0],['racing','Racing',5],['serif','Classic serif',12],['condensed','Condensed',12],['wide','Wide',16]],
+    nameSize:[['normal','Standard',0],['large','Large',12],['compact','Compact',16]],
+    nameWeight:[['regular','Regular',0],['bold','Bold',16]],
+    nameColor:[['default','Original',0],['white','White',5],['cyan','Cyan','pb:10'],['gold','Gold','pb:10'],['coral','Coral','pb:25'],['mint','Mint','pb:25'],['violet','Violet','pb:50'],['aurora','Aurora gradient','pb:50'],['sunset','Sunset gradient','wins:5']],
+    baseSecondary:[['auto','Matches first base',0],['white','White',0],['cyan','Cyan','pb:10'],['gold','Gold','pb:10'],['coral','Coral','pb:25'],['mint','Mint','pb:25'],['violet','Violet','pb:50'],['orange','Orange','pb:50'],['ice','Ice','pb:50']],
     title:[['auto','Automatic',0],['none','No title',0],['contender','Contender',3],['pbHunter','PB Hunter','pb:10'],['trackGrinder','Track Grinder',8],['podiumRegular','Podium Regular','podium'],['betaRacer','Beta Racer','beta']],
     badge:[['none','No badge',0],['auto','Automatic',0],['member','Racing since',0],['betaTester','Beta Tester','beta']]
   };
@@ -954,7 +967,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   const profileCosmeticEntries=new Map();
   const COSMETIC_DIRECTORY_KEY='polytrack-0.6.2-cosmetic-directory-v2';
   const COSMETIC_DIRECTORY_SYNC_MS=300000;
-  const COSMETIC_DEFAULTS=Object.freeze({theme:'classic',accent:'cyan',finish:'gradient',plate:'block',edge:'accent',stage:'garage',stageTint:'natural',stripe:'standard',emblem:'none',emblem2:'none',nameFont:'classic',title:'auto',badge:'auto'});
+  const COSMETIC_DEFAULTS=Object.freeze({theme:'classic',baseSecondary:'auto',accent:'cyan',finish:'gradient',plate:'block',edge:'accent',stage:'garage',stageTint:'natural',stageEffect:'none',stripe:'standard',emblem:'none',emblem2:'none',emblem3:'none',emblemBackdrop:'none',nameFont:'classic',nameSize:'normal',nameWeight:'regular',nameColor:'default',title:'auto',badge:'auto'});
   let cosmeticDirectoryCache=null;
   let cosmeticEpoch=0;
   const cosmeticResolveCache=new WeakMap();
@@ -976,7 +989,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const local=accountId&&accountId===activeRankedAccountId()?readJsonStorage(PROFILE_COSMETICS_KEY,null):null;
     const shared=accountId?readCosmeticDirectory().entries[accountId]?.value:null;
     const value=sanitizeProfileCosmetics(local||shared||entry?.profileCosmetics);
-    return ['theme','accent','finish','plate','edge','stage','stageTint','stripe','emblem','emblem2','nameFont'].some((kind)=>value[kind]!==COSMETIC_DEFAULTS[kind])||value.overridePodium===true;
+    return Object.keys(COSMETIC_DEFAULTS).some((kind)=>value[kind]!==COSMETIC_DEFAULTS[kind])||value.overridePodium===true;
   }
   /* Public designs travel through each racer's own profile document, so a blocked
      Ranked Worker never stops another device from seeing them. Changes use a timestamp cursor; legacy designs are seeded gradually.
@@ -1027,7 +1040,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const pick=(kind,fallback)=>PROFILE_COSMETIC_OPTIONS[kind].some(([id])=>id===source[kind])?source[kind]:fallback;
     const legacy=Number(source.version||0)<2;
     const favoriteTrackId=(TRACK_CATALOG.has(String(source.favoriteTrackId||''))||LEGACY_TRACK_CATALOG.has(String(source.favoriteTrackId||'')))?String(source.favoriteTrackId):'';
-    return {version:5,theme:pick('theme','classic'),accent:pick('accent','cyan'),finish:pick('finish','gradient'),plate:pick('plate','block'),edge:pick('edge','accent'),stage:pick('stage','garage'),stageTint:pick('stageTint','natural'),stripe:pick('stripe','standard'),emblem:pick('emblem','none'),emblem2:pick('emblem2','none'),nameFont:pick('nameFont','classic'),title:pick('title','auto'),badge:legacy?'auto':pick('badge','auto'),favoriteTrackId,overridePodium:source.overridePodium===true};
+    return {version:7,...Object.fromEntries(Object.entries(COSMETIC_DEFAULTS).map(([kind,fallback])=>[kind,pick(kind,fallback)])),badge:legacy?'auto':pick('badge','auto'),favoriteTrackId,overridePodium:source.overridePodium===true};
   }
   /* Rules enforce published design entitlements; every unlock is also
      re-tested here against the racer's trusted snapshot numbers before it is drawn. */
@@ -1062,6 +1075,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(requirement===0)return true;
     if(typeof requirement==='string'&&requirement.startsWith('unlock:'))return Array.isArray(entry?.cosmeticUnlocks)&&entry.cosmeticUnlocks.includes(requirement.slice(7));
     if(typeof requirement==='string'&&requirement.startsWith('pb:'))return Number(entry?.pbCount||0)>=Number(requirement.slice(3));
+    if(typeof requirement==='string'&&requirement.startsWith('wins:'))return Number(entry?.trackWins||0)>=Number(requirement.slice(5));
     if(requirement==='podium')return Number(entry?.rank||0)>0&&Number(entry.rank)<=3;
     if(requirement==='beta')return entry?.badges?.betaTester===true;
     return Number(entry?.raceCount||0)>=Number(requirement||0);
@@ -1075,18 +1089,18 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const at=Number(proof.unlockedAt),date=Number.isFinite(at)&&at>0?new Date(at).toLocaleDateString():'';
       return 'Permanently earned'+(date?' on '+date:'')+'. '+base;
     }
-    return requirement==='podium'?'Finish in the Overall top 3':requirement==='beta'?'Awarded during the Ranked beta':String(requirement).startsWith('pb:')?'Set '+requirement.slice(3)+' personal bests':requirement?'Finish '+requirement+' Ranked tracks':'Available to every racer';
+    return requirement==='podium'?'Finish in the Overall top 3':requirement==='beta'?'Awarded during the Ranked beta':String(requirement).startsWith('pb:')?'Set '+requirement.slice(3)+' personal bests':String(requirement).startsWith('wins:')?'Earn '+requirement.slice(5)+' verified first-place finish(es)':requirement?'Finish '+requirement+' Ranked tracks':'Available to every racer';
   }
   function racerCosmeticClasses(entry){
     if(!hasExplicitProfileCosmetics(entry))return '';
     const value=cosmeticsForEntry(entry);
-    return [`cosmetic-theme-${value.theme}`,`cosmetic-accent-${value.accent}`,`cosmetic-finish-${value.finish}`,`cosmetic-plate-${value.plate}`,`cosmetic-edge-${value.edge}`,`cosmetic-stage-${value.stage}`,`cosmetic-stage-tint-${value.stageTint}`,`cosmetic-stripe-${value.stripe}`,`cosmetic-emblem-${value.emblem}`,`cosmetic-emblem2-${value.emblem2}`,`cosmetic-name-font-${value.nameFont}`,value.overridePodium?'cosmetic-podium-override':''].filter(Boolean).join(' ');
+    return Object.keys(COSMETIC_DEFAULTS).map(kind=>`cosmetic-${kind.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}-${value[kind]}`).concat(value.overridePodium?'cosmetic-podium-override':'').filter(Boolean).join(' ');
   }
   function applyProfileCosmetics(element,value){
     if(!element)return;
     for(const name of Array.from(element.classList))if(name.startsWith('cosmetic-'))element.classList.remove(name);
     const safe=sanitizeProfileCosmetics(value);
-    for(const kind of ['theme','accent','finish','plate','edge','stage','stageTint','stripe','emblem','emblem2','nameFont'])element.classList.add(`cosmetic-${kind.replace(/[A-Z]/g,(letter)=>`-${letter.toLowerCase()}`)}-${safe[kind]}`);
+    for(const kind of Object.keys(COSMETIC_DEFAULTS))element.classList.add(`cosmetic-${kind.replace(/[A-Z]/g,(letter)=>`-${letter.toLowerCase()}`)}-${safe[kind]}`);
     element.classList.toggle('cosmetic-podium-override',safe.overridePodium);
   }
   function cosmeticTitleText(entry,cosmetics=cosmeticsForEntry(entry)){
@@ -1115,7 +1129,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const member=memberBadgeLabel(entry);
     const size=compact?'compact':'';
     if(beta&&(selected==='auto'||selected==='betaTester'))return `<span class="profile-badge profile-beta-badge ${size}" title="Earned during the pre-release Ranked beta">${compact?'BETA':'BETA TESTER'}</span>`;
-    if(member&&(selected==='auto'||selected==='member'))return `<span class="profile-badge profile-member-badge ${size}" title="Racing since ${escapeHtml(new Date(Number(entry.accountCreatedAt)).toLocaleDateString())}">${escapeHtml(compact?member.replace(' RACER',''):member)}</span>`;
+    if(member&&(selected==='auto'||selected==='member'))return `<span class="profile-badge profile-member-badge ${size}" title="Racing since ${escapeHtml(new Date(Number(entry.accountCreatedAt)).toLocaleDateString())}; ${escapeHtml(preciseDurationLabel(Date.now()-Number(entry.accountCreatedAt)))}">${escapeHtml(compact?member.replace(' RACER',''):member)}</span>`;
     return '';
   }
   function setupRacerStudio(content){
@@ -1161,14 +1175,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(current.badge==='auto')current.badge=entry?.badges?.betaTester===true?'betaTester':memberBadgeLabel(entry)?'member':'none';
     profileCosmeticDrafts.set(accountId,{...current});
     profileCosmeticEntries.set(accountId,entry);
-    const lockNote=(requirement)=>String(requirement).startsWith('unlock:')?'Owner challenge':String(requirement).startsWith('pb:')?`${requirement.slice(3)} PBs`:requirement==='podium'?'Top 3':requirement==='beta'?'Beta':requirement?`${requirement} tracks`:'';
+    const lockNote=(requirement)=>String(requirement).startsWith('unlock:')?'Owner challenge':String(requirement).startsWith('pb:')?`${requirement.slice(3)} PBs`:String(requirement).startsWith('wins:')?`${requirement.slice(5)} wins`:requirement==='podium'?'Top 3':requirement==='beta'?'Beta':requirement?`${requirement} tracks`:'';
     const lockReason=(requirement)=>cosmeticUnlockReason(requirement,entry);
     const group=(kind,label,description,variant='swatch')=>{
       const choices=PROFILE_COSMETIC_OPTIONS[kind].filter(([id])=>!(['title','badge'].includes(kind)&&id==='auto')).slice().sort((a,b)=>['title','badge'].includes(kind)?Number(b[0]==='none')-Number(a[0]==='none'):0).map(([id,name,requirement])=>{
         const unlocked=cosmeticUnlocked(requirement,entry);
         const note=lockNote(requirement);
         const dash=kind.replace(/[A-Z]/g,(letter)=>`-${letter.toLowerCase()}`);
-        const preview=variant==='text'?'':variant==='plate'
+        const preview=variant==='text'?'':variant==='name'?`<span class="profile-cosmetic-preview name-preview" aria-hidden="true">RACER</span>`:variant==='plate'
           ?`<span class="profile-cosmetic-preview np-preview" aria-hidden="true"><b>#8</b><span>RACER</span></span>`
           :`<span class="profile-cosmetic-preview" aria-hidden="true"><i></i></span>`;
         const label=`${name}${unlocked?'':`. Locked. ${lockReason(requirement)}`}`;
@@ -1184,21 +1198,28 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const podiumChoice=`<div class="profile-cosmetic-podium"><div><b>TOP THREE ROWS</b><small>Choose which colors appear on your top-three finishes.</small></div><div class="profile-podium-choices" role="group" aria-label="Top-three row colors"><button class="button ${current.overridePodium?'':'selected'}" type="button" data-cosmetic-podium="classic" aria-pressed="${!current.overridePodium}">Podium colors</button><button class="button ${current.overridePodium?'selected':''}" type="button" data-cosmetic-podium="own" aria-pressed="${current.overridePodium}">My design</button></div></div>`;
     const tab=(id,label)=>`<button type="button" class="studio-tab" id="studio-tab-${id}" role="tab" data-studio-tab="${id}" aria-selected="${id==='nameplate'}" tabindex="${id==='nameplate'?0:-1}" aria-controls="studio-panel-${id}">${label}</button>`;
     const panel=(id,body)=>`<div class="studio-panel" id="studio-panel-${id}" role="tabpanel" aria-labelledby="studio-tab-${id}" data-studio-panel="${id}" ${id==='nameplate'?'':'hidden'}>${body}</div>`;
-    const nameplate=group('theme','BASE COLORS','The two colors your row is built from.')
+    const nameplate=group('theme','FIRST BASE COLOR','The starting color of your row.')
+      +group('baseSecondary','SECOND BASE COLOR','Choose the far-side color. Auto follows the first color.')
       +group('accent','ACCENT','Borders, marks, titles and emblems take this color.')
       +group('finish','FINISH','How the two base colors blend.','plate')
       +group('stripe','PATTERN','A racing pattern layered over the finish.')
-      +group('emblem','EMBLEM','A mark behind your name. Twin stars unlock after eight Ranked tracks.')
-      +group('emblem2','SECOND EMBLEM','Earn five Ranked tracks to add a second, smaller mark.')
-      +group('nameFont','NAME FONT','Choose a readable style for your name in Ranked.','text')
       +group('plate','PLACE BLOCK','How the position number at the start of your row is drawn.','plate')
       +group('edge','EDGE BAR','The bar down the leading edge of your row.','plate');
     const car=group('stage','CAR BACKDROP','The scene behind your car thumbnail.')
-      +group('stageTint','BACKDROP COLOR','Retints the scene. Your car is never moved or recolored.');
+      +group('stageTint','BACKDROP COLOR','Retints the scene. Your car is never moved or recolored.')
+      +group('stageEffect','BACKDROP DETAIL','A subtle third layer behind the car.');
+    const name=group('nameFont','NAME FONT','Choose a readable style for your name in Ranked.','name')
+      +group('nameSize','NAME SIZE','Scale your name without changing other row text.','name')
+      +group('nameWeight','NAME WEIGHT','Give your name more emphasis.','name')
+      +group('nameColor','NAME COLOR','Earn colors and two gradients as you race.','name')
+      +group('emblem','EMBLEM','A mark behind your name. Twin stars unlock after eight Ranked tracks.')
+      +group('emblem2','SECOND EMBLEM','Earn a second, smaller mark.')
+      +group('emblemBackdrop','EMBLEM BACKDROP','Add a frame behind your emblem.')
+      +group('emblem3','EMBLEM DETAIL','A final accent for your mark.');
     const identity=group('title','TITLE','Choose an earned title, or hide it.','text')
       +group('badge','BADGE','One badge, shown beside your name.','text')
       +`<fieldset class="profile-cosmetic-group kind-extras variant-text"><legend>EXTRAS</legend><p>Shown on your public profile.</p><div class="profile-extras-grid"><label class="profile-favorite-track"><span><b>FAVORITE TRACK</b><small>Type to search. Shown as a shortcut on your profile.</small></span><input type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sqFavoriteTrackList" data-cosmetic-favorite value="${escapeHtml(favoriteName)}" placeholder="No favorite" aria-label="Favorite track, type to search" autocomplete="off" spellcheck="false"><div id="sqFavoriteTrackList" class="studio-track-options" role="listbox" aria-label="Favorite tracks" hidden></div></label>${podiumChoice}</div></fieldset>`;
-    return `<details class="profile-customizer"><summary><span><b>RACER STUDIO</b><small>Design the leaderboard row and profile everyone else sees</small></span><em class="studio-open-label" aria-hidden="true">Edit</em></summary><div class="profile-customizer-body">${livePreview}<div class="profile-customizer-controls"><div class="studio-tabs" role="tablist" aria-label="Studio sections">${tab('nameplate','NAMEPLATE')}${tab('car','CAR')}${tab('identity','IDENTITY')}</div>${panel('nameplate',nameplate)}${panel('car',car)}${panel('identity',identity)}<button class="button studio-close-bottom" type="button" data-studio-close>Close Racer Studio</button></div></div></details>`;
+    return `<details class="profile-customizer"><summary><span><b>RACER STUDIO</b><small>Design the leaderboard row and profile everyone else sees</small></span><em class="studio-open-label" aria-hidden="true">Edit</em></summary><div class="profile-customizer-body">${livePreview}<div class="profile-customizer-controls"><div class="studio-tabs" role="tablist" aria-label="Studio sections">${tab('nameplate','NAMEPLATE')}${tab('name','NAME')}${tab('car','CAR')}${tab('identity','IDENTITY')}</div>${panel('nameplate',nameplate)}${panel('name',name)}${panel('car',car)}${panel('identity',identity)}<button class="button studio-close-bottom" type="button" data-studio-close>Close Racer Studio</button></div></div></details>`;
   }
   let playtimeVisibleAt=document.visibilityState==='visible'?Date.now():0;
   function commitVisiblePlaytime(){
@@ -2003,6 +2024,56 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       .profile-cosmetic-choice.cosmetic-emblem2-flag .profile-cosmetic-preview::after{content:'⚑'}
       .profile-cosmetic-choice[class*='cosmetic-emblem2-'] .profile-cosmetic-preview::after{position:absolute;inset:0;display:grid;place-items:center;font-size:25px;color:#eaf7ff}
       .sq-plain-racer-themes [class*='cosmetic-emblem2-'] .overall-name::after,.sq-plain-racer-themes .leaderboard-ui [class*='cosmetic-emblem2-'] .name::after{display:none!important}
+      @media(min-width:901px) and (min-height:760px){.profile-customizer-preview{top:68px!important}.profile-customizer-preview .profile-preview-stage{min-height:134px!important;padding:12px!important}.profile-customizer-preview .profile-preview-stage>.overall-car-model{width:164px!important;height:110px!important}}
+      @media(min-width:901px) and (max-height:759px){.profile-customizer-preview{position:static!important}}
+    `;
+    rankedPolish.textContent += `
+      .studio-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))}
+      @media(max-width:600px){.studio-tab{min-width:0!important;font-size:12px!important;padding:6px 2px!important}}
+      .profile-cosmetic-group.variant-name>div{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))!important}
+      .variant-name .profile-cosmetic-choice{min-height:78px!important}
+      .name-preview{display:grid!important;place-items:center;color:#fff;font-size:19px;white-space:nowrap;overflow:hidden}
+      .cosmetic-name-font-clean .name-preview{font-family:'Trebuchet MS',sans-serif}.cosmetic-name-font-racing .name-preview{font-family:Impact,sans-serif;font-style:italic}.cosmetic-name-font-serif .name-preview{font-family:Georgia,serif;font-style:italic}
+      .cosmetic-name-font-condensed .name-preview,.cosmetic-name-font-condensed .overall-name-main,.cosmetic-name-font-condensed .profile-preview-stage>span>b,.cosmetic-name-font-condensed .profile-identity h3,.leaderboard-ui .cosmetic-name-font-condensed .name{font-family:Impact,'Arial Narrow',sans-serif!important;font-stretch:condensed;letter-spacing:-.025em}
+      .cosmetic-name-font-wide .name-preview,.cosmetic-name-font-wide .overall-name-main,.cosmetic-name-font-wide .profile-preview-stage>span>b,.cosmetic-name-font-wide .profile-identity h3,.leaderboard-ui .cosmetic-name-font-wide .name{font-family:'Trebuchet MS',sans-serif!important;letter-spacing:.09em}
+      .cosmetic-name-size-large :is(.overall-name-main,.profile-preview-stage>span>b){font-size:1.12em!important}.cosmetic-name-size-compact :is(.overall-name-main,.profile-preview-stage>span>b){font-size:.9em!important}
+      .cosmetic-name-weight-bold :is(.overall-name-main,.profile-preview-stage>span>b,.profile-identity h3),.leaderboard-ui .cosmetic-name-weight-bold .name{font-weight:900!important}
+      :is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-white{--cosmetic-b:#a4bdd4;--profile-b:#a4bdd4}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-cyan{--cosmetic-b:#087eab;--profile-b:#087eab}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-gold{--cosmetic-b:#927025;--profile-b:#927025}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-coral{--cosmetic-b:#a44b55;--profile-b:#a44b55}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-mint{--cosmetic-b:#2f9078;--profile-b:#2f9078}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-violet{--cosmetic-b:#594399;--profile-b:#594399}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-orange{--cosmetic-b:#a95825;--profile-b:#a95825}:is(.overall-entry,.overall-profile-card,.profile-cosmetic-choice).cosmetic-base-secondary-ice{--cosmetic-b:#3c88aa;--profile-b:#3c88aa}
+      .profile-cosmetic-choice[class*='cosmetic-base-secondary-'] .profile-cosmetic-preview{background:linear-gradient(90deg,#2d3b68 45%,var(--cosmetic-b,#1a2958))!important}
+      .cosmetic-name-color-white{--name-ink:#fff}.cosmetic-name-color-cyan{--name-ink:#7ee7ff}.cosmetic-name-color-gold{--name-ink:#ffdc77}.cosmetic-name-color-coral{--name-ink:#ffaaa4}.cosmetic-name-color-mint{--name-ink:#9af1ce}.cosmetic-name-color-violet{--name-ink:#ccaeff}
+      [class*='cosmetic-name-color-']:not(.cosmetic-name-color-default) :is(.overall-name-main,.profile-preview-stage>span>b,.profile-identity h3),.leaderboard-ui [class*='cosmetic-name-color-']:not(.cosmetic-name-color-default) .name{color:var(--name-ink,#fff)!important}
+      .cosmetic-name-color-aurora{--name-ink:#b3e7f5}.cosmetic-name-color-sunset{--name-ink:#ffd596}
+      :is(.cosmetic-name-color-aurora,.cosmetic-name-color-sunset) :is(.overall-name-main,.profile-identity h3,.profile-preview-stage>span>b){background:linear-gradient(90deg,#83e2f2,#d7b8ff);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+      .leaderboard-ui :is(.cosmetic-name-color-aurora,.cosmetic-name-color-sunset) .name{background:linear-gradient(90deg,#83e2f2,#d7b8ff);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+      .cosmetic-name-color-sunset :is(.overall-name-main,.profile-identity h3,.profile-preview-stage>span>b){background-image:linear-gradient(90deg,#ffe478,#ff9d75)}
+      .leaderboard-ui .cosmetic-name-color-sunset .name{background-image:linear-gradient(90deg,#ffe478,#ff9d75)}
+      :is(.cosmetic-name-color-aurora,.cosmetic-name-color-sunset) :is(.overall-name-main,.profile-identity h3) :is(.overall-you-tag,.profile-badge,.overall-provisional-tag){-webkit-text-fill-color:currentColor}
+      .profile-cosmetic-choice[class*='cosmetic-name-color-'] .name-preview{color:var(--name-ink,#fff)}
+      .profile-cosmetic-choice.cosmetic-name-color-aurora .name-preview{background:linear-gradient(90deg,#83e2f2,#d7b8ff);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+      .profile-cosmetic-choice.cosmetic-name-color-sunset .name-preview{background:linear-gradient(90deg,#ffe478,#ff9d75);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+      .profile-cosmetic-choice.cosmetic-name-size-large .name-preview{font-size:24px}.profile-cosmetic-choice.cosmetic-name-size-compact .name-preview{font-size:15px}.profile-cosmetic-choice.cosmetic-name-weight-bold .name-preview{font-weight:900}
+      .cosmetic-emblem2-diamond .overall-name::after,.leaderboard-ui .cosmetic-emblem2-diamond .name::after,.cosmetic-emblem2-diamond .profile-preview-stage>span::after{content:'◆'}
+      .cosmetic-emblem2-flame .overall-name::after,.leaderboard-ui .cosmetic-emblem2-flame .name::after,.cosmetic-emblem2-flame .profile-preview-stage>span::after{content:'♨'}
+      .cosmetic-emblem2-crown .overall-name::after,.leaderboard-ui .cosmetic-emblem2-crown .name::after,.cosmetic-emblem2-crown .profile-preview-stage>span::after{content:'♛'}
+      :is(.cosmetic-emblem2-diamond,.cosmetic-emblem2-flame,.cosmetic-emblem2-crown) .overall-name::after,:is(.cosmetic-emblem2-diamond,.cosmetic-emblem2-flame,.cosmetic-emblem2-crown) .profile-preview-stage>span::after{position:absolute;right:24%;top:50%;transform:translateY(-50%);color:var(--fx-accent,#7ee7ff);font:22px/1 ForcedSquare,sans-serif;opacity:.3;pointer-events:none}
+      .profile-cosmetic-choice.cosmetic-emblem2-diamond .profile-cosmetic-preview::after{content:'◆'}.profile-cosmetic-choice.cosmetic-emblem2-flame .profile-cosmetic-preview::after{content:'♨'}.profile-cosmetic-choice.cosmetic-emblem2-crown .profile-cosmetic-preview::after{content:'♛'}
+      .cosmetic-emblem-backdrop-disc .overall-name-label,.cosmetic-emblem-backdrop-disc .profile-preview-stage>span{background:radial-gradient(circle at 85% 50%,color-mix(in srgb,var(--fx-accent,#7ee7ff) 32%,transparent),transparent 35%)}
+      .cosmetic-emblem-backdrop-shield .overall-name-label,.cosmetic-emblem-backdrop-shield .profile-preview-stage>span{background:linear-gradient(110deg,transparent 65%,color-mix(in srgb,var(--fx-accent,#7ee7ff) 24%,transparent) 85%,transparent)}
+      .cosmetic-emblem-backdrop-hex .overall-name-label,.cosmetic-emblem-backdrop-hex .profile-preview-stage>span{background:repeating-linear-gradient(120deg,transparent 0 18px,color-mix(in srgb,var(--fx-accent,#7ee7ff) 20%,transparent) 19px 21px,transparent 22px 34px)}
+      .cosmetic-emblem3-chevron .overall-name-label,.cosmetic-emblem3-chevron .profile-preview-stage>span{border-right:3px solid var(--fx-accent,#7ee7ff)}.cosmetic-emblem3-wings .overall-name-label,.cosmetic-emblem3-wings .profile-preview-stage>span{border-top:2px solid var(--fx-accent,#7ee7ff)}.cosmetic-emblem3-laurel .overall-name-label,.cosmetic-emblem3-laurel .profile-preview-stage>span{border:2px solid var(--fx-accent,#7ee7ff);border-left:0}
+      .profile-cosmetic-choice.cosmetic-emblem3-chevron .profile-cosmetic-preview i{clip-path:polygon(20% 10%,70% 50%,20% 90%,40% 90%,90% 50%,40% 10%);background:#7ee7ff}
+      .profile-cosmetic-choice.cosmetic-emblem3-wings .profile-cosmetic-preview i{clip-path:polygon(0 60%,50% 15%,100% 60%,75% 45%,50% 70%,25% 45%);background:#7ee7ff}
+      .profile-cosmetic-choice.cosmetic-emblem3-laurel .profile-cosmetic-preview i{border:3px solid #a5efba;border-radius:50%;background:transparent}
+      .profile-cosmetic-choice.cosmetic-emblem-backdrop-disc .profile-cosmetic-preview i{border-radius:50%;background:#3c86a6}.profile-cosmetic-choice.cosmetic-emblem-backdrop-shield .profile-cosmetic-preview i{clip-path:polygon(50% 0,100% 25%,85% 78%,50% 100%,15% 78%,0 25%);background:#3c86a6}.profile-cosmetic-choice.cosmetic-emblem-backdrop-hex .profile-cosmetic-preview i{clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%);background:#3c86a6}
+      .cosmetic-stage-sunrise{--stage-bg:linear-gradient(180deg,#344873,#bf7657);--stage-fx:radial-gradient(70% 50% at 50% 100%,rgba(255,215,144,.4),transparent)}.cosmetic-stage-aurora{--stage-bg:linear-gradient(160deg,#18264b,#306a81);--stage-fx:radial-gradient(80% 50% at 65% 15%,rgba(124,255,193,.28),transparent)}
+      .profile-cosmetic-choice.cosmetic-stage-tint-orange .profile-cosmetic-preview{--choice-tint:#f28d45}.profile-cosmetic-choice.cosmetic-stage-tint-violet .profile-cosmetic-preview{--choice-tint:#ad88ee}
+      :is(.cosmetic-stage-tint-orange,.cosmetic-stage-tint-violet) .overall-car-model::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;mix-blend-mode:color;opacity:.5}
+      .cosmetic-stage-tint-orange .overall-car-model::before{background:#f28d45}.cosmetic-stage-tint-violet .overall-car-model::before{background:#ad88ee}
+      .cosmetic-stage-effect-speed{--stage-detail:repeating-linear-gradient(115deg,transparent 0 16px,rgba(255,255,255,.13) 17px 19px,transparent 20px 35px)}.cosmetic-stage-effect-spark{--stage-detail:radial-gradient(circle at 20% 20%,#ffe7a0 0 2px,transparent 3px),radial-gradient(circle at 84% 68%,#ffe7a0 0 2px,transparent 3px)}.cosmetic-stage-effect-halos{--stage-detail:radial-gradient(ellipse at 50% 50%,transparent 30%,rgba(126,231,255,.25) 48%,transparent 70%)}
+      [class*='cosmetic-stage-effect-'] .overall-car-model::after{background:var(--stage-detail,none),var(--stage-fx,none)}
+      .overall-car-model>img{z-index:2}
+      .profile-cosmetic-choice.cosmetic-stage-effect-speed .profile-cosmetic-preview i{background:repeating-linear-gradient(115deg,#263d78 0 8px,#a5ddff 9px 11px,#263d78 12px 20px)}.profile-cosmetic-choice.cosmetic-stage-effect-spark .profile-cosmetic-preview i{background:radial-gradient(circle at 30% 40%,#ffe7a0 0 3px,transparent 4px),radial-gradient(circle at 70% 70%,#ffe7a0 0 3px,transparent 4px),#263d78}.profile-cosmetic-choice.cosmetic-stage-effect-halos .profile-cosmetic-preview i{background:radial-gradient(ellipse at center,transparent 25%,#7ee7ff 45%,#263d78 70%)}
+      @media(max-width:600px){.profile-cosmetic-group.variant-name>div{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
     `;
     document.head.appendChild(rankedPolish);
   }
@@ -3797,7 +3868,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const since=Math.max(0,Number(el.dataset.rankDuration||0)||0);
       if(!since)return;
       const suffix=el.dataset.rankDurationSuffix==='profile'?'':' at rank';
-      el.textContent=`${durationLabel(Date.now()-since)}${suffix}`;
+      const label=`${durationLabel(Date.now()-since)}${suffix}`;
+      if(el.textContent!==label)el.textContent=label;
     });
   }
   function categoryContextMarkup(entry,races,officialCount,communityCount,medals){
@@ -3948,7 +4020,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const categoryUnits={overall:'RANK POINTS',medals:'PODIUM POINTS',tracks:'TRACKS COMPLETED',official:'OFFICIAL FINISHES',community:'COMMUNITY FINISHES',weight:'TOTAL WEIGHT',average:'AVERAGE PLACE',competitiveAverage:'COMPETITIVE AVG',podiumRate:'PODIUM RATE',pbs:'PERSONAL BESTS',playtime:'ACTIVE TIME',wins:'TRACK WINS',skill:'SKILL RP',consistency:'ALL-TRACK DEPTH',improved:'IMPROVEMENT',rising:'RISING SCORE',veterans:'RANKED AGE',casual:'CASUAL RP'};
     const categoryUnit=categoryUnits[overallCategory]||'RANK POINTS';
     const scoreTitles={overall:LEADERBOARD_INFO.overall,casual:LEADERBOARD_INFO.casual,medals:LEADERBOARD_INFO.medals,weight:rankedWeightTitle('',0,true),average:LEADERBOARD_INFO.average,competitiveAverage:LEADERBOARD_INFO.competitiveAverage,podiumRate:LEADERBOARD_INFO.podiumRate,pbs:LEADERBOARD_INFO.pbs,playtime:LEADERBOARD_INFO.playtime,rising:LEADERBOARD_INFO.rising,wins:LEADERBOARD_INFO.wins,skill:LEADERBOARD_INFO.skill,consistency:LEADERBOARD_INFO.consistency};
-    const scoreTitle=scoreTitles[overallCategory]||'Derived from the same complete Ranked snapshot.';
+    const scoreTitle=(scoreTitles[overallCategory]||'Derived from the same complete Ranked snapshot.')+(['playtime','veterans'].includes(overallCategory)?` Exact duration: ${preciseDurationLabel(categoryValue)}.`:'');
     const missingValue=(overallCategory==='casual'&&(!Number.isSafeInteger(row?.casualRp)||row.casualRp<0||!Number.isSafeInteger(row?.casualCompletionCount)||row.casualCompletionCount<0))||(overallCategory==='average'&&Number(row?.averagePlacementVersion||0)<AVERAGE_PLACEMENT_VERSION)||(overallCategory==='competitiveAverage'&&(!(Number(row?.competitiveAverageEligibleTracks||0)>0)||row?.competitiveAveragePlacement==null))||(overallCategory==='playtime'&&categoryValue<=0);
     const categoryDisplay=missingValue?'N/A':overallCategory==='casual'?String(categoryValue):overallCategory==='veterans'||overallCategory==='playtime'?durationLabel(categoryValue):overallCategory==='average'||overallCategory==='competitiveAverage'?Math.max(0,categoryValue).toFixed(2):['overall','skill','consistency','improved','rising'].includes(overallCategory)?formatRp(categoryValue):overallCategory==='weight'?categoryValue.toFixed(2):overallCategory==='podiumRate'?`${categoryValue.toFixed(1)}%`:String(categoryValue);
     const customCount=Number(row?.customCount||0)||0;
@@ -4891,7 +4963,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const reportedPlaytime=Number(entry.totalPlaytimeMs||0)>0?durationLabel(Number(entry.totalPlaytimeMs)):'Not reported';
     const latestPbAt=Math.max(Number(entry.latestPbAt||0)||0,...snapshotFinishes.map((finish)=>pbTimestamp(finish)));
     const competitiveAverage=entry.competitiveAveragePlacement!=null&&Number(entry.competitiveAverageEligibleTracks||0)>0?Number(entry.competitiveAveragePlacement).toFixed(2):'Not available';
-    const secondaryStats=[stat(formatRp(entry.coverageCost),'Coverage RP','Diminishing coverage cost. More eligible tracks lower this number.'),stat(formatRp(entry.consistencyCost??entry.score),'All-track depth RP','Weak outliers are limited. Lower is better.'),stat(escapeHtml(averageFinish),'Raw average place','Mean finishing place across all scored tracks.'),stat(escapeHtml(competitiveAverage),'Competitive average','Mean place on recognized non-custom tracks with at least five racers.'),stat(escapeHtml(participation),'Participation','Completed track types.'),stat(`${Number(entry.weightedTracks||0).toFixed(2)}x`,'Total weight',rankedWeightTitle('',0,true)),stat(escapeHtml(podiumRate),'Podium rate','Eligible top-three finishes divided by podium-eligible tracks.'),stat(String(eligibleWinCount(entry)),'Track wins',LEADERBOARD_INFO.wins),stat(escapeHtml(pbCount),'PBs set','Accepted personal-best improvements saved to Ranked.'),stat(bestPlace?`#${bestPlace.rank} of ${bestPlace.fieldSize}`:'N/A','Best placement','Best placement present in this complete Ranked snapshot.'),stat(largestField||'N/A','Largest field','Largest loaded competitive field represented in this profile.'),stat(escapeHtml(reportedPlaytime),'Active time','Visible active play time reported on the latest PB write.'),stat(escapeHtml(racingAge),'Racing for',`Earliest saved ranked result: ${accountSince}`),stat(latestPbAt?escapeHtml(formatLocalPbDate({pbAt:latestPbAt},false)):'N/A','Latest PB',latestPbAt?`Recorded in your local time: ${formatLocalPbDate({pbAt:latestPbAt})}`:'No PB timestamp is available.'),stat(escapeHtml(currentRankAge),'At current rank','Shared timestamp from the current complete Ranked snapshot.')].join('');
+    const secondaryStats=[stat(formatRp(entry.coverageCost),'Coverage RP','Diminishing coverage cost. More eligible tracks lower this number.'),stat(formatRp(entry.consistencyCost??entry.score),'All-track depth RP','Weak outliers are limited. Lower is better.'),stat(escapeHtml(averageFinish),'Raw average place','Mean finishing place across all scored tracks.'),stat(escapeHtml(competitiveAverage),'Competitive average','Mean place on recognized non-custom tracks with at least five racers.'),stat(escapeHtml(participation),'Participation','Completed track types.'),stat(`${Number(entry.weightedTracks||0).toFixed(2)}x`,'Total weight',rankedWeightTitle('',0,true)),stat(escapeHtml(podiumRate),'Podium rate','Eligible top-three finishes divided by podium-eligible tracks.'),stat(String(eligibleWinCount(entry)),'Track wins',LEADERBOARD_INFO.wins),stat(escapeHtml(pbCount),'PBs set','Accepted personal-best improvements saved to Ranked.'),stat(bestPlace?`#${bestPlace.rank} of ${bestPlace.fieldSize}`:'N/A','Best placement','Best placement present in this complete Ranked snapshot.'),stat(largestField||'N/A','Largest field','Largest loaded competitive field represented in this profile.'),stat(escapeHtml(reportedPlaytime),'Active time',`Visible active play time reported on the latest PB write. Exact duration: ${preciseDurationLabel(entry.totalPlaytimeMs)}.`),stat(escapeHtml(racingAge),'Racing for',`Earliest saved ranked result: ${accountSince}. Exact duration: ${preciseDurationLabel(Date.now()-Number(entry.accountCreatedAt||Date.now()))}.`),stat(latestPbAt?escapeHtml(formatLocalPbDate({pbAt:latestPbAt},false)):'N/A','Latest PB',latestPbAt?`Recorded in your local time: ${formatLocalPbDate({pbAt:latestPbAt})}`:'No PB timestamp is available.'),stat(escapeHtml(currentRankAge),'At current rank','Shared timestamp from the current complete Ranked snapshot.')].join('');
     const usedResultTracks=new Set();
     const takeUnique=(rows)=>{const found=(rows||[]).find((finish)=>finish?.trackId&&!usedResultTracks.has(finish.trackId));if(found)usedResultTracks.add(found.trackId);return found||null;};
     const bestCard=takeUnique([best]);

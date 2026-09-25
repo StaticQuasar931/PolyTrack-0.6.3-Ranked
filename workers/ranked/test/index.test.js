@@ -19,7 +19,7 @@ test('solo tracks have zero weight and populated official tracks gain weight', (
 
 test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.deepEqual(sanitizeProfileCosmetics({ theme: 'script', stage: 'night', stripe: 'cyan', badge: 'admin' }), {
-    version: 5, theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'night', stageTint: 'natural', stripe: 'cyan', emblem: 'none', title: 'auto', badge: 'auto', favoriteTrackId: '', overridePodium: false
+    version: 7, theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'night', stageTint: 'natural', stripe: 'cyan', emblem: 'none', title: 'auto', badge: 'auto', favoriteTrackId: '', overridePodium: false
   });
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ocean', stage: 'aqua', stripe: 'cyan', badge: 'auto' }, { raceCount: 0 }), true);
   assert.equal(profileCosmeticsUnlocked({ version: 2, theme: 'ice', stage: 'slate', stripe: 'apex', badge: 'auto' }, { raceCount: 0 }), true);
@@ -44,6 +44,46 @@ test('profile cosmetics are sanitized and unlocks are server enforced', () => {
   assert.equal(profileCosmeticsUnlocked({emblem2:'flag',nameFont:'serif'},{raceCount:12}),true);
   assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:20,pbCount:9}),false);
   assert.equal(profileCosmeticsUnlocked({title:'pbHunter'},{raceCount:3,pbCount:10}),true);
+});
+test('bounded studio cosmetics use server allowlists and distinct ranked metrics', () => {
+  const defaults = sanitizeProfileCosmetics({});
+  assert.equal(defaults.version, 7);
+  assert.equal(defaults.nameSize || 'normal', 'normal');
+  assert.equal(defaults.nameWeight || 'regular', 'regular');
+  assert.equal(defaults.nameColor || 'default', 'default');
+  assert.equal(defaults.baseSecondary || 'auto', 'auto');
+  assert.equal(defaults.emblem3 || 'none', 'none');
+  assert.equal(defaults.stageEffect || 'none', 'none');
+  assert.equal(defaults.emblemBackdrop || 'none', 'none');
+  assert.equal(sanitizeProfileCosmetics({nameColor:'url(javascript:alert(1))',nameSize:'huge',nameWeight:'900',emblem3:'admin'}).nameColor || 'default', 'default');
+  assert.equal(profileCosmeticsUnlocked({nameFont:'condensed'}, {raceCount:11}), false);
+  assert.equal(profileCosmeticsUnlocked({nameFont:'condensed'}, {raceCount:12}), true);
+  assert.equal(profileCosmeticsUnlocked({nameSize:'large',nameWeight:'bold'}, {raceCount:12}), false);
+  assert.equal(profileCosmeticsUnlocked({nameSize:'large'}, {raceCount:12}), true);
+  assert.equal(profileCosmeticsUnlocked({nameWeight:'bold'}, {raceCount:16}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'cyan'}, {raceCount:100,pbCount:9}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'cyan'}, {pbCount:10}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:4}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'white'}, {raceCount:5}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'mint'}, {pbCount:24}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'mint'}, {pbCount:25}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'aurora'}, {pbCount:50}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'sunset'}, {trackWins:4}), false);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'sunset'}, {trackWins:5}), true);
+  assert.equal(profileCosmeticsUnlocked({emblemBackdrop:'hex',emblem3:'laurel',emblem2:'crown'}, {trackWins:1}), true);
+  assert.equal(profileCosmeticsUnlocked({emblem3:'wings',emblemBackdrop:'shield'}, {raceCount:16}), true);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'speed'}, {raceCount:4}), false);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'speed'}, {raceCount:5}), true);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'spark'}, {raceCount:11}), false);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'spark'}, {raceCount:12}), true);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'halos'}, {raceCount:15}), false);
+  assert.equal(profileCosmeticsUnlocked({stageEffect:'halos'}, {raceCount:16}), true);
+  assert.equal(profileCosmeticsUnlocked({stage:'aurora',stageTint:'violet'}, {raceCount:16}), true);
+  assert.equal(profileCosmeticsUnlocked({nameColor:'violet'}, {cosmeticUnlocks:['nameColor:violet']}), false);
+  assert.equal(profileCosmeticsUnlocked({baseSecondary:'cyan'}, {pbCount:9}), false);
+  assert.equal(profileCosmeticsUnlocked({baseSecondary:'cyan'}, {pbCount:10}), true);
+  assert.equal(profileCosmeticsUnlocked({baseSecondary:'orange'}, {pbCount:49}), false);
+  assert.equal(profileCosmeticsUnlocked({baseSecondary:'orange'}, {pbCount:50}), true);
 });
 
 test('unchanged track signatures are rewritten when schema or algorithm is obsolete', () => {

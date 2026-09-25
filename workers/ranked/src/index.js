@@ -13,8 +13,8 @@ const TRACK_SCHEMA_VERSION = 6;
 const AVERAGE_PLACEMENT_VERSION = 2;
 const DERIVED_METRICS_VERSION = 3;
 const INTEGRITY_STATE_VERSION = 1;
-const PROFILE_COSMETICS_VERSION = 5;
-const COSMETIC_ENTITLEMENT_VERSION = 4;
+const PROFILE_COSMETICS_VERSION = 7;
+const COSMETIC_ENTITLEMENT_VERSION = 6;
 const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
@@ -50,12 +50,19 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   finish: new Set(['gradient', 'solid', 'split', 'gloss', 'carbon', 'horizon']),
   plate: new Set(['block', 'solid', 'outline', 'notch', 'bar']),
   edge: new Set(['accent', 'wide', 'none', 'double', 'dashed']),
-  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium']),
-  stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono']),
+  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora']),
+  stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono', 'orange', 'violet']),
   stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive']),
   emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
-  emblem2: new Set(['none', 'star', 'bolt', 'flag']),
-  nameFont: new Set(['classic', 'clean', 'racing', 'serif']),
+  emblem2: new Set(['none', 'star', 'bolt', 'flag', 'diamond', 'flame', 'crown']),
+  emblem3: new Set(['none', 'chevron', 'wings', 'laurel']),
+  emblemBackdrop: new Set(['none', 'disc', 'shield', 'hex']),
+  stageEffect: new Set(['none', 'speed', 'spark', 'halos']),
+  nameFont: new Set(['classic', 'clean', 'racing', 'serif', 'condensed', 'wide']),
+  nameSize: new Set(['normal', 'large', 'compact']),
+  nameWeight: new Set(['regular', 'bold']),
+  nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset']),
+  baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
   badge: new Set(['auto', 'member', 'none', 'betaTester'])
 });
@@ -65,6 +72,10 @@ export function sanitizeProfileCosmetics(value) {
   const legacy = Number(source.version || 0) < 2;
   const emblem2 = PROFILE_COSMETIC_OPTIONS.emblem2.has(source.emblem2) ? source.emblem2 : 'none';
   const nameFont = PROFILE_COSMETIC_OPTIONS.nameFont.has(source.nameFont) ? source.nameFont : 'classic';
+  const nameSize = PROFILE_COSMETIC_OPTIONS.nameSize.has(source.nameSize) ? source.nameSize : 'normal';
+  const nameWeight = PROFILE_COSMETIC_OPTIONS.nameWeight.has(source.nameWeight) ? source.nameWeight : 'regular';
+  const nameColor = PROFILE_COSMETIC_OPTIONS.nameColor.has(source.nameColor) ? source.nameColor : 'default';
+  const baseSecondary = PROFILE_COSMETIC_OPTIONS.baseSecondary.has(source.baseSecondary) ? source.baseSecondary : 'auto';
   return {
     version: PROFILE_COSMETICS_VERSION,
     theme: PROFILE_COSMETIC_OPTIONS.theme.has(source.theme) ? source.theme : 'classic',
@@ -77,7 +88,14 @@ export function sanitizeProfileCosmetics(value) {
     stripe: PROFILE_COSMETIC_OPTIONS.stripe.has(source.stripe) ? source.stripe : 'standard',
     emblem: PROFILE_COSMETIC_OPTIONS.emblem.has(source.emblem) ? source.emblem : 'none',
     ...(emblem2 === 'none' ? {} : { emblem2 }),
+    ...(PROFILE_COSMETIC_OPTIONS.emblem3.has(source.emblem3) && source.emblem3 !== 'none' ? { emblem3: source.emblem3 } : {}),
+    ...(PROFILE_COSMETIC_OPTIONS.emblemBackdrop.has(source.emblemBackdrop) && source.emblemBackdrop !== 'none' ? { emblemBackdrop: source.emblemBackdrop } : {}),
+    ...(PROFILE_COSMETIC_OPTIONS.stageEffect.has(source.stageEffect) && source.stageEffect !== 'none' ? { stageEffect: source.stageEffect } : {}),
     ...(nameFont === 'classic' ? {} : { nameFont }),
+    ...(nameSize === 'normal' ? {} : { nameSize }),
+    ...(nameWeight === 'regular' ? {} : { nameWeight }),
+    ...(nameColor === 'default' ? {} : { nameColor }),
+    ...(baseSecondary === 'auto' ? {} : { baseSecondary }),
     title: PROFILE_COSMETIC_OPTIONS.title.has(source.title) ? source.title : 'auto',
     badge: legacy ? 'auto' : (PROFILE_COSMETIC_OPTIONS.badge.has(source.badge) ? source.badge : 'auto'),
     favoriteTrackId: OFFICIAL_IDS.has(safeText(source.favoriteTrackId, 80)) || COMMUNITY_IDS.has(safeText(source.favoriteTrackId, 80)) || LEGACY_COMMUNITY_IDS.has(safeText(source.favoriteTrackId, 80)) ? safeText(source.favoriteTrackId, 80) : '',
@@ -101,16 +119,27 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
     stripe: new Set(['standard', 'cyan', 'apex']),
     emblem: new Set(['none', 'bolt', 'star', 'diamond']),
     emblem2: new Set(['none']),
+    emblem3: new Set(['none']),
+    emblemBackdrop: new Set(['none']),
+    stageEffect: new Set(['none']),
     nameFont: new Set(['classic', 'clean']),
+    nameSize: new Set(['normal']),
+    nameWeight: new Set(['regular']),
+    nameColor: new Set(['default']),
+    baseSecondary: new Set(['auto', 'white']),
     title: new Set(['auto', 'none']),
     badge: new Set(['auto', 'member', 'none'])
   };
   if (tracks >= 3) { allowed.theme.add('sunset'); allowed.accent.add('coral'); allowed.finish.add('gloss'); allowed.edge.add('double'); allowed.stage.add('grid'); allowed.stageTint.add('gold'); allowed.stripe.add('chevron'); allowed.emblem.add('flag'); allowed.title.add('contender'); }
-  if (tracks >= 5) { allowed.theme.add('neon'); allowed.accent.add('pink'); allowed.plate.add('notch'); allowed.stage.add('horizon'); allowed.stage.add('dunes'); allowed.stageTint.add('red'); allowed.stripe.add('sunset'); allowed.stripe.add('split'); allowed.emblem2.add('star'); allowed.nameFont.add('racing'); }
+  if (tracks >= 5) { allowed.theme.add('neon'); allowed.accent.add('pink'); allowed.plate.add('notch'); allowed.stage.add('horizon'); allowed.stage.add('dunes'); allowed.stageTint.add('red'); allowed.stripe.add('sunset'); allowed.stripe.add('split'); allowed.emblem2.add('star'); allowed.nameFont.add('racing'); allowed.nameColor.add('white'); allowed.stageEffect.add('speed'); }
   if (tracks >= 8) { allowed.theme.add('forest'); allowed.accent.add('violet'); allowed.finish.add('carbon'); allowed.plate.add('bar'); allowed.edge.add('dashed'); allowed.stage.add('night'); allowed.stageTint.add('pink'); allowed.stripe.add('grid'); allowed.stripe.add('circuit'); allowed.emblem.add('flame'); allowed.emblem.add('twinStars'); allowed.emblem2.add('bolt'); allowed.title.add('trackGrinder'); }
-  if (tracks >= 12) { allowed.theme.add('ember'); allowed.accent.add('ice'); allowed.stage.add('storm'); allowed.stageTint.add('mono'); allowed.stripe.add('scan'); allowed.emblem2.add('flag'); allowed.nameFont.add('serif'); }
-  if (tracks >= 16) { allowed.theme.add('crimson'); allowed.stripe.add('blocks'); }
-  if (Number(entry.pbCount||0) >= 10) allowed.title.add('pbHunter');
+  if (tracks >= 12) { allowed.emblem3.add('chevron'); allowed.emblemBackdrop.add('disc'); allowed.stageEffect.add('spark'); allowed.nameSize.add('large'); allowed.nameFont.add('condensed'); allowed.stage.add('sunrise'); allowed.stageTint.add('orange'); allowed.theme.add('ember'); allowed.accent.add('ice'); allowed.stage.add('storm'); allowed.stageTint.add('mono'); allowed.stripe.add('scan'); allowed.emblem2.add('flag'); allowed.nameFont.add('serif'); }
+  if (tracks >= 16) { allowed.emblem3.add('wings'); allowed.emblemBackdrop.add('shield'); allowed.stageEffect.add('halos'); allowed.nameSize.add('compact'); allowed.nameWeight.add('bold'); allowed.nameFont.add('wide'); allowed.stage.add('aurora'); allowed.stageTint.add('violet'); allowed.theme.add('crimson'); allowed.stripe.add('blocks'); }
+  if (Number(entry.pbCount||0) >= 10) { allowed.title.add('pbHunter'); allowed.nameColor.add('cyan'); allowed.nameColor.add('gold'); allowed.baseSecondary.add('cyan'); allowed.baseSecondary.add('gold'); }
+  if (Number(entry.pbCount||0) >= 25) { allowed.nameColor.add('coral'); allowed.nameColor.add('mint'); allowed.baseSecondary.add('coral'); allowed.baseSecondary.add('mint'); allowed.emblem2.add('diamond'); }
+  if (Number(entry.pbCount||0) >= 50) { allowed.nameColor.add('violet'); allowed.nameColor.add('aurora'); allowed.baseSecondary.add('violet'); allowed.baseSecondary.add('orange'); allowed.baseSecondary.add('ice'); allowed.emblem2.add('flame'); }
+  if (Number(entry.trackWins||0) >= 1) { allowed.emblemBackdrop.add('hex'); allowed.emblem2.add('crown'); allowed.emblem3.add('laurel'); }
+  if (Number(entry.trackWins||0) >= 5) { allowed.nameColor.add('sunset'); allowed.baseSecondary.add('ice'); }
   if (podium) { allowed.theme.add('podium'); allowed.finish.add('horizon'); allowed.stage.add('podium'); allowed.stripe.add('gold'); allowed.emblem.add('crown'); allowed.title.add('podiumRegular'); }
   if (betaTester) { allowed.theme.add('beta'); allowed.stripe.add('beta'); allowed.badge.add('betaTester'); allowed.title.add('betaRacer'); }
   const serverUnlocks = new Set(Array.isArray(entry.cosmeticUnlocks) ? entry.cosmeticUnlocks : []);
@@ -119,7 +148,7 @@ export function profileCosmeticsUnlocked(cosmetics, entry = {}, betaTester = fal
     const [kind, id] = stage.cosmeticId.split(':');
     if (allowed[kind] && PROFILE_COSMETIC_OPTIONS[kind]?.has(id)) allowed[kind].add(id);
   }
-  return allowed.theme.has(value.theme) && allowed.accent.has(value.accent) && allowed.finish.has(value.finish) && allowed.plate.has(value.plate) && allowed.edge.has(value.edge) && allowed.stage.has(value.stage) && allowed.stageTint.has(value.stageTint) && allowed.stripe.has(value.stripe) && allowed.emblem.has(value.emblem) && allowed.emblem2.has(value.emblem2||'none') && allowed.nameFont.has(value.nameFont||'classic') && allowed.title.has(value.title) && allowed.badge.has(value.badge);
+  return allowed.theme.has(value.theme) && allowed.accent.has(value.accent) && allowed.finish.has(value.finish) && allowed.plate.has(value.plate) && allowed.edge.has(value.edge) && allowed.stage.has(value.stage) && allowed.stageTint.has(value.stageTint) && allowed.stripe.has(value.stripe) && allowed.emblem.has(value.emblem) && allowed.emblem2.has(value.emblem2||'none') && allowed.emblem3.has(value.emblem3||'none') && allowed.emblemBackdrop.has(value.emblemBackdrop||'none') && allowed.stageEffect.has(value.stageEffect||'none') && allowed.nameFont.has(value.nameFont||'classic') && allowed.nameSize.has(value.nameSize||'normal') && allowed.nameWeight.has(value.nameWeight||'regular') && allowed.nameColor.has(value.nameColor||'default') && allowed.baseSecondary.has(value.baseSecondary||'auto') && allowed.title.has(value.title) && allowed.badge.has(value.badge);
 }
 function cosmeticEntitlement(entry={},beta=false){
   const defaults=sanitizeProfileCosmetics({});
