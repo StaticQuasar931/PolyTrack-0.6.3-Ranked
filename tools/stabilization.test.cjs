@@ -1,7 +1,7 @@
 const fs=require('node:fs');const vm=require('node:vm');const test=require('node:test');const assert=require('node:assert/strict');
 const source=fs.readFileSync(require('node:path').join(__dirname,'..','polytrack_062_patch.js'),'utf8');
 function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert.ok(start>=0,name);const tail=source.slice(start);const end=tail.indexOf('\n  }');assert.ok(end>0,name);return tail.slice(0,end+4);}
-function run(name,context={}){context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
+function run(name,context={}){context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
 for(const direction of [1,-1])test(`profile unknown results sort last in direction ${direction}`,()=>{
  const ctx={profileSort:'time',profileSortDirection:direction,knownFinishWeight:x=>x.weight,trackInfo:()=>({name:'track'})};
  const result=run('sortProfileFinishes',ctx)([{timeMs:null},{timeMs:2000},{timeMs:1000},{timeMs:undefined}]);
@@ -213,7 +213,7 @@ test('Firebase failed initialization clears its memoized promise with retry back
 
 
 test('new-track projection recomputes weight when a second racer becomes three',()=>{
- const ctx={trackInfo:()=>({type:'official'})};vm.createContext(ctx);vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),ctx);
+ const ctx={trackInfo:()=>({type:'official'}),PINNED_EXTRA_TRACK_IDS:new Set()};vm.createContext(ctx);vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),ctx);
  const old=ctx.rankedTrackWeightParts('a',2,1,1).finalWeight;
  const next=ctx.projectedFinish({trackId:'a',fieldSize:2,weight:old},1,3);
  assert.ok(next.weight>old);assert.equal(next.weight,ctx.rankedTrackWeightParts('a',3,1,1).finalWeight);
@@ -222,7 +222,7 @@ test('local planner gives only permanent Rolling Hills the official-baseline wei
  const rolling='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
  const official='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
  const community='5159a8dac6a1f397407a7b5233ad570613531f6609f7dc897490c28c9f2c7a4e';
- const ctx={trackInfo:id=>({type:id===official?'official':id===community||id===rolling?'community':'custom'})};
+ const ctx={trackInfo:id=>({type:id===official?'official':id===community||id===rolling?'community':'custom'}),PINNED_EXTRA_TRACK_IDS:new Set()};
  vm.createContext(ctx);vm.runInContext(extract('rankedTrackWeightParts'),ctx);
  const permanent=ctx.rankedTrackWeightParts(rolling,10),normalCommunity=ctx.rankedTrackWeightParts(community,10);
  assert.equal(permanent.type,'permanent');assert.equal(permanent.base,1.6);
@@ -378,7 +378,7 @@ test('identity hides automatic choice and resolves earned default',()=>{
 });
 
 function independentPlannerContext(metric){
- const ctx={plannerMetric:metric,trackInfo:()=>({type:'community'})};
+ const ctx={plannerMetric:metric,trackInfo:()=>({type:'community'}),PINNED_EXTRA_TRACK_IDS:new Set()};
  vm.createContext(ctx);
  for(const name of ['rankedPlacementCost','medianNumber','rankedTrackWeightParts','rankedTrackWeight','knownFinishWeight','projectedOverallScore','projectedFinish','simulateRecommendation','recommendationSimulator','recommendationAction','matchupPersonalAction','helpfulThresholdText'])vm.runInContext(extract(name),ctx);
  return ctx;

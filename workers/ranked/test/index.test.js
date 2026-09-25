@@ -217,6 +217,44 @@ test('Extra track submission is authenticated, private, and limited to one per d
   assert.equal((await send()).status,409);
 });
 
+test('Extra track reports keep a private per-track count and reject duplicate reporters', async () => {
+  const origin='https://staticquasar931.github.io',accountId='a'.repeat(64),trackId=[...EXTRA_TRACK_IDS][0];
+  let report=null,commits=0;
+  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){const write=JSON.parse(init.body).writes[0];assert.match(write.update.name,/extra_track_reports/);report={fields:write.update.fields,updateTime:'2026-09-24T00:00:00Z'};commits++;return {writeResults:[{}]};}
+    if(path.includes('profiles_public'))return {fields:{ownerUid:{stringValue:'owner'},accountId:{stringValue:accountId},nickname:{stringValue:'Runner'}}};
+    if(path.includes('extra_track_reports'))return report;
+    return null;
+  }};
+  const send=()=>handleRequest(new Request('https://ranked.example/v1/extra-tracks/reports',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({trackId,trackName:'Good Track',accountId,reason:'broken'})}),env);
+  assert.equal((await send()).status,201);
+  assert.equal(report.fields.reportsAmount.integerValue,'1');
+  assert.equal(report.fields.peopleWhoReportedIt.mapValue.fields[accountId].mapValue.fields.username.stringValue,'Runner');
+  assert.equal((await send()).status,409);
+  assert.equal(commits,1);
+});
+
+test('Poly Dip 2 publishes unranked finishes without verification or RP', async () => {
+  const origin='https://staticquasar931.github.io',accountId='b'.repeat(64),trackId='586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87';
+  let board=null,commits=0;
+  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':commit'){const write=JSON.parse(init.body).writes[0];assert.match(write.update.name,/extra_unranked_leaderboards/);board={fields:write.update.fields,updateTime:'2026-09-24T00:00:00Z'};commits++;return {writeResults:[{}]};}
+    if(path.includes('profiles_public'))return {fields:{ownerUid:{stringValue:'owner'},accountId:{stringValue:accountId},nickname:{stringValue:'Runner'}}};
+    if(path.includes('extra_unranked_leaderboards'))return board;
+    return null;
+  }};
+  const send=timeMs=>handleRequest(new Request('https://ranked.example/v1/extra-tracks/unranked',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({trackId,accountId,timeMs,frames:timeMs,recording:'A'.repeat(20),uploadId:111})}),env);
+  assert.equal((await send(20000)).status,201);
+  assert.equal((await send(21000)).status,200);
+  assert.equal(commits,1);
+  const response=await handleRequest(new Request(`https://ranked.example/v1/extra-tracks/unranked?trackId=${trackId}`,{headers:{Origin:origin}}),env);
+  const data=await response.json();
+  assert.equal(data.entries.length,1);
+  assert.equal(data.entries[0].runVerified,false);
+  assert.equal(data.entries[0].timeMs,20000);
+  assert.equal(data.entries[0].rp,undefined);
+});
+
 test('canonical reconciliation endpoint requires the private admin token', async () => {
   let touched=false;
   const response=await handleRequest(new Request('https://ranked.example/v1/admin/reconcile',{

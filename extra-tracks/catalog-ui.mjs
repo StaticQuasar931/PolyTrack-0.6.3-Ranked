@@ -43,7 +43,7 @@ function timeLabel(ms) {
   return `${minutes}:${seconds}.${String(total % 1000).padStart(3, '0')}`;
 }
 
-export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, onSubmit } = {}) {
+export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, onSubmit, onReport } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
@@ -179,6 +179,33 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   submissionModal.append(submission);
   submissionModal.addEventListener('click', event => { if (event.target === submissionModal) { submissionModal.hidden = true; submit.focus(); } });
   overlay.append(submissionModal);
+  const reportModal = make('div', 'sq-extra-report-modal');
+  reportModal.hidden = true;
+  reportModal.setAttribute('role', 'dialog');
+  reportModal.setAttribute('aria-modal', 'true');
+  reportModal.setAttribute('aria-label', 'Report a track');
+  const reportForm = make('form', 'sq-extra-report');
+  const reportTitle = make('h3', '', 'Report this track');
+  const reportClose = button('Close', 'sq-extra-submission-close', () => { reportModal.hidden = true; });
+  const reportEntry = make('p', 'sq-extra-report-entry');
+  const reportChoices = make('div', 'sq-extra-report-choices');
+  const reportReasons = [
+    ['inappropriate', 'Inappropriate'],
+    ['broken', 'Broken or unplayable'],
+    ['incorrect_credit', 'Incorrect credit']
+  ];
+  for (const [value, label] of reportReasons) {
+    const choice = make('label', 'sq-extra-report-choice');
+    const input = make('input'); input.type = 'radio'; input.name = `sq-extra-report-reason-${mountNumber}`; input.value = value;
+    choice.append(input, make('span', '', label)); reportChoices.append(choice);
+  }
+  const reportStatus = make('p', 'sq-extra-report-status');
+  reportStatus.setAttribute('role', 'status'); reportStatus.setAttribute('aria-live', 'polite'); reportStatus.hidden = true;
+  let reportingEntry = null;
+  reportForm.append(reportTitle, reportClose, reportEntry, reportChoices);
+  const reportSend = button('Send report', 'sq-extra-report-send', () => submitReport());
+  reportForm.append(reportSend, reportStatus);
+  reportModal.append(reportForm); overlay.append(reportModal);
   const status = make('p', 'sq-extra-status');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
@@ -246,6 +273,21 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       showStatus(`${error?.message || 'Could not send this track.'} You can use the Google Form instead.`, true);
     } finally { pendingAction = false; sendSubmission.disabled = false; }
   }
+  async function submitReport() {
+    if (pendingAction || destroyed) return;
+    const selected = [...reportChoices.children].map(choice => choice.children[0]).find(input => input.checked);
+    if (!selected) { reportStatus.textContent = 'Choose one reason before sending.'; reportStatus.className = 'sq-extra-report-status sq-extra-status-error'; reportStatus.hidden = false; return; }
+    if (typeof onReport !== 'function') { reportStatus.textContent = 'Reporting is unavailable right now.'; reportStatus.className = 'sq-extra-report-status sq-extra-status-error'; reportStatus.hidden = false; return; }
+    pendingAction = true; reportSend.disabled = true; reportStatus.textContent = 'Sending report...'; reportStatus.className = 'sq-extra-report-status'; reportStatus.hidden = false;
+    try {
+      await onReport(reportingEntry, selected.value);
+      reportStatus.textContent = 'Report received. Thanks for helping keep the catalog accurate.';
+      for (const choice of reportChoices.children) choice.children[0].checked = false;
+    } catch (error) {
+      reportStatus.textContent = error?.publicMessage ? error.message : 'Could not send your report. Please try again later.';
+      reportStatus.className = 'sq-extra-report-status sq-extra-status-error';
+    } finally { pendingAction = false; reportSend.disabled = false; }
+  }
   submission.addEventListener('submit', submitForm);
 
   async function runAction(kind, callback, entry) {
@@ -291,7 +333,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const body = make('div', 'sq-extra-card-body');
     const tier = text(entry.tier);
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
-    if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Local challenge · no ranked RP'));
+    if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Unranked challenge · no RP or verification'));
     body.append(make('h3', '', text(entry.name, 'Untitled track')));
     const creditedAuthor = text(entry.author);
     const shownAuthor = displayAuthor(entry);
@@ -310,7 +352,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }
     const level = difficulty(entry);
     if (level !== null) body.append(make('p', 'sq-extra-difficulty', `Difficulty ${level}/10 · ${DIFFICULTY_LABELS[level]}`));
-    if(entry.ranked===false)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes stay on this device.'));
+    if(entry.ranked===false)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes appear on an unranked leaderboard.'));
     const facts = make('p', 'sq-extra-facts');
     facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
     const copies = Number.isSafeInteger(entry.sourceCopies) ? entry.sourceCopies : null;
@@ -321,6 +363,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     body.append(facts);
     const actions = make('div', 'sq-extra-actions');
     actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
+    actions.append(button('Report', 'sq-extra-report-button', () => {
+      reportingEntry = entry; reportEntry.textContent = text(entry.name, 'Untitled track');
+      reportStatus.hidden = true; reportStatus.textContent = '';
+      for (const choice of reportChoices.children) choice.children[0].checked = false;
+      reportModal.hidden = false;
+    }));
     body.append(actions);
     article.append(body);
     return article;

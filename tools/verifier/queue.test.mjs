@@ -355,8 +355,8 @@ test('idle preflight checks both lanes and emits a no-work summary without physi
     for(const call of calls){
       assert.equal(call.p,':runQuery');
       const query=call.body.structuredQuery;
-      assert.equal(query.limit,1);
-      assert.deepEqual(query.select,{fields:[{fieldPath:'notBefore'}]});
+      assert.equal(query.limit,20);
+      assert.deepEqual(query.select,{fields:[{fieldPath:'notBefore'},{fieldPath:'slots'}]});
       assert.equal(query.where.fieldFilter.field.fieldPath,'notBefore');
       assert.equal(query.where.fieldFilter.op,'LESS_THAN_OR_EQUAL');
       assert.equal(query.orderBy[0].field.fieldPath,'notBefore');
@@ -381,7 +381,8 @@ test('preflight detects due work without counting racers and passes a determinis
     queries++;assert.equal(body.structuredQuery.where.fieldFilter.value.integerValue,'1234');
     return queries===1?[{document:{name:'queue/track',fields:{notBefore:{integerValue:'1234'}}}}]:[];
   }},{now:1234,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
-  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1});
+  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1,
+    queueSample:{queuedRuns:0,averageOverdueAgeMs:0,sampledQueueDocuments:1,sampleLimitPerLane:20,truncated:false}});
   assert.equal(queries,2);
 });
 
@@ -445,6 +446,38 @@ test('eight older Extra queues cannot hide core work and Extra selection remains
   assert.deepEqual(queries,[[VERIFICATION_COLLECTION,8],[EXTRA_VERIFICATION_COLLECTION,8]]);
   assert.deepEqual(selections,[[VERIFICATION_COLLECTION,8,11,11],[EXTRA_VERIFICATION_COLLECTION,8,1,1]]);
   assert.deepEqual(published,[...Array(11).fill(VERIFICATION_COLLECTION),EXTRA_VERIFICATION_COLLECTION]);
+});
+
+test('preflight reports bounded Core and Extra queued-run count and overdue-age proxy',async()=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'polytrack-queue-health-'));
+  const summaryPath=path.join(directory,'summary');
+  try {
+    const result=await checkForWork({call:async(_,body)=>{
+      const extra=body.structuredQuery.from[0].collectionId===EXTRA_VERIFICATION_COLLECTION;
+      return [{document:{fields:{notBefore:{integerValue:String(extra?850000:900000)},slots:{mapValue:{fields:{
+        a:{mapValue:{fields:{status:{stringValue:'waiting'}}}},
+        b:{mapValue:{fields:{status:{stringValue:'unavailable'},retryAt:{integerValue:'9999999999999999'}}}},
+        done:{mapValue:{fields:{status:{stringValue:'verified'}}}}
+      }}}}}}];
+    }},{now:1000000,env:{GITHUB_STEP_SUMMARY:summaryPath},eventCheck:async()=>({hasWork:false}),log:()=>{}});
+    assert.deepEqual(result.queueSample,{queuedRuns:2,averageOverdueAgeMs:125000,sampledQueueDocuments:2,sampleLimitPerLane:20,truncated:false});
+    const summary=fs.readFileSync(summaryPath,'utf8');
+    assert.match(summary,/bounded sample, not an exact total/);
+    assert.match(summary,/2 queued runs across Core and Extra; average overdue age 2.1 minutes/);
+    assert.match(summary,/proxy from queue notBefore/);
+    assert.match(summary,/sample did not reach its cap/);
+  } finally {
+    assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));
+    fs.rmSync(directory,{recursive:true,force:true});
+  }
+});
+
+test('preflight marks queue-health samples that reach a lane cap as possibly truncated',async()=>{
+  const result=await checkForWork({call:async()=>Array.from({length:20},()=>({document:{fields:{
+    notBefore:{integerValue:'100'},slots:{mapValue:{fields:{}}}
+  }}}))},{now:100,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
+  assert.equal(result.queueSample.sampledQueueDocuments,40);
+  assert.equal(result.queueSample.truncated,true);
 });
 
 test('idle core work lends all available verification slots to Extra runs',async()=>{
@@ -570,7 +603,9 @@ test('real event module idle preflight performs five bounded read operations and
   const calls=[];
   const result=await checkForWork({call:async(p,body)=>{
     calls.push({p,body});
-    if(p===':runQuery'){assert.equal(body.structuredQuery.limit,1);if(body.structuredQuery.from[0].collectionId!=='0.6.2_event_retries')assert.ok(body.structuredQuery.select);return [];}
+    if(p===':runQuery'){const collection=body.structuredQuery.from[0].collectionId;
+      assert.equal(body.structuredQuery.limit,[VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION].includes(collection)?20:1);
+      if(collection!=='0.6.2_event_retries')assert.ok(body.structuredQuery.select);return [];}
     assert.ok(['/0.6.2_event_catalog/main','/0.6.2_event_cursors/scan'].includes(p),p);return null;
   }},{env:{},log:()=>{},now:1234});
   assert.equal(result.hasWork,false);assert.equal(calls.length,6);

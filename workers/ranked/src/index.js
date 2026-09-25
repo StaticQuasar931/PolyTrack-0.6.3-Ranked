@@ -19,6 +19,7 @@ const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
 const TRACK_LIMIT = 500;
+const UNRANKED_EXTRA_TRACK_ID = '586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87';
 const OVERALL_BOARD_PAGE_SIZE = 100;
 const OVERALL_BOARD_LIMIT = 500;
 const REBUILD_COOLDOWN_MS = 5 * 60 * 1000;
@@ -39,7 +40,9 @@ const COLLECTIONS = Object.freeze({
   meta: '0.6.2_s1_release_meta',
   jobs: '0.6.2_s1_worker_jobs',
   cosmeticJobs: '0.6.2_s1_cosmetic_jobs',
-  extraTrackSubmissions: '0.6.2_extra_track_submissions'
+  extraTrackSubmissions: '0.6.2_extra_track_submissions',
+  extraTrackReports: '0.6.2_extra_track_reports',
+  unrankedExtra: '0.6.2_extra_unranked_leaderboards'
 });
 const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta']),
@@ -1282,6 +1285,51 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
   return response;
 }
 
+async function submitExtraTrackReport(request, env, origin, uid, body) {
+  const trackId = safeText(body.trackId, 64), accountId = safeText(body.accountId, 64);
+  const reason = safeText(body.reason, 32);
+  if (!/^[a-f0-9]{64}$/.test(trackId) || !/^[a-f0-9]{64}$/.test(accountId) || !EXTRA_TRACK_IDS.has(trackId) && trackId !== UNRANKED_EXTRA_TRACK_ID || !['inappropriate', 'broken', 'incorrect_credit'].includes(reason)) return json(origin, env, 400, {error:'invalid_report'});
+  const profile = await readDocument(env, COLLECTIONS.profiles, accountId);
+  if (!profile || profile.data.ownerUid !== uid || profile.data.accountId !== accountId) return json(origin, env, 403, {error:'profile_not_owned'});
+  const username = safeText(profile.data.nickname || profile.data.name || 'Racer', 24) || 'Racer';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const prior = await readDocument(env, COLLECTIONS.extraTrackReports, trackId);
+    const people = prior?.data.peopleWhoReportedIt || {};
+    if (people[accountId]) return json(origin, env, 409, {error:'already_reported'});
+    if (Object.keys(people).length >= 500) return json(origin, env, 409, {error:'report_capacity'});
+    const data = {trackId,trackName:safeText(body.trackName,80)||prior?.data.trackName||'Extra Track',reportsAmount:Object.keys(people).length+1,peopleWhoReportedIt:{...people,[accountId]:{username,id:accountId,reason,reportedAt:Date.now()}},updatedAt:Date.now()};
+    try { await commitDocuments(env,[{collection:COLLECTIONS.extraTrackReports,id:trackId,data,prior}]); return json(origin, env, 201, {accepted:true}); }
+    catch (error) { if (!/FIRESTORE_(409|412)/.test(String(error?.message)) || attempt === 2) throw error; }
+  }
+  return json(origin, env, 503, {error:'service_unavailable'});
+}
+
+async function unrankedExtraBoard(request, env, origin, uid, body) {
+  const trackId = request.method === 'GET' ? new URL(request.url).searchParams.get('trackId') : body?.trackId;
+  if (trackId !== UNRANKED_EXTRA_TRACK_ID) return json(origin, env, 400, {error:'invalid_track_id'});
+  if (request.method === 'GET') {
+    const board = await readDocument(env, COLLECTIONS.unrankedExtra, trackId);
+    return json(origin, env, 200, {trackId,unranked:true,entries:board?.data.entries||[],total:board?.data.total||0}, 'public, max-age=10');
+  }
+  const accountId = safeText(body.accountId,64), timeMs = Number(body.timeMs), frames = Number(body.frames);
+  if (!/^[a-f0-9]{64}$/.test(accountId) || !Number.isSafeInteger(timeMs) || timeMs < 1 || timeMs > 86400000 || frames !== timeMs || typeof body.recording !== 'string' || !/^[A-Za-z0-9+/_=-]{16,65536}$/.test(body.recording)) return json(origin, env, 400, {error:'invalid_run'});
+  const profile = await readDocument(env, COLLECTIONS.profiles, accountId);
+  if (!profile || profile.data.ownerUid !== uid || profile.data.accountId !== accountId) return json(origin, env, 403, {error:'profile_not_owned'});
+  const name = safeText(profile.data.nickname || profile.data.name || 'Racer',24)||'Racer';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const prior = await readDocument(env, COLLECTIONS.unrankedExtra, trackId);
+    const rows = Array.isArray(prior?.data.entries) ? prior.data.entries : [];
+    const old = rows.find(row => row.accountId === accountId);
+    if (old && old.timeMs <= timeMs) return json(origin, env, 200, {accepted:true,improved:false});
+    const now = Date.now();
+    const entries = [...rows.filter(row=>row.accountId!==accountId),{accountId,name,timeMs,frames,runVerified:false,integrityVerified:false,verifiedState:0,unranked:true,pbAt:now,uploadId:Number(body.uploadId)||0}].sort((a,b)=>a.timeMs-b.timeMs||a.accountId.localeCompare(b.accountId)).slice(0,TRACK_LIMIT);
+    const data={trackId,trackName:'Poly Dip 2',unranked:true,entries,total:Math.max(Number(prior?.data.total||0),rows.length)+(!old?1:0),updatedAt:now};
+    try {await commitDocuments(env,[{collection:COLLECTIONS.unrankedExtra,id:trackId,data,prior}]);return json(origin, env, 201, {accepted:true,improved:true,rank:entries.findIndex(row=>row.accountId===accountId)+1});}
+    catch(error){if(!/FIRESTORE_(409|412)/.test(String(error?.message))||attempt===2)throw error;}
+  }
+  return json(origin, env, 503, {error:'service_unavailable'});
+}
+
 export async function handleRequest(request, env, context = {}) {
   const origin = request.headers.get('Origin') || '';
   if (!allowedOrigins(env).has(origin)) return json(origin, env, 403, { error: 'origin_not_allowed' });
@@ -1297,6 +1345,7 @@ export async function handleRequest(request, env, context = {}) {
     return json(origin, env, 200, { service: 'polytrack-ranked', algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: Number(meta.derivedMetricsVersion || 0), currentDerivedMetricsVersion: DERIVED_METRICS_VERSION, openBetaEnabled: openBetaEnabled(env), rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false', revision: Number(meta.revision || 0), builtRevision: Number(meta.builtRevision || 0), dirty: meta.dirty === true, pendingRevisions: Math.max(0, Number(meta.revision || 0) - Number(meta.builtRevision || 0)), updatedAt: Number(meta.updatedAt || 0) });
   }
   if (request.method === 'GET' && path === '/v1/snapshot/overall') return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
+  if (request.method === 'GET' && path === '/v1/extra-tracks/unranked') return unrankedExtraBoard(request, env, origin);
   if (request.method === 'GET' && path === '/v1/snapshot/track') {
     const trackId = safeText(new URL(request.url).searchParams.get('trackId'), 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(trackId)) return json(origin, env, 400, { error: 'invalid_track_id' });
@@ -1324,13 +1373,15 @@ export async function handleRequest(request, env, context = {}) {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
-  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/extra-tracks/submissions') return json(origin, env, 404, { error: 'not_found' });
+  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });
   let uid;
   try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, { error: 'authentication_failed' }); }
   if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({ key: uid })).success) return json(origin, env, 429, { error: 'rate_limited', retryAfterSeconds: 60 });
   let body;
-  try { body = await requestBody(request, path === '/v1/extra-tracks/submissions' ? 550000 : 2048); } catch { return json(origin, env, 400, { error: 'invalid_request' }); }
+  try { body = await requestBody(request, path === '/v1/extra-tracks/submissions' ? 550000 : path === '/v1/extra-tracks/unranked' ? 70000 : 2048); } catch { return json(origin, env, 400, { error: 'invalid_request' }); }
+  if (path === '/v1/extra-tracks/reports') return submitExtraTrackReport(request, env, origin, uid, body);
+  if (path === '/v1/extra-tracks/unranked') return unrankedExtraBoard(request, env, origin, uid, body);
   if (path === '/v1/extra-tracks/submissions') {
     const name = safeText(body.name, 80), author = safeText(body.author, 80);
     const description = safeText(body.description, 1000), code = String(body.code || '').trim();

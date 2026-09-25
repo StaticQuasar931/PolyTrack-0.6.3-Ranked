@@ -212,8 +212,8 @@ test('oversized local challenge is visibly unranked while keeping the normal imp
   const { root, api } = fixture([entry(1, { ranked: false, name: 'Poly Dip 2', sizeBytes: 329716 })]);
   api.open();
   assert.equal(cls(root, 'sq-extra-card-unranked').length, 1);
-  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Local challenge · no ranked RP/);
-  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Finishes stay on this device/);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Unranked challenge · no RP or verification/);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Finishes appear on an unranked leaderboard/);
   assert.equal(cls(root, 'sq-extra-play')[0].textContent, 'Import and play');
   api.destroy();
 });
@@ -273,6 +273,32 @@ test('Import and play waits for the native importer before hiding', async () => 
   finish();
   await action;
   assert.equal(cls(root, 'sq-extra-overlay')[0].hidden, true);
+});
+
+test('track reports expose exactly three reasons and report clear success or failure', async () => {
+  const reports = [];
+  const { root, api } = fixture([entry(1)], { onReport: async (item, reason) => { reports.push([item, reason]); } });
+  api.open();
+  await click(cls(root, 'sq-extra-report-button')[0]);
+  const modal = cls(root, 'sq-extra-report-modal')[0];
+  const choices = cls(root, 'sq-extra-report-choice');
+  assert.equal(modal.hidden, false);
+  assert.deepEqual(choices.map(choice => choice.children[1].textContent), ['Inappropriate', 'Broken or unplayable', 'Incorrect credit']);
+  assert.equal(tag(modal, 'input').length, 3);
+  choices[2].children[0].checked = true;
+  await click(cls(modal, 'sq-extra-report-send')[0]);
+  assert.deepEqual(reports, [[entry(1), 'incorrect_credit']]);
+  assert.match(cls(modal, 'sq-extra-report-status')[0].textContent, /Report received/);
+  api.destroy();
+
+  const failed = fixture([entry(2)], { onReport: async () => { throw Error('private detail'); } });
+  failed.api.open();
+  await click(cls(failed.root, 'sq-extra-report-button')[0]);
+  cls(failed.root, 'sq-extra-report-choice')[0].children[0].checked = true;
+  await click(cls(failed.root, 'sq-extra-report-send')[0]);
+  assert.match(cls(failed.root, 'sq-extra-report-status')[0].textContent, /Could not send/);
+  assert.doesNotMatch(cls(failed.root, 'sq-extra-report-status')[0].textContent, /private detail/);
+  failed.api.destroy();
 });
 
 test('empty entries still mount and show an accurate zero count', () => {

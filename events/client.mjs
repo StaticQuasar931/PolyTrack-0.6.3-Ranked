@@ -418,6 +418,7 @@ export function installEvents(bridge){
   const ownReceipts=new Map();
   function clearNativeView(){
     if(!nativeView)return;
+    nativeView.carObserver?.disconnect();
     nativeView.board.remove();nativeView.pb.remove();nativeView.pbTitle.remove();
     if(nativeView.watch)nativeView.watch.disabled=nativeView.watchDisabled;
     nativeView.opponentsNote?.remove();
@@ -482,7 +483,8 @@ export function installEvents(bridge){
       if(normalPb){normalPb.before(pbTitle,pb);}
       const watch=side?.querySelector('button.watch'),opponents=side?.querySelector('.opponents-container');
       const opponentsNote=document.createElement('div');opponentsNote.className='opponents-container sq-event-opponents';opponentsNote.textContent='Event ghosts are not available. Normal PB ghosts are not used.';opponents?.after(opponentsNote);
-      const view=nativeView={root,board,pb,pbTitle,watch,watchDisabled:watch?.disabled,opponents,opponentsNote,periodId:period.id,accountId,page:0,signature:''};
+      const view=nativeView={root,board,pb,pbTitle,watch,watchDisabled:watch?.disabled,opponents,opponentsNote,periodId:period.id,accountId,page:0,signature:'',carStyles:new WeakMap()};
+      if(typeof IntersectionObserver==='function')view.carObserver=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;view.carObserver.unobserve(entry.target);const style=view.carStyles.get(entry.target);if(style)renderCachedCar(entry.target,style);}},{root:board.querySelector('.container'),rootMargin:'50px'});
       board.addEventListener('contextmenu',event=>event.stopPropagation());
       board.querySelector('.back').onclick=()=>{const back=original.querySelector('button.back');entryRequest++;sessions.leave();eventIntent=null;tick();back?.click();};
       board.querySelector('.sq-event-refresh').onclick=async()=>{
@@ -520,7 +522,7 @@ export function installEvents(bridge){
     view.board.querySelector('h3').textContent=eventName(period.kind)+' event';
     view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(board?.saved?' - saved standings':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
-    const container=view.board.querySelector('.container');container.replaceChildren();
+    const container=view.board.querySelector('.container');view.carObserver?.disconnect();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
       const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>{++topSelectionToken;void selectReplay(period,row);};
       const selectedRow=selectedGhosts.get(row.accountId);const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===row.timeMs&&selectedRow.targetRunId===(row.runId||null)&&selectedRow.targetPending===!!row.pending;
@@ -531,7 +533,8 @@ export function installEvents(bridge){
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
       const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.rp)||0)+' Event RP';
       const icon=button.querySelector('.checkmark');icon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';icon.alt=row.pending?'Unverified recording':'Verified replay';container.append(button);
-      renderCachedCar(button,styles[view.page*20+index]);
+      const style=styles[view.page*20+index];
+      if(style){if(view.carObserver){view.carStyles.set(button,style);view.carObserver.observe(button);}else renderCachedCar(button,style);}
     }
     if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent='No event times yet. Play to set your event PB.';container.append(empty);}
     const status=document.createElement('p');status.className='sq-event-inline-status';status.setAttribute('role','status');status.textContent=statusDescription;container.append(status);

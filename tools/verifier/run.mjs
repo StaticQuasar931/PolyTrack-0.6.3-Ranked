@@ -9,6 +9,7 @@ import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, VERIFIER_ENGINE_
 import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
 export const NORMAL_JOB_LIMIT = 12;
 export const TOTAL_JOB_LIMIT = 16;
+export const PREFLIGHT_QUEUE_SAMPLE_LIMIT = 20;
 const checkEvents = async (db, options) => (await import('./events.mjs')).checkEventWork(db, options);
 const runEvents = async (db, directory, options) => (await import('./events.mjs')).runEventVerification(db, directory, options);
 const simulate = async (directory, jobs, trustedTracks) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks);
@@ -23,17 +24,33 @@ async function validateEnginePin() {
 export async function checkForWork(db, {env = process.env, now = Date.now(), log = console.log, eventCheck = checkEvents} = {}) {
   const due = async collection => db.call(':runQuery', {structuredQuery: {
     from: [{collectionId: collection}],
-    select: {fields: [{fieldPath: 'notBefore'}]},
+    select: {fields: [{fieldPath: 'notBefore'}, {fieldPath: 'slots'}]},
     where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}},
     orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}],
-    limit: 1
+    limit: PREFLIGHT_QUEUE_SAMPLE_LIMIT
   }});
   const coreRows = await due(VERIFICATION_COLLECTION);
   const extraRows = await due(EXTRA_VERIFICATION_COLLECTION);
   if (!Array.isArray(coreRows) || !Array.isArray(extraRows)) throw Error('Unexpected verification queue response');
-  const coreHasWork = coreRows.some(row => row.document);
-  const extraHasWork = extraRows.some(row => row.document);
+  const coreDocs = coreRows.filter(row => row.document);
+  const extraDocs = extraRows.filter(row => row.document);
+  const coreHasWork = coreDocs.length > 0;
+  const extraHasWork = extraDocs.length > 0;
   const normalHasWork = coreHasWork || extraHasWork;
+  const queueRows = [...coreDocs, ...extraDocs];
+  let queuedRuns = 0, overdueAgeTotalMs = 0;
+  for (const row of queueRows) {
+    const fields = row.document.fields || {};
+    const notBefore = Number(decode(fields.notBefore || {integerValue: '0'}));
+    const slots = decode(fields.slots || {mapValue: {fields: {}}});
+    const count = Object.values(slots || {}).filter(slot =>
+      slot && (slot.status === 'waiting' || slot.status === 'unavailable' && Number(slot.retryAt || 0) < Number.MAX_SAFE_INTEGER)).length;
+    queuedRuns += count;
+    overdueAgeTotalMs += Math.max(0, now - notBefore) * count;
+  }
+  const averageOverdueAgeMs = queuedRuns ? Math.round(overdueAgeTotalMs / queuedRuns) : 0;
+  const queueSample = {queuedRuns, averageOverdueAgeMs, sampledQueueDocuments: queueRows.length,
+    sampleLimitPerLane: PREFLIGHT_QUEUE_SAMPLE_LIMIT, truncated: coreDocs.length === PREFLIGHT_QUEUE_SAMPLE_LIMIT || extraDocs.length === PREFLIGHT_QUEUE_SAMPLE_LIMIT};
   const events = await eventCheck(db, {now});
   if (typeof events?.hasWork !== 'boolean') throw Error('Unexpected event queue response');
   const eventHasWork = events.hasWork;
@@ -44,10 +61,11 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
   log(message);
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '## Verification preflight\n' + message + '\n\n' +
-    'Core and Extra queues: two projected existence queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
+    `Queue health (bounded sample, not an exact total): ${queuedRuns} queued runs across Core and Extra; average overdue age ${(averageOverdueAgeMs / 60000).toFixed(1)} minutes (proxy from queue notBefore, weighted by queued runs). Sampled ${queueRows.length} due queue documents, at most ${PREFLIGHT_QUEUE_SAMPLE_LIMIT} per lane; sample ${queueSample.truncated ? 'may be truncated' : 'did not reach its cap'}.\n\n` +
+    'Core and Extra queues: two bounded projected queue queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
     (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
       'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));
-  return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2, returnedDocuments: Number(coreHasWork) + Number(extraHasWork)};
+  return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2, returnedDocuments: queueRows.length, queueSample};
 }
 
 export async function runVerifier({check = false, drain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
