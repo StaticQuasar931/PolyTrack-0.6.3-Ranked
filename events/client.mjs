@@ -274,11 +274,18 @@ export function installEvents(bridge){
   }
   let nativeView=null,eventIntent=null;
   let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),replayCache=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
-  const carImages=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
+  const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
+  function validCachedCarStyle(style){
+    if(validatedCarStyles.has(style))return validatedCarStyles.get(style);
+    let valid=false;
+    try{const value=bridge.require()?.(8724)?.A.deserializeSafe(style);valid=!!value&&value.serialize()===style;}catch{}
+    validatedCarStyles.set(style,valid);if(validatedCarStyles.size>256)validatedCarStyles.delete(validatedCarStyles.keys().next().value);
+    return valid;
+  }
   function cachedCarStyle(row,period){
     if(!profilesAt||now()-profilesAt>=120000){profilesAt=now();profileStyles=new Map();const saved=read(PROFILE_CACHE,null);for(const entry of (Array.isArray(saved?.entries)?saved.entries:[]).slice(0,1000))profileStyles.set(entry.accountId||entry.userId,entry.carStyle);}
     const candidates=[window.__polytrackCarStyleByUser062?.[row.accountId],row.carStyle,row.accountId===bridge.accountId()?localBest(period)?.carStyle:null,profileStyles.get(row.accountId)];
-    for(const value of candidates){if(typeof value!=='string'||!value||value.length>256)continue;try{if(bridge.require()?.(8724)?.A.deserializeSafe(value)?.serialize()===value)return value;}catch{}}
+    for(const value of candidates){if(typeof value!=='string'||!value||value.length>256)continue;if(validCachedCarStyle(value))return value;}
     return '';
   }
   const imageSource=value=>typeof value==='string'?value:value?.src||value?.url||value?.dataUrl||'';

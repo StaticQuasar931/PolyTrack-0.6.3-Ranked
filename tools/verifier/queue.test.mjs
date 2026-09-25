@@ -413,12 +413,12 @@ test('Extra-only work wakes preflight while legacy core remains independently vi
   assert.equal(verificationCollectionForTrack('legacy-core-id'),VERIFICATION_COLLECTION);
 });
 
-test('all 153 pinned catalog IDs use the Extra lane',()=>{
+test('all 200 pinned catalog IDs use the Extra lane',()=>{
   const ids=[...EXTRA_TRACK_IDS].sort();
-  assert.equal(ids.length,153);
+  assert.equal(ids.length,200);
   assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
   assert.equal(createHash('sha256').update(ids.join(',')).digest('hex'),
-    '0e720800295ebdabdef7c8d8a44e8ec5d7777cb3a5deef4bbfe4dd2c6765e2a4');
+    'add9204438ea6bb8782c9eeef91cb256ca4d9a93f32f7d5ef522a141f98d674c');
   assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
 });
 

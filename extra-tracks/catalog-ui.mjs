@@ -272,6 +272,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       image.alt = '';
       image.loading = 'lazy';
       image.decoding = 'async';
+      image.fetchPriority = 'low';
       image.addEventListener('load', () => { placeholder.hidden = true; });
       image.addEventListener('error', () => { image.remove(); placeholder.hidden = false; });
       image.src = imageUrl;

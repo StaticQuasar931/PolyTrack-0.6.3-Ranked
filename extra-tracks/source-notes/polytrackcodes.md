@@ -11,3 +11,8 @@ One hundred nineteen selected codes are listed with creator credit and their ind
 ## Source terms
 
 [PolyTrackCodes Terms of Service](https://www.polytrackcodes.com/terms) prohibit scraping, copying, or redistributing the site's database without permission. The stated permission does not extend to artwork.
+
+
+## Additional PolyTrackCodes selection (2026-09-24)
+
+Forty more individually selected track codes were imported from the user-authorized source on 2026-09-24, bringing this source manifest to 159 and the full Extra catalog to 200. Candidate metadata came from `GET https://polytrackcodes-data-api.aifeefee70.workers.dev/tracks?fields=list&limit=500`; each selected code came from `GET /tracks/{slug}`. Selection favored attributed tracks with strong copy activity/rates. Each code passed `tools/verifier/kodub-track.cjs` bounded game-format preflight, had a nonempty embedded creator, and its native ID was computed from the decoded canonical track body using the game `TrackData.getId()` SHA-256 representation. IDs are unique against the full existing catalog. Codes exceeding the default 20,000-part limit were excluded. Attribution and source-page URLs are in both the catalog and source manifest. No source artwork was copied; native preview generation was not available in the bounded import workflow.

@@ -1,0 +1,142 @@
+[
+  {
+    "id": "mirage",
+    "trackId": "b1159f97c4c62dc541cd7ff12e940082ef68604044d6b48ab8f1e60ac3022966",
+    "name": "Mirage",
+    "author": "VØłĐ",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1551678560908091542",
+    "tags": [
+      "medium",
+      "speedtech"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/discord/mirage.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/mirage.png",
+    "sourceCopies": null,
+    "codeName": "Mirage",
+    "codeAuthor": "VØłĐ",
+    "codeModifiedAt": "2026-09-17T04:46:27.000Z",
+    "sizeBytes": 51760
+  },
+  {
+    "id": "chroma-chora",
+    "trackId": "80ef3f1058b162c5dd0b92c9b97bf0d0379f90df174d05a161660c1755dab4dc",
+    "name": "Chroma Chora",
+    "author": "4ev_Xav",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1551677800564654161",
+    "tags": [
+      "easy",
+      "fakespeed"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/discord/chroma-chora.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/chroma-chora.png",
+    "sourceCopies": null,
+    "codeName": "ℭ𝔥𝔯𝔬𝔪𝔞 ℭ𝔥𝔬𝔯𝔞",
+    "codeAuthor": "xav🤤_retired𝔟𝔲𝔦𝔩𝔡𝔢𝔯",
+    "codeModifiedAt": "2026-09-18T05:53:28.000Z",
+    "sizeBytes": 45794
+  },
+  {
+    "id": "tailfin-pass",
+    "trackId": "94e5fde0903251960a2d8d6350b6a04533aa854e6ceb0644aa7f59ae49d4b9cf",
+    "name": "Tailfin Pass",
+    "author": "Kaiser-Burn (route); Apex (decoration)",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1549915958070485032",
+    "tags": [
+      "easy",
+      "speedtech"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/discord/tailfin-pass.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/tailfin-pass.png",
+    "sourceCopies": null,
+    "codeName": "Tailfin Pass",
+    "codeAuthor": "Kaiser-Burn, Apex",
+    "codeModifiedAt": "2026-09-13T18:20:32.000Z",
+    "sizeBytes": 23022
+  },
+  {
+    "id": "wild-flow",
+    "trackId": "fa05ea49f63f9c9854d26b16657673f532dc0b0c8ec69c3645682ea9db21bdaf",
+    "name": "Wild Flow",
+    "author": "Maufi",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1551677425367384114",
+    "tags": [
+      "easy",
+      "fullspeed"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/discord/wild-flow.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/wild-flow.png",
+    "sourceCopies": null,
+    "codeName": "Wild Flow",
+    "codeAuthor": "Maufi",
+    "codeModifiedAt": "2026-09-17T18:00:04.000Z",
+    "sizeBytes": 14685
+  },
+  {
+    "id": "bergy-bits-3",
+    "trackId": "e35aecef1cf2f609de8bb59654cc10ec9b3ac29a5c41a120a6df41a947e519bf",
+    "name": "bergy bits 3",
+    "author": "Yoitozoid",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1550008807021617295",
+    "tags": [
+      "fakespeed",
+      "shortcut"
+    ],
+    "tier": "Community",
+    "trackPath": "extra-tracks/track-data/discord/bergy-bits-3.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/bergy-bits-3.png",
+    "sourceCopies": null,
+    "codeName": "bergy bits 3",
+    "codeAuthor": "Captain 🂡 Yoitozoid",
+    "codeModifiedAt": "2026-08-26T00:34:22.000Z",
+    "sizeBytes": 18032
+  },
+  {
+    "id": "shiver-street",
+    "trackId": "16035969ac712201254179ba426cc84dff9911da4ab3e7b38cb254684603e5ba",
+    "name": "Shiver Street",
+    "author": "diceeeeeee (route); Big Roodle (decoration)",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1543717535784902656",
+    "tags": [
+      "medium",
+      "fullspeed"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/discord/shiver-street.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/shiver-street.png",
+    "sourceCopies": null,
+    "codeName": "Shiver street",
+    "codeAuthor": "Big R, dice",
+    "codeModifiedAt": "2026-08-27T21:13:36.000Z",
+    "sizeBytes": 37378
+  },
+  {
+    "id": "combustion",
+    "trackId": "62df3f47136ff53fbef5325a14edd5899548a01cb0e4b78e6bfd1736c93a7aff",
+    "name": "Combustion",
+    "author": "CXKat; Kaiser-Burn",
+    "source": "PolyTrack Discord",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1291381174358511719/threads/1539817107502407753",
+    "tags": [
+      "speedtech",
+      "track-of-the-week"
+    ],
+    "tier": "Curated",
+    "trackPath": "extra-tracks/track-data/discord/combustion.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/combustion.png",
+    "sourceCopies": null,
+    "codeName": "Combustion",
+    "codeAuthor": "cioza, Kaiser-Burn",
+    "codeModifiedAt": "2026-07-10T19:57:27.000Z",
+    "sizeBytes": 36583
+  }
+]

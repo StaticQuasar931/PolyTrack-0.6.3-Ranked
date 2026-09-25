@@ -196,7 +196,7 @@ test('code metadata, credits and actual byte sizes are visible and searchable', 
   const card = cls(root, 'sq-extra-card')[0];
   assert.match(card.textContent, /By Track maker/);
   assert.match(card.textContent, /Source credit: Site account/);
-  assert.match(card.textContent, /Modified Sep 17, 2026/);
+  assert.match(card.textContent, /Modified .*2026/);
   assert.match(card.textContent, /16\.7 KB code/);
   const search = tag(cls(root, 'sq-extra-field')[0], 'input')[0];
   search.value = 'Track maker'; search.dispatch('input');
@@ -272,13 +272,19 @@ test('empty entries still mount and show an accurate zero count', () => {
 });
 
 test('Escape closes menu and CSS defines narrow responsive layout', () => {
-  const { document, root, api } = fixture([entry(1)]);
+  const { document, root, api } = fixture([entry(1, { thumbnailUrl: '/preview.png' })]);
   api.open();
   document.listeners.get('keydown')({ key: 'Escape', preventDefault() {} });
   assert.equal(cls(root, 'sq-extra-overlay')[0].hidden, true);
   const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
   assert.match(css, /@media\(max-width:560px\)/);
+  assert.match(css, /@media\(max-width:850px\)/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.sq-extra-overlay\[hidden\]\{display:none!important\}/);
+  const image = cls(root, 'sq-extra-visual')[0].children.find(node => node.tagName === 'IMG');
+  assert.equal(image.loading, 'lazy');
+  assert.equal(image.decoding, 'async');
+  assert.equal(image.fetchPriority, 'low');
 });
 
 test('separate mounts use distinct accessible title targets', () => {

@@ -183,6 +183,16 @@ test('event car falls back to an account-matched persisted style and native rend
  });await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>fallbackCalls===1);
  await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();await p.evaluate(()=>{for(let i=0;i<30;i++)ui.tick();});assert.equal(await p.evaluate(()=>fallbackCalls),1);
 });
+test('event leaderboard validates each cached car style once across repeated menu ticks',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();window.deserializeCalls=[];
+  bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>{deserializeCalls.push(s);return {serialize:()=>s};}}}:prior(n);
+  window.BT=async()=> 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:5},(_,i)=>({accountId:String(i+1).repeat(64),name:'Racer '+i,carStyle:'menu-style-'+i,timeMs:20000+i,rank:i+1,rp:100}))});
+ });await enter(p);await p.locator('.sq-event-board .total-players').getByText('5 racers').waitFor();
+ await p.evaluate(()=>{for(let i=0;i<60;i++)ui.tick();});
+ assert.deepEqual(await p.evaluate(()=>deserializeCalls),Array.from({length:5},(_,i)=>'menu-style-'+i));
+});
 test('event thumbnail rendering runs one job at a time',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>s.startsWith('style-')?{serialize:()=>s}:null}}:prior(n);

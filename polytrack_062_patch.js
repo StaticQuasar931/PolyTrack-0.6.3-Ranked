@@ -146,7 +146,9 @@
     if(group)kodubAdapter?.combineKodubCard(document,group,nativeWeeklySelection);
     const ranked=document.getElementById('overallLeaderboardPanel');
     if((nav&&isElementVisible(nav)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
-    if(eventUi&&Date.now()-lastEventUiTickAt>1000){lastEventUiTickAt=Date.now();eventUi.tick();}
+    const eventUiVisible=(nav&&isElementVisible(nav))||(ranked&&isElementVisible(ranked))||
+      document.querySelector('.sq-events-overlay')||document.body.classList.contains('sq-event-active');
+    if(eventUi&&eventUiVisible&&Date.now()-lastEventUiTickAt>1000){lastEventUiTickAt=Date.now();eventUi.tick();}
   }
 
   function extraTrackIds(){
@@ -542,6 +544,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     try{sessionStorage.removeItem(RANKED_EDGE_STATE_KEY);}catch{}
   }
   const jsonStorageCache=new Map();
+  const normalizedOverallSnapshots=new WeakMap();
+  let trackCacheGeneration=0;
+  let overallCacheGeneration=0;
   function readJsonStorage(key, fallback=null){
     try {
       const raw=localStorage.getItem(key);
@@ -559,7 +564,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function readOverallSnapshotCache(){
     const cached = readJsonStorage(OVERALL_CACHE_KEY,null) || readJsonStorage(OVERALL_BETA_CACHE_KEY,null) || readJsonStorage(OVERALL_LEGACY_CACHE_KEY,null);
     if (!cached || !Array.isArray(cached.entries) || !cached.entries.length) return null;
-    return {...cached,entries:normalizeEntries(cached.entries)};
+    let normalized=normalizedOverallSnapshots.get(cached);
+    if(!normalized){normalized={...cached,entries:normalizeEntries(cached.entries)};normalizedOverallSnapshots.set(cached,normalized);}
+    return normalized;
   }
   function writeOverallSnapshotCache(entries,meta={}){
     const normalized = normalizeEntries(entries || []);
@@ -569,6 +576,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const totalEntries=Number.isSafeInteger(meta.totalEntries)&&meta.totalEntries>=0?meta.totalEntries:null;
     const publishedEntries=Number.isSafeInteger(meta.publishedEntries)&&meta.publishedEntries>=0?meta.publishedEntries:null;
     writeJsonStorage(OVERALL_CACHE_KEY,{entries:normalized,trackSummaries,fetchedAt:Number(meta.checkedAt||meta.fetchedAt||0)||Date.now(),serverUpdatedAt:Number(meta.serverUpdatedAt||0)||Number(prior.serverUpdatedAt||0)||0,revision:Number(meta.revision||0)||0,builtRevision:Number(meta.builtRevision||0)||0,sourceRevision:Number(meta.sourceRevision||meta.builtRevision||0)||0,algorithmVersion:String(meta.algorithmVersion||RANK_MODEL),schemaVersion:Number(meta.schemaVersion||TRACK_CACHE_SCHEMA),source:String(meta.source||'cloud'),signature:String(meta.signature||''),complete:meta.complete===true,totalEntriesExact:meta.totalEntriesExact===true,ranksExact:meta.ranksExact===true,...(totalEntries===null?{}:{totalEntries}),...(publishedEntries===null?{}:{publishedEntries})});
+    overallCacheGeneration++;
   }
   function trackSnapshotStore(){
     const value = readJsonStorage(TRACK_CACHE_KEY,null) || readJsonStorage(TRACK_LEGACY_CACHE_KEY,{});
@@ -594,6 +602,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const ids=Object.keys(store).sort((a,b)=>Number(store[b]?.fetchedAt||0)-Number(store[a]?.fetchedAt||0));
     for(const staleId of ids.length<=18?[]:ids.slice(18)) delete store[staleId];
     writeJsonStorage(TRACK_CACHE_KEY,store);
+    trackCacheGeneration++;
     syncCachedRecordingVerification(normalizedEntries);
     trackOverlayCache=null;
   }
@@ -1526,11 +1535,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   let localPbReconcilePromise = null;
   let localPbReconcileTimer = 0;
   function readLocalRaceRows(){
-    try {
-      const raw = localStorage.getItem(LOCAL_RACE_STORE_KEY);
-      const rows = raw ? JSON.parse(raw) : [];
-      return Array.isArray(rows) ? rows : [];
-    } catch { return []; }
+    const rows=readJsonStorage(LOCAL_RACE_STORE_KEY,[]);
+    return Array.isArray(rows)?rows:[];
   }
   function writeLocalRaceRows(rows){
     try {
@@ -1548,7 +1554,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(!current||timeMs<currentMs||(timeMs===currentMs&&hasReplay&&!currentHasReplay))bestByTrackAndUser.set(key,{...row,accountId,userId:accountId,trackId,timeMs});
       }
       const canonical=Array.from(bestByTrackAndUser.values()).sort((a,b)=>Number(b.updatedAt||b.pbAt||b.createdAt||0)-Number(a.updatedAt||a.pbAt||a.createdAt||0));
-      localStorage.setItem(LOCAL_RACE_STORE_KEY, JSON.stringify(canonical.slice(0, 5000)));
+      writeJsonStorage(LOCAL_RACE_STORE_KEY,canonical.slice(0,5000));
     } catch {}
   }
   function syncCachedRecordingVerification(entries){
@@ -2134,6 +2140,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     });
   }
 
+  let lastPlacementUpdateAt=0,lastPlacementTrackGeneration=-1,lastPlacementOverallGeneration=-1,lastPlacementSettings='',lastPlacementMenu=null,lastPlacementMenuVisible=false;
   function applyUiPreferences(){
     const reduced = localStorage.getItem('polytrack-0.6.2-reduced-effects') === '1';
     document.documentElement.classList.toggle('sq-reduced-effects', reduced);
@@ -2147,7 +2154,17 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const fontScale=Math.max(85,Math.min(125,Number(localStorage.getItem('polytrack-0.6.2-ui-font-scale')||100)||100));
     document.documentElement.style.setProperty('--sq-ui-scale',String(fontScale/100));
     if (extrasWereHidden !== !showExtras) window.dispatchEvent(new Event('sq-preferences-changed'));
-    recordPlacementUi?.update();
+    if(recordPlacementUi){
+      const menu=document.querySelector('.track-selection-ui');
+      const settings=String(localStorage.getItem('polytrack-0.6.2-pb-podiums'))+'|'+String(localStorage.getItem('polytrack-0.6.2-pb-podiums-verified-only'));
+      const visible=menu&&isElementVisible(menu);
+      const changed=lastPlacementTrackGeneration!==trackCacheGeneration||lastPlacementOverallGeneration!==overallCacheGeneration||lastPlacementSettings!==settings||lastPlacementMenu!==menu||lastPlacementMenuVisible!==!!visible;
+      if(changed||visible&&Date.now()-lastPlacementUpdateAt>=5000){
+        lastPlacementTrackGeneration=trackCacheGeneration;lastPlacementOverallGeneration=overallCacheGeneration;
+        lastPlacementSettings=settings;lastPlacementMenu=menu;lastPlacementMenuVisible=!!visible;lastPlacementUpdateAt=Date.now();
+        recordPlacementUi.update();
+      }
+    }
   }
 
   function settingsToggle(label, storageKey, defaultEnabled=true, inverted=false){
@@ -6468,11 +6485,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const status=state.dataset.sqRunStatus||'unchecked';
       state.classList.toggle('verified',status==='verified');
       state.classList.toggle('pending',status!=='verified');
-      label.textContent=status==='verified'?'':status==='local'?'LOCAL PB':'WAITING';
-      state.title=status==='verified'?'Run verified':status==='local'?'Your local PB. Position estimated from the loaded leaderboard; cloud confirmation pending.':'Waiting for physics review.';
-      state.setAttribute('aria-label',(date?date+'. ':'')+state.title);
+      const nextLabel=status==='verified'?'':status==='local'?'LOCAL PB':'WAITING';
+      if(label.textContent!==nextLabel)label.textContent=nextLabel;
+      const title=status==='verified'?'Run verified':status==='local'?'Your local PB. Position estimated from the loaded leaderboard; cloud confirmation pending.':'Waiting for physics review.';
+      if(state.title!==title)state.title=title;
+      const aria=(date?date+'. ':'')+title;
+      if(state.getAttribute('aria-label')!==aria)state.setAttribute('aria-label',aria);
       const icon=state.querySelector('img');
-      if(icon){icon.src=status==='verified'?'images/state_verified.svg':'images/state_pending.svg';icon.hidden=false;}
+      if(icon){const src=status==='verified'?'images/state_verified.svg':'images/state_pending.svg';if(!icon.getAttribute('src')?.endsWith(src))icon.src=src;if(icon.hidden)icon.hidden=false;}
     }
   }
 
