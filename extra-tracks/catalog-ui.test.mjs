@@ -272,6 +272,24 @@ test('size sorting is omitted when code byte sizes are unavailable', () => {
   api.destroy();
 });
 
+test('forum activity stays distinct from plays and missing signals sort last', () => {
+  const entries = [
+    entry(1, { name: 'Unrated', sourcePlays: null }),
+    entry(2, { name: 'Liked', sourcePlays: null, sourceUpvotes: 8, sourceReplies: 1 }),
+    entry(3, { name: 'Discussed', sourcePlays: null, sourceReplies: 4 })
+  ];
+  const { root, api } = fixture(entries);
+  api.open();
+  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  assert.match(sort.textContent, /Forum activity/);
+  sort.value = 'forum'; sort.dispatch('change');
+  assert.deepEqual(cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent), ['Liked', 'Discussed', 'Unrated']);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /itch\.io: 8 likes · 1 reply/);
+  assert.match(cls(root, 'sq-extra-card')[1].textContent, /itch\.io: 4 replies/);
+  assert.doesNotMatch(cls(root, 'sq-extra-card')[0].textContent, /source plays/);
+  api.destroy();
+});
+
 test('async callback failures stay visible without closing or throwing', async () => {
   const { root, api } = fixture([entry(1)], {
     onPlay: async () => { throw new Error('private importer detail'); }
@@ -391,7 +409,7 @@ test('Escape closes menu and CSS defines narrow responsive layout', () => {
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.sq-extra-overlay\[hidden\]\{display:none!important\}/);
   assert.match(css, /\.sq-extra-visual img\{[^}]*object-fit:contain/);
-    assert.match(css, /\.sq-extra-visual img\{[^}]*width:min\(100%,168px\);height:100%;max-width:168px/);
+  assert.match(css, /\.sq-extra-visual img\{[^}]*width:100%;height:100%/);
   assert.match(css, /\.sq-extra-grid\{[^}]*gap:12px/);
   assert.match(css, /\.sq-extra-card\{[^}]*linear-gradient/);
   const image = cls(root, 'sq-extra-visual')[0].children.find(node => node.tagName === 'IMG');

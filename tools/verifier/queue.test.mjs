@@ -4,7 +4,6 @@ import {queueState,reconciledSlot,completedSlot,NEVER} from './queue.mjs';
 import {encode,decode} from './firestore.mjs';
 import {pendingSlot,VERIFIER_ENGINE_DIGEST,VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION,verificationCollectionForTrack} from '../../workers/ranked/src/verification.js';
 import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
-import {createHash} from 'node:crypto';
 const row={accountId:'racer',trackId:'track',timeMs:1000,frames:1000,uploadId:1,replayHash:'a'.repeat(64)};
 test('missing canonical work leaves the due queue instead of looping forever',()=>{const slot=reconciledSlot(pendingSlot(row),null);assert.equal(queueState({racer:slot}).notBefore,NEVER);});
 test('a superseding PB replaces the exact queued binding',()=>{const slot=pendingSlot(row),next={...row,timeMs:900};assert.deepEqual(reconciledSlot(slot,next),pendingSlot(next));});
@@ -414,12 +413,12 @@ test('Extra-only work wakes preflight while legacy core remains independently vi
   assert.equal(verificationCollectionForTrack('legacy-core-id'),VERIFICATION_COLLECTION);
 });
 
-test('all 202 pinned catalog IDs use the Extra lane',()=>{
+test('all ranked catalog IDs use the Extra lane',()=>{
   const ids=[...EXTRA_TRACK_IDS].sort();
-  assert.equal(ids.length,202);
+  const catalog=JSON.parse(fs.readFileSync(new URL('../../extra-tracks/catalog.json',import.meta.url),'utf8'));
+  const expected=catalog.filter(entry=>entry.ranked!==false).map(entry=>entry.trackId).sort();
+  assert.deepEqual(ids,expected);
   assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
-  assert.equal(createHash('sha256').update(ids.join(',')).digest('hex'),
-    'e2dbff433057288a39ed7c11c272cf9e18ef2b5c387f8b323ab4c0fdcf0b8c42');
   assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
 });
 

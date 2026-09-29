@@ -43,6 +43,13 @@ function timeLabel(ms) {
   return `${minutes}:${seconds}.${String(total % 1000).padStart(3, '0')}`;
 }
 
+function forumActivity(entry) {
+  const likes = Number.isSafeInteger(entry.sourceUpvotes) && entry.sourceUpvotes >= 0 ? entry.sourceUpvotes : null;
+  const dislikes = Number.isSafeInteger(entry.sourceDownvotes) && entry.sourceDownvotes >= 0 ? entry.sourceDownvotes : null;
+  const replies = Number.isSafeInteger(entry.sourceReplies) && entry.sourceReplies >= 0 ? entry.sourceReplies : null;
+  return likes === null && replies === null ? null : Math.max(0, (likes || 0) - (dislikes || 0)) * 2 + (replies || 0);
+}
+
 export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
@@ -127,6 +134,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const sortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest track'], ['size-smallest', 'Smallest track']);
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry?.sourcePlays) && entry.sourcePlays >= 0)) sortChoices.push(['plays', 'Most plays']);
+  if (Array.isArray(entries) && entries.some(entry => forumActivity(entry) !== null)) sortChoices.push(['forum', 'Forum activity']);
   if (typeof getLocalRating === 'function') sortChoices.push(['my-rating', 'My ratings']);
   if (Array.isArray(entries) && entries.some(entry => Number.isFinite(Date.parse(entry?.submittedAt || entry?.codeModifiedAt)))) sortChoices.push(['date-newest', 'Newest Track'], ['date-oldest', 'Oldest Track']);
   const sortField = selectField('Sort', sortChoices);
@@ -376,6 +384,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const plays = Number.isSafeInteger(entry.sourcePlays) ? entry.sourcePlays : null;
     if (copies !== null && copies >= 0) facts.append(make('span', 'sq-extra-plays', `${copies.toLocaleString()} source copies`));
     else if (plays !== null && plays >= 0) facts.append(make('span', 'sq-extra-plays', `${plays.toLocaleString()} source plays`));
+    else if (forumActivity(entry) !== null) {
+      const metrics = [];
+      if (Number.isSafeInteger(entry.sourceUpvotes) && entry.sourceUpvotes >= 0) metrics.push(`${entry.sourceUpvotes.toLocaleString()} ${entry.sourceUpvotes === 1 ? 'like' : 'likes'}`);
+      if (Number.isSafeInteger(entry.sourceReplies) && entry.sourceReplies >= 0) metrics.push(`${entry.sourceReplies.toLocaleString()} ${entry.sourceReplies === 1 ? 'reply' : 'replies'}`);
+      facts.append(make('span', 'sq-extra-plays', `itch.io: ${metrics.join(' · ')}`));
+    }
     if (Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0) facts.append(make('span', 'sq-extra-size', `${(entry.sizeBytes / 1000).toFixed(1)} KB code`));
     body.append(facts);
     if (typeof onFeedback === 'function') {
@@ -492,6 +506,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     records.sort((a, b) => {
       if (state.sort === 'plays') return (Number.isSafeInteger(b.entry.sourceCopies) ? b.entry.sourceCopies : Number.isSafeInteger(b.entry.sourcePlays) ? b.entry.sourcePlays : -1) -
         (Number.isSafeInteger(a.entry.sourceCopies) ? a.entry.sourceCopies : Number.isSafeInteger(a.entry.sourcePlays) ? a.entry.sourcePlays : -1) || compare(a.entry.name, b.entry.name);
+      if (state.sort === 'forum') return (forumActivity(b.entry) ?? -1) - (forumActivity(a.entry) ?? -1) || compare(a.entry.name, b.entry.name);
       if (state.sort === 'my-rating') return (b.rating ?? -1) - (a.rating ?? -1) || compare(a.entry.name, b.entry.name);
       if (state.sort === 'size-largest' || state.sort === 'size-smallest') {
         const aSize = Number.isSafeInteger(a.entry.sizeBytes) && a.entry.sizeBytes >= 0 ? a.entry.sizeBytes : null;
