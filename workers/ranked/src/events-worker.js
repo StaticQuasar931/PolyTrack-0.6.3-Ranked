@@ -20,16 +20,26 @@ export function eventWorkerHandler(env, { request, authenticate, origins, contex
       const key = new Request(keyUrl.toString());
       const hit = cache && await cache.match(key);
       if (hit) return hit.json();
-      const value = await load();
-      if (cache) {
-        const put = cache.put(key, new Response(JSON.stringify(value), { headers: { 'Cache-Control': 'public, max-age=' + ttl } }));
-        if (context.waitUntil) context.waitUntil(put);
-        else await put;
+      const staleKey = new Request(keyUrl.toString() + '?stale=1');
+      const stale = name === 'catalog' && cache ? await cache.match(staleKey) : null;
+      try {
+        const value = await load();
+        if (cache) {
+          const body = JSON.stringify(value);
+          const writes = [cache.put(key, new Response(body, { headers: { 'Cache-Control': 'public, max-age=' + ttl } }))];
+          if (name === 'catalog') writes.push(cache.put(staleKey, new Response(body, { headers: { 'Cache-Control': 'public, max-age=86400' } })));
+          const put = Promise.all(writes);
+          if (context.waitUntil) context.waitUntil(put);
+          else await put;
+        }
+        return value;
+      } catch (error) {
+        if (stale) return stale.json();
+        throw error;
       }
-      return value;
     };
     const service = { ...runtime.service,
-      catalog: () => cachedPublic('catalog', 20, () => runtime.service.catalog()),
+      catalog: () => cachedPublic('catalog', 120, () => runtime.service.catalog()),
       totals: () => cachedPublic('totals', 20, () => runtime.service.totals()),
       archiveMonth: month => cachedPublic('archive/' + month, 300, () => runtime.service.archiveMonth(month)),
       snapshot: id => cachedPublic('snapshot/' + encodeURIComponent(id), 15, () => runtime.service.snapshot(id)) };

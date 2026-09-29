@@ -34,6 +34,7 @@
   const eventsModuleUrl=new URL('./events/client.mjs',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
+  const extraCatalogRevision='40';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -172,7 +173,7 @@
   }
   async function loadExtraTracksCatalog(){
     if(extraTracksCatalogPromise)return extraTracksCatalogPromise;
-    extraTracksCatalogPromise=fetch(new URL('catalog.json',extraTracksBaseUrl),{headers:{Accept:'application/json'}})
+    extraTracksCatalogPromise=fetch(new URL('catalog.json?v='+extraCatalogRevision,extraTracksBaseUrl),{headers:{Accept:'application/json'}})
       .then(response=>{if(!response.ok)throw Error('Extra Tracks catalog is unavailable.');return response.json();})
       .then(data=>{
         if(!Array.isArray(data)||data.length>5000)throw Error('Extra Tracks catalog is invalid.');
@@ -272,10 +273,10 @@
     extraTrackRaceRows=readLocalRaceRows();extraTrackKnownIds=extraTrackIds();
     if(extraTracksUi){extraTracksUi.open();return;}
     if(!extraTracksUiPromise)extraTracksUiPromise=Promise.all([
-      loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs',extraTracksBaseUrl).href)
+      loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href)
     ]).then(([entries,module])=>{
       extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest,isLoaded:entry=>extraTrackKnownIds[entry.id]===entry.trackId,getLocalRating:entry=>extraFeedback(entry).rating,getFeedback:extraFeedback,onFeedback:saveExtraFeedback,onExportFeedback:exportExtraFeedback,onSubmit:submitExtraTrack,onReport:reportExtraTrack});
-      if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css',extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
+      if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css?v='+extraCatalogRevision,extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
       return extraTracksUi;
     }).finally(()=>{extraTracksUiPromise=null;});
     (await extraTracksUiPromise).open();

@@ -318,9 +318,10 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
     },
     async catalog() {
       return store.transaction(async tx => {
+        const published = await tx.get(path(C.public, 'catalog'));
+        if (published?.periods && published?.archives) return published;
         const catalog = await tx.get(path(C.catalog, 'main'));
-        const overall = await tx.get(path(C.overall, 'totals'));
-        return { ...publicEventCatalog(catalog?.periods || [], stamp()), totals: overall?.entries || [] };
+        return publicEventCatalog(catalog?.periods || [], stamp());
       });
     },
     async totals() {

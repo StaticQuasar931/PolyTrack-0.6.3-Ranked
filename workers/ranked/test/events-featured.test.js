@@ -32,6 +32,33 @@ test('public event catalog cache reuses Firestore data after ingress checks',asy
     assert.equal(rateChecks,2);
   }finally{if(prior===undefined)delete globalThis.caches;else globalThis.caches=prior;}
 });
+
+test('public event catalog remains available from stale edge cache during a Firestore outage',async()=>{
+  const prior=globalThis.caches,stored=new Map(),pending=[];
+  let unavailable=false;
+  globalThis.caches={default:{match:async key=>stored.get(key.url)?.clone()||null,
+    put:async(key,response)=>{stored.set(key.url,response.clone());}}};
+  try{
+    const handler=eventWorkerHandler({EVENTS_ENABLED:'true',FIREBASE_PROJECT_ID:'polytrack-052',
+      EVENT_RATE_LIMITER:{limit:async()=>({success:true})}},{
+      request:async path=>{
+        if(unavailable)throw Error('Firestore unavailable');
+        if(path===':beginTransaction')return {transaction:'fixture'};
+        if(path===':commit')return {};
+        return null;
+      },authenticate:async()=>({uid:'unused'}),origins:new Set(['https://staticquasar931.github.io']),
+      context:{waitUntil:promise=>pending.push(promise)}});
+    const request=()=>new Request('https://ranked.example/v1/events/catalog',
+      {headers:{Origin:'https://staticquasar931.github.io','CF-Connecting-IP':'192.0.2.1'}});
+    assert.equal((await handler(request())).status,200);
+    await Promise.all(pending.splice(0));
+    for(const key of stored.keys())if(!key.includes('?stale=1'))stored.delete(key);
+    unavailable=true;
+    const fallback=await handler(request());
+    assert.equal(fallback.status,200);
+    assert.deepEqual((await fallback.json()).periods,[]);
+  }finally{if(prior===undefined)delete globalThis.caches;else globalThis.caches=prior;}
+});
 function fixture(target,existing=false) {
   const candidates=utcEventCandidates(at,[official],[rolling]);
   const daily=candidates.find(p=>p.kind==='daily'),weekly=candidates.find(p=>p.kind==='weekly');
