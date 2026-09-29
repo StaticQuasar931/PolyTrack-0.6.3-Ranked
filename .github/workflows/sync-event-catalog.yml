@@ -1,0 +1,38 @@
+name: Sync public event catalog fallback
+
+on:
+  schedule:
+    - cron: '15 0,6,12,18 * * *'
+    - cron: '10 20 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-public-event-catalog
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Capture public event assignments
+        run: node tools/sync-event-catalog.mjs
+      - name: Commit changed assignments
+        run: |
+          if git diff --quiet -- events/public-catalog.json; then
+            echo "Public event assignments are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add events/public-catalog.json
+          git commit -m "Sync public event assignments"
+          git push

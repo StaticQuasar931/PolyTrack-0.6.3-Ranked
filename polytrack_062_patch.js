@@ -77,6 +77,14 @@
         return await response.json();
       }catch(error){if(!error.serviceResponse)markRankedEdgeUnavailable(error.message);}
     }
+    if(path==='/v1/events/catalog'){
+      try{
+        const response=await fetch(new URL('./public-catalog.json',eventsModuleUrl),{cache:'no-store',signal:AbortSignal.timeout(5000)});
+        if(response.ok){const backup=await response.json();const at=Date.now();
+          if(Array.isArray(backup.periods)&&Array.isArray(backup.archives)&&backup.periods.some(p=>p&&p.startsAt<=at&&at<p.endsAt&&['daily','weekly','kodub'].includes(p.kind)))return backup;
+        }
+      }catch{}
+    }
     const database=await db();const snapshot=await database.collection(collection).doc(id).get();
     if(!snapshot.exists)throw Error('Event data unavailable');return snapshot.data();
   }
