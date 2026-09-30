@@ -18,6 +18,8 @@ const COSMETIC_ENTITLEMENT_VERSION = 7;
 const MIN_RANKED_TRACKS = 3;
 const PODIUM_MIN_FIELD = 5;
 const OVERALL_LIMIT = 200;
+const GROUP_TAG_DIRECTORY_LIMIT = 2000;
+const GROUP_TAG_DIRECTORY_MAX_BYTES = 300 * 1024;
 const TRACK_LIMIT = 500;
 const UNRANKED_EXTRA_TRACK_ID = '586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87';
 const OVERALL_BOARD_PAGE_SIZE = 100;
@@ -33,6 +35,7 @@ const RECONCILE_TRACK_BATCH = 4;
 const COLLECTIONS = Object.freeze({
   raceResults: '0.6.2_race_results',
   profiles: '0.6.2_profiles_public',
+  groupTags: '0.6.2_s1_group_tags',
   betaTrack: '0.6.2_leaderboards_track',
   track: '0.6.2_s1_leaderboards_track',
   overall: '0.6.2_s1_leaderboards_overall',
@@ -348,20 +351,22 @@ async function readDocument(env, collection, id) {
   return payload ? { id, data: decodeFields(payload.fields || {}), updateTime: payload.updateTime || '' } : null;
 }
 
-async function readDocuments(env, collection, ids) {
-  const unique = [...new Set(ids.map(id => safeText(id, 128)).filter(Boolean))];
-  if (!unique.length) return new Map();
+async function readDocumentsForCollections(env, requests) {
+  const requested = requests.flatMap(([collection, ids]) => [...new Set(ids.map(id => safeText(id, 128)).filter(Boolean))]
+    .map(id => ({collection, id})));
+  const output = new Map(requests.map(([collection]) => [collection, new Map()]));
+  if (!requested.length) return output;
   const base = documentBase(env).replace('https://firestore.googleapis.com/v1/', '');
   const payload = await firestoreRequest(env, ':batchGet', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documents: unique.map(id => `${base}/${collection}/${id}`) })
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({documents: requested.map(({collection, id}) => `${base}/${collection}/${id}`)})
   });
-  const output = new Map();
   for (const item of Array.isArray(payload) ? payload : []) {
     const document = item?.found;
     if (!document) continue;
-    const id = decodeURIComponent(String(document.name || '').split('/').pop());
-    output.set(id, { id, data: decodeFields(document.fields || {}), updateTime: document.updateTime || '' });
+    const segments = String(document.name || '').split('/');
+    const collection = decodeURIComponent(segments.at(-2) || ''), id = decodeURIComponent(segments.at(-1) || '');
+    output.get(collection)?.set(id, {id, data: decodeFields(document.fields || {}), updateTime: document.updateTime || ''});
   }
   return output;
 }
@@ -688,6 +693,8 @@ export function computeTrackEntries(rows, trackId, env = {}, verdicts = {}) {
       carColors: safeText(row.carColors, 64) || null,
       carStyle: safeText(row.carStyle, 256),
       profileCosmetics: sanitizeProfileCosmetics(row.profileCosmetics),
+      ...(typeof row.groupCode === 'string' && (/^\d{6}$/.test(row.groupCode) || row.groupCode === '') ? {groupCode: row.groupCode} : {}),
+      ...(Number(row.groupCodeUpdatedAt) > 0 ? {groupCodeUpdatedAt: Number(row.groupCodeUpdatedAt)} : {}),
       pbCount: Math.max(0, Number(row.pbCount || 0)),
       totalPlaytimeMs: Math.max(0, Number(row.totalPlaytimeMs || 0)),
       pbAt: Math.max(0, Number(row.pbAt || row.createdAt || 0)),
@@ -733,7 +740,8 @@ async function persistTrackSnapshot(env, trackId, entries, prior = null) {
     entry.carId || '',
     entry.carColors || '',
     entry.carStyle || '',
-    JSON.stringify(entry.profileCosmetics || {})
+    JSON.stringify(entry.profileCosmetics || {}),
+    ...(Number(entry.groupCodeUpdatedAt) > 0 ? [entry.groupCode || '', entry.groupCodeUpdatedAt] : entry.groupCode ? [entry.groupCode] : [])
   ].join(':')).join('|');
   const signature = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signatureInput)).then((bytes) => base64Url(new Uint8Array(bytes)));
   if (trackSnapshotIsCurrent(prior?.data, signature)) return { changed: false, entries, revision: Number(prior.data.revision || 0) };
@@ -789,11 +797,21 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
       const weight = EXTRA_TRACK_IDS.has(trackId) ? Math.min(extraCap, Number(entry.weight || 0)) : Number(entry.weight || 0);
       if (!rank || weight <= 0) continue;
       const cost = placementCost(rank, fieldSize);
-      const user = users.get(accountId) || { userId: accountId, finishes: [], officialCount: 0, communityCount: 0, permanentCount: 0, customCount: 0, extraCount: 0, pbCount: 0, totalPlaytimeMs: 0, accountCreatedAt: 0, latestPbAt: 0, betaTester: false };
+      const user = users.get(accountId) || { userId: accountId, finishes: [], officialCount: 0, communityCount: 0, permanentCount: 0, customCount: 0, extraCount: 0, pbCount: 0, totalPlaytimeMs: 0, accountCreatedAt: 0, latestPbAt: 0, betaTester: false, groupCode: '', groupCodeUpdatedAt: 0 };
       Object.assign(user, {
         name: entry.name || user.name || 'Racer', countryCode: entry.countryCode || user.countryCode || '', carId: entry.carId || user.carId || null,
-        carColors: entry.carColors || user.carColors || null, carStyle: entry.carStyle || user.carStyle || '', profileCosmetics: sanitizeProfileCosmetics(entry.profileCosmetics || user.profileCosmetics)
+        carColors: entry.carColors || user.carColors || null, carStyle: entry.carStyle || user.carStyle || '', profileCosmetics: sanitizeProfileCosmetics(entry.profileCosmetics || user.profileCosmetics),
+        groupCode: user.groupCode,
+        groupCodeUpdatedAt: user.groupCodeUpdatedAt
       });
+      const groupCodeUpdatedAt = Number(entry.groupCodeUpdatedAt || 0);
+      if (typeof entry.groupCode === 'string' && (/^\d{6}$/.test(entry.groupCode) || entry.groupCode === '')
+        && (groupCodeUpdatedAt > user.groupCodeUpdatedAt || groupCodeUpdatedAt === user.groupCodeUpdatedAt && groupCodeUpdatedAt > 0)) {
+        user.groupCode = entry.groupCode;
+        user.groupCodeUpdatedAt = groupCodeUpdatedAt;
+      } else if (groupCodeUpdatedAt === 0 && user.groupCodeUpdatedAt === 0 && /^\d{6}$/.test(entry.groupCode || '')) {
+        user.groupCode = entry.groupCode;
+      }
       user.pbCount = Math.max(user.pbCount, Number(entry.pbCount || 0));
       user.totalPlaytimeMs = Math.max(user.totalPlaytimeMs, Number(entry.totalPlaytimeMs || 0));
       user.latestPbAt = Math.max(user.latestPbAt, Number(entry.pbAt || 0));
@@ -829,7 +847,7 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
     const primaryBest = byPlace[0] || {};
     const podiums = medals.gold + medals.silver + medals.bronze;
     return {
-      userId: user.userId, name: safeText(user.name, 24), countryCode: safeText(user.countryCode, 8).toUpperCase(), carId: user.carId, carColors: user.carColors, carStyle: user.carStyle, profileCosmetics: sanitizeProfileCosmetics(user.profileCosmetics),
+      userId: user.userId, name: safeText(user.name, 24), countryCode: safeText(user.countryCode, 8).toUpperCase(), carId: user.carId, carColors: user.carColors, carStyle: user.carStyle, profileCosmetics: sanitizeProfileCosmetics(user.profileCosmetics), ...(user.groupCode ? {groupCode: user.groupCode} : {}), ...(user.groupCodeUpdatedAt ? {groupCodeUpdatedAt: user.groupCodeUpdatedAt} : {}),
       accountCreatedAt: user.accountCreatedAt, latestPbAt: user.latestPbAt, totalPlaytimeMs: user.totalPlaytimeMs, score, raceCount: played, eligibleTrackCount: played,
       provisional: played < MIN_RANKED_TRACKS, totalTracks: OFFICIAL_IDS.size + COMMUNITY_IDS.size + LEGACY_COMMUNITY_IDS.size, officialCount: user.officialCount, communityCount: user.communityCount, customCount: user.customCount, ...(user.extraCount ? { extraCount: user.extraCount } : {}),
       weightedTracks: Number(allWeight.toFixed(3)), skillCost: Number(skillCost.toFixed(3)), coverageCost: Number(coverageCost.toFixed(3)), consistencyCost: Number(consistencyCost.toFixed(3)),
@@ -891,6 +909,8 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
       row.carColors = identityOverride.carColors;
       row.carStyle = identityOverride.carStyle;
       row.profileCosmetics = identityOverride.profileCosmetics;
+      row.groupCode = /^\d{6}$/.test(identityOverride.groupCode || '') ? identityOverride.groupCode : '';
+      row.groupCodeUpdatedAt = Number(identityOverride.groupCodeUpdatedAt || 0);
     }
   }
   const verdicts=await prepareVerification(env,trackId,rows,true);
@@ -1013,7 +1033,14 @@ export async function rebuildOverall(env, force = false) {
   const migration = (await readDocument(env, COLLECTIONS.jobs, 'release_migration'))?.data || {};
   const betaTesterIds = new Set([...(migration.awardedBadgeIds || []),...(migration.pendingBadges || [])].map((value) => safeText(value, 128)).filter(Boolean));
   const computedBase = computeOverall(boards, prior.entries || [], betaTesterIds, {includePlannerResults: true});
-  const priorEntitlements = await readDocuments(env, '0.6.2_s1_cosmetic_entitlements', computedBase.map(row => row.userId));
+  const accountIds = computedBase.map(row => row.userId);
+  const keyedRequests = [['0.6.2_s1_cosmetic_entitlements', accountIds]];
+  if (accountIds.length) keyedRequests.push([COLLECTIONS.groupTags, ['current']]);
+  const keyedDocuments = await readDocumentsForCollections(env, keyedRequests);
+  const priorEntitlements = keyedDocuments.get('0.6.2_s1_cosmetic_entitlements');
+  const groupTagDirectory = keyedDocuments.get(COLLECTIONS.groupTags)?.get('current') || null;
+  const groupTagDirectoryEntries = groupTagDirectory?.data?.accounts && typeof groupTagDirectory.data.accounts === 'object' && !Array.isArray(groupTagDirectory.data.accounts)
+    ? groupTagDirectory.data.accounts : {};
   const priorById = new Map((prior.entries || []).map(row => [row.userId, row]));
   const priorIssuedById = new Map(computedBase.map(row => {
     const oldEntry = priorById.get(row.userId) || {};
@@ -1031,7 +1058,18 @@ export async function rebuildOverall(env, force = false) {
   const computedEntries = aggregated.entries.map(row => {
     const oldEntry = priorById.get(row.userId) || {};
     const betaEntitlement = betaEntitlementFor(row.userId, oldEntry, priorEntitlements.get(row.userId), migrationSource, prior, openBetaIssue);
-    return {...row, betaEntitlement, badges: betaEntitlement ? {betaTester:true} : null};
+    const rowCodeAt = Number(row.groupCodeUpdatedAt || 0), oldCodeAt = Number(oldEntry.groupCodeUpdatedAt || 0);
+    const selectedCode = rowCodeAt > oldCodeAt ? row.groupCode : oldCodeAt > rowCodeAt ? oldEntry.groupCode
+      : /^\d{6}$/.test(row.groupCode || '') ? row.groupCode : oldEntry.groupCode;
+    const tag = groupTagDirectoryEntries[row.userId];
+    const groupCode = groupTagDirectory
+      ? (/^\d{6}$/.test(tag?.groupCode || '') ? tag.groupCode : '')
+      : (/^\d{6}$/.test(selectedCode || '') ? selectedCode : '');
+    const groupCodeUpdatedAt = groupTagDirectory ? Number(tag?.updatedAt || 0) : Math.max(rowCodeAt, oldCodeAt);
+    const result = {...row, ...(groupCodeUpdatedAt > 0 ? {groupCodeUpdatedAt} : {}), betaEntitlement, badges: betaEntitlement ? {betaTester:true} : null};
+    if (groupCode) result.groupCode = groupCode;
+    else delete result.groupCode;
+    return result;
   });
   const entries = computedEntries.map(({resultSamples, ...entry}) => entry);
   const extraCap = extraWeightCap(boards);
@@ -1120,6 +1158,9 @@ async function notifyProfile(request, env, context, uid, body) {
     carStyle: safeText(profile.data.carStyle, 256),
     profileCosmetics: sanitizeProfileCosmetics(profile.data.profileCosmetics)
   };
+  const groupTag = await readDocument(env, COLLECTIONS.groupTags, `account_${accountId}`);
+  identity.groupCode = groupTag?.data?.groupCode || '';
+  identity.groupCodeUpdatedAt = Number(groupTag?.data?.updatedAt || 0);
   const trackIds = [...new Set(results.map((result) => safeText(result.data.trackId, 80)).filter(Boolean))].slice(0, 100);
   const signature = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(identity))).then((bytes) => base64Url(new Uint8Array(bytes)));
   const jobId = `profile_${accountId}`;
@@ -1135,6 +1176,83 @@ async function notifyProfile(request, env, context, uid, body) {
   const task = processProfileJob(env, jobId, { kind: 'profile', active: true, accountId, identity, signature, pendingTrackIds },written?.updateTime||'');
   if (context.waitUntil) context.waitUntil(task.catch((error) => console.error('Deferred profile job failed', String(error?.message || error))));
   return json(request.headers.get('Origin') || '', env, 202, { accepted: true, accountId, queued: pendingTrackIds.length, betaEntitlement });
+}
+
+async function saveGroupCode(env, accountId, groupCode) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tagId = `account_${accountId}`;
+    const [tagPrior, directoryPrior, overall] = await Promise.all([
+      readDocument(env, COLLECTIONS.groupTags, tagId),
+      readDocument(env, COLLECTIONS.groupTags, 'current'),
+      readDocument(env, COLLECTIONS.overall, 'main')
+    ]);
+    const updatedAt = Date.now();
+    const accounts = {...(directoryPrior?.data?.accounts || {})};
+    if (!directoryPrior && Array.isArray(overall?.data?.entries)) {
+      for (const row of overall.data.entries) {
+        if (/^\d{6}$/.test(row.groupCode || '')) accounts[safeText(row.userId || row.accountId, 128)] = {
+          groupCode: row.groupCode, updatedAt: Number(row.groupCodeUpdatedAt || 0)
+        };
+      }
+    }
+    if (groupCode) accounts[accountId] = {groupCode, updatedAt};
+    else delete accounts[accountId];
+    if (Object.keys(accounts).length > GROUP_TAG_DIRECTORY_LIMIT
+      || new TextEncoder().encode(JSON.stringify(encodeFields({accounts, updatedAt}))).byteLength > GROUP_TAG_DIRECTORY_MAX_BYTES) {
+      throw Error('GROUP_CODE_DIRECTORY_FULL');
+    }
+    const writes = [
+      {collection: COLLECTIONS.groupTags, id: tagId, prior: tagPrior, data: {accountId, groupCode, updatedAt}},
+      {collection: COLLECTIONS.groupTags, id: 'current', prior: directoryPrior, data: {accounts, updatedAt}}
+    ];
+    if (overall && Array.isArray(overall.data.entries)) {
+      let found = false;
+      const entries = overall.data.entries.map(row => {
+        if (safeText(row.userId || row.accountId, 128) !== accountId) return row;
+        found = true;
+        const updated = {...row, groupCodeUpdatedAt: updatedAt};
+        if (groupCode) updated.groupCode = groupCode;
+        else delete updated.groupCode;
+        return updated;
+      });
+      if (found) writes.push({collection: COLLECTIONS.overall, id: 'main', prior: overall,
+        data: {...overall.data, entries, identityUpdatedAt: updatedAt}});
+    }
+    try {
+      await commitDocuments(env, writes);
+      return updatedAt;
+    } catch (error) {
+      if (!/FIRESTORE_(409|412)/.test(String(error?.message)) || attempt === 2) throw error;
+    }
+  }
+  return false;
+}
+
+async function profileGroupCode(request, env, context, uid, body, readOnly = false) {
+  const origin = request.headers.get('Origin') || '';
+  const accountId = safeText(readOnly ? new URL(request.url).searchParams.get('accountId') : body?.accountId, 128);
+  if (!accountId) return json(origin, env, 400, {error: 'invalid_account_id'});
+  if (!readOnly && !(typeof body?.groupCode === 'string' && (body.groupCode === '' || /^\d{6}$/.test(body.groupCode)))) {
+    return json(origin, env, 400, {error: 'invalid_group_code'});
+  }
+  const profile = await readDocument(env, COLLECTIONS.profiles, accountId);
+  if (!profile || profile.data.ownerUid !== uid || safeText(profile.data.accountId, 128) !== accountId) {
+    return json(origin, env, 403, {error: 'profile_not_owned'});
+  }
+  if (readOnly) {
+    const tag = await readDocument(env, COLLECTIONS.groupTags, `account_${accountId}`);
+    const groupCode = /^\d{6}$/.test(tag?.data?.groupCode || '') ? tag.data.groupCode : '';
+    return json(origin, env, 200, {groupCode});
+  }
+  const groupCode = body.groupCode;
+  try {
+    await saveGroupCode(env, accountId, groupCode);
+  } catch (error) {
+    if (/FIRESTORE_(409|412)/.test(String(error?.message))) return json(origin, env, 503, {error: 'group_code_conflict'});
+    if (/GROUP_CODE_DIRECTORY_FULL/.test(String(error?.message))) return json(origin, env, 409, {error: 'group_code_capacity'});
+    throw error;
+  }
+  return json(origin, env, 200, {groupCode});
 }
 
 async function updateProfileCosmetics(request, env, context, uid, body) {
@@ -1396,6 +1514,12 @@ export async function handleRequest(request, env, context = {}) {
     const meta = (await readDocument(env, COLLECTIONS.meta, 'current').catch(() => null))?.data || {};
     return json(origin, env, 200, { service: 'polytrack-ranked', algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: Number(meta.derivedMetricsVersion || 0), currentDerivedMetricsVersion: DERIVED_METRICS_VERSION, openBetaEnabled: openBetaEnabled(env), rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false', revision: Number(meta.revision || 0), builtRevision: Number(meta.builtRevision || 0), dirty: meta.dirty === true, pendingRevisions: Math.max(0, Number(meta.revision || 0) - Number(meta.builtRevision || 0)), updatedAt: Number(meta.updatedAt || 0) });
   }
+  if (request.method === 'GET' && path === '/v1/profile/group-code') {
+    let uid;
+    try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, {error: 'authentication_failed'}); }
+    if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({key: uid})).success) return json(origin, env, 429, {error: 'rate_limited', retryAfterSeconds: 60});
+    return profileGroupCode(request, env, context, uid, null, true);
+  }
   if (request.method === 'GET' && path === '/v1/snapshot/overall') return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
   if (request.method === 'GET' && path === '/v1/extra-tracks/unranked') return unrankedExtraBoard(request, env, origin);
   if (request.method === 'GET' && path === '/v1/snapshot/track') {
@@ -1425,7 +1549,7 @@ export async function handleRequest(request, env, context = {}) {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
-  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
+  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/profile/group-code' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });
   let uid;
   try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, { error: 'authentication_failed' }); }
@@ -1449,6 +1573,7 @@ export async function handleRequest(request, env, context = {}) {
     return json(origin, env, 201, { accepted: true });
   }
   if (path === '/v1/profile/cosmetics') return updateProfileCosmetics(request, env, context, uid, body);
+  if (path === '/v1/profile/group-code') return profileGroupCode(request, env, context, uid, body);
   if (path === '/v1/profile/notify') return notifyProfile(request, env, context, uid, body);
   const resultId = safeText(body.resultId, 220);
   if (!/^[A-Za-z0-9_.:-]{3,220}$/.test(resultId)) return json(origin, env, 400, { error: 'invalid_result_id' });

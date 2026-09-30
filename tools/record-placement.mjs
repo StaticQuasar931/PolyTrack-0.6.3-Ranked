@@ -440,7 +440,9 @@ function renderDom(document, tracks, placements, options, state) {
       removeClass(record, HOST_CLASS);
       continue;
     }
-    const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}|${Number(placement.estimated)}`;
+    placement = options.mapPlacement ? options.mapPlacement(placement, trackId) : placement;
+    if (!placement) { badge?.remove(); removeClass(record, HOST_CLASS); continue; }
+    const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}|${Number(placement.estimated)}|${placement.personalFilter || ''}`;
     if (badge?.dataset?.signature === signature) {
       retained.add(badge);
       continue;
@@ -451,10 +453,11 @@ function renderDom(document, tracks, placements, options, state) {
       record.appendChild(badge);
     }
     badge.dataset.signature = signature;
-    const className = `sq-record-placement ${placement.estimated?'estimated':placement.podium}`;
+    const className = `sq-record-placement ${placement.personalFilter?'is-personal-filter ':''}${placement.estimated?'estimated':placement.podium}`;
     if (badge.className !== className) badge.className = className;
     badge.textContent = placement.label;
     badge.title = placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
+    if (placement.personalFilter) badge.title = `Personal group: ${badge.title}`;
     badge.setAttribute('aria-label', badge.title);
     addClass(record, HOST_CLASS);
     retained.add(badge);

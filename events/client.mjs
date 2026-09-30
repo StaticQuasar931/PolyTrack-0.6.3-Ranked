@@ -204,14 +204,15 @@ export function installEvents(bridge){
     dialog.querySelector('[data-event-close]').focus();
   }
   const body=html=>{if(!dialog)return;const main=dialog.querySelector('main');const restore=main.contains(document.activeElement);main.innerHTML=html;if(restore)dialog.querySelector('[data-event-close]').focus({preventScroll:true});};
-  function displayedRecordPlacement(period,own,board){
+  function displayedRecordPlacement(period,own,board,filterResult){
     const settings=readEventPlacementSettings();
+    if(settings.enabled&&own&&filterResult?.active&&filterResult.groupGrading)return {rank:own.groupRank,fieldSize:filterResult.rows.length,knownFieldSize:filterResult.rows.length,provisional:board?.complete!==true,policy:settings.policy};
     return settings.enabled&&own?eventRecordPlacement({board,period,accountId:bridge.accountId(),timeMs:own.timeMs,policy:settings.policy}):null;
   }
   function recordMarkup(period){
-    const {rows,board}=eventDisplayRows(period),own=rows.find(row=>row.accountId===bridge.accountId());
+    const {rows,board,filterResult,sourceOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn;
     if(!own)return 'No record';
-    const presentation=eventPlacementPresentation(displayedRecordPlacement(period,own,board));
+    const presentation=shown?eventPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult)):null;
     return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.pending?' <small>Pending</small>':'');
   }
   function cards(periods){periods.forEach(p=>knownPeriods.set(p.id,p));return periods.map(p=>`<button type="button" class="sq-event-card" data-event-id="${escape(p.id)}" data-event-kind="${escape(p.kind)}"><span class="sq-event-thumb">${bridge.thumbnail(p.trackId)}</span><div class="sq-event-record">${recordMarkup(p)}</div><span><small>${escape(p.kind==='daily'?'DAILY EVENT':p.kind==='weekly'?'WEEKLY EVENT':p.kind==='kodub'?'KODUB WEEKLY':p.label||'EVENT')}</small><strong>${escape(periodName(p))}</strong><span>Up to ${Number(p.maxRp)||0} Event RP</span>${Number.isInteger(p.entrantLimit)?`<small>Up to ${p.entrantLimit} racers</small>`:''}<small>${now()<p.endsAt?'Ends':'Ended'} ${escape(reset(p))}</small></span></button>`).join('');}
@@ -229,7 +230,7 @@ export function installEvents(bridge){
     const labels={waiting:'Waiting for replay verification.',verified:receipt.eventImproved===true?'Run verified. Event PB saved.':receipt.eventImproved===false?'Run verified. Event points unchanged.':'Run verified.',no_improvement:'An equal or faster event PB is already saved.',mismatch:'Replay did not match the submitted time. No points were added.',unavailable_final:'Verification could not finish. No points were added for this run.',expired:'This event closed before the run could be scored.',event_admission_capacity:'This event reached its submission limit. Your normal PB is safe.',event_entrant_capacity:'This event is full. Your normal PB is safe.',event_submit_rate:'This attempt arrived too soon after another run. No points were added.',events_disabled:'Event submissions are paused.'};
     return labels[receipt.status==='rejected'?receipt.reason:receipt.status]||'This submission could not be scored. Your normal PB is safe.';
   }
-  function rows(entries){return entries.map(row=>`<li><b>#${Number(row.rank)||''}</b><span>${escape(displayName(row))}${row.accountId===bridge.accountId()?' <strong class="sq-event-you">YOU</strong>':''}</span><time>${time(row.timeMs)}</time><strong>${Number(row.rp)||0} RP</strong></li>`).join('');}
+  function rows(entries){return entries.map(row=>`<li><b>#${Number(row.rank)||''}</b><span>${escape(displayName(row))}${row.accountId===bridge.accountId()?' <strong class="sq-event-you">YOU</strong>':''}</span><time>${time(row.timeMs)}</time><strong>${Number(row.groupRp??row.rp)||0} ${row.groupRp!=null?'Group ERP':'RP'}</strong></li>`).join('');}
   async function openPermanent(){
     shell();selectView('home');selected=PERMANENT_ROLLING;const token=++requestId;body('<p>Loading permanent standings...</p>');
     await loadPermanent();if(!dialog||token!==requestId)return;
@@ -249,11 +250,13 @@ export function installEvents(bridge){
       const provisional=local&&(!submitted||local.timeMs<=submitted.timeMs)?local:submitted;
       const isLocal=provisional&&(!published||provisional.timeMs<published.timeMs),best=isLocal?provisional:published;
       const actions=closed?'<button class="button" type="button" data-event-practice>Practice track</button>':'<button class="button" type="button" data-event-race>Race event</button><button class="button" type="button" data-event-refresh>Refresh standings</button>';
-      const counts=closed?archivePeriodCounts(period,board):null,standings=counts?counts.verifiedEntries:board.entries;
+      const counts=closed?archivePeriodCounts(period,board):null,rawStandings=counts?counts.verifiedEntries:board.entries;
+      const filtered=bridge.filterRows?.(rawStandings,{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board.complete===true}),standings=filtered?.rows||rawStandings;
       const winner=counts?.winner?` · Winner ${escape(displayName(counts.winner))} ${time(counts.winner.timeMs)}`:'';
       const archiveMeta=counts?`<p>${counts.racers} ${counts.racers===1?'racer':'racers'}${winner}</p>`:'';
       body(`<div class="sq-event-heading"><span class="sq-event-thumb">${bridge.thumbnail(period.trackId)}</span><div><h3>${escape(periodName(period))}</h3><p>${escape(reset(period))} · ${closed?'Closed':'Open'}</p>${archiveMeta}<p>Your event PB: <b>${time(best?.timeMs)}</b> ${best?(isLocal?(provisional===local?'(saved on this device)':'(submitted)'):'(published)'):''}</p></div></div><div class="sq-event-actions">${actions}</div>${receiptText(receipt,local,period)?`<p class="sq-event-receipt" role="status">${escape(receiptText(receipt,local,period))}</p>`:''}<p class="${board.saved?'sq-event-saved':''}">${board.saved?'Saved standings':board.archived?'Final standings':closed?'Finalizing standings':'Published standings'} · Only verified event runs earn points.</p><ol class="sq-event-results">${rows(standings)||'<li>No verified event times yet.</li>'}</ol>`);
-      message(closed?'Final standings. Practice runs do not submit to the expired event.':'Only verified event runs earn Event RP.');
+      message((filtered?.active?'Personal filters are active. ':'')+(closed?'Final standings. Practice runs do not submit to the expired event.':'Only verified event runs earn Event RP.'));
+      bridge.filterButton?.(dialog.querySelector('.sq-event-actions'));
     }catch{if(token===requestId)body('<p>Event standings are unavailable. Please try again later.</p>');}
   }
   async function practice(period){
@@ -395,6 +398,8 @@ export function installEvents(bridge){
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
   function selectEventRange(first,last){return selectEventRows(first,last,false);}
   function raceGhosts(session){
+    const period=knownPeriods.get(session.periodId);
+    if(period){const allowed=new Set(eventDisplayRows(period).rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===session.periodId&&!allowed.has(id))selectedGhosts.delete(id);}
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
     if(replay)try{ownGhost=prepareOwnEventGhost({require:bridge.require(),row:replay,session,best:bestRecords[session.periodId+'_'+session.accountId]});}catch{}
     const selected=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost);
@@ -477,7 +482,8 @@ export function installEvents(bridge){
     for(const row of rows)row.name=displayName(row);
     rows.sort((a,b)=>a.timeMs-b.timeMs||String(a.accountId).localeCompare(String(b.accountId)));
     let rank=0;for(let index=0;index<rows.length;index++){if(!index||rows[index].timeMs!==rows[index-1].timeMs)rank=index+1;rows[index].rank=rank;}
-    return {rows,board};
+    const filtered=bridge.filterRows?.(rows,{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board?.complete===true});
+    return {rows:filtered?.rows||rows,board,filterResult:filtered,sourceOwn:rows.find(row=>row.accountId===accountId)};
   }
   function syncNativeBoard(session){
     const root=document.querySelector('.track-info-ui');
@@ -497,6 +503,7 @@ export function installEvents(bridge){
       board.style.setProperty('display','flex','important');
       board.innerHTML='<h2>Event leaderboard</h2><h3></h3><div class="total-players fade-in"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg"> Back</button><button type="button" class="button sq-event-refresh">Refresh</button></div>';
       original.after(board);
+      bridge.filterButton?.(board.querySelector('.button-wrapper'));
       const pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';
       const pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','block','important');
       const side=root.querySelector('.side-panel'),normalPb=side?.querySelector('.personal-best-title');
@@ -520,7 +527,7 @@ export function installEvents(bridge){
     if(quickBoard&&view.signature){
       const quickLocal=localBest(period),quickReceipt=ownReceipts.get(period.id+'_'+accountId);
       const selection=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetRunId,row.targetTimeMs,row.targetPending]);
-      const quickSignature=JSON.stringify([quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,Math.floor(now()/120000),selection]);
+      const quickSignature=JSON.stringify([bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,Math.floor(now()/120000),selection]);
       if(quickSignature===view.quickSignature)return;
       view.quickSignature=quickSignature;
     }
@@ -529,14 +536,16 @@ export function installEvents(bridge){
     const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select published racers to add their replays.':'Select published racers to load event ghosts. Normal PB ghosts are not used.';
     if(view.opponentsNote.textContent!==opponentsText)view.opponentsNote.textContent=opponentsText;
 
-    const {rows,board}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId);
+    const {rows,board,filterResult}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId);
+    if(filterResult?.active){const visible=new Set(rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===period.id&&!visible.has(id))selectedGhosts.delete(id);}
     let place=displayedRecordPlacement(period,mine,board);
     if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
+    if(mine&&filterResult?.active&&filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:board?.complete!==true,policy:'all'};
     const placement=eventPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const signature=JSON.stringify([period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle])]);
+    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle])]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -551,7 +560,7 @@ export function installEvents(bridge){
     view.signature=signature;
     const styles=rows.map(row=>cachedCarStyle(row,period));
     view.board.querySelector('h3').textContent=eventName(period.kind)+' event';
-    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(board?.saved?' - saved standings':'');
+    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(filterResult?.active?' - personal filters':'')+(board?.saved?' - saved standings':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     const container=view.board.querySelector('.container');view.carObserver?.disconnect();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
@@ -562,7 +571,7 @@ export function installEvents(bridge){
       button.innerHTML='<div class="image-container"><img class="show" src="images/car_thumbnail_placeholder.png"><img class="checkmark" src="images/state_verified.svg" alt=""></div><div class="left"><p class="position"></p><p class="event-time"></p></div><div class="right"><div class="name-container"><span class="name"></span></div><p class="verified-state"></p></div>';
       const position=button.querySelector('.position'),ordinal=eventOrdinal(row.rank);position.append(document.createTextNode(Number.isSafeInteger(row.rank)?String(row.rank):'--'));if(ordinal){const suffix=document.createElement('span');suffix.className='sq-event-ordinal-suffix';suffix.textContent=ordinal.slice(String(row.rank).length);position.append(suffix);}button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
-      const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.rp)||0)+' Event RP';
+      const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' Event RP');
       const icon=button.querySelector('.checkmark');icon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';icon.alt=row.pending?'Unverified recording':'Verified replay';container.append(button);
       const style=styles[view.page*20+index];
       if(style&&view.carObserver){view.carStyles.set(button,style);view.carObserver.observe(button);}
@@ -580,7 +589,9 @@ export function installEvents(bridge){
     const root=document.querySelector('.time-announcer-ui'),session=sessions.current()||eventIntent;
     if(!root||!latestFinish||!session||latestFinish.periodId!==session.periodId||latestFinish.accountId!==bridge.accountId())return;
     const board=cache.get(session.periodId)||read(STORE+'-'+session.periodId,null);
-    const place=eventFinishPlace({board,periodId:session.periodId,trackId:latestFinish.trackId, ...latestFinish});
+    let place=eventFinishPlace({board,periodId:session.periodId,trackId:latestFinish.trackId, ...latestFinish});
+    const period=knownPeriods.get(session.periodId);
+    if(period){const display=eventDisplayRows(period),mine=display.rows.find(row=>row.accountId===session.accountId);if(display.filterResult?.active){if(!mine)place=null;else if(display.filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:display.rows.length,provisional:board?.complete!==true};}}
     root.querySelector('.sq-event-finish-place')?.remove();
     const current=root.querySelector('.current'),position=current?.querySelector('.position');
     if(!position)return;
@@ -719,5 +730,10 @@ export function installEvents(bridge){
   },true);
   window.addEventListener('online',()=>void flush());
   window.addEventListener('storage',event=>{if(event.key===QUEUE){hasPending=read(QUEUE,[]).length>0;void flush();}if(event.key===PROFILE_CACHE)profilesAt=0;if(event.key===BEST){bestRecords=read(BEST,{});lastInline='';}});
+  window.addEventListener('pt-personal-filters-changed',()=>{
+    if(nativeView){nativeView.signature='';nativeView.quickSignature='';syncNativeBoard(sessions.current()||eventIntent);}
+    const list=dialog?.querySelector('.sq-event-results');
+    if(selected&&list){const board=cache.get(selected.id)||read(STORE+'-'+selected.id,null);if(board){const raw=now()>=selected.endsAt?archivePeriodCounts(selected,board).verifiedEntries:board.entries||[];const filtered=bridge.filterRows?.(raw,{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true});list.innerHTML=rows(filtered?.rows||raw)||'<li>No racers match these filters.</li>';message(filtered?.active?'Personal filters are active.':'Published standings.');}}
+  });
   return {featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
 }
