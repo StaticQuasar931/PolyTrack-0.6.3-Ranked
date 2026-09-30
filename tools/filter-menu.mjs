@@ -422,6 +422,10 @@ export function mountFilterMenu({
     }
     return [...values].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => [value, label]);
   }, 'badges');
+  const hideUncustomized = document.createElement('input'); hideUncustomized.type = 'checkbox';
+  hideUncustomized.setAttribute('aria-label', 'Hide uncustomized profiles');
+  const hideUncustomizedRow = el('label', 'fm-toggle-row'); hideUncustomizedRow.append(hideUncustomized, el('span', '', 'Hide uncustomized profiles'));
+  facetCard.append(hideUncustomizedRow);
   facetCard.append(el('p', 'fm-help', 'Only badges present in saved profiles are listed. Selected countries are alternatives, and selected badges are alternatives. Country and badge criteria must both match; include/exclude racers and group tags further narrow the result.'));
   playerPanel.append(groupCard);
 
@@ -481,10 +485,6 @@ export function mountFilterMenu({
   displayCard.append(labelFor('Grading', gradeSelect));
   const missingSelect = makeSelect([['include', 'Include racers with missing data'], ['exclude', 'Exclude racers with missing data']], 'Missing data handling');
   displayCard.append(labelFor('Missing data', missingSelect));
-  const hideUncustomized = document.createElement('input'); hideUncustomized.type = 'checkbox';
-  hideUncustomized.setAttribute('aria-label', 'Hide uncustomized profiles');
-  const hideUncustomizedRow = el('label', 'fm-toggle-row'); hideUncustomizedRow.append(hideUncustomized, el('span', '', 'Hide uncustomized profiles'));
-  displayCard.append(hideUncustomizedRow);
   const showLeaderboardNotice = document.createElement('input'); showLeaderboardNotice.type = 'checkbox';
   showLeaderboardNotice.setAttribute('aria-label', 'Show filter notice on leaderboard');
   const showLeaderboardNoticeRow = el('label', 'fm-toggle-row'); showLeaderboardNoticeRow.append(showLeaderboardNotice, el('span', '', 'Show filter notice on leaderboard'));
@@ -673,6 +673,7 @@ export function mountFilterMenu({
         remove.addEventListener('click', () => { filter[field] = filter[field].filter(id => id !== entry.id); renderSuggestions(); refreshSelected(); scheduleRuleNotice(null, true); });
         chip.append(remove); chips.append(chip);
       }
+      safeCall(() => onRenderRacers(chips), undefined);
     };
     function renderSuggestions() {
       popup.replaceChildren();
@@ -708,7 +709,10 @@ export function mountFilterMenu({
         option.append(person);
         const rp = bounded(candidate.row.overallRp ?? candidate.row.overallRP ?? candidate.row.overallScore ?? candidate.row.rp ?? candidate.row.score, 1e9);
         const rank = bounded(candidate.row.overallRank ?? candidate.row.rank, 1e9, true);
-        if (rank !== null || rp !== null) option.append(el('span', 'fm-suggestion-id', [rank !== null ? `#${rank}` : '', rp !== null ? `${rp} RP` : ''].filter(Boolean).join(' · ')));
+        if (rank !== null || rp !== null) {
+          const formattedRp = rp === null ? '' : `${Number(rp.toFixed(2)).toLocaleString(undefined, { maximumFractionDigits: 2 })} RP`;
+          option.append(el('span', 'fm-suggestion-id', [rank !== null ? `#${rank}` : '', formattedRp].filter(Boolean).join(' · ')));
+        }
         if (idSearch.showId) option.append(el('span', 'fm-suggestion-id', candidate.id));
         option.addEventListener('click', () => {
           filter[field] = [...new Set([...filter[field], candidate.id])].slice(0, MAX_LIST);
@@ -787,16 +791,35 @@ export function mountFilterMenu({
       const hasBest = track?.bestTimeMs != null && Number.isFinite(Number(track.bestTimeMs));
       const hasPb = track?.pbTimeMs != null && Number.isFinite(Number(track.pbTimeMs));
       const hasWeight = track?.weight != null && Number.isFinite(Number(track.weight));
-      if (hasBest) metadata.push(`Best ${(Number(track.bestTimeMs) / 1000).toFixed(3)}s`);
-      if (hasPb) metadata.push(`Your PB ${(Number(track.pbTimeMs) / 1000).toFixed(3)}s`);
+      const formatTrackTime = value => {
+        const totalMs = Math.round(Number(value));
+        const minutes = Math.floor(totalMs / 60000);
+        const seconds = Math.floor(totalMs / 1000) % 60;
+        const milliseconds = totalMs % 1000;
+        return `${minutes}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+      };
+      if (hasBest) metadata.push(`Best ${formatTrackTime(track.bestTimeMs)}`);
+      if (hasPb) metadata.push(`Your PB ${formatTrackTime(track.pbTimeMs)}`);
       if (hasWeight) metadata.push(`Weight ${Number(track.weight).toFixed(2)}x`);
+      for (const [key, label] of [['racerCount', track?.complete === true ? 'Racers' : 'Loaded racers'], ['meanTimeMs', 'Mean PB'], ['medianTimeMs', 'Median PB']]) {
+        if (track?.[key] != null && Number.isFinite(Number(track[key]))) {
+          metadata.push(`${label} ${key.endsWith('TimeMs') ? formatTrackTime(track[key]) : Number(track[key]).toLocaleString()}`);
+        }
+      }
       if (previewUrl || metadata.length) {
         const info = el('div', 'fm-track-info');
         if (previewUrl) {
           const image = document.createElement('img'); image.src = previewUrl; image.alt = ''; image.loading = 'lazy';
           image.addEventListener('error', () => image.remove(), { once: true }); info.append(image);
         }
-        if (metadata.length) info.append(el('span', 'fm-track-meta', metadata.join(' · ')));
+        if (metadata.length) {
+          const metaGrid = el('span', 'fm-track-meta');
+          for (const item of metadata) metaGrid.append(el('span', '', item));
+          info.append(metaGrid);
+          if (track?.racerCount != null || track?.meanTimeMs != null || track?.medianTimeMs != null) {
+            info.append(el('span', 'fm-track-meta-note', 'Stats use loaded PBs, not all attempts.'));
+          }
+        }
         row.append(info);
       }
       trackRuleList.append(row);
@@ -1173,6 +1196,10 @@ export function mountFilterMenu({
     writeForm(refresh());
     priorFocus = document.activeElement;
     overlay.hidden = false;
+    for (const picker of overlay.querySelectorAll('.fm-user-picker')) {
+      const chips = picker.querySelector('.fm-chips');
+      if (chips) safeCall(() => onRenderRacers(chips), undefined);
+    }
   document.body?.classList.add('pt-group-filter-menu-open');
     (closeButton || focusable()[0])?.focus({ preventScroll: true });
   }

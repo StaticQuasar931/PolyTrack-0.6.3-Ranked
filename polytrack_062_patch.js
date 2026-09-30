@@ -1397,6 +1397,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   const overallCarRenderPending = new Map();
   const overallCarRenderFailedAt = new Map();
   const overallCarRendererRetries = new WeakMap();
+  const overallCarRenderSubscribers=new WeakMap();
   const overallCarRenderQueue=[];
   let overallCarRenderActive=0;
   function drainOverallCarRenderQueue(){
@@ -1463,7 +1464,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         .finally(()=>overallCarRenderPending.delete(key));
         overallCarRenderPending.set(key,pending);
       }
+      if(overallCarRenderSubscribers.get(node)===key)return;
+      overallCarRenderSubscribers.set(node,key);
       pending.then((src)=>{
+          if(overallCarRenderSubscribers.get(node)===key)overallCarRenderSubscribers.delete(node);
           if (!src || !node.isConnected || node.dataset.renderKey !== key) return;
           rendered.src = src;
           placeholder.classList.remove('show');
@@ -2032,12 +2036,18 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       .leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button{font-size:20px!important;min-width:0!important;white-space:nowrap;padding-inline:8px!important;flex-shrink:1!important}
       .leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button img{max-width:26px;max-height:26px}
       @media(max-width:600px){.leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button{font-size:15px!important;padding-inline:5px!important}}
-      .personal-racer-context{position:fixed;z-index:2147483001;display:grid;gap:6px;width:264px;padding:10px;background:#122649;border:2px solid var(--personal-filter-color,#68efac);box-shadow:0 8px 30px #0008}
-      .personal-racer-context button{font:18px ForcedSquare,sans-serif;min-height:42px;color:white;background:#25466d;text-align:left;padding:8px}
+      .personal-racer-context{position:fixed;z-index:2147483001;display:grid;gap:4px;box-sizing:border-box;width:min(238px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:7px;background:#122649;border:1px solid #6585ac;box-shadow:0 8px 24px #0008}
+      .personal-racer-context button{font:16px/1.3 ForcedSquare,sans-serif;min-height:36px;border:0;color:#e7efff;background:#203858;text-align:left;padding:7px 10px;clip-path:none;transform:none}
+      .personal-racer-context button:hover,.personal-racer-context button:focus-visible{background:#34557a;outline:1px solid #93b4e3;outline-offset:-1px}
+      .leaderboard-ui .button-wrapper>[data-personal-filter-button]{flex:0 1 auto!important;font-size:14px!important;padding:6px 9px!important;background:#233950!important;color:#c4d3e7!important;border:0;box-shadow:none!important}
+      body.personal-filters-active .leaderboard-ui .button-wrapper>[data-personal-filter-button].selected{background:#284b48!important;color:#b9efd6!important;box-shadow:inset 0 -2px var(--personal-filter-color,#68efac)!important}
       .profile-filter-heading{display:block;padding:10px 14px;color:var(--personal-filter-color,#68efac);font-size:20px;background:#112e40;margin-bottom:8px}
       .overall-help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.overall-help-grid section{padding:14px;background:#18374c;border-left:3px solid #68efac}.overall-help-grid button{font-size:18px;margin-top:8px}
       .personal-filter-notice{margin:6px 8px;color:#a1f5c5;font-size:13px;text-align:center;line-height:1.4;flex-basis:100%;max-width:640px}
-      .personal-racer-filter-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;border-top:1px solid #50779b;background:#142e45;margin:12px 0}
+      .personal-racer-filter-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;margin:6px 0}
+      .personal-racer-filter-actions>.button{font:16px/1.3 ForcedSquare,sans-serif!important;padding:7px 12px!important;background:#263c5d!important;color:#d9e6fc!important;box-shadow:none;clip-path:none}
+      .personal-racer-filter-actions>.button:hover{background:#355277!important}
+      .profile-identity-extras>[data-copy-public-id]{font:13px/1.3 ForcedSquare,sans-serif!important;padding:5px 8px!important;background:#233451!important;color:#b6c9e6!important;clip-path:none;box-shadow:none;margin-left:auto}
       .sq-record-placement.is-personal-filter{outline:1px solid #7de5b0;outline-offset:2px}
       @media(max-width:800px){.overall-filter-host{max-width:100%}}
       .ranked-filter-panel{position:relative}
@@ -2207,11 +2217,16 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   let footerVisibilityObserver=null;
+  let footerBrandingFrame=0;
   const footerObserved=new WeakSet();
+  function schedulePersistentInfoBranding(){
+    if(footerBrandingFrame)return;
+    footerBrandingFrame=requestAnimationFrame(()=>{footerBrandingFrame=0;ensurePersistentInfoBranding();});
+  }
   function ensurePersistentInfoBranding(){
     const info = document.querySelector('.menu-ui .info, .menu .info');
     if (!info) return;
-    if(!footerVisibilityObserver)footerVisibilityObserver=new MutationObserver(()=>requestAnimationFrame(ensurePersistentInfoBranding));
+    if(!footerVisibilityObserver)footerVisibilityObserver=new MutationObserver(schedulePersistentInfoBranding);
     for(const node of document.querySelectorAll('.menu-ui,.menu,.track-selection-ui')){
       if(footerObserved.has(node))continue;
       footerObserved.add(node);
@@ -2230,7 +2245,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (info.dataset.fp === BRAND_FP && info.dataset.lang === lang && info.querySelector('.staticFunPill')) {
       const social=info.querySelector('.social-links');
       for(const duplicate of [...info.children].slice(3))if(duplicate!==social)duplicate.remove();
-      info.style.display = homeVisible() ? '' : 'none';
+      const display=homeVisible()?'':'none';
+      if(info.style.display!==display)info.style.display=display;
       return;
     }
     const nativeSocial=info.querySelector('.social-links');
@@ -4262,11 +4278,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     button=document.createElement('button');button.type='button';button.className='button personal-filter-toggle';button.dataset.personalFilterButton='';button.textContent='Filters';
     button.onclick=()=>void openPersonalFilterMenu();
     button.onkeydown=event=>{if(event.key==='Enter'||event.key===' ')event.stopPropagation();};
-    button.oncontextmenu=event=>{event.preventDefault();personalFilterRuntime?.toggle();};root.appendChild(button);refreshPersonalFilterButtons();return button;
+    button.oncontextmenu=event=>{event.preventDefault();personalFilterRuntime?.toggle();};
+    const back=root.matches('.button-wrapper')?root.querySelector('button.back,button:first-child'):null;
+    if(back)back.after(button);else root.appendChild(button);
+    refreshPersonalFilterButtons();return button;
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=43',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=44',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4286,8 +4305,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=43',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=43',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=43',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=44',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=44',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=44',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -4305,8 +4324,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return [...TRACK_CATALOG.entries(),...extraTrackInfoById.entries()].map(([id,info])=>{
       const board=boards.get(id),rows=(board?.entries||[]).filter(row=>canonicalRaceTimeMs(row)>0);
       const mine=rows.find(row=>String(row.accountId||row.userId)===ownId);
-      return {id,name:info.name||id,previewUrl:info.thumbnail||'',
-        bestTimeMs:rows.length?Math.min(...rows.map(canonicalRaceTimeMs)):null,
+      const times=rows.map(canonicalRaceTimeMs).sort((a,b)=>a-b),middle=Math.floor(times.length/2);
+      return {id,name:info.name||id,previewUrl:info.thumbnail||'',racerCount:times.length,
+        meanTimeMs:times.length?times.reduce((sum,time)=>sum+time,0)/times.length:null,
+        medianTimeMs:times.length?(times.length%2?times[middle]:(times[middle-1]+times[middle])/2):null,
+        bestTimeMs:times[0]??null,
         pbTimeMs:mine?canonicalRaceTimeMs(mine):null,weight:board?.weight??null,complete:board?.complete===true};
     });
   }
@@ -4325,7 +4347,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const button=document.createElement('button');button.type='button';button.className='button';button.textContent=label;
       button.onclick=()=>{menu.remove();void action();};menu.appendChild(button);
     }
-    menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-280))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-280))+'px';document.body.appendChild(menu);menu.querySelector('button').focus();
+    document.body.appendChild(menu);
+    const bounds=menu.getBoundingClientRect();
+    menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-bounds.width-8))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-bounds.height-8))+'px';menu.querySelector('button').focus();
     menu.onkeydown=event=>{if(event.key==='Escape')menu.remove();};
     const dismiss=event=>{if(!menu.contains(event.target))menu.remove();};document.addEventListener('pointerdown',dismiss,{capture:true,once:true});
   }
@@ -7307,7 +7331,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=43',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:43,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=44',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:44,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

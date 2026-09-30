@@ -35,3 +35,24 @@ test('the website update notice and entry-point cache revision match the publish
   assert.ok(source.includes(`installSiteUpdates({revision:${revision}`));
   assert.ok(index.includes(`polytrack_062_patch.js?v=${revision}`));
 });
+
+test('track rule statistics use loaded times and distinguish partial fields', () => {
+  const start = source.indexOf('  function personalFilterTracks(');
+  const end = source.indexOf('  async function editPersonalRacer(', start);
+  const context = vm.createContext({
+    activeRankedAccountId: () => 'me',
+    personalFilterDataSource: () => ({boards:[{trackId:'track',entries:[
+      {accountId:'me',timeMs:3000},{accountId:'other',timeMs:1000},
+      {accountId:'third',timeMs:2000}],complete:false,weight:2}]}),
+    TRACK_CATALOG:new Map([['track',{name:'Track'}]]), extraTrackInfoById:new Map(),
+    canonicalRaceTimeMs:row => row.timeMs
+  });
+  vm.runInContext(source.slice(start,end),context);
+  const track=context.personalFilterTracks()[0];
+  assert.equal(track.racerCount,3);
+  assert.equal(track.bestTimeMs,1000);
+  assert.equal(track.pbTimeMs,3000);
+  assert.equal(track.meanTimeMs,2000);
+  assert.equal(track.medianTimeMs,2000);
+  assert.equal(track.complete,false);
+});
