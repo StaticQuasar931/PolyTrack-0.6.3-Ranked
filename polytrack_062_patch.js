@@ -93,7 +93,7 @@
     eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
       eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:db,openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button)throw Error('Weekly track is unavailable');button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
-        filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,
+        filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
         readCatalog:()=>eventCloudRead('/v1/events/catalog','0.6.2_event_public','catalog'),
         readSnapshot:id=>eventCloudRead('/v1/events/'+encodeURIComponent(id)+'/snapshot','0.6.2_event_public',id),
         readReplay:async(periodId,accountId,runId=null)=>{
@@ -2022,6 +2022,20 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       .overall-filter-host{position:relative;z-index:6;flex:0 1 auto;margin-inline:auto;min-width:0;max-width:48%;display:flex;flex-wrap:wrap;justify-content:center}
       .personal-filter-toggle{color:#91ffc0!important;background:#163e3d!important;white-space:nowrap}
       .personal-filter-toggle.selected{color:#112b2b!important;background:#68efac!important}
+      body.personal-filters-active .overall-shell{border-top:4px solid var(--personal-filter-color,#68efac);background:linear-gradient(145deg,#183b44,#18274d 48%)}
+      body.personal-filters-colored .overall-entry,body.personal-filters-colored .leaderboard-ui button.main{background-color:color-mix(in srgb,var(--personal-filter-color) 18%,#13224f)!important}
+      body.personal-filters-colored .overall-top,body.personal-filters-colored .profile-hero{border-bottom:3px solid var(--personal-filter-color)}
+      body.personal-filters-active .personal-filter-toggle.selected{background:var(--personal-filter-color)!important;color:#101c2e!important}
+      .leaderboard-ui>.container>.personal-filter-notice{box-sizing:border-box;width:100%;max-width:none;margin:8px 0;padding:12px;background:#153a46;border-left:3px solid var(--personal-filter-color,#68efac);font-size:1em;flex-shrink:0}
+      .leaderboard-ui .button-wrapper>[data-personal-filter-button]{font-size:16px!important;min-width:0;flex:1 1 auto;padding:7px 9px!important}
+      .leaderboard-ui .button-wrapper:has(>[data-personal-filter-button]){display:flex!important;flex-wrap:nowrap!important;gap:6px!important;box-sizing:border-box}
+      .leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button{font-size:20px!important;min-width:0!important;white-space:nowrap;padding-inline:8px!important;flex-shrink:1!important}
+      .leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button img{max-width:26px;max-height:26px}
+      @media(max-width:600px){.leaderboard-ui .button-wrapper:has(>[data-personal-filter-button])>.button{font-size:15px!important;padding-inline:5px!important}}
+      .personal-racer-context{position:fixed;z-index:2147483001;display:grid;gap:6px;width:264px;padding:10px;background:#122649;border:2px solid var(--personal-filter-color,#68efac);box-shadow:0 8px 30px #0008}
+      .personal-racer-context button{font:18px ForcedSquare,sans-serif;min-height:42px;color:white;background:#25466d;text-align:left;padding:8px}
+      .profile-filter-heading{display:block;padding:10px 14px;color:var(--personal-filter-color,#68efac);font-size:20px;background:#112e40;margin-bottom:8px}
+      .overall-help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.overall-help-grid section{padding:14px;background:#18374c;border-left:3px solid #68efac}.overall-help-grid button{font-size:18px;margin-top:8px}
       .personal-filter-notice{margin:6px 8px;color:#a1f5c5;font-size:13px;text-align:center;line-height:1.4;flex-basis:100%;max-width:640px}
       .personal-racer-filter-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;border-top:1px solid #50779b;background:#142e45;margin:12px 0}
       .sq-record-placement.is-personal-filter{outline:1px solid #7de5b0;outline-offset:2px}
@@ -3114,11 +3128,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (document.getElementById('overallLeaderboardPanel')) return;
     const panel = document.createElement('div');
     panel.id = 'overallLeaderboardPanel';
-    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><section><b>Overall RP</b><p>Lower is better. Overall RP combines strong finishes, track coverage, and consistency.</p></section><section><b>Track weight</b><p>Track weight reflects the track type, the published field, and how competitive its results are.</p></section><section><b>Eligibility</b><p>Early results are provisional. Completing enough populated tracks establishes a Ranked position.</p></section><section><b>Podium points</b><p>Top-three finishes on recognized, sufficiently populated tracks can earn podium points.</p></section><section><b>Run verification</b><p>A checkmark means the replay reproduced its exact finish in the trusted physics engine. Waiting means not approved yet. Automatic review currently covers known tracks up to five minutes; other runs stay saved and waiting.</p></section><section><b>Badges</b><p>Badges such as Beta Tester are issued by the Ranked server and cannot be granted by the browser.</p></section><section><b>Route planner</b><p>Every plan is for you. Your profile shows ways to improve; another profile shows ways to catch that racer or extend your lead.</p></section><section><b>Saved data</b><p>Rankings stay available offline. Red means a cloud refresh failed; “up to date” means the cloud responded and no newer complete snapshot exists.</p></section><aside class="sq-track-submit"><strong>Made a track?</strong><span>Submit it for a chance to be featured in the StaticQuasar931 tab.</span><a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Submit on Discord</a></aside><p class="overall-help-note">Saved PBs remain. New track finishes can change positions.</p><p><strong>Please suggest new features and changes.</strong> Join the <a href="https://discord.gg/DP2hM7RRhR" target="_blank" rel="noopener noreferrer">Discord</a> or use the <a href="https://sites.google.com/view/staticquasar931/google-form?utm_source=polytrack&amp;utm_medium=game&amp;utm_campaign=ranked_feedback" target="_blank" rel="noopener noreferrer">feedback form</a>.</p><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
+    panel.innerHTML = `<div class="overall-shell"><div class="overall-top"><div class="overall-title-group"><h2>${tRankingsTitle()}</h2></div><div id="overallFilterPanel" class="overall-filter-host"></div><div class="overall-actions"><button id="overallFindMeBtn" class="button overall-action-btn" type="button">Find me</button><button id="overallHelpBtn" class="button overall-action-btn" type="button">Help</button><button id="closeOverallLeaderboard" class="button overall-action-btn" type="button">${tr('close')}</button></div></div><div class="overall-columns" aria-hidden="true"><span>Place</span><span>Driver</span><span>Movement & bests</span><span>Score</span></div><div id="overallLeaderboardList"></div>${dailySpotlightMarkup()}<div id="overallProfilePopup"><div class="overall-profile-card" role="dialog" aria-modal="true" aria-label="Racer profile"><div class="profile-dialog-toolbar"><span>Racer profile</span><button id="overallProfileClose" class="button" type="button">Close</button></div><div id="overallProfileContent"></div></div></div><div id="overallHelpPopup"><div class="overall-help-card" role="dialog" aria-modal="true" aria-labelledby="overallHelpTitle"><div class="overall-help-head"><h3 id="overallHelpTitle">How Ranked works</h3></div><div class="overall-help-content"><div class="overall-help-grid"><section><b>Ranked</b><p>Lower Overall RP is better. Event and Casual RP reward higher totals.</p></section><section><b>Your group</b><p>Normal filters hide racers. Smart filters calculate a separate group score. Missing saved data is marked.</p><button class="button" type="button" data-help-action="filters">Open Filters</button></section><section><b>Replays</b><p>A checkmark means verified. Waiting replays can still be watched; scores may change after review.</p></section><section><b>Improve</b><p>Your profile suggests routes from saved results. Thin data means fewer reliable suggestions.</p><button class="button" type="button" data-help-action="profile">Your profile</button></section><section><b>Controls</b><p>Arrows or A/D switch pages. Shift + number jumps to a page. Right-click Filters pauses them.</p></section><section><b>Your look</b><p>Open your profile to customize your racer and see unlock goals.</p></section></div><div class="overall-help-actions"><button id="overallHelpClose" class="button overall-action-btn" type="button">Close help</button></div></div></div></div></div>`;
     document.body.appendChild(panel);
     panel.querySelector('.overall-columns')?.insertAdjacentHTML('beforebegin','<div id="overallDataNotice" role="status" hidden></div>');
     void ensureRankedFiltersUi();
     panel.addEventListener('click', (event)=>{
+      const helpAction=event.target.closest?.('[data-help-action]');
+      if(helpAction){closeRankedDialog(panel.querySelector('#overallHelpPopup'));if(helpAction.dataset.helpAction==='filters')void openPersonalFilterMenu();else if(activeRankedAccountId())void openRankedProfile(activeRankedAccountId());return;}
       if(!event.target.closest?.('[data-category-info]')){
         const categoryControl=panel.querySelector('.overall-category-control');
         categoryControl?.classList.remove('is-explaining');
@@ -4231,21 +4247,26 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function refreshPersonalFilterButtons(){
     const active=personalFilterRuntime?.active(),filter=personalFilterRuntime?.getFilter();
     for(const button of document.querySelectorAll('[data-personal-filter-button]')){
-      const label=active?`${filter.mode==='smart'?'Group':'Filters'} ON`:'Filters';
+      const label=active?'Filters-Active':'Filters-Inactive';
       if(button.textContent!==label)button.textContent=label;
       button.classList.toggle('selected',Boolean(active));button.setAttribute('aria-pressed',String(Boolean(active)));
       button.title=active?'Personal filters are active. Click to edit; right-click to pause.':'Edit your personal leaderboard. Right-click to resume saved filters.';
     }
+    const color=/^#[a-f0-9]{6}$/i.test(filter?.color||'')?filter.color:'#68efac';
+    document.body.style.setProperty('--personal-filter-color',color);
+    document.body.classList.toggle('personal-filters-active',Boolean(active));
+    document.body.classList.toggle('personal-filters-colored',Boolean(active&&filter.colorLevel==='everywhere'));
   }
   function personalFilterButton(root){
     let button=root.querySelector('[data-personal-filter-button]');if(button)return button;
     button=document.createElement('button');button.type='button';button.className='button personal-filter-toggle';button.dataset.personalFilterButton='';button.textContent='Filters';
     button.onclick=()=>void openPersonalFilterMenu();
+    button.onkeydown=event=>{if(event.key==='Enter'||event.key===' ')event.stopPropagation();};
     button.oncontextmenu=event=>{event.preventDefault();personalFilterRuntime?.toggle();};root.appendChild(button);refreshPersonalFilterButtons();return button;
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=42',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=43',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4262,18 +4283,51 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     overallEntriesCache=overallEntriesCache.map(row=>String(row.accountId||row.userId)===accountId?{...row,groupCode:result.groupCode}:row);
     personalFilterChanged();return result.groupCode;
   }
-  async function openPersonalFilterMenu(){
+  async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=42',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=42',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=42',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=43',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=43',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=43',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
-        getRows:()=>personalFilterDataSource().profiles,getTracks:()=>[...TRACK_CATALOG.entries(),...extraTrackInfoById.entries()].map(([id,info])=>({id,name:info.name||id})),
+        getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
+        renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
         getFilter:()=>personalFilterRuntime.getFilter(),onApply:filter=>personalFilterRuntime.setFilter(filter),onToggle:()=>personalFilterRuntime.toggle(),
         getGroupCode:()=>localStorage.getItem('polytrack-personal-group-code')||'',onGroupCodeSave:savePersonalGroupCode,
-        exportCode:core.exportGroupFilterCode,importCode:core.importGroupFilterCode});
+        exportCode:core.exportGroupFilterCode,importCode:core.importGroupFilterCode,getRuleCounts:(rows,filter)=>{
+          const data=personalFilterDataSource(),prepared=data.filterIndexes||(data.filterIndexes=core.prepareGroupFilterData(data));
+          return core.groupFilterRuleCounts(rows,filter,{...prepared,complete:trackId=>data.boards.some(board=>board.trackId===trackId&&board.complete===true)});
+        }});
     }
-    personalFilterMenu.open();
+    if(show)personalFilterMenu.open();
+  }
+  function personalFilterTracks(){
+    const ownId=activeRankedAccountId(),boards=new Map(personalFilterDataSource().boards.map(board=>[board.trackId,board]));
+    return [...TRACK_CATALOG.entries(),...extraTrackInfoById.entries()].map(([id,info])=>{
+      const board=boards.get(id),rows=(board?.entries||[]).filter(row=>canonicalRaceTimeMs(row)>0);
+      const mine=rows.find(row=>String(row.accountId||row.userId)===ownId);
+      return {id,name:info.name||id,previewUrl:info.thumbnail||'',
+        bestTimeMs:rows.length?Math.min(...rows.map(canonicalRaceTimeMs)):null,
+        pbTimeMs:mine?canonicalRaceTimeMs(mine):null,weight:board?.weight??null,complete:board?.complete===true};
+    });
+  }
+  async function editPersonalRacer(id,action){
+    if(!id||!personalFilterRuntime)return;
+    if(!personalFilterMenu)await openPersonalFilterMenu(false);
+    if(personalFilterMenu?.updateRacer){personalFilterMenu.updateRacer(id,action);return;}
+    const filter=personalFilterRuntime.getFilter();
+    const blacklist=filter.blacklist.filter(value=>value!==id),forcedIncludes=(filter.forcedIncludes||[]).filter(value=>value!==id);
+    personalFilterRuntime.setFilter({...filter,enabled:true,blacklist:action==='exclude'?[...blacklist,id]:blacklist,forcedIncludes:action==='include'?[...forcedIncludes,id]:forcedIncludes});
+  }
+  function openPersonalRacerActions(id,event){
+    document.getElementById('personalRacerActions')?.remove();
+    const menu=document.createElement('div');menu.id='personalRacerActions';menu.className='personal-racer-context';menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Racer filter actions');
+    for(const [label,action] of [['Include in filters',()=>editPersonalRacer(id,'include')],['Exclude from filters',()=>editPersonalRacer(id,'exclude')],['Remove racer override',()=>editPersonalRacer(id,'remove')],['Edit filters',openPersonalFilterMenu],['Close',()=>{}]]){
+      const button=document.createElement('button');button.type='button';button.className='button';button.textContent=label;
+      button.onclick=()=>{menu.remove();void action();};menu.appendChild(button);
+    }
+    menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-280))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-280))+'px';document.body.appendChild(menu);menu.querySelector('button').focus();
+    menu.onkeydown=event=>{if(event.key==='Escape')menu.remove();};
+    const dismiss=event=>{if(!menu.contains(event.target))menu.remove();};document.addEventListener('pointerdown',dismiss,{capture:true,once:true});
   }
   function personalFilterNotice(result){
     if(!result?.active)return '';
@@ -4281,11 +4335,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return `${filter.mode==='smart'?'SMART GROUP':'PERSONAL FILTERS'} · ${result.filteredCount}/${result.sourceCount} racers · ${result.groupGrading?'group placement':'global placement'}${result.scoringUnavailable?' · Lifetime ERP stays global; live event scores can be recalculated.':''}${result.incomplete?' · Some data is missing; group scores are estimates.':''}`;
   }
   function personalFilterNoticeNode(root,result){
-    let note=root.querySelector(':scope > .personal-filter-notice');
+    const host=root.matches?.('.leaderboard-ui')?root.querySelector(':scope > .container')||root:root;
+    let note=host.querySelector(':scope > .personal-filter-notice');
     const text=personalFilterNotice(result);
-    if(!text){note?.remove();return;}
-    if(!note){note=document.createElement('p');note.className='personal-filter-notice';note.setAttribute('role','status');root.appendChild(note);}
+    if(!text||personalFilterRuntime?.getFilter().showNotice===false){note?.remove();return;}
+    if(!note){note=document.createElement('p');note.className='personal-filter-notice';note.setAttribute('role','status');host.appendChild(note);}
     if(note.textContent!==text)note.textContent=text;
+    note.title='Filters are enabled and may hide other results. Open Filters to edit or pause them.';
   }
   function personalTrackRankingRows(rows){
     if(!personalFilterRuntime?.active()||personalFilterRuntime.getFilter().scope!=='all')return rows;
@@ -4531,16 +4587,18 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function annotateCategoryRanks(rows,category){
     const key=`polytrack-0.6.2-category-ranks-${category}-v1`;
     const previous=readJsonStorage(key,{ranks:{},since:{}})||{ranks:{},since:{}};
-    const now=Date.now(); const ranks={}; const since={};
+    const now=Date.now(); const ranks={}; const since={};const movements={};
+    const unchanged=rows.length===Object.keys(previous.ranks||{}).length&&rows.every((entry,index)=>previous.ranks?.[cleanUserId(entry.userId||entry.accountId||'')]===index+1);
     const output=rows.map((entry,index)=>{
       const id=cleanUserId(entry.userId||entry.accountId||''); const rank=index+1;
       const priorRank=Math.max(0,Number(previous.ranks?.[id]||0)||0);
-      const movement=priorRank?priorRank-rank:0;
+      const movement=unchanged?Number(previous.movements?.[id]||0):(priorRank?priorRank-rank:0);
+      movements[id]=movement;
       ranks[id]=rank;
       since[id]=priorRank===rank?(Number(previous.since?.[id]||0)||now):now;
       return {...entry,categoryRank:rank,categoryMovement:movement,categorySince:since[id]};
     });
-    writeJsonStorage(key,{ranks,since,updatedAt:now});
+    if(!unchanged)writeJsonStorage(key,{ranks,since,movements,updatedAt:now});
     return output;
   }
   function sortedOverallEntries(){
@@ -5088,8 +5146,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     let lastYield=Date.now();const yieldUi=async()=>{if(Date.now()-lastYield>=8){await new Promise(resolve=>setTimeout(resolve,0));lastYield=Date.now();}return stillCurrent();};
     if(!isSelf&&!self)return '<p class="profile-guide-empty">Set a Ranked result to build your plan against this racer.</p>';
     const plannerEntry=isSelf?entry:self;
+    const groupMode=personalFilterRuntime?.active()&&personalFilterRuntime.getFilter().mode==='smart';
+    if(groupMode&&plannerEntry?.groupScoreIncomplete)return '<p class="profile-guide-empty">Not enough saved group results for a reliable route plan. Open the tracks your group plays to fill the gaps. Your public score is unchanged.</p>';
     const eventRoutes=eventPlannerRoutes(plannerEntry.userId||plannerEntry.accountId,isSelf?null:entry.userId||entry.accountId);
-    if(plannerMetric==='events')return eventPlannerMarkup(entry,self,isSelf,eventRoutes,{...plannerCategoryAvailability(isSelf?snapshotFinishes:selfFinishes,overallTrackSummariesCache),events:eventRoutes.dataAvailable===true});
+    if(plannerMetric==='events')return groupMode?'<p class="profile-guide-empty">Lifetime Event RP uses public results. Open a live event to compare your group; a historical group route cannot be calculated from this snapshot.</p>':eventPlannerMarkup(entry,self,isSelf,eventRoutes,{...plannerCategoryAvailability(isSelf?snapshotFinishes:selfFinishes,overallTrackSummariesCache),events:eventRoutes.dataAvailable===true});
     const plannerFinishes=isSelf?snapshotFinishes:selfFinishes;
     const knownResults=new Map();
     for(const finish of (plannerFinishes||[]))if(finish?.trackId&&Number(finish.rank||0)>0)knownResults.set(finish.trackId,{...(knownResults.get(finish.trackId)||{}),...finish});
@@ -5104,8 +5164,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(!(await yieldUi()))return '';
       if(completed.has(track.id))continue;
       const snapshot=store[track.id];const summary=overallTrackSummariesCache.find(row=>row.trackId===track.id);
+      if(groupMode&&snapshot?.complete!==true)continue;
       const useSnapshot=Array.isArray(snapshot?.entries)&&(!summary||Number(snapshot.serverUpdatedAt||0)>=Number(summary.updatedAt||overallLoadState.serverUpdatedAt||0));
-      const field=Math.max(0,Number(useSnapshot?snapshot.entries.length:summary?.fieldSize||0)||0);
+      const field=groupMode?applyPersonalFilters(snapshot.entries,{trackId:track.id,complete:true}).rows.length:Math.max(0,Number(useSnapshot?snapshot.entries.length:summary?.fieldSize||0)||0);
       if(field<2)continue;
       const action=recommendationAction({trackId:track.id,rank:0,fieldSize:field,weight:useSnapshot?cachedTrackWeight(track.id,snapshot):Number(summary?.weight||0),cachedAt:Number(useSnapshot?snapshot.serverUpdatedAt||snapshot.fetchedAt:summary?.updatedAt||overallLoadState.serverUpdatedAt)||0},'start',plannerEntry,simulationFinishes);
       if(rankedRoute(action))starts.push(action);
@@ -5268,11 +5329,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId)}<div class="profile-achievement-row"><span class="profile-achievement-label">ELIGIBLE PODIUMS</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ranked track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">RANKED PROFILE</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?profileCustomizerMarkup(entry):''}<div class="profile-results">${resultCards}</div>${guideMarkup}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Loaded results</h4></div><span>${cachedFinishes.length} loaded on this device · ${Number(entry.raceCount||0)} counted in Ranked</span></header><div class="profile-track-head"><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">If a track leaderboard has not been loaded, its time may not be listed.</p>`;
     applyProfileCosmetics(content.closest('.overall-profile-card'),profileCosmeticDrafts.get(cleanUserId(entry.userId||entry.accountId||''))||cosmeticsForEntry(entry));
     setupRacerStudio(content);
-    if(profileFilter.active)personalFilterNoticeNode(content,profileFilter);
+    if(profileFilter.active){
+      const heading=document.createElement('strong');heading.className='profile-filter-heading';heading.textContent='Racer profile · Filtered Results';content.prepend(heading);
+      personalFilterNoticeNode(content,profileFilter);
+    }
     if(personalFilterRuntime){
       const actions=document.createElement('div');actions.className='personal-racer-filter-actions';actions.setAttribute('aria-label','Personal racer filters');
       const id=cleanUserId(userId),filter=personalFilterRuntime.getFilter(),hidden=filter.blacklist.includes(id);
-      for(const [label,action] of [[hidden?'Show this racer':'Hide this racer',()=>personalFilterRuntime.setFilter({...filter,enabled:true,blacklist:hidden?filter.blacklist.filter(value=>value!==id):[...filter.blacklist,id]})],['Only this racer',()=>personalFilterRuntime.setFilter({enabled:true,mode:filter.mode,grading:filter.grading,scope:filter.scope,whitelist:[id]})],['Edit filters',openPersonalFilterMenu]]){
+      for(const [label,action] of [[hidden?'Include in filters':'Exclude from filters',()=>editPersonalRacer(id,hidden?'include':'exclude')],['Edit filters',openPersonalFilterMenu]]){
         const button=document.createElement('button');button.type='button';button.className='button personal-filter-toggle';button.textContent=label;button.onclick=()=>void action();actions.appendChild(button);
       }
       content.prepend(actions);
@@ -7243,6 +7307,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=43',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:43,document,
+      isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
+      canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
+      endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);
     void ensureEventUi().then(()=>ensureEventEntry()).catch(()=>{});
     observer.observe(document.body || document.documentElement, uiObserverOptions);
     setInterval(()=>{if(document.visibilityState==='visible')reconcileUI();}, 15000);
@@ -7279,6 +7347,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(accountId){openRankedProfile(accountId);const guide=document.querySelector('.profile-guide');if(guide){guide.open=true;guide.scrollIntoView({block:'nearest'});guide.querySelector('[data-planner-metric]')?.focus();}}
     });
     document.addEventListener('contextmenu',(event)=>{
+      const racer=event.target.closest?.('.overall-entry[data-userid]');
+      if(racer){event.preventDefault();openPersonalRacerActions(racer.dataset.userid,event);return;}
       const summaryTrack=event.target.closest?.('[data-summary-track-id]');
       if(summaryTrack?.dataset.summaryTrackId){event.preventDefault();focusTrackFromRanked(summaryTrack.dataset.summaryTrackId);return;}
       const button=event.target.closest?.('.leaderboard-ui > .container > button.main');

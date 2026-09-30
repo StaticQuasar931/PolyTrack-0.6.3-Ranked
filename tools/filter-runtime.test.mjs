@@ -72,3 +72,37 @@ test('missing weights do not fabricate a ranked score',()=>{
  const result=groupScoreRows(players,[unknown],['b']);
  assert.equal(result[1].groupScore,null);assert.equal(result[1].groupScoreIncomplete,true);
 });
+
+test('track weight overrides only change local smart group scores',()=>{
+ const boards=[
+  {trackId:'one',weight:1,type:'official',complete:true,entries:[
+   {accountId:'a',timeMs:1000},{accountId:'b',timeMs:2000},{accountId:'c',timeMs:3000}]},
+  {trackId:'two',weight:1,type:'official',complete:true,entries:[
+   {accountId:'c',timeMs:1000},{accountId:'b',timeMs:2000},{accountId:'a',timeMs:3000}]}
+ ];
+ const base=groupScoreRows(players,boards,['a','b','c']);
+ const weighted=groupScoreRows(players,boards,['a','b','c'],[{trackId:'one',weight:5}]);
+ assert.equal(weighted[0].groupResults.find(result=>result.trackId==='one').weight,5);
+ assert.equal(weighted[0].groupResults.find(result=>result.trackId==='two').weight,1);
+ assert.notEqual(weighted[0].groupScore,base[0].groupScore);
+ assert.equal(boards[0].weight,1);
+ const {runtime}=fixture();
+ runtime.setFilter({mode:'normal',trackWeights:[{trackId:'summer',weight:20}]});
+ assert.equal(runtime.apply(players,{overall:true,category:'overall'}).rows[0].score,10);
+ runtime.setFilter({mode:'smart',trackRules:[{trackId:'summer',state:'any',weight:7}]});
+ const weightedView=runtime.apply(players,{overall:true,category:'overall',complete:true});
+ assert.equal(weightedView.active,true);
+ assert.equal(weightedView.rows[0].groupResults[0].weight,7);
+});
+
+test('created and loaded timestamps persist locally without changing legacy filter behavior',()=>{
+ const {runtime,storage}=fixture();
+ runtime.setFilter({whitelist:['a']});
+ const saved=JSON.parse(storage.getItem(GROUP_FILTER_KEY));
+ assert.ok(Number.isSafeInteger(saved.createdAt));
+ assert.equal(saved.loadedAt,null);
+ runtime.markLoaded(123456);
+ const loaded=JSON.parse(storage.getItem(GROUP_FILTER_KEY));
+ assert.equal(loaded.createdAt,saved.createdAt);
+ assert.equal(loaded.loadedAt,123456);
+});

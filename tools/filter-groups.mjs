@@ -1,10 +1,15 @@
 const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
-const CODE_PREFIX = 'PTFilter1.';
+const CODE_PREFIX = 'PTFilter1.StaticQuasar931.';
+const INTERMEDIATE_CODE_PREFIX = 'StaticQuasar931.';
+const LEGACY_CODE_PREFIX = 'PTFilter1.';
 const MAX_CODE_BYTES = 32 * 1024;
 const MAX_ID_LIST = 128;
 const MAX_LABEL_LIST = 32;
 const MAX_GROUP_CODES = 16;
 const MAX_TRACK_RULES = 8;
+const MAX_TRACK_WEIGHT = 1000;
+const MAX_TRACK_RULE_WEIGHT = 100;
+const MAX_TRACK_WEIGHTS = 128;
 const MAX_RANGE = 1_000_000_000_000;
 const HOUR_MS = 3_600_000;
 
@@ -56,12 +61,35 @@ function normalizeTrackRules(value) {
       trackId,
       state,
       minTimeMs: boundedNumber(rule.minTimeMs),
-      maxTimeMs: boundedNumber(rule.maxTimeMs)
+      maxTimeMs: boundedNumber(rule.maxTimeMs),
+      weight: boundedNumber(rule.weight, MAX_TRACK_RULE_WEIGHT)
     });
     seen.add(trackId);
     if (result.length === MAX_TRACK_RULES) break;
   }
   return result;
+}
+
+function normalizeTrackWeights(value) {
+  if (!Array.isArray(value)) return [];
+  const result = [];
+  const seen = new Set();
+  for (const raw of value) {
+    const rule = asRecord(raw);
+    const trackId = typeof rule.trackId === 'string' ? rule.trackId.trim().slice(0, 128) : '';
+    const weight = boundedNumber(rule.weight, MAX_TRACK_WEIGHT);
+    if (!trackId || seen.has(trackId) || weight === null) continue;
+    result.push(Object.freeze({ trackId, weight }));
+    seen.add(trackId);
+    if (result.length === MAX_TRACK_WEIGHTS) break;
+  }
+  return result;
+}
+
+function normalizedColor(value) {
+  if (typeof value !== 'string') return null;
+  const color = value.trim();
+  return /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(color) ? color.toLowerCase() : null;
 }
 
 export function normalizeGroupFilter(input = {}) {
@@ -74,9 +102,17 @@ export function normalizeGroupFilter(input = {}) {
     missing: source.missing === 'include' ? 'include' : 'exclude',
     whitelist: Object.freeze(uniqueStrings(source.whitelist, MAX_ID_LIST, ID_PATTERN)),
     blacklist: Object.freeze(uniqueStrings(source.blacklist, MAX_ID_LIST, ID_PATTERN)),
+    forcedIncludes: Object.freeze(uniqueStrings(source.forcedIncludes, MAX_ID_LIST, ID_PATTERN)),
     countryCodes: Object.freeze(uniqueStrings(source.countryCodes, MAX_LABEL_LIST, /^[A-Z]{2}$/, value => value.toUpperCase())),
     badges: Object.freeze(uniqueStrings(source.badges, MAX_LABEL_LIST)),
     groupCodes: Object.freeze(uniqueStrings(source.groupCodes, MAX_GROUP_CODES, /^\d{6}$/)),
+    color: normalizedColor(source.color),
+    colorLevel: ['dropdown', 'menu', 'everywhere'].includes(source.colorLevel) ? source.colorLevel : 'dropdown',
+    hideUncustomized: source.hideUncustomized === true,
+    showNotice: source.showNotice !== false,
+    createdAt: epoch(source.createdAt),
+    loadedAt: epoch(source.loadedAt),
+    trackWeights: Object.freeze(normalizeTrackWeights(source.trackWeights)),
     rpMin: boundedNumber(source.rpMin),
     rpMax: boundedNumber(source.rpMax),
     playtimeHoursMin: boundedNumber(source.playtimeHoursMin),
@@ -99,8 +135,10 @@ function hasRange(filter, minimum, maximum) {
 
 export function hasGroupFilters(input) {
   const filter = normalizeGroupFilter(input);
-  return filter.whitelist.length > 0 || filter.blacklist.length > 0 || filter.countryCodes.length > 0 ||
-    filter.badges.length > 0 || filter.groupCodes.length > 0 || filter.trackRules.length > 0 ||
+  const hasTrackCriterion = filter.trackRules.some(rule => rule.state !== 'any' || rule.minTimeMs !== null || rule.maxTimeMs !== null);
+  const hasSmartWeight = filter.mode === 'smart' && (filter.trackWeights.length > 0 || filter.trackRules.some(rule => rule.weight !== null));
+  return filter.whitelist.length > 0 || filter.blacklist.length > 0 || filter.forcedIncludes.length > 0 || filter.countryCodes.length > 0 ||
+    filter.badges.length > 0 || filter.groupCodes.length > 0 || filter.hideUncustomized || hasTrackCriterion || hasSmartWeight ||
     ['rpMin', 'rpMax', 'playtimeHoursMin', 'playtimeHoursMax', 'tracksMin', 'tracksMax', 'winsMin', 'winsMax',
       'daysActiveMin', 'daysActiveMax', 'joinedAfter', 'joinedBefore'].some(key => filter[key] !== null);
 }
@@ -138,14 +176,19 @@ function decodeBase64(value) {
 export function exportGroupFilterCode(input) {
   const filter = normalizeGroupFilter(input);
   if (inverted(input, filter)) throw new TypeError('Filter ranges cannot be inverted');
-  const bytes = new TextEncoder().encode(JSON.stringify({ version: 1, filter }));
+  const sharedFilter = { ...filter, createdAt: null, loadedAt: null };
+  const bytes = new TextEncoder().encode(JSON.stringify({ version: 1, marker: 'StaticQuasar931', filter: sharedFilter }));
   if (bytes.byteLength > MAX_CODE_BYTES) throw new RangeError('Filter code exceeds 32 KB');
   return CODE_PREFIX + encodeBase64(bytes);
 }
 
 export function importGroupFilterCode(code) {
-  if (typeof code !== 'string' || code.length > Math.ceil(MAX_CODE_BYTES / 3) * 4 + CODE_PREFIX.length || !code.startsWith(CODE_PREFIX)) return null;
-  const bytes = decodeBase64(code.slice(CODE_PREFIX.length));
+  if (typeof code !== 'string') return null;
+  const prefix = code.startsWith(CODE_PREFIX) ? CODE_PREFIX :
+    code.startsWith(INTERMEDIATE_CODE_PREFIX) ? INTERMEDIATE_CODE_PREFIX :
+      code.startsWith(LEGACY_CODE_PREFIX) ? LEGACY_CODE_PREFIX : null;
+  if (!prefix || code.length > Math.ceil(MAX_CODE_BYTES / 3) * 4 + prefix.length) return null;
+  const bytes = decodeBase64(code.slice(prefix.length));
   if (!bytes || bytes.byteLength > MAX_CODE_BYTES) return null;
   try {
     const payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -283,6 +326,22 @@ function matchesRange(value, minimum, maximum) {
   return value !== null && (minimum === null || value >= minimum) && (maximum === null || value <= maximum);
 }
 
+const DEFAULT_PROFILE_COSMETICS = Object.freeze({
+  theme: 'classic', accent: 'cyan', finish: 'gradient', plate: 'block', edge: 'accent', stage: 'garage',
+  stageTint: 'natural', stripe: 'standard', emblem: 'none', emblem2: 'none', emblem3: 'none',
+  emblemBackdrop: 'none', stageEffect: 'none', nameFont: 'classic', nameSize: 'normal',
+  nameWeight: 'regular', nameColor: 'default', baseSecondary: 'auto'
+});
+
+function hasNonDefaultCosmetics(profile) {
+  const cosmetics = safeValue(profile, 'profileCosmetics');
+  if (!cosmetics || typeof cosmetics !== 'object' || Array.isArray(cosmetics)) return false;
+  return Object.entries(DEFAULT_PROFILE_COSMETICS).some(([key, defaultValue]) => {
+    const selected = safeValue(cosmetics, key);
+    return selected !== undefined && selected !== null && selected !== defaultValue;
+  });
+}
+
 function addMissing(missing, id, reason) {
   missing.push({ id, reason });
 }
@@ -296,13 +355,20 @@ function compareRow(row, filter, options, profiles, finishes, missing) {
     return filter.missing === 'include';
   };
 
-  if (filter.whitelist.length || filter.blacklist.length) {
+  if (filter.blacklist.length) {
     if (!id) {
       if (!unknown('identity unavailable')) return false;
     } else {
-      if (filter.whitelist.length && !filter.whitelist.includes(id)) return false;
       if (filter.blacklist.includes(id)) return false;
     }
+  }
+
+  if (id && filter.forcedIncludes.includes(id)) return true;
+
+  if (filter.whitelist.length) {
+    if (!id) {
+      if (!unknown('identity unavailable')) return false;
+    } else if (!filter.whitelist.includes(id)) return false;
   }
 
   if (filter.countryCodes.length) {
@@ -321,6 +387,8 @@ function compareRow(row, filter, options, profiles, finishes, missing) {
       if (!unknown('badges unavailable')) return false;
     } else if (!filter.badges.some(badge => badges.has(badge))) return false;
   }
+
+  if (filter.hideUncustomized && !hasNonDefaultCosmetics(profile)) return false;
 
   if (filter.groupCodes.length) {
     const groups = safeValue(profile, 'groupCodes') ?? safeValue(profile, 'groupCode');
@@ -384,6 +452,90 @@ function compareRow(row, filter, options, profiles, finishes, missing) {
     }
   }
   return true;
+}
+
+const CRITERION_FIELDS = [
+  'whitelist', 'blacklist', 'countryCodes', 'badges', 'groupCodes',
+  'hideUncustomized', 'rpMin', 'rpMax', 'playtimeHoursMin', 'playtimeHoursMax', 'tracksMin', 'tracksMax',
+  'winsMin', 'winsMax', 'daysActiveMin', 'daysActiveMax', 'joinedAfter', 'joinedBefore', 'trackRules'
+];
+
+function filterForCriterion(filter, key, trackRuleIndex = -1) {
+  const result = { ...filter };
+  result.forcedIncludes = [];
+  const retained = new Set([key]);
+  for (const [minimum, maximum] of [
+    ['rpMin', 'rpMax'], ['playtimeHoursMin', 'playtimeHoursMax'], ['tracksMin', 'tracksMax'],
+    ['winsMin', 'winsMax'], ['daysActiveMin', 'daysActiveMax'], ['joinedAfter', 'joinedBefore']
+  ]) if (key === minimum || key === maximum) {
+    retained.add(minimum);
+    retained.add(maximum);
+  }
+  for (const field of CRITERION_FIELDS) {
+    if (retained.has(field)) continue;
+    if (field === 'trackRules') {
+      result.trackRules = trackRuleIndex >= 0 ? [filter.trackRules[trackRuleIndex]] : [];
+    } else if (['whitelist', 'blacklist', 'forcedIncludes', 'countryCodes', 'badges', 'groupCodes'].includes(field)) {
+      result[field] = [];
+    } else if (field === 'hideUncustomized') result[field] = false;
+    else result[field] = null;
+  }
+  if (key === 'trackRules') result.trackRules = [filter.trackRules[trackRuleIndex]];
+  return result;
+}
+
+function configuredCriteria(filter) {
+  const criteria = [];
+  const add = (key, label, index = -1) => criteria.push({
+    key: index >= 0 ? `trackRules[${index}]` : key,
+    label,
+    filter: filterForCriterion(filter, key, index)
+  });
+  for (const key of ['whitelist', 'blacklist', 'countryCodes', 'badges', 'groupCodes']) {
+    if (filter[key].length) add(key, key);
+  }
+  if (filter.hideUncustomized) add('hideUncustomized', 'hideUncustomized');
+  for (const [minimum, maximum, label] of [
+    ['rpMin', 'rpMax', 'rp'], ['playtimeHoursMin', 'playtimeHoursMax', 'playtimeHours'],
+    ['tracksMin', 'tracksMax', 'tracks'], ['winsMin', 'winsMax', 'wins'],
+    ['daysActiveMin', 'daysActiveMax', 'daysActive'], ['joinedAfter', 'joinedBefore', 'joined']
+  ]) if (filter[minimum] !== null || filter[maximum] !== null) add(minimum, label);
+  filter.trackRules.forEach((rule, index) => {
+    if (rule.state !== 'any' || rule.minTimeMs !== null || rule.maxTimeMs !== null) add('trackRules', `track:${rule.trackId}`, index);
+  });
+  return criteria;
+}
+
+export function groupFilterRuleCounts(rows, input, options = {}) {
+  const filter = normalizeGroupFilter(input);
+  const source = Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
+  const criteria = configuredCriteria(filter);
+  const profiles = options.profileIndex instanceof Map ? options.profileIndex : indexById(options.profiles);
+  const finishes = options.finishIndex instanceof Map ? options.finishIndex : finishIndex(options.finishes);
+  const passes = (row, candidate) => compareRow(row, candidate, options, profiles, finishes, []);
+  const rules = criteria.map(criterion => {
+    const raw = source.reduce((count, row) => count + Number(passes(row, criterion.filter)), 0);
+    const othersFilter = { ...filter };
+    if (criterion.key.startsWith('trackRules[')) {
+      const index = Number(criterion.key.slice(11, -1));
+      othersFilter.trackRules = filter.trackRules.filter((_, ruleIndex) => ruleIndex !== index);
+    } else {
+      const field = criterion.key;
+      if (['whitelist', 'blacklist', 'countryCodes', 'badges', 'groupCodes'].includes(field)) othersFilter[field] = [];
+      else if (field === 'hideUncustomized') othersFilter[field] = false;
+      else if (field === 'rpMin') { othersFilter.rpMin = null; othersFilter.rpMax = null; }
+      else if (field === 'playtimeHoursMin') { othersFilter.playtimeHoursMin = null; othersFilter.playtimeHoursMax = null; }
+      else if (field === 'tracksMin') { othersFilter.tracksMin = null; othersFilter.tracksMax = null; }
+      else if (field === 'winsMin') { othersFilter.winsMin = null; othersFilter.winsMax = null; }
+      else if (field === 'daysActiveMin') { othersFilter.daysActiveMin = null; othersFilter.daysActiveMax = null; }
+      else if (field === 'joinedAfter') { othersFilter.joinedAfter = null; othersFilter.joinedBefore = null; }
+    }
+    const others = source.filter(row => passes(row, othersFilter));
+    const conditional = others.reduce((count, row) => count + Number(passes(row, criterion.filter)), 0);
+    return { key: criterion.key, label: criterion.label, qualifiedCount: raw, sourceCount: source.length,
+      conditionalQualifiedCount: conditional, othersQualifiedCount: others.length };
+  });
+  return { filter, sourceCount: source.length, rules };
 }
 
 function tieRanks(rows, valueOf) {
@@ -455,6 +607,9 @@ export function recalculateGroupScores(rows, filteredIds, options = {}) {
   const selectedIds = filteredIds instanceof Set ? filteredIds : new Set(Array.isArray(filteredIds) ? filteredIds : []);
   const source = Array.isArray(rows) ? rows : [];
   const boards = Array.isArray(options.boards) ? options.boards : [];
+  const normalizedWeights = normalizeGroupFilter({ trackWeights: options.trackWeights, trackRules: options.trackRules });
+  const weightOverrides = new Map(normalizedWeights.trackRules.filter(rule => rule.weight !== null).map(rule => [rule.trackId, rule.weight]));
+  for (const override of normalizedWeights.trackWeights) weightOverrides.set(override.trackId, override.weight);
   const accumulators = new Map();
   for (const row of source) {
     const id = rowId(row);
@@ -466,7 +621,8 @@ export function recalculateGroupScores(rows, filteredIds, options = {}) {
   let knownTracks = 0;
   for (const board of boards) {
     const trackId = typeof board?.trackId === 'string' ? board.trackId : '';
-    const weight = typeof board?.weight === 'number' && Number.isFinite(board.weight) && board.weight > 0 ? board.weight : null;
+    const boardWeight = weightOverrides.has(trackId) ? weightOverrides.get(trackId) : board?.weight;
+    const weight = typeof boardWeight === 'number' && Number.isFinite(boardWeight) && boardWeight > 0 ? boardWeight : null;
     const entries = Array.isArray(board?.entries) ? board.entries.filter(entry => entry && typeof entry === 'object') : [];
     const boardComplete = board?.complete === true || isComplete(options, 'board', trackId);
     if (!trackId || !weight || !boardComplete) {

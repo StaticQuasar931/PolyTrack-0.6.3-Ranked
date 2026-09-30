@@ -6,8 +6,12 @@ const timeOf = row => Number(row?.timeMs ?? row?.frames ?? row?.raceTimeFrames ?
 const cost = (rank, size) => size < 2 ? 50 : 50 + (size - 1) / (size + 5) * (100 * (rank - 1) / (size - 1) - 50);
 
 // Recalculate a presentation copy. Published scores and cached cloud rows stay immutable.
-export function groupScoreRows(rows, boards, selectedIds) {
+export function groupScoreRows(rows, boards, selectedIds, trackWeights = []) {
   const selected = new Set(selectedIds);
+  const overrides = trackWeights instanceof Map ? trackWeights : new Map(
+    (Array.isArray(trackWeights) ? trackWeights : []).filter(item => item && typeof item.trackId === 'string')
+      .map(item => [item.trackId, item.weight])
+  );
   const finishes = new Map();
   const missingWeights=new Set();
   for (const board of boards) {
@@ -18,7 +22,7 @@ export function groupScoreRows(rows, boards, selectedIds) {
     let rank = 0;
     unique.forEach((entry, index) => {
       if (!index || timeOf(entry) !== timeOf(unique[index - 1])) rank = index + 1;
-      const id = idOf(entry), weight = Number(board.weight ?? entry.weight);
+      const id = idOf(entry), weight = Number(overrides.has(board.trackId) ? overrides.get(board.trackId) : board.weight ?? entry.weight);
       if (!Number.isFinite(weight) || weight < 0) {missingWeights.add(id);return;}
       if(weight===0)return;
       if (!finishes.has(id)) finishes.set(id, []);
@@ -69,7 +73,9 @@ export function createFilterRuntime({storage, getData = () => ({}), onChange = (
       complete:(trackId,kind)=>kind==='track'?(shared.boards||[]).some(board=>board.trackId===trackId&&board.complete===true):context.complete===true});
     let output=result.rows;
     if (context.overall && !context.event && filter.mode==='smart') {
-      output=groupScoreRows(output, shared.boards || [], output.map(idOf));
+      const weightOverrides = new Map(filter.trackRules.filter(rule => rule.weight !== null).map(rule => [rule.trackId, rule.weight]));
+      for (const override of filter.trackWeights) weightOverrides.set(override.trackId, override.weight);
+      output=groupScoreRows(output, shared.boards || [], output.map(idOf), weightOverrides);
       const supported=['overall','skill','consistency','average','competitiveAverage','wins','medals','podiumRate','tracks','weight'];
       if(supported.includes(context.category || 'overall')) {
         output=output.map(row=>{
@@ -124,7 +130,8 @@ export function createFilterRuntime({storage, getData = () => ({}), onChange = (
     return value;
   }
   return {apply,getFilter:()=>filter,getRevision:()=>revision,
-    setFilter(input){filter=normalizeGroupFilter(input);revision++;try{storage?.setItem(GROUP_FILTER_KEY,JSON.stringify(filter));}catch{}onChange(filter);return filter;},
+    setFilter(input){filter=normalizeGroupFilter({...input,createdAt:normalizeGroupFilter(input).createdAt ?? Date.now()});revision++;try{storage?.setItem(GROUP_FILTER_KEY,JSON.stringify(filter));}catch{}onChange(filter);return filter;},
+    markLoaded(timestamp=Date.now()){filter=normalizeGroupFilter({...filter,loadedAt:timestamp});revision++;try{storage?.setItem(GROUP_FILTER_KEY,JSON.stringify(filter));}catch{}onChange(filter);return filter;},
     toggle(){return this.setFilter({...filter,enabled:!filter.enabled});},
     invalidate(){lastDataKey=undefined;dataCache=undefined;revision++;},
     active:()=>filter.enabled && hasGroupFilters(filter)};

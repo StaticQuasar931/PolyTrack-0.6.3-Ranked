@@ -19,6 +19,10 @@ Open **Filters** to choose who you see. **Normal** keeps published RP. **Smart**
 
 Filter loadouts have shareable codes. Group tags are public labels, not passwords or private lobbies. Missing results are marked rather than guessed; loading another track can fill gaps in a group score. Lifetime Event RP remains published, while individual live events can show a group score. Personal filters never change public rankings or verification.
 
+The button says **Filters-Active** or **Filters-Inactive**. Right-click a racer in Ranked to include or exclude them without clearing your other rules. Save favorite loadouts, download a share code, and choose an accent color. Imported filters keep a recovery copy of the filter they replace. Smart group weights are personal preferences, not changes to public track weights.
+
+When a newer website update is published, the menu can offer **Update available**. Reload when you are ready; updates never interrupt a race automatically.
+
 Unverified results may appear while replay checks are pending. Their status can change after verification. Extra Tracks marked unranked do not award Ranked RP.
 
 ## Controls

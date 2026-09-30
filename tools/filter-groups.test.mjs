@@ -5,6 +5,7 @@ import {
   filterGroupRows,
   hasGroupFilters,
   importGroupFilterCode,
+  groupFilterRuleCounts,
   normalizeGroupFilter,
   recalculateGroupScores,
   prepareGroupFilterData
@@ -15,7 +16,9 @@ test('normalizes bounded canonical fields and ignores unknown fields', () => {
     mode: 'smart', scope: 'overall', grading: 'group', missing: 'include',
     countryCodes: ['us', 'GB', 'USA'], groupCodes: ['123456', '12345x'],
     whitelist: Array.from({ length: 140 }, (_, index) => `user-${index}`),
-    playtimeHoursMin: '2', joinedAfter: 123, unknown: 'ignored'
+    playtimeHoursMin: '2', joinedAfter: 123, color: '#AABBCC', colorLevel: 'everywhere',
+    showNotice: false, hideUncustomized: true, createdAt: 100, loadedAt: 200,
+    trackWeights: [{ trackId: 'T', weight: 3 }, { trackId: 'T', weight: 9 }, { trackId: 'X', weight: 1001 }], unknown: 'ignored'
   });
   assert.equal(filter.mode, 'smart');
   assert.equal(filter.scope, 'overall');
@@ -25,16 +28,31 @@ test('normalizes bounded canonical fields and ignores unknown fields', () => {
   assert.deepEqual(filter.groupCodes, ['123456']);
   assert.equal(filter.whitelist.length, 128);
   assert.equal(filter.playtimeHoursMin, null);
+  assert.equal(filter.color, '#aabbcc');
+  assert.equal(filter.colorLevel, 'everywhere');
+  assert.equal(filter.showNotice, false);
+  assert.equal(filter.hideUncustomized, true);
+  assert.equal(filter.createdAt, 100);
+  assert.equal(filter.loadedAt, 200);
+  assert.deepEqual(filter.trackWeights, [{ trackId: 'T', weight: 3 }]);
   assert.equal(hasGroupFilters(filter), true);
 });
 
 test('share code roundtrips and rejects hostile, oversized, malformed, and inverted imports', () => {
   const filter = normalizeGroupFilter({
-    countryCodes: ['ca'], badges: ['gold'], trackRules: [{ trackId: 'track-a', state: 'completed', minTimeMs: 1000 }]
+    countryCodes: ['ca'], badges: ['gold'], color: '#123ABC', colorLevel: 'menu',
+    trackRules: [{ trackId: 'track-a', state: 'completed', minTimeMs: 1000 }]
   });
   const code = exportGroupFilterCode(filter);
-  assert.ok(code.startsWith('PTFilter1.'));
-  assert.deepEqual(importGroupFilterCode(code), filter);
+  assert.ok(code.startsWith('PTFilter1.StaticQuasar931.'));
+  assert.equal(JSON.parse(Buffer.from(code.slice('PTFilter1.StaticQuasar931.'.length), 'base64').toString()).marker, 'StaticQuasar931');
+  assert.equal(importGroupFilterCode(code).color, filter.color);
+  assert.equal(importGroupFilterCode(code).colorLevel, 'menu');
+  assert.equal(importGroupFilterCode(code).createdAt, null);
+  const legacy = `PTFilter1.${Buffer.from(JSON.stringify({ version: 1, filter: { whitelist: ['legacy'] } })).toString('base64')}`;
+  const intermediate = `StaticQuasar931.${Buffer.from(JSON.stringify({ version: 1, filter: { whitelist: ['intermediate'] } })).toString('base64')}`;
+  assert.deepEqual(importGroupFilterCode(legacy).whitelist, ['legacy']);
+  assert.deepEqual(importGroupFilterCode(intermediate).whitelist, ['intermediate']);
   assert.equal(importGroupFilterCode(`PTFilter1.${'A'.repeat(50_000)}`), null);
   assert.equal(importGroupFilterCode('PTFilter1.not base64'), null);
   const invertedJson = JSON.stringify({ version: 1, filter: { tracksMin: 5, tracksMax: 2 } });
@@ -43,6 +61,93 @@ test('share code roundtrips and rejects hostile, oversized, malformed, and inver
   assert.throws(() => exportGroupFilterCode({ winsMin: 3, winsMax: 1 }), /inverted/);
   const injected = JSON.stringify({ version: 1, filter: { whitelist: [], unexpected: 'ignored' }, command: 'execute' });
   assert.equal(importGroupFilterCode(`PTFilter1.${Buffer.from(injected).toString('base64')}`).unknown, undefined);
+});
+
+test('forced includes bypass every criterion except blacklist', () => {
+  const rows = [
+    { accountId: 'a', countryCode: 'US', color: '#112233' },
+    { accountId: 'b', countryCode: 'CA', color: '#445566' }
+  ];
+  const included = filterGroupRows(rows, {
+    whitelist: ['a'], forcedIncludes: ['b'], countryCodes: ['US'], color: '#112233'
+  });
+  assert.deepEqual(included.rows.map(row => row.accountId), ['a', 'b']);
+  const blocked = filterGroupRows(rows, {
+    whitelist: ['a'], forcedIncludes: ['b'], blacklist: ['b']
+  });
+  assert.deepEqual(blocked.rows.map(row => row.accountId), ['a']);
+});
+
+test('loadout color settings are metadata and never affect group membership or rule counts', () => {
+  const rows = [
+    { accountId: 'a', color: '#ff0000', colorLevel: 'menu' },
+    { accountId: 'b', color: '#00ff00', colorLevel: 'everywhere' }
+  ];
+  const filter = { color: '#FF0000', colorLevel: 'menu' };
+  const result = filterGroupRows(rows, filter);
+  assert.deepEqual(result.rows.map(row => row.accountId), ['a', 'b']);
+  assert.equal(result.active, false);
+  assert.deepEqual(groupFilterRuleCounts(rows, filter).rules, []);
+  assert.equal(hasGroupFilters(filter), false);
+  assert.equal(normalizeGroupFilter({ color: 'red' }).color, null);
+  assert.equal(normalizeGroupFilter({ colorLevel: 2 }).colorLevel, 'dropdown');
+  assert.equal(normalizeGroupFilter({}).showNotice, true);
+});
+
+test('hide uncustomized checks non-default cosmetic selections, not metadata or object presence', () => {
+  const rows = [
+    { accountId: 'default', profileCosmetics: { version: 99, theme: 'classic', accent: 'cyan', badge: 'betaTester', title: 'auto', betaTester: true } },
+    { accountId: 'empty', profileCosmetics: {} },
+    { accountId: 'custom', profileCosmetics: { version: 1, theme: 'ocean', badge: 'auto' } }
+  ];
+  assert.deepEqual(filterGroupRows(rows, { hideUncustomized: true }).rows.map(row => row.accountId), ['custom']);
+});
+
+test('track weight-only configuration activates smart scoring but not membership filtering', () => {
+  assert.equal(hasGroupFilters({ mode: 'normal', trackWeights: [{ trackId: 'T', weight: 2 }] }), false);
+  assert.equal(hasGroupFilters({ mode: 'smart', trackWeights: [{ trackId: 'T', weight: 2 }] }), true);
+  assert.equal(hasGroupFilters({ mode: 'smart', trackRules: [{ trackId: 'T', state: 'any', weight: 2 }] }), true);
+});
+
+test('per-rule counts distinguish raw qualification from qualification conditional on other rules', () => {
+  const rows = [
+    { accountId: 'a', countryCode: 'US' }, { accountId: 'b', countryCode: 'CA' },
+    { accountId: 'c', countryCode: 'US' }, { accountId: 'd', countryCode: 'CA' }
+  ];
+  const counts = groupFilterRuleCounts(rows, { whitelist: ['a', 'b'], countryCodes: ['US'] });
+  assert.equal(counts.sourceCount, 4);
+  assert.deepEqual(counts.rules.map(rule => ({
+    key: rule.key, qualifiedCount: rule.qualifiedCount, sourceCount: rule.sourceCount,
+    conditionalQualifiedCount: rule.conditionalQualifiedCount, othersQualifiedCount: rule.othersQualifiedCount
+  })), [
+    { key: 'whitelist', qualifiedCount: 2, sourceCount: 4, conditionalQualifiedCount: 1, othersQualifiedCount: 2 },
+    { key: 'countryCodes', qualifiedCount: 2, sourceCount: 4, conditionalQualifiedCount: 1, othersQualifiedCount: 2 }
+  ]);
+});
+
+test('per-rule range counts keep paired bounds together and handle max-only ranges and joined dates', () => {
+  const rows = [
+    { accountId: 'a', wins: 1, accountCreatedAt: 1000 },
+    { accountId: 'b', wins: 5, accountCreatedAt: 2000 },
+    { accountId: 'c', wins: 9, accountCreatedAt: 3000 },
+    { accountId: 'd', wins: 7, accountCreatedAt: 4000 }
+  ];
+  const paired = groupFilterRuleCounts(rows, {
+    winsMin: 3, winsMax: 7, joinedAfter: 1500, joinedBefore: 3500
+  });
+  assert.deepEqual(paired.rules.map(rule => ({
+    key: rule.key, qualifiedCount: rule.qualifiedCount, sourceCount: rule.sourceCount,
+    conditionalQualifiedCount: rule.conditionalQualifiedCount, othersQualifiedCount: rule.othersQualifiedCount
+  })), [
+    { key: 'winsMin', qualifiedCount: 2, sourceCount: 4, conditionalQualifiedCount: 1, othersQualifiedCount: 2 },
+    { key: 'joinedAfter', qualifiedCount: 2, sourceCount: 4, conditionalQualifiedCount: 1, othersQualifiedCount: 2 }
+  ]);
+
+  const maxOnly = groupFilterRuleCounts(rows, { winsMax: 7, joinedBefore: 2000 });
+  assert.deepEqual(maxOnly.rules.map(rule => ({ key: rule.key, qualifiedCount: rule.qualifiedCount })), [
+    { key: 'winsMin', qualifiedCount: 3 },
+    { key: 'joinedAfter', qualifiedCount: 2 }
+  ]);
 });
 
 test('country, badges, sharing groups, and profile ID joins filter without coercing absent values', () => {
@@ -155,6 +260,17 @@ test('group scoring uses the exact softened placement cost, weighted average, ti
   assert.equal(result.rows[0].rp, 100);
   assert.equal(result.rows[0].globalRank, 1);
   assert.equal(result.rows[0].groupWeightedCost, expected * 2);
+});
+
+test('local score recalculation honors bounded track weight overrides without changing source boards', () => {
+  const board = { trackId: 'T', weight: 2, complete: true, entries: [
+    { accountId: 'a', timeMs: 100 }, { accountId: 'b', timeMs: 200 }
+  ] };
+  const result = recalculateGroupScores([{ accountId: 'a' }], ['a'], {
+    boards: [board], trackRules: [{ trackId: 'T', state: 'any', weight: 3 }]
+  });
+  assert.equal(result.rows[0].groupWeightSum, 3);
+  assert.equal(board.weight, 2);
 });
 
 test('single-racer cost is 50, empty caches are incomplete, and event RP needs explicit maxRp', () => {
