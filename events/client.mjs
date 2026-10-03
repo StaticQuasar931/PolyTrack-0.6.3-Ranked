@@ -328,6 +328,7 @@ export function installEvents(bridge){
   }
   let nativeView=null,eventIntent=null;
   let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),preparedOwnGhosts=new Map(),replayFailures=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
+  let replayRowsLoaded=false,replayRowsRaw=null,replayRowsCache=[];
   const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function validCachedCarStyle(style){
     if(validatedCarStyles.has(style))return validatedCarStyles.get(style);
@@ -381,9 +382,18 @@ export function installEvents(bridge){
       }
     }finally{drainingRenders=false;}
   }
+  function localReplayRows(){
+    let raw;try{raw=localStorage.getItem(REPLAYS);}catch{return [];}
+    if(raw?.length>600000){replayRowsLoaded=true;replayRowsRaw=null;replayRowsCache=[];return replayRowsCache;}
+    if(!replayRowsLoaded||raw!==replayRowsRaw){
+      replayRowsLoaded=true;replayRowsRaw=raw;
+      try{const parsed=raw===null?[]:JSON.parse(raw);replayRowsCache=Array.isArray(parsed)?parsed:[];}catch{replayRowsCache=[];}
+    }
+    return replayRowsCache;
+  }
   function getOwnReplay(periodId){
     const period=knownPeriods.get(periodId)||(catalog.periods||[]).find(p=>p.id===periodId),accountId=bridge.accountId();if(!period)return null;
-    const best=localBest(period),rows=read(REPLAYS,[]),row=(Array.isArray(rows)?rows.slice(0,8):[]).find(row=>row&&typeof row==='object'&&row.periodId===periodId&&row.accountId===accountId&&row.trackId===period.trackId);
+    const best=localBest(period),row=localReplayRows().slice(0,8).find(row=>row&&typeof row==='object'&&row.periodId===periodId&&row.accountId===accountId&&row.trackId===period.trackId);
     if(!best||!row||typeof row.attemptId!=='string'||!row.attemptId.length||row.attemptId.length>128||row.attemptId!==best.attemptId||row.timeMs!==best.timeMs||row.frames!==row.timeMs||!Number.isSafeInteger(row.frames)||row.frames<1||row.frames>300000||typeof row.replay!=='string'||!row.replay.length||row.replay.length>65536||!/^[A-Za-z0-9_-]+$/.test(row.replay)||typeof row.carStyle!=='string'||row.carStyle.length>256)return null;
     const shown=eventDisplayRows(period).rows.find(entry=>entry.accountId===accountId);if(shown&&shown.timeMs<row.timeMs)return null;
     const receipt=ownReceipts.get(periodId+'_'+accountId);if(receipt?.attemptId===row.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status))return null;
@@ -774,7 +784,8 @@ export function installEvents(bridge){
       const age=elapsed===null?'':elapsed<60000?' / just now':elapsed<3600000?' / '+Math.floor(elapsed/60000)+'m ago':elapsed<86400000?' / '+Math.floor(elapsed/3600000)+'h ago':' / '+Math.floor(elapsed/86400000)+'d ago';
       const text=own?'Normal RP + '+Math.round(Number(own.rp)||0)+' / 1001 Event RP'+age:'Normal RP + up to 1001 Event RP / No reset';
       if(permanentNote.textContent!==text)permanentNote.textContent=text;
-      permanentNote.title='Both rewards use your normal physics-verified personal best. Event RP follows the fastest verified Rolling Hills time; repeated runs do not stack.';
+      const title='Both rewards use your normal physics-verified personal best. Event RP follows the fastest verified Rolling Hills time; repeated runs do not stack.';
+      if(permanentNote.title!==title)permanentNote.title=title;
     }
     if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Event standings';button.setAttribute('aria-label','Event standings');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
     if(group&&activePeriods().length){

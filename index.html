@@ -94,7 +94,7 @@
       window.POLYTRACK_RANKED_BROKER_URL='https://polytrack-ranked-worker.staticquasar931.workers.dev';
     </script>
     <script defer="defer" src="./error_screen.bundle.js"></script>
-    <script defer="defer" src="./polytrack_062_patch.js?v=47"></script>
+    <script defer="defer" src="./polytrack_062_patch.js?v=48"></script>
     <script defer="defer" src="./main.bundle.js"></script>
   </head>
 
@@ -179,10 +179,12 @@
         function bindVisualObserver(){
           if (!visualObserver) return;
           visualObserver.disconnect();
-          [document.querySelector('.menu-ui, .menu'), document.querySelector('.main-buttons-container')]
+          const buttons = document.querySelector('.main-buttons-container');
+          const play = buttons && Array.from(buttons.querySelectorAll('button,a')).find((button)=>/play/i.test(`${button.textContent||''} ${Array.from(button.querySelectorAll('img')).map((image)=>image.src||'').join(' ')}`));
+          [document.querySelector('.menu-ui, .menu'), buttons, play]
             .filter(Boolean)
             .forEach((target) => visualObserver.observe(target, {
-              subtree: true,
+              subtree: false,
               attributes: true,
               attributeFilter: ['class', 'style', 'hidden', 'aria-hidden']
             }));

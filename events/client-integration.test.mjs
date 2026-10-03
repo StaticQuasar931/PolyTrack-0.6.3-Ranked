@@ -285,6 +285,17 @@ test('unchanged event opponents do not mutate the native side panel on repeated 
  });
  assert.equal(mutations,0);
 });
+test('repeated visible event ticks do not mutate an unchanged permanent-card title',async t=>{
+ const p=await fixture(t);await showLiveRail(p);
+ const mutations=await p.evaluate(async()=>{
+  const note=document.querySelector('.sq-permanent-note');let changes=0;
+  const observer=new MutationObserver(records=>{changes+=records.length;});
+  observer.observe(note,{attributes:true,attributeFilter:['title']});
+  for(let i=0;i<30;i++)ui.tick();
+  await Promise.resolve();observer.disconnect();return changes;
+ });
+ assert.equal(mutations,0);
+});
 test('event thumbnail rendering runs one job at a time',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>s.startsWith('style-')?{serialize:()=>s}:null}}:prior(n);
@@ -336,6 +347,20 @@ test('own event replay survives upload without borrowing normal or another perio
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);
  assert.deepEqual(await p.evaluate(()=>{const r=ui.getOwnReplay('daily-fixture');return {period:r.periodId,track:r.trackId,account:r.accountId,time:r.timeMs,replay:r.replay,other:ui.getOwnReplay('weekly-fixture')};}),{period:'daily-fixture',track:id,account:id,time:20000,replay:'AAAA',other:null});
  await p.evaluate(()=>{const key='polytrack-062-events-v1-replays',rows=JSON.parse(localStorage.getItem(key));rows[0].trackId='b'.repeat(64);localStorage.setItem(key,JSON.stringify(rows));});assert.equal(await p.evaluate(()=>ui.getOwnReplay('daily-fixture')),null);
+});
+test('unchanged event ticks reuse parsed local replay cache and observe storage changes',async t=>{
+ const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);
+ const result=await p.evaluate(()=>{
+  const key='polytrack-062-events-v1-replays',raw=localStorage.getItem(key),parse=JSON.parse;let count=0;
+  JSON.parse=function(value,...args){if(value===raw)count++;return parse.call(this,value,...args);};
+  try{
+   ui.tick();count=0;for(let i=0;i<30;i++)ui.tick();
+   const cached=count,rows=JSON.parse(localStorage.getItem(key));rows[0].at++;
+   localStorage.setItem(key,JSON.stringify(rows));ui.tick();
+   return {parsedDuringRepeatedTicks:cached,changedValueObserved:!!ui.getOwnReplay('daily-fixture')};
+  }finally{JSON.parse=parse;}
+ });
+ assert.deepEqual(result,{parsedDuringRepeatedTicks:0,changedValueObserved:true});
 });
 test('corrupt local replay cache never blocks event Play',async t=>{
  const p=await fixture(t);await addNativePlay(p);await enter(p);

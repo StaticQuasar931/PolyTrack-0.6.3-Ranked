@@ -83,6 +83,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let expandedCardMenu = null;
   let expandedCardTrigger = null;
   let cardMenuNumber = 0;
+  let cardMenuPositionFrame = null;
   const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', sort: 'recommended' };
   const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const make = (tag, className, content) => {
@@ -101,6 +102,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const overlay = make('div', 'sq-extra-overlay');
   overlay.hidden = true;
   const dialog = make('section', 'sq-extra-menu');
+  const cardMenuLayer = make('div', 'sq-extra-card-menu-layer');
+  cardMenuLayer.setAttribute('aria-live', 'off');
+  overlay.append(cardMenuLayer);
   const titleId = `sq-extra-title-${++mountNumber}`;
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
@@ -416,6 +420,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (imageUrl) {
       const image = make('img');
       image.alt = '';
+      const thumbnailPath = new URL(imageUrl, document.baseURI || 'https://polytrack.local/').pathname;
+      const nativeMapThumbnail = thumbnailPath.includes('/extra-tracks/thumbnails/') &&
+        thumbnailPath.endsWith('.png') && entry.thumbnailKind !== 'artwork';
+      image.className = nativeMapThumbnail ? 'sq-extra-thumbnail-pixel' : 'sq-extra-thumbnail-photo';
       image.loading = 'lazy';
       image.decoding = 'async';
       image.fetchPriority = 'low';
@@ -487,15 +495,19 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const actions = make('div', 'sq-extra-actions');
     actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
     const more = button('', 'sq-extra-more', () => {
-      if (expandedCardMenu && expandedCardMenu !== moreMenu) clearCardMenu();
-      const opening = moreMenu.hidden;
-      moreMenu.hidden = !opening;
-      more.setAttribute('aria-expanded', String(opening));
-      expandedCardMenu = opening ? moreMenu : null;
-      expandedCardTrigger = opening ? more : null;
+      if (expandedCardMenu === moreMenu) { clearCardMenu(); return; }
+      if (expandedCardMenu) clearCardMenu();
+      cardMenuLayer.append(moreMenu);
+      moreMenu.hidden = false;
+      more.setAttribute('aria-expanded', 'true');
+      expandedCardMenu = moreMenu;
+      expandedCardTrigger = more;
+      positionCardMenu();
+      focusCardMenu();
     });
     more.setAttribute('aria-label', `More actions for ${text(entry.name, 'this track')}`);
     more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-haspopup', 'dialog');
     const moreIcon = make('span', 'sq-extra-more-icon');
     moreIcon.setAttribute('aria-hidden', 'true');
     moreIcon.innerHTML = '<svg viewBox="0 0 24 24" focusable="false"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -504,7 +516,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     moreMenu.id = `sq-extra-card-menu-${mountNumber}-${++cardMenuNumber}`;
     more.setAttribute('aria-controls', moreMenu.id);
     moreMenu.hidden = true;
-    moreMenu.setAttribute('role', 'group');
+    moreMenu.setAttribute('role', 'dialog');
     moreMenu.setAttribute('aria-label', `Track preferences for ${text(entry.name, 'this track')}`);
     if (typeof onFeedback === 'function') {
       const toggle = (field, value) => {
@@ -539,7 +551,6 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }));
     actions.append(more);
     body.append(actions);
-    body.append(moreMenu);
     article.append(body);
     return article;
   }
@@ -681,6 +692,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function close() {
     if (!opened || destroyed) return;
     opened = false;
+    clearCardMenu();
     overlay.hidden = true;
     closeSubmission(false);
     closeReport(false);
@@ -727,6 +739,24 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       else close();
       return;
     }
+    if (event.key === 'Tab' && expandedCardMenu) {
+      const menuFocusables = [...expandedCardMenu.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];
+      const first = menuFocusables[0], last = menuFocusables.at(-1);
+      if (document.activeElement === expandedCardTrigger && !event.shiftKey && first) {
+        event.preventDefault(); first.focus(); return;
+      }
+      if (document.activeElement === first && event.shiftKey) {
+        event.preventDefault(); expandedCardTrigger?.focus(); return;
+      }
+      if (document.activeElement === last && !event.shiftKey) {
+        const pageFocusables = [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];
+        const triggerIndex = pageFocusables.indexOf(expandedCardTrigger);
+        clearCardMenu();
+        event.preventDefault();
+        (pageFocusables[triggerIndex + 1] || pageFocusables[0])?.focus();
+        return;
+      }
+    }
     if ((!submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
@@ -760,9 +790,45 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
 
+  function positionCardMenu() {
+    if (!expandedCardMenu?.getBoundingClientRect || !expandedCardTrigger?.getBoundingClientRect) return;
+    const view = document.defaultView;
+    const viewportWidth = view?.innerWidth || document.documentElement?.clientWidth || 0;
+    const viewportHeight = view?.innerHeight || document.documentElement?.clientHeight || 0;
+    if (!viewportWidth || !viewportHeight) return;
+    const margin = 8;
+    const trigger = expandedCardTrigger.getBoundingClientRect();
+    const menu = expandedCardMenu.getBoundingClientRect();
+    const left = Math.min(Math.max(margin, viewportWidth - menu.width - margin), Math.max(margin, trigger.right - menu.width));
+    let top = trigger.bottom + 6;
+    if (top + menu.height > viewportHeight - margin && trigger.top - menu.height - 6 >= margin) top = trigger.top - menu.height - 6;
+    top = Math.min(Math.max(margin, top), Math.max(margin, viewportHeight - menu.height - margin));
+    expandedCardMenu.style.left = `${Math.round(left)}px`;
+    expandedCardMenu.style.top = `${Math.round(top)}px`;
+  }
+
+  function scheduleCardMenuPosition() {
+    const view = document.defaultView;
+    if (!expandedCardMenu || cardMenuPositionFrame !== null || !view?.requestAnimationFrame) return;
+    cardMenuPositionFrame = view.requestAnimationFrame(() => {
+      cardMenuPositionFrame = null;
+      positionCardMenu();
+    });
+  }
+
+  function focusCardMenu() {
+    const focusable = expandedCardMenu?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')[0];
+    focusable?.focus({preventScroll: true});
+  }
+
   function clearCardMenu(restoreFocus = false) {
     if (!expandedCardMenu) return;
-    expandedCardMenu.hidden = true;
+    const menu = expandedCardMenu;
+    const view = document.defaultView;
+    if (cardMenuPositionFrame !== null) view?.cancelAnimationFrame?.(cardMenuPositionFrame);
+    cardMenuPositionFrame = null;
+    menu.hidden = true;
+    menu.remove();
     expandedCardTrigger?.setAttribute('aria-expanded', 'false');
     const trigger = expandedCardTrigger;
     expandedCardMenu = null;
@@ -788,6 +854,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   favorites.addEventListener('change', () => { state.favorites = favorites.checked; page = 1; render(); });
   document.addEventListener('keydown', onKeydown, true);
   document.addEventListener('click', onCardMenuOutside, true);
+  document.addEventListener('scroll', scheduleCardMenuPosition, true);
+  document.defaultView?.addEventListener('resize', scheduleCardMenuPosition);
   render();
   return {
     open, close, refresh() { cachedRecords = null; render(); },
@@ -797,6 +865,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       destroyed = true;
       document.removeEventListener('keydown', onKeydown, true);
       document.removeEventListener('click', onCardMenuOutside, true);
+      document.removeEventListener('scroll', scheduleCardMenuPosition, true);
+      document.defaultView?.removeEventListener('resize', scheduleCardMenuPosition);
       overlay.remove();
     }
   };

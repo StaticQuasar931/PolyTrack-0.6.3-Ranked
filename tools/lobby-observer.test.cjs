@@ -23,3 +23,12 @@ test('lobby menu display writes are guarded against observer re-entry', () => {
   assert.match(region, /if \(changed\) queueSync\(\)/);
   assert.match(region, /visualObserver = new MutationObserver\(queueSync\)/);
 });
+
+test('lobby visual observer ignores animated descendants and watches the play control directly', () => {
+  const start = region.indexOf('function bindVisualObserver(){');
+  const end = region.indexOf('        syncLobbyWidgets();', start);
+  const binding = region.slice(start, end);
+  assert.match(binding, /subtree:\s*false/);
+  assert.doesNotMatch(binding, /subtree:\s*true/);
+  assert.match(binding, /buttons, play\]/);
+});

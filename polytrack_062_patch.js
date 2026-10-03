@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=47',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=48',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='47';
+  const extraCatalogRevision='48';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -641,23 +641,26 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     try{sessionStorage.removeItem(RANKED_EDGE_STATE_KEY);}catch{}
   }
   const jsonStorageCache=new Map();
+  const hotSnapshotStorageKeys=new Set([TRACK_CACHE_KEY,OVERALL_CACHE_KEY,TRACK_LEGACY_CACHE_KEY,OVERALL_BETA_CACHE_KEY,OVERALL_LEGACY_CACHE_KEY]);
   const normalizedOverallSnapshots=new WeakMap();
   let trackCacheGeneration=0;
   let overallCacheGeneration=0;
   let localRaceGeneration=0;
   function readJsonStorage(key, fallback=null){
     try {
-      const raw=localStorage.getItem(key);
-      if(raw===null||raw==='')return fallback;
       const hit=jsonStorageCache.get(key);
-      if(hit&&hit.raw===raw)return hit.value ?? fallback;
+      const checkedAt=Date.now();
+      if(hit&&hotSnapshotStorageKeys.has(key)&&checkedAt>=hit.checkedAt&&checkedAt-hit.checkedAt<50)return hit.value ?? fallback;
+      const raw=localStorage.getItem(key);
+      if(raw===null||raw===''){jsonStorageCache.delete(key);return fallback;}
+      if(hit&&hit.raw===raw){hit.checkedAt=checkedAt;return hit.value ?? fallback;}
       const value=JSON.parse(raw);
-      jsonStorageCache.set(key,{raw,value});
+      jsonStorageCache.set(key,{raw,value,checkedAt});
       return value ?? fallback;
     } catch { return fallback; }
   }
   function writeJsonStorage(key, value){
-    try { const raw=JSON.stringify(value); localStorage.setItem(key,raw); jsonStorageCache.set(key,{raw,value}); return true; } catch { return false; }
+    try { const raw=JSON.stringify(value); localStorage.setItem(key,raw); jsonStorageCache.set(key,{raw,value,checkedAt:Date.now()}); return true; } catch { return false; }
   }
   function readOverallSnapshotCache(){
     const cached = readJsonStorage(OVERALL_CACHE_KEY,null) || readJsonStorage(OVERALL_BETA_CACHE_KEY,null) || readJsonStorage(OVERALL_LEGACY_CACHE_KEY,null);
@@ -689,7 +692,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function writeTrackSnapshotCache(trackId,entries,serverUpdatedAt=0,meta={}){
     const id=String(trackId||'').slice(0,80); if(!id) return;
-    const store=trackSnapshotStore();
+    const store={...trackSnapshotStore()};
     const input=Array.isArray(entries)?entries:[];
     const normalizedEntries=applyCanonicalTrackWeight(id,input).slice(0,500);
     const hasComplete=typeof meta.complete==='boolean';
@@ -4407,7 +4410,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=47',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=48',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4427,8 +4430,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=47',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=47',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=47',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=48',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=48',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=48',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -7467,6 +7470,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function boot(){
     void ensurePersonalFilters();
     window.addEventListener('storage',event=>{
+      if(event.key===null)jsonStorageCache.clear();else jsonStorageCache.delete(event.key);
       if(event.key===OVERALL_CACHE_KEY){const saved=readOverallSnapshotCache();if(saved?.entries){overallEntriesCache=saved.entries;setRankedFilterSnapshotMeta(saved,saved.entries.length);}overallCacheGeneration++;}
       else if(event.key===TRACK_CACHE_KEY){trackCacheGeneration++;trackOverlayCache=null;}
       else if(event.key==='polytrack-advanced-filter-current-v1'){try{personalFilterRuntime?.setFilter(JSON.parse(event.newValue||'{}'));}catch{}return;}
@@ -7474,7 +7478,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=47',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:47,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=48',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:48,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

@@ -108,13 +108,16 @@ test('local picks toggle, rating changes and export callback stay device-scoped'
   assert.equal(saved.get(item.trackId).favorite, false);
   const more = cls(root, 'sq-extra-more')[0];
   assert.equal(more.getAttribute('aria-expanded'), 'false');
+  assert.equal(more.getAttribute('aria-haspopup'), 'dialog');
   await click(more);
   assert.equal(more.getAttribute('aria-expanded'), 'true');
   assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
   await click(cls(root, 'sq-extra-pick')[0]);
   assert.equal(saved.get(item.trackId).vote, 1);
+  await click(cls(root, 'sq-extra-more')[0]);
   await click(cls(root, 'sq-extra-pick')[1]);
   assert.equal(saved.get(item.trackId).vote, -1);
+  await click(cls(root, 'sq-extra-more')[0]);
   const rating = tag(cls(root, 'sq-extra-rating')[0], 'select')[0];
   rating.value = '8'; await rating.dispatch('change');
   assert.equal(saved.get(item.trackId).rating, 8);
@@ -373,8 +376,9 @@ test('track reports expose exactly three reasons and report clear success or fai
   const { root, api } = fixture([entry(1)], { onReport: async (item, reason) => { reports.push([item, reason]); } });
   api.open();
   const more = cls(root, 'sq-extra-more')[0];
-  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, true);
+  assert.equal(cls(root, 'sq-extra-more-menu').length, 0, 'the disclosure is not mounted until its trigger opens');
   await click(more);
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].parent.className, 'sq-extra-card-menu-layer');
   assert.equal(more.getAttribute('aria-expanded'), 'true');
   await click(cls(root, 'sq-extra-report-button')[0]);
   const modal = cls(root, 'sq-extra-report-modal')[0];
@@ -461,7 +465,7 @@ test('late report success or rejection cannot overwrite a different reopened tra
     api.open();
     const cards = cls(root, 'sq-extra-card');
     await click(cls(cards[0], 'sq-extra-more')[0]);
-    await click(cls(cards[0], 'sq-extra-report-button')[0]);
+    await click(cls(root, 'sq-extra-report-button')[0]);
     const modal = cls(root, 'sq-extra-report-modal')[0];
     cls(root, 'sq-extra-report-choice')[0].children[0].checked = true;
     const pending = click(cls(root, 'sq-extra-report-send')[0]);
@@ -469,7 +473,7 @@ test('late report success or rejection cannot overwrite a different reopened tra
     assert.equal(postedEntry, entries[0]);
     await click(cls(modal, 'sq-extra-submission-close')[0]);
     await click(cls(cards[1], 'sq-extra-more')[0]);
-    await click(cls(cards[1], 'sq-extra-report-button')[0]);
+    await click(cls(root, 'sq-extra-report-button')[0]);
     assert.equal(cls(root, 'sq-extra-report-entry')[0].textContent, entries[1].name);
     if (outcome === 'resolve') request.resolve();
     else request.reject(Error('stale report failure'));
@@ -627,4 +631,27 @@ test('separate mounts use distinct accessible title targets', () => {
   assert.notEqual(firstDialog.getAttribute('aria-labelledby'), secondDialog.getAttribute('aria-labelledby'));
   assert.equal(firstDialog.getAttribute('aria-labelledby'), tag(firstDialog, 'h2')[0].id);
   first.api.destroy(); second.api.destroy();
+});
+
+test('card feedback dropdown is portaled out of card flow and closes on Escape or outside click', async () => {
+  const {root, document, api} = fixture([entry(1), entry(2)], {
+    getFeedback: () => ({}), onFeedback: () => {}
+  });
+  api.open();
+  const more = cls(root, 'sq-extra-more')[0];
+  await click(more);
+  const menu = cls(root, 'sq-extra-more-menu')[0];
+  assert.equal(menu.parent.className, 'sq-extra-card-menu-layer');
+  assert.equal(menu.getAttribute('role'), 'dialog');
+  assert.equal(menu.getAttribute('aria-modal'), undefined, 'the floating dialog is nonmodal');
+  assert.equal(cls(root, 'sq-extra-card-body').some(body => body.children.includes(menu)), false);
+  assert.equal(more.getAttribute('aria-expanded'), 'true');
+  document.listeners.get('keydown')({key: 'Escape', preventDefault() {}});
+  assert.equal(menu.hidden, true);
+  assert.equal(more.getAttribute('aria-expanded'), 'false');
+  await click(more);
+  document.listeners.get('click')({target: document.createElement('div')});
+  assert.equal(cls(root, 'sq-extra-more-menu').length, 0, 'outside click removes the floating menu');
+  assert.equal(more.getAttribute('aria-expanded'), 'false');
+  api.destroy();
 });
