@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
+import rankedWorker, { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
@@ -1525,6 +1525,59 @@ test('high-entropy 200 by 78 planner compression benchmark publishes every resul
   t.diagnostic(JSON.stringify(measurements));
 });
 
+
+test('public event catalog backup runs daily plus weekly reset and manual dispatch', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/sync-event-catalog.yml', import.meta.url), 'utf8');
+  assert.deepEqual([...workflow.matchAll(/^    - cron: '([^']+)'$/gm)].map(match => match[1]), ['30 10 * * *', '10 20 * * 0']);
+  assert.match(workflow, /^  workflow_dispatch:$/m);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.schedule == '30 10 \* \* \*'/);
+});
+
+test('two-minute background repair skips off-window or invalid ticks before Firestore access', () => {
+  for(const scheduledTime of [120000,undefined,null,'1800000']){
+    let calls=0,waitUntilCalled=false;
+    rankedWorker.scheduled({cron:'*/2 * * * *',scheduledTime},
+      {__TEST_FIRESTORE:async()=>{calls++;return null;}},
+      {waitUntil:()=>{waitUntilCalled=true;}});
+    assert.equal(calls,0);
+    assert.equal(waitUntilCalled,false);
+  }
+});
+
+test('thirty-minute background repair still migrates legacy verification queues', async () => {
+  const firstExtraId=[...EXTRA_TRACK_IDS].sort()[0];
+  const legacyPath=`/0.6.2_s1_verification/${firstExtraId}`;
+  const migrationPath='/0.6.2_s1_worker_jobs/extra_verification_queue_migration_v1';
+  const calls=[],commits=[];
+  let markerData=null,markerRevision=0,legacyPresent=true;
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    calls.push(path);
+    if(path===migrationPath)return markerData?{fields:wire(markerData).mapValue.fields,updateTime:`marker-${markerRevision}`} : null;
+    if(path===legacyPath&&legacyPresent)return {fields:wire({trackId:firstExtraId,slots:{racer:{key:'legacy-proof',status:'waiting',attempts:1}}}).mapValue.fields,updateTime:'core-v1'};
+    if(path===':commit'){
+      const writes=JSON.parse(init.body).writes;commits.push(writes);
+      for(const write of writes){
+        if(write.delete?.includes(`0.6.2_s1_verification/${firstExtraId}`))legacyPresent=false;
+        if(write.update?.name?.endsWith(migrationPath)){
+          markerData=unwire({mapValue:{fields:write.update.fields}});markerRevision++;
+        }
+      }
+      return {};
+    }
+    return null;
+  }};
+  let completion;
+  rankedWorker.scheduled({cron:'*/2 * * * *',scheduledTime:Date.UTC(2026,9,3,0,30)},env,{waitUntil:promise=>{completion=promise;}});
+  await completion;
+  assert.ok(calls.includes(migrationPath));
+  const writes=commits.flat();
+  assert.ok(writes.some(write=>write.delete?.includes(`0.6.2_s1_verification/${firstExtraId}`)));
+  const migrated=writes.find(write=>write.update?.name?.includes(`0.6.2_s1_extra_verification/${firstExtraId}`));
+  assert.ok(migrated);
+  assert.equal(unwire({mapValue:{fields:migrated.update.fields}}).slots.racer.attempts,1);
+  assert.equal(markerData.cursor,Math.min(16,EXTRA_TRACK_IDS.size));
+  assert.equal(markerData.complete,EXTRA_TRACK_IDS.size<=16);
+});
 test('cold recovery cron fits the fifty-subrequest budget with four bootstrap and four rebuild tracks plus overall', async () => {
   const base = 'projects/polytrack-052/databases/(default)/documents/';
   const tracks = Array.from({length:4}, (_, i) => String(i).padStart(64,'0'));
@@ -1549,7 +1602,7 @@ test('cold recovery cron fits the fifty-subrequest budget with four bootstrap an
     return documents.get(p) || null;
   }};
   let completion;
-  worker.scheduled({cron:'0-59/5 * * * *'}, env, {waitUntil: promise => {completion=promise;}});
+  rankedWorker.scheduled({cron:'*/5 * * * *'}, env, {waitUntil: promise => {completion=promise;}});
   await completion;
   // One extra token request is needed with a cold service-token cache.
   assert.equal(calls+1, 41);

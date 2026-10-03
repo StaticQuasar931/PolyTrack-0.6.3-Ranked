@@ -80,6 +80,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let reportRequest = null;
   let cachedRecords = null;
   let sortedRecordsCache = null;
+  let expandedCardMenu = null;
+  let expandedCardTrigger = null;
+  let cardMenuNumber = 0;
   const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', sort: 'recommended' };
   const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const make = (tag, className, content) => {
@@ -427,7 +430,25 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
     if (entry.featuredSubmission === true) body.append(make('span', 'sq-extra-tier sq-extra-tier-submitted', 'New from players'));
     if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Unranked challenge · no RP or verification'));
-    body.append(make('h3', '', text(entry.name, 'Untitled track')));
+    const titleRow = make('div', 'sq-extra-title-row');
+    titleRow.append(make('h3', '', text(entry.name, 'Untitled track')));
+    let feedback = {};
+    if (typeof onFeedback === 'function') {
+      try { feedback = getFeedback?.(entry) || {}; } catch { /* Device storage is optional. */ }
+      const favorite = button('', 'sq-extra-favorite' + (feedback.favorite ? ' selected' : ''), () => {
+        try { onFeedback(entry, { favorite: feedback.favorite !== true }); cachedRecords = null; render(); }
+        catch { showStatus('Could not save your picks on this device.', true); }
+      });
+      favorite.setAttribute('aria-label', feedback.favorite ? 'Remove from favorites' : 'Add to favorites');
+      favorite.setAttribute('aria-pressed', String(feedback.favorite === true));
+      favorite.title = favorite.getAttribute('aria-label');
+      const icon = make('span', 'sq-extra-favorite-icon');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>';
+      favorite.append(icon);
+      titleRow.append(favorite);
+    }
+    body.append(titleRow);
     const creditedAuthor = text(entry.author);
     const shownAuthor = displayAuthor(entry);
     body.append(make('p', 'sq-extra-author', `By ${shownAuthor}`));
@@ -463,34 +484,47 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }
     if (Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0) facts.append(make('span', 'sq-extra-size', `${(entry.sizeBytes / 1000).toFixed(1)} KB code`));
     body.append(facts);
+    const actions = make('div', 'sq-extra-actions');
+    actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
+    const more = button('', 'sq-extra-more', () => {
+      if (expandedCardMenu && expandedCardMenu !== moreMenu) clearCardMenu();
+      const opening = moreMenu.hidden;
+      moreMenu.hidden = !opening;
+      more.setAttribute('aria-expanded', String(opening));
+      expandedCardMenu = opening ? moreMenu : null;
+      expandedCardTrigger = opening ? more : null;
+    });
+    more.setAttribute('aria-label', `More actions for ${text(entry.name, 'this track')}`);
+    more.setAttribute('aria-expanded', 'false');
+    const moreIcon = make('span', 'sq-extra-more-icon');
+    moreIcon.setAttribute('aria-hidden', 'true');
+    moreIcon.innerHTML = '<svg viewBox="0 0 24 24" focusable="false"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+    more.append(moreIcon);
+    const moreMenu = make('div', 'sq-extra-more-menu');
+    moreMenu.id = `sq-extra-card-menu-${mountNumber}-${++cardMenuNumber}`;
+    more.setAttribute('aria-controls', moreMenu.id);
+    moreMenu.hidden = true;
+    moreMenu.setAttribute('role', 'group');
+    moreMenu.setAttribute('aria-label', `Track preferences for ${text(entry.name, 'this track')}`);
     if (typeof onFeedback === 'function') {
-      let feedback = {};
-      try { feedback = getFeedback?.(entry) || {}; } catch { /* Device storage is optional. */ }
-      const picks = make('div', 'sq-extra-picks');
       const toggle = (field, value) => {
-        try { onFeedback(entry, { [field]: feedback[field] === value ? field === 'favorite' ? false : 0 : value }); cachedRecords = null; render(); }
+        try { onFeedback(entry, { [field]: feedback[field] === value ? 0 : value }); clearCardMenu(); cachedRecords = null; render(); }
         catch { showStatus('Could not save your picks on this device.', true); }
       };
-      const favorite = button(feedback.favorite ? 'Saved' : 'Favorite', 'sq-extra-pick' + (feedback.favorite ? ' selected' : ''), () => toggle('favorite', true));
-      favorite.setAttribute('aria-pressed', String(Boolean(feedback.favorite)));
-      const up = button('Helpful +', 'sq-extra-pick' + (feedback.vote === 1 ? ' selected' : ''), () => toggle('vote', 1));
+      const picks = make('div', 'sq-extra-picks');
+      const up = button('Helpful', 'sq-extra-pick' + (feedback.vote === 1 ? ' selected' : ''), () => toggle('vote', 1));
       const down = button('Not for me', 'sq-extra-pick' + (feedback.vote === -1 ? ' selected' : ''), () => toggle('vote', -1));
       up.setAttribute('aria-pressed', String(feedback.vote === 1)); down.setAttribute('aria-pressed', String(feedback.vote === -1));
       const ratingLabel = make('label', 'sq-extra-rating', 'My rating');
       const rating = make('select');
+      rating.setAttribute('aria-label', `My rating for ${text(entry.name, 'this track')}`);
       for (let n = 0; n <= 10; n++) { const option = make('option', '', n ? `${n}/10` : 'Not rated'); option.value = String(n); rating.append(option); }
       rating.value = String(Number(feedback.rating) || 0);
-      rating.addEventListener('change', () => { try { onFeedback(entry, { rating: Number(rating.value) }); cachedRecords = null; render(); } catch { showStatus('Could not save your rating on this device.', true); } });
-      ratingLabel.append(rating); picks.append(favorite, up, down, ratingLabel); body.append(picks);
+      rating.addEventListener('change', () => { try { onFeedback(entry, { rating: Number(rating.value) }); clearCardMenu(); cachedRecords = null; render(); } catch { showStatus('Could not save your rating on this device.', true); } });
+      ratingLabel.append(rating); picks.append(up, down, ratingLabel); moreMenu.append(picks);
     }
-    const actions = make('div', 'sq-extra-actions');
-    actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
-    const more = button('...', 'sq-extra-more', () => { moreMenu.hidden = !moreMenu.hidden; more.setAttribute('aria-expanded', String(!moreMenu.hidden)); });
-    more.setAttribute('aria-label', `More actions for ${text(entry.name, 'this track')}`);
-    more.setAttribute('aria-expanded', 'false');
-    const moreMenu = make('div', 'sq-extra-more-menu');
-    moreMenu.hidden = true;
     moreMenu.append(button('Report track', 'sq-extra-report-button', () => {
+      clearCardMenu();
       moreMenu.hidden = true; more.setAttribute('aria-expanded', 'false');
       reportReturnFocus = more;
       reportGeneration++;
@@ -503,8 +537,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       reportModal.hidden = false;
       reportClose.focus();
     }));
-    actions.append(more, moreMenu);
+    actions.append(more);
     body.append(actions);
+    body.append(moreMenu);
     article.append(body);
     return article;
   }
@@ -686,7 +721,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (!opened) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      if (!reportModal.hidden) closeReport();
+      if (expandedCardMenu) clearCardMenu(true);
+      else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
       else close();
       return;
@@ -709,13 +745,33 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }
     if (event.key !== 'Tab') return;
     const focusRoot = !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : dialog;
-    const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href]')].filter(node => !node.hidden);
+    const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href]')].filter(node => {
+      for (let current = node; current; current = current.parentElement || current.parent) {
+        if (current.hidden) return false;
+        if (current === focusRoot) return true;
+      }
+      return false;
+    });
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (!focusRoot.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
     else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+
+  function clearCardMenu(restoreFocus = false) {
+    if (!expandedCardMenu) return;
+    expandedCardMenu.hidden = true;
+    expandedCardTrigger?.setAttribute('aria-expanded', 'false');
+    const trigger = expandedCardTrigger;
+    expandedCardMenu = null;
+    expandedCardTrigger = null;
+    if (restoreFocus && trigger?.isConnected) trigger.focus();
+  }
+
+  function onCardMenuOutside(event) {
+    if (expandedCardMenu && !expandedCardMenu.contains(event.target) && !expandedCardTrigger?.contains(event.target)) clearCardMenu();
   }
 
   search.addEventListener('input', () => { state.search = search.value.trim(); page = 1; render(); });
@@ -731,6 +787,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   curated.addEventListener('change', () => { state.curated = curated.checked; page = 1; render(); });
   favorites.addEventListener('change', () => { state.favorites = favorites.checked; page = 1; render(); });
   document.addEventListener('keydown', onKeydown, true);
+  document.addEventListener('click', onCardMenuOutside, true);
   render();
   return {
     open, close, refresh() { cachedRecords = null; render(); },
@@ -739,6 +796,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       close();
       destroyed = true;
       document.removeEventListener('keydown', onKeydown, true);
+      document.removeEventListener('click', onCardMenuOutside, true);
       overlay.remove();
     }
   };

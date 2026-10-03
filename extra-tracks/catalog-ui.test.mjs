@@ -91,20 +91,29 @@ test('mount is hidden until open, paginates exact counts and restores focus', ()
 test('local picks toggle, rating changes and export callback stay device-scoped', async () => {
   const saved = new Map(), exported = [];
   const item = entry(1, { trackId: 'a'.repeat(64) });
-  const { root, api } = fixture([item], {
+  const { document, root, api } = fixture([item], {
     getFeedback: track => saved.get(track.trackId) || {},
     onFeedback: (track, change) => saved.set(track.trackId, { ...saved.get(track.trackId), ...change }),
     getLocalRating: track => saved.get(track.trackId)?.rating,
     onExportFeedback: () => exported.push(true)
   });
   api.open();
-  await click(cls(root, 'sq-extra-pick')[0]);
+  const favorite = cls(root, 'sq-extra-favorite')[0];
+  assert.equal(favorite.getAttribute('aria-label'), 'Add to favorites');
+  assert.equal(favorite.getAttribute('aria-pressed'), 'false');
+  await click(favorite);
   assert.equal(saved.get(item.trackId).favorite, true);
-  await click(cls(root, 'sq-extra-pick')[0]);
+  assert.equal(cls(root, 'sq-extra-favorite')[0].getAttribute('aria-pressed'), 'true');
+  await click(cls(root, 'sq-extra-favorite')[0]);
   assert.equal(saved.get(item.trackId).favorite, false);
-  await click(cls(root, 'sq-extra-pick')[1]);
+  const more = cls(root, 'sq-extra-more')[0];
+  assert.equal(more.getAttribute('aria-expanded'), 'false');
+  await click(more);
+  assert.equal(more.getAttribute('aria-expanded'), 'true');
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
+  await click(cls(root, 'sq-extra-pick')[0]);
   assert.equal(saved.get(item.trackId).vote, 1);
-  await click(cls(root, 'sq-extra-pick')[2]);
+  await click(cls(root, 'sq-extra-pick')[1]);
   assert.equal(saved.get(item.trackId).vote, -1);
   const rating = tag(cls(root, 'sq-extra-rating')[0], 'select')[0];
   rating.value = '8'; await rating.dispatch('change');
@@ -598,7 +607,10 @@ test('Escape closes menu and CSS defines narrow responsive layout', () => {
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.sq-extra-overlay\[hidden\]\{display:none!important\}/);
   assert.match(css, /\.sq-extra-visual img\{[^}]*object-fit:contain/);
-  assert.match(css, /\.sq-extra-visual img\{[^}]*width:calc\(100% - 28px\);height:calc\(100% - 24px\)/);
+  assert.match(css, /\.sq-extra-visual img\{[^}]*width:100%;height:100%/);
+  assert.doesNotMatch(css, /\.sq-extra-visual img\{[^}]*transform:/);
+  assert.match(css, /\.sq-extra-title-row/);
+  assert.match(css, /\.sq-extra-more-menu\[hidden\]\{display:none\}/);
   assert.match(css, /\.sq-extra-grid\{[^}]*gap:12px/);
   assert.match(css, /\.sq-extra-card\{[^}]*linear-gradient/);
   const image = cls(root, 'sq-extra-visual')[0].children.find(node => node.tagName === 'IMG');

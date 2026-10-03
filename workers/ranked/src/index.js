@@ -25,6 +25,7 @@ const UNRANKED_EXTRA_TRACK_ID = '586fbb2ef6e638f8d22e050342896497f22da6302ff081e
 const OVERALL_BOARD_PAGE_SIZE = 100;
 const OVERALL_BOARD_LIMIT = 500;
 const REBUILD_COOLDOWN_MS = 5 * 60 * 1000;
+const BACKGROUND_REPAIR_INTERVAL_MS = 30 * 60 * 1000;
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
 const MIGRATION_TRACK_BATCH = 4;
@@ -1759,6 +1760,10 @@ export default {
     });
   },
   scheduled(_event, env, context) {
+    if (_event.cron === '*/2 * * * *') {
+      const scheduledAt = _event.scheduledTime;
+      if (!Number.isSafeInteger(scheduledAt) || scheduledAt < 0 || scheduledAt % BACKGROUND_REPAIR_INTERVAL_MS !== 0) return;
+    }
     context.waitUntil((async()=>{
       if (_event.cron === '*/2 * * * *') {
         let rollingRefreshed = false;

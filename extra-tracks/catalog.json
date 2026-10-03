@@ -1,5 +1,29 @@
 [
   {
+    "id": "full-throttle",
+    "trackId": "f5d7092475e8d2fd83003f8ad81ffef7dca3efc2bf8d526fdddee820857cf556",
+    "name": "full throttle",
+    "author": "Anonymous",
+    "source": "Player submission",
+    "sourceUrl": "",
+    "tags": [
+      "speed"
+    ],
+    "tier": "Community",
+    "featuredSubmission": true,
+    "submittedAt": "2026-10-03",
+    "trackPath": "extra-tracks/track-data/submitted/new-player-track.track",
+    "description": "New from players: a full-throttle track shared with the collection.",
+    "difficulty": null,
+    "codeName": "full throttle",
+    "codeAuthor": "Anonymous",
+    "codeModifiedAt": null,
+    "sizeBytes": 3855,
+    "category": "Speed",
+    "sourceCopies": null,
+    "thumbnailUrl": "extra-tracks/thumbnails/full-throttle.png"
+  },
+  {
     "id": "canyon-of-death",
     "trackId": "4dd71b4db08edcba19e546974d3906af3e7c1afa6ad208e69e4aaf9af40c8555",
     "name": "Canyon of Death",

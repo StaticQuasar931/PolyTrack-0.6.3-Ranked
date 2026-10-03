@@ -4,12 +4,14 @@ import fs from 'node:fs';
 import {createRequire} from 'node:module';
 
 const require = createRequire(import.meta.url);
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+let chromium;
+try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch {}
+const browserSkip = !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwright package to run this browser test.';
 const moduleSource = fs.readFileSync(new URL('./catalog-ui.mjs', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
 
-test('Extra Tracks nested dialogs contain focus, close correctly, and restore their launchers', async () => {
+test('Extra Tracks nested dialogs contain focus, close correctly, and restore their launchers', {skip: browserSkip}, async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage();
@@ -97,7 +99,68 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
   }
 });
 
-test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and keep bottom actions reachable', async () => {
+test('track cards show full previews and keep feedback in an accessible three-dot disclosure', {skip: browserSkip}, async () => {
+  const browser = await chromium.launch({headless: true});
+  try {
+    const page = await browser.newPage({viewport: {width: 960, height: 900}});
+    await page.route('**/*', async route => {
+      const url = route.request().url();
+      if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      else if (url === 'http://extra-tracks.test/') await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
+      else if (url === 'http://extra-tracks.test/preview.png') await route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="41" height="76"><rect width="41" height="76" fill="green"/></svg>'});
+      else await route.abort();
+    });
+    await page.goto('http://extra-tracks.test/');
+    await page.addStyleTag({content: css});
+    await page.evaluate(async () => {
+      const {mountExtraTracks} = await import('/catalog-ui.mjs');
+      const entry = {id: 'preview-track', trackId: 'p'.repeat(64), name: 'Preview Track', author: 'Tester', thumbnailUrl: '/preview.png'};
+      window.feedback = {};
+      window.catalog = mountExtraTracks({document, root: document.querySelector('#root'), entries: [entry], getFeedback: () => window.feedback, onFeedback: (_entry, change) => { window.feedback = {...window.feedback, ...change}; }});
+      window.catalog.open();
+    });
+    const image = page.locator('.sq-extra-visual img');
+    await image.waitFor({state: 'visible'});
+    await page.waitForFunction(() => { const image = document.querySelector('.sq-extra-visual img'); return image?.complete && image.naturalWidth > 0; });
+    assert.equal(await image.evaluate(img => img.naturalWidth), 41);
+    assert.equal(await image.evaluate(img => img.naturalHeight), 76);
+    assert.equal(await image.evaluate(img => getComputedStyle(img).objectFit), 'contain');
+    assert.equal(await image.evaluate(img => getComputedStyle(img).transform), 'none');
+    const favorite = page.getByRole('button', {name: 'Add to favorites'});
+    assert.equal(await favorite.getAttribute('aria-pressed'), 'false');
+    await favorite.click();
+    assert.equal(await page.getByRole('button', {name: 'Remove from favorites'}).getAttribute('aria-pressed'), 'true');
+    const more = page.getByRole('button', {name: 'More actions for Preview Track'});
+    assert.equal(await more.getAttribute('aria-expanded'), 'false');
+    await more.click();
+    assert.equal(await more.getAttribute('aria-expanded'), 'true');
+    assert.equal(await more.getAttribute('aria-controls'), await page.locator('.sq-extra-more-menu').getAttribute('id'));
+    assert.equal(await page.getByRole('button', {name: 'Helpful'}).isVisible(), true);
+    assert.equal(await page.getByRole('button', {name: 'Not for me'}).isVisible(), true);
+    assert.equal(await page.getByLabel('My rating for Preview Track').isVisible(), true);
+    assert.equal(await page.getByRole('button', {name: 'Favorite', exact: true}).count(), 0);
+    await more.focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.getByRole('button', {name: 'Helpful'}).evaluate(el => el === document.activeElement), true, 'Tab enters the expanded dropdown');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await more.evaluate(el => el === document.activeElement), true, 'Shift+Tab returns to the dropdown trigger');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Escape');
+    assert.equal(await more.getAttribute('aria-expanded'), 'false');
+    assert.equal(await more.evaluate(el => el === document.activeElement), true, 'Escape closes the disclosure and restores focus to its trigger');
+    assert.equal(await page.getByRole('dialog', {name: 'Extra Tracks'}).isVisible(), true, 'Escape leaves the catalog open');
+    await page.setViewportSize({width: 360, height: 740});
+    const card = page.locator('.sq-extra-card');
+    const bounds = await card.boundingBox();
+    assert.ok(bounds && bounds.width <= 360 && bounds.x >= 0, `card fits narrow viewport: ${JSON.stringify(bounds)}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.evaluate(() => window.catalog.destroy());
+  } finally {
+    await browser.close();
+  }
+});
+
+test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and keep bottom actions reachable', {skip: browserSkip}, async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage({viewport: {width: 320, height: 568}});
@@ -162,7 +225,7 @@ test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and
   }
 });
 
-test('5,000-entry offline catalog interaction benchmark', async () => {
+test('5,000-entry offline catalog interaction benchmark', {skip: browserSkip}, async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage();
@@ -229,7 +292,7 @@ test('5,000-entry offline catalog interaction benchmark', async () => {
   }
 });
 
-test('delayed dialog requests cannot mutate a newer close/reopen session', async () => {
+test('delayed dialog requests cannot mutate a newer close/reopen session', {skip: browserSkip}, async () => {
   const browser = await chromium.launch({headless: true});
   try {
     const page = await browser.newPage();

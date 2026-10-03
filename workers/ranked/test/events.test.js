@@ -375,17 +375,20 @@ test('retained replay cleanup is bounded to eight documents per maintenance unit
   assert.deepEqual(await cleanupEvents(runtime), { replayCleanup: true, deleted: 0 });
   assert.equal(store.data.get(`${C.catalog}/main`).periods[0].replaysCleaned, true);
 });
-test('target fallback performs at most two lookups and never invents a target', async () => {
+test('date-selected track never changes when its verified target is missing', async () => {
   const at = Date.UTC(2026, 8, 12), officialIds = ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)];
   const lookups = [], store = memoryStore(); let created;
   const runtime = { now: () => at, store, request: async () => null,
     service: { createPeriod: async p => { created = p; } } };
   const options = { officialIds, allIds: officialIds, capacity, targetForTrack: async id => { lookups.push(id); return lookups.length === 2 ? 20402 : null; } };
   await provisionEvent(runtime, options);
-  assert.equal(lookups.length, 2); assert.equal(created.targetMs, 20402); assert.equal(created.trackId, lookups[1]);
+  assert.equal(lookups.length, 1); assert.equal(created, undefined);
   created = null; lookups.length = 0;
   const result = await provisionEvent(runtime, { ...options, targetForTrack: async id => { lookups.push(id); return null; } });
-  assert.equal(lookups.length, 2); assert.equal(created, null); assert.equal(result.created, null);
+  assert.equal(lookups.length, 1); assert.equal(created, null); assert.equal(result.created, null);
+  await provisionEvent(runtime,{...options,targetForTrack:async()=>20402});
+  assert.equal(created.trackId,utcEventCandidates(at,officialIds,officialIds)[0].trackId);
+  assert.equal(created.targetMs,20402);
 });
 test('canonical event promotion uses receipt time, not delayed verifier time', async () => {
   const f = fixture(); await f.start(); await f.submit(); f.time(50000); await f.publish();

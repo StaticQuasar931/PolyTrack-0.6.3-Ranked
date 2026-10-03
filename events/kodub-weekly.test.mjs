@@ -7,6 +7,15 @@ const current={trackId:hash,name:'Test track',author:'Author',lastModified:'2026
 const baseUrl='https://game.test/events/client.mjs',brokerUrl='https://broker.test';
 const live={...current,trackUrl:`${brokerUrl}/v1/kodub-weekly/track/${hash}`,thumbnailUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`,coverUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`};
 const response=c=>Response.json({current:c});
+
+test('weekly feed shares requests and stays cached only until the official reset',async()=>{
+ let calls=0;const fetcher=async()=>{calls++;return response(current);};
+ const options={baseUrl,brokerUrl,now,fetcher};
+ const [first,second]=await Promise.all([loadKodubWeekly(options),loadKodubWeekly(options)]);
+ assert.equal(first,second);assert.equal(calls,1);
+ await loadKodubWeekly({...options,now:now+600000});assert.equal(calls,1);
+ await loadKodubWeekly({...options,now:Date.parse(current.endTime)});assert.ok(calls>1);
+});
 test('uses an unexpired same-origin capture without probing the broker',async()=>{
  let brokerReads=0;
  const result=await loadKodubWeekly({baseUrl,brokerUrl,now,fetcher:async u=>{if(String(u).includes('current.json'))return response(current);brokerReads++;return response(live);}});

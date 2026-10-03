@@ -10,11 +10,24 @@ function localSelection(value, base, now) {
   }
   return current;
 }
-export async function loadKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.now()}) {
+const weeklyLoads=new WeakMap();
+export async function loadKodubWeekly(options) {
+  const fetcher=options.fetcher||fetch,now=options.now??Date.now();
+  let loads=weeklyLoads.get(fetcher);if(!loads){loads=new Map();weeklyLoads.set(fetcher,loads);}
+  const key=String(options.baseUrl)+'|'+String(options.brokerUrl||'');
+  const cached=loads.get(key);if(cached&&now<cached.until)return cached.promise;
+  const record={until:Infinity,promise:null};
+  record.promise=fetchKodubWeekly({...options,fetcher,now}).then(value=>{
+    record.until=value.current?Date.parse(value.current.endTime):now+60000;return value;
+  }).catch(error=>{loads.delete(key);throw error;});
+  loads.set(key,record);if(loads.size>8)loads.delete(loads.keys().next().value);
+  return record.promise;
+}
+async function fetchKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.now()}) {
   const base = new URL('./kodub/',baseUrl);
   let local = null;
   try {
-    const response = await fetcher(new URL('current.json',base),{cache:'no-store',signal:AbortSignal.timeout(4000)});
+    const response = await fetcher(new URL('current.json',base),{cache:'default',signal:AbortSignal.timeout(4000)});
     if (response.ok) local = localSelection(await response.json(),base,now);
   } catch { /* The live feed can recover a missing or expired local copy. */ }
   // Same-origin assets work on networks that block workers.dev and avoid a

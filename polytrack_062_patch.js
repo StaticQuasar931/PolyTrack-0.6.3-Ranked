@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=46',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=47',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='46';
+  const extraCatalogRevision='47';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -70,13 +70,30 @@
     try{invokeNative();}catch(error){if(pendingEventLaunch===pending)pendingEventLaunch=null;throw error;}
   }
   const eventCloudRequests=new Map(),eventCloudCache=new Map(),eventCloudRetryAt=new Map();
+  let localEventSchedulePromise=null;
+  async function localEventCatalog(){
+    if(!localEventSchedulePromise)localEventSchedulePromise=(async()=>{
+      const [schedule,registryResponse,catalogResponse]=await Promise.all([
+        import(new URL('./schedule.mjs',eventsModuleUrl).href),
+        fetch(new URL('./rotation.json',eventsModuleUrl),{cache:'default',signal:AbortSignal.timeout(5000)}),
+        fetch(new URL('./public-catalog.json',eventsModuleUrl),{cache:'default',signal:AbortSignal.timeout(5000)})
+      ]);
+      if(!registryResponse.ok)throw Error('Local event rotation unavailable');
+      const registry=await registryResponse.json();
+      const published=catalogResponse.ok?await catalogResponse.json():{periods:[],archives:[]};
+      return {schedule,registry,published};
+    })().catch(error=>{localEventSchedulePromise=null;throw error;});
+    const {schedule,registry,published}=await localEventSchedulePromise;
+    return schedule.scheduledCatalog(registry,published,Date.now());
+  }
   async function eventCloudRead(path,collection,id){
     const cached=eventCloudCache.get(path);
     if(cached&&Date.now()<cached.until)return cached.value;
     if(eventCloudRequests.has(path))return eventCloudRequests.get(path);
     if(Date.now()<Number(eventCloudRetryAt.get(path)||0)){if(cached)return cached.value;throw Error('Event data retry paused; showing saved results');}
     const request=loadEventCloudRead(path,collection,id).then(value=>{
-      const ttl=path==='/v1/events/catalog'?600000:60000;
+      const end=path==='/v1/events/catalog'?Math.min(...(value.periods||[]).map(p=>Number(p.endsAt)).filter(t=>t>Date.now())):0;
+      const ttl=path==='/v1/events/catalog'&&Number.isFinite(end)?Math.max(1,end-Date.now()):60000;
       eventCloudCache.set(path,{value,until:Date.now()+ttl});
       if(eventCloudCache.size>128)eventCloudCache.delete(eventCloudCache.keys().next().value);
       return value;
@@ -86,6 +103,7 @@
     return request;
   }
   async function loadEventCloudRead(path,collection,id){
+    if(path==='/v1/events/catalog')try{return await localEventCatalog();}catch{}
     if(rankedEdgeAvailable()){
       try{const response=await fetch(rankedBrokerUrl()+path,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
         if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Event service unavailable');
@@ -4389,7 +4407,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=46',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=47',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4409,8 +4427,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=46',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=46',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=46',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=47',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=47',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=47',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -5537,7 +5555,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     el.dataset.old=String(isOld);
     const parts=[];
     if(status==='loading')parts.push(snapshotAt?`Saved snapshot ${ageLabel(snapshotAt)}`:'No saved snapshot','checking cloud now');
-    else if(failed)parts.push('STALE SAVED DATA',snapshotAt?`${ageLabel(snapshotAt)}`:'age unknown','cloud refresh failed');
+    else if(failed)parts.push(isOld?'Older saved standings':'Saved standings',snapshotAt?`${ageLabel(snapshotAt)}`:'age unknown','live refresh unavailable');
     else if(status==='cloud'||status==='pending')parts.push(`Cloud checked ${checkedAt?ageLabel(checkedAt):'just now'}`,snapshotAt?`changed ${ageLabel(snapshotAt)}`:'change time unavailable');
     else parts.push('Saved snapshot',snapshotAt?`changed ${ageLabel(snapshotAt)}`:'change time unavailable');
     const wait=isOld?0:Math.max(0,120000-(Date.now()-lastRankedManualRefreshAt));
@@ -7343,7 +7361,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const snapshotAge=snapshotAt?durationLabel(Date.now()-snapshotAt):'';
     const underMinute=Boolean(snapshotAt&&Date.now()-snapshotAt<60000);
     const recentlyChecked=checkedAt&&Date.now()-checkedAt<TRACK_REFRESH_MS;
-    const second=state.status==='loading'?'Loading the selected track':failed?`STALE SAVED DATA · ${snapshotAge?`${snapshotAge} old`:'age unknown'}`:underMinute?`Fresh · changed ${snapshotAt?ageLabel(snapshotAt):'just now'}`:recentlyChecked?`Current · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:state.status==='cloud'?`Cloud data · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:`Saved snapshot · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`;
+    const second=state.status==='loading'?'Loading the selected track':failed?`${snapshotAt&&Date.now()-snapshotAt>2*60*60*1000?'Older saved standings':'Saved standings'} · ${snapshotAge?`${snapshotAge} old`:'age unknown'} · live refresh unavailable`:underMinute?`Fresh · changed ${snapshotAt?ageLabel(snapshotAt):'just now'}`:recentlyChecked?`Current · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:state.status==='cloud'?`Cloud data · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:`Saved snapshot · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`;
     const bannerHtml=`<strong>${fieldSize>=2?`${weight.toFixed(2)}x Weight`:'No Ranked weight'} · ${fieldSize} Player${fieldSize===1?'':'s'}</strong><span>${escapeHtml(second)}</span>`;
     if(banner.innerHTML!==bannerHtml)banner.innerHTML=bannerHtml;
     banner.title=`${failed?'Cloud refresh failed. ':checkedAt?`Cloud checked ${ageLabel(checkedAt)}. `:''}${rankedWeightTitle(state.trackId,fieldSize,false,cached?.entries?.[0])} Right-click a racer to open their Ranked profile.${state.nextRefreshAt>Date.now()?` Next check in ${durationLabel(state.nextRefreshAt-Date.now())}.`:''}`;
@@ -7456,7 +7474,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=46',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:46,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=47',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:47,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

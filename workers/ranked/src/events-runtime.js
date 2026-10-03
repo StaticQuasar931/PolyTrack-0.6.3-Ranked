@@ -1,3 +1,5 @@
+import {utcEventCandidates} from '../../../events/schedule.mjs';
+export {utcEventCandidates} from '../../../events/schedule.mjs';
 import { createEventService, EVENT_COLLECTIONS as C, EVENT_LIMITS as L, eventPeriod } from './events.js';
 import { createEventFirestoreStore, eventDecode } from './events-store.js';
 
@@ -145,22 +147,6 @@ export async function eventWork(runtime, { projectedInbox = true } = {}) {
   return { hasWork: !!(due.length || inbox.documents.length || retry || closing), periodIds: due, inbox: inbox.documents.length > 0 || !!retry, archiveId: closing?.id || null };
 }
 
-export function utcEventCandidates(at, officialIds, allIds) {
-  if (!Number.isSafeInteger(at) || at < 0 || !officialIds.length || !allIds.length) throw Error('Invalid event registry/clock');
-  const day = Math.floor(at / 86400000) * 86400000;
-  const monday = day - ((new Date(day).getUTCDay() + 6) % 7) * 86400000;
-  const key = ms => new Date(ms).toISOString().slice(0, 10).replaceAll('-', '');
-  const hash = value => { let result = 2166136261; for (let i = 0; i < value.length; i++) result = Math.imul(result ^ value.charCodeAt(i), 16777619); return result >>> 0; };
-  const rotation = ids => [...new Set(ids)].sort((a, b) => hash(a) - hash(b) || a.localeCompare(b));
-  const official = rotation(officialIds);
-  const community = rotation(allIds.filter(id => !officialIds.includes(id)));
-  const dailyIndex = Math.floor(day / 86400000);
-  const weeklyIndex = Math.floor(monday / 604800000);
-  return [
-    ...(community.length ? [{ id: 'd_' + key(day), kind: 'daily', startsAt: day, endsAt: day + 86400000, maxRp: 100, trackId: community[dailyIndex % community.length] }] : []),
-    { id: 'w_' + key(monday), kind: 'weekly', startsAt: monday, endsAt: monday + 7 * 86400000, maxRp: 500, trackId: official[weeklyIndex % official.length] }
-  ];
-}
 
 // Provision at most one period per invocation. Target is frozen from a
 // physics-verified registered leaderboard entry, never a client-supplied score.
@@ -169,23 +155,16 @@ export async function provisionEvent(runtime, { officialIds, allIds, capacity, t
   if (Math.floor(runtime.now() / 300000) % 2) candidates.reverse();
   for (const candidate of candidates) {
     if (await runtime.request('/' + C.periods + '/' + candidate.id)) continue;
-    const registry = candidate.kind === 'daily' ? allIds.filter(id=>!officialIds.includes(id)) : officialIds;
-    const cursorPath = C.cursors + '/provision_' + candidate.id;
-    const raw = await runtime.request('/' + cursorPath), prior = raw ? decode(raw) : null;
-    const offset = prior?.offset || 0, start = registry.indexOf(candidate.trackId);
-    for (let i = 0; i < Math.min(2, registry.length); i++) {
-      const trackId = registry[(start + offset + i) % registry.length];
+    // Do not change the date-selected track because a target is temporarily missing.
+    // Clients use the same bundled rotation; only server-verified targets enable scoring.
+    {
+      const trackId = candidate.trackId;
       const targetMs = await targetForTrack(trackId);
       if (!Number.isSafeInteger(targetMs) || targetMs < 1 || targetMs > L.timeMs) continue;
       const period = eventPeriod({ ...candidate, trackId, enabled: true, targetMs, capacity, graceMs: 86400000, eligibility: 'best-submitted-during-period' });
       await runtime.service.createPeriod(period, { currentUtc: true });
       return { created: period.id };
     }
-    await runtime.store.transaction(async tx => {
-      const current = await tx.get(cursorPath);
-      if (JSON.stringify(current) === JSON.stringify(prior)) await tx.set(cursorPath, { offset: (offset + 2) % registry.length });
-    });
-    return { created: null, reason: 'no_verified_target_in_bounded_scan', kind: candidate.kind };
   }
-  return { created: null };
+  return { created: null, reason: 'no_verified_target_in_bounded_scan' };
 }

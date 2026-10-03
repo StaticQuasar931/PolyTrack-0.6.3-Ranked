@@ -8,6 +8,10 @@ const start = source.indexOf('  async function selectReplay(');
 const end = source.indexOf('  function raceGhosts(', start);
 assert(start >= 0 && end > start, 'selectReplay source is available');
 const selectReplaySource = source.slice(start, end);
+const raceStart = source.indexOf('  function raceGhosts(');
+const raceEnd = source.indexOf('  function resumeRace(', raceStart);
+assert(raceStart >= 0 && raceEnd > raceStart, 'raceGhosts source is available');
+const raceGhostsSource = source.slice(raceStart, raceEnd);
 
 function deferred() {
   let resolve;
@@ -352,4 +356,31 @@ test('reselecting a validated event replay does not parse it again',async()=>{
  await h.selectReplay(period,row);
  assert.equal(h.prepares(),1);
  assert.equal(h.selected().ghost.racerId,'racer');
+});
+
+test('local event ghost parses once until its replay or saved best changes',()=>{
+ const replay={attemptId:'attempt-1',timeMs:1200,frames:1200,replay:'encoded-replay',carStyle:'encoded-style'};
+ const best={attemptId:'attempt-1',timeMs:1200};
+ const ghost={recording:{},carStyle:{},time:{numberOfFrames:1200},isSelf:true};
+ let prepares=0;
+ const context=vm.createContext({
+  bridge:{supportsEventGhost:()=>true,require:()=>({})},
+  knownPeriods:new Map([['period',period]]),
+  eventDisplayRows:()=>({rows:[]}),
+  getOwnReplay:()=>replay,
+  bestRecords:{'period_viewer':best},
+  prepareOwnEventGhost:()=>{prepares++;return ghost;}
+ });
+ const race=vm.runInContext(`(()=>{const selectedGhosts=new Map(),pendingGhosts=new Map(),preparedOwnGhosts=new Map();${raceGhostsSource};return raceGhosts;})()`,context);
+ const session={periodId:'period',trackId:period.trackId,accountId:'viewer'};
+ assert.equal(race(session).ownGhost,ghost);
+ assert.equal(race(session).ownGhost,ghost);
+ assert.equal(prepares,1,'repeated play/watch/resume preparation reuses the validated native replay');
+ replay.replay='replacement-replay';
+ assert.equal(race(session).ownGhost,ghost);
+ assert.equal(prepares,2,'changed replay bytes are parsed and validated again');
+ context.bestRecords.period_viewer={attemptId:'attempt-2',timeMs:1100};
+ replay.attemptId='attempt-2';replay.timeMs=1100;replay.frames=1100;
+ assert.equal(race(session).ownGhost,ghost);
+ assert.equal(prepares,3,'changed PB identity is parsed and validated again');
 });
