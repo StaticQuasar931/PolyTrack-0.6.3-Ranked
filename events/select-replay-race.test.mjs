@@ -22,6 +22,8 @@ function harness() {
   let accountId = 'viewer';
   let ticks = 0;
   let prepares = 0;
+  let clock = 1000;
+  let preparationError = null;
   const reads = new Map();
   const messages = [];
   let displayRows = [];
@@ -42,18 +44,20 @@ function harness() {
     nativeView: null,
     knownPeriods: new Map([['period', period]]),
     catalog: { periods: [period] },
+    now: () => clock,
     eventDisplayRows: () => ({ rows: displayRows }),
     syncNativeBoard() {},
     tick: () => { ticks++; },
     preparePublishedEventGhost: async ({ row, entry }) => {
       prepares++;
+      if (preparationError) throw preparationError;
       if (row.accountId !== entry.accountId || row.timeMs !== entry.timeMs || row.replayHash !== entry.replayHash) {
         throw Error('Published replay hash does not match standings.');
       }
       return { nickname: entry.name, racerId: entry.accountId };
     }
   });
-  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,selectEventRange,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size};})()`, context);
+  const api = vm.runInContext(`(()=>{let selectedGhost=null,replayRequest=0,topSelectionToken=0;const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),replayFailures=new Map();${selectReplaySource};return {selectReplay,selectTopEventRows,selectEventRange,clearEventGhostSelection,selected:()=>selectedGhost,selectedCount:()=>selectedGhosts.size,pendingCount:()=>pendingGhosts.size};})()`, context);
   return {
     ...api,
     bridge,
@@ -62,6 +66,8 @@ function harness() {
     session,
     setAccount: value => { accountId = value; },
     setSession: value => { activeSession = value; },
+    setClock: value => { clock = value; },
+    setPreparationError: value => { preparationError = value; },
     setRows: value => { displayRows = value; },
     showNativeBoard: () => { context.nativeView = { periodId: 'period', page: 0, signature: '' }; },
     ticks: () => ticks,
@@ -106,6 +112,121 @@ test('event range shortcuts load only the inclusive places and toggle the group'
   assert.equal(h.selectedCount(), 0);
 });
 
+test('group selection marks every row pending immediately and starts reads concurrently', async () => {
+  const h = harness();
+  const rows = Array.from({ length: 4 }, (_, index) => racer(`racer-${index + 1}`, 1200 + index * 100, `Racer ${index + 1}`));
+  h.setRows(rows); h.showNativeBoard();
+  const loading = h.selectEventRange(1, 4);
+  assert.equal(h.pendingCount(), 4);
+  assert.equal(h.reads.size, 4);
+  for (const row of rows) h.reads.get(row.accountId).resolve(payload(row));
+  await loading;
+  assert.equal(h.pendingCount(), 0);
+  assert.equal(h.selectedCount(), 4);
+});
+
+test('ten-row shortcut cache retains payloads and prepared ghosts across reselection', async () => {
+  const h = harness();
+  const rows = Array.from({ length: 10 }, (_, index) => racer(`racer-${index + 1}`, 1200 + index * 100, `Racer ${index + 1}`));
+  let reads = 0;
+  h.bridge.readReplay = async (_periodId, accountId) => { reads++; return payload(rows.find(row => row.accountId === accountId)); };
+  h.setRows(rows); h.showNativeBoard();
+  await h.selectTopEventRows(10);
+  assert.equal(h.selectedCount(), 10);
+  assert.equal(reads, 10);
+  assert.equal(h.prepares(), 10);
+  await h.selectTopEventRows(10);
+  await h.selectTopEventRows(10);
+  assert.equal(h.selectedCount(), 10);
+  assert.equal(reads, 10);
+  assert.equal(h.prepares(), 10);
+});
+
+test('direct selection cancels an in-flight group without committing stale rows', async () => {
+  const h = harness();
+  const rows = Array.from({ length: 3 }, (_, index) => racer(`racer-${index + 1}`, 1200 + index * 100, `Racer ${index + 1}`));
+  h.setRows(rows); h.showNativeBoard();
+  const group = h.selectEventRange(1, 2);
+  assert.equal(h.pendingCount(), 2);
+  const direct = h.selectReplay(period, rows[2]);
+  assert.equal(h.pendingCount(), 1);
+  for (const row of rows) h.reads.get(row.accountId).resolve(payload(row));
+  await Promise.all([group, direct]);
+  assert.equal(h.selectedCount(), 1);
+  assert.equal(h.selected().ghost.racerId, rows[2].accountId);
+  assert.equal(h.pendingCount(), 0);
+});
+
+test('pressing a pending group shortcut again cancels the whole pending batch', async () => {
+  const h = harness();
+  const rows = [racer('first', 1200, 'First'), racer('second', 1300, 'Second')];
+  h.setRows(rows); h.showNativeBoard();
+  const first = h.selectTopEventRows(2);
+  assert.equal(h.pendingCount(), 2);
+  await h.selectTopEventRows(2);
+  assert.equal(h.pendingCount(), 0);
+  for (const row of rows) h.reads.get(row.accountId).resolve(payload(row));
+  await first;
+  assert.equal(h.selectedCount(), 0);
+  assert.equal(h.messages.at(-1), 'Event ghosts unselected.');
+});
+
+test('a second pending click cancels the first pending visual state', async () => {
+  const h = harness();
+  const first = racer('first', 1200, 'First');
+  const second = racer('second', 1300, 'Second');
+  const oldRequest = h.selectReplay(period, first);
+  assert.equal(h.pendingCount(), 1);
+  const newRequest = h.selectReplay(period, second);
+  assert.equal(h.pendingCount(), 1);
+  h.reads.get('second').resolve(payload(second));
+  await newRequest;
+  h.reads.get('first').resolve(payload(first));
+  await oldRequest;
+  assert.equal(h.selectedCount(), 1);
+  assert.equal(h.selected().ghost.racerId, 'second');
+  assert.equal(h.pendingCount(), 0);
+});
+
+test('same pending replay toggles off without starting another read', async () => {
+  const h = harness(), row = racer('racer', 1400, 'Racer');
+  const request = h.selectReplay(period, row);
+  assert.equal(h.pendingCount(), 1);
+  await h.selectReplay(period, row);
+  assert.equal(h.pendingCount(), 0);
+  h.reads.get(row.accountId).resolve(payload(row));
+  await request;
+  assert.equal(h.selectedCount(), 0);
+  assert.equal(h.reads.size, 1);
+});
+
+test('replay fetch failures are cooled down then retried after expiry', async () => {
+  const h = harness(), row = racer('racer', 1400, 'Racer');
+  let calls = 0;
+  h.bridge.readReplay = async () => { calls++; throw Error('Replay service unavailable.'); };
+  await h.selectReplay(period, row);
+  await h.selectReplay(period, row);
+  assert.equal(calls, 1);
+  assert.match(h.messages.at(-1), /Replay service unavailable/);
+  h.setClock(1000 + 5 * 60 * 1000 + 1);
+  h.bridge.readReplay = async () => { calls++; return payload(row); };
+  await h.selectReplay(period, row);
+  assert.equal(calls, 2);
+  assert.equal(h.selectedCount(), 1);
+});
+
+test('native ghost preparation failures are cooled down without another replay read', async () => {
+  const h = harness(), row = racer('racer', 1400, 'Racer');
+  let calls = 0;
+  h.bridge.readReplay = async () => { calls++; return payload(row); };
+  h.setPreparationError(Error('Replay failed native validation.'));
+  await h.selectReplay(period, row);
+  await h.selectReplay(period, row);
+  assert.equal(calls, 1);
+  assert.equal(h.prepares(), 1);
+  assert.match(h.messages.at(-1), /native validation/);
+});
+
 test('an empty event group reports unavailable replays instead of a deselection', async () => {
   const h = harness();h.setRows([]);h.showNativeBoard();
   await h.selectTopEventRows(3);
@@ -128,7 +249,7 @@ test('latest replay request wins when reads resolve out of order', async () => {
   await first;
   assert.equal(h.selected().ghost.racerId, 'latest');
   assert.equal(h.messages.at(-1), 'Replay ready: Latest. Play to race this ghost.');
-  assert.equal(h.ticks(), 1);
+  assert.equal(h.ticks(), 3);
 });
 
 test('older rejection cannot replace the latest request success message', async () => {
@@ -158,7 +279,7 @@ test('latest validation failure is not overwritten by an older success', async (
   await first;
   assert.equal(h.selected(), null);
   assert.equal(h.messages.at(-1), 'Published replay hash does not match standings.');
-  assert.equal(h.ticks(), 0);
+  assert.equal(h.ticks(), 3);
 });
 
 test('session and account changes still suppress replay selection', async () => {
@@ -171,12 +292,13 @@ test('session and account changes still suppress replay selection', async () => 
     h.reads.get('racer').resolve(payload(row));
     await request;
     assert.equal(h.selected(), null);
-    assert.equal(h.ticks(), 0);
+    assert.equal(h.pendingCount(), 0);
+    assert.equal(h.ticks(), 2);
   }
 });
 
 test('client declaration owns one replay request counter', () => {
-  assert.match(source, /selectedGhost=null,replayRequest=0,topSelectionToken=0,[^;]+;const selectedGhosts=new Map\(\),replayCache=new Map\(\)/);
+  assert.match(source, /selectedGhost=null,replayRequest=0,topSelectionToken=0,[^;]+;const selectedGhosts=new Map\(\),pendingGhosts=new Map\(\),replayCache=new Map\(\)/);
   assert.match(selectReplaySource, /const token=\+\+replayRequest/);
 });
 
@@ -218,7 +340,7 @@ test('clicking the same event replay again unselects it without another download
  await h.selectReplay(period,row);
  assert.equal(h.selected(),null);
  assert.match(h.messages.at(-1),/unselected/);
-  assert.equal(h.ticks(),2);
+  assert.equal(h.ticks(),3);
 });
 
 test('reselecting a validated event replay does not parse it again',async()=>{

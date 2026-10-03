@@ -2,7 +2,8 @@ import { verificationKey, verifiedVerdict, VERIFIER_VERSION, VERIFIER_ENGINE_DIG
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts } from '../src/index.js';
+import {createHash} from 'node:crypto';
+import { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
@@ -815,6 +816,107 @@ function unwire(value){
  if(value&&'nullValue'in value)return null;
  return value?.stringValue;
 }
+
+test('profile identity update changes one published row without querying canonical races or altering proof', async () => {
+ const row=validRun({accountId:'racer',trackId:TRACK,timeMs:19000,pbAt:123456,integrityVerified:true,runVerified:true,verifiedState:1,validationState:'verified',replayHash:'b'.repeat(64),uploadId:987});
+ const snapshot={trackId:TRACK,entries:[row],complete:true,totalEntries:1,revision:7,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'old-signature'};
+ let queried=false, saved;
+ const env={__TEST_FIRESTORE:async(path,init={})=>{
+  if(path===':runQuery'){queried=true;throw Error('unexpected canonical query');}
+  if(path===':commit'){
+   const trackWrite=JSON.parse(init.body).writes.find(write=>write.update.name.includes('0.6.2_s1_leaderboards_track/'));
+   saved=unwire({mapValue:{fields:trackWrite.update.fields}});return {};
+  }
+  if(path.includes('0.6.2_s1_leaderboards_track/'))return {fields:wire(snapshot).mapValue.fields,updateTime:'track-v1'};
+  if(path.includes('0.6.2_s1_release_meta/'))return {fields:wire({revision:12,builtRevision:9}).mapValue.fields,updateTime:'meta-v1'};
+  return null;
+ }};
+ const result=await updateTrackIdentity(env,TRACK,{accountId:'racer',name:'New Name',countryCode:'ca',carId:'car-x',carColors:'red',carStyle:'style-x',profileCosmetics:{version:7,theme:'classic'},groupCode:'123456',groupCodeUpdatedAt:42});
+ assert.equal(queried,false);assert.equal(result.changed,true);
+ const changed=saved.entries[0];
+ assert.equal(changed.name,'New Name');assert.equal(changed.nickname,'New Name');assert.equal(changed.countryCode,'CA');
+ for(const key of ['timeMs','pbAt','uploadId','replayHash','integrityVerified','runVerified','verifiedState','validationState'])assert.equal(changed[key],row[key],key);
+ assert.equal(saved.complete,true);assert.equal(saved.totalEntries,1);assert.equal(saved.revision,8);
+});
+
+test('profile identity update skips an account absent from a current track snapshot without scanning', async()=>{
+ const snapshot={entries:[validRun({accountId:'someone-else',trackId:TRACK,timeMs:19000})],complete:true,totalEntries:1,revision:3,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'current'};
+ let queries=0,writes=0;
+ const result=await updateTrackIdentity({__TEST_FIRESTORE:async(path,init={})=>{if(path===':runQuery'){queries++;return [];}if(path===':commit'||init.method==='PATCH')writes++;if(path.includes('0.6.2_s1_leaderboards_track/'))return {fields:wire(snapshot).mapValue.fields,updateTime:'v1'};return null;}},TRACK,{accountId:'missing',name:'Name'});
+ assert.equal(result.changed,false);assert.equal(queries,0);assert.equal(writes,0);
+});
+
+function targetedReconcileFixture({canonicalTime=19000,queueKey=null,failJobCas=false,fullRebuildMarker=false}={}){
+ const replay='targeted-verification-fixture';
+ const canonical=validRun({accountId:'target-racer',trackId:TRACK,timeMs:canonicalTime,raceTimeFrames:1140,frames:1140,uploadId:456,replay,replayHash:createHash('sha256').update(replay).digest('hex'),integrityVerified:false,runVerified:false,pbAt:456});
+ const old=validRun({...canonical,timeMs:20000,raceTimeFrames:1200,frames:1200,uploadId:455,pbAt:455,replayHash:'c'.repeat(64),integrityVerified:true,runVerified:false,verifiedState:0});
+ const board={trackId:TRACK,entries:computeTrackEntries([old],TRACK),complete:true,totalEntries:1,revision:4,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'old-signature'};
+ const resultId=`target-racer_${TRACK}`;
+ const queue={trackId:TRACK,slots:{'target-racer':{accountId:'target-racer',trackId:TRACK,resultId,key:queueKey||verificationKey(canonical),status:'verified',verifierVersion:VERIFIER_VERSION,engineDigest:VERIFIER_ENGINE_DIGEST}}};
+ const work={backfillComplete:true,cursorIngestedAt:'2026-09-09T00:00:00Z',pendingTrackIds:[TRACK],pendingResultIds:{[TRACK]:[resultId]},pendingFullRebuildTrackIds:fullRebuildMarker?[TRACK]:[]};
+ let savedBoard=null,jobWrite=null,trackQueries=0,canonicalTrackScans=0,batchGets=0;
+ const env={__TEST_FIRESTORE:async(path,init={})=>{
+  if(path===':runQuery'){
+   const collection=JSON.parse(init.body).structuredQuery.from[0].collectionId;
+   if(collection==='0.6.2_race_results'){
+    const query=JSON.parse(init.body).structuredQuery;
+    if(query.where?.fieldFilter?.field?.fieldPath==='trackId')canonicalTrackScans++;
+    return [];
+   }
+   if(collection==='0.6.2_s1_leaderboards_track')trackQueries++;
+   return [];
+  }
+  if(path===':batchGet'){
+   batchGets++;
+   const name='projects/polytrack-052/databases/(default)/documents/0.6.2_race_results/'+resultId;
+   return [{found:{name,fields:wire(canonical).mapValue.fields}}];
+  }
+  if(path===':commit'){
+   const writes=JSON.parse(init.body).writes;
+   const trackWrite=writes.find(write=>write.update.name.includes('/0.6.2_s1_leaderboards_track/'));
+   if(trackWrite)savedBoard=unwire({mapValue:{fields:trackWrite.update.fields}});
+   jobWrite=writes.find(write=>write.update.name.endsWith('/canonical_reconcile_v2'))||jobWrite;
+   if(jobWrite&&failJobCas)throw Error('FIRESTORE_409');
+   return {};
+  }
+  if(path.includes('/canonical_reconcile_v2'))return {fields:wire(work).mapValue.fields,updateTime:'job-v1'};
+  if(path.includes('0.6.2_s1_verification/'+TRACK))return {fields:wire(queue).mapValue.fields,updateTime:'queue-v1'};
+  if(path.includes('0.6.2_s1_leaderboards_track/'+TRACK))return {fields:wire(board).mapValue.fields,updateTime:'board-v1'};
+  if(path.includes('0.6.2_s1_release_meta/current'))return {fields:wire({revision:10,builtRevision:8}).mapValue.fields,updateTime:'meta-v1'};
+  return null;
+ }};
+ return {env,canonical,work,getBoard:()=>savedBoard,getJobWrite:()=>jobWrite,getTrackQueries:()=>trackQueries,getCanonicalTrackScans:()=>canonicalTrackScans,getBatchGets:()=>batchGets};
+}
+
+test('targeted reconciliation refreshes equal/current PB from server proof without a track canonical scan',async()=>{
+ const f=targetedReconcileFixture();
+ const result=await reconcileCanonicalChanges(f.env);
+ assert.equal(result.targeted,1);assert.equal(f.getTrackQueries(),0);
+ assert.equal(f.getBoard().entries[0].runVerified,true);assert.equal(f.getBoard().entries[0].integrityVerified,true);
+ assert.deepEqual(Object.keys(f.getJobWrite().update.fields.pendingResultIds.mapValue.fields),[]);
+});
+
+test('a superseding PB with an old queue key does not inherit the previous proof',async()=>{
+ const stale={...validRun({accountId:'target-racer',trackId:TRACK,timeMs:20000,raceTimeFrames:1200,frames:1200,uploadId:455,replayHash:'c'.repeat(64)}),integrityVerified:true};
+ const f=targetedReconcileFixture({canonicalTime:19000,queueKey:verificationKey(stale)});
+ await reconcileCanonicalChanges(f.env);
+ assert.equal(f.getBoard().entries[0].timeMs,19000);assert.equal(f.getBoard().entries[0].runVerified,false);
+});
+
+test('a reconciliation job CAS conflict leaves targeted pending IDs stored for retry',async()=>{
+ const f=targetedReconcileFixture({failJobCas:true});
+ await assert.rejects(reconcileCanonicalChanges(f.env),/FIRESTORE_409/);
+ assert.deepEqual(f.work.pendingResultIds[TRACK],[`target-racer_${TRACK}`]);
+ assert.equal(f.getTrackQueries(),0);
+});
+
+test('an explicit full-rebuild marker overrides coexisting targeted IDs and clears after rebuild',async()=>{
+ const f=targetedReconcileFixture({fullRebuildMarker:true});
+ await reconcileCanonicalChanges(f.env);
+ assert.equal(f.getBatchGets(),0);assert.ok(f.getCanonicalTrackScans()>0);
+ assert.deepEqual(f.getJobWrite().update.fields.pendingFullRebuildTrackIds.arrayValue.values,[]);
+});
+
 test('Extra queue backfill moves legacy slots atomically in bounded batches',async()=>{
   const ids=Array.from({length:5},(_,i)=>String(i+1).repeat(64));
   const state=new Map(ids.map(id=>['0.6.2_s1_verification/'+id,{trackId:id,slots:{racer:{key:'original-'+id,status:'waiting',attempts:2}}}]));

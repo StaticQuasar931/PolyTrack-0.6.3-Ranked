@@ -32,6 +32,8 @@ const MIGRATION_BADGE_BATCH = 25;
 const MIGRATION_VERSION = 4;
 const RECONCILE_RESULT_BATCH = 50;
 const RECONCILE_TRACK_BATCH = 4;
+const RECONCILE_PENDING_ID_LIMIT = 200;
+const RECONCILE_TARGET_ID_BATCH = 16;
 const COLLECTIONS = Object.freeze({
   raceResults: '0.6.2_race_results',
   profiles: '0.6.2_profiles_public',
@@ -943,6 +945,47 @@ export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResul
   return persistTrackSnapshot(env, trackId, entries, prior);
 }
 
+async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, canonicalById) {
+  const prior = await readDocument(env, COLLECTIONS.track, trackId);
+  const snapshot = prior?.data;
+  if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || snapshot.complete !== true) return {fallback: true};
+  const rows = resultIds.map(id => canonicalById.get(id)?.data);
+  if (rows.some(row => !row || !structurallyValidResult(row, trackId))) return {fallback: true};
+  for (let index = 0; index < rows.length; index++) {
+    const accountId = safeText(rows[index].accountId || rows[index].userId, 128);
+    if (!accountId || resultIds[index] !== `${accountId}_${trackId}`) return {fallback: true};
+  }
+  const queueCollection = verificationCollectionForTrack(trackId);
+  const queue = await readDocument(env, queueCollection, trackId);
+  const slots = queue?.data?.slots || {};
+  const integrity = await Promise.all(rows.map(row => replayIntegrityValid(row)));
+  const entries = snapshot.entries.slice();
+  const positions = new Map(entries.map((entry, index) => [safeText(entry.accountId || entry.userId, 128), index]));
+  let changed = false;
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index], accountId = safeText(row.accountId || row.userId, 128);
+    const position = positions.get(accountId);
+    const current = position === undefined ? null : entries[position];
+    const canonicalTime = raceTime(row), canonicalUpload = Number(row.uploadId || row.id || 0);
+    if (current && (Number(current.timeMs) < canonicalTime ||
+      Number(current.timeMs) === canonicalTime && Number(current.uploadId || 0) > canonicalUpload)) continue;
+    const normalized = computeTrackEntries([{...row, integrityVerified: integrity[index],
+      validationState: integrity[index] ? 'integrity' : 'pending'}], trackId, env,
+      {[accountId]: slots[accountId]})[0];
+    if (!normalized) return {fallback: true};
+    if (position === undefined) {
+      entries.push(normalized);
+      positions.set(accountId, entries.length - 1);
+    } else {
+      entries[position] = normalized;
+    }
+    changed = true;
+  }
+  if (!changed) return {fallback: false, changed: false, revision: Number(snapshot.revision || 0)};
+  const ranked = rankTrustedTrackEntries(entries, trackId);
+  return {fallback: false, ...await persistTrackSnapshot(env, trackId, ranked, prior)};
+}
+
 export async function bootstrapSnapshotVerification(env) {
   const prior = await readDocument(env, COLLECTIONS.jobs, VERIFICATION_BOOTSTRAP_ID);
   const job = prior?.data || {};
@@ -987,25 +1030,89 @@ export async function reconcileCanonicalChanges(env) {
   const job=document?.data||{};
   const timestamp=typeof job.cursorIngestedAt==='string'?job.cursorIngestedAt:'1970-01-01T00:00:00.000000000Z';
   const queued=new Set((job.pendingTrackIds||[]).map(id=>safeText(id,80)).filter(Boolean));
+  let pendingResultIds=Object.fromEntries(Object.entries(job.pendingResultIds||{})
+    .filter(([trackId,ids])=>/^[A-Za-z0-9_-]{1,80}$/.test(trackId)&&Array.isArray(ids)&&ids.length)
+    .map(([trackId,ids])=>[trackId,[...new Set(ids.filter(id=>typeof id==='string'&&/^[A-Za-z0-9_.:-]{1,128}_[A-Za-z0-9_-]{1,80}$/.test(id)))]]));
+  const pendingFullRebuildTrackIds=new Set((job.pendingFullRebuildTrackIds||[])
+    .filter(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(id)));
+  let forceFullRebuildAll=job.forceFullRebuildAll===true;
+  if(Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0)>RECONCILE_PENDING_ID_LIMIT){
+    for(const trackId of Object.keys(pendingResultIds)){queued.add(trackId);pendingFullRebuildTrackIds.add(trackId);}
+    pendingResultIds={};
+  }
+  if(pendingFullRebuildTrackIds.size>RECONCILE_PENDING_ID_LIMIT){forceFullRebuildAll=true;pendingFullRebuildTrackIds.clear();}
+  for(const trackId of Object.keys(pendingResultIds))queued.add(trackId);
+  for(const trackId of pendingFullRebuildTrackIds)queued.add(trackId);
   const capacity=Math.max(0,200-queued.size);
   const budget=Math.min(RECONCILE_RESULT_BATCH,Math.floor(capacity/2));
   const changed=budget?await runChangedResultsQuery(env,timestamp,budget,safeText(job.cursorDocumentId,256)):[];
   const legacy=budget&&!job.backfillComplete?await runChangedResultsQuery(env,timestamp,budget,safeText(job.backfillDocumentId,256),true):[];
-  for(const row of [...changed,...legacy])if(structurallyValidResult(row.data,row.data.trackId))queued.add(safeText(row.data.trackId,80));
-  let rebuilt=0;
-  for(const id of [...queued].slice(0,RECONCILE_TRACK_BATCH)){
-    try{await rebuildTrack(env,id);queued.delete(id);rebuilt++;}
-    catch(error){queued.delete(id);queued.add(id);console.error('Canonical track reconciliation failed',id,String(error?.message||error));}
+  const fullRebuildTracks=new Set(pendingFullRebuildTrackIds);
+  for(const row of changed){
+    const trackId=safeText(row.data?.trackId,80);
+    if(!trackId||!structurallyValidResult(row.data,trackId))continue;
+    queued.add(trackId);
+    if(!(pendingResultIds[trackId]||[]).includes(row.id))fullRebuildTracks.add(trackId);
   }
-  if(document&&!changed.length&&!legacy.length&&!queued.size&&!rebuilt&&job.backfillComplete)return {scanned:0,rebuilt:0,pending:0,unchanged:true};
+  for(const row of legacy){
+    const trackId=safeText(row.data?.trackId,80);
+    if(trackId&&structurallyValidResult(row.data,trackId)){queued.add(trackId);fullRebuildTracks.add(trackId);}
+  }
+  if(forceFullRebuildAll)for(const trackId of queued)fullRebuildTracks.add(trackId);
+  let rebuilt=0,targeted=0;
+  const selected=[...Object.keys(pendingResultIds),...([...queued].filter(id=>!pendingResultIds[id]))]
+    .filter((id,index,list)=>queued.has(id)&&list.indexOf(id)===index).slice(0,RECONCILE_TRACK_BATCH);
+  const targetGroups=[];let targetBudget=RECONCILE_TARGET_ID_BATCH;
+  for(const trackId of selected){
+    if(fullRebuildTracks.has(trackId)||!pendingResultIds[trackId]?.length)continue;
+    const ids=pendingResultIds[trackId].slice(0,targetBudget);
+    if(ids.length){targetGroups.push([trackId,ids]);targetBudget-=ids.length;}
+    if(!targetBudget)break;
+  }
+  const targetIds=targetGroups.flatMap(([,ids])=>ids);
+  const canonicalDocuments=targetIds.length
+    ?(await readDocumentsForCollections(env,[[COLLECTIONS.raceResults,targetIds]])).get(COLLECTIONS.raceResults)
+    :new Map();
+  for(const trackId of selected){
+    const ids=pendingResultIds[trackId]||[];
+    const targetedIds=targetGroups.find(([id])=>id===trackId)?.[1]||[];
+    if(ids.length&&!targetedIds.length&&!fullRebuildTracks.has(trackId))continue;
+    try{
+      let result;
+      if(targetedIds.length&&!fullRebuildTracks.has(trackId)){
+        for(const resultId of targetedIds){
+          if(!resultId.endsWith(`_${trackId}`))throw new Error('INVALID_CANONICAL_PENDING_ID');
+          const accountId=resultId.slice(0,-trackId.length-1);
+          if(!/^[A-Za-z0-9_.:-]{1,128}$/.test(accountId))throw new Error('INVALID_CANONICAL_PENDING_ID');
+        }
+        result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments);
+      }else result={fallback:true};
+      if(result.fallback)await rebuildTrack(env,trackId);
+      rebuilt++;
+      if(targetedIds.length)targeted+=targetedIds.length;
+      if(result.fallback||fullRebuildTracks.has(trackId))delete pendingResultIds[trackId];
+      else{
+        const remaining=ids.slice(targetedIds.length);
+        if(remaining.length)pendingResultIds[trackId]=remaining;
+        else delete pendingResultIds[trackId];
+      }
+      if(result.fallback||fullRebuildTracks.has(trackId))pendingFullRebuildTrackIds.delete(trackId);
+      if(!pendingResultIds[trackId]?.length)queued.delete(trackId);
+    }catch(error){
+      console.error('Canonical track reconciliation failed',trackId,String(error?.message||error));
+      queued.delete(trackId);queued.add(trackId);
+    }
+  }
+  if(document&&!changed.length&&!legacy.length&&!queued.size&&!rebuilt&&job.backfillComplete)return {scanned:0,rebuilt:0,targeted:0,pending:0,unchanged:true};
   await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:jobId,prior:document,data:{
     cursorIngestedAt:changed.length?changed.at(-1).ingestedAt:timestamp,
     cursorDocumentId:changed.length?changed.at(-1).id:safeText(job.cursorDocumentId,256),
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
     backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
-    pendingTrackIds:[...queued],lastScanAt:Date.now(),schemaVersion:2
+    pendingTrackIds:[...queued],pendingResultIds,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
+    forceFullRebuildAll:Boolean(forceFullRebuildAll&&queued.size),lastScanAt:Date.now(),schemaVersion:2
   }}]);
-  return {scanned:changed.length+legacy.length,rebuilt,pending:queued.size};
+  return {scanned:changed.length+legacy.length,rebuilt,targeted,pending:queued.size};
 }
 
 async function mapConcurrent(values, concurrency, mapper) {
@@ -1286,11 +1393,40 @@ async function processProfileJob(env, jobId, job, updateTime='') {
   const pending = Array.isArray(job.pendingTrackIds) ? job.pendingTrackIds.map((value) => safeText(value, 80)).filter(Boolean) : [];
   const batch = pending.slice(0, 3);
   let changed = 0;
-  for (const trackId of batch) if ((await rebuildTrack(env, trackId, job.identity)).changed) changed += 1;
+  for (const trackId of batch) if ((await updateTrackIdentity(env, trackId, job.identity)).changed) changed += 1;
   const remaining = pending.slice(batch.length);
   await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, active: remaining.length > 0, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + batch.length, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: remaining.length ? 0 : Date.now() },updateTime);
   if (changed) await rebuildOverall(env, false);
   return { checked: batch.length, changed, remaining: remaining.length };
+}
+
+export async function updateTrackIdentity(env, trackId, identity) {
+  const prior = await readDocument(env, COLLECTIONS.track, trackId);
+  const snapshot = prior?.data;
+  if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || snapshot.complete !== true) {
+    return rebuildTrack(env, trackId, identity);
+  }
+  const accountId = safeText(identity?.accountId, 128);
+  if (!accountId) return { changed: false, entries: snapshot.entries, revision: Number(snapshot.revision || 0) };
+  const index = snapshot.entries.findIndex((entry) => safeText(entry.accountId || entry.userId, 128) === accountId);
+  if (index < 0) return { changed: false, entries: snapshot.entries, revision: Number(snapshot.revision || 0) };
+
+  const entries = snapshot.entries.slice();
+  const existing = entries[index];
+  const cosmetics = sanitizeProfileCosmetics(identity.profileCosmetics || {});
+  entries[index] = {
+    ...existing,
+    name: safeText(identity.name, 24) || 'Racer',
+    nickname: safeText(identity.name, 24) || 'Racer',
+    countryCode: safeText(identity.countryCode, 8).toUpperCase(),
+    carId: safeText(identity.carId, 32) || existing.carId || null,
+    carColors: identity.carColors ?? existing.carColors ?? '',
+    carStyle: identity.carStyle ?? existing.carStyle ?? '',
+    profileCosmetics: cosmetics,
+    groupCode: /^\d{6}$/.test(identity.groupCode || '') ? identity.groupCode : '',
+    groupCodeUpdatedAt: Number(identity.groupCodeUpdatedAt || 0)
+  };
+  return persistTrackSnapshot(env, trackId, entries, prior);
 }
 
 async function processProfileJobs(env) {

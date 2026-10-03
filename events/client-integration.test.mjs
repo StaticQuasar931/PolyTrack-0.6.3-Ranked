@@ -119,9 +119,49 @@ test('native event template shows a new local finish immediately as pending, nev
  assert.match(await p.locator('.sq-event-personal').innerText(),/20000/);await p.evaluate(()=>car.finish(19000));assert.match(await p.locator('.sq-event-personal').innerText(),/19000/);
  await p.evaluate(()=>ui.leave());assert.equal(await p.locator('.sq-event-board').count(),0);assert.equal(await p.locator('.sq-event-personal').count(),0);assert.equal(await p.locator('.side-panel .personal-best').innerText(),'9999');
 });
+test('Enter and Space activate focused native controls instead of the event Play shortcut',async t=>{
+ const p=await fixture(t);await enter(p);await addNativePlay(p);
+ await p.evaluate(()=>{
+  window.nativeControlClicks={back:0,filters:0,refresh:0};
+  const board=document.querySelector('.sq-event-board'),back=board.querySelector('.button.back'),refresh=board.querySelector('.sq-event-refresh'),filters=document.createElement('button');
+  back.onclick=()=>nativeControlClicks.back++;refresh.onclick=()=>nativeControlClicks.refresh++;
+  filters.type='button';filters.textContent='Filters';filters.onclick=()=>nativeControlClicks.filters++;board.append(filters);
+ });
+ for(const [selector,key,name] of [['.sq-event-board .button.back','Enter','back'],['.sq-event-board > button:last-child','Space','filters'],['.sq-event-board .sq-event-refresh','Enter','refresh']]){
+  await p.locator(selector).focus();await p.keyboard.press(key);assert.equal(await p.evaluate(name=>nativeControlClicks[name],name),1);
+ }
+ assert.equal(await p.evaluate(()=>normalStarts),0);
+ const rail=await fixture(t);await showLiveRail(rail);
+ assert.equal(await rail.getByRole('button',{name:'Event standings',exact:true}).count(),1);
+ assert.equal(await rail.locator('.sq-events-entry').innerText(),'Event standings');
+});
 test('visible Static group loads catalog once, hidden group does not load',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{const host=document.createElement('div');host.className='track-selection-ui';host.style.display='none';host.innerHTML='<div class="community-track-versions"><button>Static</button><button>0.6.3</button></div><div class="community-track-group"><img src="tracks/community/thumbnails/rolling_hills_racer.png"></div>';document.body.append(host);ui.tick();});assert.equal(await p.evaluate(()=>catalogReads),0);
  await p.evaluate(()=>{document.querySelector('.track-selection-ui').style.display='block';ui.tick();});await p.waitForFunction(()=>catalogReads===1);await p.evaluate(()=>{for(let i=0;i<100;i++)ui.tick();});assert.equal(await p.evaluate(()=>catalogReads),1);assert.equal(await p.locator('.sq-event-track-group').count(),1);
+});
+test('pending replay changes invalidate the quick signature and idle ticks do not rewrite row state',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(()=>{
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async periodId=>({...await read(periodId),entries:[{accountId:'b'.repeat(64),name:'Replay target',rank:1,timeMs:21000,rp:50,replayHash:'fixture-replay-hash'}]});
+  bridgeFixture.readReplay=()=>new Promise(resolve=>window.finishReplay=resolve);
+  window.eventRaceStarts=0;window.eventWatchStarts=0;bridgeFixture.startEventRace=async()=>eventRaceStarts++;bridgeFixture.watchEvent=()=>eventWatchStarts++;
+ });
+ await addNativePlay(p);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(22000));await p.waitForFunction(()=>submits.length===1);
+ const row=p.locator('.sq-event-board button.main:not(.self)').first();await row.waitFor();
+ await row.click();await p.waitForFunction(()=>document.querySelector('.sq-event-board button.main:not(.self)')?.getAttribute('aria-busy')==='true');
+ await p.locator('.side-panel .play').click();await p.waitForFunction(()=>document.querySelector('.sq-event-inline-status')?.textContent.includes('Wait or unselect them before playing'));
+ assert.equal(await p.evaluate(()=>eventRaceStarts),0);assert.equal(await p.evaluate(()=>normalStarts),0);
+ await p.locator('.side-panel .watch').click();await p.waitForFunction(()=>document.querySelector('.sq-event-inline-status')?.textContent.includes('Wait or unselect them before watching'));
+ assert.equal(await p.evaluate(()=>eventWatchStarts),0);
+ await p.evaluate(()=>{
+  const button=document.querySelector('.sq-event-board button.main:not(.self)');window.rowMutations=0;window.rowMutationObserver=new MutationObserver(records=>window.rowMutations+=records.length);rowMutationObserver.observe(button,{attributes:true});
+  for(let i=0;i<20;i++)ui.tick();
+ });
+ await p.waitForTimeout(10);assert.equal(await p.evaluate(()=>rowMutations),0);
+ await p.locator('.sq-event-board button.main:not(.self)').first().click();
+ await p.waitForFunction(()=>document.querySelector('.sq-event-board button.main:not(.self)')?.getAttribute('aria-busy')==='false');
+ assert.equal(await p.locator('.sq-event-board button.main:not(.self).pending-selection').count(),0);
+ await p.evaluate(()=>{rowMutationObserver.disconnect();finishReplay({});});
 });
 test('Event RP delegates to normal Ranked hook after closing event dialog',async t=>{
  const p=await fixture(t);await p.locator('#open').click();await p.evaluate(()=>{bridgeFixture.openRankedEvents=()=>{window.rankedOpened=!document.querySelector('.sq-events-overlay');};});await p.locator('[data-event-totals]').click();assert.equal(await p.evaluate(()=>rankedOpened),true);

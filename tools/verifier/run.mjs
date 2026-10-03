@@ -24,12 +24,15 @@ async function validateEnginePin() {
 }
 
 export async function checkForWork(db, {env = process.env, now = Date.now(), log = console.log, eventCheck = checkEvents} = {}) {
+  // Scheduled wakes need an existence check, not a repeated queue-health scan.
+  // Manual runs keep the larger, explicitly bounded diagnostic sample.
+  const sampleLimit=env.GITHUB_EVENT_NAME==='schedule'?1:PREFLIGHT_QUEUE_SAMPLE_LIMIT;
   const due = async collection => db.call(':runQuery', {structuredQuery: {
     from: [{collectionId: collection}],
     select: {fields: [{fieldPath: 'notBefore'}, {fieldPath: 'slots'}]},
     where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}},
     orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}],
-    limit: PREFLIGHT_QUEUE_SAMPLE_LIMIT
+    limit: sampleLimit
   }});
   const coreRows = await due(VERIFICATION_COLLECTION);
   const extraRows = await due(EXTRA_VERIFICATION_COLLECTION);
@@ -52,7 +55,7 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
   }
   const averageOverdueAgeMs = queuedRuns ? Math.round(overdueAgeTotalMs / queuedRuns) : 0;
   const queueSample = {queuedRuns, averageOverdueAgeMs, sampledQueueDocuments: queueRows.length,
-    sampleLimitPerLane: PREFLIGHT_QUEUE_SAMPLE_LIMIT, truncated: coreDocs.length === PREFLIGHT_QUEUE_SAMPLE_LIMIT || extraDocs.length === PREFLIGHT_QUEUE_SAMPLE_LIMIT};
+    sampleLimitPerLane: sampleLimit, truncated: coreDocs.length === sampleLimit || extraDocs.length === sampleLimit};
   const events = await eventCheck(db, {now});
   if (typeof events?.hasWork !== 'boolean') throw Error('Unexpected event queue response');
   const eventHasWork = events.hasWork;
@@ -63,7 +66,7 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
   log(message);
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '## Verification preflight\n' + message + '\n\n' +
-    `Queue health (bounded sample, not an exact total): ${queuedRuns} queued runs across Core and Extra; average overdue age ${(averageOverdueAgeMs / 60000).toFixed(1)} minutes (proxy from queue notBefore, weighted by queued runs). Sampled ${queueRows.length} due queue documents, at most ${PREFLIGHT_QUEUE_SAMPLE_LIMIT} per lane; sample ${queueSample.truncated ? 'may be truncated' : 'did not reach its cap'}.\n\n` +
+    `Queue health (bounded sample, not an exact total): ${queuedRuns} queued runs across Core and Extra; average overdue age ${(averageOverdueAgeMs / 60000).toFixed(1)} minutes (proxy from queue notBefore, weighted by queued runs). Sampled ${queueRows.length} due queue documents, at most ${sampleLimit} per lane; sample ${queueSample.truncated ? 'may be truncated' : 'did not reach its cap'}.\n\n` +
     'Core and Extra queues: two bounded projected queue queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
     (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
       'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));

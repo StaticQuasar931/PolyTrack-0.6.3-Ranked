@@ -5,6 +5,13 @@ import {encode,decode,createFirestoreCaller} from './firestore.mjs';
 import {pendingSlot,VERIFIER_ENGINE_DIGEST,VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION,verificationCollectionForTrack} from '../../workers/ranked/src/verification.js';
 import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
 const row={accountId:'racer',trackId:'track',timeMs:1000,frames:1000,uploadId:1,replayHash:'a'.repeat(64)};
+
+test('scheduled preflight checks one due document per lane without a health crawl',async()=>{
+  const {checkForWork}=await import('./run.mjs');const queries=[];
+  const result=await checkForWork({call:async(_path,body)=>{queries.push(body.structuredQuery);return [];}},{env:{GITHUB_EVENT_NAME:'schedule'},eventCheck:async()=>({hasWork:false}),log:()=>{}});
+  assert.equal(queries.length,2);assert.ok(queries.every(query=>query.limit===1));
+  assert.equal(result.queueSample.sampleLimitPerLane,1);assert.equal(result.hasWork,false);
+});
 test('missing canonical work leaves the due queue instead of looping forever',()=>{const slot=reconciledSlot(pendingSlot(row),null);assert.equal(queueState({racer:slot}).notBefore,NEVER);});
 test('a superseding PB replaces the exact queued binding',()=>{const slot=pendingSlot(row),next={...row,timeMs:900};assert.deepEqual(reconciledSlot(slot,next),pendingSlot(next));});
 test('approval requires the pinned engine',()=>{assert.throws(()=>completedSlot(pendingSlot(row),{status:'verified',engineDigest:'wrong'}));assert.equal(completedSlot(pendingSlot(row),{status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST}).status,'verified');});

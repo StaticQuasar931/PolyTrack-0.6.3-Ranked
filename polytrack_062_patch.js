@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=45',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=46',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='45';
+  const extraCatalogRevision='46';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -69,41 +69,70 @@
     const pending=pendingEventLaunch={context:{...context},isCurrent};
     try{invokeNative();}catch(error){if(pendingEventLaunch===pending)pendingEventLaunch=null;throw error;}
   }
+  const eventCloudRequests=new Map(),eventCloudCache=new Map(),eventCloudRetryAt=new Map();
   async function eventCloudRead(path,collection,id){
+    const cached=eventCloudCache.get(path);
+    if(cached&&Date.now()<cached.until)return cached.value;
+    if(eventCloudRequests.has(path))return eventCloudRequests.get(path);
+    if(Date.now()<Number(eventCloudRetryAt.get(path)||0)){if(cached)return cached.value;throw Error('Event data retry paused; showing saved results');}
+    const request=loadEventCloudRead(path,collection,id).then(value=>{
+      const ttl=path==='/v1/events/catalog'?600000:60000;
+      eventCloudCache.set(path,{value,until:Date.now()+ttl});
+      if(eventCloudCache.size>128)eventCloudCache.delete(eventCloudCache.keys().next().value);
+      return value;
+    }).catch(error=>{noteFirebaseQuota(error);eventCloudRetryAt.set(path,Date.now()+5*60000);if(eventCloudRetryAt.size>256)eventCloudRetryAt.delete(eventCloudRetryAt.keys().next().value);if(cached)return cached.value;throw error;});
+    eventCloudRequests.set(path,request);
+    request.finally(()=>eventCloudRequests.delete(path)).catch(()=>{});
+    return request;
+  }
+  async function loadEventCloudRead(path,collection,id){
     if(rankedEdgeAvailable()){
       try{const response=await fetch(rankedBrokerUrl()+path,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
         if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Event service unavailable');
         if(!response.ok){const error=Error('Event service unavailable');error.serviceResponse=true;throw error;}
         return await response.json();
-      }catch(error){if(!error.serviceResponse)markRankedEdgeUnavailable(error.message);}
+      }catch(error){markRankedEdgeUnavailable(error.message);}
     }
     if(path==='/v1/events/catalog'){
       try{
-        const response=await fetch(new URL('./public-catalog.json',eventsModuleUrl),{cache:'no-store',signal:AbortSignal.timeout(5000)});
+        const response=await fetch(new URL('./public-catalog.json',eventsModuleUrl),{cache:'default',signal:AbortSignal.timeout(5000)});
         if(response.ok){const backup=await response.json();const at=Date.now();
           if(Array.isArray(backup.periods)&&Array.isArray(backup.archives)&&backup.periods.some(p=>p&&p.startsAt<=at&&at<p.endsAt&&['daily','weekly','kodub'].includes(p.kind)))return backup;
         }
       }catch{}
     }
+    const backup=await readPublicSnapshotBackup('event',id);
+    if(backup)return backup;
     const database=await db();const snapshot=await database.collection(collection).doc(id).get();
     if(!snapshot.exists)throw Error('Event data unavailable');return snapshot.data();
+  }
+  const eventReplayRequests=new Map();
+  async function readEventReplay(periodId,accountId,runId=null){
+    if(!/^[A-Za-z0-9_-]{1,64}$/.test(periodId)||!/^[a-f0-9]{64}$/.test(accountId)||runId!==null&&!/^[a-f0-9]{64}$/.test(runId))throw Error('Invalid replay identity');
+    const key=periodId+'_'+accountId+'_'+(runId||'verified');
+    if(eventReplayRequests.has(key))return eventReplayRequests.get(key);
+    const request=(async()=>{
+      if(rankedEdgeAvailable())try{
+        const response=await fetch(rankedBrokerUrl()+'/v1/events/'+encodeURIComponent(periodId)+(runId?'/playbacks/'+runId:'/replays/'+accountId),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+        if(!response.ok)throw Error('Event replay service unavailable');
+        if(Number(response.headers.get('content-length'))>70000)throw Error('Replay response too large');
+        const text=await response.text();if(text.length>70000)throw Error('Replay response too large');return JSON.parse(text);
+      }catch(error){markRankedEdgeUnavailable(error.message);}
+      const backup=runId===null?await readPublicSnapshotBackup('event-replay',periodId,accountId):null;
+      if(backup)return backup;
+      throw Error('Replay unavailable. This recording is not in the saved public backup; try again when the event service is reachable.');
+    })();
+    eventReplayRequests.set(key,request);request.finally(()=>eventReplayRequests.delete(key)).catch(()=>{});return request;
   }
   async function ensureEventUi(){
     if(eventUi)return eventUi;if(eventUiPromise)return eventUiPromise;
     eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
-      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:db,openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button)throw Error('Weekly track is unavailable');button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
+      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:async()=>{},openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button)throw Error('Weekly track is unavailable');button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
         filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
         readCatalog:()=>eventCloudRead('/v1/events/catalog','0.6.2_event_public','catalog'),
         readSnapshot:id=>eventCloudRead('/v1/events/'+encodeURIComponent(id)+'/snapshot','0.6.2_event_public',id),
-        readReplay:async(periodId,accountId,runId=null)=>{
-          if(!/^[A-Za-z0-9_-]{1,64}$/.test(periodId)||!/^[a-f0-9]{64}$/.test(accountId))throw Error('Invalid replay identity');
-          if(runId!==null&&!/^[a-f0-9]{64}$/.test(runId))throw Error('Invalid recording identity');
-          const response=await fetch(rankedBrokerUrl()+'/v1/events/'+encodeURIComponent(periodId)+(runId?'/playbacks/'+runId:'/replays/'+accountId),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
-          if(!response.ok)throw Error('Replay unavailable. Older event recordings may not have been retained.');
-          if(Number(response.headers.get('content-length'))>70000)throw Error('Replay response too large');
-          const text=await response.text();if(text.length>70000)throw Error('Replay response too large');return JSON.parse(text);
-        },
+        readReplay:readEventReplay,
         readArchivedTrack:async period=>{
           if(!/^[A-Za-z0-9_-]{1,64}$/.test(period.id)||Date.now()<period.endsAt)throw Error('Only closed event tracks can be imported.');
           const response=await fetch(rankedBrokerUrl()+'/v1/events/'+encodeURIComponent(period.id)+'/track',{signal:AbortSignal.timeout(8000)});
@@ -124,7 +153,7 @@
           if(!field)throw Error('Native track importer is unavailable.');
           field.value=code;field.dispatchEvent(new Event('input',{bubbles:true}));field.focus();
         },
-        readPermanent:async()=>{const response=await fetch(rankedBrokerUrl()+'/v1/events/permanent-rolling-hills/snapshot',{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error('Permanent event standings unavailable');return response.json();},
+        readPermanent:()=>eventCloudRead('/v1/events/permanent-rolling-hills/snapshot','0.6.2_event_public','permanent-rolling-hills'),
         readTotals:()=>eventCloudRead('/v1/events/totals','0.6.2_event_public','totals'),
         readArchiveMonth:async month=>{if(!/^\d{4}-\d{2}$/.test(month))throw Error('Invalid archive month');const database=await db();const result=await database.collection('0.6.2_event_public').doc('archive_'+month.replace('-','')).get();return result.exists?result.data():{periods:[]};},
         readOwnStatus:async(periodId,accountId)=>{if(!/^[a-f0-9]{64}$/.test(accountId))return null;const database=await db();const result=await database.collection('0.6.2_event_receipts').doc(periodId+'_'+accountId).get();return result.exists?result.data():null;},
@@ -1637,10 +1666,22 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       carStyle:__pt062NormalizeStyle(row.carStyle||getDefaultCarStyle())
     };
   }
+  const nativeRecordingMemory=new Map(),nativeRecordingRequests=new Map(),nativeRecordingRetryAt=new Map();
+  function rememberNativeRecording(id,row){
+    nativeRecordingMemory.delete(id);nativeRecordingMemory.set(id,row);
+    let bytes=0;for(const value of nativeRecordingMemory.values())bytes+=value.recording.length*2;
+    while(nativeRecordingMemory.size>64||bytes>8*1024*1024){const oldest=nativeRecordingMemory.keys().next().value;bytes-=nativeRecordingMemory.get(oldest).recording.length*2;nativeRecordingMemory.delete(oldest);}
+  }
   async function readNativeRecordings(ids){
+    const key=ids.join(',');
+    if(nativeRecordingRequests.has(key))return nativeRecordingRequests.get(key);
+    const request=loadNativeRecordings(ids);nativeRecordingRequests.set(key,request);
+    request.finally(()=>nativeRecordingRequests.delete(key)).catch(()=>{});return request;
+  }
+  async function loadNativeRecordings(ids){
     const fromLocal=readRecordingStore(ids);
-    const resolved=fromLocal.map(cachedNativeRecording);
-    const missingIds=ids.filter((_id,index)=>!resolved[index]);
+    const resolved=fromLocal.map((row,index)=>cachedNativeRecording(row)||nativeRecordingMemory.get(ids[index])||null);
+    const missingIds=ids.filter((id,index)=>!resolved[index]&&Date.now()>=Number(nativeRecordingRetryAt.get(id)||0));
     if(!missingIds.length)return resolved;
     try {
       const d=await db();
@@ -1658,8 +1699,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return ids.map((id,index)=>{
         if(resolved[index])return resolved[index];
         const row=cloudRows.get(id)||null;
-        if(!row||!String(row.replay||''))return null;
-        return {
+        if(!row||!String(row.replay||'')){nativeRecordingRetryAt.set(id,Date.now()+60000);if(nativeRecordingRetryAt.size>128)nativeRecordingRetryAt.delete(nativeRecordingRetryAt.keys().next().value);return null;}
+        const recording={
           recording:normalizeReplayPayloadString(String(row.replay||'')),
           verifiedState:row.runVerified===true?1:0,
           frames:safePositiveInt(row.frames||row.raceTimeFrames||canonicalRaceTimeMs(row)||1,1),
@@ -1667,8 +1708,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
           carId:cleanCarId(row.carId||'')||null,
           carStyle:__pt062NormalizeStyle(row.carStyle||getDefaultCarStyle())
         };
+        rememberNativeRecording(id,recording);return recording;
       });
     } catch (error) {
+      noteFirebaseQuota(error);
+      for(const id of missingIds)nativeRecordingRetryAt.set(id,Date.now()+60000);
+      while(nativeRecordingRetryAt.size>128)nativeRecordingRetryAt.delete(nativeRecordingRetryAt.keys().next().value);
       log('warn','[FB407] recordings lookup failed',String(error&&(error.message||error)));
       return resolved;
     }
@@ -1957,7 +2002,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const copy=document.createElement('span');copy.textContent='Cloud account mismatch. Your runs are saved on this device, but cannot upload under this sign-in. Use the original browser profile or ask support for recovery.';
     const close=document.createElement('button');close.type='button';close.textContent='Dismiss';close.style.cssText='margin-left:12px;min-height:36px';close.onclick=()=>notice.remove();notice.append(copy,close);document.body.appendChild(notice);
   }
+  const FIREBASE_QUOTA_PAUSE_KEY='polytrack-firebase-quota-pause-v1';
+  function firebaseQuotaPaused(){return Date.now()<Number(readJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,0)||0);}
+  function noteFirebaseQuota(error){
+    if(error?.code==='local-quota-cooldown')return;
+    if(!/resource-exhausted|quota|429/i.test(String(error?.code||'')+' '+String(error?.message||error)))return;
+    writeJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,Date.now()+15*60*1000);
+  }
   async function db(){
+    if(firebaseQuotaPaused()){const error=new Error('Firebase quota cooldown; runs remain saved on this device');error.code='local-quota-cooldown';throw error;}
     if (firestorePromise) return firestorePromise;
     if(Date.now()<firebaseRetryAt)throw new Error("Firebase reconnect cooling down");
     firestorePromise = (async ()=>{
@@ -3619,7 +3672,19 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   const trackCloudRetryAt=new Map();
+  const trackCloudCheckedAt=new Map();
+  const trackEntryRequests=new Map();
   async function getTrackEntries(trackId, limit=10, forceCloud=false){
+    const id=String(trackId||'').slice(0,80);
+    let request=trackEntryRequests.get(id);
+    if(!request){
+      request=loadTrackEntries(id,500,forceCloud);
+      trackEntryRequests.set(id,request);
+      request.finally(()=>{if(trackEntryRequests.get(id)===request)trackEntryRequests.delete(id);}).catch(()=>{});
+    }
+    return (await request).slice(0,limit);
+  }
+  async function loadTrackEntries(trackId, limit=10, forceCloud=false){
     let entries = [];
     const safeTrackId = String(trackId || '').slice(0,80);
     if(unrankedExtraTrackIds.has(safeTrackId)){
@@ -3631,17 +3696,20 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     currentTrackLoadState={trackId:safeTrackId,status:'loading',fetchedAt:Number(cached?.serverUpdatedAt||cached?.fetchedAt||0)||0,checkedAt:Number(cached?.fetchedAt||0)||0};
     document.documentElement.classList.add('sq-track-leaderboard-loading');
     setTimeout(updateTrackFreshnessBanner,0);
-    const cacheHit = !forceCloud && cached && (!trackCacheNeedsCanonicalRefresh(cached)||cached.source==='canonical-firestore') && Date.now()-Number(cached.fetchedAt||0) < TRACK_REFRESH_MS;
+    const refreshThrottled=Date.now()-Number(trackCloudCheckedAt.get(safeTrackId)||0)<60000;
+    const cacheHit = cached && (refreshThrottled || (!forceCloud && Date.now()-Number(cached.fetchedAt||0) < TRACK_REFRESH_MS));
     if (cacheHit) {
       entries = applyCanonicalTrackWeight(safeTrackId,cached.entries||[]).slice(0,500);
       currentTrackLoadState={trackId:safeTrackId,status:'cache',fetchedAt:cached.serverUpdatedAt||cached.fetchedAt,checkedAt:cached.fetchedAt,nextRefreshAt:cached.fetchedAt+TRACK_REFRESH_MS};
     }
     try {
-      if (!cacheHit || forceCloud) {
-        if(!forceCloud&&Date.now()<Number(trackCloudRetryAt.get(safeTrackId)||0))throw new Error('Track cloud retry cooldown');
+      if (!cacheHit) {
+        if(Date.now()<Number(trackCloudRetryAt.get(safeTrackId)||0)||refreshThrottled)throw new Error('Track cloud retry cooldown');
+        trackCloudCheckedAt.set(safeTrackId,Date.now());
+        if(trackCloudCheckedAt.size>512)trackCloudCheckedAt.delete(trackCloudCheckedAt.keys().next().value);
         let data=null;
         let source='edge';
-        try{data=await fetchRankedSnapshot('track',safeTrackId);}catch{}
+        try{data=await fetchRankedSnapshot('track',safeTrackId);if(data?._publicBackup)source='public-backup';}catch{}
         if(!data){
           let derivedSnapshot=null;
           try{
@@ -3652,21 +3720,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
             const usable=Boolean(candidate&&Array.isArray(candidate.entries)&&String(candidate.algorithmVersion||'')===RANK_MODEL&&Number(candidate.schemaVersion||0)>=TRACK_CACHE_SCHEMA);
             if(usable)derivedSnapshot={...candidate,fromCache:Boolean(doc.metadata?.fromCache)};
           }catch(snapshotError){
+            noteFirebaseQuota(snapshotError);
             log('warn','[FB420] Derived Firestore snapshot unavailable',String(snapshotError&&(snapshotError.message||snapshotError)));
           }
-          if(derivedSnapshot&&!forceCloud){
+          if(derivedSnapshot){
             data=derivedSnapshot;
             source='firestore-snapshot';
           }else{
-            try{
-              data=await fetchCanonicalTrackEntries(safeTrackId,500,derivedSnapshot?.entries||[]);
-              source='canonical-firestore';
-            }catch(canonicalError){
-              if(!derivedSnapshot)throw canonicalError;
-              data=derivedSnapshot;
-              source='firestore-snapshot';
-              log('warn','[FB421] Canonical PB recovery unavailable; using derived Firestore snapshot',String(canonicalError&&(canonicalError.message||canonicalError)));
-            }
+            // Menu reads must not download every canonical replay to rebuild a board.
+            throw new Error('Published track snapshot unavailable; showing saved results');
           }
         }
         const latest=readTrackSnapshotCache(safeTrackId);
@@ -3683,9 +3745,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(data.fromCache)throw new Error('Firestore returned saved data, not a cloud check');
         writeTrackSnapshotCache(safeTrackId,entries,data.updatedAt||Date.now(),{revision:data.revision,sourceRevision:data.sourceRevision,algorithmVersion:data.algorithmVersion,schemaVersion:data.schemaVersion,source,checkedAt:Date.now(),complete:data.complete,totalEntries:data.totalEntries});
         trackCloudRetryAt.delete(safeTrackId);
-        if(loadGeneration===trackLoadGeneration)currentTrackLoadState={trackId:safeTrackId,status:'cloud',fetchedAt:Number(data.updatedAt||0)||Date.now(),checkedAt:Date.now(),nextRefreshAt:Date.now()+TRACK_REFRESH_MS};
+        if(loadGeneration===trackLoadGeneration)currentTrackLoadState={trackId:safeTrackId,status:data._publicBackup?'stale':'cloud',fetchedAt:Number(data.updatedAt||0)||Date.now(),checkedAt:Date.now(),nextRefreshAt:Date.now()+TRACK_REFRESH_MS};
       }
     } catch (error) {
+      noteFirebaseQuota(error);
       if(error?.message!=='Track cloud retry cooldown'){
         trackCloudRetryAt.set(safeTrackId,Date.now()+60000);
         if(trackCloudRetryAt.size>256)trackCloudRetryAt.delete(trackCloudRetryAt.keys().next().value);
@@ -3953,24 +4016,33 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     });
   }
   let overallCloudRetryAt=0;
+  let overallCloudCheckedAt=0;
+  let overallEntryRequest=null;
   async function fetchOverallEntries(forceRefresh=false){
+    if(overallEntryRequest)return overallEntryRequest;
+    const request=loadOverallEntries(forceRefresh);overallEntryRequest=request;
+    request.finally(()=>{if(overallEntryRequest===request)overallEntryRequest=null;}).catch(()=>{});
+    return request;
+  }
+  async function loadOverallEntries(forceRefresh=false){
     let direct = [];
     const cached = readOverallSnapshotCache();
     overallTrackSummariesCache=Array.isArray(cached?.trackSummaries)?cached.trackSummaries.slice(0,TOTAL_TRACKS):[];
-    if (!forceRefresh && cached && Date.now()-Number(cached.fetchedAt||0) < OVERALL_REFRESH_CHECK_MS) {
+    if (cached && (Date.now()-overallCloudCheckedAt<60000 || (!forceRefresh && Date.now()-Number(cached.fetchedAt||0) < OVERALL_REFRESH_CHECK_MS))) {
       overallLoadState={status:'cache',message:'Saved ranked snapshot',fetchedAt:cached.serverUpdatedAt||cached.fetchedAt,serverUpdatedAt:cached.serverUpdatedAt||0,checkedAt:Number(cached.fetchedAt||0),nextRefreshAt:Number(cached.fetchedAt||0)+OVERALL_REFRESH_CHECK_MS,complete:cached.complete===true,totalEntries:cached.totalEntries,totalEntriesExact:cached.totalEntriesExact===true,publishedEntries:cached.publishedEntries,ranksExact:cached.ranksExact===true};
       return annotateOverallMovement(cached.entries,cached.signature);
     }
-    if(!forceRefresh&&Date.now()<overallCloudRetryAt){
+    if(Date.now()<overallCloudRetryAt || Date.now()-overallCloudCheckedAt<60000){
       overallLoadState={status:cached?.entries?.length?'stale':'error',message:'Cloud retry paused after a failed check',fetchedAt:cached?.serverUpdatedAt||cached?.fetchedAt||0,nextRefreshAt:overallCloudRetryAt};
       return cached?.entries?.length?annotateOverallMovement(cached.entries,cached.signature||'saved'):[];
     }
+    overallCloudCheckedAt=Date.now();
     overallLoadState = {status:'loading',message:'',fetchedAt:cached?.fetchedAt||0};
     try {
       let data=null;
       let source='edge';
       let fromFirestoreCache=false;
-      try{data=await fetchRankedSnapshot('overall');}catch(error){log('warn','[RANKED404] Edge overall snapshot unavailable; trying Firestore',String(error&&(error.message||error)));}
+      try{data=await fetchRankedSnapshot('overall');if(data?._publicBackup)source='public-backup';}catch(error){log('warn','[RANKED404] Edge overall snapshot unavailable; trying Firestore',String(error&&(error.message||error)));}
       if(!data){
         const d = await db();
         const snap = await d.collection(COLLECTIONS.leaderboardsOverall).doc('main').get();
@@ -3980,8 +4052,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       }
       if(data.resultBundleLocation==='main_results'&&!data.resultBundle){
         try{
-          const sidecar=await (await db()).collection(COLLECTIONS.leaderboardsOverall).doc('main_results').get();
-          const detail=sidecar.data()||{};
+          const backup=data._publicBackup?await readPublicSnapshotBackup('overall-results'):null;
+          const sidecar=backup?null:data._publicBackup?null:await (await db()).collection(COLLECTIONS.leaderboardsOverall).doc('main_results').get();
+          const detail=backup||sidecar?.data()||{};
           if(detail.algorithmVersion===data.algorithmVersion&&['sourceRevision','builtRevision','updatedAt'].every(key=>Number.isFinite(Number(data[key]))&&Number(detail[key])===Number(data[key])))data={...data,resultBundle:detail.resultBundle,resultBundleVersion:detail.resultBundleVersion};
         }catch{ /* The complete leaderboard remains usable without its optional planner payload. */ }
       }
@@ -4018,7 +4091,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         overallCloudRetryAt=0;
         overallTrackSummariesCache=Array.isArray(data.trackSummaries)?data.trackSummaries.slice(0,TOTAL_TRACKS):[];
         writeOverallSnapshotCache(direct,{serverUpdatedAt:updatedAt,revision,builtRevision,sourceRevision,algorithmVersion,schemaVersion,source,signature,trackSummaries:overallTrackSummariesCache,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact});
-        overallLoadState={status:'cloud',message:'Community Ranked snapshot',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:Date.now(),nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
+        overallLoadState={status:data._publicBackup?'stale':'cloud',message:data._publicBackup?'Published backup rankings':'Community Ranked snapshot',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:Date.now(),nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
         return annotateOverallMovement(direct,signature);
       }
       if(cached?.entries?.length){
@@ -4031,6 +4104,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return [];
     } catch (error) {
       overallCloudRetryAt=Date.now()+60000;
+      noteFirebaseQuota(error);
       if (isLocalApiCapableHost()) {
         try {
           const res = await fetch('/api/overall-leaderboard', { cache: 'no-store' });
@@ -4124,10 +4198,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return total?`<span class="overall-best-line muted">${total} eligible win${total===1?'':'s'} · details load as you race</span>`:'<span class="overall-best-line muted">No eligible first-place finishes</span>';
     }
     if(overallCategory==='average'||overallCategory==='competitiveAverage'||overallCategory==='podiumRate'){
-      const eligible=normalizedFinishSamples(entry).filter((finish)=>Number(finish.fieldSize||0)>=(overallCategory==='competitiveAverage'?5:2)&&(overallCategory!=='competitiveAverage'||trackInfo(finish.trackId).type!=='custom'));
+      const eligible=normalizedFinishSamples(entry).filter((finish)=>Number(finish.fieldSize||0)>=5&&(overallCategory!=='competitiveAverage'||trackInfo(finish.trackId).type!=='custom'));
       const best=eligible.slice().sort((a,b)=>Number(a.rank)-Number(b.rank)||Number(b.fieldSize)-Number(a.fieldSize)||(knownFinishWeight(b)||0)-(knownFinishWeight(a)||0))[0];
       const strongest=eligible.slice().sort((a,b)=>((100-rankedPlacementCost(b.rank,b.fieldSize))*(knownFinishWeight(b)||0))-((100-rankedPlacementCost(a.rank,a.fieldSize))*(knownFinishWeight(a)||0)))[0];
-      const savedWorst=Number(entry?.worstTrack?.fieldSize||0)>=2?entry.worstTrack:null;
+      const savedWorst=Number(entry?.worstTrack?.fieldSize||0)>=5?entry.worstTrack:null;
       const worst=savedWorst||eligible.sort((a,b)=>Number(b.placementCost||rankedPlacementCost(b.rank,b.fieldSize))-Number(a.placementCost||rankedPlacementCost(a.rank,a.fieldSize)))[0];
       const second=strongest?.trackId&&strongest.trackId!==best?.trackId?strongest:worst?.trackId&&worst.trackId!==best?.trackId?worst:null;
       return [best,second].filter(Boolean).map((finish,index)=>{const info=trackInfo(finish.trackId);const label=index?(finish.trackId===worst?.trackId?'Worst finish':'Strongest'):'Best finish';const weight=knownFinishWeight(finish);return `<span class="overall-best-line" data-track-id="${escapeHtml(finish.trackId)}"><b>${label}</b> #${finish.rank} of ${finish.fieldSize} · ${escapeHtml(info.name)} <em>${weight===null?'N/A':`${weight.toFixed(2)}x`}</em></span>`;}).join('')||'No ranked finishes yet';
@@ -4157,9 +4231,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return [official?`<span>${official} official</span>`:'',nonOfficial?`<span>${nonOfficial} ${nonOfficialLabel}</span>`:''].filter(Boolean).join('');
   }
   function bestTrackMarkup(entry){
-    const samples=normalizedFinishSamples(entry).filter((finish)=>Number(finish.rank||0)>0&&Number(finish.fieldSize||0)>=2);
+    const samples=normalizedFinishSamples(entry).filter((finish)=>Number(finish.rank||0)>0&&Number(finish.fieldSize||0)>=5);
     const ordered=samples.slice().sort((a,b)=>Number(a.rank)-Number(b.rank)||Number(b.fieldSize)-Number(a.fieldSize)||(knownFinishWeight(b)||0)-(knownFinishWeight(a)||0));
-    const best=ordered[0]||(Array.isArray(entry?.bestTracks)&&entry.bestTracks.length?entry.bestTracks[0]:{trackId:entry?.bestTrackId,rank:entry?.bestTrackRank,fieldSize:entry?.bestTrackField});
+    const fallback=Array.isArray(entry?.bestTracks)?entry.bestTracks.find(finish=>Number(finish.rank)>0&&Number(finish.fieldSize)>=5):null;
+    const best=ordered[0]||fallback||(Number(entry?.bestTrackField)>=5?{trackId:entry?.bestTrackId,rank:entry?.bestTrackRank,fieldSize:entry?.bestTrackField}:null);
     const strongest=samples.slice().sort((a,b)=>((100-rankedPlacementCost(b.rank,b.fieldSize))*(knownFinishWeight(b)||0))-((100-rankedPlacementCost(a.rank,a.fieldSize))*(knownFinishWeight(a)||0)))[0]||null;
     const line=(label,finish)=>{const info=trackInfo(finish.trackId);const field=Math.max(Number(finish.rank||0),Number(finish.fieldSize||0)||0);const weight=knownFinishWeight(finish);return `<span class="overall-best-line" data-track-id="${escapeHtml(finish.trackId)}" title="Open ${escapeHtml(info.name)}"><b>${label}</b> #${Number(finish.rank)} of ${field} · ${escapeHtml(info.name)} <em>${weight===null?'N/A':`${weight.toFixed(2)}x`}</em></span>`;};
     if(best?.trackId&&Number(best.rank)>0){
@@ -4167,7 +4242,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const second=strongest&&strongest.trackId!==best.trackId?line('Strongest',strongest):alternate?line('Next best',alternate):`<span class="overall-best-line muted">Only one ranked track in this profile</span>`;
       return line('Best',best)+second;
     }
-    return 'Complete a track to set a best finish';
+    return 'Best finish requires a field of at least 5 racers';
   }
 
   function countryFlagMarkup(countryCode){
@@ -4314,7 +4389,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=45',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=46',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4334,8 +4409,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=45',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=45',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=45',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=46',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=46',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=46',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -5292,7 +5367,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
     const snapshotFinishes=Array.from(detailByTrack.values());
     const rankedDetails=snapshotFinishes.filter((finish)=>Number(finish.rank||0)>0&&Number(finish.fieldSize||0)>=2);
-    const best=rankedDetails.slice().sort((a,b)=>Number(a.rank)-Number(b.rank)||Number(b.fieldSize)-Number(a.fieldSize)||(knownFinishWeight(b)||0)-(knownFinishWeight(a)||0))[0]||null;
+    const best=rankedDetails.filter(finish=>Number(finish.fieldSize)>=5).sort((a,b)=>Number(a.rank)-Number(b.rank)||Number(b.fieldSize)-Number(a.fieldSize)||(knownFinishWeight(b)||0)-(knownFinishWeight(a)||0))[0]||null;
     const weightedResults=rankedDetails.slice().map((finish)=>({...finish,contribution:Number(finish.contribution||0)||Math.max(0,(100-rankedPlacementCost(finish.rank,finish.fieldSize))*(knownFinishWeight(finish)||0))})).sort((a,b)=>Number(b.contribution)-Number(a.contribution)||Number(b.fieldSize)-Number(a.fieldSize));
     const opportunities=profileOpportunityCandidates(entry,cachedFinishes,isSelf);
     const selfDetailByTrack=new Map((self?normalizedFinishSamples(self):[]).filter((finish)=>finish?.trackId).map((finish)=>[finish.trackId,finish]));
@@ -5340,13 +5415,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const currentRankAge=currentRankSince?durationLabel(Date.now()-currentRankSince):'Pending';
     const racingAge=accountCreatedAt?durationLabel(Date.now()-accountCreatedAt):'Not available';
     const allSummaryFinishes=snapshotFinishes;
-    const bestPlace=allSummaryFinishes.filter((finish)=>Number(finish.rank||0)>0).sort((a,b)=>a.rank-b.rank||b.fieldSize-a.fieldSize)[0]||null;
+    const bestPlace=allSummaryFinishes.filter((finish)=>Number(finish.rank||0)>0&&Number(finish.fieldSize||0)>=5).sort((a,b)=>a.rank-b.rank||b.fieldSize-a.fieldSize)[0]||null;
     const largestField=allSummaryFinishes.reduce((largest,finish)=>Math.max(largest,Number(finish.fieldSize||0)||0),0);
     const averageFinish=Number(entry.averageFinish||0)>0?Number(entry.averageFinish).toFixed(2):'Not available';
     const podiumRate=Number(entry.podiumRate||0)>0?`${Number(entry.podiumRate).toFixed(1)}%`:'No eligible podiums';
     const pbCount=Number(entry.pbCount||0)>0?String(Number(entry.pbCount)):'Not available';
     const guideWasOpen=isElementVisible(popup)&&popup.dataset.profileUser===cleanUserId(userId)&&content.querySelector('.profile-guide')?.open===true;
     const guideHadFocus=content.querySelector('[data-planner-metric]')===document.activeElement?'[data-planner-metric]':content.querySelector('[data-planner-sort]')===document.activeElement?'[data-planner-sort]':null;
+    const focusedProfileSort=content.contains(document.activeElement)?document.activeElement?.getAttribute('data-profile-sort'):null;
     const guideToken={};content.__guideToken=guideToken;
     const metricAtStart=plannerMetric;
     const sortAtStart=plannerSort;
@@ -5395,6 +5471,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       content.prepend(actions);
     }
     openRankedDialog(popup,popup.querySelector('#overallProfileClose'));
+    if(focusedProfileSort)content.querySelector(`[data-profile-sort="${CSS.escape(focusedProfileSort)}"]`)?.focus({preventScroll:true});
     popup.dataset.profileUser=cleanUserId(userId);
     profileCard.scrollTop=profileScroll;
     hydrateOverallCarModels(content);
@@ -5526,9 +5603,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const pbNeedsCheck=Boolean(dirtyPb?.at)&&Date.now()-Number(dirtyPb.at)>=15000&&Number(dirtyPb.at)>Number(savedBeforeOpen?.fetchedAt||0)&&Date.now()>=overallCloudRetryAt;
     const shouldForceRefresh=forceRefresh||pbNeedsCheck;
     panel.style.display='flex';
-    // Cosmetic directory checks have their own cadence; a rankings refresh is
-    // not a reason to read the same public profiles again.
-    syncCosmeticDirectory(false);
+    // Published snapshots already contain server-approved designs. Opening a
+    // leaderboard must not crawl the public profile directory on every device.
     if(!rankedFreshnessTimer)rankedFreshnessTimer=setInterval(()=>{if(isElementVisible(panel)){updateRankedFreshness();updateRankDurationLabels(panel);}},15000);
     const dailyGrid=panel.querySelector('#overallDailyGrid');
     if(dailyGrid&&!alreadyVisible) dailyGrid.outerHTML=dailySpotlightMarkup();
@@ -5613,10 +5689,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }catch{return '';}
   }
 
+  let publicSnapshotReaderPromise=null;
+  async function readPublicSnapshotBackup(kind,id='',accountId=''){
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs').then(module=>module.createPublicSnapshotReader({baseUrl:new URL('./public-snapshots/',window.location.href)})).catch(error=>{publicSnapshotReaderPromise=null;throw error;});
+    try{return await (await publicSnapshotReaderPromise)(kind,id,accountId);}catch{return null;}
+  }
   async function fetchRankedSnapshot(kind,trackId=''){
     const endpoint=rankedBrokerUrl();
-    if(!endpoint)return null;
-    if(!rankedEdgeAvailable())return null;
+    if(!endpoint||!rankedEdgeAvailable())return readPublicSnapshotBackup(kind,trackId);
     const path=kind==='overall'?'/v1/snapshot/overall':`/v1/snapshot/track?trackId=${encodeURIComponent(String(trackId||'').slice(0,80))}`;
     try{
       const response=await withTimeout(fetch(`${endpoint}${path}`,{
@@ -5625,7 +5705,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         credentials:'omit',
         referrerPolicy:'no-referrer'
       }),5000,'Ranked snapshot timed out');
-      if(response.status===404)return null;
+      if(response.status===404)return readPublicSnapshotBackup(kind,trackId);
       const contentType=String(response.headers.get('Content-Type')||'').toLowerCase();
       if(!response.ok)throw new Error(`Ranked snapshot failed (${response.status})`);
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
@@ -5634,7 +5714,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       return payload&&typeof payload==='object'?payload:null;
     }catch(error){
       markRankedEdgeUnavailable(String(error&&(error.message||error)));
-      throw error;
+      return readPublicSnapshotBackup(kind,trackId);
     }
   }
 
@@ -6240,7 +6320,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         tx.set(ref,{...raceRow,ingestedAt:window.firebase.firestore.FieldValue.serverTimestamp()},{merge:false});
         tx.set(profileRef,{accountId,ownerUid,name,nickname:name,countryCode,carStyle,isVerifier:false,pbCount:nextPbCount,totalPlaytimeMs:raceRow.totalPlaytimeMs,accountCreatedAt:raceRow.accountCreatedAt,latestPbAt:Math.max(Number(profile.latestPbAt||0),createdAt),updatedAt:Date.now()},{merge:true});
         saved = true;
-      });
+      },{maxAttempts:1});
       // A receipt is written only after Firebase has committed or confirmed this exact PB.
       rememberConfirmedLocalPb(accountId,savedRow);
       const resolvedUploadId = safeRecordingId(savedRow.uploadId) || uploadId;
@@ -6300,6 +6380,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
     } catch (error) {
       const localPb=!priorLocal || timeMs<Number(priorLocal.timeMs||Infinity);
+      noteFirebaseQuota(error);
       if (!dailyRecorded) recordDailyActivity(trackId,timeMs,localPb,localPb&&priorLocal?Math.max(0,Number(priorLocal.timeMs||0)-timeMs):0);
       addLocalRaceRow(raceRow);
       writeRecordingStore(uploadId,{recording:replayData,frames,verifiedState:0,carStyle});
@@ -6309,7 +6390,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       log('error','[FB499] Race mirror failed; cached locally',{error:String(error&&(error.message||error)),trackId,accountId});
       const permissionBlocked=/permission|insufficient/i.test(String(error&&(error.message||error)));
       if(error?.code==='account-session-conflict')showCloudOwnerConflict();
-      else scheduleLocalPbCloudReconcile(accountId,permissionBlocked?600000:15000);
+      else scheduleLocalPbCloudReconcile(accountId,permissionBlocked?600000:firebaseQuotaPaused()?15*60*1000:60000);
       return {accountId,trackId,uploadId,timeMs,frames,name,carStyle,saved:false,localSaved:true};
     }
   }
@@ -6354,6 +6435,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(!safeId||!localRows.length)return {checked:0,uploaded:0,repaired:0};
     const fingerprint=localRows.map((row)=>`${row.trackId}:${canonicalRaceTimeMs(row)}:${String(row.replayHash||'').slice(0,16)}`).join('|');
     const state=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
+    if(firebaseQuotaPaused()||Date.now()<Number(state[safeId]?.retryAt||0))return {checked:0,uploaded:0,repaired:0,deferred:true};
     if(state[safeId]?.fingerprint===fingerprint)return {checked:localRows.length,uploaded:0,repaired:0,cached:true};
     localRows=localRows.filter(row=>state[safeId]?.confirmed?.[row.trackId]!==localPbSyncSignature(row));
     if(!localRows.length)return {checked:0,uploaded:0,repaired:0,cached:true};
@@ -6414,7 +6496,21 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       log('info','[SYNC299] Saved local PB reconciliation complete',{accountId:safeId,checked:localRows.length,uploaded,repaired,adopted,failed});
       return {checked:localRows.length,uploaded,repaired,adopted,failed};
     })();
-    try{return await localPbReconcilePromise;}
+    try{
+      const result=await localPbReconcilePromise;
+      if(result.failed){
+        const latest=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
+        latest[safeId]={...(latest[safeId]||{}),retryAt:Date.now()+5*60*1000};
+        writeJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,latest);
+      }
+      return result;
+    }catch(error){
+      noteFirebaseQuota(error);
+      const latest=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
+      latest[safeId]={...(latest[safeId]||{}),retryAt:Date.now()+(firebaseQuotaPaused()?15:5)*60*1000};
+      writeJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,latest);
+      throw error;
+    }
     finally{localPbReconcilePromise=null;}
   }
 
@@ -7360,7 +7456,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=45',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:45,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=46',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:46,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

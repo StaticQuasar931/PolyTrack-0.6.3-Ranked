@@ -21,7 +21,7 @@ function extract(name){
 function harness(localRows){
   let dbCalls=0;
   const context={
-    Map,Promise,
+    Map,Promise,nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),rememberNativeRecording:()=>{},noteFirebaseQuota:()=>{},
     readRecordingStore:ids=>ids.map(id=>localRows.get(id)||null),
     normalizeReplayPayloadString:value=>String(value),
     safePositiveInt:(value,fallback)=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):fallback,
@@ -36,8 +36,8 @@ function harness(localRows){
     db:async()=>{dbCalls++;throw Error('offline');}
   };
   vm.createContext(context);
-  vm.runInContext(extract('cachedNativeRecording')+'\n'+extract('readNativeRecordings'),context);
-  return {read:context.readNativeRecordings,dbCalls:()=>dbCalls};
+  vm.runInContext(extract('cachedNativeRecording')+'\n'+extract('loadNativeRecordings')+'\n'+extract('readNativeRecordings'),context);
+  return {read:context.readNativeRecordings,dbCalls:()=>dbCalls,context};
 }
 
 test('all cached native recordings bypass an unavailable database',async()=>{
@@ -53,4 +53,16 @@ test('mixed offline recording batches preserve cached rows and leave only misses
   assert.equal(fixture.dbCalls(),1);
   assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{recording:'cached',frames:123,verifiedState:0,carStyle:'style'},null]);
   assert.equal(rows[0].verifiedState,0);
+});
+
+test('repeated unavailable recording clicks do not repeat the failed database lookup',async()=>{
+  const fixture=harness(new Map());await fixture.read([8]);await fixture.read([8]);
+  assert.equal(fixture.dbCalls(),1);
+});
+
+test('downloaded native replay is reused without another cloud query',async()=>{
+  const fixture=harness(new Map()),ctx=fixture.context;let reads=0;
+  ctx.db=async()=>({collection:()=>({where:()=>({get:async()=>{reads++;return {docs:[{data:()=>({uploadId:8,replay:'recording',timeMs:100,frames:100})}]};}})})});
+  ctx.rememberNativeRecording=(id,row)=>ctx.nativeRecordingMemory.set(id,row);
+  const first=await fixture.read([8]);await fixture.read([8]);assert.equal(reads,1);assert.equal(first[0].recording,'recording');
 });

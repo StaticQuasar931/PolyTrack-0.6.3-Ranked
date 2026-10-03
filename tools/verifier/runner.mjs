@@ -126,12 +126,43 @@ export async function publishResults(db, jobs, results) {
       const slots = {...queue.data.slots, [job.accountId]: {...completedSlot(
         {...priorSlot, key: publishedKey}, publication),
         ...(unconfirmed ? {nativeReason: String(result.reason || '').slice(0, 100)} : {})}};
+      let pendingResultIds = Object.fromEntries(Object.entries(state?.data?.pendingResultIds || {})
+        .filter(([trackId, ids]) => /^[A-Za-z0-9_-]{1,80}$/.test(trackId) && Array.isArray(ids) && ids.length)
+        .map(([trackId, ids]) => [trackId, [...new Set(ids.filter(id => typeof id === 'string' && /^[A-Za-z0-9_.:-]{1,128}_[A-Za-z0-9_-]{1,80}$/.test(id)))]]));
+      let pendingTrackIds = [...new Set([...(state?.data?.pendingTrackIds || []), job.trackId])];
+      let pendingFullRebuildTrackIds = [...new Set((state?.data?.pendingFullRebuildTrackIds || [])
+        .filter(trackId => typeof trackId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(trackId)))];
+      let forceFullRebuildAll = state?.data?.forceFullRebuildAll === true;
+      let pendingCount = Object.values(pendingResultIds).reduce((count, ids) => count + ids.length, 0);
+      if (pendingCount > 200) {
+        pendingTrackIds = [...new Set([...pendingTrackIds, ...Object.keys(pendingResultIds)])];
+        pendingFullRebuildTrackIds = [...new Set([...pendingFullRebuildTrackIds, ...Object.keys(pendingResultIds)])];
+        pendingResultIds = {};
+        pendingCount = 0;
+      }
+      if (forceFullRebuildAll || pendingFullRebuildTrackIds.includes(job.trackId)) {
+        delete pendingResultIds[job.trackId];
+      } else if (pendingCount < 200) {
+        const ids = pendingResultIds[job.trackId] || [];
+        if (!ids.includes(job.resultId)) ids.push(job.resultId);
+        pendingResultIds[job.trackId] = ids;
+      } else {
+        // Keep this track queued, but force the worker down its bounded full-rebuild fallback.
+        delete pendingResultIds[job.trackId];
+        pendingFullRebuildTrackIds.push(job.trackId);
+      }
+      pendingTrackIds = [...new Set([...pendingTrackIds, ...pendingFullRebuildTrackIds])];
+      if (pendingFullRebuildTrackIds.length > 200) {
+        forceFullRebuildAll = true;
+        pendingFullRebuildTrackIds = [];
+        pendingResultIds = {};
+      }
       const auditId = crypto.createHash('sha256').update(publishedKey).digest('hex');
       const audit = await db.get('0.6.2_s1_verification_audit', auditId);
       const writes = [
         db.write(queueCollection, job.trackId, {...queue.data, ...queueState(slots)}, queue),
         db.write('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2', {...state?.data,
-          pendingTrackIds: [...new Set([...(state?.data?.pendingTrackIds || []), job.trackId])]}, state),
+          pendingTrackIds, pendingResultIds, pendingFullRebuildTrackIds, forceFullRebuildAll}, state),
         db.write('0.6.2_s1_verification_audit', auditId, {resultId: job.resultId,
           accountId: job.accountId, trackId: job.trackId, key: publishedKey, ...slots[job.accountId],
           ...(correct ? {correctedFromKey: job.queueKey, correctedFromTimeMs: current.data.timeMs, correctedTimeMs: frames} : {})}, audit)

@@ -308,7 +308,7 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null;
-  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
+  let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),replayFailures=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
   const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
   function validCachedCarStyle(style){
     if(validatedCarStyles.has(style))return validatedCarStyles.get(style);
@@ -397,32 +397,49 @@ export function installEvents(bridge){
   }
   async function selectReplay(period,row,{silent=false}={}){
     const session=sessions.current(),viewer=bridge.accountId();if(!session||session.periodId!==period.id||typeof bridge.readReplay!=='function')return;
+    const pendingSelection=pendingGhosts.get(row.accountId);
+    if(pendingSelection?.periodId===period.id&&pendingSelection.accountId===viewer&&pendingSelection.targetTimeMs===row.timeMs&&pendingSelection.targetPending===!!row.pending&&pendingSelection.targetRunId===(row.runId||null)){
+      ++topSelectionToken;++replayRequest;pendingGhosts.delete(row.accountId);if(!silent)message('Event ghost selection cancelled.');tick();return false;
+    }
     const previous=selectedGhosts.get(row.accountId);
     if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
-      ++replayRequest;selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
+      ++topSelectionToken;++replayRequest;pendingGhosts.clear();selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
     }
-    const token=++replayRequest;if(!silent)message('Loading event replay...');
+    ++topSelectionToken;const token=++replayRequest;pendingGhosts.clear();const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
+    const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified'),failureKey=key+'_'+viewer;
     try{
-      const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
+      const failure=replayFailure(failureKey);if(failure)throw Error(failure);
       let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId,row.pending?row.runId:null);
-      if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
+      if(token!==replayRequest||pendingGhosts.get(row.accountId)!==pending)return;
+      if(sessions.current()!==session||bridge.accountId()!==viewer){pendingGhosts.delete(row.accountId);tick();return;}
       const ghostKey=key+'_'+viewer;
       let ghost=preparedGhosts.get(ghostKey);
-      if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>8)preparedGhosts.delete(preparedGhosts.keys().next().value);}
-      if(token!==replayRequest||sessions.current()!==session||bridge.accountId()!==viewer)return;
-      if(replayCache.size>=8)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
+      if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
+      if(token!==replayRequest||pendingGhosts.get(row.accountId)!==pending)return;
+      if(sessions.current()!==session||bridge.accountId()!==viewer){pendingGhosts.delete(row.accountId);tick();return;}
+      replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
       selectedGhost={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
-      selectedGhosts.set(row.accountId,selectedGhost);
+      selectedGhosts.set(row.accountId,selectedGhost);pendingGhosts.delete(row.accountId);
       if(!silent){message('Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');tick();}
       return true;
-    }catch(error){if(!silent&&token===replayRequest&&sessions.current()===session&&bridge.accountId()===viewer)message(error.message||'Event replay unavailable.');return false;}
+    }catch(error){if(token===replayRequest&&pendingGhosts.get(row.accountId)===pending){rememberReplayFailure(failureKey,error);pendingGhosts.delete(row.accountId);if(!silent&&sessions.current()===session&&bridge.accountId()===viewer){message(error.message||'Event replay unavailable.');tick();}}return false;}
   }
-  function clearEventGhostSelection(periodId,accountId){
+  function clearEventGhostSelection(periodId,accountId,{render=true}={}){
     ++topSelectionToken;++replayRequest;
     for(const [id,row] of selectedGhosts)if(row.periodId===periodId&&row.accountId===accountId)selectedGhosts.delete(id);
+    for(const [id,row] of pendingGhosts)if(row.periodId===periodId&&row.accountId===accountId)pendingGhosts.delete(id);
     selectedGhost=[...selectedGhosts.values()].at(-1)||null;
-    tick();
+    if(render)tick();
+  }
+  function replayFailure(key){
+    const failure=replayFailures.get(key);if(!failure)return null;
+    if(failure.until>now())return failure.message;
+    replayFailures.delete(key);return null;
+  }
+  function rememberReplayFailure(key,error){
+    replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+5*60*1000});
+    if(replayFailures.size>32)replayFailures.delete(replayFailures.keys().next().value);
   }
   async function selectEventRows(first,last,fromTop=false){
     const view=nativeView,session=sessions.current(),accountId=bridge.accountId();
@@ -432,18 +449,40 @@ export function installEvents(bridge){
     const chosen=eventDisplayRows(period).rows.slice(offset+first-1,offset+last).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
     const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
+    const pendingActive=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId),groupToken=pendingActive[0]?.groupToken;
+    const pendingSame=chosen.length>0&&Number.isSafeInteger(groupToken)&&pendingActive.length===chosen.length&&chosen.every(row=>{const pending=pendingGhosts.get(row.accountId);return pending?.groupToken===groupToken&&pending.targetTimeMs===row.timeMs&&pending.targetRunId===(row.runId||null)&&pending.targetPending===!!row.pending;});
     if(fromTop)view.page=0;
-    clearEventGhostSelection(period.id,accountId);
-    if(same){message('Event ghosts unselected.');return;}
-    const token=++topSelectionToken;
+    clearEventGhostSelection(period.id,accountId,{render:false});
+    if(same||pendingSame){message('Event ghosts unselected.');tick();return;}
+    if(!chosen.length){message('No playable replays in these places.');tick();return;}
+    const token=++topSelectionToken,requestToken=++replayRequest;
+    for(const row of chosen)pendingGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,groupToken:token});
     message(`Loading up to ${chosen.length} event replays...`);
-    let ready=0;
-    for(const row of chosen){
-      if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
-      if(await selectReplay(period,row,{silent:true}))ready++;
+    tick();
+    const prepared=await Promise.all(chosen.map(async row=>{
+      const pending=pendingGhosts.get(row.accountId);
+      try{
+        const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
+        const failureKey=key+'_'+accountId,failure=replayFailure(failureKey);if(failure)throw Error(failure);
+        let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId,row.pending?row.runId:null);
+        if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||sessions.current()!==session||bridge.accountId()!==accountId)return null;
+        const ghostKey=key+'_'+accountId;let ghost=preparedGhosts.get(ghostKey);
+        if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer:accountId});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
+        if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||sessions.current()!==session||bridge.accountId()!==accountId)return null;
+        replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
+        return {row,ghost};
+      }catch(error){if(token===topSelectionToken&&requestToken===replayRequest&&pendingGhosts.get(row.accountId)===pending)rememberReplayFailure(period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+accountId,error);return null;}
+    }));
+    if(token!==topSelectionToken||requestToken!==replayRequest)return;
+    if(sessions.current()!==session||bridge.accountId()!==accountId){for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);tick();return;}
+    const ready=prepared.filter(Boolean);
+    for(const {row,ghost} of ready){
+      const selection={periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
+      if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
+      selectedGhosts.set(row.accountId,selection);selectedGhost=selection;
     }
-    if(token!==topSelectionToken||sessions.current()!==session||bridge.accountId()!==accountId)return;
-    message(chosen.length?`${ready} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. Play to race them.`:'No playable replays in these places.');
+    for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);
+    message(chosen.length?`${ready.length} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. Play to race them.`:'No playable replays in these places.');
     tick();
   }
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
@@ -466,12 +505,14 @@ export function installEvents(bridge){
   }
   function watchEvent(){
     const session=sessions.current();if(!session||session.accountId!==bridge.accountId())return;
+    if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
     const {ownGhost,opponents}=raceGhosts(session),ghosts=[...(ownGhost?[ownGhost]:[]),...opponents];
     if(!ghosts.length){message('Select an event replay first, or set a local event PB.');return;}
     try{bridge.watchEvent?.(session,ghosts);}catch(error){message(error.message||'Event replay could not open.');}
   }
   async function playEvent(){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;
+    if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before playing.');return;}
     if(typeof bridge.startEventRace!=='function'){message('Event Play is unavailable: safe event race launch is not connected. Normal PB ghosts will not be used.');return;}
     const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session);
     const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
@@ -579,7 +620,8 @@ export function installEvents(bridge){
     if(quickBoard&&view.signature){
       const quickLocal=localBest(period),quickReceipt=ownReceipts.get(period.id+'_'+accountId);
       const selection=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetRunId,row.targetTimeMs,row.targetPending]);
-      const quickSignature=JSON.stringify([bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,Math.floor(now()/120000),selection]);
+      const pendingSelection=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetRunId,row.targetTimeMs,row.targetPending,row.groupToken||0]);
+      const quickSignature=JSON.stringify([bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,Math.floor(now()/120000),selection,pendingSelection]);
       if(quickSignature===view.quickSignature)return;
       view.quickSignature=quickSignature;
     }
@@ -597,13 +639,17 @@ export function installEvents(bridge){
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle])]);
+    const pendingSignature=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetTimeMs,row.targetPending,row.targetRunId,row.groupToken||0]);
+    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle]),pendingSignature]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
-        const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===Number(button.dataset.eventTime)&&selectedRow.targetRunId===(button.dataset.eventRunId||null)&&selectedRow.targetPending===(button.dataset.eventPending==='true');
-        button.classList.toggle('selected',selected);
-        if(button.getAttribute('aria-pressed')!==String(selected))button.setAttribute('aria-pressed',String(selected));
+        const matches=row=>row?.periodId===period.id&&row.accountId===accountId&&row.targetTimeMs===Number(button.dataset.eventTime)&&row.targetRunId===(button.dataset.eventRunId||null)&&row.targetPending===(button.dataset.eventPending==='true');
+        const pending=matches(pendingGhosts.get(button.dataset.eventAccountId)),selected=matches(selectedRow);
+        if(button.classList.contains('selected')!==(selected||pending))button.classList.toggle('selected',selected||pending);
+        if(button.classList.contains('pending-selection')!==pending)button.classList.toggle('pending-selection',pending);
+        if(button.getAttribute('aria-pressed')!==String(selected||pending))button.setAttribute('aria-pressed',String(selected||pending));
+        if(button.getAttribute('aria-busy')!==String(pending))button.setAttribute('aria-busy',String(pending));
       }
       const status=view.board.querySelector('.sq-event-inline-status');
       if(status&&status.textContent!==statusDescription)status.textContent=statusDescription;
@@ -616,10 +662,10 @@ export function installEvents(bridge){
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
      const container=view.board.querySelector('.container');view.carObserver?.disconnect();view.deferredCarRows.clear();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
-      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>{++topSelectionToken;void selectReplay(period,row);};
-      const selectedRow=selectedGhosts.get(row.accountId);const selected=selectedRow?.periodId===period.id&&selectedRow.accountId===accountId&&selectedRow.targetTimeMs===row.timeMs&&selectedRow.targetRunId===(row.runId||null)&&selectedRow.targetPending===!!row.pending;
-      button.classList.toggle('selected',!!selected);button.setAttribute('aria-pressed',String(!!selected));
-      button.title=row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
+      const button=document.createElement('button');button.type='button';button.className='button main'+(row.accountId===accountId?' self':'');button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
+      const selectedRow=selectedGhosts.get(row.accountId),pendingRow=pendingGhosts.get(row.accountId),matches=target=>target?.periodId===period.id&&target.accountId===accountId&&target.targetTimeMs===row.timeMs&&target.targetRunId===(row.runId||null)&&target.targetPending===!!row.pending,selected=matches(selectedRow),pending=matches(pendingRow);
+      button.classList.toggle('selected',!!(selected||pending));button.classList.toggle('pending-selection',!!pending);button.setAttribute('aria-pressed',String(!!(selected||pending)));button.setAttribute('aria-busy',String(!!pending));
+      button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.innerHTML='<div class="image-container"><img class="show" src="images/car_thumbnail_placeholder.png"><img class="checkmark" src="images/state_verified.svg" alt=""></div><div class="left"><p class="position"></p><p class="event-time"></p></div><div class="right"><div class="name-container"><span class="name"></span></div><p class="verified-state"></p></div>';
       const position=button.querySelector('.position'),ordinal=eventOrdinal(row.rank);position.append(document.createTextNode(Number.isSafeInteger(row.rank)?String(row.rank):'--'));if(ordinal){const suffix=document.createElement('span');suffix.className='sq-event-ordinal-suffix';suffix.textContent=ordinal.slice(String(row.rank).length);position.append(suffix);}button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
@@ -703,7 +749,7 @@ export function installEvents(bridge){
       if(permanentNote.textContent!==text)permanentNote.textContent=text;
       permanentNote.title='Both rewards use your normal physics-verified personal best. Event RP follows the fastest verified Rolling Hills time; repeated runs do not stack.';
     }
-    if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='All results';button.setAttribute('aria-label','Browse events and past results');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
+    if(group&&!group.querySelector('.sq-events-entry')){const button=document.createElement('button');button.type='button';button.className='button sq-events-entry';button.textContent='Event standings';button.setAttribute('aria-label','Event standings');button.addEventListener('click',e=>{e.stopPropagation();void open();});group.append(button);}
     if(group&&activePeriods().length){
       let row=group.querySelector('.sq-event-track-buttons');if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}if(!row.dataset.bound){row.dataset.bound='true';row.addEventListener('click',e=>{const button=e.target.closest('[data-event-id]');if(button){e.stopPropagation();const p=activePeriods().find(p=>p.id===button.dataset.eventId);if(p)void race(p,{direct:true});}});}
       const featured=activePeriods().filter(p=>['weekly','daily'].includes(p.kind)).sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind));const signature=JSON.stringify(featured.map(p=>[p.id,p.trackId,p.endsAt,p.maxRp,recordMarkup(p),bridge.accountId()]));if(row.dataset.periods!==signature){row.dataset.periods=signature;row.innerHTML=cards(featured);
@@ -728,6 +774,7 @@ export function installEvents(bridge){
     if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey||!nativeView?.board?.getClientRects().length||dialog||document.querySelector('.sq-extra-overlay:not([hidden])'))return;
     const target=event.target;
     if(['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable)return;
+    if((event.key==='Enter'||event.key===' ')&&target?.closest?.('button,a[href],[role="button"]'))return;
     const board=nativeView.board,rows=[...board.querySelectorAll(':scope > .container > button.main')];
     if(eventDigitBoard!==board){eventDigitBoard=board;eventDigitsHeld.clear();eventDigitsConsumed.clear();eventTopPrefixUntil=0;eventTopHeld=false;}
     const pages=[...board.querySelectorAll(':scope > .pages > button.page')];

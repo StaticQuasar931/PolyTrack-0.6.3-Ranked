@@ -53,6 +53,18 @@ function forumActivity(entry) {
   return likes === null && replies === null ? null : Math.max(0, (likes || 0) - (dislikes || 0)) * 2 + (replies || 0);
 }
 
+function searchWords(value) {
+  return new Set(value.match(/[\p{L}\p{N}]+/gu) || []);
+}
+
+function searchRelevance(record, query, tokens) {
+  if (record.searchName === query) return 0;
+  if (record.searchName.startsWith(query)) return 1;
+  if (tokens.length && tokens.every(token => record.searchNameWords.has(token))) return 2;
+  if (tokens.length && tokens.every(token => record.searchableWords.has(token))) return 3;
+  return 4;
+}
+
 export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
@@ -535,14 +547,22 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       remove.setAttribute('aria-label', `Remove ${tag.replaceAll('-', ' ')} style`);
       selectedTags.append(remove);
     }
-    const query = state.search.toLocaleLowerCase();
+    const query = state.search.toLowerCase();
+    const queryTokens = [...searchWords(query)];
     if (!cachedRecords) cachedRecords = all.map(entry => {
       let best = null, loaded = false, rating = null, favorite = false;
       try { best = personalBest(typeof getPersonalBest === 'function' ? getPersonalBest(entry) : null); } catch { /* A missing PB must not break the catalog. */ }
       try { loaded = typeof isLoaded === 'function' && Boolean(isLoaded(entry)); } catch { /* Local imports are optional. */ }
       try { rating = typeof getLocalRating === 'function' ? Number(getLocalRating(entry)) : null; } catch { /* Local ratings are optional. */ }
       try { favorite = getFeedback?.(entry)?.favorite === true; } catch { /* Device storage is optional. */ }
-      return { entry, best, loaded, favorite, rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null };
+      const searchName = text(entry.name, 'Untitled track').toLowerCase();
+      const searchable = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...(Array.isArray(entry.tags) ? entry.tags : [])]
+        .map(value => text(value).toLowerCase()).join(' ');
+      return {
+        entry, best, loaded, favorite,
+        rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null,
+        searchName, searchNameWords: searchWords(searchName), searchable, searchableWords: searchWords(searchable)
+      };
     });
     const compare = (a, b) => nameCollator.compare(text(a), text(b));
     if (!sortedRecordsCache || sortedRecordsCache.records !== cachedRecords || sortedRecordsCache.sort !== state.sort) {
@@ -581,17 +601,22 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     filterCount(completionField, progressCounts.get(state.completion) || 0);
     const selectedProgress = [...completionField.select.children].find(option => option.value === state.completion);
     if (selectedProgress) selectedProgress.textContent = state.completion === 'all' ? 'All tracks' : state.completion === 'completed' ? 'Completed' : state.completion === 'loaded' ? 'Imported, not completed' : 'Not completed';
-    const records = sortedRecordsCache.ordered.filter(({ entry, best, loaded, favorite }) => {
+    let records = sortedRecordsCache.ordered.filter(({ entry, best, loaded, favorite, searchable, searchableWords }) => {
       const entryTags = Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)) : [];
-      const searchable = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...entryTags].map(value => text(value).toLocaleLowerCase()).join(' ');
+      const matchesSearch = !query || searchable.includes(query) || queryTokens.length > 0 && queryTokens.every(token => searchableWords.has(token));
       // A curator can mark a track by tier or by the curated tag.
       const isCurated = text(entry.tier).toLocaleLowerCase() === 'curated' || entryTags.some(tag => tag.toLocaleLowerCase() === 'curated');
-      return (!query || searchable.includes(query)) && (!state.source || entry.source === state.source) && (!state.favorites || favorite) &&
+      return matchesSearch && (!state.source || entry.source === state.source) && (!state.favorites || favorite) &&
         state.tags.every(tag => entryTags.includes(tag)) && (!state.curated || isCurated) &&
         (!state.difficulty || difficulty(entry) === Number(state.difficulty)) &&
         (state.completion === 'all' || state.completion === 'completed' && best !== null ||
           state.completion === 'uncompleted' && best === null || state.completion === 'loaded' && loaded && best === null);
     });
+    if (query) {
+      records = records.map((record, index) => ({ record, index, relevance: searchRelevance(record, query, queryTokens) }))
+        .sort((a, b) => a.relevance - b.relevance || a.index - b.index)
+        .map(({ record }) => record);
+    }
     const pages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
     page = Math.min(page, pages);
     count.textContent = `${records.length} of ${all.length} tracks`;

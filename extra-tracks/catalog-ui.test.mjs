@@ -175,6 +175,31 @@ test('search, source, tag, curated and completion filters combine and refresh re
   assert.equal(cls(root, 'sq-extra-count')[0].textContent, '2 of 4 tracks');
 });
 
+test('search ranks exact titles, prefixes, token matches and generic substrings while preserving selected-sort ties', () => {
+  const entries = [
+    entry(1, { name: 'Saturn Ring', author: 'a' }),
+    entry(2, { name: 'The Great Turn', author: 'c' }),
+    entry(3, { name: 'Turn Right', author: 'z' }),
+    entry(4, { name: 'turn', author: 'd' }),
+    entry(5, { name: 'Turn Ahead', author: 'a' }),
+    entry(6, { name: 'Turn from Saturn', author: 'b' })
+  ];
+  const { root, api } = fixture(entries);
+  api.open();
+  const fields = cls(root, 'sq-extra-field');
+  const search = tag(fields[0], 'input')[0];
+  const sort = tag(fields[5], 'select')[0];
+  sort.value = 'author'; sort.dispatch('change');
+  search.value = 'TURN'; search.dispatch('input');
+  const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
+  assert.deepEqual(names(), ['turn', 'Turn Ahead', 'Turn from Saturn', 'Turn Right', 'The Great Turn', 'Saturn Ring']);
+
+  search.value = ''; search.dispatch('input');
+  assert.deepEqual(names(), ['Saturn Ring', 'Turn Ahead', 'Turn from Saturn', 'The Great Turn', 'turn', 'Turn Right']);
+  assert.equal(sort.value, 'author', 'clearing search keeps the selected sort');
+  api.destroy();
+});
+
 test('difficulty and imported-only progress filter independently of style tags', () => {
   const entries = [entry(1, { difficulty: 2, tags: ['speed'] }), entry(2, { difficulty: 7, tags: ['speed'] }), entry(3, { difficulty: 7, tags: ['technical'] })];
   const { root, api } = fixture(entries, { isLoaded: item => item.id === 'track-2' });
