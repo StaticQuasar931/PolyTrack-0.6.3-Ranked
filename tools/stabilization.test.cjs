@@ -1,7 +1,7 @@
 const fs=require('node:fs');const vm=require('node:vm');const test=require('node:test');const assert=require('node:assert/strict');
 const source=fs.readFileSync(require('node:path').join(__dirname,'..','polytrack_062_patch.js'),'utf8');
 function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert.ok(start>=0,name);const tail=source.slice(start);const end=tail.indexOf('\n  }');assert.ok(end>0,name);return tail.slice(0,end+4);}
-function run(name,context={}){context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
+function run(name,context={}){context.personalFilterRuntime??=null;context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
 test('rounded durations expose exact days, hours and minutes',()=>{
  assert.equal(run('preciseDurationLabel')(90061000),'1 day, 1 hour, 1 minute');
  assert.equal(run('preciseDurationLabel')(7200000),'2 hours');
@@ -551,7 +551,24 @@ test('event planner requires matching cached period and computes integer points'
 test('event planner excludes ended events and cannot farm maximum points',()=>{const p={id:'w_x',kind:'weekly',trackId:'t',startsAt:1,endsAt:10,targetMs:10000,maxRp:500};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-w_x':{period:p,entries:[{accountId:'me',timeMs:10000}]}};const fn=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f});assert.equal(fn('me',null,5).length,0);assert.equal(fn('other',null,10).length,0);});
 
 test('local unverified event attempt never hides verified point opportunities',()=>{const p={id:'d_x',kind:'daily',trackId:'t',startsAt:1,endsAt:100,targetMs:20000,maxRp:100};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{'d_x_me':{timeMs:20000}},'polytrack-062-events-v1-d_x':{period:p,entries:[{accountId:'me',timeMs:25000}]}};const rows=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me',null,10);assert.equal(rows[0].gain,20);assert.equal(rows[0].localTime,20000);});
-test('filtered native navigation uses visible index while rows keep full-field rank',()=>{assert.match(source,/userEntry:mine \? \{position:mineIndex\+1,/);const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose(Array.from({length:100},(_,i)=>({accountId:i===99?'me':String(i),timeMs:i+1,runVerified:i===0||i===49})),true,'me');assert.equal(rows.length,2);assert.equal(rows[1].rank,50);assert.equal(Math.floor(rows.findIndex(r=>r.accountId==='49')/20),0);});
+test('filtered native leaderboard pages preserve full-field ranks and viewer position',async()=>{
+ const context={
+  parsePayload:()=>({}),guestAccountId:'me',accountIdFromPayload:async()=> 'me',
+  getTrackEntries:async()=>Array.from({length:100},(_,i)=>({accountId:i===49?'me':String(i),timeMs:i+1,frames:i+1,runVerified:i===0||i===49})),
+  ensurePersonalFilters:async()=>{},readTrackSnapshotCache:()=>({complete:true}),unrankedExtraTrackIds:new Set(),
+  localTrackDisplayEntries:(_track,entries)=>entries,
+  applyPersonalFilters:rows=>({rows}),visibleTrackEntries:null,
+  canonicalRaceTimeMs:row=>row.timeMs,log:()=>{},safePositiveInt:value=>Number(value)||0,
+  safeRecordingId:value=>value||null,buildRecordingId:row=>`run-${row.accountId}`,
+  enrichLegacyLeaderboardEntries:rows=>rows
+ };
+ context.visibleTrackEntries=run('visibleTrackEntries',context);
+ const mockPayload=run('mockPayload',context);
+ const result=await mockPayload(new URL('https://game.invalid/leaderboard?trackId=track&onlyVerified=true&amount=1&skip=0'),'GET',null);
+ assert.equal(result.total,2);
+ assert.equal(result.entries[0].rank,1);
+ assert.equal(result.userEntry.position,50);
+});
 
 test('local and incomplete track caches require canonical refresh',()=>{const refresh=run('trackCacheNeedsCanonicalRefresh',{TRACK_CACHE_SCHEMA:5,safeRecordingId:x=>x});const base={schemaVersion:5,source:'edge',entries:[{id:'run',timingVersion:2}]};assert.equal(refresh(base),false);assert.equal(refresh({...base,source:'local'}),true);assert.equal(refresh({...base,complete:false}),true);});
 

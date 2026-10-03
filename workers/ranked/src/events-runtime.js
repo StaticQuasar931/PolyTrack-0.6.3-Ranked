@@ -91,6 +91,7 @@ export async function consumeEventInbox(runtime, { preferRetry = false } = {}) {
   let result;
   try { result = await runtime.service.consumeInbox(data); }
   catch (error) {
+    if (error?.deferred === true) throw error;
     // Infrastructure errors leave the scan cursor untouched for retry. Terminal
     // receipt rejection is recorded privately, never by modifying the client PB.
     const retry = eventReceiptRetry(error.code);

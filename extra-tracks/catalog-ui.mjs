@@ -1,5 +1,8 @@
 const SUBMIT_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSel-vg-VwzQuA2dRTEPoKiLIUgDvJ4bCvjMI8u4hqB33gkvrQ/viewform';
 const PAGE_SIZE = 12;
+const SUBMISSION_PENDING_MESSAGE = 'A previous track submission is still processing.';
+const REPORT_PENDING_MESSAGE = 'A previous report is still processing.';
+const ACTION_PENDING_MESSAGE = 'Another request is still processing. Please wait before sending.';
 let mountNumber = 0;
 const DIFFICULTY_LABELS = ['Any difficulty', 'Beginner', 'Easy', 'Approachable', 'Intermediate', 'Challenging', 'Advanced', 'Expert', 'Very hard', 'Extreme', 'Master'];
 
@@ -55,10 +58,18 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let destroyed = false;
   let opened = false;
   let returnFocus = null;
+  let submissionReturnFocus = null;
+  let reportReturnFocus = null;
   let page = 1;
   let pendingAction = false;
+  let submissionGeneration = 0;
+  let reportGeneration = 0;
+  let submissionRequest = null;
+  let reportRequest = null;
   let cachedRecords = null;
+  let sortedRecordsCache = null;
   const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', sort: 'recommended' };
+  const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const make = (tag, className, content) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -97,8 +108,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const invitation = make('p', 'sq-extra-invite', 'Made a track? Direct submissions get priority review for this collection. Inclusion and featured placement are not guaranteed.');
   const inviteRow = make('div', 'sq-extra-invite-row');
   const submit = button('Submit a track', 'sq-extra-submit', () => {
+    submissionReturnFocus = document.activeElement;
+    submissionGeneration++;
     submissionModal.hidden = false;
-    showStatus('');
+    showStatus(submissionRequest ? SUBMISSION_PENDING_MESSAGE : pendingAction ? ACTION_PENDING_MESSAGE : '');
+    syncSendControls();
     submitName.focus();
   });
   inviteRow.append(invitation, submit);
@@ -161,7 +175,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   submissionModal.setAttribute('aria-label', 'Submit an Extra Track');
   const submission = make('form', 'sq-extra-submission');
   const submissionTitle = make('h3', '', 'Share your track');
-  const submissionClose = button('Close', 'sq-extra-submission-close', () => { submissionModal.hidden = true; submit.focus(); });
+  const submissionClose = button('Close', 'sq-extra-submission-close', closeSubmission);
   const formField = (caption, tag, maxLength) => {
     const label = make('label', 'sq-extra-submission-field', caption);
     const input = make(tag);
@@ -197,7 +211,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   submissionActions.append(sendSubmission, fallback);
   submission.append(submissionActions);
   submissionModal.append(submission);
-  submissionModal.addEventListener('click', event => { if (event.target === submissionModal) { submissionModal.hidden = true; submit.focus(); } });
+  submissionModal.addEventListener('click', event => { if (event.target === submissionModal) closeSubmission(); });
   overlay.append(submissionModal);
   const reportModal = make('div', 'sq-extra-report-modal');
   reportModal.hidden = true;
@@ -206,7 +220,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   reportModal.setAttribute('aria-label', 'Report a track');
   const reportForm = make('form', 'sq-extra-report');
   const reportTitle = make('h3', '', 'Report this track');
-  const reportClose = button('Close', 'sq-extra-submission-close', () => { reportModal.hidden = true; });
+  const reportClose = button('Close', 'sq-extra-submission-close', closeReport);
   const reportEntry = make('p', 'sq-extra-report-entry');
   const reportChoices = make('div', 'sq-extra-report-choices');
   const reportReasons = [
@@ -271,9 +285,20 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     submissionStatus.className = error ? 'sq-extra-submission-status sq-extra-status-error' : 'sq-extra-submission-status';
   }
 
+  function syncSendControls() {
+    sendSubmission.disabled = Boolean(pendingAction || submissionRequest);
+    reportSend.disabled = Boolean(pendingAction || reportRequest);
+    if (!pendingAction) {
+      if (!submissionModal.hidden && submissionStatus.textContent === ACTION_PENDING_MESSAGE) showStatus('');
+      if (!reportModal.hidden && reportStatus.textContent === ACTION_PENDING_MESSAGE) {
+        reportStatus.textContent = ''; reportStatus.hidden = true;
+      }
+    }
+  }
+
   async function submitForm(event) {
     event.preventDefault();
-    if (pendingAction) return;
+    if (pendingAction) { showStatus(ACTION_PENDING_MESSAGE); return; }
     const payload = {
       name: submitName.value.trim(), author: submitAuthor.value.trim(), description: submitDescription.value.trim(),
       code: submitCode.value.trim(), difficulty: Number(submitDifficulty.value || 1),
@@ -284,29 +309,61 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       showStatus('Add a name, creator, valid export code, and sharing permission.', true); return;
     }
     if (typeof onSubmit !== 'function') { showStatus('In-game submission is unavailable. Use the Google Form below.', true); return; }
-    pendingAction = true; sendSubmission.disabled = true; showStatus('Sending track for review...');
+    const operation = { generation: submissionGeneration };
+    submissionRequest = operation;
+    pendingAction = true; syncSendControls(); showStatus('Sending track for review...');
     try {
       await onSubmit(payload);
+      if (destroyed || submissionModal.hidden || submissionGeneration !== operation.generation) return;
       showStatus('Track received for review. Thanks for sharing it.');
-      submissionModal.hidden = true; submitCode.value = ''; submit.focus();
+      submitCode.value = '';
+      closeSubmission();
     } catch (error) {
-      showStatus(`${error?.message || 'Could not send this track.'} You can use the Google Form instead.`, true);
-    } finally { pendingAction = false; sendSubmission.disabled = false; }
+      if (!destroyed && !submissionModal.hidden && submissionGeneration === operation.generation) {
+        showStatus(`${error?.message || 'Could not send this track.'} You can use the Google Form instead.`, true);
+      }
+    } finally {
+      pendingAction = false;
+      if (submissionRequest === operation) {
+        submissionRequest = null;
+        syncSendControls();
+        if (!destroyed && !submissionModal.hidden && submissionGeneration !== operation.generation && submissionStatus.textContent === SUBMISSION_PENDING_MESSAGE) showStatus('');
+      }
+    }
   }
   async function submitReport() {
-    if (pendingAction || destroyed) return;
+    if (destroyed) return;
+    if (pendingAction) {
+      reportStatus.textContent = ACTION_PENDING_MESSAGE; reportStatus.className = 'sq-extra-report-status'; reportStatus.hidden = false;
+      return;
+    }
     const selected = [...reportChoices.children].map(choice => choice.children[0]).find(input => input.checked);
     if (!selected) { reportStatus.textContent = 'Choose one reason before sending.'; reportStatus.className = 'sq-extra-report-status sq-extra-status-error'; reportStatus.hidden = false; return; }
     if (typeof onReport !== 'function') { reportStatus.textContent = 'Reporting is unavailable right now.'; reportStatus.className = 'sq-extra-report-status sq-extra-status-error'; reportStatus.hidden = false; return; }
-    pendingAction = true; reportSend.disabled = true; reportStatus.textContent = 'Sending report...'; reportStatus.className = 'sq-extra-report-status'; reportStatus.hidden = false;
+    const entry = reportingEntry;
+    const operation = { generation: reportGeneration, entry };
+    reportRequest = operation;
+    pendingAction = true; syncSendControls(); reportStatus.textContent = 'Sending report...'; reportStatus.className = 'sq-extra-report-status'; reportStatus.hidden = false;
     try {
-      await onReport(reportingEntry, selected.value);
+      await onReport(entry, selected.value);
+      if (destroyed || reportModal.hidden || reportGeneration !== operation.generation || reportingEntry !== entry) return;
       reportStatus.textContent = 'Report received. Thanks for helping keep the catalog accurate.';
       for (const choice of reportChoices.children) choice.children[0].checked = false;
     } catch (error) {
-      reportStatus.textContent = error?.publicMessage ? error.message : 'Could not send your report. Please try again later.';
-      reportStatus.className = 'sq-extra-report-status sq-extra-status-error';
-    } finally { pendingAction = false; reportSend.disabled = false; }
+      if (!destroyed && !reportModal.hidden && reportGeneration === operation.generation && reportingEntry === entry) {
+        reportStatus.textContent = error?.publicMessage ? error.message : 'Could not send your report. Please try again later.';
+        reportStatus.className = 'sq-extra-report-status sq-extra-status-error';
+      }
+    } finally {
+      pendingAction = false;
+      if (reportRequest === operation) {
+        reportRequest = null;
+        syncSendControls();
+        if (!destroyed && !reportModal.hidden && reportGeneration !== operation.generation && reportStatus.textContent === REPORT_PENDING_MESSAGE) {
+          reportStatus.textContent = ''; reportStatus.hidden = true;
+        }
+      }
+    }
   }
   submission.addEventListener('submit', submitForm);
 
@@ -317,6 +374,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       return;
     }
     pendingAction = true;
+    syncSendControls();
     showStatus(kind === 'play' ? 'Opening track...' : 'Saving track...');
     try {
       await callback(entry);
@@ -327,6 +385,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       if (!destroyed) showStatus(kind === 'play' ? 'Could not open this track. Please try again.' : 'Could not save this track. Please try again.', true);
     } finally {
       pendingAction = false;
+      syncSendControls();
     }
   }
 
@@ -421,10 +480,16 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     moreMenu.hidden = true;
     moreMenu.append(button('Report track', 'sq-extra-report-button', () => {
       moreMenu.hidden = true; more.setAttribute('aria-expanded', 'false');
+      reportReturnFocus = more;
+      reportGeneration++;
       reportingEntry = entry; reportEntry.textContent = text(entry.name, 'Untitled track');
-      reportStatus.hidden = true; reportStatus.textContent = '';
+      reportStatus.textContent = reportRequest ? REPORT_PENDING_MESSAGE : pendingAction ? ACTION_PENDING_MESSAGE : '';
+      reportStatus.hidden = !reportRequest && !pendingAction;
+      reportStatus.className = 'sq-extra-report-status';
+      syncSendControls();
       for (const choice of reportChoices.children) choice.children[0].checked = false;
       reportModal.hidden = false;
+      reportClose.focus();
     }));
     actions.append(more, moreMenu);
     body.append(actions);
@@ -479,6 +544,31 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       try { favorite = getFeedback?.(entry)?.favorite === true; } catch { /* Device storage is optional. */ }
       return { entry, best, loaded, favorite, rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null };
     });
+    const compare = (a, b) => nameCollator.compare(text(a), text(b));
+    if (!sortedRecordsCache || sortedRecordsCache.records !== cachedRecords || sortedRecordsCache.sort !== state.sort) {
+      const ordered = [...cachedRecords];
+      ordered.sort((a, b) => {
+        if (state.sort === 'plays') return (Number.isSafeInteger(b.entry.sourceCopies) ? b.entry.sourceCopies : Number.isSafeInteger(b.entry.sourcePlays) ? b.entry.sourcePlays : -1) -
+          (Number.isSafeInteger(a.entry.sourceCopies) ? a.entry.sourceCopies : Number.isSafeInteger(a.entry.sourcePlays) ? a.entry.sourcePlays : -1) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'forum') return (forumActivity(b.entry) ?? -1) - (forumActivity(a.entry) ?? -1) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'my-rating') return (b.rating ?? -1) - (a.rating ?? -1) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'size-largest' || state.sort === 'size-smallest') {
+          const aSize = Number.isSafeInteger(a.entry.sizeBytes) && a.entry.sizeBytes >= 0 ? a.entry.sizeBytes : null;
+          const bSize = Number.isSafeInteger(b.entry.sizeBytes) && b.entry.sizeBytes >= 0 ? b.entry.sizeBytes : null;
+          if (aSize === null || bSize === null) return aSize === bSize ? compare(a.entry.name, b.entry.name) : aSize === null ? 1 : -1;
+          return (state.sort === 'size-largest' ? bSize - aSize : aSize - bSize) || compare(a.entry.name, b.entry.name);
+        }
+        if (state.sort === 'date-newest' || state.sort === 'date-oldest') {
+          const aDate = Date.parse(a.entry.submittedAt || a.entry.codeModifiedAt), bDate = Date.parse(b.entry.submittedAt || b.entry.codeModifiedAt);
+          if (!Number.isFinite(aDate) || !Number.isFinite(bDate)) return Number.isFinite(aDate) ? -1 : Number.isFinite(bDate) ? 1 : compare(a.entry.name, b.entry.name);
+          return (state.sort === 'date-newest' ? bDate - aDate : aDate - bDate) || compare(a.entry.name, b.entry.name);
+        }
+        if (state.sort === 'author') return compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
+        return compare(a.entry.name, b.entry.name);
+      });
+      sortedRecordsCache = { records: cachedRecords, sort: state.sort, ordered };
+    }
     const progressCounts = new Map([['all', cachedRecords.length], ['completed', 0], ['uncompleted', 0], ['loaded', 0]]);
     for (const record of cachedRecords) {
       progressCounts.set(record.best === null ? 'uncompleted' : 'completed', progressCounts.get(record.best === null ? 'uncompleted' : 'completed') + 1);
@@ -491,7 +581,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     filterCount(completionField, progressCounts.get(state.completion) || 0);
     const selectedProgress = [...completionField.select.children].find(option => option.value === state.completion);
     if (selectedProgress) selectedProgress.textContent = state.completion === 'all' ? 'All tracks' : state.completion === 'completed' ? 'Completed' : state.completion === 'loaded' ? 'Imported, not completed' : 'Not completed';
-    const records = cachedRecords.filter(({ entry, best, loaded, favorite }) => {
+    const records = sortedRecordsCache.ordered.filter(({ entry, best, loaded, favorite }) => {
       const entryTags = Array.isArray(entry.tags) ? entry.tags.map(tag => text(tag)) : [];
       const searchable = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...entryTags].map(value => text(value).toLocaleLowerCase()).join(' ');
       // A curator can mark a track by tier or by the curated tag.
@@ -501,27 +591,6 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         (!state.difficulty || difficulty(entry) === Number(state.difficulty)) &&
         (state.completion === 'all' || state.completion === 'completed' && best !== null ||
           state.completion === 'uncompleted' && best === null || state.completion === 'loaded' && loaded && best === null);
-    });
-    const compare = (a, b) => text(a).localeCompare(text(b), undefined, { sensitivity: 'base', numeric: true });
-    records.sort((a, b) => {
-      if (state.sort === 'plays') return (Number.isSafeInteger(b.entry.sourceCopies) ? b.entry.sourceCopies : Number.isSafeInteger(b.entry.sourcePlays) ? b.entry.sourcePlays : -1) -
-        (Number.isSafeInteger(a.entry.sourceCopies) ? a.entry.sourceCopies : Number.isSafeInteger(a.entry.sourcePlays) ? a.entry.sourcePlays : -1) || compare(a.entry.name, b.entry.name);
-      if (state.sort === 'forum') return (forumActivity(b.entry) ?? -1) - (forumActivity(a.entry) ?? -1) || compare(a.entry.name, b.entry.name);
-      if (state.sort === 'my-rating') return (b.rating ?? -1) - (a.rating ?? -1) || compare(a.entry.name, b.entry.name);
-      if (state.sort === 'size-largest' || state.sort === 'size-smallest') {
-        const aSize = Number.isSafeInteger(a.entry.sizeBytes) && a.entry.sizeBytes >= 0 ? a.entry.sizeBytes : null;
-        const bSize = Number.isSafeInteger(b.entry.sizeBytes) && b.entry.sizeBytes >= 0 ? b.entry.sizeBytes : null;
-        if (aSize === null || bSize === null) return aSize === bSize ? compare(a.entry.name, b.entry.name) : aSize === null ? 1 : -1;
-        return (state.sort === 'size-largest' ? bSize - aSize : aSize - bSize) || compare(a.entry.name, b.entry.name);
-      }
-      if (state.sort === 'date-newest' || state.sort === 'date-oldest') {
-        const aDate = Date.parse(a.entry.submittedAt || a.entry.codeModifiedAt), bDate = Date.parse(b.entry.submittedAt || b.entry.codeModifiedAt);
-        if (!Number.isFinite(aDate) || !Number.isFinite(bDate)) return Number.isFinite(aDate) ? -1 : Number.isFinite(bDate) ? 1 : compare(a.entry.name, b.entry.name);
-        return (state.sort === 'date-newest' ? bDate - aDate : aDate - bDate) || compare(a.entry.name, b.entry.name);
-      }
-      if (state.sort === 'author') return compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
-      if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
-      return compare(a.entry.name, b.entry.name);
     });
     const pages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
     page = Math.min(page, pages);
@@ -553,8 +622,26 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (!opened || destroyed) return;
     opened = false;
     overlay.hidden = true;
-    submissionModal.hidden = true;
+    closeSubmission(false);
+    closeReport(false);
     if (returnFocus?.focus) returnFocus.focus();
+  }
+
+  function closeSubmission(restoreFocus = true) {
+    if (submissionModal.hidden) return;
+    submissionGeneration++;
+    submissionModal.hidden = true;
+    if (restoreFocus) (submissionReturnFocus?.isConnected !== false ? submissionReturnFocus : submit)?.focus();
+    submissionReturnFocus = null;
+  }
+
+  function closeReport(restoreFocus = true) {
+    if (reportModal.hidden) return;
+    reportGeneration++;
+    reportModal.hidden = true;
+    reportingEntry = null;
+    if (restoreFocus) (reportReturnFocus?.isConnected !== false ? reportReturnFocus : search)?.focus();
+    reportReturnFocus = null;
   }
 
   function open() {
@@ -562,6 +649,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     returnFocus = document.activeElement;
     opened = true;
     cachedRecords = null;
+    submissionModal.hidden = true;
+    reportModal.hidden = true;
     overlay.hidden = false;
     showStatus('');
     render();
@@ -570,8 +659,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
 
   function onKeydown(event) {
     if (!opened) return;
-    if (event.key === 'Escape') { event.preventDefault(); if (!submissionModal.hidden) { submissionModal.hidden = true; submit.focus(); } else close(); return; }
-    if (!submissionModal.hidden && event.key !== 'Tab') return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (!reportModal.hidden) closeReport();
+      else if (!submissionModal.hidden) closeSubmission();
+      else close();
+      return;
+    }
+    if ((!submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     if (!editing) {
@@ -588,12 +683,13 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       }
     }
     if (event.key !== 'Tab') return;
-    const focusRoot = submissionModal.hidden ? dialog : submissionModal;
+    const focusRoot = !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : dialog;
     const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href]')].filter(node => !node.hidden);
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    if (!focusRoot.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
 

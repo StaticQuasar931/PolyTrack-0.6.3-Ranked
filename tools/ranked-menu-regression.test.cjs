@@ -60,6 +60,7 @@ test('throwing filter adapter is disabled without aborting leaderboard rendering
   const root = { textContent: '' };
   const logs = [];
   const context = vm.createContext({
+    personalFilterRuntime: null,
     rankedFiltersUi: { update: () => { throw new Error('bad saved filter'); } },
     rankedFilterResult: { stale: true },
     rankedFiltersSyncing: false,

@@ -10,6 +10,8 @@ import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
 export const NORMAL_JOB_LIMIT = 12;
 export const TOTAL_JOB_LIMIT = 16;
 export const PREFLIGHT_QUEUE_SAMPLE_LIMIT = 20;
+const isDeferredFirestoreThrottle = error => error?.deferred === true &&
+  /^FIRESTORE_(READ|COMMIT)_THROTTLED$/.test(String(error.code || ''));
 const checkEvents = async (db, options) => (await import('./events.mjs')).checkEventWork(db, options);
 const runEvents = async (db, directory, options) => (await import('./events.mjs')).runEventVerification(db, directory, options);
 const simulate = async (directory, jobs, trustedTracks) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks);
@@ -71,7 +73,7 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
 export async function runVerifier({check = false, drain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
   validateEngine = validateEnginePin, log = console.log, eventCheck = checkEvents,
   eventRun = runEvents, prioritizeNormal = prioritizeQueueDocuments, selectNormal = selectJobs,
-  verifyNormal = simulate, publishNormal = publishResults, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
+  verifyNormal = simulate, publishNormal = publishResults} = {}) {
   // Preflight never loads or hashes physics assets. Actual processing still pins the engine first.
   if (!check) await validateEngine();
   const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
@@ -79,21 +81,28 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
   const db = await connectDatabase(raw);
   delete env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
   if (check) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try { return await checkForWork(db, {env, log, eventCheck}); }
-      catch (error) {
-        if (error?.status !== 429) throw error;
-        if (attempt < 2) { await sleep([2000, 5000][attempt]); continue; }
-        const message = 'Firestore throttled verification preflight (HTTP 429). Queue state is unknown; no runs were processed or removed. The next scheduled run will retry.';
-        if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=deferred\npreflight_status=throttled\n');
-        if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, '## Verification preflight deferred\n' + message + '\n');
-        log(message);
-        return {hasWork: null, deferred: true, reason: 'firestore_429'};
-      }
+    try { return await checkForWork(db, {env, log, eventCheck}); }
+    catch (error) {
+      if (error?.status !== 429 && !error?.deferred) throw error;
+      const message = 'Firestore throttled verification preflight. Queue state is unknown; no runs were processed or removed. The next scheduled run will retry.';
+      if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=deferred\npreflight_status=throttled\n');
+      if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, '## Verification preflight deferred\n' + message + '\n');
+      log(message);
+      return {hasWork: null, deferred: true, reason: 'firestore_429'};
     }
   }
   const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents};
-  if (!drain) return runRound(db,roundOptions);
+  if (!drain) {
+    try { return await runRound(db,roundOptions); }
+    catch (error) {
+      if (!isDeferredFirestoreThrottle(error)) throw error;
+      const summary={deferred:true,reason:'firestore_throttled',interruptedRound:true,countsComplete:false};
+      const message='Firestore throttled verification. This invocation deferred without replaying a write; queue state will be reread on the next scheduled run.';
+      log(JSON.stringify(summary));
+      if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,'## Verification deferred\n'+message+'\n\n'+JSON.stringify(summary)+'\n');
+      return summary;
+    }
+  }
   const bounded=budgetDatabase(db);
   const summary=await drainVerification({requests:bounded.requests,now:clock,log,
     runRound:()=>runRound(bounded,{...roundOptions,borrowUnusedEvents:true})});
@@ -102,7 +111,8 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
     ' rounds, 64 total native attempts, '+DRAIN_LIMITS.requests+' Firestore HTTP requests. Request count is not billed document usage. '+
     'Time admission is measured, not a completion guarantee; the workflow step timeout remains the hard stop. '+
     'Interrupted-round publication counts are incomplete, not zero. `stop` explains why this invocation ended; a round is not a GitHub workflow run number. '+
-    'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n');
+    'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n'+
+    (summary.stop==='firestore_throttled'?'Firestore returned a deferred throttle response. No commit was replayed; queue state will be reread by a later scheduled run. Publication counts for the interrupted round are incomplete.\n':''));
   return summary;
 }
 

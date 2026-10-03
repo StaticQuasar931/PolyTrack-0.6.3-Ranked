@@ -194,3 +194,14 @@ body.pt-group-filter-menu-open { overflow: hidden; }
   .pt-group-filter-menu:not([hidden]) .fm-shell { animation: fm-enter .16s ease-out both; }
   @keyframes fm-enter { from { opacity: .7; transform: translateY(7px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
 }
+.fm-suggestion-status {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}

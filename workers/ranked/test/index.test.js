@@ -461,6 +461,133 @@ test('irrelevant query parameters cannot force repeat public snapshot reads', as
   } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
 });
 
+test('concurrent cold-cache requests for one snapshot share the read and receive independent responses', async () => {
+  const prior = globalThis.caches, stored = new Map(), pending = [];
+  let reads = 0;
+  globalThis.caches = { default: {
+    match: async key => stored.get(key.url)?.clone() || null,
+    put: async (key, response) => { stored.set(key.url, response.clone()); }
+  } };
+  try {
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      __TEST_FIRESTORE: async path => {
+        if (!path.includes('leaderboards_overall')) return null;
+        reads++;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return { fields: { revision: { integerValue: '9' }, entries: { arrayValue: { values: [] } } } };
+      } };
+    const context = { waitUntil: promise => pending.push(promise) };
+    const responses = await Promise.all(Array.from({ length: 8 }, () => handleRequest(
+      new Request('https://ranked.example/v1/snapshot/overall',
+        { headers: { Origin: 'https://staticquasar931.github.io' } }), env, context)));
+    assert.equal(reads, 1);
+    assert.deepEqual(await Promise.all(responses.map(async response => [response.status, (await response.json()).revision])),
+      Array.from({ length: 8 }, () => [200, 9]));
+    await Promise.all(pending);
+    assert.equal(stored.size, 1);
+  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+});
+
+test('snapshot coalescing remains active until a delayed cache fill settles', async () => {
+  const prior = globalThis.caches, stored = new Map(), pending = [];
+  let reads = 0, fillCount = 0, finishFill;
+  globalThis.caches = { default: {
+    match: async key => stored.get(key.url)?.clone() || null,
+    put: async (key, response) => {
+      fillCount++;
+      await new Promise(resolve => { finishFill = resolve; });
+      stored.set(key.url, response.clone());
+    }
+  } };
+  try {
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      __TEST_FIRESTORE: async path => {
+        if (!path.includes('leaderboards_overall')) return null;
+        reads++;
+        return { fields: { revision: { integerValue: '11' }, entries: { arrayValue: { values: [] } } } };
+      } };
+    const context = { waitUntil: promise => pending.push(promise) };
+    const request = () => new Request('https://ranked.example/v1/snapshot/overall',
+      { headers: { Origin: 'https://staticquasar931.github.io' } });
+    const first = await handleRequest(request(), env, context);
+    const second = await handleRequest(request(), env, context);
+    assert.equal(reads, 1);
+    assert.equal(fillCount, 1);
+    assert.equal((await second.json()).revision, 11);
+
+    finishFill();
+    await Promise.all(pending);
+    const cached = await handleRequest(request(), env, context);
+    assert.equal(cached.status, 200);
+    assert.equal(reads, 1);
+    assert.equal((await first.json()).revision, 11);
+  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+});
+
+test('failed cache fill is contained and releases the snapshot key for a fresh load', async () => {
+  const prior = globalThis.caches, stored = new Map(), pending = [];
+  let reads = 0, fills = 0;
+  globalThis.caches = { default: {
+    match: async key => stored.get(key.url)?.clone() || null,
+    put: async (key, response) => {
+      fills++;
+      if (fills === 1) throw Error('synthetic cache failure');
+      stored.set(key.url, response.clone());
+    }
+  } };
+  try {
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      __TEST_FIRESTORE: async path => {
+        if (!path.includes('leaderboards_overall')) return null;
+        reads++;
+        return { fields: { revision: { integerValue: String(reads) }, entries: { arrayValue: { values: [] } } } };
+      } };
+    const context = { waitUntil: promise => pending.push(promise) };
+    const request = () => new Request('https://ranked.example/v1/snapshot/overall',
+      { headers: { Origin: 'https://staticquasar931.github.io' } });
+    const first = await handleRequest(request(), env, context);
+    assert.equal((await first.json()).revision, 1);
+    await Promise.all(pending.splice(0));
+
+    const second = await handleRequest(request(), env, context);
+    assert.equal((await second.json()).revision, 2);
+    await Promise.all(pending);
+    assert.equal(reads, 2);
+    assert.equal(fills, 2);
+    assert.equal(stored.size, 1);
+  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+});
+
+test('concurrent snapshot reads coalesce only identical keys and clear failed loads', async () => {
+  const prior = globalThis.caches;
+  globalThis.caches = { default: { match: async () => null, put: async () => {} } };
+  try {
+    let reads = 0, fail = true;
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      __TEST_FIRESTORE: async path => {
+        if (!path.includes('s1_leaderboards_track')) return null;
+        reads++;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        if (fail) throw Error('synthetic read failure');
+        return { fields: { entries: { arrayValue: { values: [] } } } };
+      } };
+    const request = trackId => new Request(`https://ranked.example/v1/snapshot/track?trackId=${trackId}`,
+      { headers: { Origin: 'https://staticquasar931.github.io' } });
+    const failed = await Promise.allSettled([handleRequest(request(TRACK), env), handleRequest(request(TRACK), env)]);
+    assert.equal(reads, 1);
+    assert(failed.every(result => result.status === 'rejected' && /synthetic read failure/.test(result.reason.message)));
+
+    fail = false;
+    const [same1, same2, other] = await Promise.all([
+      handleRequest(request(TRACK), env), handleRequest(request(TRACK), env), handleRequest(request('anothertrackid'), env)
+    ]);
+    assert.equal(reads, 3, 'failed load is removed and distinct keys do not coalesce');
+    assert.equal(same1.status, 200);
+    assert.equal(same2.status, 200);
+    assert.equal(other.status, 200);
+  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+});
+
 test('oversized request streams stop before the full body is buffered', async () => {
   let pulls = 0;
   const stream = new ReadableStream({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(1024)); } });

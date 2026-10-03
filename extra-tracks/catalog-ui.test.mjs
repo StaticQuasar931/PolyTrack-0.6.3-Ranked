@@ -27,6 +27,7 @@ class FakeNode {
   removeEventListener(name, handler) { this.listeners.set(name, (this.listeners.get(name) || []).filter(item => item !== handler)); }
   dispatch(name, extra = {}) { return Promise.all((this.listeners.get(name) || []).map(handler => handler({ target: this, preventDefault() {}, ...extra }))); }
   focus() { this.document.activeElement = this; }
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
   querySelectorAll() { return walk(this).filter(node => ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(node.tagName) && !node.disabled); }
 }
 
@@ -52,6 +53,20 @@ const entry = (n, extra = {}) => ({
   tags: n % 2 ? ['technical'] : ['speed'], tier: n % 3 ? '' : 'Featured',
   trackPath: `tracks/${n}.track`, sourcePlays: n * 10, ...extra
 });
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function fillSubmission(root) {
+  const fields = cls(root, 'sq-extra-submission-field');
+  fields[0].children[0].value = 'Test track';
+  fields[1].children[0].value = 'Tester';
+  fields[3].children[0].value = 'PolyTrack' + 'A'.repeat(24);
+  cls(root, 'sq-extra-submission-check')[0].children[0].checked = true;
+}
 
 test('mount is hidden until open, paginates exact counts and restores focus', () => {
   const { root, launch, document, api } = fixture(Array.from({ length: 15 }, (_, i) => entry(i + 1)));
@@ -348,6 +363,155 @@ test('track reports expose exactly three reasons and report clear success or fai
   assert.match(cls(failed.root, 'sq-extra-report-status')[0].textContent, /Could not send/);
   assert.doesNotMatch(cls(failed.root, 'sq-extra-report-status')[0].textContent, /private detail/);
   failed.api.destroy();
+});
+
+test('report dialog Escape restores focus and catalog close clears nested dialog state', async () => {
+  const { root, document, api } = fixture([entry(1)], { onReport: async () => {} });
+  api.open();
+  const keydown = document.listeners.get('keydown');
+  const more = cls(root, 'sq-extra-more')[0];
+  await click(more);
+  await click(cls(root, 'sq-extra-report-button')[0]);
+  const report = cls(root, 'sq-extra-report-modal')[0];
+  assert.equal(report.hidden, false);
+  assert.equal(document.activeElement, cls(root, 'sq-extra-submission-close')[1]);
+  keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(report.hidden, true);
+  assert.equal(document.activeElement, more);
+
+  await click(more);
+  await click(cls(root, 'sq-extra-report-button')[0]);
+  keydown({ key: 'Escape', preventDefault() {} });
+  keydown({ key: 'Escape', preventDefault() {} });
+  api.open();
+  assert.equal(report.hidden, true);
+  assert.equal(cls(root, 'sq-extra-overlay')[0].hidden, false);
+  api.destroy();
+});
+
+test('late submission success or rejection cannot close or overwrite a reopened form', async () => {
+  for (const outcome of ['resolve', 'reject']) {
+    const request = deferred();
+    let posts = 0;
+    const { root, api } = fixture([entry(1)], { onSubmit: () => { posts++; return request.promise; } });
+    api.open();
+    await click(cls(root, 'sq-extra-submit')[0]);
+    fillSubmission(root);
+    const send = cls(root, 'sq-extra-send')[0];
+    const pending = click(send);
+    await Promise.resolve();
+    assert.equal(posts, 1);
+    const modal = cls(root, 'sq-extra-submission-modal')[0];
+    await click(cls(modal, 'sq-extra-submission-close')[0]);
+    await click(cls(root, 'sq-extra-submit')[0]);
+    assert.equal(modal.hidden, false);
+    assert.equal(send.disabled, true);
+    await click(send);
+    assert.equal(posts, 1, 'reopening cannot duplicate a pending submission');
+    if (outcome === 'resolve') request.resolve();
+    else request.reject(Error('stale submission failure'));
+    await pending;
+    assert.equal(modal.hidden, false, 'late completion leaves the newer form open');
+    assert.equal(send.disabled, false);
+    assert.doesNotMatch(cls(root, 'sq-extra-submission-status')[0].textContent, /received for review|stale submission failure|Could not send/);
+    api.destroy();
+  }
+});
+
+test('late report success or rejection cannot overwrite a different reopened track report', async () => {
+  for (const outcome of ['resolve', 'reject']) {
+    const request = deferred();
+    let postedEntry;
+    const entries = [entry(1), entry(2)];
+    const { root, api } = fixture(entries, { onReport: item => { postedEntry = item; return request.promise; } });
+    api.open();
+    const cards = cls(root, 'sq-extra-card');
+    await click(cls(cards[0], 'sq-extra-more')[0]);
+    await click(cls(cards[0], 'sq-extra-report-button')[0]);
+    const modal = cls(root, 'sq-extra-report-modal')[0];
+    cls(root, 'sq-extra-report-choice')[0].children[0].checked = true;
+    const pending = click(cls(root, 'sq-extra-report-send')[0]);
+    await Promise.resolve();
+    assert.equal(postedEntry, entries[0]);
+    await click(cls(modal, 'sq-extra-submission-close')[0]);
+    await click(cls(cards[1], 'sq-extra-more')[0]);
+    await click(cls(cards[1], 'sq-extra-report-button')[0]);
+    assert.equal(cls(root, 'sq-extra-report-entry')[0].textContent, entries[1].name);
+    if (outcome === 'resolve') request.resolve();
+    else request.reject(Error('stale report failure'));
+    await pending;
+    assert.equal(modal.hidden, false, 'late completion leaves the newer report open');
+    assert.equal(cls(root, 'sq-extra-report-entry')[0].textContent, entries[1].name);
+    assert.doesNotMatch(cls(root, 'sq-extra-report-status')[0].textContent, /Report received|stale report failure|Could not send/);
+    assert.equal(cls(root, 'sq-extra-report-send')[0].disabled, false);
+    api.destroy();
+  }
+});
+
+test('cross-type requests disable both send controls and restore them when the request settles', async () => {
+  {
+    const request = deferred();
+    let submissions = 0, reports = 0;
+    const { root, api } = fixture([entry(1)], {
+      onSubmit: () => { submissions++; return request.promise; },
+      onReport: async () => { reports++; }
+    });
+    api.open();
+    await click(cls(root, 'sq-extra-submit')[0]);
+    fillSubmission(root);
+    const submitPending = click(cls(root, 'sq-extra-send')[0]);
+    await Promise.resolve();
+    await click(cls(root, 'sq-extra-submission-close')[0]);
+    const more = cls(root, 'sq-extra-more')[0];
+    await click(more);
+    await click(cls(root, 'sq-extra-report-button')[0]);
+    const reportSend = cls(root, 'sq-extra-report-send')[0];
+    assert.equal(cls(root, 'sq-extra-send')[0].disabled, true);
+    assert.equal(reportSend.disabled, true);
+    assert.match(cls(root, 'sq-extra-report-status')[0].textContent, /Another request is still processing/);
+    cls(root, 'sq-extra-report-choice')[0].children[0].checked = true;
+    await click(reportSend);
+    assert.equal(reports, 0, 'the other request lock prevents a duplicate cross-type post');
+    request.resolve();
+    await submitPending;
+    assert.equal(reportSend.disabled, false);
+    assert.equal(cls(root, 'sq-extra-send')[0].disabled, false);
+    assert.equal(cls(root, 'sq-extra-report-status')[0].hidden, true);
+    assert.equal(submissions, 1);
+    api.destroy();
+  }
+
+  {
+    const request = deferred();
+    let submissions = 0, reports = 0;
+    const { root, api } = fixture([entry(1)], {
+      onSubmit: async () => { submissions++; },
+      onReport: () => { reports++; return request.promise; }
+    });
+    api.open();
+    const more = cls(root, 'sq-extra-more')[0];
+    await click(more);
+    await click(cls(root, 'sq-extra-report-button')[0]);
+    cls(root, 'sq-extra-report-choice')[0].children[0].checked = true;
+    const reportPending = click(cls(root, 'sq-extra-report-send')[0]);
+    await Promise.resolve();
+    await click(cls(root, 'sq-extra-submission-close')[0]);
+    await click(cls(root, 'sq-extra-submit')[0]);
+    fillSubmission(root);
+    const send = cls(root, 'sq-extra-send')[0];
+    assert.equal(send.disabled, true);
+    assert.equal(cls(root, 'sq-extra-report-send')[0].disabled, true);
+    assert.match(cls(root, 'sq-extra-submission-status')[0].textContent, /Another request is still processing/);
+    await click(send);
+    assert.equal(submissions, 0, 'the other request lock prevents a duplicate cross-type post');
+    request.resolve();
+    await reportPending;
+    assert.equal(send.disabled, false);
+    assert.equal(cls(root, 'sq-extra-report-send')[0].disabled, false);
+    assert.equal(cls(root, 'sq-extra-submission-status')[0].textContent, '');
+    assert.equal(reports, 1);
+    api.destroy();
+  }
 });
 
 test('empty entries still mount and show an accurate zero count', () => {

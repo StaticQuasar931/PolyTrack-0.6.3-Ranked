@@ -13,6 +13,23 @@ const {chromium}=process.env.PLAYWRIGHT_MODULE?require(process.env.PLAYWRIGHT_MO
 const repo=process.env.EVENT_TEST_REPO||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const patch=fs.readFileSync(path.join(repo,'polytrack_062_patch.js'),'utf8');
 function section(start,end){const a=patch.indexOf(start),b=patch.indexOf(end,a+start.length);assert(a>=0&&b>a,'production source boundary exists');return patch.slice(a,b).trim();}
+function functionSource(name){
+ const start=patch.indexOf(`  function ${name}(`);assert(start>=0,`production function ${name} exists`);
+ const open=patch.indexOf('{',start);assert(open>start,`production function ${name} has a body`);
+ let depth=0,quote='',escaped=false,lineComment=false,blockComment=false;
+ for(let i=open;i<patch.length;i++){
+  const c=patch[i],next=patch[i+1];
+  if(lineComment){if(c==='\n')lineComment=false;continue;}
+  if(blockComment){if(c==='*'&&next==='/'){blockComment=false;i++;}continue;}
+  if(quote){if(escaped){escaped=false;continue;}if(c==='\\'){escaped=true;continue;}if(c===quote)quote='';continue;}
+  if(c==='/'&&next==='/'){lineComment=true;i++;continue;}
+  if(c==='/'&&next==='*'){blockComment=true;i++;continue;}
+  if(c==='\''||c==='"'||c==='`'){quote=c;continue;}
+  if(c==='{')depth++;
+  else if(c==='}'&&--depth===0)return patch.slice(start,i+1).trim();
+ }
+ assert.fail(`production function ${name} has an unterminated body`);
+}
 const focus=section('  function focusTrackFromRanked(','  function trackSummaryLine(');
 const entry=section('  function ensureEventEntryContents(){','  function extraTrackIds(){');
 const QUEUE='polytrack-062-events-v1-queue';
@@ -25,8 +42,10 @@ before(async()=>{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
 });
 after(async()=>{await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());});
-const setup=async ({focus,queue,deferReady,receipt})=>{
+const setup=async ({focus,queue,deferReady,receipt,noIntersectionObserver,controlledIntersectionObserver})=>{
   localStorage.clear(); if(queue) localStorage.setItem("polytrack-062-events-v1-queue",JSON.stringify(queue)); const id='a'.repeat(64); window.id=id;window.submits=[];window.reads=0;window.catalogReads=0;
+  if(noIntersectionObserver)window.IntersectionObserver=undefined;
+  if(controlledIntersectionObserver)window.IntersectionObserver=class{constructor(callback){this.callback=callback;this.targets=new Set();window.eventCarObserver=this;}observe(target){this.targets.add(target);}unobserve(target){this.targets.delete(target);}disconnect(){this.targets.clear();}trigger(entries){this.callback(entries);}};
   const period={id:'daily-fixture',trackId:id,kind:'daily',startsAt:Date.now()-1000,endsAt:Date.now()+3600000,maxRp:100};
   class Profile{get tokenHash(){return id;}}
   class Profiles{getCurrentUserProfile(){return this.p||(this.p=new Profile());}get profileSlot(){return 0;}setProfileSlot(){}createProfile(){}deleteProfileSlot(){}}
@@ -35,9 +54,9 @@ const setup=async ({focus,queue,deferReady,receipt})=>{
   class Car{constructor(state){this.state=state;this.callbacks=[];}getCarState(){return this.state;}addFinishCallback(c){this.callbacks.push(c);}getRecording(){return {serialize:()=> 'AAAA'};}getTime(){return {numberOfFrames:this.ms};}getCarStyle(){return {serialize:()=>''};}finish(ms){this.ms=ms;this.callbacks.forEach(c=>c(this));}}
   const modules={641:Car,5220:Physics,2522:Profiles,5492:Profile,9117:Track};const manager=new Profiles(),physics=new Physics(),track=new Track();
   window.makeCar=()=>{manager.getCurrentUserProfile();const created=physics.createCar(null,null,null,track,null);physics.controlCar(created.id);const car=new Car(created.carState);car.addFinishCallback(()=>{});return car;};
-  const trackInfo=()=>({name:'Fixture track'}),isElementVisible=()=>true;
+  const trackInfo=()=>({name:'Fixture track'}),isElementVisible=()=>true,closeOverallPanel=panel=>{if(panel)panel.style.display='none';};
   let eventUi; const nativeFocus=eval('('+focus.trim()+')');
-  window.ui=eventUi=(await import('/events/client.mjs')).installEvents(window.bridgeFixture={accountId:()=>id,trackInfo,thumbnail:()=>'',formatTime:ms=>String(ms),readCatalog:async()=>{window.catalogReads++;return {periods:[period]};},readSnapshot:async requested=>{window.reads++;return {period:requested==='old-event'?{...period,id:requested,startsAt:Date.now()-172800000,endsAt:Date.now()-86400000}:period,updatedAt:period.startsAt,entries:[]};},readOwnStatus:async()=>receipt||null,readArchiveMonth:async()=>({periods:[{...period,id:'old-event',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000}]}),readTotals:async()=>({entries:[]}),submit:async run=>{window.submits.push(run);return {runId:'fixture',status:'waiting'};},ready:()=>deferReady?new Promise(resolve=>window.resolveReady=resolve):Promise.resolve(),require:()=>n=>({A:modules[n]}),openTrack:id=>nativeFocus(id,{event:true})});
+  window.ui=eventUi=(await import('/events/client.mjs')).installEvents(window.bridgeFixture={accountId:()=>id,trackInfo,thumbnail:()=>'',formatTime:ms=>String(ms),readCatalog:async()=>{window.catalogReads++;return {periods:[period]};},readSnapshot:async requested=>{window.reads++;const archived=requested==='old-event';return {period:archived?{...period,id:requested,startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,racerCount:1}:period,updatedAt:period.startsAt,entries:archived?[{accountId:'b'.repeat(64),name:'Archived racer',rank:1,timeMs:21000,rp:100}]:[]};},readOwnStatus:async()=>receipt||null,readArchiveMonth:async()=>({periods:[{...period,id:'old-event',racerCount:1,startsAt:Date.now()-172800000,endsAt:Date.now()-86400000}]}),readTotals:async()=>({entries:[]}),submit:async run=>{window.submits.push(run);return {runId:'fixture',status:'waiting'};},ready:()=>deferReady?new Promise(resolve=>window.resolveReady=resolve):Promise.resolve(),require:()=>n=>({A:modules[n]}),openTrack:id=>nativeFocus(id,{event:true})});
   document.querySelector('#native').onclick=()=>{window.car=makeCar();};
   document.querySelector('#ranked').onclick=()=>nativeFocus(id);
   document.querySelector('#open').onclick=()=>ui.open();
@@ -89,6 +108,7 @@ test('closing the dialog while Race event waits cancels the pending entry',async
 });
 
 test('monthly archives open stored leaderboards with normal practice and no refresh',async t=>{const p=await fixture(t);await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill('2026-08');await p.getByRole('button',{name:'View month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('[data-event-practice]').waitFor();assert.match(await p.locator('.sq-events-dialog main').innerText(),/Fixture track/);assert.equal(await p.locator('[data-event-refresh]').count(),0);assert.equal(await p.locator('[data-event-race]').count(),0);});
+test('zero-racer archive stays disabled instead of exposing practice controls',async t=>{const p=await fixture(t);await p.evaluate(()=>{bridgeFixture.readArchiveMonth=async()=>({periods:[{...{id:'empty-event',trackId:id,kind:'daily',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,maxRp:100},racerCount:0}]});});await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill('2026-08');await p.getByRole('button',{name:'View month',exact:true}).click();const state=await p.locator('[data-archive-event-id="empty-event"]').evaluate(details=>({open:details.open,disabled:details.querySelector('summary').getAttribute('aria-disabled'),tabIndex:details.querySelector('summary').tabIndex,empty:details.classList.contains('sq-archive-event-empty')}));assert.deepEqual(state,{open:false,disabled:'true',tabIndex:-1,empty:true});assert.equal(await p.locator('[data-archive-event-id="empty-event"] .sq-archive-actions button').isVisible(),false);});
 test('a pending cloud event PB is visible on a device without its local record',async t=>{const p=await fixture(t,{receipt:{accountId:id,attemptId:'another-device',timeMs:18000,status:'waiting'}});await p.locator('#open').click();await p.locator('[data-event-id]').click();const text=await p.locator('.sq-events-dialog main').innerText();assert.match(text,/18000/);assert.match(text,/submitted/);assert.match(text,/Waiting for replay verification/);});
 
 test('native event template shows a new local finish immediately as pending, never normal PB',async t=>{
@@ -113,7 +133,7 @@ test('live rail card enters native event screen directly without opening a modal
 test('direct live-card entry is cancelled when leaving during readiness',async t=>{const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.resolveReady);await p.evaluate(()=>{ui.leave();resolveReady();});await p.waitForTimeout(450);assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false);assert.equal(await p.locator('.sq-event-board').count(),0);});
 test('native integrity decorator keeps published event rows verified and local rows pending',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async id=>({...await read(id),entries:[{accountId:'b'.repeat(64),name:'Published',rank:1,timeMs:20000,rp:100}]});});await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(19000));
- await p.evaluate(source=>eval('('+source+')')(),section('  function syncIntegrityStateLabels(){','  function decorateNativeLeaderboardCosmetics('));
+ await p.evaluate(source=>eval('('+source+')')(),functionSource('syncIntegrityStateLabels'));
  assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.pending').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .sq-integrity-label').innerText(),'');
 });
 test('ended event launches are removed while unavailable slots remain visible',async t=>{const p=await fixture(t);await showLiveRail(p);assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),1);await p.evaluate(async()=>{bridgeFixture.readCatalog=async()=>({periods:[],archives:[]});await ui.refreshCatalog(true);ui.tick();});assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),0);assert.equal(await p.locator('.sq-event-track-buttons .sq-event-card').count(),2);assert.match(await p.locator('.sq-event-track-buttons').innerText(),/No active event available/);assert.equal(await p.locator('.sq-events-entry').count(),1);await p.locator('.sq-event-track-buttons .sq-event-card').first().click();assert.equal(await p.locator('.sq-events-overlay').count(),1);});
@@ -213,6 +233,39 @@ test('event thumbnail rendering runs one job at a time',async t=>{
  await p.evaluate(()=>renderJobs[0]());
  await p.waitForTimeout(200);
  assert.equal(await p.evaluate(()=>maxRenders),1);
+});
+test('shared event-car render uses a visible subscriber and reuses one row label',async t=>{
+ const p=await fixture(t,{controlledIntersectionObserver:true});await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.pendingIdle=[];window.requestIdleCallback=callback=>{pendingIdle.push(callback);return pendingIdle.length;};window.cancelIdleCallback=()=>{};
+  window.renderCalls=[];window.BT=async style=>{renderCalls.push(style);return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';};
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:[{accountId:'b'.repeat(64),name:'Hidden racer',carStyle:'shared-style',timeMs:20000,rank:1},{accountId:'c'.repeat(64),name:'Visible racer',carStyle:'shared-style',timeMs:21000,rank:2}]});
+ });await enter(p);await p.waitForFunction(()=>eventCarObserver?.targets.size===2);
+ await p.evaluate(()=>eventCarObserver.trigger([...eventCarObserver.targets].map(target=>({target,isIntersecting:true}))));
+ await p.evaluate(()=>eventCarObserver.trigger([...eventCarObserver.targets].map(target=>({target,isIntersecting:true}))));
+ await p.waitForFunction(()=>pendingIdle.length===1);
+ assert.deepEqual(await p.evaluate(()=>[...document.querySelectorAll('.sq-event-board button.main')].map(row=>row.querySelectorAll('.sq-event-car-unavailable').length)),[1,1]);
+ await p.evaluate(()=>{document.querySelector('.sq-event-board button.main').style.display='none';pendingIdle.shift()();});
+ await p.waitForFunction(()=>renderCalls.length===1&&document.querySelectorAll('.sq-event-board button.main')[1].querySelector('.image-container img').getAttribute('src')?.startsWith('data:image/png;base64,'));
+ assert.deepEqual(await p.evaluate(()=>renderCalls),['shared-style']);
+});
+test('event car queue overflow retries when IntersectionObserver is unavailable',async t=>{
+ const p=await fixture(t,{noIntersectionObserver:true});await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.renderCalls=[];window.BT=async style=>{renderCalls.push(style);return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';};
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:13},(_,i)=>({accountId:String(i+1).repeat(64),name:'Racer '+i,carStyle:'fallback-'+i,timeMs:20000+i,rank:i+1}))});
+ });await enter(p);await p.waitForFunction(()=>renderCalls.length===13,{timeout:10000});
+ await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .image-container img[src^="data:image/png;base64,"]').length===13);
+ assert.equal(await p.evaluate(()=>new Set(renderCalls).size),13);
+});
+test('resolved event-car styles are reused after reopening the native event view',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.renderCalls=[];window.BT=async style=>{renderCalls.push(style);return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';};
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:[{accountId:'b'.repeat(64),name:'Cached racer',carStyle:'reopened-style',timeMs:20000,rank:1}]});
+ });await enter(p);await p.waitForFunction(()=>renderCalls.length===1);await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();
+ await p.evaluate(()=>ui.leave());await enter(p);await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();
+ assert.deepEqual(await p.evaluate(()=>renderCalls),['reopened-style']);
 });
 test('readiness wait shows cancellable progress and cannot reopen after cancellation',async t=>{
  const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();

@@ -230,6 +230,14 @@ function saveLocal(storage, data) {
   }
 }
 
+function commitLocal(storage, local, candidate) {
+  if (!saveLocal(storage, candidate)) return false;
+  local.paused = candidate.paused;
+  local.sort = candidate.sort;
+  local.presets = candidate.presets;
+  return true;
+}
+
 /** Mounts a local-only, full-screen advanced filter editor. */
 export function mountFilterMenu({
   document = globalThis.document,
@@ -654,9 +662,11 @@ export function mountFilterMenu({
     const input = document.createElement('input'); input.type = 'search'; input.autocomplete = 'off'; input.maxLength = 80;
     input.placeholder = 'Type a username or account ID'; input.setAttribute('aria-label', title);
     const popup = el('div', 'fm-suggestions'); popup.hidden = true; popup.setAttribute('role', 'listbox');
+    const suggestionStatus = el('span', 'fm-suggestion-status');
+    suggestionStatus.setAttribute('role', 'status'); suggestionStatus.setAttribute('aria-live', 'polite'); suggestionStatus.setAttribute('aria-atomic', 'true');
     input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false');
     const chips = el('div', 'fm-chips'); chips.setAttribute('aria-label', `${title} selected`);
-    container.append(labelFor(title, input), popup, chips); parent.append(container);
+    container.append(labelFor(title, input), popup, suggestionStatus, chips); parent.append(container);
     const refreshSelected = () => {
       const ids = new Set(filter[field]);
       selectedUsers[field] = [...ids].map(id => {
@@ -668,6 +678,7 @@ export function mountFilterMenu({
         const chip = el('span', 'fm-chip');
         const row=rows.find(item=>rowId(item)===entry.id),preview=row?safeCall(()=>renderRacer(row),''):'';
         if(preview){const car=el('span','fm-racer-native-preview');car.innerHTML=preview;chip.append(car);}
+        else {const initialsBadge=el('span','fm-initials',initials(entry.name));initialsBadge.setAttribute('aria-hidden','true');chip.append(initialsBadge);}
         chip.append(el('span', '', entry.name));
         const remove = button('Remove', 'fm-chip-remove'); remove.setAttribute('aria-label', `Remove ${entry.name} from ${field === 'whitelist' ? 'include' : 'exclude'} list`);
         remove.addEventListener('click', () => { filter[field] = filter[field].filter(id => id !== entry.id); renderSuggestions(); refreshSelected(); scheduleRuleNotice(null, true); });
@@ -716,6 +727,7 @@ export function mountFilterMenu({
         if (idSearch.showId) option.append(el('span', 'fm-suggestion-id', candidate.id));
         option.addEventListener('click', () => {
           filter[field] = [...new Set([...filter[field], candidate.id])].slice(0, MAX_LIST);
+          suggestionStatus.textContent = `${candidate.name} selected.`;
           scheduleRuleNotice(null, true);
           input.value = ''; popup.hidden = true; input.setAttribute('aria-expanded', 'false'); refreshSelected(); input.focus();
         });
@@ -724,6 +736,7 @@ export function mountFilterMenu({
       popup.hidden = popup.childElementCount === 0;
       popup.dataset.mode = search ? 'search' : 'top';
       input.setAttribute('aria-expanded', String(!popup.hidden));
+      suggestionStatus.textContent = popup.hidden ? 'No racers found.' : `${candidates.length} racer${candidates.length === 1 ? '' : 's'} found.`;
       if (!popup.hidden) safeCall(() => onRenderRacers(popup), undefined);
     }
     input.addEventListener('input', renderSuggestions);
@@ -1101,8 +1114,11 @@ export function mountFilterMenu({
   loadButton.addEventListener('click', () => {
     const preset = local.presets.find(item => item.name === loadoutSelect.value);
     if (!preset) { setStatus('Choose a saved loadout first.', true); return; }
+    const nextPresets = local.presets.map(item => item === preset
+      ? { ...item, usageCount: (item.usageCount || 0) + 1, lastUsedAt: Date.now() }
+      : item);
+    if (!commitLocal(storage, local, { ...local, presets: nextPresets })) { setStatus('Loadout usage could not be saved locally.', true); return; }
     backupCurrentFilter('before loadout load');
-    preset.usageCount = (preset.usageCount || 0) + 1; preset.lastUsedAt = Date.now(); saveLocal(storage, local);
     writeForm(preset.filter); loadoutName.value = preset.name; setStatus('Loadout loaded into the editor. Apply filters to use it.');
   });
   saveButton.addEventListener('click', () => {
@@ -1111,26 +1127,28 @@ export function mountFilterMenu({
     if (checked.errors.length) { setStatus(checked.errors.join(' '), true); return; }
     const existing = local.presets.find(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
     if (existing && !document.defaultView?.confirm?.(`Replace the saved loadout “${existing.name}”?`)) { setStatus('Saved loadout was not changed.'); return; }
-    local.presets = [{ name, filter: checked.value, favorite: existing?.favorite === true }, ...local.presets.filter(item => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase())].slice(0, 30);
-    if (!saveLocal(storage, local)) { setStatus('Loadout could not be saved in this browser.', true); return; }
+    const presets = [{ name, filter: checked.value, favorite: existing?.favorite === true }, ...local.presets.filter(item => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase())].slice(0, 30);
+    if (!commitLocal(storage, local, { ...local, presets })) { setStatus('Loadout could not be saved in this browser.', true); return; }
     renderLoadouts(name); setStatus(`“${name}” saved on this device.`);
   });
   favoritePresetButton.addEventListener('click', () => {
     const preset = local.presets.find(item => item.name === loadoutSelect.value);
     if (!preset) return;
-    preset.favorite = !preset.favorite;
-    if (preset.favorite) for (const other of local.presets) if (other !== preset) other.favorite = false;
-    if (!saveLocal(storage, local)) { setStatus('Favorite could not be saved locally.', true); return; }
-    renderLoadouts(preset.name); setStatus(preset.favorite ? 'Loadout added to favorites.' : 'Loadout removed from favorites.');
+    const favorite = !preset.favorite;
+    const presets = local.presets.map(item => ({ ...item, favorite: item === preset ? favorite : favorite ? false : item.favorite }));
+    if (!commitLocal(storage, local, { ...local, presets })) { setStatus('Favorite could not be saved locally.', true); return; }
+    renderLoadouts(preset.name); setStatus(favorite ? 'Loadout added to favorites.' : 'Loadout removed from favorites.');
   });
   loadoutSort.addEventListener('change', () => {
-    local.sort = ['name','used'].includes(loadoutSort.value)?loadoutSort.value:'recent'; saveLocal(storage, local); renderLoadouts(loadoutSelect.value);
+    const sort = ['name','used'].includes(loadoutSort.value) ? loadoutSort.value : 'recent';
+    if (!commitLocal(storage, local, { ...local, sort })) { loadoutSort.value = local.sort; setStatus('Loadout sort could not be saved locally.', true); return; }
+    renderLoadouts(loadoutSelect.value);
   });
   deleteButton.addEventListener('click', () => {
     const name = loadoutSelect.value;
     if (!name) { setStatus('Choose a saved loadout first.', true); return; }
-    local.presets = local.presets.filter(item => item.name !== name);
-    if (!saveLocal(storage, local)) { setStatus('Loadout could not be deleted.', true); return; }
+    const presets = local.presets.filter(item => item.name !== name);
+    if (!commitLocal(storage, local, { ...local, presets })) { setStatus('Loadout could not be deleted.', true); return; }
     renderLoadouts(); loadoutName.value = ''; setStatus('Loadout deleted from this device.');
   });
   exportLoadoutsButton.addEventListener('click', () => {
@@ -1144,15 +1162,15 @@ export function mountFilterMenu({
       if (!Array.isArray(incoming)) throw new TypeError('Loadout data must contain a presets list.');
       const collisions = incoming.filter(item => local.presets.some(saved => saved.name.toLocaleLowerCase() === cleanString(item?.name, 32).toLocaleLowerCase()));
       if (collisions.length && !document.defaultView?.confirm?.(`Replace ${collisions.length} matching saved loadout(s)?`)) { setStatus('Loadout import canceled.'); return; }
-      backupCurrentFilter('before loadout import');
       const merged = new Map(local.presets.map(item => [item.name.toLocaleLowerCase(), item]));
       for (const item of incoming.slice(0, 30)) {
         const name = cleanString(item?.name, 32);
         if (!name || !item?.filter || typeof item.filter !== 'object') continue;
         merged.set(name.toLocaleLowerCase(), { name, filter: normalizeFilter(item.filter), favorite: item.favorite === true });
       }
-      local.presets = [...merged.values()].slice(0, 30);
-      if (!saveLocal(storage, local)) throw new Error('Loadouts could not be saved in this browser.');
+      const presets = [...merged.values()].slice(0, 30);
+      if (!commitLocal(storage, local, { ...local, presets })) throw new Error('Loadouts could not be saved in this browser.');
+      backupCurrentFilter('before loadout import');
       renderLoadouts(); setStatus('Loadouts imported and saved locally.');
     } catch (error) { setStatus(error?.message || 'Loadouts could not be imported.', true); }
   });
@@ -1277,10 +1295,19 @@ export function mountFilterMenu({
     try {
       filter = target;
       await onApply({ ...filter, whitelist: [...filter.whitelist], blacklist: [...filter.blacklist], forcedIncludes: [...filter.forcedIncludes], countryCodes: [...filter.countryCodes], badges: [...filter.badges], groupCodes: [...filter.groupCodes], trackRules: filter.trackRules.map(rule => ({ ...rule })) });
-      if (targetPreset) { targetPreset.filter = normalizeFilter(filter); saveLocal(storage, local); }
+      let savedPreset = true;
+      if (targetPreset) {
+        const presets = local.presets.map(item => item === targetPreset ? { ...item, filter: normalizeFilter(filter) } : item);
+        savedPreset = commitLocal(storage, local, { ...local, presets });
+      }
       if (!overlay.hidden) writeForm(filter);
       updateRuleNotice();
-      setStatus(`${kind === 'exclude' || kind === 'blacklist' ? 'Racer excluded' : kind === 'remove' ? 'Racer rule removed' : 'Racer forced into results'}${targetPreset ? ` in “${targetPreset.name}”` : ' in the current filter'}.`);
+      const actionLabel = kind === 'exclude' || kind === 'blacklist' ? 'Racer excluded' : kind === 'remove' ? 'Racer rule removed' : 'Racer forced into results';
+      if (targetPreset && !savedPreset) {
+        setStatus(`${actionLabel} in the active filter, but saved loadout "${targetPreset.name}" could not be updated. The saved loadout is unchanged.`, true);
+      } else {
+        setStatus(`${actionLabel}${targetPreset ? ` in “${targetPreset.name}”` : ' in the current filter'}.`);
+      }
       return true;
     } catch (error) {
       filter = previous;

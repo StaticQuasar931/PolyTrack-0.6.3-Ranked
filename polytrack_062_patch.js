@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=45',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='40';
+  const extraCatalogRevision='45';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -1398,17 +1398,42 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   const overallCarRenderFailedAt = new Map();
   const overallCarRendererRetries = new WeakMap();
   const overallCarRenderSubscribers=new WeakMap();
+  const overallCarRenderDemand=new Map();
+  const OVERALL_CAR_RENDER_QUEUE_LIMIT=256;
+  const OVERALL_CAR_RENDER_SKIPPED=Symbol('obsolete-car-render');
   const overallCarRenderQueue=[];
   let overallCarRenderActive=0;
-  function drainOverallCarRenderQueue(){
-    while(overallCarRenderActive<2&&overallCarRenderQueue.length){
-      const {job,resolve}=overallCarRenderQueue.shift();
-      overallCarRenderActive++;
-      Promise.resolve().then(job).then(resolve,()=>resolve('')).finally(()=>{overallCarRenderActive--;drainOverallCarRenderQueue();});
+  function hasVisibleOverallCarDemand(key){
+    const subscribers=overallCarRenderDemand.get(key);
+    if(!subscribers)return false;
+    for(const node of subscribers){
+      if(node.isConnected&&node.dataset.renderKey===key&&
+        (typeof node.getClientRects!=='function'||node.getClientRects().length>0))return true;
+    }
+    return false;
+  }
+  function pruneObsoleteOverallCarRenders(){
+    for(let index=overallCarRenderQueue.length-1;index>=0;index--){
+      const item=overallCarRenderQueue[index];
+      if(hasVisibleOverallCarDemand(item.key))continue;
+      overallCarRenderQueue.splice(index,1);
+      item.resolve(OVERALL_CAR_RENDER_SKIPPED);
     }
   }
-  function queueOverallCarRender(job){
-    return new Promise(resolve=>{overallCarRenderQueue.push({job,resolve});drainOverallCarRenderQueue();});
+  function drainOverallCarRenderQueue(){
+    while(overallCarRenderActive<2&&overallCarRenderQueue.length){
+      const {key,job,resolve}=overallCarRenderQueue.shift();
+      overallCarRenderActive++;
+      Promise.resolve().then(()=>hasVisibleOverallCarDemand(key)?job():OVERALL_CAR_RENDER_SKIPPED)
+        .then(resolve,()=>resolve('')).finally(()=>{overallCarRenderActive--;drainOverallCarRenderQueue();});
+    }
+  }
+  function queueOverallCarRender(key,job){
+    return new Promise(resolve=>{
+      if(overallCarRenderQueue.length>=OVERALL_CAR_RENDER_QUEUE_LIMIT)pruneObsoleteOverallCarRenders();
+      if(overallCarRenderQueue.length>=OVERALL_CAR_RENDER_QUEUE_LIMIT){resolve(OVERALL_CAR_RENDER_SKIPPED);return;}
+      overallCarRenderQueue.push({key,job,resolve});drainOverallCarRenderQueue();
+    });
   }
   function rememberCarRenderFailure(key){
     overallCarRenderFailedAt.set(key,Date.now());
@@ -1436,6 +1461,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const userId = cleanUserId(node.dataset.userid || '');
       const renderArg = __pt062NormalizeStyle(node.dataset.renderarg || __pt062GetRememberedStyle(userId) || normalizeCarColorId(''));
       const key = renderArg+'|'+userId;
+      const priorKey=overallCarRenderSubscribers.get(node);
+      if(priorKey&&priorKey!==key)overallCarRenderDemand.get(priorKey)?.delete(node);
       const imgs = node.querySelectorAll('img');
       const placeholder = imgs[0];
       const rendered = imgs[1];
@@ -1449,26 +1476,28 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         return;
       }
       if(Date.now()-Number(overallCarRenderFailedAt.get(key)||0)<30000)return;
+      let demand=overallCarRenderDemand.get(key);if(!demand)overallCarRenderDemand.set(key,demand=new Set());demand.add(node);
       let pending=overallCarRenderPending.get(key);
       if(!pending){
-        pending=queueOverallCarRender(()=>renderThumb(renderArg, userId ? `u.${userId}` : ''))
-        .then((out)=>normalizeThumbResult(out))
+        pending=queueOverallCarRender(key,()=>renderThumb(renderArg, userId ? `u.${userId}` : ''))
+        .then((out)=>out===OVERALL_CAR_RENDER_SKIPPED?out:normalizeThumbResult(out))
         .then((src)=>{
+          if(src===OVERALL_CAR_RENDER_SKIPPED)return src;
           if ((!src || typeof src !== 'string') && userId) {
             return Promise.resolve(renderThumb(__pt062GetRememberedStyle(userId) || renderArg,'')).then((fallback)=>normalizeThumbResult(fallback));
           }
           return src;
         })
-        .then(src=>{if(src){overallCarRenderFailedAt.delete(key);overallCarRenderCache.set(key,src);if(overallCarRenderCache.size>256)overallCarRenderCache.delete(overallCarRenderCache.keys().next().value);}else rememberCarRenderFailure(key);return src;})
+        .then(src=>{if(src===OVERALL_CAR_RENDER_SKIPPED)return src;if(src){overallCarRenderFailedAt.delete(key);overallCarRenderCache.set(key,src);if(overallCarRenderCache.size>256)overallCarRenderCache.delete(overallCarRenderCache.keys().next().value);}else rememberCarRenderFailure(key);return src;})
         .catch(()=>{rememberCarRenderFailure(key);return '';})
-        .finally(()=>overallCarRenderPending.delete(key));
+        .finally(()=>{overallCarRenderPending.delete(key);overallCarRenderDemand.delete(key);});
         overallCarRenderPending.set(key,pending);
       }
       if(overallCarRenderSubscribers.get(node)===key)return;
       overallCarRenderSubscribers.set(node,key);
       pending.then((src)=>{
           if(overallCarRenderSubscribers.get(node)===key)overallCarRenderSubscribers.delete(node);
-          if (!src || !node.isConnected || node.dataset.renderKey !== key) return;
+          if (typeof src !== 'string' || !src || !node.isConnected || node.dataset.renderKey !== key) return;
           rendered.src = src;
           placeholder.classList.remove('show');
           rendered.classList.add('show');
@@ -4285,7 +4314,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=44',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=45',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4305,8 +4334,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=44',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=44',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=44',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=45',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=45',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=45',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -7331,7 +7360,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=44',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:44,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=45',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:45,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

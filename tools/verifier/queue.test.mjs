@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {queueState,reconciledSlot,completedSlot,NEVER} from './queue.mjs';
-import {encode,decode} from './firestore.mjs';
+import {encode,decode,createFirestoreCaller} from './firestore.mjs';
 import {pendingSlot,VERIFIER_ENGINE_DIGEST,VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION,verificationCollectionForTrack} from '../../workers/ranked/src/verification.js';
 import {EXTRA_TRACK_IDS} from '../../workers/ranked/src/extra-track-ids.js';
 const row={accountId:'racer',trackId:'track',timeMs:1000,frames:1000,uploadId:1,replayHash:'a'.repeat(64)};
@@ -519,10 +519,13 @@ test('preflight errors fail closed rather than producing a false empty-queue suc
   }},{env:{},log:()=>{throw Error('Must not report partial work');}}),/Extra queue read failed/);
 });
 
-test('transient Firestore 429 retries the whole preflight without claiming an empty queue',async()=>{
+test('transient Firestore 429 retries within the caller without multiplying preflight attempts',async()=>{
   let calls=0;
-  const result=await runVerifier({check:true,env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic'},log:()=>{},sleep:async()=>{},
-    connectDatabase:async()=>({call:async()=>{if(++calls===1)throw Object.assign(Error('throttled'),{status:429});return [];}}),
+  const result=await runVerifier({check:true,env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic'},log:()=>{},
+    connectDatabase:async()=>createFirestoreCaller({base:'https://firestore.test',access:'token',sleep:async()=>{},fetchImpl:async()=>{
+      calls++;
+      return calls===1?new Response('{}',{status:429}):Response.json([]);
+    }}),
     eventCheck:async()=>({hasWork:false})});
   assert.equal(result.hasWork,false);
   assert.equal(calls,3);
@@ -534,7 +537,9 @@ test('sustained Firestore 429 defers without reporting no work or running verifi
   let calls=0;
   try{
     const result=await runVerifier({check:true,env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic',GITHUB_OUTPUT:output,GITHUB_STEP_SUMMARY:summary},
-      log:()=>{},sleep:async()=>{},connectDatabase:async()=>({call:async()=>{calls++;throw Object.assign(Error('throttled'),{status:429});}}),
+      log:()=>{},connectDatabase:async()=>createFirestoreCaller({base:'https://firestore.test',access:'token',sleep:async()=>{},fetchImpl:async()=>{
+        calls++;return new Response('{}',{status:429});
+      }}),
       eventCheck:async()=>{throw Error('Events must not run after a failed queue read');}});
     assert.deepEqual(result,{hasWork:null,deferred:true,reason:'firestore_429'});
     assert.equal(calls,3);
@@ -553,6 +558,22 @@ test('processing mode still validates engine before authentication or queue acce
     validateEngine:async()=>{throw Error('pin mismatch');},
     connectDatabase:async()=>{connected=true;}}),/pin mismatch/);
   assert.equal(connected,false);
+});
+
+test('single-round processing reports a deferred Firestore commit throttle explicitly',async()=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'polytrack-write-throttle-'));
+  const summaryPath=path.join(directory,'summary');
+  const failure=Object.assign(Error('throttled'),{code:'FIRESTORE_COMMIT_THROTTLED',deferred:true,status:429});
+  try{
+    const result=await runVerifier({env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'synthetic',GITHUB_STEP_SUMMARY:summaryPath},
+      validateEngine:async()=>{},connectDatabase:async()=>({}),log:()=>{},
+      eventRun:async()=>{throw failure;}});
+    assert.deepEqual(result,{deferred:true,reason:'firestore_throttled',interruptedRound:true,countsComplete:false});
+    assert.match(fs.readFileSync(summaryPath,'utf8'),/without replaying a write/);
+  }finally{
+    if(fs.existsSync(summaryPath))fs.unlinkSync(summaryPath);
+    fs.rmdirSync(directory);
+  }
 });
 
 test('workflow keeps all expensive steps due-gated and credentials restricted to preflight and processing',()=>{

@@ -10,10 +10,13 @@ export class VerificationBudgetError extends Error {
 export function budgetDatabase(db, limit=DRAIN_LIMITS.requests) {
   if (!Number.isInteger(limit) || limit<1 || limit>DRAIN_LIMITS.requests) throw Error('Invalid request budget');
   let used=0;
-  const call=async (...args)=>{
+  const reserve=()=>{
     if (used>=limit) throw new VerificationBudgetError();
     used++;
-    return db.call(...args);
+  };
+  const call=async (path, body)=>{
+    reserve();
+    return db.call(path, body, {onRetry:reserve});
   };
   return {call, requests:()=>used, remainingRequests:()=>limit-used, canSpend:count=>count<=limit-used, write:(...args)=>db.write(...args),
     get:async(collection,id)=>{
@@ -34,6 +37,9 @@ export async function drainVerification({runRound,requests,now=()=>performance.n
     let round;
     try { round=await runRound(); }
     catch(error) {
+      if(error?.deferred===true && /^FIRESTORE_(READ|COMMIT)_THROTTLED$/.test(String(error.code||''))) {
+        interruptedRound=true;stop='firestore_throttled';break;
+      }
       if(error?.code!=='VERIFICATION_REQUEST_BUDGET') throw error;
       // Earlier atomic publications may have succeeded; do not invent their counts.
       interruptedRound=true;stop='request_budget';break;

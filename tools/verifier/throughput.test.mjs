@@ -75,6 +75,17 @@ test('interrupted publication reports incomplete counts, never fabricated approv
   assert.equal(result.stop,'request_budget');
 });
 
+test('deferred Firestore throttles stop drain without inventing publication counts',async()=>{
+  const failure=Object.assign(Error('throttled'),{code:'FIRESTORE_COMMIT_THROTTLED',deferred:true,status:429});
+  const result=await drainVerification({now:()=>0,requests:()=>7,log:quiet,runRound:async()=>{throw failure;}});
+  assert.equal(result.rounds,0);
+  assert.equal(result.stop,'firestore_throttled');
+  assert.equal(result.interruptedRound,true);
+  assert.equal(result.countsComplete,false);
+  assert.equal(result.processed,0);
+  assert.equal(result.verified,0);
+});
+
 test('empty, conflict-only and superseded-only work cannot repeatedly drain the same jobs',async()=>{
   for(const report of [round({processed:0,verified:0,canonicalAttempts:0}),
     round({deferred:16,verified:0}),round({superseded:16,verified:0}),

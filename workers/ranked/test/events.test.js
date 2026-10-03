@@ -267,6 +267,28 @@ test('due retry progresses even with an unending fresh inbox page', async () => 
   assert.deepEqual(consumed, ['c'.repeat(64), account]);
   assert.equal(store.data.has(`${C.retries}/${retryId}`), false);
 });
+test('deferred Firestore throttle is not recorded as a rejected event receipt', async () => {
+  const failure = Object.assign(Error('Firestore throttled'), { status: 429, code: 'FIRESTORE_COMMIT_THROTTLED', deferred: true });
+  const inboxId = 'day1_' + account;
+  const inbox = { periodId: 'day1', accountId: account, attemptId: 'throttle',
+    receivedAt: { __firestoreTimestamp: '2026-09-12T00:00:00Z' } };
+  const document = { name: `projects/test/databases/(default)/documents/${C.inbox}/${inboxId}`,
+    fields: eventEncode(inbox).mapValue.fields };
+  let transactions = 0;
+  const runtime = { now: () => 1000, store: { transaction: async () => { transactions++; } },
+    service: { consumeInbox: async () => { throw failure; } },
+    request: async (path, init) => {
+      if (path === `/${C.cursors}/scan`) return null;
+      if (path === ':runQuery') {
+        const collection = JSON.parse(init.body).structuredQuery.from[0].collectionId;
+        return collection === C.inbox ? [{ document }] : [];
+      }
+      throw Error('Unexpected event query');
+    } };
+
+  await assert.rejects(consumeEventInbox(runtime), error => error === failure);
+  assert.equal(transactions, 0, 'deferred infrastructure failure must not publish a rejected receipt');
+});
 test('waiting runs can drain after archive without changing event RP or archive', async () => {
   const f = fixture(); await f.start(); await f.submit(20402);
   f.time(p.endsAt + p.graceMs); await f.service.archivePeriod('day1');
