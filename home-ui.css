@@ -98,6 +98,10 @@
 }
 
 .track-selection-ui .tracks-container .track.sq-extra-tracks-entry > .button > .thumbnail {
+  box-sizing: border-box;
+  width: 100% !important;
+  height: 176px !important;
+  padding: 10px 14px !important;
   object-fit: contain;
   image-rendering: auto;
 }
