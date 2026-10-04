@@ -387,7 +387,8 @@ test('preflight detects due work without counting racers and passes a determinis
     queries++;assert.equal(body.structuredQuery.where.fieldFilter.value.integerValue,'1234');
     return queries===1?[{document:{name:'queue/track',fields:{notBefore:{integerValue:'1234'}}}}]:[];
   }},{now:1234,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
-  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1,
+  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1,queueReturnedDocuments:1,
+    firestoreHttpRequests:null,firestoreReturnedDocuments:null,firestoreQueryCount:null,firestoreEmptyQueryMinimumReads:null,firestoreEstimatedDocumentReads:null,
     queueSample:{queuedRuns:0,averageOverdueAgeMs:0,sampledQueueDocuments:1,sampleLimitPerLane:20,truncated:false}});
   assert.equal(queries,2);
 });
@@ -427,6 +428,19 @@ test('all ranked catalog IDs use the Extra lane',()=>{
   assert.deepEqual(ids,expected);
   assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
   assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
+});
+
+test('round-local priority cache shares the overall read and is caller-invalidated between rounds', async () => {
+  const docs = [queueDoc('track-a', [row]), queueDoc('track-b', [row])];
+  let calls = 0;
+  const db = {get: async () => { calls++; return {data: {trackSummaries: []}}; }};
+  const roundCache = new Map();
+
+  await prioritizeQueueDocuments(db, docs, 100, roundCache);
+  await prioritizeQueueDocuments(db, docs, 100, roundCache);
+  assert.equal(calls, 1);
+  await prioritizeQueueDocuments(db, docs, 101, new Map());
+  assert.equal(calls, 2);
 });
 
 test('eight older Extra queues cannot hide core work and Extra selection remains last',async()=>{

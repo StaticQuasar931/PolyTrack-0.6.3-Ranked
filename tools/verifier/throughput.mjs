@@ -18,7 +18,11 @@ export function budgetDatabase(db, limit=DRAIN_LIMITS.requests) {
     reserve();
     return db.call(path, body, {onRetry:reserve});
   };
-  return {call, requests:()=>used, remainingRequests:()=>limit-used, canSpend:count=>count<=limit-used, write:(...args)=>db.write(...args),
+  return {call, requests:()=>used, returnedDocuments:()=>db.returnedDocuments?.() ?? null,
+    queryCount:()=>db.queryCount?.() ?? null,
+    emptyQueryMinimumReads:()=>db.emptyQueryMinimumReads?.() ?? null,
+    estimatedDocumentReads:()=>db.estimatedDocumentReads?.() ?? null,
+    remainingRequests:()=>limit-used, canSpend:count=>count<=limit-used, write:(...args)=>db.write(...args),
     get:async(collection,id)=>{
       const doc=await call('/'+collection+'/'+encodeURIComponent(id));
       return doc?{...doc,data:decode({mapValue:{fields:doc.fields||{}}})}:null;
@@ -63,6 +67,10 @@ export async function drainVerification({runRound,requests,now=()=>performance.n
     mismatch:rounds.reduce((n,r)=>n+(r.mismatch||0),0),
     deferred:rounds.reduce((n,r)=>n+(r.deferred||0),0),
     superseded:rounds.reduce((n,r)=>n+(r.superseded||0),0),reasons,
+    normalQueueReturnedDocuments:rounds.reduce((n,r)=>n+(r.normalQueueReturnedDocuments||0),0),
+    unusedEventReservedSlots:rounds.reduce((n,r)=>n+(r.unusedEventReservedSlots||0),0),
+    normalIdleSlots:rounds.reduce((n,r)=>n+(r.normalIdleSlots||0),0),
+    idleNativeSlots:rounds.reduce((n,r)=>n+(r.idleNativeSlots||0),0),
     requests:requests(),elapsedMs:now()-started,stop,interruptedRound,
     countsComplete:!interruptedRound};
   log(JSON.stringify({drain:summary}));

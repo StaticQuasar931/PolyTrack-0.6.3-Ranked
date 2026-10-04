@@ -59,6 +59,19 @@ test('public event catalog remains available from stale edge cache during a Fire
     assert.deepEqual((await fallback.json()).periods,[]);
   }finally{if(prior===undefined)delete globalThis.caches;else globalThis.caches=prior;}
 });
+
+test('event cleanup checks the catalog once per five-minute window while the other phase intakes inbox',async()=>{
+  const at=Date.UTC(2026,8,14,0,3),calls=[];
+  const result=await eventWorkerMaintenance({EVENTS_ENABLED:'true'}, {
+    request:async(path)=>{calls.push(path);if(path===':runQuery')return [];return null;},
+    at,now:()=>at,officialIds:[official],allIds:[official],
+    targetForTrack:()=>assert.fail('this phase does not provision events')
+  });
+  assert.deepEqual(result,{consumed:0});
+  assert.equal(calls.includes('/'+C.catalog+'/main'),false);
+  assert.equal(calls.filter(path=>path===':runQuery').length,2,'inbox and retry due queries still run');
+});
+
 function fixture(target,existing=false) {
   const candidates=utcEventCandidates(at,[official],[rolling]);
   const daily=candidates.find(p=>p.kind==='daily'),weekly=candidates.find(p=>p.kind==='weekly');

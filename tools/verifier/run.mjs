@@ -24,6 +24,11 @@ async function validateEnginePin() {
 }
 
 export async function checkForWork(db, {env = process.env, now = Date.now(), log = console.log, eventCheck = checkEvents} = {}) {
+  const requestsBefore = db.requests?.() ?? null;
+  const documentsBefore = db.returnedDocuments?.() ?? null;
+  const queryCountBefore = db.queryCount?.() ?? null;
+  const emptyQueryMinimumBefore = db.emptyQueryMinimumReads?.() ?? null;
+  const estimatedReadsBefore = db.estimatedDocumentReads?.() ?? null;
   // Scheduled wakes need an existence check, not a repeated queue-health scan.
   // Manual runs keep the larger, explicitly bounded diagnostic sample.
   const sampleLimit=env.GITHUB_EVENT_NAME==='schedule'?1:PREFLIGHT_QUEUE_SAMPLE_LIMIT;
@@ -68,9 +73,18 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
     '## Verification preflight\n' + message + '\n\n' +
     `Queue health (bounded sample, not an exact total): ${queuedRuns} queued runs across Core and Extra; average overdue age ${(averageOverdueAgeMs / 60000).toFixed(1)} minutes (proxy from queue notBefore, weighted by queued runs). Sampled ${queueRows.length} due queue documents, at most ${sampleLimit} per lane; sample ${queueSample.truncated ? 'may be truncated' : 'did not reach its cap'}.\n\n` +
     'Core and Extra queues: two bounded projected queue queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
+    `Observed Firestore usage: ${db.requests?.() == null ? 'HTTP count unavailable' : db.requests() - requestsBefore} HTTP calls, ${db.returnedDocuments?.() == null ? 'returned-document count unavailable' : db.returnedDocuments() - documentsBefore} returned documents, ${db.emptyQueryMinimumReads?.() == null ? 'empty-query minimum count unavailable' : db.emptyQueryMinimumReads() - emptyQueryMinimumBefore} empty-query minimum reads, and ${db.estimatedDocumentReads?.() == null ? 'read estimate unavailable' : db.estimatedDocumentReads() - estimatedReadsBefore} estimated document reads. This estimate is not billed usage and excludes index-entry charges.\n` +
     (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
       'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));
-  return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2, returnedDocuments: queueRows.length, queueSample};
+  return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2,
+    returnedDocuments: queueRows.length,
+    queueReturnedDocuments: queueRows.length,
+    firestoreHttpRequests: requestsBefore === null || db.requests?.() == null ? null : db.requests() - requestsBefore,
+    firestoreReturnedDocuments: documentsBefore === null || db.returnedDocuments?.() == null ? null : db.returnedDocuments() - documentsBefore,
+    firestoreQueryCount: queryCountBefore === null || db.queryCount?.() == null ? null : db.queryCount() - queryCountBefore,
+    firestoreEmptyQueryMinimumReads: emptyQueryMinimumBefore === null || db.emptyQueryMinimumReads?.() == null ? null : db.emptyQueryMinimumReads() - emptyQueryMinimumBefore,
+    firestoreEstimatedDocumentReads: estimatedReadsBefore === null || db.estimatedDocumentReads?.() == null ? null : db.estimatedDocumentReads() - estimatedReadsBefore,
+    queueSample};
 }
 
 export async function runVerifier({check = false, drain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
@@ -109,9 +123,14 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
   const bounded=budgetDatabase(db);
   const summary=await drainVerification({requests:bounded.requests,now:clock,log,
     runRound:()=>runRound(bounded,{...roundOptions,borrowUnusedEvents:true})});
+  summary.firestoreHttpRequests=bounded.requests();
+  summary.firestoreReturnedDocuments=bounded.returnedDocuments();
+  summary.firestoreQueryCount=bounded.queryCount();
+  summary.firestoreEmptyQueryMinimumReads=bounded.emptyQueryMinimumReads();
+  summary.firestoreEstimatedDocumentReads=bounded.estimatedDocumentReads();
   if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '\n## Bounded drain\n'+JSON.stringify(summary)+'\nLimits: '+DRAIN_LIMITS.rounds+
-    ' rounds, 64 total native attempts, '+DRAIN_LIMITS.requests+' Firestore HTTP requests. Request count is not billed document usage. '+
+    ' rounds, 64 total native attempts, '+DRAIN_LIMITS.requests+' Firestore HTTP requests. Returned documents, query count, empty-query minimum reads, and estimated document reads are separate counters; the estimate is not billed usage and excludes index-entry charges. '+
     'Time admission is measured, not a completion guarantee; the workflow step timeout remains the hard stop. '+
     'Interrupted-round publication counts are incomplete, not zero. `stop` explains why this invocation ended; a round is not a GitHub workflow run number. '+
     'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n'+
@@ -119,7 +138,7 @@ export async function runVerifier({check = false, drain = false, borrowUnusedEve
   return summary;
 }
 
-async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents}) {
+export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents}) {
   const now = Date.now();
   // Events must get their reservation before normal canonical reads/commits. Otherwise
   // normal selection can spend the request budget and strand both sources.
@@ -127,9 +146,13 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
   const events = await eventRun(db, root, {limit: eventLimit, intakeLimit: TOTAL_JOB_LIMIT, canSpend:db.canSpend});
   if (!Number.isInteger(events.checked) || events.checked<0 || events.checked>eventLimit) throw Error('Invalid event native count');
   let selectedJobs = [], canonicalAttempts = 0, selectionConflicts = 0;
-  if (events.checked < TOTAL_JOB_LIMIT) {
+  let normalQueueReturnedDocuments = 0;
+  const normalCapacity = Math.min(borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT,
+    db.remainingRequests ? Math.floor(db.remainingRequests() / 15) : TOTAL_JOB_LIMIT);
+  if (events.checked < TOTAL_JOB_LIMIT && normalCapacity > 0) {
+    const candidateLimit = Math.min(QUEUE_CANDIDATE_LIMIT, normalCapacity);
     const dueDocs = async collection => {
-      const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: collection}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: QUEUE_CANDIDATE_LIMIT}});
+      const query = await db.call(':runQuery', {structuredQuery: {from: [{collectionId: collection}], where: {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}}, orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}], limit: candidateLimit}});
       if (!Array.isArray(query)) throw Error('Unexpected verification queue response');
       return query.filter(x => x.document).map(x => {
         const document = {...x.document, queueCollection: collection, data: decode({mapValue: {fields: x.document.fields || {}}})};
@@ -142,12 +165,13 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
     };
     const coreDocs = await dueDocs(VERIFICATION_COLLECTION);
     const extraDocs = await dueDocs(EXTRA_VERIFICATION_COLLECTION);
-    const capacity = borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT;
-    const coreLimit = capacity - Number(extraDocs.length > 0);
-    const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now), now, {jobLimit: coreLimit, lookupLimit: coreLimit});
+    normalQueueReturnedDocuments = coreDocs.length + extraDocs.length;
+    const coreLimit = normalCapacity - Number(extraDocs.length > 0);
+    const priorityCache = new Map();
+    const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now, priorityCache), now, {jobLimit: coreLimit, lookupLimit: coreLimit});
     // Extra runs have the last reservation, but can use every slot left idle by core tracks.
-    const extraLimit = Math.max(0, Math.min(capacity - core.jobs.length, capacity - core.canonicalAttempts));
-    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now), now, {jobLimit: extraLimit, lookupLimit: extraLimit}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
+    const extraLimit = Math.max(0, Math.min(normalCapacity - core.jobs.length, normalCapacity - core.canonicalAttempts));
+    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now, priorityCache), now, {jobLimit: extraLimit, lookupLimit: extraLimit}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
     selectedJobs = [...core.jobs, ...extra.jobs];
     canonicalAttempts = core.canonicalAttempts + extra.canonicalAttempts;
     selectionConflicts = core.selectionConflicts + extra.selectionConflicts;
@@ -160,6 +184,10 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
   if(db.remainingRequests)jobs=jobs.slice(0,Math.floor(db.remainingRequests()/15));
   const eventSummary = {checked: events.checked, consumed: events.consumed,
     rejected: events.rejected, archived: events.archived, budgetDeferred:events.budgetDeferred===true};
+  const idleCounts = {normalQueueReturnedDocuments,
+    unusedEventReservedSlots: Math.max(0, eventLimit - events.checked),
+    normalIdleSlots: Math.max(0, (borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT) - jobs.length),
+    idleNativeSlots: Math.max(0, TOTAL_JOB_LIMIT - events.checked - jobs.length)};
   log(JSON.stringify({events: eventSummary}));
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '## Event verification\n' + JSON.stringify(eventSummary) + `\nNative work: ${events.checked} event checks (${eventLimit} reserved slots), ${jobs.length} normal; at most ${TOTAL_JOB_LIMIT} total per round (unused event slots may be borrowed). Inbox intake: at most ${TOTAL_JOB_LIMIT}.\n`);
@@ -167,7 +195,7 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
   const infrastructure = result => result?.status==='unavailable' && /^(engine_|isolate_|process_|page_error|cpu_|wall_|deadline|native_engine_error)/.test(String(result.reason||''));
   const eventFailure=(events.results||[]).some(infrastructure);
   if (!jobs.length) {
-    const summary={processed:0,canonicalAttempts,selectionConflicts,events:eventSummary,infrastructureFailure:eventFailure};
+    const summary={processed:0,canonicalAttempts,selectionConflicts,events:eventSummary,...idleCounts,infrastructureFailure:eventFailure};
     log(JSON.stringify({...summary,message:'No runnable normal verification jobs.'}));return summary;
   }
   const trustedTracks = loadWeeklyTrustedTrack(root, jobs);
@@ -175,10 +203,10 @@ async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verif
   if (results.length !== jobs.length || new Set(results.map(r => r.resultId)).size !== jobs.length) throw Error('Incomplete verifier result set');
   const totals = await publishNormal(db, jobs, results);
   const reasons = totals.reasons;
-  log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...totals, reasons, firestoreRequests: db.requests()}));
+  log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...idleCounts, ...totals, reasons, firestoreRequests: db.requests()}));
   if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,`## Replay verification\nProcessed: ${jobs.length}. Verified: ${totals.verified}. Corrected legacy times: ${totals.corrected}. Waiting: ${totals.unavailable}. Deferred conflicts: ${totals.deferred}.\n\n${Object.entries(reasons).map(([reason,count])=>'- '+reason+': '+count).join('\n')}\n`);
   if(results.some(r=>r.reason==='engine_unavailable')){console.error('Verifier startup failed. Runs remain waiting; inspect the startup diagnostic.');process.exitCode=1;}
-  return {processed:jobs.length,canonicalAttempts,selectionConflicts,...totals,events:eventSummary,
+  return {processed:jobs.length,canonicalAttempts,selectionConflicts,...idleCounts,...totals,events:eventSummary,
     infrastructureFailure:eventFailure||results.some(infrastructure)};
 }
 

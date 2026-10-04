@@ -1,9 +1,9 @@
-import { verificationKey, verifiedVerdict, VERIFIER_VERSION, VERIFIER_ENGINE_DIGEST } from '../src/verification.js';
+import { verificationKey, verifiedVerdict, VERIFIER_VERSION, VERIFIER_ENGINE_DIGEST, VERIFICATION_COLLECTION } from '../src/verification.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import rankedWorker, { rebuildOverall, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
+import rankedWorker, { rebuildOverall, rebuildTrack, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
@@ -746,6 +746,32 @@ test('idle canonical reconciliation performs no recurring Firestore write', asyn
   assert.equal(writes,0);
 });
 
+test('scheduled idle recovery scans canonical results every fifteen minutes without heartbeat writes', async () => {
+  for (const [minute, expectedQueries] of [[5, 0], [15, 1]]) {
+    let queries=0, documentReads=0, writes=0, completion;
+    const env={__TEST_FIRESTORE:async(path,init={})=>{
+      if(path===':runQuery'){queries++;return [];}
+      if(path===':commit'){writes++;return {};}
+      if(init.method==='PATCH')writes++;
+      documentReads++;
+      if(path.includes(VERIFICATION_BOOTSTRAP_ID))return {fields:wire({complete:true}).mapValue.fields};
+      if(path.includes('/canonical_reconcile_v2'))return {fields:wire({backfillComplete:true,
+        cursorIngestedAt:'2026-09-09T00:00:00.000000123Z',pendingTrackIds:[]}).mapValue.fields,updateTime:'job-v1'};
+      if(path.includes('/0.6.2_s1_release_meta/current'))return {fields:wire({dirty:false,
+        plannerPublicationVersion:Number.MAX_SAFE_INTEGER,plannerBundleVersion:Number.MAX_SAFE_INTEGER,
+        cosmeticEntitlementVersion:Number.MAX_SAFE_INTEGER,averagePlacementVersion:Number.MAX_SAFE_INTEGER,
+        derivedMetricsVersion:Number.MAX_SAFE_INTEGER}).mapValue.fields,updateTime:'meta-v1'};
+      return null;
+    }};
+    rankedWorker.scheduled({cron:'*/5 * * * *',scheduledTime:Date.UTC(2026,9,3,0,minute)},env,
+      {waitUntil:promise=>{completion=promise;}});
+    await completion;
+    assert.equal(documentReads,3,'bootstrap, reconcile job, and release metadata lookups');
+    assert.equal(queries,expectedQueries);
+    assert.equal(writes,0);
+  }
+});
+
 test('synthetic ranking sizes remain capped and deterministic', () => {
   for (const size of [1, 3, 15, 200, 500, 1000]) {
     const rows = Array.from({ length: size }, (_, index) => validRun({ accountId: `racer-${index}`, trackId: TRACK, timeMs: 20000 + index, createdAt: index + 1 }));
@@ -817,6 +843,29 @@ function unwire(value){
  return value?.stringValue;
 }
 
+test('full track rebuild keeps its canonical scan bounded and still reconciles verifier slots',async()=>{
+ let queryLimit=0,queueRead=false;const commits=[];
+ const env={__TEST_FIRESTORE:async(path,init={})=>{
+  if(path===':runQuery'){
+   const query=JSON.parse(init.body).structuredQuery;
+   assert.equal(query.from[0].collectionId,'0.6.2_race_results');
+   queryLimit=query.limit;return [];
+  }
+  if(path===':commit'){commits.push(JSON.parse(init.body).writes);return {};}
+  if(path.includes('/'+VERIFICATION_COLLECTION+'/'+COMMUNITY_TRACK)){
+   queueRead=true;
+   return {fields:wire({trackId:COMMUNITY_TRACK,slots:{orphan:{status:'waiting'}}}).mapValue.fields,updateTime:'queue-v1'};
+  }
+  return null;
+ }};
+ const result=await rebuildTrack(env,COMMUNITY_TRACK);
+ assert.equal(result.entries.length,0);
+ assert.equal(queryLimit,501);
+ assert.equal(queueRead,true);
+ assert.ok(commits.flat().some(write=>write.update?.name.includes('/'+VERIFICATION_COLLECTION+'/'+COMMUNITY_TRACK)));
+ assert.ok(commits.flat().some(write=>write.update?.name.includes('/0.6.2_s1_leaderboards_track/'+COMMUNITY_TRACK)));
+});
+
 test('profile identity update changes one published row without querying canonical races or altering proof', async () => {
  const row=validRun({accountId:'racer',trackId:TRACK,timeMs:19000,pbAt:123456,integrityVerified:true,runVerified:true,verifiedState:1,validationState:'verified',replayHash:'b'.repeat(64),uploadId:987});
  const snapshot={trackId:TRACK,entries:[row],complete:true,totalEntries:1,revision:7,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'old-signature'};
@@ -846,22 +895,31 @@ test('profile identity update skips an account absent from a current track snaps
  assert.equal(result.changed,false);assert.equal(queries,0);assert.equal(writes,0);
 });
 
-function targetedReconcileFixture({canonicalTime=19000,queueKey=null,failJobCas=false,fullRebuildMarker=false}={}){
+function targetedReconcileFixture({canonicalTime=19000,queueKey=null,failJobCas=false,fullRebuildMarker=false,
+  discoverResult=false,unseen=false,discoveredId=null,schemaVersion=6,pendingIdsOverride=null,
+  failTrackRebuild=false}={}){
  const replay='targeted-verification-fixture';
  const canonical=validRun({accountId:'target-racer',trackId:TRACK,timeMs:canonicalTime,raceTimeFrames:1140,frames:1140,uploadId:456,replay,replayHash:createHash('sha256').update(replay).digest('hex'),integrityVerified:false,runVerified:false,pbAt:456});
  const old=validRun({...canonical,timeMs:20000,raceTimeFrames:1200,frames:1200,uploadId:455,pbAt:455,replayHash:'c'.repeat(64),integrityVerified:true,runVerified:false,verifiedState:0});
- const board={trackId:TRACK,entries:computeTrackEntries([old],TRACK),complete:true,totalEntries:1,revision:4,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'old-signature'};
+ const board={trackId:TRACK,entries:computeTrackEntries([old],TRACK),complete:true,totalEntries:1,revision:4,schemaVersion,algorithmVersion:'participation-v8-s1',signature:'old-signature'};
  const resultId=`target-racer_${TRACK}`;
  const queue={trackId:TRACK,slots:{'target-racer':{accountId:'target-racer',trackId:TRACK,resultId,key:queueKey||verificationKey(canonical),status:'verified',verifierVersion:VERIFIER_VERSION,engineDigest:VERIFIER_ENGINE_DIGEST}}};
- const work={backfillComplete:true,cursorIngestedAt:'2026-09-09T00:00:00Z',pendingTrackIds:[TRACK],pendingResultIds:{[TRACK]:[resultId]},pendingFullRebuildTrackIds:fullRebuildMarker?[TRACK]:[]};
+ const pendingIds=unseen?[]:(pendingIdsOverride||[resultId]);
+ const work={backfillComplete:true,cursorIngestedAt:'2026-09-09T00:00:00Z',pendingTrackIds:pendingIds.length?[TRACK]:[],pendingResultIds:pendingIds.length?{[TRACK]:pendingIds}:{},pendingFullRebuildTrackIds:fullRebuildMarker?[TRACK]:[]};
  let savedBoard=null,jobWrite=null,trackQueries=0,canonicalTrackScans=0,batchGets=0;
  const env={__TEST_FIRESTORE:async(path,init={})=>{
   if(path===':runQuery'){
    const collection=JSON.parse(init.body).structuredQuery.from[0].collectionId;
    if(collection==='0.6.2_race_results'){
-    const query=JSON.parse(init.body).structuredQuery;
-    if(query.where?.fieldFilter?.field?.fieldPath==='trackId')canonicalTrackScans++;
-    return [];
+     const query=JSON.parse(init.body).structuredQuery;
+     if(query.where?.fieldFilter?.field?.fieldPath==='trackId'){
+      canonicalTrackScans++;
+      if(failTrackRebuild)throw Error('TRACK_REBUILD_FAILURE');
+     }
+     if(discoverResult&&query.where?.fieldFilter?.field?.fieldPath==='ingestedAt')return [{document:{
+      name:'projects/polytrack-052/databases/(default)/documents/0.6.2_race_results/'+(discoveredId||resultId),
+      fields:wire({...canonical,ingestedAt:'2026-09-09T00:00:01Z'}).mapValue.fields,updateTime:'canonical-v1'}}];
+     return [];
    }
    if(collection==='0.6.2_s1_leaderboards_track')trackQueries++;
    return [];
@@ -887,6 +945,42 @@ function targetedReconcileFixture({canonicalTime=19000,queueKey=null,failJobCas=
  }};
  return {env,canonical,work,getBoard:()=>savedBoard,getJobWrite:()=>jobWrite,getTrackQueries:()=>trackQueries,getCanonicalTrackScans:()=>canonicalTrackScans,getBatchGets:()=>batchGets};
 }
+
+test('unseen canonical PB uses the changed-results page and targeted merge on a current snapshot',async()=>{
+ const f=targetedReconcileFixture({discoverResult:true,unseen:true});
+ const result=await reconcileCanonicalChanges(f.env);
+ assert.equal(result.targeted,1);
+ assert.equal(f.getBatchGets(),0,'the changed-results query already returned the canonical document');
+ assert.equal(f.getCanonicalTrackScans(),0);
+ assert.equal(f.getBoard().entries[0].timeMs,19000);
+ assert.equal(f.getBoard().entries[0].runVerified,true);
+ assert.deepEqual(Object.keys(f.getJobWrite().update.fields.pendingResultIds.mapValue.fields),[]);
+});
+
+test('malformed changed-result document IDs retain the full-rebuild fallback',async()=>{
+ const f=targetedReconcileFixture({discoverResult:true,unseen:true,discoveredId:`wrong_${TRACK}`});
+ await reconcileCanonicalChanges(f.env);
+ assert.ok(f.getCanonicalTrackScans()>0);
+ assert.equal(f.getBatchGets(),0);
+});
+
+test('stale snapshots retain the full-rebuild fallback for changed canonical rows',async()=>{
+ const f=targetedReconcileFixture({discoverResult:true,unseen:true,schemaVersion:5});
+ await reconcileCanonicalChanges(f.env);
+ assert.ok(f.getCanonicalTrackScans()>0);
+ assert.equal(f.getBatchGets(),0);
+});
+
+test('targeted-ID overflow promotes the track to a bounded full-rebuild marker before cursor advance',async()=>{
+ const pendingIds=Array.from({length:200},(_,index)=>`racer${index}_${TRACK}`);
+ const f=targetedReconcileFixture({discoverResult:true,pendingIdsOverride:pendingIds,failTrackRebuild:true});
+ await reconcileCanonicalChanges(f.env);
+ const fields=f.getJobWrite().update.fields;
+ assert.deepEqual(Object.keys(fields.pendingResultIds.mapValue.fields),[]);
+ assert.deepEqual(fields.pendingFullRebuildTrackIds.arrayValue.values.map(value=>value.stringValue),[TRACK]);
+ assert.deepEqual(fields.pendingTrackIds.arrayValue.values.map(value=>value.stringValue),[TRACK]);
+ assert.equal(fields.cursorDocumentId.stringValue,`target-racer_${TRACK}`);
+});
 
 test('targeted reconciliation refreshes equal/current PB from server proof without a track canonical scan',async()=>{
  const f=targetedReconcileFixture();

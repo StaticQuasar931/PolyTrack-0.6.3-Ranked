@@ -81,7 +81,9 @@ export async function eventWorkerMaintenance(env, { request, officialIds, allIds
     try{return {...regular,kodub:await provisionKodubEvent(runtime,{capacity,fetch:fetcher})};}
     catch(error){return {...regular,kodub:{unavailable:true,reason:String(error.message).slice(0,120)}};}
   }
-  if ([1, 3].includes(Math.floor(at / 60000) % 5)) {
+  // One bounded cleanup page per five-minute window is enough; keep the other
+  // maintenance minute available for inbox intake without rereading the catalog.
+  if (Math.floor(at / 60000) % 5 === 1) {
     const cleanup = await cleanupEvents(runtime);
     if (!cleanup.idle) return cleanup;
   }

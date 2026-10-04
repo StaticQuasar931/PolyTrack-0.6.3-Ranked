@@ -35,6 +35,7 @@ const RECONCILE_RESULT_BATCH = 50;
 const RECONCILE_TRACK_BATCH = 4;
 const RECONCILE_PENDING_ID_LIMIT = 200;
 const RECONCILE_TARGET_ID_BATCH = 16;
+const RECONCILE_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const COLLECTIONS = Object.freeze({
   raceResults: '0.6.2_race_results',
   profiles: '0.6.2_profiles_public',
@@ -1024,7 +1025,7 @@ export async function bootstrapSnapshotVerification(env) {
   return { scanned: boards.length, complete };
 }
 
-export async function reconcileCanonicalChanges(env) {
+export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) {
   // New namespace discards any cursor poisoned by legacy client-clock timestamps.
   const jobId='canonical_reconcile_v2';
   const document=await readDocument(env,COLLECTIONS.jobs,jobId);
@@ -1046,14 +1047,28 @@ export async function reconcileCanonicalChanges(env) {
   for(const trackId of pendingFullRebuildTrackIds)queued.add(trackId);
   const capacity=Math.max(0,200-queued.size);
   const budget=Math.min(RECONCILE_RESULT_BATCH,Math.floor(capacity/2));
-  const changed=budget?await runChangedResultsQuery(env,timestamp,budget,safeText(job.cursorDocumentId,256)):[];
+  const changed=budget&&(scanResults||!job.backfillComplete)
+    ?await runChangedResultsQuery(env,timestamp,budget,safeText(job.cursorDocumentId,256)):[];
   const legacy=budget&&!job.backfillComplete?await runChangedResultsQuery(env,timestamp,budget,safeText(job.backfillDocumentId,256),true):[];
   const fullRebuildTracks=new Set(pendingFullRebuildTrackIds);
+  let pendingResultCount=Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0);
   for(const row of changed){
     const trackId=safeText(row.data?.trackId,80);
     if(!trackId||!structurallyValidResult(row.data,trackId))continue;
     queued.add(trackId);
-    if(!(pendingResultIds[trackId]||[]).includes(row.id))fullRebuildTracks.add(trackId);
+    if(fullRebuildTracks.has(trackId))continue;
+    const ids=pendingResultIds[trackId]||[];
+    if(ids.includes(row.id))continue;
+    if(pendingResultCount>=RECONCILE_PENDING_ID_LIMIT){
+      pendingResultCount-=ids.length;
+      delete pendingResultIds[trackId];
+      pendingFullRebuildTrackIds.add(trackId);
+      fullRebuildTracks.add(trackId);
+    }else{
+      ids.push(row.id);
+      pendingResultIds[trackId]=ids;
+      pendingResultCount++;
+    }
   }
   for(const row of legacy){
     const trackId=safeText(row.data?.trackId,80);
@@ -1071,9 +1086,12 @@ export async function reconcileCanonicalChanges(env) {
     if(!targetBudget)break;
   }
   const targetIds=targetGroups.flatMap(([,ids])=>ids);
-  const canonicalDocuments=targetIds.length
-    ?(await readDocumentsForCollections(env,[[COLLECTIONS.raceResults,targetIds]])).get(COLLECTIONS.raceResults)
-    :new Map();
+  const canonicalDocuments=new Map(changed.map(row=>[row.id,row]));
+  const missingTargetIds=targetIds.filter(id=>!canonicalDocuments.has(id));
+  if(missingTargetIds.length){
+    const fetched=(await readDocumentsForCollections(env,[[COLLECTIONS.raceResults,missingTargetIds]])).get(COLLECTIONS.raceResults);
+    for(const [id,document] of fetched)canonicalDocuments.set(id,document);
+  }
   for(const trackId of selected){
     const ids=pendingResultIds[trackId]||[];
     const targetedIds=targetGroups.find(([id])=>id===trackId)?.[1]||[];
@@ -1803,7 +1821,14 @@ export default {
       const maintenance=_event.cron==='2-59/5 * * * *';
       const tasks=maintenance?[[processCosmeticJobs,processProfileJobs,resumeOrCreateMigration][Math.floor(Number(_event.scheduledTime||Date.now())/300000)%3]]:[bootstrapSnapshotVerification,reconcileCanonicalChanges];
       for (const task of tasks) {
-        try { await task(env); }
+        try {
+          if (task === reconcileCanonicalChanges) {
+            const scheduledAt = Number(_event.scheduledTime);
+            const scanResults = Number.isSafeInteger(scheduledAt) && scheduledAt >= 0
+              && scheduledAt % RECONCILE_SCAN_INTERVAL_MS === 0;
+            await task(env, {scanResults});
+          } else await task(env);
+        }
         catch (error) { console.error('Scheduled task failed', task.name, String(error?.message || error)); }
       }
       await rebuildOverall(env, false);

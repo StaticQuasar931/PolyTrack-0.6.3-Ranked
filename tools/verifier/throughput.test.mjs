@@ -75,6 +75,16 @@ test('interrupted publication reports incomplete counts, never fabricated approv
   assert.equal(result.stop,'request_budget');
 });
 
+test('drain summary aggregates returned queue documents and idle-slot counts',async()=>{
+  const result=await drainVerification({now:()=>0,requests:()=>10,log:quiet,runRound:async()=>round({
+    normalQueueReturnedDocuments:5,unusedEventReservedSlots:2,normalIdleSlots:3,idleNativeSlots:4,
+  })});
+  assert.equal(result.normalQueueReturnedDocuments,20);
+  assert.equal(result.unusedEventReservedSlots,8);
+  assert.equal(result.normalIdleSlots,12);
+  assert.equal(result.idleNativeSlots,16);
+});
+
 test('deferred Firestore throttles stop drain without inventing publication counts',async()=>{
   const failure=Object.assign(Error('throttled'),{code:'FIRESTORE_COMMIT_THROTTLED',deferred:true,status:429});
   const result=await drainVerification({now:()=>0,requests:()=>7,log:quiet,runRound:async()=>{throw failure;}});
@@ -176,6 +186,10 @@ test('workflow bounds drain wall time while preserving gates, permissions and na
   const step=workflow.split('- name: Verify queued runs')[1];
   assert.match(step,/timeout-minutes: 10/);assert.match(step,/run.mjs --drain/);
   assert.match(step,/if: steps.queue.outputs.has_work == 'true'/);
+  assert.match(workflow,/actions\/cache@[0-9a-f]{40}/);
+  assert.match(workflow,/playwright-\$\{\{ hashFiles\('tools\/verifier\/package-lock\.json'\) \}\}/);
+  assert.match(workflow,/npx playwright install --with-deps chromium/);
+  assert.match(workflow,/chromiumSandbox:true/);
   assert.match(workflow,/timeout-minutes: 15/);assert.match(workflow,/contents: read/);
   assert.match(workflow,/cache: npm/);assert.match(workflow,/cache-dependency-path: tools\/verifier\/package-lock\.json/);
   assert.equal(DRAIN_LIMITS.rounds*16,64);assert.equal(DRAIN_LIMITS.requests,400);

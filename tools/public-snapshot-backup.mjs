@@ -4,7 +4,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 100, eventFetches: 120, eventReplayFetches: 30,
-  eventReplaysPerPeriod: 10, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4});
+  eventReplaysPerPeriod: 10, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4,
+  archivedEventRecheckMs: 7 * 86400000});
 const WORKER = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
 const PAGES_ORIGIN = 'https://staticquasar931.github.io';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -268,6 +269,22 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
   const {snapshot: overall, planner} = publicOverallBackup(overallRaw);
   const catalog = await fetchJson(fetchImpl, `${WORKER}/v1/events/catalog`, {optional: true}) || {periods: [], archives: []};
   const selectedEvents = selectEventIds(catalog);
+  const liveIds = new Set((catalog.periods || []).map(row => row.id));
+  const eventFetchIds = [];
+  for (const id of selectedEvents) {
+    const record = previous.events?.[id];
+    const age = now - Number(record?.checkedAt || 0);
+    let reusable = false;
+    if (!liveIds.has(id) && id !== 'permanent-rolling-hills' && record?.path === `events/${id}.json` &&
+        Number(record.checkedAt) > 0 && age >= 0 && age < PUBLIC_SNAPSHOT_LIMITS.archivedEventRecheckMs) {
+      try {
+        const cached = JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8'));
+        publicEventBackup(cached, id);
+        reusable = cached.archived === true;
+      } catch { /* A missing or invalid backup must be fetched again. */ }
+    }
+    if (!reusable) eventFetchIds.push(id);
+  }
   let registry = trackIds;
   if (!registry) {
     const [indexSource, extraSource] = await Promise.all([
@@ -298,7 +315,7 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     return {id, value: value ? publicTrackBackup(value, id) : null};
   });
-  const eventRows = await mapLimit(selectedEvents, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
+  const eventRows = await mapLimit(eventFetchIds, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const url = id === 'permanent-rolling-hills'
       ? `${WORKER}/v1/events/permanent-rolling-hills/snapshot`
       : `${WORKER}/v1/events/${encodeURIComponent(id)}/snapshot`;
@@ -306,7 +323,6 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
     return {id, value: value ? publicEventBackup(value, id) : null};
   });
 
-  const liveIds = new Set((catalog.periods || []).map(row => row.id));
   const replayCandidates = [];
   for (const {id, value} of eventRows) {
     if (!value || !liveIds.has(id) || !TRACK_ID.test(value.period?.trackId || '')) continue;
@@ -348,7 +364,7 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
     if (!value) { missingEvents++; continue; }
     const relative = `events/${id}.json`;
     pendingWrites.set(relative, value);
-    nextEvents[id] = {path: relative, updatedAt: value.updatedAt};
+    nextEvents[id] = {path: relative, updatedAt: value.updatedAt, checkedAt: now};
   }
   const eventReplays = {};
   for (const {candidate, value} of replayRows) {
@@ -401,14 +417,14 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
     trackIdsKnown: allTrackIds.length, tracksFetched: trackRows.length, tracksMissing: missingTracks,
     trackBackupsPresent: Object.values(nextTracks).filter(row => row.path).length,
     trackBackupsMissing: Math.max(0, allTrackIds.length - Object.values(nextTracks).filter(row => row.path).length),
-    events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: selectedEvents.length,
+    events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents, eventReplays, eventReplayLimit: 30,
     trackSummaryMismatches,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
-  log(JSON.stringify({publicSnapshotBackup: {workerRequests: 2 + trackRows.length + eventRows.length,
+  log(JSON.stringify({publicSnapshotBackup: {workerRequests: 2 + trackRows.length + eventRows.length + replayCandidates.length,
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks,
-    eventFetches: eventRows.length, eventsChanged, eventsMissing: missingEvents,
+    eventFetches: eventRows.length, archivedEventsReused: selectedEvents.length - eventRows.length, eventsChanged, eventsMissing: missingEvents,
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length,
     plannerAvailable: planner.available, plannerReason: planner.reason}}));
   return manifest;

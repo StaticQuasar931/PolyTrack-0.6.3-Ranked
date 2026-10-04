@@ -37,7 +37,13 @@ jobs:
         run: |
           npm test --prefix tools/verifier
           node --test tools/verifier/events.test.mjs workers/ranked/test/events.test.js workers/ranked/test/event-canonical.test.js
-      - name: Install Chromium
+      - name: Cache the pinned Playwright browser
+        if: steps.queue.outputs.has_work == 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tools/verifier/package-lock.json') }}
+      - name: Install Chromium and system dependencies
         if: steps.queue.outputs.has_work == 'true'
         working-directory: tools/verifier
         run: npx playwright install --with-deps chromium

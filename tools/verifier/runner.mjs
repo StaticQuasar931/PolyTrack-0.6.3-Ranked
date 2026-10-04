@@ -8,13 +8,18 @@ const OVERALL_COLLECTION = '0.6.2_s1_leaderboards_overall';
 const NORMAL_SELECTION_LIMIT = 16;
 const PER_TRACK_SELECTION_LIMIT = 8;
 
-export async function prioritizeQueueDocuments(db, docs, now = Date.now()) {
+export async function prioritizeQueueDocuments(db, docs, now = Date.now(), cache) {
   if (!Array.isArray(docs) || docs.length < 2) return Array.isArray(docs) ? docs : [];
   const trackIds = docs.map(doc => String(doc.data?.trackId || ''));
   if (trackIds.some(trackId => !/^[A-Za-z0-9_-]{1,80}$/.test(trackId))) return docs;
   let overall;
-  try { overall = await db.get(OVERALL_COLLECTION, 'main'); }
-  catch { return docs; }
+  try {
+    if (cache instanceof Map) {
+      const key = OVERALL_COLLECTION + '/main';
+      if (!cache.has(key)) cache.set(key, db.get(OVERALL_COLLECTION, 'main').catch(() => null));
+      overall = await cache.get(key);
+    } else overall = await db.get(OVERALL_COLLECTION, 'main');
+  } catch { return docs; }
   if (!overall?.data || !Array.isArray(overall.data.trackSummaries)) return docs;
   const weights = new Map();
   for (const row of overall.data.trackSummaries) {

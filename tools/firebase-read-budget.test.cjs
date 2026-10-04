@@ -19,6 +19,23 @@ test('simultaneous track requests share one load and preserve caller limits',asy
   finish([1,2,3]);assert.deepEqual(Array.from(await a),[1]);assert.deepEqual(Array.from(await b),[1,2]);
   await Promise.resolve();assert.equal(ctx.trackEntryRequests.size,0);
 });
+test('track fallbacks share a local race index and store writes invalidate it',()=>{
+  let reads=0;const rows=[{trackId:'a',timeMs:100},{trackId:'b',timeMs:200}];
+  const ctx={localRaceGeneration:0,localRaceTrackIndex:null,localRaceTrackIndexGeneration:-1,
+    readLocalRaceRows:()=>{reads++;return rows;}};
+  vm.createContext(ctx);vm.runInContext(extract('localRaceRowsForTrack'),ctx);vm.runInContext(extract('writeLocalRaceRows'),ctx);
+  assert.deepEqual(Array.from(ctx.localRaceRowsForTrack('a')),[rows[0]]);
+  assert.deepEqual(Array.from(ctx.localRaceRowsForTrack('b')),[rows[1]]);
+  assert.equal(reads,1);
+  rows.push({trackId:'a',timeMs:90});ctx.localRaceGeneration++;
+  assert.equal(ctx.localRaceRowsForTrack('a').length,2);assert.equal(reads,2);
+  assert.match(source,/LOCAL_RACE_STORE_KEY\)localRaceGeneration\+\+/);
+  assert.match(extract('writeLocalRaceRows'),/if\(writeJsonStorage\(LOCAL_RACE_STORE_KEY,canonical\.slice\(0,5000\)\)\)localRaceGeneration\+\+/);
+  assert.equal((extract('writeLocalRaceRows').match(/localRaceGeneration\+\+/g)||[]).length,1);
+  assert.match(extract('loadTrackEntries'),/localRaceRowsForTrack\(trackId\)/);
+  assert.match(extract('reconcileTrackEntriesWithLocal'),/localRaceRowsForTrack\(id\)/);
+});
+
 test('simultaneous Overall refreshes share the pending result instead of returning stale data',async()=>{
   let calls=0,finish;const ctx={overallEntryRequest:null,loadOverallEntries:()=>{calls++;return new Promise(resolve=>{finish=resolve;});}};
   vm.createContext(ctx);vm.runInContext(extract('fetchOverallEntries'),ctx);

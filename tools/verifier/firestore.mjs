@@ -28,7 +28,7 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
   if (!Number.isInteger(maxReadRetries) || maxReadRetries < 0 || maxReadRetries > MAX_READ_RETRIES) {
     throw Error('Invalid Firestore read retry limit');
   }
-  let requests = 0;
+  let requests = 0, returnedDocuments = 0, queryCount = 0, emptyQueryMinimumReads = 0, estimatedDocumentReads = 0;
   const call = async (path, body, {onRetry} = {}) => {
     const safeRead = (!body && !String(path).startsWith(':')) || path === ':runQuery' || path === ':batchGet';
     for (let retry = 0; ; retry++) {
@@ -40,8 +40,29 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(20000)
       });
-      if (response.status === 404) return null;
-      if (response.ok) return response.json();
+      if (response.status === 404) {
+        if (!body && !String(path).startsWith(':')) estimatedDocumentReads++;
+        return null;
+      }
+      if (response.ok) {
+        const result = await response.json();
+        if (path === ':runQuery' && Array.isArray(result)) {
+          const count = result.filter(row => row?.document).length;
+          returnedDocuments += count;
+          queryCount++;
+          if (!count) emptyQueryMinimumReads++;
+          estimatedDocumentReads += Math.max(1, count);
+        } else if (path === ':batchGet' && Array.isArray(result)) {
+          const count = result.filter(row => row?.found).length;
+          const foundOrMissing = result.filter(row => row?.found || row?.missing).length;
+          returnedDocuments += count;
+          estimatedDocumentReads += foundOrMissing;
+        } else if (!body && !String(path).startsWith(':')) {
+          estimatedDocumentReads++;
+          if (result?.name) returnedDocuments++;
+        }
+        return result;
+      }
       if (response.status === 429 && safeRead) {
         const retryAfter = boundedRetryAfter(response);
         const retryHeader = response.headers?.get?.('Retry-After');
@@ -65,7 +86,9 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
       throw error;
     }
   };
-  return {call, requests: () => requests};
+  return {call, requests: () => requests, returnedDocuments: () => returnedDocuments,
+    queryCount: () => queryCount, emptyQueryMinimumReads: () => emptyQueryMinimumReads,
+    estimatedDocumentReads: () => estimatedDocumentReads};
 }
 
 export async function connect(raw){
@@ -76,5 +99,5 @@ export async function connect(raw){
  const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:unsigned+'.'+sig}),signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Firebase authentication failed: '+r.status);
  const access=(await r.json()).access_token,base='https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents';
  const firestore = createFirestoreCaller({base, access});
- return {call:firestore.call,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}}),requests:firestore.requests};
+ return {call:firestore.call,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}}),requests:firestore.requests,returnedDocuments:firestore.returnedDocuments,queryCount:firestore.queryCount,emptyQueryMinimumReads:firestore.emptyQueryMinimumReads,estimatedDocumentReads:firestore.estimatedDocumentReads};
 }

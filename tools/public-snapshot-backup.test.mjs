@@ -203,3 +203,36 @@ test('bounded export keeps prior tracks, exports permanent event, and continues 
   assert.equal(calls.filter(url => url.includes('/v1/snapshot/track')).length, 0);
   assert.ok(calls.length < firstCount);
 });
+
+test('finalized archive backups are reused, while live events and weekly correction checks stay fresh', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-archive-reuse-'));
+  t.after(() => fs.rm(directory, {recursive: true, force: true}));
+  const archived = {...period, id: 'daily_old'};
+  const calls = [];
+  const fetchImpl = async input => {
+    const url = new URL(input); calls.push(url.pathname);
+    if (url.pathname.endsWith('/v1/snapshot/overall')) return Response.json({...overall, trackSummaries: []});
+    if (url.pathname.endsWith('/v1/events/catalog')) return Response.json({periods: [period], archives: [archived]});
+    const id = url.pathname.split('/').at(-2);
+    return Response.json({id, updatedAt: 180, entries: [], archived: id === archived.id});
+  };
+  const now = 1000000000;
+  await runPublicSnapshotBackup({fetchImpl, directory, now, trackIds: [], log: () => {}});
+  calls.length = 0;
+  await runPublicSnapshotBackup({fetchImpl, directory, now: now + 86400000, trackIds: [], log: () => {}});
+  assert.equal(calls.some(url => url.includes('/daily_old/')), false);
+  assert.ok(calls.some(url => url.includes('/daily_20261002/')));
+  assert.ok(calls.some(url => url.includes('/permanent-rolling-hills/')));
+  const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.events[archived.id].checkedAt, now);
+  assert.equal(manifest.eventIdsFetched, 2);
+  calls.length = 0;
+  await runPublicSnapshotBackup({fetchImpl, directory,
+    now: now + PUBLIC_SNAPSHOT_LIMITS.archivedEventRecheckMs, trackIds: [], log: () => {}});
+  assert.ok(calls.some(url => url.includes('/daily_old/')));
+  await fs.writeFile(path.join(directory, `events/${archived.id}.json`), '{}');
+  calls.length = 0;
+  await runPublicSnapshotBackup({fetchImpl, directory,
+    now: now + PUBLIC_SNAPSHOT_LIMITS.archivedEventRecheckMs + 1, trackIds: [], log: () => {}});
+  assert.ok(calls.some(url => url.includes('/daily_old/')));
+});
