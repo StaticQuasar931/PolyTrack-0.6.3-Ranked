@@ -576,7 +576,7 @@ test('real catalog previews stay uncropped in desktop and portrait game layouts'
         assert.ok(report.alphaBounds[2] >= report.alphaBounds[0] && report.alphaBounds[3] >= report.alphaBounds[1], `${report.name} PNG has visible alpha bounds`);
         assert.equal(report.objectFit, 'contain', `${report.name} uses contain in the actual page cascade`);
         assert.equal(report.objectPosition, '50% 50%', `${report.name} stays centered`);
-        for (const side of report.inset) assert.ok(Math.abs(side - 2) < 0.05, `${report.name} has 2px preview breathing room: ${JSON.stringify(report.inset)}`);
+        for (const side of report.inset) assert.ok(Math.abs(side - 10) < 0.05, `${report.name} has 10px preview breathing room: ${JSON.stringify(report.inset)}`);
         assert.ok(report.box[0] < report.frame[0] && report.box[1] < report.frame[1], `${report.name} keeps its contain-scaled map bounds inside the preview frame`);
         assert.equal(report.transform, 'none', `${report.name} has no image transform`);
         assert.deepEqual(report.clipped, [], `${report.name} has no clipping or masking ancestor`);
