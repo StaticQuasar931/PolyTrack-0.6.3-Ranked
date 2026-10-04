@@ -70,7 +70,7 @@
 .sq-event-board .sq-event-earned-rp{grid-column:1;grid-row:2;align-self:end;justify-self:start;color:#9ce7b3;font-size:clamp(12px,1.15vw,17px);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sq-event-board .position{display:flex;align-items:baseline;gap:1px}
 .sq-event-board .sq-event-ordinal-suffix{font-size:.55em;line-height:1;color:#9bdfff;vertical-align:super}
-.sq-event-board .image-container>.checkmark{position:absolute;top:2px;left:2px;width:22px;height:22px;z-index:2;object-fit:contain}
+.sq-event-board .main>.checkmark{right:0;top:0;margin:6px;width:12px}.sq-event-board .verified-state>.sq-event-verification-icon{width:16px;height:16px;vertical-align:middle;margin-right:4px}
 .sq-event-board .main.selected{outline:2px solid #98e9ff;outline-offset:-2px}
 .sq-event-board .main.pending-selection .image-container:after{content:"";position:absolute;top:5px;left:5px;width:14px;height:14px;border:2px solid #d7f6ff;border-right-color:transparent;border-radius:50%;z-index:3;pointer-events:none;animation:sq-event-pending-spin .7s linear infinite}
 @keyframes sq-event-pending-spin{to{transform:rotate(360deg)}}
@@ -430,6 +430,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-archive-view{display:flex;flex-direction:column;gap:16px;min-width:0}
 .sq-archive-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .sq-archive-toolbar h3,.sq-archive-toolbar p{margin:0}
+.sq-archive-kind-filters{display:flex;align-items:center;gap:8px 14px;margin:0;padding:8px 12px;border:1px solid #344b7c;min-width:0}.sq-archive-kind-filters legend{padding:0 5px;color:#b9c8e4;font-size:calc(13px * var(--sq-ui-scale,1))}.sq-archive-kind-filters label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:calc(15px * var(--sq-ui-scale,1))}.sq-archive-kind-filters input{accent-color:#79caff;width:18px;height:18px}
 .sq-archive-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0}
 .sq-archive-stat{min-width:0;padding:12px;background:#17264e;border-top:2px solid #6485b5}
 .sq-archive-stat dt{font-size:calc(14px * var(--sq-ui-scale,1));color:#b9c8e4}

@@ -61,9 +61,11 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
   const averageOverdueAgeMs = queuedRuns ? Math.round(overdueAgeTotalMs / queuedRuns) : 0;
   const queueSample = {queuedRuns, averageOverdueAgeMs, sampledQueueDocuments: queueRows.length,
     sampleLimitPerLane: sampleLimit, truncated: coreDocs.length === sampleLimit || extraDocs.length === sampleLimit};
-  const events = await eventCheck(db, {now});
-  if (typeof events?.hasWork !== 'boolean') throw Error('Unexpected event queue response');
-  const eventHasWork = events.hasWork;
+  // Normal work already wakes the workflow. Event discovery runs again during
+  // processing, where event work is still reserved and checked first.
+  const events = normalHasWork ? null : await eventCheck(db, {now});
+  if (!normalHasWork && typeof events?.hasWork !== 'boolean') throw Error('Unexpected event queue response');
+  const eventHasWork = events?.hasWork ?? false;
   const hasWork = normalHasWork || eventHasWork;
   if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=' + hasWork + '\n');
   const message = hasWork ? 'Verification work is due; the verifier will re-read current queue state.' :
@@ -72,11 +74,15 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
     '## Verification preflight\n' + message + '\n\n' +
     `Queue health (bounded sample, not an exact total): ${queuedRuns} queued runs across Core and Extra; average overdue age ${(averageOverdueAgeMs / 60000).toFixed(1)} minutes (proxy from queue notBefore, weighted by queued runs). Sampled ${queueRows.length} due queue documents, at most ${sampleLimit} per lane; sample ${queueSample.truncated ? 'may be truncated' : 'did not reach its cap'}.\n\n` +
-    'Core and Extra queues: two bounded projected queue queries. Events: bounded receipt/cursor and due-period checks. No canonical replay reads or Firestore writes.\n' +
+    'Core and Extra queues: two bounded projected queue queries. ' +
+    (normalHasWork ? 'Event discovery skipped because normal due work already starts processing; processing still checks events first. ' :
+      'Events: bounded receipt/cursor and due-period checks. ') +
+    'No canonical replay reads or Firestore writes.\n' +
     `Observed Firestore usage: ${db.requests?.() == null ? 'HTTP count unavailable' : db.requests() - requestsBefore} HTTP calls, ${db.returnedDocuments?.() == null ? 'returned-document count unavailable' : db.returnedDocuments() - documentsBefore} returned documents, ${db.emptyQueryMinimumReads?.() == null ? 'empty-query minimum count unavailable' : db.emptyQueryMinimumReads() - emptyQueryMinimumBefore} empty-query minimum reads, and ${db.estimatedDocumentReads?.() == null ? 'read estimate unavailable' : db.estimatedDocumentReads() - estimatedReadsBefore} estimated document reads. This estimate is not billed usage and excludes index-entry charges.\n` +
     (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
       'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));
   return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2,
+    eventCheckSkipped: normalHasWork,
     returnedDocuments: queueRows.length,
     queueReturnedDocuments: queueRows.length,
     firestoreHttpRequests: requestsBefore === null || db.requests?.() == null ? null : db.requests() - requestsBefore,

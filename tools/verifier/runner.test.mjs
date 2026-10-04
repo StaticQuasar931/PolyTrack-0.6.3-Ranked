@@ -51,3 +51,87 @@ test('a later publication cannot turn an overflow fallback track back into targe
  assert.ok(state.pendingFullRebuildTrackIds.includes(TRACK));
  assert.equal(state.pendingResultIds[TRACK],undefined);
 });
+
+test('successful same-invocation publications reuse CAS-versioned queue and reconciliation reads',async()=>{
+ const secondRow={...row,accountId:'racer2',uploadId:8};
+ const secondJob={...job,...secondRow,resultId:`racer2_${TRACK}`,queueKey:verificationKey(secondRow)};
+ let queue={data:{trackId:TRACK,slots:Object.fromEntries([job,secondJob].map(item=>[item.accountId,
+  {accountId:item.accountId,resultId:item.resultId,trackId:TRACK,key:item.queueKey,status:'waiting',attempts:0}]))},updateTime:'queue-v1'};
+ let state={data:{pendingTrackIds:[],pendingResultIds:{}},updateTime:'state-v1'};
+ let version=1;
+ const reads={queue:0,state:0,canonical:0,audit:0};
+ const db={
+  get:async(collection,id)=>{
+   if(collection===VERIFICATION_COLLECTION){reads.queue++;return queue;}
+   if(collection==='0.6.2_race_results'){reads.canonical++;return {data:id===job.resultId?row:secondRow,updateTime:'canonical-'+id};}
+   if(collection==='0.6.2_s1_worker_jobs'){reads.state++;return state;}
+   if(collection==='0.6.2_s1_verification_audit'){reads.audit++;return null;}
+   return null;
+  },
+  write:(collection,id,data,prior)=>({collection,id,data,prior}),
+  call:async(_path,{writes})=>{
+   const writeResults=[];
+   for(const write of writes){
+    const updateTime='commit-v'+version++;
+    writeResults.push({updateTime});
+    if(write.collection===VERIFICATION_COLLECTION)queue={data:write.data,updateTime};
+    if(write.collection==='0.6.2_s1_worker_jobs')state={data:write.data,updateTime};
+   }
+   return {writeResults};
+  }
+ };
+ const totals=await publishResults(db,[job,secondJob],[verified,{...verified,resultId:secondJob.resultId}]);
+ assert.equal(totals.verified,2);
+ assert.deepEqual(reads,{queue:1,state:1,canonical:2,audit:2});
+ assert.deepEqual(state.data.pendingResultIds[TRACK],[job.resultId,secondJob.resultId]);
+ assert.equal(queue.data.slots.racer.status,'verified');
+ assert.equal(queue.data.slots.racer2.status,'verified');
+});
+
+test('publication CAS conflicts invalidate invocation caches and reread concurrent state',async()=>{
+ const secondRow={...row,accountId:'racer2',uploadId:8};
+ const secondJob={...job,...secondRow,resultId:`racer2_${TRACK}`,queueKey:verificationKey(secondRow)};
+ let queue={data:{trackId:TRACK,slots:Object.fromEntries([job,secondJob].map(item=>[item.accountId,
+  {accountId:item.accountId,resultId:item.resultId,trackId:TRACK,key:item.queueKey,status:'waiting',attempts:0}]))},updateTime:'queue-v1'};
+ let state={data:{pendingTrackIds:[],pendingResultIds:{}},updateTime:'state-v1'};
+ let attempt=0,version=1;
+ const reads={queue:0,state:0,canonical:0,audit:0};
+ let retriedWrites;
+ const conflict=Object.assign(Error('conflict'),{code:'ABORTED'});
+ const db={
+  get:async(collection,id)=>{
+   if(collection===VERIFICATION_COLLECTION){reads.queue++;return queue;}
+   if(collection==='0.6.2_race_results'){reads.canonical++;return {data:id===job.resultId?row:secondRow,updateTime:'canonical-'+id};}
+   if(collection==='0.6.2_s1_worker_jobs'){reads.state++;return state;}
+   if(collection==='0.6.2_s1_verification_audit'){reads.audit++;return null;}
+   return null;
+  },
+  write:(collection,id,data,prior)=>({collection,id,data,prior}),
+  call:async(_path,{writes})=>{
+   attempt++;
+   if(attempt===2){
+    queue={...queue,data:{...queue.data,concurrentQueueField:true},updateTime:'external-queue-v2'};
+    state={...state,data:{...state.data,concurrentStateField:true},updateTime:'external-state-v2'};
+    throw conflict;
+   }
+   if(attempt===3)retriedWrites=writes;
+   const writeResults=[];
+   for(const write of writes){
+    const updateTime='commit-v'+version++;
+    writeResults.push({updateTime});
+    if(write.collection===VERIFICATION_COLLECTION)queue={data:write.data,updateTime};
+    if(write.collection==='0.6.2_s1_worker_jobs')state={data:write.data,updateTime};
+   }
+   return {writeResults};
+  }
+ };
+ const totals=await publishResults(db,[job,secondJob],[verified,{...verified,resultId:secondJob.resultId}]);
+ assert.equal(totals.verified,2);
+ assert.equal(totals.deferred,0);
+ assert.equal(attempt,3);
+ assert.deepEqual(reads,{queue:2,state:2,canonical:3,audit:3});
+ assert.equal(retriedWrites[0].prior.updateTime,'external-queue-v2');
+ assert.equal(retriedWrites[0].data.concurrentQueueField,true);
+ assert.equal(retriedWrites[1].prior.updateTime,'external-state-v2');
+ assert.equal(retriedWrites[1].data.concurrentStateField,true);
+});

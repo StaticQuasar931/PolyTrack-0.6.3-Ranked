@@ -223,6 +223,7 @@ export function mountArchiveView(root, options = {}) {
   if (!root || typeof root.replaceChildren !== 'function') throw new TypeError('Archive root is required.');
   const document = root.ownerDocument;
   const periods = normalizeArchivePeriods(options.periods);
+  const enabledKinds = new Set(['daily', 'weekly', 'kodub']);
   const snapshots = options.snapshots instanceof Map ? options.snapshots : new Map(Object.entries(options.snapshots || {}));
   const loadSnapshot = typeof options.loadSnapshot === 'function' ? options.loadSnapshot : null;
   const formatTime = typeof options.formatTime === 'function' ? options.formatTime : defaultTime;
@@ -258,12 +259,31 @@ export function mountArchiveView(root, options = {}) {
     });
     toolbar.append(form);
   }
+  const filters = document.createElement('fieldset');
+  filters.className = 'sq-archive-kind-filters';
+  appendText(document, filters, 'legend', '', 'Show archived events');
+  for (const [kind, label] of [['daily', 'Daily'], ['weekly', 'Weekly'], ['kodub', 'Kodub']]) {
+    const wrapper = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.name = 'archive-kind';
+    input.value = kind;
+    input.checked = true;
+    input.addEventListener('change', () => {
+      if (input.checked) enabledKinds.add(kind);
+      else enabledKinds.delete(kind);
+      currentPage = 1;
+      renderPage();
+    });
+    wrapper.append(input, document.createTextNode(label));
+    filters.append(wrapper);
+  }
+  toolbar.append(filters);
   view.append(toolbar);
 
   const stats = document.createElement('dl');
   stats.className = 'sq-archive-stats';
   view.append(stats);
-  renderStats(document, stats, periods, snapshots);
 
   const events = document.createElement('div');
   events.className = 'sq-archive-events';
@@ -328,7 +348,7 @@ export function mountArchiveView(root, options = {}) {
       actions.className = 'sq-event-actions sq-archive-actions';
       const open = appendText(document, actions, 'button', 'button', 'Track details / practice');
       open.type = 'button';
-      open.addEventListener('click', () => options.onOpenPeriod(period));
+      open.addEventListener('click', () => options.onOpenPeriod(period, snapshots.get(period.id) || null));
       board.append(actions);
     }
     const results = document.createElement('div');
@@ -380,9 +400,11 @@ export function mountArchiveView(root, options = {}) {
 
   let currentPage = 1;
   function renderPage(page = currentPage) {
-    const pageInfo = paginateArchivePeriods(periods, page);
+    const filtered = periods.filter(period => !['daily', 'weekly', 'kodub'].includes(period.kind) || enabledKinds.has(period.kind));
+    const pageInfo = paginateArchivePeriods(filtered, page);
     currentPage = pageInfo.page;
     events.replaceChildren();
+    renderStats(document, stats, filtered, snapshots);
     if (!pageInfo.total) {
       appendText(document, events, 'p', 'sq-archive-empty', 'No archived events in this view.');
       pagination.replaceChildren();

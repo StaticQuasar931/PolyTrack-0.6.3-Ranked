@@ -146,6 +146,29 @@ test('events UI keeps permanent Rolling live, archives practice-only, and does n
   assert.doesNotMatch(source, /maximum points/i);
 });
 
+test('archive kind checkboxes combine locally and leave unrelated archive kinds visible', () => {
+  const { root } = archiveFixture();
+  const periods = [
+    { id: 'd', kind: 'daily', endsAt: 400, maxRp: 100, racerCount: 1 },
+    { id: 'w', kind: 'weekly', endsAt: 300, maxRp: 500, racerCount: 1 },
+    { id: 'k', kind: 'kodub', endsAt: 200, maxRp: 700, racerCount: 1 },
+    { id: 'c', kind: 'custom', endsAt: 100, maxRp: 100, racerCount: 1 }
+  ];
+  mountArchiveView(root, { periods, snapshots: new Map(periods.map(period => [period.id, { entries: [] }])) });
+  const inputs = descendants(root, node => node.tagName === 'INPUT');
+  assert.deepEqual(inputs.map(input => [input.value, input.checked]), [['daily', true], ['weekly', true], ['kodub', true]]);
+  const visibleKinds = () => descendants(root, node => node.tagName === 'DETAILS').map(node => node.dataset.eventKind);
+  assert.deepEqual(visibleKinds(), ['daily', 'weekly', 'kodub', 'custom']);
+  inputs[0].checked = false;
+  inputs[0].emit('change');
+  inputs[2].checked = false;
+  inputs[2].emit('change');
+  assert.deepEqual(visibleKinds(), ['weekly', 'custom']);
+  inputs[1].checked = false;
+  inputs[1].emit('change');
+  assert.deepEqual(visibleKinds(), ['custom']);
+});
+
 test('live selector yields Kodub, weekly and daily while permanent Rolling stays dedicated', () => {
   const periods = liveTimedEventPeriods([
     { id: 'weekly', kind: 'weekly', startsAt: 1, endsAt: 200 },

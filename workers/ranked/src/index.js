@@ -5,6 +5,7 @@ export {packPlannerResults} from './planner-results.js';
 import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
 import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
+import { recordFirestoreReads } from './firestore-read-cost.js';
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PROJECT_ID = 'polytrack-052';
@@ -24,7 +25,8 @@ const TRACK_LIMIT = 500;
 const UNRANKED_EXTRA_TRACK_ID = '586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87';
 const OVERALL_BOARD_PAGE_SIZE = 100;
 const OVERALL_BOARD_LIMIT = 500;
-const REBUILD_COOLDOWN_MS = 5 * 60 * 1000;
+const REBUILD_COOLDOWN_MS = 15 * 60 * 1000;
+const overallBuildRequests = new WeakMap();
 const BACKGROUND_REPAIR_INTERVAL_MS = 30 * 60 * 1000;
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
@@ -339,6 +341,17 @@ function decodeFields(fields) {
 }
 
 async function firestoreRequest(env, path, init = {}) {
+  const audit=env.__FIRESTORE_READ_AUDIT;
+  if (!audit) return loadFirestoreRequest(env,path,init);
+  audit.httpRequests++;
+  try {
+    const value=await loadFirestoreRequest(env,path,init);
+    recordFirestoreReads(audit,path,init,value);
+    return value;
+  } catch(error) { audit.failedRequests++; throw error; }
+}
+
+async function loadFirestoreRequest(env, path, init = {}) {
   if (typeof env.__TEST_FIRESTORE === 'function') return env.__TEST_FIRESTORE(path, init);
   const token = await serviceAccessToken(env);
   const response = await fetch(`${documentBase(env)}${path}`, {
@@ -752,13 +765,28 @@ async function persistTrackSnapshot(env, trackId, entries, prior = null) {
   if (trackSnapshotIsCurrent(prior?.data, signature)) return { changed: false, entries, revision: Number(prior.data.revision || 0) };
   const revision = Math.max(0, Number(prior?.data?.revision || 0)) + 1;
   const now = Date.now();
+  // Overall scoring re-ranks only verified entrants. Pending-only changes must
+  // still publish immediately on the track board, without crawling every board.
+  const overallChanged = !trackSnapshotIsCurrent(prior?.data, prior?.data?.signature)
+    || prior.data.complete !== (entries.length < TRACK_LIMIT)
+    || overallTrackInput(trackId, prior.data.entries) !== overallTrackInput(trackId, entries);
+  const trackWrite = {collection:COLLECTIONS.track,id:trackId,prior,data:{trackId,entries,complete:entries.length<TRACK_LIMIT,totalEntries:entries.length,updatedAt:now,builtAt:now,schemaVersion:TRACK_SCHEMA_VERSION,algorithmVersion:ALGORITHM_VERSION,revision,sourceRevision:revision,signature}};
+  if (!overallChanged) {
+    await commitDocuments(env, [trackWrite]);
+    return {changed:true,overallChanged:false,entries,revision};
+  }
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   await commitDocuments(env, [
-    {collection:COLLECTIONS.track,id:trackId,prior,data:{trackId,entries,complete:entries.length<TRACK_LIMIT,totalEntries:entries.length,updatedAt:now,builtAt:now,schemaVersion:TRACK_SCHEMA_VERSION,algorithmVersion:ALGORITHM_VERSION,revision,sourceRevision:revision,signature}},
+    trackWrite,
     {collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data:{...meta,algorithmVersion:ALGORITHM_VERSION,schemaVersion:TRACK_SCHEMA_VERSION,dirty:true,revision:Math.max(Number(meta.revision||0)+1,revision),builtRevision:Number(meta.builtRevision||0),lastPbAt:now,updatedAt:now,rankedWritesEnabled:String(env.RANKED_WRITES_ENABLED)!=='false',multiplayerEnabled:String(env.MULTIPLAYER_ENABLED)!=='false'}}
   ]);
-  return { changed: true, entries, revision };
+  return { changed: true, overallChanged:true, entries, revision };
+}
+
+export function overallTrackInput(trackId, entries) {
+  return JSON.stringify(rankTrustedTrackEntries((Array.isArray(entries) ? entries : [])
+    .filter(entry => entry.integrityVerified === true && entry.runVerified === true), trackId));
 }
 
 export function trackSnapshotIsCurrent(snapshot, signature) {
@@ -1147,7 +1175,17 @@ async function mapConcurrent(values, concurrency, mapper) {
   return output;
 }
 
-export async function rebuildOverall(env, force = false) {
+export function rebuildOverall(env, force = false) {
+  const key=env.__FIRESTORE_ROOT_ENV || env;
+  const pending = overallBuildRequests.get(key);
+  if (pending) return force ? pending.then(result => result.rebuilt ? result : rebuildOverall(env, true)) : pending;
+  const request = loadOverallRebuild(env, force);
+  overallBuildRequests.set(key, request);
+  request.finally(() => { if (overallBuildRequests.get(key) === request) overallBuildRequests.delete(key); }).catch(() => {});
+  return request;
+}
+
+async function loadOverallRebuild(env, force = false) {
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   const now = Date.now();
@@ -1264,6 +1302,7 @@ export async function rebuildOverall(env, force = false) {
     overallIncompleteObservations: incompleteObservations, overallRetryPending: incompleteRetryPending,
     overallRetryExhausted: sourceIncomplete && !incompleteRetryPending,
     revision, builtRevision: revision, lastOverallBuildAt: now, updatedAt: now, algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: DERIVED_METRICS_VERSION, rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false' }}]);
+  console.log('Ranked overall source reads', JSON.stringify({revision,sourceBoards:boards.length,entitlementDocuments:accountIds.length}));
   return { rebuilt: true, revision, racers: entries.length, tracks: trackSummaries.length };
 }
 
@@ -1765,8 +1804,8 @@ export async function handleRequest(request, env, context = {}) {
   const integrityVerified = await replayIntegrityValid(result.data);
   const trackId = safeText(result.data.trackId, 80);
   const rebuilt = await mergeCanonicalResultIntoTrack(env, trackId, result.data, integrityVerified);
-  if (rebuilt.changed && context.waitUntil) context.waitUntil(rebuildOverall(env, false).catch((error) => console.error('Deferred overall rebuild failed', String(error?.message || error))));
-  return json(origin, env, 200, { accepted: true, changed: rebuilt.changed, trackId, revision: rebuilt.revision, overallPending: rebuilt.changed, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' });
+  if (rebuilt.changed && rebuilt.overallChanged !== false && context.waitUntil) context.waitUntil(rebuildOverall(env, false).catch((error) => console.error('Deferred overall rebuild failed', String(error?.message || error))));
+  return json(origin, env, 200, { accepted: true, changed: rebuilt.changed, trackId, revision: rebuilt.revision, overallPending: rebuilt.changed && rebuilt.overallChanged !== false, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' });
 }
 
 export default {
@@ -1782,6 +1821,8 @@ export default {
       const scheduledAt = _event.scheduledTime;
       if (!Number.isSafeInteger(scheduledAt) || scheduledAt < 0 || scheduledAt % BACKGROUND_REPAIR_INTERVAL_MS !== 0) return;
     }
+    const readAudit={httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
+    env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env};
     context.waitUntil((async()=>{
       if (_event.cron === '*/2 * * * *') {
         let rollingRefreshed = false;
@@ -1832,6 +1873,7 @@ export default {
         catch (error) { console.error('Scheduled task failed', task.name, String(error?.message || error)); }
       }
       await rebuildOverall(env, false);
-    })().catch((error) => console.error('Scheduled Ranked work failed', String(error?.message || error))));
+    })().catch((error) => console.error('Scheduled Ranked work failed', String(error?.message || error)))
+      .finally(()=>console.log('Ranked scheduled Firestore reads',JSON.stringify({cron:_event.cron,...readAudit,billingEstimateOnly:true}))));
   }
 };

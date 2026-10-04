@@ -99,13 +99,17 @@ export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_
 
 export async function publishResults(db, jobs, results) {
   const totals = {verified: 0, mismatch: 0, unavailable: 0, superseded: 0, deferred: 0, corrected: 0, reasons: {}};
+  const queueCache = new Map();
+  let stateCacheLoaded = false, stateCache = null;
   for (const result of results) {
     const job = jobs.find(j => j.resultId === result.resultId);
     if (!job) throw Error('Verifier returned unknown job');
     const queueCollection = job.queueCollection || verificationCollectionForTrack(job.trackId);
     if (![VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION].includes(queueCollection)) throw Error('Invalid verification queue collection');
+    const queueCacheKey = queueCollection + '/' + job.trackId;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const queue = await db.get(queueCollection, job.trackId);
+      const queue = queueCache.has(queueCacheKey) ? queueCache.get(queueCacheKey) : await db.get(queueCollection, job.trackId);
+      if (!queueCache.has(queueCacheKey)) queueCache.set(queueCacheKey, queue);
       const current = await db.get('0.6.2_race_results', job.resultId);
       if (!queue || !current || verificationKey(current.data) !== job.queueKey ||
           queue.data.slots?.[job.accountId]?.key !== job.queueKey) {totals.superseded++; break;}
@@ -126,7 +130,8 @@ export async function publishResults(db, jobs, results) {
       }
       const corrected = correct ? {...current.data, timeMs: frames, timingVersion: 2} : null;
       const publishedKey = corrected ? verificationKey(corrected) : job.queueKey;
-      const state = await db.get('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2');
+      const state = stateCacheLoaded ? stateCache : await db.get('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2');
+      if (!stateCacheLoaded) { stateCache = state; stateCacheLoaded = true; }
       const {nativeReason: previousNativeReason, ...priorSlot} = queue.data.slots[job.accountId];
       const slots = {...queue.data.slots, [job.accountId]: {...completedSlot(
         {...priorSlot, key: publishedKey}, publication),
@@ -164,10 +169,11 @@ export async function publishResults(db, jobs, results) {
       }
       const auditId = crypto.createHash('sha256').update(publishedKey).digest('hex');
       const audit = await db.get('0.6.2_s1_verification_audit', auditId);
+      const nextQueueData = {...queue.data, ...queueState(slots)};
+      const nextStateData = {...state?.data, pendingTrackIds, pendingResultIds, pendingFullRebuildTrackIds, forceFullRebuildAll};
       const writes = [
-        db.write(queueCollection, job.trackId, {...queue.data, ...queueState(slots)}, queue),
-        db.write('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2', {...state?.data,
-          pendingTrackIds, pendingResultIds, pendingFullRebuildTrackIds, forceFullRebuildAll}, state),
+        db.write(queueCollection, job.trackId, nextQueueData, queue),
+        db.write('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2', nextStateData, state),
         db.write('0.6.2_s1_verification_audit', auditId, {resultId: job.resultId,
           accountId: job.accountId, trackId: job.trackId, key: publishedKey, ...slots[job.accountId],
           ...(correct ? {correctedFromKey: job.queueKey, correctedFromTimeMs: current.data.timeMs, correctedTimeMs: frames} : {})}, audit)
@@ -178,7 +184,19 @@ export async function publishResults(db, jobs, results) {
           updateMask: {fieldPaths: ['timeMs', 'timingVersion']}});
       }
       try {
-        await db.call(':commit', {writes});
+        const committed = await db.call(':commit', {writes});
+        const queueUpdateTime = committed?.writeResults?.[0]?.updateTime;
+        const stateUpdateTime = committed?.writeResults?.[1]?.updateTime;
+        if (typeof queueUpdateTime === 'string' && queueUpdateTime) {
+          queueCache.set(queueCacheKey, {...queue, data: nextQueueData, updateTime: queueUpdateTime});
+        } else queueCache.delete(queueCacheKey);
+        if (typeof stateUpdateTime === 'string' && stateUpdateTime) {
+          stateCache = {...state, data: nextStateData, updateTime: stateUpdateTime};
+          stateCacheLoaded = true;
+        } else {
+          stateCache = null;
+          stateCacheLoaded = false;
+        }
         totals[publication.status]++;
         const reason = String(publication.reason || '').slice(0, 100);
         totals.reasons[reason] = (totals.reasons[reason] || 0) + 1;
@@ -187,6 +205,11 @@ export async function publishResults(db, jobs, results) {
       }
       catch (error) {
         if (!isConflict(error)) throw error;
+        // A competing writer may have changed either document; refresh both
+        // before retrying rather than trusting an invocation-local snapshot.
+        queueCache.delete(queueCacheKey);
+        stateCache = null;
+        stateCacheLoaded = false;
         if (attempt === 2) totals.deferred++;
       }
     }

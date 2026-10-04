@@ -507,7 +507,7 @@ test('real catalog previews stay uncropped in desktop and portrait game layouts'
             sourceColor: point.color};
         });
         const visualSample = await page.screenshot({clip: {x: pixelTarget.left, y: pixelTarget.top, width: pixelTarget.width, height: pixelTarget.height}});
-        const renderedColor = await page.evaluate(async ({png, x, y}) => {
+        const renderedColor = await page.evaluate(async ({png, x, y, sourceColor}) => {
           const decoded = new Image();
           decoded.src = `data:image/png;base64,${png}`;
           await decoded.decode();
@@ -516,8 +516,18 @@ test('real catalog previews stay uncropped in desktop and portrait game layouts'
           canvas.height = decoded.naturalHeight;
           const context = canvas.getContext('2d', {willReadFrequently: true});
           context.drawImage(decoded, 0, 0);
-          return [...context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].slice(0, 3);
-        }, {png: visualSample.toString('base64'), x: pixelTarget.x, y: pixelTarget.y});
+          // Fractional contain scaling and screenshot clipping can round by one
+          // device pixel. Check that small neighborhood, not a large crop escape.
+          let best=null,bestDelta=Infinity;
+          for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+            const px=Math.max(0,Math.min(canvas.width-1,Math.floor(x)+dx));
+            const py=Math.max(0,Math.min(canvas.height-1,Math.floor(y)+dy));
+            const color=[...context.getImageData(px,py,1,1).data].slice(0,3);
+            const delta=Math.max(...color.map((channel,index)=>Math.abs(channel-sourceColor[index])));
+            if(delta<bestDelta){bestDelta=delta;best=color;}
+          }
+          return best;
+        }, {png: visualSample.toString('base64'), x: pixelTarget.x, y: pixelTarget.y,sourceColor:pixelTarget.sourceColor});
         const pixelDelta = Math.max(...renderedColor.map((channel, channelIndex) => Math.abs(channel - pixelTarget.sourceColor[channelIndex])));
         assert.ok(pixelDelta <= 40, `${await image.getAttribute('alt') || `catalog image ${index + 1}`} PNG pixel is visible at its contain-scaled position: expected ${pixelTarget.sourceColor}, got ${renderedColor}`);
         const report = await image.evaluate(img => {
@@ -552,15 +562,22 @@ test('real catalog previews stay uncropped in desktop and portrait game layouts'
           const card = img.closest('.sq-extra-card');
           const style = getComputedStyle(img);
           const frame = img.parentElement.getBoundingClientRect();
+          const frameStyle = getComputedStyle(img.parentElement);
           return {name: card?.querySelector('h3')?.textContent, natural: [img.naturalWidth, img.naturalHeight],
             alphaBounds: [left, top, right, bottom], box: [bounds.width, bounds.height], frame: [frame.width, frame.height],
             objectFit: style.objectFit, objectPosition: style.objectPosition, transform: style.transform,
+            inset: [bounds.left - frame.left - parseFloat(frameStyle.borderLeftWidth),
+              bounds.top - frame.top - parseFloat(frameStyle.borderTopWidth),
+              frame.right - bounds.right - parseFloat(frameStyle.borderRightWidth),
+              frame.bottom - bounds.bottom - parseFloat(frameStyle.borderBottomWidth)],
             clipped, hasNativeFrameAncestor: !!img.closest('.thumbnail, .profile-track-image-frame, .image-container')};
         });
         assert.ok(report.natural[0] > 0 && report.natural[1] > 0, `${report.name} loaded its real catalog PNG`);
         assert.ok(report.alphaBounds[2] >= report.alphaBounds[0] && report.alphaBounds[3] >= report.alphaBounds[1], `${report.name} PNG has visible alpha bounds`);
         assert.equal(report.objectFit, 'contain', `${report.name} uses contain in the actual page cascade`);
         assert.equal(report.objectPosition, '50% 50%', `${report.name} stays centered`);
+        for (const side of report.inset) assert.ok(Math.abs(side - 2) < 0.05, `${report.name} has 2px preview breathing room: ${JSON.stringify(report.inset)}`);
+        assert.ok(report.box[0] < report.frame[0] && report.box[1] < report.frame[1], `${report.name} keeps its contain-scaled map bounds inside the preview frame`);
         assert.equal(report.transform, 'none', `${report.name} has no image transform`);
         assert.deepEqual(report.clipped, [], `${report.name} has no clipping or masking ancestor`);
         assert.equal(report.hasNativeFrameAncestor, false, `${report.name} is outside native thumbnail/profile frames`);

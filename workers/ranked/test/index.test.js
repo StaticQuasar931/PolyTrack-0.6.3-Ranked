@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import rankedWorker, { rebuildOverall, rebuildTrack, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
+import rankedWorker, { overallTrackInput, rebuildOverall, rebuildTrack, mergeCanonicalResultIntoTrack, computeOverall, computeTrackEntries, handleRequest, migrateExtraVerificationQueues, profileCosmeticsUnlocked, reconcileCanonicalChanges, sanitizeProfileCosmetics, trackSnapshotIsCurrent, trackWeightParts, updateTrackIdentity } from '../src/index.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 
 const TRACK = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
@@ -1355,6 +1355,58 @@ function overallFixture(boards) {
   return {env, calls, commits, documents, setFailCommit: value => {failCommit = value;}, snapshot: () => snapshot,
     sidecar: () => documents.get('/0.6.2_s1_leaderboards_overall/main_results')?.fields};
 }
+
+test('pending-only board changes do not alter the verified overall input', () => {
+  const verified = validRun({accountId:'winner',timeMs:20000,trackId:TRACK});
+  const pending = validRun({accountId:'pending',timeMs:18000,trackId:TRACK,runVerified:false});
+  const before = [{...verified,rank:1,position:1,fieldSize:1,weight:0}];
+  const after = [{...pending,rank:1}, {...verified,rank:2,position:2,fieldSize:2,weight:3}];
+  assert.equal(overallTrackInput(TRACK,before),overallTrackInput(TRACK,after));
+  assert.notEqual(overallTrackInput(TRACK,before),overallTrackInput(TRACK,[{...verified,timeMs:19000}]));
+  assert.notEqual(overallTrackInput(TRACK,before),overallTrackInput(TRACK,[{...verified,runVerified:false}]));
+  assert.notEqual(overallTrackInput(TRACK,before),overallTrackInput(TRACK,[{...verified,name:'New name'}]));
+});
+
+test('a pending-only PB publishes its track without reading or dirtying overall metadata', async () => {
+  const old=validRun({accountId:'pending',trackId:TRACK,timeMs:20000,runVerified:false});
+  const next={...old,timeMs:19000,raceTimeFrames:19000,uploadId:124};
+  const entries=computeTrackEntries([old],TRACK);
+  const calls=[],writes=[];
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    calls.push(path);
+    if(path===':commit'){writes.push(...JSON.parse(init.body).writes);return {};}
+    if(path.includes('s1_leaderboards_track'))return {fields:wire({trackId:TRACK,entries,complete:true,totalEntries:1,
+      signature:'old',algorithmVersion:'participation-v8-s1',schemaVersion:6,revision:2}).mapValue.fields,updateTime:'v1'};
+    return null;
+  }};
+  const result=await mergeCanonicalResultIntoTrack(env,TRACK,next,true);
+  assert.equal(result.changed,true);
+  assert.equal(result.overallChanged,false);
+  assert.equal(calls.some(path=>path.includes('s1_release_meta')),false);
+  assert.equal(calls.includes(':runQuery'),false);
+  assert.equal(writes.filter(write=>write.update.name.includes('s1_leaderboards_track')).length,1);
+  assert.equal(writes.some(write=>write.update.name.includes('s1_release_meta')),false);
+});
+
+test('concurrent overall rebuilds share one source-board crawl and commit', async () => {
+  const f=overallFixture([{trackId:TRACK,complete:true,entries:[]}]);
+  const [a,b]=await Promise.all([rebuildOverall(f.env,true),rebuildOverall(f.env,true)]);
+  assert.equal(a,b);
+  assert.equal(f.calls.filter(path=>path===':runQuery').length,1);
+  assert.equal(f.commits.length,1);
+});
+
+test('normal overall updates wait fifteen minutes without reading source boards', async () => {
+  const f=overallFixture([{trackId:TRACK,complete:true,entries:[]}]);
+  await rebuildOverall(f.env,true);
+  const doc=f.documents.get('/0.6.2_s1_release_meta/current');
+  doc.fields.dirty=wire(true);
+  doc.fields.lastOverallBuildAt=wire(Date.now()-6*60000);
+  const before=f.calls.length;
+  const result=await rebuildOverall(f.env,false);
+  assert.equal(result.reason,'cooldown');
+  assert.deepEqual(f.calls.slice(before),['/0.6.2_s1_release_meta/current']);
+});
 
 test('overall completeness reports the exact full racer count when only publication is truncated', async () => {
   const boards=[{trackId:TRACK,complete:true,entries:Array.from({length:250},(_,index)=>({accountId:`racer-${index}`,

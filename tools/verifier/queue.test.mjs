@@ -387,7 +387,7 @@ test('preflight detects due work without counting racers and passes a determinis
     queries++;assert.equal(body.structuredQuery.where.fieldFilter.value.integerValue,'1234');
     return queries===1?[{document:{name:'queue/track',fields:{notBefore:{integerValue:'1234'}}}}]:[];
   }},{now:1234,env:{},eventCheck:async()=>({hasWork:false}),log:()=>{}});
-  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,returnedDocuments:1,queueReturnedDocuments:1,
+  assert.deepEqual(result,{hasWork:true,normalHasWork:true,coreHasWork:true,extraHasWork:false,eventHasWork:false,queueQueries:2,eventCheckSkipped:true,returnedDocuments:1,queueReturnedDocuments:1,
     firestoreHttpRequests:null,firestoreReturnedDocuments:null,firestoreQueryCount:null,firestoreEmptyQueryMinimumReads:null,firestoreEstimatedDocumentReads:null,
     queueSample:{queuedRuns:0,averageOverdueAgeMs:0,sampledQueueDocuments:1,sampleLimitPerLane:20,truncated:false}});
   assert.equal(queries,2);
@@ -614,16 +614,24 @@ test('workflow keeps all expensive steps due-gated and credentials restricted to
   assert.ok(!workflow.includes('repository_dispatch'));
 });
 
-test('event-only work wakes preflight and both sources are checked when normal work exists', async () => {
+test('event-only work wakes preflight while normal work skips duplicate event discovery', async () => {
   for (const normal of [false, true]) {
     let checks=0;
     const result=await checkForWork({call:async()=>normal?[{document:{}}]:[]},
       {env:{},now:1234,log:()=>{},eventCheck:async(_,options)=>{
         checks++;assert.equal(options.now,1234);return {hasWork:true};
       }});
-    assert.equal(checks,1);assert.equal(result.hasWork,true);
-    assert.equal(result.normalHasWork,normal);assert.equal(result.eventHasWork,true);
+    assert.equal(checks,normal?0:1);assert.equal(result.hasWork,true);
+    assert.equal(result.normalHasWork,normal);assert.equal(result.eventHasWork,!normal);
+    assert.equal(result.eventCheckSkipped,normal);
   }
+});
+
+test('normal queue work still wakes when event discovery would fail',async()=>{
+  const result=await checkForWork({call:async()=>[{document:{}}]},
+    {env:{},now:1234,log:()=>{},eventCheck:async()=>{throw Error('duplicate event discovery');}});
+  assert.equal(result.hasWork,true);assert.equal(result.normalHasWork,true);
+  assert.equal(result.eventHasWork,false);
 });
 
 test('event preflight failures never masquerade as no work', async () => {

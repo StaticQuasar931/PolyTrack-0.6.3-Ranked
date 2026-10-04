@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installSiteUpdates } from './site-updates.mjs';
+import { readFileSync } from 'node:fs';
 
 class FakeDocument extends EventTarget {
   constructor() {
@@ -62,4 +63,14 @@ test('contains fetch failures and removes the notification on disposal', async (
   const document = new FakeDocument();
   const failed = installSiteUpdates({ revision: 43, document, fetch: async () => { throw Error('offline'); } });
   await failed.check(); assert.equal(document.button, undefined); failed.dispose();
+});
+
+test('checked-in updater, client loader and published revision agree', () => {
+  const root=new URL('../',import.meta.url);
+  const revision=JSON.parse(readFileSync(new URL('site-version.json',root),'utf8')).revision;
+  const patch=readFileSync(new URL('polytrack_062_patch.js',root),'utf8');
+  const index=readFileSync(new URL('index.html',root),'utf8');
+  assert.ok(patch.includes(`installSiteUpdates({revision:${revision},`));
+  assert.ok(patch.includes(`site-updates.mjs?v=${revision}`));
+  assert.ok(index.includes(`polytrack_062_patch.js?v=${revision}`));
 });

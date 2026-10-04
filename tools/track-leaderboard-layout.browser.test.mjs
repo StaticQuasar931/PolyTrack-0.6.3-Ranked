@@ -24,7 +24,9 @@ const viewports = [
 ];
 
 test('owned mobile layout explicitly places all native footer controls', () => {
-  assert.match(homeCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*1\.4fr\)\s+44px\s*!important;/);
+  assert.match(homeCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(112px,\s*1\.15fr\)\s+minmax\(64px,\s*0\.9fr\)\s+44px\s*!important;/);
+  assert.match(homeCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(112px,\s*1\.25fr\)\s+44px\s*!important;/);
+  assert.match(homeCss, /font-size:\s*11px\s*!important;/);
   assert.match(homeCss, /> \.only-verified\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
   assert.match(homeCss, /> \.icon-button\.first\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s);
   assert.match(homeCss, /> \.back\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/s);
