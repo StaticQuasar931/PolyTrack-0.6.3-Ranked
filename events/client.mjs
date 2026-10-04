@@ -9,6 +9,12 @@ const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 const PERMANENT_ROLLING=Object.freeze({id:'permanent-rolling-hills',kind:'permanent',trackId:ROLLING_TRACK_ID,trackName:'Rolling Hills Racer',maxRp:1001,permanent:true});
+export function eventRunDate(row,at=Date.now()){
+  const stamp=[row?.submittedAt,row?.receivedAt,row?.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=at);
+  if(!stamp)return {label:'Date unavailable',title:'This saved result has no run date.'};
+  const seconds=Math.floor((at-stamp)/1000),minutes=Math.floor(seconds/60),hours=Math.floor(minutes/60),days=Math.floor(hours/24);
+  return {label:days?days+' day'+(days===1?'':'s')+' ago':hours?hours+' hour'+(hours===1?'':'s')+' ago':minutes?minutes+' min ago':'Just now',title:new Date(stamp).toLocaleString()};
+}
 export function liveTimedEventPeriods(periods,at=Date.now()){
   const unique=new Map();
   for(const period of (Array.isArray(periods)?periods:[]))if(period?.id&&period.id!==PERMANENT_ROLLING.id&&period.kind!=='permanent'&&period.enabled!==false&&!period.archived&&period.startsAt<=at&&period.endsAt>at&&!unique.has(period.id))unique.set(period.id,period);
@@ -160,7 +166,7 @@ export function installEvents(bridge){
   }
   async function loadCatalog(force=false){
     if(fetching)return fetching;if(!force&&catalogAt&&now()<catalogFreshUntil)return catalog;
-    fetching=bridge.readCatalog().then(storeCatalog).catch(error=>{catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(catalog.periods,catalogAt);if(!catalog.periods?.length)throw error;return catalog;}).finally(()=>fetching=null);
+    fetching=bridge.readCatalog().then(storeCatalog).catch(error=>{catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(catalog.periods,catalogAt);if(!catalog.periods?.length)throw error;return catalog;}).finally(()=>{fetching=null;tick();});
     return fetching;
   }
   async function snapshot(period,force=false){
@@ -221,8 +227,8 @@ export function installEvents(bridge){
     shell();selected=period;body('<p role="status">Opening event...</p><p>You can cancel with Close. Your saved PBs are unchanged.</p>');message('Preparing event racing.');
     const attempt=++entryRequest,accountId=bridge.accountId();
     let timer;
-    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();eventIntent=sessions.enter(period,bridge.accountId());close();message('Opening event track...');nativeOpenPermit=true;try{bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
-    catch(error){if(attempt===entryRequest)message(error.message);return false;}finally{clearTimeout(timer);}
+    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();eventIntent=sessions.enter(period,bridge.accountId());close();message('Opening event track...');nativeOpenPermit=true;try{await bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
+    catch(error){if(attempt===entryRequest||eventIntent?.periodId===period.id){sessions.leave();eventIntent=null;shell();message(error.message);body('<p>The event track could not be opened. Your saved records are unchanged.</p>');}return false;}finally{clearTimeout(timer);}
   }
   async function openEvent({kind,trackId}={}){
     sessions.leave();eventIntent=null;tick();
@@ -320,6 +326,7 @@ export function installEvents(bridge){
       else{await loadCatalog();periods=catalogArchivePeriods(catalog,now());}
       if(!dialog||token!==requestId)return;
       const value=month||new Date().toISOString().slice(0,7);
+      await bridge.prepareArchive?.();if(!dialog||token!==requestId)return;
       body('');
       mountArchiveView(dialog.querySelector('main'),{periods,month:value,formatTime:time,accountId:bridge.accountId(),snapshots:cache,
         resolveName:periodName,loadSnapshot:period=>snapshot(period,false),onMonthChange:month=>void archives(month),
@@ -633,6 +640,7 @@ export function installEvents(bridge){
       board.innerHTML='<h2>Event leaderboard</h2><h3></h3><div class="total-players fade-in"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg"> Back</button><button type="button" class="button sq-event-refresh">Refresh</button></div>';
       original.after(board);
       bridge.filterButton?.(board.querySelector('.button-wrapper'));
+      const findMe=document.createElement('button');findMe.type='button';findMe.className='button icon-button first sq-event-find-me';findMe.title='Find your event result';findMe.setAttribute('aria-label','Find your event result');findMe.innerHTML='<img class="button-icon" src="images/pin.svg" alt="">';board.querySelector('.button-wrapper').append(findMe);
       const pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';
       const pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','block','important');
       const side=root.querySelector('.side-panel'),normalPb=side?.querySelector('.personal-best-title');
@@ -643,6 +651,7 @@ export function installEvents(bridge){
       view.deferredCarRows=new Set();
       if(typeof IntersectionObserver==='function')view.carObserver=new IntersectionObserver(entries=>handleEventCarIntersections(view,entries,renderCachedCar),{root:board.querySelector('.container'),rootMargin:'50px'});
       board.addEventListener('contextmenu',event=>event.stopPropagation());
+      findMe.onclick=()=>{const index=eventDisplayRows(period).rows.findIndex(row=>row.accountId===accountId);if(index<0){message('Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
       board.querySelector('.back').onclick=()=>{const back=original.querySelector('button.back');entryRequest++;sessions.leave();eventIntent=null;tick();back?.click();};
       board.querySelector('.sq-event-refresh').onclick=async()=>{
         const button=board.querySelector('.sq-event-refresh');button.disabled=true;
@@ -677,7 +686,7 @@ export function installEvents(bridge){
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
     const pendingSignature=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetTimeMs,row.targetPending,row.targetRunId,row.groupToken||0]);
-    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle]),pendingSignature]);
+    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt]),pendingSignature]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -706,7 +715,10 @@ export function installEvents(bridge){
       button.innerHTML='<div class="image-container"><img class="show" src="images/car_thumbnail_placeholder.png"><img class="checkmark" src="images/state_verified.svg" alt=""></div><div class="left"><p class="position"></p><p class="event-time"></p></div><div class="right"><div class="name-container"><span class="name"></span></div><p class="verified-state"></p></div>';
       const position=button.querySelector('.position'),ordinal=eventOrdinal(row.rank);position.append(document.createTextNode(Number.isSafeInteger(row.rank)?String(row.rank):'--'));if(ordinal){const suffix=document.createElement('span');suffix.className='sq-event-ordinal-suffix';suffix.textContent=ordinal.slice(String(row.rank).length);position.append(suffix);}button.querySelector('.event-time').textContent=time(row.timeMs);button.querySelector('.name').textContent=row.name||'Racer';
       if(row.accountId===accountId){const self=document.createElement('span');self.className='self';self.textContent=' (You)';button.querySelector('.name-container').append(self);}
-      const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=row.pending?(row.unscored?'Not scored':'Waiting'):(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' Event RP');
+      const state=button.querySelector('.verified-state'),date=eventRunDate(row,now());state.dataset.sqRunStatus=row.pending?'unchecked':'verified';state.classList.add(row.pending?'pending':'verified');state.textContent=date.label+(row.pending?(row.unscored?' · Not scored':' · Waiting'):'');state.title=date.title;
+      if(!row.pending){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' ERP');points.title=row.groupRp!=null?'Filtered group Event RP':'Verified Event RP';button.querySelector('.right').append(points);}
+      const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
+      button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const icon=button.querySelector('.checkmark');icon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';icon.alt=row.pending?'Unverified recording':'Verified replay';container.append(button);
       const style=styles[view.page*20+index];
       if(style&&view.carObserver){view.carStyles.set(button,style);view.carObserver.observe(button);}
@@ -772,8 +784,8 @@ export function installEvents(bridge){
       const infoNode=kodubCard.querySelector('.track-of-the-week-info');
       if(infoNode){
         let reward=infoNode.querySelector('.sq-kodub-reward');if(!reward){reward=document.createElement('small');reward.className='sq-kodub-reward';infoNode.append(reward);}
-        const text=p?'700 Event RP available':'Event scoring awaiting official import';if(reward.textContent!==text)reward.textContent=text;
-        const pb=infoNode.querySelector('.personal-best');if(pb){const html=p?recordMarkup(p):'No record';if(pb.dataset.eventRecord!==html){pb.dataset.eventRecord=html;pb.innerHTML=html;}}
+        const text=p?'Up to 700 Event RP':'Normal play available · event scoring unavailable';if(reward.textContent!==text)reward.textContent=text;
+        const pb=infoNode.querySelector('.personal-best');if(pb&&p){const html=recordMarkup(p);if(pb.dataset.eventRecord!==html){pb.dataset.eventRecord=html;pb.innerHTML=html;}}
       }
     }
     if(group?.getClientRects().length){void loadCatalog().catch(()=>{});void loadPermanent();}
@@ -798,11 +810,11 @@ export function installEvents(bridge){
     }else if(group){
       let row=group.querySelector('.sq-event-track-buttons');
       if(!row){row=document.createElement('div');row.className='sq-event-track-buttons';group.append(row);}
-      if(row.dataset.periods!=='unavailable'){
-        row.dataset.periods='unavailable';row.replaceChildren();
+      const scheduleState=fetching?'loading':'unavailable';
+      if(row.dataset.periods!==scheduleState){
+        row.dataset.periods=scheduleState;row.replaceChildren();
         for(const kind of ['weekly','daily']){const button=document.createElement('button');button.className='button sq-event-card';button.type='button';button.dataset.eventKind=kind;
-          const title=document.createElement('strong');title.textContent=kind==='weekly'?'Weekly event':'Daily event';
-          const note=document.createElement('small');note.textContent='No active event available';button.append(title,note);button.onclick=()=>void open();row.append(button);}
+          button.innerHTML='<span class="sq-event-thumb" aria-hidden="true"></span><div class="sq-event-record">No record</div><span><small>'+eventName(kind)+' event</small><strong>'+(fetching?'Loading track...':'Schedule unavailable')+'</strong><span>Up to '+(kind==='weekly'?500:100)+' Event RP</span><small>'+(fetching?'Loading saved schedule':'Open Events to retry')+'</small></span>';button.onclick=()=>void open();row.append(button);}
       }
     }
     const session=sessions.current()||eventIntent;if(document.body.classList.contains('sq-event-active')!==!!session)document.body.classList.toggle('sq-event-active',!!session);
@@ -880,5 +892,5 @@ export function installEvents(bridge){
     const list=dialog?.querySelector('.sq-event-results');
     if(selected&&list){const board=cache.get(selected.id)||read(STORE+'-'+selected.id,null);if(board){const raw=now()>=selected.endsAt?archivePeriodCounts(selected,board).verifiedEntries:board.entries||[];const filtered=bridge.filterRows?.(raw,{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true});list.innerHTML=rows(filtered?.rows||raw)||'<li>No racers match these filters.</li>';message(filtered?.active?'Personal filters are active.':'Published standings.');}}
   });
-  return {featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
+  return {isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;tick();}};
 }

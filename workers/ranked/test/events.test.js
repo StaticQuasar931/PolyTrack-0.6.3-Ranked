@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { createEventService, createEventHandler, eventPeriod, eventRp, eventLeaderboard, publicEventPeriod,
-  EVENT_COLLECTIONS as C, EVENT_LIMITS as L } from '../src/events.js';
+  EVENT_COLLECTIONS as C, EVENT_LIMITS as L, EVENT_VERSION, EVENT_SCORING_V1, EVENT_SCORING_V2 } from '../src/events.js';
 import { createEventFirestoreStore, eventEncode, eventDecode } from '../src/events-store.js';
 import { VERIFIER_ENGINE_DIGEST as engine, VERIFIER_VERSION as version } from '../src/verification.js';
 import { utcEventCandidates, inboxPage, consumeEventInbox, cleanupEvents, eventReceiptRetry, eventWork, provisionEvent } from '../src/events-runtime.js';
@@ -127,7 +127,7 @@ function fixture() {
   store.data.set(`${C.profiles}/${account}`, { accountId: account, ownerUid: 'user1', name: 'Native Racer' });
   const service = createEventService({ store, now: () => time, hash, randomId: () => `lease_${nonce++}` });
   return { service, store, data: store.data, time: t => { time = t; }, advance: () => { time += 1000; },
-    async start() { await service.bindOwner('user1', account); await service.createPeriod(inputPeriod); time = 1000; },
+    async start(period = inputPeriod) { await service.bindOwner('user1', account); await service.createPeriod(period); time = 1000; },
     submit: (ms = 20402, attemptId = 'run1', extra = {}) => service.submit('day1', 'user1', {
       accountId: account, trackId: track, attemptId, timeMs: ms, frames: ms, replay, carStyle: 'test', ...extra }),
     run: runId => store.data.get(`${C.runs}/${runId}`),
@@ -402,10 +402,102 @@ test('reviewed policy is mandatory, period is immutable, and RP is bounded with 
   assert.equal(eventRp(p, 20402), 490); assert.equal(eventRp(p, 1000), 1000);
   const rows = eventLeaderboard(p, [{ accountId: account, timeMs: 10000 }, { accountId: 'c'.repeat(64), timeMs: 10000 }, { accountId: 'd'.repeat(64), timeMs: 20000 }]);
   assert.deepEqual(rows.map(r => r.rank), [1, 1, 3]);
+  const dated = eventLeaderboard(p, [
+    { accountId: account, timeMs: 10000, receivedAt: 1500, verifiedAt: 9000, updatedAt: 8000 },
+    { accountId: 'c'.repeat(64), timeMs: 10000, submittedAt: 999, pbAt: 1600 }
+  ]);
+  assert.equal(dated[0].submittedAt, 1500, 'server receipt time is published, not verification or refresh time');
+  assert.equal(dated[1].submittedAt, 1600, 'legacy authoritative PB time is preserved when valid');
+  assert.equal('updatedAt' in dated[0], false);
   const f = fixture(); await f.start();
   await assert.rejects(f.service.createPeriod(inputPeriod), /future/);
   f.time(0); await assert.rejects(f.service.createPeriod({ ...inputPeriod, maxRp: 1 }), /immutable/);
   await assert.rejects(f.service.createPeriod({ ...inputPeriod, id: 'overlap' }), /overlap/);
+});
+
+test('time-gap scoring differentiates verified times without entrant-count bonuses and preserves legacy periods', () => {
+  const weekly = eventPeriod({ ...inputPeriod, id: 'w_scoring', kind: 'weekly', maxRp: 500, targetMs: 20000 });
+  assert.equal(weekly.scoringVersion, EVENT_SCORING_V2);
+  assert.equal(publicEventPeriod(weekly).scoringVersion, EVENT_SCORING_V2);
+  assert.deepEqual([17000, 19000, 20000, 21000, 23000].map(time => eventRp(weekly, time)), [465, 428, 400, 364, 273]);
+  assert.equal(eventRp(weekly, 20000) - eventRp(weekly, 23000), 127, 'a three-second gap has substantial weight');
+  assert.equal(eventRp(weekly, 20000) - eventRp(weekly, 21000), 36, 'a one-second gap is visible');
+  assert.equal(eventRp(weekly, 20000), eventRp(weekly, 20000), 'exact time ties always score equally');
+  const rows = eventLeaderboard(weekly, [
+    { accountId: 'a'.repeat(64), timeMs: 20000 }, { accountId: 'b'.repeat(64), timeMs: 20000 },
+    { accountId: 'c'.repeat(64), timeMs: 21000 }
+  ]);
+  assert.deepEqual(rows.map(row => row.rank), [1, 1, 3]);
+  assert.equal(rows[0].rp, rows[1].rp);
+  assert(rows[1].rp > rows[2].rp);
+  assert.equal(eventRp(weekly, 21000), eventRp(weekly, 21000), 'score is independent of how many racers enter');
+
+  const alreadyCreatedLiveWeekly = eventPeriod({ ...inputPeriod, id: 'w_legacy', kind: 'weekly', maxRp: 500,
+    scoreVersion: EVENT_VERSION });
+  assert.equal(alreadyCreatedLiveWeekly.scoringVersion, EVENT_SCORING_V1);
+  assert.equal(eventRp(alreadyCreatedLiveWeekly, 11000), 454, 'existing periods retain their frozen formula');
+});
+
+test('active scoring opt-in leaves queued run proof bindings valid', async () => {
+  const f = fixture(); await f.start();
+  const intake = await f.submit();
+  const queuedBinding = f.run(intake.runId).periodBinding;
+  assert.equal(queuedBinding, JSON.stringify({ id: 'day1', enabled: true, trackId: track, startsAt: 1000,
+    endsAt: 86401000, graceMs: 3600000, targetMs: 10000, maxRp: 1000, kind: 'custom', engineDigest: engine,
+    verifierVersion: version, scoreVersion: EVENT_VERSION, eligibility: 'best-submitted-during-period',
+    capacity: { policyVersion: 'test-reviewed-v1', entrants: 200, admissionsPerPeriod: 512,
+      replayBytesPerPeriod: 8388608, minIntervalMs: 1000, verificationsPerDay: 128 } }));
+  assert.equal(queuedBinding.includes('scoringVersion'), false);
+  f.data.set(`${C.periods}/day1`, { ...f.data.get(`${C.periods}/day1`), scoringVersion: EVENT_SCORING_V2 });
+  assert.equal(f.run(intake.runId).periodBinding, queuedBinding);
+  const [result] = await f.publish();
+  assert.equal(result.status, 'verified');
+  assert.equal((await f.service.snapshot('day1')).entries[0].rp, 1);
+});
+
+test('explicit live opt-in is atomic and idempotent only before any entrants', async () => {
+  const f = fixture();
+  await f.start({ ...inputPeriod, kind: 'daily', maxRp: 100, scoreVersion: EVENT_VERSION });
+  const result = await f.service.optInLiveScoring('day1');
+  assert.deepEqual(result, { migrated: true, duplicate: false, scoringVersion: EVENT_SCORING_V2, entrants: 0 });
+  assert.equal(f.data.get(`${C.periods}/day1`).scoringVersion, EVENT_SCORING_V2);
+  assert.equal(f.data.get(`${C.live}/day1`).period.scoringVersion, EVENT_SCORING_V2);
+  assert.equal(f.data.get(`${C.catalog}/main`).periods.find(row => row.id === 'day1').scoringVersion, EVENT_SCORING_V2);
+  assert.equal(f.data.get(`${C.public}/catalog`).periods.find(row => row.id === 'day1').scoringVersion, EVENT_SCORING_V2);
+  const beforeTotals = structuredClone(await f.service.totals());
+  assert.deepEqual(await f.service.optInLiveScoring('day1'),
+    { migrated: false, duplicate: true, scoringVersion: EVENT_SCORING_V2 });
+  assert.deepEqual(await f.service.totals(), beforeTotals, 'retry does not add awards or alter totals');
+  await f.submit(); await f.publish();
+  const awarded = (await f.service.totals()).entries[0];
+  assert.equal(awarded.rp, 1);
+  assert.equal(awarded.events, 1);
+  assert.deepEqual(await f.service.optInLiveScoring('day1'),
+    { migrated: false, duplicate: true, scoringVersion: EVENT_SCORING_V2 });
+  assert.deepEqual((await f.service.totals()).entries[0], awarded, 'repeated opt-in never repeats the event award');
+});
+
+test('explicit live opt-in refuses populated and archived periods without writes', async () => {
+  const populated = fixture();
+  await populated.start({ ...inputPeriod, kind: 'daily', maxRp: 100, scoreVersion: EVENT_VERSION });
+  await populated.submit(); await populated.publish();
+  const beforePeriod = structuredClone(populated.data.get(`${C.periods}/day1`));
+  const beforeLive = structuredClone(populated.data.get(`${C.live}/day1`));
+  const beforeAccountTotal = structuredClone(populated.data.get(`${C.totals}/${account}`));
+  const beforePublicTotal = structuredClone(populated.data.get(`${C.public}/totals`));
+  await assert.rejects(populated.service.optInLiveScoring('day1'), /event_scoring_repair_required/);
+  assert.deepEqual(populated.data.get(`${C.periods}/day1`), beforePeriod);
+  assert.deepEqual(populated.data.get(`${C.live}/day1`), beforeLive);
+  assert.deepEqual(populated.data.get(`${C.totals}/${account}`), beforeAccountTotal);
+  assert.deepEqual(populated.data.get(`${C.public}/totals`), beforePublicTotal);
+
+  const archived = fixture();
+  await archived.start({ ...inputPeriod, kind: 'daily', maxRp: 100, scoreVersion: EVENT_VERSION });
+  archived.time(inputPeriod.endsAt + inputPeriod.graceMs);
+  await archived.service.archivePeriod('day1');
+  const beforeArchive = structuredClone(archived.data.get(`${C.archives}/day1`));
+  await assert.rejects(archived.service.optInLiveScoring('day1'), /event_scoring_archive_immutable/);
+  assert.deepEqual(archived.data.get(`${C.archives}/day1`), beforeArchive);
 });
 
 test('immutable ownership requires existing profile owner; client identity mismatch is rejected', async () => {
@@ -426,6 +518,7 @@ test('non-all-time PB receives separate verified event PB without changing canon
   assert.equal(result.eventImproved, true); assert.equal(result.canonicalImproved, false);
   assert.equal(f.canonical().replay, 'old');
   assert.equal(f.data.get(`${C.pbs}/day1_${account}`).timeMs, 20402);
+  assert.equal(f.data.get(`${C.pbs}/day1_${account}`).submittedAt, 1000);
   assert.equal((await f.service.snapshot('day1')).entries[0].rp, 490);
   assert.equal(f.run(intake.runId).status, 'verified');
   assert.equal(f.run(intake.runId).timeMs, 20402);
@@ -595,6 +688,7 @@ test('archive publishes only sanitized period and ranks; late verification only 
   f.time(p.endsAt + p.graceMs);
   await f.service.archivePeriod('day1');
   const archive = structuredClone(f.data.get(`${C.archives}/day1`));
+  assert.equal(archive.entries[0].submittedAt, 1000);
   assert.equal('awardCursor' in archive, false);
   const result = await f.service.completeJob('day1', job, verdict(job));
   assert.equal(result.eventImproved, false); assert(result.canonicalImproved);
@@ -688,6 +782,7 @@ import { PRE_EVENT_LAUNCH_ENGINE } from '../src/event-engine-compatibility.js';
 test('launch-only repin preserves old period binding, event Play, pending runs and frozen archive scores', async () => {
   const f=fixture();await f.start();
   const oldPeriod={...f.data.get(`${C.periods}/day1`),engineDigest:PRE_EVENT_LAUNCH_ENGINE};
+  delete oldPeriod.scoringVersion;
   f.data.set(`${C.periods}/day1`,oldPeriod);
   assert.equal((await f.service.snapshot('day1')).period.targetMs,oldPeriod.targetMs);
   const first=await f.submit();
@@ -727,6 +822,7 @@ test('event public rows retain bounded car style but reject URLs and markup',()=
 test('own-ghost repin preserves old period binding, event Play, pending runs and frozen archive scores', async () => {
   const f=fixture();await f.start();
   const oldPeriod={...f.data.get(`${C.periods}/day1`),engineDigest:'895eeacbdfdd5f68b9db92c502af620709539c5211782809f610c1a76e60785d'};
+  delete oldPeriod.scoringVersion;
   f.data.set(`${C.periods}/day1`,oldPeriod);
   assert.equal((await f.service.snapshot('day1')).period.targetMs,oldPeriod.targetMs);
   const first=await f.submit();
@@ -768,7 +864,7 @@ test('Kodub period keeps trusted code private and awards event points without no
  await f.service.createPeriod(input);f.time(1000);await f.submit();
  let trusted;await f.service.processBatch('day1',async(jobs,period)=>{trusted=period;return jobs.map(job=>kodubVerdict(job,input.kodub.trackCodeHash));});
  assert.equal(trusted.kodub.trackCode,code);assert.equal(f.canonical(),undefined);
- const board=await f.service.snapshot('day1');assert.equal(board.period.kind,'kodub');assert.equal(board.period.trackName,'Weekly fixture');assert.equal(board.entries[0].rp,343);assert.equal('kodub' in board.period,false);
+ const board=await f.service.snapshot('day1');assert.equal(board.period.kind,'kodub');assert.equal(board.period.trackName,'Weekly fixture');assert.equal(board.entries[0].rp,1);assert.equal('kodub' in board.period,false);
  assert(!JSON.stringify(await f.service.catalog()).includes(code));
  assert.throws(()=>eventPeriod({...input,maxRp:500}),/kodub_rp_cap/);
  assert.throws(()=>eventPeriod({...input,kodub:{...input.kodub,officialEndTime:1}}),/invalid_kodub_binding/);

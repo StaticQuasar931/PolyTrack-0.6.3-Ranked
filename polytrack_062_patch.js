@@ -47,6 +47,21 @@
   let lastEventUiTickAt=0;
   let pendingEventLaunch=null;
   let nativeWeeklySelection=null,kodubAdapter=null;
+  const kodubTrackHistory=new Map();
+  let kodubHistoryLoad=null;
+  function loadKodubTrackHistory(){
+    if(kodubHistoryLoad)return kodubHistoryLoad;
+    kodubHistoryLoad=fetch(new URL('./kodub/history.json',eventsModuleUrl),{cache:'default',signal:AbortSignal.timeout(4000)}).then(async response=>{
+      if(!response.ok)return;
+      const records=await response.json();
+      if(!Array.isArray(records)||records.length>520)return;
+      for(const record of records){
+        if(!/^[a-f0-9]{64}$/.test(record?.trackId||'')||typeof record.name!=='string'||record.name.length>200||!/^assets\/[a-f0-9]{64}\.webp$/.test(record.thumbnailUrl||''))continue;
+        kodubTrackHistory.set(record.trackId,{id:record.trackId,name:record.name,type:'custom',thumbnail:new URL('./kodub/'+record.thumbnailUrl,eventsModuleUrl).href});
+      }
+    }).catch(()=>{});
+    return kodubHistoryLoad;
+  }
   async function nativeWeeklyFeed(){
     kodubAdapter=await import(new URL('./kodub-weekly.mjs',eventsModuleUrl).href);
     await ensureEventUi();
@@ -146,8 +161,8 @@
     if(eventUi)return eventUi;if(eventUiPromise)return eventUiPromise;
     eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
-      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:async()=>{},openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button)throw Error('Weekly track is unavailable');button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
-        filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
+      eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:async()=>{},openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button||!isElementVisible(button))return openKodubWeeklyFromEvents(function(){return eventUi.isEntered(id);});button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
+        prepareArchive:loadKodubTrackHistory,racerActions:function(row,event){return openPersonalRacerActions(row.accountId||row.userId,event);},filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
         readCatalog:()=>eventCloudRead('/v1/events/catalog','0.6.2_event_public','catalog'),
         readSnapshot:id=>eventCloudRead('/v1/events/'+encodeURIComponent(id)+'/snapshot','0.6.2_event_public',id),
         readReplay:readEventReplay,
@@ -594,6 +609,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 .map((track)=>[track.id, Object.freeze(track)]));
   const LEGACY_TRACK_CATALOG = new Map([["5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572",{"id":"5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572","name":"Asguardia (legacy)","type":"community","retired":true,"thumbnail":"tracks/community/thumbnails/asguardia.png"}]]);
   function trackInfo(trackId){
+    if(String(trackId||'')===nativeWeeklySelection?.trackId)return {id:nativeWeeklySelection.trackId,name:nativeWeeklySelection.name,type:'custom',thumbnail:nativeWeeklySelection.thumbnailUrl};
+    if(kodubTrackHistory.has(String(trackId||'')))return kodubTrackHistory.get(String(trackId||''));
     return TRACK_CATALOG.get(String(trackId || '')) || LEGACY_TRACK_CATALOG.get(String(trackId || '')) || extraTrackInfoById.get(String(trackId||'')) || { id:String(trackId || ''), name:'Custom Track', type:'custom' };
   }
   const LOG_PREFIX='[polytrack-data-0.6.2]';
@@ -4484,7 +4501,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function openPersonalRacerActions(id,event){
     document.getElementById('personalRacerActions')?.remove();
     const menu=document.createElement('div');menu.id='personalRacerActions';menu.className='personal-racer-context';menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Racer filter actions');
-    for(const [label,action] of [['Include in filters',()=>editPersonalRacer(id,'include')],['Exclude from filters',()=>editPersonalRacer(id,'exclude')],['Remove racer override',()=>editPersonalRacer(id,'remove')],['Edit filters',openPersonalFilterMenu],['Close',()=>{}]]){
+    const profile=async()=>{await openRankedPanel(false);if(overallEntriesCache.some(entry=>cleanUserId(entry.userId||entry.accountId)===id))openRankedProfile(id);else{const list=document.querySelector('#overallLeaderboardList');if(list)list.insertAdjacentHTML('afterbegin','<div class="overall-empty compact"><strong>This racer is not in the loaded rankings yet.</strong><span>Their event run is still saved in event standings.</span></div>');}};
+    for(const [label,action] of [['Racer profile',profile],['Include in filters',()=>editPersonalRacer(id,'include')],['Exclude from filters',()=>editPersonalRacer(id,'exclude')],['Remove racer override',()=>editPersonalRacer(id,'remove')],['Edit filters',openPersonalFilterMenu],['Close',()=>{}]]){
       const button=document.createElement('button');button.type='button';button.className='button';button.textContent=label;
       button.onclick=()=>{menu.remove();void action();};menu.appendChild(button);
     }
@@ -4863,6 +4881,23 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const source=nativeSource||info.thumbnail||fallback;
     const mystery=info.type==='custom'?'<span class="profile-track-placeholder is-mystery" aria-hidden="true">?</span>':'';
     return `<span class="profile-track-image-frame ${info.type==='official'?'is-silhouette':info.type==='custom'?'is-custom':'is-artwork'}">${mystery}${source?`<img class="profile-track-thumb" src="${escapeHtml(source)}" alt="${escapeHtml(info.name)} thumbnail" loading="lazy" decoding="async" onerror="this.style.display='none'">`:''}</span>`;
+  }
+  async function openKodubWeeklyFromEvents(isCurrent=()=>true){
+    const id=nativeWeeklySelection?.trackId;
+    if(!id)throw Error('No current weekly track is available.');
+    closeOverallPanel(document.getElementById('overallLeaderboardPanel'));
+    const play=[...document.querySelectorAll('.main-buttons-container button')].find(button=>button.textContent.trim()==='Play'&&isElementVisible(button));
+    if(play)play.click();
+    for(let attempt=0;attempt<40;attempt++){
+      if(!isCurrent())throw Error('Event opening cancelled.');
+      if(nativeWeeklySelection?.trackId!==id)throw Error('The weekly track changed. Open Events again.');
+      const button=document.querySelector('.sq-kodub-weekly > button');
+      if(button&&isElementVisible(button)){button.click();return;}
+      const community=[...document.querySelectorAll('.track-selection-ui button')].find(button=>/^Community tracks$/i.test(button.textContent.trim())&&isElementVisible(button));
+      if(community&&!community.classList.contains('selected'))community.click();
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    throw Error('The weekly track could not load. Open Community tracks and try again.');
   }
   function focusTrackFromRanked(trackId,{event=false}={}){
     if(!event)eventUi?.leave();
@@ -7484,6 +7519,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   });
 
   function boot(){
+    // Warm only same-origin schedule assets, never the database, before menus open.
+    void localEventCatalog().catch(()=>{});
     void ensurePersonalFilters();
     window.addEventListener('storage',event=>{
       if(event.key===null)jsonStorageCache.clear();else jsonStorageCache.delete(event.key);

@@ -98,7 +98,7 @@
 }
 
 .track-selection-ui .tracks-container .track.sq-extra-tracks-entry > .button > .thumbnail {
-  object-fit: cover;
+  object-fit: contain;
   image-rendering: auto;
 }
 .track-selection-ui .tracks-container.no-group-containers > .wrapper > .track > .button {
@@ -175,6 +175,12 @@
   overflow-wrap: anywhere;
   float: none !important;
 }
+.track-info-ui .leaderboard-ui > .button-wrapper:has(>[data-personal-filter-button]) > [data-personal-filter-button] {
+  white-space: nowrap !important;
+  overflow-wrap: normal;
+  font-size: clamp(11px, 2vw, 14px) !important;
+  padding-inline: 5px !important;
+}
 .track-info-ui .leaderboard-ui > .button-wrapper:has(>[data-personal-filter-button]) > .only-verified {
   grid-column: 3;
   grid-row: 1;
@@ -188,7 +194,7 @@
     height: auto !important;
     min-height: 0 !important;
     flex: 0 0 auto !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px !important;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 1.25fr) 44px !important;
   }
   .track-info-ui .leaderboard-ui > .button-wrapper:has(>[data-personal-filter-button]) > .back {
     grid-column: 1;
@@ -215,5 +221,11 @@
     max-width: 20px;
     max-height: 20px;
     margin: 0 !important;
+  }
+}
+@media(max-width:600px) and (orientation:landscape) {
+  .track-info-ui .leaderboard-ui > .button-wrapper:has(>[data-personal-filter-button]) {
+    gap: 4px !important;
+    grid-template-columns: minmax(42px, .7fr) minmax(92px, 1.5fr) minmax(64px, 1.2fr) 40px !important;
   }
 }

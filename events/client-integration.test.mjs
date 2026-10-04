@@ -97,12 +97,12 @@ test('acknowledging older in-flight attempt preserves a newer queued attempt',as
  await p.evaluate(()=>ui.flush());assert.deepEqual(await p.evaluate(QUEUE=>JSON.parse(localStorage.getItem(QUEUE)).map(r=>r.attemptId),QUEUE),['newer']);
 });
 test('leaving while Race event waits for readiness cancels the pending entry',async t=>{
- const p=await fixture(t,{deferReady:true});await enter(p);await p.waitForFunction(()=>!!window.resolveReady);
+ const p=await fixture(t,{deferReady:true});await p.evaluate(()=>ui.open());await p.locator('[data-event-id="daily-fixture"]').click();await p.waitForFunction(()=>!!window.resolveReady);
  await p.locator('#ranked').click();await p.evaluate(()=>resolveReady());await p.waitForTimeout(450);
  assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'delayed readiness must not reactivate an explicitly exited event');
 });
 test('closing the dialog while Race event waits cancels the pending entry',async t=>{
- const p=await fixture(t,{deferReady:true});await enter(p);await p.waitForFunction(()=>!!window.resolveReady);
+ const p=await fixture(t,{deferReady:true});await p.evaluate(()=>ui.open());await p.locator('[data-event-id="daily-fixture"]').click();await p.waitForFunction(()=>!!window.resolveReady);
  await p.locator('[data-event-close]').click();await p.evaluate(()=>resolveReady());await p.waitForTimeout(450);
  assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'closing the dialog must cancel the pending race request');
 });
@@ -171,6 +171,23 @@ test('live Event standings cards enter the native event board with verified chec
  await p.locator('#open').click();await p.locator('.sq-events-overlay [data-event-id="daily-fixture"]').click();await p.locator('.sq-event-board button.main').waitFor();
  assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board img.checkmark[src*="state_verified.svg"]').count(),1);
 });
+test('native event rows show accepted run age and verified ERP, with cached racer actions',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily',startsAt:Date.now()-86400000,endsAt:Date.now()+3600000,maxRp:100},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Dated racer',rank:1,timeMs:19000,rp:84,submittedAt:Date.now()-3600000}]});
+  window.racerActions=[];bridgeFixture.racerActions=row=>racerActions.push(row.accountId);bridgeFixture.readReplay=async()=>null;
+ });await enter(p);const row=p.locator('.sq-event-board .container > button.main').first();
+ assert.match(await row.innerText(),/1 hour ago/);assert.match(await row.innerText(),/84 ERP/);
+ await row.click({button:'right'});assert.deepEqual(await p.evaluate(()=>racerActions),['b'.repeat(64)]);
+ await row.focus();await p.keyboard.press('Shift+F10');assert.equal(await p.evaluate(()=>racerActions.length),2);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),true);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
+});
+test('event Find me jumps to the loaded result page without fetching another board',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:Array.from({length:30},(_,i)=>({accountId:i===25?id:(i+1).toString(16).padStart(64,'0'),name:i===25?'You':'Racer '+i,rank:i+1,timeMs:18000+i,rp:90}))});
+ });await enter(p);assert.equal(await p.locator('.sq-event-board button.main.self').count(),0);
+ await p.getByRole('button',{name:'Find your event result',exact:true}).click();assert.equal(await p.locator('.sq-event-board button.main.self').count(),1);
+ assert.equal(await p.locator('.sq-event-board .pages .selected').innerText(),'2');
+});
 test('schedule-only live event remains playable, preserves its local PB, and accepts only matching snapshot metadata',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   const scheduled={id:'scheduled-fixture',trackId:id,kind:'daily',startsAt:Date.now()-1000,endsAt:Date.now()+3600000,maxRp:100,scheduleOnly:true};
@@ -197,7 +214,7 @@ test('native integrity decorator keeps published event rows verified and local r
  await p.evaluate(source=>eval('('+source+')')(),functionSource('syncIntegrityStateLabels'));
  assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.pending').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board button.main:not(.self) .sq-integrity-label').innerText(),'');
 });
-test('ended event launches are removed while unavailable slots remain visible',async t=>{const p=await fixture(t);await showLiveRail(p);assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),1);await p.evaluate(async()=>{bridgeFixture.readCatalog=async()=>({periods:[],archives:[]});await ui.refreshCatalog(true);ui.tick();});assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),0);assert.equal(await p.locator('.sq-event-track-buttons .sq-event-card').count(),2);assert.match(await p.locator('.sq-event-track-buttons').innerText(),/No active event available/);assert.equal(await p.locator('.sq-events-entry').count(),1);await p.locator('.sq-event-track-buttons .sq-event-card').first().click();assert.equal(await p.locator('.sq-events-overlay').count(),1);});
+test('ended event launches are removed while unavailable slots remain visible',async t=>{const p=await fixture(t);await showLiveRail(p);assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),1);await p.evaluate(async()=>{bridgeFixture.readCatalog=async()=>({periods:[],archives:[]});await ui.refreshCatalog(true);ui.tick();});assert.equal(await p.locator('.sq-event-track-buttons [data-event-id]').count(),0);assert.equal(await p.locator('.sq-event-track-buttons .sq-event-card').count(),2);assert.match(await p.locator('.sq-event-track-buttons').innerText(),/Schedule unavailable/);assert.equal(await p.locator('.sq-events-entry').count(),1);await p.locator('.sq-event-track-buttons .sq-event-card').first().click();assert.equal(await p.locator('.sq-events-overlay').count(),1);});
 test('native event view hides a matching rejected attempt from public standings',async t=>{const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);await p.evaluate(()=>{bridgeFixture.readOwnStatus=async()=>({attemptId:submits[0].attemptId,timeMs:20000,status:'mismatch'});});await p.locator('.sq-event-refresh').click();await p.waitForFunction(()=>document.querySelector('.sq-event-board').textContent.includes('No points were added'));assert.equal(await p.locator('.sq-event-board .verified-state').count(),0);assert.match(await p.locator('.sq-event-board').innerText(),/No points were added/);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),0);});
 test('leaving event preserves native opponent controls and listeners',async t=>{const p=await fixture(t);await p.evaluate(()=>{const target=document.querySelector('.opponents-container');const button=document.createElement('button');button.textContent='Original opponent';button.onclick=()=>window.opponentClicked=true;target.append(button);window.originalOpponent=button;});await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>originalOpponent.isConnected),true);await p.locator('button',{hasText:'Original opponent'}).click();assert.equal(await p.evaluate(()=>opponentClicked),true);});
 
@@ -288,7 +305,7 @@ test('unchanged event opponents do not mutate the native side panel on repeated 
 test('repeated visible event ticks do not mutate an unchanged permanent-card title',async t=>{
  const p=await fixture(t);await showLiveRail(p);
  const mutations=await p.evaluate(async()=>{
-  const note=document.querySelector('.sq-permanent-note');let changes=0;
+  const group=document.querySelector('.sq-featured-events');const note=document.createElement('small');note.className='sq-permanent-note';group.append(note);ui.tick();let changes=0;
   const observer=new MutationObserver(records=>{changes+=records.length;});
   observer.observe(note,{attributes:true,attributeFilter:['title']});
   for(let i=0;i<30;i++)ui.tick();

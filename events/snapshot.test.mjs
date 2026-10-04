@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function snapshot('),source.indexOf('  function message('));
-function fixture(readSnapshot){const cache=new Map(),snapshotFetching=new Map(),saved=new Map();const context={cache,snapshotFetching,read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>1000000,bridge:{readSnapshot}};return {cache,snapshotFetching,saved,run:vm.runInNewContext('('+fn+')',context)};}
+function fixture(readSnapshot){const cache=new Map(),snapshotFetching=new Map(),saved=new Map();const context={cache,snapshotFetching,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>1000000,bridge:{readSnapshot}};return {cache,snapshotFetching,saved,run:vm.runInNewContext('('+fn+')',context)};}
 const period={id:'p',trackId:'a'.repeat(64)};
 const board=at=>({period,entries:[{accountId:'b'.repeat(64),timeMs:20000,rank:1,rp:100}],updatedAt:at});
 test('complete event snapshot replaces atomically without merging entries',async()=>{const f=fixture(async()=>board(20));f.cache.set('p',{...board(10),entries:[{old:true}],fetchedAt:1});const out=await f.run(period,true);assert.equal(out.updatedAt,20);assert.equal(out.entries.length,1);assert.equal(out.entries[0].old,undefined);});

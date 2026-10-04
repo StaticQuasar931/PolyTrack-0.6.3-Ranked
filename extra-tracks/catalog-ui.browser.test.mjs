@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import {createRequire} from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -10,6 +11,11 @@ const browserSkip = !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwrigh
 const moduleSource = fs.readFileSync(new URL('./catalog-ui.mjs', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
+const homeCss = fs.readFileSync(new URL('../home-ui.css', import.meta.url), 'utf8');
+const eventsCss = fs.readFileSync(new URL('../events/events.css', import.meta.url), 'utf8');
+const rankedSource = fs.readFileSync(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
+const rankedCssFragments = [...rankedSource.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\\\])*?")/g)];
+const rankedCss = rankedCssFragments.map(fragment => JSON.parse(fragment[1])).join('\n');
 
 test('Extra Tracks nested dialogs contain focus, close correctly, and restore their launchers', {skip: browserSkip}, async () => {
   const browser = await chromium.launch({headless: true});
@@ -431,6 +437,182 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
     await page.waitForFunction(() => !document.querySelector('.sq-extra-report-send').disabled);
     assert.equal(await page.locator('.sq-extra-report-entry').textContent(), 'Race A');
     assert.doesNotMatch(await page.locator('.sq-extra-report-status').textContent(), /Could not send|stale report failure/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('real catalog previews stay uncropped in desktop and portrait game layouts', {skip: browserSkip}, async () => {
+  const browser = await chromium.launch({headless: true});
+  const entries = catalog.filter(entry => entry.thumbnailUrl?.startsWith('extra-tracks/thumbnails/')).slice(0, 12);
+  assert.ok(entries.length >= 8, 'real catalog thumbnail fixtures are available');
+  try {
+    const page = await browser.newPage({viewport: {width: 1365, height: 900}});
+    await page.route('**/*', async route => {
+      const url = new URL(route.request().url());
+      if (url.href === 'http://extra-tracks.test/catalog-ui.mjs') {
+        await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      } else if (url.href === 'http://extra-tracks.test/') {
+        await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
+      } else if (url.pathname.startsWith('/extra-tracks/thumbnails/')) {
+        await route.fulfill({contentType: 'image/png', body: fs.readFileSync(new URL(`../${url.pathname.slice(1)}`, import.meta.url))});
+      } else {
+        await route.abort();
+      }
+    });
+    await page.goto('http://extra-tracks.test/');
+    await page.addStyleTag({content: eventsCss});
+    await page.addStyleTag({content: homeCss});
+    await page.addStyleTag({content: rankedCss});
+    await page.addStyleTag({content: css});
+    await page.evaluate(async entries => {
+      const host = document.createElement('div');
+      host.id = 'ui';
+      host.innerHTML = '<div class="track-selection-ui"><div class="tracks-container"><div class="wrapper"></div></div></div>';
+      document.body.append(host);
+      const {mountExtraTracks} = await import('/catalog-ui.mjs');
+      window.catalog = mountExtraTracks({document, root: document.body, entries});
+      window.catalog.open();
+    }, entries);
+
+    const inspectLayout = async (width, height, screenshotName) => {
+      await page.setViewportSize({width, height});
+      const images = page.locator('.sq-extra-visual img');
+      await images.first().waitFor({state: 'visible'});
+      const reports = [];
+      for (let index = 0; index < await images.count(); index++) {
+        const image = images.nth(index);
+        await image.scrollIntoViewIfNeeded();
+        await image.evaluate(img => img.decode());
+        const pixelTarget = await image.evaluate(img => {
+          const source = document.createElement('canvas');
+          source.width = img.naturalWidth;
+          source.height = img.naturalHeight;
+          const sourceContext = source.getContext('2d', {willReadFrequently: true});
+          sourceContext.drawImage(img, 0, 0);
+          const sourcePixels = sourceContext.getImageData(0, 0, source.width, source.height).data;
+          let point = null, score = -1;
+          for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
+            const offset = (y * source.width + x) * 4;
+            if (sourcePixels[offset + 3] !== 255) continue;
+            const saturation = Math.max(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]) - Math.min(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
+            const candidate = saturation * 2 + Math.max(sourcePixels[offset], sourcePixels[offset + 1], sourcePixels[offset + 2]);
+            if (candidate > score) { score = candidate; point = {x, y, color: [...sourcePixels.slice(offset, offset + 3)]}; }
+          }
+          const bounds = img.getBoundingClientRect();
+          const scale = Math.min(bounds.width / img.naturalWidth, bounds.height / img.naturalHeight);
+          return {left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height,
+            x: (bounds.width - img.naturalWidth * scale) / 2 + (point.x + .5) * scale,
+            y: (bounds.height - img.naturalHeight * scale) / 2 + (point.y + .5) * scale,
+            sourceColor: point.color};
+        });
+        const visualSample = await page.screenshot({clip: {x: pixelTarget.left, y: pixelTarget.top, width: pixelTarget.width, height: pixelTarget.height}});
+        const renderedColor = await page.evaluate(async ({png, x, y}) => {
+          const decoded = new Image();
+          decoded.src = `data:image/png;base64,${png}`;
+          await decoded.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = decoded.naturalWidth;
+          canvas.height = decoded.naturalHeight;
+          const context = canvas.getContext('2d', {willReadFrequently: true});
+          context.drawImage(decoded, 0, 0);
+          return [...context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].slice(0, 3);
+        }, {png: visualSample.toString('base64'), x: pixelTarget.x, y: pixelTarget.y});
+        const pixelDelta = Math.max(...renderedColor.map((channel, channelIndex) => Math.abs(channel - pixelTarget.sourceColor[channelIndex])));
+        assert.ok(pixelDelta <= 40, `${await image.getAttribute('alt') || `catalog image ${index + 1}`} PNG pixel is visible at its contain-scaled position: expected ${pixelTarget.sourceColor}, got ${renderedColor}`);
+        const report = await image.evaluate(img => {
+          const bounds = img.getBoundingClientRect();
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const context = canvas.getContext('2d', {willReadFrequently: true});
+          context.drawImage(img, 0, 0);
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+            if (pixels[(y * canvas.width + x) * 4 + 3] === 0) continue;
+            left = Math.min(left, x); top = Math.min(top, y);
+            right = Math.max(right, x); bottom = Math.max(bottom, y);
+          }
+          const clipped = [];
+          for (let parent = img.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            const clipsOverflow = ['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX) || ['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY);
+            if (clipsOverflow) {
+              const rect = parent.getBoundingClientRect();
+              const clip = {left: rect.left + parent.clientLeft, top: rect.top + parent.clientTop,
+                right: rect.left + parent.clientLeft + parent.clientWidth,
+                bottom: rect.top + parent.clientTop + parent.clientHeight};
+              if (bounds.left < clip.left - 1 || bounds.top < clip.top - 1 || bounds.right > clip.right + 1 || bounds.bottom > clip.bottom + 1) {
+                clipped.push({selector: parent.className, overflowX: style.overflowX, overflowY: style.overflowY});
+              }
+            }
+            if (style.clipPath !== 'none' || style.maskImage !== 'none') clipped.push({selector: parent.className, clipPath: style.clipPath, maskImage: style.maskImage});
+          }
+          const card = img.closest('.sq-extra-card');
+          const style = getComputedStyle(img);
+          const frame = img.parentElement.getBoundingClientRect();
+          return {name: card?.querySelector('h3')?.textContent, natural: [img.naturalWidth, img.naturalHeight],
+            alphaBounds: [left, top, right, bottom], box: [bounds.width, bounds.height], frame: [frame.width, frame.height],
+            objectFit: style.objectFit, objectPosition: style.objectPosition, transform: style.transform,
+            clipped, hasNativeFrameAncestor: !!img.closest('.thumbnail, .profile-track-image-frame, .image-container')};
+        });
+        assert.ok(report.natural[0] > 0 && report.natural[1] > 0, `${report.name} loaded its real catalog PNG`);
+        assert.ok(report.alphaBounds[2] >= report.alphaBounds[0] && report.alphaBounds[3] >= report.alphaBounds[1], `${report.name} PNG has visible alpha bounds`);
+        assert.equal(report.objectFit, 'contain', `${report.name} uses contain in the actual page cascade`);
+        assert.equal(report.objectPosition, '50% 50%', `${report.name} stays centered`);
+        assert.equal(report.transform, 'none', `${report.name} has no image transform`);
+        assert.deepEqual(report.clipped, [], `${report.name} has no clipping or masking ancestor`);
+        assert.equal(report.hasNativeFrameAncestor, false, `${report.name} is outside native thumbnail/profile frames`);
+        reports.push(report);
+      }
+      await page.evaluate(() => { const menu = document.querySelector('.sq-extra-menu'); if (menu) menu.scrollTop = 0; });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const evidenceDir = process.env.EXTRA_TRACKS_PREVIEW_EVIDENCE_DIR;
+      if (evidenceDir) {
+        fs.mkdirSync(evidenceDir, {recursive: true});
+        await page.screenshot({path: path.join(evidenceDir, screenshotName)});
+      }
+      console.log(`Extra Tracks preview evidence ${width}x${height}: ${JSON.stringify(reports)}`);
+    };
+
+    await inspectLayout(1365, 900, 'extra-tracks-previews-desktop.png');
+    await inspectLayout(390, 844, 'extra-tracks-previews-portrait.png');
+    await page.evaluate(() => window.catalog.destroy());
+  } finally {
+    await browser.close();
+  }
+});
+
+test('native leaderboard inactive filter label stays on one line', {skip: browserSkip}, async () => {
+  const browser = await chromium.launch({headless: true});
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<style>
+      html,body{width:100%;height:100%;margin:0} #gameRoot{position:relative;width:100%;height:100%}
+      .track-info-ui{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:center;gap:16px;width:100%;height:100%;padding:16px;box-sizing:border-box}
+      .side-panel{width:280px;flex:none}.leaderboard-ui{display:flex;flex-direction:column;align-items:stretch;width:min(520px,100%);min-width:0;min-height:0;margin:auto}
+      .leaderboard-ui>.button-wrapper{height:44px;display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;overflow:hidden}
+      .leaderboard-ui>.button-wrapper>button{min-width:0;min-height:44px;padding:6px;font:16px ForcedSquare,sans-serif;box-sizing:border-box}
+      .leaderboard-ui>.button-wrapper>.back{margin:10px}.leaderboard-ui>.button-wrapper>.icon-button{width:44px}
+      .leaderboard-ui>.button-wrapper>.only-verified{white-space:nowrap}
+    </style><div id="gameRoot"><main class="track-info-ui"><section class="side-panel"></section><section class="leaderboard-ui"><div class="button-wrapper">
+      <button class="button back">Back</button><button class="button" data-personal-filter-button>Filters-Inactive</button>
+      <button class="button icon-button first" aria-label="Find me">◎</button><button class="button only-verified">Only verified</button>
+    </div></section></main></div>`);
+    await page.addStyleTag({content: rankedCss});
+    await page.addStyleTag({content: homeCss});
+    for (const [width, height] of [[320, 720], [390, 844], [600, 960], [600, 400], [820, 1180], [1920, 1080]]) {
+      await page.setViewportSize({width, height});
+      const label = await page.locator('[data-personal-filter-button]').evaluate(button => {
+        const range = document.createRange();
+        range.selectNodeContents(button);
+        const rects = [...range.getClientRects()];
+        const box = button.getBoundingClientRect();
+        return {lines: rects.length, box: [box.x, box.y, box.width, box.height], text: button.textContent};
+      });
+      assert.equal(label.lines, 1, `Filters-Inactive stays on one line at ${width}x${height}: ${JSON.stringify(label)}`);
+    }
   } finally {
     await browser.close();
   }

@@ -143,6 +143,18 @@ function appendText(document, parent, tag, className, text) {
   return node;
 }
 
+function periodThumbnailUrl(period, document) {
+  for (const candidate of [period?.thumbnailUrl, period?.thumbnail, period?.coverUrl]) {
+    if (typeof candidate !== 'string' || !candidate.trim() || candidate.length > 2048) continue;
+    try {
+      const base = document.baseURI || globalThis.location?.href || 'https://polytrack.invalid/';
+      const url = new URL(candidate.trim(), base);
+      if ((url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password) return candidate.trim();
+    } catch {}
+  }
+  return '';
+}
+
 function formatDate(value, locale) {
   if (!Number.isSafeInteger(value) || value <= 0) return 'Date unavailable';
   try {
@@ -266,21 +278,40 @@ export function mountArchiveView(root, options = {}) {
     const details = document.createElement('details');
     details.className = 'sq-archive-event';
     details.dataset.archiveEventId = period.id;
+    details.dataset.eventKind = period.kind;
     const summary = document.createElement('summary');
     summary.className = 'sq-archive-event-summary';
+    summary.dataset.eventKind = period.kind;
     const thumbnail = document.createElement('span');
     thumbnail.className = 'sq-archive-thumb';
-    const artwork = renderThumbnail?.(period);
-    if (artwork && typeof artwork.nodeType === 'number') thumbnail.append(artwork);
+    const thumbnailUrl = periodThumbnailUrl(period, document);
+    if (thumbnailUrl) {
+      const image = document.createElement('img');
+      image.src = thumbnailUrl;
+      image.alt = `${String(resolveName(period) || 'Archived event')} thumbnail`;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => {
+        const fallback = renderThumbnail?.(period);
+        if (fallback && typeof fallback.nodeType === 'number') thumbnail.replaceChildren(fallback);
+        else image.hidden = true;
+      }, { once: true });
+      thumbnail.append(image);
+    } else {
+      const artwork = renderThumbnail?.(period);
+      if (artwork && typeof artwork.nodeType === 'number') thumbnail.append(artwork);
+    }
     summary.append(thumbnail);
     const title = document.createElement('span');
     title.className = 'sq-archive-title';
     appendText(document, title, 'strong', '', String(resolveName(period) || 'Archived event'));
-    appendText(document, title, 'small', '', `${KIND_LABELS[period.kind]} | ${formatDate(period.endsAt, locale)} | Up to ${period.maxRp} RP`);
+    appendText(document, title, 'small', 'sq-archive-kind', KIND_LABELS[period.kind]);
+    appendText(document, title, 'small', 'sq-archive-date', `${formatDate(period.endsAt, locale)} | Up to ${period.maxRp} RP`);
     summary.append(title);
     const initialRacers = declaredRacerCount(period);
     const count = appendText(document, summary, 'span', 'sq-archive-count',
       initialRacers === null ? 'Open standings' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`);
+    summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${initialRacers === null ? 'standings not loaded' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`}`);
     const disableEmpty = () => {
       details.open = false;
       details.classList.add('sq-archive-event-empty');
@@ -313,13 +344,12 @@ export function mountArchiveView(root, options = {}) {
       if (counts.racers === 0) disableEmpty();
       count.replaceChildren();
       appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}`);
-      count.append(document.createTextNode(' | '));
       appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified`);
       if (counts.winner) {
-        count.append(document.createTextNode(' | '));
         const winnerName = typeof counts.winner.name === 'string' && counts.winner.name ? counts.winner.name : 'Racer';
         appendText(document, count, 'span', 'sq-archive-winner', `Winner ${winnerName} ${formatTime(counts.winner.timeMs)}`);
       }
+      summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}; ${counts.verified} verified${counts.winner ? `; winner ${counts.winner.name || 'Racer'}, ${formatTime(counts.winner.timeMs)}` : ''}`);
       renderRows(document, results, counts.verifiedEntries, formatTime, options.accountId || '');
       renderStats(document, stats, periods, snapshots);
     };

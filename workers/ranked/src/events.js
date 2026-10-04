@@ -6,6 +6,8 @@ import { VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION } from './verification.js';
 // Importing this library neither adds routes nor starts work. Authentication,
 // origin policy and the existing native verifier remain explicit dependencies.
 export const EVENT_VERSION = 'event-rp-v1';
+export const EVENT_SCORING_V1 = 'time-ratio-v1';
+export const EVENT_SCORING_V2 = 'time-gap-v2';
 export const EVENT_COLLECTIONS = Object.freeze({
   periods: '0.6.2_event_periods', catalog: '0.6.2_event_catalog',
   owners: '0.6.2_event_owners', quotas: '0.6.2_event_quotas',
@@ -47,7 +49,8 @@ function text(value, max) { return typeof value === 'string' ? value.replace(/[<
 export function publicEventPeriod(p) {
   const privateSoftTarget = p.kind === 'kodub' && p.kodub?.privateSoftScoring === true;
   return { ...(p.kind==='kodub'?{trackName:p.kodub?.name||p.trackName,author:p.kodub?.author||p.author,targetPolicy:'official-fastest-verified-at-import'}:{}),id: p.id, trackId: p.trackId, startsAt: p.startsAt, endsAt: p.endsAt,
-    graceMs: p.graceMs, maxRp: p.maxRp, ...(!privateSoftTarget && p.targetMs != null ? { targetMs: p.targetMs } : {}), kind: p.kind || 'custom',
+    graceMs: p.graceMs, maxRp: p.maxRp, scoringVersion: p.scoringVersion || EVENT_SCORING_V1,
+    ...(!privateSoftTarget && p.targetMs != null ? { targetMs: p.targetMs } : {}), kind: p.kind || 'custom',
     ...(int(p.racerCount) ? { racerCount: p.racerCount } : {}),
     entrantLimit: p.capacity?.entrants ?? p.entrantLimit,
     label: text(p.label, 80) || `${p.kind === 'weekly' ? 'Weekly' : p.kind === 'daily' ? 'Daily' : 'Event'} ${new Date(p.startsAt).toISOString().slice(0, 10)}` };
@@ -66,9 +69,13 @@ export function eventPeriod(input) {
   demand(c && ID.test(c.policyVersion) && int(c.entrants, 1, L.entrants) && int(c.admissionsPerPeriod, c.entrants, L.submissions) &&
     int(c.replayBytesPerPeriod, 65536, L.replayBytesPerPeriod) && int(c.minIntervalMs, 1000, 60000) &&
     int(c.verificationsPerDay, 1, L.verificationsPerDay), 'reviewed_capacity_required');
+  const kind = input.kind || 'custom';
+  const scoringVersion = input.scoringVersion || (input.scoreVersion === EVENT_VERSION ? EVENT_SCORING_V1 :
+    ['daily', 'weekly', 'kodub'].includes(kind) ? EVENT_SCORING_V2 : EVENT_SCORING_V1);
+  demand([EVENT_SCORING_V1, EVENT_SCORING_V2].includes(scoringVersion), 'invalid_scoring_version');
   const p = { id: id(input.id), enabled: input.enabled === true, trackId: hex(input.trackId), startsAt: input.startsAt,
     endsAt: input.endsAt, graceMs: input.graceMs, targetMs: input.targetMs,
-    maxRp: input.maxRp, kind: input.kind || 'custom', engineDigest: VERIFIER_ENGINE_DIGEST, verifierVersion: VERIFIER_VERSION,
+    maxRp: input.maxRp, kind, scoringVersion, engineDigest: VERIFIER_ENGINE_DIGEST, verifierVersion: VERIFIER_VERSION,
     scoreVersion: EVENT_VERSION, eligibility: input.eligibility, capacity: Object.freeze({ policyVersion: c.policyVersion, entrants: c.entrants,
       admissionsPerPeriod: c.admissionsPerPeriod, replayBytesPerPeriod: c.replayBytesPerPeriod,
       minIntervalMs: c.minIntervalMs, verificationsPerDay: c.verificationsPerDay }) };
@@ -95,12 +102,22 @@ export function eventPeriod(input) {
 }
 function periodBinding(p) {
   const normalized = { ...eventPeriod(p), engineDigest: p.engineDigest };
+  // Scoring is a presentation/award policy; changing it must not invalidate
+  // replay proofs or runs already bound to the immutable race parameters.
+  delete normalized.scoringVersion;
   demand(p.scoreVersion === EVENT_VERSION && compatibleEventEngine(p.engineDigest) &&
     p.verifierVersion === VERIFIER_VERSION, 'event_version_unavailable', 503);
   return JSON.stringify(normalized);
 }
 export function eventRp(period, timeMs) {
   periodBinding(period); demand(int(timeMs, 1, L.timeMs), 'invalid_time');
+  if (period.scoringVersion === EVENT_SCORING_V2) {
+    // A logistic curve gives the frozen target 80% of the cap and penalizes
+    // relative time gaps without depending on field size or entrant count.
+    const relativeGap = timeMs / period.targetMs - 1;
+    return Math.max(1, Math.min(period.maxRp,
+      Math.round(period.maxRp / (1 + Math.exp(8 * relativeGap - Math.log(4))))));
+  }
   return Math.min(period.maxRp, Number(BigInt(period.maxRp) * BigInt(period.targetMs) / BigInt(timeMs)));
 }
 export function eventLeaderboard(period, rows) {
@@ -108,7 +125,11 @@ export function eventLeaderboard(period, rows) {
   const seen = new Set();
   const sorted = rows.map(row => {
     hex(row.accountId); demand(!seen.has(row.accountId), 'duplicate_account', 503); seen.add(row.accountId);
-    return { accountId: row.accountId, timeMs: row.timeMs, rp: eventRp(period, row.timeMs), name: text(row.name, 24) || 'Racer', carStyle: typeof row.carStyle==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(row.carStyle)?row.carStyle:'' };
+    const submittedAt = [row.submittedAt, row.receivedAt, row.pbAt].find(value =>
+      int(value, period.startsAt, period.endsAt - 1));
+    return { accountId: row.accountId, timeMs: row.timeMs, rp: eventRp(period, row.timeMs),
+      name: text(row.name, 24) || 'Racer', carStyle: typeof row.carStyle==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(row.carStyle)?row.carStyle:'',
+      ...(submittedAt === undefined ? {} : { submittedAt }) };
   }).sort((a, b) => a.timeMs - b.timeMs || (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
   let rank = 0;
   return sorted.map((row, index) => {
@@ -211,6 +232,45 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         await tx.set(publicPath, publicEventCatalog(rows, stamp()));
         await tx.set(livePath, { period: publicEventPeriod(p), entries: [], pendingPlaybacks: [], racerCount: 0, archived: false, updatedAt: stamp() });
         return p;
+      });
+    },
+    async optInLiveScoring(periodId, scoringVersion = EVENT_SCORING_V2) {
+      id(periodId);
+      demand(scoringVersion === EVENT_SCORING_V2, 'invalid_scoring_version');
+      return store.transaction(async tx => {
+        const periodDoc = await tx.get(periodPath(periodId));
+        demand(periodDoc, 'event_not_found', 404);
+        periodBinding(periodDoc);
+        const archive = await tx.get(path(C.archives, periodId));
+        const history = await tx.get(path(C.history, periodId));
+        demand(!archive && history?.archived !== true && periodDoc.archived !== true,
+          'event_scoring_archive_immutable', 409);
+        const queue = await tx.get(path(C.queues, periodId));
+        const livePath = path(C.live, periodId), live = await tx.get(livePath);
+        const catalogPath = path(C.catalog, 'main'), catalog = await tx.get(catalogPath);
+        const publicPath = path(C.public, 'catalog'), published = await tx.get(publicPath);
+        demand(['daily', 'weekly', 'kodub'].includes(periodDoc.kind), 'event_scoring_kind_unsupported', 409);
+        if (periodDoc.scoringVersion === scoringVersion) return { migrated: false, duplicate: true, scoringVersion };
+        demand((periodDoc.scoringVersion || EVENT_SCORING_V1) === EVENT_SCORING_V1,
+          'event_scoring_version_unsupported', 409);
+        demand(periodDoc.enabled === true && stamp() < periodDoc.endsAt,
+          'event_scoring_opt_in_closed', 409);
+        demand(queue && queue.entrants === 0 && Array.isArray(queue.subjects) && queue.subjects.length === 0 &&
+          live && Array.isArray(live.entries) && live.entries.length === 0,
+        'event_scoring_repair_required', 409);
+        demand(catalog?.periods?.some(row => row.id === periodId) &&
+          Array.isArray(published?.periods) && Array.isArray(published.archives),
+        'event_scoring_catalog_missing', 503);
+        const migrated = { ...periodDoc, scoringVersion };
+        const publicPeriod = publicEventPeriod({ ...migrated, racerCount: live.racerCount || 0 });
+        const catalogRows = catalog.periods.map(row => row.id === periodId ? { ...row, scoringVersion } : row);
+        const publishedRows = [...published.periods.filter(row => row.id !== periodId), publicPeriod]
+          .sort((a, b) => a.startsAt - b.startsAt || a.id.localeCompare(b.id));
+        await tx.set(periodPath(periodId), migrated);
+        await tx.set(catalogPath, { ...catalog, periods: catalogRows });
+        await tx.set(publicPath, { ...published, periods: publishedRows, updatedAt: stamp() });
+        await tx.set(livePath, { ...live, period: publicPeriod, updatedAt: stamp() });
+        return { migrated: true, duplicate: false, scoringVersion, entrants: 0 };
       });
     },
     async submit(periodId, ownerUid, input, inboxDocument = null) {
@@ -517,7 +577,8 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           await tx.set(totalPath, total);
           await tx.set(overallPath, { entries: totals, updatedAt: at, complete:totals.length<200&&overall?.complete!==false,totalEntries:totals.length });
           await tx.set(eventPath, { periodId, accountId: run.accountId, ownerUid: run.ownerUid,
-            trackId: run.trackId, timeMs: run.timeMs, runId: run.runId, replayHash: run.replayHash, rp: eventRp(p, run.timeMs) });
+            trackId: run.trackId, timeMs: run.timeMs, runId: run.runId, replayHash: run.replayHash,
+            submittedAt: run.receivedAt, rp: eventRp(p, run.timeMs) });
           await tx.set(replayPath, { periodId, accountId: run.accountId, trackId: run.trackId, runId: run.runId,
             timeMs: run.timeMs, replayHash: run.replayHash, replay: run.replay, carStyle: run.carStyle,
             periodBinding: run.periodBinding, verifiedAt: at });

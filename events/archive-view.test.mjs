@@ -1,8 +1,114 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { archivePeriodCounts, catalogArchivePeriods, normalizeArchivePeriods, paginateArchivePeriods, summarizeArchives } from './archive-view.mjs';
+import { archivePeriodCounts, catalogArchivePeriods, mountArchiveView, normalizeArchivePeriods, paginateArchivePeriods, summarizeArchives } from './archive-view.mjs';
 import { liveTimedEventPeriods } from './client.mjs';
+
+class TestNode {
+  constructor(tagName = '#text', ownerDocument = null) {
+    this.tagName = tagName.startsWith('#') ? tagName : tagName.toUpperCase();
+    this.nodeType = tagName.startsWith('#') ? 3 : 1;
+    this.ownerDocument = ownerDocument;
+    this.children = [];
+    this.attributes = {};
+    this.listeners = {};
+    this.dataset = {};
+    this.className = '';
+    this.tabIndex = 0;
+    this._text = '';
+    this.classList = {
+      add: name => { this.className = `${this.className} ${name}`.trim(); },
+      contains: name => this.className.split(/\s+/).includes(name)
+    };
+  }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = [...nodes]; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
+  emit(name, event = {}) { for (const listener of this.listeners[name] || []) listener(event); }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  get textContent() { return this._text + this.children.map(node => node.textContent).join(''); }
+}
+
+function archiveFixture() {
+  const document = {
+    createElement: tagName => new TestNode(tagName, document),
+    createTextNode: text => { const node = new TestNode(); node.textContent = text; return node; }
+  };
+  const root = new TestNode('main', document);
+  return { document, root };
+}
+
+function descendants(node, predicate) {
+  return node.children.flatMap(child => [ ...(predicate(child) ? [child] : []), ...descendants(child, predicate) ]);
+}
+
+test('archive cards prefer safe period artwork and expose accessible cached standings', () => {
+  const { root } = archiveFixture();
+  const period = { id: 'past', kind: 'daily', endsAt: 100, maxRp: 100, racerCount: 2, thumbnailUrl: '/tracks/past.png', thumbnail: 'javascript:alert(1)' };
+  const winner = { accountId: 'winner', name: 'Fast Racer', timeMs: 1234, rp: 100 };
+  let fallbackCalls = 0, snapshotCalls = 0;
+  const cached = new Map([['past', { racerCount: 2, entries: [winner, { accountId: 'next', name: 'Next', timeMs: 1400 }] }]]);
+  mountArchiveView(root, {
+    periods: [period], snapshots: cached,
+    loadSnapshot: async () => { snapshotCalls += 1; return { entries: [] }; },
+    renderThumbnail: () => { fallbackCalls += 1; const image = root.ownerDocument.createElement('img'); image.alt = 'Fallback'; return image; },
+    resolveName: () => 'Past Track'
+  });
+  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
+  const image = descendants(card, node => node.tagName === 'IMG')[0];
+  assert.equal(card.dataset.eventKind, 'daily');
+  assert.equal(summary.dataset.eventKind, 'daily');
+  assert.equal(summary.attributes['aria-label'], 'Daily: Past Track; 2 racers; 2 verified; winner Fast Racer, 0:01.234');
+  assert.equal(image.src, '/tracks/past.png');
+  assert.equal(image.loading, 'lazy');
+  assert.equal(image.alt, 'Past Track thumbnail');
+  assert.equal(fallbackCalls, 0);
+  assert.equal(snapshotCalls, 0);
+  assert.deepEqual(descendants(card, node => node.className === 'sq-archive-winner').map(node => node.textContent), ['Winner Fast Racer 0:01.234']);
+});
+
+test('unsafe or missing period artwork falls back to bridge thumbnail and snapshots stay lazy', async () => {
+  const { root } = archiveFixture();
+  const period = { id: 'past', kind: 'weekly', endsAt: 100, maxRp: 500, coverUrl: 'javascript:alert(1)' };
+  let fallbackCalls = 0, snapshotCalls = 0;
+  const fallback = root.ownerDocument.createElement('img');
+  fallback.alt = 'Cached track preview';
+  mountArchiveView(root, {
+    periods: [period],
+    loadSnapshot: async () => { snapshotCalls += 1; return { entries: [{ accountId: 'a', name: 'Winner', timeMs: 900 }] }; },
+    renderThumbnail: () => { fallbackCalls += 1; return fallback; }
+  });
+  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
+  assert.equal(descendants(card, node => node.tagName === 'IMG')[0], fallback);
+  assert.equal(fallbackCalls, 1);
+  assert.equal(snapshotCalls, 0);
+  card.open = true;
+  card.emit('toggle');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(snapshotCalls, 1);
+  assert.match(summary.attributes['aria-label'], /winner Winner/);
+  assert.equal(descendants(card, node => node.className === 'sq-archive-racer-count')[0].textContent, '1 racer');
+});
+
+test('zero-racer archive cards remain disabled and cannot invoke the snapshot loader', () => {
+  const { root } = archiveFixture();
+  let snapshotCalls = 0;
+  mountArchiveView(root, {
+    periods: [{ id: 'empty', kind: 'custom', endsAt: 100, racerCount: 0 }],
+    loadSnapshot: async () => { snapshotCalls += 1; return { entries: [] }; }
+  });
+  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
+  assert.equal(summary.attributes['aria-disabled'], 'true');
+  assert.equal(summary.tabIndex, -1);
+  card.open = true;
+  card.emit('toggle');
+  assert.equal(card.open, false);
+  assert.equal(snapshotCalls, 0);
+});
 
 test('archive pagination is local, newest-first and clamps bounds', () => {
   const periods = normalizeArchivePeriods(Array.from({ length: 25 }, (_, index) => ({
@@ -31,11 +137,11 @@ test('archive UI exposes local page controls and accurate practice label', () =>
 
 test('events UI keeps permanent Rolling live, archives practice-only, and does not publish scoring formulas', () => {
   const source = fs.readFileSync(new URL('./client.mjs', import.meta.url), 'utf8');
-  assert.match(source, /cards\(livePeriods\(\)\)\+permanentCard\(\)/);
+  assert.match(source, /sq-event-cards.*cards\(livePeriods\(\)\)\+permanentCard\(true\)/);
   assert.match(source, /const actions=closed\?'<button class="button" type="button" data-event-practice>/);
   assert.match(source, /snapshot\(period,force&&!closed\)/);
   assert.match(source, /Current leader/);
-  assert.match(source, /data-event-practice>Race track<\/button>/);
+  assert.match(source, /data-event-practice>Practice track<\/button>/);
   assert.doesNotMatch(source, /target time\s*[÷/]\s*your time/i);
   assert.doesNotMatch(source, /maximum points/i);
 });
