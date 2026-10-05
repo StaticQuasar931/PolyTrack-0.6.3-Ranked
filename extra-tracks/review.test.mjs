@@ -1,12 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reviewTagOptions, normalizeReviewFeedback, effectiveReviewTags, hasTagEdits, reviewExportRow, tagLabel} from './review.mjs';
+import {reviewTagOptions, normalizeReviewFeedback, effectiveReviewTags, hasTagEdits, reviewExportRow, hasReviewExportData, tagLabel} from './review.mjs';
 
 test('tag choices keep Kacky and new review categories, without Slide or difficulty aliases', () => {
   const options = reviewTagOptions([{tags: ['slide', 'technical', 'difficulty-7', 'kacky', 'easy']}]);
   for (const tag of ['technical', 'scenic', 'elite-track', 'kacky', 'mini', 'other-route']) assert.ok(options.includes(tag));
   for (const tag of ['slide', 'difficulty-7', 'easy']) assert.ok(!options.includes(tag));
   assert.equal(tagLabel('elite-track'), 'Elite Track');
+});
+
+test('export eligibility includes each kind of real activity, not catalog metadata or cleared picks', () => {
+  const entry = {name: 'Example', tags: ['technical']};
+  assert.equal(hasReviewExportData(reviewExportRow(entry)), false);
+  for (const feedback of [{favorite: true}, {vote: -1}, {rating: 4}, {difficultyRating: 7}, {addedTags: ['mini']}, {removedTags: ['technical']}]) {
+    assert.equal(hasReviewExportData(reviewExportRow(entry, {feedback})), true);
+  }
+  assert.equal(hasReviewExportData(reviewExportRow(entry, {imported: true})), true);
+  assert.equal(hasReviewExportData(reviewExportRow(entry, {personalBestMs: 1234})), true);
+  assert.equal(hasReviewExportData(reviewExportRow(entry, {feedback: {favorite: false, rating: 0, difficultyRating: 99, editedAt: 1790000000000}})), false);
 });
 
 test('local additions and removals leave catalog data intact and do not count canceled edits', () => {

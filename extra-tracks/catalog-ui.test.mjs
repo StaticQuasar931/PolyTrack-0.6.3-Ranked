@@ -177,6 +177,14 @@ test('local tag suggestions add, remove and undo without changing canonical tags
   assert.deepEqual(saved.get(item.id).removedTags, []);
   await click(findChoice('Add Elite Track'));
   assert.deepEqual(saved.get(item.id).addedTags, ['elite-track']);
+  assert.ok(cls(root, 'sq-extra-tags')[0].textContent.includes('Elite Track'), 'a new tag is visible even when the track already has two tags');
+  const tagSearch = cls(root, 'sq-extra-tag-search')[0];
+  tagSearch.value = 'elite';
+  tagSearch.dispatch('input');
+  assert.equal(findChoice('Remove Elite Track').hidden, false);
+  assert.equal(findChoice('Remove Scenic').hidden, true);
+  tagSearch.value = '';
+  tagSearch.dispatch('input');
   await click(findChoice('Remove Elite Track'));
   assert.deepEqual(saved.get(item.id).addedTags, []);
   assert.deepEqual(item.tags, ['technical', 'scenic']);

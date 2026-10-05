@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=71',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=73',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='71';
+  const extraCatalogRevision='73';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -341,9 +341,10 @@
     extraTrackRaceRows=readLocalRaceRows();
     for(const entry of catalog){
       const choice=data[entry.trackId]||{},best=extraTrackPersonalBest(entry),personalBestMs=Number(best?.timeMs)||null;
-      tracks[entry.trackId]=extraReviewHelpers.reviewExportRow(entry,{feedback:choice,imported:known[entry.id]===entry.trackId,personalBestMs});
+      const row=extraReviewHelpers.reviewExportRow(entry,{feedback:choice,imported:known[entry.id]===entry.trackId,personalBestMs});
+      if(extraReviewHelpers.hasReviewExportData(row))tracks[entry.trackId]=row;
     }
-    const blob=new Blob([JSON.stringify({version:3,exportedAt:new Date().toISOString(),playEvidence:'saved finish',tagEvidence:'local review suggestions, not published catalog edits',tracks},null,2)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify({version:4,exportedAt:new Date().toISOString(),ratingEvidence:'rating: track quality (1=poor, 10=excellent); difficultyRating: track difficulty (1=beginner, 10=master)',playEvidence:'saved finish',tagEvidence:'local review suggestions, not published catalog edits',tracks},null,2)],{type:'application/json'});
     const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='polytrack-extra-picks.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
   }
   async function openExtraTracks(){
@@ -4450,7 +4451,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=71',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=73',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4470,8 +4471,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=71',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=71',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=71',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=73',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=73',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=73',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -7539,7 +7540,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=71',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:71,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=73',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:73,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

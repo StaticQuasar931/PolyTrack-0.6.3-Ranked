@@ -33,6 +33,7 @@ export function normalizeReviewFeedback(entry, value) {
     favorite: data.favorite === true,
     vote: data.vote === 1 || data.vote === -1 ? data.vote : 0,
     rating: Number.isInteger(data.rating) && data.rating >= 1 && data.rating <= 10 ? data.rating : 0,
+    difficultyRating: Number.isInteger(data.difficultyRating) && data.difficultyRating >= 1 && data.difficultyRating <= 10 ? data.difficultyRating : 0,
     addedTags, removedTags,
     editedAt: (addedTags.length || removedTags.length) && Number.isSafeInteger(data.editedAt)
       && data.editedAt > 0 && data.editedAt <= 4102444800000 ? data.editedAt : null
@@ -58,4 +59,10 @@ export function reviewExportRow(entry, {feedback, imported = false, personalBest
     ...review, catalogTags: tags(entry.tags), effectiveTags: effectiveReviewTags(entry, review),
     locallyEdited: hasTagEdits(entry, review)
   };
+}
+
+export function hasReviewExportData(row) {
+  return row.imported === true || row.played === true || row.favorite === true
+    || row.vote !== 0 || row.rating > 0 || row.difficultyRating > 0
+    || row.addedTags.length > 0 || row.removedTags.length > 0;
 }

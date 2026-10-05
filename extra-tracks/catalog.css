@@ -54,3 +54,34 @@
 .sq-extra-field option:disabled{background:#c5c8cc;color:#737980}.sq-extra-tag-note,.sq-extra-review-count{font-size:12px}.sq-extra-tag-choice{min-height:38px;padding:7px;font-size:13px}
 @media(max-width:400px){.sq-extra-more-menu{width:calc(100vw - 16px);padding:10px}.sq-extra-tag-options{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}.sq-extra-tag-choice{padding:6px 5px;font-size:12px}}
 .sq-extra-tag-picker[open] summary::after{content:'-'}
+
+/* Compact reviewer menu controls and keep long tag lists inside the dropdown. */
+.sq-extra-more{border-radius:0!important}
+.sq-extra-more-menu{width:min(320px,calc(100vw - 16px));gap:8px;padding:10px;border-radius:0}
+.sq-extra-picks{display:grid;grid-template-columns:38px 38px minmax(0,1fr);align-items:start;gap:6px;padding:0 0 8px;min-width:0;width:100%}
+.sq-extra-more-menu .sq-extra-menu-favorite,.sq-extra-more-menu .sq-extra-report-button{width:100%;font-size:13px;text-align:center}
+.sq-extra-more-menu .sq-extra-pick{min-width:0;min-height:36px;font-size:13px}
+.sq-extra-more-menu .sq-extra-rating{min-width:0;gap:6px;font-size:13px}
+.sq-extra-more-menu .sq-extra-rating select{min-width:0;min-height:36px;font-size:13px}
+.sq-extra-more-menu button:has(.sq-extra-vote-icon){display:inline-grid;min-width:38px;min-height:36px;place-items:center;padding:5px;border:1px solid #638ab5;border-radius:0;background:#182e53;color:#dcecff;cursor:pointer}
+.sq-extra-more-menu button[aria-label="Helpful"]:has(.sq-extra-vote-icon)[aria-pressed="true"],.sq-extra-more-menu button[aria-label="Helpful"].selected:has(.sq-extra-vote-icon){border-color:#aee5b7;background:#295e51;color:#b9ffd1}
+.sq-extra-more-menu button[aria-label="Not for me"]:has(.sq-extra-vote-icon)[aria-pressed="true"],.sq-extra-more-menu button[aria-label="Not for me"].selected:has(.sq-extra-vote-icon){border-color:#e6a6ae;background:#694050;color:#ffbbc2}
+.sq-extra-vote-icon{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sq-extra-vote-icon svg{display:block;width:100%;height:100%}.sq-extra-tag-choice[hidden]{display:none}
+.sq-extra-more-menu button[aria-label="Helpful"][aria-pressed="true"] .sq-extra-vote-icon,.sq-extra-more-menu button[aria-label="Helpful"].selected .sq-extra-vote-icon,.sq-extra-more-menu button[aria-label="Not for me"][aria-pressed="true"] .sq-extra-vote-icon,.sq-extra-more-menu button[aria-label="Not for me"].selected .sq-extra-vote-icon{fill:currentColor;stroke:currentColor}
+.sq-extra-tag-picker summary{padding:7px 9px;font-size:13px}
+.sq-extra-tag-search{box-sizing:border-box;width:calc(100% - 18px);min-height:36px;margin:0 9px 8px;padding:7px;border:1px solid #6689b6;border-radius:0;background:#142349;color:#fff;font:inherit;font-size:13px}
+.sq-extra-tag-options{max-height:210px;overflow:auto;overscroll-behavior:contain}
+.sq-extra-tag-choice{min-height:36px;font-size:13px}
+@media(max-width:400px){.sq-extra-more-menu{width:min(320px,calc(100vw - 16px));padding:9px}.sq-extra-picks{min-width:0}.sq-extra-more-menu .sq-extra-rating{min-width:0}}
+
+/* Keep review ratings separate from the helpfulness and report controls. */
+.sq-extra-review-ratings{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;width:100%;min-width:0}
+.sq-extra-review-ratings .sq-extra-rating{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,auto);align-items:center;gap:8px;width:100%;min-width:0;color:#d5e5f6;font-size:12px;line-height:1.25}
+.sq-extra-review-ratings .sq-extra-rating-quality{border-left:2px solid #73c79b;padding-left:7px}
+.sq-extra-review-ratings .sq-extra-rating-difficulty{border-left:2px solid #d7b96f;padding-left:7px}
+.sq-extra-review-ratings .sq-extra-rating select{width:100%;min-width:0;min-height:34px;padding:4px 24px 4px 7px;font-size:12px}
+.sq-extra-more-menu .sq-extra-picks{grid-template-columns:38px 38px;justify-content:start}
+.sq-extra-field option:disabled{background:#203452;color:#aabbd1}
+.sq-extra-review-ratings .sq-extra-rating{box-sizing:border-box;font-size:13px}.sq-extra-review-ratings .sq-extra-rating-help{grid-column:1/-1;font-size:11px;font-weight:400;text-align:left}.sq-extra-review-ratings .sq-extra-rating select{font-size:13px}
+@media(max-width:400px){.sq-extra-review-ratings .sq-extra-rating{grid-template-columns:minmax(0,1fr) minmax(84px,auto);gap:6px}.sq-extra-review-ratings .sq-extra-rating select{min-height:32px}}

@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as review from './review.mjs';
 
-function fixture() {
+function fixture({activity = true} = {}) {
   const source = fs.readFileSync(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
   const start = source.indexOf("  const extraFeedbackKey='sq-extra-feedback-v1';");
   const end = source.indexOf('  async function openExtraTracks(){', start);
   assert.ok(start >= 0 && end > start);
   const storage = new Map();
   const entry = {id: 'example', trackId: 'a'.repeat(64), name: 'Example', author: 'Creator', tags: ['technical']};
+  const untouched = {id: 'untouched', trackId: 'b'.repeat(64), name: 'Untouched', tags: ['scenic']};
   const state = {writes: 0, fail: false, blob: null, clicked: false};
   const context = vm.createContext({
     review, Blob, Date, Object, JSON, Number, Error,
@@ -19,8 +20,8 @@ function fixture() {
       getItem: key => storage.get(key) || null,
       setItem: (key, value) => { if (state.fail) throw Error('Storage full'); state.writes++; storage.set(key, value); }
     },
-    extraTrackIds: () => ({example: entry.trackId}), loadExtraTracksCatalog: async () => [entry],
-    readLocalRaceRows: () => [], extraTrackPersonalBest: () => ({timeMs: 12345}),
+    extraTrackIds: () => activity ? ({example: entry.trackId}) : ({}), loadExtraTracksCatalog: async () => [entry, untouched],
+    readLocalRaceRows: () => [], extraTrackPersonalBest: track => activity && track.id === entry.id ? ({timeMs: 12345}) : null,
     URL: {createObjectURL: blob => {state.blob = blob; return 'blob:review';}, revokeObjectURL() {}},
     document: {createElement: () => ({click: () => {state.clicked = true;}})}, setTimeout() {}
   });
@@ -45,12 +46,25 @@ test('actual Export My Picks includes tag edits and preserves existing progress 
   api.saveExtraFeedback(entry, {favorite: true, vote: 1, rating: 10, addedTags: ['mini'], removedTags: ['technical']});
   await api.exportExtraFeedback();
   const data = JSON.parse(await state.blob.text());
-  assert.equal(state.clicked, true); assert.equal(data.version, 3);
+  assert.equal(state.clicked, true); assert.equal(data.version, 4);
+  assert.deepEqual(Object.keys(data.tracks), [entry.trackId], 'untouched catalog tracks are omitted');
   const row = data.tracks[entry.trackId];
   assert.equal(row.favorite, true); assert.equal(row.vote, 1); assert.equal(row.rating, 10);
   assert.equal(row.imported, true); assert.equal(row.played, true); assert.equal(row.personalBestMs, 12345);
   assert.deepEqual(row.catalogTags, ['technical']); assert.deepEqual(row.addedTags, ['mini']);
   assert.deepEqual(row.removedTags, ['technical']); assert.deepEqual(row.effectiveTags, ['mini']);
+});
+
+test('difficulty-only reviews export independently and an untouched collection exports no tracks', async () => {
+  const {entry, state, api} = fixture({activity: false});
+  await api.exportExtraFeedback();
+  assert.deepEqual(JSON.parse(await state.blob.text()).tracks, {});
+  api.saveExtraFeedback(entry, {difficultyRating: 8});
+  await api.exportExtraFeedback();
+  const row = JSON.parse(await state.blob.text()).tracks[entry.trackId];
+  assert.equal(row.difficultyRating, 8); assert.equal(row.rating, 0);
+  api.saveExtraFeedback(entry, {rating: 9});
+  assert.equal(api.extraFeedback(entry).difficultyRating, 8);
 });
 
 test('failed local saves do not change cached feedback or erase successful reviewer work', () => {

@@ -477,7 +477,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const tags = effectiveReviewTags(entry, feedback);
     if (tags.length) {
       const tagList = make('div', 'sq-extra-tags');
-      for (const tag of tags.slice(0, 2)) tagList.append(make('span', '', tagLabel(tag)));
+      const added = new Set(feedback.addedTags || []);
+      const visibleTags = [...tags.filter(tag => added.has(tag)), ...tags.filter(tag => !added.has(tag))];
+      for (const tag of visibleTags.slice(0, 3)) tagList.append(make('span', '', tagLabel(tag)));
+      if (visibleTags.length > 3) {
+        const remaining = make('span', '', `+${visibleTags.length - 3}`);
+        remaining.title = visibleTags.slice(3).map(tagLabel).join(', ');
+        tagList.append(remaining);
+      }
       body.append(tagList);
     }
     const level = difficulty(entry);
@@ -555,11 +562,20 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       const picks = make('div', 'sq-extra-picks');
       const up = button('Helpful', 'sq-extra-pick' + (feedback.vote === 1 ? ' selected' : ''), () => toggle('vote', 1));
       const down = button('Not for me', 'sq-extra-pick' + (feedback.vote === -1 ? ' selected' : ''), () => toggle('vote', -1));
+      for (const [control, name, flipped] of [[up, 'Helpful', false], [down, 'Not for me', true]]) {
+        control.textContent = '';
+        control.setAttribute('aria-label', name);
+        control.title = name;
+        const icon = make('span', 'sq-extra-vote-icon');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = `<svg viewBox="0 0 24 24" focusable="false"${flipped ? ' style="transform:rotate(180deg)"' : ''}><path d="M7 10H3v11h4V10Zm3 11h8a2 2 0 0 0 2-1.6l1.3-7A2 2 0 0 0 19.3 10H15l.6-4.4A2.3 2.3 0 0 0 13.3 3L9 10v10a1 1 0 0 0 1 1Z"/></svg>`;
+        control.append(icon);
+      }
       up.setAttribute('aria-pressed', String(feedback.vote === 1)); down.setAttribute('aria-pressed', String(feedback.vote === -1));
-      const ratingLabel = make('label', 'sq-extra-rating', 'My rating');
+      const ratingLabel = make('label', 'sq-extra-rating sq-extra-rating-quality', 'Track quality');
       const rating = make('select');
       rating.setAttribute('aria-label', `My rating for ${text(entry.name, 'this track')}`);
-      for (let n = 0; n <= 10; n++) { const option = make('option', '', n ? `${n}/10` : 'Not rated'); option.value = String(n); rating.append(option); }
+      for (let n = 0; n <= 10; n++) { const option = make('option', '', n ? `${n}/10${n === 1 ? ' - Poor' : n === 10 ? ' - Excellent' : ''}` : 'Not rated'); option.value = String(n); rating.append(option); }
       rating.value = String(Number(feedback.rating) || 0);
       const saveRating = value => {
         try {
@@ -573,8 +589,31 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       };
       rating.addEventListener('change', () => saveRating(Number(rating.value)));
       rating.setAttribute('data-quick-rating', 'true');
-      const ratingHelp = make('span', 'sq-extra-rating-help', '0 = 10');
-      ratingLabel.append(rating, ratingHelp); picks.append(up, down, ratingLabel); moreMenu.append(picks);
+      const ratingHelp = make('span', 'sq-extra-rating-help', 'How good is it? 1-9 rate quality; 0 = 10.');
+      ratingLabel.append(rating, ratingHelp); picks.append(up, down); moreMenu.append(picks);
+      const difficultyLabel = make('label', 'sq-extra-rating sq-extra-difficulty-rating sq-extra-rating-difficulty', 'Track difficulty');
+      const difficultyRating = make('select');
+      difficultyRating.setAttribute('aria-label', `My difficulty rating for ${text(entry.name, 'this track')}`);
+      difficultyRating.setAttribute('data-quick-rating', 'true');
+      difficultyRating.setAttribute('data-rating-kind', 'difficulty');
+      for (let n = 0; n <= 10; n++) {
+        const option = make('option', '', n ? `${n}/10 - ${DIFFICULTY_LABELS[n]}` : 'Not rated');
+        option.value = String(n); difficultyRating.append(option);
+      }
+      difficultyRating.value = String(Number(feedback.difficultyRating) || 0);
+      const saveDifficulty = value => {
+        try {
+          onFeedback(entry, { difficultyRating: value });
+          feedback = { ...feedback, difficultyRating: value };
+          difficultyRating.value = String(value);
+          cachedRecords = null;
+          render();
+        } catch { showStatus('Could not save your difficulty rating on this device.', true); }
+      };
+      difficultyRating.addEventListener('change', () => saveDifficulty(Number(difficultyRating.value)));
+      difficultyLabel.append(difficultyRating, make('span', 'sq-extra-rating-help', 'How hard is it? 1 = Beginner; 10 = Master.'));
+      const ratings = make('div', 'sq-extra-review-ratings');
+      ratings.append(ratingLabel, difficultyLabel); moreMenu.append(ratings);
       moreMenu.append(menuFavorite);
       const picker = make('details', 'sq-extra-tag-picker');
       const pickerSummary = make('summary', '', 'Edit tags');
@@ -587,8 +626,30 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         if (pickerBuilt) return;
         pickerBuilt = true;
         const catalogTags = effectiveReviewTags(entry, {});
+        const tagSearch = make('input', 'sq-extra-tag-search');
+        tagSearch.type = 'search';
+        tagSearch.placeholder = 'Search tags';
+        tagSearch.setAttribute('aria-label', 'Search tags to add or remove');
+        picker.append(tagSearch);
         const tagList = make('div', 'sq-extra-tag-options');
         const choiceButtons = [];
+        const emptyTags = make('p', 'sq-extra-tag-note', 'No matching tags.');
+        emptyTags.hidden = true;
+        const filterTagChoices = () => {
+          const query = tagSearch.value.trim().toLocaleLowerCase();
+          let matches = 0;
+          for (const { tag, choice } of choiceButtons) {
+            choice.hidden = !tagLabel(tag).toLocaleLowerCase().includes(query);
+            if (!choice.hidden) matches++;
+          }
+          emptyTags.hidden = matches > 0;
+        };
+        tagSearch.addEventListener('input', filterTagChoices);
+        tagSearch.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' || event.isComposing) return;
+          const matches = choiceButtons.filter(({ choice }) => !choice.hidden);
+          if (matches.length === 1) { event.preventDefault(); matches[0].choice.click(); }
+        });
         let reviewCount;
         const syncTagChoices = () => {
           const currentTags = effectiveReviewTags(entry, feedback);
@@ -598,7 +659,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
             choice.className = `sq-extra-tag-choice${present ? ' selected' : ''}`;
             choice.setAttribute('aria-pressed', String(present));
           }
-          reviewCount.textContent = `${currentTags.length} effective tags · ${hasTagEdits(entry, feedback) ? 'Locally edited' : 'Not edited'}`;
+          reviewCount.textContent = `${currentTags.length} tags · ${hasTagEdits(entry, feedback) ? 'Locally edited' : 'Not edited'}`;
         };
         for (const tag of reviewTagOptions(currentEntries())) {
           const present = effectiveReviewTags(entry, feedback).includes(tag);
@@ -632,10 +693,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
           choiceButtons.push({ tag, choice });
         }
         picker.append(tagList);
-        reviewCount = make('p', 'sq-extra-review-count', `${effectiveReviewTags(entry, feedback).length} effective tags · ${hasTagEdits(entry, feedback) ? 'Locally edited' : 'Not edited'}`);
+        picker.append(emptyTags);
+        reviewCount = make('p', 'sq-extra-review-count', `${effectiveReviewTags(entry, feedback).length} tags · ${hasTagEdits(entry, feedback) ? 'Locally edited' : 'Not edited'}`);
         picker.append(reviewCount);
       });
       moreMenu.__quickRate = saveRating;
+      moreMenu.__quickDifficulty = saveDifficulty;
       moreMenu.append(picker);
     }
     moreMenu.append(button('Report track', 'sq-extra-report-button', () => {
@@ -911,7 +974,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const rateDigit = quickDigit && (activeRating || expandedCardMenu && !editing) && expandedCardMenu?.__quickRate
       ? (quickDigit[1] ?? quickDigit[2]) : null;
     if (rateDigit !== null && typeof expandedCardMenu.__quickRate === 'function') {
-      expandedCardMenu.__quickRate(rateDigit === '0' ? 10 : Number(rateDigit));
+      const rate = activeRating && document.activeElement.getAttribute('data-rating-kind') === 'difficulty'
+        ? expandedCardMenu.__quickDifficulty : expandedCardMenu.__quickRate;
+      rate(rateDigit === '0' ? 10 : Number(rateDigit));
       event.preventDefault();
       return;
     }
@@ -957,7 +1022,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     expandedCardMenu.style.minHeight = '0px';
     expandedCardMenu.style.overflowY = 'auto';
     const menu = expandedCardMenu.getBoundingClientRect();
-    const left = Math.min(Math.max(margin, (viewportWidth - menu.width) / 2), Math.max(margin, viewportWidth - menu.width - margin));
+    const left = Math.min(Math.max(margin, trigger.right - menu.width), Math.max(margin, viewportWidth - menu.width - margin));
     let top = trigger.bottom + 6;
     if (top + menu.height > viewportHeight - margin && trigger.top - menu.height - 6 >= margin) top = trigger.top - menu.height - 6;
     top = Math.min(Math.max(margin, top), Math.max(margin, viewportHeight - menu.height - margin));
