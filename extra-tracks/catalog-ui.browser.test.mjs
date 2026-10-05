@@ -9,6 +9,7 @@ let chromium;
 try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch {}
 const browserSkip = !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwright package to run this browser test.';
 const moduleSource = fs.readFileSync(new URL('./catalog-ui.mjs', import.meta.url), 'utf8');
+const reviewSource = fs.readFileSync(new URL('./review.mjs', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
 const homeCss = fs.readFileSync(new URL('../home-ui.css', import.meta.url), 'utf8');
@@ -25,7 +26,9 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     await page.route('**/*', async route => {
       const url = route.request().url();
       requested.push(url);
-      if (url === 'http://extra-tracks.test/catalog-ui.mjs') {
+      if (url === 'http://extra-tracks.test/review.mjs') {
+        await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      } else if (url === 'http://extra-tracks.test/catalog-ui.mjs') {
         await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       } else if (url === 'http://extra-tracks.test/') {
         await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><button id="launcher">Open catalog</button><main id="root"></main>'});
@@ -99,7 +102,7 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     await page.getByRole('button', {name: 'Import and play'}).click();
     await page.getByRole('dialog', {name: 'Extra Tracks'}).waitFor({state: 'hidden'});
     assert.deepEqual(await page.evaluate(() => window.played), ['browser-track'], 'import/play uses the provided offline stub and closes on success');
-    assert.deepEqual(requested, ['http://extra-tracks.test/','http://extra-tracks.test/catalog-ui.mjs'], 'test performs no external or backend requests');
+    assert.deepEqual(requested, ['http://extra-tracks.test/','http://extra-tracks.test/catalog-ui.mjs','http://extra-tracks.test/review.mjs'], 'test loads only the local UI and review helper');
   } finally {
     await browser.close();
   }
@@ -111,7 +114,8 @@ test('track cards show full previews and keep feedback in an accessible three-do
     const page = await browser.newPage({viewport: {width: 960, height: 900}});
     await page.route('**/*', async route => {
       const url = route.request().url();
-      if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      if (url === 'http://extra-tracks.test/review.mjs') await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      else if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       else if (url === 'http://extra-tracks.test/') await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
       else if (url === 'http://extra-tracks.test/extra-tracks/thumbnails/native-map.png' || url === 'http://extra-tracks.test/extra-tracks/thumbnails/itch-photo.png') await route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="41" height="76"><rect width="41" height="76" fill="green"/></svg>'});
       else await route.abort();
@@ -160,6 +164,8 @@ test('track cards show full previews and keep feedback in an accessible three-do
     await favorite.click();
     assert.equal(await previewCard.getByRole('button', {name: 'Remove from favorites'}).getAttribute('aria-pressed'), 'true');
     const more = page.getByRole('button', {name: 'More actions for Preview Track'});
+    await more.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(80);
     const cardBoundsBeforeMenu = await page.locator('.sq-extra-card').evaluateAll(cards => cards.map(card => [card.offsetLeft,card.offsetTop,card.offsetWidth,card.offsetHeight]));
     assert.equal(await more.getAttribute('aria-expanded'), 'false');
     await more.click();
@@ -197,10 +203,20 @@ test('track cards show full previews and keep feedback in an accessible three-do
     await more.click();
     await page.getByRole('button', {name: 'Helpful'}).click();
     assert.equal(await page.evaluate(() => window.feedback.vote), 1, 'native dropdown keeps vote callbacks working');
-    await more.click();
     await page.getByLabel('My rating for Preview Track').selectOption('8');
     assert.equal(await page.evaluate(() => window.feedback.rating), 8, 'native dropdown keeps rating callbacks working');
-    await more.click();
+    await page.getByLabel('My rating for Preview Track').focus();
+    await page.keyboard.press('0');
+    assert.equal(await page.evaluate(() => window.feedback.rating), 10, 'zero quick-rates ten while the rating select is focused');
+    const menuFavorite = menu.getByRole('button', {name: 'Remove from favorites'});
+    await menuFavorite.click();
+    assert.equal(await page.evaluate(() => window.feedback.favorite), false, 'favorite toggle is available inside the open menu');
+    await page.getByText('Edit tags', {exact: true}).click();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const expandedBounds = await menu.boundingBox();
+    assert.ok(expandedBounds && expandedBounds.x >= 8 && expandedBounds.y >= 8 && expandedBounds.x + expandedBounds.width <= 952 && expandedBounds.y + expandedBounds.height <= 892, `expanded tag picker stays inside the viewport: ${JSON.stringify(expandedBounds)}`);
+    await page.getByRole('button', {name: 'Add Scenic'}).click();
+    assert.deepEqual(await page.evaluate(() => window.feedback.addedTags), ['scenic'], 'unused valid tags can be added locally');
     await page.getByRole('button', {name: 'Report track'}).click();
     const report = page.getByRole('dialog', {name: 'Report a track'});
     await report.waitFor({state: 'visible'});
@@ -225,7 +241,8 @@ test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and
   try {
     const page = await browser.newPage({viewport: {width: 320, height: 568}});
     await page.route('**/*', async route => {
-      if (route.request().url() === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      if (route.request().url() === 'http://extra-tracks.test/review.mjs') await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      else if (route.request().url() === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       else if (route.request().url() === 'http://extra-tracks.test/') await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
       else await route.abort();
     });
@@ -291,7 +308,8 @@ test('5,000-entry offline catalog interaction benchmark', {skip: browserSkip}, a
     const page = await browser.newPage();
     await page.route('**/*', async route => {
       const url = route.request().url();
-      if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      if (url === 'http://extra-tracks.test/review.mjs') await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      else if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       else if (url === 'http://extra-tracks.test/') await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
       else await route.abort();
     });
@@ -358,7 +376,8 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
     const page = await browser.newPage();
     await page.route('**/*', async route => {
       const url = route.request().url();
-      if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
+      if (url === 'http://extra-tracks.test/review.mjs') await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      else if (url === 'http://extra-tracks.test/catalog-ui.mjs') await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       else if (url === 'http://extra-tracks.test/') await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});
       else await route.abort();
     });
@@ -450,7 +469,9 @@ test('real catalog previews stay uncropped in desktop and portrait game layouts'
     const page = await browser.newPage({viewport: {width: 1365, height: 900}});
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
-      if (url.href === 'http://extra-tracks.test/catalog-ui.mjs') {
+      if (url.href === 'http://extra-tracks.test/review.mjs') {
+        await route.fulfill({contentType: 'text/javascript', body: reviewSource});
+      } else if (url.href === 'http://extra-tracks.test/catalog-ui.mjs') {
         await route.fulfill({contentType: 'text/javascript', body: moduleSource});
       } else if (url.href === 'http://extra-tracks.test/') {
         await route.fulfill({contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>'});

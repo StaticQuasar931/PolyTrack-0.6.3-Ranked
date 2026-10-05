@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=70',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=71',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='70';
+  const extraCatalogRevision='71';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -320,7 +320,7 @@
     if(!response.ok){const failure=await response.json().catch(()=>({}));const reasons={already_reported:'You already reported this track.',invalid_report:'This track or reason is not valid.',profile_not_owned:'Your racer profile is not ready. Reopen the menu and try again.',report_capacity:'This track has already received enough reports for review.',rate_limited:'Please wait before reporting another track.'};const error=Error(reasons[failure.error]||`Report could not be sent (${response.status}).`);error.publicMessage=true;throw error;}
   }
   const extraFeedbackKey='sq-extra-feedback-v1';
-  let extraFeedbackCache=null;
+  let extraFeedbackCache=null,extraReviewHelpers=null;
   window.addEventListener('storage',event=>{if(event.key===extraFeedbackKey){extraFeedbackCache=null;extraTracksUi?.refresh();}});
   function readExtraFeedback(){
     if(extraFeedbackCache)return extraFeedbackCache;
@@ -328,24 +328,31 @@
     catch{extraFeedbackCache={};}
     return extraFeedbackCache;
   }
-  function extraFeedback(entry){return readExtraFeedback()[entry.trackId]||{}}
-  function saveExtraFeedback(entry,change){const all=readExtraFeedback(),next={...all,[entry.trackId]:{...(all[entry.trackId]||{}),...change}};localStorage.setItem(extraFeedbackKey,JSON.stringify(next));extraFeedbackCache=next;}
+  function extraFeedback(entry){const value=readExtraFeedback()[entry.trackId]||{};return extraReviewHelpers?extraReviewHelpers.normalizeReviewFeedback(entry,value):value;}
+  function saveExtraFeedback(entry,change){
+    if(!extraReviewHelpers)throw Error('Track review tools are not ready. Reopen Extra Tracks and try again.');
+    const all=readExtraFeedback(),prior=extraReviewHelpers.normalizeReviewFeedback(entry,all[entry.trackId]),merged={...prior,...change};
+    if(Object.hasOwn(change,'addedTags')||Object.hasOwn(change,'removedTags'))merged.editedAt=Date.now();
+    const next={...all,[entry.trackId]:extraReviewHelpers.normalizeReviewFeedback(entry,merged)};
+    localStorage.setItem(extraFeedbackKey,JSON.stringify(next));extraFeedbackCache=next;
+  }
   async function exportExtraFeedback(){
     const data=readExtraFeedback(),known=extraTrackIds(),catalog=await loadExtraTracksCatalog(),tracks={};
     extraTrackRaceRows=readLocalRaceRows();
     for(const entry of catalog){
       const choice=data[entry.trackId]||{},best=extraTrackPersonalBest(entry),personalBestMs=Number(best?.timeMs)||null;
-      tracks[entry.trackId]={name:entry.name,author:entry.codeAuthor||entry.author,imported:known[entry.id]===entry.trackId,played:personalBestMs!==null,personalBestMs,favorite:choice.favorite===true,vote:choice.vote===1||choice.vote===-1?choice.vote:0,rating:Number.isInteger(choice.rating)&&choice.rating>=1&&choice.rating<=10?choice.rating:0};
+      tracks[entry.trackId]=extraReviewHelpers.reviewExportRow(entry,{feedback:choice,imported:known[entry.id]===entry.trackId,personalBestMs});
     }
-    const blob=new Blob([JSON.stringify({version:2,exportedAt:new Date().toISOString(),playEvidence:'saved finish',tracks},null,2)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify({version:3,exportedAt:new Date().toISOString(),playEvidence:'saved finish',tagEvidence:'local review suggestions, not published catalog edits',tracks},null,2)],{type:'application/json'});
     const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='polytrack-extra-picks.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
   }
   async function openExtraTracks(){
     extraTrackRaceRows=readLocalRaceRows();extraTrackKnownIds=extraTrackIds();
     if(extraTracksUi){extraTracksUi.open();return;}
     if(!extraTracksUiPromise)extraTracksUiPromise=Promise.all([
-      loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href)
-    ]).then(([entries,module])=>{
+      loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href),import(new URL('review.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href)
+    ]).then(([entries,module,review])=>{
+      extraReviewHelpers=review;
       extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest,isLoaded:entry=>extraTrackKnownIds[entry.id]===entry.trackId,getLocalRating:entry=>extraFeedback(entry).rating,getFeedback:extraFeedback,onFeedback:saveExtraFeedback,onExportFeedback:exportExtraFeedback,onSubmit:submitExtraTrack,onReport:reportExtraTrack});
       if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css?v='+extraCatalogRevision,extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
       return extraTracksUi;
@@ -4443,7 +4450,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=70',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=71',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4463,8 +4470,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=70',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=70',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=70',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=71',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=71',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=71',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -7532,7 +7539,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=70',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:70,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=71',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:71,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

@@ -126,6 +126,108 @@ test('local picks toggle, rating changes and export callback stay device-scoped'
   api.destroy();
 });
 
+test('reviewer quick ratings map zero to ten, accept number-pad keys and ignore editable controls', async () => {
+  const saved = new Map();
+  const item = entry(1);
+  const { document, root, api } = fixture([item], {
+    getFeedback: track => saved.get(track.id) || {},
+    onFeedback: (track, change) => saved.set(track.id, { ...saved.get(track.id), ...change })
+  });
+  api.open();
+  const keydown = document.listeners.get('keydown');
+  const search = tag(cls(root, 'sq-extra-controls')[0], 'input')[0];
+  search.focus();
+  keydown({ key: '7', code: 'Digit7', preventDefault() {} });
+  assert.equal(saved.has(item.id), false, 'search typing is never captured as a quick rating');
+  await click(cls(root, 'sq-extra-more')[0]);
+  keydown({ key: '0', code: 'Numpad0', preventDefault() {} });
+  assert.equal(saved.get(item.id).rating, 10);
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false, 'quick rating leaves the menu open');
+  const rating = tag(cls(root, 'sq-extra-rating')[0], 'select')[0];
+  rating.focus();
+  keydown({ key: '0', code: 'Digit0', preventDefault() {} });
+  assert.equal(saved.get(item.id).rating, 10, 'zero on the rating select maps to ten');
+  keydown({ key: '8', code: 'Digit8', shiftKey: true, preventDefault() {} });
+  assert.equal(saved.get(item.id).rating, 10, 'Shift-modified digits are not ratings');
+  keydown({ key: '6', code: 'Numpad6', ctrlKey: true, preventDefault() {} });
+  assert.equal(saved.get(item.id).rating, 10, 'modified number-pad digits are not ratings');
+  keydown({ key: '9', code: 'Digit9', preventDefault() {} });
+  assert.equal(saved.get(item.id).rating, 9, 'one through nine remain direct ratings');
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
+  api.destroy();
+});
+
+test('local tag suggestions add, remove and undo without changing canonical tags', async () => {
+  const saved = new Map();
+  const item = entry(1, { tags: ['technical', 'scenic'] });
+  const { root, api } = fixture([item], {
+    getFeedback: track => saved.get(track.id) || {},
+    onFeedback: (track, change) => saved.set(track.id, { ...saved.get(track.id), ...change })
+  });
+  api.open();
+  await click(cls(root, 'sq-extra-more')[0]);
+  assert.equal(cls(root, 'sq-extra-tag-choice').length, 0, 'tag choices are not built for closed pickers');
+  await click(tag(cls(root, 'sq-extra-tag-picker')[0], 'summary')[0]);
+  const choices = () => cls(root, 'sq-extra-tag-choice');
+  const findChoice = name => choices().find(choice => choice.textContent === name);
+  await click(findChoice('Remove Scenic'));
+  assert.deepEqual(saved.get(item.id).removedTags, ['scenic']);
+  assert.equal(findChoice('Add Scenic').getAttribute('aria-pressed'), 'false');
+  await click(findChoice('Add Scenic'));
+  assert.deepEqual(saved.get(item.id).removedTags, []);
+  await click(findChoice('Add Elite Track'));
+  assert.deepEqual(saved.get(item.id).addedTags, ['elite-track']);
+  await click(findChoice('Remove Elite Track'));
+  assert.deepEqual(saved.get(item.id).addedTags, []);
+  assert.deepEqual(item.tags, ['technical', 'scenic']);
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false, 'tag changes keep the dropdown available');
+  api.destroy();
+});
+
+test('review status filter counts favorite and rating separately from tag edits', async () => {
+  const saved = new Map();
+  const items = [entry(1), entry(2), entry(3)];
+  const { root, api } = fixture(items, {
+    getFeedback: track => saved.get(track.id) || {},
+    onFeedback: (track, change) => saved.set(track.id, { ...saved.get(track.id), ...change })
+  });
+  api.open();
+  saved.set(items[0].id, { favorite: true, rating: 10 });
+  saved.set(items[1].id, { addedTags: ['scenic'], editedAt: Date.now() });
+  api.refresh();
+  const review = tag(cls(root, 'sq-extra-controls')[0].children[5], 'select')[0];
+  const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
+  review.value = 'edited'; await review.dispatch('change');
+  assert.deepEqual(names(), ['Track 02']);
+  review.value = 'not-edited'; await review.dispatch('change');
+  assert.deepEqual(names(), ['Track 01', 'Track 03']);
+  const sort = tag(cls(root, 'sq-extra-controls')[0].children[6], 'select')[0];
+  review.value = 'all'; await review.dispatch('change');
+  sort.value = 'edited-first'; await sort.dispatch('change');
+  assert.equal(names()[0], 'Track 02');
+  sort.value = 'unedited-first'; await sort.dispatch('change');
+  assert.equal(names()[0], 'Track 01');
+  api.destroy();
+});
+
+test('tag filter reports vocabulary size and disables unused options without hiding them from tag editing', async () => {
+  const { root, api } = fixture([entry(1, { tags: ['technical', 'difficulty-7', 'slide'] })], {
+    getFeedback: () => ({}), onFeedback: () => {}
+  });
+  api.open();
+  const tagField = cls(root, 'sq-extra-controls')[0].children[2];
+  const select = tag(tagField, 'select')[0];
+  const scenic = [...select.children].find(option => option.value === 'scenic');
+  assert.equal(scenic.disabled, true);
+  assert.equal(cls(tagField, 'sq-extra-filter-count')[0].textContent, `${select.children.length - 1} Tags`);
+  assert.equal([...select.children].some(option => option.value === 'slide'), false);
+  await click(cls(root, 'sq-extra-more')[0]);
+  assert.equal(cls(root, 'sq-extra-tag-choice').length, 0, 'opening the three-dot menu does not eagerly create tag buttons');
+  await click(tag(cls(root, 'sq-extra-tag-picker')[0], 'summary')[0]);
+  assert.ok(cls(root, 'sq-extra-tag-choice').some(choice => choice.textContent === 'Add Scenic'), 'unused valid tags remain addable in reviewer controls');
+  api.destroy();
+});
+
 test('source counts, suggested tags and the submission dialog stay together', async () => {
   const { root, api } = fixture([entry(1), entry(2), entry(3)]);
   api.open();
@@ -136,7 +238,7 @@ test('source counts, suggested tags and the submission dialog stay together', as
   assert.equal(modal.hidden, true);
   await click(cls(root, 'sq-extra-submit')[0]);
   assert.equal(modal.hidden, false);
-  assert.match(cls(root, 'sq-extra-tag-suggestions')[0].textContent, /technical/);
+  assert.match(cls(root, 'sq-extra-tag-suggestions')[0].textContent, /technical/i);
   await click(cls(root, 'sq-extra-submission-close')[0]);
   assert.equal(modal.hidden, true);
   api.destroy();
@@ -200,7 +302,7 @@ test('search ranks exact titles, prefixes, token matches and generic substrings 
   api.open();
   const fields = cls(root, 'sq-extra-field');
   const search = tag(fields[0], 'input')[0];
-  const sort = tag(fields[5], 'select')[0];
+  const sort = tag(fields[6], 'select')[0];
   sort.value = 'author'; sort.dispatch('change');
   search.value = 'TURN'; search.dispatch('input');
   const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
@@ -212,7 +314,7 @@ test('search ranks exact titles, prefixes, token matches and generic substrings 
   api.destroy();
 });
 
-test('difficulty and imported-only progress filter independently of style tags', () => {
+test('difficulty and imported-only progress filter independently of tags', () => {
   const entries = [entry(1, { difficulty: 2, tags: ['speed'] }), entry(2, { difficulty: 7, tags: ['speed'] }), entry(3, { difficulty: 7, tags: ['technical'] })];
   const { root, api } = fixture(entries, { isLoaded: item => item.id === 'track-2' });
   api.open();
@@ -248,7 +350,7 @@ test('sort, callbacks and attribution use the original entry and safe links', as
   const played = [];
   const { root, api } = fixture([dangerous, popular], { onPlay: async item => { played.push(item); } });
   api.open();
-  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  const sort = tag(cls(root, 'sq-extra-field')[6], 'select')[0];
   assert.match(sort.textContent, /Most plays/);
   assert.doesNotMatch(sort.textContent, /Most chosen/);
   sort.value = 'plays'; sort.dispatch('change');
@@ -306,7 +408,7 @@ test('size sorting uses actual catalog byte sizes and keeps missing sizes last',
   ];
   const { root, api } = fixture(entries);
   api.open();
-  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  const sort = tag(cls(root, 'sq-extra-field')[6], 'select')[0];
   assert.match(sort.textContent, /Largest track/);
   assert.match(sort.textContent, /Smallest track/);
   const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
@@ -319,7 +421,7 @@ test('size sorting uses actual catalog byte sizes and keeps missing sizes last',
 
 test('size sorting is omitted when code byte sizes are unavailable', () => {
   const { root, api } = fixture([entry(1), entry(2, { sizeBytes: '12' }), entry(3, { sizeBytes: -1 })]);
-  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  const sort = tag(cls(root, 'sq-extra-field')[6], 'select')[0];
   assert.doesNotMatch(sort.textContent, /Largest code|Smallest code/);
   api.destroy();
 });
@@ -332,7 +434,7 @@ test('forum activity stays distinct from plays and missing signals sort last', (
   ];
   const { root, api } = fixture(entries);
   api.open();
-  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  const sort = tag(cls(root, 'sq-extra-field')[6], 'select')[0];
   assert.match(sort.textContent, /Forum activity/);
   sort.value = 'forum'; sort.dispatch('change');
   assert.deepEqual(cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent), ['Liked', 'Discussed', 'Unrated']);
@@ -562,16 +664,16 @@ test('empty entries still mount and show an accurate zero count', () => {
   assert.equal(cls(root, 'sq-extra-count')[0].textContent, '0 of 0 tracks');
 });
 
-test('multiple styles combine, and empty results offer a reset', async () => {
+test('multiple tags combine, and empty results offer a reset', async () => {
   const { root, api } = fixture([
     entry(1, { tags: ['technical', 'speed'] }),
     entry(2, { tags: ['technical'] }),
     entry(3, { tags: ['speed'] })
   ]);
   api.open();
-  const style = tag(cls(root, 'sq-extra-field')[2], 'select')[0];
-  style.value = 'technical'; await style.dispatch('change');
-  style.value = 'speed'; await style.dispatch('change');
+  const tagFilter = tag(cls(root, 'sq-extra-field')[2], 'select')[0];
+  tagFilter.value = 'technical'; await tagFilter.dispatch('change');
+  tagFilter.value = 'speed'; await tagFilter.dispatch('change');
   assert.deepEqual(cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent), ['Track 01']);
   assert.equal(cls(root, 'sq-extra-selected-tag').length, 2);
   const search = tag(cls(root, 'sq-extra-field')[0], 'input')[0];
@@ -591,7 +693,7 @@ test('track date sorting uses submission dates and puts undated tracks last', as
     entry(4, { codeModifiedAt: null })
   ]);
   api.open();
-  const sort = tag(cls(root, 'sq-extra-field')[5], 'select')[0];
+  const sort = tag(cls(root, 'sq-extra-field')[6], 'select')[0];
   const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
   sort.value = 'date-newest'; await sort.dispatch('change');
   assert.deepEqual(names(), ['Track 02', 'Track 03', 'Track 01', 'Track 04']);
