@@ -33,11 +33,11 @@ export function snapshotFinish(car, context) {
  * Existing cars must be restarted; private callback arrays cannot be enumerated.
  * onFinish must synchronously take ownership of the snapshot. No internal queue.
  */
-export function installFinishCapture({ Car, bindCar, onFinish, onError, validateFinish = () => {} }) {
+export function installFinishCapture({ Car, bindCar, onFinish, onError, validateFinish = () => {}, shouldCapture = () => true }) {
   const prototype = Car?.prototype;
   if (!prototype || typeof prototype.addFinishCallback !== 'function') throw new Error('native_unavailable');
   if (installed.has(prototype)) throw new Error('capture_already_installed');
-  if (![bindCar, onFinish, onError, validateFinish].every(fn => typeof fn === 'function')) throw new Error('capture_callbacks_required');
+  if (![bindCar, onFinish, onError, validateFinish, shouldCapture].every(fn => typeof fn === 'function')) throw new Error('capture_callbacks_required');
   const original = prototype.addFinishCallback;
   const attached = new WeakSet();
   let active = true;
@@ -55,6 +55,7 @@ export function installFinishCapture({ Car, bindCar, onFinish, onError, validate
           original.call(this, car => {
             if (!active) return;
             try {
+              if (!shouldCapture(context)) return;
               validateFinish(car, context);
               const result = onFinish(snapshotFinish(car, context));
               if (result && typeof result.then === 'function') Promise.resolve(result).catch(report);

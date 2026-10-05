@@ -239,12 +239,12 @@ export function mountArchiveView(root, options = {}) {
   toolbar.className = 'sq-archive-toolbar';
   const intro = document.createElement('div');
   appendText(document, intro, 'h3', '', options.title || 'Past events');
-  appendText(document, intro, 'p', '', 'Final verified standings by event.');
+  appendText(document, intro, 'p', '', 'Browse recent events, or choose the month an event ended. Each card shows its full date range.');
   toolbar.append(intro);
   if (typeof options.onMonthChange === 'function') {
     const form = document.createElement('form');
     form.className = 'sq-event-archive-filter';
-    const label = appendText(document, form, 'label', '', 'Month ');
+    const label = appendText(document, form, 'label', '', 'Ended in ');
     const input = document.createElement('input');
     input.type = 'month';
     input.name = 'archive-month';
@@ -253,6 +253,16 @@ export function mountArchiveView(root, options = {}) {
     label.append(input);
     const submit = appendText(document, form, 'button', 'button', 'View month');
     submit.type = 'submit';
+    for (const [text, offset] of [['Previous month', -1], ['Next month', 1], ['Recent events', 0]]) {
+      const button = appendText(document, form, 'button', 'button', text);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        if (!offset) { options.onMonthChange(''); return; }
+        if (!/^\d{4}-\d{2}$/.test(input.value)) return;
+        const [year, month] = input.value.split('-').map(Number);
+        options.onMonthChange(new Date(Date.UTC(year, month - 1 + offset, 1)).toISOString().slice(0, 7));
+      });
+    }
     form.addEventListener('submit', event => {
       event.preventDefault();
       if (/^\d{4}-\d{2}$/.test(input.value)) options.onMonthChange(input.value);

@@ -1,7 +1,7 @@
 import {archivePeriodCounts,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
-import {createEventSession,keepEventBest} from './session.mjs';
+import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
@@ -145,6 +145,7 @@ export function retryDeferredEventCarRenders(view,renderCachedCar){
 }
 export function installEvents(bridge){
   const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,catalogFreshUntil=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
+  let boundaryTimer=null;
   let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
   const cache=new Map(),snapshotFetching=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
@@ -156,7 +157,11 @@ export function installEvents(bridge){
   const localBest=period=>bestRecords[period.id+'_'+bridge.accountId()];
   const displayName=row=>bridge.displayName?.(row.accountId,row.name)||row.name||'Racer';
   const reset=p=>new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(p.endsAt)+' Local';
-  function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(value.periods,catalogAt);return value;}
+  function storeCatalog(value){if(!value||!Array.isArray(value.periods))throw Error('Event catalog is unavailable.');catalog=value;cacheWrite(STORE,value);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(value.periods,catalogAt);
+    clearTimeout(boundaryTimer);
+    const boundary=Math.min(...value.periods.flatMap(p=>p.enabled===false||p.archived?[]:[p.startsAt,p.endsAt]).filter(t=>Number.isSafeInteger(t)&&t>catalogAt));
+    if(Number.isFinite(boundary))boundaryTimer=setTimeout(()=>void loadCatalog(true),Math.min(2147483647,Math.max(1,boundary-catalogAt+25)));
+    return value;}
   async function loadPermanent(){
     if(typeof bridge.readPermanent!=='function')return permanent;
     if(permanentFetching)return permanentFetching;
@@ -208,22 +213,28 @@ export function installEvents(bridge){
     }finally{hasPending=read(QUEUE,[]).length>0;flushing=false;}
   }
   function captured(run){
-    const eventRun=sessions.finish(run);if(!eventRun)return;
-    latestFinish=eventRun;
-    const best=bestRecords,key=eventRun.periodId+'_'+eventRun.accountId;
-    if(best[key]&&best[key].timeMs<=eventRun.timeMs)return;
-    ownReceiptAt.delete(key);
-    ownReceipts.delete(key);
-    write(QUEUE,keepEventBest(read(QUEUE,[]),eventRun));hasPending=true;
-    best[key]={timeMs:eventRun.timeMs,attemptId:eventRun.attemptId,carStyle:eventRun.carStyle,at:now()};write(BEST,best);
-    const replays=read(REPLAYS,[]);cacheWrite(REPLAYS,[{...eventRun,at:now()},...(Array.isArray(replays)?replays:[]).filter(row=>row.periodId!==eventRun.periodId||row.accountId!==eventRun.accountId)].slice(0,8));
-    message('New event PB saved locally.');tick();void flush();
+    const at=now(),intent=sessions.current()||eventIntent;
+    latestFinish=null;
+    const periods=[...(catalog.periods||[]),...(intent&&knownPeriods.has(intent.periodId)?[knownPeriods.get(intent.periodId)]:[])];
+    const matches=matchingEventRuns(run,periods,bridge.accountId(),at);
+    for(const eventRun of matches){
+      const key=eventRun.periodId+'_'+eventRun.accountId,prior=bestRecords[key];
+      if(intent?.periodId===eventRun.periodId)latestFinish={...eventRun,previousTimeMs:prior?.timeMs};
+      if(prior&&prior.timeMs<=eventRun.timeMs)continue;
+      ownReceiptAt.delete(key);ownReceipts.delete(key);
+      write(QUEUE,keepEventBest(read(QUEUE,[]),eventRun));hasPending=true;
+      bestRecords[key]={timeMs:eventRun.timeMs,attemptId:eventRun.attemptId,carStyle:eventRun.carStyle,at};
+      write(BEST,bestRecords);
+      const replays=read(REPLAYS,[]);
+      cacheWrite(REPLAYS,[{...eventRun,at},...(Array.isArray(replays)?replays:[]).filter(row=>row.periodId!==eventRun.periodId||row.accountId!==eventRun.accountId)].slice(0,8));
+    }
+    if(matches.length){tick({cachedOnly:true});void flush();}
   }
   function ensureCapture(){
     if(capture)return;
     const require=bridge.require();if(!require)throw Error('The game is still loading. Try again.');
     const binding=installNativeLocalBinding({require,onError:()=>{if(sessions.current())message('Event recording is not ready. Reopen this event and restart the race.');}});
-    try{capture=installFinishCapture({Car:binding.Car,bindCar:car=>{const context=binding.bindCar(car);if(context){latestFinish=null;sessions.bind(context);}return context;},validateFinish:binding.validateFinish,onFinish:captured,onError:()=>message('Event recording could not be captured. Your normal PB still saves.')});}
+    try{capture=installFinishCapture({Car:binding.Car,bindCar:car=>{const context=binding.bindCar(car);if(context){latestFinish=null;sessions.bind(context);}return context;},shouldCapture:context=>context.accountId===bridge.accountId()&&activePeriods().some(period=>period.trackId===context.trackId),validateFinish:binding.validateFinish,onFinish:captured,onError:()=>message('Event recording could not be captured. Your normal PB still saves.')});}
     catch(error){binding.stop();throw error;}
   }
   async function race(period,{direct=false}={}){
@@ -800,10 +811,7 @@ export function installEvents(bridge){
   function syncFinishPlace(){
     const root=document.querySelector('.time-announcer-ui'),session=sessions.current()||eventIntent;
     if(!root||!latestFinish||!session||latestFinish.periodId!==session.periodId||latestFinish.accountId!==bridge.accountId())return;
-    const board=cache.get(session.periodId)||read(STORE+'-'+session.periodId,null);
-    let place=eventFinishPlace({board,periodId:session.periodId,trackId:latestFinish.trackId, ...latestFinish});
-    const period=knownPeriods.get(session.periodId);
-    if(period){const display=eventDisplayRows(period),mine=display.rows.find(row=>row.accountId===session.accountId);if(display.filterResult?.active){if(!mine)place=null;else if(display.filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:display.rows.length,provisional:board?.complete!==true};}}
+    const place=finishPlace(latestFinish);
     root.querySelector('.sq-event-finish-place')?.remove();
     const current=root.querySelector('.current'),position=current?.querySelector('.position');
     if(!position)return;
@@ -976,5 +984,24 @@ export function installEvents(bridge){
     const list=dialog?.querySelector('.sq-event-results');
     if(selected&&list){const board=cache.get(selected.id)||read(STORE+'-'+selected.id,null);if(board){const raw=now()>=selected.endsAt?archivePeriodCounts(selected,board).verifiedEntries:board.entries||[];const filtered=bridge.filterRows?.(raw,{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true});list.innerHTML=rows(filtered?.rows||raw)||'<li>No racers match these filters.</li>';message(filtered?.active?'Personal filters are active.':'Published standings.');}}
   });
-  return {isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
+  function finishPlace(run){
+    const board=cache.get(run.periodId)||read(STORE+'-'+run.periodId,null);
+    let place=eventFinishPlace({board,...run});
+    const period=knownPeriods.get(run.periodId);
+    if(period){const display=eventDisplayRows(period);if(display.filterResult?.active){
+      const mine=display.rows.find(row=>row.accountId===run.accountId);
+      if(!mine)return null;
+      if(display.filterResult.groupGrading)place={rank:1+display.rows.filter(row=>row.accountId!==run.accountId&&row.timeMs<run.timeMs).length,fieldSize:display.rows.length,provisional:board?.complete!==true};
+    }}
+    return place;
+  }
+  function finishPositions(trackId,accountId,timeMs){
+    const intent=sessions.current()||eventIntent;
+    if(!intent||!latestFinish||latestFinish.periodId!==intent.periodId||latestFinish.trackId!==trackId||latestFinish.accountId!==accountId||timeMs!==undefined&&latestFinish.timeMs!==timeMs)return null;
+    const next=finishPlace(latestFinish),prior=latestFinish.previousTimeMs?finishPlace({...latestFinish,timeMs:latestFinish.previousTimeMs}):null;
+    if(!next)return null;
+    return {newPosition:next.rank,previousPosition:prior?.rank||next.fieldSize||next.rank};
+  }
+  async function prepareCapture(){await loadCatalog();ensureCapture();}
+  return {prepareCapture,captureReady:()=>!!capture,finishPositions,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:()=>ensureFeaturedSection(document),open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
 }

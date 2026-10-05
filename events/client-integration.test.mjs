@@ -90,14 +90,14 @@ async function boot(page,queue){return page.evaluate(async({entry,queue,QUEUE})=
  localStorage.setItem(QUEUE,JSON.stringify(queue));let eventUi=null,eventQueueChecked=false,calls=0,flushes=0,reads=0;
  const prior=Storage.prototype.getItem;Storage.prototype.getItem=function(key){if(key===QUEUE)reads++;return prior.call(this,key);};
  function ensureEventUi(){calls++;return Promise.resolve({flush(){flushes++;},tick(){}});}
- const ensureExtraTracksEntryContents=()=>{};
+ const ensureExtraTracksEntryContents=()=>{},isElementVisible=()=>false;
  const invoke=eval('('+entry+')');for(let i=0;i<100;i++)invoke();await Promise.resolve();Storage.prototype.getItem=prior;return {calls,flushes,reads};
  },{entry,queue,QUEUE});}
-test('real Ranked navigation clears event capture; explicit event launch keeps it',async t=>{
+test('normal Ranked navigation keeps event eligibility without retaining event display mode',async t=>{
  assert.match(patch,/focusTrackFromRanked\(id,\{event:true\}\)/);
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));
  await p.waitForFunction(()=>submits.length===1);await p.evaluate(()=>window.car=null);await p.locator('#ranked').click();await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(19000));
- assert.deepEqual(await p.evaluate(()=>({active:document.body.classList.contains('sq-event-active'),times:submits.map(r=>r.timeMs)})),{active:false,times:[20000]});
+ assert.deepEqual(await p.evaluate(()=>({active:document.body.classList.contains('sq-event-active'),times:submits.map(r=>r.timeMs)})),{active:false,times:[20000,19000]});
 });
 test('pending queue bootstraps once without opening Events',async t=>{const p=await fixture(t);assert.deepEqual(await boot(p,[run()]),{calls:1,flushes:1,reads:1});});
 test('empty queue startup checks storage once and never imports event UI',async t=>{const p=await fixture(t);assert.deepEqual(await boot(p,[]),{calls:0,flushes:0,reads:1});});
@@ -247,7 +247,7 @@ test('schedule-only live event remains playable, preserves its local PB, and acc
  await p.locator('#open').click();const card=p.locator('.sq-events-overlay [data-event-id="scheduled-fixture"]');await card.waitFor();assert.match(await card.innerText(),/100 Event RP/);assert.match(await card.innerText(),/Awaiting official server assignment/);
  await card.click();await p.waitForFunction(()=>!!window.car);assert.equal(await p.locator('.sq-event-board').count(),1);assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),true);
  await p.evaluate(()=>car.finish(21000));await p.waitForFunction(()=>submits.length===1);await p.waitForFunction(()=>JSON.parse(localStorage.getItem('polytrack-062-events-v1')).periods[0].scheduleOnly===false);
- await p.locator('#open').click();const updated=p.locator('.sq-events-overlay [data-event-id="scheduled-fixture"]');await updated.waitFor();assert.match(await updated.innerText(),/21000/);assert.doesNotMatch(await updated.innerText(),/Awaiting official server assignment/);assert.doesNotMatch(await updated.innerText(),/verified|\bRP\b.*earned/i);
+ await p.locator('#open').click();const updated=p.locator('.sq-events-overlay [data-event-id="scheduled-fixture"]');await updated.waitFor();assert.match(await updated.innerText(),/21000/);assert.doesNotMatch(await updated.innerText(),/Awaiting official server assignment/);assert.doesNotMatch(await updated.locator('.sq-event-record').innerText(),/verified|\bRP\b.*earned/i);
 });
 test('event reset labels explicitly use Local',async t=>{const p=await fixture(t);await p.locator('#open').click();assert.match(await p.locator('.sq-events-overlay [data-event-id]').innerText(),/Local/);});
 test('event home renders cached live catalog without waiting for permanent standings',async t=>{
@@ -291,8 +291,9 @@ test('daily and weekly on the same physical track retain exact period binding',a
  let count=0;for(const kind of ['daily','weekly','daily']){
   assert.equal(await p.evaluate(kind=>ui.openEvent({kind,trackId:id}),kind),true);
   await p.waitForFunction(()=>!!window.car);await p.evaluate(ms=>car.finish(ms),20000-count*1000);count++;
-  await p.waitForFunction(count=>submits.length===count,count);assert.equal(await p.locator('.sq-event-board h3').innerText(),(kind==='daily'?'Daily event':'Weekly event')+' · Fixture track');
-  assert.equal(await p.evaluate(()=>submits.at(-1).periodId),kind+'-shared');
+  await p.waitForFunction(count=>submits.length===count*2,count);assert.equal(await p.locator('.sq-event-board h3').innerText(),(kind==='daily'?'Daily event':'Weekly event')+' · Fixture track');
+  assert.deepEqual(await p.evaluate(()=>submits.slice(-2).map(run=>run.periodId).sort()),['daily-shared','weekly-shared']);
+  assert.equal(await p.evaluate(()=>ui.finishPositions(id,id)?.newPosition),1);
   await p.evaluate(()=>{ui.leave();window.car=null;});
  }
 });
@@ -494,9 +495,9 @@ test('Ranked footer replaces legacy targets with exact catalog assignments witho
  assert.equal(await p.evaluate(()=>catalogReads),await p.evaluate(()=>beforeFooterReads));
  assert.equal(await p.locator('.daily-card button').getAttribute('data-event-id'),'daily-shared');assert.equal(await p.locator('.weekly-cup button').getAttribute('data-event-id'),'weekly-shared');
  assert.equal(await p.locator('.daily-card button').getAttribute('data-track-id'),null);assert.match(await p.locator('.daily-card small').innerText(),/Local/);assert.doesNotMatch(await p.locator('#overallLeaderboardPanel').innerText(),/Wrong|Normal result/);
- await p.locator('.daily-card button').click();await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);assert.equal(await p.evaluate(()=>submits[0].periodId),'daily-shared');
+ await p.locator('.daily-card button').click();await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===2);assert.deepEqual(await p.evaluate(()=>submits.map(run=>run.periodId).sort()),['daily-shared','weekly-shared']);
 });
-test('ordinary Rolling Hills button remains separate from its live weekly event',async t=>{
+test('ordinary Rolling Hills display stays normal but its finish credits the matching weekly event',async t=>{
  const p=await fixture(t);await sharedTrackPeriods(p);await p.evaluate(()=>{
   const trackId='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';periods.forEach(p=>p.trackId=trackId);bridgeFixture.require()(9117).A.prototype.getId=()=>trackId;
   bridgeFixture.trackInfo=()=>({name:'Rolling Hills Racer'});const host=document.createElement('div');host.className='track-selection-ui';host.innerHTML='<div class="community-track-versions"><button>Static</button><button>0.6.3</button></div><div class="community-track-group"><div class="track"><button id="rolling"><span class="track-title"><p>Rolling Hills Racer</p></span></button></div></div>';document.body.append(host);
@@ -504,9 +505,9 @@ test('ordinary Rolling Hills button remains separate from its live weekly event'
  });
  assert.equal(await p.locator('#rolling[data-native-weekly-event]').count(),0);
  assert.equal(await p.locator('.sq-featured-events #rolling').count(),0);
- await p.locator('#rolling').click();await p.evaluate(()=>car.finish(21000));assert.equal(await p.evaluate(()=>submits.length),0);
+ await p.evaluate(()=>ui.prepareCapture());await p.locator('#rolling').click();await p.evaluate(()=>car.finish(21000));await p.waitForFunction(()=>submits.length===2);assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false);
  await p.locator('.sq-featured-events [data-event-id="weekly-shared"]').click();await p.evaluate(()=>car.finish(20000));
- await p.waitForFunction(()=>submits.length===1);assert.equal(await p.evaluate(()=>submits[0].periodId),'weekly-shared');
+ await p.waitForFunction(()=>submits.length===4);assert.deepEqual(await p.evaluate(()=>submits.slice(2).map(run=>run.periodId).sort()),['daily-shared','weekly-shared']);
  await p.evaluate(()=>{document.querySelector('.community-track-group').style.display='none';ui.tick();});
  assert.equal(await p.locator('.sq-featured-events').isVisible(),true);assert.equal(await p.locator('.sq-featured-events .sq-event-card').count(),2);
 });
@@ -517,6 +518,7 @@ test('Ranked visibility imports event module once even without any track group',
   const isElementVisible=e=>e.getClientRects().length>0&&getComputedStyle(e).display!=='none';
   const ensureEventUi=()=>{calls++;return Promise.resolve({tick(){}});};
   const ensureExtraTracksEntryContents=()=>{};
+  document.querySelector('.track-info-ui').style.display='none';
   const panel=document.createElement('div');panel.id='overallLeaderboardPanel';panel.textContent='Ranked';panel.style.display='none';document.body.append(panel);
   const invoke=eval('('+source+')');invoke();const hidden=calls;panel.style.display='block';for(let i=0;i<100;i++)invoke();await Promise.resolve();return {hidden,visible:calls};
  },entry),{hidden:0,visible:1});

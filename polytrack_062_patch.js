@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=78',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=79',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='78';
+  const extraCatalogRevision='79';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -99,7 +99,12 @@
       return {schedule,registry,published};
     })().catch(error=>{localEventSchedulePromise=null;throw error;});
     const {schedule,registry,published}=await localEventSchedulePromise;
-    return schedule.scheduledCatalog(registry,published,Date.now());
+    const at=Date.now(),catalog=schedule.scheduledCatalog(registry,published,at);
+    kodubAdapter ||= await import(new URL('./kodub-weekly.mjs',eventsModuleUrl).href);
+    const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl()});
+    const current=feed.current;
+    if(current)nativeWeeklySelection=current;
+    return kodubAdapter.withKodubWeekly(catalog,current,at);
   }
   async function eventCloudRead(path,collection,id){
     const cached=eventCloudCache.get(path);
@@ -159,7 +164,7 @@
   }
   async function ensureEventUi(){
     if(eventUi)return eventUi;if(eventUiPromise)return eventUiPromise;
-    eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
+    eventUiPromise=import(eventsModuleUrl).then(async({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
       eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:async()=>{},openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button||!isElementVisible(button))return openKodubWeeklyFromEvents(function(){return eventUi.isEntered(id);});button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
         prepareArchive:loadKodubTrackHistory,racerActions:function(row,event){return openPersonalRacerActions(row.accountId||row.userId,event);},decorateRacer:(button,row)=>{const identity=rankedIdentityForRacer(row);button.classList.add('sq-racer-cosmetic',...racerCosmeticClasses(identity).split(/\s+/).filter(Boolean));button.classList.toggle('sq-racer-top',Number(row.rank)>0&&Number(row.rank)<=3);decorateNativeLeaderboardIdentity(button,identity);},filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
@@ -209,20 +214,32 @@
           }
           return {status:'waiting'};
         }
-      });return eventUi;
+      });await eventUi.prepareCapture();return eventUi;
     }).catch(error=>{eventUiPromise=null;throw error;});return eventUiPromise;
   }
+  let eventCapturePlayPermit=false,eventCapturePreparing=false;
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('.track-info-ui .side-panel button.play');
+    if(!button||eventCapturePlayPermit||eventUi?.captureReady())return;
+    event.preventDefault();event.stopImmediatePropagation();
+    if(eventCapturePreparing)return;eventCapturePreparing=true;
+    void ensureEventUi().then(ui=>ui.prepareCapture()).catch(()=>{}).finally(()=>{
+      eventCapturePreparing=false;if(!button.isConnected)return;
+      eventCapturePlayPermit=true;try{button.click();}finally{eventCapturePlayPermit=false;}
+    });
+  },true);
   function ensureEventEntry(){
     return withoutUiFeedback(ensureEventEntryContents);
   }
   function ensureEventEntryContents(){
     ensureExtraTracksEntryContents();
     if(!eventQueueChecked){eventQueueChecked=true;try{if(JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').length)void ensureEventUi().then(ui=>ui.flush()).catch(()=>{setTimeout(()=>{eventQueueChecked=false;},60000);});}catch{}}
+    const trackMenus=document.querySelector('.track-selection-ui,.track-info-ui');
     const nav=document.querySelector('.track-selection-ui .community-track-versions');
     const group=eventUi?.featuredSection?.();
     if(group)kodubAdapter?.combineKodubCard(document,group,nativeWeeklySelection);
     const ranked=document.getElementById('overallLeaderboardPanel');
-    if((nav&&isElementVisible(nav)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
+    if((trackMenus&&isElementVisible(trackMenus)||ranked&&isElementVisible(ranked))&&!eventUi&&!eventUiPromise&&Date.now()>=eventModuleRetryAt){eventModuleRetryAt=Date.now()+60000;void ensureEventUi().then(ui=>ui.tick()).catch(()=>{});}
     const eventUiVisible=(nav&&isElementVisible(nav))||(ranked&&isElementVisible(ranked))||
       document.querySelector('.sq-events-overlay')||document.body.classList.contains('sq-event-active');
     const eventTickGap=document.body.classList.contains('sq-event-active')?1000:10000;
@@ -4451,7 +4468,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=78',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=79',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4471,8 +4488,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=78',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=78',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=78',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=79',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=79',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=79',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -6222,9 +6239,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const amount = Math.min(100, Number(urlObj.searchParams.get('amount') || 20) || 20);
       const skip = Math.max(0, Number(urlObj.searchParams.get('skip') || 0) || 0);
       if (requestMethod === 'POST') {
-        const preEntries = await getTrackEntries(trackId, 500).catch(()=>[]);
+        const preEntries = eventUi?.isEntered(trackId)?readTrackSnapshotCache(trackId)?.entries||[]:await getTrackEntries(trackId, 500).catch(()=>[]);
         log('info','[NET202] /leaderboard POST intercepted',{trackId});
         const mirrorMeta = await mirrorRaceResult(urlObj.toString(), body);
+        const eventPosition=eventUi?.finishPositions(trackId,mirrorMeta?.accountId,mirrorMeta?.timeMs);
+        if(eventPosition)return {uploadId:safeRecordingId(mirrorMeta?.uploadId)||nextUploadId(),...eventPosition};
         // The published snapshot can lag the committed PB. Project the saved local
         // result onto the already loaded field instead of blocking placement on a
         // second network request that may return the old revision.
@@ -7554,7 +7573,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=78',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:78,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=79',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:79,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

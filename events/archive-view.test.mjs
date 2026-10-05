@@ -43,6 +43,15 @@ function descendants(node, predicate) {
   return node.children.flatMap(child => [ ...(predicate(child) ? [child] : []), ...descendants(child, predicate) ]);
 }
 
+test('archive month navigation rolls years correctly and returns to recent events',()=>{
+ const {root}=archiveFixture(),months=[];
+ mountArchiveView(root,{periods:[],month:'2026-01',onMonthChange:month=>months.push(month)});
+ const buttons=descendants(root,node=>node.tagName==='BUTTON');
+ for(const label of ['Previous month','Next month','Recent events'])buttons.find(button=>button.textContent===label).emit('click');
+ assert.deepEqual(months,['2025-12','2026-02','']);
+ assert.match(root.textContent,/month an event ended/);
+});
+
 test('archive cards prefer safe period artwork and expose accessible cached standings', () => {
   const { root } = archiveFixture();
   const period = { id: 'past', kind: 'daily', endsAt: 100, maxRp: 100, racerCount: 2, thumbnailUrl: '/tracks/past.png', thumbnail: 'javascript:alert(1)' };
@@ -137,7 +146,7 @@ test('archive UI exposes local page controls and accurate practice label', () =>
 
 test('events UI keeps permanent Rolling live, archives practice-only, and does not publish scoring formulas', () => {
   const source = fs.readFileSync(new URL('./client.mjs', import.meta.url), 'utf8');
-  assert.match(source, /sq-event-cards.*cards\(livePeriods\(\)\)\+permanentCard\(true\)/);
+  assert.match(source, /sq-event-cards.*cards\(livePeriods\(\),\{details:true\}\)\+permanentCard\(true\)/);
   assert.match(source, /const actions=closed\?'<button class="button" type="button" data-event-practice>/);
   assert.match(source, /snapshot\(period,force&&!closed\)/);
   assert.match(source, /Current leader/);

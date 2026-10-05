@@ -29,3 +29,14 @@ export function keepEventBest(queue,run){
   if(next.length>=64)throw Error('Event upload storage is full. Connect to upload pending event PBs.');
   return [...next,run];
 }
+
+// Only called with a finish captured from a positively identified local car.
+// Eligibility follows the finish clock, not the menu used to start the race.
+export function matchingEventRuns(run,periods,accountId,at=Date.now()){
+  if(!run?.raceId||run.accountId!==accountId||!/^[a-f0-9]{64}$/.test(accountId||'')||!/^[a-f0-9]{64}$/.test(run.trackId||'')||!Number.isSafeInteger(at))return [];
+  const seen=new Set();
+  return (Array.isArray(periods)?periods:[]).filter(period=>{
+    if(!period?.id||seen.has(period.id)||period.enabled===false||period.archived||period.kind==='permanent'||period.trackId!==run.trackId||!Number.isSafeInteger(period.startsAt)||!Number.isSafeInteger(period.endsAt)||at<period.startsAt||at>=period.endsAt)return false;
+    seen.add(period.id);return true;
+  }).map(period=>({...run,periodId:period.id,attemptId:crypto.randomUUID(),finishedAt:at,endsAt:period.endsAt}));
+}

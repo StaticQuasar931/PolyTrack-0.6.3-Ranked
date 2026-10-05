@@ -857,13 +857,14 @@ test('previous launch-engine period compatibility never accepts obsolete proofs,
   assert.equal(eventPeriod({...inputPeriod,engineDigest:'895eeacbdfdd5f68b9db92c502af620709539c5211782809f610c1a76e60785d'}).engineDigest,engine);
 });
 
-test('Kodub period keeps trusted code private and awards event points without normal PB promotion',async()=>{
+test('Kodub period keeps trusted code private and saves a normal PB alongside event points',async()=>{
  const f=fixture();await f.service.bindOwner('user1',account);
  const code='PolyTrack2'+'a'.repeat(40);
  const input={...inputPeriod,kind:'kodub',maxRp:700,kodub:{source:'kodub-v6-track-of-the-week',trackCode:code,trackCodeHash:hash(code),officialTrackAssetHash:'e'.repeat(64),officialEndTime:inputPeriod.endsAt,officialFastestVerifiedMs:inputPeriod.targetMs,name:'Weekly fixture',author:'Fixture',lastModified:null,environment:0}};
  await f.service.createPeriod(input);f.time(1000);await f.submit();
  let trusted;await f.service.processBatch('day1',async(jobs,period)=>{trusted=period;return jobs.map(job=>kodubVerdict(job,input.kodub.trackCodeHash));});
- assert.equal(trusted.kodub.trackCode,code);assert.equal(f.canonical(),undefined);
+ assert.equal(trusted.kodub.trackCode,code);assert.equal(f.canonical().timeMs,20402);
+ assert.equal(f.canonical().trackId,track);assert.equal(f.canonical().verified,false);
  const board=await f.service.snapshot('day1');assert.equal(board.period.kind,'kodub');assert.equal(board.period.trackName,'Weekly fixture');assert.equal(board.entries[0].rp,1);assert.equal('kodub' in board.period,false);
  assert(!JSON.stringify(await f.service.catalog()).includes(code));
  assert.throws(()=>eventPeriod({...input,maxRp:500}),/kodub_rp_cap/);

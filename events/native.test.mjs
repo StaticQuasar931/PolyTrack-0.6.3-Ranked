@@ -65,6 +65,15 @@ test('actual native modules expose required methods and base64url serialization'
   assert.equal(typeof runtime.require(8724).A.default().serialize(), 'string');
 });
 
+test('unrelated finishes skip event replay serialization without affecting native callbacks',()=>{
+ const runtime=nativeRuntime(),Car=getNativeCar(runtime.require),captures=[],errors=[];
+ installFinishCapture({Car,bindCar:()=>binding,shouldCapture:()=>false,onFinish:run=>captures.push(run),onError:error=>errors.push(error)});
+ const car=runtime.car();let nativeFinishes=0;
+ car.getRecording=()=>{throw Error('must not serialize unrelated replay');};
+ car.addFinishCallback(()=>nativeFinishes++);frame(car,1,null);frame(car,50,50);
+ assert.equal(nativeFinishes,1);assert.deepEqual(captures,[]);assert.deepEqual(errors,[]);
+});
+
 test('native finish transition captures every run including non-all-time PB, with last input', () => {
   const runtime = nativeRuntime(), captures = [], errors = [], order = [];
   const Car = getNativeCar(runtime.require);

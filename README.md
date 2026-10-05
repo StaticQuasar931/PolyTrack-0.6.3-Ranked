@@ -9,6 +9,7 @@ Race PolyTrack, chase personal bests, and compare times with other players.
 - Race official, community, event, custom, and Extra Tracks.
 - Watch available replays and race against ghosts on supported tracks.
 - Earn Ranked and Event RP on eligible tracks. Check each event for its scoring and end time.
+- Matching-track finishes count toward live events from any track menu. Event races also keep your normal track PB; only finishes submitted while the exact event is active can earn its Event RP. Event launches show event placement, while normal launches show normal placement.
 - Explore Extra Tracks by name, style, difficulty, and progress. You can import a track to keep playing it later.
 - Personalize your racer in Racer Studio. Some designs unlock as you play.
 - Make a friends-only leaderboard with Advanced Filters. Include or hide racers, match countries, badges or shared six-digit group tags, and save or share filter loadouts.

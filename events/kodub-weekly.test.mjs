@@ -1,12 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {loadKodubWeekly} from './kodub-weekly.mjs';
+import {loadKodubWeekly,withKodubWeekly} from './kodub-weekly.mjs';
 import {validateWeekly,assetPath,boundedBytes,validateAsset,KODUB_ROOT} from './kodub-schema.mjs';
 const now=Date.parse('2026-09-19T20:00:00Z'),hash='a'.repeat(64);
 const current={trackId:hash,name:'Test track',author:'Author',lastModified:'2026-09-07T00:00:00Z',environment:0,endTime:'2026-09-20T20:00:00Z',trackUrl:`assets/${hash}.track`,thumbnailUrl:`assets/${hash}.webp`,coverUrl:`assets/${hash}.webp`};
 const baseUrl='https://game.test/events/client.mjs',brokerUrl='https://broker.test';
 const live={...current,trackUrl:`${brokerUrl}/v1/kodub-weekly/track/${hash}`,thumbnailUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`,coverUrl:`${brokerUrl}/v1/kodub-weekly/image/${hash}`};
 const response=c=>Response.json({current:c});
+
+test('live catalog adds the mirrored Kodub week even when the public catalog is behind',()=>{
+ const catalog={periods:[{id:'daily',kind:'daily'}],archives:[]};
+ const result=withKodubWeekly(catalog,current,now),period=result.periods.find(p=>p.kind==='kodub');
+ assert.equal(period.id,'kodub_'+Date.parse(current.endTime));assert.equal(period.trackId,hash);
+ assert.equal(period.scheduleOnly,true);assert.equal(result.periods.length,2);assert.equal(catalog.periods.length,1);
+ assert.equal(withKodubWeekly(catalog,current,Date.parse(current.endTime)),catalog);
+ assert.equal(withKodubWeekly(catalog,null,now),catalog);
+ const confirmed={...period,scheduleOnly:false,racerCount:12};
+ assert.equal(withKodubWeekly({...catalog,periods:[confirmed]},current,now).periods[0],confirmed);
+});
 
 test('weekly feed shares requests and stays cached only until the official reset',async()=>{
  let calls=0;const fetcher=async()=>{calls++;return response(current);};

@@ -22,3 +22,9 @@ test('waiting recordings affect provisional finish place but never represent awa
  assert.deepEqual(eventFinishPlace({board,periodId:'weekly',trackId,accountId:a,timeMs:20000}),{rank:3,fieldSize:3,provisional:true,saved:false});
  assert.equal(eventFinishPlace({board:{...board,pendingPlaybacks:[pending('invalid',18000,'e'.repeat(64))]},periodId:'weekly',trackId,accountId:a,timeMs:20000}),null);
 });
+
+test('a racer improving a published time while waiting counts only once',()=>{
+ const data=input([{accountId:b,timeMs:19000}]);
+ data.board.pendingPlaybacks=[{accountId:b,timeMs:18000,runId:'e'.repeat(64),verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-playback'}];
+ assert.deepEqual(eventFinishPlace(data),{rank:2,fieldSize:2,provisional:true,saved:false});
+});

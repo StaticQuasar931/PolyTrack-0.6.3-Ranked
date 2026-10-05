@@ -1,5 +1,14 @@
 import {validateWeekly} from './kodub-schema.mjs';
 
+export function withKodubWeekly(catalog,current,now=Date.now()){
+  const endsAt=Date.parse(current?.endTime),startsAt=endsAt-7*86400000;
+  if(!/^[a-f0-9]{64}$/.test(current?.trackId||'')||!current?.name||!Number.isSafeInteger(endsAt)||now<startsAt||now>=endsAt)return catalog;
+  const id='kodub_'+endsAt,periods=Array.isArray(catalog?.periods)?catalog.periods:[];
+  const confirmed=periods.find(period=>period.kind==='kodub'&&period.id===id&&period.trackId===current.trackId&&period.startsAt===startsAt&&period.endsAt===endsAt);
+  const period=confirmed||{id,kind:'kodub',trackId:current.trackId,trackName:current.name,author:current.author,startsAt,endsAt,maxRp:700,entrantLimit:200,scheduleOnly:true,thumbnailUrl:current.thumbnailUrl};
+  return {...catalog,periods:[...periods.filter(period=>period.kind!=='kodub'),period]};
+}
+
 function localSelection(value, base, now) {
   const current = validateWeekly(value,now);
   if (!current) return null;

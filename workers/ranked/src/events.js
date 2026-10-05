@@ -561,8 +561,8 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           retainedPlayback.replayHash === run.replayHash, 'event_playback_corrupt', 503);
         const verified = result.status === 'verified';
         const eventImproved = verified && eventOpen && (!eventPb || run.timeMs < eventPb.timeMs);
-        const oldTime = canonicalTime(canonical), canonicalDeferred = p.kind!=='kodub' && verified && oldTime === undefined;
-        const canonicalImproved = p.kind!=='kodub' && verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
+        const oldTime = canonicalTime(canonical), canonicalDeferred = verified && oldTime === undefined;
+        const canonicalImproved = verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
         const retry = result.status === 'unavailable' && at < p.endsAt + p.graceMs + 7 * 86400000 && slot.attempts < L.verificationAttempts;
         const status = retry ? 'waiting' : result.status === 'unavailable' ? 'unavailable_final' : result.status;
         const proof = { key: run.eventKey, verifierVersion: VERIFIER_VERSION, engineDigest: result.engineDigest || null,
