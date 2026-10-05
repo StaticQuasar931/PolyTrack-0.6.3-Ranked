@@ -114,10 +114,10 @@ test('local picks toggle, rating changes and export callback stay device-scoped'
   assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
   await click(cls(root, 'sq-extra-pick')[0]);
   assert.equal(saved.get(item.trackId).vote, 1);
-  await click(cls(root, 'sq-extra-more')[0]);
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
   await click(cls(root, 'sq-extra-pick')[1]);
   assert.equal(saved.get(item.trackId).vote, -1);
-  await click(cls(root, 'sq-extra-more')[0]);
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
   const rating = tag(cls(root, 'sq-extra-rating')[0], 'select')[0];
   rating.value = '8'; await rating.dispatch('change');
   assert.equal(saved.get(item.trackId).rating, 8);
@@ -189,6 +189,39 @@ test('local tag suggestions add, remove and undo without changing canonical tags
   assert.deepEqual(saved.get(item.id).addedTags, []);
   assert.deepEqual(item.tags, ['technical', 'scenic']);
   assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false, 'tag changes keep the dropdown available');
+  api.destroy();
+});
+
+test('activity progress filter includes every review type plus imports and finishes, with a default reset', async () => {
+  const tracks = Array.from({length: 9}, (_, index) => entry(index + 1));
+  const choices = [{favorite: true}, {rating: 8}, {difficultyRating: 5}, {vote: -1}, {addedTags: ['mini']}, {removedTags: ['speed']}, {}, {}, {}];
+  const {root, api} = fixture(tracks, {
+    getFeedback: track => choices[tracks.indexOf(track)],
+    isLoaded: track => track.id === tracks[6].id,
+    getPersonalBest: track => track.id === tracks[7].id ? 12345 : null
+  });
+  api.open();
+  const progress = tag(cls(root, 'sq-extra-field')[4], 'select')[0];
+  progress.value = 'activity'; await progress.dispatch('change');
+  assert.equal(cls(root, 'sq-extra-card').length, 8);
+  progress.value = 'untouched'; await progress.dispatch('change');
+  assert.equal(cls(root, 'sq-extra-card').length, 1);
+  await click(tag(root, 'button').find(button => button.textContent === 'Reset filters'));
+  assert.equal(progress.value, 'all'); assert.equal(cls(root, 'sq-extra-card').length, 9);
+  api.destroy();
+});
+
+test('reset review needs confirmation, clears all review fields and keeps PB/import state', async () => {
+  const item = entry(1);
+  let saved = {favorite: true, vote: 1, rating: 9, difficultyRating: 8, addedTags: ['mini'], removedTags: ['technical']};
+  const {root, api} = fixture([item], {getFeedback: () => saved, onFeedback: (_track, change) => { saved = {...saved, ...change}; }, isLoaded: () => true, getPersonalBest: () => 12345});
+  api.open(); await click(cls(root, 'sq-extra-more')[0]);
+  const reset = cls(root, 'sq-extra-review-reset')[0];
+  await click(reset); assert.equal(saved.rating, 9);
+  await click(reset); assert.equal(saved.rating, 0); assert.equal(saved.difficultyRating, 0);
+  assert.equal(saved.favorite, false); assert.equal(saved.vote, 0); assert.deepEqual(saved.addedTags, []); assert.deepEqual(saved.removedTags, []);
+  assert.ok(cls(root, 'sq-extra-best')[0].textContent.includes('Best'));
+  assert.equal(cls(root, 'sq-extra-more-menu')[0].hidden, false);
   api.destroy();
 });
 

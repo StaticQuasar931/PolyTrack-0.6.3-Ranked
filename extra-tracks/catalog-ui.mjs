@@ -1,4 +1,4 @@
-const { effectiveReviewTags, hasTagEdits, reviewTagOptions, tagLabel } =
+const { effectiveReviewTags, hasTagEdits, reviewTagOptions, tagLabel, reviewExportRow, hasReviewExportData } =
   await import(new URL(`review.mjs${new URL(import.meta.url).search}`, import.meta.url));
 
 const SUBMIT_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSel-vg-VwzQuA2dRTEPoKiLIUgDvJ4bCvjMI8u4hqB33gkvrQ/viewform';
@@ -166,7 +166,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   selectedTags.setAttribute('aria-label', 'Selected tags');
   tagField.label.append(selectedTags);
   const difficultyField = selectField('Difficulty', [['', 'Any level'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
-  const completionField = selectField('Progress', [['all', 'All tracks'], ['completed', 'Completed'], ['uncompleted', 'Not completed'], ['loaded', 'Imported, not completed']]);
+  const progressLabels = {all: 'All tracks', activity: 'Has my activity', untouched: 'No activity yet', completed: 'Completed', uncompleted: 'Not completed', loaded: 'Imported, not completed'};
+  const completionField = selectField('Progress', Object.entries(progressLabels));
   const reviewField = selectField('Review status', [['all', 'All tracks'], ['edited', 'Locally edited'], ['not-edited', 'Not edited']]);
   const sortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
   if (Array.isArray(entries) && entries.some(entry => Number.isSafeInteger(entry?.sizeBytes) && entry.sizeBytes >= 0)) sortChoices.push(['size-largest', 'Largest track'], ['size-smallest', 'Smallest track']);
@@ -184,6 +185,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const favorites = make('input'); favorites.type = 'checkbox';
   favoritesLabel.append(favorites, make('span', '', 'My favorites'));
   controls.append(searchLabel, sourceField.label, tagField.label, difficultyField.label, completionField.label, reviewField.label, sortField.label, curatedLabel, favoritesLabel);
+  controls.append(button('Reset filters', 'sq-extra-clear', clearFilters));
   dialog.append(controls);
 
   const summary = make('div', 'sq-extra-summary');
@@ -507,14 +509,15 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const actions = make('div', 'sq-extra-actions');
     actions.append(button('Import and play', 'sq-extra-play', () => runAction('play', onPlay, entry)));
     const more = button('', 'sq-extra-more', () => {
-      if (expandedCardMenu === moreMenu) { clearCardMenu(); return; }
+      if (expandedCardMenu?.entryId === text(entry.id)) { clearCardMenu(true); return; }
       if (expandedCardMenu) clearCardMenu();
       cardMenuLayer.append(moreMenu);
       moreMenu.hidden = false;
       more.setAttribute('aria-expanded', 'true');
       expandedCardMenu = moreMenu;
       expandedCardTrigger = more;
-      positionCardMenu();
+      moreMenu.__positioned = false;
+      positionCardMenu(true);
       focusCardMenu();
     });
     more.setAttribute('aria-label', `More actions for ${text(entry.name, 'this track')}`);
@@ -532,7 +535,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     moreMenu.hidden = true;
     moreMenu.setAttribute('role', 'dialog');
     moreMenu.setAttribute('aria-label', `Track preferences for ${text(entry.name, 'this track')}`);
+    const menuHeader = make('div', 'sq-extra-review-header');
+    menuHeader.append(make('strong', '', text(entry.name, 'Track review')), button('Done', 'sq-extra-review-done', () => clearCardMenu(true)));
+    moreMenu.append(menuHeader);
     if (typeof onFeedback === 'function') {
+      let syncTagPicker = () => {};
       const toggle = (field, value) => {
         try {
           const change = { [field]: feedback[field] === value ? 0 : value };
@@ -661,6 +668,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
           }
           reviewCount.textContent = `${currentTags.length} tags · ${hasTagEdits(entry, feedback) ? 'Locally edited' : 'Not edited'}`;
         };
+        syncTagPicker = syncTagChoices;
         for (const tag of reviewTagOptions(currentEntries())) {
           const present = effectiveReviewTags(entry, feedback).includes(tag);
           const choice = button(`${present ? 'Remove' : 'Add'} ${tagLabel(tag)}`, `sq-extra-tag-choice${present ? ' selected' : ''}`, () => {
@@ -700,6 +708,28 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       moreMenu.__quickRate = saveRating;
       moreMenu.__quickDifficulty = saveDifficulty;
       moreMenu.append(picker);
+      let resetPending = false;
+      const resetReview = button('Reset review', 'sq-extra-review-reset', () => {
+        if (!resetPending) {
+          resetPending = true;
+          resetReview.textContent = 'Confirm reset review';
+          resetReview.title = 'Clears favorites, votes, both ratings and tag suggestions. Keeps imports and personal bests.';
+          return;
+        }
+        try {
+          const defaults = {favorite: false, vote: 0, rating: 0, difficultyRating: 0, addedTags: [], removedTags: [], editedAt: null};
+          onFeedback(entry, defaults);
+          feedback = defaults;
+          rating.value = '0'; difficultyRating.value = '0';
+          menuFavorite.textContent = 'Add to favorites'; menuFavorite.setAttribute('aria-pressed', 'false');
+          for (const control of [up, down]) { control.className = 'sq-extra-pick'; control.setAttribute('aria-pressed', 'false'); }
+          syncTagPicker();
+          cachedRecords = null; render();
+          resetPending = false; resetReview.textContent = 'Reset review';
+        } catch { showStatus('Could not reset your review on this device.', true); }
+      });
+      resetReview.title = 'Reset this track review to default. Imports and personal bests are kept.';
+      moreMenu.append(resetReview);
     }
     moreMenu.append(button('Report track', 'sq-extra-report-button', () => {
       const trigger = expandedCardTrigger || more;
@@ -786,6 +816,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         .map(value => text(value).toLowerCase()).join(' ');
       return {
         entry, best, loaded, favorite, effectiveTags, edited: hasTagEdits(entry, feedback),
+        activity: hasReviewExportData(reviewExportRow(entry, {feedback, imported: loaded, personalBestMs: best})),
         rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null,
         searchName, searchNameWords: searchWords(searchName), searchable, searchableWords: searchWords(searchable)
       };
@@ -816,18 +847,20 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       });
       sortedRecordsCache = { records: cachedRecords, sort: state.sort, ordered };
     }
-    const progressCounts = new Map([['all', cachedRecords.length], ['completed', 0], ['uncompleted', 0], ['loaded', 0]]);
+    const progressCounts = new Map([['all', cachedRecords.length], ['completed', 0], ['uncompleted', 0], ['loaded', 0], ['activity', 0], ['untouched', 0]]);
     for (const record of cachedRecords) {
       progressCounts.set(record.best === null ? 'uncompleted' : 'completed', progressCounts.get(record.best === null ? 'uncompleted' : 'completed') + 1);
       if (record.loaded && record.best === null) progressCounts.set('loaded', progressCounts.get('loaded') + 1);
+      const activityKey = record.activity ? 'activity' : 'untouched';
+      progressCounts.set(activityKey, progressCounts.get(activityKey) + 1);
     }
     for (const option of completionField.select.children) {
-      const name = option.value === 'all' ? 'All tracks' : option.value === 'completed' ? 'Completed' : option.value === 'loaded' ? 'Imported, not completed' : 'Not completed';
+      const name = progressLabels[option.value];
       option.textContent = `${name} (${progressCounts.get(option.value) || 0})`;
     }
     filterCount(completionField, progressCounts.get(state.completion) || 0);
     const selectedProgress = [...completionField.select.children].find(option => option.value === state.completion);
-    if (selectedProgress) selectedProgress.textContent = state.completion === 'all' ? 'All tracks' : state.completion === 'completed' ? 'Completed' : state.completion === 'loaded' ? 'Imported, not completed' : 'Not completed';
+    if (selectedProgress) selectedProgress.textContent = progressLabels[state.completion];
     const reviewCounts = new Map([['all', cachedRecords.length], ['edited', 0], ['not-edited', 0]]);
     for (const record of cachedRecords) reviewCounts.set(record.edited ? 'edited' : 'not-edited', reviewCounts.get(record.edited ? 'edited' : 'not-edited') + 1);
     for (const option of reviewField.select.children) {
@@ -837,7 +870,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     filterCount(reviewField, reviewCounts.get(state.review) || 0);
     const selectedReview = [...reviewField.select.children].find(option => option.value === state.review);
     if (selectedReview) selectedReview.textContent = state.review === 'edited' ? 'Locally edited' : state.review === 'not-edited' ? 'Not edited' : 'All tracks';
-    let records = sortedRecordsCache.ordered.filter(({ entry, best, loaded, favorite, searchable, searchableWords, effectiveTags, edited }) => {
+    let records = sortedRecordsCache.ordered.filter(({ entry, best, loaded, favorite, searchable, searchableWords, effectiveTags, edited, activity }) => {
       const matchesSearch = !query || searchable.includes(query) || queryTokens.length > 0 && queryTokens.every(token => searchableWords.has(token));
       // A curator can mark a track by tier or by the curated tag.
       const isCurated = text(entry.tier).toLocaleLowerCase() === 'curated' ||
@@ -846,7 +879,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         state.tags.every(tag => effectiveTags.includes(tag)) && (!state.curated || isCurated) &&
         (state.review === 'all' || state.review === 'edited' && edited || state.review === 'not-edited' && !edited) &&
         (!state.difficulty || difficulty(entry) === Number(state.difficulty)) &&
-        (state.completion === 'all' || state.completion === 'completed' && best !== null ||
+        (state.completion === 'all' || state.completion === 'activity' && activity || state.completion === 'untouched' && !activity || state.completion === 'completed' && best !== null ||
           state.completion === 'uncompleted' && best === null || state.completion === 'loaded' && loaded && best === null);
     });
     if (query) {
@@ -879,8 +912,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         expandedCardTrigger?.setAttribute('aria-expanded', 'false');
         expandedCardTrigger = replacement;
         replacement.setAttribute('aria-expanded', 'true');
+        replacement.setAttribute('aria-controls', expandedCardMenu.id);
         positionCardMenu();
-      } else clearCardMenu();
+      }
     }
     pagination.replaceChildren();
     const previous = button('Previous', '', () => { page--; render(); });
@@ -1010,7 +1044,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
 
-  function positionCardMenu() {
+  function positionCardMenu(reanchor = false) {
     if (!expandedCardMenu?.getBoundingClientRect || !expandedCardTrigger?.getBoundingClientRect) return;
     const view = document.defaultView;
     const viewportWidth = view?.innerWidth || document.documentElement?.clientWidth || 0;
@@ -1022,25 +1056,28 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     expandedCardMenu.style.minHeight = '0px';
     expandedCardMenu.style.overflowY = 'auto';
     const menu = expandedCardMenu.getBoundingClientRect();
-    const left = Math.min(Math.max(margin, trigger.right - menu.width), Math.max(margin, viewportWidth - menu.width - margin));
-    let top = trigger.bottom + 6;
-    if (top + menu.height > viewportHeight - margin && trigger.top - menu.height - 6 >= margin) top = trigger.top - menu.height - 6;
+    const anchored = reanchor === true || !expandedCardMenu.__positioned;
+    const left = Math.min(Math.max(margin, anchored ? trigger.right - menu.width : parseFloat(expandedCardMenu.style.left)), Math.max(margin, viewportWidth - menu.width - margin));
+    let top = anchored ? trigger.bottom + 6 : parseFloat(expandedCardMenu.style.top);
+    if (anchored && top + menu.height > viewportHeight - margin && trigger.top - menu.height - 6 >= margin) top = trigger.top - menu.height - 6;
     top = Math.min(Math.max(margin, top), Math.max(margin, viewportHeight - menu.height - margin));
     expandedCardMenu.style.left = `${Math.round(left)}px`;
     expandedCardMenu.style.top = `${Math.round(top)}px`;
+    expandedCardMenu.__positioned = true;
   }
 
-  function scheduleCardMenuPosition() {
+  function scheduleCardMenuPosition(event) {
     const view = document.defaultView;
+    if (event?.target && expandedCardMenu?.contains(event.target)) return;
     if (!expandedCardMenu || cardMenuPositionFrame !== null || !view?.requestAnimationFrame) return;
     cardMenuPositionFrame = view.requestAnimationFrame(() => {
       cardMenuPositionFrame = null;
-      positionCardMenu();
+      positionCardMenu(expandedCardTrigger?.isConnected !== false);
     });
   }
 
   function focusCardMenu() {
-    const focusable = expandedCardMenu?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')[0];
+    const focusable = expandedCardMenu?.querySelector?.('button[aria-label="Helpful"]') || expandedCardMenu?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')[0];
     focusable?.focus({preventScroll: true});
   }
 
@@ -1056,7 +1093,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const trigger = expandedCardTrigger;
     expandedCardMenu = null;
     expandedCardTrigger = null;
-    if (restoreFocus && trigger?.isConnected) trigger.focus();
+    if (restoreFocus) (trigger?.isConnected ? trigger : search).focus({preventScroll: true});
   }
 
   function onCardMenuOutside(event) {
