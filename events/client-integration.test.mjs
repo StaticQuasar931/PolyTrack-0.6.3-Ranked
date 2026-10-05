@@ -12,6 +12,11 @@ const require=createRequire(import.meta.url);
 const {chromium}=process.env.PLAYWRIGHT_MODULE?require(process.env.PLAYWRIGHT_MODULE):createRequire(new URL('../tools/verifier/package.json',import.meta.url))('playwright');
 const repo=process.env.EVENT_TEST_REPO||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const patch=fs.readFileSync(path.join(repo,'polytrack_062_patch.js'),'utf8');
+const nativeBundle=fs.readFileSync(path.join(repo,'main.bundle.js'),'utf8');
+const nativeRowStart=nativeBundle.indexOf('il=function(e,t,n,i,r,a,s,o,l,c,h,z){'),nativeRowEnd=nativeBundle.indexOf(',rl=function e()',nativeRowStart);
+assert(nativeRowStart>0&&nativeRowEnd>nativeRowStart,'actual native row renderer is present');
+const nativeRow=nativeBundle.slice(nativeRowStart+3,nativeRowEnd);
+const nativeCss=JSON.parse(nativeBundle.match(/"\.leaderboard-ui \{(?:\\.|[^"\\])*"/)[0]);
 function section(start,end){const a=patch.indexOf(start),b=patch.indexOf(end,a+start.length);assert(a>=0&&b>a,'production source boundary exists');return patch.slice(a,b).trim();}
 function functionSource(name){
  const start=patch.indexOf(`  function ${name}(`);assert(start>=0,`production function ${name} exists`);
@@ -42,7 +47,7 @@ before(async()=>{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
 });
 after(async()=>{await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());});
-const setup=async ({focus,queue,deferReady,receipt,noIntersectionObserver,controlledIntersectionObserver})=>{
+const setup=async ({focus,nativeRow,queue,deferReady,receipt,noIntersectionObserver,controlledIntersectionObserver})=>{
   localStorage.clear(); if(queue) localStorage.setItem("polytrack-062-events-v1-queue",JSON.stringify(queue)); const id='a'.repeat(64); window.id=id;window.submits=[];window.reads=0;window.catalogReads=0;
   if(noIntersectionObserver)window.IntersectionObserver=undefined;
   if(controlledIntersectionObserver)window.IntersectionObserver=class{constructor(callback){this.callback=callback;this.targets=new Set();window.eventCarObserver=this;}observe(target){this.targets.add(target);}unobserve(target){this.targets.delete(target);}disconnect(){this.targets.clear();}trigger(entries){this.callback(entries);}};
@@ -55,6 +60,15 @@ const setup=async ({focus,queue,deferReady,receipt,noIntersectionObserver,contro
   const modules={641:Car,5220:Physics,2522:Profiles,5492:Profile,9117:Track};const manager=new Profiles(),physics=new Physics(),track=new Track();
   window.makeCar=()=>{manager.getCurrentUserProfile();const created=physics.createCar(null,null,null,track,null);physics.controlCar(created.id);const car=new Car(created.carState);car.addFinishCallback(()=>{});return car;};
   const trackInfo=()=>({name:'Fixture track'}),isElementVisible=()=>true,closeOverallPanel=panel=>{if(panel)panel.style.display='none';};
+  // Execute the real game row function; only its surrounding services are fixtures.
+  const {eventRunDate}=await import('/events/client.mjs');
+  const Oo=new WeakMap(),$o=new WeakMap(),el=new WeakMap(),zo=new WeakMap(),Do=new WeakMap(),Io=new WeakMap(),Ro={},owner={};
+  const R={gn:(object,map,type,key)=>type==='m'?key:map.get(object),GG:(object,map,value)=>map.set(object,value)};
+  const Qe=value=>String(value),Je=value=>value%100>=11&&value%100<=13?'th':({1:'st',2:'nd',3:'rd'}[value%10]||'th');
+  const He={A:{formatTimeString:value=>String(value)}},ni={O:()=>[{code:'US',name:'United States'}]},_o={Y:{Pending:0,Verified:1,InvalidDuplicate:3}},sl={u:(_lang,date,now)=>eventRunDate({submittedAt:date.getTime()},now.getTime()).label},kr={F:()=>{throw Error('Native event adapter must not start its own car renders');}};
+  Io.set(owner,{get:value=>value});el.set(owner,[]);zo.set(owner,{playUIClick(){}});Do.set(owner,()=>{throw Error('Native recording selection must not leak into event selection');});
+  const render=eval('('+nativeRow+')');
+  document.querySelector('.leaderboard-ui').__pt062EventRows={version:1,render:(container,row)=>{Oo.set(owner,container);return render.call(owner,row.rank,row.name,row.countryCode||null,row.timeMs,new Date(row.runAt),null,row.pending?0:1,row.isSelf,row.accountId,new Date(),{isCancelled:false},{event:true});}};
   let eventUi; const nativeFocus=eval('('+focus.trim()+')');
   window.ui=eventUi=(await import('/events/client.mjs')).installEvents(window.bridgeFixture={accountId:()=>id,trackInfo,thumbnail:()=>'',formatTime:ms=>String(ms),readCatalog:async()=>{window.catalogReads++;return {periods:[period]};},readSnapshot:async requested=>{window.reads++;const archived=requested==='old-event';return {period:archived?{...period,id:requested,startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,racerCount:1}:period,updatedAt:period.startsAt,entries:archived?[{accountId:'b'.repeat(64),name:'Archived racer',rank:1,timeMs:21000,rp:100}]:[]};},readOwnStatus:async()=>receipt||null,readArchiveMonth:async()=>({periods:[{...period,id:'old-event',racerCount:1,startsAt:Date.now()-172800000,endsAt:Date.now()-86400000}]}),readTotals:async()=>({entries:[]}),submit:async run=>{window.submits.push(run);return {runId:'fixture',status:'waiting'};},ready:()=>deferReady?new Promise(resolve=>window.resolveReady=resolve):Promise.resolve(),require:()=>n=>({A:modules[n]}),openTrack:id=>nativeFocus(id,{event:true})});
   document.querySelector('#native').onclick=()=>{window.car=makeCar();};
@@ -65,8 +79,8 @@ async function fixture(t,options={}){
  const context=await browser.newContext();t.after(()=>context.close());const page=await context.newPage();
  await page.route('**/*',r=>r.request().url().startsWith(base+'/')?r.continue():r.abort());
  await page.goto(base);
- await page.setContent('<button id="open">Events</button><button id="ranked" data-track-id="a">Ranked profile track</button><button id="native"><span class="track-title"><p>Fixture track</p></span></button><div class="track-info-ui"><div class="leaderboard-ui"><h2>Leaderboard</h2><div class="container">Normal leaderboard 9999</div><button class="button back">Back</button></div><div class="side-panel"><h2>Fixture track</h2><div class="personal-best-title">Personal best</div><div class="personal-best">9999</div><div class="opponents-container">Normal opponents</div><button class="button watch">Watch</button></div></div>');
- await page.evaluate(setup,{focus,...options});return page;
+ await page.setContent('<button id="open">Events</button><button id="ranked" data-track-id="a">Ranked profile track</button><button id="native"><span class="track-title"><p>Fixture track</p></span></button><div class="track-info-ui"><div class="leaderboard-ui"><h2>Leaderboard</h2><h3>Version 0.6</h3><div class="total-players"></div><div class="container">Normal leaderboard 9999</div><div class="pages"></div><div class="button-wrapper"><button class="button back">Back</button><button class="button icon-button first"><img src="images/pin.svg"></button><button class="button only-verified">Only verified<img src="images/verified.svg"></button></div></div><div class="side-panel"><h2>Fixture track</h2><div class="personal-best-title">Personal best</div><div class="personal-best">9999</div><div class="opponents-container">Normal opponents</div><button class="button watch">Watch</button></div></div>');
+ await page.evaluate(setup,{focus,nativeRow,...options});return page;
 }
 async function enter(page){await page.locator('#open').click();await page.locator('[data-event-id]').click();await page.locator('.sq-event-board').waitFor();}
 async function boot(page,queue){return page.evaluate(async({entry,queue,QUEUE})=>{
@@ -182,6 +196,18 @@ test('live Event standings cards enter the native event board with verified chec
  await p.locator('#open').click();await p.locator('.sq-events-overlay [data-event-id="daily-fixture"]').click();await p.locator('.sq-event-board button.main').waitFor();
  assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board img.checkmark[src*="checkmark.svg"]').count(),1);assert.equal(await p.locator('.sq-event-board .verified-state img.sq-event-verification-icon[src*="state_verified.svg"]').count(),1);
 });
+test('event rows use native names, flags, self labels and verification icons',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:[{accountId:id,name:'Real Racer Name',countryCode:'US',timeMs:19000,rp:100,submittedAt:Date.now()-3600000}],pendingPlaybacks:[{accountId:'c'.repeat(64),runId:'d'.repeat(64),name:'<b>Not HTML</b>',timeMs:20000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback',submittedAt:Date.now()-60000}]});
+ });await enter(p);
+ const mine=p.locator('.sq-event-board button.main.self'),waiting=p.locator('.sq-event-board button.main:not(.self)');
+ assert.equal(await mine.locator('.name').innerText(),'Real Racer Name');assert.equal(await mine.locator('.name-container > .self').innerText(),'(You)');assert.equal(await mine.locator('.country-flag').count(),1);
+ assert.equal(await mine.locator('.position > span').innerText(),'st');assert.match(await mine.locator('.verified-state').getAttribute('title'),/Verified/);assert.equal(await mine.locator('.verified-state img[src="images/state_verified.svg"]').count(),1);
+ assert.equal(await waiting.locator('.name').innerText(),'<b>Not HTML</b>');assert.equal(await waiting.locator('.name b').count(),0);assert.match(await waiting.locator('.verified-state').getAttribute('title'),/Pending/);assert.equal(await waiting.locator('.verified-state img[src="images/state_pending.svg"]').count(),1);assert.equal(await waiting.locator('.sq-event-earned-rp').count(),0);
+ await p.addStyleTag({content:nativeCss});await p.addStyleTag({content:fs.readFileSync(path.join(repo,'events/events.css'),'utf8')});
+ assert.equal(await mine.locator('.right').evaluate(node=>getComputedStyle(node).display),'inline-block','event CSS preserves native row layout');
+ assert.equal(await mine.locator('.verified-state').evaluate(node=>getComputedStyle(node).position),'absolute','event CSS preserves native status positioning');
+});
 test('Only verified filters cached event rows without reading another snapshot',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   window.snapshotCalls=0;bridgeFixture.readSnapshot=async()=>{snapshotCalls++;return {period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Verified racer',timeMs:19000,rp:100}],pendingPlaybacks:[{accountId:'c'.repeat(64),runId:'d'.repeat(64),name:'Waiting racer',timeMs:20000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}]};};
@@ -249,7 +275,7 @@ test('daily and weekly on the same physical track retain exact period binding',a
  let count=0;for(const kind of ['daily','weekly','daily']){
   assert.equal(await p.evaluate(kind=>ui.openEvent({kind,trackId:id}),kind),true);
   await p.waitForFunction(()=>!!window.car);await p.evaluate(ms=>car.finish(ms),20000-count*1000);count++;
-  await p.waitForFunction(count=>submits.length===count,count);assert.equal(await p.locator('.sq-event-board h3').innerText(),kind==='daily'?'Daily event':'Weekly event');
+  await p.waitForFunction(count=>submits.length===count,count);assert.equal(await p.locator('.sq-event-board h3').innerText(),(kind==='daily'?'Daily event':'Weekly event')+' · Fixture track');
   assert.equal(await p.evaluate(()=>submits.at(-1).periodId),kind+'-shared');
   await p.evaluate(()=>{ui.leave();window.car=null;});
  }

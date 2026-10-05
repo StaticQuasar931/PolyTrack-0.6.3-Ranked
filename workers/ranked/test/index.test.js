@@ -1836,11 +1836,18 @@ test('thirty racers stay inline without sidecar reads or writes, and shrinking a
   assert.equal(f.calls.filter(p=>p.endsWith('/main_results')).length,0);
 });
 
+test('reviewed native row UI change reuses completed bootstrap without historical reads or writes',async()=>{
+  const f=bootstrapFixture(2),base='projects/test/databases/(default)/documents/';
+  assert.ok(VERIFICATION_BOOTSTRAP_ID.endsWith('46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3'));
+  f.docs.set('/0.6.2_s1_worker_jobs/'+VERIFICATION_BOOTSTRAP_ID,{name:base+'0.6.2_s1_worker_jobs/'+VERIFICATION_BOOTSTRAP_ID,fields:wire({complete:true}).mapValue.fields,updateTime:'completed-before-ui-change'});
+  assert.deepEqual(await bootstrapSnapshotVerification(f.env),{scanned:0,complete:true});
+  assert.equal(f.calls.length,1,'only the existing completed cursor is read');
+});
 test('digest bootstrap wakes terminal NEVER queues despite completed old bootstrap, without due query',async()=>{
   const {PRE_EVENT_LAUNCH_ENGINE}=await import('../src/event-engine-compatibility.js');
   const {eventDecode}=await import('../src/events-store.js');
   const f=bootstrapFixture(2),base='projects/test/databases/(default)/documents/';
-  const oldJobId=VERIFICATION_BOOTSTRAP_ID.replace(VERIFIER_ENGINE_DIGEST,PRE_EVENT_LAUNCH_ENGINE);
+  const oldJobId=VERIFICATION_BOOTSTRAP_ID.slice(0,-64)+PRE_EVENT_LAUNCH_ENGINE;
   assert.notEqual(oldJobId,VERIFICATION_BOOTSTRAP_ID);
   const oldJob={name:base+'0.6.2_s1_worker_jobs/'+oldJobId,fields:wire({complete:true}).mapValue.fields,updateTime:'old-complete'};
   f.docs.set('/0.6.2_s1_worker_jobs/'+oldJobId,oldJob);
