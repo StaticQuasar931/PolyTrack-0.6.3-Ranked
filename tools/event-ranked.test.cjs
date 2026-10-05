@@ -72,3 +72,9 @@ test('category selector fetches events and loads Overall after event-only startu
  const {ctx,elements}=setup();elements.set('overallLeaderboardPanel',{querySelector:()=>null});ctx.recordLeaderboardUse=()=>{};ctx.refreshLeaderboardArcade=()=>{};ctx.syncCategorySelect=()=>{};let events=0,overall=0;ctx.fetchEventTotals=()=>events++;ctx.openRankedPanel=()=>overall++;vm.runInContext(extract('setOverallCategory'),ctx);
  ctx.overallCategory='overall';ctx.setOverallCategory('events');assert.equal(events,1);assert.equal(ctx.overallPage,0);ctx.setOverallCategory('overall');assert.equal(overall,1);
 });
+
+test('Event RP does not report empty or unavailable standings before the first response',()=>{
+ const {ctx,elements}=setup();ctx.updateOverallPager=()=>{};const list={innerHTML:'',scrollTop:0};elements.set('overallLeaderboardPanel',{setAttribute(){}});
+ for(const status of ['idle','loading']){ctx.eventTotalsState={status};ctx.renderEventEntries(list);assert.match(list.innerHTML,/overall-loading/);assert.doesNotMatch(list.innerHTML,/No Event RP earned|unavailable/);}
+ ctx.eventTotalsState={status:'error'};ctx.renderEventEntries(list);assert.match(list.innerHTML,/Event RP unavailable/);
+});

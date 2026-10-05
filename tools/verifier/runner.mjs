@@ -21,10 +21,10 @@ export async function prioritizeQueueDocuments(db, docs, now = Date.now(), cache
     } else overall = await db.get(OVERALL_COLLECTION, 'main');
   } catch { return docs; }
   if (!overall?.data || !Array.isArray(overall.data.trackSummaries)) return docs;
-  const weights = new Map();
+  const weights = new Map(), records = new Map();
   for (const row of overall.data.trackSummaries) {
     const trackId = String(row?.trackId || ''), weight = Number(row?.weight);
-    if (/^[A-Za-z0-9_-]{1,80}$/.test(trackId) && Number.isFinite(weight) && weight >= 0) weights.set(trackId, weight);
+    if (/^[A-Za-z0-9_-]{1,80}$/.test(trackId) && Number.isFinite(weight) && weight >= 0) {weights.set(trackId, weight);records.set(trackId, Number(row.recordMs || row.leader?.timeMs));}
   }
   const decorated = docs.map((doc, index) => ({doc, index, trackId: trackIds[index],
     dueAt: Number(doc.data?.notBefore || 0), weight: weights.get(trackIds[index]) || 0}));
@@ -34,7 +34,7 @@ export async function prioritizeQueueDocuments(db, docs, now = Date.now(), cache
     const index = decorated.findIndex(row => row.doc === oldest);
     if (index > 0) decorated.unshift(...decorated.splice(index, 1));
   }
-  return decorated.map(row => row.doc);
+  return decorated.map(row => ({...row.doc,priorityWeight:row.weight,priorityRecordMs:records.get(row.trackId)}));
 }
 
 function schedulingTime(slot) {
@@ -45,13 +45,19 @@ function schedulingTime(slot) {
 }
 
 function dueSlots(slots, now) {
-  const due = Object.values(slots).filter(slot => ['waiting', 'unavailable'].includes(slot.status) &&
-    Number(slot.retryAt || 0) <= now);
-  const fastest = [...due].sort((a, b) => schedulingTime(a) - schedulingTime(b) ||
-    String(a.accountId).localeCompare(String(b.accountId)));
-  const oldest = [...due].sort((a, b) => Number(a.checkedAt || 0) - Number(b.checkedAt || 0) ||
-    String(a.accountId).localeCompare(String(b.accountId)))[0];
-  return oldest ? [oldest, ...fastest.filter(slot => slot !== oldest)] : fastest;
+  return Object.values(slots).filter(slot => ['waiting', 'unavailable'].includes(slot.status) && Number(slot.retryAt || 0) <= now);
+}
+function queuedAt(slot, doc, now) {
+  const at=Number(slot.queuedAt ?? doc.data.notBefore ?? slot.checkedAt ?? now);
+  return Number.isFinite(at) ? at : now;
+}
+// A scheduling estimate, never awarded RP: track weight multiplied by relative pace.
+// Existing summary metadata is reused; no per-candidate leaderboard reads are needed.
+function impact(slot, doc) {
+  const time=schedulingTime(slot), reference=Number(doc.priorityRecordMs);
+  const target=Number.isFinite(reference)&&reference>0 ? reference : doc.priorityFastestMs;
+  const weight=Number.isFinite(doc.priorityWeight)?doc.priorityWeight:1;
+  return weight*Math.min(2,target/time)**2;
 }
 
 export function isConflict(error) {
@@ -59,40 +65,34 @@ export function isConflict(error) {
 }
 
 export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_SELECTION_LIMIT, lookupLimit = NORMAL_SELECTION_LIMIT, perTrackLimit = PER_TRACK_SELECTION_LIMIT} = {}) {
-  const jobs = [];
+  let jobs = [];
   let canonicalAttempts = 0, selectionConflicts = 0;
-  for (const doc of docs) {
-    if (jobs.length >= jobLimit || canonicalAttempts >= lookupLimit) break;
-    const queueCollection = doc.queueCollection || verificationCollectionForTrack(doc.data.trackId);
-    if (![VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION].includes(queueCollection)) throw Error('Invalid verification queue collection');
-    const slots = {...doc.data.slots};
-    const selected = [];
-    let changed = false, attempts = 0;
-    for (const slot of dueSlots(slots, now)) {
-      if (selected.length >= perTrackLimit || attempts >= perTrackLimit ||
-          canonicalAttempts >= lookupLimit || jobs.length + selected.length >= jobLimit) break;
-      attempts++; canonicalAttempts++;
-      const canonical = await db.get('0.6.2_race_results', slot.resultId);
-      const updated = reconciledSlot(slot, canonical?.data);
-      if (updated !== slot) { slots[slot.accountId] = updated; changed = true; }
-      if (!canonical || updated.reason === 'canonical_missing') continue;
-      const frames = legacyTimingFrames(canonical.data);
-      // This marker is generated here, never trusted from stored canonical fields.
-      selected.push({...canonical.data, resultId: slot.resultId, queueKey: updated.key, queueCollection,
-        timeMs: frames ?? canonical.data.timeMs,
-        correctionCandidate: frames === null ? null : {frames, originalTimeMs: canonical.data.timeMs}});
-    }
-    if (changed || selected.length === 0) {
-      try {
-        await db.call(':commit', {writes: [db.write(queueCollection, doc.data.trackId,
-          {...doc.data, ...queueState(slots, now)}, doc)]});
-      } catch (error) {
-        if (!isConflict(error)) throw error;
-        selectionConflicts++;
-        continue;
-      }
-    }
-    jobs.push(...selected);
+  const contexts=docs.map((source,index)=>{const slots={...source.data.slots},due=dueSlots(slots,now);return {doc:{...source,priorityFastestMs:Math.min(...due.map(schedulingTime))},index,slots,due,changed:false,attempts:0};});
+  const candidates=contexts.flatMap(context=>context.due.map(slot=>({context,slot,age:queuedAt(slot,context.doc,now),score:impact(slot,context.doc)})));
+  const priority=[...candidates].sort((a,b)=>b.score-a.score||schedulingTime(a.slot)-schedulingTime(b.slot)||a.age-b.age||a.context.index-b.context.index||String(a.slot.accountId).localeCompare(String(b.slot.accountId)));
+  const overdue=candidates.filter(c=>now-c.age>=TRACK_AGING_MS).sort((a,b)=>a.age-b.age||b.score-a.score);
+  // One quarter for overdue work, with one slot even in the small Extra reservation.
+  const capacity=Math.min(jobLimit,lookupLimit);
+  const reserved=overdue.slice(0,capacity>0?Math.max(1,Math.floor(capacity/4)):0);
+  const reservedSet=new Set(reserved),ordered=[...reserved,...priority.filter(c=>!reservedSet.has(c))];
+  for(const {context,slot} of ordered){
+    if(jobs.length>=jobLimit||canonicalAttempts>=lookupLimit)break;
+    if(context.attempts>=perTrackLimit)continue;
+    const {doc}=context,queueCollection=doc.queueCollection||verificationCollectionForTrack(doc.data.trackId);
+    if(![VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION].includes(queueCollection))throw Error('Invalid verification queue collection');
+    context.attempts++;canonicalAttempts++;
+    const canonical=await db.get('0.6.2_race_results',slot.resultId),updated=reconciledSlot(slot,canonical?.data);
+    if(updated!==slot){context.slots[slot.accountId]=updated;context.changed=true;}
+    if(!canonical||updated.reason==='canonical_missing')continue;
+    const frames=legacyTimingFrames(canonical.data);
+    jobs.push({...canonical.data,resultId:slot.resultId,queueKey:updated.key,queueCollection,timeMs:frames??canonical.data.timeMs,
+      correctionCandidate:frames===null?null:{frames,originalTimeMs:canonical.data.timeMs}});
+  }
+  for(const context of contexts){
+    if(!context.attempts&&context.due.length||!context.changed&&jobs.some(job=>job.trackId===context.doc.data.trackId))continue;
+    const {doc}=context,queueCollection=doc.queueCollection||verificationCollectionForTrack(doc.data.trackId);
+    try{await db.call(':commit',{writes:[db.write(queueCollection,doc.data.trackId,{...doc.data,...queueState(context.slots,now)},doc)]});}
+    catch(error){if(!isConflict(error))throw error;selectionConflicts++;jobs=jobs.filter(job=>job.trackId!==doc.data.trackId);}
   }
   return {jobs, canonicalAttempts, selectionConflicts};
 }

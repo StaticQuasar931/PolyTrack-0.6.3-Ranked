@@ -33,9 +33,9 @@ export function hasAcceptedVerifiedProof(row, verdict) {
 export function verifiedVerdict(row, verdict) {
   return row.integrityVerified === true && hasAcceptedVerifiedProof(row, verdict);
 }
-export function pendingSlot(row) {
+export function pendingSlot(row, now = Date.now()) {
   const accountId=String(row.accountId||row.userId||'');
-  return {accountId,resultId:accountId+'_'+row.trackId,trackId:String(row.trackId),key:verificationKey(row),status:'waiting',verifierVersion:VERIFIER_VERSION,attempts:0};
+  return {accountId,resultId:accountId+'_'+row.trackId,trackId:String(row.trackId),key:verificationKey(row),status:'waiting',verifierVersion:VERIFIER_VERSION,attempts:0,queuedAt:now};
 }
 
 

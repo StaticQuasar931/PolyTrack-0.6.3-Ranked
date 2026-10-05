@@ -196,7 +196,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
     idleNativeSlots: Math.max(0, TOTAL_JOB_LIMIT - events.checked - jobs.length)};
   log(JSON.stringify({events: eventSummary}));
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
-    '## Event verification\n' + JSON.stringify(eventSummary) + `\nNative work: ${events.checked} event checks (${eventLimit} reserved slots), ${jobs.length} normal; at most ${TOTAL_JOB_LIMIT} total per round (unused event slots may be borrowed). Inbox intake: at most ${TOTAL_JOB_LIMIT}.\n`);
+    '## Event verification\n' + JSON.stringify(eventSummary) + `\nNative work: ${events.checked} event checks (${eventLimit} reserved slots), ${jobs.length} normal; at most ${TOTAL_JOB_LIMIT} total per round (unused event slots may be borrowed). Inbox intake: at most ${TOTAL_JOB_LIMIT}.\nPriority: estimated RP impact; event ties favor faster times. One in four selection slots is reserved for runs overdue by at least one hour (normal lanes reserve at least one when capacity is smaller). Queue discovery remains bounded.\n`);
   if (events.results?.some(result => result.reason === 'engine_unavailable')) process.exitCode = 1;
   const infrastructure = result => result?.status==='unavailable' && /^(engine_|isolate_|process_|page_error|cpu_|wall_|deadline|native_engine_error)/.test(String(result.reason||''));
   const eventFailure=(events.results||[]).some(infrastructure);

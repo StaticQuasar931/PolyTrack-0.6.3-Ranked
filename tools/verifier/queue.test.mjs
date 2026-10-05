@@ -59,13 +59,13 @@ test('track scheduling prefers weight while reserving an aged queue and uses one
   assert.equal(fallback, docs);
 });
 
-test('selection reserves the least recently checked run, then fastest runs, and fills sparse tracks', async () => {
-  const now = 100000;
+test('selection reserves a genuinely overdue run then prioritizes relative pace across sparse tracks', async () => {
+  const now = 10 * TRACK_AGING_MS;
   const rows = Array.from({length: 9}, (_, index) => ({...row, accountId: 'racer-' + index,
     timeMs: 1000 + index * 1000, frames: 1000 + index * 1000, uploadId: index + 1}));
   const first = queueDoc('track-a', rows);
-  first.data.slots['racer-8'].checkedAt = 1;
-  for (let index = 0; index < 8; index++) first.data.slots['racer-' + index].checkedAt = now;
+  first.data.slots['racer-8'].queuedAt = 1;
+  for (let index = 0; index < 8; index++) first.data.slots['racer-' + index].queuedAt = now;
   const sparse = [first, queueDoc('track-b', [{...row, accountId: 'other'}]),
     queueDoc('track-c', [{...row, accountId: 'third'}])];
   const canonical = new Map();
@@ -76,8 +76,8 @@ test('selection reserves the least recently checked run, then fastest runs, and 
   }
   const result = await selectJobs({get: async (_, id) => canonical.get(id), write: fakeWrite, call: async () => {}}, sparse, now);
   assert.equal(result.jobs[0].accountId, 'racer-8');
-  assert.deepEqual(result.jobs.slice(1, 8).map(job => job.timeMs), [1000, 2000, 3000, 4000, 5000, 6000, 7000]);
-  assert.deepEqual(result.jobs.slice(8).map(job => job.trackId), ['track-b', 'track-c']);
+  assert.deepEqual(result.jobs.filter(job=>job.trackId==='track-a').slice(1).map(job => job.timeMs), [1000, 2000, 3000, 4000, 5000, 6000, 7000]);
+  assert.deepEqual(result.jobs.filter(job=>job.trackId!=='track-a').map(job => job.trackId), ['track-b', 'track-c']);
   assert.equal(result.canonicalAttempts, 10);
 });
 
@@ -765,4 +765,13 @@ test('event-only coordinator test is independent of checkout name and working di
     assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));
     fs.rmSync(directory,{recursive:true,force:true});
   }
+});
+
+test('fresh runs prioritize fastest high-weight pace before low-impact slow runs without extra lookups',async()=>{
+ const now=Date.now(),high=queueDoc('high',[{...row,accountId:'high-slow',timeMs:9000},{...row,accountId:'high-fast',timeMs:1000}]),low=queueDoc('low',[{...row,accountId:'low-fast',timeMs:1000}]);
+ Object.assign(high,{priorityWeight:9,priorityRecordMs:1000});Object.assign(low,{priorityWeight:1,priorityRecordMs:1000});
+ for(const doc of [high,low])for(const slot of Object.values(doc.data.slots))slot.queuedAt=now;
+ let reads=0;const lookup=new Map([high,low].flatMap(doc=>Object.values(doc.data.slots).map(slot=>[slot.resultId,{data:{...row,accountId:slot.accountId,trackId:doc.data.trackId,timeMs:JSON.parse(slot.key)[4]}}])));
+ const selected=await selectJobs({get:async(_,id)=>{reads++;return lookup.get(id);},write:fakeWrite,call:async()=>{}},[low,high],now);
+ assert.deepEqual(selected.jobs.map(job=>job.accountId),['high-fast','low-fast','high-slow']);assert.equal(reads,3);
 });

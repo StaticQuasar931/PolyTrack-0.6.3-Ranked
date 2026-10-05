@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { createEventService, createEventHandler, eventPeriod, eventRp, eventLeaderboard, publicEventPeriod,
-  EVENT_COLLECTIONS as C, EVENT_LIMITS as L, EVENT_VERSION, EVENT_SCORING_V1, EVENT_SCORING_V2 } from '../src/events.js';
+  EVENT_COLLECTIONS as C, EVENT_LIMITS as L, EVENT_VERSION, EVENT_SCORING_V1, EVENT_SCORING_V2, prioritizedEventSlots } from '../src/events.js';
 import { createEventFirestoreStore, eventEncode, eventDecode } from '../src/events-store.js';
 import { VERIFIER_ENGINE_DIGEST as engine, VERIFIER_VERSION as version } from '../src/verification.js';
 import { utcEventCandidates, inboxPage, consumeEventInbox, cleanupEvents, eventReceiptRetry, eventWork, provisionEvent } from '../src/events-runtime.js';
@@ -232,10 +232,10 @@ test('cumulative event RP is delta-only and repeated runs never stack', async ()
 test('owner receipt explains verdict and older completion cannot replace latest attempt', async () => {
   const f = fixture(); await f.start(); await f.submit(20000, 'first'); f.advance(); await f.submit(15000, 'latest');
   const jobs = await f.service.leaseJobs('day1');
-  await f.service.completeJob('day1', jobs[0], verdict(jobs[0], { status: 'mismatch', reason: 'finish_mismatch' }));
+  await f.service.completeJob('day1', jobs.find(job=>job.timeMs===20000), verdict(jobs.find(job=>job.timeMs===20000), { status: 'mismatch', reason: 'finish_mismatch' }));
   let receipt = await f.service.ownReceipt('day1', 'user1', account);
   assert.equal(receipt.attemptId, 'latest'); assert.equal(receipt.status, 'waiting');
-  await f.service.completeJob('day1', jobs[1], verdict(jobs[1]));
+  await f.service.completeJob('day1', jobs.find(job=>job.timeMs===15000), verdict(jobs.find(job=>job.timeMs===15000)));
   receipt = await f.service.ownReceipt('day1', 'user1', account);
   assert.equal(receipt.status, 'verified'); assert.equal(receipt.reason, 'native_exact_finish');
   assert.equal(receipt.timeMs, 15000);
@@ -899,4 +899,30 @@ test('archived Kodub track bytes are hash-bound and available only for explicitl
   trackCodeHash,environment:2,playMode:'unranked',scoringDisabled:true,archived:true});
  const snapshot=await f.service.snapshot('day1');
  assert.equal(snapshot.racerCount,0);assert.equal(JSON.stringify(snapshot).includes(code),false);
+});
+
+test('event scheduling chooses fastest impact, reserving only one overdue slot per four',()=>{
+ const at=7200000,slot=(runId,timeMs,receivedAt=at)=>({runId,timeMs,receivedAt,notBefore:receivedAt,leaseUntil:0,attempts:0});
+ const slots=[slot('slow',25000),slot('fourth',14000),slot('first',10000),slot('second',11000),slot('third',12000)];
+ assert.deepEqual(prioritizedEventSlots(slots,p,at,4).map(s=>s.runId),['first','second','third','fourth']);
+ slots[0].receivedAt=1;slots[0].notBefore=1;
+ assert.deepEqual(prioritizedEventSlots(slots,p,at,4).map(s=>s.runId),['slow','first','second','third']);
+ slots[0].leaseUntil=at+1;assert.equal(prioritizedEventSlots(slots,p,at,4).some(s=>s.runId==='slow'),false);
+});
+test('legacy event queue priority reuses public playback times rather than reading replay candidates',()=>{
+ const slots=['slow','fast','middle'].map(runId=>({runId,notBefore:1000,leaseUntil:0,attempts:0}));
+ const playbacks=[{runId:'slow',timeMs:30000},{runId:'fast',timeMs:10000},{runId:'middle',timeMs:20000}];
+ assert.deepEqual(prioritizedEventSlots(slots,p,2000,3,playbacks).map(s=>s.runId),['fast','middle','slow']);
+});
+test('event scheduling favors larger incremental RP and excludes future retries or exhausted attempts',()=>{
+ const slots=[{runId:'tiny-gain',timeMs:10000,previousTimeMs:10001},{runId:'big-gain',timeMs:11000}, {runId:'exhausted',timeMs:9000,attempts:3},{runId:'future',timeMs:9000,notBefore:5000}].map(s=>({receivedAt:1000,notBefore:1000,leaseUntil:0,attempts:0,...s}));
+ assert.deepEqual(prioritizedEventSlots(slots,p,2000,4).map(s=>s.runId),['big-gain','tiny-gain']);
+});
+
+test('legacy event leasing ranks existing fastest playbacks without reading all candidate replays',async()=>{
+ const f=fixture();await f.start();await f.submit(30000,'slow');f.advance();await f.submit(10000,'fast');
+ const queue=f.data.get(C.queues+'/day1');queue.slots=queue.slots.map(({timeMs,receivedAt,previousTimeMs,...slot})=>slot);
+ const [job]=await f.service.leaseJobs('day1',1);assert.equal(job.timeMs,10000);
+ assert.equal(f.store.counts.at(-1).reads,6);
+ const leased=f.data.get(C.queues+'/day1').slots.find(s=>s.runId===job.resultId);assert.equal(leased.timeMs,10000);assert.equal(leased.receivedAt,2000);
 });

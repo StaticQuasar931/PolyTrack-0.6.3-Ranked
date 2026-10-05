@@ -529,3 +529,16 @@ test('finish overlay shows ordinal event placement and never invents placement w
  assert.match(await p.locator('.time-announcer-ui .position').getAttribute('title'),/provisional/);
  assert.equal(await p.locator('.sq-event-finish-place').count(),0);
 });
+
+test('live and archived event browser fits phone, tablet and desktop without horizontal overflow',async t=>{
+ const p=await fixture(t);await p.addStyleTag({url:base+'/events/events.css'});await p.locator('#open').click();await p.locator('.sq-event-cards').waitFor();
+ for(const [width,height] of [[320,720],[390,844],[820,1180],[1107,1282],[1920,1080]]){
+  await p.setViewportSize({width,height});
+  assert.equal(await p.locator('.sq-events-dialog').evaluate(node=>node.getBoundingClientRect().left>=-1&&node.getBoundingClientRect().right<=innerWidth+1&&node.scrollWidth<=node.clientWidth+2),true,width+'px live dialog');
+  assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px live content');
+ }
+ await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill('2026-08');await p.getByRole('button',{name:'View month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"]').waitFor();
+ for(const [width,height] of [[320,720],[390,844],[820,1180],[1920,1080]]){
+  await p.setViewportSize({width,height});assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px archive content');
+ }
+});

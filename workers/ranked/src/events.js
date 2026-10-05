@@ -120,6 +120,20 @@ export function eventRp(period, timeMs) {
   }
   return Math.min(period.maxRp, Number(BigInt(period.maxRp) * BigInt(period.targetMs) / BigInt(timeMs)));
 }
+export function prioritizedEventSlots(slots, period, at, limit, playbacks = []) {
+  const metadata=new Map(playbacks.map(row=>[row.runId,row]));
+  const due=slots.filter(s=>s.notBefore<=at&&s.leaseUntil<=at&&s.attempts<L.verificationAttempts).map(slot=>{
+    const saved=metadata.get(slot.runId),time=Number(slot.timeMs??saved?.timeMs);
+    const valid=int(time,1,L.timeMs),prior=Number(slot.previousTimeMs);
+    const score=valid?Math.max(0,eventRp(period,time)-(int(prior,1,L.timeMs)?eventRp(period,prior):0)):-1;
+    return {slot,time:valid?time:Number.MAX_SAFE_INTEGER,score,age:Number(slot.receivedAt??saved?.submittedAt??slot.notBefore)};
+  });
+  const priority=[...due].sort((a,b)=>b.score-a.score||a.time-b.time||a.age-b.age||a.slot.runId.localeCompare(b.slot.runId));
+  const aged=due.filter(row=>at-row.age>=3600000).sort((a,b)=>a.age-b.age||b.score-a.score||a.slot.runId.localeCompare(b.slot.runId)).slice(0,Math.floor(limit/4));
+  const used=new Set(aged.map(row=>row.slot.runId));
+  return [...aged,...priority.filter(row=>!used.has(row.slot.runId))].slice(0,limit).map(row=>row.slot);
+}
+
 export function eventLeaderboard(period, rows) {
   demand(Array.isArray(rows) && rows.length <= period.capacity.entrants, 'leaderboard_capacity', 503);
   const seen = new Set();
@@ -355,7 +369,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         await tx.set(queuePath, { ...queue, runIds: [...(queue.runIds || []), runId],
           subjects: quota ? queue.subjects : [...(queue.subjects || []), { accountId, ownerHash }],
           admitted: queue.admitted + 1, replayBytes: queue.replayBytes + replay.length, entrants: queue.entrants + (quota ? 0 : 1),
-          slots: [...queue.slots, { runId, notBefore: receivedAt, attempts: 0, lease: null, leaseUntil: 0 }] });
+          slots: [...queue.slots, { runId, timeMs, previousTimeMs: eventPb?.timeMs ?? null, receivedAt, notBefore: receivedAt, attempts: 0, lease: null, leaseUntil: 0 }] });
         if (!receipt || timeMs < receipt.timeMs || clockRecovery) await tx.set(receiptPath,
           { ownerUid, accountId, periodId, attemptId, runId, timeMs, status: 'waiting', reason: '', updatedAt: stamp() });
         const pendingPlaybacks = upsertPlayback(board?.pendingPlaybacks || board?.playbacks, pendingPlaybackEntry(run), p.capacity.entrants);
@@ -496,10 +510,14 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const budgetPath = path(C.quotas, 'verification_global'), budget = await tx.get(budgetPath);
         const day = Math.floor(at / 86400000), used = budget?.day === day ? budget.used : 0;
         const allowance = Math.min(limit, Math.max(0, p.capacity.verificationsPerDay - used));
-        const chosen = queue.slots.filter(s => s.notBefore <= at && s.leaseUntil <= at && s.attempts < L.verificationAttempts).slice(0, allowance);
-        const jobs = [];
+        // Legacy queue slots reuse one bounded public document, never read every replay to sort.
+        const legacy=queue.slots.some(s=>s.notBefore<=at&&s.leaseUntil<=at&&s.attempts<L.verificationAttempts&&!int(s.timeMs,1,L.timeMs));
+        const board=legacy&&allowance ? await tx.get(path(C.live,periodId)) : null;
+        const chosen=prioritizedEventSlots(queue.slots,p,at,allowance,board?.pendingPlaybacks||board?.playbacks||[]);
+        const jobs = [], runMetadata = new Map();
         for (const slot of chosen) {
           const run = await readRun(tx, periodId, slot.runId);
+          runMetadata.set(slot.runId,{timeMs:run.timeMs,receivedAt:run.receivedAt});
           demand(run.periodBinding === periodBinding(p) && typeof run.replay === 'string' && await hash(run.replay) === run.replayHash, 'event_replay_integrity', 503);
           jobs.push({ lease, eventKey: run.eventKey, resultId: run.runId, trackId: run.trackId,
             timeMs: run.timeMs, replayHash: run.replayHash, replay: run.replay });
@@ -507,7 +525,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         if (chosen.length) {
           await tx.set(budgetPath, { day, used: used + chosen.length });
           await tx.set(queuePath, { ...queue,
-            slots: queue.slots.map(s => chosen.some(c => c.runId === s.runId) ? { ...s, lease, leaseUntil: at + L.leaseMs, attempts: s.attempts + 1 } : s) });
+            slots: queue.slots.map(s => chosen.some(c => c.runId === s.runId) ? { ...s, ...runMetadata.get(s.runId), lease, leaseUntil: at + L.leaseMs, attempts: s.attempts + 1 } : s) });
         }
         return jobs;
       });

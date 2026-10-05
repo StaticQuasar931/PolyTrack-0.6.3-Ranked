@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=77',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=78',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='77';
+  const extraCatalogRevision='78';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -4451,7 +4451,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=77',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=78',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4471,8 +4471,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=77',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=77',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=77',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=78',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=78',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=78',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -4696,6 +4696,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(!rows.length&&filtered?.active&&filtered.sourceCount){listEl.innerHTML='<div class="overall-empty"><strong>No event racers match your filters</strong><span>Open Filters to change the rules, or right-click Filters to pause.</span></div>';return;}
     if(!rows.length){
       const known=Boolean(savedEventTotals());
+      if(eventTotalsState.status==='idle'||eventTotalsState.status==='loading'){
+        listEl.innerHTML='<div class="overall-loading" role="status"><strong>Loading Event RP</strong><span>Getting saved event standings...</span><div class="overall-loading-bar"></div></div>';
+        return;
+      }
       listEl.innerHTML=`<div class="overall-empty"><strong>${eventTotalsState.status==='loading'?'Loading Event RP':known?'No Event RP earned yet':'Event RP unavailable'}</strong><span>${known?'Only verified event PBs earn points. Try a live event.':'No saved event standings are available. Your local PBs remain saved.'}</span><button class="button" type="button" data-rank-retry>Refresh Event RP</button></div>`;
     }else{
       const own=rows.find(row=>row.accountId===activeRankedAccountId());
@@ -5577,7 +5581,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(overallCategory==='topTracks'){
       const tracks=personalTrackRankingRows(loadedTrackRankingRows());
       updateOverallPager();
-      if(!tracks.length){listEl.innerHTML='<div class="overall-empty"><strong>Top Tracks is not ready</strong><span>No populated track data is available in this snapshot yet.</span></div>';return;}
+      if(!tracks.length){
+        listEl.innerHTML=overallLoadState.status==='idle'||overallLoadState.status==='loading'
+          ? '<div class="overall-loading" role="status"><strong>Loading track rankings</strong><span>Getting saved track standings...</span><div class="overall-loading-bar"></div></div>'
+          : '<div class="overall-empty"><strong>Top Tracks is not ready</strong><span>No populated track data is available in this snapshot yet.</span></div>';
+        return;
+      }
       const start=overallPage*OVERALL_PAGE_SIZE;
       listEl.innerHTML=tracks.slice(start,start+OVERALL_PAGE_SIZE).map((row,index)=>renderTrackRankingRow(row,start+index)).join('');
       listEl.scrollTop=0;
@@ -5595,6 +5604,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       listEl.innerHTML='<div class="overall-empty"><strong>No racers match your filters</strong><span>Edit Filters, pause them, or include racers whose required information is not yet loaded.</span></div>';return;
     }
     if (!allEntries.length){
+      if(overallLoadState.status==='idle'||overallLoadState.status==='loading'){
+        listEl.innerHTML=`<div class="overall-loading" role="status"><strong>${tr('loading')}</strong><span>Getting saved rankings...</span><div class="overall-loading-bar"></div></div>`;
+        return;
+      }
       const connected = overallLoadState.status === 'empty-cloud';
       listEl.innerHTML = `<div class="overall-empty"><strong>${connected?'Community Ranked is initializing':'Community Ranked is temporarily unavailable'}</strong><span>${connected?'No complete production snapshot exists yet.':`The cloud refresh did not return a complete snapshot${overallLoadState.message?`: ${escapeHtml(overallLoadState.message)}`:'.'}`}</span><span>Your local PBs remain saved. No local record is discarded when Ranked is offline.</span><button class="button" type="button" data-rank-retry>Retry</button></div>`;
       return;
@@ -7541,7 +7554,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=77',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:77,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=78',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:78,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);
