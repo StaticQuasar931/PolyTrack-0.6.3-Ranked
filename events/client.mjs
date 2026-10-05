@@ -115,6 +115,10 @@ export function ensureFeaturedSection(document){
   }
   return section;
 }
+// The native formatter consumes Time.numberOfFrames, not a millisecond scalar.
+function nativeEventRow(row,accountId,runAt){
+  return {...row,timeMs:{numberOfFrames:row.timeMs},isSelf:row.accountId===accountId,runAt};
+}
 export function handleEventCarIntersections(view,entries,renderCachedCar){
   for(const entry of entries){
     const button=entry.target;
@@ -659,7 +663,7 @@ export function installEvents(bridge){
     for(const row of rows.slice(view.page*20,view.page*20+20)){
       const renderer=view.board.__pt062EventRows;if(renderer?.version!==1)break;
       const runAt=[row.submittedAt,row.receivedAt,row.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=now());
-      const button=renderer.render(container,{...row,isSelf:row.accountId===view.accountId,runAt:runAt||now()});button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Archived replay selection is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
+      const button=renderer.render(container,nativeEventRow(row,view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Archived replay selection is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');state.dataset.sqRunStatus='verified';if(!runAt){state.firstChild.textContent='Date unavailable';state.title='Archived verified result - run date unavailable';}const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+' ERP';points.title='Archived Event RP';state.prepend(points);bridge.decorateRacer?.(button,row);
@@ -693,7 +697,7 @@ export function installEvents(bridge){
       else{
         const verified=buttonWrapper.querySelector('.only-verified');verified.classList.add('disabled');verified.setAttribute('aria-pressed','false');verified.title='Show only verified event runs';
         bridge.filterButton?.(buttonWrapper);const findMe=buttonWrapper.querySelector('.icon-button.first');findMe.disabled=false;findMe.classList.add('sq-event-find-me');findMe.title='Find your event result';findMe.setAttribute('aria-label','Find your event result');
-        const refresh=document.createElement('button');refresh.type='button';refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh event standings');refresh.title='Refresh event standings';refresh.innerHTML='<img class="button-icon" src="images/refresh.svg" alt="">';buttonWrapper.append(refresh);
+        const refresh=document.createElement('button');refresh.type='button';refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh event standings');refresh.title='Refresh event standings';refresh.innerHTML='<img class="button-icon" src="images/refresh.svg" alt="">';board.querySelector('h2').append(refresh);
       }
       const side=root.querySelector('.side-panel'),watch=side?.querySelector('button.watch'),opponents=side?.querySelector('.opponents-container');let pbTitle=null,pb=null,opponentsNote=null;
       if(!archiveMode){pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','block','important');const normalPb=side?.querySelector('.personal-best-title');if(normalPb)normalPb.before(pbTitle,pb);opponentsNote=document.createElement('div');opponentsNote.className='opponents-container sq-event-opponents';opponentsNote.textContent='Event ghosts are not available. Normal PB ghosts are not used.';opponents?.after(opponentsNote);}
@@ -757,7 +761,7 @@ export function installEvents(bridge){
       const renderer=view.board.__pt062EventRows;
       if(renderer?.version!==1){const error=document.createElement('p');error.className='error-message';error.textContent='Reload the game to load the native event leaderboard.';container.append(error);break;}
       const runAt=[row.submittedAt,row.receivedAt,row.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=now());
-      const button=renderer.render(container,{...row,isSelf:row.accountId===accountId,runAt:runAt||now()});button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
+      const button=renderer.render(container,nativeEventRow(row,accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
       const selectedRow=selectedGhosts.get(row.accountId),pendingRow=pendingGhosts.get(row.accountId),matches=target=>target?.periodId===period.id&&target.accountId===accountId&&target.targetTimeMs===row.timeMs&&target.targetRunId===(row.runId||null)&&target.targetPending===!!row.pending,selected=matches(selectedRow),pending=matches(pendingRow);
       button.classList.toggle('selected',!!(selected||pending));button.classList.toggle('pending-selection',!!pending);button.setAttribute('aria-pressed',String(!!(selected||pending)));button.setAttribute('aria-busy',String(!!pending));
       button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
@@ -940,6 +944,14 @@ export function installEvents(bridge){
     if(e.isTrusted&&(button.querySelector('.track-title')||/^(Back|Exit|Multiplayer)$/.test(button.textContent.trim()))){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();if(/^(Back|Exit)$/.test(button.textContent.trim()))refreshAfterNativeReturn();}
   },true);
   const refreshFromCachedState=()=>{if(document.visibilityState==='visible')tick({cachedOnly:true});};
+  // Native refresh replaces its wrappers. Restore cached cards before the next paint,
+  // rather than waiting for an idle tick or guessing the duration of navigation.
+  const nativeMenuObserver=new MutationObserver(records=>{
+    const rebuilt=records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1&&
+      (node.matches('.community-track-versions')||node.querySelector('.community-track-versions'))));
+    if(rebuilt)tick({cachedOnly:true});
+  });
+  nativeMenuObserver.observe(document.body,{childList:true,subtree:true});
   const refreshAfterNativeReturn=()=>{
     const render=()=>tick({cachedOnly:true});
     if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{render();requestAnimationFrame(render);});else setTimeout(render,0);

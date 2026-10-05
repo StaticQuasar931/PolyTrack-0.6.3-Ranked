@@ -19,6 +19,7 @@ const viewports = [
   [600, 960],
   [600, 400],
   [820, 1180],
+  [1107, 1282],
   [1920, 1080],
   [2800, 1920],
 ];
@@ -158,11 +159,11 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
       document.querySelector('#gameRoot').id='ui';document.body.classList.add('sq-event-active');
       const board=document.querySelector('.leaderboard-ui');board.classList.add('sq-event-board');board.style.setProperty('display','flex','important');
       board.querySelector('.icon-button.first').classList.add('sq-event-find-me');
-      const refresh=document.createElement('button');refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh');refresh.textContent='Refresh';board.querySelector('.button-wrapper').append(refresh);
+      const refresh=document.createElement('button');refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh');refresh.textContent='Refresh';board.querySelector('h2').append(refresh);
     });
     await page.addStyleTag({content:eventsCss});
     for(const [width,height] of viewports){
-      const selectors=['.back','[data-personal-filter-button]','.only-verified','.sq-event-refresh','.sq-event-find-me'].map(selector=>'.sq-event-board>.button-wrapper>'+selector);
+      const selectors=['.back','[data-personal-filter-button]','.only-verified','.sq-event-find-me'].map(selector=>'.sq-event-board>.button-wrapper>'+selector);
       const result=await checkViewport(width,height,selectors,'.sq-event-board>.button-wrapper','native event footer');
       for(let i=0;i<result.controls.length;i++)for(let j=i+1;j<result.controls.length;j++){
         const a=result.controls[i],b=result.controls[j];assert.ok(a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1,`event controls do not overlap at ${width}x${height}`);
