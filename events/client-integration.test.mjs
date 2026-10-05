@@ -156,7 +156,9 @@ test('pending replay changes invalidate the quick signature and idle ticks do no
  });
  await addNativePlay(p);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(22000));await p.waitForFunction(()=>submits.length===1);
  const row=p.locator('.sq-event-board button.main:not(.self)').first();await row.waitFor();
+ await row.evaluate(node=>window.originalReplayRow=node);
  await row.click();await p.waitForFunction(()=>document.querySelector('.sq-event-board button.main:not(.self)')?.getAttribute('aria-busy')==='true');
+ assert.equal(await row.evaluate(node=>node===originalReplayRow),true,'pending selection preserves the rendered row');
  await p.locator('.side-panel .play').click();await p.waitForFunction(()=>document.querySelector('.sq-event-inline-status')?.textContent.includes('Wait or unselect them before playing'));
  assert.equal(await p.evaluate(()=>eventRaceStarts),0);assert.equal(await p.evaluate(()=>normalStarts),0);
  await p.locator('.side-panel .watch').click();await p.waitForFunction(()=>document.querySelector('.sq-event-inline-status')?.textContent.includes('Wait or unselect them before watching'));
@@ -169,6 +171,7 @@ test('pending replay changes invalidate the quick signature and idle ticks do no
  await p.locator('.sq-event-board button.main:not(.self)').first().click();
  await p.waitForFunction(()=>document.querySelector('.sq-event-board button.main:not(.self)')?.getAttribute('aria-busy')==='false');
  assert.equal(await p.locator('.sq-event-board button.main:not(.self).pending-selection').count(),0);
+ assert.equal(await row.evaluate(node=>node===originalReplayRow),true,'unselection preserves the rendered row');
  await p.evaluate(()=>{rowMutationObserver.disconnect();finishReplay({});});
 });
 test('Event RP delegates to normal Ranked hook after closing event dialog',async t=>{
@@ -178,6 +181,14 @@ test('live Event standings cards enter the native event board with verified chec
  const p=await fixture(t);await p.evaluate(()=>{bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily',startsAt:Date.now()-1000,endsAt:Date.now()+3600000,maxRp:100},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Verified racer',rank:1,timeMs:19000,rp:100}]});});
  await p.locator('#open').click();await p.locator('.sq-events-overlay [data-event-id="daily-fixture"]').click();await p.locator('.sq-event-board button.main').waitFor();
  assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.locator('.sq-event-board .verified-state.verified').count(),1);assert.equal(await p.locator('.sq-event-board img.checkmark[src*="checkmark.svg"]').count(),1);assert.equal(await p.locator('.sq-event-board .verified-state img.sq-event-verification-icon[src*="state_verified.svg"]').count(),1);
+});
+test('Only verified filters cached event rows without reading another snapshot',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  window.snapshotCalls=0;bridgeFixture.readSnapshot=async()=>{snapshotCalls++;return {period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Verified racer',timeMs:19000,rp:100}],pendingPlaybacks:[{accountId:'c'.repeat(64),runId:'d'.repeat(64),name:'Waiting racer',timeMs:20000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}]};};
+ });await enter(p);assert.equal(await p.locator('.sq-event-board .container > button.main').count(),2);
+ const reads=await p.evaluate(()=>snapshotCalls),toggle=p.locator('.sq-event-board .only-verified');
+ await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'true');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),1);
+ await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'false');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),2);assert.equal(await p.evaluate(()=>snapshotCalls),reads);
 });
 test('live event mode reuses the native leaderboard element and restores its contents',async t=>{const p=await fixture(t);await p.evaluate(()=>{window.initialNativeBoard=document.querySelector('.track-info-ui>.leaderboard-ui');bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Native row',rank:1,timeMs:19000,rp:100}]});});await enter(p);assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);assert.equal(await p.locator('.sq-event-board button.main .checkmark').evaluate(node=>node.parentElement.matches('button.main')),true);assert.equal(await p.locator('.sq-event-board button.main .verified-state img.sq-event-verification-icon').count(),1);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>initialNativeBoard.isConnected&&!initialNativeBoard.classList.contains('sq-event-board')&&initialNativeBoard.textContent.includes('Normal leaderboard 9999')),true);});
 test('native event rows show accepted run age and verified ERP, with cached racer actions',async t=>{

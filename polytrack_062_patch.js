@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=74',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=75',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='74';
+  const extraCatalogRevision='75';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -162,7 +162,7 @@
     eventUiPromise=import(eventsModuleUrl).then(({installEvents})=>{
       if(!document.querySelector('link[data-event-css]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./events.css',eventsModuleUrl).href;link.dataset.eventCss='';document.head.append(link);}
       eventUi=installEvents({supportsEventGhost:()=>window.__pt062NativeEventGhostVersion===1,trackInfo,displayName:canonicalDisplayName,thumbnail:trackThumbnailMarkup,formatTime:formatRaceTime,accountId:activeRankedAccountId,require:__pt062WebpackRequire,ready:async()=>{},openTrack:id=>{if(id===nativeWeeklySelection?.trackId){const button=document.querySelector('.sq-kodub-weekly > button');if(!button||!isElementVisible(button))return openKodubWeeklyFromEvents(function(){return eventUi.isEntered(id);});button.click();}else focusTrackFromRanked(id,{event:true});},startEventRace,watchEvent:(context,ghosts)=>{const root=document.querySelector('.track-info-ui'),watch=root?.__pt062EventWatch;if(!watch||watch.version!==1||watch.trackId!==context.trackId||activeRankedAccountId()!==context.accountId||Date.now()>=context.endsAt)throw Error('Event replay context changed');watch.open(ghosts);},openRankedEvents:()=>window.__pt062OpenRankedEvents?.(),
-        prepareArchive:loadKodubTrackHistory,racerActions:function(row,event){return openPersonalRacerActions(row.accountId||row.userId,event);},filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
+        prepareArchive:loadKodubTrackHistory,racerActions:function(row,event){return openPersonalRacerActions(row.accountId||row.userId,event);},decorateRacer:(button,row)=>{const identity=rankedIdentityForRacer(row);button.classList.add('sq-racer-cosmetic',...racerCosmeticClasses(identity).split(/\s+/).filter(Boolean));button.classList.toggle('sq-racer-top',Number(row.rank)>0&&Number(row.rank)<=3);decorateNativeLeaderboardIdentity(button,identity);},filterRows:(rows,context)=>applyPersonalFilters(rows,context),filterRevision:()=>personalFilterRuntime?.getRevision()||0,filterButton:personalFilterButton,filterNotice:personalFilterNoticeNode,
         readCatalog:()=>eventCloudRead('/v1/events/catalog','0.6.2_event_public','catalog'),
         readSnapshot:id=>eventCloudRead('/v1/events/'+encodeURIComponent(id)+'/snapshot','0.6.2_event_public',id),
         readReplay:readEventReplay,
@@ -4451,7 +4451,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=74',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=75',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4471,8 +4471,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=74',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=74',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=74',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=75',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=75',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=75',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -7295,7 +7295,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function decorateNativeLeaderboardCosmetics(){
     const trackId=String(currentTrackLoadState?.trackId||'');
     if(!trackId)return;
-    const host=document.querySelector('.leaderboard-ui');
+    const host=document.querySelector('.leaderboard-ui:not(.sq-event-board)');
     if(!host||!isElementVisible(host))return;
     ensureNativeAllRunsDefault(host);
     const buttons=Array.from(host.querySelectorAll(':scope > .container > button.main'));
@@ -7540,7 +7540,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=74',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:74,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=75',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:75,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

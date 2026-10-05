@@ -154,6 +154,22 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
       }
     }
 
+    await page.evaluate(()=>{
+      document.querySelector('#gameRoot').id='ui';document.body.classList.add('sq-event-active');
+      const board=document.querySelector('.leaderboard-ui');board.classList.add('sq-event-board');board.style.setProperty('display','flex','important');
+      board.querySelector('.icon-button.first').classList.add('sq-event-find-me');
+      const refresh=document.createElement('button');refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh');refresh.textContent='Refresh';board.querySelector('.button-wrapper').append(refresh);
+    });
+    await page.addStyleTag({content:eventsCss});
+    for(const [width,height] of viewports){
+      const selectors=['.back','[data-personal-filter-button]','.only-verified','.sq-event-refresh','.sq-event-find-me'].map(selector=>'.sq-event-board>.button-wrapper>'+selector);
+      const result=await checkViewport(width,height,selectors,'.sq-event-board>.button-wrapper','native event footer');
+      for(let i=0;i<result.controls.length;i++)for(let j=i+1;j<result.controls.length;j++){
+        const a=result.controls[i],b=result.controls[j];assert.ok(a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1,`event controls do not overlap at ${width}x${height}`);
+      }
+      await assertNoHorizontalOverflow(page,['.sq-event-board>.button-wrapper'],'native event footer',width,height);
+    }
+
     await page.setContent(`<style>html,body{width:100%;height:100%;margin:0}</style>
       <div id="overallLeaderboardPanel" style="display:flex"><section class="overall-shell">
         <header class="overall-top"><div class="overall-title-group"><h2>Ranked</h2></div>

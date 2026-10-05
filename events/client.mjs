@@ -450,27 +450,28 @@ export function installEvents(bridge){
     }
     const previous=selectedGhosts.get(row.accountId);
     if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
-      ++topSelectionToken;++replayRequest;pendingGhosts.clear();selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
+      ++topSelectionToken;++replayRequest;pendingGhosts.delete(row.accountId);selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
     }
-    ++topSelectionToken;const token=++replayRequest;pendingGhosts.clear();const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
+    ++topSelectionToken;const token=++replayRequest;for(const [id,target] of pendingGhosts)if(target.groupToken)pendingGhosts.delete(id);const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
     const key=period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified'),failureKey=key+'_'+viewer;
     try{
       const failure=replayFailure(failureKey);if(failure)throw Error(failure);
       let payload=replayCache.get(key);if(!payload)payload=await bridge.readReplay(period.id,row.accountId,row.pending?row.runId:null);
-      if(token!==replayRequest||pendingGhosts.get(row.accountId)!==pending)return;
+      if(pendingGhosts.get(row.accountId)!==pending)return;
       if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
       const ghostKey=key+'_'+viewer;
       let ghost=preparedGhosts.get(ghostKey);
       if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
-      if(token!==replayRequest||pendingGhosts.get(row.accountId)!==pending)return;
+      if(pendingGhosts.get(row.accountId)!==pending)return;
       if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
       replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
-      selectedGhost={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
+      const selection={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
+      if(token===replayRequest)selectedGhost=selection;
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
-      selectedGhosts.set(row.accountId,selectedGhost);pendingGhosts.delete(row.accountId);
-      if(!silent){message(session.archive?'Archived replay selected. Use Watch to view it.':'Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');tick();}
+      selectedGhosts.set(row.accountId,selection);pendingGhosts.delete(row.accountId);
+      if(!silent){if(token===replayRequest)message(session.archive?'Archived replay selected. Use Watch to view it.':'Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');tick();}
       return true;
-    }catch(error){if(token===replayRequest&&pendingGhosts.get(row.accountId)===pending){rememberReplayFailure(failureKey,error);pendingGhosts.delete(row.accountId);if(!silent&&replayContextActive(session)){message(error.message||'Event replay unavailable.');tick();}}return false;}
+    }catch(error){if(pendingGhosts.get(row.accountId)===pending){rememberReplayFailure(failureKey,error);pendingGhosts.delete(row.accountId);if(!silent&&replayContextActive(session)){if(token===replayRequest)message(error.message||'Event replay unavailable.');tick();}}return false;}
   }
   function clearEventGhostSelection(periodId,accountId,{render=true}={}){
     ++topSelectionToken;++replayRequest;
@@ -488,12 +489,12 @@ export function installEvents(bridge){
     replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+5*60*1000});
     if(replayFailures.size>32)replayFailures.delete(replayFailures.keys().next().value);
   }
-  async function selectEventRows(first,last,fromTop=false){
+  async function selectEventRows(first,last,fromTop=false,explicitRows=null){
     const view=nativeView,session=sessions.current()||archiveIntent,accountId=bridge.accountId();
     if(!view||!session||session.periodId!==view.periodId||session.accountId!==accountId)return;
     const period=view.period||knownPeriods.get(view.periodId)||(catalog.periods||[]).find(row=>row.id===view.periodId);if(!period)return;
-    const offset=fromTop?0:view.page*20,sourceRows=view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows;
-    const chosen=sourceRows.slice(offset+first-1,offset+last).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
+    const offset=fromTop?0:view.page*20,sourceRows=(view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows).filter(row=>!view.onlyVerified||!row.pending);
+    const chosen=(explicitRows||sourceRows.slice(offset+first-1,offset+last)).slice(0,10).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function');
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
     const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
     const pendingActive=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId),groupToken=pendingActive[0]?.groupToken;
@@ -534,6 +535,13 @@ export function installEvents(bridge){
   }
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
   function selectEventRange(first,last){return selectEventRows(first,last,false);}
+  function selectEventYouGroup(){
+    const view=nativeView;if(!view)return;
+    const rows=(view.archive?archivePeriodCounts(view.period,view.snapshot).verifiedEntries:eventDisplayRows(view.period).rows).filter(row=>!view.onlyVerified||!row.pending);
+    const chosen=rows.slice(0,9),mine=rows.find(row=>row.accountId===bridge.accountId());
+    if(mine&&!chosen.some(row=>row.accountId===mine.accountId))chosen.push(mine);else if(rows[9])chosen.push(rows[9]);
+    return selectEventRows(1,10,true,chosen);
+  }
   function raceGhosts(session){
     const period=knownPeriods.get(session.periodId);
     if(period){const allowed=new Set(eventDisplayRows(period).rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===session.periodId&&!allowed.has(id))selectedGhosts.delete(id);}
@@ -677,16 +685,17 @@ export function installEvents(bridge){
       const board=original;board.classList.add('sq-event-board');
       board.title=archiveMode?'Frozen archived standings. Practice runs are not submitted.':'A number toggles one event ghost. T then a number selects the top group. Hold two numbers for a range. C clears ghosts.';
       board.style.setProperty('display','flex','important');
-      board.innerHTML='<h2>'+ (archiveMode?'Archived event leaderboard':'Event leaderboard') +'</h2><h3></h3><div class="total-players fade-in"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg"> Back</button>'+(archiveMode?'':'<button type="button" class="button sq-event-refresh">Refresh</button>')+'</div>';
+      board.innerHTML='<h2>'+ (archiveMode?'Archived event leaderboard':'Leaderboard') +'</h2><h3></h3><div class="total-players"></div><div class="container"></div><div class="pages"></div><div class="button-wrapper"><button type="button" class="button back"><img class="button-icon" src="images/back.svg" alt=""> Back</button>'+(archiveMode?'':'<button type="button" class="button only-verified disabled" aria-pressed="false" title="Show only verified event runs">Only verified<img src="images/state_verified.svg" alt=""></button><button type="button" class="button icon-button sq-event-refresh" aria-label="Refresh event standings" title="Refresh event standings"><img class="button-icon" src="images/refresh.svg" alt=""></button>')+'</div>';
       const buttonWrapper=board.querySelector('.button-wrapper');
       if(!archiveMode){bridge.filterButton?.(buttonWrapper);const findMe=document.createElement('button');findMe.type='button';findMe.className='button icon-button first sq-event-find-me';findMe.title='Find your event result';findMe.setAttribute('aria-label','Find your event result');findMe.innerHTML='<img class="button-icon" src="images/pin.svg" alt="">';buttonWrapper.append(findMe);}
       const side=root.querySelector('.side-panel'),watch=side?.querySelector('button.watch'),opponents=side?.querySelector('.opponents-container');let pbTitle=null,pb=null,opponentsNote=null;
       if(!archiveMode){pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','block','important');const normalPb=side?.querySelector('.personal-best-title');if(normalPb)normalPb.before(pbTitle,pb);opponentsNote=document.createElement('div');opponentsNote.className='opponents-container sq-event-opponents';opponentsNote.textContent='Event ghosts are not available. Normal PB ghosts are not used.';opponents?.after(opponentsNote);}
       const contextMenuHandler=archiveMode?null:event=>event.stopPropagation();
-      const view=nativeView={root,board,nativeMarkup,nativeBack,nativeDisplay,nativeTitle,pb,pbTitle,watch,watchDisabled:watch?.disabled,opponents,opponentsNote,period,periodId:period.id,accountId,page:0,signature:'',carStyles:new WeakMap(),archive:archiveMode,snapshot:session.snapshot,contextMenuHandler};
+      const view=nativeView={root,board,nativeMarkup,nativeBack,nativeDisplay,nativeTitle,pb,pbTitle,watch,watchDisabled:watch?.disabled,opponents,opponentsNote,period,periodId:period.id,accountId,page:0,onlyVerified:false,signature:'',carStyles:new WeakMap(),archive:archiveMode,snapshot:session.snapshot,contextMenuHandler};
       view.deferredCarRows=new Set();
       if(!archiveMode){if(typeof IntersectionObserver==='function')view.carObserver=new IntersectionObserver(entries=>handleEventCarIntersections(view,entries,renderCachedCar),{root:board.querySelector('.container'),rootMargin:'50px'});board.addEventListener('contextmenu',contextMenuHandler);
-        const findMe=buttonWrapper.querySelector('.sq-event-find-me');findMe.onclick=()=>{const index=eventDisplayRows(period).rows.findIndex(row=>row.accountId===accountId);if(index<0){message('Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
+        const verified=buttonWrapper.querySelector('.only-verified');verified.onclick=()=>{view.onlyVerified=!view.onlyVerified;verified.classList.toggle('disabled',!view.onlyVerified);verified.setAttribute('aria-pressed',String(view.onlyVerified));view.page=0;view.signature='';view.quickSignature='';syncNativeBoard(session);};
+        const findMe=buttonWrapper.querySelector('.sq-event-find-me');findMe.onclick=()=>{const index=eventDisplayRows(period).rows.filter(row=>!view.onlyVerified||!row.pending).findIndex(row=>row.accountId===accountId);if(index<0){message(view.onlyVerified?'Your run is not verified yet. Turn off Only verified to see it.':'Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
         board.querySelector('.sq-event-refresh').onclick=async()=>{const button=board.querySelector('.sq-event-refresh');button.disabled=true;profilesAt=0;try{await snapshot(period,true);await readReceipt(period.id,accountId,true);if(nativeView!==view||bridge.accountId()!==accountId||sessions.current()!==session)return;view.signature='';syncNativeBoard(session);}catch{if(nativeView===view)message('Event standings could not refresh. Your saved event PB is unchanged.');}finally{button.disabled=false;}};
       }
       board.querySelector('.back').onclick=()=>{entryRequest++;sessions.leave();eventIntent=null;if(view.archive)archiveIntent=null;tick();nativeBack?.click();refreshAfterNativeReturn();};
@@ -698,7 +707,7 @@ export function installEvents(bridge){
       const quickLocal=localBest(period),quickReceipt=ownReceipts.get(period.id+'_'+accountId);
       const selection=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetRunId,row.targetTimeMs,row.targetPending]);
       const pendingSelection=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetRunId,row.targetTimeMs,row.targetPending,row.groupToken||0]);
-      const quickSignature=JSON.stringify([bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,Math.floor(now()/120000),selection,pendingSelection]);
+      const quickSignature=JSON.stringify([bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,view.onlyVerified,Math.floor(now()/120000),selection,pendingSelection]);
       if(quickSignature===view.quickSignature)return;
       view.quickSignature=quickSignature;
     }
@@ -707,17 +716,16 @@ export function installEvents(bridge){
     const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select published racers to add their replays.':'Select published racers to load event ghosts. Normal PB ghosts are not used.';
     if(view.opponentsNote.textContent!==opponentsText)view.opponentsNote.textContent=opponentsText;
 
-    const {rows,board,filterResult}=eventDisplayRows(period),mine=rows.find(row=>row.accountId===accountId);
+    const display=eventDisplayRows(period),{board,filterResult}=display,mine=display.rows.find(row=>row.accountId===accountId),rows=display.rows.filter(row=>!view.onlyVerified||!row.pending);
     if(filterResult?.active){const visible=new Set(rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===period.id&&!visible.has(id))selectedGhosts.delete(id);}
     let place=displayedRecordPlacement(period,mine,board);
     if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
-    if(mine&&filterResult?.active&&filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:board?.complete!==true,policy:'all'};
+    if(mine&&filterResult?.active&&filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:display.rows.length,knownFieldSize:display.rows.length,provisional:board?.complete!==true,policy:'all'};
     const placement=eventPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const pendingSignature=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetTimeMs,row.targetPending,row.targetRunId,row.groupToken||0]);
-    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt]),pendingSignature]);
+    const signature=JSON.stringify([bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt])]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -734,8 +742,8 @@ export function installEvents(bridge){
     }
     view.signature=signature;
     const styles=rows.map(row=>cachedCarStyle(row,period));
-    view.board.querySelector('h3').textContent=eventName(period.kind)+' event';
-    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(filterResult?.active?' - personal filters':'')+(board?.saved?' - saved standings':'');
+    view.board.querySelector('h3').textContent=eventName(period.kind)+' event · '+periodName(period);
+    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(view.onlyVerified?' · verified only':'')+(filterResult?.active?' - personal filters':'')+(board?.saved?' - saved standings':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
      const container=view.board.querySelector('.container');view.carObserver?.disconnect();view.deferredCarRows.clear();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
@@ -750,13 +758,14 @@ export function installEvents(bridge){
       if(!row.pending){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' ERP');points.title=row.groupRp!=null?'Filtered group Event RP':'Verified Event RP';button.querySelector('.right').append(points);}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
       button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
-      const stateIcon=document.createElement('img');stateIcon.className='sq-event-verification-icon';stateIcon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';stateIcon.alt=row.pending?'Unverified recording':'Verified replay';button.querySelector('.verified-state').prepend(stateIcon);container.append(button);
+      const stateIcon=document.createElement('img');stateIcon.className='sq-event-verification-icon';stateIcon.src=row.pending?'images/state_pending.svg':'images/state_verified.svg';stateIcon.alt=row.pending?'Unverified recording':'Verified replay';button.querySelector('.verified-state').append(stateIcon);container.append(button);
+      bridge.decorateRacer?.(button,row);
       const style=styles[view.page*20+index];
       if(style&&view.carObserver){view.carStyles.set(button,style);view.carObserver.observe(button);}
       else if(style){view.carStyles.set(button,style);if(!renderCachedCar(button,style))view.deferredCarRows.add(button);}
       else renderCachedCar(button,style);
     }
-    if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent='No event times yet. Play to set your event PB.';container.append(empty);}
+    if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent=view.onlyVerified?'No verified event times yet. Turn off Only verified to see waiting runs.':'No event times yet. Play to set your event PB.';container.append(empty);}
     const status=document.createElement('p');status.className='sq-event-inline-status';status.setAttribute('role','status');status.textContent=statusDescription;container.append(status);
     bridge.filterNotice?.(view.board,filterResult);
     const pages=view.board.querySelector('.pages');pages.replaceChildren();
@@ -876,6 +885,11 @@ export function installEvents(bridge){
     }
     else if(event.key==='t'||event.key==='T'){eventTopHeld=true;eventTopPrefixUntil=Date.now()+2500;event.preventDefault();event.stopImmediatePropagation();return;}
     else if(event.key==='c'||event.key==='C'){event.preventDefault();event.stopImmediatePropagation();clearEventGhostSelection(nativeView.periodId,bridge.accountId());message('Event ghosts unselected.');return;}
+    else if(!event.shiftKey&&(event.key==='='||event.key==='Backspace')){event.preventDefault();event.stopImmediatePropagation();void selectEventYouGroup();return;}
+    else if(!event.shiftKey&&event.key==='-'){
+      const period=nativeView.period,ranked=eventDisplayRows(period).rows.filter(row=>!nativeView.onlyVerified||!row.pending),at=ranked.findIndex(row=>row.accountId===bridge.accountId());
+      if(at>0){event.preventDefault();event.stopImmediatePropagation();void selectReplay(period,ranked[at-1]);}return;
+    }
     else if(['ArrowLeft','a','A','ArrowRight','d','D'].includes(event.key)){
       ++topSelectionToken;
       const current=pages.findIndex(button=>button.classList.contains('selected'));
