@@ -558,14 +558,49 @@ test('finish overlay shows ordinal event placement and never invents placement w
 });
 
 test('live and archived event browser fits phone, tablet and desktop without horizontal overflow',async t=>{
- const p=await fixture(t);await p.addStyleTag({url:base+'/events/events.css'});await p.locator('#open').click();await p.locator('.sq-event-cards').waitFor();
- for(const [width,height] of [[320,720],[390,844],[820,1180],[1107,1282],[1920,1080]]){
+ const p=await fixture(t);await p.addStyleTag({url:base+'/events/events.css'});
+ // The shipped event stylesheet precedes native and Ranked styles. Test that
+ // actual cascade, not an isolated dialog that cannot expose selector clashes.
+ const globals=nativeBundle.match(/`(:root \{[^`]*html, body[^`]*)`/)[1].replace(/\\n/g,'\n').replace(/\\t/g,'\t').replace(/\$\{[^}]*\}/g,'');
+ await p.addStyleTag({content:globals});
+ await p.evaluate(source=>eval('('+source+')')(),section('  function ensureStyles(){','  function setUnofficialMessage(){'));
+ await p.evaluate(source=>{
+  const trackInfo=()=>({name:'Custom event preview',type:'custom'});
+  const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  bridgeFixture.thumbnail=eval('('+source+')');
+ },functionSource('trackThumbnailMarkup'));
+ await p.evaluate(()=>{
+  const footer=document.createElement('div');footer.id='overallDailyGrid';
+  footer.innerHTML='<div class="competition-feature-image">'+bridgeFixture.thumbnail(id)+'</div>';
+  document.body.append(footer);
+ });
+ assert.equal(await p.locator('#overallDailyGrid .profile-track-placeholder').evaluate(node=>{
+  const box=node.getBoundingClientRect(),frame=node.parentElement.getBoundingClientRect();
+  return getComputedStyle(node.parentElement).position==='relative'&&box.width<=frame.width+1&&box.height<=frame.height+1;
+ }),true,'Ranked footer mystery preview also stays contained');
+ await p.locator('#overallDailyGrid').evaluate(node=>node.remove());
+ await p.locator('#open').click();await p.locator('.sq-event-cards').waitFor();
+ const assertContainedPreviews=async()=>{
+  assert.equal(await p.locator('.sq-events-dialog .profile-track-placeholder').count()>0,true,'exercise real mystery previews');
+  for(const placeholder of await p.locator('.sq-events-dialog .profile-track-placeholder').all()){
+   assert.equal(await placeholder.evaluate(node=>{
+    const box=node.getBoundingClientRect(),frame=node.parentElement.getBoundingClientRect();
+    return box.left>=frame.left-1&&box.top>=frame.top-1&&box.right<=frame.right+1&&box.bottom<=frame.bottom+1;
+   }),true,'custom preview cannot paint over the menu');
+  }
+  assert.equal(await p.locator('[data-event-close]').evaluate(node=>{
+   const box=node.getBoundingClientRect();return node.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2));
+  }),true,'Close is not covered by a thumbnail');
+ };
+ for(const [width,height] of [[320,720],[390,844],[820,1180],[1107,1282],[1920,1080],[2515,1248],[2800,1920]]){
   await p.setViewportSize({width,height});
+  await assertContainedPreviews();
   assert.equal(await p.locator('.sq-events-dialog').evaluate(node=>node.getBoundingClientRect().left>=-1&&node.getBoundingClientRect().right<=innerWidth+1&&node.scrollWidth<=node.clientWidth+2),true,width+'px live dialog');
   assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px live content');
  }
+ if(process.env.EVENT_MENU_SCREENSHOT)await p.screenshot({path:process.env.EVENT_MENU_SCREENSHOT});
  await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill('2026-08');await p.getByRole('button',{name:'View month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"]').waitFor();
  for(const [width,height] of [[320,720],[390,844],[820,1180],[1920,1080]]){
-  await p.setViewportSize({width,height});assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px archive content');
+  await p.setViewportSize({width,height});await assertContainedPreviews();assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px archive content');
  }
 });

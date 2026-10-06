@@ -752,6 +752,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-event-board > h2 > .sq-event-refresh img{width:22px;height:22px;object-fit:contain}
 
 /* Keep the event browser readable without allowing its content to widen the dialog. */
+.sq-event-thumb .profile-track-image-frame,.sq-archive-thumb .profile-track-image-frame{position:relative!important;overflow:hidden;isolation:isolate}
 .sq-events-dialog{width:min(1080px,100%);min-width:0;max-height:min(900px,calc(100dvh - 24px));overflow:hidden}
 .sq-events-dialog header,.sq-events-dialog nav,.sq-event-status{flex:none;min-width:0}
 .sq-events-dialog main{width:100%;min-width:0;min-height:0;box-sizing:border-box;overscroll-behavior:contain}

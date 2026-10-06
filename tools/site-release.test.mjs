@@ -22,3 +22,13 @@ test('release stamping rejects invalid revisions or absent entry anchors', () =>
   assert.throws(() => stampClientRelease('', index, 45), /anchors/);
   assert.throws(() => stampClientRelease(patch, '', 45), /anchors/);
 });
+
+test('event stylesheet and module preload use the same release as the client', () => {
+  const html=index+'<link rel="stylesheet" href="./events/events.css" data-event-css><link rel="modulepreload" href="./events/client.mjs?v=43">';
+  const result=stampClientRelease(patch,html,45);
+  assert.match(result.index,/events\/events\.css\?v=45/);
+  assert.match(result.index,/events\/client\.mjs\?v=45/);
+  const next=stampClientRelease(result.patch,result.index,46);
+  assert.match(next.index,/events\/events\.css\?v=46/);
+  assert.match(next.index,/events\/client\.mjs\?v=46/);
+});
