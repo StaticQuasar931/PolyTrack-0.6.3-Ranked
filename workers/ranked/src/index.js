@@ -220,6 +220,12 @@ function json(origin, env, status, body, cacheControl = '') {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+function rateLimited(origin, env) {
+  const response = json(origin, env, 429, {error: 'rate_limited', retryAfterSeconds: 60});
+  response.headers.set('Retry-After', '60');
+  return response;
+}
+
 function base64UrlBytes(value) {
   const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
   const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
@@ -1641,10 +1647,22 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         if (publicSnapshotLoads.get(key) === load) publicSnapshotLoads.delete(key);
       };
       try {
+        if (!await allowPublicRead(request, env)) {
+          release();
+          return rateLimited(origin, env);
+        }
         const snapshot = await readDocument(env, collection, id);
         if (!snapshot) {
-          release();
-          return json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10, stale-while-revalidate=60');
+          const response = json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10');
+          if (cache && context.waitUntil) {
+            const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
+              .catch(() => {})
+              .finally(release);
+            try { context.waitUntil(fill); } catch { void fill; }
+          } else {
+            release();
+          }
+          return response;
         }
         const data = collection === COLLECTIONS.track && Array.isArray(snapshot.data.entries)
           ? {
@@ -1674,6 +1692,18 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
     publicSnapshotLoads.set(key, load);
   }
   return (await load).clone();
+}
+
+async function allowPublicRead(request, env) {
+  const limiter = env.PUBLIC_READ_RATE_LIMITER;
+  if (!limiter) return true;
+  const ip = request.headers.get('CF-Connecting-IP');
+  if (!ip) return false;
+  try {
+    return (await limiter.limit({ key: ip })).success === true;
+  } catch {
+    return false;
+  }
 }
 
 async function submitExtraTrackReport(request, env, origin, uid, body) {
@@ -1741,8 +1771,13 @@ export async function handleRequest(request, env, context = {}) {
     if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({key: uid})).success) return json(origin, env, 429, {error: 'rate_limited', retryAfterSeconds: 60});
     return profileGroupCode(request, env, context, uid, null, true);
   }
-  if (request.method === 'GET' && path === '/v1/snapshot/overall') return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
-  if (request.method === 'GET' && path === '/v1/extra-tracks/unranked') return unrankedExtraBoard(request, env, origin);
+  if (request.method === 'GET' && path === '/v1/snapshot/overall') {
+    return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
+  }
+  if (request.method === 'GET' && path === '/v1/extra-tracks/unranked') {
+    if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
+    return unrankedExtraBoard(request, env, origin);
+  }
   if (request.method === 'GET' && path === '/v1/snapshot/track') {
     const trackId = safeText(new URL(request.url).searchParams.get('trackId'), 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(trackId)) return json(origin, env, 400, { error: 'invalid_track_id' });

@@ -241,9 +241,9 @@ export function installEvents(bridge){
     archiveIntent=null;if(direct)close();
     shell();selected=period;body('<p role="status">Opening event...</p><p>You can cancel with Close. Your saved PBs are unchanged.</p>');message('Preparing event racing.');
     const attempt=++entryRequest,accountId=bridge.accountId();
-    let timer;
-    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();eventIntent=sessions.enter(period,bridge.accountId());close();message('Opening event track...');nativeOpenPermit=true;try{await bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
-    catch(error){if(attempt===entryRequest||eventIntent?.periodId===period.id){sessions.leave();eventIntent=null;shell();message(error.message);body('<p>The event track could not be opened. Your saved records are unchanged.</p>');}return false;}finally{clearTimeout(timer);}
+    let timer,intent=null;
+    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();intent=sessions.enter(period,bridge.accountId());eventIntent=intent;close();message('Opening event track...');nativeOpenPermit=true;try{await bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
+    catch(error){const ownsIntent=!!intent&&sessions.current()===intent&&eventIntent===intent;if(attempt===entryRequest||ownsIntent){if(ownsIntent){sessions.leave();eventIntent=null;}shell();message(error.message);body('<p>The event track could not be opened. Your saved records are unchanged.</p>');}return false;}finally{clearTimeout(timer);}
   }
   async function openEvent({kind,trackId}={}){
     archiveIntent=null;sessions.leave();eventIntent=null;tick();

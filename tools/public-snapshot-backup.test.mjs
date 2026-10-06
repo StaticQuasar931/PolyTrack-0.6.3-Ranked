@@ -17,6 +17,57 @@ const overall = {updatedAt: 300, revision: 9, builtRevision: 9, sourceRevision: 
   trackSummaries: [{trackId, updatedAt: 250, fieldSize: 2, leader: {accountId: 'racer', name: 'Racer', replay: 'private'}}],
   authorityAudit: {ownerUid: 'private'}, resultBundleLocation: 'main_results'};
 
+test('transient overall and catalog failures preserve every existing backup without retries', async t => {
+  for (const stage of ['overall', 'catalog', 'network', 'body', 'empty']) {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-backup-defer-'));
+    t.after(() => fs.rm(directory, {recursive: true, force: true}));
+    await fs.mkdir(path.join(directory, 'events'));
+    const files = {'manifest.json': JSON.stringify({schemaVersion: 1, tracks: {},
+      events: {old: {path: 'events/old.json'}}}), 'overall.json': '{"saved":true}',
+      'events/old.json': '{"oldEvent":true}'};
+    for (const [name, text] of Object.entries(files)) await fs.writeFile(path.join(directory, name), text);
+    let calls = 0;
+    const result = await runPublicSnapshotBackup({directory, trackIds: [], log: () => {}, fetchImpl: async url => {
+      calls++;
+      if (stage === 'network') throw TypeError('fetch failed');
+      if (stage === 'body') return {ok: true, status: 200, headers: new Headers(), text: async () => {throw Error('interrupted');}};
+      if (url.endsWith('/overall')) return stage === 'overall' ? new Response('', {status: 429}) : Response.json(overall);
+      if (stage === 'empty') return Response.json({periods: [], archives: []});
+      return new Response('', {status: 503});
+    }});
+    assert.equal(result.deferred, true, stage);
+    assert.equal(result.previousBackupsPreserved, true);
+    assert.equal(calls, ['catalog', 'empty'].includes(stage) ? 2 : 1, 'no retry loop or later fetches');
+    for (const [name, text] of Object.entries(files)) assert.equal(await fs.readFile(path.join(directory, name), 'utf8'), text);
+  }
+});
+
+test('a mid-batch transient failure stops new fetches and does not publish partial backups', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-backup-batch-defer-'));
+  t.after(() => fs.rm(directory, {recursive: true, force: true}));
+  const manifest = JSON.stringify({schemaVersion: 1, tracks: {}, events: {}});
+  await fs.writeFile(path.join(directory, 'manifest.json'), manifest);
+  const ids = Array.from({length: 20}, (_, i) => i.toString(16).padStart(64, '0'));
+  let boardRequests = 0;
+  const result = await runPublicSnapshotBackup({directory, trackIds: ids, log: () => {}, fetchImpl: async url => {
+    if (url.endsWith('/overall')) return Response.json({...overall, trackSummaries: []});
+    if (url.endsWith('/catalog')) return Response.json({periods: [], archives: []});
+    boardRequests++; return new Response('', {status: 502});
+  }});
+  assert.equal(result.deferred, true);
+  assert.ok(boardRequests <= PUBLIC_SNAPSHOT_LIMITS.concurrency);
+  assert.deepEqual(await fs.readdir(directory), ['manifest.json']);
+  assert.equal(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'), manifest);
+});
+
+test('malformed data and permanent access errors still fail instead of reporting success', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-backup-invalid-'));
+  t.after(() => fs.rm(directory, {recursive: true, force: true}));
+  await assert.rejects(runPublicSnapshotBackup({directory, trackIds: [], fetchImpl: async () => new Response('bad json')}), /Invalid public snapshot JSON/);
+  await assert.rejects(runPublicSnapshotBackup({directory, trackIds: [], fetchImpl: async () => new Response('', {status: 403})}), /403/);
+  await assert.rejects(runPublicSnapshotBackup({directory, trackIds: [], fetchImpl: async () => Response.json({entries: []})}), /Invalid public overall/);
+});
+
 test('overall public projection omits private and unrelated account fields when planner sidecar is absent', () => {
   const cosmetics = {version: 7, theme: 'neon', stageEffect: 'spark', emblemBackdrop: 'disc', favoriteTrackId: trackId,
     overridePodium: true, ownerUid: 'private'};
@@ -112,6 +163,25 @@ test('track registry parser and bounded selection prioritize dirty snapshots and
   }, 1, 1000000000);
   assert.deepEqual(selected, [trackId]);
   assert.equal(PUBLIC_SNAPSHOT_LIMITS.trackFetches, 100);
+});
+
+test('registry supports single/double quoted IDs and trailing commas without evaluating code', () => {
+  const legacy = '5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572';
+  const index = `const OFFICIAL_IDS = new Set(["${trackId}",]); const COMMUNITY_IDS = new Set([]);
+    const LEGACY_COMMUNITY_IDS = new Set(['${legacy}']);`;
+  assert.deepEqual(publicTrackRegistry(index, `export const EXTRA_TRACK_IDS = new Set([\n '${legacy}', "${trackId}",\n]);`),
+    [legacy, trackId].sort());
+  assert.throws(() => publicTrackRegistry(index.replace(`['${legacy}']`, `[getIds()]`), 'export const EXTRA_TRACK_IDS = new Set([]);'), /Invalid track registry/);
+  assert.throws(() => publicTrackRegistry(index, `export const EXTRA_TRACK_IDS = new Set(['invalid']);`), /Invalid track registry/);
+});
+
+test('actual repository registries parse without network access', async () => {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const registry = publicTrackRegistry(await fs.readFile(path.join(repo, 'workers/ranked/src/index.js'), 'utf8'),
+    await fs.readFile(path.join(repo, 'workers/ranked/src/extra-track-ids.js'), 'utf8'));
+  assert.ok(registry.includes('5aafb733c264d51b09beedc7bd7eabb5e65bdded338980fcb14ae5ce36955572'));
+  assert.ok(registry.length > 200);
+  assert.equal(new Set(registry).size, registry.length);
 });
 
 test('missing track fetches rotate on later daily runs instead of pinning the first cap', () => {

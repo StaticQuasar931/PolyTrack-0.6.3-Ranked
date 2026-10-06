@@ -10,17 +10,17 @@ Race PolyTrack, chase personal bests, and compare times with other players.
 - Watch available replays and race against ghosts on supported tracks.
 - Earn Ranked and Event RP on eligible tracks. Check each event for its scoring and end time.
 - Matching-track finishes count toward live events from any track menu. Event races also keep your normal track PB; only finishes submitted while the exact event is active can earn its Event RP. Event launches show event placement, while normal launches show normal placement.
-- Explore Extra Tracks by name, style, difficulty, and progress. You can import a track to keep playing it later.
+- Explore Extra Tracks by name, tags, difficulty, and progress. Favorite tracks, rate them, suggest tag edits, or import them to play later.
 - Personalize your racer in Racer Studio. Some designs unlock as you play.
 - Make a friends-only leaderboard with Advanced Filters. Include or hide racers, match countries, badges or shared six-digit group tags, and save or share filter loadouts.
 
 ## Your Leaderboard
 
-Open **Filters** to choose who you see. **Normal** keeps published RP. **Smart** calculates a separate group score from results already loaded on your device. You can use global or group placements, and apply filters to all leaderboards or just Ranked. Right-click the Filters button to pause or resume without losing your choices.
+Open **Filters** to choose who you see. **Normal** keeps published RP. **Smart** calculates a separate group score from results loaded on your device. Choose global or group placements, and apply filters to Ranked or all leaderboards.
 
-Filter loadouts have shareable codes. Group tags are public labels, not passwords or private lobbies. Missing results are marked rather than guessed; loading another track can fill gaps in a group score. Lifetime Event RP remains published, while individual live events can show a group score. Personal filters never change public rankings or verification.
+The button shows **Filters-Active** or **Filters-Inactive**. Right-click it to pause or resume, or right-click a racer in Ranked to include or exclude them. Save loadouts and share them by code; imports keep a recovery copy of your previous filter.
 
-The button says **Filters-Active** or **Filters-Inactive**. Right-click a racer in Ranked to include or exclude them without clearing your other rules. Save favorite loadouts, download a share code, and choose an accent color. Imported filters keep a recovery copy of the filter they replace. Smart group weights are personal preferences, not changes to public track weights.
+Filters never change public rankings or verification. Missing results are marked rather than guessed. Lifetime Event RP stays published; individual live events can show a group score. Six-digit group tags are public labels, not passwords or private lobbies.
 
 When a newer website update is published, the menu can offer **Update available**. Reload when you are ready; updates never interrupt a race automatically.
 

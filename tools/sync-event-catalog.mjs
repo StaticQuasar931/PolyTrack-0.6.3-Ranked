@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {randomUUID} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {fetchPublicBackupJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 
 const endpoint = 'https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/catalog';
 const output = new URL('../events/public-catalog.json', import.meta.url);
@@ -13,13 +15,27 @@ export function publicCatalogBackup(value) {
   return { periods: value.periods, archives: value.archives };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const response = await fetch(endpoint, { headers: { Origin: 'https://staticquasar931.github.io', Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-  if (response.status === 429 || response.status === 503) console.log('Event catalog sync deferred:', response.status);
-  else {
-    if (!response.ok) throw Error('Public event catalog unavailable: ' + response.status);
-    const backup = publicCatalogBackup(await response.json());
-    await fs.writeFile(output, JSON.stringify(backup, null, 2) + '\n');
-    console.log('Saved', backup.periods.length, 'live and', backup.archives.length, 'archived event periods');
+export async function syncPublicEventCatalog({fetchImpl = fetch, outputFile = output, log = console.log} = {}) {
+  try {
+    const backup = publicCatalogBackup(await fetchPublicBackupJson(fetchImpl, endpoint));
+    if (!backup.periods.length && !backup.archives.length) {
+      throw new PublicBackupDeferredError('Empty event catalog; retaining saved assignments');
+    }
+    const destination = outputFile instanceof URL ? fileURLToPath(outputFile) : path.resolve(outputFile);
+    const temporary = destination + '.' + randomUUID() + '.tmp';
+    try {
+      await fs.writeFile(temporary, JSON.stringify(backup, null, 2) + '\n', {flag: 'wx'});
+      await fs.rename(temporary, destination);
+    } finally {
+      await fs.unlink(temporary).catch(error => {if (error.code !== 'ENOENT') throw error;});
+    }
+    log('Saved', backup.periods.length, 'live and', backup.archives.length, 'archived event periods');
+    return {deferred: false};
+  } catch (error) {
+    if (!(error instanceof PublicBackupDeferredError)) throw error;
+    log('Event catalog sync deferred; existing assignments preserved:', error.status || error.message);
+    return {deferred: true, status: error.status};
   }
 }
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) await syncPublicEventCatalog();

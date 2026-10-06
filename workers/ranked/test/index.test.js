@@ -440,24 +440,128 @@ test('serves a complete public snapshot from the Worker API', async () => {
   assert.match(response.headers.get('Cache-Control'), /^public/);
 });
 
+test('public read limiter rejects before Firestore and is keyed by client IP', async () => {
+  let firestoreReads = 0, limitedKey;
+  const env = {
+    ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+    PUBLIC_READ_RATE_LIMITER: { limit: async ({key}) => { limitedKey = key; return {success: false}; } },
+    __TEST_FIRESTORE: async () => { firestoreReads++; return null; }
+  };
+  const response = await handleRequest(new Request('https://ranked.example/v1/snapshot/overall', {
+    headers: { Origin: 'https://staticquasar931.github.io', 'CF-Connecting-IP': '203.0.113.4' }
+  }), env);
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), '60');
+  assert.equal(limitedKey, '203.0.113.4');
+  assert.equal(firestoreReads, 0);
+});
+
+test('public read limiter errors fail closed before Firestore', async () => {
+  let firestoreReads = 0;
+  const env = {
+    ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+    PUBLIC_READ_RATE_LIMITER: { limit: async () => { throw new Error('binding unavailable'); } },
+    __TEST_FIRESTORE: async () => { firestoreReads++; return null; }
+  };
+  const response = await handleRequest(new Request('https://ranked.example/v1/extra-tracks/unranked?trackId=invalid', {
+    headers: { Origin: 'https://staticquasar931.github.io', 'CF-Connecting-IP': '203.0.113.4' }
+  }), env);
+  assert.equal(response.status, 429);
+  assert.equal(firestoreReads, 0);
+});
+
+test('missing public snapshots share reads, cache briefly, and recover after expiry', async () => {
+  const prior = globalThis.caches, stored = new Map(), pending = [];
+  let reads = 0, permits = 0, now = 0, published = false, finishFill;
+  globalThis.caches = { default: {
+    match: async key => {
+      const item = stored.get(key.url);
+      return item && item.expiresAt > now ? item.response.clone() : null;
+    },
+    put: async (key, response) => {
+      if (response.status === 404) {
+        assert.equal(response.headers.get('Cache-Control'), 'public, max-age=10');
+        await new Promise(resolve => { finishFill = resolve; });
+      }
+      stored.set(key.url, { response: response.clone(), expiresAt: now + 10000 });
+    }
+  } };
+  try {
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      PUBLIC_READ_RATE_LIMITER: { limit: async () => { permits++; return { success: true }; } },
+      __TEST_FIRESTORE: async () => {
+        reads++;
+        return published ? { fields: { revision: { integerValue: '12' }, entries: { arrayValue: { values: [] } } } } : null;
+      } };
+    const context = { waitUntil: promise => pending.push(promise) };
+    const request = () => new Request('https://ranked.example/v1/snapshot/overall',
+      { headers: { Origin: 'https://staticquasar931.github.io', 'CF-Connecting-IP': '203.0.113.4' } });
+    const first = await handleRequest(request(), env, context);
+    const concurrent = await handleRequest(request(), env, context);
+    assert.equal(first.status, 404);
+    assert.deepEqual(await concurrent.json(), { error: 'snapshot_not_ready' });
+    assert.equal(reads, 1, 'missing snapshot remains coalesced until cache fill settles');
+    finishFill();
+    await Promise.all(pending.splice(0));
+    published = true;
+    now = 9999;
+    assert.equal((await handleRequest(request(), env, context)).status, 404);
+    assert.equal(reads, 1);
+    assert.equal(permits, 1, 'cached absence does not consume school-network permits');
+    now = 10001;
+    const fresh = await handleRequest(request(), env, context);
+    assert.equal(fresh.status, 200);
+    assert.equal((await fresh.json()).revision, 12);
+    await Promise.all(pending.splice(0));
+    assert.equal(reads, 2);
+  } finally {
+    if (finishFill) finishFill();
+    await Promise.all(pending);
+    if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior;
+  }
+});
+
+test('missing snapshot cache-write failures retain 404 and allow a later retry', async () => {
+  const prior = globalThis.caches, pending = [];
+  let reads = 0;
+  globalThis.caches = { default: {
+    match: async () => null,
+    put: async () => { throw Error('synthetic cache failure'); }
+  } };
+  try {
+    const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      __TEST_FIRESTORE: async () => { reads++; return null; } };
+    const context = { waitUntil: promise => pending.push(promise) };
+    const request = () => new Request('https://ranked.example/v1/snapshot/overall',
+      { headers: { Origin: 'https://staticquasar931.github.io' } });
+    for (let i = 0; i < 2; i++) {
+      assert.equal((await handleRequest(request(), env, context)).status, 404);
+      await Promise.all(pending.splice(0));
+    }
+    assert.equal(reads, 2);
+  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+});
+
 test('irrelevant query parameters cannot force repeat public snapshot reads', async () => {
   const prior = globalThis.caches, stored = new Map(), pending = [];
-  let reads = 0;
+  let reads = 0, permits = 0;
   globalThis.caches = { default: {
     match: async key => stored.get(key.url)?.clone() || null,
     put: async (key, response) => { stored.set(key.url, response.clone()); }
   } };
   try {
     const env = { ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
+      PUBLIC_READ_RATE_LIMITER: { limit: async () => { permits++; return {success: true}; } },
       __TEST_FIRESTORE: async path => { if (!path.includes('leaderboards_overall')) return null; reads++; return { fields: { revision: { integerValue: '7' }, entries: { arrayValue: { values: [] } } } }; } };
     const context = { waitUntil: promise => pending.push(promise) };
     for (const suffix of ['?unused=first', '?unused=second']) {
       const response = await handleRequest(new Request('https://ranked.example/v1/snapshot/overall' + suffix,
-        { headers: { Origin: 'https://staticquasar931.github.io' } }), env, context);
+        { headers: { Origin: 'https://staticquasar931.github.io', 'CF-Connecting-IP': '203.0.113.4' } }), env, context);
       assert.equal(response.status, 200);
       await Promise.all(pending.splice(0));
     }
     assert.equal(reads, 1);
+    assert.equal(permits, 1, 'only the cold-cache miss consumes a permit');
     assert.equal(stored.size, 1);
   } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
 });

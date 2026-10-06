@@ -2,12 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 
 export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 100, eventFetches: 120, eventReplayFetches: 30,
   eventReplaysPerPeriod: 10, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4,
   archivedEventRecheckMs: 7 * 86400000});
 const WORKER = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
-const PAGES_ORIGIN = 'https://staticquasar931.github.io';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = path.join(root, 'public-snapshots');
 const TRACK_ID = /^[a-f0-9]{64}$/;
@@ -174,19 +174,20 @@ export function publicEventReplayBackup(value, {periodId, trackId, entry}) {
 }
 
 function parseSet(source, name) {
-  const match = new RegExp(`(?:const|export const)\\s+${name}\\s*=\\s*new Set\\((\\[[^\\]]*\\])\\)`).exec(source);
+  const match = new RegExp(`(?:const|export const)\\s+${name}\\s*=\\s*new Set\\(\\[([^\\]]*)\\]\\)`).exec(source);
   if (!match) throw Error(`Missing track registry ${name}`);
-  const values = JSON.parse(match[1]);
-  if (!Array.isArray(values) || values.some(id => !TRACK_ID.test(id))) throw Error(`Invalid track registry ${name}`);
-  return values;
+  // Parse only literal track IDs, never evaluate JavaScript from a registry.
+  const literal = `(?:'[a-f0-9]{64}'|"[a-f0-9]{64}")`;
+  if (!new RegExp(`^\\s*(?:${literal}(?:\\s*,\\s*${literal})*\\s*,?)?\\s*$`).test(match[1])) {
+    throw Error(`Invalid track registry ${name}`);
+  }
+  return [...match[1].matchAll(/['"]([a-f0-9]{64})['"]/g)].map(row => row[1]);
 }
 
 export function publicTrackRegistry(indexSource, extraSource) {
   const ids = new Set([...parseSet(indexSource, 'OFFICIAL_IDS'), ...parseSet(indexSource, 'COMMUNITY_IDS'),
     ...parseSet(indexSource, 'LEGACY_COMMUNITY_IDS')]);
-  const block = /EXTRA_TRACK_IDS\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(extraSource || '');
-  if (!block) throw Error('Missing extra track registry');
-  for (const match of block[1].matchAll(/['"]([a-f0-9]{64})['"]/g)) ids.add(match[1]);
+  for (const id of parseSet(extraSource || '', 'EXTRA_TRACK_IDS')) ids.add(id);
   return [...ids].sort();
 }
 
@@ -221,8 +222,14 @@ function selectEventIds(catalog, limit = PUBLIC_SNAPSHOT_LIMITS.eventFetches) {
 async function mapLimit(values, limit, fn) {
   const result = new Array(values.length);
   let index = 0;
+  let stopped = false;
   await Promise.all(Array.from({length: Math.min(limit, values.length)}, async () => {
-    for (;;) { const current = index++; if (current >= values.length) return; result[current] = await fn(values[current]); }
+    for (;;) {
+      const current = index++;
+      if (stopped || current >= values.length) return;
+      try { result[current] = await fn(values[current]); }
+      catch (error) { stopped = true; throw error; }
+    }
   }));
   return result;
 }
@@ -234,16 +241,6 @@ async function readManifest(directory) {
     for (const id of Object.keys(value.tracks)) if (!TRACK_ID.test(id)) throw Error('Invalid track in public snapshot manifest');
     return value;
   } catch (error) { if (error.code === 'ENOENT') return {schemaVersion: 1, tracks: {}, events: {}}; throw error; }
-}
-
-async function fetchJson(fetchImpl, url, {optional = false, maxBytes = PUBLIC_SNAPSHOT_LIMITS.responseBytes} = {}) {
-  const response = await fetchImpl(url, {headers: {Origin: PAGES_ORIGIN, Accept: 'application/json'}, signal: AbortSignal.timeout(12000)});
-  if (optional && [404, 429, 503].includes(response.status)) return null;
-  if (!response.ok) throw Error(`Public snapshot endpoint failed: ${response.status}`);
-  if (Number(response.headers.get('content-length') || 0) > maxBytes) throw Error('Public snapshot response exceeds size limit');
-  const text = await response.text();
-  if (Buffer.byteLength(text) > maxBytes) throw Error('Public snapshot response exceeds size limit');
-  try { return JSON.parse(text); } catch { throw Error('Invalid public snapshot JSON'); }
 }
 
 function jsonText(value) { return JSON.stringify(value, null, 2) + '\n'; }
@@ -262,13 +259,16 @@ async function writeJsonIfChanged(directory, relative, value) {
   return {changed: true, sha256: sha256(text)};
 }
 
-export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
+async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
   trackIds = null, log = console.log} = {}) {
   const previous = await readManifest(directory);
   const overallRaw = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/overall`);
   const {snapshot: overall, planner} = publicOverallBackup(overallRaw);
-  const catalog = await fetchJson(fetchImpl, `${WORKER}/v1/events/catalog`, {optional: true}) || {periods: [], archives: []};
+  const catalog = await fetchJson(fetchImpl, `${WORKER}/v1/events/catalog`);
   const selectedEvents = selectEventIds(catalog);
+  if (!catalog.periods.length && !catalog.archives.length && Object.keys(previous.events || {}).length) {
+    throw new PublicBackupDeferredError('Empty event catalog; retaining saved event backups');
+  }
   const liveIds = new Set((catalog.periods || []).map(row => row.id));
   const eventFetchIds = [];
   for (const id of selectedEvents) {
@@ -338,7 +338,10 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
       const url = `${WORKER}/v1/events/${encodeURIComponent(candidate.periodId)}/replays/${encodeURIComponent(candidate.entry.accountId)}`;
       const replay = await fetchJson(fetchImpl, url, {optional: true, maxBytes: PUBLIC_SNAPSHOT_LIMITS.eventReplayResponseBytes});
       return {candidate, value: replay ? publicEventReplayBackup(replay, candidate) : null};
-    } catch { return {candidate, value: null}; }
+    } catch (error) {
+      if (error instanceof PublicBackupDeferredError) throw error;
+      return {candidate, value: null};
+    }
   });
 
   const nextTracks = {...previous.tracks}, nextEvents = {...previous.events};
@@ -428,6 +431,16 @@ export async function runPublicSnapshotBackup({fetchImpl = fetch, directory = ou
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length,
     plannerAvailable: planner.available, plannerReason: planner.reason}}));
   return manifest;
+}
+
+export async function runPublicSnapshotBackup(options = {}) {
+  try { return await capturePublicSnapshotBackup(options); }
+  catch (error) {
+    if (!(error instanceof PublicBackupDeferredError)) throw error;
+    const result = {deferred: true, reason: error.message, status: error.status, previousBackupsPreserved: true};
+    (options.log || console.log)(JSON.stringify({publicSnapshotBackup: result}));
+    return result;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) await runPublicSnapshotBackup();

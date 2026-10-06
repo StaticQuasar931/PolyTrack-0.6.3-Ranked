@@ -1,32 +1,13 @@
-# Kodub weekly and permanent events
+# Events
 
-The Community track menu contains four independent Events cards: Kodub weekly,
-our weekly event, our daily event, and permanent Rolling Hills Racer. Community
-version navigation below the cards is full width. A version change does not hide
-Events.
+The Community menu offers Kodub's Track of the Week, daily and weekly events,
+and permanent Rolling Hills Racer. The Live Events menu also lists active events.
 
-Kodub uses its official end time, independently of our daily/weekly reset cycle.
-Its current track is mirrored through the Worker with strict asset identity and
-bounded downloads. Current event runs use the event leaderboard and Event RP.
-An expired Kodub event can be opened for unranked practice without reopening its
-scoring period. The previous local capture is only a fallback while still valid.
+- Each timed event shows its own end time. Kodub's weekly schedule is separate from the daily and weekly events.
+- A matching-track finish can count from any track menu, but only when submitted during the exact active event period. Event races also save the ordinary track personal best.
+- Pending runs can appear in standings and have available replays. Event RP requires the event's verification checks.
+- Rolling Hills Racer does not reset. Verified standings determine its current contribution.
+- Past Events shows frozen standings, winners and participant counts when available. Practice does not reopen an expired scoring period.
+- Saved results and website backups help when the live service is unavailable. Missing or incomplete data is labeled; it is not a confirmed empty leaderboard.
 
-Rolling Hills Racer is permanent and earns both normal RP and Event RP from
-server-verified runs. It does not reset. Its current contribution can change as
-verified standings change. Pending recordings may be watched but do not receive
-verified rewards.
-
-## Release components
-
-The static site, Cloudflare Worker, and Firestore rules are separate releases.
-Pushing the website does not deploy the Worker. Run the Worker tests before
-`npm run deploy --prefix workers/ranked`. Keep existing Worker secrets private.
-Do not restart migration to publish routine event or menu updates.
-
-The browser reads `/v1/kodub-weekly`, `/v1/events/catalog`, event snapshots and
-hash-bound replay/track endpoints. Requests require an allowed site Origin.
-Cloudflare upstream fetches use manual redirects and reject redirect responses.
-
-Archive standings reuse bounded cached snapshots. Winner and participant labels
-must distinguish unavailable data from a genuine empty event. Permanent Rolling
-Hills belongs in live events, not past events.
+Personal filters change what you see, not public event results or verification.

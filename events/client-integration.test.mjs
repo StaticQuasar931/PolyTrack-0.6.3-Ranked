@@ -304,6 +304,31 @@ test('featured track without exactly one matching server period never opens anot
  await p.evaluate(async()=>{periods.push({...periods[1],id:'duplicate-daily'});await ui.refreshCatalog(true);});
  assert.equal(await p.evaluate(()=>ui.openEvent({kind:'daily',trackId:id})),false);assert.equal(await p.evaluate(()=>!!window.car),false);
 });
+test('stale same-period launch failure cannot clear a newer event intent',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(()=>{
+  let rejectFirst, calls=0;
+  bridgeFixture.openTrack=()=>++calls===1?new Promise((_,reject)=>{rejectFirst=reject;}):Promise.resolve();
+  window.rejectOldLaunch=()=>rejectFirst(Error('stale launch failed'));
+  window.startOldLaunch=()=>{window.oldLaunch=ui.openEvent({kind:'daily',trackId:id});};
+  window.startNewLaunch=()=>{window.newLaunch=ui.openEvent({kind:'daily',trackId:id});};
+ });
+ await p.evaluate(()=>startOldLaunch());
+ await p.waitForFunction(()=>typeof window.rejectOldLaunch==='function'&&bridgeFixture.openTrack);
+ await p.evaluate(()=>startNewLaunch());
+ assert.equal(await p.evaluate(()=>newLaunch),true);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),true);
+ await p.evaluate(()=>rejectOldLaunch());
+ await p.waitForTimeout(0);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),true);
+});
+test('current native track-open failure clears only its owned event intent',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(()=>{bridgeFixture.openTrack=async()=>{throw Error('fixture launch failure');};});
+ assert.equal(await p.evaluate(()=>ui.openEvent({kind:'daily',trackId:id})),false);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
+ assert.match(await p.locator('.sq-events-dialog main').innerText(),/could not be opened/);
+});
 async function addNativePlay(p){await p.evaluate(()=>{window.normalStarts=0;const play=document.createElement('button');play.className='button play';play.textContent='Play';play.onclick=()=>normalStarts++;document.querySelector('.side-panel').append(play);});}
 test('event Play never falls through to normal PB launch; leaving restores normal Play',async t=>{
  const p=await fixture(t);await addNativePlay(p);await enter(p);

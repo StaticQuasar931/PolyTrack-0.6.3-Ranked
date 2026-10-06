@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import {trackMenuReadContract} from './track-menu-read-contract.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const failures = [];
@@ -20,9 +21,7 @@ const enrichContract = enrichStart >= 0 && enrichEnd > enrichStart ? patchSource
 if (!/integrityVerified:\s*entry\?\.integrityVerified\s*===\s*true/.test(enrichContract)) failures.push('Leaderboard normalization drops integrity verification state.');
 if (!/uploadId:\s*safeRecordingId/.test(enrichContract)) failures.push('Leaderboard normalization drops canonical replay upload IDs.');
 if (/newPosition:\s*0\b/.test(patchSource)) failures.push('Leaderboard POST can return an invalid zero position.');
-const derivedFallbackIndex = patchSource.indexOf("d.collection(COLLECTIONS.leaderboardsTrack).doc(safeTrackId)");
-const canonicalFallbackIndex = patchSource.indexOf('fetchCanonicalTrackEntries(safeTrackId,500,', derivedFallbackIndex);
-if (derivedFallbackIndex < 0 || canonicalFallbackIndex < derivedFallbackIndex) failures.push('Blocked edge fallback reads canonical PB documents before the one-read derived snapshot.');
+failures.push(...trackMenuReadContract(patchSource));
 
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));

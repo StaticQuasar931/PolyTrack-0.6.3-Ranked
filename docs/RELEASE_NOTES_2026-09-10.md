@@ -1,5 +1,7 @@
 # PolyTrack update: September 10
 
+Historical notes for the September 10, 2026 update. For current features, see the main README and in-game help.
+
 ## Fixed
 - Setting a PB no longer reopens Ranked over your race.
 - Waiting runs are sorted by time, including your own run in the verified filter.
