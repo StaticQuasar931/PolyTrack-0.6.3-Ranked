@@ -6,6 +6,7 @@ import { decodeSnapshot, publishSnapshot, MAX_DECODED_BYTES } from './snapshot-p
 import { runPublicSnapshotBackup } from './public-snapshot-backup.mjs';
 import { exportPublicProfilesAndReplays } from './public-profile-replay-export.mjs';
 import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
+import { buildProfileSnapshotResults } from './build-profile-snapshot-results.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -165,7 +166,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const startFullSnapshot = previousProgress?.fullSnapshotPending !== true;
     exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: 2000,
       fullSnapshot: startFullSnapshot, log });
-    const summary={counts:exportResult.counts,scanned:exportResult.scanned,
+    const summary={counts:exportResult.counts,scanned:exportResult.scanned,capturedAt:new Date().toISOString(),
       coverage:exportResult.coverage||exportResult.totalCoverage,complete:exportResult.complete===true,
       budgetReached:exportResult.budgetReached===true,incompletePage:exportResult.incompletePage===true};
     await fs.writeFile(path.join(stagingDirectory,'public-export-summary.json'),JSON.stringify(summary)+'\n');
@@ -177,6 +178,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const savedExportSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
   const coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);
   await fs.writeFile(path.join(stagingDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`);
+  await buildProfileSnapshotResults(stagingDirectory);
 
   let oldCurrent = null;
   try {

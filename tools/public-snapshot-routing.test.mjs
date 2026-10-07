@@ -9,9 +9,9 @@ function section(start,end){return source.slice(source.indexOf(start),source.ind
 test('protected refresh control visibly locks and unlocks without changing loading-owned disabled state',()=>{
   let locked=true;const attrs=new Map();
   const button={disabled:false,dataset:{},style:{removeProperty:()=>{}},setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k)};
-  const context=vm.createContext({String,snapshotOnlyForNewAccount:()=>locked,snapshotCaptureLabel:()=> 'Snapshot captured 2 hours ago'});
+  const context=vm.createContext({String,snapshotOnlyForNewAccount:()=>locked,snapshotUnlockLabel:()=> 'Live refresh unlocks in 10:00',snapshotCaptureLabel:()=> 'Snapshot captured 2 hours ago'});
   vm.runInContext(section('  function syncSnapshotRefreshControl(', '  async function readPublicSnapshotBackup('),context);
-  context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);assert.match(button.title,/Live refresh locked/);assert.equal(attrs.get('aria-disabled'),'true');
+  context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);assert.match(button.title,/Live refresh unlocks in 10:00/);assert.equal(attrs.get('aria-disabled'),'true');
   context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,false);
   button.disabled=true;locked=true;context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);
 });
@@ -30,9 +30,12 @@ test('new-account snapshot protection needs fifteen minutes and a saved finish, 
     vm.runInContext(section('  const NEW_ACCOUNT_SNAPSHOT_MS=', '  let publicSnapshotReaderPromise='),context);return context;
   };
   let context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
+  assert.match(context.snapshotUnlockLabel(),/15:00/);
   local=[{accountId,timeMs:12345}];
   now+=899999;context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
+  assert.match(context.snapshotUnlockLabel(),/0:01/);
   now++;assert.equal(context.snapshotOnlyForNewAccount(),false);
+  assert.equal(context.snapshotUnlockLabel(),'Live refresh available');
   accountId='b'.repeat(64);assert.equal(context.snapshotOnlyForNewAccount(),true);
   cached={entries:[{accountId,accountCreatedAt:now-86400000}]};assert.equal(context.snapshotOnlyForNewAccount(),false);
 });

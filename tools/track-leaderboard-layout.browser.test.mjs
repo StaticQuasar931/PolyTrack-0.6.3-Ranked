@@ -24,6 +24,27 @@ const viewports = [
   [2800, 1920],
 ];
 
+test('compact snapshot panel keeps age and countdown visible across resolutions', {
+  skip: !chromium && 'Playwright unavailable'
+}, async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await browser.newPage();
+    await page.setContent(`<html class="sq-compact-track-data"><style>html,body{margin:0}#polytrackTrackFreshness{position:fixed;display:grid;--sq-ui-scale:1}</style><div id="polytrackTrackFreshness" class="polytrack-track-freshness"><strong>Snapshot + local PB</strong><span>Snapshot captured 2 days ago</span><span>Live refresh unlocks in 14:59</span><span>Your saved finish updates here</span></div></html>`);
+    await page.addStyleTag({content:rankedCss});
+    await page.addStyleTag({content:homeCss});
+    for(const [width,height] of viewports){
+      await page.setViewportSize({width,height});
+      const box=await page.locator('#polytrackTrackFreshness').evaluate(node=>{
+        const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight};
+      });
+      assert.ok(box.left>=0&&box.right<=width&&box.top>=0&&box.bottom<=height,JSON.stringify(box));
+      assert.ok(box.width<=360,JSON.stringify(box));
+      assert.ok(box.scrollHeight<=box.clientHeight+1,'All four status rows remain visible: '+JSON.stringify(box));
+    }
+  }finally{await browser.close();}
+});
+
 test('owned mobile layout explicitly places all native footer controls', () => {
   assert.match(homeCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(112px,\s*1\.15fr\)\s+minmax\(64px,\s*0\.9fr\)\s+44px\s*!important;/);
   assert.match(homeCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(112px,\s*1\.25fr\)\s+44px\s*!important;/);

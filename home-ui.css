@@ -233,3 +233,59 @@
     grid-template-columns: minmax(42px, .7fr) minmax(92px, 1.5fr) minmax(64px, 1.2fr) 40px !important;
   }
 }
+
+/* Keep ranked snapshot details compact and above the leaderboard controls. */
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
+  left: max(10px, env(safe-area-inset-left)) !important;
+  right: auto !important;
+  bottom: max(58px, calc(env(safe-area-inset-bottom) + 54px)) !important;
+  width: min(360px, calc(100vw - 20px)) !important;
+  max-width: min(360px, calc(100vw - 20px)) !important;
+  max-height: 100px !important;
+  box-sizing: border-box !important;
+  padding: 6px 9px !important;
+  gap: 2px !important;
+  overflow: hidden !important;
+  font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+  clip-path: none !important;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong,
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  line-height: 1.25 !important;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong {
+  font-size: clamp(12px, calc(13px * var(--sq-ui-scale, 1)), 15px) !important;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
+  font-size: clamp(10px, calc(11px * var(--sq-ui-scale, 1)), 13px) !important;
+}
+@media (max-width: 900px) {
+  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
+    width: min(320px, calc(100vw - 20px)) !important;
+    max-width: min(320px, calc(100vw - 20px)) !important;
+  }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
+    bottom: max(106px, calc(env(safe-area-inset-bottom) + 102px)) !important;
+    width: min(280px, calc(100vw - 20px)) !important;
+    max-width: min(280px, calc(100vw - 20px)) !important;
+    max-height: 90px !important;
+    padding: 5px 7px !important;
+  }
+}
+@media (max-width: 360px) {
+  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+  }
+}

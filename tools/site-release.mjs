@@ -9,6 +9,7 @@ export function stampClientRelease(patch, index, revision) {
     .replace(/(tools\/public-snapshot-client\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(const extraCatalogRevision=)['"]\d+['"]/, `$1'${revision}'`);
   index = index.replace(/polytrack_062_patch\.js\?v=\d+/, `polytrack_062_patch.js?v=${revision}`)
+    .replace(/(home-ui\.css)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(events\/(?:events\.css|client\.mjs))(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`);
   return {patch, index};
 }

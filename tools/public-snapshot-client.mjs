@@ -37,6 +37,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       kind==='event'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)?`events/${id}.json`:
       kind==='archive-month'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(id)?`archives/${id}.json`:
       kind==='profile'&&/^[a-f0-9]{64}$/.test(id)?`profiles/${id}.json`:
+      kind==='profile-results'&&/^[a-f0-9]{64}$/.test(id)?`profile-results/${id}.json`:
       kind==='recording'&&/^\d{1,16}$/.test(String(id))&&Number.isSafeInteger(Number(id))&&Number(id)>0?`recordings/${id}.json`:
       kind==='event-replay'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)&&/^[a-f0-9]{64}$/.test(accountId)?`event-replays/${id}/${accountId}.json`:null;
     if(!path)return null;
@@ -60,6 +61,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='track'&&value.trackId!==id)throw Error('Public track identity mismatch');
         if(kind==='event'&&value.id!==id)throw Error('Public event identity mismatch');
         if(kind==='profile'&&value.accountId!==id)throw Error('Public profile identity mismatch');
+        if(kind==='profile-results'&&(value.accountId!==id||!Array.isArray(value.results)||value.results.length>2000||value.results.some(row=>!/^[a-f0-9]{64}$/.test(row?.trackId||''))))throw Error('Public profile results identity mismatch');
         if(kind==='recording'&&(typeof value.recording!=='string'||value.recording.length>850000||!Number.isSafeInteger(value.frames)||value.frames<1))throw Error('Invalid public recording');
         if(kind==='archive-month'&&(!Array.isArray(value.periods)||value.periods.length>500||value.periods.some(p=>typeof p?.id!=='string'||!Number.isSafeInteger(p.startsAt)||new Date(p.startsAt).toISOString().slice(0,7)!==id)))throw Error('Invalid archive month');
         if(kind==='event-replay'&&(value.periodId!==id||value.accountId!==accountId||typeof value.replay!=='string'||value.replay.length>65536))throw Error('Public replay identity mismatch');
