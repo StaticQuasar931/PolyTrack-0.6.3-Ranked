@@ -28,7 +28,7 @@ test('offline mode packages staging, excludes progress, writes honest coverage a
   assert.equal(result.coverage.backup.overallComplete, false);
   assert.equal(result.coverage.profileReplay.requested, false);
   const index = JSON.parse(await readFile(path.join(root, result.directory, 'index.json'), 'utf8'));
-  assert.deepEqual(Object.keys(index.files).sort(), ['coverage.json', 'manifest.json', 'overall.json']);
+  assert.deepEqual(Object.keys(index.files).sort(), ['cosmetic-directory.json', 'coverage.json', 'manifest.json', 'overall.json']);
   assert.match(await readFile(path.join(root, 'index.html'), 'utf8'), /name="polytrack-snapshot" content="\.\/public-snapshots1\/"/);
 });
 

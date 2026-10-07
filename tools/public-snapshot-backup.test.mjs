@@ -105,8 +105,9 @@ test('overall public projection omits private and unrelated account fields when 
     overridePodium: true, ownerUid: 'private'};
   const result = publicOverallBackup({...overall, entries: [{...overall.entries[0], profileCosmetics: cosmetics,
     cosmeticUnlocks: ['stripe:overdrive', 'nameColor:aurora', 'future_unlock:variant-v2'],
-    serverAchievements: {beatOwner: {targetAccountId: 'b'.repeat(64), count: 1,
-      unlocks: [{cosmeticId: 'emblem:target', unlockedAt: 44, sourceSignature: 'private-proof'}], privateProof: 'private'}},
+    serverAchievements: {casual: {count: 12, rp: 1200, pointsPerTrack: 100, ledger: 'private-ledger', privateProof: 'private'},
+      beatOwner: {targetAccountId: 'b'.repeat(64), count: 1,
+        unlocks: [{cosmeticId: 'emblem:target', unlockedAt: 44, sourceSignature: 'private-proof'}], privateProof: 'private'}},
     accountCreatedAt: 1, totalPlaytimeMs: 2, latestPbAt: 3, groupCode: '123456', groupCodeUpdatedAt: 4}]});
   assert.equal(result.snapshot.updatedAt, 300);
   assert.equal(result.snapshot.entries[0].score, 10);
@@ -121,11 +122,20 @@ test('overall public projection omits private and unrelated account fields when 
   assert.deepEqual(result.snapshot.entries[0].cosmeticUnlocks, ['stripe:overdrive', 'nameColor:aurora', 'future_unlock:variant-v2']);
   assert.deepEqual(result.snapshot.entries[0].serverAchievements.beatOwner.unlocks,
     [{cosmeticId: 'emblem:target', unlockedAt: 44}]);
+  assert.deepEqual(result.snapshot.entries[0].serverAchievements.casual,
+    {count: 12, rp: 1200, pointsPerTrack: 100});
   assert.equal(JSON.stringify(result.snapshot.entries[0]).includes('private-proof'), false);
+  assert.equal(JSON.stringify(result.snapshot.entries[0]).includes('private-ledger'), false);
   assert.equal(result.snapshot.authorityAudit, undefined);
   assert.equal(result.snapshot.resultBundleLocation, undefined);
   assert.equal(result.snapshot.resultBundleComplete, false);
   assert.deepEqual(result.planner, {available: false, reason: 'sidecar-not-in-public-response'});
+});
+
+test('overall projection drops malformed Casual summaries rather than manufacturing totals', () => {
+  const {snapshot} = publicOverallBackup({...overall, entries: [{...overall.entries[0],
+    serverAchievements: {casual: {count: -1, rp: '1200', pointsPerTrack: 99, ledger: 'private'}}}]});
+  assert.equal(snapshot.entries[0].serverAchievements, undefined);
 });
 
 test('inline planner bundle is split into a revision-bound optional results file', () => {

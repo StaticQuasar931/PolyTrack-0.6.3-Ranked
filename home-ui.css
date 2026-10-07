@@ -234,36 +234,35 @@
   }
 }
 
-/* Track freshness is part of the native leaderboard flow when hosted there. */
+/* Keep track freshness outside the native leaderboard and its scroll area. */
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-  --sq-track-data-bg: #354153;
-  --sq-track-data-border: #91a0b4;
+  --sq-track-data-bg: #172442;
+  --sq-track-data-border: #7892bd;
   position: fixed !important;
   inset: auto auto max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) !important;
   z-index: 20;
-  width: min(360px, calc(100vw - 20px)) !important;
-  max-width: min(360px, calc(100vw - 20px)) !important;
-  max-height: min(180px, calc(100vh - 28px)) !important;
+  width: min(300px, calc(100vw - 20px)) !important;
+  max-width: min(300px, calc(100vw - 20px)) !important;
+  max-height: min(164px, calc(100vh - 28px)) !important;
   box-sizing: border-box !important;
-  padding: 8px 10px !important;
-  gap: 3px !important;
+  padding: 7px 9px !important;
+  gap: 2px !important;
   overflow: auto !important;
   border: 1px solid var(--sq-track-data-border) !important;
   border-radius: 6px;
-  background: var(--sq-track-data-bg) !important;
+  background: linear-gradient(145deg, #1d2d50, #111d37) !important;
   color: #f5f7fb !important;
-  font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
+  font-size: clamp(12px, calc(13px * var(--sq-ui-scale, 1)), 15px) !important;
   line-height: 1.3 !important;
   letter-spacing: 0 !important;
   clip-path: none !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="snapshot"] {
-  --sq-track-data-bg: #51451f;
-  --sq-track-data-border: #e6c85f;
+  --sq-track-data-border: #e2c95e;
+  box-shadow: inset 3px 0 #e2c95e, 0 5px 18px rgba(4, 10, 25, .28);
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="mixed"] {
-  --sq-track-data-bg: #3f3b49;
-  --sq-track-data-border: #c4a6dc;
+  --sq-track-data-border: #a6b9e5;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="cache"] {
   --sq-track-data-bg: #263f61;
@@ -281,21 +280,6 @@ html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshne
   --sq-track-data-bg: #4c3032;
   --sq-track-data-border: #e49a9c;
 }
-html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness.sq-track-data-inline {
-  position: relative !important;
-  inset: auto !important;
-  z-index: auto;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr);
-  align-self: stretch;
-  flex: 0 0 auto;
-  width: 100% !important;
-  min-width: 0;
-  max-width: 100% !important;
-  max-height: none !important;
-  margin: 0 0 8px !important;
-  overflow: visible !important;
-}
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong,
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
   display: block !important;
@@ -305,10 +289,21 @@ html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshne
   line-height: 1.3 !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong {
-  font-size: clamp(12px, calc(13px * var(--sq-ui-scale, 1)), 15px) !important;
+  color: #fff4bf !important;
+  font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
-  font-size: clamp(10px, calc(11px * var(--sq-ui-scale, 1)), 13px) !important;
+  font-size: clamp(11px, calc(11px * var(--sq-ui-scale, 1)), 13px) !important;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="snapshot"] > span:first-of-type {
+  color: #e2c95e !important;
+}
+@media(max-width: 420px), (max-height: 460px) {
+  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
+    padding: 5px 7px !important;
+    gap: 1px !important;
+    max-height: min(142px, calc(100vh - 20px)) !important;
+  }
 }
 html body [data-sq-snapshot-refresh-lock] {
   cursor: default !important;
@@ -330,3 +325,16 @@ html body [data-sq-snapshot-refresh-lock]:active {
 }
 html body [data-sq-snapshot-refresh-lock]::before,
 html body [data-sq-snapshot-refresh-lock]::after { display: none !important; }
+
+/* Retain the game's own-row highlight beneath optional cosmetic artwork. */
+.leaderboard-ui > .container > button.main.self.sq-racer-cosmetic:not(:focus-visible):not(.selected) {
+  background-color: #2e4182 !important;
+}
+.leaderboard-ui > .container > button.main.self.sq-racer-cosmetic::before {
+  opacity: .45 !important;
+}
+
+/* Empty plans use the full summary width instead of route-card columns. */
+.profile-guide > summary .route-preview-empty { grid-column: 1 / -1; display: grid; gap: 6px; min-width: 0; white-space: normal; }
+.profile-guide > summary .route-preview-empty strong { color: #edf3ff; font-size: clamp(16px, 1.2vw, 21px); }
+.profile-guide > summary .route-preview-empty small { color: #b9c8e3; line-height: 1.45; font-size: 13px; overflow-wrap: anywhere; }

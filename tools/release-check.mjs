@@ -5,6 +5,19 @@ import {trackMenuReadContract} from './track-menu-read-contract.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const failures = [];
+// A conflict-marked or missing snapshot index breaks every snapshot-only account.
+try {
+  const pointer = JSON.parse(readFileSync(join(root, 'snapshot-current.json'), 'utf8'));
+  if (!/^public-snapshots[1-9]\d*$/.test(pointer.currentdir)) throw new Error('Invalid snapshot directory');
+  const snapshotIndex = JSON.parse(readFileSync(join(root, pointer.currentdir, 'index.json'), 'utf8'));
+  if (snapshotIndex.schemaVersion !== 1 || !snapshotIndex.files || snapshotIndex.generation !== Number(pointer.currentdir.replace('public-snapshots', ''))) throw new Error('Snapshot generation/index mismatch');
+  const html = readFileSync(join(root, 'index.html'), 'utf8');
+  if (!html.includes('content="./' + pointer.currentdir + '/"')) throw new Error('Website snapshot pointer mismatch');
+  for (const item of Object.values(snapshotIndex.files)) {
+    if (!/^[a-f0-9]{64}\.bin$/.test(item.path) || !existsSync(join(root, pointer.currentdir, item.path))) throw new Error('Missing or invalid snapshot payload');
+  }
+} catch (error) { failures.push('Snapshot integrity: ' + error.message); }
+
 const required = ['index.html', 'manifest.json', 'robots.txt', 'sitemap.xml', 'main.bundle.js', 'polytrack_062_patch.js', 'polytrack_physics.wasm', 'simulation_worker.bundle.js', 'events/client.mjs', 'events/session.mjs', 'events/native-binding.mjs', 'events/native-finish.mjs', 'events/weekly-native.mjs', 'events/events.css'];
 for (const file of required) if (!existsSync(join(root, file))) failures.push(`Missing required file: ${file}`);
 

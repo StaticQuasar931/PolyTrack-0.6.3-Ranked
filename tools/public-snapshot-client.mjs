@@ -32,7 +32,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     return new TextDecoder().decode(output);
   }
   return async function read(kind,id='',accountId=''){
-    const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='overall'?'overall.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
+    const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='cosmetic-directory'?'cosmetic-directory.json':kind==='overall'?'overall.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
       kind==='track'&&/^[a-f0-9]{64}$/.test(id)?`tracks/${id}.json`:
       kind==='event'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)?`events/${id}.json`:
       kind==='archive-month'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(id)?`archives/${id}.json`:
@@ -61,6 +61,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='track'&&value.trackId!==id)throw Error('Public track identity mismatch');
         if(kind==='event'&&value.id!==id)throw Error('Public event identity mismatch');
         if(kind==='profile'&&value.accountId!==id)throw Error('Public profile identity mismatch');
+        if(kind==='cosmetic-directory'&&(!value.entries||typeof value.entries!=='object'||Array.isArray(value.entries)||Object.keys(value.entries).length>2000||Object.entries(value.entries).some(([id,row])=>!/^[a-f0-9]{64}$/.test(id)||!row?.value||typeof row.value!=='object'||Array.isArray(row.value))))throw Error('Invalid snapshot cosmetics');
         if(kind==='profile-results'&&(value.accountId!==id||!Array.isArray(value.results)||value.results.length>2000||value.results.some(row=>!/^[a-f0-9]{64}$/.test(row?.trackId||''))))throw Error('Public profile results identity mismatch');
         if(kind==='recording'&&(typeof value.recording!=='string'||value.recording.length>850000||!Number.isSafeInteger(value.frames)||value.frames<1))throw Error('Invalid public recording');
         if(kind==='archive-month'&&(!Array.isArray(value.periods)||value.periods.length>500||value.periods.some(p=>typeof p?.id!=='string'||!Number.isSafeInteger(p.startsAt)||new Date(p.startsAt).toISOString().slice(0,7)!==id)))throw Error('Invalid archive month');

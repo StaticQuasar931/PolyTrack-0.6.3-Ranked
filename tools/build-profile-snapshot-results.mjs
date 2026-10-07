@@ -47,15 +47,19 @@ export async function buildProfileSnapshotResults(directory){
     }
   }
   const output=path.join(directory,'profile-results');await fs.mkdir(output,{recursive:true});
-  let resultCount=0;
+  let resultCount=0;const cosmeticEntries={};let cosmeticUpdatedAt=0;
   for(const [accountId,results]of racers){
     const finishes=[...results.values()].sort((a,b)=>a.trackId.localeCompare(b.trackId));resultCount+=finishes.length;
     const value={accountId,updatedAt:Math.max(Number(overall?.updatedAt)||0,...finishes.map(row=>Number(row.cachedAt)||0)),
       capturedAt:summary?.capturedAt||null,results:finishes,expectedEligibleTracks:Number(published.get(accountId)?.raceCount)||0,
       coverage:{boardsPresent:boards,boardsKnown:Number(manifest?.trackIdsKnown)||boards,allTracksCaptured:boards>=Number(manifest?.trackIdsKnown||Infinity)},
       publicProfile:await optional(path.join(directory,'profiles',accountId+'.json'))};
+    if(value.publicProfile?.profileCosmetics){const at=Number(value.publicProfile.updatedAt)||0;cosmeticEntries[accountId]={at,value:value.publicProfile.profileCosmetics};cosmeticUpdatedAt=Math.max(cosmeticUpdatedAt,at);}
     const body=JSON.stringify(value)+'\n';if(Buffer.byteLength(body)>2*1024*1024)throw Error('Profile results exceed client limit');
     await fs.writeFile(path.join(output,accountId+'.json'),body);
   }
+  const cosmetics=JSON.stringify({updatedAt:cosmeticUpdatedAt,entries:cosmeticEntries})+'\n';
+  if(Buffer.byteLength(cosmetics)>2*1024*1024)throw Error('Snapshot cosmetic directory exceeds client limit');
+  await fs.writeFile(path.join(directory,'cosmetic-directory.json'),cosmetics);
   return {profiles:racers.size,results:resultCount,boards};
 }

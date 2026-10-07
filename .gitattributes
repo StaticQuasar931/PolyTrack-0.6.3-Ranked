@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Packed snapshot payloads must never undergo text merging or line-ending conversion.
+*.bin binary

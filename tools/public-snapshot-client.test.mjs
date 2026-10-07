@@ -49,6 +49,13 @@ test('snapshot capture metadata is bundled, shared, and never fetched from Fireb
   await fixture.read('snapshot-meta');assert.equal(fixture.calls(),2);
 });
 
+test('packed cosmetic directory loads public designs and rejects invalid identities',async()=>{
+  const id='a'.repeat(64),fixture=await packedFixture({updatedAt:1,entries:{[id]:{at:1,value:{theme:'crimson',emblem2:'flag'}}}},'cosmetic-directory.json');
+  assert.equal((await fixture.read('cosmetic-directory')).entries[id].value.emblem2,'flag');
+  const bad=await packedFixture({updatedAt:1,entries:{private:{value:{theme:'classic'}}}},'cosmetic-directory.json');
+  assert.equal(await bad.read('cosmetic-directory'),null);
+});
+
 test('packed snapshots reject bad checksums, traversal and dishonest decompressed length',async()=>{
   for(const change of [r=>r.sha256='0'.repeat(64),r=>r.path='../private.bin',r=>r.decodedBytes=1]){
     const fixture=await packedFixture({updatedAt:1,entries:[]},'overall.json',change);

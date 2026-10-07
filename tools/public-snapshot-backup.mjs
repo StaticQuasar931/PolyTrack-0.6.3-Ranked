@@ -72,14 +72,25 @@ function projectOverallEntry(entry) {
     .filter(value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}:[A-Za-z0-9_-]{1,64}$/.test(value)).slice(0, 32);
   if (result.serverAchievements && typeof result.serverAchievements === 'object') {
     const beatOwner = result.serverAchievements.beatOwner;
-    result.serverAchievements = beatOwner && typeof beatOwner === 'object' ? {beatOwner: {
+    const casual = result.serverAchievements.casual;
+    const projectedAchievements = {};
+    if (casual && typeof casual === 'object' && !Array.isArray(casual)) {
+      projectedAchievements.casual = {
+        ...(Number.isSafeInteger(casual.count) && casual.count >= 0 ? {count: casual.count} : {}),
+        ...(Number.isSafeInteger(casual.rp) && casual.rp >= 0 ? {rp: casual.rp} : {}),
+        ...(Number.isSafeInteger(casual.pointsPerTrack) && casual.pointsPerTrack === 100 ? {pointsPerTrack: 100} : {})
+      };
+      if (!Object.keys(projectedAchievements.casual).length) delete projectedAchievements.casual;
+    }
+    if (beatOwner && typeof beatOwner === 'object' && !Array.isArray(beatOwner)) projectedAchievements.beatOwner = {
       ...(TRACK_ID.test(beatOwner.targetAccountId || '') ? {targetAccountId: beatOwner.targetAccountId} : {}),
       ...(Number.isSafeInteger(beatOwner.count) && beatOwner.count >= 0 ? {count: beatOwner.count} : {}),
       unlocks: (Array.isArray(beatOwner.unlocks) ? beatOwner.unlocks : []).filter(row =>
         typeof row?.cosmeticId === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}:[A-Za-z0-9_-]{1,64}$/.test(row.cosmeticId))
         .slice(0, 32).map(row => ({cosmeticId: row.cosmeticId,
           ...(Number.isSafeInteger(row.unlockedAt) && row.unlockedAt >= 0 ? {unlockedAt: row.unlockedAt} : {})}))
-    }} : undefined;
+    };
+    result.serverAchievements = Object.keys(projectedAchievements).length ? projectedAchievements : undefined;
   }
   return result;
 }

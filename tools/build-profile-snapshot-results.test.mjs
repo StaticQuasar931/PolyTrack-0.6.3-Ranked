@@ -28,3 +28,13 @@ test('mismatched board identity is rejected',async t=>{
   const root=await fixture(t);await fs.writeFile(path.join(root,'tracks',trackId+'.json'),JSON.stringify({trackId:accountId,entries:[]}));
   await assert.rejects(buildProfileSnapshotResults(root),/Invalid captured track/);
 });
+
+test('snapshot cosmetic directory contains public designs without profile identity or replay fields',async t=>{
+  const root=await fixture(t);await fs.mkdir(path.join(root,'profiles'));
+  const design={version:7,theme:'crimson',emblem2:'flag',nameFont:'racing'};
+  await fs.writeFile(path.join(root,'profiles',accountId+'.json'),JSON.stringify({accountId,updatedAt:90,profileCosmetics:design}));
+  await buildProfileSnapshotResults(root);
+  const directory=JSON.parse(await fs.readFile(path.join(root,'cosmetic-directory.json')));
+  assert.deepEqual(directory.entries[accountId],{at:90,value:design});
+  assert.equal(directory.updatedAt,90);assert.equal(directory.entries[accountId].ownerUid,undefined);
+});
