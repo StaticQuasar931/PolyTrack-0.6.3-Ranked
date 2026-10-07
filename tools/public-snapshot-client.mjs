@@ -32,7 +32,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     return new TextDecoder().decode(output);
   }
   return async function read(kind,id='',accountId=''){
-    const path=kind==='overall'?'overall.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
+    const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='overall'?'overall.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
       kind==='track'&&/^[a-f0-9]{64}$/.test(id)?`tracks/${id}.json`:
       kind==='event'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)?`events/${id}.json`:
       kind==='archive-month'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(id)?`archives/${id}.json`:
@@ -55,7 +55,8 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         }
         if(body.length>2*1024*1024)throw Error('Public backup exceeds size limit');
         const value=JSON.parse(body);
-        if(!value||typeof value!=='object'||Array.isArray(value)||(kind!=='event-replay'&&!Number.isFinite(value.updatedAt)))throw Error('Invalid public backup');
+        if(!value||typeof value!=='object'||Array.isArray(value)||(!['event-replay','snapshot-meta'].includes(kind)&&!Number.isFinite(value.updatedAt)))throw Error('Invalid public backup');
+        if(kind==='snapshot-meta'&&(typeof value.capturedAt!=='string'||!Number.isFinite(Date.parse(value.capturedAt))||Date.parse(value.capturedAt)<=0))throw Error('Invalid snapshot capture date');
         if(kind==='track'&&value.trackId!==id)throw Error('Public track identity mismatch');
         if(kind==='event'&&value.id!==id)throw Error('Public event identity mismatch');
         if(kind==='profile'&&value.accountId!==id)throw Error('Public profile identity mismatch');

@@ -22,6 +22,11 @@ test('packed snapshots verify checksums, decompress and reuse immutable data',as
   assert.equal(await fixture.read('profile','a'.repeat(64)),null);
   assert.equal(fixture.calls(),2);
 });
+test('snapshot capture metadata is bundled, shared, and never fetched from Firebase',async()=>{
+  const fixture=await packedFixture({capturedAt:'2026-10-07T00:17:20.349Z'},'public-export-summary.json');
+  assert.equal((await fixture.read('snapshot-meta')).capturedAt,'2026-10-07T00:17:20.349Z');
+  await fixture.read('snapshot-meta');assert.equal(fixture.calls(),2);
+});
 
 test('packed snapshots reject bad checksums, traversal and dishonest decompressed length',async()=>{
   for(const change of [r=>r.sha256='0'.repeat(64),r=>r.path='../private.bin',r=>r.decodedBytes=1]){

@@ -6,18 +6,45 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 function section(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
 
-test('new-account snapshot period lasts exactly ten minutes and survives reloads',()=>{
-  let now=Date.UTC(2026,9,7),accountId='a'.repeat(64),cached=null;const storage=new Map();
+test('protected refresh control visibly locks and unlocks without changing loading-owned disabled state',()=>{
+  let locked=true;const attrs=new Map();
+  const button={disabled:false,dataset:{},style:{removeProperty:()=>{}},setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k)};
+  const context=vm.createContext({String,snapshotOnlyForNewAccount:()=>locked,snapshotCaptureLabel:()=> 'Snapshot captured 2 hours ago'});
+  vm.runInContext(section('  function syncSnapshotRefreshControl(', '  async function readPublicSnapshotBackup('),context);
+  context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);assert.match(button.title,/Live refresh locked/);assert.equal(attrs.get('aria-disabled'),'true');
+  context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,false);
+  button.disabled=true;locked=true;context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);
+});
+test('snapshot age labels do not pretend each track was updated when the snapshot was captured',()=>{
+  const context=vm.createContext({publicSnapshotCapturedAt:123,ageLabel:at=>{assert.equal(at,123);return '2 hours ago';}});
+  vm.runInContext(section('  function snapshotCaptureLabel(', '  function syncSnapshotRefreshControl('),context);
+  assert.equal(context.snapshotCaptureLabel(),'Snapshot captured 2 hours ago');
+  context.publicSnapshotCapturedAt=0;assert.match(context.snapshotCaptureLabel(),/unavailable/);
+});
+
+test('new-account snapshot protection needs fifteen minutes and a saved finish, and survives reloads',()=>{
+  let now=Date.UTC(2026,9,7),accountId='a'.repeat(64),cached=null,local=[];const storage=new Map();
   const create=()=>{
     const context=vm.createContext({Date:{now:()=>now},activeRankedAccountId:()=>accountId,
-      readOverallSnapshotCache:()=>cached,localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)}});
+      readOverallSnapshotCache:()=>cached,readLocalRaceRows:()=>local,canonicalRaceTimeMs:row=>row.timeMs||0,localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)}});
     vm.runInContext(section('  const NEW_ACCOUNT_SNAPSHOT_MS=', '  let publicSnapshotReaderPromise='),context);return context;
   };
   let context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
-  now+=599999;context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
+  local=[{accountId,timeMs:12345}];
+  now+=899999;context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
   now++;assert.equal(context.snapshotOnlyForNewAccount(),false);
   accountId='b'.repeat(64);assert.equal(context.snapshotOnlyForNewAccount(),true);
   cached={entries:[{accountId,accountCreatedAt:now-86400000}]};assert.equal(context.snapshotOnlyForNewAccount(),false);
+});
+test('idle visitors and another account saved runs never unlock live standings',()=>{
+  let now=Date.UTC(2026,9,7),rows=[];
+  const context=vm.createContext({Date:{now:()=>now},activeRankedAccountId:()=> 'self',readOverallSnapshotCache:()=>null,
+    readLocalRaceRows:()=>rows,canonicalRaceTimeMs:row=>row.timeMs||0,localStorage:{getItem:()=>null,setItem:()=>{}}});
+  vm.runInContext(section('  const NEW_ACCOUNT_SNAPSHOT_MS=', '  let publicSnapshotReaderPromise='),context);
+  assert.equal(context.snapshotOnlyForNewAccount(),true);now+=86400000;
+  assert.equal(context.snapshotOnlyForNewAccount(),true);
+  rows=[{accountId:'other',timeMs:12345},{accountId:'self',timeMs:0}];assert.equal(context.snapshotOnlyForNewAccount(),true);
+  rows.push({accountId:'self',timeMs:12345});assert.equal(context.snapshotOnlyForNewAccount(),false);
 });
 
 test('new-account gate tolerates blocked storage and rejects future timestamps',()=>{
@@ -36,7 +63,7 @@ test('new accounts cannot bypass snapshot mode with refresh or missing event sna
   vm.runInContext(section('  async function fetchRankedSnapshot(', '  function rankedNotifyQueue('),context);
   assert.equal(await context.fetchRankedSnapshot('overall','',{refresh:true}),null);
   vm.runInContext(section('  async function loadEventCloudRead(', '  const archiveMonthReads='),context);
-  await assert.rejects(context.loadEventCloudRead('/v1/events/d_new/snapshot','0.6.2_event_public','d_new'),/10 minutes/);
+  await assert.rejects(context.loadEventCloudRead('/v1/events/d_new/snapshot','0.6.2_event_public','d_new'),/15 minutes/);
   assert.equal(reads,0);
 });
 

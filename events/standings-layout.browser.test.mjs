@@ -7,6 +7,25 @@ const require=createRequire(new URL('../tools/verifier/package.json',import.meta
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const css=fs.readFileSync(new URL('./events.css',import.meta.url),'utf8');
 
+test('live overview keeps four cards balanced without overflowing phones or desktops',async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage();
+  const cards=['daily','weekly','kodub','permanent'].map(kind=>`<button class="sq-event-card ${kind==='permanent'?'sq-event-permanent':''}"><span class="sq-event-thumb"><img alt="Track preview"></span><div class="sq-event-record">00:19.951 · 3rd</div><span><small>${kind.toUpperCase()} EVENT</small><strong>A longer community track title</strong><span>Up to 500 Event RP</span><small>125 racers · 98 verified</small><small>Ends tomorrow at 01:00</small></span></button>`).join('');
+  await page.setContent(`<style>body{margin:0}*{box-sizing:border-box}</style><div class="sq-events-overlay"><section class="sq-events-dialog"><header><h2>Events</h2><button>Close</button></header><nav><button>Live events</button><button>Past events</button></nav><main><div class="sq-event-cards">${cards}</div></main></section></div>`);
+  await page.addStyleTag({content:css});
+  for(const [width,height] of [[320,720],[390,844],[844,390],[1920,1080],[2800,1920]]){
+   await page.setViewportSize({width,height});
+   const layout=await page.locator('.sq-event-cards').evaluate(host=>({width:host.clientWidth,scroll:host.scrollWidth,cards:[...host.children].map(card=>{const r=card.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,overflow:card.scrollWidth>card.clientWidth+1};})}));
+   assert.ok(layout.scroll<=layout.width+1,`no horizontal overflow at ${width}`);
+   assert.equal(layout.cards.length,4);
+   assert.ok(layout.cards.every(card=>!card.overflow),`card content fits at ${width}`);
+   if(width>650){assert.equal(layout.cards[0].y,layout.cards[1].y);assert.ok(layout.cards[2].y>layout.cards[0].y);assert.ok(Math.abs(layout.cards[0].width-layout.cards[1].width)<1);}
+   else assert.ok(layout.cards[1].y>layout.cards[0].y);
+  }
+ }finally{await browser.close();}
+});
+
 test('event results and featured cards fit native desktop and narrow-phone viewports',async()=>{
  const browser=await chromium.launch({headless:true});
  try{

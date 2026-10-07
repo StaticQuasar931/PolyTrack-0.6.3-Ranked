@@ -793,3 +793,18 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-event-browser-heading p{margin:0 0 16px;font-size:18px;color:#c8d8ed}
 .sq-events-dialog .sq-event-card-summary{color:#d5e6ff}
 .sq-events-dialog .sq-event-card-leader{color:#9ce7b3;white-space:normal}
+
+/* Live overview: four balanced cards, with a single-column phone layout. */
+.sq-event-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:12px}
+.sq-event-cards .sq-event-permanent{grid-column:auto}
+.sq-events-dialog .sq-event-card{display:grid;grid-template-columns:minmax(68px,92px) minmax(0,1fr);grid-template-rows:auto auto;align-content:center;align-items:center;gap:4px 12px;min-height:132px}
+.sq-events-dialog .sq-event-card .sq-event-thumb{grid-column:1;grid-row:1;width:100%;height:78px;min-width:0;flex:none}
+.sq-events-dialog .sq-event-card .sq-event-record{grid-column:1;grid-row:2;min-width:0;text-align:center;font-size:15px;line-height:1.2;font-variant-numeric:tabular-nums}
+.sq-events-dialog .sq-event-card>span:last-child{grid-column:2;grid-row:1 / span 2;min-width:0;gap:4px}
+.sq-events-dialog .sq-event-card strong{overflow-wrap:anywhere}
+@media(max-width:650px){
+ .sq-event-cards{grid-template-columns:minmax(0,1fr);gap:8px}
+ .sq-events-dialog .sq-event-card{grid-template-columns:64px minmax(0,1fr);grid-template-rows:auto auto;min-height:96px;padding:8px;gap:2px 10px}
+ .sq-events-dialog .sq-event-card .sq-event-thumb{height:58px}
+ .sq-events-dialog .sq-event-card .sq-event-record{font-size:13px}
+}
