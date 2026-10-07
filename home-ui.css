@@ -236,49 +236,45 @@
 
 /* Keep track freshness outside the native leaderboard and its scroll area. */
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-  --sq-track-data-bg: #172442;
-  --sq-track-data-border: #7892bd;
+  --sq-track-data-bg: #253a75;
   position: fixed !important;
   inset: auto auto max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) !important;
   z-index: 20;
   width: min(300px, calc(100vw - 20px)) !important;
   max-width: min(300px, calc(100vw - 20px)) !important;
-  max-height: min(164px, calc(100vh - 28px)) !important;
+  max-height: min(180px, calc(100vh - 28px)) !important;
   box-sizing: border-box !important;
-  padding: 7px 9px !important;
-  gap: 2px !important;
+  padding: 7px 12px 7px 12px !important;
+  gap: 3px !important;
   overflow: auto !important;
-  border: 1px solid var(--sq-track-data-border) !important;
-  border-radius: 6px;
-  background: linear-gradient(145deg, #1d2d50, #111d37) !important;
-  color: #f5f7fb !important;
-  font-size: clamp(12px, calc(13px * var(--sq-ui-scale, 1)), 15px) !important;
+  border: 0 !important;
+  border-left: 4px solid #7ee7ff !important;
+  border-radius: 0 !important;
+  background: var(--sq-track-data-bg) !important;
+  color: #dcecff !important;
+  font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
   line-height: 1.3 !important;
-  letter-spacing: 0 !important;
-  clip-path: none !important;
+  letter-spacing: .3px !important;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3) !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="snapshot"] {
-  --sq-track-data-border: #e2c95e;
-  box-shadow: inset 3px 0 #e2c95e, 0 5px 18px rgba(4, 10, 25, .28);
+  --sq-track-data-bg: #344763;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="mixed"] {
-  --sq-track-data-border: #a6b9e5;
+  --sq-track-data-bg: #303e70;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="cache"] {
-  --sq-track-data-bg: #263f61;
-  --sq-track-data-border: #83b8f4;
+  --sq-track-data-bg: #274a76;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="live"] {
-  --sq-track-data-bg: #1e4944;
-  --sq-track-data-border: #74d5c1;
+  --sq-track-data-bg: #24506b;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="local"] {
-  --sq-track-data-bg: #3a4650;
-  --sq-track-data-border: #9aabba;
+  --sq-track-data-bg: #35476c;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="error"] {
-  --sq-track-data-bg: #4c3032;
-  --sq-track-data-border: #e49a9c;
+  --sq-track-data-bg: #493d69;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong,
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
@@ -289,20 +285,17 @@ html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshne
   line-height: 1.3 !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong {
-  color: #fff4bf !important;
+  color: #dcecff !important;
   font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
   font-size: clamp(11px, calc(11px * var(--sq-ui-scale, 1)), 13px) !important;
 }
-html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="snapshot"] > span:first-of-type {
-  color: #e2c95e !important;
-}
 @media(max-width: 420px), (max-height: 460px) {
   html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-    padding: 5px 7px !important;
-    gap: 1px !important;
-    max-height: min(142px, calc(100vh - 20px)) !important;
+    padding: 6px 8px !important;
+    gap: 2px !important;
+    max-height: min(180px, calc(100vh - 24px)) !important;
   }
 }
 html body [data-sq-snapshot-refresh-lock] {

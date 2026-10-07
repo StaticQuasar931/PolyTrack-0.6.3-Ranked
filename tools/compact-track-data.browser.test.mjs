@@ -10,7 +10,7 @@ const css = fs.readFileSync(new URL('../home-ui.css', import.meta.url), 'utf8');
 const patchSource = fs.readFileSync(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
 const cssFragments = [...patchSource.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)];
 const rankedCss = cssFragments.map(fragment => JSON.parse(fragment[1])).join('\n');
-const positionHelper = patchSource.match(/  function positionTrackFreshnessBanner\(banner,leaderboard\)\{([\s\S]*?)\n  \}\n  function updateTrackFreshnessBanner\(\)/);
+const positionHelper = patchSource.match(/  function positionTrackFreshnessBanner\(banner,leaderboard\)\{([\s\S]*?)\r?\n  \}\r?\n  function updateTrackFreshnessBanner\(\)/);
 assert.ok(positionHelper, 'freshness sidecar positioning helper remains discoverable');
 const viewports = [[320, 720], [390, 844], [600, 400], [1920, 1080], [2800, 1920]];
 
@@ -48,7 +48,8 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
           const back = document.querySelector('.back');
           const rect = element => { const r = element.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
           const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
-          return { panel:rect(panel), pages:rect(pages), back:rect(back), panelStyle:getComputedStyle(panel), insideLeaderboard:document.querySelector('.leaderboard-ui').contains(panel),
+          const countdown = panel.querySelector('span:nth-of-type(2)');
+          return { panel:rect(panel), pages:rect(pages), back:rect(back), countdown:rect(countdown), panelStyle:getComputedStyle(panel), insideLeaderboard:document.querySelector('.leaderboard-ui').contains(panel),
             overlapsPages:intersects(panel.getBoundingClientRect(),pages.getBoundingClientRect()),overlapsBack:intersects(panel.getBoundingClientRect(),back.getBoundingClientRect()),
             panelScroll:panel.scrollHeight, panelClient:panel.clientHeight, viewport:{width:innerWidth,height:innerHeight} };
         });
@@ -60,6 +61,8 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
         assert.equal(result.overlapsBack, false, `panel and native Back control do not overlap at ${label}`);
         assert.ok(result.panel.width <= 300, `sidecar stays compact at ${label}`);
         assert.ok(result.panelScroll <= result.panelClient + 2, `sidecar has no clipped content at ${label}`);
+        assert.ok(result.countdown.top >= result.panel.top && result.countdown.bottom <= result.panel.bottom,
+          `lock countdown remains fully visible at ${label}`);
       }
     }
   } finally { await browser.close(); }
@@ -69,7 +72,13 @@ test('source states and locked refresh styling are present and interaction-neutr
   for (const source of ['snapshot', 'mixed', 'cache', 'live', 'local', 'error']) assert.match(css, new RegExp(`data-source="${source}"`));
   assert.match(css, /position:\s*fixed\s*!important/);
   assert.doesNotMatch(css, /\.sq-track-data-inline\s*\{/);
-  assert.match(css, /data-source="snapshot"[\s\S]*?--sq-track-data-border:\s*#e2c95e/);
+  assert.match(css, /--sq-track-data-bg:\s*#253a75/);
+  assert.match(css, /data-source="snapshot"[\s\S]*?--sq-track-data-bg:\s*#344763/);
+  assert.match(css, /border-left:\s*4px solid #7ee7ff/);
+  assert.match(css, /clip-path:\s*polygon\(0 0, 100% 0, calc\(100% - 7px\) 100%, 0 100%\)/);
+  assert.match(css, /box-shadow:\s*0 8px 24px rgba\(0, 0, 0, \.3\)/);
+  assert.match(css, /font-size:\s*clamp\(11px, calc\(12px \* var\(--sq-ui-scale, 1\)\), 14px\)/);
+  assert.match(css, /border-radius:\s*0/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\]:hover/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\][\s\S]*?cursor:\s*default\s*!important/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\][\s\S]*?transform:\s*none\s*!important/);

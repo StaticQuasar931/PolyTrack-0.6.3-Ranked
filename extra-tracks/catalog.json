@@ -1,5 +1,32 @@
 [
   {
+    "id": "everlasting",
+    "trackId": "7a8afe73c01cf77bf16c9c87f8e0f8732023bdf4b9b6bb4a0120e97553dd447d",
+    "name": "Everlasting",
+    "author": "Vanquish (route) + Vanyayuyay (terrain, train) + Mask (assets)",
+    "source": "Player submission",
+    "sourceUrl": "https://discord.com/channels/1115776502592708720/1536125873499938997/1536125873499938997",
+    "tags": [
+      "technical",
+      "scenic",
+      "elite-track"
+    ],
+    "tier": "Community",
+    "featuredSubmission": true,
+    "submittedAt": "2026-10-07T22:27:34.658Z",
+    "trackPath": "extra-tracks/track-data/submitted/everlasting.track",
+    "thumbnailUrl": "extra-tracks/thumbnails/everlasting.png",
+    "description": "A decorated technical route, submitted as an Elite Track selection from the PolyTrack Discord community.",
+    "difficulty": 3,
+    "codeName": "Everlasting",
+    "codeAuthor": "Vanquish (route) + Vanyayuyay (terrain, train) + Mask (assets)",
+    "codeModifiedAt": "2026-08-05T22:30:21.000Z",
+    "sizeBytes": 33249,
+    "category": "Technical",
+    "sourceCopies": null,
+    "sourcePlays": null
+  },
+  {
     "id": "full-throttle",
     "trackId": "f5d7092475e8d2fd83003f8ad81ffef7dca3efc2bf8d526fdddee820857cf556",
     "name": "full throttle",
