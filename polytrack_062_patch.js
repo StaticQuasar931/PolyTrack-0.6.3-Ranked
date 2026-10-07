@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=84',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=87',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='84';
+  const extraCatalogRevision='87';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -124,6 +124,15 @@
   }
   async function loadEventCloudRead(path,collection,id){
     if(path==='/v1/events/catalog')try{return await localEventCatalog();}catch{}
+    if(snapshotOnlyForNewAccount()){
+      const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);
+      if(saved)return saved;
+      throw Error('Snapshot standings unavailable for this event. Live standings unlock after 10 minutes; your runs still save.');
+    }
+    if(collection==='0.6.2_event_public'&&path.endsWith('/snapshot')){
+      const saved=await readPublicSnapshotBackup('event',id);
+      if(saved?.archived===true)return saved;
+    }
     let eventRateLimited=false;
     if(rankedEdgeAvailable()){
       try{const response=await fetch(rankedBrokerUrl()+path,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
@@ -168,6 +177,9 @@
     const entry=cached||{value:null,until:0,retryAt:0};
     const request=(async()=>{
       try{
+        const saved=await readPublicSnapshotBackup('archive-month',month);
+        if(saved){entry.value=saved;entry.until=Date.now()+10*60000;entry.retryAt=0;return saved;}
+        if(snapshotOnlyForNewAccount())throw Error('This archive is not in the snapshot yet. Live archive access unlocks after 10 minutes.');
         const database=await db();
         const result=await database.collection('0.6.2_event_public').doc('archive_'+month.replace('-','')).get();
         const value=result.exists?result.data():{periods:[]};
@@ -191,6 +203,10 @@
     const key=periodId+'_'+accountId+'_'+(runId||'verified');
     if(eventReplayRequests.has(key))return eventReplayRequests.get(key);
     const request=(async()=>{
+      if(runId===null){
+        const board=await readPublicSnapshotBackup('event',periodId);
+        if(board?.archived===true){const saved=await readPublicSnapshotBackup('event-replay',periodId,accountId);if(saved)return saved;}
+      }
       if(rankedEdgeAvailable())try{
         const response=await fetch(rankedBrokerUrl()+'/v1/events/'+encodeURIComponent(periodId)+(runId?'/playbacks/'+runId:'/replays/'+accountId),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
         if(!response.ok)throw Error('Event replay service unavailable');
@@ -979,6 +995,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   async function loadStreakLeader(){
     const cached = readJsonStorage(STREAK_LEADER_CACHE_KEY,null);
+    if(snapshotOnlyForNewAccount())return cached?.value?{...cached.value,source:'cache'}:null;
     if (cached && Date.now()-Number(cached.fetchedAt||0) < 30*60*1000) return cached.value ? {...cached.value,fetchedAt:cached.fetchedAt,source:'cache'} : null;
     try {
       const d = await db();
@@ -1167,6 +1184,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
      Each sync reads at most 10 legacy and 20 changed profiles. */
   async function syncCosmeticDirectory(force=false){
     const directory=readCosmeticDirectory();
+    if(snapshotOnlyForNewAccount())return directory;
     if(!force&&Date.now()-Number(directory.checkedAt||0)<COSMETIC_DIRECTORY_SYNC_MS)return directory;
     if(cosmeticDirectorySyncPromise)return cosmeticDirectorySyncPromise;
     cosmeticDirectorySyncPromise=(async()=>{
@@ -1787,6 +1805,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function loadNativeRecordings(ids){
     const fromLocal=readRecordingStore(ids);
     const resolved=fromLocal.map((row,index)=>cachedNativeRecording(row)||nativeRecordingMemory.get(ids[index])||null);
+    for(let start=0;start<ids.length;start+=4)await Promise.all(ids.slice(start,start+4).map(async(id,offset)=>{
+      const index=start+offset;
+      if(resolved[index])return;
+      const saved=await readPublicSnapshotBackup('recording',String(id));
+      if(saved){const recording=cachedNativeRecording(saved);if(recording){resolved[index]=recording;rememberNativeRecording(id,recording);}}
+    }));
     const missingIds=ids.filter((id,index)=>!resolved[index]&&Date.now()>=Number(nativeRecordingRetryAt.get(id)||0));
     if(!missingIds.length)return resolved;
     try {
@@ -3829,8 +3853,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(trackCloudCheckedAt.size>512)trackCloudCheckedAt.delete(trackCloudCheckedAt.keys().next().value);
         let data=null;
         let source='edge';
-        try{data=await fetchRankedSnapshot('track',safeTrackId);if(data?._publicBackup)source='public-backup';}catch{}
+        try{data=await fetchRankedSnapshot('track',safeTrackId,{refresh:forceCloud});if(data?._publicBackup)source='public-backup';}catch{}
         if(!data){
+          if(snapshotOnlyForNewAccount())throw Error('New accounts use snapshot standings for the first 10 minutes. Your runs still save.');
           if(Date.now()<publicSnapshotRetryAt)throw Error('Public snapshot requests paused; showing saved results');
           let derivedSnapshot=null;
           try{
@@ -3864,9 +3889,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         }
         entries=applyCanonicalTrackWeight(safeTrackId,entries).slice(0,500);
         if(data.fromCache)throw new Error('Firestore returned saved data, not a cloud check');
-        writeTrackSnapshotCache(safeTrackId,entries,data.updatedAt||Date.now(),{revision:data.revision,sourceRevision:data.sourceRevision,algorithmVersion:data.algorithmVersion,schemaVersion:data.schemaVersion,source,checkedAt:Date.now(),complete:data.complete,totalEntries:data.totalEntries});
+        writeTrackSnapshotCache(safeTrackId,entries,data.updatedAt||Date.now(),{revision:data.revision,sourceRevision:data.sourceRevision,algorithmVersion:data.algorithmVersion,schemaVersion:data.schemaVersion,source,checkedAt:data._publicBackup?0:Date.now(),complete:data.complete,totalEntries:data.totalEntries});
         trackCloudRetryAt.delete(safeTrackId);
-        if(loadGeneration===trackLoadGeneration)currentTrackLoadState={trackId:safeTrackId,status:data._publicBackup?'stale':'cloud',fetchedAt:Number(data.updatedAt||0)||Date.now(),checkedAt:Date.now(),nextRefreshAt:Date.now()+TRACK_REFRESH_MS};
+        if(loadGeneration===trackLoadGeneration)currentTrackLoadState={trackId:safeTrackId,status:data._publicBackup?'snapshot':'cloud',fetchedAt:Number(data.updatedAt||0)||Date.now(),checkedAt:data._publicBackup?0:Date.now(),nextRefreshAt:Date.now()+TRACK_REFRESH_MS};
       }
     } catch (error) {
       noteFirebaseQuota(error);
@@ -4164,8 +4189,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       let data=null;
       let source='edge';
       let fromFirestoreCache=false;
-      try{data=await fetchRankedSnapshot('overall');if(data?._publicBackup)source='public-backup';}catch(error){log('warn','[RANKED404] Edge overall snapshot unavailable; trying Firestore',String(error&&(error.message||error)));}
+      try{data=await fetchRankedSnapshot('overall','',{refresh:forceRefresh});if(data?._publicBackup)source='public-backup';}catch(error){log('warn','[RANKED404] Edge overall snapshot unavailable; trying Firestore',String(error&&(error.message||error)));}
       if(!data){
+        if(snapshotOnlyForNewAccount())throw Error('New accounts use snapshot standings for the first 10 minutes. Your runs still save.');
         if(Date.now()<publicSnapshotRetryAt)throw Error('Public snapshot requests paused; showing saved results');
         const d = await db();
         const snap = await d.collection(COLLECTIONS.leaderboardsOverall).doc('main').get();
@@ -4214,7 +4240,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         overallCloudRetryAt=0;
         overallTrackSummariesCache=Array.isArray(data.trackSummaries)?data.trackSummaries.slice(0,TOTAL_TRACKS):[];
         writeOverallSnapshotCache(direct,{serverUpdatedAt:updatedAt,revision,builtRevision,sourceRevision,algorithmVersion,schemaVersion,source,signature,trackSummaries:overallTrackSummariesCache,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact});
-        overallLoadState={status:data._publicBackup?'stale':'cloud',message:data._publicBackup?'Published backup rankings':'Community Ranked snapshot',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:Date.now(),nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
+        overallLoadState={status:data._publicBackup?'snapshot':'cloud',message:data._publicBackup?(snapshotOnlyForNewAccount()?'New account: snapshot standings for the first 10 minutes. Your runs still save.':'Published snapshot data; click to check live updates'):'Fresh cloud rankings',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:data._publicBackup?0:Date.now(),nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
         return annotateOverallMovement(direct,signature);
       }
       if(cached?.entries?.length){
@@ -4512,7 +4538,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=84',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=87',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4532,8 +4558,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=84',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=84',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=84',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=87',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=87',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=87',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -4721,9 +4747,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(overallCategory==='events'){renderEntries();updateRankedFreshness();}
     eventTotalsRequest=(async()=>{
       try{
-        const next=normalizeEventTotals(await withTimeout(eventCloudRead('/v1/events/totals','0.6.2_event_public','totals'),12000,'Event RP timed out'));
+        const snapshot=(!force||snapshotOnlyForNewAccount())?await readPublicSnapshotBackup('event-totals'):null;
+        const next=normalizeEventTotals(snapshot||await withTimeout(eventCloudRead('/v1/events/totals','0.6.2_event_public','totals'),12000,'Event RP timed out'));
         if(!eventTotalsSnapshot||next.updatedAt>=eventTotalsSnapshot.updatedAt){eventTotalsSnapshot=next;writeJsonStorage(EVENT_TOTALS_CACHE_KEY,next);}
-        eventTotalsState={status:next.updatedAt<eventTotalsSnapshot.updatedAt?'stale':'cloud',checkedAt:Date.now()};
+        eventTotalsState={status:next.updatedAt<eventTotalsSnapshot.updatedAt?'stale':snapshot?'snapshot':'cloud',checkedAt:Date.now()};
       }catch{eventTotalsState={status:savedEventTotals()?'stale':'error',checkedAt:Date.now()};}
       finally{eventTotalsRequest=null;if(overallCategory==='events'){renderEntries();updateRankedFreshness();}}
       return eventTotalsSnapshot?.entries||[];
@@ -5693,7 +5720,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(status==='loading')parts.push(snapshotAt?`Saved snapshot ${ageLabel(snapshotAt)}`:'No saved snapshot','checking cloud now');
     else if(failed)parts.push(isOld?'Older saved standings':'Saved standings',snapshotAt?`${ageLabel(snapshotAt)}`:'age unknown','live refresh unavailable');
     else if(status==='cloud'||status==='pending')parts.push(`Cloud checked ${checkedAt?ageLabel(checkedAt):'just now'}`,snapshotAt?`changed ${ageLabel(snapshotAt)}`:'change time unavailable');
-    else parts.push('Saved snapshot',snapshotAt?`changed ${ageLabel(snapshotAt)}`:'change time unavailable');
+    else parts.push(status==='snapshot'?'Snapshot data':'Cached data',snapshotAt?`changed ${ageLabel(snapshotAt)}`:'change time unavailable');
     const wait=isOld?0:Math.max(0,120000-(Date.now()-lastRankedManualRefreshAt));
     const automaticWait=Math.max(0,Number(overallLoadState.nextRefreshAt||0)-Date.now());
     if(status==='loading'){}
@@ -5843,13 +5870,40 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }catch{return '';}
   }
 
+  const NEW_ACCOUNT_SNAPSHOT_MS=10*60*1000;
+  const snapshotAccountStarts=new Map();
+  function rememberSnapshotAccountAge(accountId,createdAt){
+    const at=Date.now(),value=Number(createdAt);
+    if(!accountId||!Number.isSafeInteger(value)||value<1704067200000||value>at)return;
+    const current=snapshotAccountStarts.get(accountId)||at;
+    if(value<current){snapshotAccountStarts.set(accountId,value);try{localStorage.setItem('polytrack-snapshot-account-start:'+accountId,String(value));}catch{}}
+    if(snapshotAccountStarts.size>16)snapshotAccountStarts.delete(snapshotAccountStarts.keys().next().value);
+  }
+  function snapshotOnlyForNewAccount(){
+    const at=Date.now(),accountId=activeRankedAccountId()||'visitor';
+    let start=snapshotAccountStarts.get(accountId);
+    if(!Number.isSafeInteger(start)||start>at){
+      let saved=0;try{saved=Number(localStorage.getItem('polytrack-snapshot-account-start:'+accountId));}catch{}
+      start=Number.isSafeInteger(saved)&&saved>=1704067200000&&saved<=at?saved:at;
+      snapshotAccountStarts.set(accountId,start);
+      if(snapshotAccountStarts.size>16)snapshotAccountStarts.delete(snapshotAccountStarts.keys().next().value);
+      try{localStorage.setItem('polytrack-snapshot-account-start:'+accountId,String(start));}catch{}
+    }
+    if(at-start>=NEW_ACCOUNT_SNAPSHOT_MS)return false;
+    // Cached account history avoids penalizing established racers on a new device.
+    const own=readOverallSnapshotCache()?.entries?.find(row=>(row.accountId||row.userId)===accountId);
+    rememberSnapshotAccountAge(accountId,own?.accountCreatedAt);
+    return at-(snapshotAccountStarts.get(accountId)||start)<NEW_ACCOUNT_SNAPSHOT_MS;
+  }
   let publicSnapshotReaderPromise=null;
   let publicSnapshotRetryAt=0;
   async function readPublicSnapshotBackup(kind,id='',accountId=''){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs').then(module=>module.createPublicSnapshotReader({baseUrl:new URL('./public-snapshots/',window.location.href)})).catch(error=>{publicSnapshotReaderPromise=null;throw error;});
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=87').then(module=>module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',window.location.href),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]'))})).catch(error=>{publicSnapshotReaderPromise=null;throw error;});
     try{return await (await publicSnapshotReaderPromise)(kind,id,accountId);}catch{return null;}
   }
-  async function fetchRankedSnapshot(kind,trackId=''){
+  async function fetchRankedSnapshot(kind,trackId='',{refresh=false}={}){
+    if(snapshotOnlyForNewAccount())return readPublicSnapshotBackup(kind,trackId);
+    if(!refresh){const saved=await readPublicSnapshotBackup(kind,trackId);if(saved)return saved;}
     const endpoint=rankedBrokerUrl();
     if(Date.now()<publicSnapshotRetryAt)return readPublicSnapshotBackup(kind,trackId);
     if(!endpoint||!rankedEdgeAvailable())return readPublicSnapshotBackup(kind,trackId);
@@ -6242,6 +6296,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       try {
         localStorage.setItem('polytrack-0.6.2-active-account-id', accountId);
         scheduleLocalPbCloudReconcile(accountId);
+        if(snapshotOnlyForNewAccount()){
+          const saved=await readPublicSnapshotBackup('profile',accountId);
+          if(saved)rememberSnapshotAccountAge(accountId,saved.accountCreatedAt);
+          return makeUserPayload(saved||{});
+        }
         const d = await db();
         const snap = await d.collection(COLLECTIONS.profilesPublic).doc(accountId).get();
         if (snap.exists) return makeUserPayload(snap.data() || {});
@@ -7606,7 +7665,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const snapshotAge=snapshotAt?durationLabel(Date.now()-snapshotAt):'';
     const underMinute=Boolean(snapshotAt&&Date.now()-snapshotAt<60000);
     const recentlyChecked=checkedAt&&Date.now()-checkedAt<TRACK_REFRESH_MS;
-    const second=state.status==='loading'?'Loading the selected track':failed?`${snapshotAt&&Date.now()-snapshotAt>2*60*60*1000?'Older saved standings':'Saved standings'} · ${snapshotAge?`${snapshotAge} old`:'age unknown'} · live refresh unavailable`:underMinute?`Fresh · changed ${snapshotAt?ageLabel(snapshotAt):'just now'}`:recentlyChecked?`Current · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:state.status==='cloud'?`Cloud data · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`:`Saved snapshot · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}`;
+    const ownId=activeRankedAccountId(),own=(cached?.entries||[]).find(row=>String(row.accountId||row.userId||'')===ownId);
+    const mixed=cached?.source==='local'||localRaceRowsForTrack(state.trackId).some(row=>String(row.accountId||row.userId||'')===ownId&&canonicalRaceTimeMs(row)>0&&(!own||canonicalRaceTimeMs(row)<canonicalRaceTimeMs(own)));
+    const sourceLabel=mixed?'Mixed data (saved standings + local PB)':state.status==='snapshot'?'Snapshot data':state.status==='cloud'?'Fresh cloud data':'Cached data';
+    const second=state.status==='loading'?'Loading the selected track':`${sourceLabel} · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}${failed?' · live refresh unavailable':''}`;
     const bannerHtml=`<strong>${fieldSize>=2?`${weight.toFixed(2)}x Weight`:'No Ranked weight'} · ${fieldSize} Player${fieldSize===1?'':'s'}</strong><span>${escapeHtml(second)}</span>`;
     if(banner.innerHTML!==bannerHtml)banner.innerHTML=bannerHtml;
     banner.title=`${failed?'Cloud refresh failed. ':checkedAt?`Cloud checked ${ageLabel(checkedAt)}. `:''}${rankedWeightTitle(state.trackId,fieldSize,false,cached?.entries?.[0])} Right-click a racer to open their Ranked profile.${state.nextRefreshAt>Date.now()?` Next check in ${durationLabel(state.nextRefreshAt-Date.now())}.`:''}`;
@@ -7668,9 +7730,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     await openRankedPanel(false);
     if(overallEntriesCache.some((entry)=>cleanUserId(entry.userId||entry.accountId)===userId))openRankedProfile(userId);
     else{
+      const savedProfile=await readPublicSnapshotBackup('profile',userId);
       const panel=document.getElementById('overallLeaderboardPanel');
       const list=panel?.querySelector('#overallLeaderboardList');
-      if(list)list.insertAdjacentHTML('afterbegin',`<div class="overall-empty compact"><strong>${escapeHtml(visibleName||'This racer')} is not in the current Overall snapshot</strong><span>The track result is saved, but the complete Overall rebuild has not included it yet.</span></div>`);
+      if(list)list.insertAdjacentHTML('afterbegin',`<div class="overall-empty compact"><strong>${escapeHtml(savedProfile?.name||visibleName||'This racer')}</strong><span>${savedProfile?'Snapshot profile · '+Math.max(0,Number(savedProfile.pbCount)||0)+' personal bests · '+(Math.max(0,Number(savedProfile.totalPlaytimeMs)||0)/3600000).toFixed(1)+' hours played':'The track result is saved.'}</span><span>This racer is not in the published Overall rankings. Overall RP and placement are unavailable.</span></div>`);
     }
   }
 
@@ -7723,7 +7786,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=84',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:84,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=87',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:87,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

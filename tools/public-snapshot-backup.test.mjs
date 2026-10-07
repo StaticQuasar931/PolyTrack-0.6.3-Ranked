@@ -17,6 +17,38 @@ const overall = {updatedAt: 300, revision: 9, builtRevision: 9, sourceRevision: 
   trackSummaries: [{trackId, updatedAt: 250, fieldSize: 2, leader: {accountId: 'racer', name: 'Racer', replay: 'private'}}],
   authorityAudit: {ownerUid: 'private'}, resultBundleLocation: 'main_results'};
 
+test('archived standings and validated replays survive catalog rollover without replay refetches',async t=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'polytrack-static-archive-'));
+  t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const archived={...period,id:'daily_old',startsAt:Date.UTC(2026,8,1),endsAt:Date.UTC(2026,8,2)};
+  const accountId='e'.repeat(64), replay='encoded', replayHash=createHash('sha256').update(replay).digest('hex');
+  let listed=true,replayRequests=0;
+  const fetchImpl=async input=>{
+    const url=new URL(input);
+    if(url.pathname.endsWith('/overall'))return Response.json({...overall,trackSummaries:[]});
+    if(url.pathname.endsWith('/catalog'))return Response.json({periods:[period],archives:listed?[archived]:[]});
+    if(url.pathname.includes('/replays/')){replayRequests++;return Response.json({periodId:archived.id,trackId,accountId,runId:'d'.repeat(64),timeMs:23,frames:23,replay,replayHash,carStyle:'public',verificationStatus:'verified',verified:true,eventRpEligible:true});}
+    const id=url.pathname.split('/').at(-2);
+    return Response.json({id,updatedAt:180,archived:id===archived.id,period:id===archived.id?archived:undefined,
+      entries:id===archived.id?[{accountId,name:'sh1t',timeMs:23,physicsVerified:true,replayIntegrityVerified:true}]:[]});
+  };
+  const first=await runPublicSnapshotBackup({fetchImpl,directory,now:1000000000,trackIds:[],log:()=>{}});
+  assert.equal(replayRequests,1);
+  const relative=`event-replays/${archived.id}/${accountId}.json`;
+  assert.ok(first.eventReplays[relative]);
+  listed=false;
+  const second=await runPublicSnapshotBackup({fetchImpl,directory,now:1000000001,trackIds:[],log:()=>{}});
+  assert.equal(replayRequests,1,'unchanged recording is retained without another cloud read');
+  assert.ok(second.events[archived.id]);assert.ok(second.eventReplays[relative]);
+  const saved=JSON.parse(await fs.readFile(path.join(directory,`events/${archived.id}.json`),'utf8'));
+  assert.equal(saved.entries[0].name,'Racer');assert.equal(saved.entries[0].replayHash,replayHash);
+  const month=JSON.parse(await fs.readFile(path.join(directory,'archives/2026-09.json'),'utf8'));
+  assert.equal(month.periods[0].id,archived.id);
+  await fs.writeFile(path.join(directory,relative),'{}');
+  await runPublicSnapshotBackup({fetchImpl,directory,now:1000000002,trackIds:[],log:()=>{}});
+  assert.equal(replayRequests,2,'corrupt recording is not reused');
+});
+
 test('transient overall and catalog failures preserve every existing backup without retries', async t => {
   for (const stage of ['overall', 'catalog', 'network', 'body', 'empty']) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-backup-defer-'));
@@ -197,11 +229,13 @@ test('workflow stages first-run untracked snapshots before checking for changes'
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const workflow = await fs.readFile(path.join(repo, '.github/workflows/sync-event-catalog.yml'), 'utf8');
   const stageCatalog = workflow.indexOf('git add -- events/public-catalog.json');
-  const conditionalSnapshots = workflow.indexOf('if [ -d public-snapshots ]; then');
-  const stageSnapshots = workflow.indexOf('git add -- public-snapshots', conditionalSnapshots);
-  const stagedDiff = workflow.indexOf('git diff --cached --quiet -- events/public-catalog.json public-snapshots');
+  const conditionalSnapshots = workflow.indexOf('if [ -f snapshot-current.json ]; then');
+  const stageSnapshots = workflow.indexOf("git add -A -- ':(glob)public-snapshots[0-9]*/**'", conditionalSnapshots);
+  const stagedDiff = workflow.indexOf('git diff --cached --quiet;');
   assert.ok(stageCatalog >= 0 && conditionalSnapshots > stageCatalog && stageSnapshots > conditionalSnapshots && stagedDiff > stageSnapshots);
   assert.equal(workflow.split('git add -- events/public-catalog.json').length - 1, 1);
+  assert.ok(workflow.includes('node tools/update-public-snapshot.mjs'));
+  assert.ok(!workflow.includes('git add -- local-reports'));
 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-workflow-untracked-'));
   t.after(() => fs.rm(directory, {recursive: true, force: true}));

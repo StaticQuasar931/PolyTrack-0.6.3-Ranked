@@ -1,6 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
+import {encodeSnapshot} from './snapshot-package.mjs';
+import {createHash} from 'node:crypto';
+
+async function packedFixture(value,logical='overall.json',change=()=>{}){
+  const bytes=await encodeSnapshot(value),hash=createHash('sha256').update(bytes).digest('hex');
+  const record={path:hash+'.bin',sha256:hash,decodedBytes:Buffer.byteLength(JSON.stringify(value))};
+  change(record);let calls=0;
+  const read=createPublicSnapshotReader({packed:true,baseUrl:'https://example.test/public-snapshots1/',fetchImpl:async url=>{
+    calls++;return String(url).endsWith('index.json')?Response.json({schemaVersion:1,encoding:'gzip-xor-a7-v1',files:{[logical]:record}}):new Response(bytes);
+  }});
+  return {read,calls:()=>calls};
+}
+
+test('packed snapshots verify checksums, decompress and reuse immutable data',async()=>{
+  const fixture=await packedFixture({updatedAt:1,entries:[]});
+  assert.equal((await fixture.read('overall'))._dataSource,'snapshot');
+  assert.equal((await fixture.read('overall'))._dataSource,'cached');
+  assert.equal(fixture.calls(),2);
+  assert.equal(await fixture.read('profile','a'.repeat(64)),null);
+  assert.equal(fixture.calls(),2);
+});
+
+test('packed snapshots reject bad checksums, traversal and dishonest decompressed length',async()=>{
+  for(const change of [r=>r.sha256='0'.repeat(64),r=>r.path='../private.bin',r=>r.decodedBytes=1]){
+    const fixture=await packedFixture({updatedAt:1,entries:[]},'overall.json',change);
+    assert.equal(await fixture.read('overall'),null);
+  }
+});
+
+test('packed public profiles and recordings enforce identity and payload shape',async()=>{
+  const id='a'.repeat(64),profile=await packedFixture({updatedAt:1,accountId:id,name:'Racer'},`profiles/${id}.json`);
+  assert.equal((await profile.read('profile',id)).name,'Racer');
+  const replay=await packedFixture({updatedAt:1,recording:'encoded',frames:123},'recordings/123.json');
+  assert.equal((await replay.read('recording','123')).recording,'encoded');
+  assert.equal(await replay.read('recording','-1'),null);
+});
+
+test('archive months are identity checked and use shared same-origin cache',async()=>{
+  let calls=0;
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',fetchImpl:async()=>{
+    calls++;return Response.json({updatedAt:1,periods:[{id:'d_test',startsAt:Date.UTC(2026,9,1)}]});
+  }});
+  assert.equal(await read('archive-month','../private'),null);
+  assert.equal((await read('archive-month','2026-10')).periods.length,1);
+  await read('archive-month','2026-10');assert.equal(calls,1);
+  assert.equal(await read('archive-month','2026-09'),null);
+});
+
+test('event backups cannot substitute a different event identity',async()=>{
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',fetchImpl:async()=>Response.json({updatedAt:1,id:'wrong'})});
+  assert.equal(await read('event','d_test'),null);
+});
 test('public backup shares requests and does not refetch on menu refresh',async()=>{
   let calls=0;const id='a'.repeat(64);
   const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',fetchImpl:async()=>{calls++;return new Response(JSON.stringify({trackId:id,updatedAt:1,entries:[]}),{headers:{'content-type':'application/json'}});}});

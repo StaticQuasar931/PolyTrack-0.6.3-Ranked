@@ -28,14 +28,15 @@ jobs:
         run: node tools/sync-event-catalog.mjs
       - name: Capture bounded public snapshots
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 10 * * *'
-        run: node tools/public-snapshot-backup.mjs
+        run: node tools/update-public-snapshot.mjs
       - name: Commit changed assignments
         run: |
           git add -- events/public-catalog.json
-          if [ -d public-snapshots ]; then
-            git add -- public-snapshots
+          if [ -f snapshot-current.json ]; then
+            git add -- index.html snapshot-current.json
+            git add -A -- ':(glob)public-snapshots[0-9]*/**'
           fi
-          if git diff --cached --quiet -- events/public-catalog.json public-snapshots; then
+          if git diff --cached --quiet; then
             echo "Public static backups are current."
             exit 0
           fi

@@ -678,7 +678,8 @@ export function installEvents(bridge){
     for(const button of view.board.querySelectorAll(':scope > .container > button.main')){const selected=selectedGhosts.get(button.dataset.eventAccountId),pending=pendingGhosts.get(button.dataset.eventAccountId),matches=row=>row?.periodId===period.id&&row.accountId===view.accountId&&row.targetTimeMs===Number(button.dataset.eventTime);const active=matches(selected),busy=matches(pending);button.classList.toggle('selected',!!(active||busy));button.classList.toggle('pending-selection',!!busy);button.setAttribute('aria-pressed',String(!!(active||busy)));button.setAttribute('aria-busy',String(!!busy));}
     if(signature===view.signature)return;
     view.signature=signature;view.board.querySelector('h3').textContent=eventName(period.kind)+' archive';
-    view.board.querySelector('.total-players').textContent=rows.length+' archived '+(rows.length===1?'racer':'racers');
+    view.board.querySelector('h3').title=snapshot._publicBackup?'Snapshot data: frozen archived standings':snapshot.saved?'Cached data: saved archived standings':'Fresh data: published archived standings';
+    view.board.querySelector('.total-players').textContent=rows.length+' archived '+(rows.length===1?'racer':'racers')+' · '+(snapshot._publicBackup?'Snapshot data':snapshot.saved?'Cached data':'Fresh data');
     const container=view.board.querySelector('.container');container.replaceChildren();
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     for(const row of rows.slice(view.page*20,view.page*20+20)){
@@ -775,7 +776,9 @@ export function installEvents(bridge){
     view.signature=signature;
     const styles=rows.map(row=>cachedCarStyle(row,period));
     view.board.querySelector('h3').textContent=eventName(period.kind)+' event · '+periodName(period);
-    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+(view.onlyVerified?' · verified only':'')+(filterResult?.active?' - personal filters':'')+(board?.saved?' - saved standings':'');
+    const sourceLabel=rows.some(row=>row.pending)?'Mixed data':board?._publicBackup?'Snapshot data':board?.saved?'Cached data':'Fresh data';
+    view.board.querySelector('h3').title=sourceLabel;
+    view.board.querySelector('.total-players').textContent=rows.length+(rows.length===1?' racer':' racers')+' · '+sourceLabel+(view.onlyVerified?' · verified only':'')+(filterResult?.active?' - personal filters':'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
      const container=view.board.querySelector('.container');view.carObserver?.disconnect();view.deferredCarRows.clear();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){

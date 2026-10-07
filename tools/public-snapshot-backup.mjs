@@ -3,13 +3,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
+import {publicDisplayName} from './public-display-name.mjs';
 
 export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 100, eventFetches: 120, eventReplayFetches: 30,
-  eventReplaysPerPeriod: 10, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4,
+  eventReplaysPerPeriod: 500, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4,
   archivedEventRecheckMs: 7 * 86400000});
 const WORKER = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outputDirectory = path.join(root, 'public-snapshots');
+const outputDirectory = path.join(root, 'local-reports', 'snapshot-staging');
 const TRACK_ID = /^[a-f0-9]{64}$/;
 const EVENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const PUBLIC_ACCOUNT_ID = /^[a-f0-9]{64}$/;
@@ -49,7 +50,7 @@ const eventFields = ['id', 'kind', 'trackId', 'period', 'scoreVersion', 'targetP
 
 function project(source, fields) {
   const result = {};
-  for (const field of fields) if (Object.hasOwn(source || {}, field)) result[field] = source[field];
+  for (const field of fields) if (Object.hasOwn(source || {}, field)) result[field] = ['name', 'nickname', 'author'].includes(field) ? publicDisplayName(source[field]) : source[field];
   return result;
 }
 function projectCosmetics(value) {
@@ -211,12 +212,12 @@ export function chooseTrackFetches(trackIds, summaries, previous = {}, limit = P
   return candidates.slice(0, Math.max(0, Math.min(limit, PUBLIC_SNAPSHOT_LIMITS.trackFetches))).map(row => row.id);
 }
 
-function selectEventIds(catalog, limit = PUBLIC_SNAPSHOT_LIMITS.eventFetches) {
+function selectEventIds(catalog) {
   if (!catalog || !Array.isArray(catalog.periods) || !Array.isArray(catalog.archives) ||
       catalog.periods.length > 160 || catalog.archives.length > 160) throw Error('Invalid public event catalog');
   const periods = catalog.periods.map(projectPeriod);
   const archives = catalog.archives.map(projectPeriod).sort((a, b) => b.endsAt - a.endsAt || a.id.localeCompare(b.id));
-  return [...new Set([...periods.map(row => row.id), ...archives.map(row => row.id), 'permanent-rolling-hills'])].slice(0, limit);
+  return [...new Set([...periods.map(row => row.id), ...archives.map(row => row.id), 'permanent-rolling-hills'])];
 }
 
 async function mapLimit(values, limit, fn) {
@@ -239,11 +240,18 @@ async function readManifest(directory) {
     const value = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
     if (value?.schemaVersion !== 1 || !value.tracks || typeof value.tracks !== 'object' || Array.isArray(value.tracks)) throw Error('Invalid public snapshot manifest');
     for (const id of Object.keys(value.tracks)) if (!TRACK_ID.test(id)) throw Error('Invalid track in public snapshot manifest');
+    for (const [id, record] of Object.entries(value.events || {})) {
+      if (!EVENT_ID.test(id) || record?.path !== `events/${id}.json`) throw Error('Invalid event in public snapshot manifest');
+    }
+    for (const [key, record] of Object.entries(value.eventReplays || {})) {
+      if (!EVENT_ID.test(record?.periodId || '') || !PUBLIC_ACCOUNT_ID.test(record?.accountId || '') ||
+          key !== `event-replays/${record.periodId}/${record.accountId}.json` || record.path !== key) throw Error('Invalid replay in public snapshot manifest');
+    }
     return value;
   } catch (error) { if (error.code === 'ENOENT') return {schemaVersion: 1, tracks: {}, events: {}}; throw error; }
 }
 
-function jsonText(value) { return JSON.stringify(value, null, 2) + '\n'; }
+function jsonText(value) { return JSON.stringify(value) + '\n'; }
 function sha256(text) { return crypto.createHash('sha256').update(text).digest('hex'); }
 
 async function writeJsonIfChanged(directory, relative, value) {
@@ -285,6 +293,11 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     }
     if (!reusable) eventFetchIds.push(id);
   }
+  // Missing and oldest archives go first, so a catalog larger than one batch
+  // eventually gets complete coverage without increasing the request budget.
+  eventFetchIds.sort((a, b) => Number(liveIds.has(b) || b === 'permanent-rolling-hills') - Number(liveIds.has(a) || a === 'permanent-rolling-hills') ||
+    Number(previous.events?.[a]?.checkedAt || 0) - Number(previous.events?.[b]?.checkedAt || 0));
+  eventFetchIds.splice(PUBLIC_SNAPSHOT_LIMITS.eventFetches);
   let registry = trackIds;
   if (!registry) {
     const [indexSource, extraSource] = await Promise.all([
@@ -323,15 +336,33 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     return {id, value: value ? publicEventBackup(value, id) : null};
   });
 
-  const replayCandidates = [];
-  for (const {id, value} of eventRows) {
-    if (!value || !liveIds.has(id) || !TRACK_ID.test(value.period?.trackId || '')) continue;
+  const eventValues = new Map();
+  for (const [id, record] of Object.entries(previous.events || {})) {
+    if (!EVENT_ID.test(id) || record.path !== `events/${id}.json`) continue;
+    try { eventValues.set(id, publicEventBackup(JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8')), id)); } catch {}
+  }
+  for (const {id, value} of eventRows) if (value) eventValues.set(id, value);
+  const replayCandidates = [], retainedReplays = {};
+  const replayEvents = [...eventValues].sort(([a],[b]) => Number(liveIds.has(b)) - Number(liveIds.has(a)));
+  for (const [id, value] of replayEvents) {
+    if (!TRACK_ID.test(value.period?.trackId || '')) continue;
     for (const entry of value.entries.slice(0, PUBLIC_SNAPSHOT_LIMITS.eventReplaysPerPeriod)) {
       if (!PUBLIC_ACCOUNT_ID.test(entry.accountId || '') || !Number.isSafeInteger(entry.timeMs)) continue;
+      if (entry.physicsVerified === false || entry.replayIntegrityVerified === false) continue;
+      const relative = `event-replays/${id}/${entry.accountId}.json`, prior = previous.eventReplays?.[relative];
+      if (prior?.path === relative && prior.timeMs === entry.timeMs) {
+        try {
+          const replay = JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
+          const projected=publicEventReplayBackup({...replay, verificationStatus:'verified', verified:true, eventRpEligible:true}, {periodId:id, trackId:value.period.trackId, entry});
+          if (JSON.stringify(projected) !== JSON.stringify(replay)) throw Error('Replay is not a public projection');
+          if (entry.runId && replay.runId !== entry.runId || entry.replayHash && replay.replayHash !== entry.replayHash) throw Error('Replay changed');
+          retainedReplays[relative] = prior; entry.runId = replay.runId; entry.replayHash = replay.replayHash;
+          continue;
+        } catch { /* A changed or corrupt replay must be replaced. */ }
+      }
+      if (replayCandidates.length >= PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) continue;
       replayCandidates.push({periodId: id, trackId: value.period.trackId, entry});
-      if (replayCandidates.length >= PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) break;
     }
-    if (replayCandidates.length >= PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) break;
   }
   const replayRows = await mapLimit(replayCandidates, PUBLIC_SNAPSHOT_LIMITS.concurrency, async candidate => {
     try {
@@ -369,10 +400,10 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     pendingWrites.set(relative, value);
     nextEvents[id] = {path: relative, updatedAt: value.updatedAt, checkedAt: now};
   }
-  const eventReplays = {};
+  const eventReplays = {...retainedReplays};
   for (const {candidate, value} of replayRows) {
     if (!value) continue;
-    const event = eventRows.find(row => row.id === candidate.periodId)?.value;
+    const event = eventValues.get(candidate.periodId);
     const entry = event?.entries.find(row => row.accountId === candidate.entry.accountId && row.timeMs === candidate.entry.timeMs);
     if (!entry) continue;
     entry.replayHash = value.replayHash;
@@ -382,6 +413,18 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     eventReplays[relative] = {path: relative, periodId: candidate.periodId, accountId: candidate.entry.accountId,
       timeMs: candidate.entry.timeMs, replayHash: value.replayHash};
   }
+  // Keep valid historical standings even when the cloud catalog rolls its
+  // bounded recent-history window forward. Generate month indexes locally.
+  const months = new Map();
+  for (const [id, value] of eventValues) {
+    pendingWrites.set(`events/${id}.json`, value);
+    if (!nextEvents[id]) nextEvents[id] = {path:`events/${id}.json`, updatedAt:value.updatedAt};
+    if (value.archived !== true || !value.period) continue;
+    const month = new Date(value.period.startsAt).toISOString().slice(0, 7);
+    if (!months.has(month)) months.set(month, []);
+    months.get(month).push({...value.period, racerCount:value.entries.length});
+  }
+  for (const [month, periods] of months) pendingWrites.set(`archives/${month}.json`, {updatedAt:Math.max(...periods.map(p => eventValues.get(p.id).updatedAt)), periods:periods.sort((a,b)=>b.startsAt-a.startsAt)});
   let overallResults = {path: null, available: false, reason: planner.reason};
   if (planner.available) {
     pendingWrites.set('overall-results.json', planner.document);
@@ -400,13 +443,6 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     try { await fs.unlink(path.join(directory, 'overall-results.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 
-  const currentEventIds = new Set(selectedEvents);
-  for (const [id, record] of Object.entries(nextEvents)) {
-    if (!currentEventIds.has(id)) {
-      if (record.path) try { await fs.unlink(path.join(directory, record.path)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      delete nextEvents[id];
-    }
-  }
   const replayPaths = new Set(Object.keys(eventReplays));
   for (const record of Object.values(previous.eventReplays || {})) {
     if (record.path && !replayPaths.has(record.path)) {
