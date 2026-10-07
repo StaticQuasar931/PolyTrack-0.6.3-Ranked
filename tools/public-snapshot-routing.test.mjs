@@ -31,9 +31,12 @@ test('new-account snapshot protection needs fifteen minutes and a saved finish, 
   };
   let context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
   assert.match(context.snapshotUnlockLabel(),/15:00/);
+  assert.match(context.snapshotUnlockLabel(),/saved finish required/);
   local=[{accountId,timeMs:12345}];
   now+=899999;context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
   assert.match(context.snapshotUnlockLabel(),/0:01/);
+  assert.doesNotMatch(context.snapshotUnlockLabel(),/finish required/);
+  assert.match(context.snapshotAccessNotice(),/Only the timer remains/);
   now++;assert.equal(context.snapshotOnlyForNewAccount(),false);
   assert.equal(context.snapshotUnlockLabel(),'Live refresh available');
   accountId='b'.repeat(64);assert.equal(context.snapshotOnlyForNewAccount(),true);
@@ -53,7 +56,7 @@ test('idle visitors and another account saved runs never unlock live standings',
 test('new-account gate tolerates blocked storage and rejects future timestamps',()=>{
   const now=Date.UTC(2026,9,7);
   for(const storage of [{getItem:()=>String(now+86400000),setItem:()=>{}},{getItem:()=>{throw Error('blocked');},setItem:()=>{throw Error('blocked');}}]){
-    const context=vm.createContext({Date:{now:()=>now},activeRankedAccountId:()=>'',readOverallSnapshotCache:()=>null,localStorage:storage});
+    const context=vm.createContext({Date:{now:()=>now},activeRankedAccountId:()=>'',readOverallSnapshotCache:()=>null,readLocalRaceRows:()=>[],canonicalRaceTimeMs:()=>0,localStorage:storage});
     vm.runInContext(section('  const NEW_ACCOUNT_SNAPSHOT_MS=', '  let publicSnapshotReaderPromise='),context);
     assert.equal(context.snapshotOnlyForNewAccount(),true);
   }

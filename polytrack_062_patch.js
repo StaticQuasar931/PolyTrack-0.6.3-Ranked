@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=91',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=92',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='91';
+  const extraCatalogRevision='92';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -4542,7 +4542,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=91',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=92',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4562,8 +4562,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=91',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=91',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=91',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=92',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=92',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=92',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -5110,7 +5110,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const rank=Math.max(1,Number(row.rank||row.position||index+1)||index+1);
       const fieldSize=Math.max(rank,rows.length);
       const current=byTrack.get(trackId),boardAt=Number(snapshot.serverUpdatedAt||snapshot.checkedAt||0);
-      if(current&&row.localPending!==true&&(entryTimeMs(row)>current.timeMs||boardAt<Number(current.cachedAt||0)))continue;
+      const currentPlaced=Number(current?.rank)>0&&Number(current?.fieldSize)>=Number(current.rank);
+      if(current&&row.localPending!==true&&(entryTimeMs(row)>current.timeMs||(currentPlaced&&boardAt<Number(current.cachedAt||0))))continue;
       byTrack.set(trackId,{trackId,rank,fieldSize,timeMs:entryTimeMs(row),pbAt:pbTimestamp(row),weight:knownFinishWeight({...row,trackId,rank,fieldSize}),cachedAt:Math.max(Number(snapshot.serverUpdatedAt||0),Number(snapshot.checkedAt||0)),local:row.localPending===true});
     }
     const overallFreshAt=Number(overallLoadState.serverUpdatedAt||overallLoadState.fetchedAt||readOverallSnapshotCache()?.serverUpdatedAt||readOverallSnapshotCache()?.fetchedAt||0)||0;
@@ -5121,8 +5122,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const current=byTrack.get(finish.trackId);
       if(current?.local)continue;
       if(current?.timeMs&&summaryTime>current.timeMs)continue;
+      if(current&&Number(current.rank)>0&&Number(current.fieldSize)>=Number(current.rank)&&(!summaryTime||summaryTime===current.timeMs)&&!(Number(finish.rank)>0&&Number(finish.fieldSize)>=Number(finish.rank)))continue;
       if(!current||overallFreshAt>=Number(current.cachedAt||0)){
-        const localTime=current?.local&&current.timeMs&&(!summaryTime||current.timeMs<summaryTime)?current.timeMs:summaryTime;
+        const localTime=summaryTime||current?.timeMs||0;
         byTrack.set(finish.trackId,{...current,...finish,timeMs:localTime,weight:knownFinishWeight({...finish,fieldSize}),cachedAt:overallFreshAt,local:Boolean(current?.local)});
       }
     }
@@ -5134,10 +5136,38 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         if(!trackId||!timeMs)continue;
         const current=byTrack.get(trackId);
         if(!current)byTrack.set(trackId,{trackId,rank:null,fieldSize:null,timeMs,pbAt:pbTimestamp(row),weight:null,cachedAt:Number(row.createdAt||0)||0,local:true});
-        else if(!current.timeMs||timeMs<current.timeMs)byTrack.set(trackId,{...current,timeMs,pbAt:pbTimestamp(row),local:true});
+        else if(!current.timeMs||timeMs<current.timeMs)byTrack.set(trackId,{...current,timeMs,rank:null,fieldSize:null,weight:null,pbAt:pbTimestamp(row),local:true});
       }
     }
     return sortProfileFinishes(Array.from(byTrack.values()));
+  }
+  const profilePlacementRequests=new Map();
+  function warmProfileLocalPlacements(userId){
+    const id=cleanUserId(userId);
+    if(id!==activeRankedAccountId())return Promise.resolve(false);
+    if(profilePlacementRequests.has(id))return profilePlacementRequests.get(id);
+    const request=(async()=>{
+      const saved=profileSnapshotResults.get(id),results=new Map((saved?.results||[]).map(row=>[row.trackId,row]));
+      const candidates=readLocalRaceRows().filter(row=>{
+        if(cleanUserId(row.accountId||row.userId)!==id||!/^[a-f0-9]{64}$/.test(row.trackId||''))return false;
+        const finish=results.get(row.trackId),timeMs=entryTimeMs(row);
+        return timeMs>0&&(!finish||timeMs<finish.timeMs||!(Number(finish.rank)>0&&Number(finish.fieldSize)>=Number(finish.rank)));
+      }).slice(-32);
+      let next=0,changed=false;
+      const worker=async()=>{while(next<candidates.length){
+        const row=candidates[next++],trackId=row.trackId;
+        const board=readTrackSnapshotCache(trackId)||await readPublicSnapshotBackup('track',trackId);
+        if(!board?.complete||!Array.isArray(board.entries))continue;
+        const rows=visibleTrackEntries(localTrackDisplayEntries(trackId,board.entries,id),false,id);
+        const mine=rows.find(value=>cleanUserId(value.accountId||value.userId)===id);if(!mine)continue;
+        results.set(trackId,{trackId,rank:mine.rank,fieldSize:rows.length,timeMs:entryTimeMs(mine),pbAt:pbTimestamp(mine),cachedAt:Number(board.updatedAt||board.serverUpdatedAt||0),local:mine.localPending===true,weight:knownFinishWeight({...mine,trackId,fieldSize:rows.length})});
+        changed=true;
+      }};
+      await Promise.all([worker(),worker()]);
+      if(changed){profileSnapshotResults.set(id,{...saved,results:[...results.values()]});if(profileSnapshotResults.size>32)profileSnapshotResults.delete(profileSnapshotResults.keys().next().value);}
+      return changed;
+    })().catch(()=>false).finally(()=>profilePlacementRequests.delete(id));
+    profilePlacementRequests.set(id,request);return request;
   }
   function localPlannerProfileEntry(userId){
     const accountId=cleanUserId(userId);
@@ -5549,7 +5579,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const savedProfile=profileSnapshotResults.get(cleanUserId(userId));
     if(!entry&&savedProfile?.publicProfile)entry={...savedProfile.publicProfile,userId:cleanUserId(userId),resultSamples:savedProfile.results,localOnly:true,raceCount:savedProfile.results.length};
     if(!entry)entry=localPlannerProfileEntry(userId);
-    void loadProfileSnapshotResults(userId).then(changed=>{if(changed&&document.getElementById('overallProfilePopup')?.dataset.profileUser===cleanUserId(userId)&&isElementVisible(document.getElementById('overallProfilePopup')))openRankedProfile(userId);});
+    void loadProfileSnapshotResults(userId).then(async changed=>{changed=await warmProfileLocalPlacements(userId)||changed;if(changed&&document.getElementById('overallProfilePopup')?.dataset.profileUser===cleanUserId(userId)&&isElementVisible(document.getElementById('overallProfilePopup')))openRankedProfile(userId);});
     if(cleanUserId(userId)!==activeRankedAccountId())void loadProfileSnapshotResults(activeRankedAccountId()).then(changed=>{if(changed&&document.getElementById('overallProfilePopup')?.dataset.profileUser===cleanUserId(userId)&&isElementVisible(document.getElementById('overallProfilePopup')))openRankedProfile(userId);});
     const profileFilter=applyPersonalFilters(overallEntriesCache,{overall:true,category:'overall',complete:rankedFilterSnapshotMeta.complete});
     const groupEntry=profileFilter.active?profileFilter.rows.find(row=>cleanUserId(row.userId||row.accountId)===cleanUserId(userId)):null;
@@ -5578,7 +5608,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const detailByTrack=new Map(normalizedFinishSamples(entry).map((finish)=>[finish.trackId,finish]));
     for(const finish of cachedFinishes){
       const current=detailByTrack.get(finish.trackId);
-      if(!current||Number(finish.cachedAt||0)>=snapshotAt)detailByTrack.set(finish.trackId,{...current,...finish});
+      if(!current||finish.local||Number(finish.cachedAt||0)>=snapshotAt||(finish.timeMs===current.timeMs&&!(Number(current.rank)>0)&&Number(finish.rank)>0))detailByTrack.set(finish.trackId,{...current,...finish});
     }
     const snapshotFinishes=Array.from(detailByTrack.values());
     const rankedDetails=snapshotFinishes.filter((finish)=>Number(finish.rank||0)>0&&Number(finish.fieldSize||0)>=2);
@@ -5672,9 +5702,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const favoriteTrack=profileCosmetics.favoriteTrackId?trackInfo(profileCosmetics.favoriteTrackId):null;
     const copyPublicId=localStorage.getItem('polytrack-0.6.2-show-racer-codes')==='1'?`<button type="button" class="button" data-copy-public-id="${uid}">Copy public ID</button>`:'';
     const profileIdentityExtras=`${profileBadges}${profileTitle?`<span class="profile-racer-title">${escapeHtml(profileTitle)}</span>`:''}${favoriteTrack?`<button type="button" class="profile-favorite-chip" data-track-id="${escapeHtml(favoriteTrack.id)}" aria-label="Open favorite track ${escapeHtml(favoriteTrack.name)}">Favorite · ${escapeHtml(favoriteTrack.name)}</button>`:''}${copyPublicId}`;
-    content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId)}<div class="profile-achievement-row"><span class="profile-achievement-label">ELIGIBLE PODIUMS</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ${entry.localOnly?'saved':'ranked'} track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">${entry.localOnly?'LOCAL PB PROFILE':'RANKED PROFILE'}</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?profileCustomizerMarkup(entry):''}<div class="profile-results">${resultCards}</div>${guideMarkup}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Loaded results</h4></div><span>${cachedFinishes.length} loaded on this device${entry.localOnly?' · Public Ranked totals unavailable':' · '+Number(entry.raceCount||0)+' counted in Ranked'}</span></header><div class="profile-track-head"><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">If a track leaderboard has not been loaded, its time may not be listed.</p>`;
+    content.innerHTML=`<div class="profile-hero"><div class="profile-car-column">${carModelPreview(carStyle,entry.carColorId||entry.carColors,entry.userId)}<div class="profile-achievement-row"><span class="profile-achievement-label">ELIGIBLE PODIUMS</span><div class="profile-achievement-medals">${achievements}</div><span class="profile-ranked-count">${Number(entry.raceCount||0)} ${entry.localOnly?'saved':'ranked'} track${Number(entry.raceCount||0)===1?'':'s'}</span></div></div><div class="profile-identity"><span class="profile-kicker">${entry.localOnly?'LOCAL PB PROFILE':'RANKED PROFILE'}</span><h3>${escapeHtml(safeDisplayName(entry.name||'Guest',entry.userId))}${countryFlagMarkup(entry.countryCode)}${isSelf?'<span class="overall-you-tag">YOU</span>':''}</h3><div class="profile-identity-extras">${profileIdentityExtras}</div><div class="profile-stat-strip profile-stat-primary">${primaryStats}</div><details class="profile-more-stats"><summary>More profile stats</summary><div class="profile-stat-strip profile-stat-secondary">${secondaryStats}</div></details></div></div>${isSelf?profileCustomizerMarkup(entry):''}<div class="profile-results">${resultCards}</div>${guideMarkup}<section class="profile-track-history"><header><div><span class="profile-kicker">TRACK BREAKDOWN</span><h4>Loaded results</h4></div><span>${cachedFinishes.length} loaded on this device${entry.localOnly?' · Public Ranked totals unavailable':' · '+Number(entry.raceCount||0)+' counted in Ranked'}</span></header><div class="profile-track-head"><button type="button" data-profile-sort="track" data-profile-user="${uid}" class="${profileSort==='track'?'active':''}" aria-label="Sort by track name">Track${profileSortArrow('track')}</button><button type="button" data-profile-sort="weight" data-profile-user="${uid}" class="${profileSort==='weight'?'active':''}" aria-label="Sort by track weight">Weight & age${profileSortArrow('weight')}</button><button type="button" data-profile-sort="place" data-profile-user="${uid}" class="${profileSort==='place'?'active':''}" aria-label="Sort by finishing result">Result${profileSortArrow('place')}</button><button type="button" data-profile-sort="time" data-profile-user="${uid}" class="${profileSort==='time'?'active':''}" aria-label="Sort by personal best time">Time${profileSortArrow('time')}</button></div><div class="profile-track-list">${trackRows}</div></section><p class="profile-disclaimer">Saved results and local PBs are shown. Missing placements load from complete saved boards when available.</p>`;
     applyProfileCosmetics(content.closest('.overall-profile-card'),profileCosmeticDrafts.get(cleanUserId(entry.userId||entry.accountId||''))||cosmeticsForEntry(entry));
     setupRacerStudio(content);
+    const topButton=document.createElement('button');topButton.type='button';topButton.className='button overall-action-btn';topButton.textContent='Back to top';topButton.title='Scroll to the top of this racer profile';topButton.onclick=()=>{profileCard.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});popup.querySelector('#overallProfileClose')?.focus({preventScroll:true});};content.appendChild(topButton);
     if(profileFilter.active){
       const heading=document.createElement('strong');heading.className='profile-filter-heading';heading.textContent='Racer profile · Filtered Results';content.prepend(heading);
       personalFilterNoticeNode(content,profileFilter);
@@ -5943,10 +5974,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const own=readOverallSnapshotCache()?.entries?.find(row=>(row.accountId||row.userId)===accountId);
     rememberSnapshotAccountAge(accountId,own?.accountCreatedAt);
     const remainingMs=Math.max(0,NEW_ACCOUNT_SNAPSHOT_MS-(at-(snapshotAccountStarts.get(accountId)||start)));
-    if(remainingMs>0)return {locked:true,remainingMs,needsFinish:null};
+    const hasSavedFinish=readLocalRaceRows().some(row=>String(row.accountId||row.userId||'')===accountId&&canonicalRaceTimeMs(row)>0);
+    if(remainingMs>0)return {locked:true,remainingMs,needsFinish:!hasSavedFinish};
     if(own&&Number.isSafeInteger(Number(own.accountCreatedAt))&&Number(own.accountCreatedAt)>=1704067200000&&at-Number(own.accountCreatedAt)>=NEW_ACCOUNT_SNAPSHOT_MS)return {locked:false,remainingMs:0,needsFinish:false};
     // Age alone must not turn an idle visitor into a live leaderboard reader.
-    const needsFinish=!readLocalRaceRows().some(row=>String(row.accountId||row.userId||'')===accountId&&canonicalRaceTimeMs(row)>0);
+    const needsFinish=!hasSavedFinish;
     return {locked:needsFinish,remainingMs:0,needsFinish};
   }
   function snapshotOnlyForNewAccount(){return snapshotRefreshState().locked;}
@@ -5955,10 +5987,11 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(!state.locked)return 'Live refresh available';
     if(state.remainingMs===0)return 'Live refresh ready after your first saved finish';
     const seconds=Math.ceil(state.remainingMs/1000);
-    return `Live refresh unlocks in ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} · saved finish required`;
+    return `Live refresh unlocks in ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}${state.needsFinish?' · saved finish required':' · finish saved'}`;
   }
   function snapshotAccessNotice(){
-    return 'Live refresh works: new players wait 15 minutes and save a first finish to unlock it. Until then, saved standings load instantly and your local PB updates here. Other racers may have newer runs; run submissions still work.';
+    const state=snapshotRefreshState();
+    return `${state.needsFinish?'Save a first finish and wait for the timer to unlock live refresh.':'Your finish is saved. Only the timer remains before live refresh unlocks.'} Until then, snapshot standings and your local PB are available. Run submissions still work.`;
   }
   let snapshotCountdownWasLocked=false;
   // Only update visible status panels, never reload boards for a countdown.
@@ -5997,7 +6030,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
   }
   async function readPublicSnapshotBackup(kind,id='',accountId=''){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=91').then(module=>{
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=92').then(module=>{
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',window.location.href),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]'))});
       void reader('snapshot-meta').then(meta=>{const at=Date.parse(meta?.capturedAt||'');if(Number.isFinite(at)&&at>0&&at<=Date.now())publicSnapshotCapturedAt=at;}).catch(()=>{});
       return reader;
@@ -7763,8 +7796,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     let banner=document.getElementById('polytrackTrackFreshness');
     if(!nativeLeaderboard||!isElementVisible(nativeLeaderboard)||!currentTrackLoadState){if(banner)banner.remove();return;}
     if(!banner){banner=document.createElement('div');banner.id='polytrackTrackFreshness';banner.className='polytrack-track-freshness';document.body.appendChild(banner);}
+    const footer=nativeLeaderboard.querySelector(':scope > .pages')||nativeLeaderboard.querySelector(':scope > .button-wrapper');
+    const inline=Boolean(footer&&nativeLeaderboard.closest('.track-info-ui'));
+    if(inline){if(banner.parentElement!==nativeLeaderboard)nativeLeaderboard.insertBefore(banner,footer);}
+    else if(banner.parentElement!==document.body)document.body.appendChild(banner);
     const state=currentTrackLoadState;
-    banner.className=`polytrack-track-freshness ${state.status==='stale'?'is-stale':state.status==='loading'?'is-loading':''}`;
+    banner.className=`polytrack-track-freshness ${inline?'sq-track-data-inline ':''}${state.status==='stale'?'is-stale':state.status==='loading'?'is-loading':''}`;
     const cached=readTrackSnapshotCache(state.trackId);
     const fieldSize=Math.max(0,Number(cached?.entries?.length||0)||0);
     const weight=cachedTrackWeight(state.trackId,cached);
@@ -7776,7 +7813,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const recentlyChecked=checkedAt&&Date.now()-checkedAt<TRACK_REFRESH_MS;
     const ownId=activeRankedAccountId(),own=(cached?.entries||[]).find(row=>String(row.accountId||row.userId||'')===ownId);
     const mixed=cached?.source==='local'||localRaceRowsForTrack(state.trackId).some(row=>String(row.accountId||row.userId||'')===ownId&&canonicalRaceTimeMs(row)>0&&(!own||canonicalRaceTimeMs(row)<canonicalRaceTimeMs(own)));
-    const sourceLabel=mixed?'Mixed data (saved standings + local PB)':state.status==='snapshot'?'Snapshot data':state.status==='cloud'?'Fresh cloud data':'Cached data';
+    const sourceLabel=mixed?'Snapshot/cache + local PB':state.status==='snapshot'||cached?.source==='public-backup'?'Snapshot data':state.status==='cloud'?'Fresh cloud data':'Cached data';
+    const source=mixed?'mixed':state.status==='snapshot'||cached?.source==='public-backup'?'snapshot':state.status==='cloud'?'live':cached?.source==='local'?'local':failed?'error':'cache';
+    if(banner.dataset.source!==source)banner.dataset.source=source;
     const second=state.status==='loading'?'Loading the selected track':`${sourceLabel} · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}${failed?' · live refresh unavailable':''}`;
     const policy=snapshotOnlyForNewAccount()?snapshotUnlockLabel():'';
     const bannerHtml=`<strong>${fieldSize>=2?`${weight.toFixed(2)}x Weight`:'No Ranked weight'} · ${fieldSize} Player${fieldSize===1?'':'s'}</strong><span>${escapeHtml(second)}</span>${state.status==='snapshot'||cached?.source==='public-backup'?`<span>${escapeHtml(snapshotCaptureLabel())}</span>`:''}${policy?`<span>${escapeHtml(policy)}</span>`:''}`;
@@ -7884,6 +7923,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function boot(){
     // Warm only same-origin schedule assets, never the database, before menus open.
     void localEventCatalog().catch(()=>{});
+    // Warm one small same-origin board after startup, never replays or Firestore.
+    setTimeout(()=>{if(document.visibilityState==='visible'&&snapshotOnlyForNewAccount())void readPublicSnapshotBackup('track','5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038');},2000);
     void ensurePersonalFilters();
     window.addEventListener('storage',event=>{
       if(event.key===null)jsonStorageCache.clear();else jsonStorageCache.delete(event.key);
@@ -7895,7 +7936,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=91',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:91,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=92',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:92,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

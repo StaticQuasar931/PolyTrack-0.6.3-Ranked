@@ -234,32 +234,75 @@
   }
 }
 
-/* Keep ranked snapshot details compact and above the leaderboard controls. */
+/* Track freshness is part of the native leaderboard flow when hosted there. */
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-  left: max(10px, env(safe-area-inset-left)) !important;
-  right: auto !important;
-  bottom: max(58px, calc(env(safe-area-inset-bottom) + 54px)) !important;
+  --sq-track-data-bg: #354153;
+  --sq-track-data-border: #91a0b4;
+  position: fixed !important;
+  inset: auto auto max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)) !important;
+  z-index: 20;
   width: min(360px, calc(100vw - 20px)) !important;
   max-width: min(360px, calc(100vw - 20px)) !important;
-  max-height: 100px !important;
+  max-height: min(180px, calc(100vh - 28px)) !important;
   box-sizing: border-box !important;
-  padding: 6px 9px !important;
-  gap: 2px !important;
-  overflow: hidden !important;
+  padding: 8px 10px !important;
+  gap: 3px !important;
+  overflow: auto !important;
+  border: 1px solid var(--sq-track-data-border) !important;
+  border-radius: 6px;
+  background: var(--sq-track-data-bg) !important;
+  color: #f5f7fb !important;
   font-size: clamp(11px, calc(12px * var(--sq-ui-scale, 1)), 14px) !important;
-  line-height: 1.25 !important;
+  line-height: 1.3 !important;
   letter-spacing: 0 !important;
   clip-path: none !important;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="snapshot"] {
+  --sq-track-data-bg: #51451f;
+  --sq-track-data-border: #e6c85f;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="mixed"] {
+  --sq-track-data-bg: #3f3b49;
+  --sq-track-data-border: #c4a6dc;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="cache"] {
+  --sq-track-data-bg: #263f61;
+  --sq-track-data-border: #83b8f4;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="live"] {
+  --sq-track-data-bg: #1e4944;
+  --sq-track-data-border: #74d5c1;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="local"] {
+  --sq-track-data-bg: #3a4650;
+  --sq-track-data-border: #9aabba;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness[data-source="error"] {
+  --sq-track-data-bg: #4c3032;
+  --sq-track-data-border: #e49a9c;
+}
+html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness.sq-track-data-inline {
+  position: relative !important;
+  inset: auto !important;
+  z-index: auto;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  align-self: stretch;
+  flex: 0 0 auto;
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100% !important;
+  max-height: none !important;
+  margin: 0 0 8px !important;
+  overflow: visible !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong,
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
   display: block !important;
   min-width: 0 !important;
   max-width: 100% !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-  line-height: 1.25 !important;
+  overflow-wrap: anywhere;
+  line-height: 1.3 !important;
 }
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > strong {
   font-size: clamp(12px, calc(13px * var(--sq-ui-scale, 1)), 15px) !important;
@@ -267,25 +310,23 @@ html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshne
 html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness > span {
   font-size: clamp(10px, calc(11px * var(--sq-ui-scale, 1)), 13px) !important;
 }
-@media (max-width: 900px) {
-  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-    width: min(320px, calc(100vw - 20px)) !important;
-    max-width: min(320px, calc(100vw - 20px)) !important;
-  }
+html body [data-sq-snapshot-refresh-lock] {
+  cursor: default !important;
+  filter: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background-color: #555d68 !important;
+  border-color: #737d8b !important;
+  color: #d5d9df !important;
+  opacity: .72 !important;
 }
-@media (max-width: 600px) and (orientation: portrait) {
-  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-    bottom: max(106px, calc(env(safe-area-inset-bottom) + 102px)) !important;
-    width: min(280px, calc(100vw - 20px)) !important;
-    max-width: min(280px, calc(100vw - 20px)) !important;
-    max-height: 90px !important;
-    padding: 5px 7px !important;
-  }
+html body [data-sq-snapshot-refresh-lock]:hover,
+html body [data-sq-snapshot-refresh-lock]:focus-visible,
+html body [data-sq-snapshot-refresh-lock]:active {
+  cursor: default !important;
+  filter: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
-@media (max-width: 360px) {
-  html.sq-compact-track-data body #polytrackTrackFreshness.polytrack-track-freshness {
-    width: calc(100vw - 16px) !important;
-    max-width: calc(100vw - 16px) !important;
-    left: max(8px, env(safe-area-inset-left)) !important;
-  }
-}
+html body [data-sq-snapshot-refresh-lock]::before,
+html body [data-sq-snapshot-refresh-lock]::after { display: none !important; }

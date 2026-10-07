@@ -22,6 +22,27 @@ test('packed snapshots verify checksums, decompress and reuse immutable data',as
   assert.equal(await fixture.read('profile','a'.repeat(64)),null);
   assert.equal(fixture.calls(),2);
 });
+
+test('recent boards stay cached while old boards are evicted at the entry limit',async()=>{
+  let calls=0;
+  const id=n=>n.toString(16).padStart(64,'0');
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',fetchImpl:async url=>{
+    calls++;return Response.json({updatedAt:1,trackId:String(url).split('/').pop().replace('.json',''),entries:[]});
+  }});
+  for(let i=1;i<=128;i++)await read('track',id(i));
+  await read('track',id(1));await read('track',id(129));
+  assert.equal(calls,129);await read('track',id(1));assert.equal(calls,129);
+  await read('track',id(2));assert.equal(calls,130);
+});
+
+test('large replay cache releases old decoded payloads at its memory budget',async()=>{
+  let calls=0;
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',fetchImpl:async()=>{
+    calls++;return Response.json({updatedAt:1,frames:10,recording:'x'.repeat(810000)});
+  }});
+  for(let i=1;i<=6;i++)await read('recording',String(i));
+  assert.equal(calls,6);await read('recording','1');assert.equal(calls,7);
+});
 test('snapshot capture metadata is bundled, shared, and never fetched from Firebase',async()=>{
   const fixture=await packedFixture({capturedAt:'2026-10-07T00:17:20.349Z'},'public-export-summary.json');
   assert.equal((await fixture.read('snapshot-meta')).capturedAt,'2026-10-07T00:17:20.349Z');

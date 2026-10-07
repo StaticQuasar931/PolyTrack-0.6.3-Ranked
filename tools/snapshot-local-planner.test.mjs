@@ -15,13 +15,34 @@ function functionSource(name){
   }
   throw new Error(`unterminated function ${name}`);
 }
-function makeHarness({snapshots,localRows,active='self',savedResults=new Map()}){
+function makeHarness({snapshots,localRows,active='self',savedResults=new Map(),backupBoards={},overallAt=0}){
   const cleanUserId=value=>String(value||'').trim();
   const canonicalRaceTimeMs=row=>Number(row?.timeMs||0);
-  const functions='const profileSnapshotResults=deps.savedResults;\n'+['localTrackDisplayEntries','visibleTrackEntries','localPlannerProfileEntry','cachedProfileFinishes'].map(functionSource).join('\n');
-  const init=new Function('deps',`const {cleanUserId,canonicalRaceTimeMs,trackSnapshotStore,readLocalRaceRows,safeRecordingId,buildRecordingId,entryTimeMs,pbTimestamp,knownFinishWeight,overallLoadState,readOverallSnapshotCache,activeRankedAccountId,sortProfileFinishes,getLastKnownName}=deps;${functions};return {localPlannerProfileEntry,cachedProfileFinishes};`);
-  return init({savedResults,cleanUserId,canonicalRaceTimeMs,trackSnapshotStore:()=>snapshots,readLocalRaceRows:()=>localRows,safeRecordingId:value=>value||'',buildRecordingId:()=> 'local-id',entryTimeMs:canonicalRaceTimeMs,pbTimestamp:row=>row.createdAt||0,knownFinishWeight:({rank,fieldSize})=>rank?fieldSize/rank:0,overallLoadState:{},readOverallSnapshotCache:()=>null,activeRankedAccountId:()=>active,sortProfileFinishes:rows=>rows,getLastKnownName:()=>''});
+  const functions='const profileSnapshotResults=deps.savedResults,profilePlacementRequests=new Map();const readTrackSnapshotCache=id=>deps.trackSnapshotStore()[id],readPublicSnapshotBackup=async(kind,id)=>deps.backupBoards[id]||null;\n'+['localTrackDisplayEntries','visibleTrackEntries','localPlannerProfileEntry','cachedProfileFinishes','warmProfileLocalPlacements'].map(functionSource).join('\n');
+  const init=new Function('deps',`const {cleanUserId,canonicalRaceTimeMs,trackSnapshotStore,readLocalRaceRows,safeRecordingId,buildRecordingId,entryTimeMs,pbTimestamp,knownFinishWeight,overallLoadState,readOverallSnapshotCache,activeRankedAccountId,sortProfileFinishes,getLastKnownName}=deps;${functions};return {localPlannerProfileEntry,cachedProfileFinishes,warmProfileLocalPlacements};`);
+  return init({backupBoards,savedResults,cleanUserId,canonicalRaceTimeMs,trackSnapshotStore:()=>snapshots,readLocalRaceRows:()=>localRows,safeRecordingId:value=>value||'',buildRecordingId:()=> 'local-id',entryTimeMs:canonicalRaceTimeMs,pbTimestamp:row=>row.createdAt||0,knownFinishWeight:({rank,fieldSize})=>rank?fieldSize/rank:0,overallLoadState:{serverUpdatedAt:overallAt},readOverallSnapshotCache:()=>null,activeRankedAccountId:()=>active,sortProfileFinishes:rows=>rows,getLastKnownName:()=>''});
 }
+
+test('summary with no placement never erases saved placement or time',()=>{
+  const savedResults=new Map([['self',{updatedAt:100,results:[{trackId:'track',rank:2,fieldSize:20,timeMs:19000}]}]]);
+  const h=makeHarness({snapshots:{},localRows:[],savedResults,overallAt:200});
+  const [finish]=h.cachedProfileFinishes('self',{resultSamples:[{trackId:'track',rank:null,timeMs:19000}]});
+  assert.equal(finish.rank,2);assert.equal(finish.fieldSize,20);assert.equal(finish.timeMs,19000);
+});
+
+test('local PB placement is calculated from complete static board without opening it',async()=>{
+  const trackId='b'.repeat(64),savedResults=new Map();
+  const h=makeHarness({snapshots:{},savedResults,localRows:[{accountId:'self',trackId,timeMs:15000}],backupBoards:{[trackId]:{complete:true,updatedAt:90,entries:[{accountId:'rival',timeMs:14000},{accountId:'slow',timeMs:16000}]}}});
+  assert.equal(await h.warmProfileLocalPlacements('self'),true);
+  const [finish]=h.cachedProfileFinishes('self',{});assert.equal(finish.rank,2);assert.equal(finish.fieldSize,3);assert.equal(finish.local,true);
+  assert.equal(await h.warmProfileLocalPlacements('self'),false);
+});
+
+test('partial saved board cannot invent exact placement for local PB',async()=>{
+  const trackId='b'.repeat(64);
+  const h=makeHarness({snapshots:{},localRows:[{accountId:'self',trackId,timeMs:15000}],backupBoards:{[trackId]:{complete:false,entries:[{accountId:'rival',timeMs:14000}]}}});
+  assert.equal(await h.warmProfileLocalPlacements('self'),false);assert.equal(h.cachedProfileFinishes('self',{})[0].rank,null);
+});
 
 test('profile index supplies every saved finish without opening track boards',()=>{
   const results=Array.from({length:26},(_,i)=>({trackId:'track'+i,rank:2,fieldSize:20,timeMs:10000+i}));
