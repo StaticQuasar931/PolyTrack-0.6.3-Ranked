@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {sameHashMap} from './engine-pin.cjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {connect, decode} from './firestore.mjs';
@@ -16,11 +17,11 @@ const checkEvents = async (db, options) => (await import('./events.mjs')).checkE
 const runEvents = async (db, directory, options) => (await import('./events.mjs')).runEventVerification(db, directory, options);
 const simulate = async (directory, jobs, trustedTracks) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-async function validateEnginePin() {
+export async function validateEnginePin() {
   const {snapshot} = await import('./assets.cjs');
   const manifest=JSON.parse(fs.readFileSync(new URL('./engine-manifest.json',import.meta.url),'utf8'));
   const trusted=snapshot(root);
-  if(trusted.engineFingerprint!==VERIFIER_ENGINE_DIGEST||manifest.engineDigest!==VERIFIER_ENGINE_DIGEST||JSON.stringify(trusted.tracks)!==JSON.stringify(manifest.tracks))throw Error('Verifier engine pin mismatch: repin and deploy matching Worker before processing');
+  if(trusted.engineFingerprint!==VERIFIER_ENGINE_DIGEST||manifest.engineDigest!==VERIFIER_ENGINE_DIGEST||!sameHashMap(trusted.tracks,manifest.tracks))throw Error('Verifier engine pin mismatch: repin and deploy matching Worker before processing');
 }
 
 export async function checkForWork(db, {env = process.env, now = Date.now(), log = console.log, eventCheck = checkEvents} = {}) {

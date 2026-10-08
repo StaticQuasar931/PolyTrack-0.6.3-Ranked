@@ -5,12 +5,13 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { LIMITS, sha256, checkJob } = require('./replay.cjs');
 const { snapshot, serve } = require('./assets.cjs');
+const { sameHashMap } = require('./engine-pin.cjs');
 const { geometryDecision } = require('./geometry.cjs');
 const { normalizeTrustedTracks } = require('./kodub-track.cjs');
 
 const VERIFIER_VERSION = 'polytrack-native-bounded-v1';
 const trace = message => { if (process.env.VERIFIER_DEBUG === '1') process.stderr.write(`[verifier] ${message}\n`); };
-const verifierFingerprint = sha256(['verify.cjs', 'assets.cjs', 'replay.cjs', 'geometry.cjs', 'kodub-track.cjs', 'track-geometry.json'].map(name => name + '\n' + fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\r\n?/g, '\n')).join('\n'));
+const verifierFingerprint = sha256(['verify.cjs', 'engine-pin.cjs', 'assets.cjs', 'replay.cjs', 'geometry.cjs', 'kodub-track.cjs', 'track-geometry.json'].map(name => name + '\n' + fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\r\n?/g, '\n')).join('\n'));
 
 function duration(name, maximum) {
   const raw = process.env[name];
@@ -279,7 +280,7 @@ async function verifyBatch(root, jobs, trustedTracks) {
     trace('snapshot loaded');
     const pin = JSON.parse(fs.readFileSync(path.join(__dirname, 'engine-manifest.json'), 'utf8'));
     if (pin.engineDigest !== engine.engineFingerprint || sha256(JSON.stringify(pin.files)) !== pin.engineDigest) throw Error('engine_pin_mismatch');
-    if (JSON.stringify(pin.tracks) !== JSON.stringify(engine.tracks)) throw Error('track_pin_mismatch');
+    if (!sameHashMap(pin.tracks, engine.tracks)) throw Error('track_pin_mismatch');
     if (process.env.VERIFIER_ENGINE_DIGEST && process.env.VERIFIER_ENGINE_DIGEST !== engine.engineFingerprint) throw Error('engine_pin_mismatch');
     const trusted = normalizeTrustedTracks(trustedTracks, new Set(jobs.map(job => job.trackId)));
     for (let i = 0; i < jobs.length; i++) {
