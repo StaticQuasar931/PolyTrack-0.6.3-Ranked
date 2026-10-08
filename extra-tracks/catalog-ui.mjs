@@ -68,7 +68,7 @@ function searchRelevance(record, query, tokens) {
   return 4;
 }
 
-export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
+export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, onOpenPack, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
@@ -139,6 +139,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   });
   inviteRow.append(invitation, submit);
   dialog.append(inviteRow);
+  if(typeof onOpenPack==='function'){
+    const packs=new Map();for(const entry of entries){if(entry.packId){const pack=packs.get(entry.packId)||{name:entry.packName||'Track collection',count:0};pack.count++;packs.set(entry.packId,pack);}}
+    if(packs.size){const row=make('div','sq-extra-pack-links');for(const [id,pack] of packs)row.append(button(pack.name+' · '+pack.count+' tracks','sq-extra-pack-open',async()=>{try{await onOpenPack(id);}catch(error){showStatus(error?.message||'This collection could not open.',true);}}));dialog.append(row);}
+  }
+
 
   const controls = make('div', 'sq-extra-controls');
   const searchLabel = make('label', 'sq-extra-field', 'Search tracks');
@@ -445,6 +450,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
     if (entry.featuredSubmission === true) body.append(make('span', 'sq-extra-tier sq-extra-tier-submitted', 'New from players'));
     if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Unranked challenge · no RP or verification'));
+    if(entry.packName)body.append(make('span','sq-extra-pack-label',entry.packName));
     const titleRow = make('div', 'sq-extra-title-row');
     titleRow.append(make('h3', '', text(entry.name, 'Untitled track')));
     let feedback = {};

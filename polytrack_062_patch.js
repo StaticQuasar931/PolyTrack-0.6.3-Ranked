@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=94',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=95',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='94';
+  const extraCatalogRevision='95';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -335,9 +335,9 @@
       }).catch(error=>{extraTracksCatalogPromise=null;throw error;});
     return extraTracksCatalogPromise;
   }
-  async function importExtraTrack(entry){
+  async function importExtraTrack(entry,{saveOnly=false}={}){
     if(!entry||!(/^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath||'')||entry.ranked===false&&/^extra-tracks\/challenges\/[a-z0-9-]+\.track$/.test(entry.trackPath||'')))throw Error('Track file is unavailable.');
-    const response=await fetch(new URL('../'+entry.trackPath,extraTracksBaseUrl));
+    const response=await fetch(new URL('../'+entry.trackPath,extraTracksBaseUrl),{signal:AbortSignal.timeout(15000)});
     if(!response.ok||Number(response.headers.get('content-length'))>524288)throw Error('Track file is unavailable or too large.');
     const code=(await response.text()).trim();
     if(code.length>524288||!/^PolyTrack[0-9A-Za-z+/_=-]+$/.test(code))throw Error('Track code is invalid.');
@@ -353,7 +353,7 @@
       .find(node=>node.textContent.trim()===nativeName)?.closest('button');
     if(matchingCard&&known[entry.id]!==trackId)throw Error('A different custom track has this name. Rename it before importing.');
     const saved=known[entry.id]===trackId&&matchingCard;
-    if(saved){saved.click();extraTracksUi?.close();return;}
+    if(saved){if(!saveOnly){saved.click();extraTracksUi?.close();}return;}
     const importButton=[...document.querySelectorAll('.track-selection-ui > .bar > button')].find(button=>button.querySelector('img[src*="import.svg"]'));
     if(!importButton)throw Error('Open Custom Tracks, then try again.');
     importButton.click();
@@ -372,7 +372,7 @@
     known[entry.id]=trackId;
     try{localStorage.setItem(extraTrackIdsKey,JSON.stringify(known));}catch{}
     extraTrackKnownIds=known;
-    extraTracksUi?.close();
+    if(!saveOnly)extraTracksUi?.close();
   }
   async function submitExtraTrack(payload){
     const user=window.firebase?.auth?.().currentUser;
@@ -421,6 +421,22 @@
     const blob=new Blob([JSON.stringify({version:4,exportedAt:new Date().toISOString(),ratingEvidence:'rating: track quality (1=poor, 10=excellent); difficultyRating: track difficulty (1=beginner, 10=master)',playEvidence:'saved finish',tagEvidence:'local review suggestions, not published catalog edits',tracks},null,2)],{type:'application/json'});
     const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='polytrack-extra-picks.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
   }
+  let extraTrackPackUi=null,extraTrackPackPending=false;
+  async function openExtraTrackPack(packId){
+    if(extraTrackPackUi||extraTrackPackPending)return;
+    extraTrackPackPending=true;
+    try{
+    const [entries,module,response]=await Promise.all([loadExtraTracksCatalog(),import(new URL('pack-ui.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href),fetch(new URL('packs.json?v='+extraCatalogRevision,extraTracksBaseUrl),{headers:{Accept:'application/json'}})]);
+    if(!response.ok)throw Error('This track collection could not load.');
+    const packs=await response.json();const pack=Array.isArray(packs)?packs.find(row=>row.id===packId):null;
+    if(!pack||!Array.isArray(pack.trackIds)||pack.trackIds.length>100)throw Error('This track collection is unavailable.');
+    const ids=new Set(pack.trackIds);const tracks=entries.filter(entry=>ids.has(entry.trackId)).sort((a,b)=>(a.packOrder||0)-(b.packOrder||0));
+    if(tracks.length!==ids.size)throw Error('This collection is missing a track.');
+    if(!document.querySelector('link[data-extra-pack-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('pack.css?v='+extraCatalogRevision,extraTracksBaseUrl).href;css.dataset.extraPackCss='';document.head.append(css);}
+    extraTracksUi?.close();
+    extraTrackPackUi=module.mountTrackPack({document,root:document.body,entries:tracks,pack,onImport:entry=>importExtraTrack(entry,{saveOnly:true}),onClose:()=>{extraTrackPackUi=null;extraTracksUi?.open();}});
+    }catch(error){extraTracksUi?.open();throw error;}finally{extraTrackPackPending=false;}
+  }
   async function openExtraTracks(){
     extraTrackRaceRows=readLocalRaceRows();extraTrackKnownIds=extraTrackIds();
     if(extraTracksUi){extraTracksUi.open();return;}
@@ -428,7 +444,7 @@
       loadExtraTracksCatalog(),import(new URL('catalog-ui.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href),import(new URL('review.mjs?v='+extraCatalogRevision,extraTracksBaseUrl).href)
     ]).then(([entries,module,review])=>{
       extraReviewHelpers=review;
-      extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,getPersonalBest:extraTrackPersonalBest,isLoaded:entry=>extraTrackKnownIds[entry.id]===entry.trackId,getLocalRating:entry=>extraFeedback(entry).rating,getFeedback:extraFeedback,onFeedback:saveExtraFeedback,onExportFeedback:exportExtraFeedback,onSubmit:submitExtraTrack,onReport:reportExtraTrack});
+      extraTracksUi=module.mountExtraTracks({document,root:document.body,entries,onPlay:importExtraTrack,onSave:importExtraTrack,onOpenPack:openExtraTrackPack,getPersonalBest:extraTrackPersonalBest,isLoaded:entry=>extraTrackKnownIds[entry.id]===entry.trackId,getLocalRating:entry=>extraFeedback(entry).rating,getFeedback:extraFeedback,onFeedback:saveExtraFeedback,onExportFeedback:exportExtraFeedback,onSubmit:submitExtraTrack,onReport:reportExtraTrack});
       if(!document.querySelector('link[data-extra-tracks-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href=new URL('catalog.css?v='+extraCatalogRevision,extraTracksBaseUrl).href;css.dataset.extraTracksCss='';document.head.append(css);}
       return extraTracksUi;
     }).finally(()=>{extraTracksUiPromise=null;});
@@ -4551,7 +4567,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=94',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=95',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4571,8 +4587,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=94',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=94',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=94',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=95',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=95',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=95',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -6055,7 +6071,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
   }
   async function readPublicSnapshotBackup(kind,id='',accountId=''){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=94').then(module=>{
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=95').then(module=>{
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',window.location.href),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]'))});
       void reader('cosmetic-directory').then(data=>{if(!data)return;snapshotCosmeticEntries=data.entries;cosmeticEpoch++;if(isElementVisible(document.getElementById('overallLeaderboardPanel')))renderEntries();decorateNativeLeaderboardCosmetics();}).catch(()=>{});
       void reader('snapshot-meta').then(meta=>{const at=Date.parse(meta?.capturedAt||'');if(Number.isFinite(at)&&at>0&&at<=Date.now())publicSnapshotCapturedAt=at;}).catch(()=>{});
@@ -7823,7 +7839,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function positionTrackFreshnessBanner(banner,leaderboard){
-    const inset=8,width=Math.min(300,window.innerWidth-16);
+    const inset=8,width=Math.min(360,window.innerWidth-20);
     const pages=leaderboard.querySelector(':scope > .pages');
     const footer=leaderboard.querySelector(':scope > .button-wrapper');
     const pagesRect=pages?.getBoundingClientRect();
@@ -7865,9 +7881,10 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const sourceLabel=mixed?'Snapshot/cache + local PB':state.status==='snapshot'||cached?.source==='public-backup'?'Snapshot data':state.status==='cloud'?'Fresh cloud data':'Cached data';
     const source=mixed?'mixed':state.status==='snapshot'||cached?.source==='public-backup'?'snapshot':state.status==='cloud'?'live':cached?.source==='local'?'local':failed?'error':'cache';
     if(banner.dataset.source!==source)banner.dataset.source=source;
-    const second=state.status==='loading'?'Loading the selected track':`${sourceLabel} · changed ${snapshotAt?ageLabel(snapshotAt):'unknown'}${failed?' · live refresh unavailable':''}`;
+    const second=state.status==='loading'?'Loading the selected track':`${sourceLabel}${failed?' · live refresh unavailable':''}`;
+    const ageLine=`Standings age: ${snapshotAt?ageLabel(snapshotAt):'unknown'}`;
     const policy=snapshotOnlyForNewAccount()?snapshotUnlockLabel():'';
-    const bannerHtml=`<strong>${fieldSize>=2?`${weight.toFixed(2)}x Weight`:'No Ranked weight'} · ${fieldSize} Player${fieldSize===1?'':'s'}</strong><span>${escapeHtml(second)}</span>${state.status==='snapshot'||cached?.source==='public-backup'?`<span>${escapeHtml(snapshotCaptureLabel())}</span>`:''}${policy?`<span>${escapeHtml(policy)}</span>`:''}`;
+    const bannerHtml=`<strong>${fieldSize>=2?`${weight.toFixed(2)}x Weight`:'No Ranked weight'} · ${fieldSize} Player${fieldSize===1?'':'s'}</strong><span>${escapeHtml(second)}</span><span>${escapeHtml(ageLine)}</span>${policy?`<span>${escapeHtml(policy)}</span>`:''}`;
     if(banner.innerHTML!==bannerHtml)banner.innerHTML=bannerHtml;
     positionTrackFreshnessBanner(banner,nativeLeaderboard);
     syncSnapshotRefreshControl(nativeLeaderboard.querySelector('button.refresh'));
@@ -7986,7 +8003,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=94',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:94,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=95',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:95,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

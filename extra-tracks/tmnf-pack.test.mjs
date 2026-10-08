@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import {createHash} from 'node:crypto';import {readEmbeddedTrackMetadata} from './sync-code-metadata.mjs';
+test('TMNF pack has thirty distinct native tracks, individual metadata and collective-only tags/difficulty',()=>{
+ const root=new URL('../',import.meta.url),catalog=JSON.parse(fs.readFileSync(new URL('extra-tracks/catalog.json',root),'utf8')),packs=JSON.parse(fs.readFileSync(new URL('extra-tracks/packs.json',root),'utf8'));
+ const pack=packs.find(p=>p.id==='tmnf-ab'),rows=catalog.filter(e=>e.packId===pack.id);assert.equal(rows.length,30);assert.equal(new Set(pack.trackIds).size,30);assert.deepEqual([...pack.trackIds].sort(),rows.map(e=>e.trackId).sort());assert.equal(pack.difficulty,4);assert.deepEqual(pack.tags,['speedrun','racing','scenic','tutorial']);
+ const pin=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
+ for(const row of rows){const bytes=fs.readFileSync(new URL(row.trackPath,root)),code=bytes.toString('utf8').trim(),meta=readEmbeddedTrackMetadata(code);assert.equal(row.name,meta.codeName);assert.equal(row.author,meta.codeAuthor);assert.deepEqual(row.tags,[]);assert.equal(row.difficulty,undefined);assert.equal(row.rating,undefined);assert.equal(pin.tracks[row.trackPath],createHash('sha256').update(bytes).digest('hex'));const png=fs.readFileSync(new URL(row.thumbnailUrl,root));assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');assert.ok(!('ownerUid' in row));}
+});

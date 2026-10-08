@@ -30,8 +30,8 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
         <div class="pages">Leaderboard pages</div><div class="button-wrapper"><button class="back">Back</button><button>Filter</button></div>
       </section></main>
       <div id="polytrackTrackFreshness" class="polytrack-track-freshness" data-source="snapshot">
-          <strong>Snapshot + local personal best</strong><span>Snapshot captured two days ago</span>
-          <span>Live refresh unlocks in fourteen minutes</span><span>Your saved finish updates here</span>
+          <strong>1.25x Weight · 84 Players</strong><span>Snapshot data</span>
+          <span>Standings age: 2d ago</span><span>Live refresh unlocks in 14:00 · finish saved</span>
       </div></body></html>`);
     await page.addStyleTag({ content: rankedCss });
     await page.addStyleTag({ content: css });
@@ -51,7 +51,7 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
           const countdown = panel.querySelector('span:nth-of-type(2)');
           return { panel:rect(panel), pages:rect(pages), back:rect(back), countdown:rect(countdown), panelStyle:getComputedStyle(panel), insideLeaderboard:document.querySelector('.leaderboard-ui').contains(panel),
             overlapsPages:intersects(panel.getBoundingClientRect(),pages.getBoundingClientRect()),overlapsBack:intersects(panel.getBoundingClientRect(),back.getBoundingClientRect()),
-            panelScroll:panel.scrollHeight, panelClient:panel.clientHeight, viewport:{width:innerWidth,height:innerHeight} };
+            panelScroll:panel.scrollHeight, panelClient:panel.clientHeight, fontSizePx:parseFloat(getComputedStyle(panel).fontSize), viewport:{width:innerWidth,height:innerHeight} };
         });
         const label = `${width}x${height} scale ${scale}: ${JSON.stringify({panel:result.panel,pages:result.pages,back:result.back})}`;
         assert.equal(result.panelStyle.position, 'fixed', `sidecar remains fixed outside leaderboard flow at ${label}`);
@@ -59,10 +59,11 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
         assert.ok(result.panel.left >= -1 && result.panel.right <= width + 1, `panel stays in viewport at ${label}`);
         assert.equal(result.overlapsPages, false, `panel avoids leaderboard pages at ${label}`);
         assert.equal(result.overlapsBack, false, `panel and native Back control do not overlap at ${label}`);
-        assert.ok(result.panel.width <= 300, `sidecar stays compact at ${label}`);
+        assert.ok(result.panel.width <= 360, `sidecar stays within the readable desktop width at ${label}`);
         assert.ok(result.panelScroll <= result.panelClient + 2, `sidecar has no clipped content at ${label}`);
         assert.ok(result.countdown.top >= result.panel.top && result.countdown.bottom <= result.panel.bottom,
           `lock countdown remains fully visible at ${label}`);
+        assert.ok(result.fontSizePx >= 13, `sidecar text remains readable at ${label}`);
       }
     }
   } finally { await browser.close(); }
@@ -77,7 +78,11 @@ test('source states and locked refresh styling are present and interaction-neutr
   assert.match(css, /border-left:\s*4px solid #7ee7ff/);
   assert.match(css, /clip-path:\s*polygon\(0 0, 100% 0, calc\(100% - 7px\) 100%, 0 100%\)/);
   assert.match(css, /box-shadow:\s*0 8px 24px rgba\(0, 0, 0, \.3\)/);
-  assert.match(css, /font-size:\s*clamp\(11px, calc\(12px \* var\(--sq-ui-scale, 1\)\), 14px\)/);
+  assert.match(css, /width:\s*min\(360px, calc\(100vw - 20px\)\) !important/);
+  assert.match(css, /font-size:\s*clamp\(13px, calc\(14px \* var\(--sq-ui-scale, 1\)\), 15px\) !important/);
+  assert.match(patchSource, /const ageLine=`Standings age: \$\{snapshotAt\?ageLabel\(snapshotAt\):'unknown'\}`/);
+  assert.doesNotMatch(patchSource, /const bannerHtml=.*snapshotCaptureLabel\(\)/);
+  assert.match(patchSource, /const bannerHtml=.*\$\{escapeHtml\(ageLine\)\}.*\$\{policy\?/);
   assert.match(css, /border-radius:\s*0/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\]:hover/);
   assert.match(css, /\[data-sq-snapshot-refresh-lock\][\s\S]*?cursor:\s*default\s*!important/);
