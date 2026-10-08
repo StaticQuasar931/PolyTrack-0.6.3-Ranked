@@ -798,3 +798,15 @@ test('card feedback dropdown is portaled out of card flow and closes on Escape o
   assert.equal(more.getAttribute('aria-expanded'), 'false');
   api.destroy();
 });
+
+test('recommended player submissions put TMNF tracks last and show no collection launcher',()=>{
+ const {root,api}=fixture([
+  entry(1,{name:'A01',featuredSubmission:true,packId:'tmnf-ab',packName:'TMNF',submissionOrder:1}),
+  entry(2,{name:'Zebra',featuredSubmission:true}),
+  entry(3,{name:'Normal',featuredSubmission:false})
+ ],{onOpenPack:()=>{throw Error('Removed collection button must not call this');}});
+ api.open();
+ assert.deepEqual(cls(root,'sq-extra-card').map(card=>tag(card,'h3')[0].textContent),['Zebra','A01','Normal']);
+ assert.equal(cls(root,'sq-extra-pack-open').length,0);assert.equal(cls(root,'sq-extra-pack-links').length,0);
+ api.destroy();
+});

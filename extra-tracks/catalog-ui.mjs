@@ -68,7 +68,7 @@ function searchRelevance(record, query, tokens) {
   return 4;
 }
 
-export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, onOpenPack, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
+export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
@@ -139,10 +139,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   });
   inviteRow.append(invitation, submit);
   dialog.append(inviteRow);
-  if(typeof onOpenPack==='function'){
-    const packs=new Map();for(const entry of entries){if(entry.packId){const pack=packs.get(entry.packId)||{name:entry.packName||'Track collection',count:0};pack.count++;packs.set(entry.packId,pack);}}
-    if(packs.size){const row=make('div','sq-extra-pack-links');for(const [id,pack] of packs)row.append(button(pack.name+' · '+pack.count+' tracks','sq-extra-pack-open',async()=>{try{await onOpenPack(id);}catch(error){showStatus(error?.message||'This collection could not open.',true);}}));dialog.append(row);}
-  }
+
 
 
   const controls = make('div', 'sq-extra-controls');
@@ -848,7 +845,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
           return (state.sort === 'date-newest' ? bDate - aDate : aDate - bDate) || compare(a.entry.name, b.entry.name);
         }
         if (state.sort === 'author') return compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
-        if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || ((a.entry.featuredSubmission === true && b.entry.featuredSubmission === true) ? (Number(a.entry.submissionOrder) || 0) - (Number(b.entry.submissionOrder) || 0) : 0) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
         return compare(a.entry.name, b.entry.name);
       });
       sortedRecordsCache = { records: cachedRecords, sort: state.sort, ordered };
