@@ -31,10 +31,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=96',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=100',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='96';
+  const extraCatalogRevision='100';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -4567,7 +4567,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=96',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=100',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -4587,8 +4587,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=96',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=96',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=96',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=100',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=100',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=100',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         renderRacer:row=>carModelPreview(row.carStyle,row.carColorId||row.carColors,row.userId||row.accountId),onRenderRacers:root=>hydrateOverallCarModels(root),
@@ -6071,7 +6071,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }
   }
   async function readPublicSnapshotBackup(kind,id='',accountId=''){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=96').then(module=>{
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=100').then(module=>{
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',window.location.href),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]'))});
       void reader('cosmetic-directory').then(data=>{if(!data)return;snapshotCosmeticEntries=data.entries;cosmeticEpoch++;if(isElementVisible(document.getElementById('overallLeaderboardPanel')))renderEntries();decorateNativeLeaderboardCosmetics();}).catch(()=>{});
       void reader('snapshot-meta').then(meta=>{const at=Date.parse(meta?.capturedAt||'');if(Number.isFinite(at)&&at>0&&at<=Date.now())publicSnapshotCapturedAt=at;}).catch(()=>{});
@@ -7106,7 +7106,14 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const style = getComputedStyle(el);
       return Math.max(latest,cssTimeMs(style.animationDelay)+cssTimeMs(style.animationDuration));
     },0);
-    const delay = Math.min(460,Math.max(90,nativeEnd>0?nativeEnd+35:150));
+    // Native staggered cards can finish well after 460ms. Wait for their actual remaining work.
+    const remaining = nativeButtons.flatMap(el=>typeof el.getAnimations==='function'?el.getAnimations():[])
+      .reduce((latest,animation)=>{
+        const end=Number(animation.effect?.getComputedTiming().endTime);
+        const current=Number(animation.currentTime)||0;
+        return Number.isFinite(end)?Math.max(latest,(end-current)/Math.max(.01,Math.abs(animation.playbackRate)||1)):latest;
+      },0);
+    const delay = Math.max(90,remaining>0?remaining+35:nativeEnd>0?nativeEnd+35:150);
     rankedSpawnTimer = setTimeout(()=>{
       rankedSpawnTimer=0;
       if (!rankingsSpawnedOnce && isElementVisible(container) && button.isConnected) {
@@ -7148,8 +7155,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       mainButtonsWereVisible = false;
       nativeMenuButtonsAnimating = false;
       if (rankedSpawnTimer) { clearTimeout(rankedSpawnTimer); rankedSpawnTimer=0; }
-      button.classList.remove('ranked-waiting','button-spawn');
-      button.classList.add('ranked-ready');
+      button.classList.remove('ranked-waiting','ranked-ready','button-spawn');
+      button.classList.add(rankingsSpawnedOnce?'ranked-ready':'ranked-waiting');
       return;
     }
     if (!rankingsSpawnedOnce && !rankedSpawnTimer) scheduleRankedSpawnFallback(button,container);
@@ -7169,7 +7176,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if (!button) {
       button = document.createElement('button');
       button.id = 'injectedRankingsBtn';
-      button.className = `button button-image ${isElementVisible(container)&&!rankingsSpawnedOnce?'ranked-waiting':'ranked-ready'}`;
+      button.className = `button button-image ${!rankingsSpawnedOnce?'ranked-waiting':'ranked-ready'}`;
       const existing = container.querySelectorAll('button.button-image');
       button.style.animationDelay = '0s';
       container.appendChild(button);
@@ -7186,7 +7193,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     button.style.order = '6';
     if (container.dataset.rankedAnimationBound !== '1') {
       container.dataset.rankedAnimationBound = '1';
-      container.addEventListener('animationstart',()=>{ const ranked=document.getElementById('injectedRankingsBtn'); if(ranked&&!rankingsSpawnedOnce&&!rankedSpawnTimer) scheduleRankedSpawnFallback(ranked,container); },true);
+      container.addEventListener('animationstart',()=>{ const ranked=document.getElementById('injectedRankingsBtn'); if(ranked&&!rankingsSpawnedOnce) scheduleRankedSpawnFallback(ranked,container); },true);
     }
     syncRankingsButtonAnimation(button, container);
     if (isElementVisible(container) && !rankingsSpawnedOnce) scheduleRankingsSync(button, container);
@@ -7846,17 +7853,21 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function positionTrackFreshnessBanner(banner,leaderboard){
-    const inset=8,width=Math.min(360,window.innerWidth-20);
+    const inset=8;
+    // CSS fits the text; measure that width rather than reserving an empty 360px box.
+    banner.style.removeProperty('width');
+    const bannerRect=banner.getBoundingClientRect();
+    const width=bannerRect.width,left=bannerRect.left;
     const pages=leaderboard.querySelector(':scope > .pages');
     const footer=leaderboard.querySelector(':scope > .button-wrapper');
     const pagesRect=pages?.getBoundingClientRect();
     const footerRect=footer?.getBoundingClientRect();
-    const overlapsLeft=(rect)=>rect&&rect.left<width+inset*2&&rect.right>inset;
+    const overlapsLeft=(rect)=>rect&&rect.left<left+width+inset&&rect.right>left-inset;
     // Lift the fixed body sidecar above native pages and footer controls when they occupy its corner.
     const collisionTop=overlapsLeft(footerRect)?Math.min(footerRect.top,pagesRect?.top??footerRect.top):null;
     const bottom=collisionTop===null?inset:Math.max(inset,window.innerHeight-collisionTop+inset);
-    const nextWidth=width+'px',nextBottom=bottom+'px';
-    if(banner.style.width!==nextWidth)banner.style.width=nextWidth;
+    const nextBottom=bottom+'px';
+    banner.style.setProperty('--sq-track-data-room',Math.max(44,window.innerHeight-bottom-inset)+'px');
     if(banner.style.getPropertyValue('bottom')!==nextBottom||banner.style.getPropertyPriority('bottom')!=='important')banner.style.setProperty('bottom',nextBottom,'important');
     if(!positionTrackFreshnessBanner.resizeHandler){
       positionTrackFreshnessBanner.resizeHandler=()=>{
@@ -8010,7 +8021,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=96',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:96,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=100',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:100,document,
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       endpoint:new URL('../site-version.json',eventsModuleUrl).href})).catch(()=>{}),5000);

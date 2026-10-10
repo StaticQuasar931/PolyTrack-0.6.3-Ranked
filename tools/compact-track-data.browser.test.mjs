@@ -12,7 +12,7 @@ const cssFragments = [...patchSource.matchAll(/(?:style|rankedPolish)\.textConte
 const rankedCss = cssFragments.map(fragment => JSON.parse(fragment[1])).join('\n');
 const positionHelper = patchSource.match(/  function positionTrackFreshnessBanner\(banner,leaderboard\)\{([\s\S]*?)\r?\n  \}\r?\n  function updateTrackFreshnessBanner\(\)/);
 assert.ok(positionHelper, 'freshness sidecar positioning helper remains discoverable');
-const viewports = [[320, 720], [390, 844], [600, 400], [1920, 1080], [2800, 1920]];
+const viewports = [[320, 720], [390, 844], [600, 400], [844, 390], [768, 1024], [1024, 768], [1920, 1080], [2800, 1920]];
 
 test('freshness sidecar stays outside the leaderboard and avoids native controls at compact sizes and UI scales', {
   skip: !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwright package to run this browser test.'
@@ -59,12 +59,29 @@ test('freshness sidecar stays outside the leaderboard and avoids native controls
         assert.ok(result.panel.left >= -1 && result.panel.right <= width + 1, `panel stays in viewport at ${label}`);
         assert.equal(result.overlapsPages, false, `panel avoids leaderboard pages at ${label}`);
         assert.equal(result.overlapsBack, false, `panel and native Back control do not overlap at ${label}`);
-        assert.ok(result.panel.width <= 360, `sidecar stays within the readable desktop width at ${label}`);
+        assert.ok(result.panel.width <= (height <= 500 && width >= 700 ? 420 : 360), `sidecar stays within the readable desktop width at ${label}`);
         assert.ok(result.panelScroll <= result.panelClient + 2, `sidecar has no clipped content at ${label}`);
         assert.ok(result.countdown.top >= result.panel.top && result.countdown.bottom <= result.panel.bottom,
           `lock countdown remains fully visible at ${label}`);
         assert.ok(result.fontSizePx >= 13, `sidecar text remains readable at ${label}`);
       }
+      if(process.env.UI_SCREENSHOT_DIR && (width===2800 || width===390)){
+        await page.screenshot({path: `${process.env.UI_SCREENSHOT_DIR}/track-data-${width}.png`});
+      }
+    }
+    await page.evaluate(()=>document.documentElement.classList.remove('sq-compact-track-data'));
+    assert.equal(await page.locator('#polytrackTrackFreshness').evaluate(el=>getComputedStyle(el).width==='360px'),false,'non-compact setting also fits content rather than reserving empty space');
+    for(const source of ['snapshot','mixed','cache','live','local','error']){
+      const contrast=await page.locator('#polytrackTrackFreshness').evaluate((el,source)=>{
+        el.dataset.source=source;
+        const luminance=value=>{
+          const channels=value.match(/[\d.]+/g).slice(0,3).map(Number).map(c=>{c/=255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;});
+          return channels[0]*.2126+channels[1]*.7152+channels[2]*.0722;
+        };
+        const bg=luminance(getComputedStyle(el).backgroundColor);
+        return [...el.children].map(child=>{const fg=luminance(getComputedStyle(child).color);return (Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05);});
+      },source);
+      assert.ok(contrast.every(value=>value>=4.5),`${source} text has accessible contrast: ${contrast}`);
     }
   } finally { await browser.close(); }
 });
@@ -74,11 +91,12 @@ test('source states and locked refresh styling are present and interaction-neutr
   assert.match(css, /position:\s*fixed\s*!important/);
   assert.doesNotMatch(css, /\.sq-track-data-inline\s*\{/);
   assert.match(css, /--sq-track-data-bg:\s*#253a75/);
-  assert.match(css, /data-source="snapshot"[\s\S]*?--sq-track-data-bg:\s*#344763/);
+  assert.match(css, /data-source="snapshot"[\s\S]*?--sq-track-data-bg:\s*#253650/);
   assert.match(css, /border-left:\s*4px solid #7ee7ff/);
   assert.match(css, /clip-path:\s*polygon\(0 0, 100% 0, calc\(100% - 7px\) 100%, 0 100%\)/);
   assert.match(css, /box-shadow:\s*0 8px 24px rgba\(0, 0, 0, \.3\)/);
-  assert.match(css, /width:\s*min\(360px, calc\(100vw - 20px\)\) !important/);
+  assert.match(css, /width:\s*fit-content !important/);
+  assert.match(css, /max-width:\s*min\(360px, calc\(100vw - 20px\)\) !important/);
   assert.match(css, /font-size:\s*clamp\(13px, calc\(14px \* var\(--sq-ui-scale, 1\)\), 15px\) !important/);
   assert.match(patchSource, /const ageLine=`Standings age: \$\{snapshotAt\?ageLabel\(snapshotAt\):'unknown'\}`/);
   assert.doesNotMatch(patchSource, /const bannerHtml=.*snapshotCaptureLabel\(\)/);
