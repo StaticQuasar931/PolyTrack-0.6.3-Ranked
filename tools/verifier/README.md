@@ -110,3 +110,9 @@ This is not another migration. Do not reset queues, player data, event periods, 
 7. If engine checks fail, disable the variable and fix the matching deployment. Do not repin automatically or disable verification checks.
 
 Scheduled runs are best-effort at minutes 7, 22, 37, and 52 each hour. Enabling the workflow does not guarantee that every pending replay finishes in one run.
+
+## Extra queue routing recovery
+
+When registered Extra tracks change, deploy the matching Worker registry before processing their runs. The verifier keeps its lane mismatch guard and identifies the offending track in its error.
+
+`node tools/verifier/repair-extra-queues.mjs` is a read-only dry run using `FIREBASE_VERIFIER_SERVICE_ACCOUNT`. To move misplaced Core entries, add `--apply --backup-dir <private-directory-outside-this-repository>`. It refuses truncated discovery, overlapping account slots and missing backups. Each move writes a recoverable private copy first, then uses one atomic commit with source and destination version preconditions. Conflicts stop the repair without overwriting concurrent work. This tool never edits canonical runs or scores.

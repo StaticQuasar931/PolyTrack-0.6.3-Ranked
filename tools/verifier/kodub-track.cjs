@@ -162,16 +162,29 @@ function parseTrackPayload(bytes, version, partLimit = LIMITS.trackParts) {
   return parseTrackBody(bytes, cursor, version, partLimit);
 }
 
-function preflightTrackCode(code, partLimit = LIMITS.trackParts) {
+function reviewedTrackFor(code, candidate) {
+  if (!candidate || typeof candidate !== 'object' || sha256(code) !== candidate.hash) return null;
+  return reviewedGeometry.tracks.find(track => track.id === candidate.id &&
+    track.hash === candidate.hash) || null;
+}
+
+function preflightTrackCode(code, reviewedCandidate = null) {
   const match = /^PolyTrack([12])([0-9A-Za-z]+)$/.exec(code);
   if (!match) reject('invalid_trusted_track_code');
   const version = Number(match[1]);
+  const reviewed = reviewedTrackFor(code, reviewedCandidate);
+  const partLimit = reviewed?.parts ?? LIMITS.trackParts;
+  const maxPayloadBytes = MAX_METADATA_BYTES + MAX_BODY_HEADER_BYTES + MAX_PART_GROUPS * 5 +
+    partLimit * MAX_RECORD_BYTES;
+  const maxSecondCompressedBytes = maxPayloadBytes + (maxPayloadBytes >>> 12) +
+    (maxPayloadBytes >>> 14) + (maxPayloadBytes >>> 25) + 13;
+  const maxInnerTextBytes = Math.ceil(maxSecondCompressedBytes * 8 / 5);
   const outerCompressed = decodePacked(match[2], LIMITS.trackBytes, 'trusted_track_size_limit');
-  const innerTextBytes = inflateBounded(outerCompressed, MAX_INNER_TEXT_BYTES, 'trusted_track_inflated_size_limit');
+  const innerTextBytes = inflateBounded(outerCompressed, maxInnerTextBytes, 'trusted_track_inflated_size_limit');
   for (const byte of innerTextBytes) if (packedValue(byte) < 0) reject('invalid_trusted_track_code');
-  const innerCompressed = decodePacked(innerTextBytes.toString('ascii'), MAX_SECOND_COMPRESSED_BYTES,
+  const innerCompressed = decodePacked(innerTextBytes.toString('ascii'), maxSecondCompressedBytes,
     'trusted_track_inflated_size_limit');
-  const payload = inflateBounded(innerCompressed, MAX_TRACK_PAYLOAD_BYTES, 'trusted_track_inflated_size_limit');
+  const payload = inflateBounded(innerCompressed, maxPayloadBytes, 'trusted_track_inflated_size_limit');
   const parts = parseTrackPayload(payload, version, partLimit);
   return Object.freeze({ version, parts, inflatedBytes: payload.length });
 }
@@ -197,9 +210,9 @@ function normalizeTrustedTracks(value, jobTrackIds) {
     }
     if (!TRACK_CODE.test(item.code)) reject('invalid_trusted_track_code');
     if (sha256(item.code) !== item.codeHash) reject('trusted_track_hash_mismatch');
-    const reviewed = reviewedGeometry.tracks.find(track => track.name === `trusted/${item.trackId}.track` &&
+    const reviewed = reviewedGeometry.tracks.find(track =>
       track.id === item.trackId && track.hash === item.codeHash);
-    preflightTrackCode(item.code, reviewed?.parts ?? LIMITS.trackParts);
+    preflightTrackCode(item.code, reviewed);
     return Object.freeze({
       expectedId: item.trackId,
       name: `trusted/${item.trackId}.track`,

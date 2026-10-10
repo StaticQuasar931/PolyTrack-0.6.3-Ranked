@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const { LIMITS, sha256 } = require('./replay.cjs');
 const { normalizeTrustedTracks, _internals: trackInternals } = require('./kodub-track.cjs');
 const { _internals } = require('./verify.cjs');
+const reviewedGeometry = require('./track-geometry.json');
 
 const id = 'a'.repeat(64);
 const realCode = fs.readFileSync(path.join(__dirname, '../../tracks/community/4_seasons.track'), 'utf8').trim();
@@ -81,12 +82,71 @@ test('real exported track is decoded and counted within existing caps', () => {
 
 test('La Riviera part-cap exception requires the exact reviewed ID and content hash', () => {
   assert.throws(() => trackInternals.preflightTrackCode(laRivieraCode), /trusted_track_part_limit/);
+  const reviewed = reviewedGeometry.tracks.find(track =>
+    track.id === laRivieraId && track.hash === laRiviera.codeHash);
+  assert.ok(reviewed);
   const [source] = normalizeTrustedTracks([laRiviera], new Set([laRivieraId]));
   assert.equal(source.expectedId, laRivieraId);
   assert.equal(source.hash, laRiviera.codeHash);
-  assert.equal(trackInternals.preflightTrackCode(laRivieraCode, 42781).parts, 42781);
+  assert.equal(trackInternals.preflightTrackCode(laRivieraCode, reviewed).parts, reviewed.parts);
   const unreviewedId = 'b'.repeat(64);
   assert.throws(() => normalizeTrustedTracks([{...laRiviera, trackId: unreviewedId}], new Set([unreviewedId])), /trusted_track_part_limit/);
+});
+
+test('reviewed Core tracks use hash-pinned part-derived inflate bounds', () => {
+  const paths = [
+    '../../tracks/community/la_infinita.track',
+    '../../tracks/community/out_of_bounds.track',
+    '../../tracks/community/arx_lucida.track',
+    '../../tracks/community/winterfell.track',
+  ];
+  const tracks = paths.map(file => {
+    const code = fs.readFileSync(path.join(__dirname, file), 'utf8').trim();
+    const codeHash = sha256(code);
+    const reviewed = reviewedGeometry.tracks.find(track => track.hash === codeHash);
+    assert.ok(reviewed, `${file} must have an exact reviewed geometry entry`);
+    return { trackId: reviewed.id, code, codeHash, reviewed };
+  });
+
+  for (const { trackId, code, codeHash, reviewed } of tracks) {
+    const [source] = normalizeTrustedTracks([{ trackId, code, codeHash }], new Set([trackId]));
+    const result = trackInternals.preflightTrackCode(code, { id: trackId, hash: codeHash, parts: 1_000_000 });
+    assert.equal(source.hash, reviewed.hash);
+    assert.equal(result.parts, reviewed.parts);
+    assert(result.inflatedBytes > trackInternals.TRACK_PREFLIGHT_LIMITS.payloadBytes);
+  }
+});
+
+test('reviewed inflate bounds cannot be forged with altered code or caller-supplied parts', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../tracks/community/la_infinita.track'), 'utf8').trim();
+  const codeHash = sha256(code);
+  const reviewed = reviewedGeometry.tracks.find(track => track.hash === codeHash);
+  assert.ok(reviewed);
+
+  const result = trackInternals.preflightTrackCode(code, {
+    id: reviewed.id, hash: codeHash, parts: 1_000_000,
+  });
+  assert.equal(result.parts, reviewed.parts);
+
+  const oversized = exportCode(emptyV2Payload([{ part: 0, count: LIMITS.trackParts + 1 }]));
+  assert.throws(() => trackInternals.preflightTrackCode(oversized, {
+    id: 'f'.repeat(64), hash: sha256(oversized), parts: 1_000_000,
+  }), /trusted_track_part_limit/);
+
+  const alteredCode = `${code.slice(0, -1)}${code.endsWith('A') ? 'B' : 'A'}`;
+  assert.throws(() => normalizeTrustedTracks([{
+    trackId: reviewed.id, code: alteredCode, codeHash: sha256(alteredCode),
+  }], new Set([reviewed.id])));
+});
+
+test('Poly Dip 2 remains unranked and cannot use reviewed inflate bounds', () => {
+  const extraCatalog = require('../../extra-tracks/catalog.json');
+  const entry = extraCatalog.find(track => track.id === 'poly-dip-2');
+  assert.ok(entry);
+  assert.equal(entry.ranked, false);
+  const code = fs.readFileSync(path.join(__dirname, '../../', entry.trackPath), 'utf8').trim();
+  const trusted = { trackId: entry.trackId, code, codeHash: sha256(code) };
+  assert.throws(() => normalizeTrustedTracks([trusted], new Set([entry.trackId])), /trusted_track_size_limit/);
 });
 
 test('job-supplied code is never admitted implicitly', () => {

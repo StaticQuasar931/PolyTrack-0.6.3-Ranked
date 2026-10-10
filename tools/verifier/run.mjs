@@ -165,7 +165,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
         const document = {...x.document, queueCollection: collection, data: decode({mapValue: {fields: x.document.fields || {}}})};
         const registered = EXTRA_TRACK_IDS.has(document.data.trackId);
         if (registered !== (collection === EXTRA_VERIFICATION_COLLECTION)) {
-          throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED: queue lane does not match trusted track registry');
+          throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED: '+collection+'/'+document.data.trackId+'; deploy the matching Worker registry and run the backed-up Extra queue repair before retrying');
         }
         return document;
       });
