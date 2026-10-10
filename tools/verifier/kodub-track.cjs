@@ -189,13 +189,13 @@ function preflightTrackCode(code, reviewedCandidate = null) {
   return Object.freeze({ version, parts, inflatedBytes: payload.length });
 }
 
-function normalizeTrustedTracks(value, jobTrackIds) {
-  if (value === undefined) return [];
+function partitionTrustedTracks(value, jobTrackIds) {
+  if (value === undefined) return { accepted: [], rejected: new Map() };
   if (!Array.isArray(value) || value.length > LIMITS.jobs) reject('invalid_trusted_tracks');
   const admitted = jobTrackIds instanceof Set ? jobTrackIds : new Set(jobTrackIds || []);
   const seen = new Set();
   let totalBytes = 0;
-  return value.map(item => {
+  const descriptors = value.map(item => {
     if (!item || typeof item !== 'object' || !TRACK_ID.test(item.trackId || '') ||
         !TRACK_ID.test(item.codeHash || '') || typeof item.code !== 'string') {
       reject('invalid_trusted_track');
@@ -205,23 +205,40 @@ function normalizeTrustedTracks(value, jobTrackIds) {
     seen.add(item.trackId);
     const bytes = Buffer.byteLength(item.code, 'utf8');
     totalBytes += bytes;
-    if (bytes < 32 || bytes > LIMITS.trackBytes || totalBytes > LIMITS.trackBytes * LIMITS.jobs) {
-      reject('trusted_track_size_limit');
-    }
-    if (!TRACK_CODE.test(item.code)) reject('invalid_trusted_track_code');
-    if (sha256(item.code) !== item.codeHash) reject('trusted_track_hash_mismatch');
-    const reviewed = reviewedGeometry.tracks.find(track =>
-      track.id === item.trackId && track.hash === item.codeHash);
-    preflightTrackCode(item.code, reviewed);
-    return Object.freeze({
-      expectedId: item.trackId,
-      name: `trusted/${item.trackId}.track`,
-      hash: item.codeHash,
-      text: item.code,
-      trusted: true,
-    });
+    return { item, bytes };
   });
+  if (totalBytes > LIMITS.trackBytes * LIMITS.jobs) reject('trusted_track_size_limit');
+
+  const accepted = [];
+  const rejected = new Map();
+  for (const { item, bytes } of descriptors) {
+    try {
+      if (bytes < 32 || bytes > LIMITS.trackBytes) reject('trusted_track_size_limit');
+      if (!TRACK_CODE.test(item.code)) reject('invalid_trusted_track_code');
+      if (sha256(item.code) !== item.codeHash) reject('trusted_track_hash_mismatch');
+      const reviewed = reviewedGeometry.tracks.find(track =>
+        track.id === item.trackId && track.hash === item.codeHash);
+      preflightTrackCode(item.code, reviewed);
+      accepted.push(Object.freeze({
+        expectedId: item.trackId,
+        name: `trusted/${item.trackId}.track`,
+        hash: item.codeHash,
+        text: item.code,
+        trusted: true,
+      }));
+    } catch (error) {
+      rejected.set(item.trackId, error.reason || 'invalid_trusted_track');
+    }
+  }
+  return { accepted, rejected };
 }
 
-module.exports = { normalizeTrustedTracks, TRACK_CODE,
+function normalizeTrustedTracks(value, jobTrackIds) {
+  if (value === undefined) return [];
+  const { accepted, rejected } = partitionTrustedTracks(value, jobTrackIds);
+  if (rejected.size) reject(rejected.values().next().value);
+  return accepted;
+}
+
+module.exports = { normalizeTrustedTracks, partitionTrustedTracks, TRACK_CODE,
   _internals: { preflightTrackCode, decodePacked, TRACK_PREFLIGHT_LIMITS } };

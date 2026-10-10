@@ -116,3 +116,7 @@ Scheduled runs are best-effort at minutes 7, 22, 37, and 52 each hour. Enabling 
 When registered Extra tracks change, deploy the matching Worker registry before processing their runs. The verifier keeps its lane mismatch guard and identifies the offending track in its error.
 
 `node tools/verifier/repair-extra-queues.mjs` is a read-only dry run using `FIREBASE_VERIFIER_SERVICE_ACCOUNT`. To move misplaced Core entries, add `--apply --backup-dir <private-directory-outside-this-repository>`. It refuses truncated discovery, overlapping account slots and missing backups. Each move writes a recoverable private copy first, then uses one atomic commit with source and destination version preconditions. Conflicts stop the repair without overwriting concurrent work. This tool never edits canonical runs or scores.
+
+## Trusted track resource failures
+
+An oversized or corrupt trusted track stays unavailable for its own jobs; it cannot block unrelated valid replays or silently fall back to other track bytes. Malformed descriptor lists, duplicate IDs, unexpected tracks and engine-pin failures still fail the batch closed. Exact reviewed geometry exceptions do not change the global limits or native CPU/wall deadlines.
