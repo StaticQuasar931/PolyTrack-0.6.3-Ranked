@@ -6,9 +6,9 @@ test('HTML report escapes malicious identifiers and remains self-contained', () 
   const html = renderHtmlReport({
     generatedAt: '2026-09-20T12:00:00.000Z',
     scope: {queueDocuments: 1, auditRecordsRead: 1, eventRuns: 0, truncated: false},
-    summary: {verified: 1, waiting: 0, published: 1, people: 1, tracks: 1,
+    summary: {verified: 1, mismatch: 2, waiting: 0, published: 1, people: 1, tracks: 1,
       verificationLatencyMs: {averageMs: 2500}, waitingAgeMs: {averageMs: 0}},
-    runs: [{kind: 'normal', accountId: '<img src=x onerror=alert(1)>', resultId: '" onclick="alert(2)',
+    runs: [{kind: 'normal', verificationLane: 'extra', accountId: '<img src=x onerror=alert(1)>', resultId: '" onclick="alert(2)',
       trackId: 'track', trackName: '</td><script>alert(3)</script>', status: 'verified', place: {rank: 1, fieldSize: 4},
       waitAgeMs: 4000, submittedAt: '2026-09-20T11:59:00.000Z', verifiedAt: '2026-09-20T12:00:00.000Z',
       verificationLatencyMs: 60000, replay: 'secret replay must not render', reason: 'private native detail'}]
@@ -21,4 +21,7 @@ test('HTML report escapes malicious identifiers and remains self-contained', () 
   assert.doesNotMatch(html, /<script src=|https?:\/\//);
   assert.match(html, /Wait duration/);
   assert.match(html, /#1\/4/);
+  assert.match(html, /mismatches, not cheating findings/);
+  assert.match(html, /<th>Lane<\/th>/);
+  assert.match(html, /extra/);
 });

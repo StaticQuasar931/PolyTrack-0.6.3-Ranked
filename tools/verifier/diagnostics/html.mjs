@@ -30,10 +30,10 @@ function statusClass(status) {
 
 function rowHtml(row) {
   const cells = [
-    row.kind || '-', row.accountId, row.resultId, track(row), row.status, place(row),
+    row.kind || '-', row.verificationLane || '-', row.accountId, row.resultId, track(row), row.status, place(row),
     duration(row.waitAgeMs), row.submittedAt || '-', row.verifiedAt || '-', duration(row.verificationLatencyMs)
   ];
-  return `<tr><td>${cells.slice(0, 4).map(escapeHtml).join('</td><td>')}</td><td class="status ${statusClass(row.status)}">${escapeHtml(cells[4])}</td><td>${cells.slice(5).map(escapeHtml).join('</td><td>')}</td></tr>`;
+  return `<tr><td>${cells.slice(0, 5).map(escapeHtml).join('</td><td>')}</td><td class="status ${statusClass(row.status)}">${escapeHtml(cells[5])}</td><td>${cells.slice(6).map(escapeHtml).join('</td><td>')}</td></tr>`;
 }
 
 export function renderHtmlReport(report) {
@@ -45,7 +45,7 @@ export function renderHtmlReport(report) {
     `${scope.queueDocuments ?? 0} queue docs`, `${scope.auditRecordsRead ?? 0} audit records`,
     `${scope.eventRuns ?? 0} event runs`, `bounded=${scope.truncated === true}`
   ].join(' | ');
-  const summaryText = `${summary.verified ?? 0} verified | ${summary.waiting ?? 0} waiting | ${summary.published ?? 0} published | ${summary.people ?? 0} people | ${summary.tracks ?? 0} tracks`;
+  const summaryText = `${summary.verified ?? 0} verified | ${summary.mismatch ?? 0} mismatches | ${summary.waiting ?? 0} waiting | ${summary.published ?? 0} published | ${summary.people ?? 0} people | ${summary.tracks ?? 0} tracks`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PolyTrack verifier diagnostics</title>
@@ -57,13 +57,14 @@ export function renderHtmlReport(report) {
 <p class="meta">Generated ${generated}<br>Scope: ${escapeHtml(scopeText)}<br>${escapeHtml(summaryText)}</p>
 <section class="summary" aria-label="Summary">
 <div class="card"><strong>${escapeHtml(summary.verified ?? 0)}</strong><span>verified</span></div>
+<div class="card"><strong>${escapeHtml(summary.mismatch ?? 0)}</strong><span>mismatches, not cheating findings</span></div>
 <div class="card"><strong>${escapeHtml(summary.waiting ?? 0)}</strong><span>waiting</span></div>
 <div class="card"><strong>${escapeHtml(summary.published ?? 0)}</strong><span>published place available</span></div>
 <div class="card"><strong>${escapeHtml(duration(summary.verificationLatencyMs?.averageMs))}</strong><span>average verification latency</span></div>
 <div class="card"><strong>${escapeHtml(duration(summary.waitingAgeMs?.averageMs))}</strong><span>average wait duration</span></div>
 </section>
-<h2>Runs</h2><div class="toolbar"><label for="search">Search runs</label><input id="search" type="search" placeholder="account, run, track, status"></div>
-<table id="runs"><thead><tr><th>Kind</th><th>Account ID</th><th>Run ID</th><th>Track</th><th>Status</th><th>Place</th><th>Wait duration</th><th>Submitted</th><th>Verified</th><th>Verification latency</th></tr></thead><tbody>${rows.length ? rows.map(rowHtml).join('') : '<tr><td class="empty" colspan="10">No bounded report rows.</td></tr>'}</tbody></table>
+<h2>Runs</h2><div class="toolbar"><label for="search">Search runs</label><input id="search" type="search" placeholder="account, run, track, lane, status"></div>
+<table id="runs"><thead><tr><th>Kind</th><th>Lane</th><th>Account ID</th><th>Run ID</th><th>Track</th><th>Status</th><th>Place</th><th>Wait duration</th><th>Submitted</th><th>Verified</th><th>Verification latency</th></tr></thead><tbody>${rows.length ? rows.map(rowHtml).join('') : '<tr><td class="empty" colspan="11">No bounded report rows.</td></tr>'}</tbody></table>
 <script>(function(){const input=document.getElementById('search');const rows=[...document.querySelectorAll('#runs tbody tr')];input.addEventListener('input',function(){const query=input.value.trim().toLowerCase();rows.forEach(row=>{row.hidden=!!query&&!row.textContent.toLowerCase().includes(query);});});}());</script>
 </main></body></html>`;
 }

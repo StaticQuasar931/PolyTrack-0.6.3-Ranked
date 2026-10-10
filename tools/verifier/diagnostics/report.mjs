@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import {decode} from '../firestore.mjs';
-import {VERIFICATION_COLLECTION} from '../../../workers/ranked/src/verification.js';
+import {EXTRA_VERIFICATION_COLLECTION, VERIFICATION_COLLECTION} from '../../../workers/ranked/src/verification.js';
+import {EXTRA_TRACK_IDS} from '../../../workers/ranked/src/extra-track-ids.js';
 
 export const REPORT_LIMITS = Object.freeze({trackLimit: 8, runLimit: 64, historyLimit: 64, eventLimit: 32, maxTrackLimit: 16, maxRunLimit: 128, maxHistoryLimit: 128, maxEventLimit: 64});
 const AUDIT_COLLECTION = '0.6.2_s1_verification_audit';
@@ -72,21 +73,32 @@ function auditId(key) {
   return crypto.createHash('sha256').update(String(key || '')).digest('hex');
 }
 
-async function queueDocuments(db, {now, trackId, trackLimit, dueOnly}) {
+async function queueDocuments(db, {now, trackId, queueLimits, dueOnly}) {
   if (trackId) {
-    const document = await db.get(VERIFICATION_COLLECTION, trackId);
-    return document ? [{...document, data: document.data || {}}] : [];
+    const documents = await Promise.all([VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION]
+      .map(async queueCollection => {
+        const document = await db.get(queueCollection, trackId);
+        return document ? {...document, queueCollection, data: document.data || {}} : null;
+      }));
+    return documents.filter(Boolean);
   }
-  const structuredQuery = {
-    from: [{collectionId: VERIFICATION_COLLECTION}],
-    where: dueOnly ? {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}} :
-      {fieldFilter: {field: {fieldPath: 'pending'}, op: 'EQUAL', value: {booleanValue: true}}},
-    orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}],
-    limit: trackLimit
-  };
-  const rows = await db.call(':runQuery', {structuredQuery});
-  if (!Array.isArray(rows)) throw Error('Unexpected verification queue response');
-  return rows.map(queryDocument).filter(Boolean);
+  const lanes = await Promise.all([
+    [VERIFICATION_COLLECTION, queueLimits.core],
+    [EXTRA_VERIFICATION_COLLECTION, queueLimits.extra]
+  ].map(async ([queueCollection, limit]) => {
+    if (!limit) return [];
+    const structuredQuery = {
+      from: [{collectionId: queueCollection}],
+      where: dueOnly ? {fieldFilter: {field: {fieldPath: 'notBefore'}, op: 'LESS_THAN_OR_EQUAL', value: {integerValue: String(now)}}} :
+        {fieldFilter: {field: {fieldPath: 'pending'}, op: 'EQUAL', value: {booleanValue: true}}},
+      orderBy: [{field: {fieldPath: 'notBefore'}, direction: 'ASCENDING'}, {field: {fieldPath: '__name__'}, direction: 'ASCENDING'}],
+      limit
+    };
+    const rows = await db.call(':runQuery', {structuredQuery});
+    if (!Array.isArray(rows)) throw Error('Unexpected verification queue response');
+    return rows.map(queryDocument).filter(Boolean).map(document => ({...document, queueCollection}));
+  }));
+  return lanes.flat();
 }
 
 async function recentAuditDocuments(db, {trackId, historyLimit}) {
@@ -122,7 +134,7 @@ function selectedSlots(documents, runLimit) {
   for (const document of documents) {
     const values = Object.values(document.data?.slots || {}).filter(slot => slot && typeof slot === 'object');
     total += values.length;
-    for (const slot of values) slots.push({...slot, trackId: String(slot.trackId || document.data.trackId || documentTrackId(document))});
+    for (const slot of values) slots.push({...slot, trackId: String(slot.trackId || document.data.trackId || documentTrackId(document)), queueCollection: document.queueCollection});
   }
   slots.sort((a, b) => (STATUS_ORDER.get(String(a.status)) ?? 9) - (STATUS_ORDER.get(String(b.status)) ?? 9) ||
     Number(a.checkedAt || 0) - Number(b.checkedAt || 0) || String(a.accountId || '').localeCompare(String(b.accountId || '')) ||
@@ -184,12 +196,15 @@ export async function createDiagnosticReport(db, {
   if (!db || typeof db.get !== 'function' || typeof db.call !== 'function') throw Error('Diagnostic Firestore connection required');
   const at = millis(now);
   if (at === null) throw Error('Invalid report time');
-  trackLimit = boundedInteger(trackLimit, 'track limit', 1, REPORT_LIMITS.maxTrackLimit);
+  trackLimit = boundedInteger(trackLimit, 'track limit', 2, REPORT_LIMITS.maxTrackLimit);
   runLimit = boundedInteger(runLimit, 'run limit', 1, REPORT_LIMITS.maxRunLimit);
   historyLimit = boundedInteger(historyLimit, 'history limit', 0, REPORT_LIMITS.maxHistoryLimit);
   eventLimit = boundedInteger(eventLimit, 'event limit', 0, REPORT_LIMITS.maxEventLimit);
   if (trackId !== null && !/^[A-Za-z0-9_-]{1,80}$/.test(String(trackId))) throw Error('Invalid track id');
-  const queues = await queueDocuments(db, {now: at, trackId, trackLimit, dueOnly});
+  const queueLimits = trackId ? {core: 1, extra: 1, total: 2} : {
+    core: Math.ceil(trackLimit / 2), extra: Math.floor(trackLimit / 2), total: trackLimit
+  };
+  const queues = await queueDocuments(db, {now: at, trackId, queueLimits, dueOnly});
   const selected = selectedSlots(queues, runLimit);
   const audits = historyLimit ? await recentAuditDocuments(db, {trackId, historyLimit}) : [];
   const eventDocuments = eventLimit ? await recentEventRuns(db, {trackId, eventLimit}) : [];
@@ -220,15 +235,18 @@ export async function createDiagnosticReport(db, {
     const checkedAt = firstMillis(audit, ['verifiedAt', 'checkedAt']) ?? firstMillis(slot, ['checkedAt']);
     const verifiedAt = status === 'verified' ? checkedAt : null;
     const inventory = trustedTracks.get(currentTrackId);
+    const registeredExtra = EXTRA_TRACK_IDS.has(currentTrackId);
+    const verificationLane = slot.queueCollection ?
+      slot.queueCollection === EXTRA_VERIFICATION_COLLECTION ? 'extra' : 'core' : registeredExtra ? 'extra' : 'core';
     return {
-      kind: 'normal', source, accountId: id, resultId, trackId: currentTrackId, trackName: inventory?.name || null,
-      trustedTrack: Boolean(inventory), status, reason, submissionTimestampSource: submitted.source,
+      kind: 'normal', source, verificationLane, accountId: id, resultId, trackId: currentTrackId, trackName: inventory?.name || null,
+      trustedTrack: Boolean(inventory) || registeredExtra, status, reason, submissionTimestampSource: submitted.source,
       submittedAt: submitted.value === null ? null : new Date(submitted.value).toISOString(),
       waitAgeMs: submitted.value === null ? null : Math.max(0, at - submitted.value),
       verifiedAt: verifiedAt === null ? null : new Date(verifiedAt).toISOString(),
       verificationLatencyMs: verifiedAt === null || submitted.value === null ? null : Math.max(0, verifiedAt - submitted.value),
       published: Boolean(publishedEntry), place: publicPlace(publishedEntry),
-      missingTrustedTrack: reason === 'missing_trusted_track' || reason === 'track_identity_mismatch' || !inventory
+      missingTrustedTrack: reason === 'missing_trusted_track' || reason === 'track_identity_mismatch' || (!inventory && !registeredExtra)
     };
   };
   for (const slot of selected.slots) {
@@ -256,7 +274,7 @@ export async function createDiagnosticReport(db, {
     const inventory = trustedTracks.get(currentTrackId);
     const publishedEntry = matchingPublishedEntry(eventBoardCache.get(periodId), {accountId: String(event.accountId || ''), timeMs: Number(event.timeMs)});
     rows.push({
-      kind: 'event', source: 'event_run', accountId: String(event.accountId || ''), resultId: runId, periodId, trackId: currentTrackId,
+      kind: 'event', source: 'event_run', verificationLane: 'event', accountId: String(event.accountId || ''), resultId: runId, periodId, trackId: currentTrackId,
       trackName: inventory?.name || null, trustedTrack: Boolean(inventory), status, reason, submissionTimestampSource: submitted.source,
       submittedAt: submitted.value === null ? null : new Date(submitted.value).toISOString(),
       waitAgeMs: submitted.value === null ? null : Math.max(0, at - submitted.value),
@@ -268,17 +286,17 @@ export async function createDiagnosticReport(db, {
   }
   const people = new Map(), tracks = new Map(), latency = [], waitingAge = [], reasonCounts = {};
   for (const row of rows) {
-    const person = people.get(row.accountId) || {accountId: row.accountId, runs: 0, verified: 0, waiting: 0, tracks: new Set()};
-    person.runs++; person.verified += row.status === 'verified' ? 1 : 0; person.waiting += ['waiting', 'unavailable', 'unavailable_final'].includes(row.status) ? 1 : 0; person.tracks.add(row.trackId); people.set(row.accountId, person);
-    const track = tracks.get(row.trackId) || {trackId: row.trackId, trackName: row.trackName, trustedTrack: row.trustedTrack, runs: 0, verified: 0, waiting: 0, missingTrustedTrack: 0, published: 0};
-    track.runs++; track.verified += row.status === 'verified' ? 1 : 0; track.waiting += ['waiting', 'unavailable', 'unavailable_final'].includes(row.status) ? 1 : 0; track.missingTrustedTrack += row.missingTrustedTrack ? 1 : 0; track.published += row.published ? 1 : 0; tracks.set(row.trackId, track);
+    const person = people.get(row.accountId) || {accountId: row.accountId, runs: 0, verified: 0, mismatch: 0, waiting: 0, tracks: new Set()};
+    person.runs++; person.verified += row.status === 'verified' ? 1 : 0; person.mismatch += row.status === 'mismatch' ? 1 : 0; person.waiting += ['waiting', 'unavailable', 'unavailable_final'].includes(row.status) ? 1 : 0; person.tracks.add(row.trackId); people.set(row.accountId, person);
+    const track = tracks.get(row.trackId) || {trackId: row.trackId, trackName: row.trackName, trustedTrack: row.trustedTrack, runs: 0, verified: 0, mismatch: 0, waiting: 0, missingTrustedTrack: 0, published: 0};
+    track.runs++; track.verified += row.status === 'verified' ? 1 : 0; track.mismatch += row.status === 'mismatch' ? 1 : 0; track.waiting += ['waiting', 'unavailable', 'unavailable_final'].includes(row.status) ? 1 : 0; track.missingTrustedTrack += row.missingTrustedTrack ? 1 : 0; track.published += row.published ? 1 : 0; tracks.set(row.trackId, track);
     if (row.verificationLatencyMs !== null) latency.push(row.verificationLatencyMs);
     if (row.status === 'waiting' || row.status === 'unavailable' || row.status === 'unavailable_final') if (row.waitAgeMs !== null) waitingAge.push(row.waitAgeMs);
     if (row.reason) reasonCounts[row.reason] = (reasonCounts[row.reason] || 0) + 1;
   }
   return {
     generatedAt: new Date(at).toISOString(),
-    scope: {queueDocuments: queues.length, queueLimit: trackLimit, runLimit, historyLimit, eventLimit, dueOnly, selectedRuns: rows.length, queueRuns: selected.slots.length, auditRecordsRead: audits.length, auditHistoryRuns: rows.filter(row => row.source === 'audit_history').length, eventRuns: eventDocuments.length, totalRunsSeen: selected.total, auditHistoryMayBeTruncated: historyLimit > 0 && audits.length >= historyLimit, eventHistoryMayBeTruncated: eventLimit > 0 && eventDocuments.length >= eventLimit, truncated: selected.truncated || queues.length >= trackLimit || historyLimit > 0 && audits.length >= historyLimit || eventLimit > 0 && eventDocuments.length >= eventLimit},
+    scope: {queueDocuments: queues.length, queueLimit: queueLimits.total, coreQueueLimit: queueLimits.core, extraQueueLimit: queueLimits.extra, coreQueueDocuments: queues.filter(queue => queue.queueCollection === VERIFICATION_COLLECTION).length, extraQueueDocuments: queues.filter(queue => queue.queueCollection === EXTRA_VERIFICATION_COLLECTION).length, runLimit, historyLimit, eventLimit, dueOnly, selectedRuns: rows.length, queueRuns: selected.slots.length, auditRecordsRead: audits.length, auditHistoryRuns: rows.filter(row => row.source === 'audit_history').length, eventRuns: eventDocuments.length, totalRunsSeen: selected.total, auditHistoryMayBeTruncated: historyLimit > 0 && audits.length >= historyLimit, eventHistoryMayBeTruncated: eventLimit > 0 && eventDocuments.length >= eventLimit, truncated: selected.truncated || (!trackId && (queues.filter(queue => queue.queueCollection === VERIFICATION_COLLECTION).length >= queueLimits.core || queues.filter(queue => queue.queueCollection === EXTRA_VERIFICATION_COLLECTION).length >= queueLimits.extra)) || historyLimit > 0 && audits.length >= historyLimit || eventLimit > 0 && eventDocuments.length >= eventLimit},
     engine: {geometrySchema: geometry.schemaVersion, trustedTrackCount: trustedTracks.size},
     scheduler: schedulerDiagnosis(lastRun),
     summary: {
@@ -289,6 +307,7 @@ export async function createDiagnosticReport(db, {
       people: people.size,
       tracks: tracks.size,
       verified: rows.filter(row => row.status === 'verified').length,
+      mismatch: rows.filter(row => row.status === 'mismatch').length,
       waiting: rows.filter(row => ['waiting', 'unavailable', 'unavailable_final'].includes(row.status)).length,
       published: rows.filter(row => row.published).length,
       missingTrustedTracks: rows.filter(row => row.missingTrustedTrack).length,

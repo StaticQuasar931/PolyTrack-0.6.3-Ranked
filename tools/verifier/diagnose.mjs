@@ -33,14 +33,14 @@ function textReport(report) {
   const lines = [
     'PolyTrack verifier diagnostics (bounded, private)',
     `Scope: ${report.scope.queueDocuments} queue documents, ${report.summary.runs} runs, dueOnly=${report.scope.dueOnly}, truncated=${report.scope.truncated}`,
-    `Summary: ${report.summary.verified} verified, ${report.summary.waiting} waiting, ${report.summary.published} published, ${report.summary.missingTrustedTracks} missing/untrusted track observations`,
+    `Summary: ${report.summary.verified} verified, ${report.summary.mismatch} mismatches (not cheating findings), ${report.summary.waiting} waiting, ${report.summary.published} published, ${report.summary.missingTrustedTracks} missing/untrusted track observations`,
     `Latency: ${formatAge(report.summary.verificationLatencyMs.averageMs)} average, ${formatAge(report.summary.verificationLatencyMs.maxMs)} maximum`,
     `Waiting age: ${formatAge(report.summary.waitingAgeMs.averageMs)} average, ${formatAge(report.summary.waitingAgeMs.maxMs)} maximum`,
     `Scheduler: ${report.scheduler.status}${report.scheduler.finding ? ` (${report.scheduler.finding})` : ''}`,
     '',
-    'Runs: accountId | trackId | status | reason | place | wait age | verification latency'
+    'Runs: lane | accountId | trackId | status | reason | place | wait age | verification latency'
   ];
-  for (const row of report.runs) lines.push(`${row.accountId} | ${row.trackId} | ${row.status} | ${row.reason || '-'} | ${row.place?.rank ?? '-'}${row.place?.fieldSize ? `/${row.place.fieldSize}` : ''} | ${formatAge(row.waitAgeMs)} | ${formatAge(row.verificationLatencyMs)}`);
+  for (const row of report.runs) lines.push(`${row.verificationLane || '-'} | ${row.accountId} | ${row.trackId} | ${row.status} | ${row.reason || '-'} | ${row.place?.rank ?? '-'}${row.place?.fieldSize ? `/${row.place.fieldSize}` : ''} | ${formatAge(row.waitAgeMs)} | ${formatAge(row.verificationLatencyMs)}`);
   return lines.join('\n');
 }
 

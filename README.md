@@ -26,6 +26,8 @@ When a newer website update is published, the menu can offer **Update available*
 
 Unverified results may appear while replay checks are pending. Their status can change after verification. Extra Tracks marked unranked do not award Ranked RP.
 
+When a personal best is submitted, its saved result includes the website origin (scheme, hostname, and optional port only; no page path, query string, or referrer data) so maintainers can privately summarize submitted PBs by hostname. This reports only the latest retained PB document per player and track, not visits or every run.
+
 ## Controls
 
 Use the controls shown in-game for driving. In leaderboards, number keys select racers, Enter or Space starts a race, and arrow keys or A/D change pages when you are not typing. Racer Studio supports Shift+1 through Shift+4 to switch tabs.

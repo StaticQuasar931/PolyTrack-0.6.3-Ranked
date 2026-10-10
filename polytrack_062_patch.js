@@ -6636,6 +6636,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return Number.isFinite(best)?best:0;
   }
 
+  function deploymentSourceOrigin(){
+    try{
+      const origin=new URL(String(window.location.origin||''));
+      return ['http:','https:'].includes(origin.protocol)?origin.origin:'unknown';
+    }catch{return 'unknown';}
+  }
+
   async function mirrorRaceResult(url, body, reconcileGuard=null){
     const payload = parsePayload(body); if (!payload) return null;
     const accountId = await accountIdFromPayload(payload, guestAccountId);
@@ -6667,7 +6674,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const uploadId = nextUploadId();
     const resultDocId = `${accountId}_${trackId}`;
     const localAccountCreatedAt=readLocalRaceRows().filter((row)=>cleanUserId(row.accountId||row.userId)===accountId).reduce((old,row)=>{const value=Number(row.accountCreatedAt||row.createdAt||0)||0;return value>0?Math.min(old||Infinity,value):old;},0);
-    const raceRow = {accountId,ownerUid:'',trackId,name,nickname:name,countryCode,timeMs,replay:replayData,replayHash:await sha256Hex(replayData),carStyle,totalPlaytimeMs:Math.round(currentPlaytimeMs()),raceTimeFrames:frames,frames,uploadId,verified:false,verifiedState:0,pbAt:createdAt,createdAt,accountCreatedAt:localAccountCreatedAt||createdAt,updatedAt:createdAt,source:String(url||'').slice(0,500)};
+    const raceRow = {accountId,ownerUid:'',trackId,name,nickname:name,countryCode,timeMs,replay:replayData,replayHash:await sha256Hex(replayData),carStyle,totalPlaytimeMs:Math.round(currentPlaytimeMs()),raceTimeFrames:frames,frames,uploadId,verified:false,verifiedState:0,pbAt:createdAt,createdAt,accountCreatedAt:localAccountCreatedAt||createdAt,updatedAt:createdAt,source:deploymentSourceOrigin()};
     if(reconcileGuard&&!isCurrentLocalPbReconcileIdentity(reconcileGuard.accountId,reconcileGuard.ownerUid))return {saved:false,cancelled:true};
     __pt062RememberStyle(accountId,carStyle);
     log('info','[FB210] mirror payload normalized',{accountId,trackId,timeMs,frames,uploadId,name,carStyle,hasReplay:true,replayBytes:replayData.length});

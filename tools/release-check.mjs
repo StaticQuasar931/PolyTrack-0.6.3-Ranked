@@ -2,9 +2,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {trackMenuReadContract} from './track-menu-read-contract.mjs';
+import {checkRepositoryExtraVerification} from './extra-verification-check.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const failures = [];
+failures.push(...checkRepositoryExtraVerification());
 // A conflict-marked or missing snapshot index breaks every snapshot-only account.
 try {
   const pointer = JSON.parse(readFileSync(join(root, 'snapshot-current.json'), 'utf8'));

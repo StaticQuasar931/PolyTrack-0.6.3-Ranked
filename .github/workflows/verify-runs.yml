@@ -24,6 +24,8 @@ jobs:
           package-manager-cache: false
           cache: npm
           cache-dependency-path: tools/verifier/package-lock.json
+      - name: Check Extra catalog and trusted track pins
+        run: node tools/extra-verification-check.mjs
       - name: Check for due verification work
         id: queue
         timeout-minutes: 2
