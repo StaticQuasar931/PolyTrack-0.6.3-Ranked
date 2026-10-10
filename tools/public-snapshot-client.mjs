@@ -1,24 +1,57 @@
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
-  let indexRequest=null;
+  let packageBase=new URL(baseUrl),indexRequest=null,pointerRecoveryAttempted=false,pointerRecoveryRequest=null;
   async function packageIndex(){
-    if(!indexRequest)indexRequest=(async()=>{
-      const response=await fetchImpl(new URL('index.json',baseUrl),{credentials:'omit',cache:'default',signal:AbortSignal.timeout(5000)});
-      if(!response.ok)throw Error('Snapshot index unavailable');
-      const text=await response.text();if(text.length>8*1024*1024)throw Error('Snapshot index too large');
-      const index=JSON.parse(text);
-      if(index.schemaVersion!==1||index.encoding!=='gzip-xor-a7-v1'||!index.files||typeof index.files!=='object')throw Error('Unsupported snapshot encoding');
-      return index;
-    })().catch(error=>{indexRequest=null;throw error;});
+    if(!indexRequest){
+      const requestedBase=packageBase;
+      const request=(async()=>{
+        const response=await fetchImpl(new URL('index.json',requestedBase),{credentials:'omit',cache:'default',signal:AbortSignal.timeout(5000)});
+        if(!response.ok){const error=Error('Snapshot index unavailable');error.status=response.status;error.base=requestedBase.href;throw error;}
+        const text=await response.text();if(text.length>8*1024*1024)throw Error('Snapshot index too large');
+        const index=JSON.parse(text);
+        if(index.schemaVersion!==1||index.encoding!=='gzip-xor-a7-v1'||!index.files||typeof index.files!=='object')throw Error('Unsupported snapshot encoding');
+        return {index,base:requestedBase};
+      })();
+      let tracked;
+      tracked=request.catch(error=>{if(indexRequest===tracked)indexRequest=null;throw error;});
+      indexRequest=tracked;
+    }
     return indexRequest;
   }
-  async function packedText(logical){
-    const record=(await packageIndex()).files[logical];
+  async function recoverCurrentGeneration(){
+    if(pointerRecoveryRequest)return pointerRecoveryRequest;
+    if(pointerRecoveryAttempted)return false;
+    pointerRecoveryAttempted=true;
+    pointerRecoveryRequest=(async()=>{
+      try{
+        const parent=new URL('../',packageBase),pointerUrl=new URL('snapshot-current.json',parent);
+        if(pointerUrl.origin!==packageBase.origin)return false;
+        const response=await fetchImpl(pointerUrl,{credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(5000)});
+        if(!response.ok)return false;
+        if(response.url){const finalUrl=new URL(response.url);if(finalUrl.origin!==pointerUrl.origin||finalUrl.href!==pointerUrl.href)return false;}
+        const text=await response.text();if(text.length>16384)return false;
+        const pointer=JSON.parse(text);
+        if(typeof pointer.currentdir!=='string'||!/^public-snapshots[1-9]\d*$/.test(pointer.currentdir))return false;
+        const nextBase=new URL(`${pointer.currentdir}/`,parent);
+        if(nextBase.origin!==packageBase.origin||nextBase.pathname!==`${parent.pathname}${pointer.currentdir}/`)return false;
+        packageBase=nextBase;
+        indexRequest=null;
+        return true;
+      }catch{return false;}
+    })();
+    const request=pointerRecoveryRequest;
+    request.then(()=>{if(pointerRecoveryRequest===request)pointerRecoveryRequest=null;},()=>{if(pointerRecoveryRequest===request)pointerRecoveryRequest=null;});
+    return request;
+  }
+  async function packedTextAtCurrent(logical){
+    const pack=await packageIndex();
+    if(pack.base.href!==packageBase.href)return packedTextAtCurrent(logical);
+    const record=pack.index.files[logical];
     if(!record)return null;
     if(!/^[a-f0-9]{64}\.bin$/.test(record.path)||!Number.isSafeInteger(record.decodedBytes)||record.decodedBytes<1||record.decodedBytes>2*1024*1024)throw Error('Invalid snapshot record');
-    const response=await fetchImpl(new URL(record.path,baseUrl),{credentials:'omit',cache:'force-cache',signal:AbortSignal.timeout(5000)});
-    if(!response.ok)throw Error('Snapshot unavailable');
+    const response=await fetchImpl(new URL(record.path,pack.base),{credentials:'omit',cache:'force-cache',signal:AbortSignal.timeout(5000)});
+    if(!response.ok){const error=Error('Snapshot unavailable');error.status=response.status;error.base=pack.base.href;throw error;}
     const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>2*1024*1024)throw Error('Snapshot payload too large');
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
     if(hash!==record.sha256)throw Error('Snapshot checksum mismatch');
@@ -30,6 +63,16 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(total!==record.decodedBytes)throw Error('Snapshot length mismatch');
     const output=new Uint8Array(total);let offset=0;for(const chunk of chunks){output.set(chunk,offset);offset+=chunk.length;}
     return new TextDecoder().decode(output);
+  }
+  async function packedText(logical){
+    try{return await packedTextAtCurrent(logical);}
+    catch(error){
+      if(error.status===404||error.status===410){
+        if(error.base!==packageBase.href)return packedTextAtCurrent(logical);
+        if(await recoverCurrentGeneration())return packedTextAtCurrent(logical);
+      }
+      throw error;
+    }
   }
   return async function read(kind,id='',accountId=''){
     const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='cosmetic-directory'?'cosmetic-directory.json':kind==='overall'?'overall.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
