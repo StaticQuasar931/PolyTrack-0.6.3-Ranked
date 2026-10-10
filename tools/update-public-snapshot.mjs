@@ -155,11 +155,11 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   }
   if (!offline) {
     backupResult = await capture({ ...captureOptions, directory: stagingDirectory, log });
+    if (backupResult?.deferred) throw new Error(`Snapshot capture deferred: ${backupResult.reason || 'previous backups preserved'}`);
     if (capture === runPublicSnapshotBackup) {
       try { await captureTotals({ directory: stagingDirectory, log }); }
       catch (error) { log(JSON.stringify({ publicEventTotalsBackup: { preservedPrevious: true, error: error.message } })); }
     }
-    if (backupResult?.deferred) throw new Error(`Snapshot capture deferred: ${backupResult.reason || 'previous backups preserved'}`);
   }
   if (fullPublic) {
     const previousProgress = await readJsonIfPresent(path.join(stagingDirectory, 'export-progress.json'));

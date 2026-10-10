@@ -206,31 +206,36 @@ function validBoundRace(row, binding) {
     crypto.createHash('sha256').update(row.replay, 'utf8').digest('hex') === binding.replayHash;
 }
 
-async function savedMatchExists(directory, record, binding) {
-  if (!record?.available || record.signature !== binding.signature) return false;
+async function savedMatchExists(directory, binding) {
   try {
     const replay = JSON.parse(await fs.readFile(path.join(directory, `recordings/${binding.uploadId}.json`), 'utf8'));
     const canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8'));
-    return replay.accountId === binding.accountId && replay.trackId === binding.trackId && replay.frames === binding.frames &&
-      replay.replayHash === binding.replayHash && typeof replay.recording === 'string' &&
+    return replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
+      replay.frames === binding.frames && replay.verifiedState === 1 && replay.replayHash === binding.replayHash &&
+      typeof replay.recording === 'string' && replay.recording.length > 0 && Buffer.byteLength(replay.recording, 'utf8') <= 850000 &&
       crypto.createHash('sha256').update(replay.recording, 'utf8').digest('hex') === binding.replayHash &&
       canonical.accountId === binding.accountId && canonical.trackId === binding.trackId &&
-      canonical.uploadId === binding.uploadId && canonical.frames === binding.frames && canonical.replayHash === binding.replayHash;
+      canonical.uploadId === binding.uploadId && canonical.frames === binding.frames &&
+      (canonical.raceTimeFrames === undefined || canonical.raceTimeFrames === binding.frames) &&
+      canonical.timeMs > 0 && Number.isSafeInteger(canonical.timeMs) && canonical.runVerified === true &&
+      (binding.metadata.timeMs === undefined || canonical.timeMs === binding.metadata.timeMs) &&
+      canonical.integrityVerified === true && canonical.verified === true && canonical.replayHash === binding.replayHash;
   } catch { return false; }
 }
 
 function currentRaceState(bindings, fingerprint, invalid, previous) {
   const same = previous?.fingerprint === fingerprint;
-  const state = same ? previous : {fingerprint, pending: [], covered: {}, records: {...(previous?.records || {})}, invalid,
+  const state = same ? previous : {fingerprint, pending: [], covered: {}, records: {}, invalid,
     responseInvalid: 0, known: bindings.length};
   if (!same) {
     state.pending = [];
     state.covered = {};
     state.records = {};
-    state.invalid = invalid;
     state.responseInvalid = 0;
-    state.known = bindings.length;
   }
+  state.fingerprint = fingerprint;
+  state.invalid = invalid;
+  state.known = bindings.length;
   return state;
 }
 
@@ -305,15 +310,19 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
 
   const race = currentRaceState(staged.bindings, staged.fingerprint, staged.invalid, previous.raceExport);
   race.responseInvalid = Number.isSafeInteger(race.responseInvalid) ? race.responseInvalid : 0;
-  const sameBindingRegistry = previous.raceExport?.fingerprint === staged.fingerprint;
   race.known = staged.bindings.length;
   race.invalid = staged.invalid;
   const bindingBySignature = new Map(staged.bindings.map(binding => [binding.signature, binding]));
-  for (const [signature, record] of Object.entries(race.records)) {
-    const binding = bindingBySignature.get(signature);
-    if (!binding || record.available && !await savedMatchExists(directory, record, binding) || !sameBindingRegistry && !record.available) {
-      delete race.records[signature]; delete race.covered[signature];
-    } else race.covered[signature] = true;
+  for (const binding of staged.bindings) {
+    const signature = binding.signature;
+    if (await savedMatchExists(directory, binding)) {
+      race.records[signature] = {signature, available: true, replayPath: `recordings/${binding.uploadId}.json`,
+        canonicalPath: `canonical/${binding.trackId}/${binding.accountId}.json`};
+      race.covered[signature] = true;
+    } else {
+      delete race.records[signature];
+      delete race.covered[signature];
+    }
   }
   race.pending = staged.bindings.map(binding => binding.signature).filter(signature => !race.covered[signature]).sort();
   progress.raceExport = race;
@@ -374,7 +383,8 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
           }
         }
       }
-      race.covered[signature] = true;
+      if (race.records[signature]?.available) race.covered[signature] = true;
+      else delete race.covered[signature];
       usedThisRun++;
     }
     race.pending = race.pending.slice(count);
@@ -403,7 +413,8 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
   const coverageComplete = scanComplete && missing === 0 && invalid === 0 && available === race.known && progress.profileSkipped === 0;
   const result = {counts: {profiles: progress.profileCount, canonical: available, recordings: available, missing,
       skipped: progress.profileSkipped + invalid}, scanned: progress.profiles.scanned + records.length,
-    knownVerifiedBindings: race.known, totalCoverage: {available, missing, invalid, complete: coverageComplete,
+    fetchedDocumentsThisRun: usedThisRun, knownVerifiedBindings: race.known,
+    totalCoverage: {available, missing, invalid, complete: coverageComplete,
       scope: 'current-staged-track-snapshots'}, scanComplete, complete: coverageComplete, budgetReached, incompletePage};
   log(JSON.stringify({publicProfileReplayExport: result}));
   return result;

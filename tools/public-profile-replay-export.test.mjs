@@ -41,6 +41,7 @@ test('exports matching staged native binding despite canonical verified false',a
  await withDirectory(async directory=>{await stage(directory,[binding()]);const requests=[],logs=[];
   const result=await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?[profileDoc()]:batchResponse(req),requests),log:m=>logs.push(m)});
   assert.equal(result.complete,true);assert.equal(result.scanComplete,true);assert.equal(result.knownVerifiedBindings,1);
+  assert.equal(result.fetchedDocumentsThisRun,2);
   assert.deepEqual(result.totalCoverage,{available:1,missing:0,invalid:0,complete:true,scope:'current-staged-track-snapshots'});
   const queries=requests.filter(r=>r.url.endsWith(':runQuery'));assert.equal(queries.length,1);
   assert.equal(queries[0].options.structuredQuery.from[0].collectionId,'0.6.2_profiles_public');
@@ -86,14 +87,17 @@ test('resumes invocation budget and does not rescan completed profiles',async()=
   const first=await exportPublicProfilesAndReplays({directory,pageSize:1,maxDocuments:1,
    fetchImpl:fixtureFetch(()=>[profileDoc()]),log:()=>{}});
   assert.equal(first.budgetReached,true);assert.equal(first.scanComplete,false);
+  assert.equal(first.fetchedDocumentsThisRun,1);
   const requests=[];const second=await exportPublicProfilesAndReplays({directory,pageSize:1,maxDocuments:1,
    fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?emptyProfiles:batchResponse(req),requests),log:()=>{}});
   assert.equal(second.counts.profiles,1);assert.equal(second.counts.recordings,1);assert.equal(second.budgetReached,false);
+  assert.equal(second.fetchedDocumentsThisRun,1);
   assert.equal(requests.filter(r=>r.url.endsWith(':runQuery')).length,1);
   assert.equal(requests.filter(r=>r.url.endsWith(':batchGet')).length,1);
   const thirdRequests=[];const third=await exportPublicProfilesAndReplays({directory,maxDocuments:1,
    fetchImpl:fixtureFetch(()=>{throw Error('completed binding must not be fetched again');},thirdRequests),log:()=>{}});
   assert.equal(third.complete,true);assert.equal(thirdRequests.length,0);
+  assert.equal(third.fetchedDocumentsThisRun,0);
  });});
 
 test('changed binding fingerprint preserves historical file and fetches the new signature',async()=>{
@@ -107,6 +111,71 @@ test('changed binding fingerprint preserves historical file and fetches the new 
    return batchResponse(req,raceFields({uploadId:int(43),replay:str(nextReplay),replayHash:str(nextHash)}));}),log:()=>{}});
   assert.equal(fetched,1);assert.equal(result.knownVerifiedBindings,1);assert.equal(await fs.readFile(oldPath,'utf8'),oldBytes);
   assert.equal(JSON.parse(await fs.readFile(path.join(directory,'recordings','43.json'),'utf8')).replayHash,nextHash);
+ });});
+
+test('reuses validated local replay pairs without progress metadata after a binding fingerprint change',async()=>{
+ await withDirectory(async directory=>{await stage(directory,[binding()]);
+  await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?emptyProfiles:batchResponse(req)),log:()=>{}});
+  await fs.unlink(path.join(directory,'export-progress.json'));
+  await stage(directory,[binding({name:'Updated public name'})]);
+  const requests=[];
+  const result=await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>{
+   if(req.url.endsWith(':runQuery'))return emptyProfiles;
+   throw Error('an unchanged verified replay pair must be reused');
+  },requests),log:()=>{}});
+  assert.equal(result.complete,true);assert.equal(result.counts.recordings,1);
+  assert.equal(requests.filter(req=>req.url.endsWith(':batchGet')).length,0);
+ });});
+
+test('corrupt local replay pair is refetched instead of trusting saved progress',async()=>{
+ await withDirectory(async directory=>{await stage(directory,[binding()]);
+  await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?emptyProfiles:batchResponse(req)),log:()=>{}});
+  const replayPath=path.join(directory,'recordings','42.json');
+  const saved=JSON.parse(await fs.readFile(replayPath,'utf8'));saved.recording='corrupt';
+  await fs.writeFile(replayPath,JSON.stringify(saved));
+  let batchGets=0;
+  const result=await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>{
+   if(req.url.endsWith(':runQuery'))throw Error('completed profile scan must be reused');
+   batchGets++;return batchResponse(req);
+  }),log:()=>{}});
+  assert.equal(batchGets,1);assert.equal(result.complete,true);
+  assert.equal(JSON.parse(await fs.readFile(replayPath,'utf8')).recording,replay);
+ });});
+
+test('cached canonical time must match the staged binding time',async()=>{
+ await withDirectory(async directory=>{await stage(directory,[binding()]);
+  await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?emptyProfiles:batchResponse(req)),log:()=>{}});
+  const canonicalPath=path.join(directory,'canonical',trackId,accountId+'.json');
+  const saved=JSON.parse(await fs.readFile(canonicalPath,'utf8'));saved.timeMs++;
+  await fs.writeFile(canonicalPath,JSON.stringify(saved));
+  let batchGets=0;
+  const result=await exportPublicProfilesAndReplays({directory,fetchImpl:fixtureFetch(req=>{
+   if(req.url.endsWith(':runQuery'))throw Error('completed profile scan must be reused');
+   batchGets++;return batchResponse(req);
+  }),log:()=>{}});
+  assert.equal(batchGets,1);assert.equal(result.complete,true);
+  assert.equal(result.fetchedDocumentsThisRun,1);
+  assert.equal(JSON.parse(await fs.readFile(canonicalPath,'utf8')).timeMs,15000);
+ });});
+
+test('previously missing bindings retry within each run document limit',async()=>{
+ await withDirectory(async directory=>{await stage(directory,[binding()]);
+  const firstRequests=[];
+  await exportPublicProfilesAndReplays({directory,maxDocuments:1,
+   fetchImpl:fixtureFetch(req=>req.url.endsWith(':runQuery')?emptyProfiles:[{missing:req.options.documents[0]}],firstRequests),log:()=>{}});
+  const progressPath=path.join(directory,'export-progress.json');
+  const progress=JSON.parse(await fs.readFile(progressPath,'utf8'));
+  const signature=JSON.stringify([accountId,trackId,42,900,replayHash]);
+  progress.raceExport.covered[signature]=true;
+  await fs.writeFile(progressPath,JSON.stringify(progress));
+  const retryRequests=[];
+  const result=await exportPublicProfilesAndReplays({directory,maxDocuments:1,
+   fetchImpl:fixtureFetch(req=>[{missing:req.options.documents[0]}],retryRequests),log:()=>{}});
+  assert.equal(result.budgetReached,false);
+  assert.equal(result.fetchedDocumentsThisRun,1);
+  assert.equal(retryRequests.length,1);
+  assert.equal(retryRequests[0].url.endsWith(':batchGet'),true);
+  assert.equal(retryRequests[0].options.documents.length,1);
  });});
 
 test('bounds batchGet response and rejects mismatched document name',async()=>{

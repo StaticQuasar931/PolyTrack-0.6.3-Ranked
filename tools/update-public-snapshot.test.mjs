@@ -128,13 +128,13 @@ test('offline coverage uses saved export summary and never claims complete with 
   assert.equal(result.coverage.complete, false);
 });
 
-test('default capture calls event totals without making network requests in the test', async t => {
+test('deferred capture skips event totals and preserves the current pointer', async t => {
   const root = await fixture(t);
   const { runPublicSnapshotBackup } = await import('./public-snapshot-backup.mjs');
   let totalsCalls = 0;
   await assert.rejects(updatePublicSnapshot({ root, capture: runPublicSnapshotBackup,
     captureOptions: { fetchImpl: async () => { throw new Error('test network disabled'); } },
     captureTotals: async () => { totalsCalls++; }, log: () => {} }), /Snapshot capture deferred/);
-  assert.equal(totalsCalls, 1);
+  assert.equal(totalsCalls, 0);
   assert.equal(await readFile(path.join(root, 'snapshot-current.json')).then(() => true, () => false), false);
 });
