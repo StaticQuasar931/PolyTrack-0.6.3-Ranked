@@ -38,6 +38,9 @@ const RECONCILE_TRACK_BATCH = 4;
 const RECONCILE_PENDING_ID_LIMIT = 200;
 const RECONCILE_TARGET_ID_BATCH = 16;
 const RECONCILE_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const RECONCILE_REBUILD_BACKOFF_BASE_MS = 15 * 60 * 1000;
+const RECONCILE_REBUILD_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
+const RECONCILE_REBUILD_FAILURE_LIMIT = RECONCILE_PENDING_ID_LIMIT;
 const COLLECTIONS = Object.freeze({
   raceResults: '0.6.2_race_results',
   profiles: '0.6.2_profiles_public',
@@ -1059,11 +1062,13 @@ export async function bootstrapSnapshotVerification(env) {
   return { scanned: boards.length, complete };
 }
 
-export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) {
+export async function reconcileCanonicalChanges(env, {scanResults = true, now = Date.now()} = {}) {
   // New namespace discards any cursor poisoned by legacy client-clock timestamps.
   const jobId='canonical_reconcile_v2';
   const document=await readDocument(env,COLLECTIONS.jobs,jobId);
   const job=document?.data||{};
+  const reconcileNow = Number.isSafeInteger(now) && now >= 0 ? now : Date.now();
+  const retryAtLimit = Math.min(Number.MAX_SAFE_INTEGER, reconcileNow + RECONCILE_REBUILD_BACKOFF_MAX_MS);
   const timestamp=typeof job.cursorIngestedAt==='string'?job.cursorIngestedAt:'1970-01-01T00:00:00.000000000Z';
   const queued=new Set((job.pendingTrackIds||[]).map(id=>safeText(id,80)).filter(Boolean));
   let pendingResultIds=Object.fromEntries(Object.entries(job.pendingResultIds||{})
@@ -1071,6 +1076,14 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
     .map(([trackId,ids])=>[trackId,[...new Set(ids.filter(id=>typeof id==='string'&&/^[A-Za-z0-9_.:-]{1,128}_[A-Za-z0-9_-]{1,80}$/.test(id)))]]));
   const pendingFullRebuildTrackIds=new Set((job.pendingFullRebuildTrackIds||[])
     .filter(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(id)));
+  const failedFullRebuilds = Object.create(null);
+  for (const [trackId, failure] of Object.entries(job.failedFullRebuilds || {})) {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(trackId) || !failure || typeof failure !== 'object') continue;
+    const attempts = Number.isSafeInteger(failure.attempts) ? Math.max(0, Math.min(8, failure.attempts)) : 0;
+    const retryAt = Number.isSafeInteger(failure.retryAt) ? Math.min(retryAtLimit, Math.max(0, failure.retryAt)) : 0;
+    if (!attempts || !retryAt) continue;
+    if (Object.keys(failedFullRebuilds).length < RECONCILE_REBUILD_FAILURE_LIMIT) failedFullRebuilds[trackId] = {attempts, retryAt};
+  }
   let forceFullRebuildAll=job.forceFullRebuildAll===true;
   if(Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0)>RECONCILE_PENDING_ID_LIMIT){
     for(const trackId of Object.keys(pendingResultIds)){queued.add(trackId);pendingFullRebuildTrackIds.add(trackId);}
@@ -1079,6 +1092,8 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
   if(pendingFullRebuildTrackIds.size>RECONCILE_PENDING_ID_LIMIT){forceFullRebuildAll=true;pendingFullRebuildTrackIds.clear();}
   for(const trackId of Object.keys(pendingResultIds))queued.add(trackId);
   for(const trackId of pendingFullRebuildTrackIds)queued.add(trackId);
+  for (const trackId of Object.keys(failedFullRebuilds)) if (!queued.has(trackId)) delete failedFullRebuilds[trackId];
+  const rebuildCoolingDown = trackId => (failedFullRebuilds[trackId]?.retryAt || 0) > reconcileNow;
   const capacity=Math.max(0,200-queued.size);
   const budget=Math.min(RECONCILE_RESULT_BATCH,Math.floor(capacity/2));
   const changed=budget&&(scanResults||!job.backfillComplete)
@@ -1110,8 +1125,12 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
   }
   if(forceFullRebuildAll)for(const trackId of queued)fullRebuildTracks.add(trackId);
   let rebuilt=0,targeted=0;
+  const fallbackOnly = trackId => fullRebuildTracks.has(trackId) || !pendingResultIds[trackId]?.length;
   const selected=[...Object.keys(pendingResultIds),...([...queued].filter(id=>!pendingResultIds[id]))]
-    .filter((id,index,list)=>queued.has(id)&&list.indexOf(id)===index).slice(0,RECONCILE_TRACK_BATCH);
+    .filter((id,index,list)=>queued.has(id)&&list.indexOf(id)===index
+      &&!(fallbackOnly(id)&&rebuildCoolingDown(id))
+      &&!(fallbackOnly(id)&&!failedFullRebuilds[id]
+        &&Object.keys(failedFullRebuilds).length>=RECONCILE_REBUILD_FAILURE_LIMIT)).slice(0,RECONCILE_TRACK_BATCH);
   const targetGroups=[];let targetBudget=RECONCILE_TARGET_ID_BATCH;
   for(const trackId of selected){
     if(fullRebuildTracks.has(trackId)||!pendingResultIds[trackId]?.length)continue;
@@ -1130,6 +1149,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
     const ids=pendingResultIds[trackId]||[];
     const targetedIds=targetGroups.find(([id])=>id===trackId)?.[1]||[];
     if(ids.length&&!targetedIds.length&&!fullRebuildTracks.has(trackId))continue;
+    let attemptedFullRebuild = false;
     try{
       let result;
       if(targetedIds.length&&!fullRebuildTracks.has(trackId)){
@@ -1140,8 +1160,14 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
         }
         result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments);
       }else result={fallback:true};
-      if(result.fallback)await rebuildTrack(env,trackId);
+      if(result.fallback) {
+        if (rebuildCoolingDown(trackId)
+          || !failedFullRebuilds[trackId] && Object.keys(failedFullRebuilds).length >= RECONCILE_REBUILD_FAILURE_LIMIT) continue;
+        attemptedFullRebuild = true;
+        await rebuildTrack(env,trackId);
+      }
       rebuilt++;
+      delete failedFullRebuilds[trackId];
       if(targetedIds.length)targeted+=targetedIds.length;
       if(result.fallback||fullRebuildTracks.has(trackId))delete pendingResultIds[trackId];
       else{
@@ -1153,6 +1179,13 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
       if(!pendingResultIds[trackId]?.length)queued.delete(trackId);
     }catch(error){
       console.error('Canonical track reconciliation failed',trackId,String(error?.message||error));
+      if (attemptedFullRebuild) {
+        const previous = failedFullRebuilds[trackId];
+        const attempts = Math.min(8, (previous?.attempts || 0) + 1);
+        const delay = Math.min(RECONCILE_REBUILD_BACKOFF_MAX_MS,
+          RECONCILE_REBUILD_BACKOFF_BASE_MS * (2 ** (attempts - 1)));
+        failedFullRebuilds[trackId] = {attempts, retryAt: reconcileNow + delay};
+      }
       queued.delete(trackId);queued.add(trackId);
     }
   }
@@ -1163,6 +1196,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true} = {}) 
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
     backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
     pendingTrackIds:[...queued],pendingResultIds,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
+    failedFullRebuilds,
     forceFullRebuildAll:Boolean(forceFullRebuildAll&&queued.size),lastScanAt:Date.now(),schemaVersion:2
   }}]);
   return {scanned:changed.length+legacy.length,rebuilt,targeted,pending:queued.size};
