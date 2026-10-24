@@ -32,7 +32,7 @@ export async function verifyAndSignal({env = process.env, verify = runVerifier,
   if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY,
     '\n## Post-verification publication\nPublic snapshot capture requested: ' + needed +
     '. Gate uses completed verdicts/archives, not due-work, native attempts, or process success alone. ' +
-    'The separate public-only job runs automatically with an enabled verifier unless POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED=false. ' +
+    'The separate bounded snapshot job runs automatically with an enabled verifier unless POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED=false. ' +
     'Capture reads currently published public data: it does not force rebuilds or wait for a published revision. ' +
     'Cached track boards and the Overall aggregate may lag these verdicts; a new package is not proof of aggregate freshness.\n');
   return {snapshotNeeded: needed, summary};

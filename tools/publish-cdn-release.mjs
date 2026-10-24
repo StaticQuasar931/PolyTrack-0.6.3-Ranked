@@ -176,25 +176,57 @@ export async function publishAssetTree(plan, git) {
   return {commit,archiveBytes:archive.length,files:selected.length};
 }
 
-export async function refreshReleasePointer(expected, {fetchImpl=fetch, sleep=pause}={}) {
-  let failure;
-  // A purge acknowledgment is not proof of propagation: read and compare the pointer.
-  for (let attempt=0; attempt<3; attempt++) {
+export async function refreshReleasePointer(expected, {fetchImpl=fetch, sleep=pause, now=Date.now, log=console.warn}={}) {
+  const valid = value => value?.schemaVersion === 1 && value.repository === REPOSITORY && sha(value.commit) &&
+    /^[a-f0-9]{64}$/.test(value.indexSha256 || '') && /^public-snapshots[1-9]\d*$/.test(value.snapshotDirectory || '') &&
+    (value.sourceCommit === undefined || sha(value.sourceCommit));
+  if (!valid(expected)) throw Error('Invalid expected release pointer');
+  const started=now(),deadline=started+240000,delays=[5000,10000,20000,30000,45000,60000,60000,60000];
+  let failure, attempts=0, purges=0;
+  // Compare the real loader URL, not a cache-busted URL that could hide stale clients.
+  for (let attempt=0; attempt<9 && now()<deadline; attempt++) {
+    attempts++;
     try {
-      const purge = JSON.parse((await fetchBytes(POINTER_URL.replace('://cdn.', '://purge.'), fetchImpl)).toString('utf8'));
-      if (purge.status !== 'finished') throw Error('Pointer purge not finished');
-      await sleep(3000);
-      const actual = JSON.parse((await fetchBytes(POINTER_URL, fetchImpl)).toString('utf8'));
-      if (actual.repository !== REPOSITORY || actual.commit !== expected.commit || actual.indexSha256 !== expected.indexSha256 || actual.snapshotDirectory !== expected.snapshotDirectory || expected.sourceCommit && actual.sourceCommit !== expected.sourceCommit) throw Error('Release pointer has not propagated');
-      return;
-    } catch (error) { failure=error; if (attempt<2) await sleep(20000); }
+      const actual=JSON.parse((await fetchBytes(POINTER_URL,fetchImpl)).toString('utf8'));
+      if (!valid(actual)) throw Object.assign(Error('Invalid CDN release pointer; refusing confirmation'),{integrityFailure:true});
+      if (actual.commit===expected.commit && actual.indexSha256===expected.indexSha256 &&
+          actual.snapshotDirectory===expected.snapshotDirectory && (!expected.sourceCommit || actual.sourceCommit===expected.sourceCommit)) {
+        return {confirmed:true,attempts,purges,elapsedMs:now()-started};
+      }
+      failure=Error('Release pointer has not propagated');
+    } catch (error) {
+      if (error.integrityFailure || error.packageLimit) throw error;
+      failure=error;
+    }
+    if (!purges && now()<deadline) {
+      purges++;
+      try {
+        const purge=JSON.parse((await fetchBytes(POINTER_URL.replace('://cdn.','://purge.'),fetchImpl)).toString('utf8'));
+        const pathState=purge.paths?.[new URL(POINTER_URL).pathname];
+        if (pathState?.throttled===true) {
+          const seconds=Number(pathState.throttlingReset);
+          const retryAfterMs=Number.isFinite(seconds)&&seconds>0?Math.min(seconds*1000,86400000):3600000;
+          return {confirmed:false,status:'deferred',reason:'purge-throttled',retryAfterMs,attempts,purges,elapsedMs:now()-started};
+        }
+        if (purge.status!=='finished') log('CDN pointer purge acknowledged but not finished; checking actual content.');
+      } catch (error) {
+        if (error.status===429) return {confirmed:false,status:'deferred',reason:'purge-rate-limited',
+          retryAfterMs:error.retryAfterMs || 3600000,attempts,purges,elapsedMs:now()-started};
+        log('CDN pointer purge unavailable; checking actual content within the existing deadline.');
+      }
+    }
+    const delay=delays[attempt];
+    if (!delay || now()+delay>=deadline) break;
+    log(`CDN pointer is not current yet; check ${attempts}/9, retry in ${delay/1000}s. No Firebase requests.`);
+    await sleep(delay);
   }
-  throw Error('Pointer published, but CDN propagation could not be confirmed; rerun Publish CDN release', {cause:failure});
+  throw Object.assign(Error('Pointer published, but CDN propagation could not be confirmed. Rerun only Publish CDN release; do not repeat snapshot capture or verification.',{cause:failure}),
+    {code:'CDN_PROPAGATION_PENDING',attempts,purges,elapsedMs:now()-started});
 }
 
 export async function publishRelease({root=process.cwd(), branch=process.env.DEFAULT_BRANCH, repository=process.env.GITHUB_REPOSITORY,
   git=(args, options={}) => execFileSync('git', args, {cwd:root, encoding:'utf8', maxBuffer:20000000, ...options}),
-  check=checkReleaseFiles, refresh=refreshReleasePointer, now=new Date()}={}) {
+  check=checkReleaseFiles, refresh=refreshReleasePointer, now=new Date(), refreshOnly=false}={}) {
   if (repository !== REPOSITORY || branch !== 'main') throw Error('Only the canonical main branch can publish releases');
   git(['fetch','--no-tags','origin','refs/heads/main']);
   const commit = git(['rev-parse','FETCH_HEAD']).trim();
@@ -218,13 +250,17 @@ export async function publishRelease({root=process.cwd(), branch=process.env.DEF
     }
   }
   let assets;
-  if (previous?.sourceCommit === commit && previous.indexSha256 === plan.pointer.indexSha256 && previous.snapshotDirectory === plan.pointer.snapshotDirectory) {
+  const alreadyPublished=previous?.sourceCommit===commit && previous.indexSha256===plan.pointer.indexSha256 && previous.snapshotDirectory===plan.pointer.snapshotDirectory;
+  if (alreadyPublished) {
     assets={commit:previous.commit};
   } else assets=await publishAssetTree(plan,git);
   plan.pointer={...plan.pointer,sourceCommit:commit,commit:assets.commit};
   plan.assetPackage=assets;
   // Assets exist remotely before probing; the public pointer still names the old release.
-  await check(plan);
+  // An advertised immutable package passed this gate before its pointer was pushed.
+  // CDN-only repair can reuse that proof. A new source always runs full validation.
+  if (!refreshOnly || !alreadyPublished) await check(plan);
+  plan.assetChecks=refreshOnly && alreadyPublished ? 'previously-published-immutable-package' : 'validated';
   if (previous?.commit !== plan.pointer.commit || previous.sourceCommit !== plan.pointer.sourceCommit || previous.indexSha256 !== plan.pointer.indexSha256 || previous.snapshotDirectory !== plan.pointer.snapshotDirectory) {
     const blob = git(['hash-object','-w','--stdin'], {input:JSON.stringify(plan.pointer)+'\n'}).trim();
     const tree = git(['mktree'], {input:'100644 blob ' + blob + '\trelease.json\n'}).trim();
@@ -235,13 +271,25 @@ export async function publishRelease({root=process.cwd(), branch=process.env.DEF
     // Fast-forward only: races fail safely instead of overwriting another release.
     git(['push','origin',next + ':refs/heads/' + POINTER_BRANCH]);
   }
-  await refresh(plan.pointer);
+  plan.propagation=await refresh(plan.pointer);
   return plan;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const plan = await publishRelease();
-  const summary = `CDN release confirmed: ${plan.pointer.commit}\nSource: ${plan.pointer.sourceCommit}\nSnapshot: ${plan.pointer.snapshotDirectory}\nAsset archive bytes: ${plan.assetPackage.archiveBytes ?? 'reused'}\nValidated ${plan.files.length} immutable boot assets. Purged one mutable release pointer. No Firebase requests.\n`;
-  console.log(summary);
-  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+  const args=process.argv.slice(2);
+  if (args.length>1 || args.some(arg=>arg!=='--refresh-only')) throw Error('Expected optional --refresh-only');
+  try {
+    const plan = await publishRelease({refreshOnly:args.includes('--refresh-only')});
+    const deferred=plan.propagation?.status==='deferred';
+    const status=deferred?'deferred':'confirmed';
+    const summary = `${deferred?'CDN propagation deferred: the provider throttled this pointer purge. The published files are intact, but CDN freshness is not confirmed.':'CDN release confirmed at this checking edge.'}\nAssets: ${plan.pointer.commit}\nSource: ${plan.pointer.sourceCommit}\nSnapshot: ${plan.pointer.snapshotDirectory}\nAsset archive bytes: ${plan.assetPackage.archiveBytes ?? 'reused'}\nBoot asset gate: ${plan.assetChecks} (${plan.files.length} assets). Pointer purges: ${plan.propagation?.purges ?? 0}. No Firebase requests.\n${deferred?`Purge cooldown: about ${Math.ceil(plan.propagation.retryAfterMs/60000)} minutes. The CDN-only schedule retries automatically; do not repeat snapshot capture or verification.\n`:''}`;
+    if (deferred) console.warn('::warning::jsDelivr throttled the mutable release pointer purge. Propagation is deferred, not confirmed; the CDN-only schedule will retry without Firebase access.');
+    if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,`cdn_status=${status}\n`);
+    console.log(summary);
+    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+  } catch (error) {
+    if (error.code==='CDN_PROPAGATION_PENDING' && process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
+      '## CDN Propagation Pending\nThe immutable files and GitHub release pointer were published. CDN freshness was not confirmed, so this job remains failed rather than claiming users have the new release. Retry **Publish CDN release** only; the CDN-only schedule also retries without Firebase access. Do not rerun verification or snapshot capture for this error.\n');
+    throw error;
+  }
 }
