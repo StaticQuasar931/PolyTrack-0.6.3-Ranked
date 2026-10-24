@@ -128,7 +128,7 @@ export function summarizeArchives(periods, snapshots = new Map()) {
   for (const period of normalized) {
     kindCounts[period.kind] += 1;
     const snapshot = snapshotFor(snapshots, period.id);
-    if (!snapshot) continue;
+    if (!snapshotMatchesPeriod(snapshot, period)) continue;
     loadedEvents += 1;
     const counts = archivePeriodCounts(period, snapshot);
     verifiedFinishes += counts.verified;
@@ -263,31 +263,33 @@ export function mountArchiveView(root, options = {}) {
   appendText(document, intro, 'h3', '', options.title || 'Past events');
   appendText(document, intro, 'p', '', 'Search or filter saved event standings.');
   toolbar.append(intro);
-  if (typeof options.onMonthChange === 'function') {
+  let jumpToMonth = () => {};
+  {
     const form = document.createElement('form');
     form.className = 'sq-event-archive-filter';
-    const label = appendText(document, form, 'label', '', 'Ended in ');
+    const label = appendText(document, form, 'label', '', 'Jump to month (UTC) ');
     const input = document.createElement('input');
     input.type = 'month';
     input.name = 'archive-month';
     input.value = typeof options.month === 'string' ? options.month : '';
     input.setAttribute('aria-label', 'Archive month');
     label.append(input);
-    const submit = appendText(document, form, 'button', 'button', 'View month');
+    const submit = appendText(document, form, 'button', 'button', 'Jump to month');
     submit.type = 'submit';
     for (const [text, offset] of [['Previous month', -1], ['Next month', 1], ['All saved events', 0]]) {
       const button = appendText(document, form, 'button', 'button', text);
       button.type = 'button';
       button.addEventListener('click', () => {
-        if (!offset) { options.onMonthChange(''); return; }
+        if (!offset) { input.value = ''; jumpToMonth(''); return; }
         if (!/^\d{4}-\d{2}$/.test(input.value)) return;
         const [year, month] = input.value.split('-').map(Number);
-        options.onMonthChange(new Date(Date.UTC(year, month - 1 + offset, 1)).toISOString().slice(0, 7));
+        input.value = new Date(Date.UTC(year, month - 1 + offset, 1)).toISOString().slice(0, 7);
+        jumpToMonth(input.value);
       });
     }
     form.addEventListener('submit', event => {
       event.preventDefault();
-      if (/^\d{4}-\d{2}$/.test(input.value)) options.onMonthChange(input.value);
+      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(input.value)) jumpToMonth(input.value);
     });
     toolbar.append(form);
   }
@@ -365,29 +367,29 @@ export function mountArchiveView(root, options = {}) {
     title.className = 'sq-archive-title';
     appendText(document, title, 'strong', '', String(resolveName(period) || 'Archived event'));
     appendText(document, title, 'small', 'sq-archive-kind', KIND_LABELS[period.kind]);
-    appendText(document, title, 'small', 'sq-archive-date', `${formatDate(period.endsAt, locale)} | Up to ${period.maxRp} RP`);
+    appendText(document, title, 'small', 'sq-archive-date', `${formatDate(period.endsAt, locale)} | ${period.historyOnly ? 'Saved selection; results unavailable' : `Up to ${period.maxRp} RP`}`);
     summary.append(title);
     const initialRacers = declaredRacerCount(period);
     const count = appendText(document, summary, 'span', 'sq-archive-count',
       initialRacers === null ? 'Open standings' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`);
     summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${initialRacers === null ? 'standings not loaded' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`}`);
-    const disableEmpty = () => {
-      details.open = false;
-      details.classList.add('sq-archive-event-empty');
-      summary.setAttribute('aria-disabled', 'true');
-      summary.tabIndex = -1;
-    };
-    if (initialRacers === 0) disableEmpty();
-    summary.addEventListener('click', event => { if (details.classList.contains('sq-archive-event-empty')) event.preventDefault(); });
     details.append(summary);
     const board = document.createElement('div');
     board.className = 'sq-archive-board';
+    appendText(document, board, 'p', 'sq-archive-track-details',
+      [period.author ? `Author: ${period.author}` : '', period.trackId ? `Track: ${period.trackId}` : '',
+        'Closed event. Practice does not change its final Event RP.'].filter(Boolean).join(' | '));
     if (typeof options.onOpenPeriod === 'function') {
       const actions = document.createElement('div');
       actions.className = 'sq-event-actions sq-archive-actions';
       const open = appendText(document, actions, 'button', 'button', 'Track details / practice');
       open.type = 'button';
       open.addEventListener('click', () => options.onOpenPeriod(period, snapshots.get(period.id) || null));
+      if (typeof options.onImportPeriod === 'function' && (period.kind === 'kodub' || period.kind === 'custom')) {
+        const importButton = appendText(document, actions, 'button', 'button', 'Import saved track');
+        importButton.type = 'button';
+        importButton.addEventListener('click', () => options.onImportPeriod(period));
+      }
       board.append(actions);
     }
     const results = document.createElement('div');
@@ -400,7 +402,6 @@ export function mountArchiveView(root, options = {}) {
     const showSnapshot = snapshot => {
       const counts = archivePeriodCounts(period, snapshot);
       snapshots.set(period.id, snapshot);
-      if (counts.racers === 0) disableEmpty();
       count.replaceChildren();
       appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}`);
       appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified`);
@@ -415,8 +416,16 @@ export function mountArchiveView(root, options = {}) {
     if (snapshots.has(period.id) && snapshotMatchesPeriod(snapshots.get(period.id), period)) showSnapshot(snapshots.get(period.id));
 
     details.addEventListener('toggle', () => {
-      if (details.classList.contains('sq-archive-event-empty')) { details.open = false; return; }
       if (!details.open || snapshots.has(period.id) && snapshotMatchesPeriod(snapshots.get(period.id), period) || loading) return;
+      if (period.historyOnly) {
+        results.replaceChildren();
+        appendText(document, results, 'p', 'sq-archive-empty', 'The weekly selection was saved, but no final standings or Event RP were captured.');
+        return;
+      }
+      if (initialRacers === 0) {
+        renderRows(document, results, [], formatTime, options.accountId || '');
+        return;
+      }
       if (!loadSnapshot) {
         results.replaceChildren();
         appendText(document, results, 'p', 'sq-archive-error', 'Final standings are unavailable in this view.');
@@ -438,6 +447,27 @@ export function mountArchiveView(root, options = {}) {
   }
 
   let currentPage = 1;
+  const locationStatus = appendText(document, toolbar, 'p', 'sq-archive-location', 'All saved events');
+  locationStatus.setAttribute('role', 'status');
+  jumpToMonth = month => {
+    if (!month) {
+      currentPage = 1;
+      locationStatus.textContent = 'All saved events';
+      renderPage();
+    } else {
+      const rows = visiblePeriods();
+      const index = rows.findIndex(period => new Date(period.endsAt).toISOString().slice(0, 7) === month);
+      if (index < 0) locationStatus.textContent = `No saved events in ${month} match the current filters.`;
+      else {
+        renderPage(Math.floor(index / 12) + 1);
+        locationStatus.textContent = `Jumped to ${month}. Other months remain available.`;
+        const card = [...events.children].find(node => node.dataset.archiveEventId === rows[index].id);
+        card?.scrollIntoView?.({ block: 'nearest' });
+        card?.querySelector?.('summary')?.focus();
+      }
+    }
+    options.onMonthChange?.(month);
+  };
   function renderPage(page = currentPage) {
     const filtered = visiblePeriods();
     const pageInfo = paginateArchivePeriods(filtered, page);
@@ -471,5 +501,6 @@ export function mountArchiveView(root, options = {}) {
   renderPage();
 
   root.replaceChildren(view);
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month || '')) jumpToMonth(options.month);
   return Object.freeze({ element: view, periods, snapshots });
 }

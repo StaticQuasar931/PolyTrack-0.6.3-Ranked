@@ -1,4 +1,5 @@
 import {archivePeriodCounts,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=173';
+import {readSavedArchiveTrack} from './archive-track.mjs';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
@@ -302,6 +303,7 @@ export function installEvents(bridge){
   function captured(run){
     const at=now(),intent=sessions.current()||eventIntent;
     latestFinish=null;
+    if(archiveIntent)return;
     const periods=[...(catalog.periods||[]),...(intent&&knownPeriods.has(intent.periodId)?[knownPeriods.get(intent.periodId)]:[])];
     const matches=matchingEventRuns(run,periods,bridge.accountId(),at);
     for(const eventRun of matches){
@@ -349,7 +351,7 @@ export function installEvents(bridge){
     if(dialog)return;
     returnFocus=document.activeElement;dialog=document.createElement('div');dialog.className='sq-events-overlay';dialog.innerHTML='<section class="sq-events-dialog" role="dialog" aria-modal="true" aria-labelledby="sqEventsTitle"><header><h2 id="sqEventsTitle">Events</h2><button type="button" class="button" data-event-close>Close</button></header><nav><button type="button" class="button" data-event-home>Live events</button><button type="button" class="button" data-event-totals>Event RP</button><button type="button" class="button" data-event-archives>Past events</button></nav><p class="sq-event-status" role="status" aria-live="polite"></p><main></main></section>';document.body.append(dialog);
     dialog.addEventListener('click',e=>{if(e.target===dialog||e.target.closest('[data-event-close]'))return close();if(e.target.closest('[data-event-home]'))void open();if(e.target.closest('[data-event-totals]'))void totals();if(e.target.closest('[data-event-archives]'))void archives();if(e.target.closest('[data-event-month-go]'))void archives(dialog.querySelector('[data-event-month]').value);if(e.target.closest('[data-event-permanent]'))return void openPermanent();const card=e.target.closest('[data-event-id]');if(card){const period=knownPeriods.get(card.dataset.eventId)||[...(catalog.periods||[]),...(catalog.archives||[])].find(p=>p.id===card.dataset.eventId);if(period){if(period.scheduleOnly)void openPeriod(period);else if(period.startsAt<=now()&&period.endsAt>now())void race(period,{direct:true});else void openPeriod(period);}}if(e.target.closest('[data-event-race]')&&selected)void race(selected);if(e.target.closest('[data-event-refresh]')&&selected&&now()<selected.endsAt)void openPeriod(selected,true);if(e.target.closest('[data-event-practice]')&&selected)void practice(selected);});
-    dialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();}if(e.key==='Tab'){const buttons=[...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled])')].filter(e=>e.getClientRects().length);const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+    dialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();}if(e.key==='Tab'){const buttons=[...dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])')].filter(e=>e.getClientRects().length);const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
     dialog.querySelector('[data-event-close]').focus();
   }
   const body=html=>{if(!dialog)return;const main=dialog.querySelector('main');const restore=main.contains(document.activeElement);main.innerHTML=html;if(restore)dialog.querySelector('[data-event-close]').focus({preventScroll:true});};
@@ -425,18 +427,17 @@ export function installEvents(bridge){
     }catch{if(token===requestId)body('<p>Event standings are unavailable. Please try again later.</p>');}
   }
   async function practice(period){
-    if(period.kind==='kodub'||period.kind==='custom')return importArchived(period);
+    if(period.kind==='custom'||period.historyOnly)return importArchived(period);
     const saved=cache.get(period.id)||read(STORE+'-'+period.id,null);
     if(!saved||!Array.isArray(saved.entries)){message('Archived standings are not loaded. Reopen the archive card and try again.');return;}
     openArchivedTrack(period,saved);
   }
   async function importArchived(period){
-    if(typeof bridge.readArchivedTrack!=='function'){message('Saved archived track import is unavailable.');return;}
     const token=++requestId,owner=dialog;
     const current=()=>!!owner&&token===requestId&&dialog===owner;
     message('Loading archived track for custom-track practice...');
     try{
-      const code=await bridge.readArchivedTrack(period);if(!current())return;
+      const code=await (typeof bridge.readArchivedTrack==='function'?bridge.readArchivedTrack(period):readSavedArchiveTrack(period,{decode:value=>bridge.require()?.(9117)?.A?.fromExportString(value),isCurrent:current}));if(!current())return;
       const result=bridge.importTrackCode(code,current);
       const handedOff=result&&typeof result.then==='function'?await result:result;
       if(!current())return;
@@ -448,16 +449,14 @@ export function installEvents(bridge){
   async function archives(month=''){
     shell();selectView('archives');selected=null;const token=++requestId;body('<p>Loading past events...</p>');
     try{
-      let periods;
-      if(month){if(!/^\d{4}-\d{2}$/.test(month))throw Error('Choose a month');const key=STORE+'-archive-'+month;try{const data=await bridge.readArchiveMonth(month);if(!Array.isArray(data?.periods))throw Error('Saved archive month unavailable');periods=data.periods;cacheWrite(key,periods);}catch(error){periods=read(key,null);if(!periods)throw error;}periods=periods.map(period=>({...period,archived:true}));}
-      else{const savedCatalog=await bridge.readStaticArchiveCatalog?.(),source=savedCatalog&&Array.isArray(savedCatalog.archives)?savedCatalog:catalog,finalIds=new Set((source.archives||[]).map(period=>period.id));periods=catalogArchivePeriods(source,now()).map(period=>finalIds.has(period.id)?{...period,archived:true}:period);}
+      const savedCatalog=await bridge.readStaticArchiveCatalog?.(),source=savedCatalog&&Array.isArray(savedCatalog.archives)?savedCatalog:catalog;
+      const periods=catalogArchivePeriods(source,now()).map(period=>({...period,archived:true}));
       if(!dialog||token!==requestId)return;
-      const value=month||new Date().toISOString().slice(0,7);
       await bridge.prepareArchive?.();if(!dialog||token!==requestId)return;
       body('');
-      mountArchiveView(dialog.querySelector('main'),{periods,month:value,formatTime:time,accountId:bridge.accountId(),snapshots:cache,
-        resolveName:periodName,loadSnapshot:period=>snapshot(period,false),onMonthChange:month=>void archives(month),
-        onOpenPeriod:(period,snapshot)=>void openArchivedTrack(period,snapshot),renderThumbnail:period=>{const node=document.createElement('span');node.innerHTML=bridge.thumbnail(period.trackId);return node;}});
+      mountArchiveView(dialog.querySelector('main'),{periods,month,formatTime:time,accountId:bridge.accountId(),snapshots:cache,
+        resolveName:periodName,loadSnapshot:period=>snapshot(period,false),
+        onOpenPeriod:(period,snapshot)=>void openArchivedTrack(period,snapshot),onImportPeriod:period=>void importArchived(period),renderThumbnail:period=>{const node=document.createElement('span');node.innerHTML=bridge.thumbnail(period.trackId);return node;}});
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null,archiveIntent=null,featuredSelection=null;
@@ -466,8 +465,13 @@ export function installEvents(bridge){
     return context?.trackId===trackId&&context.accountId===accountId&&bridge.accountId()===accountId;
   }
   async function openArchivedTrack(period,saved){
-    if(period?.kind==='kodub'||period?.kind==='custom')return importArchived(period);
-    const snapshot=saved||cache.get(period?.id)||read(STORE+'-'+period?.id,null);
+    if(period?.kind==='custom'||period?.historyOnly)return importArchived(period);
+    let snapshot=saved||cache.get(period?.id)||read(STORE+'-'+period?.id,null);
+    if(!snapshot){
+      const owner=dialog,token=requestId;
+      try{snapshot=await loadArchivedBoard(period);}catch{if(dialog===owner&&requestId===token)message('Final standings are unavailable. Use Import saved track for practice.');return false;}
+      if(dialog!==owner||requestId!==token)return false;
+    }
     if(!period?.id||!period.trackId||!snapshot||!Array.isArray(snapshot.entries)||snapshot.period?.id&&snapshot.period.id!==period.id||snapshot.period?.trackId&&snapshot.period.trackId!==period.trackId){message('Archived standings are not loaded or do not match this track. Reopen the archive card and try again.');return false;}
     entryRequest++;sessions.leave();eventIntent=null;archiveIntent={archive:true,period,periodId:period.id,trackId:period.trackId,accountId:bridge.accountId(),snapshot};knownPeriods.set(period.id,period);close();message('Opening archived track for normal practice.');
     const intent=archiveIntent;
@@ -475,6 +479,7 @@ export function installEvents(bridge){
     if(archiveIntent!==intent||bridge.accountId()!==intent.accountId)return false;
     tick();return true;
   }
+  async function loadArchivedBoard(period){return snapshot(period,false);}
   let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),preparedOwnGhosts=new Map(),replayFailures=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
   let replayRowsLoaded=false,replayRowsRaw=null,replayRowsCache=[];
   const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
@@ -710,7 +715,13 @@ export function installEvents(bridge){
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
     const ghosts=session.archive?[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost):(()=>{const {ownGhost,opponents}=raceGhosts(session);return [...(ownGhost?[ownGhost]:[]),...opponents];})();
     if(!ghosts.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
-    try{bridge.watchEvent?.(session,ghosts);}catch(error){message(error.message||'Event replay could not open.');}
+    try{
+      if(session.archive){
+        const watch=document.querySelector('.track-info-ui')?.__pt062EventWatch;
+        if(!replayContextActive(session)||watch?.version!==1||watch.trackId!==session.trackId)throw Error('Archived replay context changed. Reopen this track.');
+        watch.open(ghosts);
+      }else bridge.watchEvent?.(session,ghosts);
+    }catch(error){message(error.message||'Event replay could not open.');}
   }
   async function playEvent(){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;

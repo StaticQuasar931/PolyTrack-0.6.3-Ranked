@@ -4,6 +4,15 @@ const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, revie
 
 const SUBMIT_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSel-vg-VwzQuA2dRTEPoKiLIUgDvJ4bCvjMI8u4hqB33gkvrQ/viewform';
 const PAGE_SIZE = 12;
+const SORT_ALIASES = {
+  'size-largest': ['size', 'desc'], 'size-smallest': ['size', 'asc'],
+  'date-newest': ['date', 'desc'], 'date-oldest': ['date', 'asc'],
+  'edited-first': ['my-reviews', 'desc'], 'unedited-first': ['my-reviews', 'asc'],
+  'review-quality-high': ['review-quality', 'desc'], 'review-quality-low': ['review-quality', 'asc'],
+  'review-difficulty-high': ['review-difficulty', 'desc'], 'review-difficulty-low': ['review-difficulty', 'asc'],
+  'review-votes-high': ['review-votes', 'desc'], 'review-votes-low': ['review-votes', 'asc']
+};
+const defaultDirection = metric => ['name', 'author'].includes(metric) ? 'asc' : 'desc';
 const REVIEW_SORT_DESCRIPTIONS = {
   'review-quality-high': 'Published ratings, highest first (10 to 1)',
   'review-quality-low': 'Published ratings, lowest first (1 to 10)',
@@ -98,7 +107,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let cardMenuNumber = 0;
   let cardMenuPositionFrame = null;
   let filtersExpanded = false;
-  const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', review: 'all', sort: 'recommended', reviewedQuality: '', reviewedDifficulty: '', reviewedVote: '' };
+  const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', review: 'all', sort: 'recommended', direction: 'desc', reviewedQuality: '', reviewedDifficulty: '', reviewedVote: '' };
   const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const make = (tag, className, content) => {
     const node = document.createElement(tag);
@@ -210,7 +219,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const progressLabels = {all: 'All tracks', activity: 'Has my activity', untouched: 'No activity yet', completed: 'Completed', uncompleted: 'Not completed', loaded: 'Imported, not completed'};
   const completionField = selectField('Progress', Object.entries(progressLabels));
   const reviewField = selectField('Review status', [['all', 'All tracks'], ['edited', 'Reviewed by me'], ['not-edited', 'Not reviewed by me'], ['published', 'Has published ratings'], ['no-published', 'No published ratings']]);
-  const baseSortChoices = [['recommended', 'Recommended'], ['name', 'Name A-Z'], ['author', 'Author A-Z']];
+  const baseSortChoices = [['recommended', 'Recommended'], ['name', 'Name'], ['author', 'Author']];
   const sortField = selectField('Sort', baseSortChoices);
   sortField.count.remove();
   let sortCapabilityKey = '';
@@ -224,17 +233,23 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   searchLabel.className += ' sq-extra-search-field';
   reviewField.label.className += ' sq-extra-review-field';
   const sortControls = make('div', 'sq-extra-sort-controls');
-  sortControls.append(sortField.label);
+  const sortDirection = button('', 'sq-extra-sort-direction', () => {
+    if (state.sort === 'recommended') return;
+    state.direction = state.direction === 'asc' ? 'desc' : 'asc';
+    page = 1;
+    render();
+  });
+  sortControls.append(sortField.label, sortDirection);
   const quickFilters = make('div', 'sq-extra-quick-filters');
   quickFilters.append(favoritesLabel, curatedLabel, button('Reset filters', 'sq-extra-clear', clearFilters));
-  advancedControls.append(sourceField.label, tagField.label, difficultyField.label, completionField.label, reviewField.label, quickFilters);
+  advancedControls.append(sourceField.label, tagField.label, difficultyField.label, completionField.label, reviewField.label);
   const reviewedControls = make('div', 'sq-extra-reviewed-controls');
   const reviewedCaption = make('span', 'sq-extra-reviewed-caption', 'Published ratings');
   const qualityField = selectField('Rating', [['', 'Any score'], ...Array.from({length: 10}, (_, i) => [String(i + 1), `At least ${i + 1}/10`])]);
   const reviewedDifficultyField = selectField('Difficulty', [['', 'Any score'], ...DIFFICULTY_LABELS.slice(1).map((label, i) => [String(i + 1), `${i + 1}/10 - ${label}`])]);
   reviewedDifficultyField.select.setAttribute('aria-description', 'Published difficulty rounded to the nearest whole level.');
   const voteField = selectField('Votes', [['', 'Any votes'], ['positive', 'Net positive'], ['negative', 'Net negative'], ['voted', 'Has votes'], ['unvoted', 'No votes']]);
-  reviewedControls.append(reviewedCaption, qualityField.label, reviewedDifficultyField.label, voteField.label);
+  reviewedControls.append(reviewedCaption, quickFilters, qualityField.label, reviewedDifficultyField.label, voteField.label);
   advancedControls.append(reviewedControls);
   controls.append(searchLabel, sortControls, advancedToggle, advancedControls);
   dialog.append(controls);
@@ -370,16 +385,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
 
   function syncSortChoices(all) {
     const choices = [...baseSortChoices];
-    if (all.some(entry => Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0)) choices.push(['size-largest', 'Largest track'], ['size-smallest', 'Smallest track']);
-    if (all.some(entry => Number.isSafeInteger(entry.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry.sourcePlays) && entry.sourcePlays >= 0)) choices.push(['plays', 'Most plays']);
+    if (all.some(entry => Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0)) choices.push(['size', 'Track size']);
+    if (all.some(entry => Number.isSafeInteger(entry.sourceCopies) && entry.sourceCopies >= 0 || Number.isSafeInteger(entry.sourcePlays) && entry.sourcePlays >= 0)) choices.push(['plays', 'Plays']);
     if (all.some(entry => forumActivity(entry) !== null)) choices.push(['forum', 'Forum activity']);
-    if (typeof getLocalRating === 'function') choices.push(['my-rating', 'My rating: 10 to 1']);
-    choices.push(['edited-first', 'My reviews first'], ['unedited-first', 'Not reviewed by me first']);
+    if (typeof getLocalRating === 'function') choices.push(['my-rating', 'My rating']);
+    choices.push(['my-reviews', 'My reviews']);
     if (all.some(entry => reviewedSummary(entry).count)) choices.push(
-      ['review-quality-high', 'Rating: 10 to 1'], ['review-quality-low', 'Rating: 1 to 10'],
-      ['review-difficulty-high', 'Difficulty: 10 to 1'], ['review-difficulty-low', 'Difficulty: 1 to 10'],
-      ['review-votes-high', 'Votes: highest first'], ['review-votes-low', 'Votes: lowest first']);
-    if (all.some(entry => Number.isFinite(Date.parse(entry.submittedAt || entry.codeModifiedAt)))) choices.push(['date-newest', 'Newest Track'], ['date-oldest', 'Oldest Track']);
+      ['review-quality', 'Rating'], ['review-difficulty', 'Difficulty'], ['review-votes', 'Votes']);
+    if (all.some(entry => Number.isFinite(Date.parse(entry.submittedAt || entry.codeModifiedAt)))) choices.push(['date', 'Track date']);
 
     const capabilityKey = choices.map(([value]) => value).join('|');
     if (capabilityKey === sortCapabilityKey) return;
@@ -389,13 +402,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     for (const [value, label] of choices) {
       const option = make('option', '', label);
       option.value = value;
-      if (REVIEW_SORT_DESCRIPTIONS[value]) {
-        option.title = REVIEW_SORT_DESCRIPTIONS[value];
-        option.setAttribute('aria-label', REVIEW_SORT_DESCRIPTIONS[value]);
-      }
       sortField.select.append(option);
     }
     sortField.select.value = selected;
+    if (state.sort !== selected) state.direction = defaultDirection(selected);
     state.sort = selected;
     sortCapabilityKey = capabilityKey;
   }
@@ -886,9 +896,18 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (destroyed) return;
     const all = currentEntries();
     syncSortChoices(all);
-    sortField.select.title = REVIEW_SORT_DESCRIPTIONS[state.sort] || '';
-    if (sortField.select.title) sortField.select.setAttribute('aria-description', sortField.select.title);
+    const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
+    const description = REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
+    sortField.select.title = description;
+    if (description) sortField.select.setAttribute('aria-description', description);
     else sortField.select.removeAttribute('aria-description');
+    sortDirection.disabled = state.sort === 'recommended';
+    sortDirection.textContent = state.direction === 'asc' ? '\u2191' : '\u2193';
+    const directionLabel = state.direction === 'asc' ? 'ascending' : 'descending';
+    const nextDirection = state.direction === 'asc' ? 'descending' : 'ascending';
+    const metricLabel = Array.from(sortField.select.children).find(option => option.value === state.sort)?.textContent || 'Sort';
+    sortDirection.setAttribute('aria-label', sortDirection.disabled ? 'Recommended order (fixed)' : metricLabel + ': ' + directionLabel + '. Switch to ' + nextDirection);
+    sortDirection.title = sortDirection.getAttribute('aria-label');
     const sourceCounts = new Map(), difficultyCounts = new Map();
     for (const entry of all) if (text(entry.source)) sourceCounts.set(entry.source, (sourceCounts.get(entry.source) || 0) + 1);
     for (const entry of all) { const level = difficulty(entry); if (level !== null) difficultyCounts.set(String(level), (difficultyCounts.get(String(level)) || 0) + 1); }
@@ -954,40 +973,36 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       };
     });
     const compare = (a, b) => nameCollator.compare(text(a), text(b));
-    if (!sortedRecordsCache || sortedRecordsCache.records !== cachedRecords || sortedRecordsCache.sort !== state.sort) {
+    if (!sortedRecordsCache || sortedRecordsCache.records !== cachedRecords || sortedRecordsCache.sort !== state.sort || sortedRecordsCache.direction !== state.direction) {
       const ordered = [...cachedRecords];
-      ordered.sort((a, b) => {
+      const numeric = (av, bv, a, b) => {
+        // Unknown metrics stay last in both directions; equal values keep name order.
+        if (av === null || bv === null) return av === bv ? compare(a.entry.name, b.entry.name) : av === null ? 1 : -1;
+        return (state.direction === 'asc' ? av - bv : bv - av) || compare(a.entry.name, b.entry.name);
+      };
+      const metric = record => {
+        const entry = record.entry;
         if (state.sort.startsWith('review-')) {
-          const kind = state.sort.split('-')[1], ascending = state.sort.endsWith('-low');
-          const metric = record => {
-            const review = reviewedSummary(record.entry);
-            return kind === 'quality' ? review.quality : kind === 'difficulty' ? review.difficulty : review.votes ? review.up - review.down : null;
-          };
-          const av = metric(a), bv = metric(b);
-          if (av === null || bv === null) return av === bv ? compare(a.entry.name, b.entry.name) : av === null ? 1 : -1;
-          return (ascending ? av - bv : bv - av) || compare(a.entry.name, b.entry.name);
+          const review = reviewedSummary(entry);
+          return state.sort === 'review-quality' ? review.quality : state.sort === 'review-difficulty' ? review.difficulty : review.votes ? review.up - review.down : null;
         }
-        if (state.sort === 'plays') return (Number.isSafeInteger(b.entry.sourceCopies) ? b.entry.sourceCopies : Number.isSafeInteger(b.entry.sourcePlays) ? b.entry.sourcePlays : -1) -
-          (Number.isSafeInteger(a.entry.sourceCopies) ? a.entry.sourceCopies : Number.isSafeInteger(a.entry.sourcePlays) ? a.entry.sourcePlays : -1) || compare(a.entry.name, b.entry.name);
-        if (state.sort === 'forum') return (forumActivity(b.entry) ?? -1) - (forumActivity(a.entry) ?? -1) || compare(a.entry.name, b.entry.name);
-        if (state.sort === 'my-rating') return (b.rating ?? -1) - (a.rating ?? -1) || compare(a.entry.name, b.entry.name);
-        if (state.sort === 'edited-first' || state.sort === 'unedited-first') return (state.sort === 'edited-first' ? Number(b.edited) - Number(a.edited) : Number(a.edited) - Number(b.edited)) || compare(a.entry.name, b.entry.name);
-        if (state.sort === 'size-largest' || state.sort === 'size-smallest') {
-          const aSize = Number.isSafeInteger(a.entry.sizeBytes) && a.entry.sizeBytes >= 0 ? a.entry.sizeBytes : null;
-          const bSize = Number.isSafeInteger(b.entry.sizeBytes) && b.entry.sizeBytes >= 0 ? b.entry.sizeBytes : null;
-          if (aSize === null || bSize === null) return aSize === bSize ? compare(a.entry.name, b.entry.name) : aSize === null ? 1 : -1;
-          return (state.sort === 'size-largest' ? bSize - aSize : aSize - bSize) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'my-rating') return record.rating;
+        if (state.sort === 'my-reviews') return Number(record.edited);
+        if (state.sort === 'forum') return forumActivity(entry);
+        if (state.sort === 'date') {
+          const date = Date.parse(entry.submittedAt || entry.codeModifiedAt);
+          return Number.isFinite(date) ? date : null;
         }
-        if (state.sort === 'date-newest' || state.sort === 'date-oldest') {
-          const aDate = Date.parse(a.entry.submittedAt || a.entry.codeModifiedAt), bDate = Date.parse(b.entry.submittedAt || b.entry.codeModifiedAt);
-          if (!Number.isFinite(aDate) || !Number.isFinite(bDate)) return Number.isFinite(aDate) ? -1 : Number.isFinite(bDate) ? 1 : compare(a.entry.name, b.entry.name);
-          return (state.sort === 'date-newest' ? bDate - aDate : aDate - bDate) || compare(a.entry.name, b.entry.name);
-        }
-        if (state.sort === 'author') return compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'size') return Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 ? entry.sizeBytes : null;
+        return Number.isSafeInteger(entry.sourceCopies) && entry.sourceCopies >= 0 ? entry.sourceCopies : Number.isSafeInteger(entry.sourcePlays) && entry.sourcePlays >= 0 ? entry.sourcePlays : null;
+      };
+      ordered.sort((a, b) => {
         if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || ((a.entry.featuredSubmission === true && b.entry.featuredSubmission === true) ? (Number(a.entry.submissionOrder) || 0) - (Number(b.entry.submissionOrder) || 0) : 0) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
-        return compare(a.entry.name, b.entry.name);
+        if (state.sort === 'name') return (state.direction === 'asc' ? 1 : -1) * compare(a.entry.name, b.entry.name);
+        if (state.sort === 'author') return (state.direction === 'asc' ? 1 : -1) * compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
+        return numeric(metric(a), metric(b), a, b);
       });
-      sortedRecordsCache = { records: cachedRecords, sort: state.sort, ordered };
+      sortedRecordsCache = { records: cachedRecords, sort: state.sort, direction: state.direction, ordered };
     }
     const progressCounts = new Map([['all', cachedRecords.length], ['completed', 0], ['uncompleted', 0], ['loaded', 0], ['activity', 0], ['untouched', 0]]);
     for (const record of cachedRecords) {
@@ -1122,7 +1137,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   }
 
   function clearFilters() {
-    Object.assign(state, { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', review: 'all', sort: 'recommended', reviewedQuality: '', reviewedDifficulty: '', reviewedVote: '' });
+    Object.assign(state, { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', review: 'all', sort: 'recommended', direction: 'desc', reviewedQuality: '', reviewedDifficulty: '', reviewedVote: '' });
     qualityField.select.value = ''; reviewedDifficultyField.select.value = ''; voteField.select.value = '';
     search.value = ''; sourceField.select.value = ''; difficultyField.select.value = '';
     completionField.select.value = 'all'; reviewField.select.value = 'all'; sortField.select.value = 'recommended'; curated.checked = false; favorites.checked = false;
@@ -1362,7 +1377,15 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   difficultyField.select.addEventListener('change', () => { state.difficulty = difficultyField.select.value; page = 1; render(); });
   completionField.select.addEventListener('change', () => { state.completion = completionField.select.value; page = 1; render(); });
   reviewField.select.addEventListener('change', () => { state.review = reviewField.select.value; page = 1; render(); });
-  sortField.select.addEventListener('change', () => { state.sort = sortField.select.value; page = 1; render(); });
+  sortField.select.addEventListener('change', () => {
+    // Normalize legacy directional keys without exposing duplicate metric options.
+    const [metric, direction] = SORT_ALIASES[sortField.select.value] || [sortField.select.value, defaultDirection(sortField.select.value)];
+    state.sort = metric;
+    state.direction = direction;
+    sortField.select.value = metric;
+    page = 1;
+    render();
+  });
   for (const [field, key] of [[qualityField, 'reviewedQuality'], [reviewedDifficultyField, 'reviewedDifficulty'], [voteField, 'reviewedVote']]) {
     field.select.addEventListener('change', () => { state[key] = field.select.value; page = 1; render(); });
   }

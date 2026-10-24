@@ -427,6 +427,13 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-archive-view{display:flex;flex-direction:column;gap:16px;min-width:0}
 .sq-archive-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .sq-archive-toolbar h3,.sq-archive-toolbar p{margin:0}
+.sq-archive-search,.sq-archive-order{display:flex;flex-direction:column;gap:6px;min-width:0;color:#d5e6ff;font:inherit}
+.sq-archive-search{flex:1 1 240px}.sq-archive-order{flex:0 1 200px}
+.sq-archive-search input,.sq-archive-order select{box-sizing:border-box;width:100%;min-width:0;min-height:44px;border:1px solid #83cfe9;border-radius:3px;padding:8px 12px;background:#142451;color:#fff;font:inherit;color-scheme:dark}
+.sq-archive-search input::placeholder{color:#b9c8e4;opacity:1}
+.sq-archive-search input:focus-visible,.sq-archive-order select:focus-visible,.sq-event-archive-filter input:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.sq-archive-location{flex-basis:100%;color:#b9c8e4;overflow-wrap:anywhere}
+.sq-archive-track-details{overflow-wrap:anywhere;color:#b9c8e4;line-height:1.5}
 .sq-archive-kind-filters{display:flex;align-items:center;gap:8px 14px;margin:0;padding:8px 12px;border:1px solid #344b7c;min-width:0}.sq-archive-kind-filters legend{padding:0 5px;color:#b9c8e4;font-size:calc(13px * var(--sq-ui-scale,1))}.sq-archive-kind-filters label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:calc(15px * var(--sq-ui-scale,1))}.sq-archive-kind-filters input{accent-color:#79caff;width:18px;height:18px}
 .sq-archive-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0}
 .sq-archive-stat{min-width:0;padding:12px;background:#17264e;border-top:2px solid #6485b5}
@@ -440,8 +447,6 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-archive-event[data-event-kind="custom"]{--archive-kind:#f19b91}
 .sq-archive-event[open]{box-shadow:0 8px 24px #050d284d}
 .sq-archive-event-summary{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px;cursor:pointer;list-style:none}
-.sq-archive-event-empty{opacity:.58;filter:saturate(.55)}
-.sq-archive-event-empty .sq-archive-event-summary{cursor:not-allowed}
 .sq-archive-event-summary::-webkit-details-marker{display:none}
 .sq-archive-event-summary:focus-visible{outline:3px solid #fff;outline-offset:-3px}
 .sq-archive-thumb{display:flex;align-items:center;justify-content:center;width:72px;height:72px;overflow:hidden;background:#101d40;flex:none}

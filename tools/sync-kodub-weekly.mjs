@@ -3,6 +3,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {KODUB_ROOT,validateWeekly,assetPath,boundedBytes,validateAsset} from '../events/kodub-schema.mjs';
 import {mergeKodubHistory} from '../events/kodub-history.mjs';
+import {mergeWeeklySelections} from './archive-weekly-selections.mjs';
 
 const directory = new URL('../events/kodub/',import.meta.url);
 const headers = {Origin:'https://app-polytrack.kodub.com',Referer:'https://app-polytrack.kodub.com/'};
@@ -53,6 +54,9 @@ await mkdir(new URL('assets/',directory),{recursive:true});
 for (const [name,bytes] of assets) await writeFile(new URL(name,directory),bytes);
 const history=mergeKodubHistory(await readJson('history.json'),(await readJson('current.json'))?.current,current);
 const trustedHistory=await mergeTrustedTrackHistory(await readJson('trusted-tracks.json'),[previous,current],asset=>readFile(new URL(asset,directory)));
+const selections=mergeWeeklySelections(await readJson('selections.json'),previous,current);
+await writeFile(new URL('selections.json.tmp',directory),JSON.stringify(selections,null,2)+'\n');
+await rename(new URL('selections.json.tmp',directory),new URL('selections.json',directory));
 await writeFile(new URL('trusted-tracks.json.tmp',directory),JSON.stringify(trustedHistory,null,2)+'\n');
 await rename(new URL('trusted-tracks.json.tmp',directory),new URL('trusted-tracks.json',directory));
 await writeFile(new URL('history.json.tmp',directory),JSON.stringify(history,null,2)+'\n');

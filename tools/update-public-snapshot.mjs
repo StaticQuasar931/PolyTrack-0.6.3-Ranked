@@ -7,6 +7,7 @@ import { decodeSnapshot, publishSnapshot, MAX_DECODED_BYTES } from './snapshot-p
 import { runPublicSnapshotBackup } from './public-snapshot-backup.mjs';
 import { PublicBackupDeferredError } from './public-backup-fetch.mjs';
 import { exportPublicProfilesAndReplays } from './public-profile-replay-export.mjs';
+import { createSnapshotExportFetch } from './snapshot-export-auth.mjs';
 import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
 import { buildProfileSnapshotResults } from './build-profile-snapshot-results.mjs';
 
@@ -386,7 +387,7 @@ export async function reportCaptureOutcome(result, {env = process.env, log = con
 
 export async function updatePublicSnapshot({ root = moduleRoot, offline = false, fullPublic = false, refreshReplays = false,
   capture = runPublicSnapshotBackup, captureTotals = capture === runPublicSnapshotBackup ? capturePublicEventTotals : null,
-  captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, log = console.log } = {}) {
+  captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log } = {}) {
   const absoluteRoot = path.resolve(root);
   const stagingDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-staging');
   const historyDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-history');
@@ -429,14 +430,15 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       if (totalsResult?.deferred !== false) throw new Error('Invalid public event totals capture outcome');
     }
   }
-  if (fullPublic || refreshReplays) {
+  // Offline packaging never issues credentials or live reads, even with refresh flags.
+  if (!offline && (fullPublic || refreshReplays)) {
     const previousProgress = await readJsonIfPresent(path.join(stagingDirectory, 'export-progress.json'));
     const previousSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
     const startFullSnapshot = fullPublic && previousProgress?.fullSnapshotPending !== true;
     try {
       exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: fullPublic ? 2000 : 100,
         fullSnapshot: startFullSnapshot, includeProfiles: fullPublic, retryInvalidAfterMs:3600000,
-        fetchImpl: replayCaptureFetch(exportFetch), log });
+        fetchImpl: replayCaptureFetch(createSnapshotExportFetch({ ...exportAuth, fetchImpl: exportFetch })), log });
     } catch (error) {
       if (!(error instanceof PublicBackupDeferredError)) throw error;
       return defer('replays', error);

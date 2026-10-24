@@ -1907,11 +1907,18 @@ async function notifyProfile(request, env, context, uid, body) {
 async function saveGroupCode(env, accountId, groupCode) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const tagId = `account_${accountId}`;
-    const [tagPrior, directoryPrior, overall] = await Promise.all([
+    const [tagPrior, directoryPrior] = await Promise.all([
       readDocument(env, COLLECTIONS.groupTags, tagId),
-      readDocument(env, COLLECTIONS.groupTags, 'current'),
-      readOverallSnapshot(env)
+      readDocument(env, COLLECTIONS.groupTags, 'current')
     ]);
+    const directoryAccounts = directoryPrior?.data?.accounts;
+    // These records and any public row change commit atomically. Do not expand
+    // or republish Overall for an already committed value, including a clear.
+    if (tagPrior?.data?.accountId === accountId && tagPrior.data.groupCode === groupCode &&
+        directoryAccounts && typeof directoryAccounts === 'object' && !Array.isArray(directoryAccounts) &&
+        (groupCode ? Object.hasOwn(directoryAccounts, accountId) && directoryAccounts[accountId]?.groupCode === groupCode
+          : !Object.hasOwn(directoryAccounts, accountId))) return Number(tagPrior.data.updatedAt || 0);
+    const overall = await readOverallSnapshot(env);
     const updatedAt = Date.now();
     const accounts = {...(directoryPrior?.data?.accounts || {})};
     if (!directoryPrior && Array.isArray(overall?.data?.entries)) {
@@ -2208,15 +2215,22 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         if (publicSnapshotLoads.get(key) === load) publicSnapshotLoads.delete(key);
       };
       try {
-        if(collection===PUBLIC_PAGE_COLLECTION){const manifest=await readDocument(env,PUBLIC_MANIFEST_COLLECTION,id.replace(/_[0-9]+$/,'_0'));if(!manifest||Number(id.split('_').at(-1))>=manifest.data.pageCount){release();return json(origin,env,404,{error:'snapshot_not_ready'});}}
-        const snapshot = await readDocument(env, collection, id);
+        let pageReady = true;
+        if (collection === PUBLIC_PAGE_COLLECTION) {
+          const manifest = await readDocument(env, PUBLIC_MANIFEST_COLLECTION, id.replace(/_[0-9]+$/, '_0'));
+          pageReady = Number.isSafeInteger(manifest?.data?.pageCount) &&
+            Number(id.split('_').at(-1)) < manifest.data.pageCount;
+        }
+        const snapshot = pageReady ? await readDocument(env, collection, id) : null;
         if (!snapshot) {
           const response = json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10');
-          if (cache && context.waitUntil) {
+          if (cache) {
             const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
               .catch(() => {})
               .finally(release);
-            try { context.waitUntil(fill); } catch { void fill; }
+            if (context.waitUntil) {
+              try { context.waitUntil(fill); } catch { await fill; }
+            } else await fill;
           } else {
             release();
           }

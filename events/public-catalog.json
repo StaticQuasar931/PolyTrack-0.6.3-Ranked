@@ -146,7 +146,10 @@
       "racerCount": 1,
       "entrantLimit": 200,
       "label": "Event 2026-10-11",
-      "archived": true
+      "archived": true,
+      "environment": 0,
+      "lastModified": "2026-10-09T22:42:56.000Z",
+      "thumbnailUrl": "events/kodub/assets/c85a1753fc8131837197e2586fc11b4bae15f6bdbeb1f810dfba4a172c430105.webp"
     },
     {
       "id": "d_20261017",
@@ -284,7 +287,10 @@
       "racerCount": 5,
       "entrantLimit": 200,
       "label": "Event 2026-10-04",
-      "archived": true
+      "archived": true,
+      "environment": 0,
+      "lastModified": "2026-09-25T00:28:31.000Z",
+      "thumbnailUrl": "events/kodub/assets/c7361d9c29931334bd29ac7d786afe708df0c5e1114b0ab146c7b9b391e32ccf.webp"
     },
     {
       "id": "d_20261009",
@@ -407,7 +413,10 @@
       "racerCount": 20,
       "entrantLimit": 200,
       "label": "Event 2026-09-27",
-      "archived": true
+      "archived": true,
+      "environment": 0,
+      "lastModified": "2026-09-20T04:39:16.000Z",
+      "thumbnailUrl": "events/kodub/assets/404a308bd31338cdefdbd9072c78271d17e4d668ba32201518b2f493755559cc.webp"
     },
     {
       "id": "d_20261003",
@@ -545,7 +554,10 @@
       "racerCount": 8,
       "entrantLimit": 200,
       "label": "Event 2026-09-20",
-      "archived": true
+      "archived": true,
+      "environment": 0,
+      "lastModified": "2026-09-20T20:52:41.000Z",
+      "thumbnailUrl": "events/kodub/assets/1ee50cc80e3bdd13b4163f00f13a3dd1ce2688f9977ebc5e807ed1d63b7605ac.webp"
     },
     {
       "id": "d_20260926",
@@ -666,6 +678,21 @@
       "entrantLimit": 200,
       "label": "Weekly 2026-09-14",
       "archived": true
+    },
+    {
+      "id": "kodub_1789934400000",
+      "kind": "kodub",
+      "trackId": "5fc79f76ee33a37a0ee8815a5cce75b4686330649c74793630fbfc12c11a2bb3",
+      "trackName": "going back in time",
+      "author": "✄┈leonnnn2400┈",
+      "environment": 0,
+      "lastModified": "2026-09-07T18:16:28.000Z",
+      "startsAt": 1789329600000,
+      "endsAt": 1789934400000,
+      "archived": true,
+      "thumbnailUrl": "events/kodub/assets/119474d2731a55d260e45fbcb9fcebfb69e2cc585b8d79751537b2a20ca7f87a.webp",
+      "historyOnly": true,
+      "maxRp": 0
     },
     {
       "id": "d_20260919",

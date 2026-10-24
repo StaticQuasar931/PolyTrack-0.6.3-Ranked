@@ -37,10 +37,10 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=178',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=179',document.currentScript?.src||location.href).href;
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='178';
+  const extraCatalogRevision='179';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -81,7 +81,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=178',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=179',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -108,7 +108,7 @@
     if(localWeeklyCatalogRequest||Date.now()<localWeeklyCatalogUntil)return localWeeklyCatalogRequest;
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=178',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=179',eventsModuleUrl).href);
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       const current=feed.current,end=Date.parse(current?.endTime||'');
       localWeeklyCatalogUntil=current&&end>Date.now()?end:Date.now()+60000;
@@ -240,7 +240,7 @@
         if(!response.ok){const error=Error('Event service unavailable');error.serviceResponse=true;throw error;}
         let payload=await response.json();
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=178');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=179');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
         }
@@ -1195,17 +1195,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return result;
   }
   async function loadStreakLeader(){
-    const cached = readJsonStorage(STREAK_LEADER_CACHE_KEY,null);
-    if(snapshotOnlyForNewAccount())return cached?.value?{...cached.value,source:'cache'}:null;
-    if (cached && Date.now()-Number(cached.fetchedAt||0) < 30*60*1000) return cached.value ? {...cached.value,fetchedAt:cached.fetchedAt,source:'cache'} : null;
-    try {
-      const d = await db();
-      const snap = await d.collection(COLLECTIONS.dailyStreaks).orderBy('bestStreak','desc').limit(1).get();
-      const row = snap.docs?.[0]?.data?.() || null;
-      const value = row ? {name:safeDisplayName(row.name||'Racer',row.accountId),bestStreak:Number(row.bestStreak||0)||0} : null;
-      writeJsonStorage(STREAK_LEADER_CACHE_KEY,{value,fetchedAt:Date.now()});
-      return value ? {...value,fetchedAt:Date.now(),source:'cloud'} : null;
-    } catch { return cached?.value ? {...cached.value,fetchedAt:cached.fetchedAt,source:'stale'} : null; }
+    const cached=readJsonStorage(STREAK_LEADER_CACHE_KEY,null);
+    return cached?.value?{...cached.value,fetchedAt:cached.fetchedAt,source:'cache'}:null;
   }
   function weeklyCup(){
     const tracks=Array.from(TRACK_CATALOG.values());
@@ -1413,46 +1404,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
      Ranked Worker never stops another device from seeing them. Changes use a timestamp cursor; legacy designs are seeded gradually.
      Each sync reads at most 10 legacy and 20 changed profiles. */
   async function syncCosmeticDirectory(force=false){
-    const directory=readCosmeticDirectory();
-    if(snapshotOnlyForNewAccount())return directory;
-    if(!force&&Date.now()-Number(directory.checkedAt||0)<COSMETIC_DIRECTORY_SYNC_MS)return directory;
-    if(cosmeticDirectorySyncPromise)return cosmeticDirectorySyncPromise;
-    cosmeticDirectorySyncPromise=(async()=>{
-      try{
-        const fire=await db();
-        const Timestamp=window.firebase.firestore.Timestamp;
-        const stamp=new Timestamp(Number(directory.cursor?.seconds||0),Number(directory.cursor?.nanoseconds||0));
-        let query=fire.collection(COLLECTIONS.profilesPublic).where('cosmeticsSyncedAt','>=',stamp).orderBy('cosmeticsSyncedAt','asc').orderBy(window.firebase.firestore.FieldPath.documentId(),'asc');
-        if(directory.cursorId)query=query.startAfter(stamp,directory.cursorId);
-        const entries={...directory.entries};
-        let seeded=Boolean(directory.seeded),seedId=String(directory.seedId||'');
-        // One bounded, document-ordered seed keeps old designs visible without trusting old clocks.
-        if(!seeded){
-          let seedQuery=fire.collection(COLLECTIONS.profilesPublic).orderBy(window.firebase.firestore.FieldPath.documentId(),'asc');
-          if(seedId)seedQuery=seedQuery.startAfter(seedId);
-          const seed=await seedQuery.limit(10).get({source:'server'});
-          seed.forEach(doc=>{const data=doc.data()||{};seedId=doc.id;if(data.profileCosmetics)entries[cleanUserId(data.accountId||doc.id)]={...entries[cleanUserId(data.accountId||doc.id)],at:Number(data.cosmeticsSyncedAt?.toMillis?.()||0),value:sanitizeProfileCosmetics(data.profileCosmetics)};});
-          seeded=seed.size<10;
-        }
-        const snapshot=await query.limit(20).get({source:'server'});
-        let cursor=directory.cursor||null,cursorId=String(directory.cursorId||''),changed=0;
-        snapshot.forEach(doc=>{
-          const data=doc.data()||{},id=cleanUserId(data.accountId||doc.id),at=data.cosmeticsSyncedAt;
-          if(!id||!at||typeof at.toMillis!=='function')return;
-          cursor={seconds:at.seconds,nanoseconds:at.nanoseconds};cursorId=doc.id;
-          entries[id]={...entries[id],at:at.toMillis(),value:sanitizeProfileCosmetics(data.profileCosmetics)};changed++;
-        });
-        writeCosmeticDirectory({cursor,cursorId,seeded,seedId,checkedAt:Date.now(),entries});
-        if(changed){log('info','[COSMETIC200] Public designs synced from Firestore',{changed});renderEntries();}
-        return cosmeticDirectoryCache;
-      }catch(error){
-        log('warn','[COSMETIC404] Public design sync deferred',String(error&&(error.message||error)));
-        const kept={...readCosmeticDirectory(),checkedAt:Date.now()};
-        writeCosmeticDirectory(kept);
-        return kept;
-      }finally{cosmeticDirectorySyncPromise=null;}
-    })();
-    return cosmeticDirectorySyncPromise;
+    // Snapshot metadata supplies public designs; no paid Firestore change-feed scan.
+    return readCosmeticDirectory();
   }
   function sanitizeProfileCosmetics(value){
     const source=value&&typeof value==='object'?value:{};
@@ -1684,8 +1637,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=178');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=178');
+    const module=await import('./tools/developer-diagnostics.mjs?v=179');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=179');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1720,13 +1673,13 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   function initializePracticeHistory(){
     if(practiceInitPromise)return practiceInitPromise;
     practiceInitPromise=(async()=>{
-      const module=await import('./tools/practice-history.mjs?v=178');
+      const module=await import('./tools/practice-history.mjs?v=179');
       let storage;try{storage=window.localStorage;}catch{}
       practiceHistory=module.createPracticeHistory({storage});practiceAdviceFor=module.practiceAdvice;
-      const insightsModule=await import('./tools/local-insights.mjs?v=178');
-      localInsights=insightsModule.createLocalInsights({storage,revision:178});
-      void import('./tools/control-usage.mjs?v=178').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
-      const profileModule=await import('./tools/practice-profile.mjs?v=178');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const insightsModule=await import('./tools/local-insights.mjs?v=179');
+      localInsights=insightsModule.createLocalInsights({storage,revision:179});
+      void import('./tools/control-usage.mjs?v=179').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+      const profileModule=await import('./tools/practice-profile.mjs?v=179');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
       window.addEventListener('error',()=>localInsights.action('runtime-error'));
       window.addEventListener('unhandledrejection',()=>localInsights.action('unhandled-rejection'));
@@ -1734,7 +1687,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')localInsights.flush(true);});
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
-      const native=await import('./tools/practice-native.mjs?v=178');
+      const native=await import('./tools/practice-native.mjs?v=179');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2170,42 +2123,27 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const saved=await readPublicSnapshotBackup('recording',String(id));
       if(saved){const recording=cachedNativeRecording(saved);if(recording){resolved[index]=recording;rememberNativeRecording(id,recording);}}
     }));
-    const missingIds=ids.filter((id,index)=>!resolved[index]&&Date.now()>=Number(nativeRecordingRetryAt.get(id)||0));
-    if(!missingIds.length)return resolved;
-    try {
-      const d=await db();
-      const chunks=[];
-      for(let index=0;index<missingIds.length;index+=30)chunks.push(missingIds.slice(index,index+30));
-      const snapshots=await Promise.all(chunks.map(chunk=>d.collection(COLLECTIONS.raceResults).where('uploadId','in',chunk).get()));
-      const cloudRows=new Map();
-      for(const snapshot of snapshots){
-        for(const doc of snapshot.docs||[]){
-          const row=doc.data()||{};
-          const id=safeRecordingId(row.uploadId||row.id);
-          if(id&&!cloudRows.has(id))cloudRows.set(id,row);
-        }
-      }
-      return ids.map((id,index)=>{
-        if(resolved[index])return resolved[index];
-        const row=cloudRows.get(id)||null;
-        if(!row||!String(row.replay||'')){nativeRecordingRetryAt.set(id,Date.now()+60000);if(nativeRecordingRetryAt.size>128)nativeRecordingRetryAt.delete(nativeRecordingRetryAt.keys().next().value);return null;}
-        const recording={
-          recording:normalizeReplayPayloadString(String(row.replay||'')),
-          verifiedState:row.runVerified===true?1:0,
-          frames:safePositiveInt(row.frames||row.raceTimeFrames||canonicalRaceTimeMs(row)||1,1),
-          carColors:normalizeCarColorId(row.carColors||''),
-          carId:cleanCarId(row.carId||'')||null,
-          carStyle:__pt062NormalizeStyle(row.carStyle||getDefaultCarStyle())
-        };
-        rememberNativeRecording(id,recording);return recording;
-      });
-    } catch (error) {
-      noteFirebaseQuota(error);
-      for(const id of missingIds)nativeRecordingRetryAt.set(id,Date.now()+60000);
-      while(nativeRecordingRetryAt.size>128)nativeRecordingRetryAt.delete(nativeRecordingRetryAt.keys().next().value);
-      log('warn','[FB407] recordings lookup failed',String(error&&(error.message||error)));
-      return resolved;
-    }
+    // Public replays come from the pinned package, never a billable cross-owner query.
+    for(const [index,id] of ids.entries())if(!resolved[index])nativeRecordingRetryAt.set(id,Date.now()+60000);
+    while(nativeRecordingRetryAt.size>128)nativeRecordingRetryAt.delete(nativeRecordingRetryAt.keys().next().value);
+    return resolved;
+  }
+
+  async function repairOwnNativeRecording(database,recId,recording,payload,style,colors,carId){
+    const accountId=activeRankedAccountId(),ownerUid=window.firebase?.auth?.().currentUser?.uid;
+    if(!accountId||!ownerUid)return 0;
+    const tracks=[...new Set(readLocalRaceRows().filter(row=>String(row.accountId||row.userId||'')===accountId&&safeRecordingId(row.uploadId||row.id)===recId).map(row=>String(row.trackId||'')).filter(id=>/^[a-f0-9]{64}$/.test(id)))].slice(0,10);
+    let matched=0;
+    await Promise.all(tracks.map(async trackId=>{
+      const ref=database.collection(COLLECTIONS.raceResults).doc(accountId+'_'+trackId),doc=await ref.get();
+      if(!doc.exists)return;
+      const row=doc.data()||{};
+      if(activeRankedAccountId()!==accountId||window.firebase?.auth?.().currentUser?.uid!==ownerUid||row.ownerUid!==ownerUid||row.accountId!==accountId||row.trackId!==trackId||safeRecordingId(row.uploadId)!==recId)return;
+      const patch=recordingRepairPatch(row,recording,payload,style,colors,carId);
+      if(patch&&Object.keys(patch).length)await ref.set(patch,{merge:true});
+      matched++;
+    }));
+    return matched;
   }
 
   const LOCAL_RACE_STORE_KEY = 'polytrack-0.6.2-local-race-results-v1';
@@ -2569,7 +2507,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=178').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=179').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   async function db(){
@@ -3104,7 +3042,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=178',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=179',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -3564,9 +3502,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
           const d = await db();
           const uid = window.firebase.auth().currentUser?.uid || '';
           const createdAt = Date.now();
-          const codeHash=await sha256Hex(entered);
+          const code=entered;
           entered='';
-          await d.collection(COLLECTIONS.adminSessions).doc(uid).set({uid,codeHash,createdAt,expiresAt:createdAt+10*60*1000},{merge:false});
+          await d.collection(COLLECTIONS.adminSessions).doc(uid).set({uid,code,createdAt,expiresAt:createdAt+10*60*1000},{merge:false});
           adminSessionActive = true;
           adminSessionExpiresAt=createdAt+10*60*1000;
           setTimeout(()=>activeModeratorSession(),10*60*1000+250);
@@ -4622,26 +4560,6 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       && String(row.replayHash).toLowerCase()===String(published.replayHash||'').toLowerCase();
   }
 
-  async function fetchCanonicalTrackEntries(trackId,limit=500,publishedEntries=[]){
-    const d=await db();
-    const snapshot=await d.collection(COLLECTIONS.raceResults).where('trackId','==',String(trackId||'').slice(0,80)).limit(Math.min(500,Math.max(1,limit))+1).get();
-    if(snapshot.docs.length>Math.min(500,Math.max(1,limit)))throw new Error('Track exceeds recovery limit; retaining complete snapshot');
-    const rows=await Promise.all((snapshot.docs||[]).map(async(doc)=>{
-      const row={id:doc.id,...(doc.data()||{})};
-      const expected=String(row.replayHash||'').toLowerCase();
-      const replay=typeof row.replay==='string'?row.replay:'';
-      let integrityVerified=false;
-      if(replay&&/^[0-9a-f]{64}$/.test(expected)){
-        try{integrityVerified=(await sha256Hex(replay))===expected;}catch{}
-      }
-      const approved=integrityVerified&&publishedEntries.some(entry=>exactPublishedVerification(row,entry));
-      return {...row,runVerified:approved,verified:approved,verifiedState:approved?1:0,integrityVerified,validationState:approved?'verified':integrityVerified?'integrity':'pending'};
-    }));
-    const entries=computeTrackTopEntries(rows,trackId,limit);
-    const updatedAt=rows.reduce((latest,row)=>Math.max(latest,Number(row.updatedAt||row.pbAt||row.createdAt||0)||0),0);
-    log('info','[FB220] Direct canonical track recovery complete',{trackId,participants:entries.length,pending:entries.filter((entry)=>entry.integrityVerified!==true).length});
-    return {entries,updatedAt:updatedAt||Date.now(),builtAt:updatedAt||Date.now(),schemaVersion:TRACK_CACHE_SCHEMA,algorithmVersion:RANK_MODEL,source:'canonical-firestore',fromCache:Boolean(snapshot.metadata?.fromCache)};
-  }
 
   const trackCloudRetryAt=new Map();
   const trackCloudCheckedAt=new Map();
@@ -5468,7 +5386,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=178').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=179').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -5493,7 +5411,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=178',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=179',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -5537,7 +5455,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=178',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=179',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -5557,8 +5475,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=178',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=178',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=178',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=179',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=179',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=179',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -6191,7 +6109,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=178',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=179',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -7293,7 +7211,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(178));
+    headers.set('X-PolyTrack-Revision', String(179));
     return fetch(url, {...options, headers});
   }
 
@@ -7405,7 +7323,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=178'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=179'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -7468,8 +7386,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   let snapshotTrackStatistics = {};
   let metadataRecovery=null;
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=178').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=178');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=179').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=179');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,onRead:metric=>noteDeveloperEvent('snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         metadataRecovery.reset();
         if(typeof syncLocalOverallProjection==='function')void syncLocalOverallProjection();
@@ -7545,7 +7463,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=178');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=179');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -8043,9 +7961,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         log('info','[FB211] recordings POST normalized',{recordingId:recId,frames,bytes:recData.length,carColors:recColors,carId:recCarId,carStyle:recCarStyle});
         try {
           const d = await db();
-          const q = await d.collection(COLLECTIONS.raceResults).where('uploadId','==',recId).limit(10).get();
-          await Promise.all((q.docs||[]).map(doc=>{const patch=recordingRepairPatch(doc.data()||{},recData,payload,recCarStyle,recColors,recCarId);return patch&&Object.keys(patch).length?doc.ref.set(patch,{merge:true}):Promise.resolve();}));
-          log('info','[FB212] recordings POST upserted',{recordingId:recId,matched:(q.docs||[]).length});
+          const matched=await repairOwnNativeRecording(d,recId,recData,payload,recCarStyle,recColors,recCarId);
+          log('info','[FB212] recordings POST upserted',{recordingId:recId,matched});
         } catch (error) {
           log('warn','[FB412] recordings POST firestore upsert failed', String(error && (error.message || error)));
         }
@@ -9618,9 +9535,9 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=178'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=179'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=178',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:178,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=179',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:179,document,
       onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false;},
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
@@ -9674,7 +9591,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=178').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=179').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -9701,7 +9618,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=178', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=179', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});
