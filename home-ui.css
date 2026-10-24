@@ -1082,3 +1082,6 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 #overallLeaderboardPanel .overall-category-control{grid-template-columns:minmax(0,1fr) 44px!important}
 #overallLeaderboardPanel .overall-category-info{width:44px;height:44px}
 @media(max-width:700px){#overallProfilePopup .profile-guide-controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px!important}}
+
+/* Announce recalculation provenance without consuming leaderboard space. */
+.overall-snapshot-notice{position:absolute!important;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}

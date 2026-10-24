@@ -1,6 +1,7 @@
 // Pure scoring mirror of workers/ranked/src/index.js. Source-parity tests fence drift.
 // Never use these presentation projections as public standings or verification proof.
 import {EXTRA_TRACK_IDS} from '../workers/ranked/src/extra-track-ids.js';
+import {projectCasualRp,readPublishedCasual} from './casual-rp-model.mjs';
 const SPECIAL_ROLLING_HILLS_TRACK_ID = 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 
 const ALGORITHM_VERSION = 'participation-v8-s1';
@@ -345,7 +346,7 @@ function sameSamples(expected, actual) {
   });
 }
 
-function present(row) {
+function present(row,casualProjection=null) {
   if (!row) return null;
   // Deliberately omit identities, cosmetics, badges, verification flags and public rank.
   return {userId: row.userId, score: row.score, projectedRank: row.rank || null,
@@ -354,6 +355,7 @@ function present(row) {
     officialCount: row.officialCount, communityCount: row.communityCount, customCount: row.customCount,
     extraCount: row.extraCount || 0, averagePlacement: row.averagePlacement,
     trackResults: row.resultSamples.map(({rank, ...sample}) => ({...sample, projectedRank: rank})),
+    casualProjection,
     localPending: true, publicRank: null};
 }
 
@@ -367,6 +369,64 @@ function present(row) {
  * {accountId, trackId, timeMs, accepted:true, acceptedAt, generation}.
  * Receipt fields are a caller contract, never authentication or verification evidence.
  */
+export function projectScopedSnapshot({accountId,generation,overall,tracks}={}) {
+  const unavailable=reason=>({status:'unavailable',kind:'scoped-snapshot-v1',reason,generation,
+    calculationExact:false,scopedCalculationExact:false,overallProjection:false,projection:null,publicRank:null,localPending:false});
+  if(!validId(accountId)||!positive(generation)||overall?.generation!==generation)return unavailable('scoped_generation_mismatch');
+  if(overall.algorithmVersion!==ALGORITHM_VERSION||overall.schemaVersion!==6||!positive(overall.sourceRevision)||!positive(overall.updatedAt)||!completeBoard(overall)||!uniqueRows(overall.entries))return unavailable('scoped_invalid_overall_directory');
+  const catalog=overall.trackCatalog;
+  if(!Array.isArray(catalog)||catalog.length>512||!Array.isArray(tracks)||tracks.length!==catalog.length||
+    catalog.some(row=>!validId(row?.trackId))||new Set(catalog.map(row=>row.trackId)).size!==catalog.length)return unavailable('scoped_incomplete_catalog');
+  const expected=new Set(catalog.map(row=>row.trackId)),seen=new Set(),boards=[],sources=[];
+  for(const board of tracks){
+    if(!board||!expected.has(board.trackId)||seen.has(board.trackId))return unavailable('scoped_missing_or_duplicate_board');
+    if(board.generation!==generation)return unavailable('scoped_mixed_generation');
+    if(board.algorithmVersion!==ALGORITHM_VERSION||board.schemaVersion!==6||!positive(board.sourceRevision)||
+      !Number.isSafeInteger(board.updatedAt)||board.updatedAt<0||!completeBoard(board)||!uniqueRows(board.entries))return unavailable('scoped_invalid_board_source');
+    if(board.entries.some(row=>!positive(row.timeMs)||row.timeMs>36000000||
+      typeof row.runVerified!=='boolean'||typeof row.integrityVerified!=='boolean'||
+      !Number.isSafeInteger(row.pbAt)||row.pbAt<0||row.trackId&&row.trackId!==board.trackId))return unavailable('scoped_invalid_board_rows');
+    seen.add(board.trackId);
+    const trusted=board.entries.filter(row=>row.runVerified===true&&row.integrityVerified===true)
+      .map(row=>({...row,accountId:idOf(row)}));
+    // Same canonical ordering, competition and weight functions as Overall's
+    // isolated mirror; only verified captured rows enter this calculation.
+    const entries=rankTrustedTrackEntries(trusted,board.trackId);
+    boards.push({...board,complete:true,sourceComplete:true,totalEntriesExact:true,totalEntries:entries.length,entries});
+    sources.push({trackId:board.trackId,sourceRevision:board.sourceRevision,updatedAt:board.updatedAt,
+      capturedAt:board.capturedAt??null,snapshotCapturedAt:board._snapshotCapturedAt??null});
+  }
+  const prior=new Map(overall.entries.map(row=>[idOf(row),row]));
+  const population=new Set([...prior.keys(),...boards.flatMap(board=>board.entries.map(idOf))]);
+  const extraCap=extraWeightCap(boards);
+  const eligible=[...OFFICIAL_IDS,...COMMUNITY_IDS,...LEGACY_COMMUNITY_IDS];
+  const official=[...OFFICIAL_IDS,SPECIAL_ROLLING_HILLS_TRACK_ID];
+  const casualRacers=[];
+  for(const userId of population){
+    const casualProjection=projectCasualRp({accountId:userId,boards,eligibleTrackIds:eligible,
+      officialTrackIds:official,extraTrackIds:[...EXTRA_TRACK_IDS],priorEntry:prior.get(userId),sourceComplete:true});
+    const trackResults=[];
+    for(const board of boards){
+      if(board.entries.length<2)continue;
+      const row=board.entries.find(row=>row.accountId===userId);if(!row)continue;
+      const weight=EXTRA_TRACK_IDS.has(board.trackId)?Math.min(extraCap,row.weight):row.weight;
+      if(weight<=0)continue;
+      trackResults.push({trackId:board.trackId,projectedRank:row.rank,fieldSize:board.entries.length,weight,timeMs:row.timeMs});
+    }
+    casualRacers.push({userId,raceCount:trackResults.length,trackResults,
+      casualProjection:{...casualProjection,localPending:false,captureRecalculated:true,
+        reason:casualProjection.known?'captured_boards_not_overall_projection':casualProjection.reason,
+        historicalLedgerAvailable:typeof prior.get(userId)?.serverAchievements?.casual?.ledger==='string'}});
+  }
+  return {status:'scoped-snapshot',kind:'scoped-snapshot-v1',generation,accountId,
+    calculationExact:false,scopedCalculationExact:true,overallProjection:false,projection:null,publicRank:null,
+    localPending:false,acceptedPbsApplied:false,
+    label:'Captured track-board recalculation; captured separately from Overall RP. Pending PBs are not included.',
+    overallSourceRevision:overall.sourceRevision,overallUpdatedAt:overall.updatedAt,
+    boardCount:boards.length,sourceMetadata:sources,casualRacers};
+}
+
+
 export function projectLocalOverall({accountId, generation, overall, results, tracks, acceptedPbs = []} = {}) {
   if (!validId(accountId)) return fail('invalid_account');
   if (!(typeof generation === 'string' && generation.length || positive(generation))) return fail('invalid_generation');
@@ -414,6 +474,19 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
       resultById.has(row.userId) && !sameSamples(row.resultSamples, decodeSamples(resultById.get(row.userId), results.resultTracks));
   })) return fail('baseline_mismatch');
 
+  const casualOptions={eligibleTrackIds:[...OFFICIAL_IDS,...COMMUNITY_IDS,...LEGACY_COMMUNITY_IDS],
+    officialTrackIds:[...OFFICIAL_IDS,SPECIAL_ROLLING_HILLS_TRACK_ID],extraTrackIds:[...EXTRA_TRACK_IDS],sourceComplete:true};
+  const casualBaseline=new Map(baseline.map(row=>{
+    const prior=publicById.get(row.userId);
+    const state=projectCasualRp({...casualOptions,accountId:row.userId,boards,priorEntry:prior});
+    const published=readPublishedCasual(prior);
+    const matches=!published.known||state.known&&state.casualRp===published.value&&state.casualCompletionCount===published.count;
+    return [row.userId,{state,matches}];
+  }));
+  const casualFor=row=>casualBaseline.get(row.userId)?.matches===false
+    ?{known:false,casualRp:null,officialCasualRp:null,casualCompletionCount:null,officialCasualCompletionCount:null,reason:'baseline_casual_mismatch'}
+    :projectCasualRp({...casualOptions,accountId:row.userId,
+      boards:boards.map(board=>({...board,totalEntries:board.entries.length})),priorEntry:publicById.get(row.userId)});
   if (!Array.isArray(acceptedPbs)) return fail('invalid_receipts');
   const best = new Map();
   for (const receipt of acceptedPbs) {
@@ -439,9 +512,12 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
     changedTracks.push(trackId);
   }
   if (!changedTracks.length) return {status: 'unchanged', generation, calculationExact: true,
-    localPending: false, publicRank: null, projection: null, racers: [], changedTracks: []};
+    localPending: false, publicRank: null, projection: null, racers: [], changedTracks: [],
+    casualRacers:baseline.map(row=>({userId:row.userId,raceCount:row.raceCount,
+      trackResults:row.resultSamples.map(({rank,...sample})=>({...sample,projectedRank:rank})),
+      casualProjection:casualFor(row)}))};
   const calculated = computeOverall(boards, overall.entries, new Set(), {includePlannerResults: true});
-  const racers = calculated.map(present);
+  const racers = calculated.map(row=>present(row,casualFor(row)));
   return {status: 'projected', generation, sourceRevision: overall.sourceRevision,
     label: 'Snapshot + local recalculation', assumption: 'Accepted PBs eventually pass verification; other snapshot rows stay unchanged.',
     calculationExact: true, localPending: true, publicRank: null, changedTracks: changedTracks.sort(),

@@ -1,3 +1,5 @@
+import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
+import {publicEventPlaybackProjection} from './public-event-playback.mjs';
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
@@ -46,7 +48,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
   async function fetchSnapshot(url,options){try{return await fetchImpl(url,options);}catch(error){throw markTransientFetchError(error);}}
   async function responseBody(response,method){try{return await response[method]();}catch(error){throw markTransientFetchError(error);}}
   let packageBase=new URL(baseUrl),indexRequest=null,bootstrapRequest=null,preferBootstrap=bootstrap,pointerRecoveryRetryAt=0,manualPointerRetryAt=0,pointerRecoveryRequest=null,pointerRecoveryOutcome=null,pointerRecoveryFailure=null;
-  const bootstrapPath=logical=>!/^(?:profiles|profile-results|canonical|recordings|event-replays)\//.test(logical);
+  const bootstrapPath=logical=>!/^(?:profiles|profile-results|canonical|recordings|event-replays|event-playbacks)\//.test(logical);
   async function loadPackageIndex(compact){
     const failure=indexFailures.get(compact);
     if(failure){if(now()<failure.retryAt)throw failure.error;indexFailures.delete(compact);}
@@ -228,6 +230,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       kind==='profile'&&/^[a-f0-9]{64}$/.test(id)?`profiles/${id}.json`:
       kind==='profile-results'&&/^[a-f0-9]{64}$/.test(id)?`profile-results/${id}.json`:
       kind==='recording'&&/^\d{1,16}$/.test(String(id))&&Number.isSafeInteger(Number(id))&&Number(id)>0?`recordings/${id}.json`:
+      kind==='event-playback'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)&&/^[a-f0-9]{64}$/.test(accountId)?`event-playbacks/${id}/${accountId}.json`:
       kind==='event-replay'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)&&/^[a-f0-9]{64}$/.test(accountId)?`event-replays/${id}/${accountId}.json`:null;
     if(!path)return null;
     const readStarted=now();
@@ -258,8 +261,14 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
           body=await responseBody(response,'text');
         }
         if(body!==null&&body.length>2*1024*1024)throw Error('Public backup exceeds size limit');
-        const value=materialized||JSON.parse(body);
-        if(!value||typeof value!=='object'||Array.isArray(value)||(!['event-replay','snapshot-meta','manifest','track-statistics','snapshot-paging'].includes(kind)&&!Number.isFinite(value.updatedAt)))throw Error('Invalid public backup');
+        let value=materialized||JSON.parse(body);
+        if(!value||typeof value!=='object'||Array.isArray(value)||(!['event-replay','event-playback','snapshot-meta','manifest','track-statistics','snapshot-paging'].includes(kind)&&!Number.isFinite(value.updatedAt)))throw Error('Invalid public backup');
+        if(kind==='event-playback'){
+          const board=await readAtGeneration('event',id,'',requestedGeneration);
+          const entry=board?.pendingPlaybacks?.find(row=>row.runId===accountId);
+          if(!board||board.archived===true||board.period?.id!==id||!entry||value.periodId!==id||value.runId!==accountId)throw Error('Pending event playback no longer publicly listed');
+          value=await publicEventPlaybackProjection(value,{periodId:id,trackId:board.period.trackId,entry});
+        }
         if(kind==='snapshot-meta'&&(typeof value.capturedAt!=='string'||!Number.isFinite(Date.parse(value.capturedAt))||Date.parse(value.capturedAt)<=0))throw Error('Invalid snapshot capture date');
         if(kind==='track-statistics'&&(value.schemaVersion!==1||typeof value.complete!=='boolean'||!value.tracks||typeof value.tracks!=='object'||Array.isArray(value.tracks)||Object.entries(value.tracks).some(([id,row])=>!/^[a-f0-9]{64}$/.test(id)||!row||typeof row!=='object'||typeof row.complete!=='boolean'||!(row.count===null||Number.isSafeInteger(row.count)&&row.count>=0)||!(row.players===null||Number.isSafeInteger(row.players)&&row.players>=0)||!(row.totalEntries===null||Number.isSafeInteger(row.totalEntries)&&row.totalEntries>=0)||!(row.weight===null||Number.isFinite(row.weight)&&row.weight>=0)||!(row.revision===null||Number.isSafeInteger(row.revision))||!(row.updatedAt===null||Number.isSafeInteger(row.updatedAt))||!(row.capturedAt===null||typeof row.capturedAt==='string'&&Number.isFinite(Date.parse(row.capturedAt))))))throw Error('Invalid public track statistics');
         if(kind==='manifest'&&(value.schemaVersion!==1||!value.tracks||typeof value.tracks!=='object'||Array.isArray(value.tracks)))throw Error('Invalid public snapshot manifest');
@@ -405,10 +414,16 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       const requestedGeneration=generation;
       const value=await readAtGeneration(kind,id,accountId,requestedGeneration);
       // Rejoin the current generation even when a retired pending request succeeds or fails.
-      if(requestedGeneration===generation)return value;
+      if(requestedGeneration===generation)return kind==='recording'&&(value?.playbackPending===true||value?.verifiedState===0)?null:value;
     }
   };
   read.refresh=()=>recoverCurrentGeneration({manual:true});
+  read.recordingPlayback=async(entry,{allowPending=false}={})=>{
+    const epoch=generation;
+    const row=await readAtGeneration('recording',entry?.uploadId,'',epoch);
+    if(!row||epoch!==generation)return null;
+    try{const result=await preparePublicRecordingPlayback(row,entry,{allowPending});return epoch===generation?result:null;}catch{return null;}
+  };
   Object.defineProperty(read,'packageInfo',{value:()=>Object.freeze({
     generation:Number(/(?:^|\/)public-snapshots([1-9]\d*)\/$/.exec(packageBase.pathname)?.[1]||0),
     epoch:generation,baseUrl:packageBase.href

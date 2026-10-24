@@ -25,8 +25,9 @@ export function eventRunDate(row,at=Date.now()){
   return {label:days?days+' day'+(days===1?'':'s')+' ago':hours?hours+' hour'+(hours===1?'':'s')+' ago':minutes?minutes+' min ago':'Just now',title:new Date(stamp).toLocaleString()};
 }
 export function eventVerificationLabel(row,pending=!!row?.pending,locale){
-  const at=eventDisplayRunAt(row);
-  const prefix=at&&!eventExactRunAt(row)&&!validEventTimestamp(row?.runAt)?'Received ':'';
+  const runAt=eventDisplayRunAt(row),verdictAt=!pending&&validEventTimestamp(row?.verifiedAt)?row.verifiedAt:null;
+  const at=runAt||verdictAt;
+  const prefix=runAt?!eventExactRunAt(row)&&!validEventTimestamp(row?.runAt)?'Received ':'':verdictAt?'Verification date ':'';
   const date=at?prefix+new Date(at).toLocaleString(locale,{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'}):'Date unavailable';
   return date+' - '+(pending?'Pending':'Verified');
 }
@@ -64,7 +65,7 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
   const label=eventVerificationLabel(row,!!row.pending);
   // The shared status decorator preserves this date, including its receipt-time qualifier.
   state.dataset.sqNativeDate=label.slice(0,label.lastIndexOf(' - '));
-  if(!eventDisplayRunAt(row,at)){
+  if(!eventDisplayRunAt(row,at)&&(row.pending||!validEventTimestamp(row?.verifiedAt,at))){
     const text=[...state.childNodes].find(node=>node.nodeType===3);
     if(text)text.textContent='Date unavailable';
   }
@@ -626,7 +627,7 @@ export function installEvents(bridge){
     const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified'),failureKey=key+'_'+viewer;
     try{
       const failure=replayFailure(failureKey);if(failure)throw Error(failure);
-      let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null});
+      let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
       if(session.archive&&!payload)throw Error('Saved archived replay is unavailable.');
       if(pendingGhosts.get(row.accountId)!==pending)return;
       if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
@@ -684,7 +685,7 @@ export function installEvents(bridge){
       try{
         const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
         const failureKey=key+'_'+accountId,failure=replayFailure(failureKey);if(failure)throw Error(failure);
-        let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null});
+        let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
         if(session.archive&&!payload)throw Error('Saved archived replay is unavailable.');
         if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||!replayContextActive(session))return null;
         const ghostKey=key+'_'+accountId;let ghost=preparedGhosts.get(ghostKey);
@@ -1235,9 +1236,10 @@ export function installEvents(bridge){
   }
   async function prepareCapture(){
     const catalogPromise=loadCatalog();
+    // Practice observers must initialize before the protected native binding.
+    await Promise.all([bridge.ready(),catalogPromise]);
     ensureCapture();
     tick({cachedOnly:true});
-    await catalogPromise;
   }
   return {prepareCapture,captureReady:()=>!!capture,finishPositions,isTrackNavigationCurrent,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:selection=>{if(selection?.matches?.('.track-selection-ui'))featuredSelection=selection;return ensureFeaturedSection(document,selection);},open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
 }

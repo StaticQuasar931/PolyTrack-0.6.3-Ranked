@@ -100,7 +100,7 @@ export function buildBoardPageManifest(board, preview, monolithOmitted) {
 }
 
 export function isBootstrapSnapshotPath(logicalPath) {
-  return !/^(?:profiles|profile-results|canonical|recordings|event-replays)\//.test(logicalPath);
+  return !/^(?:profiles|profile-results|canonical|recordings|event-replays|event-playbacks)\//.test(logicalPath);
 }
 
 export function buildSnapshotBootstrapIndex(index) {

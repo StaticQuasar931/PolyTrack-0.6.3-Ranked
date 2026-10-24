@@ -356,3 +356,5 @@ html body #overallProfilePopup :is(.profile-guide-controls,.profile-track-list,.
 @media (prefers-reduced-motion: reduce) {
   html body :is(#overallLeaderboardPanel,#overallProfilePopup,#overallHelpPopup,#overallFilterPanel) * { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
+
+html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-mobile-drawer .overall-track-scope button{min-height:44px!important;flex:1 1 auto}

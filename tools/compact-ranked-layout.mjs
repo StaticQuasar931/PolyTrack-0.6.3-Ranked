@@ -14,15 +14,27 @@ export function installCompactRankedLayout({document=globalThis.document,window=
     toggle.type='button';toggle.className='overall-mobile-tools';toggle.textContent='More';toggle.hidden=true;
     toggle.setAttribute('aria-controls',drawer.id);toggle.setAttribute('aria-expanded','false');
     toggle.setAttribute('aria-label','More ranking tools, snapshot status, quick rankings and challenges');
-    const moved=[...footer.querySelectorAll('.overall-challenge-stack,.overall-field-summary,.overall-freshness,.leaderboard-arcade,.overall-track-scope')]
-      .map(node=>{const marker=document.createTextNode('');node.parentNode.insertBefore(marker,node);return {node,marker};});
+    const moved=[];
+    function syncMoved(){
+      for(const node of footer.querySelectorAll('.overall-challenge-stack,.overall-field-summary,.overall-freshness,.leaderboard-arcade,.overall-track-scope')){
+        if(moved.some(record=>record.node===node))continue;
+        // A category change may replace a control while it lives inside the drawer.
+        const previous=node.id&&moved.find(record=>record.node.id===node.id&&!record.node.isConnected);
+        if(previous){previous.node=node;continue;}
+        const marker=document.createTextNode('');node.parentNode.insertBefore(marker,node);moved.push({node,marker});
+      }
+      for(let i=moved.length-1;i>=0;i--)if(!moved[i].node.isConnected){moved[i].marker.remove();moved.splice(i,1);}
+    }
+    syncMoved();
     footer.append(toggle,drawer);
     let mode='desktop';
     const close=(focus=false)=>{drawer.hidden=true;toggle.setAttribute('aria-expanded','false');toggle.textContent='More';if(focus&&!toggle.hidden)toggle.focus();};
     const click=()=>{const open=drawer.hidden;drawer.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Less':'More';};
     toggle.addEventListener('click',click);
     return {footer,update(next){
-      if(next===mode)return;mode=next;close();
+      syncMoved();
+      if(next===mode){if(mode!=='desktop')for(const {node}of moved)if(node.parentNode!==drawer)drawer.append(node);return;}
+      mode=next;close();
       if(mode==='desktop'){
         for(const {node,marker}of moved)marker.parentNode?.insertBefore(node,marker);
         delete footer.dataset.mobileAxis;toggle.hidden=true;
@@ -45,7 +57,7 @@ export function installCompactRankedLayout({document=globalThis.document,window=
   const schedule=()=>{if(!frame&&!disposed)frame=window.requestAnimationFrame(update);};
   const observer=typeof window.MutationObserver==='function'?new window.MutationObserver(records=>{
     if(records.some(record=>[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&
-      (node.id==='overallLeaderboardPanel'||node.id==='overallDailyGrid'||node.querySelector?.('#overallDailyGrid')))))schedule();
+      (node.id==='overallLeaderboardPanel'||node.id==='overallDailyGrid'||node.id==='overallRankingScope'||node.querySelector?.('#overallDailyGrid,#overallRankingScope')))))schedule();
   }):null;
   observer?.observe(document.documentElement,{childList:true,subtree:true});
   const outside=event=>{if(active?.isOpen()&&!active.targetInside(event.target))active.close();};

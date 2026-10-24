@@ -437,7 +437,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const startFullSnapshot = fullPublic && previousProgress?.fullSnapshotPending !== true;
     try {
       exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: fullPublic ? 2000 : 100,
-        fullSnapshot: startFullSnapshot, includeProfiles: fullPublic, retryInvalidAfterMs:3600000,
+        fullSnapshot: startFullSnapshot, includeProfiles: fullPublic, includePendingReplays:true, retryInvalidAfterMs:3600000,
         fetchImpl: replayCaptureFetch(createSnapshotExportFetch({ ...exportAuth, fetchImpl: exportFetch })), log });
     } catch (error) {
       if (!(error instanceof PublicBackupDeferredError)) throw error;

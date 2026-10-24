@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {publicDisplayName} from './public-display-name.mjs';
 import {publicOverallBackup} from './public-snapshot-backup.mjs';
+import {validatePublicReplayStructure,hasPlayablePublicReplayStatus} from './public-replay-playback.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -137,14 +138,17 @@ function queryBody(collection, fields, cursor, pageSize) {
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function safeBinding(entry, snapshotTrackId) {
-  if (entry?.runVerified !== true || entry?.integrityVerified !== true) return null;
+function safeBinding(entry, snapshotTrackId, includePendingReplays = false) {
+  if (!hasPlayablePublicReplayStatus(entry)) return null;
+  const playbackPending = includePendingReplays && entry?.runVerified === false && entry?.verified === false &&
+    entry?.verifiedState === 0 && entry?.integrityVerified === true;
+  if (!playbackPending && (entry?.runVerified !== true || entry?.integrityVerified !== true)) return null;
   const frames = entry.frames ?? entry.raceTimeFrames;
   if (!ACCOUNT_ID.test(entry.accountId || '') || !TRACK_ID.test(entry.trackId || '') || entry.trackId !== snapshotTrackId ||
       !Number.isSafeInteger(entry.uploadId) || entry.uploadId < 1 || !Number.isSafeInteger(frames) || frames < 1 || frames > 4000000 ||
       entry.frames !== undefined && entry.frames !== frames || entry.raceTimeFrames !== undefined && entry.raceTimeFrames !== frames ||
       !HASH.test(entry.replayHash || '')) return {invalid: true};
-  const binding = {accountId: entry.accountId, trackId: entry.trackId, uploadId: entry.uploadId, frames, replayHash: entry.replayHash,
+  const binding = {accountId: entry.accountId, trackId: entry.trackId, uploadId: entry.uploadId, frames, replayHash: entry.replayHash, playbackPending,
     metadata: Object.fromEntries(['name', 'nickname', 'countryCode', 'carStyle', 'timeMs', 'createdAt', 'pbAt']
       .filter(key => Object.hasOwn(entry, key)).map(key => [key,
         ['name', 'nickname'].includes(key) ? publicDisplayName(entry[key]) : entry[key]]))};
@@ -152,7 +156,7 @@ function safeBinding(entry, snapshotTrackId) {
   return binding;
 }
 
-async function loadStagedBindings(directory, snapshotDirectory) {
+async function loadStagedBindings(directory, snapshotDirectory, includePendingReplays) {
   const candidates = [path.join(snapshotDirectory, 'staging', 'tracks'), path.join(snapshotDirectory, 'tracks'),
     path.join(moduleRoot, 'public-snapshots', 'tracks')];
   let trackDirectory;
@@ -177,9 +181,8 @@ async function loadStagedBindings(directory, snapshotDirectory) {
     const snapshotTrackId = file.slice(0, -5);
     if (!TRACK_ID.test(snapshotTrackId) || snapshot?.trackId !== snapshotTrackId || !Array.isArray(snapshot.entries)) { invalid++; continue; }
     for (const entry of snapshot.entries) {
-      if (entry?.runVerified !== true || entry?.integrityVerified !== true) continue;
-      const binding = safeBinding(entry, snapshotTrackId);
-      if (!binding) { invalid++; continue; }
+      const binding = safeBinding(entry, snapshotTrackId, includePendingReplays);
+      if (!binding) continue;
       if (binding.invalid) { invalid++; continue; }
       const uploadOwner = uploadOwners.get(binding.uploadId);
       if (uploadOwner && uploadOwner !== binding.signature) {
@@ -206,8 +209,10 @@ function raceDocumentName(projectId, accountId, trackId) {
 }
 
 function validBoundRace(row, binding) {
+  if (!hasPlayablePublicReplayStatus(row)) return false;
   const frames = row.frames ?? row.raceTimeFrames;
-  return row.accountId === binding.accountId && row.trackId === binding.trackId && row.uploadId === binding.uploadId &&
+  return (!binding.playbackPending || row.verified === false && row.verifiedState === 0) &&
+    row.accountId === binding.accountId && row.trackId === binding.trackId && row.uploadId === binding.uploadId &&
     Number.isSafeInteger(row.timeMs) && row.timeMs > 0 &&
     (binding.metadata.timeMs === undefined || row.timeMs === binding.metadata.timeMs) &&
     Number.isSafeInteger(frames) && frames === binding.frames &&
@@ -223,16 +228,18 @@ async function savedMatchExists(directory, binding) {
   try {
     const replay = JSON.parse(await fs.readFile(path.join(directory, `recordings/${binding.uploadId}.json`), 'utf8'));
     const canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8'));
+    if (!hasPlayablePublicReplayStatus(replay) || !hasPlayablePublicReplayStatus(canonical)) return false;
     return replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
-      replay.frames === binding.frames && replay.verifiedState === 1 && replay.replayHash === binding.replayHash &&
+      replay.frames === binding.frames && replay.verifiedState === (binding.playbackPending ? 0 : 1) && replay.replayHash === binding.replayHash &&
       typeof replay.recording === 'string' && replay.recording.length > 0 && Buffer.byteLength(replay.recording, 'utf8') <= 850000 &&
       crypto.createHash('sha256').update(replay.recording, 'utf8').digest('hex') === binding.replayHash &&
       canonical.accountId === binding.accountId && canonical.trackId === binding.trackId &&
       canonical.uploadId === binding.uploadId && canonical.frames === binding.frames &&
       (canonical.raceTimeFrames === undefined || canonical.raceTimeFrames === binding.frames) &&
-      canonical.timeMs > 0 && Number.isSafeInteger(canonical.timeMs) && canonical.runVerified === true &&
+      canonical.timeMs > 0 && Number.isSafeInteger(canonical.timeMs) &&
       (binding.metadata.timeMs === undefined || canonical.timeMs === binding.metadata.timeMs) &&
-      canonical.integrityVerified === true && canonical.verified === true && canonical.replayHash === binding.replayHash;
+      canonical.integrityVerified === true && canonical.verified === !binding.playbackPending &&
+      canonical.runVerified === !binding.playbackPending && canonical.replayHash === binding.replayHash;
   } catch { return false; }
 }
 
@@ -254,10 +261,10 @@ function currentRaceState(bindings, fingerprint, invalid, previous) {
 
 export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directory, projectId = 'polytrack-052', maxDocuments = 2000,
   pageSize = 100, log = () => {}, fullSnapshot = false, includeProfiles = true, snapshotDirectory = directory,
-  retryInvalidAfterMs = 3600000, now = Date.now()} = {}) {
+  retryInvalidAfterMs = 3600000, now = Date.now(), includePendingReplays = false} = {}) {
   if (typeof fetchImpl !== 'function' || typeof directory !== 'string' || !directory || typeof snapshotDirectory !== 'string' ||
       !Number.isSafeInteger(maxDocuments) || maxDocuments < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100 ||
-      typeof includeProfiles !== 'boolean' || fullSnapshot && !includeProfiles ||
+      typeof includeProfiles !== 'boolean' || typeof includePendingReplays !== 'boolean' || fullSnapshot && !includeProfiles ||
       !Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(retryInvalidAfterMs) || retryInvalidAfterMs < 0 || retryInvalidAfterMs > 86400000 ||
       typeof projectId !== 'string' || !/^[a-z][a-z0-9-]{4,62}[a-z0-9]$/.test(projectId)) throw Error('Invalid public export options');
   maxDocuments = Math.min(maxDocuments, MAX_DOCUMENTS_PER_RUN);
@@ -280,7 +287,7 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
     profileSkipped: fullSnapshot ? 0 : previous.profileSkipped ?? 0,
     fullSnapshotPending: fullSnapshot || previous.fullSnapshotPending === true,
     raceExport: null};
-  const staged = await loadStagedBindings(directory, snapshotDirectory);
+  const staged = await loadStagedBindings(directory, snapshotDirectory, includePendingReplays);
   const race = currentRaceState(staged.bindings, staged.fingerprint, staged.invalid, previous.raceExport);
   // Profile checkpoints must retain replay retry history even if a later request fails.
   progress.raceExport = race;
@@ -381,18 +388,28 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
       } else {
         let row;
         try { row = decodeDocument(result.found).fields; } catch { row = null; }
-        if (!row || !validBoundRace(row, binding)) {
+        let structureValid = true;
+        if (row && binding.playbackPending) {
+          try { await validatePublicReplayStructure(row.replay, binding.frames); } catch { structureValid = false; }
+        }
+        if (!row || !validBoundRace(row, binding) || !structureValid) {
           race.records[signature] = {signature, available: false, reason: row ? 'binding-mismatch' : 'batch-response-mismatch'};
         } else {
           const updatedAt = [row.updatedAt, row.pbAt, row.createdAt, binding.metadata.pbAt, binding.metadata.createdAt]
             .find(value => Number.isSafeInteger(value) && value >= 0) ?? 0;
-          const replay = {recording: row.replay, frames: binding.frames, verifiedState: 1,
+          const replay = {recording: row.replay, frames: binding.frames, verifiedState: binding.playbackPending ? 0 : 1,
             carStyle: row.carStyle ?? binding.metadata.carStyle ?? '', accountId: binding.accountId,
             trackId: binding.trackId, replayHash: binding.replayHash, updatedAt};
           const canonical = {...binding.metadata, accountId: binding.accountId, trackId: binding.trackId,
             timeMs: row.timeMs, frames: binding.frames, raceTimeFrames: binding.frames, uploadId: binding.uploadId,
             replayHash: binding.replayHash, carStyle: row.carStyle ?? binding.metadata.carStyle ?? '', updatedAt,
-            runVerified: true, integrityVerified: true, verified: true, verifiedState: 1};
+            runVerified: !binding.playbackPending, integrityVerified: true, verified: !binding.playbackPending,
+            verifiedState: binding.playbackPending ? 0 : 1};
+          if (binding.playbackPending) {
+            replay.playbackPending = canonical.playbackPending = true;
+            replay.verificationStatus = canonical.verificationStatus = 'pending';
+            replay.eventRpEligible = canonical.eventRpEligible = false;
+          }
           const replayPath = `recordings/${binding.uploadId}.json`;
           const canonicalPath = `canonical/${binding.trackId}/${binding.accountId}.json`;
           let conflict = false;

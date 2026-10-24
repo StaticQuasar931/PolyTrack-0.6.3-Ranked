@@ -159,7 +159,7 @@ export function aggregateServerAchievements(entries, trackDocuments, priorById, 
       casualField.forEach((entry, index) => {
         if (index === 0 || entry.timeMs !== casualField[index - 1].timeMs) rank = index + 1;
         const placements = casualPlacements.get(entry.accountId) || new Map();
-        const publishedWeight = Number(entry.weight);
+        const publishedWeight = typeof entry.weight === 'number' ? entry.weight : NaN;
         const extraCap = strongestNormalWeight > 0 ? strongestNormalWeight / 5 : 0.2;
         const weight = EXTRA_TRACK_IDS.has(trackId) && Number.isFinite(publishedWeight)
           ? Math.min(extraCap, publishedWeight) : publishedWeight;
@@ -187,7 +187,7 @@ export function aggregateServerAchievements(entries, trackDocuments, priorById, 
     const accountId = text(entry?.userId || entry?.accountId, 128);
     const previous = prior.get(accountId) || {};
     const casualTracks = priorLedger(previous, 'casual', catalog);
-    const legacyCasualUnknown = Number.isSafeInteger(previous.casualRp) && previous.casualRp > 0 && casualTracks.size === 0;
+    const legacyCasualUnknown = typeof previous.casualRp === 'number' && Number.isFinite(previous.casualRp) && previous.casualRp > 0 && casualTracks.size === 0;
     for (const trackId of completions.get(accountId) || []) casualTracks.add(trackId);
     const placements = casualPlacements.get(accountId) || new Map();
     const casualRpKnown = !legacyCasualUnknown && [...casualTracks].every(trackId => Number.isFinite(placements.get(trackId)) && placements.get(trackId) >= 0);

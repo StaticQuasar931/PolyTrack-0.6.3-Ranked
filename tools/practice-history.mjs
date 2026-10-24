@@ -1,15 +1,16 @@
 export const PRACTICE_KEY='polytrack-practice-history-v1';
 const HASH=/^[a-f0-9]{64}$/;
-const MAX_TRACKS=256,MAX_ACCOUNTS=4;
+const MAX_TRACKS=1024,MAX_ACCOUNTS=4;
 export const HUNT_IDLE_MS=300000;
 const LIMIT=315576000000;
 const observedFields=['observedStartedAt','focusedMs','hiddenMs','pausedMs','progressingMs','movingMs','motionObservedMs','stationaryMs','idleMs','unobservedGapMs','longestHuntMs','biggestObservedImprovementMs','biggestPbImprovementMs','trackedBestMs','lastObservedFinishMs','lastObservedFinishAt'];
 const bounded=n=>Number.isFinite(n)&&n>=0?Math.min(LIMIT,n):0;
-const timestamp=(value,at)=>Number.isFinite(value)&&value>=0&&value<=at?value:0;
+const timestamp=(value,at)=>Number.isFinite(value)&&value>=0&&value!==LIMIT&&value<=at?value:0;
 function cleanHunt(value,at){return value&&Number.isFinite(value.startedAt)&&value.startedAt>=0&&value.startedAt<=at&&Number.isFinite(value.lastMovingAt)&&value.lastMovingAt>=value.startedAt&&value.lastMovingAt<=at?{startedAt:value.startedAt,lastMovingAt:value.lastMovingAt,movingMs:bounded(value.movingMs)}:null;}
 function cleanPlacement(value,at){return value&&Number.isSafeInteger(value.rank)&&value.rank>0&&Number.isSafeInteger(value.total)&&value.total>=value.rank&&value.exact===true&&value.complete===true&&value.authoritative===true&&Number.isFinite(value.timeMs)&&value.timeMs>0&&Number.isFinite(value.finishedAt)&&value.finishedAt>=0&&Number.isFinite(value.at)&&value.at>=value.finishedAt&&value.at<=at?{rank:value.rank,total:value.total,at:value.at,timeMs:value.timeMs,finishedAt:value.finishedAt,exact:true,complete:true,authoritative:true}:null;}
 export function createPracticeHistory({storage,now=Date.now,onChange=()=>{}}={}){
  let data={version:1,accounts:{},coverage:{}},dirty=false,revision=0,lastSave=0;
+ const listeners=new Set();
  try{
   const value=JSON.parse(storage?.getItem(PRACTICE_KEY)||'null');
   if(value?.version===1&&value.accounts&&typeof value.accounts==='object'){
@@ -52,7 +53,7 @@ export function createPracticeHistory({storage,now=Date.now,onChange=()=>{}}={})
   row.hunt??=null;row.firstPlacement??=null;
   return row;
  }
- function changed(){dirty=true;revision++;try{onChange();}catch{}}
+ function changed(){dirty=true;revision++;try{onChange(revision);}catch{}for(const listener of listeners)try{listener(revision);}catch{}}
  function flush(force=false){if(!dirty||!force&&now()-lastSave<30000)return false;lastSave=now();try{storage?.setItem(PRACTICE_KEY,JSON.stringify(data));dirty=false;return true;}catch{return false;}}
  function begin(accountId,trackId,baselineMs=0){
   const row=entry(accountId,trackId);if(!row)return null;
@@ -141,7 +142,7 @@ export function createPracticeHistory({storage,now=Date.now,onChange=()=>{}}={})
  }
  function list(accountId){return Object.entries(data.accounts[accountId]||{}).filter(([,r])=>r.attempts>0||r.finishes>0||r.activeMs>0).map(([trackId,row])=>({trackId,...JSON.parse(JSON.stringify(row))}));}
  function coverage(accountId){const row=data.coverage[accountId];return row?{...row,version:2,coverageFraction:row.knownPlaytimeMs>0?Math.min(1,row.observedVisibleMs/row.knownPlaytimeMs):0}:null;}
- return {begin,flush,list,coverage,observeCoverage,observePlacement,observeBest,get revision(){return revision;},get(accountId,trackId){const row=data.accounts?.[accountId]?.[trackId];return row?JSON.parse(JSON.stringify(row)):null;},clear(accountId){if(Object.hasOwn(data.accounts,accountId)||Object.hasOwn(data.coverage,accountId)){delete data.accounts[accountId];delete data.coverage[accountId];changed();flush(true);}}};
+ return {begin,flush,list,coverage,observeCoverage,observePlacement,observeBest,subscribe(listener){if(typeof listener!=='function')return ()=>{};listeners.add(listener);return ()=>listeners.delete(listener);},get revision(){return revision;},get(accountId,trackId){const row=data.accounts?.[accountId]?.[trackId];return row?JSON.parse(JSON.stringify(row)):null;},clear(accountId){if(Object.hasOwn(data.accounts,accountId)||Object.hasOwn(data.coverage,accountId)){delete data.accounts[accountId];delete data.coverage[accountId];changed();flush(true);}}};
 }
 export function practiceAdvice(row,at=Date.now(),{otherTracks=[]}={}){
  if(!row||row.attempts<3||row.activeMs<60000)return {factor:1,text:''};

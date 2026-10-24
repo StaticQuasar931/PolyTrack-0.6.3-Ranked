@@ -1,6 +1,6 @@
 import {installMobileFullscreen} from './mobile-fullscreen.mjs';
 // Only UI overlays consume these measurements. Canvas size and game input stay native.
-import {installCompactRankedLayout} from './compact-ranked-layout.mjs?v=181';
+import {installCompactRankedLayout} from './compact-ranked-layout.mjs?v=183';
 export function availableViewport({document,window,container}){
   const html=document.documentElement,visual=window.visualViewport;
   const rootWidth=html.clientWidth||window.innerWidth,rootHeight=html.clientHeight||window.innerHeight;

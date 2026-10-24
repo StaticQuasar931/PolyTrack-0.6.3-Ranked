@@ -152,7 +152,7 @@
 @container practice (max-width: 700px) {
   .polytrack-practice-profile .pp-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .polytrack-practice-profile .pp-toolbar > label:first-child { grid-column: 1 / -1; }
-  .polytrack-practice-profile .pp-toolbar [role="group"] { grid-column: 2; grid-row: 2; }
+  .polytrack-practice-profile .pp-toolbar [aria-label="Track layout"] { grid-column: 2; grid-row: 2; }
   .polytrack-practice-profile [data-pp-count] { grid-column: 1 / -1; grid-row: auto; align-self: center; }
   .polytrack-practice-profile .pp-view-list .pp-track { grid-template-columns: minmax(0, 1fr); }
   .polytrack-practice-profile .pp-view-list .pp-track > * { grid-column: 1; grid-row: auto; }
@@ -194,3 +194,8 @@
 .polytrack-practice-profile .pp-card-observations dt { color: #bedbff; font-size: 13px; }
 .polytrack-practice-profile .pp-card-observations dd { margin: 3px 0 0; color: #fff; font-variant-numeric: tabular-nums; }
 .polytrack-practice-profile :is(button,summary,input,select):focus-visible { outline: 2px solid #b4f2ff; outline-offset: 3px; }
+
+.polytrack-practice-profile .pp-filters{display:flex;flex-wrap:wrap;gap:6px;grid-column:1 / -1;min-width:0}
+.polytrack-practice-profile .pp-filters button{min-height:44px;flex:0 1 auto;max-width:100%}
+.polytrack-practice-profile .pp-tracks[data-pp-sort-key="observed-gain"] .pp-sort-observed-gain,
+.polytrack-practice-profile .pp-tracks[data-pp-sort-key="driven-gain"] .pp-sort-driven-gain{font-weight:700;color:var(--pp-amber);font-size:1.08em}

@@ -1,6 +1,6 @@
 const projectionUrl=new URL('./overall-local-projection.mjs',import.meta.url);
 projectionUrl.search=new URL(import.meta.url).search;
-const {projectLocalOverall}=await import(projectionUrl.href);
+const {projectLocalOverall,projectScopedSnapshot}=await import(projectionUrl.href);
 
 export const LOCAL_OVERALL_RECEIPTS_KEY = 'polytrack-overall-accepted-pbs-v1';
 const MAX_RECEIPTS = 128, MAX_BOARDS = 512, MAX_BYTES = 6 * 1024 * 1024;
@@ -39,10 +39,10 @@ async function decodeResults(data, population) {
  * onState receives {status, accountId, generation, result?, reason?, retryAt?}.
  */
 export function createLocalOverallController({storage, read, packageInfo, getAccount,
-  isVisible, onState = () => {}, now = Date.now} = {}) {
-  if (![read, packageInfo, getAccount, isVisible, onState, now].every(value => typeof value === 'function')) throw TypeError('Invalid local Overall controller callbacks');
+  isVisible, needsBaseline = () => false, onState = () => {}, now = Date.now} = {}) {
+  if (![read, packageInfo, getAccount, isVisible, needsBaseline, onState, now].every(value => typeof value === 'function')) throw TypeError('Invalid local Overall controller callbacks');
   let receipts = [], activeKey = '', revision = 0, baseline = null, running = null, requested = false;
-  let failure = null, computedKey = '', state = {status: 'idle', accountId: '', generation: null};
+  let failure = null, failures = new Map(), computedKey = '', state = {status: 'idle', accountId: '', generation: null};
 
   function validReceipt(row) {
     const time = now();
@@ -73,10 +73,12 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
 
   function context() {
     const info = packageInfo(), accountId = getAccount(), visible = Boolean(isVisible());
+    const baselineRequested = visible && Boolean(needsBaseline());
     const valid = positive(info?.generation) && uint(info.epoch) && typeof info.baseUrl === 'string' && info.baseUrl.length > 0 && validId(accountId);
     const packageKey = valid ? JSON.stringify([info.generation, info.epoch, info.baseUrl]) : '';
     return {accountId: validId(accountId) ? accountId : '', generation: valid ? info.generation : null,
-      packageKey, visible, valid, key: JSON.stringify([accountId, packageKey, visible])};
+      workKey:JSON.stringify([packageKey,baselineRequested?'scoped':'overall']),
+      packageKey, visible, baselineRequested, valid, key: JSON.stringify([accountId, packageKey, visible, baselineRequested])};
   }
   function emit(ctx, next) {
     state = {...next, accountId: ctx.accountId, generation: ctx.generation};
@@ -86,8 +88,8 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
   function synchronize(ctx) {
     if (ctx.key !== activeKey) {
       revision++; activeKey = ctx.key; computedKey = '';
-      if (baseline?.key !== ctx.packageKey) baseline = null;
-      if (failure?.key !== ctx.packageKey) failure = null;
+      if (ctx.visible && baseline?.key !== ctx.workKey) baseline = null;
+      failure = failures.get(ctx.workKey) || null;
       emit(ctx, {status: 'idle'});
     }
   }
@@ -101,13 +103,13 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
     return receipts.filter(row => row.accountId === ctx.accountId && row.generation === ctx.generation);
   }
   async function load(ctx, token) {
-    const [overall, packed] = await Promise.all([read('overall'), read('overall-results')]);
+    const [overall, packed] = await Promise.all([read('overall'), ctx.baselineRequested ? null : read('overall-results')]);
     if (!current(ctx, token)) return null;
     const catalog = overall?.trackCatalog;
     if (!Array.isArray(overall?.entries) || overall.entries.length > 100000 || !Array.isArray(catalog) || catalog.length > MAX_BOARDS ||
-        !Number.isSafeInteger(packed?.resultBoardCount) || packed.resultBoardCount !== catalog.length || packed.resultBoardLimitReached !== false ||
+        (!ctx.baselineRequested && (!Number.isSafeInteger(packed?.resultBoardCount) || packed.resultBoardCount !== catalog.length || packed.resultBoardLimitReached !== false)) ||
         new Set(catalog.map(item => item?.trackId)).size !== catalog.length || catalog.some(item => !validId(item?.trackId) || item.trackId.length > 80)) throw Error('incomplete_track_catalog');
-    const results = await decodeResults(packed, overall.entries.length);
+    const results = ctx.baselineRequested ? null : await decodeResults(packed, overall.entries.length);
     if (!current(ctx, token)) return null;
     const tracks = new Array(catalog.length); let cursor = 0, error = null;
     async function worker() {
@@ -125,17 +127,17 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
     await Promise.all(Array.from({length: Math.min(4, catalog.length)}, worker));
     if (error) throw error;
     if (!current(ctx, token)) return null;
-    return {key: ctx.packageKey, overall: {...overall, generation: ctx.generation},
+    return {key: ctx.workKey, overall: {...overall, generation: ctx.generation},
       results: {...results, generation: ctx.generation}, tracks};
   }
   async function runOnce() {
     const ctx = context(); synchronize(ctx);
     const accepted = activeReceipts(ctx);
-    if (!ctx.valid || !ctx.visible || !accepted.length) {
+    if (!ctx.valid || !ctx.visible || !accepted.length && !ctx.baselineRequested) {
       if (state.status !== 'idle' || state.reason !== (!accepted.length ? 'no_receipts' : 'hidden')) emit(ctx, {status: 'idle', reason: !accepted.length ? 'no_receipts' : 'hidden'});
       return;
     }
-    if (failure?.key === ctx.packageKey && now() < failure.retryAt) {
+    if (failure?.key === ctx.workKey && now() < failure.retryAt) {
       if (state.status !== 'unavailable') emit(ctx, {status: 'unavailable', reason: failure.reason, retryAt: failure.retryAt});
       return;
     }
@@ -153,25 +155,29 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
       await new Promise(resolve => setTimeout(resolve, 0));
       if (!current(ctx, token)) return;
       const latest = activeReceipts(ctx);
-      if (!latest.length) { emit(ctx, {status: 'idle', reason: 'no_receipts'}); return; }
-      const result = projectLocalOverall({accountId: ctx.accountId, generation: ctx.generation,
+      if (!latest.length && !ctx.baselineRequested) { emit(ctx, {status: 'idle', reason: 'no_receipts'}); return; }
+      const result = ctx.baselineRequested
+        ? projectScopedSnapshot({accountId:ctx.accountId,generation:ctx.generation,overall:baseline.overall,tracks:baseline.tracks})
+        : projectLocalOverall({accountId: ctx.accountId, generation: ctx.generation,
         overall: baseline.overall, results: baseline.results, tracks: baseline.tracks,
         acceptedPbs: latest.map(row => ({...row, accepted: true}))});
       if (!current(ctx, token)) return;
       if (result.status === 'unavailable') {
         // Validated static bytes cannot repair a model/version mismatch in place.
-        const waitingForSnapshot=['track_binding_mismatch','baseline_mismatch','result_binding_mismatch','generation_mismatch'].includes(result.reason);
-        failure = {key: ctx.packageKey, retryAt: waitingForSnapshot?Number.MAX_SAFE_INTEGER:now() + RETRY_MS, reason: result.reason};
+        const waitingForSnapshot=['track_binding_mismatch','baseline_mismatch','result_binding_mismatch','generation_mismatch','scoped_mixed_generation','scoped_invalid_board_source','scoped_incomplete_catalog'].includes(result.reason);
+        failure = {key: ctx.workKey, retryAt: waitingForSnapshot?Number.MAX_SAFE_INTEGER:now() + RETRY_MS, reason: result.reason};
+        failures.set(ctx.workKey,failure);while(failures.size>4)failures.delete(failures.keys().next().value);
         baseline = null;
         emit(ctx, {status: 'unavailable', reason: result.reason, retryAt: failure.retryAt, result});
       } else {
         computedKey = JSON.stringify([ctx.key, latest.map(row => [row.trackId, row.timeMs, row.acceptedAt])]);
-        failure = null;
+        failure = null;failures.delete(ctx.workKey);
         emit(ctx, {status: result.status, result});
       }
     } catch (error) {
       if (!current(ctx, token)) return;
-      failure = {key: ctx.packageKey, retryAt: now() + RETRY_MS, reason: error?.message || 'static_data_unavailable'};
+      failure = {key: ctx.workKey, retryAt: now() + RETRY_MS, reason: error?.message || 'static_data_unavailable'};
+      failures.set(ctx.workKey,failure);while(failures.size>4)failures.delete(failures.keys().next().value);
       baseline = null;
       emit(ctx, {status: 'unavailable', reason: failure.reason, retryAt: failure.retryAt});
     }
