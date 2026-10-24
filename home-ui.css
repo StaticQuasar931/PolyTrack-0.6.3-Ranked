@@ -1,4 +1,58 @@
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px) {
+  html body .menu-ui > .main-buttons-container:not(.hidden) {
+    display: grid !important; grid-template-columns: repeat(3,minmax(0,1fr)); align-content: center;
+    gap: calc(6px / var(--ui-scale-factor,1)); width: calc((100vw - 24px) / var(--ui-scale-factor,1));
+    margin-inline: auto; box-sizing: border-box;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image {
+    width: 100% !important; min-width: 0 !important; height: calc(82px / var(--ui-scale-factor,1)) !important;
+    box-sizing: border-box; margin: 0 !important; padding: 0 !important;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image > img {
+    width: calc(36px / var(--ui-scale-factor,1)) !important; height: calc(36px / var(--ui-scale-factor,1)) !important;
+    margin: calc(12px / var(--ui-scale-factor,1)) 0 calc(6px / var(--ui-scale-factor,1)) !important;
+  }
+  html body .menu-ui > .main-buttons-container > .button-image > p { font-size: calc(14px / var(--ui-scale-factor,1)) !important; }
+}
+@media (max-width: 1100px) and (max-height: 500px) and (orientation: landscape) {
+  html body .menu-ui > .main-buttons-container:not(.hidden) {
+    grid-template-columns: repeat(6,minmax(0,1fr)); max-width: calc(820px / var(--ui-scale-factor,1));
+  }
+}
 /* Keep the single lobby footer branding and suppress the overlapping bundle watermark. */
+@media (max-width: 700px), (max-width: 1100px) and (max-height: 500px) {
+  html body .menu-ui > .info {
+    width: calc((100vw - 24px) / var(--ui-scale-factor,1)) !important;
+    bottom: calc(max(64px,env(safe-area-inset-bottom,0px) + 52px) / var(--ui-scale-factor,1)) !important;
+    flex-direction: row !important; flex-wrap: wrap !important; justify-content: center !important;
+    gap: calc(3px / var(--ui-scale-factor,1)) calc(8px / var(--ui-scale-factor,1)) !important;
+  }
+  html body .menu-ui > .info > a {
+    font-size: calc(14px / var(--ui-scale-factor,1)) !important;
+    line-height: 1.25 !important; padding: calc(3px / var(--ui-scale-factor,1)) calc(4px / var(--ui-scale-factor,1)) !important;
+    max-width: 100%; box-sizing: border-box;
+  }
+  html body .menu-ui > .info > .staticFunPill {
+    flex-basis: 100%; font-size: calc(17px / var(--ui-scale-factor,1)) !important;
+    margin-bottom: 0 !important;
+  }
+  html body .menu-ui > .info > .social-links { flex-basis: 100%; }
+  html body .menu-ui > .info > .social-links > a { margin-inline: calc(6px / var(--ui-scale-factor,1)) !important; }
+  html body .menu-ui > .info > .social-links img {
+    height: calc(26px / var(--ui-scale-factor,1)) !important; max-width: none !important;
+  }
+}
+@media (max-width: 1100px) and (max-height: 500px) and (orientation: landscape) {
+  html body .menu-ui > .info { display: grid !important; grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr) minmax(0,1.8fr) auto; gap: calc(8px / var(--ui-scale-factor,1)) !important; }
+  html body .menu-ui > .info > a {
+    display: block !important; width: 100% !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis; white-space: nowrap !important;
+  }
+  html body .menu-ui > .info > .staticFunPill {
+    flex-basis: auto !important; font-size: calc(14px / var(--ui-scale-factor,1)) !important;
+  }
+  html body .menu-ui > .info > .social-links { flex: 0 0 auto !important; }
+  html body .menu-ui > .info > .social-links img { height: calc(20px / var(--ui-scale-factor,1)) !important; }
+}
 #static-more-games-watermark {
   display: none !important;
 }

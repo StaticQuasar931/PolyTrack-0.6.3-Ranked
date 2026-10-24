@@ -1,4 +1,6 @@
+import {installMobileFullscreen} from './mobile-fullscreen.mjs';
 // Only UI overlays consume these measurements. Canvas size and game input stay native.
+import {installCompactRankedLayout} from './compact-ranked-layout.mjs';
 export function installResponsiveViewport({document=globalThis.document,window=globalThis.window,container}={}){
   if(!document?.documentElement||!window)return ()=>{};
   const html=document.documentElement;
@@ -7,8 +9,8 @@ export function installResponsiveViewport({document=globalThis.document,window=g
     frame=0;if(disposed)return;
     const bounds=container?.getBoundingClientRect?.();
     const viewport=window.visualViewport;
-    const width=Math.max(1,Math.round(Math.min(bounds?.width||window.innerWidth,viewport?.width||window.innerWidth)));
-    const height=Math.max(1,Math.round(Math.min(bounds?.height||window.innerHeight,viewport?.height||window.innerHeight)));
+    const width=Math.max(1,Math.round(Math.min(bounds?.width||html.clientWidth||window.innerWidth,viewport?.width||window.innerWidth)));
+    const height=Math.max(1,Math.round(Math.min(bounds?.height||html.clientHeight||window.innerHeight,viewport?.height||window.innerHeight)));
     const top=Math.max(0,Math.round(bounds?.top||0),Math.round(viewport?.offsetTop||0));
     const left=Math.max(0,Math.round(bounds?.left||0),Math.round(viewport?.offsetLeft||0));
     const signature=[width,height,top,left].join(':');if(signature===last)return;last=signature;
@@ -39,6 +41,6 @@ export function installResponsiveViewport({document=globalThis.document,window=g
 }
 
 if(typeof document!=='undefined'&&typeof window!=='undefined'){
-  const start=()=>installResponsiveViewport({document,window,container:document.querySelector('[data-polytrack-container]')||undefined});
+  const start=()=>{installResponsiveViewport({document,window,container:document.querySelector('[data-polytrack-container]')||undefined});installCompactRankedLayout({document,window});installMobileFullscreen({document,window});};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 }
