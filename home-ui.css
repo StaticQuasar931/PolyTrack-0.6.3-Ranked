@@ -1,3 +1,5 @@
+/* Native home visibility always wins over responsive display rules. */
+html body .menu-ui > .info:is(.hidden,[hidden],[style*="display: none"]) { display: none !important; }
 @media (max-width: 700px), (max-width: 1100px) and (max-height: 500px) {
   html body .menu-ui > .main-buttons-container:not(.hidden) {
     display: grid !important; grid-template-columns: repeat(3,minmax(0,1fr)); align-content: center;

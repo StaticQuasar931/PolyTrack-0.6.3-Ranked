@@ -56,6 +56,19 @@ function project(source, fields) {
   for (const field of fields) if (Object.hasOwn(source || {}, field)) result[field] = ['name', 'nickname', 'author'].includes(field) ? publicDisplayName(source[field]) : source[field];
   return result;
 }
+function eventDates(source) {
+  const result = {};
+  for (const field of ['submittedAt', 'verifiedAt']) {
+    if (Number.isSafeInteger(source?.[field]) && source[field] > 0) result[field] = source[field];
+  }
+  return result;
+}
+function applyReplayDates(entry, replay) {
+  // A PB submission date and a successful verification date are different evidence.
+  const dates = eventDates(replay);
+  if (dates.verifiedAt) entry.verifiedAt = dates.verifiedAt;
+  if (!entry.submittedAt && dates.submittedAt) entry.submittedAt = dates.submittedAt;
+}
 function projectCosmetics(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? project(value, cosmeticFields) : undefined;
 }
@@ -207,7 +220,7 @@ export function publicEventBackup(value, eventId) {
   if (value.period) result.period = projectPeriod(value.period);
   result.id = eventId;
   result.entries = value.entries.map(row => {
-    const entry = project(row, eventEntryFields);
+    const entry = {...project(row, eventEntryFields), ...eventDates(row)};
     for (const key of ['runId', 'replayHash']) if (typeof row?.[key] === 'string' && TRACK_ID.test(row[key])) entry[key] = row[key];
     return entry;
   });
@@ -307,7 +320,8 @@ export function publicEventReplayBackup(value, {periodId, trackId, entry}) {
     throw Error('Invalid or unbound public event replay');
   }
   return {periodId, trackId, accountId: entry.accountId, runId: value.runId, timeMs: entry.timeMs,
-    frames: entry.timeMs, replay: value.replay, replayHash: value.replayHash, carStyle: value.carStyle};
+    frames: entry.timeMs, replay: value.replay, replayHash: value.replayHash, carStyle: value.carStyle,
+    ...eventDates(value)};
 }
 
 function parseSet(source, name) {
@@ -509,7 +523,11 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
           const projected=publicEventReplayBackup({...replay, verificationStatus:'verified', verified:true, eventRpEligible:true}, {periodId:id, trackId:value.period.trackId, entry});
           if (JSON.stringify(projected) !== JSON.stringify(replay)) throw Error('Replay is not a public projection');
           retainedReplays[relative] = prior; entry.runId = replay.runId; entry.replayHash = replay.replayHash;
-          continue;
+          applyReplayDates(entry, replay);
+          // Repair legacy live metadata within the existing fetch cap, retaining good bytes on failure.
+          const dateCheckAge = now - Number(prior.verdictDateCheckedAt);
+          const dateCheckFresh = Number.isSafeInteger(prior.verdictDateCheckedAt) && dateCheckAge >= 0 && dateCheckAge < 7 * 86400000;
+          if (!liveIds.has(id) || Number.isSafeInteger(replay.verifiedAt) && replay.verifiedAt > 0 || dateCheckFresh) continue;
         } catch { /* A changed or corrupt replay must be replaced. */ }
       }
       // Frozen history is never a paid fallback during routine publication.
@@ -562,10 +580,11 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     if (!entry) continue;
     entry.replayHash = value.replayHash;
     entry.runId = value.runId;
+    applyReplayDates(entry, value);
     const relative = `event-replays/${candidate.periodId}/${candidate.entry.accountId}.json`;
     pendingWrites.set(relative, value);
     eventReplays[relative] = {path: relative, periodId: candidate.periodId, accountId: candidate.entry.accountId,
-      timeMs: candidate.entry.timeMs, replayHash: value.replayHash};
+      timeMs: candidate.entry.timeMs, replayHash: value.replayHash, verdictDateCheckedAt: now};
   }
   // Keep valid historical standings even when the cloud catalog rolls its
   // bounded recent-history window forward. Generate month indexes locally.

@@ -51,8 +51,10 @@ export function installCompactRankedLayout({document=globalThis.document,window=
   const outside=event=>{if(active?.isOpen()&&!active.targetInside(event.target))active.close();};
   const key=event=>{if(event.key==='Escape'&&active?.isOpen()){active.close(true);event.preventDefault();event.stopImmediatePropagation();}};
   window.addEventListener('resize',schedule,{passive:true});window.visualViewport?.addEventListener('resize',schedule,{passive:true});
+  document.addEventListener('sq-viewport-changed',schedule);
   document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);update();
   return ()=>{disposed=true;if(frame)window.cancelAnimationFrame(frame);observer?.disconnect();active?.destroy();
     window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);
+    document.removeEventListener('sq-viewport-changed',schedule);
     document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',key,true);};
 }

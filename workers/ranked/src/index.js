@@ -1,4 +1,5 @@
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
+import {recallPublicResponse, rememberPublicResponse} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId} from './verification-shards.js';
@@ -2203,9 +2204,11 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
   cacheUrl.searchParams.set('__entryDetails', String(OVERALL_DETAILS_VERSION));
   const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
   if (cache) {
-    const cached = await cache.match(cacheKey);
+    const cached = await cache.match(cacheKey).catch(() => null);
     if (cached) return cached;
   }
+  const remembered = recallPublicResponse(env, cacheKey.url);
+  if (remembered) return remembered;
   if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
   const key = cacheKey.url;
   let load = publicSnapshotLoads.get(key);
@@ -2251,6 +2254,7 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
           : overallData;
         const response = json(origin, env, 200, data, collection === PUBLIC_PAGE_COLLECTION
           ? 'public, max-age=86400, immutable' : 'public, max-age=300, stale-while-revalidate=30');
+        await rememberPublicResponse(env, cacheKey.url, response);
         if (cache && context.waitUntil) {
           const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
             .catch(() => {})
@@ -2279,6 +2283,8 @@ async function publicStatus(request, env, context, origin) {
   const cacheKey = new Request(url, {method: 'GET'});
   const cached = await cache?.match(cacheKey).catch(() => null);
   if (cached) return cached;
+  const remembered = recallPublicResponse(env, cacheKey.url);
+  if (remembered) return remembered;
   // Admission is per caller; only the database read may be shared.
   if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
   let load = publicSnapshotLoads.get(cacheKey.url);
@@ -2288,6 +2294,7 @@ async function publicStatus(request, env, context, origin) {
       try {
         const meta = (await readDocument(env, COLLECTIONS.meta, 'current'))?.data || {};
         const response = json(origin, env, 200, { service: 'polytrack-ranked', algorithmVersion: ALGORITHM_VERSION, schemaVersion: TRACK_SCHEMA_VERSION, averagePlacementVersion: AVERAGE_PLACEMENT_VERSION, derivedMetricsVersion: Number(meta.derivedMetricsVersion || 0), currentDerivedMetricsVersion: DERIVED_METRICS_VERSION, openBetaEnabled: openBetaEnabled(env), rankedWritesEnabled: String(env.RANKED_WRITES_ENABLED) !== 'false', multiplayerEnabled: String(env.MULTIPLAYER_ENABLED) !== 'false', revision: Number(meta.revision || 0), builtRevision: Number(meta.builtRevision || 0), dirty: meta.dirty === true, pendingRevisions: Math.max(0, Number(meta.revision || 0) - Number(meta.builtRevision || 0)), updatedAt: Number(meta.updatedAt || 0) }, 'public, max-age=30');
+        await rememberPublicResponse(env, cacheKey.url, response);
         // Keep concurrent requests joined until the edge cache is populated.
         if (cache) await cache.put(cacheKey, response.clone()).catch(() => {});
         return response;
@@ -2302,7 +2309,7 @@ async function publicStatus(request, env, context, origin) {
 
 async function allowPublicRead(request, env) {
   const limiter = env.PUBLIC_READ_RATE_LIMITER;
-  if (!limiter) return true;
+  if (!limiter) return String(env.PUBLIC_READ_RATE_LIMIT_REQUIRED) !== 'true';
   const ip = request.headers.get('CF-Connecting-IP');
   if (!ip) return false;
   try {

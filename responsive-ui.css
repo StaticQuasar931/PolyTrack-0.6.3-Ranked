@@ -126,17 +126,17 @@ html:root body #polytrackTrackFreshness.polytrack-track-freshness {
   box-shadow: 0 6px 18px #0004 !important;
 }
 html:root body #polytrackTrackFreshness .track-data-weight {
-  font-size: clamp(20px, 1.65vw, 25px);
+  font-size: calc(clamp(20px, 1.65vw, 25px) * var(--sq-ui-scale,1));
   line-height: 1.1;
   color: #ffe6a6;
 }
-html:root body #polytrackTrackFreshness .track-data-players { font-size: clamp(20px, 1.65vw, 25px); line-height: 1.1; color: #c6edff; }
+html:root body #polytrackTrackFreshness .track-data-players { font-size: calc(clamp(20px, 1.65vw, 25px) * var(--sq-ui-scale,1)); line-height: 1.1; color: #c6edff; }
 html:root body #polytrackTrackFreshness.polytrack-track-freshness > strong { align-items: baseline; gap: 6px 12px; }
 html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="vertical"],
 html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="compact"][data-expanded="true"] {
   width: fit-content !important;
   max-width: var(--sq-track-data-width) !important;
-  padding: 7px 9px !important;
+  padding: calc(7px * var(--sq-ui-scale,1)) calc(9px * var(--sq-ui-scale,1)) !important;
   gap: 4px !important;
 }
 html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="compact"]:not([data-expanded="true"]) {

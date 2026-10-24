@@ -19,14 +19,15 @@ export function eventRewardLabel(period){
   return Number.isFinite(cap)&&cap>0?'Up to '+cap+' Event RP':'Event RP details unavailable';
 }
 export function eventRunDate(row,at=Date.now()){
-  const stamp=[row?.submittedAt,row?.receivedAt,row?.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=at);
+  const stamp=eventDisplayRunAt(row,at);
   if(!stamp)return {label:'Date unavailable',title:'This saved result has no run date.'};
   const seconds=Math.floor((at-stamp)/1000),minutes=Math.floor(seconds/60),hours=Math.floor(minutes/60),days=Math.floor(hours/24);
   return {label:days?days+' day'+(days===1?'':'s')+' ago':hours?hours+' hour'+(hours===1?'':'s')+' ago':minutes?minutes+' min ago':'Just now',title:new Date(stamp).toLocaleString()};
 }
 export function eventVerificationLabel(row,pending=!!row?.pending,locale){
-  const at=eventExactRunAt(row);
-  const date=at?new Date(at).toLocaleString(locale,{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'}):'Date unavailable';
+  const at=eventDisplayRunAt(row);
+  const prefix=at&&!eventExactRunAt(row)&&!validEventTimestamp(row?.runAt)?'Received ':'';
+  const date=at?prefix+new Date(at).toLocaleString(locale,{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'}):'Date unavailable';
   return date+' - '+(pending?'Pending':'Verified');
 }
 export function eventExactRunAt(row,at=Date.now()){
@@ -40,6 +41,34 @@ export function eventExactRunAt(row,at=Date.now()){
     if(value<=Math.min(at,8640000000000000))return value;
   }
   return null;
+}
+function validEventTimestamp(value,at=Date.now()){
+  return Number.isSafeInteger(value)&&value>=946684800000&&value<=Math.min(at,8640000000000000);
+}
+export function eventDisplayRunAt(row,at=Date.now()){
+  return eventExactRunAt(row,at)||[row?.runAt,row?.submittedAt,row?.receivedAt].find(value=>validEventTimestamp(value,at))||null;
+}
+export function decorateEventRowPresentation(button,row,at=Date.now()){
+  const position=button.querySelector('.left .position'),ordinal=eventOrdinal(row.rank);
+  if(position&&ordinal){
+    const number=String(row.rank),suffix=button.ownerDocument.createElement('span');
+    suffix.className='sq-event-ordinal-suffix';suffix.textContent=ordinal.slice(number.length);
+    position.replaceChildren(button.ownerDocument.createTextNode(number),suffix);
+    position.setAttribute('aria-label',ordinal);
+  }
+  const state=button.querySelector('.verified-state');
+  if(!state)return;
+  state.dataset.sqRunStatus=row.pending?'unchecked':'verified';
+  const exact=eventExactRunAt(row,at);
+  if(exact)state.dataset.sqPbAt=String(exact);else delete state.dataset.sqPbAt;
+  const label=eventVerificationLabel(row,!!row.pending);
+  // The shared status decorator preserves this date, including its receipt-time qualifier.
+  state.dataset.sqNativeDate=label.slice(0,label.lastIndexOf(' - '));
+  if(!eventDisplayRunAt(row,at)){
+    const text=[...state.childNodes].find(node=>node.nodeType===3);
+    if(text)text.textContent='Date unavailable';
+  }
+  state.title=label;state.setAttribute('aria-label',label);
 }
 export function eventStandingsLabel(board,at=Date.now(),failed=false){
   const capture=board?._publicBackup&&Number(board._snapshotCapturedAt)>0?Number(board._snapshotCapturedAt):0;
@@ -834,12 +863,11 @@ export function installEvents(bridge){
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     for(const row of rows.slice(view.page*20,view.page*20+20)){
       const renderer=view.board.__pt062EventRows;if(renderer?.version!==1)break;
-      const runAt=[row.submittedAt,row.receivedAt,row.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=now());
+      const runAt=eventDisplayRunAt(row,now());
       const button=renderer.render(container,nativeEventRow(row,view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readArchivedReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Saved archived replay is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
       button.querySelector('.left p:not(.position)').classList.add('event-time');
-      const state=button.querySelector('.verified-state');state.dataset.sqRunStatus='verified';
-      const exactRunAt=eventExactRunAt(row);if(exactRunAt)state.dataset.sqPbAt=String(exactRunAt);else delete state.dataset.sqPbAt;
-      if(!runAt)state.firstChild.textContent='Date unavailable';state.title=eventVerificationLabel(row,false);state.setAttribute('aria-label',state.title);const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
+      const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
+      const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+' ERP';points.title='Archived Event RP';state.prepend(points);bridge.decorateRacer?.(button,row);
     }
     if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent='No verified archived times were recorded.';container.append(empty);}
@@ -963,15 +991,13 @@ export function installEvents(bridge){
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
       const renderer=view.board.__pt062EventRows;
       if(renderer?.version!==1){const error=document.createElement('p');error.className='error-message';error.textContent='Reload the game to load the native event leaderboard.';container.append(error);break;}
-      const runAt=[row.submittedAt,row.receivedAt,row.pbAt].find(value=>Number.isSafeInteger(value)&&value>0&&value<=now());
+      const runAt=eventDisplayRunAt(row,now());
       const button=renderer.render(container,nativeEventRow(row,accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending=String(!!row.pending);const playable=(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof bridge.readReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));if(playable)button.onclick=()=>void selectReplay(period,row);
       const selectedRow=selectedGhosts.get(row.accountId),pendingRow=pendingGhosts.get(row.accountId),matches=target=>target?.periodId===period.id&&target.accountId===accountId&&target.targetTimeMs===row.timeMs&&target.targetRunId===(row.runId||null)&&target.targetPending===!!row.pending,selected=matches(selectedRow),pending=matches(pendingRow);
       button.classList.toggle('selected',!!(selected||pending));button.classList.toggle('pending-selection',!!pending);button.setAttribute('aria-pressed',String(!!(selected||pending)));button.setAttribute('aria-busy',String(!!pending));
       button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.querySelector('.left p:not(.position)').classList.add('event-time');
-      const state=button.querySelector('.verified-state');state.dataset.sqRunStatus=row.pending?'unchecked':'verified';
-      const exactRunAt=eventExactRunAt(row);if(exactRunAt)state.dataset.sqPbAt=String(exactRunAt);else delete state.dataset.sqPbAt;
-      if(!runAt)state.firstChild.textContent='Date unavailable';state.title=eventVerificationLabel(row);state.setAttribute('aria-label',state.title);
+      const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
       if(!row.pending){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' ERP');points.title=row.groupRp!=null?'Filtered group Event RP':'Verified Event RP';state.prepend(points);}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
       button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
@@ -999,7 +1025,14 @@ export function installEvents(bridge){
     const current=root.querySelector('.current'),position=current?.querySelector('.position');
     if(!position)return;
     const text=place?eventOrdinal(place.rank):'';
-    if(position.textContent!==text)position.textContent=text;
+    if(position.textContent!==text||text&&!position.querySelector('.sq-event-ordinal-suffix')){
+      if(!text)position.textContent='';
+      else{
+        const number=String(place.rank),suffix=document.createElement('span');
+        suffix.className='sq-event-ordinal-suffix';suffix.textContent=text.slice(number.length);
+        position.replaceChildren(document.createTextNode(number),suffix);
+      }
+    }
     if(current.classList.contains('show-position')!==!!place)current.classList.toggle('show-position',!!place);
     const detail=place?'Event place '+place.rank+(place.fieldSize===null?'':` of ${place.fieldSize}`)+(place.provisional?' (provisional)':''):'';
     if(position.title!==detail)position.title=detail;

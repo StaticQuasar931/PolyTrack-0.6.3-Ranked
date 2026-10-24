@@ -45,9 +45,8 @@ export async function capturePublicEventTotals({directory,fetchImpl=fetch,log=()
   const request=(...args)=>totalsNetworkRead(()=>fetchImpl(...args));
   try{
     const response=await request('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/totals',{headers:{Accept:'application/json',Origin:'https://staticquasar931.github.io'},signal:AbortSignal.timeout(10000)});
-    let result=response;
-    if(response.status===403||response.status===404)result=await request('https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents/0.6.2_event_public/totals?mask.fieldPaths=entries&mask.fieldPaths=updatedAt&mask.fieldPaths=complete&mask.fieldPaths=totalEntries',{signal:AbortSignal.timeout(10000)});
-    const raw=await totalsJson(result);
+    // Public Firestore totals are backend-only. Never retry a Worker denial there.
+    const raw=await totalsJson(response);
     const source=raw.fields?Object.fromEntries(Object.entries(raw.fields).map(([key,value])=>[key,decode(value)])):raw;
     let pageRequests=0;
     const full=await assemblePublishedSnapshotPages(source,{fetchPage:async(page,generation)=>{pageRequests++;return totalsJson(await request('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/totals/page?generation='+encodeURIComponent(generation)+'&page='+page,{headers:{Accept:'application/json',Origin:'https://staticquasar931.github.io'},signal:AbortSignal.timeout(12000)}));}});

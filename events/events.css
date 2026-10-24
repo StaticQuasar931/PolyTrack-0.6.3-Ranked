@@ -1037,3 +1037,21 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 .sq-event-loading::before{content:"";display:inline-block;width:1em;height:1em;margin-right:.6em;border:2px solid #6b93be;border-top-color:#94e9ff;border-radius:50%;vertical-align:-.15em;animation:sq-event-loading-spin .8s linear infinite}
 @keyframes sq-event-loading-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.sq-event-loading::before{animation:none}}
+
+/* Event ordinals must remain readable instead of inheriting the tiny native suffix face. */
+.sq-event-board .left .position .sq-event-ordinal-suffix,
+.time-announcer-ui .position .sq-event-ordinal-suffix{
+ font-family:ui-sans-serif,sans-serif!important;font-size:.55em!important;
+ font-weight:600!important;line-height:1!important;letter-spacing:normal!important;
+ text-transform:none!important;vertical-align:baseline!important;
+ display:inline-block;min-width:1.15em;
+}
+
+/* Daily previews use the same crisp pixel-map sampling as native track tiles. */
+#ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"] .sq-event-thumb .profile-track-image-frame {
+ width:100%!important;height:100%!important;padding:0!important;box-sizing:border-box;
+}
+#ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"] .sq-event-thumb img {
+ object-fit:contain!important;object-position:center!important;image-rendering:pixelated!important;
+ padding:0!important;max-width:100%!important;max-height:100%!important;
+}
