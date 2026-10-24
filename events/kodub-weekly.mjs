@@ -1,0 +1,104 @@
+import {validateWeekly} from './kodub-schema.mjs';
+
+export function withKodubWeekly(catalog,current,now=Date.now()){
+  const endsAt=Date.parse(current?.endTime),startsAt=endsAt-7*86400000;
+  if(!/^[a-f0-9]{64}$/.test(current?.trackId||'')||!current?.name||!Number.isSafeInteger(endsAt)||now<startsAt||now>=endsAt)return catalog;
+  const id='kodub_'+endsAt,periods=Array.isArray(catalog?.periods)?catalog.periods:[];
+  const confirmed=periods.find(period=>period.kind==='kodub'&&period.id===id&&period.trackId===current.trackId&&period.startsAt===startsAt&&period.endsAt===endsAt);
+  const period=confirmed||{id,kind:'kodub',trackId:current.trackId,trackName:current.name,author:current.author,startsAt,endsAt,maxRp:700,entrantLimit:200,scheduleOnly:true,thumbnailUrl:current.thumbnailUrl};
+  return {...catalog,periods:[...periods.filter(period=>period.kind!=='kodub'),period]};
+}
+
+function localSelection(value, base, now) {
+  const current = validateWeekly(value,now);
+  if (!current) return null;
+  for (const [field,ext] of [['trackUrl','track'],['thumbnailUrl','webp'],['coverUrl','webp']]) {
+    if (field === 'coverUrl' && current[field] === null) continue;
+    if (!new RegExp('^assets/[a-f0-9]{64}\\.'+ext+'$').test(current[field])) throw Error('Invalid local weekly asset');
+    current[field] = new URL(current[field],base).href;
+  }
+  return current;
+}
+const weeklyLoads=new WeakMap();
+async function fetchWithDeadline(fetcher,url,options,milliseconds){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),milliseconds);
+  try{return await fetcher(url,{...options,signal:controller.signal});}
+  finally{clearTimeout(timer);}
+}
+export async function loadKodubWeekly(options) {
+  const fetcher=options.fetcher||fetch,now=options.now??Date.now();
+  let loads=weeklyLoads.get(fetcher);if(!loads){loads=new Map();weeklyLoads.set(fetcher,loads);}
+  const key=String(options.baseUrl)+'|'+String(options.brokerUrl||'');
+  const cached=loads.get(key);if(cached&&now<cached.until)return cached.promise;
+  const record={until:Infinity,promise:null};
+  record.promise=fetchKodubWeekly({...options,fetcher,now}).then(value=>{
+    record.until=value.current?Date.parse(value.current.endTime):now+60000;return value;
+  }).catch(error=>{loads.delete(key);throw error;});
+  loads.set(key,record);if(loads.size>8)loads.delete(loads.keys().next().value);
+  return record.promise;
+}
+async function fetchKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.now()}) {
+  const base = new URL('./kodub/',baseUrl);
+  let local = null;
+  try {
+    const url=new URL('current.json',base);
+    const response = await fetchWithDeadline(fetcher,url,{cache:'default'},2500);
+    if (response.ok) {
+      local = localSelection(await response.json(),base,now);
+      // An expired browser copy must not force school networks onto workers.dev.
+      if(!local){
+        const fresh=await fetchWithDeadline(fetcher,url,{cache:'no-cache'},2500);
+        if(fresh.ok)local=localSelection(await fresh.json(),base,now);
+      }
+    }
+  } catch { /* The live feed can recover a missing or expired local copy. */ }
+  // Same-origin assets work on networks that block workers.dev and avoid a
+  // second native error path. The scheduled capture keeps this copy current.
+  if (local) return {serverTime:new Date(now).toISOString(),current:local};
+  if (brokerUrl) try {
+    const url = new URL('/v1/kodub-weekly',brokerUrl);
+    const response = await fetchWithDeadline(fetcher,url,{},3500);
+    if (!response.ok) throw Error('Kodub feed unavailable');
+    const current = validateWeekly(await response.json(),now);
+    if (current) for (const [field,kind] of [['trackUrl','track'],['thumbnailUrl','image'],['coverUrl','image']]) {
+      if (field === 'coverUrl' && current[field] === null) continue;
+      const asset = new URL(current[field]);
+      if (asset.origin !== url.origin || asset.search || asset.hash || asset.username || asset.password ||
+          !new RegExp('^/v1/kodub-weekly/'+kind+'/[a-f0-9]{64}$').test(asset.pathname)) throw Error('Invalid mirrored asset');
+    }
+    return {serverTime:new Date(now).toISOString(),current};
+  } catch { /* A transient upstream failure must not hide an unexpired capture. */ }
+  return {serverTime:new Date(now).toISOString(),current:local};
+}
+
+export function combineKodubCard(document, group, selection, now=Date.now()) {
+  if(!group)return;
+  const menu=group.closest('.track-selection-ui');
+  const card=menu?.querySelector('.track.track-of-the-week:not(.sq-kodub-weekly)')||menu?.querySelector('.sq-kodub-weekly');
+  const unavailable=group.querySelector('.sq-kodub-unavailable');
+  if(unavailable){
+    const valid=selection&&now<Date.parse(selection.endTime);
+    if(unavailable.hidden!==!!(valid&&card))unavailable.hidden=!!(valid&&card);
+    const note=unavailable.querySelector('small'),text=valid?'Loading weekly selection...':'Weekly track unavailable. Try again later.';if(note.textContent!==text)note.textContent=text;
+  }
+  if(!card)return;
+  if (!selection || now >= Date.parse(selection.endTime)) { card.hidden=true; return; }
+  const identity=selection.trackId+'@'+selection.endTime;
+  if(card.dataset.kodubIdentity && card.dataset.kodubIdentity!==identity){card.hidden=true;return;}
+  for(const old of group.querySelectorAll('.sq-kodub-weekly'))if(old!==card)old.remove();
+  if(card.dataset.kodubIdentity!==identity)card.dataset.kodubIdentity=identity;
+  if(card.hidden)card.hidden=false;
+  if (card.parentElement !== group) {
+    const section=card.parentElement;
+    const heading=group.querySelector(':scope > .sq-featured-heading');
+    if(heading)heading.after(card);else group.prepend(card);
+    if (section.querySelector('.group-title')) section.hidden=true;
+  }
+  if(!card.classList.contains('sq-kodub-weekly'))card.classList.add('sq-kodub-weekly');
+  const button=card.querySelector(':scope > button');
+  if (button && !button.querySelector('.sq-kodub-label')) {
+    const label=document.createElement('small');label.className='sq-kodub-label';label.textContent='WEEKLY SPOTLIGHT';
+    button.prepend(label);
+  }
+}

@@ -1,0 +1,243 @@
+/* Available-space overlays. The native canvas, camera and page buttons stay game-owned. */
+:root {
+  --sq-available-width: 100vw;
+  --sq-available-height: 100vh;
+  --sq-visible-top: 0px;
+}
+/* Weight, population and source age lead. Policy/change timestamps are secondary. */
+html:root body #polytrackTrackFreshness.polytrack-track-freshness {
+  background: #21364c !important;
+  pointer-events: auto;
+  box-shadow: 0 6px 18px #0004 !important;
+}
+html:root body #polytrackTrackFreshness .track-data-weight {
+  font-size: clamp(20px, 1.65vw, 25px);
+  line-height: 1.1;
+  color: #ffe6a6;
+}
+html:root body #polytrackTrackFreshness .track-data-players { font-size: clamp(20px, 1.65vw, 25px); line-height: 1.1; color: #c6edff; }
+html:root body #polytrackTrackFreshness.polytrack-track-freshness > strong { align-items: baseline; gap: 6px 12px; }
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="vertical"],
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="compact"][data-expanded="true"] {
+  width: fit-content !important;
+  max-width: var(--sq-track-data-width) !important;
+  padding: 7px 9px !important;
+  gap: 4px !important;
+}
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="compact"]:not([data-expanded="true"]) {
+  width: 44px !important;
+  height: 44px !important;
+  padding: 10px !important;
+}
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-layout="horizontal"] > strong { flex-direction: row !important; align-items: baseline; gap: 8px 16px !important; }
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-detail="essential"] > :is(.track-data-update,.track-data-unlock) {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+}
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-detail="essential"]:is(:hover,:focus-within) > :is(.track-data-update,.track-data-unlock),
+html:root body #polytrackTrackFreshness.polytrack-track-freshness[data-detail="full"] > :is(.track-data-update,.track-data-unlock) {
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  clip-path: none !important;
+}
+html:root body #polytrackTrackFreshness:focus-visible { outline: 2px solid #a1edff; outline-offset: 3px; }
+@supports (height: 100dvh) { :root { --sq-available-height: 100dvh; } }
+html body :is(#overallLeaderboardPanel,#overallProfilePopup,#overallHelpPopup) {
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  top: var(--sq-visible-top, 0px) !important;
+  left: var(--sq-visible-left, 0px) !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: var(--sq-available-width) !important;
+  height: var(--sq-available-height) !important;
+}
+html body #overallFilterPanel { min-width: 0; box-sizing: border-box; }
+html body :is(#overallProfilePopup,#overallHelpPopup) {
+  width: min(100%, var(--sq-available-width)) !important;
+  height: min(100%, var(--sq-available-height)) !important;
+}
+html body #overallLeaderboardPanel .overall-shell {
+  width: min(1540px, calc(var(--sq-available-width) - 16px)) !important;
+  height: calc(var(--sq-available-height) - 16px) !important;
+  max-height: calc(var(--sq-available-height) - 16px) !important;
+  min-height: calc(var(--sq-available-height) - 16px) !important;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+html body #overallLeaderboardList { min-height: 72px; min-width: 0; overscroll-behavior: contain; }
+html body #overallLeaderboardList .overall-entry { animation-duration: .16s !important; }
+html body #overallLeaderboardList .overall-loading::before {
+  content: '';
+  display: block;
+  width: 30px;
+  height: 30px;
+  margin: 0 auto 12px;
+  border: 3px solid #5575a5;
+  border-top-color: #9ceaff;
+  border-radius: 50%;
+  animation: sq-ranking-loading .7s linear infinite;
+}
+@keyframes sq-ranking-loading { to { transform: rotate(360deg); } }
+html body #overallProfilePopup .overall-profile-card,
+html body #overallHelpPopup .overall-help-card {
+  box-sizing: border-box;
+  width: min(1440px, calc(var(--sq-available-width) - 24px)) !important;
+  max-width: calc(var(--sq-available-width) - 24px) !important;
+  max-height: calc(var(--sq-available-height) - 24px) !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+html body #overallProfilePopup .overall-profile-header,
+html body #overallProfilePopup .profile-dialog-toolbar,
+html body #overallHelpPopup .overall-help-header,
+html body #overallHelpPopup .overall-help-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #25386c;
+}
+html body #overallHelpPopup .overall-help-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)) !important;
+  gap: 14px !important;
+  align-items: start;
+}
+html body #overallLeaderboardPanel #overallHelpPopup .overall-help-grid section { min-width: 0; padding: 12px; overflow-wrap: anywhere; grid-column: auto !important; }
+html body #overallHelpPopup .overall-help-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+html body #overallHelpPopup .overall-help-head h3 { font-size: clamp(22px, 3vw, 32px); min-width: 0; }
+html body #overallHelpPopup #overallHelpClose { flex: 0 0 auto; width: auto !important; min-width: 88px !important; min-height: 44px !important; padding: 8px 18px !important; font-size: 17px !important; white-space: nowrap; }
+html body #overallHelpPopup .overall-help-grid p { line-height: 1.4; }
+html body #overallHelpPopup .overall-help-content > h4 { margin: 20px 0 6px; color: #9ce8ff; }
+html body #overallHelpPopup .ranked-help-note { margin: 0 0 12px; color: #becde8; line-height: 1.4; }
+html body #overallHelpPopup .ranked-help-sections { display: grid; gap: 8px; }
+html body #overallHelpPopup .ranked-help-controls { min-width: 0; border: 1px solid #4b6690; background: #17264c; }
+html body #overallHelpPopup .ranked-help-controls summary { min-height: 44px; box-sizing: border-box; padding: 12px 16px; cursor: pointer; color: #e1f6ff; }
+html body #overallHelpPopup .ranked-help-controls summary:focus-visible { outline: 2px solid #8ee9ff; outline-offset: -3px; }
+html body #overallHelpPopup .ranked-help-controls[open] summary { background: #29416f; border-bottom: 1px solid #4b6690; }
+html body #overallHelpPopup .ranked-help-controls dl { margin: 0; padding: 4px 16px 12px; }
+html body #overallHelpPopup .ranked-help-controls dl > div { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 0; border-bottom: 1px solid #304568; }
+html body #overallHelpPopup .ranked-help-controls dl > div:last-child { border-bottom: 0; }
+html body #overallHelpPopup .ranked-help-controls dt { flex: 1 1 210px; min-width: 0; color: #96e7ff; }
+html body #overallHelpPopup .ranked-help-controls dd { flex: 2 1 260px; min-width: 0; margin: 0; line-height: 1.5; color: #e2eafb; }
+html body #overallHelpPopup .ranked-help-controls kbd { font: inherit; overflow-wrap: anywhere; }
+html body #overallHelpPopup .overall-help-actions { position: sticky; bottom: 0; background: #25386c; padding-block: 8px; }
+html body .pt-group-filter-menu .fm-shell {
+  max-width: calc(var(--sq-available-width) - 24px) !important;
+  max-height: calc(var(--sq-available-height) - 24px) !important;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+}
+html body .pt-group-filter-menu {
+  top: var(--sq-visible-top, 0px);
+  left: var(--sq-visible-left, 0px);
+  width: var(--sq-available-width);
+  height: var(--sq-available-height);
+}
+html body :is(#overallProfilePopup,#overallHelpPopup,#overallFilterPanel) :is(input,select,textarea) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+html body :is(#overallLeaderboardPanel,#overallProfilePopup,#overallHelpPopup,#overallFilterPanel) :is(button,summary,select,input):focus-visible {
+  outline: 2px solid #a1edff;
+  outline-offset: 2px;
+}
+html body .track-info-ui .leaderboard-ui > .button-wrapper {
+  width: calc(100% - 20px) !important;
+  max-width: none !important;
+}
+/* Keep the native information panel on the right while its board mounts. */
+html body .track-info-ui.sq-event-scaffold-needed::before {
+  content: 'Loading event standings';
+  display: grid;
+  place-items: center;
+  width: 600px;
+  align-self: stretch;
+  flex: 0 0 600px;
+  background: #29366b;
+  color: #c6e9ff;
+  font: 20px ForcedSquare, sans-serif;
+  order: -1;
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  html body .track-info-ui.sq-event-scaffold-needed::before { width: 100%; flex: 1 1 120px; min-height: 120px; order: 1; }
+}
+/* Each custom profile section responds to its own column, not the monitor's name. */
+html body #overallProfileContent { container-type: inline-size; }
+html body #overallProfilePopup :is(.profile-guide-controls,.profile-track-list,.profile-results,.profile-stat-strip) { min-width: 0; }
+@container (max-width: 720px) {
+  #overallProfilePopup .profile-guide-controls { flex-wrap: wrap !important; gap: 8px !important; }
+  #overallProfilePopup .profile-guide-track { min-width: 0 !important; }
+  #overallProfilePopup .profile-track-head { font-size: 13px !important; }
+}
+@media (max-width: 1100px), (max-height: 700px) {
+  html body .pt-group-filter-menu .fm-shell {
+    max-height: calc(var(--sq-available-height) - 24px) !important;
+  }
+  html body #overallLeaderboardPanel .overall-top { padding: 10px 14px !important; gap: 10px; }
+  html body #overallLeaderboardPanel .overall-top h2 { font-size: clamp(26px, 3.2vw, 42px) !important; }
+  html body #overallLeaderboardPanel .overall-actions { gap: 6px; }
+  html body #overallLeaderboardPanel .overall-action-btn { min-width: 68px; min-height: 44px; font-size: 18px; }
+  html body #overallLeaderboardPanel .overall-sub { padding: 6px 14px; font-size: 13px; }
+  html body #overallLeaderboardPanel .overall-columns { padding-block: 6px; font-size: 12px; }
+  html body #overallLeaderboardPanel #overallDailyGrid { gap: 6px !important; padding: 6px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid > div { padding: 5px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-center-tools { gap: 6px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .competition-track-name { font-size: 17px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .competition-result { font-size: 12px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-challenge-stack > section { min-height: 58px !important; padding: 4px !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .competition-feature-button { grid-template-columns: 40px minmax(0,1fr) !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .competition-feature-image { width: 40px !important; height: 40px !important; }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  html body #overallLeaderboardPanel .overall-shell { --rank-columns: 68px minmax(0,1.3fr) minmax(0,1fr) minmax(92px,.5fr); }
+}
+/* Wide but short school-laptop windows retain three distinct footer sections. */
+@media (min-width: 1000px) and (max-height: 700px) {
+  html body #overallLeaderboardPanel #overallDailyGrid {
+    grid-template-columns: minmax(0,1fr) minmax(0,.95fr) minmax(0,1fr) !important;
+    grid-template-rows: auto !important;
+    max-height: 38vh !important;
+  }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-challenge-stack { grid-column: 1 !important; grid-row: 1 !important; grid-template-columns: minmax(0,1fr) !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-center-tools { grid-column: 2 !important; grid-row: 1 !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-footer-right { grid-column: 3 !important; grid-row: 1 !important; }
+}
+@media (max-width: 700px) {
+  html body #overallLeaderboardPanel { padding: 4px !important; }
+  html body #overallLeaderboardPanel .overall-shell { width: calc(var(--sq-available-width) - 8px) !important; height: calc(var(--sq-available-height) - 8px) !important; }
+  html body #overallLeaderboardPanel .overall-top { flex-wrap: wrap; padding: 8px !important; }
+  html body #overallLeaderboardPanel .overall-title-group { flex: 1 1 170px; }
+  html body #overallLeaderboardPanel .overall-actions { margin-left: auto; }
+  html body #overallLeaderboardPanel .overall-actions button { min-width: 54px; padding-inline: 8px; font-size: 16px; }
+  html body #overallProfilePopup .profile-hero { grid-template-columns: minmax(0,1fr) !important; }
+  html body #overallProfilePopup .profile-identity h3 { overflow-wrap: anywhere; }
+  html body #overallProfilePopup .profile-track-history { min-width: 0; }
+  html body #overallProfilePopup .profile-guide-controls .profile-guide-filter { min-height: 44px !important; }
+}
+@media (max-height: 460px) {
+  html body #overallLeaderboardPanel .overall-top { padding-block: 4px !important; }
+  html body #overallLeaderboardPanel .overall-sub { max-height: 30px; overflow: auto; }
+  html body #overallProfilePopup .overall-profile-card,
+  html body #overallHelpPopup .overall-help-card { max-height: calc(var(--sq-available-height) - 12px) !important; }
+  html body #overallProfilePopup .profile-hero { gap: 10px; }
+  html body #overallProfilePopup .profile-car-column { max-height: 150px; overflow: auto; }
+  html body #overallLeaderboardPanel #overallDailyGrid { max-height: 48vh !important; }
+}
+@media (max-height: 440px) and (min-width: 641px) {
+  html body #overallLeaderboardPanel #overallDailyGrid { grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; grid-template-rows: auto auto !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-center-tools { grid-column: 1 !important; grid-row: 1 !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-footer-right { grid-column: 2 !important; grid-row: 1 !important; }
+  html body #overallLeaderboardPanel #overallDailyGrid .overall-challenge-stack { grid-column: 1 / -1 !important; grid-row: 2 !important; grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; }
+  html body #overallLeaderboardPanel .overall-page-arrow { min-width: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body :is(#overallLeaderboardPanel,#overallProfilePopup,#overallHelpPopup,#overallFilterPanel) * { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
