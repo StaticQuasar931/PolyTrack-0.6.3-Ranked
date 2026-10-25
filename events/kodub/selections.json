@@ -64,5 +64,16 @@
     "trackUrl": "assets/a6ccd78cc443cd848a41da11d94904d2fffb7647d0ecafca64562eb53480ea2b.track",
     "thumbnailUrl": "assets/cca7b59f73e005dacfb76b87b59ee43a2f1f441f9f0af14982a59c230f7babb5.webp",
     "coverUrl": "assets/0adfc40b1241a542248576aef5109d134ca89789ad197c955ac15246a023e82e.webp"
+  },
+  {
+    "trackId": "7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7",
+    "name": "Hydropower",
+    "author": "Bobson Dugnutt",
+    "lastModified": "2026-09-27T00:29:50.000Z",
+    "environment": 0,
+    "endTime": "2026-11-01T20:00:00.000Z",
+    "trackUrl": "assets/3c3206ae080a741d3b3ac9d387fa113ab7468122f3db02e8f3c00915fc61cffe.track",
+    "thumbnailUrl": "assets/aae064e20b6e3444acf98372f104077c776a22236012082b189e606ffdfd281c.webp",
+    "coverUrl": "assets/c9bc112aa7965f15d221b8dc16568b0be1d9102bd949fb9ed5c9be6ff6af21e7.webp"
   }
 ]
