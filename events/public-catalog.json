@@ -1,22 +1,6 @@
 {
   "periods": [
     {
-      "trackName": "Spite",
-      "author": "Zihcx/CXKat",
-      "targetPolicy": "official-fastest-verified-at-import",
-      "id": "kodub_1792958400000",
-      "trackId": "60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48",
-      "startsAt": 1792353600000,
-      "endsAt": 1792958400000,
-      "graceMs": 86400000,
-      "maxRp": 700,
-      "scoringVersion": "time-gap-v2",
-      "targetMs": 44170,
-      "kind": "kodub",
-      "entrantLimit": 200,
-      "label": "Event 2026-10-18"
-    },
-    {
       "id": "w_20261019",
       "trackId": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
       "startsAt": 1792368000000,
@@ -41,6 +25,22 @@
       "kind": "daily",
       "entrantLimit": 200,
       "label": "Daily 2026-10-25"
+    },
+    {
+      "trackName": "Hydropower",
+      "author": "Bobson Dugnutt",
+      "targetPolicy": "official-fastest-verified-at-import",
+      "id": "kodub_1793563200000",
+      "trackId": "7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7",
+      "startsAt": 1792958400000,
+      "endsAt": 1793563200000,
+      "graceMs": 86400000,
+      "maxRp": 700,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 35439,
+      "kind": "kodub",
+      "entrantLimit": 200,
+      "label": "Event 2026-10-25"
     }
   ],
   "archives": [
