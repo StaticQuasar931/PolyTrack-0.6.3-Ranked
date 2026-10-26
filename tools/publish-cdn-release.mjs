@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 export const REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
 export const POINTER_BRANCH = 'cdn-release';
 export const ASSET_BRANCH = 'cdn-assets';
+export const SNAPSHOT_BRANCH = 'cdn-snapshots';
 export const POINTER_URL = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${POINTER_BRANCH}/release.json`;
 export const POINTER_MIRRORS = ['fastly.jsdelivr.net','gcore.jsdelivr.net'].map(host => POINTER_URL.replace('cdn.jsdelivr.net',host));
 const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
@@ -80,7 +81,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     files.push({path:file, sha256:hash});
   }
   if (files.length > 256) throw Error('Entry point requires review: too many release probes');
-  return {pointer:{schemaVersion:1, repository:REPOSITORY, commit, snapshotDirectory:directory, indexSha256:digest(index), publishedAt:now.toISOString()}, files};
+  return {pointer:{schemaVersion:1, repository:REPOSITORY, commit, snapshotDirectory:directory, indexSha256:digest(index), publishedAt:now.toISOString()}, files, entryHtml:html};
 }
 
 async function fetchBytes(url, fetchImpl, {retryAfterCapMs=120000}={}) {
@@ -104,7 +105,7 @@ async function fetchBytes(url, fetchImpl, {retryAfterCapMs=120000}={}) {
 }
 
 export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now=Date.now, log=console.warn}={}) {
-  const base = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${plan.pointer.commit}/`;
+  const baseFor = file => `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${file.commit || plan.pointer.commit}/`;
   // Bounded concurrency warms the boot path, not every replay or historical file.
   const queue = [...plan.files];
   const deadline = now() + 5*60*1000;
@@ -120,7 +121,7 @@ export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now
         if (now() >= deadline) { error=Error('CDN readiness budget exhausted'); break; }
         attempts++;
         try {
-          if (digest(await fetchBytes(base + file.path, fetchImpl)) !== file.sha256) throw Error('CDN bytes differ from committed file');
+          if (digest(await fetchBytes(baseFor(file) + file.path, fetchImpl)) !== file.sha256) throw Error('CDN bytes differ from committed file');
           error = null; break;
         } catch (failure) {
           error = failure;
@@ -154,45 +155,70 @@ export function assertCdnAssetSizes(entries) {
   }
 }
 
-export async function publishAssetTree(plan, git) {
-  const source = plan.pointer.commit;
+export function bindSnapshotPackage(plan, snapshotCommit) {
+  if (!sha(snapshotCommit) || typeof plan.entryHtml !== 'string' || !/^public-snapshots[1-9]\d*$/.test(plan.pointer.snapshotDirectory)) throw Error('Invalid snapshot package binding');
+  const original = '<meta name="polytrack-snapshot" content="./'+plan.pointer.snapshotDirectory+'/">';
+  if (plan.entryHtml.split(original).length !== 2) throw Error('Snapshot entry binding must be unique');
+  const absolute = 'https://cdn.jsdelivr.net/gh/'+REPOSITORY+'@'+snapshotCommit+'/'+plan.pointer.snapshotDirectory+'/';
+  const html = plan.entryHtml.replace(original, '<meta name="polytrack-snapshot" content="'+absolute+'">');
+  plan.pointer = {...plan.pointer, snapshotCommit, indexSha256:digest(html)};
+  plan.files = plan.files.map(file=>file.path==='index.html'?{...file,sha256:digest(html)}:
+    file.path.startsWith(plan.pointer.snapshotDirectory+'/')?{...file,commit:snapshotCommit}:file);
+  return html;
+}
+
+export async function publishAssetTree(plan, git, {partition='all', entryHtml}={}) {
+  if (!['all','runtime','snapshot'].includes(partition)) throw Error('Invalid CDN partition');
+  const source = plan.pointer.sourceCommit || plan.pointer.commit;
   const entries = git(['ls-tree','-r','-l','-z',source]).toString().split('\0').filter(Boolean);
   const requiredFiles = new Set(plan.files.map(file=>file.path));
+  const snapshotPath = file => file.startsWith(plan.pointer.snapshotDirectory+'/');
+  const belongs = file => partition==='snapshot'
+    ? snapshotPath(file) || file==='snapshot-current.json'
+    : partition==='runtime' ? !snapshotPath(file) : true;
   const selected = entries.map(line => {
     const match = /^(\d+) blob ([a-f0-9]{40})\s+(\d+)\t([\s\S]+)$/.exec(line);
     if (!match) throw Error('Unsupported release Git entry');
     return {mode:match[1],hash:match[2],bytes:Number(match[3]),path:match[4]};
-  }).filter(entry => includeReleaseAsset(entry.path,plan.pointer.snapshotDirectory,requiredFiles));
+  }).filter(entry => includeReleaseAsset(entry.path,plan.pointer.snapshotDirectory,requiredFiles) && belongs(entry.path));
+  if (partition==='runtime') {
+    if (typeof entryHtml!=='string' || digest(entryHtml)!==plan.pointer.indexSha256) throw Error('Runtime entry does not match its bound pointer');
+    const entry=selected.find(file=>file.path==='index.html');if(!entry)throw Error('Missing runtime entry');
+    entry.hash=git(['hash-object','-w','--stdin'],{input:entryHtml}).trim();entry.bytes=Buffer.byteLength(entryHtml);
+    if(!sha(entry.hash))throw Error('Invalid runtime entry blob');
+  }
   assertCdnAssetSizes(selected);
   const names = new Set(selected.map(entry=>entry.path));
-  if (plan.files.some(file=>!names.has(file.path))) throw Error('Compact package excludes a required boot asset');
+  if (plan.files.some(file=>belongs(file.path) && !names.has(file.path))) throw Error('Compact package excludes a required boot asset');
   const temporary = await mkdtemp(path.join(os.tmpdir(),'polytrack-cdn-index-'));
   const env = {...process.env,GIT_INDEX_FILE:path.join(temporary,'index')};
   git(['read-tree','--empty'],{env});
-  git(['update-index','-z','--index-info'],{env,input:selected.map(entry=>`${entry.mode} blob ${entry.hash}\t${entry.path}\0`).join('')});
+  git(['update-index','-z','--index-info'],{env,input:selected.map(entry=>entry.mode+' blob '+entry.hash+'\t'+entry.path+'\0').join('')});
   const tree = git(['write-tree'],{env}).trim();
-  // Measure the actual tar, including headers/padding, rather than only blob bytes.
   const archive = git(['archive','--format=tar','--prefix=PolyTrack-0.6.3-Ranked-'+source+'/',tree],{encoding:null,maxBuffer:64000000});
-  if (archive.length >= 49000000) throw Error('Compact CDN archive still exceeds the safe 49 MB publishing budget');
-  const listed = git(['ls-remote','--heads','origin','refs/heads/'+ASSET_BRANCH]).trim();
+  if (archive.length >= 49000000) throw Error(partition+' CDN archive exceeds the safe 49 MB publishing budget: '+archive.length+' bytes');
+  const branch=partition==='snapshot'?SNAPSHOT_BRANCH:ASSET_BRANCH;
+  const listed = git(['ls-remote','--heads','origin','refs/heads/'+branch]).trim();
   let parent;
-  if (listed) { git(['fetch','--no-tags','origin','refs/heads/'+ASSET_BRANCH]);parent=git(['rev-parse','FETCH_HEAD']).trim();if(!sha(parent))throw Error('Invalid asset parent'); }
-  if (parent && git(['rev-parse',parent+'^{tree}']).trim() === tree) return {commit:parent,archiveBytes:archive.length,files:selected.length};
-  const identity = {...process.env,GIT_AUTHOR_NAME:'github-actions[bot]',GIT_COMMITTER_NAME:'github-actions[bot]',GIT_AUTHOR_EMAIL:'41898282+github-actions[bot]@users.noreply.github.com',GIT_COMMITTER_EMAIL:'41898282+github-actions[bot]@users.noreply.github.com'};
-  const commit = git(['commit-tree',tree,...(parent?['-p',parent]:[])],{env:identity,input:'CDN assets for '+source+'\n'}).trim();
+  if (listed) {git(['fetch','--no-tags','origin','refs/heads/'+branch]);parent=git(['rev-parse','FETCH_HEAD']).trim();if(!sha(parent))throw Error('Invalid asset parent');}
+  if (parent && git(['rev-parse',parent+'^{tree}']).trim()===tree) return {commit:parent,archiveBytes:archive.length,files:selected.length};
+  const identity={...process.env,GIT_AUTHOR_NAME:'github-actions[bot]',GIT_COMMITTER_NAME:'github-actions[bot]',GIT_AUTHOR_EMAIL:'41898282+github-actions[bot]@users.noreply.github.com',GIT_COMMITTER_EMAIL:'41898282+github-actions[bot]@users.noreply.github.com'};
+  const commit=git(['commit-tree',tree,...(parent?['-p',parent]:[])],{env:identity,input:'CDN '+partition+' for '+source+'\n'}).trim();
   if(!sha(commit))throw Error('Invalid asset commit');
-  git(['push','origin',commit+':refs/heads/'+ASSET_BRANCH]);
+  git(['push','origin',commit+':refs/heads/'+branch]);
   return {commit,archiveBytes:archive.length,files:selected.length};
 }
 
 export const validReleasePointer = value => value?.schemaVersion === 1 && value.repository === REPOSITORY && sha(value.commit) &&
     /^[a-f0-9]{64}$/.test(value.indexSha256 || '') && /^public-snapshots[1-9]\d*$/.test(value.snapshotDirectory || '') &&
     typeof value.publishedAt==='string' && Number.isFinite(Date.parse(value.publishedAt)) &&
-    (value.sourceCommit === undefined || sha(value.sourceCommit));
+    (value.sourceCommit === undefined || sha(value.sourceCommit)) &&
+    (value.snapshotCommit === undefined || sha(value.snapshotCommit));
 
 export function sameReleasePointer(actual, expected) {
   return validReleasePointer(actual) && actual.commit===expected.commit && actual.indexSha256===expected.indexSha256 &&
-    actual.snapshotDirectory===expected.snapshotDirectory && (!expected.sourceCommit || actual.sourceCommit===expected.sourceCommit);
+    actual.snapshotDirectory===expected.snapshotDirectory && (!expected.sourceCommit || actual.sourceCommit===expected.sourceCommit) &&
+    (!expected.snapshotCommit || actual.snapshotCommit===expected.snapshotCommit);
 }
 
 export function validPurgeState(state, now=Date.now()) {
@@ -319,10 +345,16 @@ export async function publishRelease({root=process.cwd(), branch=process.env.DEF
     }
   }
   let assets;
-  const alreadyPublished=previous?.sourceCommit===commit && previous.indexSha256===plan.pointer.indexSha256 && previous.snapshotDirectory===plan.pointer.snapshotDirectory;
+  const sameSource=previous?.sourceCommit===commit && previous.snapshotDirectory===plan.pointer.snapshotDirectory && sha(previous.snapshotCommit);
+  if(sameSource)bindSnapshotPackage(plan,previous.snapshotCommit);
+  const alreadyPublished=sameSource && previous.indexSha256===plan.pointer.indexSha256;
   if (alreadyPublished) {
-    assets={commit:previous.commit};
-  } else assets=await publishAssetTree(plan,git);
+    assets={commit:previous.commit,snapshot:{commit:previous.snapshotCommit}};
+  } else {
+    const snapshot=await publishAssetTree(plan,git,{partition:'snapshot'});
+    const entryHtml=bindSnapshotPackage(plan,snapshot.commit);
+    assets={...await publishAssetTree(plan,git,{partition:'runtime',entryHtml}),snapshot};
+  }
   plan.pointer={...plan.pointer,sourceCommit:commit,commit:assets.commit};
   plan.assetPackage=assets;
   // Assets exist remotely before probing; the public pointer still names the old release.
@@ -375,7 +407,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const superseded=plan.propagation?.status==='superseded';
     if(!deferred&&!superseded&&plan.propagation?.confirmed!==true)throw Error('CDN refresh returned no explicit confirmation');
     const status=deferred?'deferred':superseded?'superseded':'confirmed';
-    const summary = `${deferred?'CDN propagation deferred. The published files are intact, but CDN freshness is NOT confirmed.':superseded?'CDN publication superseded by a changed authoritative pointer. This job does NOT confirm that replacement.':'CDN release confirmed at this checking edge only, not globally.'}\nAssets: ${plan.pointer.commit}\nSource: ${plan.pointer.sourceCommit}\nSnapshot: ${plan.pointer.snapshotDirectory}\nAsset archive bytes: ${plan.assetPackage.archiveBytes ?? 'reused'}\nBoot asset gate: ${plan.assetChecks} (${plan.files.length} assets). Pointer purges: ${plan.propagation?.purges ?? 0}. No Firebase requests.\n${deferred?`Reason: ${plan.propagation.reason}. Cooldown: about ${Math.ceil(plan.propagation.retryAfterMs/60000)} minutes. The CDN-only schedule retries automatically; do not repeat snapshot capture or verification.\n`:''}${plan.propagation.mirrors?.length?'Mirror diagnostics (not loader confirmation): '+JSON.stringify(plan.propagation.mirrors)+'\n':''}`;
+    const summary = `${deferred?'CDN propagation deferred. The published files are intact, but CDN freshness is NOT confirmed.':superseded?'CDN publication superseded by a changed authoritative pointer. This job does NOT confirm that replacement.':'CDN release confirmed at this checking edge only, not globally.'}\nAssets: ${plan.pointer.commit}\nSource: ${plan.pointer.sourceCommit}\nSnapshot: ${plan.pointer.snapshotDirectory}\nRuntime archive bytes: ${plan.assetPackage.archiveBytes ?? 'reused'}\nSnapshot archive bytes: ${plan.assetPackage.snapshot?.archiveBytes ?? 'reused'}\nBoot asset gate: ${plan.assetChecks} (${plan.files.length} assets). Pointer purges: ${plan.propagation?.purges ?? 0}. No Firebase requests.\n${deferred?`Reason: ${plan.propagation.reason}. Cooldown: about ${Math.ceil(plan.propagation.retryAfterMs/60000)} minutes. The CDN-only schedule retries automatically; do not repeat snapshot capture or verification.\n`:''}${plan.propagation.mirrors?.length?'Mirror diagnostics (not loader confirmation): '+JSON.stringify(plan.propagation.mirrors)+'\n':''}`;
     if (deferred) console.warn('::warning::Mutable CDN pointer refresh is deferred, NOT confirmed. See reason/cooldown; retry CDN-only, never capture or verification.');
     if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,`cdn_status=${status}\n`);
     console.log(summary);

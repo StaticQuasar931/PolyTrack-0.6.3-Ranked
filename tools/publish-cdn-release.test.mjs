@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
+import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
 
 const sha='a'.repeat(40),hash=b=>createHash('sha256').update(b).digest('hex');
 function fixture(){
@@ -250,6 +250,15 @@ test('real local bare remote: no source changes, first publish, no-op repeat, ne
   assert.ok(first.pointer.sourceCommit);
   assert.notEqual(first.pointer.commit,first.pointer.sourceCommit);
   assert.ok(first.assetPackage.archiveBytes<49000000);
+  assert.ok(first.assetPackage.snapshot.archiveBytes<49000000);
+  assert.ok(first.pointer.snapshotCommit);
+  assert.notEqual(first.pointer.snapshotCommit,first.pointer.commit);
+  const publishedHtml=git(['show',first.pointer.commit+':index.html']);
+  assert.equal(hash(publishedHtml),first.pointer.indexSha256);
+  assert.ok(publishedHtml.includes('@'+first.pointer.snapshotCommit+'/public-snapshots1/'));
+  assert.ok(!git(['ls-tree','-r','--name-only',first.pointer.commit]).includes('public-snapshots1/'));
+  assert.ok(git(['ls-tree','-r','--name-only',first.pointer.snapshotCommit]).includes('public-snapshots1/index.json'));
+  assert.ok(!git(['ls-tree','-r','--name-only',first.pointer.snapshotCommit]).includes('main.bundle.js'));
   assert.ok(git(['ls-tree','-r','--name-only',first.pointer.sourceCommit]).includes('public-snapshots0/obsolete.bin'));
   assert.ok(!git(['ls-tree','-r','--name-only',first.pointer.commit]).includes('public-snapshots0/obsolete.bin'));
   assert.ok(git(['ls-tree','-r','--name-only',first.pointer.commit]).includes('main.bundle.js'));
@@ -349,11 +358,44 @@ test('the current shipped snapshot fits the CDN tar budget without dropping any 
     if(args[0]==='update-index')selected=options.input.split('\0').filter(Boolean).map(line=>line.split('\t')[1]);
     return local(args,options);
   };
-  const result=await publishAssetTree(plan,git);
+  const snapshot=await publishAssetTree(plan,git,{partition:'snapshot'});
   const snapshotFiles=local(['ls-tree','-r','--name-only',commit,'--',plan.pointer.snapshotDirectory]).trim().split('\n');
   assert.equal(snapshotFiles.filter(file=>!selected.includes(file)).length,0,'all replay payloads and lookup/index files are retained');
-  assert.ok(result.archiveBytes<49000000);
+  assert.ok(selected.includes('snapshot-current.json'),'snapshot recovery pointer stays with its data');
+  assert.ok(!selected.includes('main.bundle.js'));
+  const entryHtml=bindSnapshotPackage(plan,snapshot.commit);
+  const runtime=await publishAssetTree(plan,git,{partition:'runtime',entryHtml});
+  assert.ok(snapshot.archiveBytes<49000000);assert.ok(runtime.archiveBytes<49000000);
+  assert.ok(!selected.some(file=>file.startsWith(plan.pointer.snapshotDirectory+'/')));
   assert.ok(!selected.includes('workers/ranked/src/index.js'));
   assert.ok(selected.includes('workers/ranked/src/extra-track-ids.js'),'shared browser scoring input stays available');
-  t.diagnostic('Current immutable tar: '+result.archiveBytes+' bytes; '+plan.files.length+' readiness probes; no remote requests.');
+  t.diagnostic('Immutable tars: runtime '+runtime.archiveBytes+', snapshot '+snapshot.archiveBytes+' bytes; '+plan.files.length+' readiness probes; no remote requests.');
+});
+
+test('split snapshot binding changes only the CDN entry and keeps source HTML reusable',async()=>{
+  const plan=await releasePlan({commit:sha,...fixture()}),original=plan.entryHtml,snapshot='d'.repeat(40);
+  const html=bindSnapshotPackage(plan,snapshot);
+  assert.equal(plan.entryHtml,original);
+  assert.equal(plan.pointer.indexSha256,hash(html));
+  assert.equal(plan.files.find(file=>file.path==='index.html').sha256,hash(html));
+  assert.ok(html.includes('https://cdn.jsdelivr.net/gh/'+REPOSITORY+'@'+snapshot+'/public-snapshots1/'));
+  for(const file of plan.files)assert.equal(file.commit,file.path.startsWith('public-snapshots1/')?snapshot:undefined);
+  assert.equal(bindSnapshotPackage(plan,snapshot),html,'repeat binding never rewrites the already absolute output twice');
+  assert.equal(validReleasePointer({...plan.pointer,snapshotCommit:'invalid'}),false);
+  assert.equal(sameReleasePointer({...plan.pointer,snapshotCommit:'e'.repeat(40)},plan.pointer),false);
+  assert.throws(()=>bindSnapshotPackage(plan,'main'),/Invalid snapshot package/);
+});
+
+test('readiness validates each snapshot probe at its own immutable commit',async()=>{
+  const plan=await releasePlan({commit:sha,...fixture()}),snapshot='d'.repeat(40),html=bindSnapshotPackage(plan,snapshot);
+  plan.pointer.commit='c'.repeat(40);
+  const f=fixture(),urls=[];
+  await checkReleaseFiles(plan,{fetchImpl:async url=>{
+    urls.push(url);
+    const file=plan.files.find(file=>url.endsWith('/'+file.path));assert.ok(file);
+    assert.ok(url.includes('@'+(file.commit||plan.pointer.commit)+'/'));
+    return response(file.path==='index.html'?html:await f.read(file.path));
+  }});
+  assert.equal(urls.length,plan.files.length);
+  assert.ok(urls.some(url=>url.includes('@'+snapshot+'/public-snapshots1/')));
 });
