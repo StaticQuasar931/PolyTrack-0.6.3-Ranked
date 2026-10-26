@@ -23,6 +23,76 @@ const overall = {updatedAt: 300, revision: 9, builtRevision: 9, sourceRevision: 
   trackSummaries: [{trackId, updatedAt: 250, fieldSize: 2, leader: {accountId: 'racer', name: 'Racer', replay: 'private'}}],
   authorityAudit: {ownerUid: 'private'}, resultBundleLocation: 'main_results'};
 
+async function pendingCaptureFixture(t,count=2){
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'pending-capture-invariant-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+ const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=createHash('sha256').update(replay).digest('hex');
+ const pending=Array.from({length:count},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),
+  runId:(i+100).toString(16).padStart(64,'0'),timeMs:23,carStyle:'style',name:'Waiting',submittedAt:150,replayHash,
+  verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-playback'}));
+ const verified={accountId:'f'.repeat(64),timeMs:22,rp:10,rank:1,physicsVerified:false};
+ const state={calls:[],fail:new Set(),invalid:new Set()};
+ const fetchImpl=async input=>{
+  const url=new URL(input);state.calls.push(url.pathname);
+  if(url.pathname.endsWith('/overall'))return Response.json({...overall,trackSummaries:[]});
+  if(url.pathname.endsWith('/catalog'))return Response.json({periods:[livePeriod],archives:[]});
+  if(url.pathname===`/v1/events/${period.id}/snapshot`)return Response.json({id:period.id,period:livePeriod,
+   updatedAt:200,archived:false,entries:[verified],pendingPlaybacks:pending,racerCount:count+1});
+  if(url.pathname.includes('/playbacks/')){
+   const e=pending.find(row=>row.runId===url.pathname.split('/').at(-1));assert.ok(e);
+   if(state.fail.has(e.runId))return new Response('',{status:404});
+   return Response.json({periodId:period.id,trackId,accountId:e.accountId,runId:e.runId,timeMs:e.timeMs,frames:e.timeMs,
+    replay,replayHash:state.invalid.has(e.runId)?'e'.repeat(64):replayHash,carStyle:e.carStyle,submittedAt:e.submittedAt,
+    verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-recording'});
+  }
+  return new Response('',{status:404});
+ };
+ const capture=()=>runPublicSnapshotBackup({directory,fetchImpl,trackIds:[],now:1000,log:()=>{}});
+ const board=()=>fs.readFile(path.join(directory,`events/${period.id}.json`),'utf8').then(JSON.parse);
+ const playbackCalls=()=>state.calls.filter(url=>url.includes('/playbacks/'));
+ return {directory,pending,verified,state,capture,board,playbackCalls};
+}
+
+test('missing or invalid pending payloads stay off saved boards and later capture fills only missing runs',async t=>{
+ for(const failure of ['fail','invalid']){
+  const f=await pendingCaptureFixture(t);f.state[failure].add(f.pending[1].runId);
+  const first=await f.capture(),board=await f.board();
+  assert.deepEqual(board.pendingPlaybacks.map(row=>row.runId),[f.pending[0].runId]);
+  assert.deepEqual(board.entries,[f.verified],'verified standings and RP are not filtered or rewritten');
+  assert.equal(board.racerCount,3,'source entrant count must not be relabelled as complete payload coverage');
+  assert.deepEqual(first.pendingPlaybackCoverage,{known:2,published:1,missing:1,failed:1,deferred:0,complete:false,scope:'selected-saved-event-boards'});
+  assert.equal(Object.keys(first.eventPlaybacks).length,1);
+  f.state[failure].clear();f.state.calls.length=0;
+  const second=await f.capture();assert.equal(f.playbackCalls().length,1);
+  assert.ok(f.playbackCalls()[0].endsWith('/'+f.pending[1].runId),'valid retained run must not be fetched again');
+  assert.equal((await f.board()).pendingPlaybacks.length,2);assert.equal(second.pendingPlaybackCoverage.complete,true);
+  f.state.calls.length=0;await f.capture();assert.equal(f.playbackCalls().length,0,'all exact retained bytes are reused');
+ }
+});
+
+test('pending payload cap publishes only validated rows and resumes the rest without refetching retained bytes',async t=>{
+ const f=await pendingCaptureFixture(t,32);
+ const first=await f.capture();assert.equal(f.playbackCalls().length,30);assert.equal((await f.board()).pendingPlaybacks.length,30);
+ assert.deepEqual(first.pendingPlaybackCoverage,{known:32,published:30,missing:2,failed:0,deferred:2,complete:false,scope:'selected-saved-event-boards'});
+ f.state.calls.length=0;const second=await f.capture();
+ assert.equal(f.playbackCalls().length,2);assert.equal((await f.board()).pendingPlaybacks.length,32);
+ assert.equal(second.pendingPlaybackCoverage.complete,true);assert.equal(second.pendingPlaybackCoverage.deferred,0);
+ assert.equal(second.eventReplayLimit,30);assert.deepEqual((await f.board()).entries,[f.verified]);
+});
+
+test('cached pending payloads must revalidate, and manifest metadata is derived from exact bytes',async t=>{
+ const f=await pendingCaptureFixture(t,1);await f.capture();
+ const manifestPath=path.join(f.directory,'manifest.json');const manifest=JSON.parse(await fs.readFile(manifestPath));
+ const relative=`event-playbacks/${period.id}/${f.pending[0].runId}.json`;
+ manifest.eventPlaybacks[relative].accountId='0'.repeat(64);await fs.writeFile(manifestPath,JSON.stringify(manifest));
+ f.state.calls.length=0;const corrected=await f.capture();
+ assert.equal(f.playbackCalls().length,0);assert.equal(corrected.eventPlaybacks[relative].accountId,f.pending[0].accountId);
+ const payloadPath=path.join(f.directory,relative),saved=JSON.parse(await fs.readFile(payloadPath));
+ saved.accountId='0'.repeat(64);await fs.writeFile(payloadPath,JSON.stringify(saved));f.state.fail.add(f.pending[0].runId);
+ const rejected=await f.capture();assert.equal((await f.board()).pendingPlaybacks.length,0);
+ assert.equal(Object.keys(rejected.eventPlaybacks).length,0);assert.equal(rejected.pendingPlaybackCoverage.complete,false);
+ await assert.rejects(fs.stat(payloadPath),{code:'ENOENT'},'invalid cached bytes must not stay listed');
+});
+
 function eventPromotionFixture(){
  const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=createHash('sha256').update(replay).digest('hex');
  const accountId='b'.repeat(64),runId='c'.repeat(64);

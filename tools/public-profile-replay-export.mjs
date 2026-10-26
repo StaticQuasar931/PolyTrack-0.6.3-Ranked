@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isDeepStrictEqual} from 'node:util';
 import {publicDisplayName} from './public-display-name.mjs';
-import {publicOverallBackup} from './public-snapshot-backup.mjs';
+import {publicOverallBackup,publicEventBackup,publicEventReplayBackup} from './public-snapshot-backup.mjs';
+import {publicEventPlaybackForPublication} from './public-event-playback.mjs';
 import {validatePublicReplayForPublication as validatePublicReplayStructure,hasPlayablePublicReplayStatus} from './public-replay-playback.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -20,6 +22,7 @@ const RACE_FIELDS = ['accountId', 'trackId', 'name', 'nickname', 'countryCode', 
   'replay', 'replayHash'];
 const MAX_DOCUMENTS_PER_RUN = 2000;
 const BATCH_GET_SIZE = 20;
+const EVENT_REUSE_LIMITS = Object.freeze({records:2000,boards:120,bytes:16*1024*1024});
 const MAX_RETRY_DELAY_MS = 86400000;
 const MAX_FAILURE_ATTEMPTS = 32;
 const DETERMINISTIC_FAILURES = new Set(['missing', 'binding-mismatch', 'upload-conflict', 'output-too-large']);
@@ -288,6 +291,105 @@ function currentRaceState(bindings, fingerprint, invalid, previous) {
   return {fingerprint, pending: [], covered: {}, records, invalid, responseInvalid: 0, known: bindings.length};
 }
 
+const eventReuseKey = binding => JSON.stringify([binding.accountId,binding.trackId,binding.metadata.timeMs,
+  binding.frames,binding.replayHash,binding.metadata.carStyle]);
+
+async function eventReplayReuseIndex(directory,bindings) {
+  const index=new Map(),needed=new Set(bindings.filter(row=>row.playbackPending).map(eventReuseKey));
+  const targets=new Set(bindings.filter(row=>row.playbackPending).map(row=>JSON.stringify([row.accountId,row.metadata.timeMs,row.replayHash])));
+  let bytes=0,visited=0;const boards=new Map();
+  const root=await fs.realpath(directory);
+  const read=async relative=>{
+    if(!/^(?:manifest\.json|events\/[A-Za-z0-9_-]{1,64}\.json|event-(?:playbacks|replays)\/[A-Za-z0-9_-]{1,64}\/[a-f0-9]{64}\.json)$/.test(relative))throw Error('Invalid public event cache path');
+    const file=path.join(directory,...relative.split('/')),stat=await fs.lstat(file);
+    const real=await fs.realpath(file);
+    if(!stat.isFile()||stat.isSymbolicLink()||!real.startsWith(root+path.sep)||stat.size>MAX_FILE_BYTES||
+        bytes+stat.size>EVENT_REUSE_LIMITS.bytes)throw Error('Public event cache read limit');
+    const body=await fs.readFile(file);bytes+=body.length;
+    if(body.length>MAX_FILE_BYTES||bytes>EVENT_REUSE_LIMITS.bytes)throw Error('Public event cache read limit');
+    return JSON.parse(body.toString('utf8'));
+  };
+  let manifest;try{manifest=await read('manifest.json');}catch{return index;}
+  if(manifest?.schemaVersion!==1)return index;
+  for(const [lane,pending]of [['eventPlaybacks',true],['eventReplays',false]]){
+    const records=manifest[lane];if(!records||typeof records!=='object'||Array.isArray(records))continue;
+    for(const [relative,record]of Object.entries(records)){
+      if(++visited>EVENT_REUSE_LIMITS.records||bytes>=EVENT_REUSE_LIMITS.bytes)return index;
+      if(!record||record.path!==relative||!targets.has(JSON.stringify([record.accountId,record.timeMs,record.replayHash])))continue;
+      const match=new RegExp(`^${pending?'event-playbacks':'event-replays'}/([A-Za-z0-9_-]{1,64})/([a-f0-9]{64})\\.json$`).exec(relative);
+      if(!match||match[1]!==record.periodId||match[2]!==record[pending?'runId':'accountId'])continue;
+      try{
+        const id=match[1];let board=boards.get(id);
+        if(!boards.has(id)){
+          if(boards.size>=EVENT_REUSE_LIMITS.boards)return index;
+          boards.set(id,null);
+          if(manifest.events?.[id]?.path!==`events/${id}.json`)continue;
+          const raw=await read(`events/${id}.json`);board=publicEventBackup(raw,id);
+          if(!isDeepStrictEqual(raw,board)||manifest.events[id].updatedAt!==board.updatedAt)continue;
+          boards.set(id,board);
+        }
+        if(!board||board.period?.id!==id||!TRACK_ID.test(board.period.trackId||'')||pending&&board.archived===true)continue;
+        const entry=(pending?board.pendingPlaybacks:board.entries)?.find(row=>row.accountId===record.accountId&&
+          row.timeMs===record.timeMs&&row.replayHash===record.replayHash&&HASH.test(row.runId||'')&&
+          (!record.runId||record.runId===row.runId));
+        if(!entry||!pending&&(entry.physicsVerified!==true||entry.replayIntegrityVerified!==true))continue;
+        const raw=await read(relative);let value;
+        if(pending)value=await publicEventPlaybackForPublication(raw,{periodId:id,trackId:board.period.trackId,entry});
+        else{
+          if(!hasPlayablePublicReplayStatus(raw)||raw.pending===true||raw.verified===false||raw.eventRpEligible===false)continue;
+          value=publicEventReplayBackup({...raw,verificationStatus:'verified',verified:true,eventRpEligible:true},
+            {periodId:id,trackId:board.period.trackId,entry});
+        }
+        if(!isDeepStrictEqual(raw,value)||value.frames!==value.timeMs||value.replayHash!==record.replayHash||
+            value.accountId!==record.accountId||value.timeMs!==record.timeMs||entry.carStyle!==value.carStyle||
+            entry.frames!==undefined&&entry.frames!==value.frames)continue;
+        const structure=await validatePublicReplayStructure(value.replay,value.frames);
+        if(structure?.indexedPlaybackWithinBudget===false)continue;
+        const key=eventReuseKey({accountId:value.accountId,trackId:value.trackId,frames:value.frames,replayHash:value.replayHash,
+          metadata:{timeMs:value.timeMs,carStyle:value.carStyle}});
+        if(needed.has(key))index.set(key,value);
+      }catch{ /* Untrusted, oversized or changed public cache is not a reuse source. */ }
+    }
+  }
+  return index;
+}
+
+async function reuseEventReplay(directory,binding,index) {
+  if(!binding.playbackPending||!Number.isSafeInteger(binding.metadata.timeMs)||binding.metadata.timeMs<1||
+      typeof binding.metadata.carStyle!=='string'||binding.metadata.carStyle.length>256)return false;
+  const cached=index.get(eventReuseKey(binding));if(!cached)return false;
+  const replayPath=`recordings/${binding.uploadId}.json`,canonicalPath=`canonical/${binding.trackId}/${binding.accountId}.json`;
+  const read=async relative=>{
+    try{const stat=await fs.lstat(path.join(directory,relative));if(!stat.isFile()||stat.size>MAX_FILE_BYTES)throw Error('Invalid normal cache');
+      return JSON.parse(await fs.readFile(path.join(directory,relative),'utf8'));}
+    catch(error){if(error.code==='ENOENT')return null;throw error;}
+  };
+  try{
+    const replay=await read(replayPath),canonical=await read(canonicalPath);
+    if(replay&&canonical)return false;
+    if(replay&&(!hasPlayablePublicReplayStatus(replay)||replay.accountId!==binding.accountId||replay.trackId!==binding.trackId||
+        replay.frames!==binding.frames||replay.replayHash!==binding.replayHash||replay.recording!==cached.replay||
+        replay.carStyle!==cached.carStyle||replay.verifiedState!==0||replay.verified===true||
+        replay.uploadId!==undefined&&replay.uploadId!==binding.uploadId||
+        replay.timeMs!==undefined&&replay.timeMs!==binding.metadata.timeMs||
+        replay.raceTimeFrames!==undefined&&replay.raceTimeFrames!==binding.frames))return false;
+    if(canonical&&(!hasPlayablePublicReplayStatus(canonical)||canonical.accountId!==binding.accountId||canonical.trackId!==binding.trackId||
+        canonical.uploadId!==binding.uploadId||canonical.frames!==binding.frames||canonical.timeMs!==binding.metadata.timeMs||
+        canonical.replayHash!==binding.replayHash||canonical.carStyle!==cached.carStyle||canonical.verified!==false||
+        canonical.runVerified!==false||canonical.verifiedState!==0||canonical.integrityVerified!==true||
+        canonical.raceTimeFrames!==undefined&&canonical.raceTimeFrames!==binding.frames))return false;
+  }catch{return false;}
+  const updatedAt=[cached.submittedAt,cached.pbAt,cached.createdAt].find(value=>Number.isSafeInteger(value)&&value>=0)??0;
+  const status={playbackPending:true,verificationStatus:'pending',eventRpEligible:false};
+  const recording={recording:cached.replay,frames:binding.frames,verifiedState:0,carStyle:cached.carStyle,
+    accountId:binding.accountId,trackId:binding.trackId,replayHash:binding.replayHash,updatedAt,...status};
+  const canonical={...binding.metadata,accountId:binding.accountId,trackId:binding.trackId,uploadId:binding.uploadId,
+    timeMs:binding.metadata.timeMs,frames:binding.frames,raceTimeFrames:binding.frames,replayHash:binding.replayHash,
+    carStyle:cached.carStyle,updatedAt,runVerified:false,integrityVerified:true,verified:false,verifiedState:0,...status};
+  if(!await atomicWrite(directory,replayPath,recording))return false;
+  return atomicWrite(directory,canonicalPath,canonical);
+}
+
 export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directory, projectId = 'polytrack-052', maxDocuments = 2000,
   pageSize = 100, log = () => {}, fullSnapshot = false, includeProfiles = true, snapshotDirectory = directory,
   retryInvalidAfterMs = 3600000, now = Date.now(), includePendingReplays = false} = {}) {
@@ -370,9 +472,15 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
 
   const bindingBySignature = new Map(staged.bindings.map(binding => [binding.signature, binding]));
   const deferredBindings = new Set();
+  let eventReuseIndex;
   for (const binding of staged.bindings) {
     const signature = binding.signature;
-    if (await savedMatchExists(directory, binding)) {
+    let available=await savedMatchExists(directory,binding);
+    if(!available&&binding.playbackPending){
+      eventReuseIndex??=eventReplayReuseIndex(directory,staged.bindings);
+      available=await reuseEventReplay(directory,binding,await eventReuseIndex);
+    }
+    if (available) {
       race.records[signature] = {signature, available: true, replayPath: `recordings/${binding.uploadId}.json`,
         canonicalPath: `canonical/${binding.trackId}/${binding.accountId}.json`};
       race.covered[signature] = true;

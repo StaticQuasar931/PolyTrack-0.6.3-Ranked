@@ -6,6 +6,8 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 import {exportPublicProfilesAndReplays} from './public-profile-replay-export.mjs';
+import {publicEventBackup,publicEventReplayBackup} from './public-snapshot-backup.mjs';
+import {publicEventPlaybackForPublication} from './public-event-playback.mjs';
 const accountId='a'.repeat(64), trackId='b'.repeat(64), otherAccount='c'.repeat(64);
 const replay='fixture-replay-payload', replayHash=createHash('sha256').update(replay).digest('hex');
 const str=stringValue=>({stringValue}), int=integerValue=>({integerValue:String(integerValue)});
@@ -37,6 +39,136 @@ function fixtureFetch(handler,requests=[]){return async(url,options)=>{
   return{ok:true,status:200,text:async()=>JSON.stringify(await handler(request))};};}
 const emptyProfiles=[{readTime:'2026-10-06T00:00:00Z'}];
 const batchResponse=(request,fields=raceFields())=>request.options.documents.map(name=>({found:{name,fields}}));
+
+async function seedEventBytes(directory,{count=1,verified=false,malformed=false}={}){
+ const id='kodub_1793563200000',period={id,kind:'kodub',trackId,startsAt:100,endsAt:100000,maxRp:700};
+ const bytes=deflateSync(Buffer.alloc(malformed?14:15)).toString('base64url');
+ const hash=createHash('sha256').update(bytes).digest('hex');
+ const rows=Array.from({length:count},(_,i)=>binding({accountId:(i+1).toString(16).padStart(64,'0'),uploadId:1000+i,
+  frames:900,raceTimeFrames:900,timeMs:900,replayHash:hash,carStyle:'style',verified:false,runVerified:false,verifiedState:0}));
+ const entries=rows.map((row,i)=>({accountId:row.accountId,runId:(i+100).toString(16).padStart(64,'0'),
+  timeMs:900,frames:900,name:'Public Racer',carStyle:'style',replayHash:hash,submittedAt:150,
+  ...(verified?{physicsVerified:true,replayIntegrityVerified:true}:{verificationStatus:'waiting',pending:true,verified:false,
+   eventRpEligible:false,source:'pending-event-playback'})}));
+ const board=publicEventBackup({id,period,updatedAt:200,archived:false,entries:verified?entries:[],pendingPlaybacks:verified?[]:entries},id);
+ const manifest={schemaVersion:1,events:{[id]:{path:`events/${id}.json`,updatedAt:200}},eventPlaybacks:{},eventReplays:{}};
+ await fs.mkdir(path.join(directory,'events'),{recursive:true});
+ await fs.writeFile(path.join(directory,`events/${id}.json`),JSON.stringify(board));
+ const payloads=[];
+ for(const entry of entries){
+  const raw={periodId:id,trackId,accountId:entry.accountId,runId:entry.runId,timeMs:900,frames:900,replay:bytes,replayHash:hash,
+   carStyle:'style',submittedAt:150,verificationStatus:verified?'verified':'waiting',pending:!verified,verified,
+   eventRpEligible:verified,source:'pending-event-recording'};
+  const value=malformed?Object.fromEntries(Object.entries(raw).filter(([key])=>!verified||!['pending','source','verificationStatus','verified','eventRpEligible'].includes(key))):
+   verified?publicEventReplayBackup(raw,{periodId:id,trackId,entry}):await publicEventPlaybackForPublication(raw,{periodId:id,trackId,entry});
+  const relative=verified?`event-replays/${id}/${entry.accountId}.json`:`event-playbacks/${id}/${entry.runId}.json`;
+  await fs.mkdir(path.dirname(path.join(directory,relative)),{recursive:true});
+  await fs.writeFile(path.join(directory,relative),JSON.stringify(value));payloads.push({relative,value});
+  manifest[verified?'eventReplays':'eventPlaybacks'][relative]={path:relative,periodId:id,accountId:entry.accountId,
+   ...(verified?{}:{runId:entry.runId}),timeMs:900,replayHash:hash};
+ }
+ await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify(manifest));
+ await stage(directory,rows);return {rows,entries,board,manifest,payloads,id};
+}
+
+test('three normal pending runs reuse exact public event bytes with one bounded index and no payload reads',async()=>{
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory,{count:3});let manifests=0,boards=0;
+  const original=fs.readFile;fs.readFile=async(...args)=>{const p=String(args[0]).replace(/\\/g,'/');
+   if(p===path.join(directory,'manifest.json').replace(/\\/g,'/'))manifests++;
+   if(p.endsWith(`/events/${f.id}.json`))boards++;return original(...args);};
+  try{
+   const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+    fetchImpl:()=>{throw Error('Bundled immutable bytes must not be fetched');}});
+   assert.equal(result.fetchedDocumentsThisRun,0);assert.equal(manifests,1);assert.equal(boards,1);
+   for(const row of f.rows){
+    const recording=JSON.parse(await original(path.join(directory,`recordings/${row.uploadId}.json`)));
+    const canonical=JSON.parse(await original(path.join(directory,`canonical/${trackId}/${row.accountId}.json`)));
+    assert.equal(recording.recording,f.payloads[0].value.replay);assert.equal(canonical.uploadId,row.uploadId);
+    assert.equal(recording.verifiedState,0);assert.equal(recording.playbackPending,true);
+    assert.equal(canonical.runVerified,false);assert.equal(canonical.verified,false);assert.equal(canonical.eventRpEligible,false);
+    assert.equal(canonical.verificationStatus,'pending');assert.equal(canonical.verifiedAt,undefined);
+    assert.equal(canonical.runId,undefined);assert.equal(canonical.proof,undefined);
+   }
+   manifests=0;await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+    fetchImpl:()=>{throw Error('Existing normal pairs must remain read-free');}});
+   assert.equal(manifests,0,'valid normal pairs must not even load the event index');
+  }finally{fs.readFile=original;}
+ });
+});
+
+test('verified event bytes may seed a pending normal pair but never promote normal proof',async()=>{
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory,{verified:true});
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('Verified event bytes should be reused');}});
+  const c=JSON.parse(await fs.readFile(path.join(directory,`canonical/${trackId}/${f.rows[0].accountId}.json`)));
+  assert.equal(c.verifiedState,0);assert.equal(c.verified,false);assert.equal(c.runVerified,false);assert.equal(c.eventRpEligible,false);
+ });
+});
+
+test('event reuse rejects cross-account, track, time, frames, hash, style and untrusted manifest/board sources',async()=>{
+ const changes=[f=>{f.rows[0].accountId=otherAccount;},f=>{f.rows[0].timeMs++;},
+  f=>{f.rows[0].frames++;f.rows[0].raceTimeFrames++;},f=>{f.rows[0].replayHash='e'.repeat(64);},
+  f=>{f.rows[0].carStyle='other-style';},f=>{f.board.period.trackId='e'.repeat(64);},
+  f=>{f.board.pendingPlaybacks[0].verificationStatus='rejected';},
+  f=>{f.manifest.events[f.id].updatedAt++;},f=>{f.manifest.eventPlaybacks[f.payloads[0].relative].accountId=otherAccount;},
+  f=>{f.manifest.eventPlaybacks[f.payloads[0].relative].path='../private.json';}];
+ for(const mutate of changes)await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory);mutate(f);await stage(directory,f.rows);
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify(f.manifest));
+  await fs.writeFile(path.join(directory,`events/${f.id}.json`),JSON.stringify(f.board));
+  const calls=[];const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(calls.length,1);assert.equal(result.fetchedDocumentsThisRun,1);
+  await assert.rejects(fs.stat(path.join(directory,'recordings/1000.json')),{code:'ENOENT'});
+ });
+});
+
+test('malformed hash-valid event bytes and normal upload collisions are not reusable',async()=>{
+ for(const verified of [false,true])await withDirectory(async directory=>{
+  await seedEventBytes(directory,{verified,malformed:true});const calls=[];
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(calls.length,1);await assert.rejects(fs.stat(path.join(directory,'recordings/1000.json')),{code:'ENOENT'});
+ });
+ await withDirectory(async directory=>{
+  await seedEventBytes(directory);await fs.mkdir(path.join(directory,'recordings'));
+  const prior=JSON.stringify({accountId:otherAccount,trackId,replayHash,recording:replay});
+  await fs.writeFile(path.join(directory,'recordings/1000.json'),prior);const calls=[];
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(calls.length,1);assert.equal(await fs.readFile(path.join(directory,'recordings/1000.json'),'utf8'),prior);
+ });
+});
+
+test('event bytes cannot seed a verified normal binding and local reuse beats deterministic cooldown',async()=>{
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory);await stage(directory,f.rows.map(row=>({...row,verified:true,runVerified:true,verifiedState:1})));
+  const calls=[];await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});assert.equal(calls.length,1);
+ });
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory);await fs.unlink(path.join(directory,'manifest.json'));
+  const calls=[];await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,now:1000,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});assert.equal(calls.length,1);
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify(f.manifest));
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,now:1001,
+   fetchImpl:()=>{throw Error('Exact new cached bytes override a stale retry failure');}});
+  assert.equal(result.fetchedDocumentsThisRun,0);
+ });
+});
+
+test('event index stops at its record ceiling instead of scanning unbounded cache metadata',async()=>{
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory),records={};
+  for(let i=0;i<2000;i++)records['ignored-'+i]={path:'invalid',accountId:'invalid'};
+  f.manifest.eventPlaybacks={...records,...f.manifest.eventPlaybacks};
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify(f.manifest));const calls=[];
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});assert.equal(calls.length,1);
+ });
+});
 
 async function pendingPair(directory,{frames=900,payload=deflateSync(Buffer.alloc(15)).toString('base64url')}={}) {
  const hash=createHash('sha256').update(payload).digest('hex');

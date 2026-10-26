@@ -658,7 +658,8 @@ export function installEvents(bridge){
     replayFailures.delete(key);return null;
   }
   function rememberReplayFailure(key,error){
-    replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+5*60*1000});
+    const delay=Number.isFinite(error?.retryAfterMs)?Math.max(1000,Math.min(900000,error.retryAfterMs)):15000;
+    replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+delay});
     if(replayFailures.size>32)replayFailures.delete(replayFailures.keys().next().value);
   }
   async function selectEventRows(first,last,fromTop=false,explicitRows=null){

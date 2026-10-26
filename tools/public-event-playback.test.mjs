@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {publicEventPlaybackProjection} from './public-event-playback.mjs';
+import {publicEventPlaybackProjection,publicEventPlaybackForPublication} from './public-event-playback.mjs';
+import {confirmPlaybackEngine,revokePlaybackEngine,playbackEngineMetadata} from './playback-engine-session.mjs';
+import {PLAYBACK_ENGINE_PIN} from './playback-engine-pin.mjs';
 import {runPublicSnapshotBackup} from './public-snapshot-backup.mjs';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
 import {encodeSnapshot} from './snapshot-package.mjs';
@@ -17,6 +19,88 @@ const entry=n=>({accountId:hex(n),runId:hex(n+100),timeMs:100,name:'Racer',carSt
  verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-playback'});
 const payload=e=>({periodId:period.id,trackId:period.trackId,accountId:e.accountId,runId:e.runId,timeMs:e.timeMs,frames:e.timeMs,
  replay,replayHash,carStyle:e.carStyle,submittedAt:e.submittedAt,verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-recording'});
+
+function eventBytes(lists){
+ const bytes=Buffer.alloc(15+lists.reduce((sum,list)=>sum+list.length*3,0));let offset=0;
+ for(const list of lists){bytes.writeUIntLE(list.length,offset,3);offset+=3;
+  for(let index=0;index<list.length;index++){bytes.writeUIntLE(list[index]-(index?list[index-1]:0),offset,3);offset+=3;}}
+ return bytes;
+}
+function highWork({lists=Array.from({length:5},()=>Array.from({length:1024},(_,i)=>i)),bytes,frames=35000}={}){
+ const e={...entry(1),timeMs:frames},encoded=deflateSync(bytes||eventBytes(lists)).toString('base64url');
+ const value={...payload(e),frames,replay:encoded,replayHash:createHash('sha256').update(encoded).digest('hex')};
+ return {value,binding:{periodId:period.id,trackId:period.trackId,entry:{...e,replayHash:value.replayHash}}};
+}
+async function engine(){
+ class Worker extends EventTarget{
+  postMessage(message){queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:{...message,
+   lookupVersion:PLAYBACK_ENGINE_PIN.lookupVersion,lookupDigest:PLAYBACK_ENGINE_PIN.lookupDigest}})));}
+ }
+ const worker=new Worker();
+ const token=await confirmPlaybackEngine({worker,workerBytes:new Uint8Array(await fs.readFile(new URL('../simulation_worker.bundle.js',import.meta.url))),
+  mainBytes:new Uint8Array(await fs.readFile(new URL('../main.bundle.js',import.meta.url)))});
+ return {worker,token};
+}
+
+test('high linear-work pending events publish structurally bounded bytes without granting runtime or RP',async()=>{
+ const f=highWork();await assert.rejects(publicEventPlaybackProjection(f.value,f.binding),/work limit/);
+ const saved=await publicEventPlaybackForPublication({...f.value,ownerUid:'private',proof:'private',verifiedAt:999},f.binding);
+ assert.equal(saved.replay,f.value.replay);assert.equal(saved.replayHash,f.value.replayHash);
+ assert.equal(saved.verificationStatus,'waiting');assert.equal(saved.pending,true);assert.equal(saved.verified,false);
+ assert.equal(saved.eventRpEligible,false);assert.equal(saved.runtimeCapability,false);
+ assert.equal(saved.requiredPlaybackEngine.engineDigest,PLAYBACK_ENGINE_PIN.engineDigest);assert.ok(saved.playbackWork<30000000);
+ for(const key of ['ownerUid','proof','verifiedAt','playbackEngine'])assert.equal(saved[key],undefined);
+ await assert.rejects(publicEventPlaybackProjection(saved,f.binding),/work limit/,'published engine hints cannot authorize an old worker');
+ assert.deepEqual(await publicEventPlaybackForPublication(saved,f.binding),saved,'publication is a stable public projection');
+});
+
+test('indexed pending runtime needs a live authenticated capability and rejects forged, revoked or failed sessions',async()=>{
+ const f=highWork(),session=await engine();
+ try{
+  const saved=await publicEventPlaybackProjection(f.value,f.binding,{playbackEngine:session.token});
+  assert.equal(saved.pending,true);assert.equal(saved.verified,false);assert.equal(saved.eventRpEligible,false);
+  assert.ok(saved.playbackWork<30000000);assert.equal(saved.runtimeCapability,false,'the serialized row is not a worker capability');
+  for(const token of [{...session.token},Object.freeze({...PLAYBACK_ENGINE_PIN}),null])
+   await assert.rejects(publicEventPlaybackProjection(f.value,f.binding,{playbackEngine:token}),/work limit/);
+  await assert.rejects(publicEventPlaybackProjection({...f.value,playbackEngine:session.token,publicationOnly:true},f.binding,
+   {publicationOnly:true}),/work limit/,'row flags and runtime options cannot select publication-only validation');
+  session.worker.dispatchEvent(new Event('error'));assert.equal(playbackEngineMetadata(session.token),null);
+  await assert.rejects(publicEventPlaybackProjection(f.value,f.binding,{playbackEngine:session.token}),/work limit/);
+ }finally{revokePlaybackEngine(session.token);}
+ const second=await engine();revokePlaybackEngine(second.token);
+ await assert.rejects(publicEventPlaybackProjection(f.value,f.binding,{playbackEngine:second.token}),/work limit/);
+});
+
+test('publication and authenticated indexed runtime preserve every event structural limit',async()=>{
+ const session=await engine();
+ try{
+  const invalid=[Buffer.alloc(14),Buffer.alloc(16),Buffer.alloc(30016),
+   eventBytes([[0,0],[],[],[],[]]),eventBytes([[35001],[],[],[],[]]),
+   eventBytes([Array.from({length:4097},(_,i)=>i),[],[],[],[]]),
+   eventBytes([Array.from({length:4000},(_,i)=>i),Array.from({length:4000},(_,i)=>i),Array.from({length:2001},(_,i)=>i),[],[]])];
+  for(const bytes of invalid){const f=highWork({bytes});
+   await assert.rejects(publicEventPlaybackForPublication(f.value,f.binding));
+   await assert.rejects(publicEventPlaybackProjection(f.value,f.binding,{playbackEngine:session.token}));
+  }
+  const maximum=highWork({lists:Array.from({length:5},()=>Array.from({length:2000},(_,i)=>i))});
+  assert.equal((await publicEventPlaybackForPublication(maximum.value,maximum.binding)).pending,true);
+  const tooLong=highWork({frames:300001});
+  await assert.rejects(publicEventPlaybackForPublication(tooLong.value,tooLong.binding),/binding/);
+  await assert.rejects(publicEventPlaybackProjection(tooLong.value,tooLong.binding,{playbackEngine:session.token}),/binding/);
+ }finally{revokePlaybackEngine(session.token);}
+});
+
+test('publication and indexed runtime cannot bypass terminal status or exact pending event binding',async()=>{
+ const f=highWork(),session=await engine();
+ try{
+  for(const change of [{verified:true},{eventRpEligible:true},{pending:false},{verificationStatus:'verified'},
+   {status:'rejected'},{validationState:'unknown'},{trackId:hex(1000)},{accountId:hex(1000)},
+   {runId:hex(1000)},{timeMs:35001},{frames:35001},{submittedAt:1501},{replayHash:hex(1000)}]){
+   await assert.rejects(publicEventPlaybackForPublication({...f.value,...change},f.binding));
+   await assert.rejects(publicEventPlaybackProjection({...f.value,...change},f.binding,{playbackEngine:session.token}));
+  }
+ }finally{revokePlaybackEngine(session.token);}
+});
 test('public waiting projection binds the exact public run, strips private proof and never earns RP',async()=>{
  const e=entry(1),input={...payload(e),ownerUid:'private',proof:'private',verifiedAt:999};
  const projected=await publicEventPlaybackProjection(input,{periodId:period.id,trackId:period.trackId,entry:e});

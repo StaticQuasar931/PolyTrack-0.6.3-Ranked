@@ -5,6 +5,7 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {decodeSnapshot, MAX_FILE_BYTES} from '../snapshot-package.mjs';
 import {compareControls} from './similarity.mjs';
+import {publicEventPlaybackForPublication} from '../public-event-playback.mjs';
 import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
 import {validateEnginePin} from './run.mjs';
 import {VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, legacyTimingFrames} from '../../workers/ranked/src/verification.js';
@@ -250,9 +251,47 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
       bindingStatus: boardBound ? 'event_board_bound' : 'event_board_missing', periodId: event.periodId,
       runId: event.runId});
   }
+
+  // Publication integrity is not a verified verdict or permission for native dispatch.
+  const pendingJobs = [], pendingBindings = new Map(), usedPendingFiles = new Set();
+  for (const [periodId, board] of eventBoards) {
+    if (board.pendingPlaybacks !== undefined && !Array.isArray(board.pendingPlaybacks)) {
+      issues.push({kind: 'pending_event_list_invalid', source: 'events/'+periodId+'.json'}); continue;
+    }
+    for (const entry of board.pendingPlaybacks || []) {
+      const logical = 'event-playbacks/'+periodId+'/'+String(entry?.runId || '')+'.json';
+      if (!HASH.test(entry?.runId || '') || !HASH.test(entry?.replayHash || '') || board.archived === true ||
+          board.entries.some(row => row?.runId === entry.runId)) {
+        issues.push({kind: 'pending_event_binding_invalid', source: logical}); continue;
+      }
+      if (pendingBindings.has(logical)) {
+        issues.push({kind: 'pending_event_binding_duplicate', source: logical}); continue;
+      }
+      pendingBindings.set(logical, entry);
+      let payload;
+      try { payload = await readIndexedPayload(snapshotDir, index, logical, cache); }
+      catch { issues.push({kind: 'pending_event_payload_unreadable', source: logical}); continue; }
+      if (!payload) { issues.push({kind: 'pending_event_payload_missing', source: logical}); continue; }
+      let projected;
+      try { projected = await publicEventPlaybackForPublication(payload, {periodId, trackId: board.period.trackId, entry}); }
+      catch { issues.push({kind: 'pending_event_payload_invalid', source: logical}); continue; }
+      usedPendingFiles.add(logical);
+      const id = recordId('event-pending', logical);
+      pendingJobs.push({recordId:id,resultId:id,kind:'event-pending',source:logical,accountId:projected.accountId,
+        trackId:projected.trackId,periodId:projected.periodId,runId:projected.runId,timeMs:projected.timeMs,
+        replay:projected.replay,replayHash:projected.replayHash,bindingStatus:'pending_event_board_bound',
+        verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,publicationOnly:true});
+    }
+  }
+  for (const logical of files.filter(value => value.startsWith('event-playbacks/'))) {
+    if (!/^event-playbacks\/([A-Za-z0-9_-]{1,64})\/([a-f0-9]{64})\.json$/.test(logical) || !pendingBindings.has(logical))
+      issues.push({kind: 'pending_event_payload_unbound', source: logical});
+  }
+
   const auditSource = await fs.readFile(fileURLToPath(import.meta.url));
   const manifest = {generation: pointer.currentdir, indexSha256: digest(indexBytes), pointerSha256: digest(pointerBytes),
     auditSourceSha256: digest(auditSource),
+    pendingPlaybackValidatorSha256: digest(await fs.readFile(new URL('../public-event-playback.mjs', import.meta.url))),
     engineDigest: VERIFIER_ENGINE_DIGEST, verifierVersion: VERIFIER_VERSION, engineFingerprint: verifierFingerprint};
   const manifestSha256 = digest(Buffer.from(JSON.stringify(manifest)));
   jobs.sort((a, b) => a.trackId.localeCompare(b.trackId) || a.kind.localeCompare(b.kind) || a.recordId.localeCompare(b.recordId));
@@ -261,6 +300,8 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
     currentTrackFiles: files.filter(value => /^tracks\/[a-f0-9]{64}\.json$/.test(value)).length,
     normalRecordingFiles: files.filter(value => value.startsWith('recordings/')).length,
     eventReplayFiles: files.filter(value => value.startsWith('event-replays/')).length,
+    pendingEventPlaybackFiles: files.filter(value => value.startsWith('event-playbacks/')).length,
+    pendingEventBindings: pendingBindings.size, pendingEventPlaybacks: pendingJobs.length,
     normalRecordings: recordings.size, normalJobs: jobs.filter(job => job.kind === 'normal').length,
     eventReplays: jobs.filter(job => job.kind === 'event').length,
     orphanNormalRecordings: jobs.filter(job => job.kind === 'normal' && job.bindingStatus === 'orphan_recording').length,
@@ -268,8 +309,9 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
     missingOrInvalid: issues.length};
   coverage.complete = issues.length === 0 && coverage.canonicalFiles === coverage.canonicalRecords &&
     coverage.normalRecordingFiles === coverage.normalRecordings && coverage.eventReplayFiles === coverage.eventReplays &&
-    coverage.normalJobs === coverage.normalRecordings;
-  return {root, snapshotDir, manifest, manifestSha256, jobs, issues, coverage};
+    coverage.normalJobs === coverage.normalRecordings &&
+    coverage.pendingEventPlaybackFiles === usedPendingFiles.size && coverage.pendingEventBindings === pendingJobs.length;
+  return {root, snapshotDir, manifest, manifestSha256, jobs, pendingJobs, issues, coverage};
 }
 
 function pairAccumulator() {
@@ -284,7 +326,7 @@ async function compareAllPairs(audit, pairsFile, state, checkpoint) {
   const grouped = new Map();
   const rowCounts = new Map();
   let decodeUnavailable = 0;
-  for (const job of audit.jobs) {
+  for (const job of [...audit.jobs, ...(audit.pendingJobs || [])]) {
     rowCounts.set(job.trackId, (rowCounts.get(job.trackId) || 0) + 1);
     try {
       job.controls = decodeReplay(job.replay, job.timeMs);

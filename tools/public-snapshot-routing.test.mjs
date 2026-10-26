@@ -431,10 +431,10 @@ test('an old immutable snapshot board does not start a live background refresh',
 
 test('selected live event replay bypasses a stale saved binding but matching snapshots stay read-free',async()=>{
  const period='d_live',account='a'.repeat(64),track='b'.repeat(64);
- const saved={periodId:period,accountId:account,trackId:track,timeMs:10000,runId:'old'},live={...saved,timeMs:9000,runId:'new'};
+ const saved={periodId:period,accountId:account,trackId:track,timeMs:10000,runId:'old'},live={...saved,timeMs:9000,runId:'new',replay:'payload',replayHash:'239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5'};
  let cloud=0,gate;
  const context=vm.createContext({eventReplayRequests:new Map(),readPublicSnapshotBackup:async kind=>kind==='event'?{archived:false}:saved,
- rankedEdgeAvailable:()=>true,rankedBrokerUrl:()=> 'https://example.test',eventRequestSignal:()=>undefined,markRankedEdgeUnavailable:()=>{},
+ crypto:globalThis.crypto,TextEncoder,compatibilityOnlineAllowed:true,rankedEdgeAvailable:()=>true,rankedBrokerUrl:()=> 'https://example.test',eventRequestSignal:()=>undefined,markRankedEdgeUnavailable:()=>{},
  fetch:async()=>{cloud++;if(gate)await gate;return {ok:true,headers:new Headers(),text:async()=>JSON.stringify(live)};}});
  runClientSource(section('  async function readEventReplay(', '  async function ensureEventUi('),context);
  assert.equal(await context.readEventReplay(period,account,null,{timeMs:10000,trackId:track,runId:'old'}),saved);assert.equal(cloud,0);
@@ -446,10 +446,10 @@ test('frozen replay mismatches and unavailable live replays never return stale r
  const period='d_old',account='a'.repeat(64),track='b'.repeat(64),saved={periodId:period,accountId:account,trackId:track,timeMs:10000};
  let archived=true,cloud=0;
  const context=vm.createContext({eventReplayRequests:new Map(),readPublicSnapshotBackup:async kind=>kind==='event'?{archived}:saved,
- rankedEdgeAvailable:()=>{cloud++;return false;}});
+ compatibilityOnlineAllowed:false,rankedEdgeAvailable:()=>{cloud++;return false;}});
  runClientSource(section('  async function readEventReplay(', '  async function ensureEventUi('),context);
  const expected={timeMs:9000,trackId:track};
  await assert.rejects(context.readEventReplay(period,account,null,expected),/Archived replay/);assert.equal(cloud,0);
  archived=false;await assert.rejects(context.readEventReplay(period,account,null,expected),/matching recording/);
- assert.equal(cloud,1);
+ assert.equal(cloud,0,'compatibility lockdown performs no network request');
 });
