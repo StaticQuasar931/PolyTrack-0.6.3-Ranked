@@ -216,3 +216,12 @@ test('non-drain and drain throttle deferrals keep their existing distinct explan
     assert.doesNotMatch(text, /An event transaction conflicted/);
   }
 });
+
+
+test('new committed review findings raise workflow warnings without another query',async()=>{
+ const {announceReviewFindings}=await import('./run.mjs');const messages=[];
+ for(const count of [0,-1,NaN,1.5,undefined])announceReviewFindings(count,m=>messages.push(m));
+ assert.equal(messages.length,0);announceReviewFindings(1,m=>messages.push(m));announceReviewFindings(2,m=>messages.push(m));
+ assert.equal(messages.length,2);assert.match(messages[0],/^::warning title=Replay review required::1 new replay review finding\./);
+ assert.match(messages[1],/2 new replay review findings\./);assert.match(messages[0],/remain held pending human review/);
+});

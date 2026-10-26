@@ -1,3 +1,4 @@
+import {hasMatchingCompetitiveReviewHold} from './competitive-review.js';
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
 
 export const VERIFIER_ENGINE_DIGEST = '3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0';
@@ -75,6 +76,7 @@ export function bootstrapSlots(trackId, entries, existing = {}) {
     const slot = slots[accountId];
     // Bootstrap runs once per version; even stale snapshots must wake terminal old keys.
     // The runner fetches canonical data and replaces this provisional binding before verifying.
+    if (hasMatchingCompetitiveReviewHold(entry, slot)) continue;
     if (slot?.reason === 'canonical_missing' || slot?.key !== verificationKey(entry) && !hasAcceptedVerifiedProof(entry, slot)) {
       slots[accountId] = pendingSlot(entry);
     } else if (slot.status === 'unavailable' && (['track_geometry_limit','scan_work_limit'].includes(slot.reason) || slot.reason === 'time_limit' && legacyTimingFrames(entry) !== null)) {

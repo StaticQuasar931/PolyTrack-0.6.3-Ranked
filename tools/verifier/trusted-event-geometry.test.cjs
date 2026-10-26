@@ -55,22 +55,33 @@ test('current and archived registry assets pass reviewed preflight without trust
 
 test('unreviewed weekly code cannot poison a small official job or skip replay authentication', async () => {
   const official = policy.tracks.find(row => row.name === 'tracks/official/desert1.track');
-  const current = JSON.parse(fs.readFileSync(path.join(root, 'events/kodub/current.json'))).current;
-  const code = fs.readFileSync(path.join(root, 'events/kodub', current.trackUrl), 'utf8');
+  // Pin Spite's bytes: the rotating weekly track need not exceed the default part cap.
+  const codeHash = 'a6ccd78cc443cd848a41da11d94904d2fffb7647d0ecafca64562eb53480ea2b';
+  const code = fs.readFileSync(path.join(root, 'events/kodub/assets', codeHash + '.track'), 'utf8');
+  assert.equal(sha256(code), codeHash);
+  assert.equal(LIMITS.trackParts, 20000);
+  assert.throws(() => _internals.preflightTrackCode(code), {reason: 'trusted_track_part_limit'});
   const unknown = 'f'.repeat(64);
+  assert(!policy.tracks.some(row => row.id === unknown));
+  const trusted = [{trackId: unknown, code, codeHash}];
   const jobs = [official.id, unknown].map((trackId, index) => ({
     resultId: `offline-${index}`, trackId, timeMs: 1000,
     replay: 'not-a-replay', replayHash: sha256('not-a-replay'),
   }));
   // Both jobs fail before browser startup. The official job must reach replay decoding.
-  const results = await verifyBatch(root, jobs, [{trackId: unknown, code, codeHash: sha256(code)}]);
+  const results = await verifyBatch(root, jobs, trusted);
   assert.equal(results[0].reason, 'invalid_zlib');
+  assert.equal(results[1].status, 'unavailable');
   assert.equal(results[1].reason, 'trusted_track_part_limit');
-  const [badHash] = await verifyBatch(root, [{...jobs[0], replayHash: '0'.repeat(64)}]);
+  assert.equal(results[1].trackContentHash, null);
+  assert.equal(results[1].binding.nativeTrackId, null);
+  const [badHash, stillRejected] = await verifyBatch(root,
+    [{...jobs[0], replayHash: '0'.repeat(64)}, jobs[1]], trusted);
   assert.equal(badHash.reason, 'replay_hash_mismatch');
+  assert.equal(stillRejected.reason, 'trusted_track_part_limit');
 });
 
-test('four-job event batches reach replay validation for Spite and weekly Desert 1', async () => {
+test('four-job event batches reach replay validation for the current weekly track and Desert 1', async () => {
   const {runEventCoordinator} = await import('./events.mjs');
   const current = JSON.parse(fs.readFileSync(path.join(root, 'events/kodub/current.json'))).current;
   const official = policy.tracks.find(row => row.name === 'tracks/official/desert1.track');

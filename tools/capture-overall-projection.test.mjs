@@ -5,9 +5,10 @@ import {gzipSync} from 'node:zlib';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {captureOverallProjection, applyCapturedOverallProjection, createOverallCaptureFetch} from './capture-overall-projection.mjs';
+import {captureOverallProjection, applyCapturedOverallProjection, createOverallCaptureFetch, overallCaptureForBackup, frozenOverallSource} from './capture-overall-projection.mjs';
 import {encode} from './verifier/firestore.mjs';
-import {prepareSourcePublication} from '../workers/ranked/src/overall-source-publication.js';
+import {runPublicSnapshotBackup,publicTrackBackup,authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
+import {prepareSourcePublication,decodeSourcePublication} from '../workers/ranked/src/overall-source-publication.js';
 import {preparePublicationPages} from '../workers/ranked/src/paged-publication.js';
 import {computeOverall, trackWeightParts} from '../workers/ranked/src/index.js';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
@@ -21,7 +22,7 @@ const canonical = value => Array.isArray(value) ? value.map(canonical) : value &
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 
-async function fixture({paged = false} = {}) {
+async function fixture({paged = false, inline = false} = {}) {
   const metadata = {algorithmVersion:'participation-v8-s1', schemaVersion:6, sourceRevision:10, builtRevision:10, updatedAt:1000};
   const binding = {revision:1, sourceRevision:1, updatedAt:1000, signature:'frozen-signature'};
   const board = {...metadata, ...binding, trackId:track, complete:true, totalEntries:2,
@@ -43,6 +44,10 @@ async function fixture({paged = false} = {}) {
     ['0.6.2_s1_release_meta/current',{builtRevision:10,lastOverallBuildAt:1000,sourceBundle:published.marker,dirty:true}],
     ['0.6.2_s1_leaderboards_overall/main',overall],['0.6.2_s1_leaderboards_overall/main_results',results],
     ...published.documents.map(row => [row.collection+'/'+row.id,row.data])]);
+  if (inline) {
+    delete overall.resultBundleLocation;
+    Object.assign(overall, results);
+  }
   if (paged) {
     const pages = await preparePublicationPages('overall','main',entries,{sourceRevision:10,sourceComplete:true});
     overall.pagination = pages.pagination; overall.sourceComplete = true;
@@ -204,4 +209,176 @@ test('auth validates raw canonical document names before OAuth and uses syntheti
   assert.equal(oauth,0);assert.equal(reads,0);
   await auth(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({documents:[base+'0.6.2_s1_release_meta/current']})});
   assert.equal(oauth,1);assert.equal(reads,1);
+});
+
+
+test('inline results ignore an unused stale sidecar and save one named document read',async()=>{
+  const f=await fixture({paged:true,inline:true});f.documents.get('0.6.2_s1_leaderboards_overall/main_results').sourceRevision--;
+  const capture=await captureOverallProjection({fetchImpl:async(url,options)=>{
+    assert.ok(!JSON.parse(options.body).documents[0].endsWith('/main_results'),'unused sidecar must never be requested');
+    return f.fetchImpl(url,options);
+  }});
+  assert.equal(capture.report.resultSource,'inline');assert.equal(capture.report.rootDocuments,2);
+  assert.equal(capture.report.estimatedReads,4);assert.equal(capture.report.generationPages,1);
+  assert.equal(capture.report.projectionReady,true);assert.equal(capture.files.get('overall-results.json').sourceRevision,10);
+});
+
+test('inline results do not depend on a sidecar existing or being readable',async()=>{
+  const f=await fixture({inline:true});f.documents.delete('0.6.2_s1_leaderboards_overall/main_results');
+  const capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  assert.equal(capture.report.estimatedReads,3);assert.equal(capture.report.projectionReady,true);
+  assert.equal(f.requests.some(row=>row.documents[0].endsWith('/main_results')),false);
+});
+
+test('referenced sidecar remains mandatory and mismatches stop before source or generation page reads',async()=>{
+  const f=await fixture({paged:true});f.documents.get('0.6.2_s1_leaderboards_overall/main_results').builtRevision++;
+  await assert.rejects(captureOverallProjection({fetchImpl:f.fetchImpl}),/RESULT_BUNDLE_SOURCE_MISMATCH/);
+  assert.equal(f.requests.length,3);assert.equal(f.requests.some(row=>/overall_sources|public_pages/.test(row.documents[0])),false);
+});
+
+test('a successful inline capture publishes through the real updater despite an obsolete unused sidecar',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-inline-update-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const stage=path.join(root,'local-reports','snapshot-staging');await fs.mkdir(stage,{recursive:true});
+  await fs.writeFile(path.join(root,'index.html'),'<html><head></head></html>');
+  const f=await fixture({inline:true});f.documents.get('0.6.2_s1_leaderboards_overall/main_results').updatedAt--;
+  const result=await updatePublicSnapshot({root,refreshReplays:true,capture:async()=>{
+    await fs.writeFile(path.join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{},events:{}}));return {};
+  },captureOverall:()=>captureOverallProjection({fetchImpl:f.fetchImpl}),exportPublic:async()=>({complete:false,counts:{},coverage:{complete:false}}),log:()=>{}});
+  assert.equal(result.generation,1);assert.equal(result.changed,true);
+  const manifest=JSON.parse(await fs.readFile(path.join(stage,'manifest.json')));
+  assert.equal(manifest.overallCapture.resultSource,'inline');assert.equal(manifest.overallProjection.available,true);
+});
+
+
+test('source mismatch stops before ordinary capture or replay export and preserves publication',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-fail-first-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const stage=path.join(root,'local-reports','snapshot-staging');await fs.mkdir(stage,{recursive:true});
+ await fs.writeFile(path.join(root,'index.html'),'<html><head></head></html>');
+ const f=await fixture({paged:true});f.documents.get('0.6.2_s1_leaderboards_overall/main_results').sourceRevision--;
+ let ordinary=0,exports=0;
+ await assert.rejects(updatePublicSnapshot({root,refreshReplays:true,
+  captureOverall:()=>captureOverallProjection({fetchImpl:f.fetchImpl}),
+  capture:async()=>{ordinary++;return {};},exportPublic:async()=>{exports++;},log:()=>{}}),/RESULT_BUNDLE_SOURCE_MISMATCH/);
+ assert.equal(ordinary,0);assert.equal(exports,0);assert.equal(f.requests.length,3);
+ await assert.rejects(fs.access(path.join(root,'snapshot-current.json')),/ENOENT/);
+});
+
+
+test('backup reuses the bound Overall capture without Worker root or page requests',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-reuse-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const f=await fixture({paged:true,inline:true}),capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+ const bound=overallCaptureForBackup(capture),calls=[];
+ assert.equal(bound.entries.length,2);assert.equal(bound.resultBundleComplete,true);
+ let metrics;const result=await runPublicSnapshotBackup({directory:root,capturedOverall:bound,trackIds:[],log:value=>{metrics=JSON.parse(value).publicSnapshotBackup;},
+  fetchImpl:async input=>{const u=new URL(input);calls.push(u.pathname);
+   if(u.pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+   assert.ok(['/v1/snapshot/track','/v1/events/permanent-rolling-hills/snapshot'].includes(u.pathname));return new Response('',{status:404});}});
+ assert.notEqual(result.deferred,true);assert.equal(calls.length,3);assert.equal(calls.some(p=>p.includes('/overall')),false);assert.equal(metrics.workerRequests,3);
+ const saved=JSON.parse(await fs.readFile(path.join(root,'overall-results.json')));
+ assert.equal(saved.resultBundle,bound.resultBundle);assert.equal(saved.sourceRevision,10);
+ const invalid={...capture,files:new Map(capture.files)};
+ invalid.files.set('overall-results.json',{...saved,sourceRevision:9});
+ assert.throws(()=>overallCaptureForBackup(invalid),/binding mismatch/);
+});
+
+async function bound(count=501,mutate=()=>{}){
+  const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+  const overall=f.documents.get('0.6.2_s1_leaderboards_overall/main'),results=f.documents.get('0.6.2_s1_leaderboards_overall/main_results');
+  const documents=new Map([...f.documents].filter(([key])=>key.startsWith('0.6.2_s1_overall_sources/')).map(([key,data])=>[key.split('/')[1],{data}]));
+  const envelope=JSON.parse(await decodeSourcePublication(meta.sourceBundle,documents)),payload=envelope.payload;
+  const id=overall.trackCatalog[0].trackId,board=payload.boards[id];
+  board.entries=Array.from({length:count},(_,index)=>({...board.entries[0],accountId:(index+1).toString(16).padStart(64,'0'),timeMs:10000+index}));
+  board.totalEntries=count;mutate({payload,board,overall,meta,results,id});
+  const publication=await prepareSourcePublication(JSON.stringify(envelope),{...meta.sourceBundle,digest:digest(payload),catalogHash:digest(payload.catalog)});
+  meta.sourceBundle=publication.marker;
+  return {meta,overall,results,documents:new Map(publication.documents.map(row=>[row.id,{data:row.data}])),board,id};
+}
+
+test('authenticated signed 501-entry full source is accepted after exact catalog validation, with no invented paging flags',async()=>{
+  const input=await bound(),before=JSON.stringify(input.board);
+  const tracks=await frozenOverallSource(input);
+  assert.equal(tracks.length,1);assert.equal(tracks[0].entries.length,501);assert.equal(tracks[0].totalEntries,501);
+  assert.equal(Object.hasOwn(tracks[0],'pagination'),false);assert.equal(Object.hasOwn(tracks[0],'paginatedSource'),false);
+  assert.doesNotMatch(JSON.stringify(tracks),/ownerUid|signature/);assert.equal(JSON.stringify(input.board),before);
+  assert.throws(()=>publicTrackBackup(input.board,input.id),/Invalid public track snapshot/);
+});
+
+test('public legacy default stays 500; authenticated internal maximum is exactly 10000',async()=>{
+  const input=await bound(500);assert.equal(publicTrackBackup(input.board,input.id).entries.length,500);
+  const template=input.board.entries[0];
+  for(const count of [501,10000]){
+    const board={...input.board,totalEntries:count,entries:Array.from({length:count},()=>({...template}))};
+    assert.throws(()=>publicTrackBackup(board,input.id),/Invalid public track snapshot/);
+    assert.equal(authenticatedOverallTrackBackup(board,input.id).entries.length,count);
+  }
+  const board={...input.board,totalEntries:10001,entries:Array.from({length:10001},()=>({...template}))};
+  assert.throws(()=>authenticatedOverallTrackBackup(board,input.id),/Invalid authenticated Overall track snapshot/);
+});
+
+test('malformed authenticated count, completeness, identity and entry container are rejected',async()=>{
+  const {board,id}=await bound();
+  for(const change of [{totalEntries:500},{totalEntries:501.5},{complete:false,sourceComplete:false},{trackId:'a'.repeat(64)},{entries:{}},{updatedAt:'1000'}]){
+    assert.throws(()=>authenticatedOverallTrackBackup({...board,...change},id),/Invalid authenticated Overall track snapshot/);
+  }
+});
+
+test('signed malformed source count and incomplete board are rejected before projection',async()=>{
+  for(const mutate of [({board})=>{board.totalEntries--;},({board})=>{board.complete=false;board.sourceComplete=false;}]){
+    await assert.rejects(frozenOverallSource(await bound(501,mutate)),/FROZEN_BOARD_INCOMPLETE/);
+  }
+  await assert.rejects(frozenOverallSource(await bound(10001)),/Invalid authenticated Overall track snapshot/);
+});
+
+test('hash, exact track binding and complete catalog guards remain mandatory for the 501 lane',async()=>{
+  const input=await bound();input.meta.sourceBundle.digest='f'.repeat(64);
+  await assert.rejects(frozenOverallSource(input),/OVERALL_SOURCE_PUBLICATION_INVALID/);
+  await assert.rejects(frozenOverallSource(await bound(501,({board})=>{board.updatedAt++;})),/FROZEN_BOARD_BINDING_MISMATCH/);
+  await assert.rejects(frozenOverallSource(await bound(501,({overall})=>{overall.trackCatalog[0].updatedAt++;})),/FROZEN_TRACK_CATALOG_MISMATCH/);
+  await assert.rejects(frozenOverallSource(await bound(501,({overall})=>{overall.trackCatalog=[];})),/FROZEN_TRACK_CATALOG_MISMATCH/);
+});
+
+test('public valid assembled pagination still follows the existing public validation contract',async()=>{
+  const {board,id}=await bound();
+  const paged={...board,sourceComplete:true,paginatedSource:true,pagination:{version:1,generation:'a'.repeat(64),complete:true,pageSize:100,totalEntries:501,pageCount:6}};
+  assert.equal(publicTrackBackup(paged,id).entries.length,501);
+  assert.throws(()=>publicTrackBackup({...paged,pagination:{...paged.pagination,pageCount:5}},id),/Invalid public track snapshot/);
+});
+
+
+test('successful frozen baseline has no failure diagnosis and uses the same reads',async()=>{
+  const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  assert.equal(result.report.projectionReady,true);assert.equal(result.report.projectionFailureStage,null);
+  assert.equal(result.report.projectionFailureCode,null);assert.equal(result.report.estimatedReads,4);
+});
+test('missing frozen marker is identified without source scans, retries or fabricated projection',async()=>{
+  const f=await fixture();delete f.documents.get('0.6.2_s1_release_meta/current').sourceBundle;
+  const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  assert.equal(result.report.projectionReady,false);assert.equal(result.report.projectionFailureStage,'frozen-source');
+  assert.equal(result.report.projectionFailureCode,'FROZEN_OVERALL_SOURCE_UNAVAILABLE_OR_STALE');
+  assert.equal(result.report.estimatedReads,3);assert.equal(result.files.has('projection-source.json'),false);
+});
+test('exact-baseline failure is distinguished from frozen-marker failure',async()=>{
+  const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,
+    buildBundle:async()=>{throw Error('Overall projection baseline mismatch: baseline_mismatch');}});
+  assert.equal(result.report.projectionFailureStage,'baseline');assert.equal(result.report.projectionFailureCode,'baseline_mismatch');
+  assert.equal(result.report.projectionReason,'bound-source-or-baseline-unavailable');assert.equal(result.report.estimatedReads,4);
+});
+test('unknown exception text is not copied to public diagnostics',async()=>{
+  for(const message of ['PRIVATE_HEADERS_AND_CREDENTIAL_CANARY','FROZEN_PRIVATE_ACCOUNT_CANARY','Overall projection baseline mismatch: private_account_canary']){
+    const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,
+      buildBundle:async()=>{throw Error(message);}});
+    assert.equal(result.report.projectionFailureCode,'unclassified');assert.doesNotMatch(JSON.stringify(result.report),/CANARY|private_account_canary/);
+  }
+});
+test('mixed publication digest is classified at the frozen-source stage',async()=>{
+  const f=await fixture();f.documents.get('0.6.2_s1_release_meta/current').sourceBundle.digest='f'.repeat(64);
+  const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  assert.equal(result.report.projectionFailureStage,'frozen-source');assert.equal(result.report.projectionFailureCode,'OVERALL_SOURCE_PUBLICATION_INVALID');
+  assert.equal(result.report.estimatedReads,4);assert.equal(result.files.has('projection-source.json'),false);
+});
+test('invalid board and oversized result errors map to fixed public codes',async()=>{
+  for(const [message,code] of [['Invalid Overall projection board','PROJECTION_BOARD_INVALID'],['Projection results too large','PROJECTION_RESULTS_TOO_LARGE']]){
+    const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,buildBundle:async()=>{throw Error(message);}});
+    assert.equal(result.report.projectionFailureStage,'baseline');assert.equal(result.report.projectionFailureCode,code);
+  }
 });

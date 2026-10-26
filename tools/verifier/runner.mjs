@@ -1,3 +1,4 @@
+import {COMPETITIVE_REVIEW_REASON, isCompetitiveReviewHold, hasMatchingCompetitiveReviewHold, strongNearCloneEvidence} from '../../workers/ranked/src/competitive-review.js';
 import {queueDocumentId} from '../../workers/ranked/src/verification-shards.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -170,6 +171,7 @@ export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_
     const timeMs=frames??canonical.data.timeMs;
     const verifiedControlReferences=context.controlReferences.filter(reference=>reference.accountId!==slot.accountId&&reference.timeMs===timeMs);
     jobs.push({...canonical.data,resultId:slot.resultId,queueKey:updated.key,queueCollection,queueId:queueDocumentId(doc),timeMs,verifiedControlReferences,
+      previouslyAccepted:hasAcceptedVerifiedProof(canonical.data,updated),
       correctionCandidate:frames===null?null:{frames,originalTimeMs:canonical.data.timeMs}});
   }
   for(const context of contexts){
@@ -240,16 +242,27 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         totals.superseded++; break;
       }
       const existingSlot=queue.data.slots[job.accountId];
+      if(isCompetitiveReviewHold(result)&&!hasMatchingCompetitiveReviewHold(current.data,existingSlot)){
+        const b=result.binding;
+        if(!strongNearCloneEvidence(similarityEvidence(result))||result.trackId!==job.trackId||result.timeMs!==job.timeMs||
+          result.replayHash!==job.replayHash||b?.resultId!==job.resultId||b.trackId!==job.trackId||b.nativeTrackId!==job.trackId||
+          b.timeMs!==job.timeMs||b.replayHash!==job.replayHash||b.actualReplayHash!==job.replayHash||
+          b.engineDigest!==VERIFIER_ENGINE_DIGEST||b.verifierVersion!==VERIFIER_VERSION)
+          throw Error('Invalid competitive review hold binding');
+      }
       // Receipt validity is independent of optional clone-comparison signatures.
-      if(result.status==='unavailable'&&hasAcceptedVerifiedProof(current.data,existingSlot)&&
+      if(result.status==='unavailable'&&!isCompetitiveReviewHold(result)&&hasAcceptedVerifiedProof(current.data,existingSlot)&&
           existingSlot.accountId===job.accountId&&existingSlot.trackId===job.trackId&&existingSlot.resultId===job.resultId){
         totals.deferred++;
         totals.reasons.accepted_proof_preserved=(totals.reasons.accepted_proof_preserved||0)+1;
         break;
       }
       const unconfirmed = Boolean(candidateValid && result.status === 'mismatch');
-      const publication = unconfirmed ? {...result, status: 'unavailable', reason: 'legacy_time_unconfirmed'} : result;
-      const correct = Boolean(candidateValid && result.status === 'verified');
+      const priorHeld=hasMatchingCompetitiveReviewHold(current.data,existingSlot);
+      const currentEvidence=similarityEvidence(result)||(priorHeld?existingSlot.reviewEvidence:null);
+      const publication = priorHeld ? {...result,status:'unavailable',reason:COMPETITIVE_REVIEW_REASON} :
+        unconfirmed ? {...result, status: 'unavailable', reason: 'legacy_time_unconfirmed'} : result;
+      const correct = Boolean(candidateValid && publication.status === 'verified');
       if (correct && (result.timeMs !== frames || result.trackId !== job.trackId || result.replayHash !== job.replayHash)) {
         totals.superseded++; break;
       }
@@ -271,6 +284,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         } : null;
       const slots = {...queue.data.slots, [job.accountId]: {...completed,
         ...(controlProof?{controlProof}:{}),
+        ...(currentEvidence?{needsReview:true,reviewEvidence:currentEvidence}:{}),
         ...(unconfirmed ? {nativeReason: String(result.reason || '').slice(0, 100)} : {})}};
       let pendingResultIds = Object.fromEntries(Object.entries(state?.data?.pendingResultIds || {})
         .filter(([trackId, ids]) => /^[A-Za-z0-9_-]{1,80}$/.test(trackId) && Array.isArray(ids) && ids.length)
@@ -305,7 +319,10 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
       }
       const auditId = crypto.createHash('sha256').update(publishedKey).digest('hex');
       const audit = await db.get('0.6.2_s1_verification_audit', auditId);
-      const reviewWrite = await reviewInboxWrite(db,auditId,job,publication,similarityEvidence(result));
+      const previousAudit= audit?.data;
+      const auditEvidence=currentEvidence || (previousAudit?.key===publishedKey&&previousAudit.resultId===job.resultId&&
+        previousAudit.accountId===job.accountId&&previousAudit.trackId===job.trackId&&previousAudit.needsReview===true ? previousAudit.reviewEvidence : null);
+      const reviewWrite = await reviewInboxWrite(db,auditId,job,publication,currentEvidence);
       const nextQueueData = {...queue.data, ...queueState(slots)};
       const nextStateData = {...state?.data, pendingTrackIds, pendingResultIds, pendingFullRebuildTrackIds, forceFullRebuildAll};
       const writes = [
@@ -313,7 +330,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         db.write('0.6.2_s1_worker_jobs', 'canonical_reconcile_v2', nextStateData, state),
         db.write('0.6.2_s1_verification_audit', auditId, {resultId: job.resultId,
           accountId: job.accountId, trackId: job.trackId, key: publishedKey, ...slots[job.accountId],
-          ...(similarityEvidence(result) ? {needsReview:true, reviewEvidence:similarityEvidence(result)} : {}),
+          ...(auditEvidence ? {needsReview:true, reviewEvidence:auditEvidence} : {}),
           ...(correct ? {correctedFromKey: job.queueKey, correctedFromTimeMs: current.data.timeMs, correctedTimeMs: frames} : {})}, audit)
       ];
       if (correct) {

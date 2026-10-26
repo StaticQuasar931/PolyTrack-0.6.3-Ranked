@@ -109,3 +109,10 @@ test('A/D navigation and Shift-numpad page selection retain their behavior',()=>
  f.key('KeyD',{key:'d',shiftKey:false});assert.equal(f.context.overallPage,4);
  f.key('Numpad3',{key:'3',shiftKey:true});assert.deepEqual(f.jumps,[3]);assert.deepEqual(f.favorites,[]);
 });
+
+
+test('favorite shortcuts survive compact footer collapse without activating disabled controls',()=>{
+ const f=fixture();f.buttons[0].visible=false;
+ assert.equal(f.key('Digit1',{shiftKey:false}),true);assert.deepEqual(f.favorites,[1]);
+ f.buttons[1].disabled=true;assert.equal(f.key('Numpad2',{shiftKey:false}),false);assert.deepEqual(f.favorites,[1]);
+});

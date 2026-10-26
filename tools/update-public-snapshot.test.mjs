@@ -145,7 +145,7 @@ test('deferred capture skips event totals and preserves the current pointer', as
   const root = await fixture(t);
   const { runPublicSnapshotBackup } = await import('./public-snapshot-backup.mjs');
   let totalsCalls = 0;
-  const result = await updatePublicSnapshot({ root, capture: runPublicSnapshotBackup,
+  const result = await updatePublicSnapshot({ root, capture: runPublicSnapshotBackup, captureOverall: null,
     captureOptions: { fetchImpl: async () => { throw new Error('test network disabled'); } },
     captureTotals: async () => { totalsCalls++; }, log: () => {} });
   assert.equal(result.deferred, true);
@@ -398,7 +398,7 @@ test('snapshot deferral preserves all published bytes and does not start replay 
 
 test('malformed snapshot data remains fatal rather than reporting a deferral', async t => {
   const f = await replayCaptureFixture(t);
-  await assert.rejects(updatePublicSnapshot({root: f.root,
+  await assert.rejects(updatePublicSnapshot({root: f.root, captureOverall: null,
     captureOptions: {fetchImpl: async () => new Response('not JSON')}, log: () => {}}), /Invalid public snapshot JSON/);
   await f.unchanged();
 });

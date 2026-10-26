@@ -1,3 +1,5 @@
+import {isCompetitiveReviewHold, strongNearCloneEvidence} from './competitive-review.js';
+import {reviewRecord, REVIEW_COLLECTION} from './review-inbox.js';
 import {publicEventPage,publicEventTotal} from './event-public-projection.js';
 import {eventCapacityStorage,prepareEventRetention,eventRetentionPaths,EVENT_RETENTION_COLLECTION,EVENT_REVIEWED_MAX_ENTRANTS,EVENT_REVIEWED_MAX_SUBMISSIONS} from './event-capacity.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION,publicationPageId} from './paged-publication.js';
@@ -191,7 +193,12 @@ function validVerdict(run, result, period) {
   const expectedId = run.runId || run.resultId;
   demand(result.resultId === expectedId && result.trackId === run.trackId && result.timeMs === run.timeMs &&
     result.replayHash === run.replayHash, 'verifier_input_mismatch', 502);
-  if (result.status !== 'unavailable') {
+  const reviewHold=isCompetitiveReviewHold(result);
+  if(reviewHold)demand(result.needsReview===true&&strongNearCloneEvidence(result.reviewEvidence)&&
+    result.reviewEvidence.chronology!=='later_reference'&&result.reviewEvidence.referenceAccountId!==run.accountId&&
+    HEX.test(result.reviewEvidence.referenceAccountId||'')&&result.reviewEvidence.comparedDurationMs<=run.timeMs&&
+    result.reviewEvidence.comparedDurationMs>=.9*run.timeMs,'invalid_review_hold',502);
+  if (result.status !== 'unavailable' || reviewHold) {
     const b = result.binding;
     demand(result.engineDigest === VERIFIER_ENGINE_DIGEST && b?.engineDigest === VERIFIER_ENGINE_DIGEST &&
       b.verifierVersion === VERIFIER_VERSION && b.resultId === expectedId && b.trackId === run.trackId &&
@@ -610,6 +617,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
       return store.transaction(async tx => {
         const at = stamp(), p = await readPeriod(tx, periodId), run = await readRun(tx, periodId, job.resultId);
         demand(run.periodBinding === periodBinding(p) && job.eventKey === run.eventKey, 'event_binding_changed', 409);
+        demand(!(run.status==='verified'&&isCompetitiveReviewHold(result)), 'reviewed_event_correction_required', 409);
         if (['verified', 'mismatch', 'expired', 'unavailable_final'].includes(run.status)) return { status: run.status, duplicate: true };
         const queuePath = path(C.queues, periodId), queue = await tx.get(queuePath);
         const slot = queue.slots.find(s => s.runId === run.runId);
@@ -633,11 +641,19 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
           retainedReplay.trackId === run.trackId, 'event_replay_corrupt', 503);
         demand(retainedPlayback?.periodId === periodId && retainedPlayback.runId === run.runId &&
           retainedPlayback.replayHash === run.replayHash, 'event_playback_corrupt', 503);
+        const reviewHold=isCompetitiveReviewHold(result);
+        let findingPath=null,existingFinding=null,finding=null;
+        if(result.reviewEvidence&&result.needsReview===true){
+          const auditId=await hash(JSON.stringify(['event-review-v1',periodId,run.runId,run.trackId,run.timeMs,run.replayHash]));
+          findingPath=path(REVIEW_COLLECTION,auditId);
+          existingFinding=await tx.get(findingPath);
+          finding=reviewRecord(auditId,{...run,periodId},{...result,checkedAt:at},result.reviewEvidence);
+        }
         const verified = result.status === 'verified';
         const eventImproved = verified && eventOpen && (!eventPb || run.timeMs < eventPb.timeMs);
         const oldTime = canonicalTime(canonical), canonicalDeferred = verified && oldTime === undefined;
         const canonicalImproved = verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
-        const retry = result.status === 'unavailable' && at < p.endsAt + p.graceMs + 7 * 86400000 && slot.attempts < L.verificationAttempts;
+        const retry = result.status === 'unavailable' && !reviewHold && at < p.endsAt + p.graceMs + 7 * 86400000 && slot.attempts < L.verificationAttempts;
         const status = retry ? 'waiting' : result.status === 'unavailable' ? 'unavailable_final' : result.status;
         const proof = { key: run.eventKey, verifierVersion: VERIFIER_VERSION, engineDigest: result.engineDigest || null,
           status: result.status, checkedAt: at, reason: text(result.reason, 100) };
@@ -691,13 +707,16 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         }
         await tx.patch(playbackPath, { verificationStatus: status, verified, eventRpEligible: verified && eventOpen,
           eventRpAwarded: eventImproved, verifiedAt: verified ? at : null });
+        if(finding&&!existingFinding)await tx.create(findingPath,finding);
         await tx.patch(path(C.runs, run.runId), { status, attempts: slot.attempts, proof, replay: retry ? run.replay : null,
+          ...(finding?{needsReview:true,reviewEvidence:result.reviewEvidence}:{}),
           eventImproved, canonicalImproved, canonicalDeferred, completedAt: at });
         if (receipt?.attemptId === run.attemptId && receipt.timeMs === run.timeMs) await tx.patch(receiptPath,
           { status, reason: text(result.reason, 100), eventImproved, canonicalImproved, updatedAt: at });
         await tx.set(queuePath, { ...queue, replayBytes: Math.max(0, queue.replayBytes - (retry ? 0 : run.replay.length)), slots: retry ? queue.slots.map(s => s.runId === run.runId ?
           { ...s, lease: null, leaseUntil: 0, notBefore: at + L.retryMs } : s) : queue.slots.filter(s => s.runId !== run.runId) });
-        return { status, eventImproved, canonicalImproved, canonicalDeferred, eventClosed: !eventOpen };
+        return { status, eventImproved, canonicalImproved, canonicalDeferred, eventClosed: !eventOpen,
+          ...(finding?{reviewFindingAdded:!existingFinding}:{} ) };
       });
     },
     async processBatch(periodId, verifyBatch, limit = L.batch) {

@@ -98,6 +98,7 @@ export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_
               const resultId = job.runId || job.resultId;
               const result = verified.find(row => row?.resultId === resultId);
               const evidence = result && similarityEvidence(result);
+              if (evidence) {result.needsReview=true;result.reviewEvidence=evidence;}
               if (evidence) reviewCandidates.set(resultId, {
                 job: { ...job, periodId: trustedPeriod.id || periodId },
                 verdict: { status: result.status, reason: result.reason },
@@ -111,7 +112,8 @@ export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_
         if(!jobs.every(job=>job.trackId===period.trackId))throw Error('Kodub verifier period mismatch');
         return verifyAndReview(jobs,period,[{trackId:period.trackId,code:period.kodub.trackCode,codeHash:period.kodub.trackCodeHash}]);
       }, Math.min(4, limit - checked)));
-    // A finding is durable only after publication confirms the same result and verdict.
+    eventFindingsAdded += published.filter(result=>result.reviewFindingAdded===true).length;
+    // Legacy/advisory fallback; held findings are committed atomically by the service.
     if (writeFinding) for (const result of published) {
       const candidate = reviewCandidates.get(result?.resultId);
       if (!candidate || candidate.verdict.status !== result.status || candidate.verdict.reason !== result.reason) continue;

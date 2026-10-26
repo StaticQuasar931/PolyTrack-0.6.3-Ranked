@@ -1,3 +1,4 @@
+import {COMPETITIVE_REVIEW_REASON, strongNearCloneEvidence, isCompetitiveReviewHold} from '../../workers/ranked/src/competitive-review.js';
 import {inputRateEvidence} from './input-rate.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -153,7 +154,23 @@ export function createSimilarityReviewer(root) {
         referenceRank:Number.isSafeInteger(ref.rank)?ref.rank:null,
         referenceSnapshot:ref.generation||'same_batch',
         referenceUpdatedAt:Number.isFinite(ref.boardUpdatedAt)?ref.boardUpdatedAt:null});
-      if(exact){result.status='mismatch';result.reason='exact_duplicate_run';}
+      if(exact){result.status='mismatch';result.reason='exact_duplicate_run';return;}
+      const whole=compareControls(row.controls,ref.controls,job.timeMs,ref.timeMs);
+      const segment=compareInputSegment(row.controls,ref.controls,job.timeMs,ref.timeMs);
+      if(!whole || !segment)return;
+      const ownOrder=submissionOrder(job),referenceOrder=submissionOrder(ref);
+      const known=ownOrder!==Number.MAX_SAFE_INTEGER&&referenceOrder!==Number.MAX_SAFE_INTEGER;
+      const chronology=known?(referenceOrder<ownOrder?'earlier_reference':referenceOrder>ownOrder?'later_reference':'unknown'):'unknown';
+      const strong={...evidenceByResult.get(result),...whole,strongNearClone:true,policyVersion:'strong-near-clone-v1',
+        segmentInputSimilarity:segment.inputSimilarity,segmentDurationMs:segment.endTickA-segment.startTickA,
+        comparedDurationMs:Math.min(job.timeMs,ref.timeMs),matchedChanges:segment.matchedChanges,
+        distinctSteeringChannels:segment.distinctSteeringChannels,offsetTicks:segment.offsetTicks,chronology};
+      if(!strongNearCloneEvidence(strong))return;
+      evidenceByResult.set(result,strong);
+      // Unknown ownership can defer a new candidate, never revoke an accepted original.
+      if(chronology==='earlier_reference'||chronology==='unknown'&&job.previouslyAccepted!==true){
+        result.status='unavailable';result.reason=COMPETITIVE_REVIEW_REASON;
+      }
     };
     for(const group of exactGroups.values()) {
       const candidates=group.filter(row=>row.comparisonAllowed&&verifiedControlProof(row.result)?.informative)
@@ -192,20 +209,20 @@ export function createSimilarityReviewer(root) {
         const nearby=[];
         const bucket=Math.floor(job.timeMs/11);
         for(let offset=-1;offset<=1&&nearby.length<10;offset++) for(const candidate of buckets.get(bucketKey(job.trackId,bucket+offset))||[]) {
-          if(candidate!==row && candidate.result.status==='verified' && candidate.job.accountId!==job.accountId && Math.abs(candidate.job.timeMs-job.timeMs)<=10) nearby.push(candidate);
+          if(candidate!==row && (candidate.result.status==='verified'||isCompetitiveReviewHold(candidate.result)) && candidate.job.accountId!==job.accountId && Math.abs(candidate.job.timeMs-job.timeMs)<=10) nearby.push(candidate);
           if(nearby.length>=10) break;
         }
         // A copied opening can survive a deliberately slower finish. Keep this
         // local comparison bounded to ten same-track references, with near ties first.
         for(const candidate of rows) {
           if(nearby.length>=10)break;
-          if(candidate!==row&&candidate.result.status==='verified'&&candidate.job.trackId===job.trackId&&candidate.job.accountId!==job.accountId&&!nearby.includes(candidate))nearby.push(candidate);
+          if(candidate!==row&&(candidate.result.status==='verified'||isCompetitiveReviewHold(candidate.result))&&candidate.job.trackId===job.trackId&&candidate.job.accountId!==job.accountId&&!nearby.includes(candidate))nearby.push(candidate);
         }
         for(const candidate of nearby.slice(0,10)) {
           const evidence=(Math.abs(job.timeMs-candidate.job.timeMs)<=10?compareControls(controls,candidate.controls,job.timeMs,candidate.job.timeMs):null)
             || compareInputSegment(controls,candidate.controls,job.timeMs,candidate.job.timeMs);
           if(evidence) {
-            setEvidence(row,{...candidate.job,generation:'same_batch'},evidence,false);
+            setEvidence(row,{...candidate.job,controls:candidate.controls,generation:'same_batch'},evidence,false);
             break;
           }
         }

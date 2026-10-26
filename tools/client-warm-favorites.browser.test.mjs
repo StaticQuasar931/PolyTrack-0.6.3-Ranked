@@ -127,9 +127,11 @@ test('offline warm native boards remain visible and favorite keys match displaye
       assert.equal((await favoriteState()).rows.find(row=>row.selected==='true').key,other.key);
       const button=page.locator('#overallDailyGrid .leaderboard-arcade [data-leaderboard-shortcut="'+target+'"]');
       const slotAtTap=await button.getAttribute('aria-keyshortcuts');
+      const drawer=page.locator('#overallMobileTools');
+      if(await drawer.isHidden())await page.locator('#overallDailyGrid .overall-mobile-tools').click();
       await button.scrollIntoViewIfNeeded();
       const reach=await button.evaluate(element=>{
-        const footer=element.closest('#overallDailyGrid'),rect=element.getBoundingClientRect();
+        const footer=element.closest('.overall-mobile-drawer')||element.closest('#overallDailyGrid'),rect=element.getBoundingClientRect();
         const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
         return {height:footer.clientHeight,scrollHeight:footer.scrollHeight,scrollTop:footer.scrollTop,overflow:getComputedStyle(footer).overflowY,top:footer.getBoundingClientRect().top,bottom:footer.getBoundingClientRect().bottom,windowScroll:window.scrollY,reachable:hit===element||element.contains(hit)};
       });

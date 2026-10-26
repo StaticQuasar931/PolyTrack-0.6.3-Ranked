@@ -100,16 +100,25 @@ test('prior proof requires every exact run field and trusted verdict, never a cl
  assert.equal(verifiedVerdict(row,{runVerified:true,verified:true}),false);
  assert.equal(verifiedVerdict(row,current),true);
 });
+async function importTransformedSource(source, sourceUrl) {
+ // A data URL has no relative base. Real file URLs retain recursive helper imports.
+ const linked=source.replace(/(\bfrom\s*)(['"])(\.[^'"]+)\2/g,
+   (_match,prefix,_quote,specifier)=>prefix+JSON.stringify(new URL(specifier,sourceUrl).href));
+ return import('data:text/javascript;base64,'+Buffer.from(linked).toString('base64'));
+}
+
 test('future repin cannot implicitly inherit proof or immutable-period compatibility',async()=>{
  const fs=await import('node:fs');const future='e'.repeat(64);
  const source=fs.readFileSync(new URL('../src/verification.js',import.meta.url),'utf8')
    .replace("import { EXTRA_TRACK_IDS } from './extra-track-ids.js';",'const EXTRA_TRACK_IDS = new Set();')
    .replace("export const VERIFIER_ENGINE_DIGEST = '"+VERIFIER_ENGINE_DIGEST+"'","export const VERIFIER_ENGINE_DIGEST = '"+future+"'");
- const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const module=await importTransformedSource(source,new URL('../src/verification.js',import.meta.url));
  for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,current])assert.equal(module.verifiedVerdict(row,proof),false);
  assert.equal(module.VERIFICATION_BOOTSTRAP_ID,'verification_snapshot_v3_'+VERIFIER_VERSION+'_'+future);
+ const held={...pendingSlot(row),status:'unavailable',reason:'similar_replay_pending_manual_review',retryAt:Number.MAX_SAFE_INTEGER};
+ assert.equal(module.bootstrapSlots(row.trackId,[row],{racer:held}).racer,held,'future repin loads the real hold guard');
  const compat=fs.readFileSync(new URL('../src/event-engine-compatibility.js',import.meta.url),'utf8').replace("import { VERIFIER_ENGINE_DIGEST } from './verification.js';","const VERIFIER_ENGINE_DIGEST = '"+future+"';");
- const next=await import('data:text/javascript;base64,'+Buffer.from(compat).toString('base64'));
+ const next=await importTransformedSource(compat,new URL('../src/event-engine-compatibility.js',import.meta.url));
  for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(next.compatibleEventEngine(digest),false);
  for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(compatibleEventEngine(digest),true);
 });

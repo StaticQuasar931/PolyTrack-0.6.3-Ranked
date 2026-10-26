@@ -234,6 +234,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
     unusedEventReservedSlots: Math.max(0, eventLimit - events.checked),
     normalIdleSlots: Math.max(0, (borrowUnusedEvents ? TOTAL_JOB_LIMIT - events.checked : NORMAL_JOB_LIMIT) - jobs.length),
     idleNativeSlots: Math.max(0, TOTAL_JOB_LIMIT - events.checked - jobs.length)};
+  announceReviewFindings(eventSummary.reviewInboxAdded,log);
   log(JSON.stringify({events: eventSummary}));
   if(eventSummary.conflictDeferred)log('Event inbox deferred after transaction contention. No contested write was replayed; normal verification continues.');
   if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
@@ -251,6 +252,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
   if(reviewSimilarity) await reviewSimilarity(jobs,results);
   const totals = await publishNormal(db, jobs, results);
   const reasons = totals.reasons;
+  announceReviewFindings(totals.reviewInboxAdded,log);
   log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...idleCounts, ...totals, reasons, firestoreRequests: db.requests()}));
   const tracks = verifiedTrackCounts(totals.verifiedByTrack);
   if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,`## Replay verification\nProcessed: ${jobs.length}. Verified: ${totals.verified}. Corrected legacy times: ${totals.corrected}. Waiting: ${totals.unavailable}. Deferred conflicts: ${totals.deferred}. Review inbox additions: ${totals.reviewInboxAdded||0} (manual review, not cheating verdicts).\n\nVerified tracks:\n${tracks.length ? tracks.map(track=>`- ${track.trackName}: ${track.count}`).join('\n') : '- None'}\n\n${Object.entries(reasons).map(([reason,count])=>'- '+reason+': '+count).join('\n')}\n`);
@@ -261,4 +263,10 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await runVerifier({check: process.argv.includes('--check'), drain: process.argv.includes('--drain'), catchUp: process.argv.includes('--catch-up'), borrowUnusedEvents: true});
+}
+
+
+export function announceReviewFindings(count, log = console.log) {
+  if (!Number.isSafeInteger(count) || count <= 0) return;
+  log('::warning title=Replay review required::' + count + ' new replay review ' + (count === 1 ? 'finding' : 'findings') + '. Strong near-clone candidates remain held pending human review. No account penalty was applied.');
 }
