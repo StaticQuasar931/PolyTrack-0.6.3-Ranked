@@ -2,8 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8').replace(/\r\n/g,'\n');
-function extract(name){let start=source.indexOf('  function '+name+'(');if(start<0)start=source.indexOf('  async function '+name+'(');const end=source.indexOf('\n  }',start);assert.ok(start>=0&&end>start,name);return source.slice(start,end+4);}
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const sourceRoot=process.env.POLYTRACK_TEST_SOURCE_ROOT||fileURLToPath(new URL('..',import.meta.url));
+const source=fs.readFileSync(path.join(sourceRoot,'polytrack_062_patch.js'),'utf8').replace(/\r\n/g,'\n');
+function extract(name){
+ const start=source.search(new RegExp('^ *'+'(?:async )?function '+name+'\\(','m'));
+ assert.ok(start>=0,name);
+ const tail=source.slice(start);
+ // Parse candidates instead of mistaking an embedded helper's closing brace for the end.
+ for(const match of tail.matchAll(/^ *}[^\n]*$/gm)){
+  const candidate=tail.slice(0,match.index+match[0].length);
+  try{new vm.Script(candidate);return candidate;}catch(error){if(!(error instanceof SyntaxError))throw error;}
+ }
+ assert.fail('No complete function: '+name);
+}
 test('confirmed duplicate replay is skipped only for the exact account, hash, style and frame binding',async()=>{
  const map=new Map([['upload',{accountId:'self',replayHash:'hash',carStyle:'style',frames:10000}]]);
  const context=vm.createContext({confirmedRecordingUploads:map,activeRankedAccountId:()=> 'self',sha256Hex:async value=>value==='replay'?'hash':'other'});
@@ -37,7 +50,7 @@ test('unchanged profile saves retain ownership checks but skip a redundant write
  assert.ok(segment.indexOf('assertCloudOwner')<segment.indexOf('Object.entries(next)'));
 });
 test('practice storage contains no replay, input, name, network or Firebase telemetry',()=>{
- const module=fs.readFileSync(new URL('./practice-history.mjs',import.meta.url),'utf8');
+ const module=fs.readFileSync(path.join(sourceRoot,'tools/practice-history.mjs'),'utf8');
  assert.doesNotMatch(module,/\bfetch\(|firebase|\.collection\(|recording:|replay:|nickname:/);
 });
 

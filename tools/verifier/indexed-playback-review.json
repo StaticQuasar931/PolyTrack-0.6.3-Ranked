@@ -1,0 +1,211 @@
+{
+  "schema": 1,
+  "previousReview": "docs/events/opponent-shortcut-ui-engine-review.json",
+  "previousReviewSha256": "f861b46be777bc51763811c06fa95e45d44828443d62c96261bf681ec7d610a3",
+  "previousEngine": "7cd54f05e02b66c67133fd856f025c829c21d600d8ef6a9071df62b4fb5905c4",
+  "currentEngine": "3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0",
+  "scope": "Indexed Recording lookup and capability handshake only; explicit compatibility for prior proofs/periods, new event completion still requires current digest. Native A/B evidence is sampled equivalence, not a universal proof. Final engine includes persistent capability listener correction. Intermediate 512 was never deployed and is not an accepted production proof engine.",
+  "changedAssets": [
+    "simulation_worker.bundle.js"
+  ],
+  "previousAssets": {
+    "simulation_worker.bundle.js": "f9b0d88dd006e75d3dce7306487ed1db7f21ac252263d77fed50b10cbf5a90f2"
+  },
+  "currentAssets": {
+    "simulation_worker.bundle.js": "b38921e3b913d569b667a422a8772df9f891ef80504b64f8d429c12a0db94f24"
+  },
+  "unchangedAssets": {
+    "main.bundle.js": "ac4c96b08a49574d2194bc9de83349680d50b6ffe70deedd546c333af9313b4d",
+    "polytrack_physics.wasm": "d4ef02676973d41afc34b23b5248f6950b35dc4cc7e3047e3a9c6bd88e4c180e",
+    "lib/polytrack_physics.js": "42815d83ab6929d7eafd7e98835905f40e147e031fc5f87dfb90c35f002df54a"
+  },
+  "trackPinsSha256": "e3edd8f947e261e27120bceed9a553f509b60a8ee7cfa965b1aa20427711d7cf",
+  "geometryRowsSha256": "3f56ae47e4ad30dbedc0280fbaa820d67f4dba249de411caf723a5ec0d640f99",
+  "historicalBootstrapUnchanged": true,
+  "bootstrapId": "verification_snapshot_v3_polytrack-native-bounded-v1_46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3",
+  "nativeAB": {
+    "privateEvidence": "PolyTrack/Private/Release-204/finish-pass/replay/native-ab-results.json",
+    "privateEvidenceSha256": "e9c2bd253b041a8ec2f4049917b44c19a37d6d3763c5dad73f90510105e25806",
+    "executedRunner": "native-worker-ab.executed.mjs",
+    "executedRunnerSha256": "521579651fc699b74d72099921794debdb70caa265f6a32aee127e5116d8878f",
+    "pairCount": 11,
+    "browserClosed": true,
+    "serverClosed": true,
+    "reportCorrection": "Initial first-finish probe read packed offset 15 rather than 11. Probe removed from final report; full-stream hashes and decoded first/last state comparisons were unaffected. Final decoded finishFrames is attested; first-finish occurrence is not separately attested. Raw result preserved.",
+    "pairs": [
+      {
+        "name": "synthetic-empty",
+        "frames": 1000,
+        "replayHash": "77462dbb1a6be2971a6417c38befd4406332d9015653a2beb9aafdf838864212",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "ca3c150866afce56ff029b8f90e22966f00ba3e6a2410f5a29d93f43368f585a",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-initial",
+        "frames": 1000,
+        "replayHash": "033a976694280c050ae3479268b84a5266ac34e5a958b5fcabc596bccfcd07d7",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "f2878b887e0bbbb4571898258a1f5e6ebe2da6240d5ed57179b9ddf65fe5beb9",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-late",
+        "frames": 1000,
+        "replayHash": "dfd1fbf80fe7a19466994a0001708a28939737f3f3a9a16f8b624f8541df28d8",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "28d1e166535580637e6e96fff1fc195371f50dbf30695843a0bf04a5de0ea61f",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-dense",
+        "frames": 1000,
+        "replayHash": "451a2fccd4837ba6b47282a6ddb0637eb6eb99b9fd8fafd4547d4b7e774bdc49",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "d0fbeb323578d20dc517c38db16ba200355d13ec03d5a69dc7d047f751594b1d",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-simultaneous",
+        "frames": 1000,
+        "replayHash": "928544e63ad271515ecba313c94170bc48a690585e47a96d0ba23c3401644b8b",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "8f5eb3bb99f452487fba33777524bf1290c23164c7169a315a938ca0441d5137",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-duplicates",
+        "frames": 1000,
+        "replayHash": "dc809716d484f483207c6409e63e7d83ce3acaf2fd91d2d794744afe527ef5b9",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "0c83d104ac14c7642bc655cd3f25bfc0f09277269daaec0aa8e8ab97d54271f2",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-held",
+        "frames": 1000,
+        "replayHash": "603378fdbe6b3b1e1ee7c36df7b88e70b85f84bf053bdc4ddf2ce592a79730f1",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "2e1694cb07fe657f97d038fc9cce9256ad9e81fc966ba8250532fa40c43d9b63",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "synthetic-terminal",
+        "frames": 1000,
+        "replayHash": "a0e0b6cace3dec4086098d5b9e0783e0fbd4592b11189d895ba488e46d33482a",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "93a63504b24dd595a87f9aad9bb520a6efcb47a8b48d86471153c0df214d5ffd",
+        "blocks": 4,
+        "baseStates": 1000,
+        "candidateStates": 1000,
+        "baseBytes": 227000,
+        "candidateBytes": 227000
+      },
+      {
+        "name": "crystalrunner-Spite",
+        "frames": 270713,
+        "replayHash": "7df955ac2e369edbc1139a25c618008c54eaa1fcfed31b86658ab326f798e77b",
+        "trackId": "60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48",
+        "equal": true,
+        "streamSha256": "5e59fd45fe426021777a43caa5a440f9643d3fa95e9ae92ec54f5df87b3224a5",
+        "blocks": 938,
+        "baseStates": 270713,
+        "candidateStates": 270713,
+        "baseBytes": 61451851,
+        "candidateBytes": 61451851
+      },
+      {
+        "name": "OmniCars-1913708",
+        "frames": 1913708,
+        "replayHash": "4fb1ec47f8e5265bc52355718d25496f9fcfe2bc782002d59fda4dcc707698ea",
+        "trackId": "5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",
+        "equal": true,
+        "streamSha256": "737d46ec0d97068b6efa69b38c08f2ea643084f251788cf46cf2daed69c48226",
+        "blocks": 6629,
+        "baseStates": 1913708,
+        "candidateStates": 1913708,
+        "baseBytes": 434411716,
+        "candidateBytes": 434411716
+      },
+      {
+        "name": "starlitbreaker-2169896",
+        "frames": 2169896,
+        "replayHash": "3fef4bc011d2c96c23a57a25ebfb598731f217fe163e002668efe9d050a880ed",
+        "trackId": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
+        "equal": true,
+        "streamSha256": "39699923b047dc57073d97f30839f47b228c72b47b248751f1f424bb96c0e063",
+        "blocks": 7516,
+        "baseStates": 2169896,
+        "candidateStates": 2169896,
+        "baseBytes": 492566392,
+        "candidateBytes": 492566392
+      }
+    ]
+  },
+  "geometryBaseline": {
+    "gitHead": "d364f2d87280045f11e93e9e9325cfa411ffa70a",
+    "rowsSha256": "3f56ae47e4ad30dbedc0280fbaa820d67f4dba249de411caf723a5ec0d640f99",
+    "historicalPriorReviewRowsSha256": "bf972170b586b5b84279c0b051e5c3f31235387afd226dfed1f07c3dddc06b1f",
+    "note": "Geometry rows exactly equal the pre-indexed committed HEAD baseline. Historical prior review row hash predates this baseline; it is preserved, not rewritten."
+  },
+  "persistentCapabilityCorrection": {
+    "priorDraftEngine": "51258f231e15e2acb7e2ba852476985255a6ccdbf1fa141ebb6d4ed859c13bf2",
+    "currentEngine": "3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0",
+    "priorDraftWorkerSha256": "c4360119ca77177d7e040fe83993e20f0a8ae55b37445dcabffe7c085fad0300",
+    "currentWorkerSha256": "b38921e3b913d569b667a422a8772df9f891ef80504b64f8d429c12a0db94f24",
+    "before": "onmessage=t=>{if(t.data&&t.data.messageType===\"polytrack-playback-capability-v1\"){if(typeof t.data.nonce===\"string\"&&/^[a-f0-9]{32}$/.test(t.data.nonce))postMessage({messageType:\"polytrack-playback-capability-v1\",nonce:t.data.nonce,lookupVersion:\"cursor-lower-bound-v1\",lookupDigest:\"458739642bc526729db0c8aa0f94f8dbaba627c4387be3b5626739e8d9eb51d0\"});return}$o.push(t)}",
+    "after": "self.addEventListener(\"message\",t=>{if(t.data&&t.data.messageType===\"polytrack-playback-capability-v1\"){t.stopImmediatePropagation();if(typeof t.data.nonce===\"string\"&&/^[a-f0-9]{32}$/.test(t.data.nonce))postMessage({messageType:\"polytrack-playback-capability-v1\",nonce:t.data.nonce,lookupVersion:\"cursor-lower-bound-v1\",lookupDigest:\"458739642bc526729db0c8aa0f94f8dbaba627c4387be3b5626739e8d9eb51d0\"})}});onmessage=t=>{$o.push(t)}",
+    "anchorPrivateEvidence": "PolyTrack/Private/Release-204/finish-pass/replay/native-consumer-final/handshake-fix/exact-anchor.json",
+    "anchorEvidenceSha256": "abc3d1c60c54503fbf97bf25ed127335b0eced174f56333d6c2a90aa57db4641",
+    "consumerReport": "PolyTrack/Private/Release-204/finish-pass/replay/native-consumer-final/report.json",
+    "consumerReportSha256": "d875e25c6300e0d4ec3445eb19ac31d903239b0ce6e1da44b29e5918d0b48a0b",
+    "integrationManifestSha256": "610d7fc966000b06d35abf8be6af41479ab5c077e7f3e4648159e5ec57ac9ccf",
+    "lifetimeTestSha256": "95c16b0abd425f2241a353160ffc6903831e4ccf2a4ab7f4bd52004368a0dd5e",
+    "lifetimeTestResultsSha256": "486de50cf0c8dd249c01636eeb547d4564fb66d0f85ce8424133c1c51aa583dc",
+    "consumerPassed": true,
+    "browserClosed": true,
+    "serverClosed": true,
+    "physicsAndLookupUnchanged": true
+  },
+  "lookupEvidence": {
+    "legacyExpression": "function(t,e){let i=-1;for(let r=0;r<e.length;++r){const s=e[r];if(s==t){i=r;break}if(s>t)break;i=r}return i}",
+    "indexedExpression": "(()=>{const cache=new WeakMap;return function(t,e){if(!Number.isFinite(t)){let i=-1;for(let r=0;r<e.length;++r){const s=e[r];if(s==t){i=r;break}if(s>t)break;i=r}return i}let s=cache.get(e),i;if(!s||s.length!==e.length||t<s.tick){let lo=0,hi=e.length;for(;lo<hi;){const mid=Math.floor((lo+hi)/2);if(e[mid]<t)lo=mid+1;else hi=mid}s={length:e.length,tick:t,index:lo};cache.set(e,s);return lo<e.length&&e[lo]==t?lo:lo-1}for(i=s.index;i<e.length;++i){const value=e[i];if(value>=t){s.index=i;s.tick=t;return value==t?i:i-1}}s.index=i;s.tick=t;return i-1}})()",
+    "indexedExpressionSha256": "458739642bc526729db0c8aa0f94f8dbaba627c4387be3b5626739e8d9eb51d0"
+  }
+}

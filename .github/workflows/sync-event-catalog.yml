@@ -4,18 +4,19 @@ on:
   schedule:
     # Daily rotation is 00:00 UTC; allow the 15-minute provisioning cadence before refreshing.
     - cron: '20 0 * * *'
-    - cron: '10 20 * * 0'
+    # Kodub capture at 20:03 has a ten-minute bound; provisioning gets its :15 turn first.
+    - cron: '19 20 * * 0'
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: public-repository-captures-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   sync:
+    # Release this lock before downstream snapshot/CDN jobs wait on their own locks.
+    concurrency:
+      group: public-repository-captures-${{ github.repository }}
+      cancel-in-progress: false
     outputs:
       publication_changed: ${{ steps.publication.outputs.changed }}
     if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -30,13 +31,19 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - name: Test conflict-safe publishing
-        run: node --test tools/push-public-capture.test.mjs tools/workflow-release-contract.test.mjs
+        run: node --test tools/push-public-capture.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs
       - name: Check Extra catalog, registry, and pins
         # Local consistency check; fail before fetching or writing public captures.
         run: node tools/extra-verification-check.mjs
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
         run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs
+      - name: Reuse a later published bounded capture
+        id: coordination
+        env:
+          CAPTURE_REQUESTED_AT: ''
+          CAPTURE_SCHEDULE: ${{ github.event.schedule }}
+        run: node tools/workflow-capture-coordination.mjs check
       # Workflow-private state, NOT secret storage: only public binding IDs and
       # retry timestamps/counters. Never cache the raw export checkpoint or repo.
       - name: Restore private replay retry ledger
@@ -108,6 +115,7 @@ jobs:
           node "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" restore "$RUNNER_TEMP/polytrack-replay-retries/history.json" local-reports/snapshot-staging/export-progress.json
       - name: Capture public event assignments
         id: catalog
+        if: steps.coordination.outputs.reuse != 'true'
         run: |
           node --input-type=module <<'CATALOG'
           import {syncPublicEventCatalog} from './tools/sync-event-catalog.mjs';
@@ -116,7 +124,7 @@ jobs:
           CATALOG
       - name: Capture bounded public snapshots
         id: snapshot
-        if: steps.catalog.outputs.capture_status == 'complete' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '20 0 * * *')
+        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '20 0 * * *')
         # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
         # One daily reconciliation catches later aggregate publication even with no new verdicts.
         # Bounded authenticated reads only. No credential reaches catalog, cache, tests, or publishing.
@@ -140,14 +148,22 @@ jobs:
         with:
           path: ${{ runner.temp }}/polytrack-replay-retries/history.json
           key: replay-retries-v1-${{ github.repository_id }}-${{ github.event.repository.default_branch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Record the successful bounded capture binding
+        if: success() && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'
+        env:
+          CAPTURE_STARTED_AT: ${{ steps.coordination.outputs.started_at }}
+        run: node tools/workflow-capture-coordination.mjs record
       - name: Commit changed assignments
         id: publication
         # A successful step can be explicitly deferred; never publish that capture.
-        if: success() && steps.catalog.outputs.capture_status == 'complete' && (steps.snapshot.outputs.capture_status == 'complete' || (github.event_name == 'schedule' && github.event.schedule == '10 20 * * 0' && steps.snapshot.outcome == 'skipped'))
+        if: success() && steps.catalog.outputs.capture_status == 'complete' && (steps.snapshot.outputs.capture_status == 'complete' || (github.event_name == 'schedule' && github.event.schedule == '19 20 * * 0' && steps.snapshot.outcome == 'skipped'))
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           git add -- events/public-catalog.json
+          if [ -f tools/workflow-capture-state.json ]; then
+            git add -- tools/workflow-capture-state.json
+          fi
           if [ -f snapshot-current.json ]; then
             git add -- index.html snapshot-current.json
             git add -A -- ':(glob)public-snapshots[0-9]*/**'

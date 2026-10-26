@@ -1,4 +1,5 @@
 import {normalizeControlUsage} from './control-usage.mjs';
+import {summarizeClientUsage} from './local-insights.mjs';
 const finite = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 const positiveInt = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const cleanText = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 100);
@@ -10,6 +11,12 @@ const settingNames = new Set(['music', 'sound', 'showFps', 'showGhost', 'cameraS
 const insightSources = ['planner', 'profile', 'leaderboard', 'event', 'selection', 'unknown'];
 
 const selectNumbers = (row, fields) => Object.fromEntries(fields.map(key => [key, finite(row?.[key])]));
+function roundExportMilliseconds(value,key=''){
+ if(typeof value==='number')return key.endsWith('Ms')&&Number.isFinite(value)?Math.round(value):value;
+ if(Array.isArray(value))return value.map(item=>roundExportMilliseconds(item));
+ if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([name,item])=>[name,roundExportMilliseconds(item,name)]));
+ return value;
+}
 // A previous storage loader confused epoch dates with capped durations.
 // Do not substitute a last-played/PB date for a finish whose date was lost.
 const recentPracticeFinishes = row => (Array.isArray(row?.recentFinishes) ? row.recentFinishes : []).slice(-8)
@@ -69,7 +76,7 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
   typeof includePublicId === 'object' ? includePublicId?.includeSavedTrackCodes === true : includePublicId === true;
  const includesSavedTrackCodes = includesLocalData && codeChoice;
  const sanitizedSettings = settings && typeof settings === 'object' ? Object.fromEntries(Object.entries(settings).filter(([key]) => settingNames.has(key)).filter(([, value]) => typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))).slice(0, settingNames.size)) : null;
- return {
+ const report={
   schema: 'polytrack-developer-diagnostics-v1', revision: finite(clientRevision), diagnosticsRevision: 158, exportedAt: new Date().toISOString(),
   privacy: { automaticUpload: false, includesPublicId: includesLocalData && (hash(publicId) || profileRows.some(row => opaqueId(row?.publicId || row?.accountId))), includesLocalProfiles: includesLocalData, includesSavedTrackCodes, limitations: 'Client observations are incomplete and untrusted. Timing notes are not cheating verdicts. Practice coverage is partial and does not imply legacy playtime was tracked. Request events are not billed Firebase operations.' },
   ...(includesLocalData && hash(publicId) ? { publicRacerId: publicId } : {}),
@@ -80,6 +87,7 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
   loadedResults: (Array.isArray(finishes) ? finishes : []).slice(0, 256).map(sanitizeResult),
   localResults: localRows.slice(0, 5000).map(sanitizeResult),
   insights: sanitizeInsights(insights),
+  firebaseUsage:summarizeClientUsage(insights?.clientUsage),
   savedTrackSummary: { count: finite(localData?.collection?.savedTrackCount ?? savedTrackRows.length), bytes: finite(localData?.collection?.savedTrackBytes ?? savedTrackRows.reduce((sum, row) => sum + (typeof row?.data === 'string' ? new TextEncoder().encode(row.data).length : 0), 0)) },
   extraTracks: trackRows.slice(0, 5000).map(row => ({ trackId: opaqueId(row?.trackId ?? row?.id), name: cleanText(row?.name), author: cleanText(row?.author) })),
   localData: includesLocalData ? {
@@ -101,6 +109,9 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
   practiceSummary: summarizePractice(rows),
   recentEvents: (Array.isArray(events) ? events : []).slice(-80).map(row => ({ category: /^[a-z-]{1,32}$/.test(row?.category) ? row.category : 'application', code: /^[A-Z0-9_-]{1,32}$/.test(row?.code) ? row.code : 'EVENT', durationMs: finite(row?.durationMs), status: finite(row?.status) }))
  };
+ const exported=roundExportMilliseconds(report);
+ exported.practiceSummary.activeMs=exported.practice.reduce((sum,row)=>sum+row.activeMs,0);
+ return exported;
 }
 
 export function openDiagnostics({ report, returnFocus = document.activeElement } = {}) {

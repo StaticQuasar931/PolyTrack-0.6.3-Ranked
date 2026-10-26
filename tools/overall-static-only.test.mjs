@@ -16,7 +16,7 @@ for(const refresh of [false,true])for(const saved of [null,{entries:[]}])test(`O
 function loaderFixture({cached=null,packageValue=null,detail=null}={}){
   const calls=[],writes=[];
   const context=vm.createContext({Date,Error,Number,String,Array,Map,Boolean,Math,console:{warn(){}},
-    TOTAL_TRACKS:500,OVERALL_REFRESH_CHECK_MS:600000,AVERAGE_PLACEMENT_VERSION:2,AVERAGE_FINISH_VERSION:2,
+    TOTAL_TRACKS:500,MIN_RANKED_TRACKS:3,cleanUserId:id=>String(id||''),OVERALL_REFRESH_CHECK_MS:600000,AVERAGE_PLACEMENT_VERSION:2,AVERAGE_FINISH_VERSION:2,
     TRACK_CACHE_SCHEMA:6,RANK_MODEL:'test-model',overallCloudCheckedAt:0,overallCloudRetryAt:0,overallTrackSummariesCache:[],
     readOverallSnapshotCache:()=>cached,annotateOverallMovement:rows=>rows,normalizeEntries:rows=>rows,
     fetchRankedSnapshot:async(...args)=>{calls.push(args);return packageValue;},
@@ -24,7 +24,7 @@ function loaderFixture({cached=null,packageValue=null,detail=null}={}){
     expandRankedResults:async data=>data.entries,writeOverallSnapshotCache:(...args)=>writes.push(args),
     readDirectPublicSnapshot:()=>assert.fail('Firestore read'),fetch:()=>assert.fail('API request'),
     noteFirebaseQuota:()=>{},log:()=>{}});
-  vm.runInContext(fn('loadOverallEntries'),context);
+  vm.runInContext(fn('publishedOverallRanksExact')+fn('loadOverallEntries'),context);
   return {context,calls,writes};
 }
 test('missing Overall package preserves saved standings without cloud fallback',async()=>{

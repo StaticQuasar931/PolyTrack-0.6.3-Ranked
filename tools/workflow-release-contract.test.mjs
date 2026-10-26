@@ -15,7 +15,7 @@ const names=['sync-event-catalog.yml','publish-verified-snapshots.yml','sync-kod
 const workflows=Object.fromEntries(await Promise.all(names.map(async name=>[name,
   (await fs.readFile(new URL('../.github/workflows/'+name,import.meta.url),'utf8')).replace(/\r\n/g,'\n')])));
 const captures=names.slice(0,3),cdn=workflows['publish-cdn-release.yml'],verifier=workflows['verify-runs.yml'];
-const steps=source=>source.split(/(?=^      - )/m).slice(1);
+const steps=source=>source.split(/(?=^      - )/m).slice(1).map(value=>value.split(/^  [a-z_]+:\n/m)[0]);
 function step(source,name){const value=steps(source).find(value=>value.startsWith('      - name: '+name+'\n'));assert.ok(value,name);return value;}
 function job(source,name){const start=source.indexOf('  '+name+':\n');assert.ok(start>=0,name);
   const end=source.slice(start+1).search(/^  [a-z_]+:\n/m);return source.slice(start,end<0?undefined:start+1+end);}
@@ -106,7 +106,7 @@ test('deferred or failed captures cannot open publication; weekly catalog-only p
     assert.equal(evaluate(expression,{success:()=>false,github:{event_name:'workflow_dispatch',event:{}},
       steps:{catalog:{outputs:{capture_status:'complete'}},snapshot:{outputs:{capture_status:'complete'},outcome:'success'}}}),false);
     if(name==='sync-event-catalog.yml')assert.equal(evaluate(expression,{success:()=>true,
-      github:{event_name:'schedule',event:{schedule:'10 20 * * 0'}},
+      github:{event_name:'schedule',event:{schedule:'19 20 * * 0'}},
       steps:{catalog:{outputs:{capture_status:'complete'}},snapshot:{outputs:{capture_status:''},outcome:'skipped'}}}),true);
   }
 });

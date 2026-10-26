@@ -6,6 +6,11 @@ on:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT:
         required: true
     inputs:
+      capture_requested_at:
+        description: 'Completed verifier request timestamp; absent callers always capture'
+        required: false
+        type: string
+        default: ''
       publication_changed:
         required: true
         type: boolean
@@ -13,12 +18,12 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: public-repository-captures-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   sync:
+    # Release this lock before downstream snapshot/CDN jobs wait on their own locks.
+    concurrency:
+      group: public-repository-captures-${{ github.repository }}
+      cancel-in-progress: false
     outputs:
       publication_changed: ${{ steps.publication.outputs.changed }}
     if: inputs.publication_changed && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -35,13 +40,19 @@ jobs:
       # Resolve the current default branch only after acquiring the shared capture lock.
       # Never check out verifier artifacts or a workflow_run head ref.
       - name: Test conflict-safe publishing
-        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/workflow-release-contract.test.mjs
+        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs
       - name: Check Extra catalog, registry, and pins
         # Local consistency check; fail before fetching or writing public captures.
         run: node tools/extra-verification-check.mjs
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
         run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs
+      - name: Reuse a later published bounded capture
+        id: coordination
+        env:
+          CAPTURE_REQUESTED_AT: ${{ inputs.capture_requested_at }}
+          CAPTURE_SCHEDULE: ${{ github.event.schedule }}
+        run: node tools/workflow-capture-coordination.mjs check
       # Workflow-private state, NOT secret storage: only public binding IDs and
       # retry timestamps/counters. Never cache the raw export checkpoint or repo.
       - name: Restore private replay retry ledger
@@ -111,6 +122,7 @@ jobs:
           node "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" restore "$RUNNER_TEMP/polytrack-replay-retries/history.json" local-reports/snapshot-staging/export-progress.json
       - name: Capture public event assignments
         id: catalog
+        if: steps.coordination.outputs.reuse != 'true'
         run: |
           node --input-type=module <<'CATALOG'
           import {syncPublicEventCatalog} from './tools/sync-event-catalog.mjs';
@@ -121,7 +133,7 @@ jobs:
       # Do not force rebuilds or poll stale cached boards here.
       - name: Capture bounded public snapshots
         id: snapshot
-        if: steps.catalog.outputs.capture_status == 'complete'
+        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
         # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
         # Bounded authenticated reads only. No credential reaches catalog, cache, tests, or publishing.
         env:
@@ -144,6 +156,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/polytrack-replay-retries/history.json
           key: replay-retries-v1-${{ github.repository_id }}-${{ github.event.repository.default_branch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Record the successful bounded capture binding
+        if: success() && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'
+        env:
+          CAPTURE_STARTED_AT: ${{ steps.coordination.outputs.started_at }}
+        run: node tools/workflow-capture-coordination.mjs record
       - name: Commit changed assignments
         id: publication
         # A successful step can be explicitly deferred; never publish that capture.
@@ -152,6 +169,9 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           git add -- events/public-catalog.json
+          if [ -f tools/workflow-capture-state.json ]; then
+            git add -- tools/workflow-capture-state.json
+          fi
           if [ -f snapshot-current.json ]; then
             git add -- index.html snapshot-current.json
             git add -A -- ':(glob)public-snapshots[0-9]*/**'

@@ -245,12 +245,58 @@ test('new accounts cannot bypass snapshot mode with refresh or missing event sna
 test('native replay loading resolves packaged recordings without opening Firestore',async()=>{
   let cloud=0,active=0,peak=0;
   const context=vm.createContext({readRecordingStore:ids=>ids.map(()=>null),cachedNativeRecording:row=>row||null,
-    nativeRecordingMemory:new Map(),nativeRecordingRetryAt:new Map(),Date,rememberNativeRecording:()=>{},
+    nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),nativeRecordingEpoch:0,
+    playbackWorkerBridgePromise:Promise.resolve(null),
+    currentTrackLoadState:{trackId:''},Date,rememberNativeRecording:()=>{},
     readPublicSnapshotBackup:async(kind,id)=>{assert.equal(kind,'recording');active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,1));active--;return {recording:id,frames:1};},
     db:async()=>{cloud++;throw Error('Unexpected cloud');}});
-  runClientSource(section('  async function loadNativeRecordings(', '  const LOCAL_RACE_STORE_KEY'),context);
-  const ids=Array.from({length:10},(_,i)=>i+1),rows=await context.loadNativeRecordings(ids);
+  runClientSource(section('  async function readNativeRecordings(', '  const LOCAL_RACE_STORE_KEY'),context);
+  const ids=Array.from({length:10},(_,i)=>i+1),rows=await context.readNativeRecordings(ids);
   assert.equal(rows.length,10);assert.equal(cloud,0);assert.ok(peak<=4);
+  assert.deepEqual(Array.from(rows,row=>row.recording),ids.map(String));
+});
+
+test('native replay package epoch invalidation discards an in-flight static response without caching it',async()=>{
+  let release,remembered=0,cloud=0;
+  const context=vm.createContext({readRecordingStore:ids=>ids.map(()=>null),cachedNativeRecording:row=>row||null,
+    nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),nativeRecordingEpoch:0,
+    playbackWorkerBridgePromise:Promise.resolve(null),
+    currentTrackLoadState:{trackId:''},Date,rememberNativeRecording:()=>{remembered++;},
+    readPublicSnapshotBackup:()=>new Promise(resolve=>{release=resolve;}),
+    db:()=>{cloud++;throw Error('Unexpected cloud');}});
+  runClientSource(section('  async function readNativeRecordings(', '  const LOCAL_RACE_STORE_KEY'),context);
+  const pending=context.readNativeRecordings([42]);context.nativeRecordingEpoch++;
+  release({recording:'old-package',frames:1});
+  assert.deepEqual(Array.from(await pending),[null]);assert.equal(remembered,0);assert.equal(cloud,0);
+});
+
+test('native gated rows use the reader preparation hook and await bridge refresh before dispatch',async()=>{
+  const trackId='a'.repeat(64),prepared=[],refreshed=[];let release,done=false,cloud=0;
+  const normal={recording:'normal-cached-bytes',frames:10,verifiedState:1};
+  const entries=[42,43].map(uploadId=>({trackId,uploadId,frames:900}));
+  const bridge={refreshPreparedRecording:async(recording,frames)=>{
+    refreshed.push([recording,frames]);
+    if(recording==='gated-42')await new Promise(resolve=>{release=resolve;});
+    if(recording==='gated-43')throw Error('Prepared playback token expired');
+  }};
+  const context=vm.createContext({Date,nativeRecordingEpoch:0,currentTrackLoadState:{trackId},
+    nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),
+    readRecordingStore:ids=>ids.map(id=>id===44?normal:null),cachedNativeRecording:row=>row||null,
+    rememberNativeRecording:()=>{},playbackWorkerBridgePromise:Promise.resolve(bridge),
+    readPublicSnapshotBackup:async kind=>kind==='track'?{trackId,entries}:{recording:'raw-must-not-bypass-gate',frames:900},
+    publicSnapshotReaderPromise:Promise.resolve({recordingPlayback:async(entry,options)=>{
+      assert.equal(entry.trackId,trackId);assert.equal(options.allowPending,true);prepared.push(entry.uploadId);
+      return {recording:'gated-'+entry.uploadId,frames:entry.frames,playbackPending:true};
+    }}),db:()=>{cloud++;throw Error('Unexpected cloud');}});
+  runClientSource(section('  async function readNativeRecordings(', '  const LOCAL_RACE_STORE_KEY'),context);
+  const pending=context.readNativeRecordings([42,43,44]).then(rows=>{done=true;return rows;});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(prepared,[42,43]);assert.equal(typeof release,'function');assert.equal(done,false,'dispatch must wait for prepared token refresh');
+  release();const rows=await pending;
+  assert.equal(rows[0].recording,'gated-42');assert.equal(rows[1],null,'refresh failure must not dispatch stale gated bytes');
+  assert.equal(rows[2],normal,'the ordinary cached native path must remain unchanged');
+  assert.deepEqual(refreshed,[['gated-42',900],['gated-43',900],['normal-cached-bytes',10]]);
+  assert.equal(cloud,0);
 });
 
 test('Overall refresh stays static while explicit track refresh may read live data',async()=>{

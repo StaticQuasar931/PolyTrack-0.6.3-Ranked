@@ -10,12 +10,12 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: public-repository-captures-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   sync:
+    # Release this lock before downstream snapshot/CDN jobs wait on their own locks.
+    concurrency:
+      group: public-repository-captures-${{ github.repository }}
+      cancel-in-progress: false
     outputs:
       publication_changed: ${{ steps.publication.outputs.changed }}
     if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)

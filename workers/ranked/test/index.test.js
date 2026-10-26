@@ -2072,7 +2072,7 @@ test('high-entropy 200 by 78 planner compression benchmark publishes every resul
 
 test('public event catalog backup runs daily plus weekly reset and manual dispatch', () => {
   const workflow = readFileSync(new URL('../../../.github/workflows/sync-event-catalog.yml', import.meta.url), 'utf8');
-  assert.deepEqual([...workflow.matchAll(/^    - cron: '([^']+)'$/gm)].map(match => match[1]), ['20 0 * * *', '10 20 * * 0']);
+  assert.deepEqual([...workflow.matchAll(/^    - cron: '([^']+)'$/gm)].map(match => match[1]), ['20 0 * * *', '19 20 * * 0']);
   assert.match(workflow, /^  workflow_dispatch:$/m);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.schedule == '20 0 \* \* \*'/);
 });

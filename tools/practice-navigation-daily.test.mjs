@@ -165,5 +165,7 @@ test('event verification labels put the local run date first and status last wit
  const at=Date.UTC(2026,9,20,18,44,1),date=new Date(at).toLocaleString('en-US',{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'});
  assert.equal(eventVerificationLabel({pbAt:at},false,'en-US'),date+' - Verified');
  assert.equal(eventVerificationLabel({runCreatedAt:at,pending:true},undefined,'en-US'),date+' - Pending');
- assert.equal(eventVerificationLabel({submittedAt:at,updatedAt:at},false,'en-US'),'Date unavailable - Verified');
+ assert.equal(eventVerificationLabel({submittedAt:at,updatedAt:at},false,'en-US'),'Received '+date+' - Verified');
+ assert.equal(eventVerificationLabel({updatedAt:at},false,'en-US'),'Date unavailable - Verified');
+ assert.equal(eventVerificationLabel({verifiedAt:at},false,'en-US'),'Verification date '+date+' - Verified');
 });

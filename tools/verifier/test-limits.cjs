@@ -73,10 +73,7 @@ test('closed-form work matches native linear lookup element visits at every boun
   const module=source.slice(start,end);
   const match=module.match(/d=(function\(e,t\)\{let n=-1;for\(let i=0;i<t.length;\+\+i\)\{const r=t\[i\];if\(r==e\)\{n=i;break\}if\(r>e\)break;n=i\}return n\}),u=/);
   assert.ok(match,'Pinned native linear lookup must be reviewed if its implementation changes');
-  const worker=fs.readFileSync(path.join(root,'simulation_worker.bundle.js'),'utf8');
-  const workerMatch=worker.match(/ka=(function\(t,e\)\{let i=-1;for\(let r=0;r<e.length;\+\+r\)\{const s=e\[r\];if\(s==t\)\{i=r;break\}if\(s>t\)break;i=r\}return i\}),_a=/);
-  assert.ok(workerMatch,'Pinned simulation-worker lookup must also retain the audited semantics');
-  const nativeLookups=[match[1],workerMatch[1]].map(body=>vm.runInNewContext('('+body+')'));
+  const nativeLookups=[vm.runInNewContext('('+match[1]+')')];
   for(const native of nativeLookups) for(let mask=0;mask<256;mask++) {
     const channels=lists();channels.up=Array.from({length:8},(_,i)=>i).filter(i=>mask&(1<<i));
     channels.left=[0,3,7];channels.reset=[8];
@@ -113,4 +110,19 @@ test('five-minute, transition, decompression, CPU and wall bounds remain in forc
   assert.equal(LIMITS.inflatedBytes,30015);assert.equal(LIMITS.cpuMs,20000);assert.equal(LIMITS.wallMs,45000);
   const over=lists();over.up=Array.from({length:4097},(_,i)=>i);
   assert.throws(()=>decodeReplay(recording(over),10000),e=>e.reason==='transition_limit');
+});
+
+// Keep the conservative linear proof budget; playback optimization does not relax admission.
+test('pinned indexed worker preserves linear lookup semantics across boundaries and rewinds',()=>{
+ const review=JSON.parse(fs.readFileSync(path.join(root,'tools/verifier/indexed-playback-review.json'),'utf8'));
+ const worker=fs.readFileSync(path.join(root,'simulation_worker.bundle.js'),'utf8').replace(/\r\n?/g,'\n');
+ assert.equal(sha256(worker),review.currentAssets['simulation_worker.bundle.js']);
+ const {legacyExpression,indexedExpression,indexedExpressionSha256}=review.lookupEvidence;
+ assert.equal(sha256(indexedExpression),indexedExpressionSha256);assert.ok(worker.includes('ka='+indexedExpression));
+ const old=vm.runInNewContext('('+legacyExpression+')'),indexed=vm.runInNewContext(indexedExpression);
+ for(let mask=0;mask<256;mask++){
+  const a=Array.from({length:8},(_,i)=>i).filter(i=>mask&(1<<i));
+  for(const list of [a,a.flatMap(x=>[x,x]),[],[0,0,1,1,7,8]])for(const tick of [0,1,2,3,4,5,6,7,8,9,7,3,0,8,1,1,-1,Infinity,-Infinity,NaN])assert.equal(indexed(tick,list),old(tick,list));
+ }
+ assert.equal(LIMITS.scanWork,30000000);assert.equal(LIMITS.cpuMs,20000);assert.equal(LIMITS.wallMs,45000);
 });

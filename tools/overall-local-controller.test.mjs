@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
 import {createLocalOverallController, LOCAL_OVERALL_RECEIPTS_KEY} from './overall-local-controller.mjs';
 import {computeOverall, trackWeightParts} from '../workers/ranked/src/index.js';
+import {createOverallProjectionBundle} from './overall-projection-bundle.mjs';
 
 const id='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
 const clock=2000000000000;
@@ -33,11 +34,27 @@ function fixture(options={}) {
     return clone(kind==='overall'?data.overall:kind==='overall-results'?data.results:data.boards.get(trackId));
   };
   const controller=createLocalOverallController({storage,read,packageInfo:()=>info,getAccount:()=>account,isVisible:()=>visible,
-    onState:state=>states.push(state),now:()=>time});
+    getLocalPbs:options.getLocalPbs||(()=>[]),readProjectionSource:options.readProjectionSource?()=>options.readProjectionSource(data):null,onState:state=>states.push(state),now:()=>time});
   return {controller,data,states,calls,storage,setAccount:v=>{account=v;},setVisible:v=>{visible=v;},setInfo:v=>{info=v;},advance:ms=>{time+=ms;},
     ack:(rest={})=>controller.acknowledge({accountId:'b',trackId:id,timeMs:9000,acceptedAt:time,...rest})};
 }
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+
+test('bound projection source avoids one request per track and rejects a corrupt source without fallback',async()=>{
+ const f=fixture({readProjectionSource:data=>createOverallProjectionBundle({overall:data.overall,results:data.results,tracks:[...data.boards.values()]})});
+ f.ack();const state=await f.controller.update();assert.equal(state.status,'projected');assert.equal(f.calls.filter(([kind])=>kind==='track').length,0);
+ const g=fixture({readProjectionSource:()=>({version:1,boards:[]})});g.ack();const invalid=await g.controller.update();
+ assert.equal(invalid.status,'unavailable');assert.equal(g.calls.filter(([kind])=>kind==='track').length,0);
+});
+
+test('device-local PBs recalculate without fabricating cloud acknowledgements and update when local time improves',async()=>{
+ let timeMs=9000;
+ const f=fixture({getLocalPbs:()=>[{accountId:'b',trackId:id,timeMs,observedAt:clock}]});
+ const first=await f.controller.update();assert.equal(first.status,'projected');assert.equal(first.result.localPbsApplied,true);
+ assert.match(first.result.assumption,/provisional/);assert.equal(f.storage.getItem(LOCAL_OVERALL_RECEIPTS_KEY),null);
+ timeMs=8000;const next=await f.controller.update();assert.equal(next.status,'projected');assert.notEqual(next.result,first.result);
+ f.setAccount('a');const other=await f.controller.update();assert.equal(other.status,'idle');
+});
 
 test('no static preload without receipts; hidden acknowledgements stay local until Overall is visible',async()=>{
   const f=fixture();await f.controller.update();assert.equal(f.calls.length,0);
@@ -168,6 +185,13 @@ test('current saved generation projects only with complete matching source board
     assert.ok(peak<=4);assert.ok(trackReads<=overall.trackCatalog.length);
     const count=trackReads;await controller.update();assert.equal(trackReads,count);
   }finally{await server.close();}
+});
+
+test('other profiles cannot exhaust the active profile local-PB bound',async()=>{
+ const rows=Array.from({length:600},()=>({accountId:'a',trackId:id,timeMs:8000,observedAt:clock}));
+ rows.push({accountId:'b',trackId:id,timeMs:9000,observedAt:clock});
+ const f=fixture({getLocalPbs:()=>rows});const state=await f.controller.update();
+ assert.equal(state.status,'projected');assert.equal(state.accountId,'b');assert.equal(state.result.localPending,true);
 });
 
 test('immutable source mismatch waits for a new snapshot instead of reloading every minute',async()=>{

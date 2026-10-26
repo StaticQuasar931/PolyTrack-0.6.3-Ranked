@@ -11,13 +11,15 @@ on:
         default: false
 permissions:
   contents: read
-concurrency:
-  group: polytrack-run-verifier
-  cancel-in-progress: false
 jobs:
   verify:
+    # Release this lock before downstream snapshot/CDN jobs wait on their own locks.
+    concurrency:
+      group: polytrack-run-verifier
+      cancel-in-progress: false
     outputs:
       snapshot_needed: ${{ steps.verification.outputs.snapshot_needed }}
+      capture_requested_at: ${{ steps.capture_request.outputs.requested_at }}
     if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 25 || 15 }}
@@ -85,6 +87,10 @@ jobs:
           else
             node tools/post-verification-run.mjs --drain
           fi
+      - name: Timestamp the completed publication request
+        id: capture_request
+        if: steps.verification.outputs.snapshot_needed == 'true'
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'requested_at=' + Date.now() + '\n')"
 
   publish_snapshots:
     needs: verify
@@ -94,6 +100,7 @@ jobs:
     uses: ./.github/workflows/publish-verified-snapshots.yml
     with:
       publication_changed: true
+      capture_requested_at: ${{ needs.verify.outputs.capture_requested_at }}
     # Forward only the existing privileged credential to bounded capture; no blanket inheritance.
     secrets:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

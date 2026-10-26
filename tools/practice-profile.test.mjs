@@ -1,8 +1,42 @@
+import { pathToFileURL } from 'node:url';
+const repositoryRoot = process.env.PRACTICE_UI_REPO ? pathToFileURL(process.env.PRACTICE_UI_REPO.replace(/\\/g, '/') + '/') : new URL('../', import.meta.url);
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { renderPracticeProfile, installPracticeProfileControls } from './practice-profile.mjs';
+import { practiceProfileChoiceKey, readPracticeProfileChoice, writePracticeProfileChoice } from './practice-profile.mjs';
+
+test('sort preference keys isolate profiles and never use an anonymous shared key', () => {
+  assert.equal(practiceProfileChoiceKey(''), null);
+  assert.equal(practiceProfileChoiceKey(null), null);
+  assert.notEqual(practiceProfileChoiceKey('profile/a'), practiceProfileChoiceKey('profile%2Fa'));
+  const data = new Map(), storage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value) };
+  writePracticeProfileChoice('a', { sort: 'name', direction: 'asc', search: 'private' }, storage);
+  assert.deepEqual(readPracticeProfileChoice('a', storage), { sort: 'name', direction: 'asc' });
+  assert.deepEqual(readPracticeProfileChoice('b', storage), { sort: 'active', direction: 'desc' });
+  assert.deepEqual(JSON.parse(data.get(practiceProfileChoiceKey('a'))), { sort: 'name', direction: 'asc' });
+  writePracticeProfileChoice('', { sort: 'recent', direction: 'asc' }, storage);
+  assert.equal(data.size, 1);
+});
+
+test('invalid, corrupt, missing and throwing storage safely use Active time', () => {
+  for (const value of [null, '{', '{}', '[]', 'null', '{"sort":"missing","direction":"asc"}', '{"sort":"active","direction":"sideways"}']) {
+    assert.deepEqual(readPracticeProfileChoice('a', { getItem: () => value }), { sort: 'active', direction: 'desc' });
+  }
+  const broken = { getItem() { throw Error('denied'); }, setItem() { throw Error('quota'); } };
+  assert.deepEqual(readPracticeProfileChoice('a', broken), { sort: 'active', direction: 'desc' });
+  assert.doesNotThrow(() => writePracticeProfileChoice('a', { sort: 'recent', direction: 'asc' }, broken));
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  try {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw Error('disabled'); } });
+    assert.deepEqual(readPracticeProfileChoice('a'), { sort: 'active', direction: 'desc' });
+    assert.doesNotThrow(() => writePracticeProfileChoice('a', { sort: 'name', direction: 'asc' }));
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
+});
 
 const row = (overrides = {}) => ({
   trackId: 'track-a', trackName: 'Summer Run', activeMs: 125000, attempts: 7,
@@ -172,20 +206,20 @@ test('finish count without a tracked best does not invent a best time', () => {
   assert.doesNotMatch(html, /<b>best |No finish recorded|pp-evidence-unavailable/);
 });
 
-const require = createRequire(new URL('./verifier/package.json', import.meta.url));
+const require = createRequire(new URL('tools/verifier/package.json', repositoryRoot));
 let chromium;
 try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch {}
 
 test('practice identity and controls survive injected popup CSS in narrow grid and list layouts', { skip: !chromium }, async () => {
   const module = await fs.readFile(new URL('./practice-profile.mjs', import.meta.url), 'utf8');
-  const activeTimeModule = await fs.readFile(new URL('./active-time.mjs', import.meta.url), 'utf8');
-  const historyModule = await fs.readFile(new URL('./practice-history.mjs', import.meta.url), 'utf8');
-  const patch = await fs.readFile(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
+  const activeTimeModule = await fs.readFile(new URL('tools/active-time.mjs', repositoryRoot), 'utf8');
+  const historyModule = await fs.readFile(new URL('tools/practice-history.mjs', repositoryRoot), 'utf8');
+  const patch = await fs.readFile(new URL('polytrack_062_patch.js', repositoryRoot), 'utf8');
   const injectedCss = [...patch.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)]
     .map(match => JSON.parse(match[1])).join('\n');
   assert.ok(injectedCss.includes('#overallProfilePopup') && injectedCss.includes('!important'));
-  const font = (await fs.readFile(new URL('../forced_square.woff2', import.meta.url))).toString('base64');
-  const css = await fs.readFile(new URL('../home-ui.css', import.meta.url), 'utf8') + '\n' +
+  const font = (await fs.readFile(new URL('forced_square.woff2', repositoryRoot))).toString('base64');
+  const css = await fs.readFile(new URL('home-ui.css', repositoryRoot), 'utf8') + '\n' +
     await fs.readFile(new URL('../practice-responsive.css', import.meta.url), 'utf8');
   const browser = await chromium.launch({ headless: true });
   try {
@@ -224,7 +258,7 @@ test('practice identity and controls survive injected popup CSS in narrow grid a
       await document.fonts.ready;
     });
     const ids = () => page.locator('.pp-track:not([hidden])').evaluateAll(items => items.map(item => item.dataset.ppTrackId));
-    assert.deepEqual(await ids(), ['c', 'b', 'a']);
+    assert.deepEqual(await ids(), ['b', 'c', 'a']);
     const direction = page.locator('[data-pp-direction]');
     for (const [key, descending, ascending] of [
       ['recent', ['c', 'b', 'a'], ['a', 'b', 'c']],
@@ -373,7 +407,7 @@ test('per-track history exposes recent pace and separates earlier time estimates
   recentFinishes:[{at:Date.now()-1000,timeMs:50000},{at:Date.now(),timeMs:48000}],furthestCheckpoint:4})]});
  assert.match(html,/Earlier time estimate/);assert.match(html,/New race progress/);
  assert.match(html,/Latest finish/);assert.match(html,/Recent finish range/);assert.match(html,/48.00s to 50.00s/);
- assert.match(html,/Checkpoint progress/);assert.match(html,/Includes earlier time estimates/);assert.match(html,/PRACTICE TIME/);
+ assert.match(html,/Furthest checkpoint/);assert.match(html,/Includes earlier time estimates/);assert.match(html,/PRACTICE TIME/);
 });
 
 test('a substantial older hunt gets a revisit suggestion without claiming guaranteed improvement',()=>{
@@ -386,7 +420,15 @@ test('a substantial older hunt gets a revisit suggestion without claiming guaran
 
 test('compact active sort label keeps the full accessible option name',()=>{
  const html=renderPracticeProfile({rows:[row()]});
- assert.match(html,/<option value="active" aria-label="Active race time">Active time<\/option>/);
+ assert.match(html,/<option value="active" aria-label="Active race time" selected>Active time<\/option>/);
+});
+
+test('furthest checkpoint labels the supplied single-attempt index without deriving cumulative progress',()=>{
+ const html=renderPracticeProfile({rows:[row({furthestCheckpoint:4,attempts:150,finishes:90,pbs:20})]});
+ assert.match(html,/<dt title="Highest checkpoint index observed in a single attempt, not total across all drives">Furthest checkpoint<\/dt><dd>4<\/dd>/);
+ assert.doesNotMatch(html,/Checkpoint progress|Total checkpoints|Cumulative checkpoints/);
+ const absent=renderPracticeProfile({rows:[row({furthestCheckpoint:undefined,attempts:150,finishes:90,pbs:20})]});
+ assert.doesNotMatch(absent,/Furthest checkpoint/);
 });
 
 test('official and completed metadata separates saved PBs from recorded finishes',()=>{

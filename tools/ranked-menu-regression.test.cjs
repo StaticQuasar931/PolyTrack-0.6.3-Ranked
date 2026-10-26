@@ -277,7 +277,8 @@ test('completion scope offers All, Extra only and Without Extra while hiding out
  buttons.forEach(button=>{button.classList.owner=button;});
  const scope={hidden:false,querySelectorAll:()=>buttons};
  const panel={querySelector:selector=>selector==='#overallTrackScope'?scope:null};
- const context=vm.createContext({overallCompletionScope:'no-extra'});vm.runInContext(extract('syncOverallTrackScope'),context);
+ const context=vm.createContext({overallCompletionScope:'no-extra'});
+ vm.runInContext(extract('syncOverallRankingScope')+';'+extract('syncOverallTrackScope'),context);
  context.syncOverallTrackScope(panel,'tracks');assert.equal(scope.hidden,false);assert.deepEqual(buttons.map(button=>button.pressed),['false','false','true']);
  context.syncOverallTrackScope(panel,'overall');assert.equal(scope.hidden,true);assert.deepEqual(buttons.map(button=>button.pressed),['false','false','false']);
  context.overallCompletionScope='all';context.syncOverallTrackScope(panel,'tracks');assert.equal(scope.hidden,false);assert.deepEqual(buttons.map(button=>button.pressed),['true','false','false']);
@@ -363,8 +364,9 @@ test('manual refresh is bounded while requests are in flight and during failure 
 });
 test('button state preserves snapshot age and identifies a failed static check',()=>{
  const button={dataset:{},setAttribute(){},style:{}};
- const ctx=vm.createContext({document:{getElementById:id=>id==='overallFreshness'?button:null},overallCategory:'overall',overallLoadState:{status:'stale',serverUpdatedAt:1000,checkedAt:2000},rankedManualRefreshFailed:true,Date:{now:()=>10000},lastRankedManualRefreshAt:0,readOverallSnapshotCache:()=>({source:'public-backup'}),publicSnapshotCapturedAt:3000,ageLabel:()=> '3h ago',durationLabel:()=> '2m',snapshotOnlyForNewAccount:()=>false,snapshotCaptureLabel:()=> 'Snapshot captured 3h ago',syncSnapshotRefreshControl(){},applyRankedRefreshCooldown(){}});
- vm.runInContext(extract('rankedFreshnessText')+'\n'+extract('updateRankedFreshness'),ctx);ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot · 3h old · Check failed');
+ const ctx=vm.createContext({document:{getElementById:id=>id==='overallFreshness'?button:null},overallCategory:'overall',overallLoadState:{status:'stale',serverUpdatedAt:1000,checkedAt:2000},rankedManualRefreshFailed:true,Date:{now:()=>10000},lastRankedManualRefreshAt:0,readOverallSnapshotCache:()=>({source:'public-backup'}),publicSnapshotCapturedAt:3000,ageLabel:()=> '3h ago',durationLabel:()=> '2m',snapshotOnlyForNewAccount:()=>false,snapshotCaptureLabel:()=> 'Snapshot captured 3h ago',syncSnapshotRefreshControl(){},applyRankedRefreshCooldown(){},
+  localOverallReader:null,localOverallState:null});
+ vm.runInContext(extract('localCasualIsVisible')+';'+extract('currentLocalCasualResult')+';'+extract('rankedFreshnessText')+'\n'+extract('updateRankedFreshness'),ctx);ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot · 3h old · Check failed');
  ctx.overallLoadState.status='snapshot';ctx.rankedManualRefreshFailed=false;ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot · 3h old');
 });
 

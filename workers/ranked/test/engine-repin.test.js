@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import {verifiedTargetMs,bootstrapSlots,pendingSlot,verificationKey,VERIFIER_ENGINE_DIGEST,
   VERIFIER_VERSION,VERIFICATION_BOOTSTRAP_ID,verifiedVerdict,PRE_REPLAY_UI_PROOF_ENGINE} from '../src/verification.js';
 import {PRE_EVENT_LAUNCH_ENGINE} from '../src/event-engine-compatibility.js';
+
+async function reviewedOpponentFiles(manifest) {
+ const fs=await import('node:fs'),{createHash}=await import('node:crypto');
+ const sha=value=>createHash('sha256').update(value).digest('hex');
+ const root=new URL('../../../',import.meta.url);
+ const indexed=JSON.parse(fs.readFileSync(new URL('tools/verifier/indexed-playback-review.json',root),'utf8'));
+ assert.equal(indexed.currentEngine,VERIFIER_ENGINE_DIGEST);
+ assert.equal(indexed.currentEngine,'3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0');
+ assert.equal(indexed.previousEngine,'7cd54f05e02b66c67133fd856f025c829c21d600d8ef6a9071df62b4fb5905c4');
+ assert.equal(indexed.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
+ assert.equal(sha(fs.readFileSync(new URL(indexed.previousReview,root),'utf8').replace(/\r\n?/g,'\n')),indexed.previousReviewSha256);
+ assert.deepEqual(indexed.changedAssets,['simulation_worker.bundle.js']);
+ assert.deepEqual(Object.keys(indexed.previousAssets),indexed.changedAssets);assert.deepEqual(Object.keys(indexed.currentAssets),indexed.changedAssets);
+ for(const [asset,hash]of Object.entries({...indexed.unchangedAssets,...indexed.currentAssets}))assert.equal(manifest.files[asset],hash);
+ assert.equal(sha(JSON.stringify(manifest.files)),indexed.currentEngine);
+ const restored={...manifest.files,...indexed.previousAssets};
+ assert.equal(sha(JSON.stringify(restored)),indexed.previousEngine,'restore exact prior Worker and require full historical engine hash');
+ assert.equal(indexed.historicalBootstrapUnchanged,true);assert.equal(indexed.bootstrapId,VERIFICATION_BOOTSTRAP_ID);
+ return {files:restored,indexed};
+}
+
 const row={accountId:'racer',trackId:'a'.repeat(64),timeMs:19997,frames:19997,
   replayHash:'b'.repeat(64),uploadId:1,integrityVerified:true,runVerified:true};
 const current={...pendingSlot(row),status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST};
@@ -39,7 +60,7 @@ test('manifest, opponent review chain and reviewed Worker compatibility use the 
   const historical=JSON.parse(fs.readFileSync(new URL('../../../docs/migration/engine-review.json',import.meta.url),'utf8'));
   assert.equal(manifest.engineDigest,VERIFIER_ENGINE_DIGEST);
   assert.equal(geometry.engineDigest,VERIFIER_ENGINE_DIGEST);
-  assert.equal(review.currentEngine,VERIFIER_ENGINE_DIGEST);
+  assert.equal(review.currentEngine,(await reviewedOpponentFiles(manifest)).indexed.previousEngine);
   assert.equal(review.previousEngine,nativeReview.currentEngine);
   assert.equal(nativeReview.previousEngine,priorReview.currentEngine);
   assert.equal(priorReview.currentEngine,'46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3');
@@ -108,7 +129,7 @@ test('0.6.3 release gate binds all served assets and reviewed geometry',async()=
  const nativeReview=JSON.parse(fs.readFileSync(new URL('docs/events/native-row-ui-engine-review.json',root),'utf8'));
  const priorReview=JSON.parse(fs.readFileSync(new URL('docs/events/replay-ui-engine-review.json',root),'utf8'));
  const historical=JSON.parse(fs.readFileSync(new URL('docs/migration/engine-review.json',root),'utf8'));
- assert.equal(review.currentEngine,VERIFIER_ENGINE_DIGEST);assert.equal(review.previousEngine,nativeReview.currentEngine);
+ assert.equal(review.currentEngine,(await reviewedOpponentFiles(manifest)).indexed.previousEngine);assert.equal(review.previousEngine,nativeReview.currentEngine);
   assert.equal(nativeReview.previousEngine,priorReview.currentEngine);
  assert.equal(priorReview.previousEngine,historical.engineDigest);
  assert.deepEqual(review.unchangedPhysicsAssets,historical.unchangedPhysicsAssets);
@@ -124,14 +145,15 @@ test('opponent review proves two UI insertions are the entire bundle change and 
  let bundle=fs.readFileSync(new URL('main.bundle.js',root),'utf8').replace(/\r\n?/g,'\n');
  const manifest=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
  const geometry=JSON.parse(fs.readFileSync(new URL('tools/verifier/track-geometry.json',root),'utf8'));
- const previousFiles={...manifest.files,'main.bundle.js':review.previousMainBundleSha256};
+ const opponentFiles=(await reviewedOpponentFiles(manifest)).files;
+ const previousFiles={...opponentFiles,'main.bundle.js':review.previousMainBundleSha256};
  assert.equal(sha(JSON.stringify(previousFiles)),review.previousEngine,'all other engine file pins are unchanged');
  assert.equal(sha(fs.readFileSync(new URL(review.previousReview,root),'utf8').replace(/\r\n?/g,'\n')),review.previousReviewSha256,'prior review is immutable');
  assert.equal(sha(JSON.stringify(Object.entries(manifest.tracks).sort(([a],[b])=>a<b?-1:a>b?1:0))),review.trackPinsSha256);
  const geometryReview=JSON.parse(fs.readFileSync(new URL('docs/events/spite-geometry-review.json',root),'utf8'));
  const added=new Set(geometryReview.addedTracks.map(row=>row.id));
  assert.equal(sha(JSON.stringify(geometry.tracks.filter(row=>!added.has(row.id)))),review.geometryRowsSha256,'historical UI review geometry is unchanged');
- for(const [name,digest] of Object.entries(review.unchangedSimulationAssets))assert.equal(manifest.files[name],digest);
+ for(const [name,digest] of Object.entries(review.unchangedSimulationAssets))assert.equal(opponentFiles[name],digest);
  assert.equal(sha(bundle),review.currentMainBundleSha256);
  assert.equal(review.normalizedUiInsertions.length,2);
  assert.equal(review.previousEngine,EVENT_NATIVE_ROW_UI_ENGINE);
@@ -150,7 +172,9 @@ test('later Spite geometry review adds exactly one bound exception without rewri
  const proof=JSON.parse(fs.readFileSync(new URL('docs/events/spite-geometry-review.json',root),'utf8'));
  const geometry=JSON.parse(fs.readFileSync(new URL('tools/verifier/track-geometry.json',root),'utf8'));
  const priorText=fs.readFileSync(new URL('docs/events/opponent-shortcut-ui-engine-review.json',root),'utf8').replace(/\r\n?/g,'\n');
- assert.equal(proof.schemaVersion,1);assert.equal(proof.engineDigest,VERIFIER_ENGINE_DIGEST);
+ assert.equal(proof.schemaVersion,1);
+ const pin=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
+ assert.equal(proof.engineDigest,(await reviewedOpponentFiles(pin)).indexed.previousEngine);
  assert.equal(proof.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');assert.equal(sha(priorText),proof.previousReviewSha256);
  assert.equal(proof.previousGeometryRowsSha256,JSON.parse(priorText).geometryRowsSha256);
  const id='60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48';
@@ -196,3 +220,5 @@ test('native-row event periods stay usable while fresh completions require the n
  assert.equal(data.get(C.runs+'/'+submitted.runId).status,'verified');
  assert.deepEqual(data.get(C.periods+'/day1'),periodBefore,'immutable old period binding is retained');
 });
+
+test('indexed review chain rejects changed assets and fabricated prior restoration',async()=>{const fs=await import('node:fs');const manifest=JSON.parse(fs.readFileSync(new URL('../../../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));for(const [name,value]of [['simulation_worker.bundle.js','f'.repeat(64)],['main.bundle.js','f'.repeat(64)],['polytrack_physics.wasm','f'.repeat(64)]])await assert.rejects(reviewedOpponentFiles({...manifest,files:{...manifest.files,[name]:value}}));});

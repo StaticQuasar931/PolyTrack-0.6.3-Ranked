@@ -199,3 +199,37 @@
 .polytrack-practice-profile .pp-filters button{min-height:44px;flex:0 1 auto;max-width:100%}
 .polytrack-practice-profile .pp-tracks[data-pp-sort-key="observed-gain"] .pp-sort-observed-gain,
 .polytrack-practice-profile .pp-tracks[data-pp-sort-key="driven-gain"] .pp-sort-driven-gain{font-weight:700;color:var(--pp-amber);font-size:1.08em}
+
+/* One toolbar on wide panels; wrap deliberately rather than shrinking targets. */
+.polytrack-practice-profile .pp-toolbar {
+  grid-template-columns: minmax(140px, 200px) minmax(250px, 300px) auto auto;
+  align-items: end;
+  gap: 10px;
+}
+.polytrack-practice-profile .pp-toolbar > label:first-child { grid-column: 1; grid-row: 1; }
+.polytrack-practice-profile .pp-sort-control { grid-column: 2; grid-row: 1; }
+.polytrack-practice-profile .pp-toolbar .pp-filters { grid-column: 3; grid-row: 1; flex-wrap: wrap; }
+.polytrack-practice-profile .pp-toolbar [aria-label="Track layout"] { grid-column: 4; grid-row: 1; flex-wrap: wrap; }
+.polytrack-practice-profile .pp-toolbar :is(input, select, button) {
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 16px;
+}
+.polytrack-practice-profile .pp-toolbar :is(input, select) { width: 100%; }
+.polytrack-practice-profile .pp-toolbar button { white-space: normal; }
+.polytrack-practice-profile .pp-toolbar [data-pp-count] { grid-column: 1 / -1; grid-row: 2; }
+@container practice (max-width: 1000px) {
+  .polytrack-practice-profile .pp-toolbar { grid-template-columns: minmax(0, 1fr) minmax(190px, 1fr); }
+  .polytrack-practice-profile .pp-toolbar .pp-filters { grid-column: 1; grid-row: 2; }
+  .polytrack-practice-profile .pp-toolbar [aria-label="Track layout"] { grid-column: 2; grid-row: 2; }
+  .polytrack-practice-profile .pp-toolbar [data-pp-count] { grid-row: 3; }
+}
+@container practice (max-width: 480px) {
+  .polytrack-practice-profile .pp-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .polytrack-practice-profile .pp-toolbar > label:first-child { grid-column: 1; grid-row: 1; }
+  .polytrack-practice-profile .pp-sort-control { grid-column: 1; grid-row: 2; }
+  .polytrack-practice-profile .pp-toolbar .pp-filters { grid-column: 1; grid-row: 3; }
+  .polytrack-practice-profile .pp-toolbar [aria-label="Track layout"] { grid-column: 1; grid-row: 4; }
+  .polytrack-practice-profile .pp-toolbar [data-pp-count] { grid-row: 5; text-align: left; }
+}

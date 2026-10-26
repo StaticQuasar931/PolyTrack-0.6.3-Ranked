@@ -10,6 +10,7 @@ import { exportPublicProfilesAndReplays } from './public-profile-replay-export.m
 import { createSnapshotExportFetch } from './snapshot-export-auth.mjs';
 import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
 import { buildProfileSnapshotResults } from './build-profile-snapshot-results.mjs';
+import {captureOverallProjection, applyCapturedOverallProjection} from './capture-overall-projection.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -387,6 +388,7 @@ export async function reportCaptureOutcome(result, {env = process.env, log = con
 
 export async function updatePublicSnapshot({ root = moduleRoot, offline = false, fullPublic = false, refreshReplays = false,
   capture = runPublicSnapshotBackup, captureTotals = capture === runPublicSnapshotBackup ? capturePublicEventTotals : null,
+  captureOverall = capture === runPublicSnapshotBackup ? captureOverallProjection : null, overallCaptureOptions = {},
   captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log } = {}) {
   const absoluteRoot = path.resolve(root);
   const stagingDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-staging');
@@ -419,6 +421,18 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   if (!offline) {
     backupResult = await capture({ ...captureOptions, directory: stagingDirectory, log });
     if (backupResult?.deferred === true) return defer('snapshots', backupResult);
+    if (captureOverall) {
+      let latest;
+      try {
+        latest = await captureOverall({auth: {...exportAuth, fetchImpl: exportFetch}, ...overallCaptureOptions});
+      } catch (error) {
+        if (!(error instanceof PublicBackupDeferredError)) throw error;
+        return defer('overall-source', error);
+      }
+      await applyCapturedOverallProjection({directory: stagingDirectory, capture: latest});
+      backupResult = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
+      log(JSON.stringify({overallCapture: latest.report}));
+    }
     if (captureTotals) {
       let totalsResult;
       try { totalsResult = await captureTotals({ directory: stagingDirectory, log }); }

@@ -65,6 +65,7 @@ html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] > .overal
 }
 html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] > .overall-mobile-drawer[hidden] { display: none !important; }
 html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-mobile-drawer > * { flex: 0 0 auto !important; }
+html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-mobile-drawer .leaderboard-arcade { display: block !important; }
 html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] :is(button,input) {
   clip-path: none !important; transform: none !important; border-radius: 2px !important;
 }
@@ -185,7 +186,12 @@ html body #overallLeaderboardPanel .overall-shell {
   flex: 0 0 auto;
   min-width: 0;
 }
-html body #overallLeaderboardList { min-height: 72px; min-width: 0; overscroll-behavior: contain; }
+/* Override legacy short-screen fixed list heights without moving native track UI. */
+html body #overallLeaderboardPanel .overall-shell { box-sizing: border-box !important; overflow: hidden !important; }
+html body #overallLeaderboardPanel #overallLeaderboardList {
+  flex: 1 1 0 !important; min-height: 0 !important; max-height: none !important;
+  box-sizing: border-box !important; min-width: 0; overflow-y: auto !important; overscroll-behavior: contain;
+}
 html body #overallLeaderboardList .overall-entry { animation-duration: .16s !important; }
 html body #overallLeaderboardList .overall-loading::before {
   content: '';
@@ -358,3 +364,18 @@ html body #overallProfilePopup :is(.profile-guide-controls,.profile-track-list,.
 }
 
 html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-mobile-drawer .overall-track-scope button{min-height:44px!important;flex:1 1 auto}
+/* Help stays searchable without turning every shortcut into a large button. */
+#overallHelpPopup .ranked-help-search{margin:14px 0 18px}
+#overallHelpPopup .ranked-help-search>label{display:block;margin-bottom:6px;color:#a7d5ff}
+#overallHelpPopup .ranked-help-search>div{display:flex;gap:8px;min-width:0}
+#overallHelpPopup .ranked-help-search input{flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:8px 12px;background:#14214b;color:#eefaff;border:1px solid #7fa9d0;font:inherit}
+#overallHelpPopup .ranked-help-search button{flex:0 0 auto;min-height:44px;padding:8px 14px}
+#overallHelpPopup .ranked-help-controls summary{min-height:44px;box-sizing:border-box;display:flex;align-items:center;gap:10px;cursor:pointer}
+#overallHelpPopup .ranked-help-controls summary small{margin-left:auto;color:#9ebbd8;font-size:.8em}
+#overallHelpPopup .ranked-help-controls summary::before{content:'';width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid #7ee7ff;flex:0 0 auto}
+#overallHelpPopup .ranked-help-controls[open] summary::before{transform:rotate(90deg)}
+#overallHelpPopup .ranked-help-controls [hidden],#overallHelpPopup .ranked-help-controls[hidden]{display:none!important}
+#overallHelpPopup .ranked-help-controls kbd{overflow-wrap:anywhere;white-space:normal}
+#overallHelpPopup [data-help-empty]{color:#ffd28c}
+#overallHelpPopup [data-help-empty][hidden]{display:none!important}
+#overallHelpPopup .ranked-help-search input:focus-visible{outline:2px solid #7ee7ff;outline-offset:2px}

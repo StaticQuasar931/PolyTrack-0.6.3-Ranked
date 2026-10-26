@@ -4,11 +4,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {publicOverallBackup, publicTrackBackup, publicEventBackup, publicTrackRegistry, chooseTrackFetches,
   publicEventReplayBackup, runPublicSnapshotBackup, PUBLIC_SNAPSHOT_LIMITS,
-  isReusableArchivedEventBackup, createAdminArchiveCaptureFetch} from './public-snapshot-backup.mjs';
+  isReusableArchivedEventBackup, createAdminArchiveCaptureFetch, promotePublicEventPlayback} from './public-snapshot-backup.mjs';
 
 const trackId = 'a'.repeat(64);
 const period = {id: 'daily_20261002', trackId, startsAt: 100, endsAt: 200, maxRp: 100, kind: 'daily'};
@@ -21,6 +22,59 @@ const overall = {updatedAt: 300, revision: 9, builtRevision: 9, sourceRevision: 
     ownerUid: 'private', resultSamples: [{replay: 'private'}], bestTracks: [{trackId, rank: 1, replayHash: 'private'}]}],
   trackSummaries: [{trackId, updatedAt: 250, fieldSize: 2, leader: {accountId: 'racer', name: 'Racer', replay: 'private'}}],
   authorityAudit: {ownerUid: 'private'}, resultBundleLocation: 'main_results'};
+
+function eventPromotionFixture(){
+ const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=createHash('sha256').update(replay).digest('hex');
+ const accountId='b'.repeat(64),runId='c'.repeat(64);
+ return {value:{periodId:period.id,trackId,accountId,runId,timeMs:23,frames:23,replay,replayHash,carStyle:'style',submittedAt:150,
+  verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,source:'pending-event-recording'},
+  entry:{accountId,runId,timeMs:23,frames:23,replayHash,physicsVerified:true,replayIntegrityVerified:true}};
+}
+
+test('event promotion requires exact fresh verified binding and preserves bytes without invented verdict dates',async()=>{
+ const f=eventPromotionFixture();const context={periodId:period.id,trackId,entry:f.entry};
+ const promoted=await promotePublicEventPlayback(f.value,context);
+ assert.equal(promoted.replay,f.value.replay);assert.equal(promoted.submittedAt,150);assert.equal(promoted.verifiedAt,undefined);
+ assert.equal(promoted.pending,undefined);assert.equal(promoted.source,undefined);
+ const dated=await promotePublicEventPlayback(f.value,{...context,entry:{...f.entry,verifiedAt:200}});
+ assert.equal(dated.verifiedAt,200);
+ for(const mutation of [{accountId:'d'.repeat(64)},{runId:'d'.repeat(64)},{replayHash:'d'.repeat(64)},
+  {timeMs:24},{frames:24},{physicsVerified:false},{physicsVerified:undefined},
+  {replayIntegrityVerified:false},{replayHash:undefined},{submittedAt:151}])
+  await assert.rejects(promotePublicEventPlayback(f.value,{...context,entry:{...f.entry,...mutation}}));
+ for(const mutation of [{trackId:'d'.repeat(64)},{frames:24},{replay:f.value.replay+'A'},
+  {verificationStatus:'rejected'},{ownerUid:'private'}])
+  await assert.rejects(promotePublicEventPlayback({...f.value,...mutation},context));
+});
+
+test('pending-to-verified event capture reuses payload locally across later runs within unchanged budgets',async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'event-promote-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+ const f=eventPromotionFixture(),calls=[];let verified=false;
+ const pending={...f.entry,name:'Racer',carStyle:'style',submittedAt:150,verificationStatus:'waiting',pending:true,verified:false,eventRpEligible:false,
+  source:'pending-event-playback'};
+ const fetchImpl=async input=>{
+  const url=new URL(input);calls.push(url.pathname);
+  if(url.pathname.endsWith('/overall'))return Response.json({...overall,trackSummaries:[]});
+  if(url.pathname.endsWith('/catalog'))return Response.json({periods:[livePeriod],archives:[]});
+  if(url.pathname===`/v1/events/${period.id}/snapshot`)return Response.json({id:period.id,period:livePeriod,
+   updatedAt:verified?200:180,archived:false,entries:verified?[f.entry]:[],pendingPlaybacks:verified?[]:[pending]});
+  if(url.pathname.includes('/playbacks/'))return Response.json(f.value);
+  if(url.pathname.includes('/replays/'))throw Error('Same exact event bytes must never be re-fetched');
+  return new Response('',{status:404});
+ };
+ const capture=now=>runPublicSnapshotBackup({directory,fetchImpl,trackIds:[],now,log:()=>{}});
+ await capture(1000);assert.equal(calls.filter(url=>url.includes('/playbacks/')).length,1);
+ verified=true;calls.length=0;const manifest=await capture(1001);
+ assert.equal(calls.some(url=>/\/(?:replays|playbacks)\//.test(url)),false);
+ const relative=`event-replays/${period.id}/${f.entry.accountId}.json`;
+ assert.ok(manifest.eventReplays[relative]);assert.equal(Object.keys(manifest.eventPlaybacks).length,0);
+ const saved=JSON.parse(await fs.readFile(path.join(directory,relative)));
+ assert.equal(saved.replay,f.value.replay);assert.equal(saved.verifiedAt,undefined);
+ await assert.rejects(fs.stat(path.join(directory,`event-playbacks/${period.id}/${f.entry.runId}.json`)),{code:'ENOENT'});
+ calls.length=0;await capture(1001+8*86400000);
+ assert.equal(calls.some(url=>/\/(?:replays|playbacks)\//.test(url)),false,'exact fresh run binding avoids metadata-only payload downloads too');
+ assert.equal(PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches,30);assert.equal(PUBLIC_SNAPSHOT_LIMITS.eventReplaysPerPeriod,500);
+});
 
 test('legacy archive reuse requires validated exact coverage and never invents completeness',()=>{
   const legacy={period:{...period,entrantLimit:200},updatedAt:220,archived:true,racerCount:1,

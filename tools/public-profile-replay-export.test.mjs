@@ -38,6 +38,83 @@ function fixtureFetch(handler,requests=[]){return async(url,options)=>{
 const emptyProfiles=[{readTime:'2026-10-06T00:00:00Z'}];
 const batchResponse=(request,fields=raceFields())=>request.options.documents.map(name=>({found:{name,fields}}));
 
+async function pendingPair(directory,{frames=900,payload=deflateSync(Buffer.alloc(15)).toString('base64url')}={}) {
+ const hash=createHash('sha256').update(payload).digest('hex');
+ const row=binding({frames,raceTimeFrames:frames,replayHash:hash,runVerified:false,verified:false,verifiedState:0});
+ await stage(directory,[row]);
+ // Seed an existing public pair directly so malformed-cache rejection can be tested too.
+ await fs.mkdir(path.join(directory,'recordings'),{recursive:true});
+ await fs.mkdir(path.join(directory,'canonical',trackId),{recursive:true});
+ const recording={recording:payload,frames,verifiedState:0,carStyle:'style',accountId,trackId,replayHash:hash,
+  updatedAt:600,playbackPending:true,verificationStatus:'pending',eventRpEligible:false};
+ const canonical={...row,updatedAt:600,playbackPending:true,verificationStatus:'pending',eventRpEligible:false};
+ await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(recording));
+ await fs.writeFile(path.join(directory,`canonical/${trackId}/${accountId}.json`),JSON.stringify(canonical));
+ return {row,recording,canonical};
+}
+
+test('status-only promotion retains exact encoded bytes and makes zero payload requests',async()=>{
+ await withDirectory(async directory=>{
+  const f=await pendingPair(directory);await stage(directory,[{...f.row,verified:true,runVerified:true,verifiedState:1}]);
+  const options={directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('Status-only promotion must not fetch');}};
+  const result=await exportPublicProfilesAndReplays(options);
+  assert.equal(result.fetchedDocumentsThisRun,0);
+  const saved=JSON.parse(await fs.readFile(path.join(directory,'recordings/42.json')));
+  const canonical=JSON.parse(await fs.readFile(path.join(directory,`canonical/${trackId}/${accountId}.json`)));
+  assert.equal(saved.recording,f.recording.recording);assert.equal(saved.updatedAt,600);assert.equal(saved.verifiedState,1);
+  assert.equal(canonical.verified,true);assert.equal(canonical.runVerified,true);assert.equal(canonical.verifiedState,1);
+  for(const row of [saved,canonical])for(const key of ['playbackPending','verificationStatus','eventRpEligible','verifiedAt'])
+   assert.equal(row[key],undefined,key+' must not carry stale pending status or invented verdict time');
+  assert.equal((await exportPublicProfilesAndReplays(options)).fetchedDocumentsThisRun,0);
+ });
+});
+
+test('promotion rejects every changed immutable binding including time and optional recording upload',async()=>{
+ const mutations=[f=>{f.canonical.accountId=otherAccount;},f=>{f.canonical.trackId='d'.repeat(64);},
+  f=>{f.canonical.uploadId++;},f=>{f.canonical.frames++;},f=>{f.canonical.raceTimeFrames++;},
+  f=>{f.canonical.replayHash='d'.repeat(64);},f=>{f.canonical.timeMs++;},
+  f=>{f.recording.uploadId=43;},f=>{f.recording.timeMs=15001;},f=>{f.recording.recording+='A';},
+  f=>{f.canonical.verificationStatus='rejected';}];
+ for(const mutate of mutations)await withDirectory(async directory=>{
+  const f=await pendingPair(directory);mutate(f);
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(f.recording));
+  await fs.writeFile(path.join(directory,`canonical/${trackId}/${accountId}.json`),JSON.stringify(f.canonical));
+  await stage(directory,[{...f.row,verified:true,runVerified:true,verifiedState:1}]);
+  const calls=[];const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(calls.length,1);assert.equal(result.fetchedDocumentsThisRun,1);
+  assert.equal(JSON.parse(await fs.readFile(path.join(directory,'recordings/42.json'))).verifiedState,0);
+ });
+});
+
+test('interrupted two-file status promotion is safely completed without re-fetch',async()=>{
+ for(const partial of ['recording','canonical'])await withDirectory(async directory=>{
+  const f=await pendingPair(directory);
+  if(partial==='recording')f.recording={...f.recording,verifiedState:1,playbackPending:undefined,verificationStatus:undefined,eventRpEligible:undefined};
+  else f.canonical={...f.canonical,verified:true,runVerified:true,verifiedState:1,playbackPending:undefined,verificationStatus:undefined,eventRpEligible:undefined};
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(f.recording));
+  await fs.writeFile(path.join(directory,`canonical/${trackId}/${accountId}.json`),JSON.stringify(f.canonical));
+  await stage(directory,[{...f.row,verified:true,runVerified:true,verifiedState:1}]);
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,fetchImpl:()=>{throw Error('Partial pair must resume locally');}});
+  assert.equal(JSON.parse(await fs.readFile(path.join(directory,'recordings/42.json'))).verifiedState,1);
+  assert.equal(JSON.parse(await fs.readFile(path.join(directory,`canonical/${trackId}/${accountId}.json`))).verified,true);
+ });
+});
+
+test('malformed bytes cannot be promoted; structure-valid high-work bytes can be retained without refetching',async()=>{
+ const work=Buffer.alloc(45);for(let channel=0;channel<5;channel++){work[channel*9]=2;work[channel*9+6]=1;}
+ for(const [bytes,frames] of [[Buffer.alloc(14),900],[work,4000000]])await withDirectory(async directory=>{
+  const f=await pendingPair(directory,{frames,payload:deflateSync(bytes).toString('base64url')});
+  await stage(directory,[{...f.row,verified:true,runVerified:true,verifiedState:1}]);
+  const calls=[];await exportPublicProfilesAndReplays({directory,includeProfiles:false,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  const malformed=bytes.length===14;
+  assert.equal(calls.length,malformed?1:0,'malformed bytes need bounded recovery; valid source-bound bytes need no download');
+  assert.equal(JSON.parse(await fs.readFile(path.join(directory,'recordings/42.json'))).verifiedState,malformed?0:1);
+ });
+});
+
 test('opt-in pending public canonical replay exports bounded playback without a verified badge or private fields',async()=>{
  await withDirectory(async directory=>{
   const pendingReplay=deflateSync(Buffer.alloc(15)).toString('base64url');

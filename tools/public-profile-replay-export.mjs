@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {publicDisplayName} from './public-display-name.mjs';
 import {publicOverallBackup} from './public-snapshot-backup.mjs';
-import {validatePublicReplayStructure,hasPlayablePublicReplayStatus} from './public-replay-playback.mjs';
+import {validatePublicReplayForPublication as validatePublicReplayStructure,hasPlayablePublicReplayStatus} from './public-replay-playback.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -149,6 +149,8 @@ function safeBinding(entry, snapshotTrackId, includePendingReplays = false) {
       entry.frames !== undefined && entry.frames !== frames || entry.raceTimeFrames !== undefined && entry.raceTimeFrames !== frames ||
       !HASH.test(entry.replayHash || '')) return {invalid: true};
   const binding = {accountId: entry.accountId, trackId: entry.trackId, uploadId: entry.uploadId, frames, replayHash: entry.replayHash, playbackPending,
+    promotionEligible: entry.runVerified === true && entry.integrityVerified === true &&
+      entry.verified !== false && entry.verifiedState === 1,
     metadata: Object.fromEntries(['name', 'nickname', 'countryCode', 'carStyle', 'timeMs', 'createdAt', 'pbAt']
       .filter(key => Object.hasOwn(entry, key)).map(key => [key,
         ['name', 'nickname'].includes(key) ? publicDisplayName(entry[key]) : entry[key]]))};
@@ -225,12 +227,16 @@ function validBoundRace(row, binding) {
 }
 
 async function savedMatchExists(directory, binding) {
+  let replay, canonical;
   try {
-    const replay = JSON.parse(await fs.readFile(path.join(directory, `recordings/${binding.uploadId}.json`), 'utf8'));
-    const canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8'));
+    replay = JSON.parse(await fs.readFile(path.join(directory, `recordings/${binding.uploadId}.json`), 'utf8'));
+    canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8'));
     if (!hasPlayablePublicReplayStatus(replay) || !hasPlayablePublicReplayStatus(canonical)) return false;
-    return replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
-      replay.frames === binding.frames && replay.verifiedState === (binding.playbackPending ? 0 : 1) && replay.replayHash === binding.replayHash &&
+    const exact = replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
+      (replay.uploadId === undefined || replay.uploadId === binding.uploadId) &&
+      (replay.timeMs === undefined || replay.timeMs === binding.metadata.timeMs) &&
+      (replay.raceTimeFrames === undefined || replay.raceTimeFrames === binding.frames) &&
+      replay.frames === binding.frames && replay.replayHash === binding.replayHash &&
       typeof replay.recording === 'string' && replay.recording.length > 0 && Buffer.byteLength(replay.recording, 'utf8') <= 850000 &&
       crypto.createHash('sha256').update(replay.recording, 'utf8').digest('hex') === binding.replayHash &&
       canonical.accountId === binding.accountId && canonical.trackId === binding.trackId &&
@@ -238,9 +244,32 @@ async function savedMatchExists(directory, binding) {
       (canonical.raceTimeFrames === undefined || canonical.raceTimeFrames === binding.frames) &&
       canonical.timeMs > 0 && Number.isSafeInteger(canonical.timeMs) &&
       (binding.metadata.timeMs === undefined || canonical.timeMs === binding.metadata.timeMs) &&
-      canonical.integrityVerified === true && canonical.verified === !binding.playbackPending &&
-      canonical.runVerified === !binding.playbackPending && canonical.replayHash === binding.replayHash;
+      canonical.integrityVerified === true && canonical.replayHash === binding.replayHash;
+    if (!exact) return false;
+    const pendingMarkers = [replay, canonical].some(row => row.playbackPending === true ||
+      row.verificationStatus !== undefined && row.verificationStatus !== 'verified');
+    if ((binding.playbackPending || !pendingMarkers) && replay.verifiedState === (binding.playbackPending ? 0 : 1) &&
+        canonical.verified === !binding.playbackPending && canonical.runVerified === !binding.playbackPending &&
+        (canonical.verifiedState === undefined || canonical.verifiedState === (binding.playbackPending ? 0 : 1))) return true;
+    // Only the fresh public board authorizes a status change. Old status never
+    // supplies proof; immutable bytes and canonical time must bind independently.
+    const pending = canonical.verified === false && canonical.runVerified === false && canonical.verifiedState === 0;
+    const verified = canonical.verified === true && canonical.runVerified === true && canonical.verifiedState === 1;
+    if (binding.playbackPending || !binding.promotionEligible || !Number.isSafeInteger(binding.metadata.timeMs) ||
+        binding.metadata.timeMs < 1 || ![0, 1].includes(replay.verifiedState) || !pending && !verified) return false;
+    await validatePublicReplayStructure(replay.recording, binding.frames);
   } catch { return false; }
+  const updatedAt = Number.isSafeInteger(replay.updatedAt) && replay.updatedAt >= 0 ? replay.updatedAt : 0;
+  const carStyle = typeof replay.carStyle === 'string' && replay.carStyle.length <= 256 ? replay.carStyle : '';
+  const promotedReplay = {recording: replay.recording, frames: binding.frames, verifiedState: 1, carStyle,
+    accountId: binding.accountId, trackId: binding.trackId, replayHash: binding.replayHash, updatedAt};
+  const promotedCanonical = {...binding.metadata, accountId: binding.accountId, trackId: binding.trackId,
+    timeMs: binding.metadata.timeMs, frames: binding.frames, raceTimeFrames: binding.frames, uploadId: binding.uploadId,
+    replayHash: binding.replayHash, carStyle, updatedAt, runVerified: true, integrityVerified: true,
+    verified: true, verifiedState: 1};
+  // Each write is atomic; a stopped pair rewrite is revalidated and completed on resume.
+  if (!await atomicWrite(directory, `recordings/${binding.uploadId}.json`, promotedReplay)) return false;
+  return atomicWrite(directory, `canonical/${binding.trackId}/${binding.accountId}.json`, promotedCanonical);
 }
 
 function currentRaceState(bindings, fingerprint, invalid, previous) {

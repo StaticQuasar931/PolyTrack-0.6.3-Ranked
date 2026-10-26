@@ -9,7 +9,7 @@ const root=process.env.PRACTICE_REVIEW_SOURCE_ROOT
   ? pathToFileURL(process.env.PRACTICE_REVIEW_SOURCE_ROOT.replace(/\\/g,'/')+'/')
   : new URL('../',import.meta.url);
 const patch=fs.readFileSync(new URL('polytrack_062_patch.js',root),'utf8');
-const {renderPracticeProfile,capturePracticeProfileView,restorePracticeProfileView}=await import(new URL('tools/practice-profile.mjs',root));
+const {renderPracticeProfile,capturePracticeProfileView,restorePracticeProfileView}=await import(new URL('./practice-profile.mjs',import.meta.url));
 
 function functionSource(name,next){
   const start=patch.indexOf(`  function ${name}(`),end=patch.indexOf(`  function ${next}(`,start);
@@ -131,7 +131,7 @@ function refreshFixture({otherRacer=false}={}){
     installPracticeProfileControls(){events.push('install');return ()=>{};},
     restorePracticeProfileView(){events.push('restore');},
     refreshOpenProfilePlanner(){plannerFinishes=context.cachedFinishes;events.push('planner');}};
-  const refresh=vm.runInNewContext('('+functionSource('refreshOpenPracticeProfile','initializePracticeHistory')+')',sandbox);
+  const refresh=vm.runInNewContext('('+functionSource('refreshOpenPracticeProfile','importPracticeStartupModule')+')',sandbox);
   return {refresh,events,context,card,next,freshFinishes,plannerFinishes:()=>plannerFinishes};
 }
 

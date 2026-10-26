@@ -190,10 +190,10 @@ test('daily and manual captures always reconcile regardless of combined-publishi
   const gate=/^        if: (.+)$/m.exec(capture)[1];
   for(const verifierEnabled of ['true','false','',undefined]) for(const combined of ['true','false','',undefined]) {
     const vars={POLYTRACK_VERIFIER_ENABLED:verifierEnabled,POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:combined};
-    for(const [event_name,schedule,expected] of [['schedule','20 0 * * *',true],['workflow_dispatch',undefined,true],['schedule','10 20 * * 0',false]]) {
-      assert.equal(evaluate(gate,{vars,github:{event_name,event:{schedule}},steps:{catalog:{outputs:{capture_status:'complete'}}}}),expected);
+    for(const [event_name,schedule,expected] of [['schedule','20 0 * * *',true],['workflow_dispatch',undefined,true],['schedule','19 20 * * 0',false]]) {
+      assert.equal(evaluate(gate,{vars,github:{event_name,event:{schedule}},steps:{coordination:{outputs:{reuse:'false'}},catalog:{outputs:{capture_status:'complete'}}}}),expected);
     }
-    assert.equal(evaluate(gate,{vars,github:{event_name:'schedule',event:{schedule:'20 0 * * *'}},steps:{catalog:{outputs:{capture_status:'deferred'}}}}),false);
+    assert.equal(evaluate(gate,{vars,github:{event_name:'schedule',event:{schedule:'20 0 * * *'}},steps:{coordination:{outputs:{reuse:'false'}},catalog:{outputs:{capture_status:'deferred'}}}}),false);
   }
 });
 
@@ -239,17 +239,17 @@ test('helper explicitly warns that capture is not a published-revision freshness
 
 test('one daily reconciliation prevents last-verdict staleness without adding idle polling', () => {
   const cron=[...catalog.matchAll(/cron: '([^']+)'/g)].map(match=>match[1]);
-  assert.deepEqual(cron,['20 0 * * *','10 20 * * 0']);
+  assert.deepEqual(cron,['20 0 * * *','19 20 * * 0']);
   assert.equal((catalog.match(/node tools\/update-public-snapshot.mjs --refresh-replays/g)||[]).length,1);
   assert.doesNotMatch(step(catalog,'Capture bounded public snapshots'),/--full-public|while |until |sleep |continue-on-error/);
-  assert.match(step(publisher,'Capture bounded public snapshots'),/if: steps.catalog.outputs.capture_status == 'complete'/);
+  assert.match(step(publisher,'Capture bounded public snapshots'),/steps.catalog.outputs.capture_status == 'complete'/);
   assert.doesNotMatch(publisher,/^  schedule:/m);
 });
 
-test('daily assignments run at 00:20 UTC while both weekly schedules stay unchanged', async () => {
+test('daily reconciliation stays at 00:20 UTC and Sunday catalog follows bounded Kodub capture', async () => {
   assert.match(catalog,/cron: '20 0 \* \* \*'/);
   assert.doesNotMatch(catalog,/30 10 \* \* \*/);
-  assert.match(catalog,/cron: '10 20 \* \* 0'/);
+  assert.match(catalog,/cron: '19 20 \* \* 0'/);
   assert.match(await readWorkflow('sync-kodub-weekly.yml'),/cron: "3 20 \* \* \*"/);
   assert.equal((catalog.match(/'20 0 \* \* \*'/g)||[]).length,4);
 });

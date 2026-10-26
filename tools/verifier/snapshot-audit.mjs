@@ -16,6 +16,8 @@ const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const ACCOUNT = /^[a-f0-9]{64}$/;
 const TRACK = /^[a-f0-9]{64}$/;
 const HASH = /^[a-f0-9]{64}$/;
+const PERMANENT_ID = 'permanent-rolling-hills';
+const PERMANENT_TRACK = 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 const STATE_SCHEMA = 'polytrack-snapshot-audit-v1';
 const NATIVE_BATCH_SIZE = 16;
 const MAX_FINDING_LINES = 500000;
@@ -98,6 +100,30 @@ async function validateIndexedPayloadHashes(snapshotDir, index) {
 function safeSnapshotName(logical) {
   return typeof logical === 'string' && !logical.startsWith('/') &&
     !logical.split('/').some(part => !part || part === '.' || part === '..');
+}
+
+function validPermanentBoard(board) {
+  const uint = value => Number.isSafeInteger(value) && value >= 0;
+  if (!board || board.id !== PERMANENT_ID || board.kind !== 'permanent' || board.trackId !== PERMANENT_TRACK ||
+      board.period !== undefined || board.archived === true || board.complete !== true || board.sourceComplete === false ||
+      !Array.isArray(board.entries) || !board.entries.length || board.entries.length > 10000 ||
+      board.totalEntries !== board.entries.length || !uint(board.sourceTotalEntries) || board.sourceTotalEntries < board.totalEntries ||
+      !uint(board.updatedAt) || board.updatedAt === 0 || !uint(board.sourceRevision) || board.sourceRevision === 0 ||
+      board.scoreVersion !== 'rolling-hills-live-verified-v1' || board.targetPolicy !== 'live-fastest-physics-verified' ||
+      board.maxRp !== 1001 || !uint(board.targetMs) || board.targetMs === 0 || board.targetMs > 300000 ||
+      !['explicit-snapshot-metadata', 'legacy-exact-field-size', 'paged-source-manifest'].includes(board.sourceCompleteness) ||
+      board.contributions?.normalRp !== true || board.contributions?.eventRp !== true) return false;
+  const seen = new Set();
+  for (const row of board.entries) {
+    if (!ACCOUNT.test(row?.accountId || '') || seen.has(row.accountId) ||
+        row.trackId !== undefined && row.trackId !== PERMANENT_TRACK ||
+        !uint(row.timeMs) || row.timeMs < board.targetMs || row.timeMs > 300000 || row.frames !== row.timeMs ||
+        !HASH.test(row.replayHash || '') || row.physicsVerified !== true || row.replayIntegrityVerified !== true ||
+        row.normalRpEligible !== true || !uint(row.rank) || row.rank < 1 || row.rank > board.entries.length ||
+        !uint(row.rp) || row.rp > board.maxRp || row.eventRpContribution !== row.rp) return false;
+    seen.add(row.accountId);
+  }
+  return Math.min(...board.entries.map(row => row.timeMs)) === board.targetMs;
 }
 
 export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
@@ -192,6 +218,11 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
   for (const logical of files.filter(value => /^events\/[^/]+\.json$/.test(value))) {
     const board = await readIndexedPayload(snapshotDir, index, logical, cache);
     const period = logical.slice('events/'.length, -'.json'.length);
+    if (period === PERMANENT_ID) {
+      if (!validPermanentBoard(board)) issues.push({kind: 'permanent_board_invalid', source: logical});
+      // This derived board has no timed period or recording namespace. Normal track jobs cover its replays.
+      continue;
+    }
     if (!board || board.id !== period || board.period?.id !== period || !TRACK.test(board.period?.trackId || '') || !Array.isArray(board.entries)) {
       issues.push({kind: 'event_board_invalid', source: logical}); continue;
     }
@@ -199,6 +230,9 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
   }
   for (const logical of files.filter(value => value.startsWith('event-replays/'))) {
     const match = /^event-replays\/([A-Za-z0-9_-]{1,64})\/([a-f0-9]{64})\.json$/.exec(logical);
+    if (match?.[1] === PERMANENT_ID) {
+      issues.push({kind: 'permanent_replay_wrong_lane', source: logical}); continue;
+    }
     const event = await readIndexedPayload(snapshotDir, index, logical, cache);
     if (!match || !event || event.periodId !== match[1] || event.accountId !== match[2] ||
         !TRACK.test(event.trackId || '') || !HASH.test(event.runId || '') || !Number.isSafeInteger(event.timeMs) || event.timeMs <= 0 ||

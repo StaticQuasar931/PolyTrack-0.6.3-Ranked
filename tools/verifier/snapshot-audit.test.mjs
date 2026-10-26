@@ -75,6 +75,78 @@ async function fixture({missingRecording = false, lowInformation = false} = {}) 
 
 async function cleanup(item) { await fs.rm(item.temp, {recursive: true, force: true}); }
 
+const ROLLING_TRACK = 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+function permanentBoard() {
+  return {id: 'permanent-rolling-hills', kind: 'permanent', trackId: ROLLING_TRACK,
+    scoreVersion: 'rolling-hills-live-verified-v1', targetPolicy: 'live-fastest-physics-verified',
+    targetMs: 5000, maxRp: 1001, sourceRevision: 1, updatedAt: 10000, complete: true,
+    totalEntries: 1, sourceTotalEntries: 1, sourceCompleteness: 'explicit-snapshot-metadata',
+    contributions: {normalRp: true, eventRp: true}, entries: [{accountId: ACCOUNTS[0],
+      timeMs: 5000, frames: 5000, replayHash: REPLAY_HASH, rank: 1, rp: 1001,
+      eventRpContribution: 1001, normalRpEligible: true, physicsVerified: true, replayIntegrityVerified: true}]};
+}
+async function replacePayload(item, logical, value) {
+  const directory = path.join(item.root, 'public-snapshots1');
+  const index = JSON.parse(await fs.readFile(path.join(directory, 'index.json'), 'utf8'));
+  const bytes = Buffer.from(await encodeSnapshot(value));
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  await fs.writeFile(path.join(directory, sha256 + '.bin'), bytes);
+  index.files[logical] = {path: sha256 + '.bin', sha256, decodedBytes: Buffer.byteLength(JSON.stringify(value))};
+  await fs.writeFile(path.join(directory, 'index.json'), JSON.stringify(index));
+}
+
+test('dedicated permanent validation accepts its public schema without adding replay jobs', async () => {
+  const item = await fixture();
+  try {
+    const before = await loadSnapshotAuditInputs({root: item.root});
+    await replacePayload(item, 'events/permanent-rolling-hills.json', permanentBoard());
+    const after = await loadSnapshotAuditInputs({root: item.root});
+    assert.deepEqual(after.issues, before.issues);
+    assert.deepEqual(after.jobs, before.jobs);
+    assert.equal(after.coverage.normalJobs, 2);
+    assert.equal(after.coverage.eventReplays, 2);
+  } finally { await cleanup(item); }
+});
+
+test('invalid permanent identity, completeness, source policy and rows remain audit issues', async () => {
+  const item = await fixture();
+  try {
+    const base = permanentBoard();
+    const invalids = [null, {...base, id: 'wrong'}, {...base, kind: 'weekly'}, {...base, trackId: TRACK},
+      {...base, period: {id: base.id, trackId: ROLLING_TRACK}}, {...base, complete: false},
+      {...base, totalEntries: 2}, {...base, sourceComplete: false}, {...base, sourceTotalEntries: 0},
+      {...base, targetPolicy: 'other'}, {...base, maxRp: 999}, {...base, sourceRevision: 0},
+      {...base, targetMs: 4999}, {...base, entries: [null]},
+      ...[{accountId: 'bad'}, {frames: 4999}, {replayHash: 'bad'}, {physicsVerified: false},
+        {replayIntegrityVerified: false}, {rp: 1002}, {eventRpContribution: 0}]
+        .map(patch => ({...base, entries: [{...base.entries[0], ...patch}]})),
+      {...base, totalEntries: 2, sourceTotalEntries: 2, entries: [base.entries[0], base.entries[0]]}];
+    for (const value of invalids) {
+      await replacePayload(item, 'events/permanent-rolling-hills.json', value);
+      const audit = await loadSnapshotAuditInputs({root: item.root});
+      assert.ok(audit.issues.some(issue => issue.kind === 'permanent_board_invalid'));
+      assert.equal(audit.jobs.length, 4);
+    }
+  } finally { await cleanup(item); }
+});
+
+test('timed boards still require matching period and permanent replay files cannot duplicate jobs', async () => {
+  const item = await fixture();
+  try {
+    await replacePayload(item, 'events/d_20261001.json', {id: 'd_20261001', kind: 'permanent',
+      trackId: ROLLING_TRACK, entries: []});
+    await replacePayload(item, 'events/permanent-rolling-hills.json', permanentBoard());
+    await replacePayload(item, `event-replays/permanent-rolling-hills/${ACCOUNTS[0]}.json`, {
+      periodId: 'permanent-rolling-hills', trackId: ROLLING_TRACK, accountId: ACCOUNTS[0],
+      runId: 'f'.repeat(64), timeMs: 5000, replay: REPLAY, replayHash: REPLAY_HASH});
+    const audit = await loadSnapshotAuditInputs({root: item.root});
+    assert.ok(audit.issues.some(issue => issue.kind === 'event_board_invalid' && issue.source === 'events/d_20261001.json'));
+    assert.ok(audit.issues.some(issue => issue.kind === 'permanent_replay_wrong_lane'));
+    assert.equal(audit.jobs.length, 4);
+    assert.ok(audit.jobs.every(job => job.periodId !== 'permanent-rolling-hills'));
+  } finally { await cleanup(item); }
+});
+
 function fakeVerify(calls) {
   return async (_root, jobs) => {
     calls.push(jobs.length);

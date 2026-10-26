@@ -49,14 +49,14 @@ function hooksFixture(){
   const results={...metadata,resultBundleVersion:1,resultBundleEncoding:'gzip-base64-json-v1',resultBundleComplete:true,resultBoardCount:1,resultBoardLimitReached:false,
     resultBundle:gzipSync(JSON.stringify({entries:entries.map(row=>({userId:row.userId,resultSamples:row.resultSamples})),resultTracks:[trackId]})).toString('base64')};
   let info={generation:43,epoch:0,baseUrl:'https://example.test/public-snapshots43/'};
-  const reader=async kind=>{reads++;return kind==='overall'?overall:kind==='overall-results'?results:board;};reader.packageInfo=()=>({...info});
+  const reader=async kind=>{reads++;return kind==='overall'?overall:kind==='overall-results'?results:kind==='overall-projection'?null:board;};reader.packageInfo=()=>({...info});
   const ctx=vm.createContext({Promise,Date,setTimeout,clearTimeout,clearInterval,queueMicrotask,MutationObserver:class{observe(){}},
     document:{hidden:false,getElementById:id=>nodes.get(id)||null,createElement:()=>element(),head:{appendChild:node=>nodes.set(node.id,node)},addEventListener:(name,callback)=>{listeners[name]=callback;}},
     window:{addEventListener:(name,callback)=>{listeners[name]=callback;}},
     localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},
     renderEntries:()=>{},overallCategory:'overall',overallLoadState:{status:'snapshot',serverUpdatedAt:100000},publicSnapshotCapturedAt:100000,
     rankedManualRefreshFailed:false,rankedFreshnessTimer:0,publicSnapshotReaderPromise:Promise.resolve(reader),guestAccountId:'',
-    cleanUserId:String,escapeHtml:String,canonicalRaceTimeMs:row=>row.timeMs,formatRp:value=>Number(value).toFixed(3),ageLabel:()=> '1h ago',
+    cleanUserId:String,escapeHtml:String,canonicalRaceTimeMs:row=>row.timeMs,readLocalRaceRows:()=>[],formatRp:value=>Number(value).toFixed(3),ageLabel:()=> '1h ago',
     readOverallSnapshotCache:()=>({source:'public-backup'}),applyRankedRefreshCooldown:()=>{},
     isElementVisible:node=>Boolean(node&&node.style.display!=='none'),
     loadControllerModule:async()=>({createLocalOverallController})});
@@ -106,5 +106,6 @@ test('inline presentation uses isolated copies and keeps snapshot comparison acc
  assert.match(fn('sortedOverallEntries'),/localEstimateOrigin:\{score:row.score,rank:row.rank\}/);
  assert.match(fn('renderEntryRow'),/Local estimate:/);assert.match(fn('renderEntryRow'),/Snapshot:/);
  assert.match(fn('renderEntryRow'),/escapeHtml\(estimateTitle\)/);
- assert.doesNotMatch(fn('renderLocalOverallProjection'),/createElement|insertAdjacentElement/);
+ assert.doesNotMatch(fn('renderLocalOverallProjection'),/\.id\s*=\s*['"]localOverallEstimate['"]|insertAdjacentElement/);
+ assert.match(fn('renderLocalOverallProjection'),/scopedRankingSnapshotNotice/);
 });

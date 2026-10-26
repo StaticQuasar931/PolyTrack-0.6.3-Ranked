@@ -40,16 +40,28 @@ test('opponent UI review remains chained to the prior proof and immutable physic
  assert.equal(opponentReview.previousReview,'docs/events/native-row-ui-engine-review.json');
  assert.equal(digest(priorBytes.toString('utf8').replace(/\r\n?/g,'\n')),opponentReview.previousReviewSha256);
  const prior=JSON.parse(priorBytes),manifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
- assert.equal(opponentReview.previousEngine,prior.currentEngine);assert.equal(manifest.engineDigest,opponentReview.currentEngine);
+ assert.equal(opponentReview.previousEngine,prior.currentEngine);
+ const extension=JSON.parse(fs.readFileSync(new URL('../tools/verifier/indexed-playback-review.json',import.meta.url),'utf8'));
+ assert.equal(extension.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
+ assert.equal(extension.previousReviewSha256,digest(fs.readFileSync(new URL('../'+extension.previousReview,import.meta.url),'utf8').replace(/\r\n?/g,'\n')));
+ assert.equal(extension.currentEngine,'3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0');
+ assert.equal(extension.previousEngine,opponentReview.currentEngine);assert.equal(manifest.engineDigest,extension.currentEngine);
+ assert.deepEqual(extension.changedAssets,['simulation_worker.bundle.js']);
+ assert.equal(extension.nativeAB.pairCount,11);assert.equal(extension.nativeAB.pairs.length,11);
+ for(const pair of extension.nativeAB.pairs){assert.equal(pair.equal,true);assert.match(pair.streamSha256,/^[a-f0-9]{64}$/);assert.equal(pair.baseStates,pair.candidateStates);assert.equal(pair.baseBytes,pair.candidateBytes);}
+ assert.equal(extension.historicalBootstrapUnchanged,true);
+ for(const [asset,hash] of Object.entries(extension.unchangedAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash);
+ for(const [asset,hash] of Object.entries(extension.currentAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash);
  assert.equal(opponentReview.trackPinsUnchanged,true);assert.equal(opponentReview.geometryPinsReusedBecausePhysicsAndTracksUnchanged,true);assert.equal(opponentReview.historicalBootstrapUnchanged,true);
  assert.deepEqual(opponentReview.unchangedPhysicsAssets,prior.unchangedPhysicsAssets);
  assert.deepEqual(Object.keys(opponentReview.unchangedPhysicsAssets).sort(),['lib/polytrack_physics.js','polytrack_physics.wasm']);
  for(const [asset,hash] of Object.entries(opponentReview.unchangedPhysicsAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash,asset+' remains immutable');
  assert.deepEqual(Object.keys(opponentReview.unchangedSimulationAssets),['simulation_worker.bundle.js']);
- for(const [asset,hash] of Object.entries(opponentReview.unchangedSimulationAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash,asset+' remains immutable');
+ assert.deepEqual(extension.previousAssets,opponentReview.unchangedSimulationAssets);
  assert.equal(digest(JSON.stringify(Object.entries(manifest.tracks).sort(([a],[b])=>a<b?-1:a>b?1:0))),opponentReview.trackPinsSha256);
  const geometry=JSON.parse(fs.readFileSync(new URL('../tools/verifier/track-geometry.json',import.meta.url),'utf8'));
- assert.equal(digest(JSON.stringify(geometry.tracks)),opponentReview.geometryRowsSha256);
+ assert.equal(extension.geometryRowsSha256,extension.geometryBaseline.rowsSha256);
+ assert.equal(digest(JSON.stringify(geometry.tracks)),extension.geometryRowsSha256);
 });
 
 test('reviewed opponent UI stripping rejects extra edits, duplicate anchors and changed review allowances',()=>{

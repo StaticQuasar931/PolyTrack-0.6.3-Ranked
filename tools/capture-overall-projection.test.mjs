@@ -1,0 +1,207 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash, generateKeyPairSync} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {captureOverallProjection, applyCapturedOverallProjection, createOverallCaptureFetch} from './capture-overall-projection.mjs';
+import {encode} from './verifier/firestore.mjs';
+import {prepareSourcePublication} from '../workers/ranked/src/overall-source-publication.js';
+import {preparePublicationPages} from '../workers/ranked/src/paged-publication.js';
+import {computeOverall, trackWeightParts} from '../workers/ranked/src/index.js';
+import {updatePublicSnapshot} from './update-public-snapshot.mjs';
+import {publishSnapshot, decodeSnapshot, MAX_DECODED_BYTES} from './snapshot-package.mjs';
+
+const base = 'projects/polytrack-052/databases/(default)/documents/';
+const endpoint = 'https://firestore.googleapis.com/v1/' + base.slice(0, -1) + ':batchGet';
+const point = '2026-10-25T18:49:28.585265Z';
+const track = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+
+async function fixture({paged = false} = {}) {
+  const metadata = {algorithmVersion:'participation-v8-s1', schemaVersion:6, sourceRevision:10, builtRevision:10, updatedAt:1000};
+  const binding = {revision:1, sourceRevision:1, updatedAt:1000, signature:'frozen-signature'};
+  const board = {...metadata, ...binding, trackId:track, complete:true, totalEntries:2,
+    entries:[['a'.repeat(64),10000],['b'.repeat(64),12000]].map(([accountId,timeMs]) => ({accountId, trackId:track, timeMs,
+      pbAt:100, weight:Number(trackWeightParts(track,2,1).finalWeight.toFixed(3)), runVerified:true, integrityVerified:true,
+      ownerUid:'PRIVATE_OWNER', name:'PRIVATE_SOURCE_NAME'}))};
+  const entries = computeOverall([board], [], new Set(), {includePlannerResults:true});
+  const overall = {...metadata, complete:true, totalEntries:entries.length, entries, trackSummaries:[],
+    trackCatalog:[{trackId:track, updatedAt:1000}], resultBundleLocation:'main_results'};
+  const results = {...metadata, resultBundleVersion:1, resultBundleEncoding:'gzip-base64-json-v1', resultBundleComplete:true,
+    resultBoardCount:1, resultBoardLimitReached:false,
+    resultBundle:gzipSync(JSON.stringify({entries:entries.map(row => ({userId:row.userId,resultSamples:row.resultSamples})),resultTracks:[track]})).toString('base64')};
+  const catalog = {version:1,complete:true,scannedAt:10,count:1,tracks:{[track]:binding}};
+  const scope = 'https://firestore.googleapis.com/v1/' + base + '0.6.2_s1_leaderboards_track/overall-bundle-loader-v1';
+  const payload = {version:1,scopeHash:digest(scope),createdAt:30,catalog,boards:{[track]:board}};
+  const marker = {version:1,scopeHash:payload.scopeHash,createdAt:30,digest:digest(payload),catalogHash:digest(catalog)};
+  const published = await prepareSourcePublication(JSON.stringify({version:1,payload}),marker);
+  const documents = new Map([
+    ['0.6.2_s1_release_meta/current',{builtRevision:10,lastOverallBuildAt:1000,sourceBundle:published.marker,dirty:true}],
+    ['0.6.2_s1_leaderboards_overall/main',overall],['0.6.2_s1_leaderboards_overall/main_results',results],
+    ...published.documents.map(row => [row.collection+'/'+row.id,row.data])]);
+  if (paged) {
+    const pages = await preparePublicationPages('overall','main',entries,{sourceRevision:10,sourceComplete:true});
+    overall.pagination = pages.pagination; overall.sourceComplete = true;
+    for (const row of pages.documents) documents.set(row.collection+'/'+row.id,row.data);
+  }
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    assert.equal(url,endpoint); const body=JSON.parse(options.body); requests.push(body);
+    assert.equal(options.method,'POST'); assert.equal(body.documents.length,1);
+    if(requests.length===1) assert.equal(body.readTime,undefined); else assert.equal(body.readTime,point);
+    const name=body.documents[0],relative=name.slice(base.length),value=documents.get(relative);
+    assert.ok(value,'Unexpected document '+relative);
+    return Response.json([{found:{name,fields:encode(value).mapValue.fields,updateTime:'2026-10-25T18:46:57.903763Z'},readTime:point}]);
+  };
+  return {documents,requests,fetchImpl};
+}
+
+test('consistent exact roots/source plus named generation pages build one public artifact',async()=>{
+  const f=await fixture({paged:true});const charges=[];
+  const result=await captureOverallProjection({fetchImpl:f.fetchImpl,onRead:row=>charges.push(row)});
+  assert.equal(result.report.projectionReady,true);assert.equal(result.report.estimatedReads,5);
+  assert.equal(result.report.generationPages,1);assert.equal(charges.length,5);
+  assert.equal(result.report.metadataDirty,true);assert.equal(result.report.freshness,'last-published-not-a-rebuild');
+  assert.deepEqual([...result.files.keys()],['overall.json','overall-results.json','projection-source.json']);
+  assert.doesNotMatch(JSON.stringify(result.files.get('projection-source.json')),/PRIVATE_|ownerUid|signature|replay|name/);
+  assert.ok(f.requests.every(row=>!row.documents[0].includes('leaderboards_track')));
+});
+
+test('source corruption or baseline mismatch withholds projection without disguising published scores',async()=>{
+  for(const mutate of [f=>{f.documents.get('0.6.2_s1_overall_sources/main_0').digest='f'.repeat(64);},
+    f=>{f.documents.get('0.6.2_s1_leaderboards_overall/main').entries[0].score+=1;}]) {
+    const f=await fixture();mutate(f);
+    const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
+    assert.equal(result.report.projectionReady,false);assert.equal(result.files.has('projection-source.json'),false);
+    assert.ok(result.files.has('overall.json'));assert.ok(result.report.projectionReason);
+  }
+});
+
+test('mixed result revision, pre-handoff point and mismatched document identity fail closed',async()=>{
+  const f=await fixture();f.documents.get('0.6.2_s1_leaderboards_overall/main_results').sourceRevision++;
+  await assert.rejects(captureOverallProjection({fetchImpl:f.fetchImpl}),/MISMATCH/);
+  const g=await fixture();
+  await assert.rejects(captureOverallProjection({fetchImpl:g.fetchImpl,minimumCommitTime:'2026-10-25T18:50:00Z'}),/precedes/);
+  assert.equal(g.requests.length,1);
+  await assert.rejects(captureOverallProjection({fetchImpl:async()=>Response.json([{found:{name:base+'WRONG',fields:{}},readTime:point}])}),/mismatched/);
+});
+
+test('429 stops at one charged attempt; budget exhaustion never refetches or falls back',async()=>{
+  let calls=0,charges=0;
+  await assert.rejects(captureOverallProjection({fetchImpl:async()=>{calls++;return new Response('',{status:429});},onRead:()=>{charges++;}}),error=>error.status===429);
+  assert.equal(calls,1);assert.equal(charges,1);
+  const f=await fixture();await assert.rejects(captureOverallProjection({fetchImpl:f.fetchImpl,maxReads:3}),/budget/);
+  assert.equal(f.requests.length,3);
+});
+
+test('missing optional companion withholds projection but retains latest bound Overall',async()=>{
+  const f=await fixture();
+  const result=await captureOverallProjection({fetchImpl:(url,options)=>JSON.parse(options.body).documents[0].includes('overall_sources/')
+    ? Response.json([{missing:JSON.parse(options.body).documents[0],readTime:point}]) : f.fetchImpl(url,options)});
+  assert.equal(result.report.projectionReady,false);assert.equal(result.report.estimatedReads,4);
+  assert.equal(result.files.get('overall.json').builtRevision,10);
+});
+
+test('updater automatically applies bound capture before export and never invokes it offline',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-update-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const stage=path.join(root,'local-reports','snapshot-staging');await fs.mkdir(stage,{recursive:true});
+  await fs.writeFile(path.join(root,'index.html'),'<html><head></head></html>');
+  let called=0;
+  await updatePublicSnapshot({root,refreshReplays:true,capture:async()=>{
+    await fs.writeFile(path.join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{},events:{}}));return {};
+  },captureOverall:async()=>{called++;const f=await fixture();return captureOverallProjection({fetchImpl:f.fetchImpl});},
+  exportPublic:async()=>{
+    const manifest=JSON.parse(await fs.readFile(path.join(stage,'manifest.json')));
+    assert.equal(manifest.overallProjection.available,true);assert.equal(manifest.overallCapture.publishedRevision,10);
+    return {complete:false,counts:{},coverage:{complete:false}};
+  },log:()=>{}});
+  assert.equal(called,1);
+  await updatePublicSnapshot({root,offline:true,captureOverall:()=>{throw Error('Offline auth forbidden');},log:()=>{}});
+});
+
+test('stage application preserves fresh tracks, archives and replay lanes and removes stale projection',async t=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'overall-capture-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const preserved={schemaVersion:1,tracks:{fresh:{updatedAt:9999}},events:{archive:{path:'events/old.json'}},eventReplays:{saved:{path:'kept.json'}}};
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify(preserved));
+  await fs.mkdir(path.join(directory,'tracks'));await fs.writeFile(path.join(directory,'tracks','fresh.json'),'FRESH');
+  const f=await fixture(),capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  await applyCapturedOverallProjection({directory,capture});
+  let manifest=JSON.parse(await fs.readFile(path.join(directory,'manifest.json')));
+  for(const key of ['tracks','events','eventReplays'])assert.deepEqual(manifest[key],preserved[key]);
+  assert.equal(await fs.readFile(path.join(directory,'tracks','fresh.json'),'utf8'),'FRESH');
+  assert.equal(manifest.overallProjection.available,true);
+  assert.equal(manifest.overall.sha256,createHash('sha256').update(await fs.readFile(path.join(directory,'overall.json'))).digest('hex'));
+  capture.files.delete('projection-source.json');capture.report.projectionReady=false;capture.report.projectionReason='withheld';
+  await applyCapturedOverallProjection({directory,capture});
+  await assert.rejects(fs.stat(path.join(directory,'projection-source.json')),{code:'ENOENT'});
+});
+
+test('Overall above 2 MiB applies as a private monolith and publishes complete bounded pages',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-large-pages-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const directory=path.join(root,'stage');await fs.mkdir(directory);
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{},events:{}}));
+  const f=await fixture(),capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  // Realistic public per-racer result arrays, not oversized unpageable metadata.
+  const entries=Array.from({length:800},(_,index)=>({userId:(index+1).toString(16).padStart(64,'0'),name:'Racer',
+    rank:index+1,score:800-index,weightedResults:Array.from({length:30},(_,result)=>({trackId:track,
+      rank:result+1,fieldSize:800,weight:1,timeMs:10000+index,pbAt:100}))}));
+  const overall={...capture.files.get('overall.json'),entries,totalEntries:entries.length,complete:true,sourceComplete:true};
+  capture.files.set('overall.json',overall);capture.files.delete('projection-source.json');
+  capture.report.projectionReady=false;capture.report.projectionReason='size-only-fixture';
+  const expectedBytes=Buffer.byteLength(JSON.stringify(overall)+'\n');
+  assert.ok(expectedBytes>MAX_DECODED_BYTES);assert.ok(expectedBytes<=16*1024*1024);
+  await applyCapturedOverallProjection({directory,capture});
+  assert.equal((await fs.stat(path.join(directory,'overall.json'))).size,expectedBytes);
+  const published=await publishSnapshot({root,stagingDirectory:directory});
+  const output=path.join(root,published.directory),index=JSON.parse(await fs.readFile(path.join(output,'index.json')));
+  assert.equal(index.files['overall.json'],undefined,'large monolith must remain private, never published whole');
+  const decode=async logical=>{
+    const record=index.files[logical];assert.ok(record,logical);assert.ok(record.decodedBytes<=MAX_DECODED_BYTES);
+    const bytes=await decodeSnapshot(await fs.readFile(path.join(output,record.path)));
+    assert.ok(bytes.byteLength<=MAX_DECODED_BYTES);return JSON.parse(Buffer.from(bytes).toString('utf8'));
+  };
+  const manifest=await decode('overall-manifest.json');
+  assert.equal(manifest.monolithOmitted,true);assert.equal(manifest.sourceComplete,true);
+  assert.equal(manifest.publishedEntries,800);assert.equal(manifest.pageCount,8);
+  assert.ok((await decode('snapshot-paging.json')).omittedMonoliths.includes('overall.json'));
+  const restored=[];
+  for(let page=1;page<=manifest.pageCount;page++)restored.push(...(await decode(`overall-pages/${page}.json`)).entries);
+  assert.equal(restored.length,entries.length);
+  assert.deepEqual(restored.map(({globalRank,...row})=>row),entries,'all public rows and published order survive paging');
+  for(const record of Object.values(index.files))assert.ok(record.decodedBytes<=MAX_DECODED_BYTES);
+});
+
+test('Overall above 16 MiB or either companion above 2 MiB rejects before any stage write',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-size-reject-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  for(const [name,limit] of [['overall.json',16],['overall-results.json',2],['projection-source.json',2]]) {
+    const directory=path.join(root,name);await fs.mkdir(directory);
+    const originals={'manifest.json':JSON.stringify({schemaVersion:1,tracks:{},events:{}}),
+      'overall.json':'OLD_OVERALL','overall-results.json':'OLD_RESULTS','projection-source.json':'OLD_PROJECTION','untouched.json':'UNRELATED'};
+    for(const [file,bytes]of Object.entries(originals))await fs.writeFile(path.join(directory,file),bytes);
+    const capture={files:new Map([['overall.json',{updatedAt:1000,sourceRevision:10,entries:[]}],
+      ['overall-results.json',{}],['projection-source.json',{}]]),report:{projectionReady:true}};
+    capture.files.set(name,{padding:'x'.repeat(limit*1024*1024)});
+    await assert.rejects(applyCapturedOverallProjection({directory,capture}),/Overall public file too large/);
+    assert.deepEqual((await fs.readdir(directory)).sort(),Object.keys(originals).sort(),'no extra or temporary output');
+    for(const [file,bytes]of Object.entries(originals))
+      assert.equal(await fs.readFile(path.join(directory,file),'utf8'),bytes,name+' rejection must leave '+file+' byte-identical');
+  }
+});
+
+test('auth validates raw canonical document names before OAuth and uses synthetic RSA key only',async()=>{
+  let oauth=0,reads=0;
+  const privateKey=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'});
+  const auth=createOverallCaptureFetch({serviceAccount:{type:'service_account',project_id:'polytrack-052',
+    client_email:'fixture@polytrack-052.iam.gserviceaccount.com',private_key:privateKey},
+    oauthFetch:async()=>{oauth++;return Response.json({token_type:'Bearer',access_token:'synthetic-token',expires_in:3600});},
+    fetchImpl:async(url,options)=>{reads++;assert.equal(options.redirect,'error');assert.equal(options.headers.get('authorization'),'Bearer synthetic-token');return Response.json([]);}});
+  for(const relative of ['0.6.2_s1_release_meta/../current','0.6.2_s1_release_meta/%2e%2e/current','0.6.2_s1_leaderboards_track/'+track])
+    await assert.rejects(auth(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({documents:[base+relative]})}),/boundary/);
+  assert.equal(oauth,0);assert.equal(reads,0);
+  await auth(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({documents:[base+'0.6.2_s1_release_meta/current']})});
+  assert.equal(oauth,1);assert.equal(reads,1);
+});

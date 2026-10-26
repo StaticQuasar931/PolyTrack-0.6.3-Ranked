@@ -1,13 +1,26 @@
 const fs=require('node:fs');const vm=require('node:vm');const test=require('node:test');const assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'..','polytrack_062_patch.js'),'utf8');
-function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert.ok(start>=0,name);const tail=source.slice(start);const end=tail.indexOf('\n  }');assert.ok(end>0,name);return tail.slice(0,end+4);}
-function run(name,context={}){context.personalFilterRuntime??=null;context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}vm.runInContext(extract(name),context);return context[name];}
+const sourceRoot=process.env.POLYTRACK_TEST_SOURCE_ROOT||require('node:path').join(__dirname,'..');
+const source=fs.readFileSync(require('node:path').join(sourceRoot,'polytrack_062_patch.js'),'utf8').replace(/\r\n/g,'\n');
+function extract(name){
+ const start=source.search(new RegExp('^ *'+'(?:async )?function '+name+'\\(','m'));
+ assert.ok(start>=0,name);
+ const tail=source.slice(start);
+ // Parse candidates instead of mistaking an embedded helper's closing brace for the end.
+ for(const match of tail.matchAll(/^ *}[^\n]*$/gm)){
+  const candidate=tail.slice(0,match.index+match[0].length);
+  try{new vm.Script(candidate);return candidate;}catch(error){if(!(error instanceof SyntaxError))throw error;}
+ }
+ assert.fail('No complete function: '+name);
+}
+function run(name,context={}){context.observeFirestore??=(database=>database);context.personalFilterRuntime??=null;context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}if(name==='loadOverallEntries'&&!context.publishedOverallRanksExact){context.cleanUserId=x=>String(x||'');context.MIN_RANKED_TRACKS=3;vm.runInContext(extract('publishedOverallRanksExact'),context);}
+ if(name==='plannerEase')vm.runInContext(source.slice(source.indexOf('const plannerPositive='),source.indexOf('function plannerBenefitEaseScore(')),context);
+ vm.runInContext(extract(name),context);return context[name];}
 test('rounded durations expose exact days, hours and minutes',()=>{
  assert.equal(run('preciseDurationLabel')(90061000),'1 day, 1 hour, 1 minute');
  assert.equal(run('preciseDurationLabel')(7200000),'2 hours');
 });
 test('Racer Studio choices and Worker allowlists stay aligned',()=>{
- const worker=fs.readFileSync(require('node:path').join(__dirname,'..','workers','ranked','src','index.js'),'utf8');
+ const worker=fs.readFileSync(require('node:path').join(sourceRoot,'workers','ranked','src','index.js'),'utf8');
  const clientBlock=source.match(/  const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\});\r?\n  const profileCosmeticDrafts=/)?.[1];
  const workerBlock=worker.match(/const PROFILE_COSMETIC_OPTIONS = Object\.freeze\((\{[\s\S]*?\})\);\r?\n\r?\nexport function sanitizeProfileCosmetics/)?.[1];
  assert.ok(clientBlock);assert.ok(workerBlock);
@@ -60,8 +73,10 @@ test('minimum helpful placement comes from before/after simulation',()=>{
 test('native track identity contains no badge or racer title renderer',()=>{
  const body=extract('decorateNativeLeaderboardIdentity');assert.doesNotMatch(body,/badgeMarkup|rankTitleMarkup|profileBadgeMarkup/);assert.match(body,/countryFlagMarkup/);
 });
-test('public cosmetic cursor includes timestamp and document tie-break',()=>{
- const body=extract('syncCosmeticDirectory');assert.match(body,/startAfter\(stamp,directory.cursorId\)/);assert.match(body,/FieldPath.documentId/);
+test('public cosmetic synchronization reads the saved snapshot directory without a live scan',async()=>{
+ const directory={profiles:{example:{paint:'blue'}}};let reads=0;
+ const sync=run('syncCosmeticDirectory',{readCosmeticDirectory:()=>{reads++;return directory;},db:()=>assert.fail('Unexpected Firestore call')});
+ assert.equal(await sync(),directory);assert.equal(await sync(true),directory);assert.equal(reads,2);
 });
 test('PB is persisted before attempting Firestore',()=>{
  const body=extract('mirrorRaceResult');assert.ok(body.indexOf('addLocalRaceRow(raceRow)')<body.indexOf('const d = await db()'));
@@ -192,9 +207,9 @@ test('canonical recovery retains only an exact published physics approval',()=>{
 });
 
 
-test('cosmetic synchronization budgets 10 legacy plus 20 changed profiles',()=>{
- const body=extract('syncCosmeticDirectory');assert.match(body,/seedQuery.limit\(10\)/);assert.match(body,/query.limit\(20\)/);
- assert.match(body,/seeded=seed.size<10/);assert.match(body,/startAfter\(stamp,directory.cursorId\)/);
+test('snapshot-only cosmetic synchronization has no query or network fallback',()=>{
+ const body=extract('syncCosmeticDirectory');assert.match(body,/return readCosmeticDirectory\(\)/);
+ assert.doesNotMatch(body,/\b(?:db|fetch|readDirectPublicSnapshot)\s*\(|\.(?:collection|where|orderBy|startAfter|limit|get)\s*\(/);
 });
 test('all waiting results use one pending style, never the former blue integrity style',()=>{
  assert.doesNotMatch(source,/data-sq-run-status="replay"\]\{background/);
@@ -321,8 +336,8 @@ test('planner selector excludes average and non-actionable categories',()=>{
  const options=source.match(/const PLANNER_METRICS=Object.freeze\(([^;]+)\);/)[1];assert.doesNotMatch(options,/average|playtime|veterans/);for(const key of ['medals','wins','podiumRate','weight'])assert.ok(options.includes(key));
 });
 
-test('planner fills eight unique suggestions after the rival routes',()=>{
- const select=run('orderedPlannerRoutes');const rows=select([{trackId:'r'}],[{trackId:'r'},...Array.from({length:8},(_,i)=>({trackId:String(i)}))]);assert.deepEqual(Array.from(rows,r=>r.trackId),['r','0','1','2','3','4','5','6']);
+test('planner caps eight unique suggestions by benefit rather than source priority',()=>{
+ const select=run('orderedPlannerRoutes');const rows=select([{trackId:'r',value:100}],[{trackId:'r',value:1},...Array.from({length:8},(_,i)=>({trackId:String(i),value:10-i}))]);assert.deepEqual(Array.from(rows,r=>r.trackId),['r','0','1','2','3','4','5','6']);
 });
 test('defense requires first place on every important known track and complete personal data',()=>{
  const defense=run('plannerDefenseAllowed');const tracks=[{trackId:'a',fieldSize:5,weight:2},{trackId:'b',fieldSize:8,weight:3}];assert.equal(defense([{trackId:'a',rank:1}],{raceCount:1},tracks),false);assert.equal(defense([{trackId:'a',rank:1},{trackId:'b',rank:2}],{raceCount:2},tracks),false);assert.equal(defense([{trackId:'a',rank:1},{trackId:'b',rank:1}],{raceCount:2},tracks),true);assert.equal(defense([],{raceCount:0},[]),false);
@@ -332,7 +347,7 @@ test('planner reads new-track candidates from the existing overall summaries',()
 });
 
 test('hosted verifier checks sandbox startup before processing replays',()=>{
- const workflow=fs.readFileSync(require('node:path').join(__dirname,'../.github/workflows/verify-runs.yml'),'utf8');assert.ok(workflow.indexOf('Sandboxed browser startup passed')<workflow.indexOf('name: Verify queued runs'));assert.match(workflow,/apparmor_parser/);assert.match(workflow,/chromiumSandbox:true/);assert.doesNotMatch(workflow,/--no-sandbox|apparmor_restrict_unprivileged_userns=0/);
+ const workflow=fs.readFileSync(require('node:path').join(sourceRoot,'.github/workflows/verify-runs.yml'),'utf8');assert.ok(workflow.indexOf('Sandboxed browser startup passed')<workflow.indexOf('name: Verify queued runs'));assert.match(workflow,/apparmor_parser/);assert.match(workflow,/chromiumSandbox:true/);assert.doesNotMatch(workflow,/--no-sandbox|apparmor_restrict_unprivileged_userns=0/);
 });
 
 test('compact result snapshot decodes all scored tracks without cloud reads',()=>{
@@ -379,7 +394,7 @@ test('different revision cannot borrow older planner results',async()=>{
  const row={userId:'me',score:5,raceCount:2,rankModel:'test',averageFinishVersion:1,averagePlacementVersion:1};
  const data={entries:[row],trackSummaries:[],algorithmVersion:'test',schemaVersion:1,revision:3,builtRevision:3,sourceRevision:3,updatedAt:3};
  const ctx=overallContext({workerData:data});ctx.readOverallSnapshotCache=()=>({entries:[{...row,resultSamples:[{trackId:'a'},{trackId:'b'}]}],signature:'test:2:2:2',fetchedAt:1});
- const rows=await run('loadOverallEntries',ctx)(true);assert.equal(rows[0].resultSamples,undefined);
+ const rows=await run('loadOverallEntries',ctx)(true);assert.equal(rows[0].resultSamples,undefined);assert.equal(ctx.overallLoadState.status,'snapshot');assert.equal(ctx.written.rows[0].resultSamples,undefined);
 });
 
 test('large planner sidecar is used only with exact snapshot binding',async()=>{
@@ -533,25 +548,25 @@ test('planner mixes rival and personal routes by actual benefit, not source',()=
  const result=run('orderedPlannerRoutes')([{trackId:'rival',value:1,weight:9}],[{trackId:'personal',value:8,weight:2},{trackId:'rival',value:2,weight:9}]);
  assert.deepEqual(Array.from(result,x=>x.trackId),['personal','rival']);assert.equal(result[1].value,2);
 });
-test('ease sorts relative time gaps and leaves missing evidence last',()=>{
- const result=run('orderedPlannerRoutes')([],[{trackId:'unknown',value:100},{trackId:'hard',value:20,ease:{relativeGap:.2}},{trackId:'easy',value:1,ease:{relativeGap:.01}}],6,'ease');
+test('ease sorts supported effort estimates and leaves missing evidence last',()=>{
+ const result=run('orderedPlannerRoutes')([],[{trackId:'unknown',value:100},{trackId:'hard',value:20,ease:{relativeGap:.2,effortScore:20}},{trackId:'easy',value:1,ease:{relativeGap:.01,effortScore:1}}],6,'ease');
  assert.deepEqual(Array.from(result,x=>x.trackId),['easy','hard','unknown']);
 });
 test('ease uses the local viewer and relative target gap, not raw seconds',()=>{
- const ease=run('plannerEase');const snapshot={entries:[{accountId:'other',timeMs:9000},{accountId:'me',timeMs:10000}]};
- const result=ease({currentRank:2,targetRank:1},snapshot,'me');assert.equal(result.relativeGap,.1);assert.equal(result.gapMs,1000);assert.equal(ease({currentRank:0,targetRank:1},snapshot,'me'),null);assert.equal(ease({currentRank:2,targetRank:1},{entries:[]},'me'),null);
+ const ease=run('plannerEase');const snapshot={complete:true,totalEntries:2,entries:[{accountId:'other',timeMs:9000},{accountId:'me',timeMs:10000}]};
+ const result=ease({currentRank:2,targetRank:1},snapshot,'me');assert.equal(result.relativeGap,.1);assert.equal(result.gapMs,1000);assert.equal(ease({currentRank:0,targetRank:1},snapshot,'me').known,false);assert.equal(ease({currentRank:2,targetRank:1},{entries:[]},'me').known,false);
 });
-test('ease mode selects a smaller helpful step on a played track',()=>{
+test('ease mode preserves the best benefit target and reports the smaller helpful threshold',()=>{
  const ctx={plannerSort:'ease',projectedOverallScore:()=>10,simulateRecommendation:(_rows,_finish,rank)=>rank<=3?rank+3:11,knownFinishWeight:()=>2,rankedTrackWeight:()=>2};
- const action=run('recommendationAction',ctx)({trackId:'played',fieldSize:8,rank:5},'improve',{},[]);assert.equal(action.targetRank,3);assert.ok(action.estimatedGain>0);
+ const action=run('recommendationAction',ctx)({trackId:'played',fieldSize:8,rank:5},'improve',{},[]);assert.equal(action.targetRank,1);assert.equal(action.minimumHelpfulRank,3);assert.ok(action.estimatedGain>0);
 });
 
-test('ease preserves the easier helpful target when two routes share a track',()=>{
- const result=run('orderedPlannerRoutes')([{trackId:'same',targetRank:1,value:10,ease:{relativeGap:.2}}],[{trackId:'same',targetRank:2,value:2,ease:{relativeGap:.01}}],6,'ease');assert.equal(result.length,1);assert.equal(result[0].targetRank,2);
+test('ease preserves the same highest-benefit target when two routes share a track',()=>{
+ const result=run('orderedPlannerRoutes')([{trackId:'same',targetRank:1,value:10,ease:{relativeGap:.2,effortScore:20}}],[{trackId:'same',targetRank:2,value:2,ease:{relativeGap:.01,effortScore:1}}],6,'ease');assert.equal(result.length,1);assert.equal(result[0].targetRank,1);assert.equal(result[0].value,10);
 });
 
 test('ease does not use a track snapshot older than the planner result',()=>{
- const snapshot={serverUpdatedAt:100,entries:[{accountId:'me',timeMs:10000},{accountId:'other',timeMs:9000}]};assert.equal(run('plannerEase')({currentRank:2,targetRank:1,cachedAt:200},snapshot,'me'),null);
+ const snapshot={complete:true,totalEntries:2,serverUpdatedAt:100,entries:[{accountId:'me',timeMs:10000},{accountId:'other',timeMs:9000}]};assert.equal(run('plannerEase')({currentRank:2,targetRank:1,cachedAt:200},snapshot,'me').known,false);
 });
 
 test('verified filtering hides waiting self while preserving the verified full-field position',()=>{const choose=run('visibleTrackEntries',{canonicalRaceTimeMs:x=>x.timeMs});const rows=choose([{accountId:'fast',timeMs:1000},{accountId:'me',timeMs:2000},{accountId:'verified',timeMs:3000,runVerified:true}],true,'me');assert.equal(rows.length,1);assert.equal(rows[0].position,3);assert.equal(rows[0].runVerified,true);});
@@ -559,10 +574,10 @@ test('planner data availability excludes empty and non-scoring fields',()=>{cons
 
 test('local-only PB cannot invent a first place without a complete field',()=>{assert.equal(run('localTrackDisplayEntries')('track',[],'me',false).length,0);});
 
-test('event planner requires matching cached period and computes integer points',()=>{const period={id:'d_x',kind:'daily',trackId:'track',startsAt:1,endsAt:100,targetMs:20000,maxRp:100};const data={'polytrack-062-events-v1':{periods:[period]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-d_x':{period,entries:[{accountId:'me',timeMs:25000}],updatedAt:5}};const routes=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me','rival',10);assert.equal(routes.length,1);assert.equal(routes[0].currentRp,80);assert.equal(routes[0].gain,20);assert.equal(routes[0].minimumTime,24691);data['polytrack-062-events-v1-d_x'].period={...period,targetMs:19000};assert.equal(run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me','rival',10).length,0);});
-test('event planner excludes ended events and cannot farm maximum points',()=>{const p={id:'w_x',kind:'weekly',trackId:'t',startsAt:1,endsAt:10,targetMs:10000,maxRp:500};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-w_x':{period:p,entries:[{accountId:'me',timeMs:10000}]}};const fn=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f});assert.equal(fn('me',null,5).length,0);assert.equal(fn('other',null,10).length,0);});
+test('event planner requires matching cached period and computes integer points',()=>{const period={id:'d_x',kind:'daily',trackId:'a'.repeat(64),startsAt:1,endsAt:100,targetMs:20000,maxRp:100,scoringVersion:'time-ratio-v1'};const data={'polytrack-062-events-v1':{periods:[period]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-d_x':{period,entries:[{accountId:'me',timeMs:25000}],updatedAt:5}};const routes=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me','rival',10);assert.equal(routes.length,1);assert.equal(routes[0].currentRp,80);assert.equal(routes[0].gain,20);assert.equal(routes[0].minimumTime,24691);data['polytrack-062-events-v1-d_x'].period={...period,targetMs:19000};assert.equal(run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me','rival',10).length,0);});
+test('event planner excludes ended events and cannot farm maximum points',()=>{const p={id:'w_x',kind:'weekly',trackId:'a'.repeat(64),startsAt:1,endsAt:10,targetMs:10000,maxRp:500,scoringVersion:'time-ratio-v1'};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{},'polytrack-062-events-v1-w_x':{period:p,updatedAt:5,complete:true,entries:[{accountId:'me',timeMs:10000}]}};const fn=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f});assert.equal(fn('me',null,5).length,0);assert.equal(fn('other',null,10).length,0);});
 
-test('local unverified event attempt never hides verified point opportunities',()=>{const p={id:'d_x',kind:'daily',trackId:'t',startsAt:1,endsAt:100,targetMs:20000,maxRp:100};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{'d_x_me':{timeMs:20000}},'polytrack-062-events-v1-d_x':{period:p,entries:[{accountId:'me',timeMs:25000}]}};const rows=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me',null,10);assert.equal(rows[0].gain,20);assert.equal(rows[0].localTime,20000);});
+test('local unverified event attempt never hides verified point opportunities',()=>{const p={id:'d_x',kind:'daily',trackId:'a'.repeat(64),startsAt:1,endsAt:100,targetMs:20000,maxRp:100,scoringVersion:'time-ratio-v1'};const data={'polytrack-062-events-v1':{periods:[p]},'polytrack-062-events-v1-best':{'d_x_me':{timeMs:20000}},'polytrack-062-events-v1-d_x':{period:p,updatedAt:5,complete:true,entries:[{accountId:'me',timeMs:25000}]}};const rows=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f})('me',null,10);assert.equal(rows[0].gain,20);assert.equal(rows[0].localTime,20000);});
 test('filtered native leaderboard pages preserve full-field ranks and viewer position',async()=>{
  const context={
   parsePayload:()=>({}),guestAccountId:'me',accountIdFromPayload:async()=> 'me',
@@ -616,4 +631,21 @@ test('multiplayer listener asks only for this socket and never consumes another 
  deliver({docChanges:()=>[change('other','other-tab',1),change('mine','test-socket',Date.now()+60000)]});
  assert.deepEqual(deleted,['mine']);assert.equal(events.length,1);
  await socket._listen('tester');assert.equal(filters.length,2,'the same listener is not duplicated');socket.close();assert.equal(unsubscribed,1);
+});
+
+test('event planner rejects malformed identities, missing timestamps and unknown scoring',()=>{
+ const period={id:'d_x',kind:'daily',trackId:'a'.repeat(64),startsAt:1,endsAt:100,targetMs:20000,maxRp:100,scoringVersion:'time-ratio-v1'};
+ const board={period,updatedAt:5,complete:true,entries:[{accountId:'me',timeMs:25000}]};
+ const data={'polytrack-062-events-v1':{periods:[period]},'polytrack-062-events-v1-d_x':board};
+ const routes=run('eventPlannerRoutes',{readJsonStorage:(k,f)=>data[k]||f});
+ assert.equal(routes('me',null,10).length,1);
+ for(const patch of [{updatedAt:undefined},{period:{...period,trackId:'invalid'}},{period:{...period,scoringVersion:'unknown'}},{entries:[{accountId:'me',timeMs:25000,verified:false}]}]){
+  data['polytrack-062-events-v1-d_x']={...board,...patch};assert.equal(routes('me',null,10).length,0);
+ }
+});
+test('incomplete ease placement field never invents an effort estimate',()=>{
+ const ease=run('plannerEase'),action={currentRank:2,targetRank:1};
+ const snapshot={complete:true,totalEntries:2,entries:[{accountId:'other',timeMs:9000},{accountId:'me',timeMs:10000}]};
+ assert.equal(ease(action,snapshot,'me').known,true);
+ for(const patch of [{complete:false},{totalEntries:3},{totalEntriesExact:false}])assert.equal(ease(action,{...snapshot,...patch},'me').known,false);
 });
