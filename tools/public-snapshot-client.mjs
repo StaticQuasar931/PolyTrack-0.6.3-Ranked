@@ -1,5 +1,5 @@
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
-import {publicEventPlaybackProjection} from './public-event-playback.mjs';
+import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();

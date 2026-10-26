@@ -6,8 +6,8 @@ import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './p
 import {publicDisplayName} from './public-display-name.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
 import {projectEventDates} from './public-event-dates.mjs';
-import {publicEventPlaybackProjection} from './public-event-playback.mjs';
-export {publicEventPlaybackProjection as publicEventPlaybackBackup} from './public-event-playback.mjs';
+import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs';
+export {publicEventPlaybackForPublication as publicEventPlaybackBackup} from './public-event-playback.mjs';
 
 export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 100, eventFetches: 120, eventReplayFetches: 30, pageFetches: 100,
   eventReplaysPerPeriod: 500, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4});
@@ -358,7 +358,8 @@ export function publicTrackRegistry(indexSource, extraSource) {
   return [...ids].sort();
 }
 
-export function chooseTrackFetches(trackIds, summaries, previous = {}, limit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, now = Date.now()) {
+export function chooseTrackFetches(trackIds, summaries, previous = {}, limit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, now = Date.now(), activeTrackIds = []) {
+  const activeIds = new Set(activeTrackIds.filter(id => TRACK_ID.test(id)));
   const summaryById = new Map((Array.isArray(summaries) ? summaries : []).filter(row => TRACK_ID.test(row?.trackId || '') &&
     Number.isSafeInteger(row?.updatedAt)).map(row => [row.trackId, row]));
   const candidates = [...new Set(trackIds)].filter(id => TRACK_ID.test(id)).map(id => {
@@ -367,10 +368,12 @@ export function chooseTrackFetches(trackIds, summaries, previous = {}, limit = P
     const dirty = !!summary && !same;
     const missing = !prior?.path && (!prior?.missing || now - Number(prior.checkedAt || 0) >= 7 * 86400000);
     const staleWithoutSummary = !summary && prior?.path && now - Number(prior.checkedAt || 0) >= 7 * 86400000;
-    return {id, prior, summary, dirty, missing, needsFetch: !same && (dirty || missing || staleWithoutSummary)};
+    const active = activeIds.has(id);
+    const activeWithoutSummary = active && !summary && now - Number(prior?.checkedAt || 0) >= 30 * 60000;
+    return {id, prior, summary, dirty, missing, active, needsFetch: !same && (dirty || missing || staleWithoutSummary || activeWithoutSummary)};
   }).filter(row => row.needsFetch);
   const day = Math.floor(now / 86400000);
-  candidates.sort((a, b) => Number(b.dirty) - Number(a.dirty) || Number(!a.prior?.path) - Number(!b.prior?.path) ||
+  candidates.sort((a, b) => Number(b.active) - Number(a.active) || Number(b.dirty) - Number(a.dirty) || Number(!a.prior?.path) - Number(!b.prior?.path) ||
     (a.dirty && b.dirty ? Number(a.summary.updatedAt) - Number(b.summary.updatedAt) : 0) ||
     Number(a.prior?.checkedAt || 0) - Number(b.prior?.checkedAt || 0) ||
     crypto.createHash('sha256').update(`${day}:${a.id}`).digest('hex').localeCompare(
@@ -504,7 +507,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     }
   }
   const selectedTracks = chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
-    PUBLIC_SNAPSHOT_LIMITS.trackFetches, now);
+    PUBLIC_SNAPSHOT_LIMITS.trackFetches, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
@@ -571,7 +574,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       replayCandidates.push({periodId: id, trackId: value.period.trackId, entry});
     }
   }
-  const retainedPlaybacks = {}, playbackCandidates = [];
+  const retainedPlaybacks = {}, playbackCandidates = [], validatedPlaybacks = new Map();
   // Only fresh public live boards can retain or request pending inputs.
   for (const {id, value} of eventRows) {
     if (!value || !liveIds.has(id) || value.archived === true || !TRACK_ID.test(value.period?.trackId || '')) continue;
@@ -583,7 +586,9 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
           const saved = JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
           const projected = await publicEventPlaybackProjection(saved, candidate);
           if (JSON.stringify(projected) !== JSON.stringify(saved)) throw Error('Non-public pending projection');
-          retainedPlaybacks[relative] = prior; entry.replayHash = projected.replayHash;
+          retainedPlaybacks[relative] = {path:relative,periodId:id,runId:entry.runId,accountId:entry.accountId,
+            timeMs:entry.timeMs,replayHash:projected.replayHash};
+          validatedPlaybacks.set(relative, projected); entry.replayHash = projected.replayHash;
           continue;
         } catch { /* Changed or invalid pending input is not reused. */ }
       }
@@ -646,6 +651,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       entry.replayHash = value.replayHash;
       const relative = `event-playbacks/${candidate.periodId}/${entry.runId}.json`;
       pendingWrites.set(relative,value);
+      validatedPlaybacks.set(relative,value);
       eventPlaybacks[relative] = {path:relative,periodId:candidate.periodId,runId:entry.runId,accountId:entry.accountId,timeMs:entry.timeMs,replayHash:value.replayHash};
       continue;
     }
@@ -659,6 +665,29 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     eventReplays[relative] = {path: relative, periodId: candidate.periodId, accountId: candidate.entry.accountId,
       timeMs: candidate.entry.timeMs, replayHash: value.replayHash, verdictDateCheckedAt: now};
   }
+  // A saved waiting row must be playable from the same package. Keep failed or
+  // budget-deferred source rows out of public boards, not out of future retries:
+  // each capture reloads the live board and reuses already validated cached bytes.
+  const attemptedPlaybacks = new Set(replayCandidates.filter(row=>row.pendingPlayback)
+    .map(row=>`event-playbacks/${row.periodId}/${row.entry.runId}.json`));
+  const pendingPlaybackCoverage = {known:0,published:0,missing:0,failed:0,deferred:0,complete:true,
+    scope:'selected-saved-event-boards'};
+  for (const [id, value] of eventValues) {
+    if (!Array.isArray(value.pendingPlaybacks)) continue;
+    value.pendingPlaybacks = value.pendingPlaybacks.filter(entry=>{
+      pendingPlaybackCoverage.known++;
+      const relative=`event-playbacks/${id}/${entry.runId}.json`, saved=validatedPlaybacks.get(relative);
+      const exact=value.archived!==true && saved && Object.hasOwn(eventPlaybacks,relative) &&
+        saved.periodId===id && saved.trackId===value.period?.trackId && saved.accountId===entry.accountId &&
+        saved.runId===entry.runId && saved.timeMs===entry.timeMs && saved.frames===entry.timeMs &&
+        saved.replayHash===entry.replayHash && saved.submittedAt===entry.submittedAt;
+      if (exact) { pendingPlaybackCoverage.published++; return true; }
+      pendingPlaybackCoverage.missing++;
+      pendingPlaybackCoverage[attemptedPlaybacks.has(relative)?'failed':'deferred']++;
+      return false;
+    });
+  }
+  pendingPlaybackCoverage.complete = pendingPlaybackCoverage.missing===0;
   // Keep valid historical standings even when the cloud catalog rolls its
   // bounded recent-history window forward. Generate month indexes locally.
   const months = new Map();
@@ -709,6 +738,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     trackBackupsMissing: Math.max(0, allTrackIds.length - Object.values(nextTracks).filter(row => row.path).length),
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents + archivedEventsUnavailable, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
+    pendingPlaybackCoverage,
     trackSummaryMismatches,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
@@ -716,7 +746,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
-    eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length,
+    eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage,
     plannerAvailable: planner.available, plannerReason: planner.reason}}));
   return manifest;
 }
