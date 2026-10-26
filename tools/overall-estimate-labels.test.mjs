@@ -39,10 +39,10 @@ function aria(html) {return html.match(/aria-label="([^"]*)"/)[1];}
 test('identical displayed RP and rank suppress comparison in both tooltip and ARIA but retain unpublished status',()=>{
   const entry=row(),saved=JSON.stringify(entry),html=fixture().render(entry);
   for(const value of [title(html),aria(html)]) {
-    assert.match(value,/Unpublished local estimate\./);
-    assert.match(value,/Displayed RP and rank match the snapshot\./);
+    assert.match(value,/Local estimate\./);
+    assert.ok(value.length<145,'estimate stays concise');
     assert.doesNotMatch(value,/Local estimate:|Snapshot:/);
-    assert.match(value,/Pending PBs are not verified; public standings are unchanged\./);
+    assert.match(value,/Pending verification\./);
   }
   assert.equal(JSON.stringify(entry),saved);assert.equal(entry.localPending,true);
 });
@@ -50,10 +50,10 @@ test('identical displayed RP and rank suppress comparison in both tooltip and AR
 test('comparison follows every supported precision, not raw floating-point equality',()=>{
   for(const decimals of [2,3,4]) {
     const f=fixture(decimals),entry=row(10.123401,2,10.123402,2);
-    assert.match(title(f.render(entry)),/Displayed RP and rank match/);
+    assert.match(title(f.render(entry)),/Local estimate\. Pending verification\./);
   }
   const entry=row(10.12344,2,10.12346,2);
-  assert.match(title(fixture(3).render(entry)),/Displayed RP and rank match/);
+  assert.match(title(fixture(3).render(entry)),/Local estimate\. Pending verification\./);
   assert.match(title(fixture(4).render(entry)),/Local estimate: 10.1234 RP\. Snapshot: 10.1235 RP\./);
 });
 
@@ -73,7 +73,7 @@ test('a score-only change compares only RP; both changes compare both fields',()
 test('filtered place is never falsely compared to the snapshot global rank',()=>{
   const entry={...row(),filteredRank:1,filteredTotal:5,globalRank:2},html=fixture().render(entry);
   assert.match(aria(html),/Filtered place 1 of 5\. Global rank 2\./);
-  assert.match(aria(html),/Displayed RP and rank match/);
+  assert.match(aria(html),/Local estimate\. Pending verification\./);
   const changed=fixture().render({...entry,rank:3});
   assert.match(aria(changed),/Local estimate: #3\. Snapshot: #2\./);
 });
@@ -82,7 +82,7 @@ test('plain snapshot and separately captured-board notices retain their establis
   const entry=row();delete entry.localEstimateOrigin;
   assert.equal(title(fixture().render(entry)),'Snapshot ranking.');
   entry.casualProjection={captureRecalculated:true};
-  assert.equal(title(fixture().render(entry)),'Captured track-board recalculation; not a published Overall ranking. Pending PBs are not included.');
+  assert.equal(title(fixture().render(entry)),'Track-board estimate. Verified PBs only.');
 });
 
 test('complete row ARIA and title remain escaped with untrusted names',()=>{
@@ -90,4 +90,14 @@ test('complete row ARIA and title remain escaped with untrusted names',()=>{
   assert.match(aria(html),/Racer&quot; &lt;tag&gt;&amp;/);
   assert.ok(aria(html).includes(title(html)));
   assert.doesNotMatch(html,/<tag>/);
+});
+
+test('score hover and accessible note use the same concise estimate without the long ranking help',()=>{
+  const html=fixture().render(row(9.1234,1,10.1234,2));
+  const note=html.match(/<div class="overall-stats" title="([^"]*)" aria-label="([^"]*)"/);
+  assert.ok(note);
+  assert.equal(note[1],note[2]);
+  assert.equal(note[1],title(html));
+  assert.ok(note[1].length<110);
+  assert.doesNotMatch(note[1],/Rank points\.|public standings|Unpublished/);
 });

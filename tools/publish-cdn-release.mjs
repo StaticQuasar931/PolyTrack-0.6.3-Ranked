@@ -50,7 +50,12 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     if (!Array.isArray(binding) || binding[0] !== entry.sha256 || binding[1] !== entry.decodedBytes) throw Error('Fast index rankings binding mismatch: ' + logical);
     probes.add(directory + '/' + entry.path);
   }
-  const modules = [...probes].filter(file => file.endsWith('.mjs'));
+  // The patch loads additional browser tools lazily. Include their literal paths
+  // before trimming Node-only build/export/verification tools from the CDN tree.
+  const patch = (await read('polytrack_062_patch.js')).toString('utf8');
+  for (const match of patch.matchAll(/(?:\.\.\/|\.\/)?tools\/([a-zA-Z0-9_.-]+\.(?:mjs|css))/g)) probes.add('tools/'+match[1]);
+  for (const file of ['extra-tracks/catalog-ui.mjs','extra-tracks/pack-ui.mjs']) probes.add(file);
+  const modules = [...probes].filter(file => /\.[cm]?js$/.test(file));
   const seen = new Set();
   while (modules.length) {
     const file = modules.shift();
@@ -61,7 +66,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
       const relative = match[1].split(/[?#]/)[0];
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(file),relative));
       if (target.startsWith('../') || !/^[a-zA-Z0-9_./-]+$/.test(target)) throw Error('Unsafe module dependency');
-      if (!probes.has(target)) { probes.add(target); if(target.endsWith('.mjs')) modules.push(target); }
+      if (!probes.has(target)) { probes.add(target); if(/\.[cm]?js$/.test(target)) modules.push(target); }
     }
     if (probes.size > 256) throw Error('Runtime graph requires review: too many release probes');
   }
@@ -132,10 +137,12 @@ export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now
   }));
 }
 
-export function includeReleaseAsset(file, snapshotDirectory) {
+export function includeReleaseAsset(file, snapshotDirectory, requiredFiles = null) {
   const top = file.split('/')[0];
   if (/^public-snapshots\d+$/.test(top)) return top === snapshotDirectory;
-  if (['.github','.gitignore','docs','AGENTS.md'].includes(top)) return false;
+  if (['.github','.gitignore','docs','AGENTS.md','electron','README.md'].includes(top)) return false;
+  if (requiredFiles && ['tools','workers'].includes(top)) return requiredFiles.has(file);
+  if (/^images\/icons\/cover(?:1920x1080|512x512)\.png$/.test(file)) return requiredFiles?.has(file) === true;
   if (file.startsWith('tools/verifier/') || file.startsWith('workers/ranked/test/')) return false;
   if (/\.(?:test|spec|benchmark)\.[cm]?js$/.test(file)) return false;
   return true;
@@ -150,11 +157,12 @@ export function assertCdnAssetSizes(entries) {
 export async function publishAssetTree(plan, git) {
   const source = plan.pointer.commit;
   const entries = git(['ls-tree','-r','-l','-z',source]).toString().split('\0').filter(Boolean);
+  const requiredFiles = new Set(plan.files.map(file=>file.path));
   const selected = entries.map(line => {
     const match = /^(\d+) blob ([a-f0-9]{40})\s+(\d+)\t([\s\S]+)$/.exec(line);
     if (!match) throw Error('Unsupported release Git entry');
     return {mode:match[1],hash:match[2],bytes:Number(match[3]),path:match[4]};
-  }).filter(entry => includeReleaseAsset(entry.path,plan.pointer.snapshotDirectory));
+  }).filter(entry => includeReleaseAsset(entry.path,plan.pointer.snapshotDirectory,requiredFiles));
   assertCdnAssetSizes(selected);
   const names = new Set(selected.map(entry=>entry.path));
   if (plan.files.some(file=>!names.has(file.path))) throw Error('Compact package excludes a required boot asset');
@@ -164,7 +172,7 @@ export async function publishAssetTree(plan, git) {
   git(['update-index','-z','--index-info'],{env,input:selected.map(entry=>`${entry.mode} blob ${entry.hash}\t${entry.path}\0`).join('')});
   const tree = git(['write-tree'],{env}).trim();
   // Measure the actual tar, including headers/padding, rather than only blob bytes.
-  const archive = git(['archive','--format=tar','--prefix=PolyTrack-0.6.3-Ranked-'+source+'/',tree],{encoding:null,maxBuffer:50000000});
+  const archive = git(['archive','--format=tar','--prefix=PolyTrack-0.6.3-Ranked-'+source+'/',tree],{encoding:null,maxBuffer:64000000});
   if (archive.length >= 49000000) throw Error('Compact CDN archive still exceeds the safe 49 MB publishing budget');
   const listed = git(['ls-remote','--heads','origin','refs/heads/'+ASSET_BRANCH]).trim();
   let parent;

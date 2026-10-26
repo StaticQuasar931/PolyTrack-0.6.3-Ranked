@@ -18,6 +18,7 @@ function fixture(){
     'public-snapshots1/bootstrap-fast.json':JSON.stringify({schemaVersion:1,generation:1,encoding:'gzip-xor-a7-v1',compactIndexVersion:1,partial:true,fallbackIndex:'index.json',files:Object.fromEntries(['overall-manifest.json','overall-preview.json','overall-pages/1.json'].map(name=>[name,[id,payload.length]]))}),
     'tools/overall-local-controller.mjs':'/* controller */','tools/overall-local-projection.mjs':'/* projection */','tools/practice-profile.mjs':'/* practice */','tools/unique-profile-name.mjs':'/* atomic names */','tools/public-snapshot-client.mjs':'/* reader */','tools/snapshot-metadata-recovery.mjs':'/* metadata */','events/client.mjs':'/* events */',
     ['public-snapshots1/'+id+'.bin']:payload,
+    'extra-tracks/catalog-ui.mjs':'/* catalog */','extra-tracks/pack-ui.mjs':'/* packs */',
     'site-version.json':'{}','main.bundle.js':'/* game */','polytrack_062_patch.js':'/* patch */','simulation_worker.bundle.js':'/* worker */','polytrack_physics.wasm':'wasm fixture'
   }).map(([k,v])=>[k,Buffer.from(v)]));
   return {files,read:async file=>{if(!files.has(file))throw Error('Missing '+file);return files.get(file);}};
@@ -316,4 +317,43 @@ test('all file-writing workflows explicitly publish after their push, including 
   assert.match(publisher,/branches: \[main\]/);assert.match(publisher,/workflow_call:/);
   assert.ok(!publisher.includes('pull_request_target'));assert.ok(!publisher.includes('workflow_run:'));
   assert.match(publisher,/fetch-depth: 0/);
+});
+
+test('lazy browser tools and their shared dependencies remain in the readiness graph', async()=>{
+  const f=fixture();
+  f.files.set('polytrack_062_patch.js',Buffer.from("import('./tools/lazy-client.mjs?v=1');"));
+  f.files.set('tools/lazy-client.mjs',Buffer.from("import {ids} from '../workers/ranked/src/browser-ids.js';"));
+  f.files.set('workers/ranked/src/browser-ids.js',Buffer.from('export const ids=[];'));
+  const plan=await releasePlan({commit:sha,...f}),needed=new Set(plan.files.map(file=>file.path));
+  for(const file of ['tools/lazy-client.mjs','workers/ranked/src/browser-ids.js']){
+    assert.ok(needed.has(file),file);
+    assert.equal(includeReleaseAsset(file,'public-snapshots1',needed),true);
+  }
+  for(const file of ['tools/update-public-snapshot.mjs','tools/publish-cdn-release.mjs','workers/ranked/src/index.js','workers/ranked/wrangler.jsonc','electron/main.js','images/icons/cover1920x1080.png'])
+    assert.equal(includeReleaseAsset(file,'public-snapshots1',needed),false,file);
+  assert.equal(includeReleaseAsset('public-snapshots1/preserved-replay.bin','public-snapshots1',needed),true);
+  assert.equal(includeReleaseAsset('events/kodub/assets/archived.track','public-snapshots1',needed),true);
+  needed.add('images/icons/cover1920x1080.png');
+  assert.equal(includeReleaseAsset('images/icons/cover1920x1080.png','public-snapshots1',needed),true,'explicitly needed image cannot be trimmed');
+});
+
+test('the current shipped snapshot fits the CDN tar budget without dropping any snapshot files',{timeout:120000},async t=>{
+  const root=fileURLToPath(new URL('../',import.meta.url));
+  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options});
+  const commit=local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit});
+  let selected=[];
+  const git=(args,options={})=>{
+    if(args[0]==='ls-remote'||args[0]==='push')return '';
+    if(args[0]==='commit-tree')return 'c'.repeat(40);
+    if(args[0]==='fetch')assert.fail('capacity regression must not access a remote');
+    if(args[0]==='update-index')selected=options.input.split('\0').filter(Boolean).map(line=>line.split('\t')[1]);
+    return local(args,options);
+  };
+  const result=await publishAssetTree(plan,git);
+  const snapshotFiles=local(['ls-tree','-r','--name-only',commit,'--',plan.pointer.snapshotDirectory]).trim().split('\n');
+  assert.equal(snapshotFiles.filter(file=>!selected.includes(file)).length,0,'all replay payloads and lookup/index files are retained');
+  assert.ok(result.archiveBytes<49000000);
+  assert.ok(!selected.includes('workers/ranked/src/index.js'));
+  assert.ok(selected.includes('workers/ranked/src/extra-track-ids.js'),'shared browser scoring input stays available');
+  t.diagnostic('Current immutable tar: '+result.archiveBytes+' bytes; '+plan.files.length+' readiness probes; no remote requests.');
 });
