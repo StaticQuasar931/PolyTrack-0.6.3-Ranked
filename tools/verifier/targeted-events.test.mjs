@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {targetedEventPlan,guardedEventFetch,runTargetedEvents,eventBatchReadReserve} from './targeted-events.mjs';
+import {targetedEventPlan,guardedEventFetch,runTargetedEvents,eventBatchReadReserve,selectCompatibilityProbe} from './targeted-events.mjs';
 test('default mode plans exact event-only work without accessing credentials or Firebase',async()=>{
   const result=await runTargetedEvents({periodIds:['kodub_1792958400000','w_20261019','d_20261024'],
     credentialFile:'never-read',fetchImpl:()=>assert.fail('network')});
@@ -51,4 +51,17 @@ test('last single job reserves only its bounded work without raising the 252-rea
   assert.equal(small.canSpend(136,1),false);
   assert.equal(targetedEventPlan(['daily'],12).maxDocumentReadAttempts,252);
   assert.equal(targetedEventPlan(['daily'],4).maxDocumentReadAttempts,89);
+});
+
+
+test('deployed compatibility probe prefers current metadata but accepts only explicitly compatible immutable periods',async()=>{
+ const {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION}=await import('../../workers/ranked/src/verification.js');
+ const {EVENT_OPPONENT_SHORTCUT_UI_ENGINE}=await import('../../workers/ranked/src/event-engine-compatibility.js');
+ const periods=new Map([['legacy',{engineDigest:EVENT_OPPONENT_SHORTCUT_UI_ENGINE,verifierVersion:VERIFIER_VERSION}],['current',{engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION}],['unknown',{engineDigest:'f'.repeat(64),verifierVersion:VERIFIER_VERSION}]]);
+ const pending=[{periodId:'legacy'},{periodId:'current'},{periodId:'unknown'}];
+ assert.equal(selectCompatibilityProbe(['legacy','current'],periods,pending),'current');
+ assert.equal(selectCompatibilityProbe(['legacy'],periods,pending),'legacy');
+ assert.equal(selectCompatibilityProbe(['legacy'],periods,[]),null);
+ assert.equal(selectCompatibilityProbe(['unknown'],periods,pending),null);
+ periods.get('legacy').verifierVersion='unapproved';assert.equal(selectCompatibilityProbe(['legacy'],periods,pending),null);
 });

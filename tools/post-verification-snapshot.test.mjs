@@ -65,7 +65,7 @@ test('wrapper preserves verifier options and adds no fetch or database discovery
   }});
   assert.equal(calls,1); assert.equal(result.snapshotNeeded,true);
   assert.equal(await f.output(),'snapshot_needed=false\nsnapshot_needed=true\n');
-  assert.match(await fs.readFile(f.env.GITHUB_STEP_SUMMARY,'utf8'),/completed verdicts\/archives/);
+  assert.match(await fs.readFile(f.env.GITHUB_STEP_SUMMARY,'utf8'),/completed verdicts, competitive-review holds and archives/);
 });
 
 test('wrapper leaves only the false output on thrown verifier failure', async t => {
@@ -252,4 +252,26 @@ test('daily reconciliation stays at 00:20 UTC and Sunday catalog follows bounded
   assert.match(catalog,/cron: '19 20 \* \* 0'/);
   assert.match(await readWorkflow('sync-kodub-weekly.yml'),/cron: "3 20 \* \* \*"/);
   assert.equal((catalog.match(/'20 0 \* \* \*'/g)||[]).length,4);
+});
+
+
+test('committed competitive-review holds request snapshots without treating generic unavailability as a change',()=>{
+ const reason='similar_replay_pending_manual_review';
+ assert.equal(needsSnapshot(complete({unavailable:1,reasons:{[reason]:1}})),true);
+ for(const value of [0,-1,'1',NaN])assert.equal(needsSnapshot(complete({unavailable:1,reasons:{[reason]:value}})),false);
+ assert.equal(needsSnapshot(complete({unavailable:1,reasons:{engine_unavailable:1}})),false);
+ assert.equal(needsSnapshot(complete({unavailable:1,reasons:{[reason]:1},countsComplete:false})),false);
+});
+
+test('only committed terminal event review holds request capture, not attempts or duplicate completion',async t=>{
+ for(const [row,expected]of [
+  [{status:'unavailable_final',reason:'similar_replay_pending_manual_review'},true],
+  [{status:'unavailable_final',reason:'similar_replay_pending_manual_review',duplicate:true},false],
+  [{status:'unavailable',reason:'similar_replay_pending_manual_review'},false],
+  [{status:'waiting',reason:'similar_replay_pending_manual_review'},false],
+  [{status:'unavailable_final',reason:'engine_unavailable'},false]]){
+  const f=await fixture(t);let calls=0;
+  const result=await verifyAndSignal({env:f.env,eventRun:async()=>{calls++;return {results:[row]};},verify:async({eventRun})=>{await eventRun();return complete();}});
+  assert.equal(result.snapshotNeeded,expected);assert.equal(calls,1);
+ }
 });

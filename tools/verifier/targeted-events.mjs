@@ -2,6 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
+import {compatibleEventEngine} from '../../workers/ranked/src/event-engine-compatibility.js';
+import {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION} from '../../workers/ranked/src/verification.js';
+
+export function selectCompatibilityProbe(periodIds,periods,pendingRows) {
+  const pending=new Set([...pendingRows].map(row=>row?.periodId));
+  const available=periodIds.filter(id=>{const period=periods.get(id);
+    return pending.has(id)&&period?.verifierVersion===VERIFIER_VERSION&&compatibleEventEngine(period.engineDigest);});
+  return available.find(id=>periods.get(id).engineDigest===VERIFIER_ENGINE_DIGEST)||available[0]||null;
+}
 
 export function targetedEventPlan(periodIds, maxJobs = 12) {
   if (!Array.isArray(periodIds) || !periodIds.length || periodIds.length > 3 ||
@@ -98,17 +107,16 @@ export async function runTargetedEvents({root,periodIds,maxJobs=12,execute=false
       summary.before.push({periodId,verified:board.entries?.length||0,pending:queue.slots?.length||0,
         pendingRuns:(queue.slots||[]).map(slot=>({runId:slot.runId,name:pendingNames.get(slot.runId)?.name||null,timeMs:slot.timeMs}))});
     }
-    const currentPeriod=periodIds.find(id=>periods.get(id).engineDigest===VERIFIER_ENGINE_DIGEST&&
-      [...pendingNames.values()].some(row=>row.periodId===id));
-    if(!currentPeriod)throw Error('No current-engine pending period for deployed compatibility check');
+    const currentPeriod=selectCompatibilityProbe(periodIds,periods,pendingNames.values());
+    if(!currentPeriod)throw Error('No compatible pending period for deployed compatibility check');
     const check=[...pendingNames.values()].find(row=>row.periodId===currentPeriod);
     const response=await guard.fetch(guard.allowCompatibilityRead(currentPeriod,check.runId),{
       headers:{Origin:'https://staticquasar931.github.io',Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(10000)});
     const payload=await response.json();
     if(!response.ok||payload.periodId!==currentPeriod||payload.runId!==check.runId||payload.trackId!==periods.get(currentPeriod).trackId)
-      throw Error('Deployed Worker did not accept current-engine period binding; stop before publication');
+      throw Error('Deployed Worker did not accept the selected compatible period binding; stop before publication');
     summary.compatibility={engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION,
-      currentPeriod,publicPlaybackStatus:response.status,periodDigests:Object.fromEntries([...periods].map(([id,p])=>[id,p.engineDigest]))};
+      currentPeriod,probedPeriodEngine:periods.get(currentPeriod).engineDigest,publicPlaybackStatus:response.status,periodDigests:Object.fromEntries([...periods].map(([id,p])=>[id,p.engineDigest]))};
     const runtime=eventRuntime((route,init)=>db.call(route,init?.body?JSON.parse(init.body):undefined));
     const metadata=new Map();let activePeriod;
     const processBatch=runtime.service.processBatch.bind(runtime.service);

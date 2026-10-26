@@ -918,7 +918,11 @@ test('scheduled idle recovery scans canonical results every fifteen minutes with
     rankedWorker.scheduled({cron:'*/5 * * * *',scheduledTime:Date.UTC(2026,9,3,0,minute)},env,
       {waitUntil:promise=>{completion=promise;}});
     await completion;
-    assert.equal(documentReads,3,'bootstrap, reconcile job, and release metadata lookups');
+    assert.equal(documentReads,2,'reconciliation reads only bootstrap and its job');
+    rankedWorker.scheduled({cron:'1-59/5 * * * *',scheduledTime:Date.UTC(2026,9,3,0,minute+1)},env,
+      {waitUntil:promise=>{completion=promise;}});
+    await completion;
+    assert.equal(documentReads,3,'the isolated aggregate adds exactly the moved metadata lookup');
     assert.equal(queries,expectedQueries);
     assert.equal(writes,0);
   }
@@ -2132,7 +2136,7 @@ test('thirty-minute background repair still migrates legacy verification queues'
   assert.equal(markerData.cursor,Math.min(16,EXTRA_TRACK_IDS.size));
   assert.equal(markerData.complete,EXTRA_TRACK_IDS.size<=16);
 });
-test('cold recovery cron fits the fifty-subrequest budget with four bootstrap and four rebuild tracks plus overall', async () => {
+test('cold recovery cron fits the fifty-subrequest budget without sharing it with aggregation', async () => {
   const base = 'projects/polytrack-052/databases/(default)/documents/';
   const tracks = Array.from({length:4}, (_, i) => String(i).padStart(64,'0'));
   const documents = new Map(tracks.map(trackId => ['/0.6.2_s1_leaderboards_track/'+trackId,
@@ -2159,7 +2163,7 @@ test('cold recovery cron fits the fifty-subrequest budget with four bootstrap an
   rankedWorker.scheduled({cron:'*/5 * * * *'}, env, {waitUntil: promise => {completion=promise;}});
   await completion;
   // One extra token request is needed with a cold service-token cache.
-  assert.equal(calls+1,45);
+  assert.equal(calls+1,40);
   assert.ok(calls+1 < 50);
 });
 
@@ -2312,4 +2316,38 @@ test('bounded digest bootstrap retains exact approved NEVER slot but wakes chang
   assert.equal(state.slots.racer.status,i===0?'verified':'waiting');assert.equal(state.pending,i!==0);
   if(i===0)assert.equal(state.notBefore,Number.MAX_SAFE_INTEGER);else assert.notEqual(state.notBefore,Number.MAX_SAFE_INTEGER);
  }
+});
+
+
+test('trusted-row reranking preserves every remaining replay and verification binding without mutating input',async()=>{
+ const {rankTrustedTrackEntries}=await import('../src/index.js');
+ const rows=computeTrackEntries([validRun({accountId:'remove',trackId:TRACK,timeMs:19000}),validRun({accountId:'keep',trackId:TRACK,timeMs:21000}),validRun({accountId:'pending',trackId:TRACK,timeMs:23000})],TRACK);
+ rows[1].runVerified=true;rows[1].verified=true;rows[1].integrityVerified=true;const original=JSON.stringify(rows);
+ const ranked=rankTrustedTrackEntries(rows.filter(row=>row.accountId!=='remove'),TRACK);
+ assert.deepEqual(ranked.map(r=>r.accountId),['keep','pending']);assert.deepEqual(ranked.map(r=>r.rank),[1,2]);
+ for(const row of ranked){const prior=rows.find(r=>r.accountId===row.accountId);for(const key of ['timeMs','uploadId','replayHash','runVerified','verified','integrityVerified'])assert.equal(row[key],prior[key]);assert.equal(row.fieldSize,2);}
+ assert.equal(JSON.stringify(rows),original);
+});
+
+test('scheduled profile propagation leaves aggregation to its isolated publishing slot', async () => {
+  const row=validRun({accountId:'racer',trackId:TRACK,timeMs:19000,name:'Old'});
+  const board={trackId:TRACK,entries:[row],complete:true,totalEntries:1,revision:7,schemaVersion:6,algorithmVersion:'participation-v8-s1',signature:'old'};
+  const calls=[],writes=[],tasks=[];
+  const job={kind:'profile',active:true,accountId:'racer',identity:{accountId:'racer',name:'New'},pendingTrackIds:[TRACK]};
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    calls.push(path);
+    if(path===':runQuery')return [{document:{name:'projects/test/databases/(default)/documents/0.6.2_s1_worker_jobs/profile-test',updateTime:'job-v1',fields:wire(job).mapValue.fields}}];
+    if(path.includes('/0.6.2_s1_leaderboards_track/'))return {updateTime:'track-v1',fields:wire(board).mapValue.fields};
+    if(path.includes('/0.6.2_s1_release_meta/'))return {updateTime:'meta-v1',fields:wire({dirty:false,revision:7}).mapValue.fields};
+    if(path===':commit'){const batch=JSON.parse(init.body).writes;writes.push(...batch);return {writeResults:batch.map(()=>({updateTime:'written'}))};}
+    throw Error('Unexpected profile maintenance request '+path);
+  }};
+  // Maintenance rotates through three tasks; this slot selects profile propagation.
+  rankedWorker.scheduled({cron:'2-59/5 * * * *',scheduledTime:420000},env,{waitUntil(p){tasks.push(p);}});
+  await Promise.all(tasks);
+  assert.equal(calls.filter(path=>path===':runQuery').length,1);
+  assert.equal(calls.filter(path=>path.includes('/0.6.2_s1_release_meta/')).length,1);
+  assert.ok(writes.some(w=>w.update?.name.endsWith('/0.6.2_s1_release_meta/current')&&w.update.fields.dirty.booleanValue===true));
+  assert.ok(writes.some(w=>w.update?.name.endsWith('/0.6.2_s1_worker_jobs/profile-test')&&w.update.fields.active.booleanValue===false));
+  assert.equal(calls.some(path=>path.includes('/0.6.2_s1_leaderboards_overall/')),false);
 });

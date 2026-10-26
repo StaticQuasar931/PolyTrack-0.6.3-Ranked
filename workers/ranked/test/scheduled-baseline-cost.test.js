@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../src/index.js';
+import worker, {scheduledIntervalDue} from '../src/index.js';
 import {VERIFICATION_BOOTSTRAP_ID} from '../src/verification.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 import {PERMANENT_ROLLING_HILLS} from '../src/permanent-rolling-hills.js';
 import {eventEncode} from '../src/events-store.js';
 import {recordFirestoreReads} from '../src/firestore-read-cost.js';
 
-test('24h non-event baseline is 1440 estimated reads and no writes, excluding source rescans/builds', async () => {
+async function checkDailyBaseline(jitterMs) {
   const audit = {documentReadEstimate:0, collections:{}}, errors = [], logs = [];
   const jobs = '/0.6.2_s1_worker_jobs/', calls = [];
   const env = {EVENTS_ENABLED:'false', __TEST_FIRESTORE:async (path, init = {}) => {
@@ -41,10 +41,10 @@ test('24h non-event baseline is 1440 estimated reads and no writes, excluding so
   try {
     for (let minute = 0; minute < 1440; minute++) {
       const crons = [...(minute % 2 === 0 ? ['*/2 * * * *'] : []),
-        ...(minute % 5 === 0 ? ['*/5 * * * *'] : []), ...(minute % 5 === 2 ? ['2-59/5 * * * *'] : [])];
+        ...(minute % 5 === 0 ? ['*/5 * * * *'] : []), ...(minute % 5 === 1 ? ['1-59/5 * * * *'] : []), ...(minute % 5 === 2 ? ['2-59/5 * * * *'] : [])];
       for (const cron of crons) {
         let completion;
-        worker.scheduled({cron, scheduledTime:Date.UTC(2026, 9, 20) + minute * 60000}, env,
+        worker.scheduled({cron, scheduledTime:Date.UTC(2026, 9, 20) + minute * 60000 + jitterMs}, env,
           {waitUntil:promise => {completion = promise;}});
         await completion;
       }
@@ -57,7 +57,26 @@ test('24h non-event baseline is 1440 estimated reads and no writes, excluding so
   assert.equal(calls.filter(path => path === ':runQuery').length, 384);
   const scheduled = logs.filter(([message]) => message === 'Ranked scheduled Firestore reads')
     .map(([, payload]) => JSON.parse(payload));
-  assert.equal(scheduled.length, 624);
+  assert.equal(scheduled.length, 912);
+  const aggregates=scheduled.filter(row=>row.cron==='1-59/5 * * * *');
+  assert.equal(aggregates.length,288);
+  assert(aggregates.every(row=>row.documentReadEstimate===1&&Object.keys(row.collections).length===1&&row.collections['0.6.2_s1_release_meta']===1));
+  assert(scheduled.filter(row=>row.cron==='*/5 * * * *').every(row=>!row.collections['0.6.2_s1_release_meta']),'quiet reconciliation must not start aggregation');
   assert.ok(scheduled.every(row => row.quotaPolicy === 'rev171-event-activity' && Number.isSafeInteger(row.scheduledTime)));
   assert.equal(scheduled.reduce((total, row) => total + row.documentReadEstimate, 0), 1440);
+}
+
+for (const jitter of [0,39338,59999]) {
+  test('24h non-event baseline stays at 1440 reads and zero writes with cron jitter '+jitter+'ms',()=>checkDailyBaseline(jitter));
+}
+
+test('cron interval gating uses the scheduled minute and rejects malformed timestamps/intervals',()=>{
+ const base=Date.UTC(2026,9,26,14,0,0),scan=15*60000,repair=30*60000;
+ for(const jitter of [0,1,39338,59999]) {
+  assert.equal(scheduledIntervalDue(base+jitter,scan),true);assert.equal(scheduledIntervalDue(base+jitter,repair),true);
+  assert.equal(scheduledIntervalDue(base+15*60000+jitter,scan),true);assert.equal(scheduledIntervalDue(base+15*60000+jitter,repair),false);
+  assert.equal(scheduledIntervalDue(base+2*60000+jitter,scan),false);
+ }
+ for(const value of [undefined,null,NaN,Infinity,-1,1.5,'0'])assert.equal(scheduledIntervalDue(value,scan),false);
+ for(const interval of [undefined,NaN,0,-60000,30000,90000])assert.equal(scheduledIntervalDue(base,interval),false);
 });

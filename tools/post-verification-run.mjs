@@ -3,6 +3,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {runVerifier} from './verifier/run.mjs';
 import {runEventVerification} from './verifier/events.mjs';
+import {COMPETITIVE_REVIEW_REASON} from '../workers/ranked/src/competitive-review.js';
 
 const count = value => Number.isSafeInteger(value) && value > 0 ? value : 0;
 const COMPLETE_STOPS = new Set(['round_limit', 'time_reserve', 'request_reserve', 'no_progress', 'budget_deferred']);
@@ -10,7 +11,7 @@ const COMPLETE_STOPS = new Set(['round_limit', 'time_reserve', 'request_reserve'
 export function needsSnapshot(summary, eventPublications = 0) {
   return summary?.countsComplete === true && summary.interruptedRound === false &&
     COMPLETE_STOPS.has(summary.stop) && summary.deferred !== true &&
-    count(summary.verified) + count(summary.mismatch) + count(eventPublications) > 0;
+    count(summary.verified) + count(summary.mismatch) + count(summary.reasons?.[COMPETITIVE_REVIEW_REASON]) + count(eventPublications) > 0;
 }
 
 // Observe existing committed-result APIs; no additional database calls or core edits.
@@ -23,7 +24,8 @@ export async function verifyAndSignal({env = process.env, verify = runVerifier,
   let eventPublications = 0;
   const summary = await verify({env, drain: true, catchUp, eventRun: async (...args) => {
     const result = await eventRun(...args);
-    eventPublications += (result.results || []).filter(row => ['verified', 'mismatch'].includes(row?.status)).length;
+    eventPublications += (result.results || []).filter(row => ['verified', 'mismatch'].includes(row?.status) ||
+      row?.status === 'unavailable_final' && row.reason === COMPETITIVE_REVIEW_REASON && row.duplicate !== true).length;
     if (typeof result.archived === 'string' && result.archived) eventPublications++;
     return result;
   }});
@@ -31,7 +33,7 @@ export async function verifyAndSignal({env = process.env, verify = runVerifier,
   await output(needed);
   if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY,
     '\n## Post-verification publication\nPublic snapshot capture requested: ' + needed +
-    '. Gate uses completed verdicts/archives, not due-work, native attempts, or process success alone. ' +
+    '. Gate uses completed verdicts, competitive-review holds and archives, not due-work, native attempts, or process success alone. ' +
     'The separate bounded snapshot job runs automatically with an enabled verifier unless POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED=false. ' +
     'Capture reads currently published public data: it does not force rebuilds or wait for a published revision. ' +
     'Cached track boards and the Overall aggregate may lag these verdicts; a new package is not proof of aggregate freshness.\n');

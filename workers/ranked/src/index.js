@@ -44,6 +44,13 @@ const OVERALL_REBUILD_FAILURE_BASE_MS = 15 * 60 * 1000;
 const OVERALL_REBUILD_FAILURE_MAX_MS = 2 * 60 * 60 * 1000;
 const overallBuildRequests = new WeakMap();
 const BACKGROUND_REPAIR_INTERVAL_MS = 30 * 60 * 1000;
+
+// Scheduled timestamps can include seconds and milliseconds within their cron minute.
+export function scheduledIntervalDue(scheduledAt, intervalMs) {
+  return Number.isSafeInteger(scheduledAt) && scheduledAt >= 0 &&
+    Number.isSafeInteger(intervalMs) && intervalMs >= 60000 && intervalMs % 60000 === 0 &&
+    Math.floor(scheduledAt / 60000) % (intervalMs / 60000) === 0;
+}
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
 const MIGRATION_TRACK_BATCH = 4;
@@ -842,7 +849,7 @@ export function computeTrackEntries(rows, trackId, env = {}, verdicts = {}) {
   return rankTrustedTrackEntries([...best.values()], trackId);
 }
 
-function rankTrustedTrackEntries(rows, trackId) {
+export function rankTrustedTrackEntries(rows, trackId) {
   const entries = [...rows].sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
   const comp = competition(entries);
   const parts = trackWeightParts(trackId, entries.length, comp.boost);
@@ -2024,7 +2031,7 @@ async function processProfileJob(env, jobId, job, updateTime='') {
   for (const trackId of batch) if ((await updateTrackIdentity(env, trackId, job.identity)).changed) changed += 1;
   const remaining = pending.slice(batch.length);
   await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, active: remaining.length > 0, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + batch.length, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: remaining.length ? 0 : Date.now() },updateTime);
-  if (changed) await rebuildOverall(env, false);
+  // Track persistence marks Overall dirty; its isolated cron owns aggregation.
   return { checked: batch.length, changed, remaining: remaining.length };
 }
 
@@ -2524,7 +2531,7 @@ export default {
   scheduled(_event, env, context) {
     if (_event.cron === '*/2 * * * *') {
       const scheduledAt = _event.scheduledTime;
-      if (!Number.isSafeInteger(scheduledAt) || scheduledAt < 0 || scheduledAt % BACKGROUND_REPAIR_INTERVAL_MS !== 0) return;
+      if (!scheduledIntervalDue(scheduledAt, BACKGROUND_REPAIR_INTERVAL_MS)) return;
     }
     const readAudit={httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
     env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env};
@@ -2545,6 +2552,11 @@ export default {
           catch (error) { console.error('Extra queue recovery failed', String(error?.message || error)); break; }
         }
         try{await migrateCapacityVerificationQueues(env);}catch(error){console.error('Capacity queue migration deferred',String(error?.message||error));}
+        return;
+      }
+      if (_event.cron === '1-59/5 * * * *') {
+        // Keep aggregation out of reconciliation's shared subrequest budget.
+        await rebuildOverall(env, false);
         return;
       }
       if (_event.cron === '* * * * *') {
@@ -2578,14 +2590,13 @@ export default {
         try {
           if (task === reconcileCanonicalChanges) {
             const scheduledAt = Number(_event.scheduledTime);
-            const scanResults = Number.isSafeInteger(scheduledAt) && scheduledAt >= 0
-              && scheduledAt % RECONCILE_SCAN_INTERVAL_MS === 0;
+            const scanResults = scheduledIntervalDue(scheduledAt, RECONCILE_SCAN_INTERVAL_MS);
             await task(env, {scanResults});
           }else{const result=await task(env);if(result?.paged)return;}
         }
         catch (error) { console.error('Scheduled task failed', task.name, String(error?.message || error)); }
       }
-      if (!maintenance) await rebuildOverall(env, false);
+
     })().catch((error) => console.error('Scheduled Ranked work failed', String(error?.message || error)))
       .finally(()=>console.log('Ranked scheduled Firestore reads',JSON.stringify({cron:_event.cron,
         scheduledTime:_event.scheduledTime,quotaPolicy:'rev171-event-activity',...readAudit,billingEstimateOnly:true}))));
