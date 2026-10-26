@@ -11,7 +11,7 @@ export function installPracticeObserver({require,history,accountId,bestMs=()=>0,
  if(typeof Object.getOwnPropertyDescriptor(cp,'isPaused')?.get!=='function')throw Error('practice_native_contract');
  if(typeof pp.createCar!=='function')throw Error('practice_native_contract');
  const originalCreate=pp.createCar,originalReset=cp.addResetCallback,originalFinish=cp.addFinishCallback;
- const states=new WeakMap(),attached=new WeakSet();let current=null,pending=null,stopped=false;
+ const states=new WeakMap(),attached=new WeakSet();let current=null,pending=null,stopped=false,stopping=false;
  const report=fn=>{try{return fn();}catch{return undefined;}};
  // getPosition() is a read-only vector API in native module 641. Missing or
  // invalid positions mean unknown motion, never stationary or proven driving.
@@ -134,6 +134,17 @@ export function installPracticeObserver({require,history,accountId,bestMs=()=>0,
  const boundary=()=>{report(()=>sample(true));history.flush(true);};
  eventTarget?.addEventListener?.('visibilitychange',boundary);
  for(const type of ['blur','focus','pagehide'])windowTarget?.addEventListener?.(type,boundary);
- const handle={sample(){report(sample);},stop(){stopped=true;cancel(timer);eventTarget?.removeEventListener?.('visibilitychange',boundary);for(const type of ['blur','focus','pagehide'])windowTarget?.removeEventListener?.(type,boundary);if(pp.createCar===create)pp.createCar=originalCreate;if(cp.addResetCallback===resetRegistration)cp.addResetCallback=originalReset;report(sample);current?.attempt?.leave();pending?.attempt?.leave();current=null;pending=null;history.flush(true);installed.delete(pp);}};
+ const handle={sample(){report(sample);},stop(){
+  if(stopped||stopping)return;
+  stopping=true;cancel(timer);
+  // The last native sample may contain a finish whose notification has not arrived.
+  report(sample);stopped=true;
+  eventTarget?.removeEventListener?.('visibilitychange',boundary);
+  for(const type of ['blur','focus','pagehide'])windowTarget?.removeEventListener?.(type,boundary);
+  if(pp.createCar===create)pp.createCar=originalCreate;
+  if(cp.addResetCallback===resetRegistration)cp.addResetCallback=originalReset;
+  current?.attempt?.leave();pending?.attempt?.leave();current=null;pending=null;
+  history.flush(true);if(installed.get(pp)===handle)installed.delete(pp);
+ }};
  installed.set(pp,handle);return handle;
 }

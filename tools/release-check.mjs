@@ -7,6 +7,11 @@ import {buildNamePolicy} from './build-name-policy.mjs';
 import {validateEnginePin} from './verifier/run.mjs';
 import {privatePublicationPaths} from './publication-privacy.mjs';
 
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {snapshot} from './verifier/assets.cjs';
+import {sameHashMap} from './verifier/engine-pin.cjs';
+import {VERIFIER_ENGINE_DIGEST,VERIFICATION_BOOTSTRAP_ID} from '../workers/ranked/src/verification.js';
 const root = resolve(import.meta.dirname, '..');
 const failures = [];
 const tracked = spawnSync('git', ['ls-files', '-z', '--', 'docs/security', 'workers/ranked/test/quota-rules-candidate.test.js', '*.rules', '*.rules.*', '*firebase-config.local*', '*service-account*', '*serviceAccount*', '*firebase-adminsdk*', '*service_account*', '*credentials*.json', '.env*', '**/.env*', '.dev.vars*', '**/.dev.vars*', '*.pem', '*.p12', '*.key'], {cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024});
@@ -14,6 +19,51 @@ if (tracked.status !== 0) failures.push('Cannot verify tracked publication files
 else for (const file of privatePublicationPaths(tracked.stdout.split('\0').filter(Boolean))) failures.push('Private file remains tracked: ' + file);
 try { await validateEnginePin(); }
 catch (error) { failures.push('Verifier engine pin: ' + error.message); }
+
+try {
+ const sha=value=>createHash('sha256').update(value).digest('hex');
+ const json=file=>JSON.parse(readFileSync(join(root,file),'utf8'));
+ const lf=file=>readFileSync(join(root,file),'utf8').replace(/\r\n?/g,'\n');
+ const pin=json('tools/verifier/engine-manifest.json'),indexed=json('tools/verifier/indexed-playback-review.json');
+ const actual=snapshot(root);
+ assert.equal(actual.engineFingerprint,VERIFIER_ENGINE_DIGEST);assert.equal(pin.engineDigest,VERIFIER_ENGINE_DIGEST);
+ assert(sameHashMap(actual.manifest,pin.files));assert(sameHashMap(actual.tracks,pin.tracks));
+ assert.equal(indexed.currentEngine,VERIFIER_ENGINE_DIGEST);
+ assert.equal(indexed.currentEngine,'3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0');
+ assert.equal(indexed.previousEngine,'7cd54f05e02b66c67133fd856f025c829c21d600d8ef6a9071df62b4fb5905c4');
+ assert.equal(indexed.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
+ assert.equal(sha(lf(indexed.previousReview)),indexed.previousReviewSha256);
+ assert.deepEqual(indexed.changedAssets,['simulation_worker.bundle.js']);
+ assert.deepEqual(Object.keys(indexed.currentAssets),indexed.changedAssets);assert.deepEqual(Object.keys(indexed.previousAssets),indexed.changedAssets);
+ for(const [file,hash]of Object.entries({...indexed.unchangedAssets,...indexed.currentAssets}))assert.equal(pin.files[file],hash);
+ assert.equal(sha(JSON.stringify(pin.files)),indexed.currentEngine);
+ const correction=indexed.persistentCapabilityCorrection;assert.equal(correction.currentEngine,VERIFIER_ENGINE_DIGEST);assert.equal(correction.consumerPassed,true);assert.equal(correction.browserClosed,true);assert.equal(correction.serverClosed,true);assert.equal(correction.physicsAndLookupUnchanged,true);
+ const worker=lf('simulation_worker.bundle.js');assert.equal(sha(worker),correction.currentWorkerSha256);assert.equal(worker.split(correction.after).length,2);assert.equal(sha(worker.replace(correction.after,correction.before)),correction.priorDraftWorkerSha256);
+ assert.equal(sha(indexed.lookupEvidence.indexedExpression),indexed.lookupEvidence.indexedExpressionSha256);assert(worker.includes('ka='+indexed.lookupEvidence.indexedExpression));
+ const opponentFiles={...pin.files,...indexed.previousAssets};assert.equal(sha(JSON.stringify(opponentFiles)),indexed.previousEngine);
+ const opponent=json(indexed.previousReview),native=json('docs/events/native-row-ui-engine-review.json'),replay=json('docs/events/replay-ui-engine-review.json'),historical=json('docs/migration/engine-review.json');
+ assert.equal(opponent.currentEngine,indexed.previousEngine);assert.equal(opponent.previousEngine,native.currentEngine);assert.equal(native.previousEngine,replay.currentEngine);assert.equal(replay.previousEngine,historical.engineDigest);
+ for(const review of [opponent,native,replay])if(review.previousReviewSha256)assert.equal(sha(lf(review.previousReview)),review.previousReviewSha256);
+ assert.deepEqual(opponent.changedAssets,['main.bundle.js']);
+ assert.deepEqual(indexed.previousAssets,opponent.unchangedSimulationAssets);
+ assert.equal(opponentFiles['main.bundle.js'],opponent.currentMainBundleSha256);
+ assert.equal(sha(JSON.stringify({...opponentFiles,'main.bundle.js':opponent.previousMainBundleSha256})),opponent.previousEngine);
+ for(const [file,hash]of Object.entries(historical.unchangedPhysicsAssets))assert.equal(pin.files[file],hash);
+ assert.equal(sha(JSON.stringify(Object.entries(pin.tracks).sort(([a],[b])=>a<b?-1:a>b?1:0))),indexed.trackPinsSha256);
+ assert.equal(indexed.trackPinsSha256,opponent.trackPinsSha256);
+ const geometry=json('tools/verifier/track-geometry.json'),spite=json('docs/events/spite-geometry-review.json');
+ assert.equal(geometry.engineDigest,VERIFIER_ENGINE_DIGEST);
+ assert.equal(spite.engineDigest,indexed.previousEngine);assert.equal(spite.previousReview,indexed.previousReview);assert.equal(spite.previousReviewSha256,indexed.previousReviewSha256);
+ assert.equal(sha(JSON.stringify(geometry.tracks)),indexed.geometryRowsSha256);assert.equal(indexed.geometryRowsSha256,spite.currentGeometryRowsSha256);
+ const added=new Set(spite.addedTracks.map(row=>row.id));assert.deepEqual(geometry.tracks.filter(row=>added.has(row.id)),spite.addedTracks);
+ assert.equal(sha(JSON.stringify(geometry.tracks.filter(row=>!added.has(row.id)))),opponent.geometryRowsSha256);assert.equal(opponent.geometryRowsSha256,spite.previousGeometryRowsSha256);
+ assert.equal(sha(lf('tools/verifier/geometry.cjs')),spite.geometryValidatorSha256);
+ assert.equal(indexed.historicalBootstrapUnchanged,true);assert.equal(indexed.bootstrapId,VERIFICATION_BOOTSTRAP_ID);
+ assert.equal(VERIFICATION_BOOTSTRAP_ID,'verification_snapshot_v3_polytrack-native-bounded-v1_46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3');
+ assert.equal(indexed.nativeAB.pairCount,11);assert.equal(indexed.nativeAB.pairs.length,11);assert.equal(indexed.nativeAB.browserClosed,true);assert.equal(indexed.nativeAB.serverClosed,true);
+ for(const pair of indexed.nativeAB.pairs){assert.equal(pair.equal,true);assert.match(pair.streamSha256,/^[a-f0-9]{64}$/);assert.equal(pair.baseStates,pair.frames);assert.equal(pair.candidateStates,pair.frames);assert.equal(pair.baseBytes,pair.candidateBytes);}
+} catch(error) { failures.push('Indexed playback immutable review chain: '+error.message); }
+
 try { await buildNamePolicy({check:true}); }
 catch (error) { failures.push('Shared name policy: ' + error.message); }
 failures.push(...checkRepositoryExtraVerification());

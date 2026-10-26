@@ -1,7 +1,7 @@
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
 import {publicEventPlaybackProjection} from './public-event-playback.mjs';
 // Public, same-origin backups never replace the authoritative PB submission path.
-export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange}){
+export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
   const lookupCache=new Map(),lookupPending=new Map(),lookupRetryAt=new Map();let manifestValue=null;
 
@@ -219,7 +219,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
   async function readAtGeneration(kind,id,accountId,requestedGeneration){
     if(requestedGeneration!==generation)return null;
     const overallPage=accountId===''?id:accountId;
-    const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='snapshot-paging'?'snapshot-paging.json':kind==='track-statistics'?'track-statistics.json':kind==='manifest'?'manifest.json':kind==='racer-directory'?'racer-directory.json':kind==='cosmetic-directory'?'cosmetic-directory.json':kind==='overall'?'overall.json':kind==='overall-manifest'?'overall-manifest.json':kind==='overall-preview'?'overall-preview.json':kind==='overall-results'?'overall-results.json':kind==='event-totals'?'event-totals.json':
+    const path=kind==='snapshot-meta'?'public-export-summary.json':kind==='snapshot-paging'?'snapshot-paging.json':kind==='track-statistics'?'track-statistics.json':kind==='manifest'?'manifest.json':kind==='racer-directory'?'racer-directory.json':kind==='cosmetic-directory'?'cosmetic-directory.json':kind==='overall'?'overall.json':kind==='overall-manifest'?'overall-manifest.json':kind==='overall-preview'?'overall-preview.json':kind==='overall-results'?'overall-results.json':kind==='overall-projection'?'projection-source.json':kind==='event-totals'?'event-totals.json':
       kind==='overall-page'&&/^[1-9]\d{0,15}$/.test(String(overallPage))&&Number.isSafeInteger(Number(overallPage))?`overall-pages/${Number(overallPage)}.json`:
       kind==='track'&&/^[a-f0-9]{64}$/.test(id)?`tracks/${id}.json`:
       kind==='track-manifest'&&/^[a-f0-9]{64}$/.test(id)?`track-manifests/${id}.json`:
@@ -418,11 +418,19 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     }
   };
   read.refresh=()=>recoverCurrentGeneration({manual:true});
+  function reportPlaybackFailure(error){
+    try{
+      const message=String(error?.message||'');
+      const code=/work limit/i.test(message)?'REPLAY_BUDGET':/hash|integrity/i.test(message)?'REPLAY_INTEGRITY':/identity|binding|changed/i.test(message)?'REPLAY_BINDING':/engine|worker|capability|attestation|asset/i.test(message)?'REPLAY_ENGINE':/eligible|pending/i.test(message)?'REPLAY_STATUS':/structure|encoding|deflate|malformed|decode/i.test(message)?'REPLAY_FORMAT':'REPLAY_UNAVAILABLE';
+      onPlaybackFailure?.({code});
+    }catch{}
+  }
   read.recordingPlayback=async(entry,{allowPending=false}={})=>{
     const epoch=generation;
     const row=await readAtGeneration('recording',entry?.uploadId,'',epoch);
-    if(!row||epoch!==generation)return null;
-    try{const result=await preparePublicRecordingPlayback(row,entry,{allowPending});return epoch===generation?result:null;}catch{return null;}
+    if(epoch!==generation)return null;
+    if(!row){reportPlaybackFailure(null);return null;}
+    try{const result=await (prepareRecording||preparePublicRecordingPlayback)(row,entry,{allowPending});return epoch===generation?result:null;}catch(error){if(epoch===generation)reportPlaybackFailure(error);return null;}
   };
   Object.defineProperty(read,'packageInfo',{value:()=>Object.freeze({
     generation:Number(/(?:^|\/)public-snapshots([1-9]\d*)\/$/.exec(packageBase.pathname)?.[1]||0),

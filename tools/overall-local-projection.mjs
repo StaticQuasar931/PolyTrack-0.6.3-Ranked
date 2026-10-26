@@ -427,7 +427,7 @@ export function projectScopedSnapshot({accountId,generation,overall,tracks}={}) 
 }
 
 
-export function projectLocalOverall({accountId, generation, overall, results, tracks, acceptedPbs = []} = {}) {
+export function projectLocalOverall({accountId, generation, overall, results, tracks, acceptedPbs = [], localPbs = []} = {}) {
   if (!validId(accountId)) return fail('invalid_account');
   if (!(typeof generation === 'string' && generation.length || positive(generation))) return fail('invalid_generation');
   if (overall?.generation !== generation || results?.generation !== generation) return fail('generation_mismatch');
@@ -488,6 +488,7 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
     :projectCasualRp({...casualOptions,accountId:row.userId,
       boards:boards.map(board=>({...board,totalEntries:board.entries.length})),priorEntry:publicById.get(row.userId)});
   if (!Array.isArray(acceptedPbs)) return fail('invalid_receipts');
+  if(!Array.isArray(localPbs)||localPbs.length>512)return fail('invalid_local_pbs');
   const best = new Map();
   for (const receipt of acceptedPbs) {
     if (receipt?.accountId !== accountId) return fail('receipt_account_mismatch');
@@ -498,7 +499,15 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
     const prior = best.get(receipt.trackId);
     if (!prior || receipt.timeMs < prior.timeMs || receipt.timeMs === prior.timeMs && receipt.acceptedAt > prior.acceptedAt) best.set(receipt.trackId, receipt);
   }
+  for(const local of localPbs){
+    if(local?.accountId!==accountId||local.generation!==generation||!positive(local.timeMs)||local.timeMs>36000000||
+        !Number.isSafeInteger(local.observedAt)||local.observedAt<0)return fail('invalid_local_pb');
+    if(!byTrack.has(local.trackId))continue;
+    const prior=best.get(local.trackId);
+    if(!prior||local.timeMs<prior.timeMs)best.set(local.trackId,{...local,acceptedAt:local.observedAt,source:'local-device'});
+  }
   const changedTracks = [];
+  let localPbsApplied=false;
   for (const [trackId, receipt] of best) {
     const board = byTrack.get(trackId);
     const previous = board.entries.find(row => row.accountId === accountId);
@@ -510,6 +519,7 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
       pbAt: receipt.acceptedAt, runVerified: true, integrityVerified: true};
     board.entries = rankTrustedTrackEntries([...board.entries.filter(row => row.accountId !== accountId), entry], trackId);
     changedTracks.push(trackId);
+    localPbsApplied ||= receipt.source==='local-device';
   }
   if (!changedTracks.length) return {status: 'unchanged', generation, calculationExact: true,
     localPending: false, publicRank: null, projection: null, racers: [], changedTracks: [],
@@ -519,7 +529,8 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
   const calculated = computeOverall(boards, overall.entries, new Set(), {includePlannerResults: true});
   const racers = calculated.map(row=>present(row,casualFor(row)));
   return {status: 'projected', generation, sourceRevision: overall.sourceRevision,
-    label: 'Snapshot + local recalculation', assumption: 'Accepted PBs eventually pass verification; other snapshot rows stay unchanged.',
+    label: 'Snapshot + local recalculation', assumption: localPbsApplied?'Local PBs are provisional estimates until submitted and verified; public standings are unchanged.':'Accepted PBs eventually pass verification; other snapshot rows stay unchanged.',
+    localPbsApplied,
     calculationExact: true, localPending: true, publicRank: null, changedTracks: changedTracks.sort(),
     projection: racers.find(row => row.userId === accountId) || null, racers};
 }

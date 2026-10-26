@@ -324,6 +324,22 @@ export function publicEventReplayBackup(value, {periodId, trackId, entry}) {
     ...eventDates(value)};
 }
 
+export async function promotePublicEventPlayback(value, {periodId, trackId, entry}) {
+  if (entry?.physicsVerified !== true || entry.replayIntegrityVerified !== true ||
+      !TRACK_ID.test(entry.runId || '') || !TRACK_ID.test(entry.replayHash || '') ||
+      entry.frames !== undefined && entry.frames !== entry.timeMs ||
+      entry.submittedAt !== undefined && entry.submittedAt !== value?.submittedAt)
+    throw Error('Verified event board does not bind pending payload');
+  // Validate the old public waiting envelope as waiting, not as invented proof.
+  const waitingEntry = {accountId: entry.accountId, runId: entry.runId, timeMs: entry.timeMs,
+    replayHash: entry.replayHash, submittedAt: value?.submittedAt, verificationStatus: 'waiting',
+    pending: true, verified: false, eventRpEligible: false, source: 'pending-event-playback'};
+  const pending = await publicEventPlaybackProjection(value, {periodId, trackId, entry: waitingEntry});
+  if (JSON.stringify(pending) !== JSON.stringify(value)) throw Error('Non-public cached pending payload');
+  return publicEventReplayBackup({...pending, ...eventDates(entry), verificationStatus: 'verified',
+    verified: true, eventRpEligible: true}, {periodId, trackId, entry});
+}
+
 function parseSet(source, name) {
   const match = new RegExp(`(?:const|export const)\\s+${name}\\s*=\\s*new Set\\(\\[([^\\]]*)\\]\\)`).exec(source);
   if (!match) throw Error(`Missing track registry ${name}`);
@@ -509,7 +525,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     try { eventValues.set(id, publicEventBackup(JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8')), id)); } catch {}
   }
   for (const {id, value} of eventRows) if (value) eventValues.set(id, value);
-  const replayCandidates = [], retainedReplays = {};
+  const replayCandidates = [], retainedReplays = {}, promotedReplays = new Map();
   const replayEvents = [...eventValues].sort(([a],[b]) => Number(liveIds.has(b)) - Number(liveIds.has(a)));
   for (const [id, value] of replayEvents) {
     if (!TRACK_ID.test(value.period?.trackId || '')) continue;
@@ -517,6 +533,8 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       if (!PUBLIC_ACCOUNT_ID.test(entry.accountId || '') || !Number.isSafeInteger(entry.timeMs)) continue;
       if (entry.physicsVerified === false || entry.replayIntegrityVerified === false) continue;
       const relative = `event-replays/${id}/${entry.accountId}.json`, prior = previous.eventReplays?.[relative];
+      const exactPublishedRun = entry.physicsVerified === true && entry.replayIntegrityVerified === true &&
+        TRACK_ID.test(entry.runId || '') && TRACK_ID.test(entry.replayHash || '');
       if (prior?.path === relative && prior.timeMs === entry.timeMs) {
         try {
           const replay = JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
@@ -524,11 +542,28 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
           if (JSON.stringify(projected) !== JSON.stringify(replay)) throw Error('Replay is not a public projection');
           retainedReplays[relative] = prior; entry.runId = replay.runId; entry.replayHash = replay.replayHash;
           applyReplayDates(entry, replay);
+          if (exactPublishedRun) continue;
           // Repair legacy live metadata within the existing fetch cap, retaining good bytes on failure.
           const dateCheckAge = now - Number(prior.verdictDateCheckedAt);
           const dateCheckFresh = Number.isSafeInteger(prior.verdictDateCheckedAt) && dateCheckAge >= 0 && dateCheckAge < 7 * 86400000;
           if (!liveIds.has(id) || Number.isSafeInteger(replay.verifiedAt) && replay.verifiedAt > 0 || dateCheckFresh) continue;
         } catch { /* A changed or corrupt replay must be replaced. */ }
+      }
+      if (exactPublishedRun) {
+        const pendingPath = `event-playbacks/${id}/${entry.runId}.json`;
+        const cached = previous.eventPlaybacks?.[pendingPath];
+        if (cached?.path === pendingPath && cached.periodId === id && cached.accountId === entry.accountId &&
+            cached.runId === entry.runId && cached.timeMs === entry.timeMs && cached.replayHash === entry.replayHash) {
+          try {
+            const saved = JSON.parse(await fs.readFile(path.join(directory, pendingPath), 'utf8'));
+            const replay = await promotePublicEventPlayback(saved, {periodId:id, trackId:value.period.trackId, entry});
+            promotedReplays.set(relative, replay);
+            retainedReplays[relative] = {path:relative, periodId:id, accountId:entry.accountId,
+              timeMs:entry.timeMs, replayHash:entry.replayHash};
+            applyReplayDates(entry, replay);
+            continue;
+          } catch { /* Missing, invalid or changed pending bytes are never promoted. */ }
+        }
       }
       // Frozen history is never a paid fallback during routine publication.
       if(!liveIds.has(id)&&id!=='permanent-rolling-hills'&&!archiveRepairIds.has(id))continue;
@@ -576,7 +611,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   });
 
   const nextTracks = {...cachedTracks}, nextEvents = {...previous.events};
-  const pendingWrites = new Map([['overall.json', overall]]);
+  const pendingWrites = new Map([['overall.json', overall], ...promotedReplays]);
   let missingTracks = 0, missingEvents = 0;
   const trackSummaryMismatches = [];
   for (const {id, value} of trackRows) {

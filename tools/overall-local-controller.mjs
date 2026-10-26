@@ -1,6 +1,9 @@
 const projectionUrl=new URL('./overall-local-projection.mjs',import.meta.url);
 projectionUrl.search=new URL(import.meta.url).search;
 const {projectLocalOverall,projectScopedSnapshot}=await import(projectionUrl.href);
+const bundleUrl=new URL('./overall-projection-bundle.mjs',import.meta.url);
+bundleUrl.search=new URL(import.meta.url).search;
+const {decodeOverallProjectionBundle}=await import(bundleUrl.href);
 
 export const LOCAL_OVERALL_RECEIPTS_KEY = 'polytrack-overall-accepted-pbs-v1';
 const MAX_RECEIPTS = 128, MAX_BOARDS = 512, MAX_BYTES = 6 * 1024 * 1024;
@@ -39,8 +42,10 @@ async function decodeResults(data, population) {
  * onState receives {status, accountId, generation, result?, reason?, retryAt?}.
  */
 export function createLocalOverallController({storage, read, packageInfo, getAccount,
-  isVisible, needsBaseline = () => false, onState = () => {}, now = Date.now} = {}) {
+  isVisible, needsBaseline = () => false, readProjectionSource = null, getLocalPbs = () => [], onState = () => {}, now = Date.now} = {}) {
   if (![read, packageInfo, getAccount, isVisible, needsBaseline, onState, now].every(value => typeof value === 'function')) throw TypeError('Invalid local Overall controller callbacks');
+  if(readProjectionSource!==null&&typeof readProjectionSource!=='function')throw TypeError('Invalid projection source callback');
+  if(typeof getLocalPbs!=='function')throw TypeError('Invalid local PB callback');
   let receipts = [], activeKey = '', revision = 0, baseline = null, running = null, requested = false;
   let failure = null, failures = new Map(), computedKey = '', state = {status: 'idle', accountId: '', generation: null};
 
@@ -102,6 +107,14 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
     if (trimmed.length !== receipts.length) { receipts = trimmed; save(); }
     return receipts.filter(row => row.accountId === ctx.accountId && row.generation === ctx.generation);
   }
+  function localPbs(ctx){
+    let rows;try{rows=getLocalPbs();}catch{return [];}
+    if(!Array.isArray(rows))return [];
+    return rows.filter(row=>row?.accountId===ctx.accountId&&validId(row.trackId)&&
+      positive(row.timeMs)&&row.timeMs<=36000000&&uint(row.observedAt)&&row.observedAt<=now()+300000)
+      .slice(0,512)
+      .map(row=>({accountId:ctx.accountId,trackId:row.trackId,timeMs:row.timeMs,observedAt:row.observedAt,generation:ctx.generation}));
+  }
   async function load(ctx, token) {
     const [overall, packed] = await Promise.all([read('overall'), ctx.baselineRequested ? null : read('overall-results')]);
     if (!current(ctx, token)) return null;
@@ -111,6 +124,12 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
         new Set(catalog.map(item => item?.trackId)).size !== catalog.length || catalog.some(item => !validId(item?.trackId) || item.trackId.length > 80)) throw Error('incomplete_track_catalog');
     const results = ctx.baselineRequested ? null : await decodeResults(packed, overall.entries.length);
     if (!current(ctx, token)) return null;
+    const source=readProjectionSource?await readProjectionSource():null;
+    if(!current(ctx,token))return null;
+    if(source){
+      const tracks=decodeOverallProjectionBundle(source,{overall,generation:ctx.generation});
+      return {key:ctx.workKey,overall:{...overall,generation:ctx.generation},results:{...results,generation:ctx.generation},tracks};
+    }
     const tracks = new Array(catalog.length); let cursor = 0, error = null;
     async function worker() {
       while (!error && current(ctx, token)) {
@@ -133,7 +152,8 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
   async function runOnce() {
     const ctx = context(); synchronize(ctx);
     const accepted = activeReceipts(ctx);
-    if (!ctx.valid || !ctx.visible || !accepted.length && !ctx.baselineRequested) {
+    const local=localPbs(ctx);
+    if (!ctx.valid || !ctx.visible || !accepted.length && !local.length && !ctx.baselineRequested) {
       if (state.status !== 'idle' || state.reason !== (!accepted.length ? 'no_receipts' : 'hidden')) emit(ctx, {status: 'idle', reason: !accepted.length ? 'no_receipts' : 'hidden'});
       return;
     }
@@ -141,7 +161,7 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
       if (state.status !== 'unavailable') emit(ctx, {status: 'unavailable', reason: failure.reason, retryAt: failure.retryAt});
       return;
     }
-    const signature = JSON.stringify([ctx.key, accepted.map(row => [row.trackId, row.timeMs, row.acceptedAt])]);
+    const signature = JSON.stringify([ctx.key, accepted.map(row => [row.trackId, row.timeMs, row.acceptedAt]),local.map(row=>[row.trackId,row.timeMs,row.observedAt])]);
     if (computedKey === signature) return;
     const token = revision;
     emit(ctx, {status: 'loading'});
@@ -155,12 +175,13 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
       await new Promise(resolve => setTimeout(resolve, 0));
       if (!current(ctx, token)) return;
       const latest = activeReceipts(ctx);
-      if (!latest.length && !ctx.baselineRequested) { emit(ctx, {status: 'idle', reason: 'no_receipts'}); return; }
+      const latestLocal=localPbs(ctx);
+      if (!latest.length && !latestLocal.length && !ctx.baselineRequested) { emit(ctx, {status: 'idle', reason: 'no_receipts'}); return; }
       const result = ctx.baselineRequested
         ? projectScopedSnapshot({accountId:ctx.accountId,generation:ctx.generation,overall:baseline.overall,tracks:baseline.tracks})
         : projectLocalOverall({accountId: ctx.accountId, generation: ctx.generation,
         overall: baseline.overall, results: baseline.results, tracks: baseline.tracks,
-        acceptedPbs: latest.map(row => ({...row, accepted: true}))});
+        acceptedPbs: latest.map(row => ({...row, accepted: true})),localPbs:latestLocal});
       if (!current(ctx, token)) return;
       if (result.status === 'unavailable') {
         // Validated static bytes cannot repair a model/version mismatch in place.
@@ -170,7 +191,7 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
         baseline = null;
         emit(ctx, {status: 'unavailable', reason: result.reason, retryAt: failure.retryAt, result});
       } else {
-        computedKey = JSON.stringify([ctx.key, latest.map(row => [row.trackId, row.timeMs, row.acceptedAt])]);
+        computedKey = JSON.stringify([ctx.key, latest.map(row => [row.trackId, row.timeMs, row.acceptedAt]),latestLocal.map(row=>[row.trackId,row.timeMs,row.observedAt])]);
         failure = null;failures.delete(ctx.workKey);
         emit(ctx, {status: result.status, result});
       }
