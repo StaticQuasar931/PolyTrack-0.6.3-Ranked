@@ -1,3 +1,4 @@
+import {hasMatchingCompetitiveReviewHold} from './competitive-review.js';
 import {pendingSlot, verificationKey, hasAcceptedVerifiedProof, verificationSchedule} from './verification.js';
 
 export const VERIFICATION_SHARD_VERSION = 2;
@@ -11,6 +12,7 @@ export function queueDocumentId(document) {
   return document?.data?.queueId || document?.id || String(document?.name || '').split('/').pop() || document?.data?.trackId;
 }
 function nextSlot(row, slot) {
+  if (hasMatchingCompetitiveReviewHold(row, slot)) return slot;
   return slot?.reason === 'canonical_missing' || slot?.key !== verificationKey(row) && !hasAcceptedVerifiedProof(row, slot)
     ? pendingSlot(row) : slot;
 }

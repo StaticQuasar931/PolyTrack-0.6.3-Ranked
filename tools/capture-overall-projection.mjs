@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {decode} from './verifier/firestore.mjs';
-import {publicOverallBackup, publicTrackBackup} from './public-snapshot-backup.mjs';
+import {publicOverallBackup, authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
 import {PublicBackupDeferredError} from './public-backup-fetch.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
 import {unpackOverallDetails} from '../workers/ranked/src/overall-details.js';
@@ -157,10 +157,10 @@ export async function frozenOverallSource({meta, overall, results, documents, no
     const board = payload.boards[row?.trackId];
     if (!/^[a-f0-9]{64}$/.test(row?.trackId || '') || seen.has(row.trackId) || !board ||
         row.updatedAt !== (board.updatedAt ?? board.builtAt ?? 0)) throw Error('FROZEN_TRACK_CATALOG_MISMATCH');
-    seen.add(row.trackId); boards.push(publicTrackBackup(board, row.trackId));
+    seen.add(row.trackId); boards.push([board, row.trackId]);
   }
   if (ids.filter(id => /^[a-f0-9]{64}$/.test(id)).length !== boards.length) throw Error('FROZEN_TRACK_CATALOG_MISMATCH');
-  return boards;
+  return boards.map(([board, trackId]) => authenticatedOverallTrackBackup(board, trackId));
 }
 
 // Returns public files only. The caller applies them after the ordinary capture,
@@ -202,7 +202,14 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
   };
   const meta = await read(META);
   let overall = await unpackOverallDetails(await read(OVERALL));
-  const boundResults = await read(RESULTS);
+  const usesSidecar = overall.resultBundleLocation === 'main_results';
+  const boundResults = usesSidecar ? await read(RESULTS) : null;
+  const rootReads = reads;
+  const results = usesSidecar ? boundResults : overall;
+  for (const key of ['sourceRevision', 'builtRevision', 'updatedAt', 'algorithmVersion'])
+    if (results?.[key] !== overall[key]) throw Error('RESULT_BUNDLE_SOURCE_MISMATCH');
+  if (meta.builtRevision !== overall.builtRevision || meta.lastOverallBuildAt !== overall.updatedAt ||
+      overall.sourceRevision !== overall.builtRevision) throw Error('OVERALL_METADATA_BINDING_MISMATCH');
   const parts = new Map();
   const partIds = sourcePublicationIds(meta.sourceBundle);
   for (const id of partIds) {
@@ -211,28 +218,47 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
   }
   overall = await assemblePublishedSnapshotPages(overall, {maxPages: MAX_PAGES, fetchPage: async (page, generation) =>
     decodePublicationPage(await read('0.6.2_s1_public_pages/' + publicationPageId('overall', 'main', generation, page)))});
-  const results = overall.resultBundleLocation === 'main_results' ? boundResults : overall;
+  // Immutable page metadata must still agree with the selected root/result source.
   for (const key of ['sourceRevision', 'builtRevision', 'updatedAt', 'algorithmVersion'])
-    if (results?.[key] !== overall[key] || boundResults?.[key] !== overall[key]) throw Error('RESULT_BUNDLE_SOURCE_MISMATCH');
-  if (meta.builtRevision !== overall.builtRevision || meta.lastOverallBuildAt !== overall.updatedAt ||
-      overall.sourceRevision !== overall.builtRevision) throw Error('OVERALL_METADATA_BINDING_MISMATCH');
+    if (results?.[key] !== overall[key]) throw Error('RESULT_BUNDLE_SOURCE_MISMATCH');
   const rawPublic = {...overall, ...Object.fromEntries(Object.entries(results).filter(([key]) => key.startsWith('result')))};
   const projected = publicOverallBackup(rawPublic);
   if (!projected.planner.available) throw Error('Published Overall results unavailable');
   const files = new Map([['overall.json', projected.snapshot], ['overall-results.json', projected.planner.document]]);
-  let projectionReady = false, projectionReason = null;
+  let projectionReady = false, projectionReason = null, projectionFailureStage = null, projectionFailureCode = null;
   try {
+    projectionFailureStage = 'frozen-source';
     const tracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now()});
+    projectionFailureStage = 'baseline';
     const bundle = await buildBundle({overall: projected.snapshot, results: projected.planner.document, tracks});
-    files.set('projection-source.json', bundle); projectionReady = true;
-  } catch {
+    files.set('projection-source.json', bundle); projectionReady = true; projectionFailureStage = null;
+  } catch (error) {
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const sourceCodes = ['FROZEN_OVERALL_SOURCE_UNAVAILABLE_OR_STALE', 'RESULT_BUNDLE_SOURCE_MISMATCH', 'INCOMPLETE_OVERALL_SOURCE', 'FROZEN_SOURCE_DIGEST_MISMATCH', 'FROZEN_SOURCE_CATALOG_MISMATCH', 'FROZEN_BOARD_INCOMPLETE', 'FROZEN_BOARD_BINDING_MISMATCH', 'FROZEN_TRACK_CATALOG_MISMATCH', 'OVERALL_SOURCE_PUBLICATION_INVALID', 'OVERALL_SOURCE_PUBLICATION_INFLATE_LIMIT'];
+    const bundleCodes = new Map([['Invalid authenticated Overall track snapshot', 'AUTHENTICATED_TRACK_INVALID'], ['Invalid Overall projection source', 'PROJECTION_SOURCE_INVALID'], ['Duplicate Overall projection source', 'PROJECTION_SOURCE_DUPLICATE'], ['Invalid Overall projection board', 'PROJECTION_BOARD_INVALID'], ['Invalid Overall projection row', 'PROJECTION_ROW_INVALID'], ['Incomplete Overall source board', 'PROJECTION_BOARD_INCOMPLETE'], ['Missing bound Overall source boards', 'PROJECTION_BOARDS_MISSING'], ['Overall projection source exceeds snapshot file limit', 'PROJECTION_SOURCE_TOO_LARGE'], ['Invalid projection result bundle', 'PROJECTION_RESULTS_INVALID'], ['Invalid decoded projection results', 'PROJECTION_RESULTS_INVALID'], ['Projection results too large', 'PROJECTION_RESULTS_TOO_LARGE']]);
+    const baselineCodes = ['invalid_account', 'invalid_generation', 'generation_mismatch', 'unsupported_model', 'result_binding_mismatch', 'incomplete_overall', 'incomplete_track_catalog', 'incomplete_track_bindings', 'invalid_track_bindings', 'invalid_results', 'invalid_track_catalog', 'track_binding_mismatch', 'unsupported_track', 'incomplete_track', 'invalid_track_rows', 'track_weight_mismatch', 'baseline_mismatch'];
+    const baselineCode = message.startsWith('Overall projection baseline mismatch: ') ? message.slice('Overall projection baseline mismatch: '.length) : '';
+    projectionFailureCode = sourceCodes.includes(message) ? message : bundleCodes.get(message) || (baselineCodes.includes(baselineCode) ? baselineCode : 'unclassified');
     // Published scores remain accurate even when a coherent local projection is unavailable.
     projectionReason = 'bound-source-or-baseline-unavailable';
   }
   return {files, report: {readTime, estimatedReads: reads, httpRequests: reads, maxReads,
-    rootAndSourceReadLimit: 7, generationPages: reads - 3 - partIds.length, projectionReady, projectionReason,
+    rootDocuments: rootReads, resultSource: usesSidecar ? 'main_results' : 'inline',
+    rootAndSourceReadLimit: rootReads + 4, generationPages: reads - rootReads - partIds.length, projectionReady, projectionReason,
+    projectionFailureStage, projectionFailureCode,
     publishedRevision: overall.builtRevision, metadataDirty: meta.dirty === true,
     source: 'authenticated-published-overall', freshness: 'last-published-not-a-rebuild'}};
+}
+
+// Reuse the already authenticated, fully assembled public root without a second Worker/page read.
+export function overallCaptureForBackup(capture) {
+  const overall=capture?.files?.get?.('overall.json'),results=capture?.files?.get?.('overall-results.json');
+  if(!overall||!results)throw Error('Missing captured public Overall files');
+  for(const key of ['sourceRevision','builtRevision','updatedAt','algorithmVersion'])
+    if(results[key]!==overall[key])throw Error('Captured public Overall binding mismatch');
+  const value={...overall,...Object.fromEntries(Object.entries(results).filter(([key])=>key.startsWith('result')))};
+  if(!publicOverallBackup(value).planner.available)throw Error('Captured public Overall results unavailable');
+  return value;
 }
 
 export async function applyCapturedOverallProjection({directory, capture}) {

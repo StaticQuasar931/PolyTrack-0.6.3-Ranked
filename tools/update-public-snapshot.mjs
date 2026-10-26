@@ -10,7 +10,7 @@ import { exportPublicProfilesAndReplays } from './public-profile-replay-export.m
 import { createSnapshotExportFetch } from './snapshot-export-auth.mjs';
 import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
 import { buildProfileSnapshotResults } from './build-profile-snapshot-results.mjs';
-import {captureOverallProjection, applyCapturedOverallProjection} from './capture-overall-projection.mjs';
+import {captureOverallProjection, applyCapturedOverallProjection, overallCaptureForBackup} from './capture-overall-projection.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -420,19 +420,21 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     await fs.mkdir(stagingDirectory, { recursive: true });
   }
   if (!offline) {
-    backupResult = await capture({ ...captureOptions, directory: stagingDirectory, log });
-    if (backupResult?.deferred === true) return defer('snapshots', backupResult);
-    if (captureOverall) {
-      let latest;
-      try {
-        latest = await captureOverall({auth: {...exportAuth, fetchImpl: exportFetch}, ...overallCaptureOptions});
-      } catch (error) {
-        if (!(error instanceof PublicBackupDeferredError)) throw error;
-        return defer('overall-source', error);
+    let latest=null;
+    if(captureOverall){
+      try{latest=await captureOverall({auth:{...exportAuth,fetchImpl:exportFetch},...overallCaptureOptions});}
+      catch(error){
+        if(!(error instanceof PublicBackupDeferredError))throw error;
+        return defer('overall-source',error);
       }
-      await applyCapturedOverallProjection({directory: stagingDirectory, capture: latest});
-      backupResult = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
-      log(JSON.stringify({overallCapture: latest.report}));
+    }
+    backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
+      ...(latest?{capturedOverall:overallCaptureForBackup(latest)}:{})});
+    if(backupResult?.deferred===true)return defer('snapshots',backupResult);
+    if(latest){
+      await applyCapturedOverallProjection({directory:stagingDirectory,capture:latest});
+      backupResult=await readJsonIfPresent(path.join(stagingDirectory,'manifest.json'));
+      log(JSON.stringify({overallCapture:latest.report}));
     }
     if (captureTotals) {
       let totalsResult;

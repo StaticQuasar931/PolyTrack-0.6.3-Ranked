@@ -167,6 +167,22 @@ export function publicTrackBackup(value, trackId) {
       !Number.isSafeInteger(value.updatedAt) || !validBoardLength(value, 500)) {
     throw Error('Invalid public track snapshot');
   }
+  return projectTrackBackup(value);
+}
+
+// Only for full internal boards after frozenOverallSource validates the authenticated
+// payload digest, complete catalog, exact counts and published track bindings.
+export function authenticatedOverallTrackBackup(value, trackId) {
+  if (!TRACK_ID.test(trackId) || !value || typeof value !== 'object' || value.trackId !== trackId ||
+      !Number.isSafeInteger(value.updatedAt) || !Array.isArray(value.entries) || value.entries.length > 10000 ||
+      !Number.isSafeInteger(value.totalEntries) || value.totalEntries !== value.entries.length ||
+      value.complete !== true && value.sourceComplete !== true) {
+    throw Error('Invalid authenticated Overall track snapshot');
+  }
+  return projectTrackBackup(value);
+}
+
+function projectTrackBackup(value) {
   const snapshot = project(value, ['trackId', 'complete', 'totalEntries', 'updatedAt', 'builtAt', 'schemaVersion',
     'algorithmVersion', 'revision', 'sourceRevision', 'sourceComplete', 'paginatedSource', 'pagination']);
   snapshot.entries = value.entries.map(entry => {
@@ -437,7 +453,7 @@ async function writeJsonIfChanged(directory, relative, value) {
 }
 
 async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
-  trackIds = null, log = console.log, archiveExport = null} = {}) {
+  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null} = {}) {
   const adminCapture = archiveExport ? createAdminArchiveCaptureFetch({...archiveExport, fetchImpl}) : null;
   if (adminCapture) fetchImpl = adminCapture.fetch;
   const previous = await readManifest(directory);
@@ -448,7 +464,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     const url = new URL(endpoint, WORKER);url.searchParams.set('generation', generation);url.searchParams.set('page', String(page));
     return fetchJson(fetchImpl, url.href);
   }});
-  const overallRaw = await assemble(await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/overall`), '/v1/snapshot/overall/page');
+  const overallRaw = capturedOverall ?? await assemble(await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/overall`), '/v1/snapshot/overall/page');
   const {snapshot: overall, planner} = publicOverallBackup(overallRaw);
   const catalog = await fetchJson(fetchImpl, `${WORKER}/v1/events/catalog`);
   const selectedEvents = selectEventIds(catalog);
@@ -742,7 +758,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     trackSummaryMismatches,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
-  log(JSON.stringify({publicSnapshotBackup: {workerRequests: 2 + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
+  log(JSON.stringify({publicSnapshotBackup: {workerRequests: (capturedOverall ? 1 : 2) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
