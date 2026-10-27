@@ -1296,7 +1296,7 @@ test('permanently failing tracks rotate behind healthy reconciliation work',asyn
   if(path===':runQuery')return [];
   return null;
  }};
- await reconcileCanonicalChanges(env);assert.equal(job.pendingTrackIds[0],TRACK);
+ for(let pass=0;pass<4;pass++)await reconcileCanonicalChanges(env);assert.equal(job.pendingTrackIds[0],TRACK);
  await reconcileCanonicalChanges(env);assert.equal(healthyWritten,true);assert.ok(!job.pendingTrackIds.includes(TRACK));
 });
 
@@ -2163,7 +2163,7 @@ test('cold recovery cron fits the fifty-subrequest budget without sharing it wit
   rankedWorker.scheduled({cron:'*/5 * * * *'}, env, {waitUntil: promise => {completion=promise;}});
   await completion;
   // One extra token request is needed with a cold service-token cache.
-  assert.equal(calls+1,40);
+  assert.equal(calls+1,19);
   assert.ok(calls+1 < 50);
 });
 

@@ -85,13 +85,13 @@ function fixture({tracks, discover = false, failing = new Set()}) {
   return {env, data, calls, queries, commits, failing, job: () => data.get(jobPath)};
 }
 
-test('legacy backfill keeps full-publication work beyond the four-track batch', async () => {
+test('legacy backfill keeps full-publication work across one-full-build passes', async () => {
   const tracks = Array.from({length: 5}, (_, i) => `backfill-track-${i}`);
   const f = fixture({tracks, discover: true});
   await reconcileCanonicalChanges(f.env, {now});
   assert.equal(f.job().backfillComplete, true);
-  assert.deepEqual(f.job().pendingTrackIds, [tracks[4]]);
-  await reconcileCanonicalChanges(f.env, {scanResults: false, now: now + 1});
+  assert.deepEqual(f.job().pendingTrackIds, tracks.slice(1));
+  for(let pass=1;pass<tracks.length;pass++) await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
   const published = f.data.get(`${boards}/${tracks[4]}`);
   assert.deepEqual(published.entries.map(r => r.accountId).sort(), ['current-racer', 'legacy-racer'],
     'the deferred track must include historical racers, not only the changed-result row');

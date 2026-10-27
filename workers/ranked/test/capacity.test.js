@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {rebuildTrack, updateTrackIdentity,computeTrackEntries, mergeCanonicalResultIntoTrack, mergeCanonicalResultsIntoTrack, rebuildOverall, computeOverall, handleRequest} from '../src/index.js';
+import {rebuildTrack, updateTrackIdentity,computeTrackEntries, mergeCanonicalResultIntoTrack, mergeCanonicalResultsIntoTrack, rebuildOverall, computeOverall, handleRequest, processMigrationJob, reconcileCanonicalChanges} from '../src/index.js';
 import {pendingSlot, VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, verificationSchedule, VERIFICATION_COLLECTION} from '../src/verification.js';
 import {loadPublicationEntries, PUBLIC_PAGE_COLLECTION, preparePublicationPages} from '../src/paged-publication.js';
 import {migrateVerificationChunk, verificationShardId} from '../src/verification-shards.js';
@@ -158,4 +158,37 @@ test('Overall trackCatalog discovers all 229 source boards without extra reads, 
  assert.deepEqual(publicBoard.trackCatalog,published.trackCatalog);
  for(const entry of publicBoard.trackCatalog)assert.deepEqual(Object.keys(entry).sort(),['trackId','updatedAt']);
  assert.ok(!JSON.stringify(publicBoard.trackCatalog).includes('canary'));
+});
+
+test('migration checkpoints a healthy sibling while a capacity build remains pending',async()=>{
+ const f=fixture(501),healthy='7239b17057127936907a805b0caa5d8c6f6c97eca9bdabf1a5312dce479629b7';
+ const original=f.env.__TEST_FIRESTORE;let largeQueries=0,healthyQueries=0;
+ f.env.__TEST_FIRESTORE=async(route,init={})=>{
+   if(route===':runQuery'){
+     const q=JSON.parse(init.body).structuredQuery;
+     if(q.from[0].collectionId===results){
+       if(q.where?.fieldFilter?.value?.stringValue===healthy){healthyQueries++;return [];}
+       largeQueries++;
+     }
+   }
+   if(init.method==='PATCH'){
+     const key=decodeURIComponent(route.slice(1));f.data.set(key,eventDecode({mapValue:{fields:JSON.parse(init.body).fields}}));
+     return {updateTime:'migration-written'};
+   }
+   return original(route,init);
+ };
+ const job={kind:'migration',pendingTrackIds:[track,healthy],pendingBadges:['previously-earned'],awardedBadgeIds:[],processedTracks:0};
+ const first=await processMigrationJob(f.env,job);
+ assert.equal(first.processedTracks,0);assert.equal(first.tracksRemaining,2);
+ const saved=f.data.get('0.6.2_s1_worker_jobs/release_migration');
+ assert.deepEqual(saved.pendingTrackIds,[track,healthy]);assert.ok(saved.pendingBadges.includes('previously-earned'));
+ const deferred=await processMigrationJob(f.env,saved);
+ assert.equal(deferred.deferred,true,'migration does not compete with its active reconciliation build');
+ const queued=f.data.get('0.6.2_s1_worker_jobs/canonical_reconcile_v2');
+ queued.backfillComplete=true;queued.schemaVersion=2;
+ await reconcileCanonicalChanges(f.env,{scanResults:false});
+ await processMigrationJob(f.env,saved);
+ await processMigrationJob(f.env,f.data.get('0.6.2_s1_worker_jobs/release_migration'));
+ assert.equal(healthyQueries,1,'completed sibling is not rebuilt on the next pass');
+ assert.equal(largeQueries,2,'migration reuses the completed publication instead of starting a second canonical scan');
 });

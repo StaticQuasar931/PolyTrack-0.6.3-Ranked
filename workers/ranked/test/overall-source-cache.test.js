@@ -773,3 +773,24 @@ test('Worker E2E: unchanged metadata permits exactly one corruption scan after t
   assert.deepEqual(calls.slice(0,scan).map(c=>c.path),['/'+META,':batchGet','/'+META]);
   assert.equal(f.data.get(OVERALL).sourceComplete,true);
 });
+
+test('deterministic Overall budget failures suppress unchanged-source scans and recover on source change',async t=>{
+  let now=Date.parse('2026-10-26T00:00:00Z');t.mock.method(Date,'now',()=>now);
+  const f=workerFixture();await rebuildOverall(f.env,true);f.readyToBuild();f.cache.values.clear();
+  const old=clone(f.data.get(OVERALL)),request=f.env.__TEST_FIRESTORE;let expansions=0;
+  f.env.__TEST_FIRESTORE=async(path,init)=>{
+    if(path===':batchGet'&&JSON.parse(init.body).documents.some(name=>name.includes('/'+SOURCE_PUBLICATION_COLLECTION+'/'))){
+      expansions++;throw Object.assign(Error('OVERALL_SOURCE_REQUEST_BUDGET_EXHAUSTED'),{invalidateSourceBundle:true});
+    }
+    return request(path,init);
+  };
+  await assert.rejects(rebuildOverall(f.env),/BUDGET_EXHAUSTED/);
+  const blocked=f.data.get(META);assert.equal(blocked.overallRebuildRetryAt,now+86400000);
+  assert.equal(blocked.overallRebuildBlockedSource.sourceDigest,'','block binds the invalidated source marker, not its old digest');
+  for(let i=0;i<12;i++){now+=5*60000;assert.equal((await rebuildOverall(f.env)).reason,'failure_cooldown');}
+  assert.equal(expansions,1);assert.deepEqual(f.data.get(OVERALL),old);
+  f.mutate(META,{...f.data.get(META),revision:Number(blocked.revision||0)+1});
+  f.env.__TEST_FIRESTORE=request;
+  assert.equal((await rebuildOverall(f.env)).rebuilt,true,'changed source bypasses deterministic old-source block');
+  assert.equal(f.data.get(META).overallRebuildBlockedSource,undefined);
+});

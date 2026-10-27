@@ -96,6 +96,7 @@ test('failed fallback rebuilds cool down, let other tracks progress, retry when 
 
   await reconcileCanonicalChanges(fixture.env, {scanResults: false, now: start});
   assert.equal(fixture.canonicalQueries.get(failed), 1);
+  await reconcileCanonicalChanges(fixture.env, {scanResults:false,now:start+1});
   assert.equal(fixture.writtenBoards.has(healthy), true);
   assert.deepEqual(fixture.getJob().pendingTrackIds, [failed]);
   const firstRetryAt = fixture.getJob().failedFullRebuilds[failed].retryAt;
@@ -192,4 +193,29 @@ test('far-future persisted retry times are clamped to the maximum backoff', asyn
   await reconcileCanonicalChanges(fixture.env, {scanResults: false, now});
   assert.equal(fixture.getJob().failedFullRebuilds[trackId].retryAt, now + 6 * 60 * 60 * 1000);
   assert.equal(fixture.canonicalQueries.has(trackId), false, 'clamped retry remains cooling until its bounded deadline');
+});
+
+test('targeted exceptions cool down before canonical reads and preserve healthy work', async () => {
+  const target='targeted-track', healthy='healthy-track', at=1800000000000;
+  const f=reconcileFixture({tracks:[target],fullRebuildTracks:[],pendingResultIds:{[target]:['new-racer_'+target]}});
+  const original=f.env.__TEST_FIRESTORE;let failures=0;
+  f.env.__TEST_FIRESTORE=async(path,init)=>{
+    if(path.includes('/0.6.2_s1_leaderboards_track/'+target)){failures++;throw Error('EXTRA_QUEUE_BACKFILL_REQUIRED');}
+    return original(path,init);
+  };
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:at});
+  assert.equal(failures,1);assert.equal(f.getBatchGets(),1);
+  const retryAt=f.getJob().failedFullRebuilds[target].retryAt;
+  assert.ok(retryAt>at);
+  const commits=f.getCommits();
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:at+1});
+  assert.equal(f.getBatchGets(),1,'cooling targets are filtered before batchGet');
+  assert.equal(f.getCommits(),commits,'unchanged cooldown state is not rewritten');
+  f.getJob().pendingTrackIds.push(healthy);f.getJob().pendingFullRebuildTrackIds.push(healthy);
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:at+2});
+  assert.ok(f.writtenBoards.has(healthy));assert.equal(failures,1);
+  f.env.__TEST_FIRESTORE=original;
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:retryAt});
+  assert.equal(f.getJob().failedFullRebuilds[target],undefined);
+  assert.deepEqual(f.getJob().pendingTrackIds,[]);
 });

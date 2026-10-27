@@ -30,7 +30,7 @@ test('track fallbacks share a local race index and store writes invalidate it',(
   rows.push({trackId:'a',timeMs:90});ctx.localRaceGeneration++;
   assert.equal(ctx.localRaceRowsForTrack('a').length,2);assert.equal(reads,2);
   assert.match(source,/LOCAL_RACE_STORE_KEY\)localRaceGeneration\+\+/);
-  assert.match(extract('writeLocalRaceRows'),/if\(writeJsonStorage\(LOCAL_RACE_STORE_KEY,canonical\.slice\(0,5000\)\)\)localRaceGeneration\+\+/);
+  assert.match(extract('writeLocalRaceRows'),/if\(writeJsonStorage\(LOCAL_RACE_STORE_KEY,canonical\.slice\(0,5000\)\)\)\{\s*localRaceGeneration\+\+/);
   assert.equal((extract('writeLocalRaceRows').match(/localRaceGeneration\+\+/g)||[]).length,1);
   assert.match(extract('loadTrackEntries'),/localRaceRowsForTrack\(trackId\)/);
   assert.match(extract('reconcileTrackEntriesWithLocal'),/localRaceRowsForTrack\(id\)/);
@@ -55,7 +55,7 @@ test('PB quota read retries are guarded and failed PBs are not confirmed',()=>{
 });
 test('opening Ranked and entering a locally loaded event do not crawl profiles or require Firebase',()=>{
   assert.doesNotMatch(extract('openPanel'),/syncCosmeticDirectory\(/);
-  assert.match(source,/require:__pt062WebpackRequire,ready:async\(\)=>\{\},openTrack/);
+  assert.match(source,/require:__pt062WebpackRequire,ready:async\(\)=>\{await initializePracticeHistory\(\);\},openTrack/);
 });
 test('public event requests share one fetch and reuse their bounded cache',async()=>{
   let loads=0;const ctx={Map,Date,eventCloudCache:new Map(),eventCloudRequests:new Map(),eventCloudRetryAt:new Map(),noteFirebaseQuota:()=>{},loadEventCloudRead:async()=>{loads++;return {updatedAt:1,entries:[]};}};

@@ -3,7 +3,7 @@ import {recallPublicResponse, rememberPublicResponse} from './public-response-me
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId} from './verification-shards.js';
-import {advanceTrackBuild, trackBuildId, TRACK_BUILD_JOBS} from './track-build.js';
+import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS} from './track-build.js';
 import { safePublicName } from './public-name-policy.js';
 import {kodubWeekly} from './kodub-weekly.js';
 import { eventWorkerHandler, eventWorkerMaintenance } from './events-worker.js';
@@ -53,7 +53,8 @@ export function scheduledIntervalDue(scheduledAt, intervalMs) {
 }
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
-const MIGRATION_TRACK_BATCH = 4;
+// One capacity build can consume most of the Worker's shared subrequest budget.
+const MIGRATION_TRACK_BATCH = 1;
 const MIGRATION_BADGE_BATCH = 25;
 const MIGRATION_VERSION = 4;
 const RECONCILE_RESULT_BATCH = 50;
@@ -386,15 +387,21 @@ function decodeFields(fields) {
 }
 
 async function firestoreRequest(env, path, init = {}) {
-  takeOverallRequest(env);
   const audit=env.__FIRESTORE_READ_AUDIT;
+  // Catch-and-continue maintenance must not spend more calls after quota exhaustion.
+  if (audit?.quotaStopped) throw new Error('FIRESTORE_429');
+  takeOverallRequest(env);
   if (!audit) return loadFirestoreRequest(env,path,init);
   audit.httpRequests++;
   try {
     const value=await loadFirestoreRequest(env,path,init);
     recordFirestoreReads(audit,path,init,value);
     return value;
-  } catch(error) { audit.failedRequests++; throw error; }
+  } catch(error) {
+    audit.failedRequests++;
+    if (error?.status === 429 || error?.message === 'FIRESTORE_429') audit.quotaStopped = true;
+    throw error;
+  }
 }
 
 function takeOverallRequest(env) {
@@ -1147,15 +1154,16 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const job = await readDocument(env,TRACK_BUILD_JOBS,trackBuildId(trackId));
   let initial = null;
-  if (job?.data?.complete !== false || job.data.baseVersion !== (prior?.updateTime||'') || Date.now()-Date.parse(job.data.readTime)>50*60000) initial = await canonicalTrackPage(env,trackId,'','',TRACK_LIMIT+1);
+  if (trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_LIMIT+1);
   if (!initial || initial.documents.length > TRACK_LIMIT) {
     const build = await advanceTrackBuild({trackId,prior,job,initial,
       readPage:(cursor,readTime,limit)=>canonicalTrackPage(env,trackId,cursor,readTime,limit),
       normalize:(rows,readTime)=>normalizeBuildRows(env,trackId,rows,readTime),
-      read:(c,id)=>readDocument(env,c,id),commit:w=>commitDocuments(env,w)});
+      read:(c,id)=>readDocument(env,c,id),
+      readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
     if(build.pending){
       const queue=await readDocument(env,COLLECTIONS.jobs,'canonical_reconcile_v2'),state=queue?.data||{};
-      if(!(state.pendingFullRebuildTrackIds||[]).includes(trackId))await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:'canonical_reconcile_v2',prior:queue,data:{...state,pendingTrackIds:[...new Set([...(state.pendingTrackIds||[]),trackId])],pendingFullRebuildTrackIds:[...new Set([...(state.pendingFullRebuildTrackIds||[]),trackId])]}}]);
+      if(!(state.pendingFullRebuildTrackIds||[]).includes(trackId)||!state.activeFullRebuildTrackId)await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:'canonical_reconcile_v2',prior:queue,data:{...state,activeFullRebuildTrackId:state.activeFullRebuildTrackId||trackId,pendingTrackIds:[...new Set([...(state.pendingTrackIds||[]),trackId])],pendingFullRebuildTrackIds:[...new Set([...(state.pendingFullRebuildTrackIds||[]),trackId])]}}]);
       return build;
     }
     if (build.restart) throw Error('TRACK_BUILD_RESTART_REQUIRED');
@@ -1320,6 +1328,7 @@ export async function bootstrapSnapshotVerification(env) {
 }
 
 export async function reconcileCanonicalChanges(env, {scanResults = true, now = Date.now()} = {}) {
+  env = {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.httpRequests || 0),limit:42}};
   // New namespace discards any cursor poisoned by legacy client-clock timestamps.
   const jobId='canonical_reconcile_v2';
   const document=await readDocument(env,COLLECTIONS.jobs,jobId);
@@ -1339,7 +1348,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     const attempts = Number.isSafeInteger(failure.attempts) ? Math.max(0, Math.min(8, failure.attempts)) : 0;
     const retryAt = Number.isSafeInteger(failure.retryAt) ? Math.min(retryAtLimit, Math.max(0, failure.retryAt)) : 0;
     if (!attempts || !retryAt) continue;
-    if (Object.keys(failedFullRebuilds).length < RECONCILE_REBUILD_FAILURE_LIMIT) failedFullRebuilds[trackId] = {attempts, retryAt};
+    if (Object.keys(failedFullRebuilds).length < RECONCILE_REBUILD_FAILURE_LIMIT) failedFullRebuilds[trackId] = {attempts, retryAt, ...(failure.targeted === true ? {targeted:true} : {})};
   }
   let forceFullRebuildAll=job.forceFullRebuildAll===true;
   if(Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0)>RECONCILE_PENDING_ID_LIMIT){
@@ -1386,16 +1395,19 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   }
   if(forceFullRebuildAll)for(const trackId of queued)fullRebuildTracks.add(trackId);
   let rebuilt=0,targeted=0;
+  let activeFullRebuildTrackId = queued.has(job.activeFullRebuildTrackId) ? job.activeFullRebuildTrackId : '';
   const fallbackOnly = trackId => fullRebuildTracks.has(trackId) || !pendingResultIds[trackId]?.length;
   // Firestore map key order is not a durable cursor; rotate using the persisted array.
-  const eligible=[...queued].filter(id=>!(fallbackOnly(id)&&rebuildCoolingDown(id))
+  const eligible=[...queued].filter(id=>!(rebuildCoolingDown(id) && (fallbackOnly(id) || failedFullRebuilds[id]?.targeted === true))
     &&!(fallbackOnly(id)&&!failedFullRebuilds[id]
       &&Object.keys(failedFullRebuilds).length>=RECONCILE_REBUILD_FAILURE_LIMIT));
   const fullCandidates=eligible.filter(fallbackOnly);
-  // Reserve one existing slot for the oldest eligible full rebuild, then favor
-  // targeted work. Full work may borrow idle slots, never exceed the four-track cap.
-  const selected=[...fullCandidates.slice(0,1),...eligible.filter(id=>!fallbackOnly(id)),
-    ...fullCandidates.slice(1)].slice(0,RECONCILE_TRACK_BATCH);
+  // A fixed-readTime build must get its next page before starting another full build.
+  const activeIndex=fullCandidates.indexOf(activeFullRebuildTrackId);
+  if(activeIndex>0)fullCandidates.unshift(...fullCandidates.splice(activeIndex,1));
+  // One full build per invocation leaves room for checkpointing and targeted work.
+  // Never run several capacity assemblies in the same fifty-subrequest budget.
+  const selected=[...fullCandidates.slice(0,1),...eligible.filter(id=>!fallbackOnly(id))].slice(0,RECONCILE_TRACK_BATCH);
   const targetGroups=[];let targetBudget=RECONCILE_TARGET_ID_BATCH;
   for(const trackId of selected){
     if(fullRebuildTracks.has(trackId)||!pendingResultIds[trackId]?.length)continue;
@@ -1434,8 +1446,10 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
           || !failedFullRebuilds[trackId] && Object.keys(failedFullRebuilds).length >= RECONCILE_REBUILD_FAILURE_LIMIT) continue;
         attemptedFullRebuild = true;
         const full = await rebuildTrack(env,trackId);
-        if(full.pending)break;
+        if(full.blocked)throw Error('TRACK_BUILD_BLOCKED: '+full.reason);
+        if(full.pending){activeFullRebuildTrackId=trackId;break;}
       }
+      if(activeFullRebuildTrackId===trackId)activeFullRebuildTrackId='';
       rebuilt++;
       delete failedFullRebuilds[trackId];
       if(targetedIds.length)targeted+=targetedIds.length;
@@ -1448,13 +1462,15 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
       if(result.fallback||fullRebuildTracks.has(trackId))pendingFullRebuildTrackIds.delete(trackId);
       if(!pendingResultIds[trackId]?.length)queued.delete(trackId);
     }catch(error){
+      if(activeFullRebuildTrackId===trackId)activeFullRebuildTrackId='';
       console.error('Canonical track reconciliation failed',trackId,String(error?.message||error));
-      if (attemptedFullRebuild) {
+      if (!/^FIRESTORE_(409|412)$/.test(String(error?.message || '')) &&
+          (failedFullRebuilds[trackId] || Object.keys(failedFullRebuilds).length < RECONCILE_REBUILD_FAILURE_LIMIT)) {
         const previous = failedFullRebuilds[trackId];
         const attempts = Math.min(8, (previous?.attempts || 0) + 1);
         const delay = Math.min(RECONCILE_REBUILD_BACKOFF_MAX_MS,
           RECONCILE_REBUILD_BACKOFF_BASE_MS * (2 ** (attempts - 1)));
-        failedFullRebuilds[trackId] = {attempts, retryAt: reconcileNow + delay};
+        failedFullRebuilds[trackId] = {attempts, retryAt: reconcileNow + delay, ...(!attemptedFullRebuild ? {targeted:true} : {})};
       }
       queued.delete(trackId);queued.add(trackId);
     }
@@ -1465,18 +1481,20 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     &&Array.isArray(job.pendingFullRebuildTrackIds)
     &&JSON.stringify([...pendingFullRebuildTrackIds])===JSON.stringify(job.pendingFullRebuildTrackIds)
     &&Boolean(forceFullRebuildAll&&queued.size)===Boolean(job.forceFullRebuildAll)
+    &&String(job.activeFullRebuildTrackId||'')===activeFullRebuildTrackId
     &&Number(job.schemaVersion||0)===2
     &&JSON.stringify(failedFullRebuilds)===JSON.stringify(job.failedFullRebuilds||{});
   if(document&&!changed.length&&!legacy.length&&!rebuilt&&job.backfillComplete
     &&(!queued.size||selected.length===0&&normalizedJobState))
     return {scanned:0,rebuilt:0,targeted:0,pending:queued.size,unchanged:true};
+  env.__OVERALL_REQUEST_BUDGET.limit = 45; // Reserve three calls for durable reconciliation state.
   await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:jobId,prior:document,data:{
     cursorIngestedAt:changed.length?changed.at(-1).ingestedAt:timestamp,
     cursorDocumentId:changed.length?changed.at(-1).id:safeText(job.cursorDocumentId,256),
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
     backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
     pendingTrackIds:[...queued],pendingResultIds,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
-    failedFullRebuilds,
+    failedFullRebuilds,activeFullRebuildTrackId,
     forceFullRebuildAll:Boolean(forceFullRebuildAll&&queued.size),lastScanAt:Date.now(),schemaVersion:2
   }}]);
   return {scanned:changed.length+legacy.length,rebuilt,targeted,pending:queued.size};
@@ -1527,7 +1545,11 @@ async function loadOverallRebuild(env, force = false) {
   const entitlementScanDue = entitlementAuditDue(meta, now, force);
   const entitlementAuditExpired = Number.isSafeInteger(meta.entitlementAuditedAt) && entitlementScanDue;
   const retryAt = Number(meta.overallRebuildRetryAt || 0);
-  if (!force && Number.isSafeInteger(retryAt) && retryAt > now) {
+  const blocked = meta.overallRebuildBlockedSource;
+  const sameBlockedSource = blocked && blocked.revision === Number(meta.revision || 0) &&
+    blocked.sourceDigest === String(meta.sourceBundle?.digest || '') &&
+    blocked.catalogScannedAt === Number(meta.sourceCatalog?.scannedAt || 0);
+  if (!force && Number.isSafeInteger(retryAt) && retryAt > now && (!blocked || sameBlockedSource)) {
     return {rebuilt: false, reason: 'failure_cooldown', retryAt,
       attempts: Number(meta.overallRebuildFailureAttempts || 0)};
   }
@@ -1569,11 +1591,15 @@ async function recordOverallRebuildFailure(env, initialMeta, sourceError) {
     const previousAttempts = Number.isSafeInteger(current.overallRebuildFailureAttempts)
       ? Math.max(0, current.overallRebuildFailureAttempts) : 0;
     const attempts = Math.min(previousAttempts + 1, 5);
-    const retryDelay = Math.min(OVERALL_REBUILD_FAILURE_MAX_MS,
+    const sourceBudgetBlocked = ['OVERALL_SOURCE_REQUEST_BUDGET_EXHAUSTED', 'OVERALL_REQUEST_BUDGET_EXHAUSTED'].includes(sourceError?.message);
+    if (sourceBudgetBlocked && Number(current.revision || 0) !== Number(initialMeta.revision || 0)) return;
+    const retryDelay = sourceBudgetBlocked ? 24 * 60 * 60 * 1000 : Math.min(OVERALL_REBUILD_FAILURE_MAX_MS,
       OVERALL_REBUILD_FAILURE_BASE_MS * 2 ** Math.min(attempts - 1, 4));
     await commitDocuments(env, [{collection: COLLECTIONS.meta, id: 'current', prior: currentDoc,
       data: {...current, ...(sourceError?.invalidateSourceBundle ? {sourceBundle:{version:1,ready:false}} : {}),
-        overallRebuildFailureAttempts: attempts, overallRebuildRetryAt: Date.now() + retryDelay}}]);
+        overallRebuildFailureAttempts: attempts, overallRebuildRetryAt: Date.now() + retryDelay,
+        overallRebuildBlockedSource: sourceBudgetBlocked ? {revision:Number(current.revision || 0),
+          sourceDigest:sourceError?.invalidateSourceBundle ? '' : String(current.sourceBundle?.digest || ''), catalogScannedAt:Number(current.sourceCatalog?.scannedAt || 0)} : null}}]);
   } catch {
     // Failure bookkeeping must not hide the original build error or weaken CAS.
   } finally {
@@ -1778,6 +1804,7 @@ async function buildOverallSnapshot(env, metaDoc, meta, now, force = false, allo
   const successMeta = {...sourceMeta};
   delete successMeta.overallRebuildFailureAttempts;
   delete successMeta.overallRebuildRetryAt;
+  delete successMeta.overallRebuildBlockedSource;
   const writeBytes = documents => documents.reduce((size,doc)=>size+1024+new TextEncoder().encode(JSON.stringify(encodeFields(doc.data))).length,0);
   // Journal each intermediate chunk atomically, even if the build later dies.
   // Never adopt a freshly read metadata precondition for this old calculation.
@@ -2142,23 +2169,53 @@ async function resumeOrCreateMigration(env) {
   return createMigrationJob(env, existing);
 }
 
-async function processMigrationJob(env, supplied = null) {
+export async function processMigrationJob(env, supplied = null) {
   const job = supplied || (await readDocument(env, COLLECTIONS.jobs, 'release_migration'))?.data;
   if (!job || job.kind !== 'migration' || Number(job.completedAt || 0) > 0) return { active: false };
   const pendingTracks = Array.isArray(job.pendingTrackIds) ? job.pendingTrackIds : [];
-  const pendingBadges = new Set();
+  const pendingBadges = new Set(Array.isArray(job.pendingBadges) ? job.pendingBadges : []);
   const awardedBadgeIds = new Set(Array.isArray(job.awardedBadgeIds) ? job.awardedBadgeIds.map((value) => safeText(value, 128)).filter(Boolean) : []);
-  const batch = pendingTracks.slice(0, MIGRATION_TRACK_BATCH);
-  const rebuiltTracks = await mapConcurrent(batch, 3, (trackId) => rebuildTrack(env, trackId));
-  let processedTracks = 0;
-  for (const result of rebuiltTracks) {
+  const at = Date.now(), failures = {...job.trackFailures};
+  const batch = pendingTracks.filter(id => !(Number(failures[id]?.retryAt || 0) > at)).slice(0, MIGRATION_TRACK_BATCH);
+  if (!batch.length && pendingTracks.length) return {active:true, tracksRemaining:pendingTracks.length, deferred:true};
+  // Do not start a second fixed-readTime build while reconciliation owns another.
+  const coordination = (await readDocument(env, COLLECTIONS.jobs, 'canonical_reconcile_v2'))?.data;
+  if (batch.length && coordination?.activeFullRebuildTrackId &&
+      coordination.pendingTrackIds?.includes(coordination.activeFullRebuildTrackId))
+    return {active:true, tracksRemaining:pendingTracks.length, deferred:true};
+  // Retain unfinished tracks, but checkpoint completed siblings even when another fails.
+  const rebuiltTracks = await mapConcurrent(batch, 3, async trackId => {
+    try {
+      const build = await readDocument(env, TRACK_BUILD_JOBS, trackBuildId(trackId));
+      if (build?.data?.complete === true && Number(build.data.completedAt || 0) >= Number(job.createdAt || 0)) {
+        const published = await readDocument(env, COLLECTIONS.track, trackId);
+        if (published) return {trackId, result:{entries:await loadPublicationEntries(published.data,'track',trackId,
+          (collection,id)=>readDocument(env,collection,id))}};
+      }
+      return {trackId, result:await rebuildTrack(env, trackId)};
+    }
+    catch (error) { return {trackId, error}; }
+  });
+  const completed = new Set();
+  for (const {trackId, result, error} of rebuiltTracks) {
+    if (error || result?.blocked) {
+      const attempts = Math.min(8, Number(failures[trackId]?.attempts || 0) + 1);
+      failures[trackId] = {attempts, retryAt:at + Math.min(RECONCILE_REBUILD_BACKOFF_MAX_MS,
+        RECONCILE_REBUILD_BACKOFF_BASE_MS * 2 ** (attempts - 1))};
+      console.error('Migration track rebuild deferred', trackId, String(error?.message || result?.reason || error));
+      continue;
+    }
+    if (result?.pending) continue;
+    if (!Array.isArray(result?.entries)) throw Error('INVALID_MIGRATION_REBUILD_RESULT');
+    delete failures[trackId];
     for (const entry of result.entries) {
       const createdAt = Number(entry.accountCreatedAt || 0);
       if (createdAt > 0 && createdAt <= betaCutoff(env) && !awardedBadgeIds.has(entry.accountId)) pendingBadges.add(entry.accountId);
     }
-    processedTracks += 1;
+    completed.add(trackId);
   }
-  const remainingTracks = pendingTracks.slice(processedTracks);
+  const processedTracks = completed.size;
+  const remainingTracks = pendingTracks.filter(id => !completed.has(id));
   let awardedBadges = 0;
   if (!remainingTracks.length) {
     const badgeWrites=[];
@@ -2172,9 +2229,9 @@ async function processMigrationJob(env, supplied = null) {
     if(badgeWrites.length)await commitDocuments(env,badgeWrites);
   }
   const complete = !remainingTracks.length && pendingBadges.size === 0;
-  const next = { ...job, migrationVersion: MIGRATION_VERSION, pendingTrackIds: remainingTracks, pendingBadges: [...pendingBadges], awardedBadgeIds: [...awardedBadgeIds], processedTracks: Math.max(0, Number(job.processedTracks || 0)) + processedTracks, awardedBadges: Math.max(0, Number(job.awardedBadges || 0)) + awardedBadges, updatedAt: Date.now(), completedAt: complete ? Date.now() : 0 };
+  const next = { ...job, migrationVersion: MIGRATION_VERSION, pendingTrackIds: remainingTracks, trackFailures: Object.fromEntries(Object.entries(failures).filter(([id]) => remainingTracks.includes(id))), pendingBadges: [...pendingBadges], awardedBadgeIds: [...awardedBadgeIds], processedTracks: Math.max(0, Number(job.processedTracks || 0)) + processedTracks, awardedBadges: Math.max(0, Number(job.awardedBadges || 0)) + awardedBadges, updatedAt: Date.now(), completedAt: complete ? Date.now() : 0 };
   await writeDocument(env, COLLECTIONS.jobs, 'release_migration', next);
-  if (processedTracks || complete) await rebuildOverall(env, complete);
+  // Published track changes already mark Overall dirty; its isolated cron owns aggregation.
   return { active: !complete, tracksRemaining: remainingTracks.length, badgesRemaining: pendingBadges.size, processedTracks: next.processedTracks, awardedBadges: next.awardedBadges, migrationVersion: MIGRATION_VERSION };
 }
 

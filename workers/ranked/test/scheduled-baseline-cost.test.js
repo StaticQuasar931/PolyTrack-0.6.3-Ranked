@@ -80,3 +80,20 @@ test('cron interval gating uses the scheduled minute and rejects malformed times
  for(const value of [undefined,null,NaN,Infinity,-1,1.5,'0'])assert.equal(scheduledIntervalDue(value,scan),false);
  for(const interval of [undefined,NaN,0,-60000,30000,90000])assert.equal(scheduledIntervalDue(base,interval),false);
 });
+
+test('quota exhaustion stops later catch-and-continue maintenance calls in the same invocation',async()=>{
+ let requests=0,completion;const errors=[];
+ const original=console.error;console.error=(...args)=>errors.push(args);
+ try{
+   worker.scheduled({cron:'*/2 * * * *',scheduledTime:Date.UTC(2026,9,26,12)},
+     {__TEST_FIRESTORE:async()=>{requests++;throw Error('FIRESTORE_429');}},
+     {waitUntil:value=>{completion=value;}});
+   await completion;
+   assert.equal(requests,1,'Rolling Hills failure cannot cause follow-up migration reads');
+   worker.scheduled({cron:'*/2 * * * *',scheduledTime:Date.UTC(2026,9,26,12,30)},
+     {__TEST_FIRESTORE:async()=>{requests++;throw Error('FIRESTORE_429');}},
+     {waitUntil:value=>{completion=value;}});
+   await completion;
+   assert.equal(requests,2,'a later invocation can detect quota recovery; no permanent circuit lock');
+ }finally{console.error=original;}
+});
