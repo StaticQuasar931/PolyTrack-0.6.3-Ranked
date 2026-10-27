@@ -13,10 +13,22 @@ export function publicEventTotal(row) {
   for(const field of ['finiteEventRp','permanentRollingHillsRp','dynamicEventRp','rollingHillsTimeMs','rollingHillsRunAgeMs','rollingHillsEventRpContribution'])if(int(row[field]))output[field]=row[field];
   return output;
 }
+export function publicEventFinishMetadata(row) {
+  const output = {};
+  for (const field of ['runId', 'replayHash'])
+    if (typeof row?.[field] === 'string' && /^[a-f0-9]{64}$/.test(row[field])) output[field] = row[field];
+  for (const field of ['verifiedAt', 'runCreatedAt', 'pbAt', 'createdAt'])
+    if (int(row?.[field]) && row[field] > 0) output[field] = row[field];
+  for (const field of ['physicsVerified', 'replayIntegrityVerified', 'runVerified', 'integrityVerified', 'verified', 'eventRpEligible', 'pending'])
+    if (typeof row?.[field] === 'boolean') output[field] = row[field];
+  if (['verified', 'waiting', 'pending', 'mismatch', 'rejected', 'expired', 'unavailable_final'].includes(row?.verificationStatus))
+    output.verificationStatus = row.verificationStatus;
+  return output;
+}
 function publicEventFinish(row) {
   if(!row||!account(row.accountId)||!int(row.timeMs)||row.timeMs<1||!int(row.rp)||!int(row.rank)||row.rank<1)throw Error('EVENT_PUBLIC_FINISH_INVALID');
   return {accountId:row.accountId,name:safePublicName(row.name||'Racer',row.accountId),timeMs:row.timeMs,rp:row.rp,rank:row.rank,
-    carStyle:carStyle(row.carStyle),...(int(row.submittedAt)?{submittedAt:row.submittedAt}:{})};
+    carStyle:carStyle(row.carStyle),...(int(row.submittedAt)?{submittedAt:row.submittedAt}:{}),...publicEventFinishMetadata(row)};
 }
 export function publicEventPage(data,kind) {
   if(!data||!Array.isArray(data.entries))throw Error('EVENT_PUBLIC_PAGE_INVALID');

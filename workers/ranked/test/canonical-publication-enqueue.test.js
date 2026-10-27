@@ -222,3 +222,17 @@ test('shared batch reader rejects invalid exact IDs before batchGet, never redir
     assert.equal(calls.includes(':batchGet'), false);
   }
 });
+
+
+test('owner PB notification marks Overall dirty without launching a second aggregator',async()=>{
+ const canonical=row('b'.repeat(64)),f=fixture({rows:[canonical]});
+ const tasks=[];
+ const response=await handleRequest(new Request('https://audit.invalid/v1/pb/notify',{method:'POST',
+ headers:{Origin:'https://audit.invalid','Content-Type':'application/json'},body:JSON.stringify({resultId:f.ids[0]})}),
+ {...f.env,ALLOWED_ORIGINS:'https://audit.invalid',PB_NOTIFY_RATE_LIMITER:{limit:async()=>({success:true})},__TEST_UID:'owner'},
+ {waitUntil:task=>tasks.push(task)});
+ assert.equal(response.status,200);const body=await response.json();assert.equal(body.changed,true);assert.equal(body.overallPending,true);
+ assert.equal(f.data.get('0.6.2_s1_release_meta/current').dirty,true);
+ assert.equal(tasks.length,0,'The existing cron, not every PB request, owns aggregation');
+ assert.equal(f.calls.includes('/0.6.2_s1_leaderboards_overall/main'),false);
+});

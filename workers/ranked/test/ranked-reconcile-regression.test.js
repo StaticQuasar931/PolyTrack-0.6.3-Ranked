@@ -40,10 +40,11 @@ function fixture({tracks, discover = false, failing = new Set()}) {
       const field = query.where?.fieldFilter?.field.fieldPath;
       if (field === 'trackId') {
         const track = query.where.fieldFilter.value.stringValue;
-        assert.equal(query.limit, 501, 'fallback scan remains bounded');
-        if (failing.has(track)) return Array.from({length: 501}, (_, i) => ({
-          document: wire(`${results}/overflow-${i}`, row(track, `overflow-${i}`))}));
+        assert.equal(query.limit, 100, 'fallback scan remains bounded');
+        if (failing.has(track)) throw Error('FIRESTORE_503');
+        const after=query.startAt?.values?.[0]?.referenceValue || '';
         return [...data].filter(([key, value]) => key.startsWith(results + '/') && value.trackId === track)
+          .filter(([key])=>base+key>after).sort(([a],[b])=>a.localeCompare(b)).slice(0,query.limit)
           .map(([key, value]) => ({document: wire(key, value)}));
       }
       if (discover && field === 'ingestedAt' && !discovered) {

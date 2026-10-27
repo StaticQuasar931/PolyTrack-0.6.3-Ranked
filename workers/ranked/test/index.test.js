@@ -1019,7 +1019,7 @@ test('full track rebuild keeps its canonical scan bounded and still reconciles v
  }};
  const result=await rebuildTrack(env,COMMUNITY_TRACK);
  assert.equal(result.entries.length,0);
- assert.equal(queryLimit,501);
+ assert.equal(queryLimit,100);
  assert.equal(queueRead,true);
  assert.ok(commits.flat().some(write=>write.update?.name.includes('/'+VERIFICATION_COLLECTION+'/'+COMMUNITY_TRACK)));
  assert.ok(commits.flat().some(write=>write.update?.name.includes('/0.6.2_s1_leaderboards_track/'+COMMUNITY_TRACK)));

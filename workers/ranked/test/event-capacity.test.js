@@ -211,6 +211,7 @@ test('Rolling-only refresh reuses completed finite scan even after snapshot quer
  f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:9999,events:1});
  f.data.get(C.public+'/totals').revision++;
  f.data.get(C.public+'/totals').publicationPending=true;
+ f.time(f.runtime.now()+15*60000); // Scheduled finite refresh coalesces new revisions.
  const next=f.calls.length;
  assert.equal((await publishEventCapacity(f.runtime)).published,true);
  assert.equal(f.calls.slice(next).includes(':runQuery'),true);
@@ -648,5 +649,20 @@ test('reordered Firestore job maps complete multi-page publication without false
  assert.equal((await advanceEventPublication(f.runtime)).pending,true);
  assert.equal((await advanceEventPublication(f.runtime)).published,true);
  assert.equal(meter.audit.collections[C.totals],1001,'key ordering must not cause rereads');
+ assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
+});
+
+
+test('finite totals coalesce new revisions without rereading participants; dirty work survives',async()=>{
+ const f=await combinedFixture(),before=structuredClone(f.data.get(C.public+'/totals_full'));
+ f.data.set(C.totals+'/'+f.c,{accountId:f.c,name:'Finite C',rp:960,events:2});
+ const work=f.data.get(C.public+'/totals');work.revision++;work.publicationPending=true;work.pendingPeriodIds=[];
+ f.time(3000);const meter=readMeter(f),held=await publishEventCapacity(f.runtime);
+ assert.equal(held.reason,'finite_totals_coalescing');assert.equal(held.retryAt,902000);
+ assert.equal(meter.audit.collections[C.totals]||0,0);
+ assert.deepEqual(f.data.get(C.public+'/totals_full'),before);
+ assert.equal(f.data.get(C.public+'/totals').publicationPending,true);
+ f.time(902000);assert.equal((await publishEventCapacity(f.runtime)).published,true);
+ assert.equal(f.data.get(C.public+'/totals_full').entries.find(row=>row.accountId===f.c).rp,960);
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
 });

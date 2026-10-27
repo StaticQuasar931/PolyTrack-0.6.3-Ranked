@@ -40,6 +40,9 @@ jobs:
         run: node --test tools/workflow-release-contract.test.mjs
       - name: Check trusted engine before Firebase reads
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
+      - name: Test queue and publication contracts before quota access
+        # Offline, dependency-free checks catch regressions before any production read.
+        run: node --test tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs
       - name: Check for due verification work
         id: queue
         timeout-minutes: 2

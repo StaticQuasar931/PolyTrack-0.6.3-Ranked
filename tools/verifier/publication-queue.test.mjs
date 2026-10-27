@@ -203,13 +203,13 @@ test('no eligible full work leaves all four slots available to targeted work', a
   assert.equal(f.targetBatches[0].length, 4);
 });
 
-test('full-only work still admits at most four existing bounded scans per invocation', async () => {
+test('full-only work admits one bounded build and retains every remaining track', async () => {
   const fullTracks = Array.from({length: 6}, (_, i) => 'full-only-' + i);
   const f = laneFixture({fullTracks, targetedCount: 0});
   const result = await reconcileCanonicalChanges(f.env, {scanResults: false, now: f.now});
-  assert.equal(result.rebuilt, 4);
+  assert.equal(result.rebuilt, 1);
   assert.equal(result.targeted, 0);
-  assert.deepEqual(f.fullQueries, fullTracks.slice(0, 4));
-  assert.deepEqual(f.job.pendingFullRebuildTrackIds, fullTracks.slice(4));
+  assert.deepEqual(f.fullQueries, fullTracks.slice(0, 1));
+  assert.deepEqual(f.job.pendingFullRebuildTrackIds, fullTracks.slice(1));
   assert.deepEqual(f.targetBatches, []);
 });

@@ -576,7 +576,7 @@ test('track registry parser and bounded selection prioritize dirty snapshots and
     [ids[1]]: {path: `tracks/${ids[1]}.json`, sourceUpdatedAt: 10, checkedAt: 1}
   }, 1, 1000000000);
   assert.deepEqual(selected, [trackId]);
-  assert.equal(PUBLIC_SNAPSHOT_LIMITS.trackFetches, 100);
+  assert.equal(PUBLIC_SNAPSHOT_LIMITS.trackFetches, 20);
 });
 
 test('missing known-source boards outrank speculative stale cached boards within the fetch budget',()=>{
@@ -622,8 +622,8 @@ test('missing track fetches rotate on later daily runs instead of pinning the fi
   const ids = Array.from({length: 140}, (_, i) => i.toString(16).padStart(64, '0'));
   const first = chooseTrackFetches(ids, [], {}, 100, Date.UTC(2026, 9, 2));
   const second = chooseTrackFetches(ids, [], {}, 100, Date.UTC(2026, 9, 3));
-  assert.equal(first.length, 100);
-  assert.equal(second.length, 100);
+  assert.equal(first.length, PUBLIC_SNAPSHOT_LIMITS.trackFetches);
+  assert.equal(second.length, PUBLIC_SNAPSHOT_LIMITS.trackFetches);
   assert.ok(second.some(id => !first.includes(id)));
 });
 
@@ -945,3 +945,5 @@ test('compact track catalog discovers low-participation boards and avoids unchan
 });
 
 import './event-verification-dates.test.mjs';
+
+import './public-event-export-regression.test.mjs';

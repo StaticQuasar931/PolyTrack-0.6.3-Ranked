@@ -1,6 +1,6 @@
 import {isCompetitiveReviewHold, strongNearCloneEvidence} from './competitive-review.js';
 import {reviewRecord, REVIEW_COLLECTION} from './review-inbox.js';
-import {publicEventPage,publicEventTotal} from './event-public-projection.js';
+import {publicEventPage,publicEventTotal,publicEventFinishMetadata} from './event-public-projection.js';
 import {eventCapacityStorage,prepareEventRetention,eventRetentionPaths,EVENT_RETENTION_COLLECTION,EVENT_REVIEWED_MAX_ENTRANTS,EVENT_REVIEWED_MAX_SUBMISSIONS} from './event-capacity.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION,publicationPageId} from './paged-publication.js';
 import { compatibleEventEngine } from './event-engine-compatibility.js';
@@ -51,6 +51,10 @@ function receiptTime(value) {
   const ms = Date.parse(value.__firestoreTimestamp); demand(int(ms), 'invalid_server_receipt', 409); return ms;
 }
 function text(value, max) { return typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : ''; }
+function publicBoardMetadata(source) {
+  const fields = ['pagination', 'sourceRevision', 'sourceReadTime', 'sourceComplete', 'totalEntries', 'complete'];
+  return Object.fromEntries(fields.filter(field => source?.[field] !== undefined && (field !== 'pagination' || source[field] !== null)).map(field => [field, source[field]]));
+}
 export function publicEventPeriod(p) {
   const privateSoftTarget = p.kind === 'kodub' && p.kodub?.privateSoftScoring === true;
   return { ...(p.kind==='kodub'?{trackName:p.kodub?.name||p.trackName,author:p.kodub?.author||p.author,targetPolicy:'official-fastest-verified-at-import'}:{}),id: p.id, trackId: p.trackId, startsAt: p.startsAt, endsAt: p.endsAt,
@@ -154,7 +158,7 @@ export function eventLeaderboard(period, rows) {
       int(value, period.startsAt, period.endsAt - 1));
     return { accountId: row.accountId, timeMs: row.timeMs, rp: eventRp(period, row.timeMs),
       name: text(row.name, 24) || 'Racer', carStyle: typeof row.carStyle==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(row.carStyle)?row.carStyle:'',
-      ...(submittedAt === undefined ? {} : { submittedAt }) };
+      ...(submittedAt === undefined ? {} : { submittedAt }), ...publicEventFinishMetadata(row) };
   }).sort((a, b) => a.timeMs - b.timeMs || (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
   let rank = 0;
   return sorted.map((row, index) => {
@@ -521,7 +525,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
       return store.transaction(async tx => {
         const history = await tx.get(path(C.history, id(periodId)));
         if (history?.archived === true) return { period: history.period, entries: history.entries,
-          ...(history.pagination?{pagination:history.pagination,sourceRevision:history.sourceRevision,sourceReadTime:history.sourceReadTime,sourceComplete:history.sourceComplete,totalEntries:history.totalEntries,complete:history.complete}:{}),pendingPlaybacks: [], racerCount: history.racerCount ?? history.entries?.length ?? 0,
+          ...publicBoardMetadata(history),pendingPlaybacks: [], racerCount: history.racerCount ?? history.entries?.length ?? 0,
           archived: true, updatedAt: history.archivedAt };
         const p = await readPeriod(tx, periodId), at = stamp();
         demand(at >= p.startsAt && at < p.endsAt + p.graceMs, 'event_not_public', 404);
@@ -529,7 +533,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const board = await tx.get(path(C.live, periodId));
         return { period: publicEventPeriod({ ...p, racerCount: board?.racerCount || 0 }), archived: false, updatedAt: board?.updatedAt || 0,
           racerCount: board?.racerCount || 0, pendingPlaybacks: visiblePendingPlaybacks(board?.pendingPlaybacks || board?.playbacks),
-          ...(board?.pagination?{pagination:board.pagination,sourceRevision:board.sourceRevision,sourceReadTime:board.sourceReadTime,sourceComplete:board.sourceComplete,totalEntries:board.totalEntries,complete:board.complete}:{}),
+          ...publicBoardMetadata(board),
           state: at < p.endsAt ? 'open' : 'settling', entries: eventLeaderboard(p, board?.entries || []) };
       });
     },
@@ -814,7 +818,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         await tx.create(archivePath, { period: p, archivedAt: at, entries, racerCount,
           unresolvedRunIds: queue?.slots.map(s => s.runId) || [], settled: queue?.slots.length === 0, cleanupCursor: 0 });
         await tx.set(historyPath, { periodId, period: publicPeriod, archived: true, updatedAt: at,
-          archivedAt: at, racerCount, entries,...(board?.pagination?{pagination:board.pagination,sourceComplete:board.sourceComplete,totalEntries:board.totalEntries,complete:board.complete}:{}),pendingPlaybacks: [], winner: entries[0] || null });
+          archivedAt: at, racerCount, entries,...publicBoardMetadata(board),pendingPlaybacks: [], winner: entries[0] || null });
         if (p.kind === 'kodub' && !priorArchiveTrack) await tx.create(archiveTrackPath, { periodId, trackId: p.trackId,
           trackCode: p.kodub.trackCode, trackCodeHash: p.kodub.trackCodeHash, environment: p.kodub.environment, archivedAt: at });
         await tx.set(monthPath, { month, periods: monthPeriods, updatedAt: at });

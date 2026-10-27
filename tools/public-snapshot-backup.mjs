@@ -10,7 +10,7 @@ import {projectEventDates} from './public-event-dates.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs';
 export {publicEventPlaybackForPublication as publicEventPlaybackBackup} from './public-event-playback.mjs';
 
-export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 100, eventFetches: 120, eventReplayFetches: 30, pageFetches: 100,
+export const PUBLIC_SNAPSHOT_LIMITS = Object.freeze({trackFetches: 20, eventFetches: 120, eventReplayFetches: 30, pageFetches: 100,
   eventReplaysPerPeriod: 500, eventReplayResponseBytes: 70 * 1024, responseBytes: 2 * 1024 * 1024, concurrency: 4});
 const WORKER = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,7 +47,7 @@ const cosmeticFields = ['version', 'theme', 'accent', 'finish', 'plate', 'edge',
 const summaryFields = ['trackId', 'type', 'fieldSize', 'weight', 'recordMs', 'updatedAt'];
 const leaderFields = ['accountId', 'name', 'countryCode', 'carStyle', 'timeMs', 'rank'];
 const periodFields = ['id', 'trackId', 'startsAt', 'endsAt', 'graceMs', 'maxRp', 'targetMs', 'kind', 'racerCount',
-  'entrantLimit', 'label', 'trackName', 'author', 'targetPolicy'];
+  'entrantLimit', 'label', 'trackName', 'author', 'targetPolicy', 'scoringVersion'];
 const eventEntryFields = ['accountId', 'name', 'carStyle', 'timeMs', 'rp', 'rank', 'countryCode', 'frames', 'runAt',
   'runAgeMs', 'eventRpContribution', 'normalRpEligible', 'physicsVerified', 'replayIntegrityVerified'];
 const eventFields = ['id', 'kind', 'trackId', 'period', 'scoreVersion', 'targetPolicy', 'targetMs', 'maxRp', 'sourceRevision',
@@ -454,7 +454,10 @@ async function writeJsonIfChanged(directory, relative, value) {
 }
 
 async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
-  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null} = {}) {
+  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null,
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches} = {}) {
+  if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
+    throw Error('Invalid trackFetchLimit');
   const adminCapture = archiveExport ? createAdminArchiveCaptureFetch({...archiveExport, fetchImpl}) : null;
   if (adminCapture) fetchImpl = adminCapture.fetch;
   const previous = await readManifest(directory);
@@ -524,7 +527,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     }
   }
   const selectedTracks = chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
-    PUBLIC_SNAPSHOT_LIMITS.trackFetches, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
+    trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
@@ -753,7 +756,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   const manifest = {schemaVersion: 1, source: 'public-ranked-worker',
     overall: {path: 'overall.json', revision: Number(overall.revision || overall.sourceRevision || 0), updatedAt: overall.updatedAt,
       sha256: records['overall.json'].sha256},
-    overallResults, tracks: nextTracks, trackFetchLimit: PUBLIC_SNAPSHOT_LIMITS.trackFetches,
+    overallResults, tracks: nextTracks, trackFetchLimit,
     trackIdsKnown: allTrackIds.length, tracksFetched: trackRows.length, tracksMissing: missingTracks,
     trackBackupsPresent: Object.values(nextTracks).filter(row => row.path).length,
     trackBackupsMissing: Math.max(0, allTrackIds.length - Object.values(nextTracks).filter(row => row.path).length),

@@ -200,3 +200,11 @@ test('normal verifier budget enforces 400 requests and expanded catch-up remains
   assert.match(runtime,/catchUp && env.GITHUB_EVENT_NAME !== 'workflow_dispatch'/);
   assert.ok(runtime.indexOf("catchUp && env.GITHUB_EVENT_NAME !== 'workflow_dispatch'")<runtime.indexOf('const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT'));
 });
+
+
+test('queue and publication regression gates run offline before verifier preflight',()=>{
+ const guard=step(verifier,'Test queue and publication contracts before quota access');
+ assert.match(guard,/node --test tools\/verifier\/queue.test.mjs tools\/verifier\/publication-queue.test.mjs/);
+ assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
+ assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
+});

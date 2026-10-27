@@ -3,7 +3,7 @@ import {recallPublicResponse, rememberPublicResponse} from './public-response-me
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId} from './verification-shards.js';
-import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS} from './track-build.js';
+import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS, TRACK_BUILD_PAGE_SIZE} from './track-build.js';
 import { safePublicName } from './public-name-policy.js';
 import {kodubWeekly} from './kodub-weekly.js';
 import { eventWorkerHandler, eventWorkerMaintenance } from './events-worker.js';
@@ -1121,7 +1121,9 @@ async function canonicalTrackPage(env,trackId,afterName='',readTime='',limit=100
     ...(afterName?{startAt:{before:false,values:[{referenceValue:afterName}]}}:{})};
   const payload=await firestoreRequest(env,':runQuery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({structuredQuery,...(readTime?{readTime}:{})})});
   if(!Array.isArray(payload))throw Error('TRACK_QUERY_INVALID');
-  return {readTime:readTime||payload.at(-1)?.readTime||'',documents:payload.flatMap(item=>item.document?[{name:item.document.name,data:decodeFields(item.document.fields||{})}]:[])};
+  const documents=payload.flatMap(item=>item.document?[{name:item.document.name,data:decodeFields(item.document.fields||{})}]:[]);
+  if(documents.length>limit)throw Error('TRACK_QUERY_OVERFLOW');
+  return {readTime:readTime||payload.at(-1)?.readTime||'',documents,ended:documents.length<limit};
 }
 async function normalizeBuildRows(env,trackId,rows,readTime) {
   rows=rows.filter(row=>structurallyValidResult(row,trackId));
@@ -1168,8 +1170,8 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const job = await readDocument(env,TRACK_BUILD_JOBS,trackBuildId(trackId));
   let initial = null;
-  if (trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_LIMIT+1);
-  if (!initial || initial.documents.length > TRACK_LIMIT) {
+  if (trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_BUILD_PAGE_SIZE);
+  if (!initial || !initial.ended) {
     const build = await advanceTrackBuild({trackId,prior,job,initial,
       readPage:(cursor,readTime,limit)=>canonicalTrackPage(env,trackId,cursor,readTime,limit),
       normalize:(rows,readTime)=>normalizeBuildRows(env,trackId,rows,readTime),
@@ -1181,7 +1183,20 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
       return build;
     }
     if (build.restart) throw Error('TRACK_BUILD_RESTART_REQUIRED');
-    const previous = prior?.data?.pagination ? await loadPublicationEntries(prior.data,'track',trackId,(c,id)=>readDocument(env,c,id)) : prior?.data?.entries||[];
+    let previousPages;
+    const previous = prior?.data?.pagination ? await loadPublicationEntries(prior.data,'track',trackId,async(c,id)=>{
+      // Immutable generation pages can share one request without weakening validation.
+      if(!previousPages){
+        const p=prior.data.pagination;
+        const ids=Array.from({length:p.pageCount},(_,page)=>publicationPageId('track',trackId,p.generation,page));
+        const base=documentBase(env).replace('https://firestore.googleapis.com/v1/','');
+        const payload=await firestoreRequest(env,':batchGet',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({documents:ids.map(id=>`${base}/${c}/${id}`)})});
+        previousPages=new Map((Array.isArray(payload)?payload:[]).filter(item=>item.found).map(({found})=>
+          [found.name.split('/').at(-1),{data:decodeFields(found.fields||{})}]));
+      }
+      return previousPages.get(id);
+    }) : prior?.data?.entries||[];
     const byId = new Map(previous.map(row=>[row.accountId||row.userId,row]));
     const entries = rankTrustedTrackEntries(build.entries.map(row=>preservePublishedIdentity(row,byId.get(row.accountId))),trackId);
     return persistTrackSnapshot(env,trackId,entries,prior,build);
@@ -2590,7 +2605,7 @@ async function handleRequestInternal(request, env, context = {}) {
   const integrityVerified = await replayIntegrityValid(result.data);
   const trackId = safeText(result.data.trackId, 80);
   const rebuilt = await mergeCanonicalResultIntoTrack(env, trackId, result.data, integrityVerified);
-  if (rebuilt.changed && rebuilt.overallChanged !== false && context.waitUntil) context.waitUntil(rebuildOverall(env, false).catch((error) => console.error('Deferred overall rebuild failed', String(error?.message || error))));
+  // Track publication already marks Overall dirty. Only its isolated cron aggregates.
   return json(origin, env, 200, { accepted: true, changed: rebuilt.changed, trackId, revision: rebuilt.revision, overallPending: rebuilt.changed && rebuilt.overallChanged !== false, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' });
 }
 

@@ -6,7 +6,7 @@ export const TRACK_BUILD_PARTS = '0.6.2_s1_track_build_parts';
 export const TRACK_BUILD_JOBS = '0.6.2_s1_worker_jobs';
 export const trackBuildId = trackId => `capacity_track_${trackId}`;
 
-// Call before fetching the initial 501 rows. A new snapshot cannot fix insufficient
+// Call before fetching the initial page. A new snapshot cannot fix insufficient
 // throughput on the same published base, so expired work requires a base change.
 export function trackBuildDisposition({prior, job, now = Date.now()}) {
   if (!Number.isSafeInteger(now) || now < 0) throw Error('TRACK_BUILD_CLOCK_INVALID');
@@ -50,7 +50,9 @@ export async function advanceTrackBuild({trackId, prior, job, initial, readPage,
   do {
     const page = input || await readPage(state.afterName, state.readTime, TRACK_BUILD_PAGE_SIZE);
     input = null;
-    if (!Array.isArray(page.documents) || page.documents.length > (pages === 0 && !active ? 501 : TRACK_BUILD_PAGE_SIZE)) throw Error('TRACK_BUILD_PAGE_INVALID');
+    if (!Array.isArray(page.documents) || page.documents.length > TRACK_BUILD_PAGE_SIZE ||
+      (page.ended !== undefined && page.ended !== (page.documents.length < TRACK_BUILD_PAGE_SIZE))) throw Error('TRACK_BUILD_PAGE_INVALID');
+    if (page.readTime !== state.readTime) throw Error('TRACK_BUILD_READ_TIME_CHANGED');
     const lastName = page.documents.at(-1)?.name;
     if (page.documents.length && (!lastName || lastName === state.afterName)) throw Error('TRACK_BUILD_CURSOR_INVALID');
     const rows = await normalize(page.documents.map(d => d.data), state.readTime);
@@ -61,13 +63,12 @@ export async function advanceTrackBuild({trackId, prior, job, initial, readPage,
     }
     state = {...state, parts:state.parts + writes.length, afterName:lastName || state.afterName,
       sourceCount:state.sourceCount+page.documents.length, updatedAt:now};
-    ended = page.documents.length < (pages === 0 && !active ? 501 : TRACK_BUILD_PAGE_SIZE);
+    ended = page.ended ?? page.documents.length < TRACK_BUILD_PAGE_SIZE;
     const committed = await commit([...writes,{collection:TRACK_BUILD_JOBS,id:trackBuildId(trackId),prior:job,data:state}]);
     const updateTime = committed?.writeResults?.at(-1)?.updateTime;
     job = updateTime ? {data:state,updateTime} : await read(TRACK_BUILD_JOBS,trackBuildId(trackId));
     pages++;
-  // The 501-row initial normalization is already expensive. Only resumed passes
-  // may process two 100-row pages; never add another page to the initial pass.
+  // Initial passes normalize one page; resumed passes normalize at most two.
   } while (!ended && active && pages < pagesPerPass);
   if (!ended) return {pending:true,changed:false,revision:prior?.data?.revision||0,sourceReadTime:state.readTime};
   const entries = [];

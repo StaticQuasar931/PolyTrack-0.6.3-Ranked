@@ -22,7 +22,7 @@ function rollingRevision(source) {
 }
 // One fixed-snapshot source query per page, no per-racer verification or menu scan.
 // Authoritative per-account PB/total documents already exist; only display storage was capped.
-export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined) {
+export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined,{coalesceFiniteTotals=false}={}) {
  const kind=periodId?'event':'event_totals',id=periodId||'main',jobId=kind+'_'+id;
  const rootPath=C.public+'/'+(periodId||'totals'),targetPath=C.public+'/'+(periodId||'totals_full');
  const root=knownRoot===undefined?decode(await runtime.request('/'+rootPath)):knownRoot;
@@ -37,6 +37,12 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
  const p=periodId?decode(await runtime.request('/'+C.periods+'/'+periodId)):null;
  if(periodId&&!p)return {idle:true};
  const priorJob=decode(await runtime.request('/'+JOBS+'/'+jobId));
+ // Coalesce only NEW finite-total generations. Rolling-only updates reuse saved parts;
+ // unfinished fixed-snapshot work retains its existing cursor and expiry fences.
+ const builtAt=priorCombined?.builtAt;
+ if(coalesceFiniteTotals&&!periodId&&priorJob?.complete===true&&priorJob.sourceRevision!==(root.revision||0)&&
+   Number.isSafeInteger(builtAt)&&builtAt>=0&&runtime.now()>=builtAt&&runtime.now()-builtAt<15*60000)
+   return {pending:true,deferred:true,reason:'finite_totals_coalescing',retryAt:builtAt+15*60000,kind,id};
  let state=priorJob;
  // Defer abandoned checkpoints before reading another source page. The durable
  // coordinator gate coalesces changes; the next due attempt may restart.
@@ -179,11 +185,12 @@ export async function publishEventCapacity(runtime) {
  if(index===undefined)return {pending:true,deferred:true,reason:'publication_backoff',
    retryAt:Math.min(...Object.values(retries).map(retry=>retry.retryAt))};
  const periodId=candidates[index],key=keyFor(periodId);
- let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work);
+ let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work,{coalesceFiniteTotals:true});
  if(result.idle)result={pending:true,deferred:true,kind:periodId?'event':'event_totals',id:periodId||'main',reason:'event_source_not_ready'};
  if(result.published)delete retries[key];
  else if(result.deferred){
-   const retry=publicationRetry(retries[key],result.reason,now);
+   const retry=result.reason==='finite_totals_coalescing'&&Number.isSafeInteger(result.retryAt)&&result.retryAt>now&&result.retryAt<=now+15*60000
+     ?{reason:result.reason,attempts:1,retryAt:result.retryAt}:publicationRetry(retries[key],result.reason,now);
    if(retry)retries[key]=retry;
  }
  const nextCursor={active:!!result.pending&&!result.deferred,periodId,offset:(index+1)%candidates.length,

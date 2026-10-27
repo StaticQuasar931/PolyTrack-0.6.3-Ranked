@@ -54,14 +54,36 @@ function fixture(count) {
 }
 async function build(f){let result;for(let pass=0;pass<20;pass++) {const start=f.calls.length;result=await rebuildTrack(f.env,track);assert.ok(f.calls.length-start<=50,`pass used ${f.calls.length-start} requests`);if(!result.pending)return result;}throw Error('Build failed to finish');}
 
-for(const count of [500,501,531,1001])test(`full publication preserves ${count} racers and deterministic cross-page ties`,async()=>{
+test('stale final publication cannot complete a checkpoint or replace a newer board',async()=>{
+ const f=fixture(101), original=f.env.__TEST_FIRESTORE;
+ await rebuildTrack(f.env,track);
+ const newer={trackId:track,entries:[{accountId:'newer'}],revision:99};
+ let conflict=true;
+ f.env.__TEST_FIRESTORE=async(route,init={})=>{
+   if(conflict&&route===':commit'&&JSON.parse(init.body).writes.some(w=>w.update?.name===base+boards+'/'+track)){
+     conflict=false;f.data.set(boards+'/'+track,newer);throw Error('FIRESTORE_412');
+   }
+   return original(route,init);
+ };
+ await assert.rejects(rebuildTrack(f.env,track),/FIRESTORE_412/);
+ assert.deepEqual(f.data.get(boards+'/'+track),newer);
+ const job=f.data.get('0.6.2_s1_worker_jobs/capacity_track_'+track);
+ assert.equal(job.complete,false);
+ const before=f.queries.length;
+ assert.equal((await rebuildTrack(f.env,track)).pending,true);
+ assert.equal(f.queries.length,before+1);
+ assert.equal(f.queries.at(-1).readTime,undefined,'a changed published base requires a fresh snapshot');
+});
+
+for(const count of [0,99,100,101,500,501,531,1001])test(`full publication preserves ${count} racers and deterministic cross-page ties`,async()=>{
  const f=fixture(count);await build(f);
  const board=f.data.get(`${boards}/${track}`),entries=await loadPublicationEntries(board,'track',track,f.read);
  assert.equal(entries.length,count);assert.equal(board.totalEntries,count);assert.equal(board.sourceComplete,true);
  assert.equal(board.entries.length,Math.min(500,count));assert.equal(board.complete,count<=500);
  assert.deepEqual(entries.map(r=>r.accountId),f.rows.map(r=>r.accountId));
  assert.ok(entries.every((r,i)=>r.rank===i+1&&r.fieldSize===count&&r.runVerified));
- if(count>500){assert.equal(board.pagination.pageCount,Math.ceil(count/100));assert.equal(f.queries.filter(q=>q.readTime).length,Math.floor((count-501)/100)+1);}
+ if(count>500){assert.equal(board.pagination.pageCount,Math.ceil(count/100));assert.equal(f.queries.filter(q=>q.readTime).length,Math.floor(count/100));}
+ if(!count)return;
  const before=f.commits.length;await mergeCanonicalResultsIntoTrack(f.env,track,[`${f.rows[0].accountId}_${track}`],new Map([[`${f.rows[0].accountId}_${track}`,{data:f.rows[0]}]]));
  assert.equal(f.data.get(`${boards}/${track}`).revision,board.revision,'duplicate PB is idempotent');
  assert.ok(f.commits.length-before<=1,'only unfinished migration checkpoint may change');
@@ -186,9 +208,9 @@ test('migration checkpoints a healthy sibling while a capacity build remains pen
  assert.equal(deferred.deferred,true,'migration does not compete with its active reconciliation build');
  const queued=f.data.get('0.6.2_s1_worker_jobs/canonical_reconcile_v2');
  queued.backfillComplete=true;queued.schemaVersion=2;
- await reconcileCanonicalChanges(f.env,{scanResults:false});
+ for(let turn=0;turn<3;turn++)await reconcileCanonicalChanges(f.env,{scanResults:false});
  await processMigrationJob(f.env,saved);
  await processMigrationJob(f.env,f.data.get('0.6.2_s1_worker_jobs/release_migration'));
  assert.equal(healthyQueries,1,'completed sibling is not rebuilt on the next pass');
- assert.equal(largeQueries,2,'migration reuses the completed publication instead of starting a second canonical scan');
+ assert.equal(largeQueries,6,'migration reuses the six bounded canonical pages instead of starting a second scan');
 });
