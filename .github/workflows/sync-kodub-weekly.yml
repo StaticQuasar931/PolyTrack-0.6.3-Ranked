@@ -36,7 +36,7 @@ jobs:
         run: node tools/extra-verification-check.mjs
       - name: Test snapshot integrity and resumable capture
         # Offline projection safeguards run before any public capture reads.
-        run: node --test --test-concurrency=2 tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs
+        run: node --test --test-concurrency=2 tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
       - name: Capture current weekly track
         run: node tools/sync-kodub-weekly.mjs
       - name: Commit changed capture

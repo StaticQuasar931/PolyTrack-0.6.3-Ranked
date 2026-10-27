@@ -26,8 +26,8 @@ test('an invalidated in-flight receipt cannot overwrite a new submission',async(
 });
 test('event freshness does not call an old published update a fresh snapshot capture',()=>{
  const at=36000000;
- assert.equal(eventStandingsLabel({_publicBackup:true,updatedAt:at-7200000},at),'Snapshot data · updated 2h ago');
- assert.equal(eventStandingsLabel({_publicBackup:true,_snapshotCapturedAt:at-3600000,updatedAt:1},at),'Snapshot data · 1h old');
+ assert.equal(eventStandingsLabel({_publicBackup:true,updatedAt:at-7200000},at),'Snapshot package · age unknown · Standings changed 2h ago');
+ assert.equal(eventStandingsLabel({_publicBackup:true,_snapshotCapturedAt:at-3600000,updatedAt:1},at),'Snapshot package · age unknown · Standings changed 9h ago');
  assert.equal(eventStandingsLabel({saved:true,updatedAt:at-60000},at,true),'Refresh failed. Cached standings · updated 1m ago');
 });
 
@@ -46,4 +46,11 @@ test('snapshot-only visitors do not read nonexistent event receipts until they s
  let calls=0;const bestRecords={},f=fixture(async()=>{calls++;return {status:'waiting'};},{snapshotOnly:()=>true,bestRecords});
  assert.equal(await f.read('period','self'),null);assert.equal(calls,0);
  bestRecords.period_self={timeMs:20000};assert.equal((await f.read('period','self')).status,'waiting');assert.equal(calls,1);
+});
+
+
+test('public events use the common package age rather than their individual check date',()=>{
+ const at=36000000,base={_publicBackup:true,_snapshotPackageAt:at-60000,updatedAt:at-7200000};
+ assert.equal(eventStandingsLabel({...base,_snapshotCapturedAt:1},at),'Snapshot package · 1m old · Standings changed 2h ago');
+ assert.equal(eventStandingsLabel({...base,_snapshotCapturedAt:at},at),eventStandingsLabel(base,at));
 });

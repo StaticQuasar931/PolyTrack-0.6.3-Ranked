@@ -105,6 +105,7 @@ export function isBootstrapSnapshotPath(logicalPath) {
 
 export function buildSnapshotBootstrapIndex(index) {
   return { schemaVersion: index.schemaVersion, generation: index.generation, encoding: index.encoding,
+    ...(Number.isSafeInteger(index.publishedAt)&&index.publishedAt>0?{publishedAt:index.publishedAt}:{}),
     ...(index.lookupShardsVersion === 1 ? { lookupShardsVersion: 1 } : {}),
     partial: true, fallbackIndex: 'index.json',
     files: Object.fromEntries(Object.entries(index.files).filter(([logicalPath]) => isBootstrapSnapshotPath(logicalPath))) };

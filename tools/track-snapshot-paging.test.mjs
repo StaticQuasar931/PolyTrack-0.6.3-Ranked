@@ -562,3 +562,15 @@ test('full reconstruction never returns a partial board and recovers with child 
   assert.equal(full.complete, true);
   assert.equal(h.count(badPage), 3);
 });
+
+
+test('one package publication clock is shared while board confirmations remain independent',async t=>{
+ const f=await fixture(t),h=readerFixture(f);
+ const bootstrap=JSON.parse(await readFile(path.join(f.directory,'bootstrap-index.json'),'utf8'));
+ assert.equal(bootstrap.publishedAt,f.index.publishedAt);
+ const track=await h.read('track-preview',id),overall=await h.read('overall');
+ assert.equal(track._snapshotPackageAt,f.index.publishedAt);
+ assert.equal(overall._snapshotPackageAt,f.index.publishedAt);
+ assert.equal(track._snapshotCapturedAt,Date.parse(capturedAt));
+ assert.notEqual(track._snapshotCapturedAt,track._snapshotPackageAt);
+});

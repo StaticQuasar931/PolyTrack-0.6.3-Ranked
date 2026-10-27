@@ -465,3 +465,29 @@ test('successful totals capture is included before publishing one complete packa
   assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString('utf8')),{...totals,capturedAt:new Date(2000).toISOString(),entries:totals.entries.map(row=>({...row,identityUpdatedAt:0}))});
   await f.ledgerUnchanged();
 });
+
+
+test('saved-board Overall calculation follows capture reuse and precedes totals in one package',async t=>{
+ const root=await fixture(t),order=[],boards=new Map();
+ const overall={updatedAt:100,sourceRevision:1,builtRevision:1,algorithmVersion:'fixture',entries:[],trackSummaries:[]};
+ const results={...overall,resultBundle:'e30=',resultBundleVersion:1,resultBundleComplete:true};
+ const result=await updatePublicSnapshot({root,
+  captureOverall:async()=>{order.push('source');return {files:new Map([['overall.json',overall],['overall-results.json',results]]),
+    confirmedTracks:new Map(),capturedTracks:boards,report:{projectionReady:false,projectionReason:'fixture'}};},
+  capture:async o=>{order.push('backup');assert.equal(o.capturedTracks,boards);
+    await writeFile(path.join(o.directory,'manifest.json'),JSON.stringify({tracks:{}}));return {};},
+  calculateOverall:async({directory})=>{order.push('calculate');
+    const m=JSON.parse(await readFile(path.join(directory,'manifest.json'),'utf8'));assert.equal(m.overall.path,'overall.json');
+    return {additionalFirestoreReads:0,additionalFirestoreWrites:0};},
+  captureTotals:async()=>{order.push('totals');return {deferred:false};},log:()=>{}});
+ assert.equal(result.published,true);assert.deepEqual(order,['source','backup','calculate','totals']);
+});
+
+test('failed saved-board scoring cannot publish a mismatched cohort',async t=>{
+ const root=await fixture(t);
+ await assert.rejects(updatePublicSnapshot({root,
+  captureOverall:async()=>({files:new Map([['overall.json',{updatedAt:100,sourceRevision:1,builtRevision:1,algorithmVersion:'fixture',entries:[],trackSummaries:[]}],['overall-results.json',{updatedAt:100,sourceRevision:1,builtRevision:1,algorithmVersion:'fixture',resultBundle:'e30=',resultBundleVersion:1,resultBundleComplete:true}]]),report:{projectionReady:false}}),
+  capture:async({directory})=>{await writeFile(path.join(directory,'manifest.json'),JSON.stringify({tracks:{}}));return {};},
+  calculateOverall:async()=>{throw Error('incomplete cohort');},log:()=>{}}),/incomplete cohort/);
+ await assert.rejects(readFile(path.join(root,'snapshot-current.json')),/ENOENT/);
+});

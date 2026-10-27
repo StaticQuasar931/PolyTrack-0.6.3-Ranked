@@ -462,7 +462,7 @@ async function writeJsonIfChanged(directory, relative, value) {
 }
 
 async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
-  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null,
+  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
   trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches} = {}) {
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
     throw Error('Invalid trackFetchLimit');
@@ -518,16 +518,34 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   }
   // Weekly tracks may have a public board before they enter Overall summaries.
   const eventTrackIds = [...catalog.periods, ...catalog.archives].map(row => projectPeriod(row).trackId);
-  const allTrackIds = [...new Set([...registry, ...eventTrackIds, ...(overall.trackCatalog || []).map(row => row.trackId), ...overall.trackSummaries.map(row => row.trackId), ...Object.keys(previous.tracks)])]
+  const allTrackIds = [...new Set([...registry, ...eventTrackIds, ...(overall.trackCatalog || []).map(row => row.trackId), ...overall.trackSummaries.map(row => row.trackId), ...Object.keys(previous.tracks), ...(capturedTracks instanceof Map?capturedTracks.keys():[])])]
     .filter(id => TRACK_ID.test(id)).sort();
+  const sourceRepairs=new Map();
+  // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
+  // This is local staging validation only; network responses retain their paged-source checks.
+  const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
   const cachedTracks = {...previous.tracks};
+  if(capturedTracks!==null){
+    if(!(capturedTracks instanceof Map)||capturedTracks.size>512)throw Error('Invalid captured source boards');
+    for(const [id,value] of capturedTracks){
+      if(!TRACK_ID.test(id))throw Error('Invalid captured source track');
+      const board=authenticatedOverallTrackBackup(value,id),relative='tracks/'+id+'.json';
+      if(JSON.stringify(board)!==JSON.stringify(value)||!(board.complete===true||board.sourceComplete===true)||board.totalEntries!==board.entries.length)throw Error('Invalid captured source board');
+      let cached=null;const prior=cachedTracks[id];
+      if(prior?.path===relative)try{const raw=JSON.parse(await fs.readFile(path.join(directory,relative),'utf8'));const valid=cachedProjection(raw,id);if(JSON.stringify(raw)===JSON.stringify(valid))cached=valid;}catch{}
+      // Frozen inputs can fill gaps, never roll a newer track board backward.
+      if(cached&&Number(cached.updatedAt)>=Number(board.updatedAt))continue;
+      sourceRepairs.set(relative,board);
+      cachedTracks[id]={path:relative,revision:Number(board.revision||board.sourceRevision||0),sourceUpdatedAt:board.updatedAt,updatedAt:board.updatedAt};
+    }
+  }
   for (const id of allTrackIds) {
     const record = cachedTracks[id];
     if (!record?.path) continue;
     try {
       if (record.path !== `tracks/${id}.json`) throw Error('Unexpected cached track path');
-      const cached = JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8'));
-      const projected = publicTrackBackup(cached, id);
+      const cached = sourceRepairs.get(record.path)||JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8'));
+      const projected = cachedProjection(cached, id);
       if (JSON.stringify(projected) !== JSON.stringify(cached)) throw Error('Cached track is not a public projection');
       const confirmation = confirmedTracks instanceof Map ? confirmedTracks.get(id) : null;
       if (confirmation && /^[a-f0-9]{64}$/.test(confirmation.sha256 || '') &&
@@ -654,7 +672,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   });
 
   const nextTracks = {...cachedTracks}, nextEvents = {...previous.events};
-  const pendingWrites = new Map([['overall.json', overall], ...promotedReplays]);
+  const pendingWrites = new Map([['overall.json', overall], ...promotedReplays, ...sourceRepairs]);
   let missingTracks = 0, missingEvents = 0;
   const trackSummaryMismatches = [];
   for (const {id, value} of trackRows) {
@@ -785,7 +803,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: (capturedOverall ? 1 : 2) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
-    trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks,
+    trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

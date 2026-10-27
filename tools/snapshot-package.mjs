@@ -270,7 +270,7 @@ export async function restoreSnapshotArchive(archivePath, destinationDirectory) 
   return contents.index;
 }
 
-export async function publishSnapshot({ root, stagingDirectory, historyDirectory = path.join(root, 'local-reports', 'snapshot-history') }) {
+export async function publishSnapshot({ root, stagingDirectory, historyDirectory = path.join(root, 'local-reports', 'snapshot-history'), now = Date.now }) {
   if (!root || !stagingDirectory) throw new TypeError('root and stagingDirectory are required');
   const absoluteRoot = path.resolve(root);
   const entries = await collectJsonFiles(path.resolve(stagingDirectory));
@@ -309,7 +309,8 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
       await fs.rename(path.join(stagingPublish, payload), path.join(stagingPublish, payloadName));
       files[logicalPath] = { path: payloadName, sha256: payloadHash, decodedBytes: bytes.byteLength };
     }
-    const index = { schemaVersion: 1, generation, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1, files };
+    const publishedAt=now();if(!Number.isSafeInteger(publishedAt)||publishedAt<=0||publishedAt>8640000000000000)throw Error('Invalid snapshot package publication time');
+    const index = { schemaVersion: 1, generation, publishedAt, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1, files };
     await writeSnapshotLookupShards(index, stagingPublish);
     const indexBytes = Buffer.from(`${JSON.stringify(index)}\n`, 'utf8');
     if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError(`index.json exceeds ${MAX_FILE_BYTES} bytes`);

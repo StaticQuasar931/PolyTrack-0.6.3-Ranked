@@ -5,11 +5,14 @@ import {createRequire} from 'node:module';
 const require=createRequire(new URL('../tools/verifier/package.json',import.meta.url));
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const css=fs.readFileSync(new URL('./events.css',import.meta.url),'utf8');
+const weekly=JSON.parse(fs.readFileSync(new URL('./kodub/current.json',import.meta.url),'utf8')).current;
+const cover='data:image/webp;base64,'+fs.readFileSync(new URL('./kodub/'+weekly.coverUrl,import.meta.url)).toString('base64');
 test('0.6.3 version navigation and event cards stay within desktop and portrait widths',async()=>{
  const browser=await chromium.launch({headless:true});
  try{const page=await browser.newPage();
- await page.setContent(`<style>body{margin:0}.wrapper{display:grid;grid-template-columns:repeat(2,1fr);width:1150px}.community-track-versions{height:488px}.hidden{display:none}</style><div id="ui"><div class="track-selection-ui"><div class="tracks-container"><div class="wrapper"><section class="sq-featured-events sq-event-track-group"><h2 class="sq-featured-heading">Events</h2><div class="track track-of-the-week sq-kodub-weekly"><button class="button"><small class="sq-kodub-label">Kodub weekly</small><img class="cover"><div class="track-of-the-week-info"><div class="title">going back in time</div><div class="time-remaining">17h remaining</div></div></button></div><button class="sq-events-entry">Events</button><div class="track sq-permanent-track"><button class="button"><div class="track-title"><p>Rolling Hills Racer</p></div><img class="thumbnail"><div class="record">00:19.993</div><small class="sq-permanent-note">Normal RP active / 1001 Event RP pending target</small></button></div><div class="sq-event-track-buttons"><button class="sq-event-card" data-event-kind="weekly"><div class="sq-event-record">No record</div><span class="sq-event-thumb"><span class="profile-track-image-frame"><img></span></span><span><small>Weekly event</small><strong>Test track</strong><span>Up to 500 Event RP</span><small>Up to 200 racers</small><small>Ends Sunday 13:00 Local</small></span></button><button class="sq-event-card" data-event-kind="daily"><div class="sq-event-record">No record</div><span class="sq-event-thumb"><span class="profile-track-image-frame"><img></span></span><span><small>Daily event</small><strong>Test track</strong><span>Up to 500 Event RP</span><small>Up to 200 racers</small><small>Ends Sunday 13:00 Local</small></span></button></div></section><div class="community-track-versions"><button class="button">0.6.3</button><button class="button">0.6.1</button></div><div class="community-track-group"><div class="track"><button class="button">Rolling Hills Racer</button></div></div></div></div></div></div>`);
+ await page.setContent(`<style>body{margin:0}.wrapper{display:grid;grid-template-columns:repeat(2,1fr);width:1150px}.community-track-versions{height:488px}.hidden{display:none}</style><div id="ui"><div class="track-selection-ui"><div class="tracks-container"><div class="wrapper"><section class="sq-featured-events sq-event-track-group"><h2 class="sq-featured-heading">Events</h2><div class="track track-of-the-week sq-kodub-weekly"><button class="button"><small class="sq-kodub-label">Kodub weekly</small><img class="cover" src="${cover}"><div class="track-of-the-week-info"><div class="title">going back in time</div><div class="time-remaining">17h remaining</div></div></button></div><button class="sq-events-entry">Events</button><div class="track sq-permanent-track"><button class="button"><div class="track-title"><p>Rolling Hills Racer</p></div><img class="thumbnail"><div class="record">00:19.993</div><small class="sq-permanent-note">Normal RP active / 1001 Event RP pending target</small></button></div><div class="sq-event-track-buttons"><button class="sq-event-card" data-event-kind="weekly"><div class="sq-event-record">No record</div><span class="sq-event-thumb"><span class="profile-track-image-frame"><img></span></span><span><small>Weekly event</small><strong>Test track</strong><span>Up to 500 Event RP</span><small>Up to 200 racers</small><small>Ends Sunday 13:00 Local</small></span></button><button class="sq-event-card" data-event-kind="daily"><div class="sq-event-record">No record</div><span class="sq-event-thumb"><span class="profile-track-image-frame"><img></span></span><span><small>Daily event</small><strong>Test track</strong><span>Up to 500 Event RP</span><small>Up to 200 racers</small><small>Ends Sunday 13:00 Local</small></span></button></div></section><div class="community-track-versions"><button class="button">0.6.3</button><button class="button">0.6.1</button></div><div class="community-track-group"><div class="track"><button class="button">Rolling Hills Racer</button></div></div></div></div></div></div>`);
  await page.addStyleTag({content:css});
+ await page.locator('.sq-kodub-weekly>button>img').evaluate(image=>image.decode());
  for(const [width,height] of [[1366,768],[390,844],[768,1024]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
@@ -28,16 +31,25 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   const thumbBoxes=[];for(const e of await page.locator('.sq-permanent-track .thumbnail,.sq-event-card .sq-event-thumb').all())thumbBoxes.push(await e.boundingBox());
   assert.equal(rewardBoxes.length,3);assert.equal(thumbBoxes.length,3);for(const [index,box] of rewardBoxes.entries()){if(width<=480)assert(box.x>=thumbBoxes[index].x+thumbBoxes[index].width-1,'Phone record sits beside artwork');else assert(box.y>=thumbBoxes[index].y+thumbBoxes[index].height-1,'Record row must not overlap its artwork');assert(box.y+box.height<=rects[index+1].y+rects[index+1].height+1,'Record row stays inside its card');}
   if(width>=1366)for(const rect of rects)assert(rect.x+rect.width<=width+1);
+  const artwork=await page.locator('.sq-kodub-weekly>button>img').evaluate(image=>{
+   const rect=image.getBoundingClientRect(),style=getComputedStyle(image);
+   return {width:rect.width,height:rect.height,left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,fit:style.objectFit,position:style.objectPosition,nativeRatio:image.naturalWidth/image.naturalHeight};
+  });
+  const card=await page.locator('.sq-kodub-weekly>button').boundingBox();
+  const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
+  assert(artwork.width>0&&artwork.height>0,'Artwork has visible width and height');
+  assert(Math.abs(artwork.width/artwork.height-1.9)<.005,'Artwork uses its deliberate near-native ratio');
+  assert.equal(artwork.fit,'cover');assert.equal(artwork.position,'50% 50%');
+  const ratio=artwork.width/artwork.height;
+  assert(Math.min(ratio/artwork.nativeRatio,artwork.nativeRatio/ratio)>=.94,'Local cover crop stays below 6%');
+  assert(artwork.left>=card.x-1&&artwork.right<=info.x+1,'Artwork remains left of the details inside the card');
+  assert(artwork.top>=card.y-1&&artwork.bottom<=card.y+card.height+1,'Artwork height stays inside the card');
+  assert(artwork.height<=300,'Artwork is bounded, not forced to the outer card height');
+  if(width>480)assert.equal(card.height,300,'Desktop/tablet outer card keeps its original height');
   const tabs=await page.locator('.community-track-versions>.button').all();
   assert.equal((await tabs[0].boundingBox()).width,(await tabs[1].boundingBox()).width);
   if(width>650)assert.equal(await page.locator('.community-track-versions').evaluate(e=>e.scrollWidth),await page.locator('.community-track-versions').evaluate(e=>e.clientWidth));
  }
- const image=await page.locator('.sq-kodub-weekly>button>img').evaluate(e=>({fit:getComputedStyle(e).objectFit,height:e.getBoundingClientRect().height}));
- const artwork=await page.locator('.sq-kodub-weekly>button>img').boundingBox();
- const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
- assert(artwork.x+artwork.width<=info.x,'Artwork must be left of the details');
- assert.equal((await page.locator('.sq-kodub-weekly>button').boundingBox()).height,300);
- assert.equal(image.fit,'cover');assert.equal(image.height,300);
  const decoration=await page.locator('.sq-kodub-weekly>button').evaluate(e=>({border:getComputedStyle(e).borderTopWidth,shadow:getComputedStyle(e).boxShadow}));
  assert.equal(decoration.border,'0px');assert.equal(decoration.shadow,'none');
  await page.locator('.community-track-group').evaluate(e=>e.classList.add('hidden'));

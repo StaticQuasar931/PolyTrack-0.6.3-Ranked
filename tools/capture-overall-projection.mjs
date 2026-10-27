@@ -239,7 +239,7 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
   if (!projected.planner.available) throw Error('Published Overall results unavailable');
   const files = new Map([['overall.json', projected.snapshot], ['overall-results.json', projected.planner.document]]);
   let projectionReady = false, projectionReason = null, projectionFailureStage = null, projectionFailureCode = null;
-  const confirmedTracks = new Map();
+  const confirmedTracks = new Map(), capturedTracks = new Map();
   try {
     projectionFailureStage = 'frozen-source';
     const tracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now(),
@@ -247,6 +247,7 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
     projectionFailureStage = 'baseline';
     const bundle = await buildBundle({overall: projected.snapshot, results: projected.planner.document, tracks});
     files.set('projection-source.json', bundle); projectionReady = true; projectionFailureStage = null;
+    for(const board of tracks)capturedTracks.set(board.trackId,board);
   } catch (error) {
     const message = typeof error?.message === 'string' ? error.message : '';
     const sourceCodes = ['FROZEN_OVERALL_SOURCE_UNAVAILABLE_OR_STALE', 'RESULT_BUNDLE_SOURCE_MISMATCH', 'INCOMPLETE_OVERALL_SOURCE', 'FROZEN_SOURCE_DIGEST_MISMATCH', 'FROZEN_SOURCE_CATALOG_MISMATCH', 'FROZEN_BOARD_INCOMPLETE', 'FROZEN_BOARD_BINDING_MISMATCH', 'FROZEN_TRACK_CATALOG_MISMATCH', 'OVERALL_SOURCE_PUBLICATION_INVALID', 'OVERALL_SOURCE_PUBLICATION_INFLATE_LIMIT'];
@@ -257,7 +258,7 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
     // Published scores remain accurate even when a coherent local projection is unavailable.
     projectionReason = 'bound-source-or-baseline-unavailable';
   }
-  return {files, confirmedTracks, report: {readTime, estimatedReads: reads, httpRequests: reads, maxReads,
+  return {files, confirmedTracks, capturedTracks, report: {readTime, estimatedReads: reads, httpRequests: reads, maxReads,
     rootDocuments: rootReads, resultSource: usesSidecar ? 'main_results' : 'inline',
     rootAndSourceReadLimit: rootReads + 4, generationPages: reads - rootReads - partIds.length, projectionReady, projectionReason,
     projectionFailureStage, projectionFailureCode,

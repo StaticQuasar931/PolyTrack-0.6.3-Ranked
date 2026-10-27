@@ -1546,13 +1546,17 @@ async function mapConcurrent(values, concurrency, mapper) {
   return output;
 }
 
-export function rebuildOverall(env, force = false) {
+export function rebuildOverall(env, force = false, {adminRecovery = false} = {}) {
+  // Only an explicit authenticated admin recovery may bypass external publication.
+  // Gate before single-flight and metadata reads, including forced background calls.
+  if (env.OVERALL_PUBLICATION_MODE === 'external' && !(force === true && adminRecovery === true))
+    return Promise.resolve({rebuilt:false, reason:'externally_published', publicationMode:'external'});
   const key=env.__FIRESTORE_ROOT_ENV || env;
   const pending = overallBuildRequests.get(key);
   if (pending) {
     // A forced admin call must not inherit a non-forced cache-only build.
     if (force && !pending.force) return pending.request.then(
-      () => rebuildOverall(env,true), () => rebuildOverall(env,true));
+      () => rebuildOverall(env,true,{adminRecovery}), () => rebuildOverall(env,true,{adminRecovery}));
     return pending.request;
   }
   const request = loadOverallRebuild(env, force);
@@ -2547,7 +2551,10 @@ async function handleRequestInternal(request, env, context = {}) {
   if (request.method !== 'POST') return json(origin, env, 404, { error: 'not_found' });
   if (path === '/v1/admin/rebuild') {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
-    const result = await rebuildOverall(env, true);
+    const adminRecovery = new URL(request.url).searchParams.get('recovery') === 'worker-rebuild';
+    if (env.OVERALL_PUBLICATION_MODE === 'external' && !adminRecovery)
+      return json(origin, env, 409, {error:'external_overall_publication', recovery:'POST /v1/admin/rebuild?recovery=worker-rebuild'});
+    const result = await rebuildOverall(env, true, {adminRecovery});
     return json(origin, env, 200, result);
   }
   if (path === '/v1/admin/migrate') {

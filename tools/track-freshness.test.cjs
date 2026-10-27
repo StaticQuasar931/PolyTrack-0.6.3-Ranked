@@ -18,8 +18,9 @@ vm.runInContext(helper,context);
 
 test('fresh snapshot and old track update are independent timestamps',()=>{
   const result=context.trackFreshnessPresentation({status:'snapshot',fetchedAt:now-240*3600000},{source:'public-backup',snapshotCapturedAt:now-2*3600000},false,now);
-  assert.equal(result.sourceLine,'Snapshot 2h old');
+  assert.equal(result.sourceLine,'Snapshot package 0h old');
   assert.equal(result.updateLine,'Standings changed 240h ago');
+  assert.equal(result.checkLine,'Track data checked 2h ago');
   assert.equal(result.baseSource,'snapshot');
   assert.equal(result.sourceLabel,'Snapshot');
 });
@@ -38,35 +39,35 @@ test('mixed sources identify their actual base and failed refresh does not erase
 });
 test('unknown activity and capture times remain unknown rather than fabricated',()=>{
   const result=context.trackFreshnessPresentation({status:'snapshot'},null,false);
-  assert.equal(result.sourceLine,'Snapshot age unknown');
+  assert.equal(result.sourceLine,'Snapshot package age unknown');
   assert.equal(result.updateLine,'Standings change time unknown');
 });
 
 test('snapshot capture age appears once alongside its source, separate from track update age',()=>{
   const result=context.trackFreshnessPresentation({status:'snapshot',fetchedAt:now-72*3600000},{source:'public-backup',snapshotCapturedAt:now-9*3600000},false,now);
-  assert.equal(result.sourceLine,'Snapshot 9h old');
+  assert.equal(result.sourceLine,'Snapshot package 0h old');
   assert.equal(result.updateLine,'Standings changed 72h ago');
   assert.doesNotMatch(result.sourceLine,/track updated/i);
 });
 
 test('mixed snapshot source keeps local PB explicit without duplicating Snapshot',()=>{
   const result=context.trackFreshnessPresentation({status:'snapshot',fetchedAt:now-72*3600000},{source:'public-backup',snapshotCapturedAt:now-9*3600000},true,now);
-  assert.equal(result.sourceLine,'Snapshot 9h old + local PB');
+  assert.equal(result.sourceLine,'Snapshot package 0h old + local PB');
   assert.equal(result.updateLine,'Standings changed 72h ago');
 });
 
 test('confirmed uploaded PB provenance is distinct from a local-only PB',()=>{
   const state={status:'snapshot',fetchedAt:now-72*3600000};
   const cached={source:'public-backup',snapshotCapturedAt:now-9*3600000};
-  assert.equal(context.trackFreshnessPresentation(state,cached,true,now,'submitted PB').sourceLine,'Snapshot 9h old + submitted PB');
-  assert.equal(context.trackFreshnessPresentation(state,cached,true,now,'local PB').sourceLine,'Snapshot 9h old + local PB');
+  assert.equal(context.trackFreshnessPresentation(state,cached,true,now,'submitted PB').sourceLine,'Snapshot package 0h old + submitted PB');
+  assert.equal(context.trackFreshnessPresentation(state,cached,true,now,'local PB').sourceLine,'Snapshot package 0h old + local PB');
 });
 
 test('snapshot markup bolds an escaped age label',()=>{
   const markup=source.match(/  function trackFreshnessSourceHtml\([\s\S]*?\r?\n  \}/)[0];
   const renderContext=vm.createContext({escapeHtml:value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')});
   vm.runInContext(markup,renderContext);
-  assert.equal(renderContext.trackFreshnessSourceHtml('snapshot','Snapshot 2h old'),'<b class="track-data-snapshot-age">Snapshot</b> 2h old');
+  assert.equal(renderContext.trackFreshnessSourceHtml('snapshot','Snapshot package 0h old'),'<b class="track-data-snapshot-age">Snapshot</b> package 0h old');
   assert.match(renderContext.trackFreshnessSourceHtml('snapshot','Snapshot <img> old'),/&lt;img&gt;/);
 });
 

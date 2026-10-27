@@ -364,10 +364,10 @@ test('manual refresh is bounded while requests are in flight and during failure 
 });
 test('button state preserves snapshot age and identifies a failed static check',()=>{
  const button={dataset:{},setAttribute(){},style:{}};
- const ctx=vm.createContext({document:{getElementById:id=>id==='overallFreshness'?button:null},overallCategory:'overall',overallLoadState:{status:'stale',serverUpdatedAt:1000,checkedAt:2000},rankedManualRefreshFailed:true,Date:{now:()=>10000},lastRankedManualRefreshAt:0,readOverallSnapshotCache:()=>({source:'public-backup',snapshotCapturedAt:3000}),publicSnapshotCapturedAt:9000,ageLabel:at=> {assert.equal(at,3000);return '3h ago';},durationLabel:()=> '2m',snapshotOnlyForNewAccount:()=>false,snapshotCaptureLabel:()=> 'Snapshot captured 3h ago',syncSnapshotRefreshControl(){},applyRankedRefreshCooldown(){},
+ const ctx=vm.createContext({document:{getElementById:id=>id==='overallFreshness'?button:null},overallCategory:'overall',overallLoadState:{status:'stale',serverUpdatedAt:1000,checkedAt:2000},rankedManualRefreshFailed:true,Date:{now:()=>10000},lastRankedManualRefreshAt:0,readOverallSnapshotCache:()=>({source:'public-backup',snapshotCapturedAt:3000}),publicSnapshotCapturedAt:9000,publicSnapshotPublishedAt:3000,ageLabel:at=> {assert.equal(at,3000);return '3h ago';},durationLabel:()=> '2m',snapshotOnlyForNewAccount:()=>false,snapshotCaptureLabel:()=> 'Snapshot captured 3h ago',syncSnapshotRefreshControl(){},applyRankedRefreshCooldown(){},
   localOverallReader:null,localOverallState:null});
- vm.runInContext(extract('localCasualIsVisible')+';'+extract('currentLocalCasualResult')+';'+extract('rankedFreshnessText')+'\n'+extract('updateRankedFreshness'),ctx);ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot · 3h old · Check failed');
- ctx.overallLoadState.status='snapshot';ctx.rankedManualRefreshFailed=false;ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot · 3h old');
+ vm.runInContext(extract('localCasualIsVisible')+';'+extract('currentLocalCasualResult')+';'+extract('rankedFreshnessText')+'\n'+extract('updateRankedFreshness'),ctx);ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot package · 3h old · Check failed');
+ ctx.overallLoadState.status='snapshot';ctx.rankedManualRefreshFailed=false;ctx.updateRankedFreshness();assert.equal(button.dataset.source,'snapshot');assert.equal(button.textContent,'Snapshot package · 3h old');
 });
 
 test('non-track rankings combine community and custom without double-counting Extra',()=>{

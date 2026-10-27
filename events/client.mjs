@@ -72,6 +72,11 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
   state.title=label;state.setAttribute('aria-label',label);
 }
 export function eventStandingsLabel(board,at=Date.now(),failed=false){
+  if(board?._publicBackup){
+    const packageAt=Number(board._snapshotPackageAt)||0,changed=Number(board.updatedAt)||0;
+    const age=value=>{const m=Math.max(0,Math.floor((at-value)/60000));return m<1?'less than 1m':m<60?m+'m':m<1440?Math.floor(m/60)+'h':Math.floor(m/1440)+'d';};
+    return (failed||board._eventRefreshFailed?'Refresh failed. ':'')+'Snapshot package · '+(packageAt?age(packageAt)+' old':'age unknown')+(changed?' · Standings changed '+age(changed)+' ago':'');
+  }
   const capture=board?._publicBackup&&Number(board._snapshotCapturedAt)>0?Number(board._snapshotCapturedAt):0;
   const stamp=capture||Number(board?.updatedAt)||0,seconds=stamp?Math.max(0,Math.floor((at-stamp)/1000)):null;
   const age=seconds===null?'':seconds<60?'just now':seconds<3600?Math.floor(seconds/60)+'m':seconds<86400?Math.floor(seconds/3600)+'h':Math.floor(seconds/86400)+'d';

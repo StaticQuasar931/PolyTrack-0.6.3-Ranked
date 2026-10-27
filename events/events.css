@@ -1055,20 +1055,27 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
  object-fit:contain!important;object-position:center!important;image-rendering:pixelated!important;
  padding:0!important;max-width:100%!important;max-height:100%!important;
 }
-/* Bound only the featured Kodub artwork; keep desktop geometry and other previews intact. */
-@media(max-width:480px){
- #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
-  height:clamp(112px,36vw,160px)!important;
-  min-height:0!important;
-  max-height:160px!important;
-  align-self:center;
- }
+/* Featured artwork uses a near-native ratio, not a tall letterboxed slot.
+   1.9:1 trims 5% horizontally from the current 2:1 cover. Map fallbacks
+   retain contain: their arbitrary native ratios must not be cropped. */
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+ width:100%!important;
+ height:auto!important;
+ min-height:0!important;
+ max-width:min(100%,calc(var(--event-card-height,300px) * 1.9))!important;
+ max-height:var(--event-card-height,300px)!important;
+ aspect-ratio:1.9!important;
+ object-fit:contain!important;
+ object-position:center!important;
+ align-self:center!important;
+ justify-self:center!important;
+}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){
+ object-fit:cover!important;
 }
 @media(min-width:481px) and (orientation:landscape) and (max-height:460px){
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
-  height:min(var(--event-card-height,300px),60dvh)!important;
-  min-height:0!important;
-  max-height:100%!important;
-  align-self:center;
+  max-width:min(100%,calc(60dvh * 1.9))!important;
+  max-height:60dvh!important;
  }
 }

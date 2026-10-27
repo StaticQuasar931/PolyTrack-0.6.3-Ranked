@@ -127,3 +127,17 @@ test('regenerates hydrated track statistics once and preserves a valid zero weig
   assert.equal(stats.tracks[id].weight, 0);
   assert.equal((await readdir(path.join(paths.root, result.directory))).length, 4);
 });
+
+
+test('package publication time is stable for no-op runs and changes only with content', async t => {
+ const f=await fixture(t);await writeFile(path.join(f.staging,'sample.json'),'{"value":1}');
+ const first=await publishSnapshot({...f,now:()=>1000});
+ const load=async dir=>JSON.parse(await readFile(path.join(f.root,dir,'index.json'),'utf8'));
+ assert.equal((await load(first.directory)).publishedAt,1000);
+ const same=await publishSnapshot({...f,now:()=>{throw Error('no-op must not stamp time');}});
+ assert.equal(same.changed,false);assert.equal((await load(first.directory)).publishedAt,1000);
+ await writeFile(path.join(f.staging,'sample.json'),'{"value":2}');
+ const changed=await publishSnapshot({...f,now:()=>2000});
+ assert.equal((await load(changed.directory)).publishedAt,2000);
+ assert.equal((await load(first.directory)).publishedAt,1000);
+});
