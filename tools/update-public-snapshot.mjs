@@ -430,7 +430,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       }
     }
     backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
-      ...(latest?{capturedOverall:overallCaptureForBackup(latest)}:{})});
+      ...(latest?{capturedOverall:overallCaptureForBackup(latest),confirmedTracks:latest.confirmedTracks}:{})});
     if(backupResult?.deferred===true)return defer('snapshots',backupResult);
     if(latest){
       await applyCapturedOverallProjection({directory:stagingDirectory,capture:latest});

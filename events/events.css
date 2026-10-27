@@ -665,7 +665,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
  margin:0!important;
  padding:0!important;
  border:0!important;
- object-fit:cover!important;
+ object-fit:contain!important;
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best{
  margin:5px 0 0!important;
@@ -1054,4 +1054,21 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"] .sq-event-thumb img {
  object-fit:contain!important;object-position:center!important;image-rendering:pixelated!important;
  padding:0!important;max-width:100%!important;max-height:100%!important;
+}
+/* Bound only the featured Kodub artwork; keep desktop geometry and other previews intact. */
+@media(max-width:480px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+  height:clamp(112px,36vw,160px)!important;
+  min-height:0!important;
+  max-height:160px!important;
+  align-self:center;
+ }
+}
+@media(min-width:481px) and (orientation:landscape) and (max-height:460px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+  height:min(var(--event-card-height,300px),60dvh)!important;
+  min-height:0!important;
+  max-height:100%!important;
+  align-self:center;
+ }
 }

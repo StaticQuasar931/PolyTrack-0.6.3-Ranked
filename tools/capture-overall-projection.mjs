@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {decode} from './verifier/firestore.mjs';
-import {publicOverallBackup, authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
+import {publicOverallBackup, authenticatedOverallTrackBackup, publicTrackConfirmationDigest} from './public-snapshot-backup.mjs';
 import {PublicBackupDeferredError} from './public-backup-fetch.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
 import {unpackOverallDetails} from '../workers/ranked/src/overall-details.js';
@@ -126,7 +126,8 @@ export function createOverallCaptureFetch({fetchImpl = fetch, oauthFetch = fetch
 }
 
 
-export async function frozenOverallSource({meta, overall, results, documents, now = Date.now()}) {
+export async function frozenOverallSource({meta, overall, results, documents, now = Date.now(),
+  confirmationAt = null, confirmedTracks = null}) {
   const marker = meta?.sourceBundle;
   if (!Number.isSafeInteger(overall?.builtRevision) || overall.builtRevision < 1 ||
       overall.sourceRevision !== overall.builtRevision || meta.builtRevision !== overall.builtRevision ||
@@ -160,11 +161,23 @@ export async function frozenOverallSource({meta, overall, results, documents, no
     seen.add(row.trackId); boards.push([board, row.trackId]);
   }
   if (ids.filter(id => /^[a-f0-9]{64}$/.test(id)).length !== boards.length) throw Error('FROZEN_TRACK_CATALOG_MISMATCH');
-  return boards.map(([board, trackId]) => authenticatedOverallTrackBackup(board, trackId));
+  const normalized = boards.map(([board, trackId]) => authenticatedOverallTrackBackup(board, trackId));
+  // Compare CURRENT metadata to the authenticated frozen binding, not the
+  // historical Overall trackCatalog. Never publish the private binding itself.
+  if (confirmedTracks instanceof Map && Number.isSafeInteger(confirmationAt) && confirmationAt > 0 &&
+      sourceCatalogIsReady(meta.sourceCatalog) && meta.sourceCatalog.scannedAt <= confirmationAt) {
+    for (const board of normalized) {
+      const id = board.trackId;
+      if (isDeepStrictEqual(meta.sourceCatalog.tracks[id], payload.catalog.tracks[id]) && board.updatedAt <= confirmationAt)
+        confirmedTracks.set(id, {sha256: publicTrackConfirmationDigest(board, id),
+          updatedAt: board.updatedAt, checkedAt: confirmationAt});
+    }
+  }
+  return normalized;
 }
 
-// Returns public files only. The caller applies them after the ordinary capture,
-// leaving current track boards and every replay/archive lane untouched.
+// Public files and separate in-memory digest confirmations; private bindings never
+// leave this capture. The caller publishes files, not the confirmation Map.
 export async function captureOverallProjection({fetchImpl, auth = {}, minimumCommitTime,
   maxReads = 107, now = Date.now, buildBundle = createOverallProjectionBundle, onRead = () => {}} = {}) {
   if (!Number.isSafeInteger(maxReads) || maxReads < 3 || maxReads > 107) throw Error('Invalid Overall capture read budget');
@@ -226,9 +239,11 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
   if (!projected.planner.available) throw Error('Published Overall results unavailable');
   const files = new Map([['overall.json', projected.snapshot], ['overall-results.json', projected.planner.document]]);
   let projectionReady = false, projectionReason = null, projectionFailureStage = null, projectionFailureCode = null;
+  const confirmedTracks = new Map();
   try {
     projectionFailureStage = 'frozen-source';
-    const tracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now()});
+    const tracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now(),
+      confirmationAt: Date.parse(readTime), confirmedTracks});
     projectionFailureStage = 'baseline';
     const bundle = await buildBundle({overall: projected.snapshot, results: projected.planner.document, tracks});
     files.set('projection-source.json', bundle); projectionReady = true; projectionFailureStage = null;
@@ -242,7 +257,7 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
     // Published scores remain accurate even when a coherent local projection is unavailable.
     projectionReason = 'bound-source-or-baseline-unavailable';
   }
-  return {files, report: {readTime, estimatedReads: reads, httpRequests: reads, maxReads,
+  return {files, confirmedTracks, report: {readTime, estimatedReads: reads, httpRequests: reads, maxReads,
     rootDocuments: rootReads, resultSource: usesSidecar ? 'main_results' : 'inline',
     rootAndSourceReadLimit: rootReads + 4, generationPages: reads - rootReads - partIds.length, projectionReady, projectionReason,
     projectionFailureStage, projectionFailureCode,

@@ -1,4 +1,5 @@
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
+import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confirmation-time.mjs';
 import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 // Public, same-origin backups never replace the authoritative PB submission path.
@@ -244,9 +245,10 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(now()<(retryAt.get(path)||0))return cached?.value||null;
     const request=(async()=>{
       // Fetch capture metadata alongside the board instead of adding another round trip.
-        const knownTrack=kind==='track'?saved.get('track-statistics.json')?.value?.tracks?.[id]:null;
-        const knownCapture=Date.parse(knownTrack?.capturedAt||'');
-        const trackManifest=kind==='track'&&!Number.isFinite(knownCapture)?readAtGeneration('manifest','','',requestedGeneration):null;
+        const trackBoard=['track','track-preview','track-page','track-manifest'].includes(kind);
+        const overallBoard=['overall','overall-preview','overall-page','overall-manifest'].includes(kind);
+        const knownTrack=trackBoard?saved.get('track-statistics.json')?.value?.tracks?.[id]:null;
+        const confirmationManifest=overallBoard||kind==='event'||kind==='track'&&!knownTrack?readAtGeneration('manifest','','',requestedGeneration):null;
       try{
         let body,materialized=null;
         if(packed){
@@ -287,13 +289,12 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='archive-month'&&(!Array.isArray(value.periods)||value.periods.length>500||value.periods.some(p=>typeof p?.id!=='string'||!Number.isSafeInteger(p.startsAt)||new Date(p.startsAt).toISOString().slice(0,7)!==id)))throw Error('Invalid archive month');
         if(kind==='event-replay'&&(value.periodId!==id||value.accountId!==accountId||typeof value.replay!=='string'||value.replay.length>65536))throw Error('Public replay identity mismatch');
         const result={...value,_publicBackup:true,_dataSource:'snapshot'};
-        if((materialized||['track-preview','track-page','track-manifest','overall-preview','overall-page','overall-manifest'].includes(kind))&&typeof value.capturedAt==='string')result._snapshotCapturedAt=Date.parse(value.capturedAt);
-        if(kind==='track'){
-          // Reuse this generation's validated statistics instead of fetching a global manifest solely for capture age.
-          const knownMatches=Number.isFinite(knownCapture)&&knownCapture>0&&knownTrack.revision===value.revision&&knownTrack.updatedAt===value.updatedAt&&knownTrack.complete===value.complete&&knownTrack.count===value.entries?.length;
-          const manifest=knownMatches?null:await (trackManifest||readAtGeneration('manifest','','',requestedGeneration));
-          const checkedAt=knownMatches?knownCapture:manifest?.tracks?.[id]?.checkedAt;
-          if(Number.isSafeInteger(checkedAt)&&checkedAt>0)result._snapshotCapturedAt=checkedAt;
+        if(trackBoard||overallBoard||kind==='event'){
+          // Matching statistics/paged track metadata already carry a board-specific check.
+          const hasTrackCapture=trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);
+          const manifest=hasTrackCapture?manifestValue:await (confirmationManifest||readAtGeneration('manifest','','',requestedGeneration));
+          const capturedAt=snapshotConfirmationTime(kind,value,{manifest,statistics:knownTrack});
+          if(capturedAt!==null)result._snapshotCapturedAt=capturedAt;
         }
         if(requestedGeneration!==generation)return null;
         if(kind==='manifest')manifestValue=result;
@@ -333,7 +334,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(entries.length!==manifest.publishedEntries)throw integrityError('Incomplete paged board');
     return {...manifest.boardMetadata,entries,complete:manifest.sourceComplete,sourceComplete:manifest.sourceComplete,
       totalEntries:manifest.totalEntries,totalEntriesExact:manifest.totalEntriesExact,publishedEntries:manifest.publishedEntries,
-      ranksExact:manifest.ranksExact,capturedAt:manifest.capturedAt,_reconstructedFromPages:true};
+      ranksExact:manifest.ranksExact,pagingVersion:manifest.pagingVersion,capturedAt:manifest.capturedAt,_reconstructedFromPages:true};
   }
   function validCosmeticContext(context){
     if(!context||typeof context!=='object'||Array.isArray(context))return false;

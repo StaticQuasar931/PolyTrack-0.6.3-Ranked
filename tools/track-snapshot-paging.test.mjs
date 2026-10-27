@@ -204,7 +204,7 @@ test('normal startup and concurrent previews/pages never fetch full index or mon
   assert.equal(h.count('bootstrap-index.json'), 1);
   assert.equal(h.count('index.json'), 0);
   assert.equal(h.count(f.index.files[`tracks/${id}.json`].path), 0);
-  assert.equal(h.count(f.index.files['manifest.json'].path), 0, 'preview never waits for a large capture manifest');
+  assert.equal(h.count(f.index.files['manifest.json'].path), 1, 'Overall resolves bound capture metadata once');
   assert.equal((await h.read('track-page', id, '', 2))._dataSource, 'cached');
   assert.equal(h.count(f.index.files[`track-pages/${id}/2.json`].path), 1);
   assert.equal((await h.read('track', id)).entries.length, 205, 'full logical read stays complete');

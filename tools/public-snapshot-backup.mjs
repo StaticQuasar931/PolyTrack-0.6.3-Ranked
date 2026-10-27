@@ -183,6 +183,14 @@ export function authenticatedOverallTrackBackup(value, trackId) {
   return projectTrackBackup(value);
 }
 
+// Hash only the normalized public board. Object key order is not evidence;
+// entry order, completeness, revisions, identities and public metadata are.
+export function publicTrackConfirmationDigest(value, trackId) {
+  const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+  return sha256(JSON.stringify(canonical(authenticatedOverallTrackBackup(value, trackId))));
+}
+
 function projectTrackBackup(value) {
   const snapshot = project(value, ['trackId', 'complete', 'totalEntries', 'updatedAt', 'builtAt', 'schemaVersion',
     'algorithmVersion', 'revision', 'sourceRevision', 'sourceComplete', 'paginatedSource', 'pagination']);
@@ -454,7 +462,7 @@ async function writeJsonIfChanged(directory, relative, value) {
 }
 
 async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
-  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null,
+  trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null,
   trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches} = {}) {
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
     throw Error('Invalid trackFetchLimit');
@@ -521,6 +529,16 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       const cached = JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8'));
       const projected = publicTrackBackup(cached, id);
       if (JSON.stringify(projected) !== JSON.stringify(cached)) throw Error('Cached track is not a public projection');
+      const confirmation = confirmedTracks instanceof Map ? confirmedTracks.get(id) : null;
+      if (confirmation && /^[a-f0-9]{64}$/.test(confirmation.sha256 || '') &&
+          Number.isSafeInteger(confirmation.checkedAt) && confirmation.checkedAt > 0 && confirmation.checkedAt <= now &&
+          confirmation.updatedAt === cached.updatedAt && cached.updatedAt <= confirmation.checkedAt &&
+          record.updatedAt === cached.updatedAt && record.sourceUpdatedAt === cached.updatedAt &&
+          record.revision === Number(cached.revision || cached.sourceRevision || 0) &&
+          confirmation.checkedAt > Number(record.checkedAt || 0) &&
+          (projected.complete === true || projected.sourceComplete === true) && projected.totalEntries === projected.entries.length && projected.entries.length <= 10000 &&
+          publicTrackConfirmationDigest(projected, id) === confirmation.sha256)
+        cachedTracks[id] = {...record, checkedAt: confirmation.checkedAt};
     } catch {
       cachedTracks[id] = {...record, path: null, missing: false};
       delete cachedTracks[id].checkedAt;

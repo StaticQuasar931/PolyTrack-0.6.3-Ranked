@@ -779,14 +779,25 @@ export function installEvents(bridge){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before playing.');return;}
     if(typeof bridge.startEventRace!=='function'){message('Event Play is unavailable: safe event race launch is not connected. Normal PB ghosts will not be used.');return;}
+    const root=nativeView?.root||document.querySelector('.track-info-ui');
+    const nativeTrack=()=>root?.isConnected&&root===document.querySelector('.track-info-ui')&&root.__pt062EventWatch?.version===1&&root.__pt062EventWatch.trackId===session.trackId;
+    if(!nativeTrack()){message('The event track is still opening. Please try Play again.');return;}
     const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session);
-    const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+    const current=()=>nativeTrack()&&sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
-    try{await bridge.startEventRace({...session,ownGhost,opponents},()=>{
-      if(sessions.current()!==session||bridge.accountId()!==session.accountId)throw Error('Event launch context changed');
-      const play=nativeView?.root.querySelector('.side-panel button.play');if(!play)throw Error('Native Play is unavailable');
-      nativePlayPermit=true;try{play.click();}finally{nativePlayPermit=false;}
-    },current);}
+    try{
+      // A nested HTMLElement.click() is suppressed while its original click is dispatching.
+      await Promise.resolve();
+      if(!current())throw Error('Event launch context changed');
+      await bridge.startEventRace({...session,ownGhost,opponents},()=>{
+        if(!current())throw Error('Event launch context changed');
+        const play=root.querySelector('.side-panel button.play');if(!play||play.disabled)throw Error('Native Play is unavailable');
+        let dispatched=false;const observed=()=>{dispatched=true;};
+        play.addEventListener('click',observed,{once:true,capture:true});
+        nativePlayPermit=true;try{play.click();}finally{nativePlayPermit=false;play.removeEventListener('click',observed,true);}
+        if(!dispatched)throw Error('Native Play click was not dispatched');
+      },current);
+    }
     catch{if(sessions.current()===session)message('Event race could not start safely. No normal PB ghost was loaded.');}
     finally{launching=false;}
   }

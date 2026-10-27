@@ -67,7 +67,7 @@ test('generation recovery invalidates warm boards, profiles, capture metadata an
     'overall.json':{updatedAt:generation,entries:[]},
     [profile]:{updatedAt:generation,accountId:id,name:`Racer ${generation}`},
     'public-export-summary.json':{capturedAt:`2026-10-0${generation}T00:00:00.000Z`},
-    'manifest.json':{schemaVersion:1,tracks:{[id]:{checkedAt:generation*1000}}},
+    'manifest.json':{schemaVersion:1,tracks:{[id]:{path:track,updatedAt:generation,checkedAt:generation*1000}}},
     [track]:{updatedAt:generation,trackId:id,entries:[]}
   });
   const changes=[];let warmedMetadata;
@@ -147,7 +147,7 @@ test('recovery resets both missing-logical and failed-payload negative caches im
 
 test('manifest-triggered recovery keeps board and capture metadata in the same generation',{timeout:5000},async()=>{
   const id='c'.repeat(64),track=`tracks/${id}.json`,manifestStarted=deferred(),releaseManifest=deferred();
-  const files=generation=>({'manifest.json':{schemaVersion:1,tracks:{[id]:{checkedAt:generation*1000}}},[track]:{updatedAt:generation,trackId:id,entries:[]}});
+  const files=generation=>({'manifest.json':{schemaVersion:1,tracks:{[id]:{path:track,updatedAt:generation,checkedAt:generation*1000}}},[track]:{updatedAt:generation,trackId:id,entries:[]}});
   const fixture=await generationFixture(files(7),files(8),{intercept:async({generation,logical})=>{
     if(generation===7&&logical==='manifest.json'){manifestStarted.resolve();await releaseManifest.promise;return new Response('',{status:410});}
   }});
@@ -162,7 +162,7 @@ test('manifest-triggered recovery keeps board and capture metadata in the same g
 test('a late retired manifest cannot overwrite current capture metadata',{timeout:5000},async()=>{
   const id='d'.repeat(64),track=`tracks/${id}.json`,oldStarted=deferred(),releaseOld=deferred();
   const files=generation=>({
-    'manifest.json':{schemaVersion:1,tracks:{[id]:{checkedAt:generation*1000}}},
+    'manifest.json':{schemaVersion:1,tracks:{[id]:{path:track,updatedAt:generation,checkedAt:generation*1000}}},
     [track]:{updatedAt:generation,trackId:id,entries:[]},
     'event-totals.json':{updatedAt:generation,entries:[]}
   });
@@ -381,7 +381,7 @@ test('track reads expose manifest check times and cache the static manifest once
   const ids=['a','b'].map(char=>char.repeat(64));let manifestReads=0,trackReads=0;
   const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',fetchImpl:async url=>{
     const target=new URL(url);
-    if(target.pathname.endsWith('/manifest.json')){manifestReads++;return Response.json({schemaVersion:1,tracks:{[ids[0]]:{checkedAt:123},[ids[1]]:{checkedAt:456}}});}
+    if(target.pathname.endsWith('/manifest.json')){manifestReads++;return Response.json({schemaVersion:1,tracks:{[ids[0]]:{path:`tracks/${ids[0]}.json`,updatedAt:50,checkedAt:123},[ids[1]]:{path:`tracks/${ids[1]}.json`,updatedAt:50,checkedAt:456}}});}
     trackReads++;const id=target.pathname.split('/').at(-1).replace('.json','');
     return Response.json({trackId:id,updatedAt:50,entries:[]});
   }});
@@ -466,7 +466,7 @@ test('event backups cannot substitute a different event identity',async()=>{
 test('public backup shares requests and does not refetch on menu refresh',async()=>{
   let calls=0,manifestReads=0;const id='a'.repeat(64);
   const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',fetchImpl:async url=>{
-    calls++;if(new URL(url).pathname.endsWith('/manifest.json')){manifestReads++;return new Response(JSON.stringify({schemaVersion:1,tracks:{[id]:{checkedAt:123}}}),{headers:{'content-type':'application/json'}});}
+    calls++;if(new URL(url).pathname.endsWith('/manifest.json')){manifestReads++;return new Response(JSON.stringify({schemaVersion:1,tracks:{[id]:{path:`tracks/${id}.json`,updatedAt:1,checkedAt:123}}}),{headers:{'content-type':'application/json'}});}
     return new Response(JSON.stringify({trackId:id,updatedAt:1,entries:[]}),{headers:{'content-type':'application/json'}});
   }});
   const [a,b]=await Promise.all([read('track',id),read('track',id)]);
@@ -475,12 +475,13 @@ test('public backup shares requests and does not refetch on menu refresh',async(
 test('missing backup has negative cooldown and invalid identifiers never fetch',async()=>{
   let calls=0;const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',fetchImpl:async()=>{calls++;return new Response('',{status:404});}});
   assert.equal(await read('track','../private'),null);assert.equal(calls,0);
-  await read('overall');await read('overall');assert.equal(calls,1);
+  await read('overall');await read('overall');assert.equal(calls,2); // Board and shared confirmation metadata, once each.
 });
 test('transient network failures use a short explicit-read cooldown without amplifying concurrent reads',async()=>{
   let now=0,calls=0,release;
   const blocked=new Promise(resolve=>{release=resolve;});
-  const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',now:()=>now,fetchImpl:async()=>{
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots/',now:()=>now,fetchImpl:async url=>{
+    if(new URL(url).pathname.endsWith('/manifest.json'))return Response.json({schemaVersion:1,tracks:{}});
     calls++;if(calls===1){await blocked;throw new TypeError('network unavailable');}
     return Response.json({updatedAt:2,entries:[]});
   }});
@@ -496,7 +497,8 @@ test('transient network failures use a short explicit-read cooldown without ampl
 
 test('timeout failures use the short cooldown and recover on an explicit read',async()=>{
   let now=0,calls=0;
-  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',now:()=>now,fetchImpl:async()=>{
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',now:()=>now,fetchImpl:async url=>{
+    if(new URL(url).pathname.endsWith('/manifest.json'))return Response.json({schemaVersion:1,tracks:{}});
     calls++;if(calls===1)throw Object.assign(new Error('request timed out'),{name:'TimeoutError'});
     return Response.json({updatedAt:5,entries:[]});
   }});
@@ -508,7 +510,8 @@ test('timeout failures use the short cooldown and recover on an explicit read',a
 test('HTTP 429 and 5xx failures retry only after the short cooldown',async()=>{
   for(const status of [429,503]){
     let now=0,calls=0;
-    const read=createPublicSnapshotReader({baseUrl:'https://example.test/',now:()=>now,fetchImpl:async()=>{
+    const read=createPublicSnapshotReader({baseUrl:'https://example.test/',now:()=>now,fetchImpl:async url=>{
+      if(new URL(url).pathname.endsWith('/manifest.json'))return Response.json({schemaVersion:1,tracks:{}});
       calls++;return calls===1?new Response('',{status}):Response.json({updatedAt:3,entries:[]});
     }});
     assert.equal(await read('overall'),null);assert.equal(calls,1);

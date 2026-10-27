@@ -139,7 +139,7 @@ test('existing snapshot reader really decodes a bounded preview before any full 
   const {createPublicSnapshotReader}=await import(new URL('./public-snapshot-client.mjs',import.meta.url));
   const p=buildOverallSnapshotPaging({entries,complete:true,totalEntries:200,updatedAt:100,algorithmVersion:'test',schemaVersion:6,sourceRevision:1}).preview;
   const calls=[];const read=createPublicSnapshotReader({baseUrl:'https://offline.invalid/',fetchImpl:async url=>{
-    calls.push(String(url));assert.ok(String(url).endsWith('/overall-preview.json'));return Response.json(p);
+    calls.push(String(url));if(String(url).endsWith('/manifest.json'))return Response.json({});assert.ok(String(url).endsWith('/overall-preview.json'));return Response.json(p);
   }});
-  const result=await read('overall-preview');assert.equal(result.entries.length,15);assert.equal(result.complete,false);assert.equal(calls.length,1);
+  const result=await read('overall-preview');assert.equal(result.entries.length,15);assert.equal(result.complete,false);assert.equal(calls.length,2);assert.ok(calls[0].endsWith('/manifest.json'),'confirmation starts before the board response');assert.equal(calls.filter(url=>url.endsWith('/overall-preview.json')).length,1);
 });

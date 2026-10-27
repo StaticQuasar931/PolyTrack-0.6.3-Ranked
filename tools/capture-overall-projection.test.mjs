@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {captureOverallProjection, applyCapturedOverallProjection, createOverallCaptureFetch, overallCaptureForBackup, frozenOverallSource} from './capture-overall-projection.mjs';
 import {encode} from './verifier/firestore.mjs';
-import {runPublicSnapshotBackup,publicTrackBackup,authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
+import {runPublicSnapshotBackup,publicTrackBackup,authenticatedOverallTrackBackup,publicTrackConfirmationDigest} from './public-snapshot-backup.mjs';
 import {prepareSourcePublication,decodeSourcePublication} from '../workers/ranked/src/overall-source-publication.js';
 import {preparePublicationPages} from '../workers/ranked/src/paged-publication.js';
 import {computeOverall, trackWeightParts} from '../workers/ranked/src/index.js';
@@ -62,7 +62,7 @@ async function fixture({paged = false, inline = false} = {}) {
     assert.ok(value,'Unexpected document '+relative);
     return Response.json([{found:{name,fields:encode(value).mapValue.fields,updateTime:'2026-10-25T18:46:57.903763Z'},readTime:point}]);
   };
-  return {documents,requests,fetchImpl};
+  return {documents,requests,fetchImpl,catalog,board};
 }
 
 test('consistent exact roots/source plus named generation pages build one public artifact',async()=>{
@@ -82,6 +82,7 @@ test('source corruption or baseline mismatch withholds projection without disgui
     const f=await fixture();mutate(f);
     const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
     assert.equal(result.report.projectionReady,false);assert.equal(result.files.has('projection-source.json'),false);
+    assert.equal(result.confirmedTracks.size,0);
     assert.ok(result.files.has('overall.json'));assert.ok(result.report.projectionReason);
   }
 });
@@ -116,9 +117,11 @@ test('updater automatically applies bound capture before export and never invoke
   const stage=path.join(root,'local-reports','snapshot-staging');await fs.mkdir(stage,{recursive:true});
   await fs.writeFile(path.join(root,'index.html'),'<html><head></head></html>');
   let called=0;
-  await updatePublicSnapshot({root,refreshReplays:true,capture:async()=>{
+  await updatePublicSnapshot({root,refreshReplays:true,capture:async options=>{
+    assert.ok(options.confirmedTracks instanceof Map);
+    assert.equal(options.confirmedTracks.size,1);
     await fs.writeFile(path.join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{},events:{}}));return {};
-  },captureOverall:async()=>{called++;const f=await fixture();return captureOverallProjection({fetchImpl:f.fetchImpl});},
+  },captureOverall:async()=>{called++;const f=await fixture();f.documents.get('0.6.2_s1_release_meta/current').sourceCatalog=f.catalog;return captureOverallProjection({fetchImpl:f.fetchImpl});},
   exportPublic:async()=>{
     const manifest=JSON.parse(await fs.readFile(path.join(stage,'manifest.json')));
     assert.equal(manifest.overallProjection.available,true);assert.equal(manifest.overallCapture.publishedRevision,10);
@@ -279,6 +282,84 @@ test('backup reuses the bound Overall capture without Worker root or page reques
  const invalid={...capture,files:new Map(capture.files)};
  invalid.files.set('overall-results.json',{...saved,sourceRevision:9});
  assert.throws(()=>overallCaptureForBackup(invalid),/binding mismatch/);
+});
+
+test('current exact source binding confirms unchanged public boards with zero additional reads even when dirty',async()=>{
+  const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+  meta.sourceCatalog=structuredClone(f.catalog);
+  const capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  assert.equal(meta.dirty,true);
+  assert.equal(f.requests.length,4);assert.equal(capture.report.estimatedReads,4);
+  const confirmation=capture.confirmedTracks.get(track);
+  assert.deepEqual(confirmation,{sha256:publicTrackConfirmationDigest(f.board,track),updatedAt:1000,checkedAt:Date.parse(point)});
+  assert.doesNotMatch(JSON.stringify([...capture.confirmedTracks]),/signature|PRIVATE_|ownerUid|entries|sourceCatalog/);
+  assert.doesNotMatch(JSON.stringify(capture.report),/confirmedTracks|signature|sourceCatalog/);
+});
+
+test('missing, incomplete, changed or future current source catalog never confirms a frozen board',async()=>{
+  for(const mutate of [meta=>{delete meta.sourceCatalog;},meta=>{meta.sourceCatalog.complete=false;},
+    meta=>{meta.sourceCatalog.tracks[track].signature='changed';},meta=>{meta.sourceCatalog.tracks[track].revision++;},
+    meta=>{meta.sourceCatalog.tracks[track].sourceRevision++;},meta=>{meta.sourceCatalog.tracks[track].updatedAt++;},
+    meta=>{meta.sourceCatalog.tracks={};meta.sourceCatalog.count=0;},meta=>{meta.sourceCatalog.scannedAt=Date.parse(point)+1;}]){
+    const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+    meta.sourceCatalog=structuredClone(f.catalog);mutate(meta);
+    const capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+    assert.equal(capture.report.projectionReady,true);
+    assert.equal(capture.confirmedTracks.size,0);assert.equal(f.requests.length,4);
+  }
+});
+
+test('legacy source updateTime bindings require exact current equality',async()=>{
+  for(const changed of [false,true]){
+    const input=await bound(2,({payload,meta,id})=>{
+      payload.catalog.tracks[id]={updateTime:'2026-10-24T00:00:00.123456Z'};
+      meta.sourceCatalog=structuredClone(payload.catalog);
+      if(changed)meta.sourceCatalog.tracks[id].updateTime='2026-10-24T00:00:00.123457Z';
+    });
+    const confirmedTracks=new Map();
+    await frozenOverallSource({...input,confirmationAt:Date.parse(point),confirmedTracks});
+    assert.equal(confirmedTracks.size,changed?0:1);
+  }
+});
+
+test('backup advances only exact retained public bytes and preserves source timestamps without fetching tracks',async t=>{
+  for(const scenario of ['exact','digest-mismatch','changed-binding','missing-evidence','wrong-path','newer-cached','missing-board','older-check',
+    'future-check','invalid-check','manifest-mismatch','incomplete-cache']){
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'track-confirmation-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+    const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+    meta.sourceCatalog=structuredClone(f.catalog);
+    if(scenario==='changed-binding')meta.sourceCatalog.tracks[track].signature='new-source';
+    if(scenario==='missing-evidence')delete meta.sourceCatalog;
+    const capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+    if(scenario==='future-check')capture.confirmedTracks.get(track).checkedAt=Date.parse(point)+101;
+    if(scenario==='invalid-check')capture.confirmedTracks.get(track).checkedAt=NaN;
+    const board=publicTrackBackup(f.board,track);
+    if(scenario==='digest-mismatch')board.entries[0].timeMs++;
+    if(scenario==='newer-cached')board.updatedAt++;
+    if(scenario==='incomplete-cache')board.complete=false;
+    const relative=`tracks/${track}.json`,previousCheck=scenario==='older-check'?Date.parse(point)+1:2000;
+    const record={path:scenario==='wrong-path'?'tracks/wrong.json':relative,revision:board.revision,
+      sourceUpdatedAt:board.updatedAt,updatedAt:board.updatedAt,checkedAt:previousCheck};
+    if(scenario==='manifest-mismatch')record.sourceUpdatedAt--;
+    await fs.mkdir(path.join(directory,'tracks'));
+    const before=JSON.stringify(board)+'\n';
+    if(scenario!=='missing-board')await fs.writeFile(path.join(directory,relative),before);
+    await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{[track]:record},events:{}}));
+    const calls=[];
+    const result=await runPublicSnapshotBackup({directory,capturedOverall:overallCaptureForBackup(capture),
+      confirmedTracks:capture.confirmedTracks,trackFetchLimit:0,trackIds:[],now:Date.parse(point)+100,log:()=>{},
+      fetchImpl:async input=>{
+        const p=new URL(input).pathname;calls.push(p);
+        if(p==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+        assert.equal(p,'/v1/events/permanent-rolling-hills/snapshot');return new Response('',{status:404});
+      }});
+    assert.equal(result.deferred,undefined);assert.equal(calls.length,2);
+    const saved=result.tracks[track];
+    assert.equal(saved.checkedAt,scenario==='exact'?Date.parse(point):['wrong-path','missing-board'].includes(scenario)?undefined:previousCheck,scenario);
+    assert.equal(saved.updatedAt,record.updatedAt);assert.equal(saved.sourceUpdatedAt,record.sourceUpdatedAt);
+    if(scenario!=='missing-board')assert.equal(await fs.readFile(path.join(directory,relative),'utf8'),before);
+    assert.doesNotMatch(JSON.stringify(result),/confirmedTracks|sourceCatalog|signature|PRIVATE_/);
+  }
 });
 
 async function bound(count=501,mutate=()=>{}){

@@ -73,12 +73,12 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=189',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=190',document.currentScript?.src||location.href).href;
   let helpControlsModule=null;
   const helpControlsPromise=import(new URL('../tools/help-controls.mjs',eventsModuleUrl).href).then(module=>(helpControlsModule=module)).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='189';
+  const extraCatalogRevision='190';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -119,7 +119,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=189',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=190',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -146,7 +146,7 @@
     if(localWeeklyCatalogRequest||Date.now()<localWeeklyCatalogUntil)return localWeeklyCatalogRequest;
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=189',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=190',eventsModuleUrl).href);
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       const current=feed.current,end=Date.parse(current?.endTime||'');
       localWeeklyCatalogUntil=current&&end>Date.now()?end:Date.now()+60000;
@@ -278,7 +278,7 @@
         if(!response.ok){const error=Error('Event service unavailable');error.serviceResponse=true;throw error;}
         let payload=await response.json();
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=189');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=190');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
         }
@@ -1001,7 +1001,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     const trackSummaries=Array.isArray(meta.trackSummaries)?meta.trackSummaries.slice(0,TOTAL_TRACKS):Array.isArray(prior.trackSummaries)?prior.trackSummaries:[];
     const totalEntries=Number.isSafeInteger(meta.totalEntries)&&meta.totalEntries>=0?meta.totalEntries:null;
     const publishedEntries=Number.isSafeInteger(meta.publishedEntries)&&meta.publishedEntries>=0?meta.publishedEntries:null;
-    writeJsonStorage(OVERALL_CACHE_KEY,{entries:normalized,trackSummaries,fetchedAt:Number(meta.checkedAt||meta.fetchedAt||0)||Date.now(),serverUpdatedAt:Number(meta.serverUpdatedAt||0)||Number(prior.serverUpdatedAt||0)||0,revision:Number(meta.revision||0)||0,builtRevision:Number(meta.builtRevision||0)||0,sourceRevision:Number(meta.sourceRevision||meta.builtRevision||0)||0,algorithmVersion:String(meta.algorithmVersion||RANK_MODEL),schemaVersion:Number(meta.schemaVersion||TRACK_CACHE_SCHEMA),source:String(meta.source||'cloud'),signature:String(meta.signature||''),complete:meta.complete===true,totalEntriesExact:meta.totalEntriesExact===true,ranksExact:meta.ranksExact===true,...(totalEntries===null?{}:{totalEntries}),...(publishedEntries===null?{}:{publishedEntries})});
+    writeJsonStorage(OVERALL_CACHE_KEY,{entries:normalized,trackSummaries,fetchedAt:Number(meta.checkedAt||meta.fetchedAt||0)||Date.now(),serverUpdatedAt:Number(meta.serverUpdatedAt||0)||Number(prior.serverUpdatedAt||0)||0,snapshotCapturedAt:Number(meta.snapshotCapturedAt||0)||0,revision:Number(meta.revision||0)||0,builtRevision:Number(meta.builtRevision||0)||0,sourceRevision:Number(meta.sourceRevision||meta.builtRevision||0)||0,algorithmVersion:String(meta.algorithmVersion||RANK_MODEL),schemaVersion:Number(meta.schemaVersion||TRACK_CACHE_SCHEMA),source:String(meta.source||'cloud'),signature:String(meta.signature||''),complete:meta.complete===true,totalEntriesExact:meta.totalEntriesExact===true,ranksExact:meta.ranksExact===true,...(totalEntries===null?{}:{totalEntries}),...(publishedEntries===null?{}:{publishedEntries})});
     overallCacheGeneration++;
   }
   function trackSnapshotStore(){
@@ -1695,8 +1695,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=189');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=189');
+    const module=await import('./tools/developer-diagnostics.mjs?v=190');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=190');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1765,15 +1765,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=189');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=190');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=189');
-        localInsights=module.createLocalInsights({storage,revision:189});
-        void import('./tools/control-usage.mjs?v=189').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=190');
+        localInsights=module.createLocalInsights({storage,revision:190});
+        void import('./tools/control-usage.mjs?v=190').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=189');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=190');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -1797,7 +1797,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=189');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=190');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2654,7 +2654,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=189').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=190').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null;
@@ -2719,7 +2719,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=189',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=190',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -3218,7 +3218,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=189',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=190',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -3638,7 +3638,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=189',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=190',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -4228,7 +4228,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     return helpControlsModule.renderHelpControls({idPrefix:'rankedHelp',
       bindings:helpControlsModule.readHelpBindings(localStorage),
       ghostShortcut:opponentPresetModule?.opponentShortcutLabel(opponentPreset?.key||'KeyG')||'G',
-      release:{version:VERSION,revision:189,notes:['Snapshot-first standings. Run submissions and replay verification remain separate.']}});
+      release:{version:VERSION,revision:190,notes:['Snapshot-first standings. Run submissions and replay verification remain separate.']}});
   }
   async function refreshRankedHelp(pop){
     const module=await helpControlsPromise,content=pop?.querySelector('.overall-help-content');
@@ -5243,8 +5243,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       if (validDirect && !(cached?.algorithmVersion===algorithmVersion && sourceRevision<Number(cached.sourceRevision||cached.revision||0))) {
         overallCloudRetryAt=0;
         overallTrackSummariesCache=Array.isArray(data.trackSummaries)?data.trackSummaries.slice(0,TOTAL_TRACKS):[];
-        writeOverallSnapshotCache(direct,{serverUpdatedAt:updatedAt,revision,builtRevision,sourceRevision,algorithmVersion,schemaVersion,source,signature,trackSummaries:overallTrackSummariesCache,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact});
-        overallLoadState={status:data._snapshotRefreshFailed?'stale':'snapshot',message:data._snapshotRefreshFailed?'Snapshot check failed; showing the retained published standings':'Published standings',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:0,nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
+        writeOverallSnapshotCache(direct,{snapshotCapturedAt:Number(data._snapshotCapturedAt||0)||0,serverUpdatedAt:updatedAt,revision,builtRevision,sourceRevision,algorithmVersion,schemaVersion,source,signature,trackSummaries:overallTrackSummariesCache,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact});
+        overallLoadState={snapshotCapturedAt:Number(data._snapshotCapturedAt||0)||0,status:data._snapshotRefreshFailed?'stale':'snapshot',message:data._snapshotRefreshFailed?'Snapshot check failed; showing the retained published standings':'Published standings',fetchedAt:updatedAt||Date.now(),serverUpdatedAt:updatedAt||0,checkedAt:0,nextRefreshAt:Date.now()+OVERALL_REFRESH_CHECK_MS,complete,totalEntries,totalEntriesExact,publishedEntries,ranksExact};
         return annotateOverallMovement(direct,signature);
       }
       if(cached?.entries?.length){
@@ -5583,10 +5583,11 @@ function rankingScopeMarkup(category,scope='total'){
     const estimateScoreChanged=origin&&formatRp(score)!==formatRp(origin.score);
     const estimateRank=Number(row.rank),snapshotRank=Number(origin?.rank);
     const estimateRankChanged=origin&&estimateRank!==snapshotRank;
-    const estimateComparison=origin&&(estimateScoreChanged||estimateRankChanged)
-      ?'Local estimate: '+[estimateScoreChanged?formatRp(score)+' RP':'',estimateRankChanged?'#'+estimateRank:''].filter(Boolean).join(', ')+'. Snapshot: '+[estimateScoreChanged?formatRp(origin.score)+' RP':'',estimateRankChanged?'#'+snapshotRank:''].filter(Boolean).join(', ')+'.'
-      :'Local estimate.';
-    const estimateTitle=entry.casualProjection?.captureRecalculated===true?'Track-board estimate. Verified PBs only.':origin?estimateComparison+' Pending verification.':'Snapshot ranking.';
+    const estimateComparison=estimateScoreChanged
+      ?'Local RP-'+formatRp(score)+'. Verified RP-'+formatRp(origin.score)+'.'
+      :estimateRankChanged?'Local rank-'+estimateRank+'. Verified rank-'+snapshotRank+'.'
+      :origin?'Verified RP-'+formatRp(origin.score)+'.':'Snapshot ranking.';
+    const estimateTitle=entry.casualProjection?.captureRecalculated===true?'Track-board estimate. Verified PBs only.':estimateComparison;
     const scoreTitle=estimateTitle+(origin||entry.casualProjection?.captureRecalculated===true?'':' '+(scoreTitles[overallCategory]||'Derived from the same complete Ranked snapshot.'))+(['playtime','veterans'].includes(overallCategory)?` Exact duration: ${preciseDurationLabel(categoryValue)}.`:'');
     const missingValue=(['wins','casual'].includes(overallCategory)&&!rankingMetricFor(row).known)||(overallCategory==='tracks'&&completedTrackCount(row)===null)||(entry.groupScore===null&&overallCategory==='overall')||(overallCategory==='casual'&&(!Number.isFinite(row?.casualRp)||row.casualRp<0||!Number.isSafeInteger(row?.casualCompletionCount)||row.casualCompletionCount<0))||(overallCategory==='average'&&Number(row?.averagePlacementVersion||0)<AVERAGE_PLACEMENT_VERSION)||(overallCategory==='competitiveAverage'&&(!(Number(row?.competitiveAverageEligibleTracks||0)>0)||row?.competitiveAveragePlacement==null))||(overallCategory==='playtime'&&categoryValue<=0);
     const categoryDisplay=missingValue?'N/A':overallCategory==='casual'?formatRp(categoryValue):overallCategory==='playtime'?activeDurationLabel(categoryValue):overallCategory==='veterans'?durationLabel(categoryValue):overallCategory==='average'||overallCategory==='competitiveAverage'?Math.max(0,categoryValue).toFixed(2):['overall','skill','consistency','improved','rising'].includes(overallCategory)?formatRp(categoryValue):overallCategory==='weight'?categoryValue.toFixed(2):overallCategory==='podiumRate'?`${categoryValue.toFixed(1)}%`:String(categoryValue);
@@ -5677,7 +5678,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=189').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=190').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -5702,7 +5703,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=189',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=190',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -5746,7 +5747,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=189',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=190',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -5766,8 +5767,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=189',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=189',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=189',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=190',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=190',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=190',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -6424,7 +6425,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=189',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=190',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -7543,7 +7544,7 @@ function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
     const saved=readOverallSnapshotCache();
     const snapshotAt=Number(overallLoadState.serverUpdatedAt||overallLoadState.fetchedAt||0)||0;
     const fromPackage=status==='snapshot'||saved?.source==='public-backup';
-    const ageAt=fromPackage?(publicSnapshotCapturedAt||snapshotAt):snapshotAt;
+    const ageAt=fromPackage?(Number(overallLoadState.snapshotCapturedAt||saved?.snapshotCapturedAt||0)||0):snapshotAt;
     const failed=status==='stale'||status==='error'||rankedManualRefreshFailed;
     el.className='overall-freshness'+(failed?' is-stale':status==='loading'?' is-loading':'');
     el.dataset.old=String(Boolean(ageAt&&Date.now()-ageAt>2*60*60*1000));
@@ -7768,7 +7769,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(189));
+    headers.set('X-PolyTrack-Revision', String(190));
     return fetch(url, {...options, headers});
   }
 
@@ -7916,7 +7917,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=189'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=190'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -7983,8 +7984,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   let snapshotTrackStatistics = {};
   let metadataRecovery=null;
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=189').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=189');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=190').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=190');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,prepareRecording:ptPrepareGatedRecording,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent('snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         metadataRecovery.reset();
@@ -8061,7 +8062,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=189');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=190');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -10195,9 +10196,9 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=189'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=190'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=189',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:189,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=190',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:190,document,
       onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false;},
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
@@ -10251,7 +10252,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=189').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=190').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -10278,7 +10279,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=189', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=190', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});
