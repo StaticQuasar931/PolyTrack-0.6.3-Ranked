@@ -73,10 +73,12 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=188',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=189',document.currentScript?.src||location.href).href;
+  let helpControlsModule=null;
+  const helpControlsPromise=import(new URL('../tools/help-controls.mjs',eventsModuleUrl).href).then(module=>(helpControlsModule=module)).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='188';
+  const extraCatalogRevision='189';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -117,7 +119,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=188',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=189',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -144,7 +146,7 @@
     if(localWeeklyCatalogRequest||Date.now()<localWeeklyCatalogUntil)return localWeeklyCatalogRequest;
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=188',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=189',eventsModuleUrl).href);
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       const current=feed.current,end=Date.parse(current?.endTime||'');
       localWeeklyCatalogUntil=current&&end>Date.now()?end:Date.now()+60000;
@@ -276,7 +278,7 @@
         if(!response.ok){const error=Error('Event service unavailable');error.serviceResponse=true;throw error;}
         let payload=await response.json();
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=188');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=189');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
         }
@@ -1693,8 +1695,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=188');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=188');
+    const module=await import('./tools/developer-diagnostics.mjs?v=189');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=189');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1763,15 +1765,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=188');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=189');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=188');
-        localInsights=module.createLocalInsights({storage,revision:188});
-        void import('./tools/control-usage.mjs?v=188').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=189');
+        localInsights=module.createLocalInsights({storage,revision:189});
+        void import('./tools/control-usage.mjs?v=189').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=188');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=189');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -1795,7 +1797,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=188');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=189');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2271,7 +2273,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       const row=doc.data()||{};
       if(activeRankedAccountId()!==accountId||window.firebase?.auth?.().currentUser?.uid!==ownerUid||row.ownerUid!==ownerUid||row.accountId!==accountId||row.trackId!==trackId||safeRecordingId(row.uploadId)!==recId)return;
       const patch=recordingRepairPatch(row,recording,payload,style,colors,carId);
-      if(patch&&Object.keys(patch).length)await ref.set(patch,{merge:true});
+      if(patch&&Object.keys(patch).length)await ref.set({...patch,ingestedAt:window.firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
       matched++;
     }));
     return matched;
@@ -2652,7 +2654,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=188').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=189').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null;
@@ -2717,7 +2719,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=188',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=189',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -3216,7 +3218,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=188',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=189',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -3636,7 +3638,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=188',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=189',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -4221,83 +4223,20 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     });
   }
 
-  function filterRankedHelp(root,query){
-    if(!root)return;
-    const term=String(query||'').trim().toLowerCase();let matches=0;
-    for(const section of root.querySelectorAll('.ranked-help-controls')){
-      if(section.dataset.helpOpen===undefined)section.dataset.helpOpen=String(section.open);
-      let count=0;
-      const sectionMatches=Boolean(term&&section.querySelector('summary')?.textContent.toLowerCase().includes(term));
-      for(const row of section.querySelectorAll('[data-help-entry]')){
-        row.hidden=Boolean(term&&!sectionMatches&&!row.textContent.toLowerCase().includes(term));
-        if(!row.hidden)count++;
-      }
-      section.hidden=count===0;matches+=count;
-      section.open=term?count>0:section.dataset.helpOpen==='true';
-      if(!term)delete section.dataset.helpOpen;
-    }
-    const empty=root.querySelector('[data-help-empty]');if(empty)empty.hidden=matches>0;
-  }
   function rankedHelpMarkup(){
-    const groups=[
-      ['Main menu',[
-        ['P / Space','Play.'],['R','Rankings.'],['G','Garage.'],['S','Settings.'],
-        ['M','Multiplayer.'],['E','Track editor.'],['C','Community.'],['H','Help.'],['1-9','Open that menu button.']
-      ]],
-      ['Rankings and pages',[
-        ['1-4','Open that Quick Ranking.'],
-        ['Left / Right or A / D','Previous / next page. Also works in track boards, Extra Tracks and archives.'],
-        ['Shift + number','Go to that page. 0 = page 10.'],
-        ['Shift + plus/minus + number','Move forward/back that many pages.'],
-        ['Page field + Enter','Go to a typed page. Left and right buttons also switch pages.'],
-        ['Right-click Filters','Pause or resume your Ranked filters.'],
-        ['Arrow keys / Home / End','Move within a ranking-category menu. Enter selects; Escape closes.']
-      ]],
-      ['Track selection',[
-        ['Left / Right','Switch Official, Community and Custom tabs.'],
-        ['Shift + 1 / 2 / 3','Open Official / Community / Custom tracks.'],
-        ['1..9 / 0','Open Summer 1..9 / 10, when present.'],
-        ['S / W / D, then number','Open a Summer / Winter / Desert track from Official tracks.'],
-        ['1..9 / 0 in an Extra Track rating','Rate 1..9 / 10. Focus Difficulty to rate difficulty instead.'],
-        ['Enter in search','Apply the Extra Tracks search.']
-      ]],
-      ['Track boards and ghosts',[
-        [opponentPresetModule?.opponentShortcutLabel(opponentPreset?.key||'KeyG')||'G','Select your saved ghost group. Change it in Filters > Ghost shortcut.'],
-        ['Click a racer / number','Select or unselect a ghost. 0 = row 10.'],
-        ['Hold two numbers','Select every row between them.'],
-        ['T, then number','Select that many leading racers.'],
-        ['C','Clear ghost selections.'],
-        ['Equals / Backspace','Select leading racers and your own ghost where available.'],
-        ['Minus','Select the racer immediately ahead of you.'],
-        ['Enter / Space','Play the track. A focused button keeps its normal action.']
-      ]],
-      ['Driving: default keys',[
-        ['W / Up','Accelerate.'],['S / Down','Brake / reverse.'],['A / Left; D / Right','Steer.'],
-        ['R / Enter','Reset to checkpoint.'],['T / Backspace','Restart from the start.'],
-        ['C / M','Toggle cockpit camera.'],['P / Space','Pause.'],['H','Toggle race UI.'],
-        ['Equals','Toggle FPS counter.']
-      ]],
-      ['Replay and spectator: default keys',[
-        ['Slash','Toggle spectator camera.'],['WASD / arrows','Move spectator camera.'],
-        ['Z / C','Move spectator camera up / down.'],['Shift','Spectator speed modifier.'],
-        ['Period / comma','Step preview forward / backward.']
-      ]],
-      ['Track editor: default keys',[
-        ['R / Space','Rotate a part.'],['Shift','Height modifier.'],['Delete / X','Delete.'],
-        ['WASD / arrows','Move around the editor.'],['Y / H','Rotate view up / down.'],
-        ['Q / E','Rotate view left / right.'],['Z / C','Move down / up.'],
-        ['T','Test the track.'],['G','Pick a part.']
-      ]],
-      ['Menus and accessibility',[
-        ['Tab / Shift + Tab','Move focus forward / backward.'],
-        ['Enter / Space','Activate a focused button.'],
-        ['Escape','Close the top dialog or return from a menu.'],
-        ['Touch controls','Use the on-screen driving buttons; adjust touch controls in Settings.'],
-        ['Settings > Controls','View or change game key bindings. Custom bindings override the defaults above.']
-      ]]
-    ];
-    const sections=groups.map(([title,rows],index)=>`<details class="ranked-help-controls"${index===0?' open':''}><summary>${escapeHtml(title)} <small>${rows.length}</small></summary><dl>${rows.map(([keys,action])=>`<div data-help-entry><dt><kbd>${escapeHtml(keys)}</kbd></dt><dd>${escapeHtml(action)}</dd></div>`).join('')}</dl></details>`).join('');
-    return `<div class="overall-help-grid"><section><b>Scores</b><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark means the replay was verified.</p></section><section><b>Your next improvement</b><p>Your profile combines saved results and local practice to suggest tracks.</p><button class="button" type="button" data-help-action="profile">Your profile</button></section><section><b>Filters</b><p>Normal filters hide racers. Smart filters calculate a separate group score.</p><button class="button" type="button" data-help-action="filters">Open Filters</button></section></div><button class="button" type="button" data-help-action="ghost-shortcut">Ghost shortcut</button><h4>Help and controls</h4><p class="ranked-help-note">Keys apply to the open screen. Settings can change the driving defaults.</p><div class="ranked-help-search"><label for="rankedHelpSearch">Find a control</label><div><input id="rankedHelpSearch" type="search" placeholder="Search actions or keys" autocomplete="off"><button class="button" type="button" data-help-clear aria-label="Clear control search">Clear</button></div></div><p data-help-empty hidden>No matching controls.</p><div class="ranked-help-sections">${sections}</div><section class="ranked-help-credits"><h4>Credits</h4><p>Track ratings and difficulty gradings: <strong>Window Cleaner</strong>.</p></section>`;
+    if(!helpControlsModule)return '<p role="status">Loading help and controls...</p>';
+    return helpControlsModule.renderHelpControls({idPrefix:'rankedHelp',
+      bindings:helpControlsModule.readHelpBindings(localStorage),
+      ghostShortcut:opponentPresetModule?.opponentShortcutLabel(opponentPreset?.key||'KeyG')||'G',
+      release:{version:VERSION,revision:189,notes:['Snapshot-first standings. Run submissions and replay verification remain separate.']}});
+  }
+  async function refreshRankedHelp(pop){
+    const module=await helpControlsPromise,content=pop?.querySelector('.overall-help-content');
+    if(!content||!pop.isConnected)return;
+    pop.__helpCleanup?.();
+    if(!module){content.innerHTML='<p role="status">Help could not load. Reopen Help to retry after reloading the game.</p>';return;}
+    content.innerHTML=rankedHelpMarkup();
+    pop.__helpCleanup=module.bindHelpControls(content);
   }
 
   function ensurePanel(){
@@ -4317,13 +4256,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       event.target.value=String(overallPage+1);
       event.preventDefault();event.stopPropagation();
     });
-    panel.addEventListener('input',event=>{
-      if(event.target.id==='rankedHelpSearch')filterRankedHelp(panel.querySelector('#overallHelpPopup'),event.target.value);
-    });
     panel.addEventListener('click', (event)=>{
-      if(event.target.closest?.('[data-help-clear]')){
-        const input=panel.querySelector('#rankedHelpSearch');if(input){input.value='';filterRankedHelp(panel.querySelector('#overallHelpPopup'),'');input.focus();}return;
-      }
       const helpAction=event.target.closest?.('[data-help-action]');
       if(helpAction){closeRankedDialog(panel.querySelector('#overallHelpPopup'));if(helpAction.dataset.helpAction==='ghost-shortcut')void openOpponentShortcutMenu();else if(helpAction.dataset.helpAction==='filters')void openPersonalFilterMenu();else if(activeRankedAccountId())void openRankedProfile(activeRankedAccountId());return;}
       if(!event.target.closest?.('[data-category-info]')){
@@ -4466,6 +4399,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     panel.querySelector('#overallFindMeBtn').addEventListener('click',focusCurrentRacer);
     panel.querySelector('#overallHelpBtn').addEventListener('click', ()=>{
       const pop = panel.querySelector('#overallHelpPopup');
+      void refreshRankedHelp(pop);
       openRankedDialog(pop,panel.querySelector('#overallHelpClose'));
     });
     panel.querySelector('#overallHelpClose').addEventListener('click', ()=>{
@@ -4908,7 +4842,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         let source='edge';
         try{data=await fetchRankedSnapshot('track',safeTrackId,{refresh:forceCloud});if(data?._publicBackup)source='public-backup';}catch{}
         if(!data){
-          if(snapshotOnlyForNewAccount())throw Error('Saved-data mode: live leaderboard refresh unlocks after 15 minutes and your first saved finish. Run submissions still work.');
+          if(snapshotOnlyForNewAccount())throw Error('Standings use saved snapshots. Run submissions still work.');
           if(Date.now()<publicSnapshotRetryAt)throw Error('Public snapshot requests paused; showing saved results');
           let derivedSnapshot=null;
           try{
@@ -5743,7 +5677,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=188').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=189').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -5768,7 +5702,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=188',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=189',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -5812,7 +5746,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=188',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=189',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -5832,8 +5766,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=188',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=188',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=188',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=189',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=189',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=189',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -6115,7 +6049,7 @@ function rankingScopeMarkup(category,scope='total'){
     const source=status==='cloud'?'live':saved?.source==='snapshot'||status==='snapshot'?'snapshot':'cache';
     el.dataset.source=source;
     const ageAt=source==='snapshot'?Number(saved?.snapshotCapturedAt||publicSnapshotCapturedAt||0):Number(saved?.lastLiveCheckedAt||0);
-    el.textContent=rankedFreshnessText({source,ageAt,status,failed:failed||rankedManualRefreshFailed})+(protectedReads?' · '+snapshotUnlockLabel():'');
+    el.textContent=rankedFreshnessText({source,ageAt,status,failed:failed||rankedManualRefreshFailed});
     el.title=(protectedReads?snapshotAccessNotice():'Event RP uses verified event PBs. Live results are the last successful response, not a continuous feed. Select to check for updates.')+(saved?' Standings last changed '+ageLabel(saved.updatedAt)+'.':'');
     syncSnapshotRefreshControl(el);
     el.dataset.old=String(Boolean(saved&&Date.now()-saved.updatedAt>7200000));
@@ -6490,7 +6424,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=188',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=189',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -7834,7 +7768,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(188));
+    headers.set('X-PolyTrack-Revision', String(189));
     return fetch(url, {...options, headers});
   }
 
@@ -7888,15 +7822,11 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   function snapshotOnlyForNewAccount(){return snapshotRefreshState().locked;}
   function snapshotUnlockLabel(){
     const state=snapshotRefreshState();
-    if(!state.locked)return 'Live refresh available';
-    if(state.remainingMs===0)return 'Live refresh ready after your first saved finish';
-    const seconds=Math.ceil(state.remainingMs/1000);
-    return `Live refresh unlocks in ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}${state.needsFinish?' · saved finish required':' · finish saved'}`;
+    if(!state.locked)return 'Snapshot standings';
+    return 'Snapshot standings';
   }
   function snapshotAccessNotice(){
-    const state=snapshotRefreshState();
-    const unlock=state.remainingMs===0?'Live refresh unlocks after your first saved finish.':state.needsFinish?'Live refresh unlocks after the timer and your first saved finish.':'Finish saved. Live refresh unlocks when the timer ends.';
-    return `${unlock} You can race and save runs while using snapshot standings.`;
+    return 'Standings use saved snapshots. You can race and submit runs normally.';
   }
   let snapshotCountdownWasLocked=false;
   // Only update visible status panels, never reload boards for a countdown.
@@ -7986,7 +7916,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=188'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=189'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -8039,7 +7969,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(locked){
       if(!button.dataset.sqSnapshotRefreshLock)button.dataset.sqSnapshotRefreshLock=String(button.disabled);
       button.disabled=true;
-      button.title=snapshotUnlockLabel()+'. Live refresh works once unlocked. '+snapshotCaptureLabel();
+      button.title='Standings use saved snapshots. '+snapshotCaptureLabel();
       button.setAttribute('aria-label',button.title);
       button.setAttribute('aria-disabled','true');
       button.style.opacity='0.55';
@@ -8053,8 +7983,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   let snapshotTrackStatistics = {};
   let metadataRecovery=null;
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=188').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=188');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=189').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=189');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,prepareRecording:ptPrepareGatedRecording,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent('snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         metadataRecovery.reset();
@@ -8131,7 +8061,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=188');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=189');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -10097,7 +10027,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     banner.dataset.submittedPb=String(mixed&&cloudConfirmed);
     banner.dataset.refreshFailed=String(failed);
     const second=state.status==='loading'?'Loading the selected track':`${sourceLine}${failed?' · live refresh unavailable':''}`;
-    const policy=snapshotOnlyForNewAccount()?snapshotUnlockLabel():'';
+    const policy='';
     banner.setAttribute('aria-description',[updateLine,policy].filter(Boolean).join('. '));
     const sourceHtml=state.status==='loading'?escapeHtml(second):`${trackFreshnessSourceHtml(baseSource,sourceLine)}${failed?' · live refresh unavailable':''}`;
     const pbStatusHtml=cloudConfirmed?` <b class="track-data-pb-status">WAITING</b>`:'';
@@ -10265,9 +10195,9 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=188'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=189'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=188',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:188,document,
+    setTimeout(()=>void import(new URL('../tools/site-updates.mjs?v=189',eventsModuleUrl).href).then(module=>module.installSiteUpdates({revision:189,document,
       onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false;},
       isIdle:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
       canReload:()=>isElementVisible(document.querySelector('.menu-ui,.menu')),
@@ -10279,7 +10209,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
     observer.observe(document.body || document.documentElement, uiObserverOptions);
     setInterval(()=>{if(document.visibilityState==='visible')reconcileUI();}, 15000);
-    setInterval(tickSnapshotCountdown,1000);
+    // Snapshot-first standings do not need an unlock countdown timer.
     setTimeout(()=>resumeRankedNotifications().catch(()=>{}),2500);
     window.addEventListener('keydown', (event)=>{
       handleModeratorSequence(event);
@@ -10321,7 +10251,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=188').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=189').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -10348,7 +10278,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=188', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=189', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});

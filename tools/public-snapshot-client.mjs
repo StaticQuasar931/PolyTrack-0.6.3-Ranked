@@ -1,4 +1,5 @@
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
+import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
@@ -429,8 +430,43 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     const epoch=generation;
     const row=await readAtGeneration('recording',entry?.uploadId,'',epoch);
     if(epoch!==generation)return null;
-    if(!row){reportPlaybackFailure(null);return null;}
-    try{const result=await (prepareRecording||preparePublicRecordingPlayback)(row,entry,{allowPending});return epoch===generation?result:null;}catch(error){if(epoch===generation)reportPlaybackFailure(error);return null;}
+    const prepare=prepareRecording||preparePublicRecordingPlayback;
+    let failure=null;
+    if(row)try{
+      const result=await prepare(row,entry,{allowPending});return epoch===generation?result:null;
+    }catch(error){
+      if(epoch!==generation)return null;
+      if(error?.message!=='Public recording binding mismatch'){reportPlaybackFailure(error);return null;}
+      failure=error;
+    }
+    const state=normalEventRecordingState(entry);
+    if(state===null||state===0&&!allowPending){reportPlaybackFailure(failure);return null;}
+    const manifest=await readAtGeneration('manifest','','',epoch);
+    if(epoch!==generation)return null;
+    // Only exact local metadata can nominate aliases; never discover them via cloud reads.
+    const candidates=[];
+    for(const [lane,kind] of [['eventReplays','event-replay'],['eventPlaybacks','event-playback']]){
+      const records=manifest?.[lane];if(!records||typeof records!=='object'||Array.isArray(records))continue;
+      for(const [path,record] of Object.entries(records)){
+        if(!eventRecordingCandidateMatches(record,entry)||!/^[A-Za-z0-9_-]{1,64}$/.test(record.periodId||''))continue;
+        const id=kind==='event-replay'?entry.accountId:record.runId;
+        if(!/^[a-f0-9]{64}$/.test(id||'')||path!==record.path||path!==`${kind==='event-replay'?'event-replays':'event-playbacks'}/${record.periodId}/${id}.json`)continue;
+        candidates.push({kind,id,record});if(candidates.length===4)break;
+      }
+      if(candidates.length===4)break;
+    }
+    for(const {kind,id,record} of candidates){
+      const payload=await readAtGeneration(kind,record.periodId,id,epoch);
+      if(epoch!==generation)return null;
+      if(payload?.periodId!==record.periodId||kind==='event-playback'&&payload?.runId!==record.runId)continue;
+      const alias=eventRecordingToNormal(payload,entry);if(!alias)continue;
+      try{
+        const result=await prepare(alias,entry,{allowPending});if(epoch!==generation)return null;
+        return result;
+      }catch(error){if(epoch!==generation)return null;failure=error;}
+    }
+    if(epoch===generation)reportPlaybackFailure(failure);
+    return null;
   };
   Object.defineProperty(read,'packageInfo',{value:()=>Object.freeze({
     generation:Number(/(?:^|\/)public-snapshots([1-9]\d*)\/$/.exec(packageBase.pathname)?.[1]||0),

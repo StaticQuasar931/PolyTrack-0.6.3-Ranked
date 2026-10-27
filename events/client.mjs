@@ -360,9 +360,29 @@ export function installEvents(bridge){
     archiveIntent=null;if(direct)close();
     shell();selected=period;body('<p role="status">Opening event...</p><p>You can cancel with Close. Your saved PBs are unchanged.</p>');message('Preparing event racing.');
     const attempt=++entryRequest,accountId=bridge.accountId();
-    let timer,intent=null;
-    try{if(now()>=period.endsAt)throw Error('This event has ended.');await Promise.race([bridge.ready(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Event preparation timed out. Close and try again.')),12000);})]);if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;ensureCapture();intent=sessions.enter(period,bridge.accountId());eventIntent=intent;tick({cachedOnly:true});close();message('Opening event track...');nativeOpenPermit=true;try{if(await bridge.openTrack(period.trackId)===false)throw Error('The event track could not open. Please try again.');}finally{nativeOpenPermit=false;}tick();void refreshNativeEventData(period,sessions.current());return true;}
-    catch(error){const ownsIntent=!!intent&&sessions.current()===intent&&eventIntent===intent;if(attempt===entryRequest||ownsIntent){if(ownsIntent){sessions.leave();eventIntent=null;}shell();message(error.message);body('<p>The event track could not be opened. Your saved records are unchanged.</p>');}return false;}finally{clearTimeout(timer);}
+    let intent=null;
+    try{
+      if(now()>=period.endsAt)throw Error('This event has ended.');
+      // Local capture/play do not require Firebase. Keep a cancellation checkpoint
+      // before binding; the durable upload queue retries cloud submission later.
+      await Promise.resolve();
+      if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;
+      ensureCapture();
+      if(attempt!==entryRequest||accountId!==bridge.accountId()||!dialog||selected?.id!==period.id)return false;
+      intent=sessions.enter(period,accountId);eventIntent=intent;
+      tick({cachedOnly:true});close();message('Opening event track...');
+      const navigationRequest=entryRequest;
+      nativeOpenPermit=true;
+      let opened;
+      try{opened=await bridge.openTrack(period.trackId);}finally{nativeOpenPermit=false;}
+      if(navigationRequest!==entryRequest||accountId!==bridge.accountId()||sessions.current()!==intent||eventIntent!==intent){
+        if(sessions.current()===intent&&eventIntent===intent){sessions.leave();eventIntent=null;tick({cachedOnly:true});}
+        return false;
+      }
+      if(opened===false)throw Error('The event track could not open. Please try again.');
+      tick();void refreshNativeEventData(period,intent);return true;
+    }
+    catch(error){const ownsIntent=!!intent&&sessions.current()===intent&&eventIntent===intent;if(ownsIntent){sessions.leave();eventIntent=null;}if((attempt===entryRequest||ownsIntent)&&accountId===bridge.accountId()){shell();message(error.message);body('<p>The event track could not be opened. Your saved records are unchanged.</p>');}return false;}
   }
   async function openEvent({kind,trackId}={}){
     archiveIntent=null;sessions.leave();eventIntent=null;tick();
@@ -623,8 +643,8 @@ export function installEvents(bridge){
     if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
       ++topSelectionToken;++replayRequest;pendingGhosts.delete(row.accountId);cancelPendingEventGroups();selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
     }
-    ++topSelectionToken;const token=++replayRequest;cancelPendingEventGroups();const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
-    const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified'),failureKey=key+'_'+viewer;
+    ++topSelectionToken;const token=++replayRequest;cancelPendingEventGroups();const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
+    const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||''),failureKey=key+'_'+viewer;
     try{
       const failure=replayFailure(failureKey);if(failure)throw Error(failure);
       let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
@@ -637,7 +657,7 @@ export function installEvents(bridge){
       if(pendingGhosts.get(row.accountId)!==pending)return;
       if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
       replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
-      const selection={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
+      const selection={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,ghost};
       if(token===replayRequest)selectedGhost=selection;
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
       selectedGhosts.set(row.accountId,selection);pendingGhosts.delete(row.accountId);
@@ -678,13 +698,13 @@ export function installEvents(bridge){
     if(same||pendingSame){message('Event ghosts unselected.');tick();return;}
     if(!chosen.length){message('No playable replays in these places.');tick();return;}
     const token=++topSelectionToken,requestToken=++replayRequest;
-    for(const row of chosen)pendingGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,groupToken:token});
+    for(const row of chosen)pendingGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,groupToken:token});
     message(`Loading up to ${chosen.length} event replays...`);
     tick();
     const prepared=await Promise.all(chosen.map(async row=>{
       const pending=pendingGhosts.get(row.accountId);
       try{
-        const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified');
+        const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
         const failureKey=key+'_'+accountId,failure=replayFailure(failureKey);if(failure)throw Error(failure);
         let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
         if(session.archive&&!payload)throw Error('Saved archived replay is unavailable.');
@@ -694,13 +714,13 @@ export function installEvents(bridge){
         if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||!replayContextActive(session))return null;
         replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
         return {row,ghost};
-      }catch(error){if(token===topSelectionToken&&requestToken===replayRequest&&pendingGhosts.get(row.accountId)===pending)rememberReplayFailure((session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+accountId,error);return null;}
+      }catch(error){if(token===topSelectionToken&&requestToken===replayRequest&&pendingGhosts.get(row.accountId)===pending)rememberReplayFailure((session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'')+'_'+accountId,error);return null;}
     }));
     if(token!==topSelectionToken||requestToken!==replayRequest)return;
     if(!replayContextActive(session)){for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);tick();return;}
     const ready=prepared.filter(Boolean);
     for(const {row,ghost} of ready){
-      const selection={periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,ghost};
+      const selection={periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,ghost};
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
       selectedGhosts.set(row.accountId,selection);selectedGhost=selection;
     }
@@ -719,7 +739,7 @@ export function installEvents(bridge){
   }
   function raceGhosts(session){
     const period=knownPeriods.get(session.periodId);
-    if(period){const allowed=new Set(eventDisplayRows(period).rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===session.periodId&&!allowed.has(id))selectedGhosts.delete(id);}
+    if(period){const allowed=new Map(eventDisplayRows(period).rows.map(row=>[row.accountId,row]));for(const [id,row] of selectedGhosts){const current=allowed.get(id);if(row.periodId===session.periodId&&(!current||row.targetTimeMs!==current.timeMs||row.targetRunId!==(current.runId||null)||row.targetPending!==!!current.pending||row.targetReplayHash!==(current.replayHash||null)))selectedGhosts.delete(id);}}
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
     if(replay){
       const key=session.periodId+'_'+session.accountId,best=bestRecords[key],cached=preparedOwnGhosts.get(key);
@@ -746,6 +766,7 @@ export function installEvents(bridge){
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
     const ghosts=session.archive?[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost):(()=>{const {ownGhost,opponents}=raceGhosts(session);return [...(ownGhost?[ownGhost]:[]),...opponents];})();
     if(!ghosts.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
+    if(ghosts.length>2){message('Watch supports 2 replays. Unselect extras, or choose Play to race all selected ghosts.');return;}
     try{
       if(session.archive){
         const watch=document.querySelector('.track-info-ui')?.__pt062EventWatch;

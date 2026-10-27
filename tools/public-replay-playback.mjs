@@ -33,7 +33,7 @@ async function parsePublicReplayStructure(recording,frames,{playbackEngine,publi
   if(!publicationOnly&&playbackWork>30000000)throw Error('Public replay work limit');
   if(publicationOnly)return Object.freeze({structureValid:true,runtimeCapability:false,indexedPlaybackWithinBudget:playbackWork<=30000000,
     inputSha256:Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join(''),
-    playbackWork,legacyWork:work,transitions:total,inflatedBytes:size,
+    playbackWork,legacyWork:work,transitions:total,maxChannelTransitions:Math.max(0,...lists.map(list=>list.length)),inflatedBytes:size,
     requiredPlaybackEngine:Object.freeze({lookupVersion:PLAYBACK_ENGINE_PIN.lookupVersion,engineDigest:PLAYBACK_ENGINE_PIN.engineDigest,
       workModel:'cursor-forward-ticks-v1',scope:'public-playback-only'})});
   return Object.freeze({playbackWork,legacyWork:work,transitions:total,inflatedBytes:size,
