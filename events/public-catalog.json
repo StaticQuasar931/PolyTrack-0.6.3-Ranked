@@ -17,19 +17,6 @@
       "label": "Event 2026-10-25"
     },
     {
-      "id": "d_20261026",
-      "trackId": "fcbba504800751b0fb404a7cd1c9591befdf688ad5451ab2bc1f3651590cc5fc",
-      "startsAt": 1792972800000,
-      "endsAt": 1793059200000,
-      "graceMs": 86400000,
-      "maxRp": 100,
-      "scoringVersion": "time-gap-v2",
-      "targetMs": 52980,
-      "kind": "daily",
-      "entrantLimit": 200,
-      "label": "Daily 2026-10-26"
-    },
-    {
       "id": "w_20261026",
       "trackId": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
       "startsAt": 1792972800000,
@@ -41,9 +28,67 @@
       "kind": "weekly",
       "entrantLimit": 200,
       "label": "Weekly 2026-10-26"
+    },
+    {
+      "id": "d_20261027",
+      "trackId": "5ea46b3ae268a0196dcc59dabe88926400b56e29814658bfed06a284f837cefd",
+      "startsAt": 1793059200000,
+      "endsAt": 1793145600000,
+      "graceMs": 86400000,
+      "maxRp": 100,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 77082,
+      "kind": "daily",
+      "entrantLimit": 200,
+      "label": "Daily 2026-10-27"
     }
   ],
   "archives": [
+    {
+      "id": "d_20261025",
+      "trackId": "2ec74a179c8aba94354e3c6dee2a2920bedd7d84adf4d0a691f4a7453afdb1e8",
+      "startsAt": 1792886400000,
+      "endsAt": 1792972800000,
+      "graceMs": 86400000,
+      "maxRp": 100,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 44928,
+      "kind": "daily",
+      "racerCount": 3,
+      "entrantLimit": 200,
+      "label": "Daily 2026-10-25"
+    },
+    {
+      "id": "w_20261019",
+      "trackId": "c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",
+      "startsAt": 1792368000000,
+      "endsAt": 1792972800000,
+      "graceMs": 86400000,
+      "maxRp": 500,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 26393,
+      "kind": "weekly",
+      "racerCount": 57,
+      "entrantLimit": 200,
+      "label": "Weekly 2026-10-19"
+    },
+    {
+      "trackName": "Spite",
+      "author": "Zihcx/CXKat",
+      "targetPolicy": "official-fastest-verified-at-import",
+      "id": "kodub_1792958400000",
+      "trackId": "60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48",
+      "startsAt": 1792353600000,
+      "endsAt": 1792958400000,
+      "graceMs": 86400000,
+      "maxRp": 700,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 44170,
+      "kind": "kodub",
+      "racerCount": 21,
+      "entrantLimit": 200,
+      "label": "Event 2026-10-18"
+    },
     {
       "id": "d_20261024",
       "trackId": "470af92ed4c0a6f62028d7dea4dbc7765d1db16a3698d6a0c271be582a20a7c6",
@@ -70,8 +115,7 @@
       "kind": "daily",
       "racerCount": 14,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-23",
-      "archived": true
+      "label": "Daily 2026-10-23"
     },
     {
       "id": "d_20261022",
@@ -141,8 +185,7 @@
       "kind": "daily",
       "racerCount": 2,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-18",
-      "archived": true
+      "label": "Daily 2026-10-18"
     },
     {
       "id": "w_20261012",
@@ -156,8 +199,7 @@
       "kind": "weekly",
       "racerCount": 49,
       "entrantLimit": 200,
-      "label": "Weekly 2026-10-12",
-      "archived": true
+      "label": "Weekly 2026-10-12"
     },
     {
       "trackName": "Velvoire",
@@ -174,8 +216,7 @@
       "kind": "kodub",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Event 2026-10-11",
-      "archived": true
+      "label": "Event 2026-10-11"
     },
     {
       "id": "d_20261017",
@@ -189,8 +230,7 @@
       "kind": "daily",
       "racerCount": 0,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-17",
-      "archived": true
+      "label": "Daily 2026-10-17"
     },
     {
       "id": "d_20261016",
@@ -204,8 +244,7 @@
       "kind": "daily",
       "racerCount": 6,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-16",
-      "archived": true
+      "label": "Daily 2026-10-16"
     },
     {
       "id": "d_20261015",
@@ -219,8 +258,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-15",
-      "archived": true
+      "label": "Daily 2026-10-15"
     },
     {
       "id": "d_20261014",
@@ -234,8 +272,7 @@
       "kind": "daily",
       "racerCount": 7,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-14",
-      "archived": true
+      "label": "Daily 2026-10-14"
     },
     {
       "id": "d_20261013",
@@ -249,8 +286,7 @@
       "kind": "daily",
       "racerCount": 7,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-13",
-      "archived": true
+      "label": "Daily 2026-10-13"
     },
     {
       "id": "d_20261012",
@@ -264,8 +300,7 @@
       "kind": "daily",
       "racerCount": 5,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-12",
-      "archived": true
+      "label": "Daily 2026-10-12"
     },
     {
       "id": "d_20261011",
@@ -279,8 +314,7 @@
       "kind": "daily",
       "racerCount": 3,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-11",
-      "archived": true
+      "label": "Daily 2026-10-11"
     },
     {
       "id": "w_20261005",
@@ -294,8 +328,7 @@
       "kind": "weekly",
       "racerCount": 92,
       "entrantLimit": 200,
-      "label": "Weekly 2026-10-05",
-      "archived": true
+      "label": "Weekly 2026-10-05"
     },
     {
       "trackName": "JEALOUSY",
@@ -312,8 +345,7 @@
       "kind": "kodub",
       "racerCount": 5,
       "entrantLimit": 200,
-      "label": "Event 2026-10-04",
-      "archived": true
+      "label": "Event 2026-10-04"
     },
     {
       "id": "d_20261009",
@@ -327,8 +359,7 @@
       "kind": "daily",
       "racerCount": 11,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-09",
-      "archived": true
+      "label": "Daily 2026-10-09"
     },
     {
       "id": "d_20261008",
@@ -342,8 +373,7 @@
       "kind": "daily",
       "racerCount": 6,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-08",
-      "archived": true
+      "label": "Daily 2026-10-08"
     },
     {
       "id": "d_20261007",
@@ -357,8 +387,7 @@
       "kind": "daily",
       "racerCount": 4,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-07",
-      "archived": true
+      "label": "Daily 2026-10-07"
     },
     {
       "id": "d_20261006",
@@ -372,8 +401,7 @@
       "kind": "daily",
       "racerCount": 6,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-06",
-      "archived": true
+      "label": "Daily 2026-10-06"
     },
     {
       "id": "d_20261005",
@@ -387,8 +415,7 @@
       "kind": "daily",
       "racerCount": 6,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-05",
-      "archived": true
+      "label": "Daily 2026-10-05"
     },
     {
       "id": "d_20261004",
@@ -402,8 +429,7 @@
       "kind": "daily",
       "racerCount": 3,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-04",
-      "archived": true
+      "label": "Daily 2026-10-04"
     },
     {
       "id": "w_20260928",
@@ -417,8 +443,7 @@
       "kind": "weekly",
       "racerCount": 22,
       "entrantLimit": 200,
-      "label": "Weekly 2026-09-28",
-      "archived": true
+      "label": "Weekly 2026-09-28"
     },
     {
       "trackName": "Horrice",
@@ -435,8 +460,7 @@
       "kind": "kodub",
       "racerCount": 20,
       "entrantLimit": 200,
-      "label": "Event 2026-09-27",
-      "archived": true
+      "label": "Event 2026-09-27"
     },
     {
       "id": "d_20261003",
@@ -450,8 +474,7 @@
       "kind": "daily",
       "racerCount": 0,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-03",
-      "archived": true
+      "label": "Daily 2026-10-03"
     },
     {
       "id": "d_20261002",
@@ -465,8 +488,7 @@
       "kind": "daily",
       "racerCount": 2,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-02",
-      "archived": true
+      "label": "Daily 2026-10-02"
     },
     {
       "id": "d_20261001",
@@ -480,8 +502,7 @@
       "kind": "daily",
       "racerCount": 3,
       "entrantLimit": 200,
-      "label": "Daily 2026-10-01",
-      "archived": true
+      "label": "Daily 2026-10-01"
     },
     {
       "id": "d_20260930",
@@ -495,8 +516,7 @@
       "kind": "daily",
       "racerCount": 4,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-30",
-      "archived": true
+      "label": "Daily 2026-09-30"
     },
     {
       "id": "d_20260929",
@@ -510,8 +530,7 @@
       "kind": "daily",
       "racerCount": 3,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-29",
-      "archived": true
+      "label": "Daily 2026-09-29"
     },
     {
       "id": "d_20260928",
@@ -525,8 +544,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-28",
-      "archived": true
+      "label": "Daily 2026-09-28"
     },
     {
       "id": "d_20260927",
@@ -540,8 +558,7 @@
       "kind": "daily",
       "racerCount": 4,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-27",
-      "archived": true
+      "label": "Daily 2026-09-27"
     },
     {
       "id": "w_20260921",
@@ -555,8 +572,7 @@
       "kind": "weekly",
       "racerCount": 12,
       "entrantLimit": 200,
-      "label": "Weekly 2026-09-21",
-      "archived": true
+      "label": "Weekly 2026-09-21"
     },
     {
       "trackName": "La Riviera",
@@ -573,8 +589,7 @@
       "kind": "kodub",
       "racerCount": 8,
       "entrantLimit": 200,
-      "label": "Event 2026-09-20",
-      "archived": true
+      "label": "Event 2026-09-20"
     },
     {
       "id": "d_20260926",
@@ -588,8 +603,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-26",
-      "archived": true
+      "label": "Daily 2026-09-26"
     },
     {
       "id": "d_20260925",
@@ -603,8 +617,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-25",
-      "archived": true
+      "label": "Daily 2026-09-25"
     },
     {
       "id": "d_20260924",
@@ -618,8 +631,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-24",
-      "archived": true
+      "label": "Daily 2026-09-24"
     },
     {
       "id": "d_20260923",
@@ -633,8 +645,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-23",
-      "archived": true
+      "label": "Daily 2026-09-23"
     },
     {
       "id": "d_20260922",
@@ -648,8 +659,7 @@
       "kind": "daily",
       "racerCount": 0,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-22",
-      "archived": true
+      "label": "Daily 2026-09-22"
     },
     {
       "id": "d_20260921",
@@ -663,8 +673,7 @@
       "kind": "daily",
       "racerCount": 0,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-21",
-      "archived": true
+      "label": "Daily 2026-09-21"
     },
     {
       "id": "d_20260920",
@@ -678,8 +687,7 @@
       "kind": "daily",
       "racerCount": 1,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-20",
-      "archived": true
+      "label": "Daily 2026-09-20"
     },
     {
       "id": "w_20260914",
@@ -693,8 +701,7 @@
       "kind": "weekly",
       "racerCount": 5,
       "entrantLimit": 200,
-      "label": "Weekly 2026-09-14",
-      "archived": true
+      "label": "Weekly 2026-09-14"
     },
     {
       "id": "kodub_1789934400000",
@@ -719,8 +726,7 @@
       "kind": "daily",
       "racerCount": 0,
       "entrantLimit": 200,
-      "label": "Daily 2026-09-19",
-      "archived": true
+      "label": "Daily 2026-09-19"
     },
     {
       "id": "d_20260918",
@@ -733,8 +739,7 @@
       "targetMs": 19997,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-18",
-      "archived": true
+      "label": "Daily 2026-09-18"
     },
     {
       "id": "d_20260917",
@@ -747,8 +752,7 @@
       "targetMs": 26342,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-17",
-      "archived": true
+      "label": "Daily 2026-09-17"
     },
     {
       "id": "d_20260916",
@@ -761,8 +765,7 @@
       "targetMs": 33552,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-16",
-      "archived": true
+      "label": "Daily 2026-09-16"
     },
     {
       "id": "d_20260915",
@@ -775,8 +778,7 @@
       "targetMs": 33552,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-15",
-      "archived": true
+      "label": "Daily 2026-09-15"
     },
     {
       "id": "d_20260914",
@@ -789,8 +791,7 @@
       "targetMs": 28318,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-14",
-      "archived": true
+      "label": "Daily 2026-09-14"
     },
     {
       "id": "d_20260913",
@@ -803,8 +804,7 @@
       "targetMs": 19180,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-09-13",
-      "archived": true
+      "label": "Daily 2026-09-13"
     },
     {
       "id": "w_20260907",
@@ -817,8 +817,7 @@
       "targetMs": 19180,
       "kind": "weekly",
       "entrantLimit": 200,
-      "label": "Weekly 2026-09-07",
-      "archived": true
+      "label": "Weekly 2026-09-07"
     }
   ]
 }
