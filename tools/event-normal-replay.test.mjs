@@ -162,3 +162,12 @@ test('future snapshot packaging reuses exact event bytes without raising normal 
  assert.equal((await deriveEventRecordings([files[0],{...files[1],value:{...f.payload,replay:'corrupt'}}])).length,0);
  assert.equal((await deriveEventRecordings([files[0],{...files[1],value:{...f.payload,accountId:'d'.repeat(64)}}])).length,0);
 });
+
+test('derived normal files meet the real reader schema without an event fallback or invented timestamp',async()=>{
+ const f=fixture();const aliases=await deriveEventRecordings([{logicalPath:`tracks/${track}.json`,value:{trackId:track,entries:[entry]}},{logicalPath:f.path,value:f.payload}]);
+ assert.equal(aliases[0].value.updatedAt,0);f.data.set(aliases[0].logicalPath,aliases[0].value);f.data.delete('manifest.json');f.data.delete(f.path);
+ const result=await f.read.recordingPlayback(entry,{allowPending:true});assert.ok(result);assert.equal(result.frames,entry.frames);assert.equal(result.verifiedState,0);
+ assert.equal(f.calls.some(path=>path.endsWith('/manifest.json')||path.includes('/event-replays/')),false);
+ const known=await deriveEventRecordings([{logicalPath:`tracks/${track}.json`,value:{trackId:track,entries:[{...entry,updatedAt:123}]}},{logicalPath:f.path,value:f.payload}]);assert.equal(known[0].value.updatedAt,123);
+});
+

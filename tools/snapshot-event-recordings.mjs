@@ -18,6 +18,8 @@ export async function deriveEventRecordings(files){
       if(existing.has(target)||entry?.trackId!==value.trackId)continue;
       const payload=byBinding.get(binding(entry));if(!payload)continue;
       const recording=eventRecordingToNormal(payload,entry);if(!recording)continue;
+      // Unknown metadata is not a new capture date. The static reader requires a numeric field.
+      recording.updatedAt=Number.isFinite(entry.updatedAt)?entry.updatedAt:0;
       try{await preparePublicRecordingForNativeDispatch(recording,entry,{allowPending:true});}catch{continue;}
       derived.push({logicalPath:target,value:recording});existing.add(target);
     }
