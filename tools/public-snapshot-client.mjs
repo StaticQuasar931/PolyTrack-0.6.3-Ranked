@@ -25,7 +25,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       }catch{byteCacheDisabled=true;}
     }).finally(()=>{byteCacheQueued--;});
   }
-  let generation=0,fastIndexDisabled=false;
+  let generation=0,fastIndexDisabled=false,packagePublishedAt=0;
   const generationChanged=Error('Snapshot generation changed');
   const transientFetchErrors=new WeakSet();
   const integrityErrors=new WeakSet(),badCacheUrls=new Set(),indexFailures=new Map();
@@ -74,6 +74,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
           compact&&(index.partial!==true||index.fallbackIndex!=='index.json'))throw integrityError('Unsupported snapshot encoding');
         if(Object.values(index.files).some(record=>!record||typeof record!=='object'||!/^[a-f0-9]{64}\.bin$/.test(record.path)||
           record.path!==`${record.sha256}.bin`||!Number.isSafeInteger(record.decodedBytes)||record.decodedBytes<1||record.decodedBytes>2*1024*1024))throw integrityError('Invalid snapshot index record');
+        if(requestedGeneration===generation)packagePublishedAt=Number.isSafeInteger(index.publishedAt)&&index.publishedAt>0?index.publishedAt:0;
         return {index,base:requestedBase,generation:requestedGeneration};
       });
       let tracked;
@@ -162,7 +163,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(nextBase.origin!==packageBase.origin||nextBase.pathname!==`${parent.pathname}${pointer.currentdir}/`)return invalidPointer('Invalid snapshot pointer path');
         if(nextBase.href===packageBase.href)return false;
         const previousBaseUrl=packageBase.href;
-        packageBase=nextBase;
+        packageBase=nextBase;packagePublishedAt=0;
         generation++;fastIndexDisabled=false;
         indexRequest=null;bootstrapRequest=null;
         indexFailures.clear();badCacheUrls.clear();lookupCache.clear();lookupPending.clear();lookupRetryAt.clear();
@@ -288,7 +289,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='recording'&&(typeof value.recording!=='string'||value.recording.length>850000||!Number.isSafeInteger(value.frames)||value.frames<1))throw Error('Invalid public recording');
         if(kind==='archive-month'&&(!Array.isArray(value.periods)||value.periods.length>500||value.periods.some(p=>typeof p?.id!=='string'||!Number.isSafeInteger(p.startsAt)||new Date(p.startsAt).toISOString().slice(0,7)!==id)))throw Error('Invalid archive month');
         if(kind==='event-replay'&&(value.periodId!==id||value.accountId!==accountId||typeof value.replay!=='string'||value.replay.length>65536))throw Error('Public replay identity mismatch');
-        const result={...value,_publicBackup:true,_dataSource:'snapshot'};
+        const result={...value,_publicBackup:true,_dataSource:'snapshot',...(packagePublishedAt&&(trackBoard||overallBoard||['event','event-totals','snapshot-meta'].includes(kind))?{_snapshotPackageAt:packagePublishedAt}:{})};
         if(trackBoard||overallBoard||kind==='event'||kind==='event-totals'){
           // Matching statistics/paged track metadata already carry a board-specific check.
           const hasTrackCapture=kind==='event-totals'||trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);

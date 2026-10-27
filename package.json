@@ -82,7 +82,7 @@
     "test:leaderboard-latency": "node --test tools/leaderboard-latency.browser.test.mjs",
     "test:client-warm-favorites": "node --test --test-concurrency=1 tools/client-warm-favorites.browser.test.mjs",
     "search:metadata": "node tools/build-track-search-metadata.mjs",
-    "test:verification-snapshot": "node --test tools/post-verification-snapshot.test.mjs tools/push-public-capture.test.mjs tools/public-snapshot-backup.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/snapshot-retry-workflow.test.mjs tools/workflow-capture-coordination.test.mjs tools/capture-overall-projection.test.mjs",
+    "test:verification-snapshot": "node --test tools/post-verification-snapshot.test.mjs tools/push-public-capture.test.mjs tools/public-snapshot-backup.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/snapshot-retry-workflow.test.mjs tools/workflow-capture-coordination.test.mjs tools/capture-overall-projection.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs",
     "snapshot:audit-events": "node tools/audit-event-replays.mjs"
   }
 }
