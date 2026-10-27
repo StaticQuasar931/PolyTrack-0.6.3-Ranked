@@ -1423,7 +1423,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     }
   }
   if(forceFullRebuildAll)for(const trackId of queued)fullRebuildTracks.add(trackId);
-  let rebuilt=0,targeted=0;
+  let rebuilt=0,targeted=0,fullRebuildAttempts=0;
   let activeFullRebuildTrackId = queued.has(job.activeFullRebuildTrackId) ? job.activeFullRebuildTrackId : '';
   const fallbackOnly = trackId => fullRebuildTracks.has(trackId) || !pendingResultIds[trackId]?.length;
   // Firestore map key order is not a durable cursor; rotate using the persisted array.
@@ -1473,6 +1473,10 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
         pendingFullRebuildTrackIds.add(trackId);
         if (rebuildCoolingDown(trackId)
           || !failedFullRebuilds[trackId] && Object.keys(failedFullRebuilds).length >= RECONCILE_REBUILD_FAILURE_LIMIT) continue;
+        // Targeted merges can discover stale/missing boards after selection.
+        // They share the same full-build allowance, including failed attempts.
+        if (fullRebuildAttempts >= 1) continue;
+        fullRebuildAttempts++;
         attemptedFullRebuild = true;
         const full = await rebuildTrack(env,trackId);
         if(full.blocked)throw Error('TRACK_BUILD_BLOCKED: '+full.reason);

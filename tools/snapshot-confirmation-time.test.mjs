@@ -144,3 +144,10 @@ test('snapshot 68 packaged Overall, track and event clocks reflect their own con
   assert.equal(event._snapshotCapturedAt,eventRecord.checkedAt);
   assert.equal(event.updatedAt,eventRecord.updatedAt);
 });
+
+test('Event RP totals use only their own confirmation, never unrelated package time',async()=>{
+ assert.equal(snapshotConfirmationTime('event-totals',{updatedAt:1000,capturedAt:new Date(2000).toISOString()}),2000);
+ for(const capturedAt of [undefined,'invalid',new Date(999).toISOString()])assert.equal(snapshotConfirmationTime('event-totals',{updatedAt:1000,capturedAt},{manifest:{capturedAt:new Date(9000).toISOString()}}),null);
+ const read=createPublicSnapshotReader({baseUrl:'https://example.test/',fetchImpl:async url=>{assert.ok(String(url).endsWith('/event-totals.json'));return Response.json({updatedAt:1000,capturedAt:new Date(2000).toISOString(),entries:[]});}});
+ assert.equal((await read('event-totals'))._snapshotCapturedAt,2000);
+});

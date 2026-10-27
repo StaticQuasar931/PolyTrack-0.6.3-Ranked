@@ -16,7 +16,7 @@ function fixture(observer,clockOverride){
   last(){return this.#last;}
   set(data){calls.push(['set',this.#id,data]);if(failure)throw failure;this.#last=Promise.resolve(resultValue);return this.#last;}
   update(...args){return this.set(args);}
-  delete(){calls.push('delete');return Promise.resolve(resultValue);}
+  delete(){calls.push('delete');return failure?Promise.reject(failure):Promise.resolve(resultValue);}
   collection(){this.#id;return new Query();}
   isEqual(other){return refs.has(other)&&other.#id===this.#id;}
   needsRaw(ref,data){this.#id;assert.ok(refs.has(ref));assert.ok(refs.has(data.nested.link));return data;}
@@ -41,7 +41,7 @@ function fixture(observer,clockOverride){
   get(ref){this.#brand;assert.ok(refs.has(ref));calls.push('tx.get');return Promise.resolve({metadata});}
   set(ref,data){this.#brand;assert.ok(refs.has(ref));if(queuedFailure)throw new Error('queued rejected');if(data?.link)assert.ok(refs.has(data.link));return this;}
   update(ref,data){return this.set(ref,data);}
-  delete(ref){this.#brand;assert.ok(refs.has(ref));return this;}
+  delete(ref){this.#brand;assert.ok(refs.has(ref));if(queuedFailure)throw new Error('queued rejected');return this;}
   commit(){this.#brand;calls.push('batch.commit');return commitFailure?Promise.reject(resultValue):Promise.resolve(resultValue);}
  }
  const unsubscribe=()=> 'native unsubscribe';
@@ -84,13 +84,14 @@ test('document and query server/cache/unknown metadata estimates do not equate H
  f.setMetadata(undefined);await d.get();assert.equal(f.events.at(-1).source,'firestore');assert.equal(Object.hasOwn(f.events.at(-1),'reads'),false);
  assert.equal(f.calls.filter(c=>c==='doc.get').length,2);
 });
-test('direct set/update count only successful acknowledgments; deletes remain unknown',async()=>{
+test('direct set/update/delete count only successful acknowledgments',async()=>{
  const f=fixture(),d=f.wrapped.doc('x');
  const p=d.set({a:1});assert.equal(p,d.last());assert.equal(await p,f.resultValue);await d.update({a:2});
  assert.deepEqual(f.events.map(e=>e.writes),[1,1]);
- await d.delete();assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
+ await d.delete();assert.equal(f.events.at(-1).writes,1);
  const error=new Error('native throw');f.setFailure(error);
  assert.throws(()=>d.set({a:3}),value=>value===error);assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
+ await assert.rejects(d.delete(),value=>value===error);assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
 });
 test('collection add counts one write only after acknowledgment and preserves promise and resolved reference identity',async()=>{
  const f=fixture(),collection=f.wrapped.collection('multiplayer'),ref=f.wrapped.doc('target');
@@ -108,7 +109,7 @@ test('batch queues emit nothing; failed queued mutations and failed commits do n
  assert.equal(await batch.commit(),f.resultValue);assert.equal(f.events.at(-1).writes,2);
  f.setCommitFailure(true);const failed=f.wrapped.batch().set(d,{});await assert.rejects(failed.commit(),e=>e===f.resultValue);
  assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
- f.setCommitFailure(false);await f.wrapped.batch().set(d,{}).delete(d).commit();assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
+ f.setCommitFailure(false);await f.wrapped.batch().set(d,{}).delete(d).commit();assert.equal(f.events.at(-1).writes,2);
 });
 test('transaction retries count each attempt read, but only successful final-attempt writes; callback this/result remain native',async()=>{
  const f=fixture(),d=f.wrapped.doc('x');f.setAttempts(2);
@@ -124,6 +125,25 @@ test('failed transaction does not emit queued writes as acknowledged',async()=>{
  await assert.rejects(f.wrapped.runTransaction(async tx=>{await tx.get(d);tx.set(d,{});return 7;}),e=>e===f.resultValue);
  assert.equal(f.events.filter(e=>e.reads===1).length,2);
  assert.equal(f.events.some(e=>e.writes>0),false);assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
+});
+
+test('delete batches count successful queued mutations, not rejected queues or commits',async()=>{
+ const f=fixture(),d=f.wrapped.doc('x'),batch=f.wrapped.batch();
+ f.setQueuedFailure(true);assert.throws(()=>batch.delete(d),/queued rejected/);
+ f.setQueuedFailure(false);assert.equal(batch.delete(d).set(d,{}),batch);
+ assert.equal(f.events.length,0);await batch.commit();assert.equal(f.events.at(-1).writes,2);
+ f.setCommitFailure(true);await assert.rejects(f.wrapped.batch().delete(d).commit());
+ assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
+ f.setCommitFailure(false);await f.wrapped.batch().commit();assert.equal(f.events.at(-1).writes,0);
+});
+
+test('mixed delete transactions count only final acknowledged attempt mutations',async()=>{
+ const f=fixture(),d=f.wrapped.doc('x');f.setAttempts(2);
+ await f.wrapped.runTransaction((tx,index)=>{tx.delete(d);if(index===0)tx.set(d,{});});
+ assert.equal(f.events.length,1);assert.equal(f.events[0].writes,1);
+ f.setCommitFailure(true);
+ await assert.rejects(f.wrapped.runTransaction(tx=>tx.delete(d)));
+ assert.equal(Object.hasOwn(f.events.at(-1),'writes'),false);
 });
 test('synchronous callback return and exceptions are not changed',async()=>{
  const f=fixture();assert.equal(await f.wrapped.runTransaction(()=>7),7);assert.equal(f.callbackReturns[0],7);
@@ -155,5 +175,6 @@ test('coverage metadata explicitly marks listeners, uninstrumented activity and 
  assert.match(FIREBASE_USAGE_COVERAGE.uninstrumented,/not automatically instrumented/);
  assert.match(FIREBASE_USAGE_COVERAGE.serverProjectUsage,/Unknown/);
  assert.match(FIREBASE_USAGE_COVERAGE.billedUsage,/Unavailable/);
+ assert.match(FIREBASE_USAGE_COVERAGE.deletes,/Acknowledged/);
  assert.doesNotMatch(JSON.stringify(FIREBASE_USAGE_COVERAGE),/https:|accountId|credential|Bearer/);
 });

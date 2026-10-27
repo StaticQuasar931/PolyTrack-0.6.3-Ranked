@@ -289,9 +289,9 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='archive-month'&&(!Array.isArray(value.periods)||value.periods.length>500||value.periods.some(p=>typeof p?.id!=='string'||!Number.isSafeInteger(p.startsAt)||new Date(p.startsAt).toISOString().slice(0,7)!==id)))throw Error('Invalid archive month');
         if(kind==='event-replay'&&(value.periodId!==id||value.accountId!==accountId||typeof value.replay!=='string'||value.replay.length>65536))throw Error('Public replay identity mismatch');
         const result={...value,_publicBackup:true,_dataSource:'snapshot'};
-        if(trackBoard||overallBoard||kind==='event'){
+        if(trackBoard||overallBoard||kind==='event'||kind==='event-totals'){
           // Matching statistics/paged track metadata already carry a board-specific check.
-          const hasTrackCapture=trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);
+          const hasTrackCapture=kind==='event-totals'||trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);
           const manifest=hasTrackCapture?manifestValue:await (confirmationManifest||readAtGeneration('manifest','','',requestedGeneration));
           const capturedAt=snapshotConfirmationTime(kind,value,{manifest,statistics:knownTrack});
           if(capturedAt!==null)result._snapshotCapturedAt=capturedAt;

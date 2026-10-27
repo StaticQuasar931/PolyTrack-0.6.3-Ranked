@@ -1,5 +1,5 @@
 import {normalizeControlUsage} from './control-usage.mjs';
-import {summarizeClientUsage} from './local-insights.mjs';
+import {summarizeClientUsage} from './diagnostics-usage.mjs';
 const finite = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 const positiveInt = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const cleanText = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 100);
@@ -101,7 +101,7 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
    localResults: { omitted: Math.max(0, localRows.length - 5000) },
    extraTracks: { omitted: Math.max(0, trackRows.length - 5000) },
    localProfiles: { omitted: includesLocalData ? 0 : profileRows.length },
-   localPersonalBests: { omitted: 0 },
+   localPersonalBests: { omitted: includesLocalData ? 0 : profileRows.reduce((sum,row)=>sum+(Array.isArray(row?.personalBests)?row.personalBests.length:0),0) },
    localTracks: { omitted: includesLocalData ? 0 : localTrackRows.length },
    localPractice: { omitted: includesLocalData ? 0 : localPracticeRows.length }
   },

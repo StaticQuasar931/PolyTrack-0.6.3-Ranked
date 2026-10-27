@@ -1,8 +1,46 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createLocalInsights,summarizeClientUsage} from './local-insights.mjs';
+import {createLocalInsights} from './local-insights.mjs';
+import {summarizeClientUsage} from './diagnostics-usage.mjs';
+import {wrapFirestoreUsage,FIREBASE_USAGE_COVERAGE} from './firebase-usage.mjs';
 import {buildDeveloperReport} from './developer-diagnostics.mjs';
 const track='a'.repeat(64);
+
+test('usage exports disclose coverage and unknown backend/billing totals even without samples',()=>{
+ for(const insights of [null,{version:1},{version:1,clientUsage:{version:999,startedAt:0}}]){
+  const report=buildDeveloperReport({insights});
+  assert.equal(report.firebaseUsage.available,false);
+  assert.deepEqual(report.firebaseUsage.coverage,FIREBASE_USAGE_COVERAGE);
+  assert.match(report.firebaseUsage.coverage.serverProjectUsage,/Unknown/);
+  assert.match(report.firebaseUsage.coverage.billedUsage,/Unavailable/);
+  assert.match(report.firebaseUsage.coverage.listeners,/Uninstrumented/);
+  assert.equal(report.firebaseUsage.estimatedDocuments,null);
+  report.firebaseUsage.coverage.scope='modified export';
+  assert.notEqual(FIREBASE_USAGE_COVERAGE.scope,'modified export');
+ }
+});
+
+test('acknowledged deletes reach the exported estimate without becoming billed usage',async()=>{
+ const h=createLocalInsights({now:()=>1000});
+ const database={doc:()=>({delete:()=>Promise.resolve()})};
+ await wrapFirestoreUsage(database,{observeUsage:h.observeUsage,now:()=>0}).doc().delete();
+ const insights=h.report(),before=structuredClone(insights);
+ const usage=buildDeveloperReport({insights}).firebaseUsage;
+ assert.equal(usage.observedOperations.firestore,1);
+ assert.deepEqual(usage.estimatedDocuments,{reads:0,writes:1,unknownReadOperations:0,unknownWriteOperations:0});
+ assert.deepEqual(usage.billed,{reads:null,writes:null,cost:null});
+ assert.match(usage.coverage.deletes,/Acknowledged/);
+ assert.deepEqual(insights,before);
+});
+
+test('opting out reports omitted per-profile PBs without exporting them',()=>{
+ const localData={profiles:[{publicId:'racer',personalBests:[{trackId:track,timeMs:10},{trackId:track,timeMs:20}]},{personalBests:null}]};
+ const before=structuredClone(localData),report=buildDeveloperReport({localData});
+ assert.equal(report.localData,null);
+ assert.equal(report.truncation.localPersonalBests.omitted,2);
+ assert.equal(buildDeveloperReport({localData,includePublicId:true}).truncation.localPersonalBests.omitted,0);
+ assert.deepEqual(localData,before);
+});
 
 test('legacy HTTP/latency counters do not imply Firebase document or billed totals',()=>{
  const h=createLocalInsights({now:()=>1000});for(let i=0;i<100;i++)h.measure('TRACK',1);

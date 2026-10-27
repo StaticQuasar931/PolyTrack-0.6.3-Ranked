@@ -104,7 +104,7 @@ test('controller child import carries the release query and remains executable w
 
 test('inline presentation uses isolated copies and keeps snapshot comparison accessible',()=>{
  assert.match(fn('sortedOverallEntries'),/localEstimateOrigin:\{score:row.score,rank:row.rank\}/);
- assert.match(fn('renderEntryRow'),/Local estimate:/);assert.match(fn('renderEntryRow'),/Snapshot:/);
+ assert.match(fn('renderEntryRow'),/Local RP-/);assert.match(fn('renderEntryRow'),/Verified RP-/);
  assert.match(fn('renderEntryRow'),/escapeHtml\(estimateTitle\)/);
  assert.doesNotMatch(fn('renderLocalOverallProjection'),/\.id\s*=\s*['"]localOverallEstimate['"]|insertAdjacentElement/);
  assert.match(fn('renderLocalOverallProjection'),/scopedRankingSnapshotNotice/);

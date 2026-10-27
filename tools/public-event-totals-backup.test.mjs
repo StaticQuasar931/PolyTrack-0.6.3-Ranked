@@ -43,9 +43,9 @@ async function totalsFixture(t){
 
 test('successful totals capture has an explicit complete outcome and replaces validated data',async t=>{
   const f=await totalsFixture(t),value={...totalsValue(),updatedAt:8};let requests=0;
-  const result=await capturePublicEventTotals({directory:f.directory,fetchImpl:async()=>{requests++;return Response.json(value);}});
+  const result=await capturePublicEventTotals({directory:f.directory,now:()=>2000,fetchImpl:async()=>{requests++;return Response.json(value);}});
   assert.deepEqual(result,{deferred:false,entries:1,updatedAt:8,pageRequests:0});
-  assert.equal(requests,1);assert.deepEqual(JSON.parse(await fs.readFile(f.target,'utf8')),value);
+  assert.equal(requests,1);assert.deepEqual(JSON.parse(await fs.readFile(f.target,'utf8')),{...value,capturedAt:new Date(2000).toISOString()});
 });
 
 test('expected totals HTTP failures defer once without replacing prior data',async t=>{
@@ -136,4 +136,13 @@ test('totals write failures are fatal and first-capture deferral creates no tota
   const missing=path.join(f.directory,'missing');
   assert.equal((await capturePublicEventTotals({directory:missing,fetchImpl:async()=>new Response('',{status:503})})).deferred,true);
   await assert.rejects(fs.stat(missing),{code:'ENOENT'});await f.unchanged();
+});
+
+test('unchanged totals confirm again without changing standings or adding requests',async t=>{
+ const f=await totalsFixture(t);let requests=0;
+ for(const at of [2000,3000]){await capturePublicEventTotals({directory:f.directory,now:()=>at,fetchImpl:async()=>{requests++;return Response.json(totalsValue());}});
+ const saved=JSON.parse(await fs.readFile(f.target,'utf8'));assert.equal(saved.updatedAt,7);assert.equal(saved.capturedAt,new Date(at).toISOString());}
+ assert.equal(requests,2);
+ await assert.rejects(capturePublicEventTotals({directory:f.directory,now:()=>1,fetchImpl:async()=>Response.json(totalsValue())}),/confirmation time/);
+ assert.equal(JSON.parse(await fs.readFile(f.target,'utf8')).capturedAt,new Date(3000).toISOString());
 });

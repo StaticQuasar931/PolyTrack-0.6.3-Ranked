@@ -118,7 +118,7 @@ function laneFixture({fullTracks = ['old-full-a', 'old-full-b'], targetedCount =
       const query = JSON.parse(init.body).structuredQuery;
       assert.equal(query.from[0].collectionId, '0.6.2_race_results');
       assert.equal(query.where.fieldFilter.field.fieldPath, 'trackId');
-      assert.equal(query.limit, 501, 'Existing per-track canonical read ceiling is unchanged');
+      assert.equal(query.limit, 100, 'Full rebuilds use the bounded 100-row initial page');
       const trackId = query.where.fieldFilter.value.stringValue;
       assert.ok(fullTracks.includes(trackId), 'No targeted track should need a full scan');
       fullQueries.push(trackId);

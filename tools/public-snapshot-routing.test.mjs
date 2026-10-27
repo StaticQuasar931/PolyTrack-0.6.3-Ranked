@@ -9,7 +9,7 @@ function section(start,end){return source.slice(source.indexOf(start),source.ind
 // Extracted production routes must include their shared transport dependency.
 function runClientSource(code,context,...options){
   if(code.includes('rankedFetch(')&&!code.includes('function rankedFetch(')){
-    context.Headers=Headers;
+    context.Headers=Headers;context.performance=performance;context.noteDeveloperEvent=()=>{};
     vm.runInContext(section('  function rankedFetch(', '  function rankedBrokerUrl('),context);
   }
   return vm.runInContext(code,context,...options);
@@ -240,7 +240,7 @@ test('new accounts cannot bypass snapshot mode with refresh or missing event sna
   runClientSource(section('  async function fetchRankedSnapshot(', '  function rankedNotifyQueue('),context);
   assert.equal(await context.fetchRankedSnapshot('overall','',{refresh:true}),null);
   runClientSource(section('  async function loadEventCloudRead(', '  const archiveMonthReads='),context);
-  await assert.rejects(context.loadEventCloudRead('/v1/events/d_new/snapshot','0.6.2_event_public','d_new'),/15 minutes/);
+  await assert.rejects(context.loadEventCloudRead('/v1/events/d_new/snapshot','0.6.2_event_public','d_new'),/Saved standings are unavailable/);
   assert.equal(reads,0);
 });
 

@@ -129,7 +129,8 @@ test('cooling targeted fallbacks yield all four selection slots to healthy publi
   const cooling = Array.from({length: 4}, (_, i) => `cooling-track-${i}`);
   const f = fixture({tracks: cooling, failing: new Set(cooling)});
   for (const track of cooling) f.data.get(`${boards}/${track}`).schemaVersion = 5;
-  await reconcileCanonicalChanges(f.env, {scanResults: false, now});
+  for (let pass = 0; pass < cooling.length; pass++)
+    await reconcileCanonicalChanges(f.env, {scanResults: false, now});
   const healthy = 'healthy-track';
   f.data.set(`${boards}/${healthy}`, board(healthy));
   f.data.set(`${results}/${resultId(row(healthy))}`, row(healthy));
@@ -138,4 +139,37 @@ test('cooling targeted fallbacks yield all four selection slots to healthy publi
   await reconcileCanonicalChanges(f.env, {scanResults: false, now: now + 1});
   assert.equal(f.data.get(`${boards}/${healthy}`).entries.length, 1);
   assert.deepEqual(f.job().pendingTrackIds, cooling);
+});
+
+for (const fails of [false, true]) test(`targeted fallbacks share one full-build attempt, failure=${fails}`, async () => {
+  const tracks = Array.from({length:4}, (_, i) => `stale-track-${i}`);
+  const f = fixture({tracks, failing:new Set(fails ? [tracks[0]] : [])});
+  for (const track of tracks) f.data.get(`${boards}/${track}`).schemaVersion = 5;
+  await reconcileCanonicalChanges(f.env, {scanResults:false, now});
+  const scans = () => f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId');
+  assert.equal(scans().length, 1, 'failed attempts also consume the shared allowance');
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds, fails ? tracks : tracks.slice(1));
+  assert.deepEqual(f.job().pendingTrackIds, fails ? tracks : tracks.slice(1));
+  for (const track of tracks.slice(1)) {
+    assert.deepEqual(f.job().pendingResultIds[track], [resultId(row(track))]);
+    assert.equal(f.job().failedFullRebuilds[track], undefined, 'budget deferral is not a failure');
+    assert.equal(f.data.get(`${boards}/${track}`).schemaVersion, 5, 'deferred publication is untouched');
+  }
+  for (let pass = 1; pass < tracks.length; pass++) {
+    await reconcileCanonicalChanges(f.env, {scanResults:false, now:now+pass});
+    assert.equal(scans().length, pass+1, 'each later invocation advances one queued full rebuild');
+  }
+  assert.deepEqual(f.job().pendingTrackIds, fails ? [tracks[0]] : []);
+});
+
+test('known full build and newly discovered fallback share the same allowance', async () => {
+  const tracks = ['known-full', 'new-fallback', 'healthy-target'];
+  const f = fixture({tracks});
+  f.job().pendingFullRebuildTrackIds = [tracks[0]];
+  f.data.get(`${boards}/${tracks[1]}`).schemaVersion = 5;
+  await reconcileCanonicalChanges(f.env, {scanResults:false, now});
+  assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 1);
+  assert.deepEqual(f.job().pendingTrackIds, [tracks[1]]);
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds, [tracks[1]]);
+  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length, 1, 'healthy targeted work still progresses');
 });

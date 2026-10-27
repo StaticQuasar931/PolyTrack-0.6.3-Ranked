@@ -457,11 +457,11 @@ test('successful totals capture is included before publishing one complete packa
   const totals={updatedAt:9,entries:[{accountId:'a'.repeat(64),name:'Racer',rp:3}],complete:true,totalEntries:1};
   const result=await updatePublicSnapshot({root:f.root,refreshReplays:true,
     capture:async()=>{order.push('snapshot');return {};},
-    captureTotals:options=>capturePublicEventTotals({...options,fetchImpl:async()=>{order.push('totals');return Response.json(totals);}}),
+    captureTotals:options=>capturePublicEventTotals({...options,now:()=>2000,fetchImpl:async()=>{order.push('totals');return Response.json(totals);}}),
     exportPublic:async()=>{order.push('replays');return {complete:true,coverage:{complete:true},counts:{}};},log:()=>{}});
   assert.deepEqual(order,['snapshot','totals','replays']);assert.equal(result.deferred,false);assert.equal(result.published,true);assert.equal(result.generation,2);
   const index=JSON.parse(await readFile(path.join(f.root,result.directory,'index.json'),'utf8'));
   const packed=await readFile(path.join(f.root,result.directory,index.files['event-totals.json'].path));
-  assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString('utf8')),{...totals,entries:totals.entries.map(row=>({...row,identityUpdatedAt:0}))});
+  assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString('utf8')),{...totals,capturedAt:new Date(2000).toISOString(),entries:totals.entries.map(row=>({...row,identityUpdatedAt:0}))});
   await f.ledgerUnchanged();
 });

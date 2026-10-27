@@ -11,3 +11,9 @@ test('obsolete Help filter listeners and unlock countdown are not installed',()=
  assert.doesNotMatch(patch,/function filterRankedHelp|data-help-clear|setInterval\(tickSnapshotCountdown/);
  assert.doesNotMatch(patch,/Live refresh unlocks in|live leaderboard refresh unlocks after 15 minutes/);
 });
+
+test('Overall has one status container, with no duplicate live-region ID',()=>{
+ const shell=patch.slice(patch.indexOf('  function ensurePanel('),patch.indexOf('    void ensureRankedFiltersUi();',patch.indexOf('  function ensurePanel(')));
+ assert.equal((shell.match(/id="overallDataNotice"/g)||[]).length,1);
+ assert.doesNotMatch(shell,/insertAdjacentHTML\('beforebegin','<div id="overallDataNotice"/);
+});

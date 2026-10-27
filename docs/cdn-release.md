@@ -24,10 +24,12 @@ jsDelivr returned explicit 50 MB package-size denials for the source tree on
 October 24, 2026. Cached files could still return 200 while other files returned
 403, so one successful icon request did not establish package availability.
 
-Publication now builds a separate `cdn-assets` Git tree. It retains the current
-snapshot and runtime files, omitting obsolete snapshot generations and development
-directories/tests. The source main branch and its history are not deleted or
-rewritten. No private untracked files are read or copied.
+Publication builds two separate Git trees: `cdn-assets` contains runtime files,
+and `cdn-snapshots` contains the current snapshot package. Each omits obsolete
+snapshot generations and development directories/tests. The `cdn-release` branch
+is the small pointer connecting those two immutable trees. All three generated
+branches are required by the current publishing workflow. The source main branch
+and its history are not deleted or rewritten. No private untracked files are read or copied.
 
 Every file in the generated tree must be strictly below 20,000,000 bytes,
 including files outside the initial readiness probes. The publisher separately
@@ -36,9 +38,10 @@ headers, and rejects packages at or above 49,000,000 bytes. The archive is a
 measurement, not one large file served to browsers. Identical asset trees reuse
 their existing immutable commit.
 
-The pointer's `commit` is the asset commit, and `sourceCommit` records the main
-commit it was built from. Existing automatic HTML already reads `commit`, so
-this change does not require another Apps Script HTML replacement.
+The pointer's `commit` is the runtime asset commit, `snapshotCommit` identifies
+the snapshot tree, and `sourceCommit` records the main commit they were built from.
+The publisher binds the entry HTML to that exact immutable snapshot URL. Existing
+automatic HTML already reads `commit`, so this change does not require another Apps Script HTML replacement.
 
 ## Order And Coverage
 
@@ -46,7 +49,7 @@ this change does not require another Apps Script HTML replacement.
 2. The publisher checks out current main after acquiring its shared release lock.
 3. It checks local snapshot pointers, all bootstrap bindings and required asset
    paths, builds the compact asset tree, enforces all per-file limits, measures
-   the package size, and pushes the compact asset branch.
+   each package size, and pushes the runtime and snapshot branches.
 4. It compares CDN bytes against the committed entry point, directly referenced
    files, runtime modules, native startup images, physics worker/WASM, snapshot
    bootstrap, and initial rankings payloads. Only after these pass does it
@@ -69,7 +72,7 @@ token with contents:write is needed; no new secret or access token is required.
 
 Commit and push the workflow, tool, tests, and this document to canonical main.
 Check that `Publish CDN release` completes successfully. If repository rules
-prevent creating or updating `cdn-release` or `cdn-assets`, fix that narrowly; do not disable
+prevent creating or updating `cdn-release`, `cdn-assets` or `cdn-snapshots`, fix that narrowly. Do not disable
 main protections or broaden token permissions.
 
 Then replace Apps Script's index HTML with the separately generated private

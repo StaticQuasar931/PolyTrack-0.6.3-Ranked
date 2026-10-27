@@ -86,3 +86,8 @@ test('new local features advance coherently with future client revisions',()=>{
  for(const name of modules)assert.ok(result.patch.includes(name+'.mjs?v=175'));
  assert.deepEqual(stampClientRelease(result.patch,result.index,175),result);
 });
+
+test('Help module cache follows the next client revision',()=>{
+ const result=stampClientRelease(patch+"import('../tools/help-controls.mjs?v=190');",index,999);
+ assert.match(result.patch,/help-controls\.mjs\?v=999/);
+});

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import vm from 'node:vm';
-import {HELP_BINDING_IDS,readHelpBindings,createHelpControlGroups,searchHelpControls,renderHelpControls,bindHelpControls} from './help-controls.mjs';
+import {HELP_BINDING_IDS,helpKeyMatches,readHelpBindings,createHelpControlGroups,searchHelpControls,renderHelpControls,bindHelpControls} from './help-controls.mjs';
 
 const flat=groups=>groups.flatMap(group=>group.rows);
 const find=(groups,id)=>flat(groups).find(row=>row.id===id);
@@ -152,7 +152,7 @@ test('HTML has semantic native disclosures, labels, status and one keycap per ch
   assert.match(html,/role="status" aria-live="polite" aria-atomic="true"/);
   assert.equal((html.match(/<details /g)||[]).length,10);
   assert.equal((html.match(/<summary>/g)||[]).length,10);
-  assert.match(html,/<kbd>Shift<\/kbd>.*?<kbd>Tab<\/kbd>/s);
+  assert.match(html,/<kbd data-hc-key="Shift">Shift<\/kbd>.*?<kbd data-hc-key="Tab">Tab<\/kbd>/s);
   assert.doesNotMatch(html,/<kbd>Shift \+ Tab<\/kbd>|role="dialog"|tabindex="-1"|autofocus/);
   for(const action of ['profile','filters','ghost-shortcut'])assert.ok(html.includes(`data-help-action="${action}"`));
   assert.match(html,/Window Cleaner/);
@@ -234,10 +234,30 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   await page.setViewportSize({width:390,height:844});
   await page.locator('[data-hc-topic="ghosts"]').tap();
   assert.equal(await page.locator('[data-hc-topic="ghosts"]').getAttribute('aria-pressed'),'true');
+  await page.locator('[data-hc-topic="rankings"]').click();
+  await page.keyboard.down('d');
+  assert.ok(await page.locator('[data-hc-key="D"].is-pressed:visible').count()>0);
+  if(process.env.HELP_REVIEW_SCREENSHOT)await page.screenshot({path:process.env.HELP_REVIEW_SCREENSHOT,fullPage:true});
+  await page.keyboard.up('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);
+  await input.focus();await page.keyboard.down('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('d');
+  await input.fill('');await page.locator('[data-hc-topic="ghosts"]').click();
+  await page.keyboard.down('f');assert.ok(await page.locator('[data-hc-key="F"].is-pressed:visible').count()>0);
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('f');
   await page.evaluate(()=>{window.cleanupHelp();window.cleanupHelp();});
+  await page.keyboard.down('f');assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('f');
   const before=await page.locator('[data-hc-status]').textContent();await input.fill('no match after cleanup');
   assert.equal(await page.locator('[data-hc-status]').textContent(),before);
   await page.evaluate(()=>{window.cleanupHelp=window.helpAPI.bindHelpControls(document.querySelector('#fixture'));});
   assert.equal(await page.locator('[data-hc-empty]').isVisible(),true);
   assert.equal(network,0,'fixture and help must make no network requests');
+});
+
+test('highlight matching respects remaps, ranges, punctuation and modifier labels',()=>{
+ const match=(label,code,key)=>helpKeyMatches(label,{code,key});
+ assert.equal(match('D','KeyD','d'),true);assert.equal(match('D','KeyF','f'),false);assert.equal(match('D','KeyQ','d'),false);assert.equal(match('Q','KeyD','q'),false);
+ assert.equal(match('Right','ArrowRight','ArrowRight'),true);assert.equal(match('Shift','ShiftRight','Shift'),true);
+ assert.equal(match('Left Shift','ShiftRight','Shift'),false);assert.equal(match('Left Shift','ShiftLeft','Shift'),true);
+ assert.equal(match('1-4','Digit4','4'),true);assert.equal(match('1-4','Digit5','5'),false);
+ assert.equal(match('1-9, 0','Digit0','0'),true);assert.equal(match('1-9','Digit0','0'),false);
+ assert.equal(match('+','Equal','+'),true);assert.equal(match('Esc','Escape','Escape'),true);
 });

@@ -41,7 +41,7 @@ async function totalsJson(response){
   return JSON.parse(text);
 }
 
-export async function capturePublicEventTotals({directory,fetchImpl=fetch,log=()=>{}}){
+export async function capturePublicEventTotals({directory,fetchImpl=fetch,log=()=>{},now=Date.now}){
   const request=(...args)=>totalsNetworkRead(()=>fetchImpl(...args));
   try{
     const response=await request('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/totals',{headers:{Accept:'application/json',Origin:'https://staticquasar931.github.io'},signal:AbortSignal.timeout(10000)});
@@ -52,6 +52,9 @@ export async function capturePublicEventTotals({directory,fetchImpl=fetch,log=()
     const full=await assemblePublishedSnapshotPages(source,{fetchPage:async(page,generation)=>{pageRequests++;return totalsJson(await request('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/totals/page?generation='+encodeURIComponent(generation)+'&page='+page,{headers:{Accept:'application/json',Origin:'https://staticquasar931.github.io'},signal:AbortSignal.timeout(12000)}));}});
     const value=publicEventTotals(full);
     if(full.complete!==undefined&&full.complete!==true||full.sourceComplete!==undefined&&full.sourceComplete!==true||full.totalEntries!==undefined&&full.totalEntries!==value.entries.length)throw Error('Incomplete or invalid public event totals coverage');
+    const checkedAt=now();
+    if(!Number.isSafeInteger(checkedAt)||checkedAt<=0||checkedAt<value.updatedAt)throw Error('Invalid event totals confirmation time');
+    value.capturedAt=new Date(checkedAt).toISOString();
     await fs.mkdir(directory,{recursive:true});
     const target=path.join(directory,'event-totals.json'),temporary=target+'.'+process.pid+'.tmp';
     await fs.writeFile(temporary,JSON.stringify(value)+'\n');await fs.rename(temporary,target);
