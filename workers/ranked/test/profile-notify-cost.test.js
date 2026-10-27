@@ -5,7 +5,7 @@ import {encode,decode} from '../../../tools/verifier/firestore.mjs';
 const origin='https://staticquasar931.github.io',accountId='profile-cost-racer';
 function fixture(){
  let profile={accountId,ownerUid:'owner',nickname:'Racer One',profileUpdatedAt:1000},profileUpdateTime='2026-10-01T00:00:00.000Z',job=null,queries=0,writes=0,profileQueries=0;const tasks=[];
- const env={ALLOWED_ORIGINS:origin,OPEN_BETA_ENABLED:'false',__TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
+ const env={ALLOWED_ORIGINS:origin,OPEN_BETA_ENABLED:'false',PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
   if(path===':runQuery'){queries++;const q=JSON.parse(init.body).structuredQuery;if(q.where?.fieldFilter?.field?.fieldPath==='accountId')profileQueries++;return [];}
   if(path===':commit'){const body=JSON.parse(init.body);for(const write of body.writes){if(write.update?.name.includes('/0.6.2_s1_worker_jobs/profile_'))job=decode({mapValue:{fields:write.update.fields}});writes++;}return{writeResults:body.writes.map(()=>({updateTime:'v2'}))};}
   if(init.method==='PATCH'){writes++;job=decode({mapValue:{fields:JSON.parse(init.body).fields}});return{updateTime:'v1'};}

@@ -11,8 +11,16 @@ export async function kodubWeekly(request, headers, context = {}, dependencies =
   const cacheUrl=new URL(path,request.url);
   cacheUrl.searchParams.set('origin',request.headers.get('Origin') || '');
   const key = new Request(cacheUrl);
-  const hit = await cache?.match(key);
+  let hit=null;
+  try { hit=await cache?.match(key); } catch {}
   if (hit) return hit;
+  let admitted = false;
+  try { admitted = await dependencies.admit?.() === true; } catch {}
+  if (!admitted) {
+    const out = new Headers(headers);
+    out.set('Cache-Control','no-store'); out.set('Retry-After','60');
+    return new Response(JSON.stringify({error:'rate_limited',retryAfterSeconds:60}),{status:429,headers:out});
+  }
   try {
     const upstream = await fetcher(KODUB_ROOT + (metadata ? '' : '/' + match[1] + '/' + match[2]) + '?version=0.6.3', {
       headers:{Accept:metadata?'application/json':'*/*',Origin:'https://app-polytrack.kodub.com',Referer:'https://app-polytrack.kodub.com/'},
@@ -34,7 +42,7 @@ export async function kodubWeekly(request, headers, context = {}, dependencies =
     }
     const out = new Headers(headers); out.set('Content-Type',type); out.set('Cache-Control','public, max-age='+ttl);
     const response = new Response(body,{headers:out});
-    if (cache && context.waitUntil) context.waitUntil(cache.put(key,response.clone()));
+    if (cache && context.waitUntil) try { context.waitUntil(Promise.resolve(cache.put(key,response.clone())).catch(()=>{})); } catch {}
     return response;
   } catch (error) {
     console.warn('Kodub mirror failed:',error.message);

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "entry": {
+    "accountId": "a26de365875df377d17c20db4d7208080afdd6eb79878612714b751835b68fc1",
+    "trackId": "7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7",
+    "uploadId": 1793032721062804,
+    "timeMs": 41198,
+    "frames": 41198,
+    "raceTimeFrames": 41198,
+    "replayHash": "a77178dc173a37da5d854dd2b98146e96aefbeafecb0cb5359b05f2e2732c9b3",
+    "runVerified": false,
+    "verified": false,
+    "integrityVerified": true,
+    "verifiedState": 0,
+    "validationState": "integrity"
+  },
+  "payload": {
+    "periodId": "kodub_1793563200000",
+    "trackId": "7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7",
+    "accountId": "a26de365875df377d17c20db4d7208080afdd6eb79878612714b751835b68fc1",
+    "runId": "698cbd93829489dcaac06909114bdd2f418ed50a9415314e01fa3602928d82a0",
+    "timeMs": 41198,
+    "frames": 41198,
+    "replayHash": "a77178dc173a37da5d854dd2b98146e96aefbeafecb0cb5359b05f2e2732c9b3",
+    "replay": "eNod0UGIjWEUxvHfeb_vfubemnu7ZsrSJLIxs5vsJDQlZcVKGjEpRIpGiYlEMysZskLZyJQslKQoNaJmiySsJotRVhY2E953zuo5Z_HveZ7TV-ZO14Ows-1mmE2apN91OazQD_ObLVbOdw3Urm3yJ4zxOiyHmXUkU21f-cIxvq-3m21hb8cejjKazLASDvNu0NNwLxxgOsyF52E_C8PajVWOsCG5xHjtdBhp2cffjiWuc5Hh2q7G72R7Mk0rdBnruZ11x9WMGvKExSioj1ud5FvPKf5tKYQd_KjdZyQcZymZZ7VyI-mFz5XJypnkExONKzlmq3Ay5OCQF5Vf4W3NoGfJQx7XltcqWkjO8p5z-aiky1azvbvJKPWAW8xVpnjUeMWHyoQS4SUbUzHzpjaprCe40DGezTcOhZ-KzsXOrn3qP5twRyM",
+    "carStyle": "AAAAACMKjv___xMTE2ZmZg"
+  },
+  "manifestRecord": {
+    "path": "event-replays/kodub_1793563200000/a26de365875df377d17c20db4d7208080afdd6eb79878612714b751835b68fc1.json",
+    "periodId": "kodub_1793563200000",
+    "accountId": "a26de365875df377d17c20db4d7208080afdd6eb79878612714b751835b68fc1",
+    "timeMs": 41198,
+    "replayHash": "a77178dc173a37da5d854dd2b98146e96aefbeafecb0cb5359b05f2e2732c9b3"
+  }
+}

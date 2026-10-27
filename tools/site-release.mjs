@@ -11,10 +11,11 @@ export function stampClientRelease(patch, index, revision) {
     .replace(/(const extraCatalogRevision=)['"]\d+['"]/, `$1'${revision}'`);
   patch = patch.replace(/headers\.set\('X-PolyTrack-Revision', String\(\d+\)\)/g, `headers.set('X-PolyTrack-Revision', String(${revision}))`);
   patch = patch.replace(/createLocalInsights\(\{storage,revision:\d+\}\)/g, `createLocalInsights({storage,revision:${revision}})`);
+  patch = patch.replace(/(release:\{version:VERSION,revision:)\d+/, '$1'+revision);
   index = index.replace(/polytrack_062_patch\.js\?v=\d+/, `polytrack_062_patch.js?v=${revision}`)
     .replace(/(main\.bundle\.js)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(public-name-policy\.js)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
-    .replace(/((?:home-ui|responsive-ui|practice-responsive)\.css)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
+    .replace(/((?:home-ui|responsive-ui|practice-responsive|help-controls)\.css)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(tools\/responsive-ui\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(events\/(?:events\.css|client\.mjs))(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`);
   return {patch, index};

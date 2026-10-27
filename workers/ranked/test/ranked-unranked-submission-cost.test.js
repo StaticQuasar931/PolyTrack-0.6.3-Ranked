@@ -15,7 +15,7 @@ function fixture({racer = accountId, count = 500, conflict = false} = {}) {
   let board = {trackId, entries: entries().slice(0, count), total: count, updatedAt: 1};
   let writes = 0, attempts = 0;
   const calls = [];
-  const env = {ALLOWED_ORIGINS: origin, __TEST_UID: 'owner', __TEST_FIRESTORE: async (path, init = {}) => {
+  const env = {ALLOWED_ORIGINS: origin, PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'owner', __TEST_FIRESTORE: async (path, init = {}) => {
     calls.push(path);
     if (path === ':commit') {
       attempts++;

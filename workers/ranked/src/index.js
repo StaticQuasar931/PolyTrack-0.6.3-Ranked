@@ -255,6 +255,20 @@ function rateLimited(origin, env) {
   return response;
 }
 
+async function userRateLimitResponse(origin, env, uid) {
+  try {
+    const limiter = env.PB_NOTIFY_RATE_LIMITER;
+    if (typeof limiter?.limit === 'function') {
+      const result = await limiter.limit({key: uid});
+      if (result?.success === true) return null;
+      if (result?.success === false) return rateLimited(origin, env);
+    }
+  } catch {}
+  const response = json(origin, env, 503, {error:'user_limiter_unavailable',retryAfterSeconds:60});
+  response.headers.set('Retry-After','60');
+  return response;
+}
+
 function base64UrlBytes(value) {
   const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
   const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
@@ -2371,9 +2385,9 @@ async function publicStatus(request, env, context, origin) {
   return (await load).clone();
 }
 
-async function allowPublicRead(request, env) {
+async function allowPublicRead(request, env, required = String(env.PUBLIC_READ_RATE_LIMIT_REQUIRED) === 'true') {
   const limiter = env.PUBLIC_READ_RATE_LIMITER;
-  if (!limiter) return String(env.PUBLIC_READ_RATE_LIMIT_REQUIRED) !== 'true';
+  if (!limiter) return !required;
   const ip = request.headers.get('CF-Connecting-IP');
   if (!ip) return false;
   try {
@@ -2479,14 +2493,16 @@ async function handleRequestInternal(request, env, context = {}) {
     return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
   }
 
-  if (path === '/v1/kodub-weekly' || path.startsWith('/v1/kodub-weekly/')) return kodubWeekly(request,responseHeaders(origin,env),context);
+  if (path === '/v1/kodub-weekly' || path.startsWith('/v1/kodub-weekly/')) return kodubWeekly(request,responseHeaders(origin,env),context,
+    {admit:()=>allowPublicRead(request,env,true)});
   if (request.method === 'GET' && path === '/v1/status') {
     return publicStatus(request, env, context, origin);
   }
   if (request.method === 'GET' && path === '/v1/profile/group-code') {
     let uid;
     try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, {error: 'authentication_failed'}); }
-    if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({key: uid})).success) return json(origin, env, 429, {error: 'rate_limited', retryAfterSeconds: 60});
+    const limited = await userRateLimitResponse(origin, env, uid);
+    if (limited) return limited;
     return profileGroupCode(request, env, context, uid, null, true);
   }
   if (request.method === 'GET' && ['/v1/snapshot/overall/page','/v1/snapshot/track/page'].includes(path)) {
@@ -2544,7 +2560,8 @@ async function handleRequestInternal(request, env, context = {}) {
   try { body = await requestBody(request, path === '/v1/extra-tracks/submissions' ? 550000 : path === '/v1/extra-tracks/unranked' ? 70000 : 2048); if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('INVALID_BODY'); } catch { return json(origin, env, 400, { error: 'invalid_request' }); }
   let uid;
   try { uid = await verifyFirebaseUser(request, env); } catch { return json(origin, env, 401, { error: 'authentication_failed' }); }
-  if (env.PB_NOTIFY_RATE_LIMITER && !(await env.PB_NOTIFY_RATE_LIMITER.limit({ key: uid })).success) return json(origin, env, 429, { error: 'rate_limited', retryAfterSeconds: 60 });
+  const limited = await userRateLimitResponse(origin, env, uid);
+  if (limited) return limited;
 
   if (path === '/v1/extra-tracks/reports') return submitExtraTrackReport(request, env, origin, uid, body);
   if (path === '/v1/extra-tracks/unranked') return unrankedExtraBoard(request, env, origin, uid, body);

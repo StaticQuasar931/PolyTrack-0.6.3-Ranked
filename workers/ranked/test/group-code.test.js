@@ -59,7 +59,7 @@ function requestEnv({groupCode = '', overallEntries = [], ownerUid = 'signed-in-
   let version = 1;
   const env = {
     ALLOWED_ORIGINS: ORIGIN,
-    __TEST_UID: 'signed-in-user',
+    PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'signed-in-user',
     __TEST_FIRESTORE: async (path, init = {}) => {
       calls.push(path);
       if (path === ':commit') {

@@ -296,6 +296,7 @@ function makeCoverage(overall, manifest, exportResult, previousCoverage, savedEx
       ? Object.values(manifest.events).filter(item => item?.path).length : null,
     eventsMissing: Number.isSafeInteger(manifest?.eventsMissing) ? manifest.eventsMissing : null,
     eventReplays: replayCount,
+    ...(manifest?.replayCoverage ? {eventPlayback: manifest.replayCoverage} : {}),
     ...(manifest?.pendingPlaybackCoverage ? {pendingPlaybacks: manifest.pendingPlaybackCoverage} : {}),
     deferred: manifest?.deferred === true,
   };
@@ -323,7 +324,7 @@ function makeCoverage(overall, manifest, exportResult, previousCoverage, savedEx
     ? previousCoverage.profileReplay : { requested: false, complete: false };
   return {
     schemaVersion: 1,
-    complete: backup.overallComplete && backup.tracksMissing === 0 && backup.eventsMissing === 0 && profileReplay.complete && backup.pendingPlaybacks?.complete !== false,
+    complete: backup.overallComplete && backup.tracksMissing === 0 && backup.eventsMissing === 0 && profileReplay.complete && backup.pendingPlaybacks?.complete !== false && backup.eventPlayback?.complete !== false,
     backup,
     profileReplay,
   };

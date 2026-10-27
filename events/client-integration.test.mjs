@@ -192,15 +192,30 @@ test('acknowledging older in-flight attempt preserves a newer queued attempt',as
  await p.evaluate(()=>{const prior=submits.push.bind(submits);submits.push=function(value){prior(value);localStorage.setItem('polytrack-062-events-v1-queue',JSON.stringify([{...value,attemptId:'newer',timeMs:19000,frames:19000}]));return submits.length;};});
  await p.evaluate(()=>ui.flush());assert.deepEqual(await p.evaluate(QUEUE=>JSON.parse(localStorage.getItem(QUEUE)).map(r=>r.attemptId),QUEUE),['newer']);
 });
-test('leaving while Race event waits for readiness cancels the pending entry',async t=>{
- const p=await fixture(t,{deferReady:true});await p.evaluate(()=>ui.open());await p.locator('[data-event-id="daily-fixture"]').click();await p.waitForFunction(()=>!!window.resolveReady);
- await p.locator('#ranked').click();await p.evaluate(()=>resolveReady());await p.waitForTimeout(450);
- assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'delayed readiness must not reactivate an explicitly exited event');
+test('leaving while native event opening is pending cancels the entry',async t=>{
+ const p=await fixture(t,{deferReady:true});
+ await p.evaluate(()=>{bridgeFixture.openTrack=()=>new Promise(resolve=>{window.resolveEventOpen=resolve;});});
+ await p.evaluate(()=>ui.open());await p.locator('[data-event-id="daily-fixture"]').click();await p.waitForFunction(()=>!!window.resolveEventOpen);
+ await p.locator('#ranked').click();await p.evaluate(()=>resolveEventOpen(true));await p.waitForTimeout(450);
+ assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'late native opening must not reactivate an explicitly exited event');
+ assert.equal(await p.evaluate(()=>typeof window.resolveReady),'undefined','event launch must not request Firebase readiness');
 });
-test('closing the dialog while Race event waits cancels the pending entry',async t=>{
- const p=await fixture(t,{deferReady:true});await p.evaluate(()=>ui.open());await p.locator('[data-event-id="daily-fixture"]').click();await p.waitForFunction(()=>!!window.resolveReady);
- await p.locator('[data-event-close]').click();await p.evaluate(()=>resolveReady());await p.waitForTimeout(450);
- assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false,'closing the dialog must cancel the pending race request');
+test('closing during the local event preparation checkpoint cancels before native opening',async t=>{
+ const p=await fixture(t,{deferReady:true});await p.evaluate(()=>ui.open());
+ await p.evaluate(()=>{
+  const observer=new MutationObserver(()=>{
+   const main=document.querySelector('.sq-events-dialog main');
+   if(!main?.textContent.includes('Opening event'))return;
+   window.cancelProgress=main.textContent;observer.disconnect();
+   document.querySelector('[data-event-close]').click();
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+ });
+ await p.locator('.sq-events-overlay [data-event-id="daily-fixture"]').click();await p.waitForTimeout(100);
+ assert.match(await p.evaluate(()=>cancelProgress),/Opening event/);
+ assert.equal(await p.evaluate(()=>!!window.car),false);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
+ assert.equal(await p.locator('.sq-events-overlay').count(),0);
 });
 
 test('archived standings use the native track panel as frozen rows and launch normal practice',async t=>{const p=await fixture(t);await addNativePlay(p);await p.evaluate(()=>window.initialNativeBoard=document.querySelector('.track-info-ui>.leaderboard-ui'));await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));await p.getByRole('button',{name:'Jump to month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);assert.match(await p.locator('.sq-event-board h2').innerText(),/Archived event leaderboard/);assert.match(await p.locator('.sq-event-board .container').innerText(),/Archived racer/);assert.equal(await p.locator('.sq-event-board .sq-event-refresh').count(),0);assert.equal(await p.locator('.sq-event-board [data-event-race],.sq-event-board [data-event-practice]').count(),0);assert.equal(await p.locator('.sq-event-board .container .main[aria-disabled="true"]').count(),1);assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);assert.equal(await p.evaluate(()=>reads),1);await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),1);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>initialNativeBoard.isConnected&&!initialNativeBoard.classList.contains('sq-event-board')&&initialNativeBoard.textContent.includes('Normal leaderboard 9999')),true);});
@@ -402,7 +417,15 @@ test('native wrapper rebuild restores cached event cards without a timer or netw
  assert.equal(await p.evaluate(()=>catalogReads),reads);
 });
 test('live rail card enters native event screen directly without opening a modal',async t=>{const p=await fixture(t);await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.car);assert.equal(await p.locator('.sq-events-overlay').count(),0);assert.equal(await p.locator('.sq-event-board').count(),1);await p.evaluate(()=>car.finish(21000));assert.match(await p.locator('.sq-event-personal').innerText(),/21000/);});
-test('direct live-card entry is cancelled when leaving during readiness',async t=>{const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.resolveReady);await p.evaluate(()=>{ui.leave();resolveReady();});await p.waitForTimeout(450);assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false);assert.equal(await p.locator('.sq-event-board').count(),0);});
+test('direct live-card entry is cancelled when leaving during native opening',async t=>{
+ const p=await fixture(t,{deferReady:true});await showLiveRail(p);
+ await p.evaluate(()=>{bridgeFixture.openTrack=()=>new Promise(resolve=>{window.resolveEventOpen=resolve;});});
+ await p.locator('.sq-event-track-buttons [data-event-id]').click();await p.waitForFunction(()=>!!window.resolveEventOpen);
+ await p.evaluate(()=>{ui.leave();resolveEventOpen(true);});await p.waitForTimeout(100);
+ assert.equal(await p.evaluate(()=>document.body.classList.contains('sq-event-active')),false);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
+ assert.equal(await p.locator('.sq-event-board').count(),0);
+});
 test('native integrity decorator keeps published event rows verified and local rows pending',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async id=>({...await read(id),entries:[{accountId:'b'.repeat(64),name:'Published',rank:1,timeMs:20000,rp:100}]});});await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(19000));
  await p.evaluate(source=>eval('('+source+')')(),functionSource('syncIntegrityStateLabels'));
@@ -576,9 +599,13 @@ test('resolved event-car styles are reused after reopening the native event view
  await p.evaluate(()=>ui.leave());await enter(p);await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();
  assert.deepEqual(await p.evaluate(()=>renderCalls),['reopened-style']);
 });
-test('readiness wait shows cancellable progress and cannot reopen after cancellation',async t=>{
+test('unresolved Firebase readiness does not delay native event launch',async t=>{
  const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();
- assert.match(await p.locator('.sq-events-dialog main').innerText(),/Opening event/);await p.locator('[data-event-close]').click();await p.evaluate(()=>resolveReady());await p.waitForTimeout(400);assert.equal(await p.evaluate(()=>!!window.car),false);
+ await p.waitForFunction(()=>!!window.car);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),true);
+ assert.equal(await p.evaluate(()=>typeof window.resolveReady),'undefined');
+ assert.equal(await p.locator('.sq-events-overlay').count(),0);
+ assert.equal(await p.locator('.sq-event-board').count(),1);
 });
 test('own event replay survives upload without borrowing normal or another period replay',async t=>{
  const p=await fixture(t);await enter(p);await p.waitForFunction(()=>!!window.car);await p.evaluate(()=>car.finish(20000));await p.waitForFunction(()=>submits.length===1);

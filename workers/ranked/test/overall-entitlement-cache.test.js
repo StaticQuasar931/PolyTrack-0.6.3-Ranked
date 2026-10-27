@@ -168,7 +168,7 @@ async function profileGrant(f, accountId = 'r0000') {
   const tasks = [];
   const response = await handleRequest(new Request('https://ranked.example/v1/profile/notify', {
     method: 'POST', headers: {Origin: 'https://example.test', 'Content-Type': 'application/json'}, body: JSON.stringify({accountId})
-  }), {...f.env, ALLOWED_ORIGINS: 'https://example.test', __TEST_UID: 'owner'}, {waitUntil(task) {tasks.push(task);}});
+  }), {...f.env, ALLOWED_ORIGINS: 'https://example.test', PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'owner'}, {waitUntil(task) {tasks.push(task);}});
   await Promise.all(tasks);
   return response;
 }

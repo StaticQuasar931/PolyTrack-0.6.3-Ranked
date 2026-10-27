@@ -7,7 +7,7 @@ const current={trackId:hash,name:'Weekly',author:'A',lastModified:new Date().toI
 test('mirrors only weekly URLs and never forwards client credentials',async()=>{
  let init,url;
  const request=new Request('https://broker.test/v1/kodub-weekly',{headers:{Authorization:'Bearer private',Cookie:'private'}});
- const result=await kodubWeekly(request,{}, {},{fetch:async(u,i)=>{url=u;init=i;return Response.json({current})}});
+ const result=await kodubWeekly(request,{}, {},{admit:async()=>true,fetch:async(u,i)=>{url=u;init=i;return Response.json({current})}});
  const body=await result.json();assert.equal(result.status,200);
  assert.equal(url,root+'?version=0.6.3');assert.equal(init.redirect,'manual');assert.equal(init.headers.Authorization,undefined);assert.equal(init.headers.Cookie,undefined);
  assert.equal(body.current.trackUrl,'https://broker.test/v1/kodub-weekly/track/'+hash);
@@ -23,15 +23,23 @@ test('origin restrictions apply to new routes',async()=>{
 });
 test('403 upstream, foreign assets and HTML payload fail closed',async()=>{
  for(const response of [new Response('Forbidden',{status:403}),new Response(null,{status:302,headers:{Location:'https://evil.test'}}),Response.json({current:{...current,trackUrl:'https://evil.test/file'}})]){
-  const result=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly'),{}, {},{fetch:async()=>response});assert.equal(result.status,502);
+  const result=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly'),{}, {},{admit:async()=>true,fetch:async()=>response});assert.equal(result.status,502);
  }
- const result=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly/track/'+hash),{}, {},{fetch:async()=>new Response('<html>')});assert.equal(result.status,502);
+ const result=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly/track/'+hash),{}, {},{admit:async()=>true,fetch:async()=>new Response('<html>')});assert.equal(result.status,502);
 });
 test('cache hits skip upstream; successful responses are cached',async()=>{
  const writes=[],pending=[];const cache={match:async()=>undefined,put:async(k,v)=>writes.push([k,v])};
  const request=new Request('https://broker.test/v1/kodub-weekly');
- await kodubWeekly(request,{}, {waitUntil:p=>pending.push(p)},{cache,fetch:async()=>Response.json({current})});
+ await kodubWeekly(request,{}, {waitUntil:p=>pending.push(p)},{admit:async()=>true,cache,fetch:async()=>Response.json({current})});
  await Promise.all(pending);assert.equal(writes.length,1);
  const result=await kodubWeekly(request,{}, {},{cache:{match:async()=>writes[0][1]},fetch:()=>{throw Error('cache miss')}});assert.equal(result.status,200);
 });
 
+
+test('edge cache failures preserve admitted valid weekly responses and never bypass admission',async()=>{
+ for(const cache of [{match:async()=>{throw Error('cache unavailable');}},{match:async()=>null,put:()=>{throw Error('cache unavailable');}},{match:async()=>null,put:async()=>{throw Error('cache unavailable');}}]){
+  let fetches=0;const pending=[];const response=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly'),{}, {waitUntil:p=>pending.push(p)}, {cache,admit:async()=>true,fetch:async()=>{fetches++;return Response.json({current});}});
+  await Promise.all(pending);assert.equal(response.status,200);assert.equal(fetches,1);
+ }
+ const denied=await kodubWeekly(new Request('https://broker.test/v1/kodub-weekly'),{}, {}, {cache:{match:async()=>{throw Error('cache down');}},admit:async()=>false,fetch:async()=>assert.fail('denied cache miss must not fetch')});assert.equal(denied.status,429);
+});

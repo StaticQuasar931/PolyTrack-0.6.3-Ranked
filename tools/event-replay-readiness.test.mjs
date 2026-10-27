@@ -74,3 +74,9 @@ test('active weekly tracks do not wait seven days for an Overall summary before 
  prior[active]={path:'tracks/'+active+'.json',sourceUpdatedAt:100,checkedAt:now-31*60000};assert.deepEqual(chooseTrackFetches([active,other],[{trackId:active,updatedAt:100},...summaries],prior,1,now,[active]),[other],'unchanged known boards remain read-free');
  assert.equal(chooseTrackFetches([active,other],summaries,{},0,now,[active]).length,0,'the shared track read cap is unchanged');
 });
+
+ test('missing verified replay payloads also keep aggregate snapshot coverage incomplete',()=>{
+ const updater=fs.readFileSync(new URL('./update-public-snapshot.mjs',import.meta.url),'utf8'),begin=updater.indexOf('function makeCoverage('),end=updater.indexOf('async function updateMeta(',begin),context=vm.createContext({});vm.runInContext(updater.slice(begin,end),context);
+ const manifest={trackBackupsMissing:0,eventsMissing:0,pendingPlaybackCoverage:{complete:true},replayCoverage:{known:2,published:1,missing:1,complete:false}},exported={complete:true,coverage:{complete:true}};
+ assert.equal(context.makeCoverage({complete:true},manifest,exported,null,null).complete,false);manifest.replayCoverage.complete=true;assert.equal(context.makeCoverage({complete:true},manifest,exported,null,null).complete,true);
+ });

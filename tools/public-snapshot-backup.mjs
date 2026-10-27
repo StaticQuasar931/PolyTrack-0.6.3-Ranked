@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
+import {eventReplayCoverage} from './event-replay-coverage.mjs';
 import {projectEventDates} from './public-event-dates.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs';
 export {publicEventPlaybackForPublication as publicEventPlaybackBackup} from './public-event-playback.mjs';
@@ -706,6 +707,10 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   pendingPlaybackCoverage.complete = pendingPlaybackCoverage.missing===0;
   // Keep valid historical standings even when the cloud catalog rolls its
   // bounded recent-history window forward. Generate month indexes locally.
+  const replayCoverage = await eventReplayCoverage(eventValues.values(), async relative => {
+    if (pendingWrites.has(relative)) return pendingWrites.get(relative);
+    return JSON.parse(await fs.readFile(path.join(directory,relative),'utf8'));
+  });
   const months = new Map();
   for (const [id, value] of eventValues) {
     pendingWrites.set(`events/${id}.json`, value);
@@ -754,7 +759,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     trackBackupsMissing: Math.max(0, allTrackIds.length - Object.values(nextTracks).filter(row => row.path).length),
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents + archivedEventsUnavailable, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
-    pendingPlaybackCoverage,
+    pendingPlaybackCoverage, replayCoverage,
     trackSummaryMismatches,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
@@ -762,7 +767,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
-    eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage,
+    eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,
     plannerAvailable: planner.available, plannerReason: planner.reason}}));
   return manifest;
 }

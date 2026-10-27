@@ -1,3 +1,4 @@
+import {deriveEventRecordings} from './snapshot-event-recordings.mjs';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -121,6 +122,7 @@ async function collectJsonFiles(directory) {
     }
   }
   await walk(directory);
+  for(const file of await deriveEventRecordings(entries)) entries.push({...file,bytes:jsonBytes(file.value)});
   const byPath = new Map(entries.map(entry => [entry.logicalPath, entry.value]));
   const catalog = { schemaVersion: 1, pagingVersion: 1, pageSize: 100, legacyMonolithCoverageComplete: true, omittedMonoliths: [], tracks: {}, overall: null };
   function addDerived(logicalPath, value) {

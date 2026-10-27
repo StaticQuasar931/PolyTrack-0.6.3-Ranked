@@ -283,7 +283,7 @@ test('Extra track submission is authenticated, private, and limited to one per d
   const origin='https://staticquasar931.github.io';
   const input={name:'New track',author:'Creator',description:'Fast corners',code:'PolyTrack'+'A'.repeat(40),difficulty:4,tags:['racing'],sourceUrl:'',permissionGranted:true};
   let committed=null;
-  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'test-uid',__TEST_FIRESTORE:async(path,init={})=>{
+  const env={ALLOWED_ORIGINS:origin,PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'test-uid',__TEST_FIRESTORE:async(path,init={})=>{
     if(path===':commit'){committed=JSON.parse(init.body).writes;return {writeResults:[{}]};}
     return null;
   }};
@@ -300,7 +300,7 @@ test('Extra track submission is authenticated, private, and limited to one per d
 test('Extra track reports keep a private per-track count and reject duplicate reporters', async () => {
   const origin='https://staticquasar931.github.io',accountId='a'.repeat(64),trackId=[...EXTRA_TRACK_IDS][0];
   let report=null,commits=0;
-  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
+  const env={ALLOWED_ORIGINS:origin,PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
     if(path===':commit'){const write=JSON.parse(init.body).writes[0];assert.match(write.update.name,/extra_track_reports/);report={fields:write.update.fields,updateTime:'2026-09-24T00:00:00Z'};commits++;return {writeResults:[{}]};}
     if(path.includes('profiles_public'))return {fields:{ownerUid:{stringValue:'owner'},accountId:{stringValue:accountId},nickname:{stringValue:'Runner'}}};
     if(path.includes('extra_track_reports'))return report;
@@ -317,7 +317,7 @@ test('Extra track reports keep a private per-track count and reject duplicate re
 test('Poly Dip 2 publishes unranked finishes without verification or RP', async () => {
   const origin='https://staticquasar931.github.io',accountId='b'.repeat(64),trackId='586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87';
   let board=null,commits=0;
-  const env={ALLOWED_ORIGINS:origin,__TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
+  const env={ALLOWED_ORIGINS:origin,PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'owner',__TEST_FIRESTORE:async(path,init={})=>{
     if(path===':commit'){const write=JSON.parse(init.body).writes[0];assert.match(write.update.name,/extra_unranked_leaderboards/);board={fields:write.update.fields,updateTime:'2026-09-24T00:00:00Z'};commits++;return {writeResults:[{}]};}
     if(path.includes('profiles_public'))return {fields:{ownerUid:{stringValue:'owner'},accountId:{stringValue:accountId},nickname:{stringValue:'Runner'}}};
     if(path.includes('extra_unranked_leaderboards'))return board;
@@ -354,7 +354,7 @@ test('rejects notification for a result owned by another Firebase user', async (
     body: JSON.stringify({ resultId: `racer_${TRACK}` })
   }), {
     ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
-    __TEST_UID: 'signed-in-user',
+    PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'signed-in-user',
     __TEST_FIRESTORE: async (path) => path.includes('race_results') ? { fields: {
       ownerUid: { stringValue: 'different-user' }, accountId: { stringValue: 'racer' }, trackId: { stringValue: TRACK }
     } } : null
@@ -375,7 +375,7 @@ test('cosmetic saves update the public overall snapshot before background propag
   }),{
     ALLOWED_ORIGINS:'https://staticquasar931.github.io',
     BETA_CUTOFF_MS:String(Date.now()+60000),
-    __TEST_UID:'signed-in-user',
+    PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'signed-in-user',
     __TEST_FIRESTORE:async(path,init={})=>{
       if(path===':commit'){for(const write of JSON.parse(init.body).writes){guardedPaths.push(write.currentDocument.updateTime);if(write.update.name.includes('cosmetic_entitlements'))entitlementFields=write.update.fields;if(write.update.name.includes('s1_leaderboards_overall')){overallWrite=JSON.stringify(write.update);overallFields=write.update.fields;}}return {writeResults:[{updateTime:'2026-09-09T00:00:00Z'}]};}
       if(init.method==='PATCH'){
@@ -411,7 +411,7 @@ test('accepts an owned hash mismatch as pending without granting integrity verif
     body: JSON.stringify({ resultId: `racer_${TRACK}` })
   }), {
     ALLOWED_ORIGINS: 'https://staticquasar931.github.io',
-    __TEST_UID: 'signed-in-user',
+    PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'signed-in-user',
     __TEST_FIRESTORE: async (path, init) => {
       if(path.includes('race_results'))return { fields: {
         ownerUid: { stringValue: 'signed-in-user' }, accountId: { stringValue: 'racer' }, trackId: { stringValue: TRACK },
@@ -716,7 +716,7 @@ test('oversized request streams stop before the full body is buffered', async ()
   const stream = new ReadableStream({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(1024)); } });
   const response = await handleRequest(new Request('https://ranked.example/v1/pb/notify', {
     method: 'POST', duplex: 'half', headers: { Origin: 'https://staticquasar931.github.io', 'Content-Type': 'application/json' }, body: stream
-  }), { ALLOWED_ORIGINS: 'https://staticquasar931.github.io', __TEST_UID: 'signed-in-user' });
+  }), { ALLOWED_ORIGINS: 'https://staticquasar931.github.io', PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'signed-in-user' });
   assert.equal(response.status, 400);
   assert(pulls < 10);
 });
@@ -1904,7 +1904,7 @@ test('profile first registration is server-stamped and a client backdated profil
   const response=await handleRequest(new Request('https://ranked.example/v1/profile/notify',{
     method:'POST',headers:{Origin:'https://staticquasar931.github.io','Content-Type':'application/json'},
     body:JSON.stringify({accountId})
-  }),{ALLOWED_ORIGINS:'https://staticquasar931.github.io',BETA_CUTOFF_MS:String(cutoff),__TEST_UID:'owner-uid',
+  }),{ALLOWED_ORIGINS:'https://staticquasar931.github.io',BETA_CUTOFF_MS:String(cutoff),PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'owner-uid',
     __TEST_FIRESTORE:async(path,init={})=>{
       if(path===':commit'){
         const writes=JSON.parse(init.body).writes;commits.push(...writes);

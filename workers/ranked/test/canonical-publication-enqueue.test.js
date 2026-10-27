@@ -192,7 +192,7 @@ test('existing owner notification narrowly requeues a stranded current PB after 
   board.entries = computeTrackEntries([{...canonical, integrityVerified: true}], track);
   const response = await handleRequest(new Request('https://audit.invalid/v1/pb/notify', {method: 'POST',
     headers: {Origin: 'https://audit.invalid', 'Content-Type': 'application/json'}, body: JSON.stringify({resultId: f.ids[0]})}),
-  {...f.env, ALLOWED_ORIGINS: 'https://audit.invalid', __TEST_UID: 'owner'});
+  {...f.env, ALLOWED_ORIGINS: 'https://audit.invalid', PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID: 'owner'});
   assert.equal(response.status, 200);
   assert.equal(f.queue().slots[canonical.accountId].key, verificationKey(canonical));
   assert.equal(f.queue().pending, true);

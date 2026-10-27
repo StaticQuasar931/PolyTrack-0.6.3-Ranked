@@ -17,7 +17,12 @@ test('failed readiness must not install native binding',async()=>{
   {ready:async()=>{throw Error('practice not ready');}},async()=>{},()=>{installs++;},()=>{});
  await assert.rejects(prepare(),/practice not ready/);assert.equal(installs,0);
 });
-test('all capture-installation callers gate on readiness and native binding guard stays protected',()=>{
+test('background capture keeps its readiness gate while explicit launch validates a local session',()=>{
  const calls=[...source.matchAll(/ensureCapture\(\);/g)];assert.equal(calls.length,2);
- for(const call of calls){const start=source.lastIndexOf('async function ',call.index);assert.match(source.slice(start,call.index),/await[\s\S]*bridge\.ready\(\)/);}
+ assert.match(body,/await[\s\S]*bridge\.ready\(\)/);
+ const race=source.slice(source.indexOf('  async function race(period,'),source.indexOf('  async function openEvent('));
+ assert.doesNotMatch(race,/bridge\.ready\(/);
+ assert.match(race,/accountId!==bridge\.accountId\(\)/);
+ assert(race.indexOf('ensureCapture();')<race.indexOf('sessions.enter(period,accountId)'));
+ assert(race.indexOf('sessions.enter(period,accountId)')<race.indexOf('await bridge.openTrack('));
 });

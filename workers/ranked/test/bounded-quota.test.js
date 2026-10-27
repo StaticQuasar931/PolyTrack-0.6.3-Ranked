@@ -17,7 +17,7 @@ function fixture() {
   let conflicts = 0, commitAttempts = 0;
   const wire = key => docs.has(key) ? {fields:eventEncode(docs.get(key)).mapValue.fields,
     updateTime:'v' + (versions.get(key) || 1)} : null;
-  const env = {ALLOWED_ORIGINS:origin, __TEST_UID:'owner', __TEST_FIRESTORE:async (path, init = {}) => {
+  const env = {ALLOWED_ORIGINS:origin, PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'owner', __TEST_FIRESTORE:async (path, init = {}) => {
     if (path === ':commit') {
       commitAttempts++;
       const batch = JSON.parse(init.body).writes;

@@ -349,7 +349,7 @@ test('lazy browser tools and their shared dependencies remain in the readiness g
 test('the current shipped snapshot fits the CDN tar budget without dropping any snapshot files',{timeout:120000},async t=>{
   const root=fileURLToPath(new URL('../',import.meta.url));
   const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options});
-  const commit=local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit});
+  const commit=process.env.POLYTRACK_CDN_TEST_COMMIT||local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit});
   let selected=[];
   const git=(args,options={})=>{
     if(args[0]==='ls-remote'||args[0]==='push')return '';

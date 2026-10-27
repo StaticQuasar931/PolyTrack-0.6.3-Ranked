@@ -429,3 +429,19 @@ test('local event ghost parses once until its replay or saved best changes',()=>
  assert.equal(race(session).ownGhost,ghost);
  assert.equal(prepares,3,'changed PB identity is parsed and validated again');
 });
+
+test('refresh drops a selected ghost when time, run ID or waiting status changes',()=>{
+ for(const change of [{timeMs:1300},{runId:'new'},{pending:false},{replayHash:'new-hash'}]){
+  const row={accountId:'racer',timeMs:1200,runId:'old',pending:true};
+  const selection={periodId:'period',accountId:'viewer',targetAccountId:'racer',targetTimeMs:1200,targetRunId:'old',targetPending:true,targetReplayHash:null,ghost:{isSelf:false}};
+  const selectedGhosts=new Map([['racer',selection]]),ctx=vm.createContext({knownPeriods:new Map([['period',period]]),eventDisplayRows:()=>({rows:[{...row,...change}]}),selectedGhosts,bridge:{supportsEventGhost:()=>false}});
+  vm.runInContext(raceGhostsSource,ctx);const result=ctx.raceGhosts({periodId:'period',accountId:'viewer'});
+  assert.equal(selectedGhosts.size,0);assert.equal(result.opponents.length,0);
+ }
+});
+
+test('Watch explains its current two-replay limit before calling the native bridge',()=>{
+ const start=source.indexOf('  function watchEvent(){'),end=source.indexOf('  async function playEvent(',start),messages=[];let calls=0;
+ const ctx=vm.createContext({sessions:{current:()=>({periodId:'period',accountId:'viewer'})},archiveIntent:null,bridge:{accountId:()=> 'viewer',watchEvent:()=>calls++},pendingGhosts:new Map(),raceGhosts:()=>({ownGhost:null,opponents:[{},{},{}]}),message:value=>messages.push(value)});
+ vm.runInContext(source.slice(start,end),ctx);ctx.watchEvent();assert.equal(calls,0);assert.match(messages[0],/Watch supports 2 replays/);
+});
