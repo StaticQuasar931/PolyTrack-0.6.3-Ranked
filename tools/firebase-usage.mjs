@@ -4,10 +4,10 @@ const queryMethods=new Set(['where','orderBy','limit','limitToLast','startAt','s
 export const FIREBASE_USAGE_COVERAGE=Object.freeze({
  scope:'Observed instrumented compat SDK activity on this browser device only',
  documentReads:'Direct get and each transaction-attempt get; estimates require server/cache metadata',
- acknowledgedWrites:'Document set/update, collection add, successful batch set/update mutations, successful final transaction attempt',
+ acknowledgedWrites:'Successful set/update/delete/add mutations; batches and final transaction attempts only after acknowledgment',
  listeners:'Uninstrumented; no listener read-cost estimate',
  uninstrumented:'Other SDK operations and raw references returned by SDK promises or snapshots are not automatically instrumented',
- deletes:'Unknown write dimension; mixed delete batches/transactions also omit the write estimate',
+ deletes:'Acknowledged delete mutations included; not a billed delete total',
  serverProjectUsage:'Unknown: backend fanout, rules/index charges, other clients and hidden SDK retries are not observed',
  billedUsage:'Unavailable; operation counts and estimates are not billed Firebase metrics'
 });
@@ -67,7 +67,7 @@ export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.no
   if(originals.has(target))return target;
   if(kind!=='transaction'&&proxies.has(target))return proxies.get(target);
   const methods=new Map();let proxy;
-  const mutation=()=>state||{writes:0,unknown:false};
+  const mutation=()=>state||{writes:0};
   proxy=new Proxy(target,{
    get(native,key){
     const value=Reflect.get(native,key,native);
@@ -85,17 +85,17 @@ export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.no
      if(kind==='database'&&key==='runTransaction'&&typeof args[0]==='function'){
       let lastAttempt=null;
       nativeArgs[0]=function(transaction,...rest){
-       const attempt={writes:0,unknown:false};lastAttempt=attempt;
+       const attempt={writes:0};lastAttempt=attempt;
        return Reflect.apply(args[0],this,[wrap(transaction,'transaction',attempt),...rest]);
       };
       let result;try{result=Reflect.apply(value,native,nativeArgs);}catch(error){emit({source:'firestore',reads:0,...timing(start)});throw error;}
-      return observe(result,()=>emit({source:'firestore',reads:0,...(lastAttempt&&!lastAttempt.unknown?{writes:lastAttempt.writes}:{}),...timing(start)}),()=>emit({source:'firestore',reads:0,...timing(start)}));
+      return observe(result,()=>emit({source:'firestore',reads:0,...(lastAttempt?{writes:lastAttempt.writes}:{}),...timing(start)}),()=>emit({source:'firestore',reads:0,...timing(start)}));
      }
      const get=(kind==='doc'||kind==='query'||kind==='transaction')&&key==='get';
      const queued=(kind==='batch'||kind==='transaction')&&['set','update','delete'].includes(key);
      const direct=kind==='doc'&&['set','update','delete'].includes(key)||kind==='query'&&key==='add';
      const commit=kind==='batch'&&key==='commit';
-     const writeCount=commit?mutation().writes:1,unknownWrites=commit?mutation().unknown:key==='delete';
+     const writeCount=commit?mutation().writes:1;
      let result;
      try{result=Reflect.apply(value,native,nativeArgs);}
      catch(error){
@@ -103,10 +103,10 @@ export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.no
       else if(direct||commit)emit({source:'firestore',reads:0,...timing(start)});
       throw error;
      }
-     if(queued){if(key==='delete')mutation().unknown=true;else mutation().writes++;return result===native?proxy:result;}
+     if(queued){mutation().writes++;return result===native?proxy:result;}
      if(get)return observe(result,snapshot=>readEvent(snapshot,kind,start),()=>emit({source:'firestore',writes:0,...timing(start)}));
-     if(direct||commit)return observe(result,()=>emit({source:'firestore',reads:0,...(unknownWrites?{}:{writes:writeCount}),...timing(start)}),()=>emit({source:'firestore',reads:0,...timing(start)}));
-     if(kind==='database'&&key==='batch')return wrap(result,'batch',{writes:0,unknown:false});
+     if(direct||commit)return observe(result,()=>emit({source:'firestore',reads:0,writes:writeCount,...timing(start)}),()=>emit({source:'firestore',reads:0,...timing(start)}));
+     if(kind==='database'&&key==='batch')return wrap(result,'batch',{writes:0});
      if((kind==='database'||kind==='doc')&&key==='collection'||kind==='database'&&key==='collectionGroup')return wrap(result,'query');
      if((kind==='database'||kind==='query')&&key==='doc')return wrap(result,'doc');
      if(kind==='query'&&queryMethods.has(key)||key==='withConverter'&&(kind==='doc'||kind==='query'))return wrap(result,kind);

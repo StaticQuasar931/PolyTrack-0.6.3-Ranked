@@ -11,6 +11,10 @@ export function matchingTrackStatistics(board, record) {
 
 // Confirmation belongs to the bound published data, never to browser hydration.
 export function snapshotConfirmationTime(kind, board, {manifest, statistics} = {}) {
+  if(kind==='event-totals'){
+    const checked=date(board.capturedAt);
+    return sourceTime(board.updatedAt)&&checked!==null&&checked>=board.updatedAt?checked:null;
+  }
   const track = kind === 'track' || kind.startsWith('track-');
   const overall = kind === 'overall' || kind.startsWith('overall-');
   const event = kind === 'event';

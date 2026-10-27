@@ -150,9 +150,18 @@ export function searchHelpControls(groups,query='',groupId='all') {
   return groups.filter(group=>groupId==='all'||group.id===groupId).map(group=>({...group,rows:group.rows.filter(item=>tokens.every(token=>searchable(group,item).includes(token)))})).filter(group=>group.rows.length);
 }
 
+export function helpKeyMatches(label,event) {
+  const code=String(event.code||''),key=String(event.key||'');
+  const shown=keyLabel(code),digit=/^(?:Digit|Numpad)(\d)$/.exec(code)?.[1];
+  const range=/^([1-9])-([1-9])(?:, 0)?$/.exec(label);
+  if(range&&digit)return Number(digit)>=Number(range[1])&&Number(digit)<=Number(range[2])||digit==='0'&&label.endsWith(', 0');
+  if(['Shift','Ctrl','Alt','Meta'].includes(label))return key===(label==='Ctrl'?'Control':label);
+  return label===shown||! /^[A-Za-z0-9]$/.test(label)&&label===key||label==='Esc'&&key==='Escape';
+}
+
 function keycaps(item) {
   if(!item.keys.length)return '<span class="hc-unbound">Not bound</span>';
-  return item.keys.map(chord=>`<span class="hc-chord">${chord.map(key=>`<kbd>${escape(key)}</kbd>`).join('<span class="hc-plus" aria-hidden="true">+</span><span class="hc-sr-only"> plus </span>')}</span>`).join(`<span class="hc-key-separator">${item.sequence?'then':'or'}</span>`);
+  return item.keys.map(chord=>`<span class="hc-chord">${chord.map(key=>`<kbd data-hc-key="${escape(key)}">${escape(key)}</kbd>`).join('<span class="hc-plus" aria-hidden="true">+</span><span class="hc-sr-only"> plus </span>')}</span>`).join(`<span class="hc-key-separator">${item.sequence?'then':'or'}</span>`);
 }
 
 let serial=0;
@@ -170,21 +179,21 @@ export function renderHelpControls(options={}) {
   return `<section class="pt-help-controls" data-help-controls aria-labelledby="${prefix}-title">
     <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Release info</button></div>`:''}</header>
     <div id="${prefix}-controls" data-hc-panel="controls">
-      <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Keys apply to the open screen. Game bindings can be changed in Settings &gt; Controls.</p></div>
+      <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Press a key to highlight it here. Shortcuts do not run while Help is open. Change game keys in Settings &gt; Controls.</p></div>
       <div class="hc-layout"><nav class="hc-topics" aria-label="Control topics"><p class="hc-eyebrow">BROWSE BY SCREEN</p><button type="button" data-hc-topic="all" aria-pressed="true" aria-controls="${prefix}-results"><span>All controls</span><span class="hc-count">${total}</span></button>${groups.map(group=>`<button type="button" data-hc-topic="${escape(group.id)}" aria-pressed="false" aria-controls="${prefix}-results"><span>${escape(group.title)}</span><span class="hc-count">${group.rows.length}</span></button>`).join('')}</nav>
       <div class="hc-results" id="${prefix}-results"><div class="hc-results-head"><h3 data-hc-results-title>All controls</h3><p role="status" aria-live="polite" aria-atomic="true" data-hc-status>${total} controls</p></div><div class="hc-empty" data-hc-empty hidden><h3>No matching controls</h3><p>Try an action, key or screen name.</p><button type="button" data-hc-reset>Show all controls</button></div>
       ${groups.map((group,index)=>`<details class="hc-group" data-hc-group="${escape(group.id)}"${group.open?' open':''}><summary><span class="hc-section-number" aria-hidden="true">${String(index+1).padStart(2,'0')}</span><span class="hc-summary-copy"><strong>${escape(group.title)}</strong><small>${escape(group.note)}</small></span><span class="hc-count" data-hc-group-count>${group.rows.length}</span><span class="hc-chevron" aria-hidden="true"></span></summary><dl>${group.rows.map(item=>`<div class="hc-row" data-hc-row="${escape(item.id)}" data-hc-search-text="${escape(searchable(group,item))}"><dt><span>${escape(item.title)}</span>${item.custom?'<span class="hc-custom">Custom</span>':''}${item.description?`<small>${escape(item.description)}</small>`:''}</dt><dd class="hc-keycaps">${keycaps(item)}</dd></div>`).join('')}</dl>${group.id==='ghosts'?'<div class="hc-group-footer"><button type="button" data-help-action="ghost-shortcut">Set up your ghost shortcut <span aria-hidden="true">&gt;</span></button></div>':''}</details>`).join('')}
       <p class="hc-default-note">${options.bindings||options.getBindings?'Supplied game bindings are shown; any missing actions use their defaults.':'Driving, replay and editor keys shown here are defaults. Your custom game bindings take priority.'}</p></div></div>
-      <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters hide racers. Smart filters calculate a separate group score.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
+      <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
-    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><p class="hc-eyebrow">BUILD INFORMATION</p><h3 id="${prefix}-release-title">Your current release</h3>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>In this release</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Build details supplied by the game. No online check is performed here.</p></section>`:''}
+    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><p class="hc-eyebrow">BUILD INFORMATION</p><h3 id="${prefix}-release-title">Your current release</h3>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>In this release</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">This is the loaded game version, not an update check. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
     <footer class="hc-credits"><p>Track ratings &amp; difficulty gradings: <strong>Window Cleaner</strong>.</p></footer>
   </section>`;
 }
 
 const bindingsByRoot=new WeakMap();
 /** Bind a rendered fragment (or its host). Returns an idempotent cleanup function.
- * Uses only local DOM events; no document listeners, storage, fetching or game hotkeys.
+ * Uses local DOM events; key highlights never dispatch gameplay actions or fetch data.
  */
 export function bindHelpControls(root) {
   const host=root?.matches?.('[data-help-controls]')?root:root?.querySelector?.('[data-help-controls]');
@@ -195,7 +204,20 @@ export function bindHelpControls(root) {
   const topics=[...host.querySelectorAll('[data-hc-topic]')],views=[...host.querySelectorAll('[data-hc-view]')];
   const groups=[...host.querySelectorAll('[data-hc-group]')].map(node=>({node,rows:[...node.querySelectorAll('[data-hc-row]')],count:node.querySelector('[data-hc-group-count]')}));
   let topic='all',snapshot=null,active=true;
+  const keyScope=host.closest('[role="dialog"]')||host,view=host.ownerDocument.defaultView;
+  const pressed=new Map();
+  const releaseKeys=()=>{for(const caps of pressed.values())for(const cap of caps)cap.classList.remove('is-pressed');pressed.clear();};
+  function showKey(event){
+    if(!active||!host.getClientRects().length||event.isComposing||event.target.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+    const id=event.code||event.key;if(pressed.has(id))return;
+    const caps=[...host.querySelectorAll('[data-hc-key]')].filter(cap=>cap.getClientRects().length&&helpKeyMatches(cap.dataset.hcKey,event));
+    for(const cap of caps)cap.classList.add('is-pressed');
+    if(caps.length)pressed.set(id,caps);
+  }
+  function hideKey(event){const id=event.code||event.key,caps=pressed.get(id)||[];pressed.delete(id);for(const cap of caps)if(![...pressed.values()].some(other=>other.includes(cap)))cap.classList.remove('is-pressed');}
+  function leaveScope(event){if(!keyScope.contains(event.relatedTarget))releaseKeys();}
   function filter() {
+    releaseKeys();
     const tokens=normalize(input.value).split(' ').filter(Boolean),filtering=tokens.length>0||topic!=='all';
     if(filtering&&!snapshot)snapshot=new Map(groups.map(({node})=>[node,node.open]));
     let count=0;
@@ -223,6 +245,7 @@ export function bindHelpControls(root) {
     else if(button.hasAttribute('data-hc-reset')){topic='all';input.value='';filter();input.focus();}
     else if(button.hasAttribute('data-hc-topic')){topic=button.dataset.hcTopic;filter();}
     else if(button.hasAttribute('data-hc-view')) {
+      releaseKeys();
       const view=button.dataset.hcView;
       for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==view;
       for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle===button));
@@ -244,10 +267,12 @@ export function bindHelpControls(root) {
     // Bubble through the outer modal trap on Tab; contain gameplay shortcuts otherwise.
     if(event.key!=='Tab')event.stopPropagation();
   }
+  keyScope.addEventListener('keydown',showKey,true);keyScope.addEventListener('keyup',hideKey,true);keyScope.addEventListener('focusout',leaveScope);view?.addEventListener('blur',releaseKeys);
   host.addEventListener('input',filter);host.addEventListener('click',click);host.addEventListener('keydown',keydown);
   filter();
   const cleanup=()=>{
-    if(!active)return;active=false;
+    if(!active)return;active=false;releaseKeys();
+    keyScope.removeEventListener('keydown',showKey,true);keyScope.removeEventListener('keyup',hideKey,true);keyScope.removeEventListener('focusout',leaveScope);view?.removeEventListener('blur',releaseKeys);
     host.removeEventListener('input',filter);host.removeEventListener('click',click);host.removeEventListener('keydown',keydown);
     if(bindingsByRoot.get(host)===cleanup)bindingsByRoot.delete(host);
   };
