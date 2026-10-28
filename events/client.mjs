@@ -1,12 +1,12 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=194';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=194';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=195';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=195';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=194';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=195';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -741,7 +741,7 @@ export function installEvents(bridge){
       let accepted=false;
       try{accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',returnFocus:document.activeElement});}catch{}
       if(!current()){release();tick();return;}
-      if(!accepted){release();message('Event ghost selection cancelled. Your previous selection is unchanged.');tick();return;}
+      if(accepted!==true){release();message('Event ghost selection cancelled. Your previous selection is unchanged.');tick();return;}
     }
     clearEventGhostSelection(period.id,accountId,{render:false});
     for(const {row,ghost} of ready){
@@ -789,16 +789,61 @@ export function installEvents(bridge){
   function watchEvent(){
     const session=sessions.current()||archiveIntent;if(!session||session.accountId!==bridge.accountId())return;
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
-    const ghosts=session.archive?[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost):(()=>{const {ownGhost,opponents}=raceGhosts(session);return [...(ownGhost?[ownGhost]:[]),...opponents];})();
-    if(!ghosts.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
-    if(ghosts.length>2){message('Watch supports 2 replays. Unselect extras, or choose Play to race all selected ghosts.');return;}
-    try{
-      if(session.archive){
-        const watch=document.querySelector('.track-info-ui')?.__pt062EventWatch;
-        if(!replayContextActive(session)||watch?.version!==1||watch.trackId!==session.trackId)throw Error('Archived replay context changed. Reopen this track.');
-        watch.open(ghosts);
-      }else bridge.watchEvent?.(session,ghosts);
-    }catch(error){message(error.message||'Event replay could not open.');}
+    if(watchEvent.pending)return watchEvent.pending;
+    // Watch must not use raceGhosts: it prunes selections before consent and reuses parsed ghosts.
+    const work=(async()=>{
+      try{
+        const view=nativeView,root=document.querySelector('.track-info-ui'),period=view?.period||knownPeriods.get(session.periodId),token=replayRequest,page=view?.page,filter=view?.onlyVerified;
+        const nativeWatch=root?.__pt062EventWatch;
+        if(!root?.isConnected||nativeWatch?.version!==1||nativeWatch.trackId!==session.trackId||period?.id!==session.periodId||period.trackId!==session.trackId)throw Error('Event replay context changed. Reopen this track.');
+        const selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
+        const own=!session.archive&&!selections.some(row=>row.targetAccountId===session.accountId)&&bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;
+        const boardRows=()=>session.archive?archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period).rows;
+        const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name]);
+        const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
+        const current=()=>replayContextActive(session)&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
+          selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&selections.every(row=>selectedGhosts.get(row.targetAccountId)===row)&&
+          selections.every(row=>binding(boardRows().find(entry=>entry.accountId===row.targetAccountId))===binding(entries.get(row.targetAccountId)))&&(!own||JSON.stringify(getOwnReplay(session.periodId))===JSON.stringify(own));
+        const candidates=selections.map(selection=>({selection,row:entries.get(selection.targetAccountId)||{name:selection.ghost?.nickname||'Racer'}}));
+        if(own)candidates.unshift({own:true,row:{name:'Your event PB'},payload:own});
+        if(!candidates.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
+        const prepare=async item=>{
+          if(item.own)return prepareOwnEventGhost({require:bridge.require(),row:item.payload,session,best:bestRecords[session.periodId+'_'+session.accountId]});
+          const {selection,row}=item;
+          if(row.accountId!==selection.targetAccountId||row.timeMs!==selection.targetTimeMs||(row.runId||null)!==selection.targetRunId||!!row.pending!==selection.targetPending||(row.replayHash||null)!==selection.targetReplayHash)throw Error('Selected replay no longer matches standings.');
+          const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
+          if(!item.payload){
+            const readReplay=session.archive?bridge.readArchivedReplay:bridge.readReplay;
+            item.payload=replayCache.get(key)||await readReplay?.(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
+          }
+          if(!item.payload)throw Error('Saved event replay unavailable.');
+          return preparePublishedEventGhost({require:bridge.require(),row:item.payload,period,entry:row,viewer:session.accountId});
+        };
+        message('Checking selected replays for Watch...');
+        const checked=await Promise.all(candidates.map(async item=>{try{const ghost=await prepare(item);return {...item,ghost};}catch(error){return {...item,error};}}));
+        if(!current())return;
+        const ready=checked.filter(item=>!item.error),failed=checked.filter(item=>item.error);
+        if(!ready.length){message('No selected replay is ready to watch. Your selection is unchanged.');return;}
+        if(ready.length>2){message('Watch supports 2 replays. Unselect extras, or choose Play to race all selected ghosts.');return;}
+        if(failed.length){
+          const accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',mode:'watch',returnFocus:root.querySelector('.side-panel button.watch')});
+          if(!current())return;
+          if(accepted!==true){message('Watch cancelled. Your selection is unchanged.');return;}
+          // Recheck bytes, binding and live engine after the user has considered the choice.
+          for(const item of ready)item.ghost=await prepare(item);
+        }
+        if(!current())return;
+        const ghosts=ready.map(item=>item.ghost);
+        if(session.archive)nativeWatch.open(ghosts);
+        else{if(typeof bridge.watchEvent!=='function')throw Error('Event Watch is unavailable.');bridge.watchEvent(session,ghosts);}
+        // Remove only explicitly skipped selections, and only after the native handoff succeeds.
+        for(const item of failed)if(item.selection&&selectedGhosts.get(item.selection.targetAccountId)===item.selection)selectedGhosts.delete(item.selection.targetAccountId);
+        selectedGhost=[...selectedGhosts.values()].at(-1)||null;
+      }catch(error){message(error.message||'Event replay could not open. Your selection is unchanged.');}
+    })();
+    watchEvent.pending=work;
+    void work.finally(()=>{if(watchEvent.pending===work)watchEvent.pending=null;});
+    return work;
   }
   async function playEvent(){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;

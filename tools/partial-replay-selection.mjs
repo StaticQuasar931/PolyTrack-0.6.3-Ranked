@@ -4,6 +4,36 @@ const CACHE_CHARACTERS = 2 * 1024 * 1024;
 const FAILURE_MS = 60000;
 const selectionKey = rows => JSON.stringify(rows.map(row => [row.recordingId, row.nickname, row.isSelf]));
 const available = check => { try { return check() === true; } catch { return false; } };
+let dialogId = 0;
+function installPartialReplayStyles(document) {
+  if (document.getElementById('sq-partial-replay-style')) return;
+  const style = document.createElement('style');
+  style.id = 'sq-partial-replay-style';
+  style.textContent = `
+.sq-partial-replay-dialog{box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border:2px solid #80d9ef;border-radius:0;background:#172947;color:#effaff;font:italic 20px/1.3 ForcedSquare,sans-serif;overflow:auto;overflow-wrap:anywhere;overscroll-behavior:contain;touch-action:pan-y;box-shadow:8px 8px 0 #080f2599}
+.sq-partial-replay-dialog::backdrop{background:#080f25c9}
+.sq-partial-replay-dialog *{box-sizing:border-box;line-height:inherit}
+.sq-partial-replay-dialog header{padding:18px 22px 14px;background:#213b64;border-bottom:2px solid #80d9ef}
+.sq-partial-replay-dialog header small{display:block;color:#9deaff;font-size:16px;letter-spacing:1px;margin-bottom:5px}
+.sq-partial-replay-dialog h2{margin:0;font:inherit;font-size:30px;line-height:1.05;font-weight:normal}
+.sq-partial-replay-dialog .sq-partial-content{padding:16px 22px 4px}
+.sq-partial-replay-dialog p{margin:0 0 12px}
+.sq-partial-replay-dialog .sq-partial-note{font-size:16px;color:#c1d7ed}
+.sq-partial-replay-dialog ul{margin:0 0 16px;padding:10px 14px 10px 32px;background:#102039;border-left:3px solid #80d9ef;max-height:24vh;overflow:auto}
+.sq-partial-replay-dialog li{padding:2px 0}
+.sq-partial-replay-dialog ul:focus-visible{outline:2px solid #effaff;outline-offset:2px}
+.sq-partial-replay-dialog footer{display:flex;flex-wrap:wrap;gap:10px;padding:12px 22px 20px}
+.sq-partial-replay-dialog button{position:relative;flex:1 1 160px;min-width:0;min-height:48px;margin:0;padding:12px 16px;border:0;border-radius:0;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);background:#345982;color:#effaff;font:inherit;white-space:normal;cursor:pointer;touch-action:manipulation}
+.sq-partial-replay-dialog button[data-partial-replay-continue]{background:#82def0;color:#102039}
+.sq-partial-replay-dialog button:hover{background:#4775a5}
+.sq-partial-replay-dialog button[data-partial-replay-continue]:hover{background:#b5f2ff}
+.sq-partial-replay-dialog button:focus-visible{outline:0;box-shadow:inset 0 0 0 3px #fff;text-decoration:underline;text-underline-offset:4px}
+.sq-partial-replay-dialog button:active{filter:brightness(.85)}
+@media(max-width:400px){.sq-partial-replay-dialog header{padding:14px}.sq-partial-replay-dialog h2{font-size:26px}.sq-partial-replay-dialog .sq-partial-content{padding:14px 14px 0}.sq-partial-replay-dialog footer{padding:10px 14px 14px}.sq-partial-replay-dialog button{flex-basis:100%}}
+@media(forced-colors:active){.sq-partial-replay-dialog button{clip-path:none;border:2px solid ButtonText}.sq-partial-replay-dialog button:focus-visible{outline:3px solid Highlight;outline-offset:-5px}}
+`;
+  document.head.append(style);
+}
 
 // Window capture precedes document capture even if installed later. The parent
 // should install this before main if it also adds window-capture shortcuts.
@@ -15,6 +45,16 @@ export function installReplayModalKeyboardGuard({document}) {
     const code = event.code || event.key;
     const open = !!document.querySelector('.sq-partial-replay-dialog[open],.sq-snapshot-update-dialog[open]');
     if (open || event.type === 'keyup' && held.has(code)) event.stopImmediatePropagation();
+    const partial = document.querySelector('.sq-partial-replay-dialog[open]');
+    if (partial && event.type === 'keydown' && event.key === 'Tab') {
+      // Handle this at window capture, before the game shortcuts and our propagation guard.
+      const targets = [...partial.querySelectorAll('button:not([disabled]),[tabindex="0"]')].filter(node => node.getClientRects().length);
+      if (targets.length) {
+        event.preventDefault();
+        const index = targets.indexOf(document.activeElement);
+        targets[(index + (event.shiftKey ? targets.length - 1 : 1)) % targets.length].focus();
+      }
+    }
     if (event.type === 'keydown' && open) held.add(code);
     if (event.type === 'keyup') held.delete(code);
   };
@@ -25,39 +65,49 @@ export function installReplayModalKeyboardGuard({document}) {
 }
 
 // This is a playback choice, not a verification verdict or authority to award RP.
-export function confirmPartialReplaySelection({document, ready, failed, isCurrent, signal, returnFocus, source = 'saved'}) {
+export function confirmPartialReplaySelection({document, ready, failed, isCurrent, signal, returnFocus, source = 'saved', mode = 'select'}) {
   if (!ready.length || !failed.length || !available(isCurrent) || signal?.aborted) return Promise.resolve(false);
   installReplayModalKeyboardGuard({document});
+  installPartialReplayStyles(document);
   const dialog = document.createElement('dialog');
   dialog.className = 'sq-partial-replay-dialog';
-  dialog.setAttribute('aria-label', 'Some saved replays are unavailable');
-  dialog.style.cssText = 'box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;border:2px solid #8ce7ff;border-radius:8px;padding:20px;background:#182449;color:#fff;font:18px ForcedSquare,sans-serif;line-height:1.4;overflow-wrap:anywhere';
+  const id = 'sq-partial-replay-' + (++dialogId);
+  dialog.setAttribute('aria-labelledby', id + '-title');
+  dialog.setAttribute('aria-describedby', id + '-summary');
+  const header = document.createElement('header'), label = document.createElement('small');
+  label.textContent = source === 'event' ? 'EVENT REPLAYS' : 'SAVED REPLAYS';
   const title = document.createElement('h2');
-  title.textContent = 'Some saved replays are unavailable';
-  title.style.cssText = 'font:inherit;font-size:24px;margin:0 0 12px';
+  title.id = id + '-title';
+  title.textContent = 'Skip unavailable replays?';
+  header.append(label, title);
+  const content = document.createElement('div');
+  content.className = 'sq-partial-content';
   const summary = document.createElement('p');
-  summary.textContent = `${ready.length} of ${ready.length + failed.length} selected replays are ready. Continue with only these working replays?`;
+  summary.id = id + '-summary';
+  summary.textContent = `${ready.length} of ${ready.length + failed.length} replays ready${mode === 'watch' ? ' to watch' : ''}. Skip ${failed.length === 1 ? 'this unavailable replay' : 'these unavailable replays'}:`;
   const note = document.createElement('p');
-  note.textContent = 'Unavailable replays are skipped. Your run and event points are unchanged.';
+  note.className = 'sq-partial-note';
+  note.textContent = 'Saved PBs and points are unchanged. Cancel keeps your selection.';
   const list = document.createElement('ul');
+  list.setAttribute('aria-label', 'Unavailable replays');
+  list.tabIndex = 0;
   for (const item of failed) {
     const row = item.row || item;
     const entry = document.createElement('li');
     entry.textContent = String(row.nickname || row.name || 'Racer').slice(0, 256);
     list.append(entry);
   }
-  const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;margin-top:18px';
+  const controls = document.createElement('footer');
   const cancel = document.createElement('button'), proceed = document.createElement('button');
   for (const button of [cancel, proceed]) {
     button.type = 'button';
-    button.style.cssText = 'flex:1 1 160px;min-width:0;white-space:normal;padding:12px;border:1px solid #8ce7ff;border-radius:4px;background:#28346a;color:white;font:inherit;cursor:pointer';
   }
   cancel.textContent = 'Cancel';
-  proceed.textContent = 'Continue with working replays';
+  proceed.textContent = mode === 'watch' ? 'Skip & watch' : mode === 'play' ? 'Skip & play' : 'Use ready replays';
   proceed.dataset.partialReplayContinue = '';
   controls.append(cancel, proceed);
-  dialog.append(title, summary, note, list, controls);
+  content.append(summary, list, note);
+  dialog.append(header, content, controls);
   return new Promise(resolve => {
     const scope = document.defaultView;
     let settled = false, timer;
@@ -168,9 +218,11 @@ export function createPartialReplaySelection({readRecordings, validateRecording,
       if (!ready.length) { status('Saved replays unavailable or failed playback validation. No selected replay can be used.', true); return 'all-failed'; }
       if (mode === 'watch' && ready.length > 2) { status('Watch supports 2 replays. Choose Play to race all selected ghosts, or select at most 2 for Watch.', true); return 'watch-limit'; }
       if (failed.length) {
-        const accepted = await confirm({ready, failed, isCurrent: current, signal: job.abort.signal, returnFocus});
+        const accepted = await confirm({ready, failed, isCurrent: current, signal: job.abort.signal, returnFocus, mode});
         if (!available(current)) return 'cancelled';
         if (accepted !== true) { status('Replay launch cancelled. Your selection was not changed.'); return 'declined'; }
+        // Consent may remain open while the live playback engine changes.
+        for (const item of ready) if (await validateRecording(item.payload, item.row, context) !== true) throw Error('Replay readiness changed. Try again. Your selection is unchanged.');
       }
       if (!available(current)) return 'cancelled';
       if (failed.length) {
