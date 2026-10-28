@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 226,
+  "number": 227,
   "version": "0.6.3",
-  "revision": 195,
+  "revision": 196,
   "notes": [
-    "Compact event cards with consistent details and responsive artwork.",
-    "A clearer replay dialog lets Play and Watch skip unavailable replays after confirmation.",
-    "Stricter saved event replay validation and fewer unused event-intake reads."
+    "Watch can retry immediately after changing tracks, racers or selected replays.",
+    "Repeated Watch clicks within the same context still share one validation."
   ],
-  "preparedAt": "2026-10-28T15:05:06.409Z"
+  "preparedAt": "2026-10-28T16:00:33.496Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
