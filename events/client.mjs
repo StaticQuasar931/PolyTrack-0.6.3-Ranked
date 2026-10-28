@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=198';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=198';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=199';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=199';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,7 +7,7 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=198';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=199';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -1169,15 +1169,10 @@ export function installEvents(bridge){
     root.querySelector('.sq-event-finish-place')?.remove();
     const current=root.querySelector('.current'),position=current?.querySelector('.position');
     if(!position)return;
-    const text=place?eventOrdinal(place.rank):'';
-    if(position.textContent!==text||text&&!position.querySelector('.sq-event-ordinal-suffix')){
-      if(!text)position.textContent='';
-      else{
-        const number=String(place.rank),suffix=document.createElement('span');
-        suffix.className='sq-event-ordinal-suffix';suffix.textContent=text.slice(number.length);
-        position.replaceChildren(document.createTextNode(number),suffix);
-      }
-    }
+    const number=place?String(place.rank):'';
+    const text=place?number.replace(/\B(?=(\d{3})+(?!\d))/g,'\u202f')+eventOrdinal(place.rank).slice(number.length):'';
+    // Keep the native plain-text ordinal and its original ForcedSquare glyphs.
+    if(position.textContent!==text||position.firstElementChild)position.textContent=text;
     if(current.classList.contains('show-position')!==!!place)current.classList.toggle('show-position',!!place);
     const detail=place?'Event place '+place.rank+(place.fieldSize===null?'':` of ${place.fieldSize}`)+(place.provisional?' (provisional)':''):'';
     if(position.title!==detail)position.title=detail;

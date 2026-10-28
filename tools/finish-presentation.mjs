@@ -7,34 +7,15 @@ export function finishOrdinal(position){
 export function enhanceFinishAnnouncers(document){
  for(const node of document.querySelectorAll('.time-announcer-ui > .current > .position')){
   if(observed.has(node))continue;
-  const current=node.parentElement,time=current.querySelector(':scope > .time');
-  const center=()=>{
-   if(!time)return;
-   // The native tween centers the dash, not the differently sized time/rank pair.
-   // offsetWidth stays in UI pixels even when the game's UI ancestor is scaled.
-   const offset=(time.offsetWidth-node.offsetWidth)/2+'px';
-   if(current.style.getPropertyValue('--sq-finish-center-offset')!==offset)current.style.setProperty('--sq-finish-center-offset',offset);
-  };
   const update=()=>{
-   const text=node.textContent.replace(/[\s\u202f]/g,'');
-   const match=/^(\d+)(?:st|nd|rd|th|x|×)?$/i.exec(text),value=match&&finishOrdinal(Number(match[1]));
-   if(!value){center();return;}
-   // Event results own their suffix and provisional/field-size explanation.
-   if(node.querySelector('.sq-event-ordinal-suffix')){node.setAttribute('aria-label',node.title||value.label);center();return;}
-   node.setAttribute('aria-label',value.label);
-   if(node.children.length===2&&node.firstElementChild?.className==='sq-finish-number'&&node.lastElementChild?.textContent===value.suffix){center();return;}
-   const number=document.createElement('span'),suffix=document.createElement('sup');
-   number.className='sq-finish-number';number.textContent=value.number;
-   suffix.className='sq-finish-ordinal';suffix.textContent=value.suffix;
-   // Keep the number native, but do not shrink ForcedSquare's angular suffix glyphs.
-   suffix.style.fontFamily='Arial,sans-serif';suffix.style.fontStyle='normal';
-   suffix.style.fontVariant='normal';suffix.style.letterSpacing='normal';
-   node.replaceChildren(number,suffix);
-   center();
+   const match=/^(\d+)(?:st|nd|rd|th)?$/i.exec(node.textContent.replace(/[\s\u202f]/g,''));
+   const value=match&&finishOrdinal(Number(match[1]));
+   if(!value)return;
+   const label=node.title||value.label;
+   if(node.getAttribute('aria-label')!==label)node.setAttribute('aria-label',label);
   };
   const observer=new document.defaultView.MutationObserver(update);
-  observed.set(node,observer);update();observer.observe(node,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['title']});
-  const resize=new document.defaultView.ResizeObserver(center);
-  resize.observe(node);if(time)resize.observe(time);
+  observed.set(node,observer);update();
+  observer.observe(node,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['title']});
  }
 }
