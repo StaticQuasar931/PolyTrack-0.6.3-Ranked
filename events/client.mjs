@@ -1,12 +1,12 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=195';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=195';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=196';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=196';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=195';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=196';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -789,7 +789,8 @@ export function installEvents(bridge){
   function watchEvent(){
     const session=sessions.current()||archiveIntent;if(!session||session.accountId!==bridge.accountId())return;
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
-    if(watchEvent.pending)return watchEvent.pending;
+    if(watchEvent.pending?.isCurrent())return watchEvent.pending.work;
+    const job={isCurrent:()=>false};watchEvent.pending=job;
     // Watch must not use raceGhosts: it prunes selections before consent and reuses parsed ghosts.
     const work=(async()=>{
       try{
@@ -801,9 +802,10 @@ export function installEvents(bridge){
         const boardRows=()=>session.archive?archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period).rows;
         const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name]);
         const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
-        const current=()=>replayContextActive(session)&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
+        const current=()=>watchEvent.pending===job&&replayContextActive(session)&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
           selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&selections.every(row=>selectedGhosts.get(row.targetAccountId)===row)&&
           selections.every(row=>binding(boardRows().find(entry=>entry.accountId===row.targetAccountId))===binding(entries.get(row.targetAccountId)))&&(!own||JSON.stringify(getOwnReplay(session.periodId))===JSON.stringify(own));
+        job.isCurrent=current;
         const candidates=selections.map(selection=>({selection,row:entries.get(selection.targetAccountId)||{name:selection.ghost?.nickname||'Racer'}}));
         if(own)candidates.unshift({own:true,row:{name:'Your event PB'},payload:own});
         if(!candidates.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
@@ -841,8 +843,8 @@ export function installEvents(bridge){
         selectedGhost=[...selectedGhosts.values()].at(-1)||null;
       }catch(error){message(error.message||'Event replay could not open. Your selection is unchanged.');}
     })();
-    watchEvent.pending=work;
-    void work.finally(()=>{if(watchEvent.pending===work)watchEvent.pending=null;});
+    job.work=work;
+    void work.finally(()=>{if(watchEvent.pending===job)watchEvent.pending=null;});
     return work;
   }
   async function playEvent(){

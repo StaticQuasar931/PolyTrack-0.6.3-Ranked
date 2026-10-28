@@ -27,7 +27,7 @@ function fixture(options={}){
   const opened=[],messages=[],prompts=[],bestRecords={};
   const root={isConnected:true,querySelector:()=>({}),__pt062EventWatch:{version:1,trackId:period.trackId,open:ghosts=>{if(options.nativeError)throw Error('native unavailable');opened.push(ghosts);}}};
   const view={root,period,periodId:period.id,page:0,onlyVerified:false};
-  const read=async(_period,id)=>{reads++;await options.readGate?.promise;return payloads.find(row=>row?.accountId===id)||null;};
+  const read=async(_period,id)=>{reads++;const gate=options.readGateFor?options.readGateFor(reads):options.readGate;await gate?.promise;return payloads.find(row=>row?.accountId===id)||null;};
   if(options.own){own={...session,attemptId:'local',timeMs:1100,frames:1100,replay:options.badOwn?'AAAA':replay,carStyle,source:'local-event-recording'};bestRecords[period.id+'_'+session.accountId]={attemptId:'local',timeMs:1100};}
   const context=vm.createContext({nativeView:view,knownPeriods:new Map([[period.id,period]]),replayRequest:0,selectedGhosts,selectedGhost:null,pendingGhosts:new Map(),replayCache:new Map(),bestRecords,
     document:{querySelector:()=>root},sessions:{current:()=>options.archive?null:active},archiveIntent:options.archive?session:null,
@@ -89,4 +89,25 @@ test('local own PB failure requires consent without deleting the PB or receipts'
 test('repeated Watch clicks share one validation and one native handoff',async()=>{
   const gate=deferred(),f=fixture({count:2,readGate:gate});const first=f.watch(),second=f.watch();assert.equal(first,second);
   gate.resolve();await first;assert.equal(f.reads(),2);assert.equal(f.opened.length,1);assert.equal(f.selectedGhosts.size,2);assert.equal(f.prompts.length,0);
+});
+
+for(const kind of ['session','selection','page','filter'])for(const oldFirst of [true,false])test(`stale Watch after ${kind} change is replaced, with ${oldFirst?'old':'fresh'} completion first`,async()=>{
+  const oldGate=deferred(),freshGate=deferred();
+  const f=fixture({count:2,readGateFor:call=>call<=2?oldGate:freshGate});
+  const old=f.watch();assert.equal(f.reads(),2);
+  f.change(kind);
+  const fresh=f.watch();assert.notEqual(fresh,old);assert.equal(f.reads(),4);
+  assert.equal(f.watch(),fresh,'same-context duplicates still coalesce');
+  if(oldFirst){
+    oldGate.resolve();await old;
+    assert.equal(f.opened.length,0);
+    assert.equal(f.watch(),fresh,'stale completion must not clear fresh pending work');
+    assert.equal(f.reads(),4);
+    freshGate.resolve();await fresh;
+  }else{
+    freshGate.resolve();await fresh;assert.equal(f.opened.length,1);
+    oldGate.resolve();await old;
+  }
+  assert.equal(f.opened.length,1);assert.equal(f.selectedGhosts.size,2);assert.equal(f.prompts.length,0);
+  assert.equal(f.watch.pending,null);
 });
