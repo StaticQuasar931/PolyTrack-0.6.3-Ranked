@@ -90,7 +90,7 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G'}
     ]},
     {id:'tracks',title:'Track browsing',note:'In track selection or Extra Tracks.',rows:[
       row('track-tabs','Switch track tab',[['Left'],['Right']],'Cycle Official, Community and Custom.'),
-      row('track-tab-direct','Open a track tab',[['Shift','1-3']],'1 = Official; 2 = Community; 3 = Custom.'),
+      row('track-tab-direct','Official / Community / Custom',[['Shift','1'],['Shift','2'],['Shift','3']],'Shift + 1 = Official; Shift + 2 = Community; Shift + 3 = Custom. Use the top-row number keys.'),
       row('summer-track','Open Summer track',[['1-9'],['0']],'Official tracks only. 0 opens Summer 10, when present.'),
       row('season-track','Choose a season track',[['S'],['W'],['D']],'Official tracks only. Summer / Winter / Desert, then 1-9 or 0 within 1.5 seconds.'),
       row('extra-rate','Rate an Extra Track',[['1-9'],['0']],'Open its review menu. 0 = 10. Focus Difficulty to rate difficulty.'),
@@ -166,19 +166,20 @@ function keycaps(item) {
 
 let serial=0;
 /** HTML fragment, not a modal. The host owns opening, closing and its focus trap.
- * release: {version,revision,commit,commitConfirmed,notes:string[]}. Commit is opt-in confirmed metadata.
+ * release: {number,version,revision,commit,commitConfirmed,notes:string[]}. Use RELEASE_INFO from release-info.mjs.
  * Existing data-help-action hooks: profile, filters, ghost-shortcut. No callback or network needed.
  */
 export function renderHelpControls(options={}) {
   const prefix=String(options.idPrefix||'pt-help-'+(++serial)).replace(/[^a-zA-Z0-9_-]/g,'-');
   const groups=createHelpControlGroups(options),total=groups.reduce((sum,group)=>sum+group.rows.length,0);
   const release=options.release||{};
-  const metadata=[['Game version',release.version],['Client revision',release.revision],['Commit',release.commitConfirmed===true?release.commit:null]].filter(([,value])=>value!==undefined&&value!==null&&String(value).trim()!=='');
+  const metadata=[['Release number',release.number],['Game version',release.version],['Client revision',release.revision],['Commit',release.commitConfirmed===true&&/^[a-f0-9]{7,40}$/i.test(String(release.commit||''))?release.commit:null]].filter(([,value])=>value!==undefined&&value!==null&&String(value).trim()!=='');
   const notes=Array.isArray(release.notes)?release.notes.filter(note=>typeof note==='string'&&note.trim()):[];
   const hasRelease=metadata.length>0||notes.length>0;
   return `<section class="pt-help-controls" data-help-controls aria-labelledby="${prefix}-title">
     <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Release info</button></div>`:''}</header>
     <div id="${prefix}-controls" data-hc-panel="controls">
+      <aside class="hc-track-quick" aria-label="Track selection shortcuts"><strong>Track selection</strong><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="1">1</kbd> Official</span><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="2">2</kbd> Community</span><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="3">3</kbd> Custom</span></aside>
       <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Press a key to highlight it here. Shortcuts do not run while Help is open. Change game keys in Settings &gt; Controls.</p></div>
       <div class="hc-layout"><nav class="hc-topics" aria-label="Control topics"><p class="hc-eyebrow">BROWSE BY SCREEN</p><button type="button" data-hc-topic="all" aria-pressed="true" aria-controls="${prefix}-results"><span>All controls</span><span class="hc-count">${total}</span></button>${groups.map(group=>`<button type="button" data-hc-topic="${escape(group.id)}" aria-pressed="false" aria-controls="${prefix}-results"><span>${escape(group.title)}</span><span class="hc-count">${group.rows.length}</span></button>`).join('')}</nav>
       <div class="hc-results" id="${prefix}-results"><div class="hc-results-head"><h3 data-hc-results-title>All controls</h3><p role="status" aria-live="polite" aria-atomic="true" data-hc-status>${total} controls</p></div><div class="hc-empty" data-hc-empty hidden><h3>No matching controls</h3><p>Try an action, key or screen name.</p><button type="button" data-hc-reset>Show all controls</button></div>
@@ -186,7 +187,7 @@ export function renderHelpControls(options={}) {
       <p class="hc-default-note">${options.bindings||options.getBindings?'Supplied game bindings are shown; any missing actions use their defaults.':'Driving, replay and editor keys shown here are defaults. Your custom game bindings take priority.'}</p></div></div>
       <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
-    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><p class="hc-eyebrow">BUILD INFORMATION</p><h3 id="${prefix}-release-title">Your current release</h3>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>In this release</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">This is the loaded game version, not an update check. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
+    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><p class="hc-eyebrow">BUILD INFORMATION</p><h3 id="${prefix}-release-title">Your current release</h3>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>In this release</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Release number identifies the manual update. Client revision identifies the loaded client build, not a Git commit. This is not an update check. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
     <footer class="hc-credits"><p>Track ratings &amp; difficulty gradings: <strong>Window Cleaner</strong>.</p></footer>
   </section>`;
 }

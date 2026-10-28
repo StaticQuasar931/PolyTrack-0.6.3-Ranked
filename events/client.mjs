@@ -788,14 +788,16 @@ export function installEvents(bridge){
     const nativeTrack=()=>root?.isConnected&&root===document.querySelector('.track-info-ui')&&root.__pt062EventWatch?.version===1&&root.__pt062EventWatch.trackId===session.trackId;
     if(!nativeTrack()){message('The event track is still opening. Please try Play again.');return;}
     const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session);
-    const current=()=>nativeTrack()&&sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+    // Native Play disposes this panel before its asynchronous race handoff.
+    // The handoff must retain session/replay checks, not require the old DOM.
+    const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
     try{
       // A nested HTMLElement.click() is suppressed while its original click is dispatching.
       await Promise.resolve();
-      if(!current())throw Error('Event launch context changed');
+      if(!nativeTrack()||!current())throw Error('Event launch context changed');
       await bridge.startEventRace({...session,ownGhost,opponents},()=>{
-        if(!current())throw Error('Event launch context changed');
+        if(!nativeTrack()||!current())throw Error('Event launch context changed');
         const play=root.querySelector('.side-panel button.play');if(!play||play.disabled)throw Error('Native Play is unavailable');
         let dispatched=false;const observed=()=>{dispatched=true;};
         play.addEventListener('click',observed,{once:true,capture:true});

@@ -1,9 +1,11 @@
+import {snapshotPublicationTime} from './snapshot-publication.mjs';
+export {readSnapshotPublicationMeta} from './snapshot-publication.mjs';
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
 import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confirmation-time.mjs';
 import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 // Public, same-origin backups never replace the authoritative PB submission path.
-export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
+export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
   const lookupCache=new Map(),lookupPending=new Map(),lookupRetryAt=new Map();let manifestValue=null;
 
@@ -74,7 +76,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
           compact&&(index.partial!==true||index.fallbackIndex!=='index.json'))throw integrityError('Unsupported snapshot encoding');
         if(Object.values(index.files).some(record=>!record||typeof record!=='object'||!/^[a-f0-9]{64}\.bin$/.test(record.path)||
           record.path!==`${record.sha256}.bin`||!Number.isSafeInteger(record.decodedBytes)||record.decodedBytes<1||record.decodedBytes>2*1024*1024))throw integrityError('Invalid snapshot index record');
-        if(requestedGeneration===generation)packagePublishedAt=Number.isSafeInteger(index.publishedAt)&&index.publishedAt>0?index.publishedAt:0;
+        if(requestedGeneration===generation)packagePublishedAt=Number.isSafeInteger(index.publishedAt)&&index.publishedAt>0?index.publishedAt:snapshotPublicationTime(publication,requestedBase.href,index,now());
         return {index,base:requestedBase,generation:requestedGeneration};
       });
       let tracked;

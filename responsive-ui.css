@@ -379,3 +379,12 @@ html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-
 #overallHelpPopup [data-help-empty]{color:#ffd28c}
 #overallHelpPopup [data-help-empty][hidden]{display:none!important}
 #overallHelpPopup .ranked-help-search input:focus-visible{outline:2px solid #7ee7ff;outline-offset:2px}
+
+/* Keep the native finish tween; separate ordinal glyphs so they cannot merge into an x. */
+html body .time-announcer-ui > .current{font-size:clamp(24px,3.2vw,48px);line-height:1.35;min-height:1.35em}
+html body .time-announcer-ui > .current > .position{white-space:nowrap;overflow:visible}
+html body .time-announcer-ui .sq-finish-ordinal{font-size:.54em;line-height:0;vertical-align:super;margin-inline-start:.08em}
+html body .time-announcer-ui > .record{font-size:clamp(26px,4.5vw,64px)}
+html body .time-announcer-ui > .track-name{font-size:clamp(24px,4vw,60px);line-height:1.2}
+@media(max-height:500px){html body .time-announcer-ui{top:20%}html body .time-announcer-ui > .track-name{margin-bottom:4px}}
+@media(prefers-reduced-motion:reduce){html body .time-announcer-ui > .current > div{transition:none!important}}
