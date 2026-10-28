@@ -367,6 +367,10 @@ test('native-shaped finish layout keeps time and superscript ranks readable acro
       assert.equal(g.position.opacity, '1', label + ': native reveal completes');
       assert.ok(g.time.right < g.dash.x && g.dash.right < g.position.x, label + ': time, dash, rank do not overlap');
       assert.ok(g.number.right < g.suffix.x, label + ': separate ordinal glyphs');
+      assert.ok(Math.abs((g.time.x + g.position.right) / 2 - width / 2) <= 1,
+        label + ': complete time and placement group is centered');
+      assert.ok(Math.abs(g.number.font - g.current.font) < .02, label + ': number inherits row font size');
+      assert.ok(Math.abs(g.suffix.font / g.number.font - .54) < .002, label + ': consistent suffix ratio');
       assert.ok(g.suffix.font < g.number.font && g.suffix.y < g.number.y, label + ': raised smaller suffix');
       assert.equal(g.suffix.verticalAlign, 'super');
       assert.ok(g.scroll <= g.client, label + ': no horizontal overflow');
@@ -492,4 +496,69 @@ test('actual native renderer and event synchronizer paint third place with reada
   if (directory) await fs.writeFile(path.join(directory, 'native-event-font-audit.json'), JSON.stringify({records, fonts}, null, 2));
   t.diagnostic('Real native formatter + DOM renderer + event synchronizer, local rank 3; rendered fonts: ' + JSON.stringify(fonts));
   await page.evaluate(() => window.nativeAnnouncer.dispose());
+});
+
+test('native and event placements stay centered and equally sized through rank, time, font and UI scale changes', {timeout: 90000}, async t => {
+  const page = await openFixture(t, {reducedMotion: 'reduce'});
+  const source = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
+  const helpers = source.slice(source.indexOf('export function eventOrdinal('), source.indexOf('export function eventTrackName(')).replace(/^export /, '')
+    + source.slice(source.indexOf('  function syncFinishPlace(){'), source.indexOf('  function tick('));
+  // Load production event styles after responsive CSS to exercise their !important rules.
+  await page.addStyleTag({content: await fs.readFile(new URL('../events/events.css', import.meta.url), 'utf8')});
+  await page.evaluate(helpers => {
+    window.eventPlace = {rank: 1, fieldSize: 10000, provisional: true};
+    window.syncPlacement = new Function('place', `
+      const latestFinish = {periodId: 'daily', accountId: 'fixture'};
+      const sessions = {current: () => ({periodId: 'daily'})};
+      const bridge = {accountId: () => 'fixture'};
+      const finishPlace = () => place;
+      ${helpers}
+      return syncFinishPlace;
+    `)(window.eventPlace);
+    window.finish.enhanceFinishAnnouncers(document);
+    document.querySelector('.current').classList.add('show-position');
+  }, helpers);
+  await page.evaluate(async () => Promise.all(document.getAnimations().map(animation => animation.finished)));
+  const output = process.env.POLYTRACK_FINISH_SCREENSHOTS;
+  if (output) await fs.mkdir(output, {recursive: true});
+  let cases = 0;
+  for (const [width, height, scale] of [[320,568,1],[390,844,1],[844,390,.8],[1366,768,1.25],[1920,1080,1]]) {
+    await page.setViewportSize({width, height});
+    await page.locator('#ui').evaluate((node, scale) => {
+      node.style.width = (100 / scale) + '%';node.style.height = (100 / scale) + '%';
+      node.style.transform = `scale(${scale})`;
+    }, scale);
+    for (const owner of ['native', 'event']) {
+      for (const rank of [1,2,3,11,12,13,21,22,23,113,1003,9999999]) {
+        await page.evaluate(({owner, rank}) => {
+          const row = document.querySelector('.current');
+          row.style.fontSize = (Math.max(24, Math.min(48, innerWidth * .032)) * (rank === 113 ? 1.25 : 1)) + 'px';
+          row.querySelector('.time').textContent = rank === 113 ? '01:42.123' : '00:24.531';
+          if (owner === 'event') {window.eventPlace.rank = rank;window.syncPlacement();}
+          else row.querySelector('.position').textContent = String(rank);
+        }, {owner, rank});
+        await settle(page);
+        const g = await page.evaluate(() => {
+          const row = document.querySelector('.current'), time = row.querySelector('.time'), position = row.querySelector('.position');
+          const a = time.getBoundingClientRect(), b = position.getBoundingClientRect(), r = row.getBoundingClientRect();
+          const suffix = position.lastElementChild, style = getComputedStyle(suffix);
+          return {center:(a.left+b.right)/2, target:(r.left+r.right)/2, left:a.left, right:b.right,
+            size:parseFloat(style.fontSize), rowSize:parseFloat(getComputedStyle(row).fontSize),
+            align:style.verticalAlign, font:style.fontFamily, italic:style.fontStyle,
+            label:position.getAttribute('aria-label'), text:position.textContent};
+        });
+        const label = `${owner} ${rank}, ${width}x${height}, UI scale ${scale}`;
+        assert.ok(Math.abs(g.center-g.target) <= scale, label + ': centered ' + JSON.stringify(g));
+        assert.ok(g.left >= -1 && g.right <= width+1, label + ': unclipped');
+        assert.ok(Math.abs(g.size/g.rowSize-.54) < .002, label + ': suffix size');
+        assert.equal(g.align, 'super', label + ': raised suffix');
+        assert.equal(g.font, 'Arial, sans-serif', label + ': readable suffix font');
+        assert.equal(g.italic, 'normal', label + ': upright suffix');
+        if (owner === 'event') assert.equal(g.label, `Event place ${rank} of 10000 (provisional)`);
+        cases++;
+      }
+      if (output) await page.screenshot({path:path.join(output, `centered-${owner}-${width}x${height}-scale${scale}.png`)});
+    }
+  }
+  t.diagnostic(`${cases} native/event centering and typography cases; production event sync, CSS, UI scaling, time and font changes`);
 });

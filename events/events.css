@@ -1168,3 +1168,41 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){position:static!important;grid-column:1!important;grid-row:1!important;width:100%!important;height:auto!important;aspect-ratio:2.2!important}
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{grid-column:1!important;grid-row:2!important}
 }
+
+/* Four events form one row on laptops and desktops; keep text legible on smaller screens. */
+@media(min-width:600px) and (max-width:899px){
+ #ui .track-selection-ui .sq-featured-events{grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-auto-rows:1fr}
+}
+@media(min-width:600px){
+ #ui .track-selection-ui .sq-featured-events>.track>.button,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card{
+  grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto auto minmax(min-content,1fr)!important;
+  padding:0 12px 12px!important;gap:8px!important;min-height:0!important;
+ }
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button>img.thumbnail,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>.sq-event-thumb,
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+  position:relative!important;grid-column:1!important;grid-row:1!important;inset:auto!important;
+  width:calc(100% + 24px)!important;height:auto!important;aspect-ratio:1.85!important;
+  margin:0 -12px!important;padding:10px!important;box-sizing:border-box!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){padding:0!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button:before,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>small:first-child{grid-column:1!important;grid-row:2!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track .track-title,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>strong{grid-column:1!important;grid-row:3!important;font-size:calc(22px * var(--sq-ui-scale,1))!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button>.record,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>.sq-event-record{grid-column:1!important;grid-row:4!important;align-self:end!important;font-size:calc(19px * var(--sq-ui-scale,1))!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button>.sq-permanent-note,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>.sq-event-card-details{grid-column:1!important;grid-row:5!important;min-height:calc(39px * var(--sq-ui-scale,1))!important;font-size:calc(15px * var(--sq-ui-scale,1))!important}
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto 1fr!important;padding:0 12px 12px!important;gap:0!important}
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{grid-column:1!important;grid-row:2!important;padding:8px 0 0!important;gap:7px!important}
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{font-size:calc(22px * var(--sq-ui-scale,1))!important}
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>:is(.author,.date-range,.sq-kodub-cycle,.sq-kodub-reward){font-size:calc(15px * var(--sq-ui-scale,1))!important}
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.time-remaining,
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best,
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{font-size:calc(19px * var(--sq-ui-scale,1))!important}
+}
+@media(min-width:900px){
+ #ui .track-selection-ui .sq-featured-events{grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-rows:1fr}
+}

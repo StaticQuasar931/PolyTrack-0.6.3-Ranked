@@ -181,6 +181,59 @@ test('ordinary mixed selection: modal, desktop/mobile layout, safe names, native
   assert.deepEqual(await page.evaluate(() => stats.nativeRequests), [[1, 3]]);
   assert.deepEqual(await page.evaluate(() => stats.races[0]), [{name: 'First <img src=x onerror=alert(1)>', frames: 1001, isSelf: false, verifiedState: 0}, {name: 'Racer 3', frames: 1003, isSelf: true, verifiedState: 0}]);
 });
+
+for (const mode of ['play', 'watch']) test(`scaled ${mode} chooser keeps native typography and both actions visible on short screens`, async t => {
+  const page = await fixture(t);
+  await page.setViewportSize({width: 844, height: 390});
+  await page.locator('.' + mode).click(); await proceed(page).waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  for (const scale of [0.85, 1, 1.25]) {
+    await page.evaluate(scale => document.documentElement.style.setProperty('--sq-ui-scale', scale), String(scale));
+    const sizes = await chooser(page).evaluate(dialog => {
+      const style = getComputedStyle(dialog);
+      return {body: parseFloat(style.fontSize), title: parseFloat(getComputedStyle(dialog.querySelector('h2')).fontSize),
+        note: parseFloat(getComputedStyle(dialog.querySelector('.sq-partial-note')).fontSize),
+        button: parseFloat(getComputedStyle(dialog.querySelector('button')).fontSize), family: style.fontFamily, italic: style.fontStyle};
+    });
+    assert.equal(sizes.body, 20 * scale);
+    assert.equal(sizes.title, 30 * scale);
+    assert.equal(sizes.note, 16 * scale);
+    assert.equal(sizes.button, 20 * scale);
+    assert.match(sizes.family, /^ForcedSquare/); assert.equal(sizes.italic, 'italic');
+  }
+  // More names than fit force content scrolling, not scrolling the actions offscreen.
+  await chooser(page).locator('ul').evaluate(list => {
+    list.style.maxHeight = 'none';
+    for (let i = 0; i < 9; i++) { const li = document.createElement('li'); li.textContent = 'Unavailable racer ' + i; list.append(li); }
+  });
+  for (const [width, height] of [[844, 390], [320, 568], [640, 320]]) {
+    await page.setViewportSize({width, height});
+    for (const bottom of [false, true]) {
+      const layout = await chooser(page).evaluate((dialog, bottom) => {
+        const content = dialog.querySelector('.sq-partial-body');
+        content.scrollTop = bottom ? content.scrollHeight : 0;
+        const box = dialog.getBoundingClientRect();
+        return {overflow: dialog.scrollWidth > dialog.clientWidth + 1,
+          contentScrolls: content.scrollHeight > content.clientHeight,
+          actions: [...dialog.querySelectorAll('button')].map(button => {
+            const rect = button.getBoundingClientRect();
+            return {visible: rect.top >= box.top && rect.bottom <= box.bottom && rect.bottom <= innerHeight,
+              height: rect.height, font: getComputedStyle(button).fontFamily};
+          })};
+      }, bottom);
+      assert.equal(layout.overflow, false); assert.equal(layout.contentScrolls, true);
+      for (const action of layout.actions) { assert.equal(action.visible, true, JSON.stringify(layout)); assert.ok(action.height >= 44); assert.match(action.font, /^ForcedSquare/); }
+    }
+    assert.equal(await proceed(page).textContent(), 'Skip & ' + mode);
+    assert.equal(await page.evaluate(() => stats.dispatched + stats.writes), 0);
+    await shot(page, `partial-replay-${mode}-scaled-${width}x${height}`);
+  }
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  assert.equal(await page.evaluate(() => fixture.selected().length), 3);
+  assert.equal(await page.evaluate(() => stats.dispatched + stats.writes), 0);
+  assert.equal(await page.locator('.' + mode).evaluate(button => button === document.activeElement), true);
+});
+
 test('ordinary cancel, Escape, keyboard activation and repeat clicks do not silently drop or reread failures', async t => {
   const page = await fixture(t);
   await page.locator('.play').click(); await proceed(page).waitFor();
@@ -211,6 +264,10 @@ test('native-style modal traps focus, handles long names and remains operable at
   await page.keyboard.press('Tab');assert.equal(await page.getByRole('button',{name:'Cancel',exact:true}).evaluate(el=>el===document.activeElement),true);
   await chooser(page).evaluate(el=>el.style.fontSize='40px');
   await proceed(page).focus();
+  assert.equal(await chooser(page).locator('.sq-partial-body').evaluate(el=>el.clientHeight>100&&el.scrollHeight>el.clientHeight),true,'large text retains a usable scrollable explanation');
+  for (const button of await chooser(page).locator('button').all()) {
+    assert.equal(await button.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),true);
+  }
   assert.equal(await chooser(page).evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
   assert.equal(await chooser(page).locator('script').count(),0);
   await shot(page,'partial-replay-long-names-large-text');

@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 227,
+  "number": 228,
   "version": "0.6.3",
-  "revision": 196,
+  "revision": 197,
   "notes": [
-    "Watch can retry immediately after changing tracks, racers or selected replays.",
-    "Repeated Watch clicks within the same context still share one validation."
+    "Four event cards share one row on desktop, with clearer text and responsive artwork.",
+    "Finish placements stay centered with readable ordinal text.",
+    "Replay confirmation scales with UI text and keeps its action buttons visible."
   ],
-  "preparedAt": "2026-10-28T16:00:33.496Z"
+  "preparedAt": "2026-10-28T19:11:35.648Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
