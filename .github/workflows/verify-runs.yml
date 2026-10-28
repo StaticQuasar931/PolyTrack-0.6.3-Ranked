@@ -48,6 +48,7 @@ jobs:
         timeout-minutes: 2
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
         run: node tools/verifier/run.mjs --check
       - name: Install pinned verifier dependencies
         if: steps.queue.outputs.has_work == 'true'
@@ -83,6 +84,7 @@ jobs:
         if: steps.queue.outputs.has_work == 'true'
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
           VERIFIER_CATCH_UP: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 'true' || 'false' }}
         run: |
           if [ "$VERIFIER_CATCH_UP" = "true" ]; then

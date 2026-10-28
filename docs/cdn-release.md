@@ -90,9 +90,17 @@ executing it and falls back to a saved release or the embedded baseline on error
 Rollback-like CDN responses older than its saved publication date are ignored.
 
 CDN propagation is not instantaneous and one runner cannot certify every CDN
-edge or school network. If propagation verification fails after pointer push,
-rerun `Publish CDN release`: it retries the purge without adding a duplicate
-pointer commit. Asset readiness failure leaves the old pointer untouched.
+edge or school network. If the canonical pointer is still stale after the bounded
+check, the job completes with `cdn_status=deferred` and a warning. This confirms
+publication, NOT CDN freshness. The CDN-only schedule checks again and honors the
+persisted purge cooldown without recapturing Firebase data or adding a duplicate
+pointer commit. Retry `Publish CDN release` only, not verification or snapshot
+capture. A current mirror alone cannot confirm the canonical loader URL.
+
+Asset readiness failures, hash mismatches and invalid pointers still fail the job.
+An asset readiness failure leaves the old pointer untouched. All five workflows
+are syntax-checked by the checksum-pinned official actionlint validator before
+CDN publication; offline release-contract tests cover their job handoffs.
 
 Temporary 403/404, throttling, server errors and network failures get bounded
 backoff of 5, 15, 30 and 60 seconds, with a five-minute readiness budget.

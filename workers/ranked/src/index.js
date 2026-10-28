@@ -2089,21 +2089,39 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
 }
 
 async function processProfileJob(env, jobId, job, updateTime='') {
-  const pending = Array.isArray(job.pendingTrackIds) ? job.pendingTrackIds.map((value) => safeText(value, 80)).filter(Boolean) : [];
-  const batch = pending.slice(0, 3);
+  const pending = Array.isArray(job.pendingTrackIds) ? [...new Set(job.pendingTrackIds.map((value) => safeText(value, 80)).filter(Boolean))] : [];
+  const batch = pending.slice(0, 3), completed = new Set();
+  const budget = {fullRebuildAttempted:false};
   let changed = 0;
-  for (const trackId of batch) if ((await updateTrackIdentity(env, trackId, job.identity)).changed) changed += 1;
-  const remaining = pending.slice(batch.length);
-  await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, active: remaining.length > 0, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + batch.length, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: remaining.length ? 0 : Date.now() },updateTime);
+  for (const trackId of batch) {
+    try {
+      const result = await updateTrackIdentity(env, trackId, job.identity, budget);
+      if (result.pending || result.blocked) continue;
+      completed.add(trackId);
+      if (result.changed) changed += 1;
+    } catch (error) {
+      if (error?.status === 429 || error?.message === 'FIRESTORE_429') throw error;
+      console.error('Profile track update deferred', trackId, String(error?.message || error));
+    }
+  }
+  // Rotate unfinished checks behind untouched work without discarding them.
+  const remaining = [...pending.slice(batch.length), ...batch.filter(trackId => !completed.has(trackId))];
+  await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, active: remaining.length > 0, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + completed.size, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: remaining.length ? 0 : Date.now() },updateTime);
   // Track persistence marks Overall dirty; its isolated cron owns aggregation.
   return { checked: batch.length, changed, remaining: remaining.length };
 }
 
-export async function updateTrackIdentity(env, trackId, identity) {
+export async function updateTrackIdentity(env, trackId, identity, budget = {fullRebuildAttempted:false}) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const snapshot = prior?.data;
   if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || (snapshot.complete !== true&&snapshot.sourceComplete!==true)) {
-    return rebuildTrack(env, trackId, identity);
+    if (budget.fullRebuildAttempted) return {changed:false,pending:true,reason:'maintenance_rebuild_budget'};
+    // Reserve before awaiting: failures consume the same one-fallback allowance.
+    budget.fullRebuildAttempted = true;
+    const result = await rebuildTrack(env, trackId, identity);
+    // Paged builds do not apply identityOverride. Confirm/apply against the published
+    // board next pass rather than double-publishing inside a read-heavy build pass.
+    return {...result,pending:true,identityPending:true};
   }
   if(snapshot.pagination)snapshot.entries=await loadPublicationEntries(snapshot,'track',trackId,(c,id)=>readDocument(env,c,id));
   const accountId = safeText(identity?.accountId, 128);

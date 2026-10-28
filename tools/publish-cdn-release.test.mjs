@@ -121,9 +121,11 @@ test('a current loader pointer avoids redundant purges',async()=>{
   const result=await refreshReleasePointer(expected,{sleep:async()=>{},fetchImpl:async url=>{calls.push(url);return response(JSON.stringify(expected));}});
   assert.deepEqual(calls,[POINTER_URL]);assert.equal(result.purges,0);assert.equal(result.confirmed,true);
 });
-test('purge success with stale pointer is not reported as success',async()=>{
+test('purge success with stale pointer defers without claiming confirmation',async()=>{
   const expected=(await releasePlan({commit:sha,...fixture()})).pointer,calls=[];let time=0;
-  await assert.rejects(refreshReleasePointer(expected,{now:()=>time,log:()=>{},sleep:async ms=>{time+=ms;},fetchImpl:async url=>{calls.push(url);return response(JSON.stringify(url.includes('purge.jsdelivr.net')?{status:'finished'}:{...expected,commit:'b'.repeat(40)}));}}),error=>error.code==='CDN_PROPAGATION_PENDING'&&error.purges===1);
+  const result=await refreshReleasePointer(expected,{now:()=>time,log:()=>{},sleep:async ms=>{time+=ms;},fetchImpl:async url=>{calls.push(url);return response(JSON.stringify(url.includes('purge.jsdelivr.net')?{status:'finished'}:{...expected,commit:'b'.repeat(40)}));}});
+  assert.equal(result.status,'deferred');assert.equal(result.reason,'propagation-pending');assert.equal(result.confirmed,false);assert.equal(result.purges,1);
+  assert.ok(result.retryAfterMs>3000000);assert.ok(result.retryAfterMs<=3600000);
   assert.equal(calls.filter(url=>url.includes('purge.jsdelivr.net')).length,1);
   assert.ok(calls.length<=12);assert.equal(calls.filter(url=>POINTER_MIRRORS.includes(url)).length,2);assert.ok(time<=240000);assert.ok(time>49000);
 });
@@ -179,9 +181,9 @@ test('source commit equality is checked even when immutable asset bytes are unch
 
 test('fresh mirrors cannot confirm a stale canonical loader URL',async()=>{
   const expected=(await releasePlan({commit:sha,...fixture()})).pointer;let time=0;
-  await assert.rejects(refreshReleasePointer(expected,{now:()=>time,sleep:async ms=>{time+=ms;},log:()=>{},
-    fetchImpl:async url=>response(JSON.stringify(POINTER_MIRRORS.includes(url)?expected:url.includes('purge.')?{status:'finished'}:{...expected,commit:'b'.repeat(40)}))}),
-    error=>error.code==='CDN_PROPAGATION_PENDING'&&error.mirrors.length===2&&error.mirrors.every(row=>row.status==='current'));
+  const result=await refreshReleasePointer(expected,{now:()=>time,sleep:async ms=>{time+=ms;},log:()=>{},
+    fetchImpl:async url=>response(JSON.stringify(POINTER_MIRRORS.includes(url)?expected:url.includes('purge.')?{status:'finished'}:{...expected,commit:'b'.repeat(40)}))});
+  assert.equal(result.status,'deferred');assert.equal(result.confirmed,false);assert.equal(result.mirrors.length,2);assert.ok(result.mirrors.every(row=>row.status==='current'));
 });
 
 test('obsolete authoritative pointer stops polling and purging, not falsely confirming replacement',async()=>{
@@ -310,6 +312,20 @@ globalThis.fetch=async url=>{
   assert.match(await readFile(summary,'utf8'),/freshness is NOT confirmed/);
   const checkpoint=JSON.parse(await readFile(state,'utf8'));
   assert.equal(checkpoint.nextPurgeAt-checkpoint.updatedAt,3600000,'CLI checkpoint retains provider hour cooldown');
+  // Reproduce the reported failure: purge succeeds, canonical URL stays stale, mirrors cannot confirm it.
+  const pendingPreload=path.join(temp,'mock-cdn-pending.mjs'),pendingOutput=path.join(temp,'pending-output'),pendingSummary=path.join(temp,'pending-summary'),pendingState=path.join(temp,'pending-state.json');
+  const pendingMock=(await readFile(preload,'utf8')).replace("return new Response('',{status:429,headers:{'Retry-After':'3600'}})","return Response.json({status:'finished'})");
+  assert.notEqual(pendingMock,await readFile(preload,'utf8'));
+  await writeFile(pendingPreload,"let clock=1000;Date.now=()=>clock;globalThis.setTimeout=(done,ms)=>{clock+=ms;queueMicrotask(done);return 0;};\n"+pendingMock);
+  execFileSync(process.execPath,['--import',pathToFileURL(pendingPreload).href,fileURLToPath(new URL('./publish-cdn-release.mjs',import.meta.url)),'--refresh-only'],{
+    cwd:root,encoding:'utf8',timeout:120000,env:{...env,DEFAULT_BRANCH:'main',GITHUB_REPOSITORY:REPOSITORY,
+      GITHUB_OUTPUT:pendingOutput,GITHUB_STEP_SUMMARY:pendingSummary,CDN_PURGE_STATE_FILE:pendingState},stdio:['pipe','pipe','pipe']});
+  assert.equal(await readFile(pendingOutput,'utf8'),'cdn_status=deferred\n');
+  assert.match(await readFile(pendingSummary,'utf8'),/freshness is NOT confirmed/);
+  assert.match(await readFile(pendingSummary,'utf8'),/Reason: propagation-pending/);
+  const pendingCheckpoint=JSON.parse(await readFile(pendingState,'utf8'));
+  assert.equal(pendingCheckpoint.nextPurgeAt-pendingCheckpoint.updatedAt,3600000);
+
 });
 test('all file-writing workflows explicitly publish after their push, including token pushes',async()=>{
   const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');

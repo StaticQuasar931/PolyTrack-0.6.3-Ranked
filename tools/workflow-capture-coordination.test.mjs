@@ -10,6 +10,12 @@ import {checkCapture, recordCapture, requestedAfter} from './workflow-capture-co
 import {publishSnapshot, encodeSnapshot, decodeSnapshot, buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex} from './track-snapshot-paging.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
+import tls from 'node:tls';
+import {buildOfflineOverall} from './offline-overall.mjs';
+import {computeOverall, rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
 
 const now = Date.UTC(2026, 9, 25, 0, 40);
 const statePath = 'tools/workflow-capture-state.json';
@@ -178,6 +184,106 @@ test('real omitted Overall and track monoliths remain valid through existing pag
   for(const omitted of ['overall','track']) {
     const f=await fixture(t,{omitted});
     assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+  }
+});
+
+function forbidNetwork(t) {
+  const calls = [];
+  const deny = label => () => {calls.push(label); throw Error('Network forbidden: ' + label);};
+  t.mock.method(globalThis, 'fetch', deny('fetch'));
+  for (const [target, methods] of [[http, ['get', 'request']], [https, ['get', 'request']],
+    [net, ['connect', 'createConnection']], [tls, ['connect']]])
+    for (const method of methods) t.mock.method(target, method, deny(method));
+  t.after(() => assert.deepEqual(calls, [], 'all integration inputs must be local'));
+}
+
+async function publishOfflineFixture(f) {
+  const result = await publishSnapshot({root:f.root, stagingDirectory:f.stage});
+  await fs.writeFile(path.join(f.root,'snapshot-current.json'),JSON.stringify({currentdir:result.directory}));
+  await fs.writeFile(path.join(f.root,'index.html'),`<meta name="polytrack-snapshot" content="./${result.directory}/">`);
+  const index = JSON.parse(await fs.readFile(path.join(f.root,result.directory,'index.json'),'utf8'));
+  return {...f, directory:result.directory, index};
+}
+
+async function offlineOverallFixture(t, size) {
+  forbidNetwork(t);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(),'offline-overall-receipt-'));
+  assert.equal(path.dirname(root),path.resolve(os.tmpdir()));
+  t.after(() => fs.rm(root,{recursive:true,force:true}));
+  const stage = path.join(root,'input');
+  for (const name of ['input/tracks','events','tools']) await fs.mkdir(path.join(root,name),{recursive:true});
+  const model = {algorithmVersion:'participation-v8-s1',schemaVersion:6,revision:10,sourceRevision:10,builtRevision:10,updatedAt:1000};
+  // Small complete boards exercise 731 Overall rows without needing fake backend
+  // pagination on either input. The many track opportunities also exercise omission.
+  const population = Array.from({length:size},(_,i)=>(i+1).toString(16).padStart(64,'0'));
+  const boardCount = size===731 ? Math.floor(size/2) : 3;
+  const tracks = Array.from({length:boardCount},(_,i)=>{
+    const trackId = (i+10000).toString(16).padStart(64,'0');
+    const accounts = size===731 ? population.slice(i*2,i===boardCount-1?size:i*2+2) : population;
+    const entries = rankTrustedTrackEntries(accounts.map((accountId,j)=>({accountId,trackId,name:'Public Racer',
+      timeMs:10000+j*100,pbAt:100,pbCount:2,totalPlaytimeMs:500,accountCreatedAt:10,
+      runVerified:true,integrityVerified:true})),trackId);
+    return {...model,trackId,complete:true,sourceComplete:true,totalEntries:entries.length,entries};
+  });
+  const prior = computeOverall(tracks);
+  const previousOverall = {...model,entries:prior,complete:true,totalEntries:prior.length,trackSummaries:[],
+    trackCatalog:tracks.map(b=>({trackId:b.trackId,updatedAt:b.updatedAt}))};
+  const built = await buildOfflineOverall({tracks,previousOverall,expectedTrackIds:tracks.map(b=>b.trackId),now:2000});
+  const values = Object.fromEntries(built.files);
+  values['overall-calculation.json'] = built.calculation;
+  values['manifest.json'] = {schemaVersion:1,tracks:Object.fromEntries(tracks.map(b=>[b.trackId,{
+    path:'tracks/'+b.trackId+'.json',sourceUpdatedAt:b.updatedAt,updatedAt:b.updatedAt}]))};
+  values['coverage.json'] = {schemaVersion:1,complete:false};
+  values['public-export-summary.json'] = {complete:false,counts:{profiles:0,canonical:0,recordings:0}};
+  values['event-totals.json'] = {updatedAt:1000,entries:[],complete:true,totalEntries:0};
+  for (const board of tracks) values['tracks/'+board.trackId+'.json'] = board;
+  for (const [file,value] of Object.entries(values)) await fs.writeFile(path.join(stage,file),JSON.stringify(value));
+  await fs.writeFile(path.join(root,'events/public-catalog.json'),JSON.stringify({periods:[],archives:[]}));
+  return publishOfflineFixture({root,stage,built});
+}
+
+for (const size of [201,731]) test(`real offline ${size}-row Overall builds, packages, records and reuses without backend pagination`,async t=>{
+  const f = await offlineOverallFixture(t,size), overall = f.built.files.get('overall.json');
+  assert.equal(overall.entries.length,size);
+  assert.equal(Object.hasOwn(overall,'pagination'),false);
+  assert.equal(Object.hasOwn(overall,'paginatedSource'),false);
+  if(size===731){
+    assert.ok(f.built.report.artifactBytes['overall.json']>2*1024*1024);
+    assert.equal(Object.hasOwn(f.index.files,'overall.json'),false,'large source must use real canonical package pages');
+  }else assert.ok(f.index.files['overall.json'],'small assembled monolith remains present');
+  const state = await recordCapture({root:f.root,startedAt:String(now-1000),now});
+  assert.equal(state.reusable,true);
+  assert.equal((await checkCapture({root:f.root,requestedAt:String(now-2000),now})).reuse,true);
+  if(size===731){
+    const before = await fs.readFile(path.join(f.root,statePath),'utf8');
+    await mutatePayload(f,'overall-pages/3.json',page=>({...page,entries:page.entries.slice(1)}));
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
+    await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}));
+    assert.equal(await fs.readFile(path.join(f.root,statePath),'utf8'),before,'invalid pages cannot advance receipt');
+  }
+});
+
+test('assembled Overall admission retains completeness, schema, identity and backend-pagination guards',async t=>{
+  const f = await offlineOverallFixture(t,201);
+  const original = f.built.files.get('overall.json');
+  await recordCapture({root:f.root,startedAt:String(now-1000),now});
+  const before = await fs.readFile(path.join(f.root,statePath),'utf8');
+  for (const change of [
+    value=>{value.complete=false;}, value=>{value.sourceComplete=false;},
+    value=>{value.totalEntriesExact=false;}, value=>{value.totalEntries++;}, value=>{value.publishedEntries--;},
+    value=>{value.schemaVersion++;}, value=>{value.algorithmVersion='unsupported';},
+    value=>{value.builtRevision++;}, value=>{value.sourceRevision=0;value.builtRevision=0;},
+    value=>{value.entries[200].userId=value.entries[0].userId;},
+    value=>{value.entries[200].userId='invalid';}, value=>{value.entries[200]=null;},
+    value=>{value.pagination={version:1,complete:true};}, value=>{value.paginatedSource=false;},
+    value=>{value.entries=Array.from({length:10001},(_,i)=>({userId:(i+1).toString(16).padStart(64,'0'),rank:0}));
+      value.totalEntries=value.publishedEntries=value.entries.length;}
+  ]) {
+    const value=structuredClone(original);change(value);
+    await mutatePayload(f,'overall.json',()=>value);
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
+    await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}));
+    assert.equal(await fs.readFile(path.join(f.root,statePath),'utf8'),before);
   }
 });
 

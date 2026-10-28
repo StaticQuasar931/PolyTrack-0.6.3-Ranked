@@ -14,6 +14,15 @@ export async function firestoreFailure(response) {
 export const MAX_READ_RETRIES = 2;
 export const MAX_RETRY_AFTER_MS = 2000;
 
+function validateMode(mode) {
+  if (mode !== 'manual' && mode !== 'scheduled') throw Error('Invalid Firestore quota mode');
+  return mode;
+}
+
+export function firestoreQuotaMode(env = process.env) {
+  return validateMode(env.VERIFIER_FIRESTORE_MODE ?? 'manual');
+}
+
 export function boundedRetryAfter(response, now = Date.now()) {
   const value = response.headers?.get?.('Retry-After');
   if (value == null || value.trim() === '') return null;
@@ -25,14 +34,18 @@ export function boundedRetryAfter(response, now = Date.now()) {
 }
 
 export function createFirestoreCaller({base, access, fetchImpl = fetch,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), maxReadRetries = MAX_READ_RETRIES}) {
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), maxReadRetries = MAX_READ_RETRIES, mode = 'manual'}) {
+  validateMode(mode);
   if (!Number.isInteger(maxReadRetries) || maxReadRetries < 0 || maxReadRetries > MAX_READ_RETRIES) {
     throw Error('Invalid Firestore read retry limit');
   }
   let requests = 0, returnedDocuments = 0, queryCount = 0, emptyQueryMinimumReads = 0, estimatedDocumentReads = 0;
+  let quotaFailure = null;
   const call = async (path, body, {onRetry} = {}) => {
+    if (quotaFailure) throw quotaFailure;
     const safeRead = (!body && !String(path).startsWith(':')) || path === ':runQuery' || path === ':batchGet';
     for (let retry = 0; ; retry++) {
+      if (quotaFailure) throw quotaFailure;
       if (retry > 0) onRetry?.();
       requests++;
       const response = await fetchImpl(base + path, {
@@ -41,6 +54,16 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(20000)
       });
+      if (mode === 'scheduled' && response.status === 429) {
+        // Latch before reading an error body: no read, write, rollback or retry
+        // may probe an exhausted database again in this invocation.
+        quotaFailure = Object.assign(new Error('Firestore request failed: 429'), {
+          status: 429, code: safeRead ? 'FIRESTORE_READ_THROTTLED' : 'FIRESTORE_COMMIT_THROTTLED', deferred: true
+        });
+        const delay = boundedRetryAfter(response);
+        if (delay !== null) quotaFailure.retryAfterMs = delay;
+        throw quotaFailure;
+      }
       if (response.status === 404) {
         if (!body && !String(path).startsWith(':')) estimatedDocumentReads++;
         return null;
@@ -92,13 +115,14 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
     estimatedDocumentReads: () => estimatedDocumentReads};
 }
 
-export async function connect(raw){
+export async function connect(raw, {mode = firestoreQuotaMode()} = {}){
+ validateMode(mode);
  const credentials=JSON.parse(raw);if(credentials.project_id!=='polytrack-052')throw Error('Unexpected Firebase project');
  const b=x=>Buffer.from(JSON.stringify(x)).toString('base64url'),now=Math.floor(Date.now()/1000);
  const unsigned=b({alg:'RS256',typ:'JWT'})+'.'+b({iss:credentials.client_email,scope:'https://www.googleapis.com/auth/datastore',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+1800});
  const sig=crypto.sign('RSA-SHA256',Buffer.from(unsigned),credentials.private_key).toString('base64url');
  const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:unsigned+'.'+sig}),signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Firebase authentication failed: '+r.status);
  const access=(await r.json()).access_token,base='https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents';
- const firestore = createFirestoreCaller({base, access});
+ const firestore = createFirestoreCaller({base, access, mode});
  return {call:firestore.call,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}}),requests:firestore.requests,returnedDocuments:firestore.returnedDocuments,queryCount:firestore.queryCount,emptyQueryMinimumReads:firestore.emptyQueryMinimumReads,estimatedDocumentReads:firestore.estimatedDocumentReads};
 }

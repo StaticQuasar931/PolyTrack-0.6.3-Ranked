@@ -58,6 +58,15 @@ jobs:
           key: cdn-pointer-purge-v1-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             cdn-pointer-purge-v1-${{ github.repository_id }}-
+      - name: Validate workflow syntax
+        # Official pinned validator, verified before execution. No Firebase access.
+        run: |
+          TOOL_DIR="$RUNNER_TEMP/polytrack-actionlint-1.7.12"
+          mkdir -p "$TOOL_DIR"
+          curl --fail --location --retry 2 --connect-timeout 10 --max-time 60 --output "$TOOL_DIR/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$TOOL_DIR/actionlint.tar.gz" | sha256sum --check --status
+          tar -xzf "$TOOL_DIR/actionlint.tar.gz" -C "$TOOL_DIR" actionlint
+          "$TOOL_DIR/actionlint" -no-color -shellcheck= -pyflakes=
       - name: Test CDN publication safeguards
         run: node --test tools/publish-cdn-release.test.mjs tools/workflow-release-contract.test.mjs
       - name: Validate immutable assets, publish pointer, and confirm CDN refresh

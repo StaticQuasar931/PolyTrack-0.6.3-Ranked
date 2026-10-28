@@ -54,6 +54,32 @@ function validateTotalsArtifact(value) {
     throw Error('Non-public projected event totals fields');
 }
 
+function validateOverallArtifact(value) {
+  if (!Array.isArray(value?.entries) || value.entries.length <= 200 ||
+      value.pagination !== undefined || value.paginatedSource !== undefined) {
+    publicOverallBackup(value);
+    return;
+  }
+  // Offline assembly has no backend pagination. Validate every public row without
+  // inventing it; validateConsumerPackage still checks the canonical package pages.
+  if (value.entries.length > 10000 || value.algorithmVersion !== 'participation-v8-s1' || value.schemaVersion !== 6 ||
+      value.complete !== true || value.sourceComplete !== true || value.totalEntriesExact !== true ||
+      value.totalEntries !== value.entries.length || value.publishedEntries !== value.entries.length ||
+      !Number.isSafeInteger(value.sourceRevision) || value.sourceRevision < 1 || value.builtRevision !== value.sourceRevision)
+    throw Error('Invalid assembled Overall source');
+  const seen = new Set();
+  for (let offset = 0; offset < value.entries.length; offset += 200) {
+    const entries = value.entries.slice(offset, offset + 200);
+    const projected = publicOverallBackup({...value, entries}).snapshot.entries;
+    for (let index = 0; index < entries.length; index++) {
+      const row = entries[index], id = projected[index].userId;
+      if (!object(row) || !/^[a-f0-9]{64}$/.test(id || '') || row.userId !== id || seen.has(id))
+        throw Error('Invalid assembled Overall identity');
+      seen.add(id);
+    }
+  }
+}
+
 async function validateConsumerPackage(root, directory, index) {
   const equal = async (relative, expected) => {
     if (!isDeepStrictEqual(await json(root, directory + '/' + relative), expected)) throw Error('Invalid consumer artifact: ' + relative);
@@ -72,7 +98,7 @@ async function validateConsumerPackage(root, directory, index) {
     await hydrateStaging(root, temporary);
     const read = relative => json(temporary, relative);
     const overall = await read('overall.json');
-    publicOverallBackup(overall);
+    validateOverallArtifact(overall);
     validateTotalsArtifact(await read('event-totals.json'));
     const coverage = await read('coverage.json'), summary = await read('public-export-summary.json');
     if (!object(coverage) || coverage.schemaVersion !== 1 || typeof coverage.complete !== 'boolean' ||

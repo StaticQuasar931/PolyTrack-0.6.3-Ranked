@@ -245,7 +245,7 @@ export async function refreshReleasePointer(expected, {fetchImpl=fetch, sleep=pa
   const started=now(),deadline=started+240000,delays=[5000,10000,20000,30000,45000,60000,60000,60000];
   let failure, attempts=0, purges=0;
   const state = retryAfterMs => {const at=now();return {schemaVersion:1,pointerUrl:POINTER_URL,updatedAt:at,nextPurgeAt:at+retryAfterMs};};
-  const save = async retryAfterMs => {try {await savePurgeState(state(retryAfterMs));} catch {log('Optional purge cooldown checkpoint unavailable.');}};
+  const save = async retryAfterMs => {purgeState=state(retryAfterMs);try {await savePurgeState(purgeState);} catch {log('Optional purge cooldown checkpoint unavailable.');}};
   const deferred = async (reason,retryAfterMs) => {
     const mirrors=inspectMirrors?await pointerMirrorEvidence(expected,{fetchImpl}):[];
     return {confirmed:false,status:'deferred',reason,retryAfterMs,attempts,purges,elapsedMs:now()-started,mirrors};
@@ -313,9 +313,9 @@ export async function refreshReleasePointer(expected, {fetchImpl=fetch, sleep=pa
   }
   const changed=await authority();
   if(changed)return changed;
-  const mirrors=inspectMirrors?await pointerMirrorEvidence(expected,{fetchImpl}):[];
-  throw Object.assign(Error('Pointer published, but canonical loader CDN propagation could not be confirmed. Mirrors are diagnostic only. Rerun only Publish CDN release; do not repeat snapshot capture or verification.',{cause:failure}),
-    {code:'CDN_PROPAGATION_PENDING',attempts,purges,elapsedMs:now()-started,mirrors});
+  // Publishing succeeded. Provider propagation is asynchronous, not an asset-integrity failure.
+  // Keep canonical confirmation false and retry CDN-only after the persisted purge cooldown.
+  return deferred('propagation-pending',validPurgeState(purgeState,now())?Math.max(15000,purgeState.nextPurgeAt-now()):900000);
 }
 
 export async function publishRelease({root=process.cwd(), branch=process.env.DEFAULT_BRANCH, repository=process.env.GITHUB_REPOSITORY,

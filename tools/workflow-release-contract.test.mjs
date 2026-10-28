@@ -208,3 +208,24 @@ test('queue and publication regression gates run offline before verifier preflig
  assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
  assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
 });
+
+
+test('all workflows are linted with a checksum-pinned official validator before CDN publication',async t=>{
+ const gate=step(cdn,'Validate workflow syntax'),body=script(gate);
+ assert.match(body,/https:\/\/github\.com\/rhysd\/actionlint\/releases\/download\/v1\.7\.12\/actionlint_1\.7\.12_linux_amd64\.tar\.gz/);
+ assert.match(body,/8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8/);
+ assert.ok(body.indexOf('sha256sum --check --status')<body.indexOf('tar -xzf'));
+ assert.ok(body.indexOf('tar -xzf')<body.indexOf('"$TOOL_DIR/actionlint"'));
+ assert.ok(cdn.indexOf('name: Validate workflow syntax')<cdn.indexOf('name: Validate immutable assets'));
+ const root=await fixture(t);
+ for(const [download,checksum,lint] of [[1,0,0],[0,1,0],[0,0,1],[0,0,0]]){
+  await fs.writeFile(path.join(root,'calls'),'');
+  const mocks="curl(){ echo download >> calls; return \"$DOWNLOAD_EXIT\"; }\nsha256sum(){ cat >/dev/null; echo checksum >> calls; return \"$CHECKSUM_EXIT\"; }\ntar(){ echo extract >> calls; printf '#!/usr/bin/env bash\\necho lint >> calls\\nexit %s\\n' \"$LINT_EXIT\" > \"$TOOL_DIR/actionlint\"; chmod +x \"$TOOL_DIR/actionlint\"; }\n";
+  const r=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',mocks+body],{cwd:root,encoding:'utf8',env:{...process.env,RUNNER_TEMP:'.',DOWNLOAD_EXIT:String(download),CHECKSUM_EXIT:String(checksum),LINT_EXIT:String(lint)}});
+  assert.equal(r.status,download||checksum||lint,r.stderr);
+  const calls=await fs.readFile(path.join(root,'calls'),'utf8');
+  if(download)assert.equal(calls,'download\n');
+  else if(checksum)assert.equal(calls,'download\nchecksum\n');
+  else assert.equal(calls,'download\nchecksum\nextract\nlint\n');
+ }
+});
