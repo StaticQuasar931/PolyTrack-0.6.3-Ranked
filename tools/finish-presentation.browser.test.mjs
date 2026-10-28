@@ -9,29 +9,26 @@ import {startResponsiveServer} from './responsive-server.mjs';
 const require = createRequire(new URL('./verifier/package.json', import.meta.url));
 const {chromium} = require('playwright');
 const bundle = await fs.readFile(new URL('../main.bundle.js', import.meta.url), 'utf8');
-// Read only the native CSS literal, never execute the game or its network bootstrap.
-const nativeLiteral = bundle.match(/s\.push\(\[e\.id,('(?:\\.|[^'\\])*\.time-announcer-ui(?:\\.|[^'\\])*'),""\]\)/);
-assert.ok(nativeLiteral, 'native announcer CSS remains discoverable');
-const nativeCSS = vm.runInNewContext(nativeLiteral[1], Object.create(null), {timeout: 1000});
-const positionSelector = '.time-announcer-ui > .current > .position';
-const fixture = `<!doctype html><html><head><meta charset="utf-8">
-<style>
-@font-face{font-family:ForcedSquare;src:url('/forced_square.woff2') format('woff2')}
-html,body{margin:0;width:100%;height:100%;background:#111d40}
-*{font-family:ForcedSquare,Arial,sans-serif;font-style:italic;line-height:1}
-:root{--surface-color:#28346a;--surface-secondary-color:#19264b;--text-color:#fff}
-#ui{position:absolute;inset:0;pointer-events:none;transform-origin:0 0}
-.hidden{display:none}
-${nativeCSS}
-</style><link rel="stylesheet" href="/responsive-ui.css"></head><body><div id="ui">
-<div class="time-announcer-ui">
-  <div class="record personal-best">NEW PERSONAL BEST</div>
-  <div class="track-name">Rolling Hills Racer</div>
-  <div class="current"><div class="time">00:24.531</div><div class="position-dash">-</div><div class="position"></div></div>
-  <div class="difference"><p>-00:00.123</p></div>
-  <div class="difference red"><p class="title">Previous racer</p><p>+00:00.456</p></div>
-</div></div></body></html>`;
-
+const eventSource = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
+const slice = (source, start, end) => {
+  const a = source.indexOf(start), b = source.indexOf(end, a);
+  assert.ok(a >= 0 && b > a, `native extraction anchors: ${start}`);
+  return source.slice(a, b);
+};
+// Extract literals and the real formatter/NT DOM renderer, never the game bootstrap.
+const literal = bundle.match(/s\.push\(\[e\.id,('(?:\\.|[^'\\])*\.time-announcer-ui(?:\\.|[^'\\])*'),""\]\)/);
+assert.ok(literal, 'native finish CSS is discoverable');
+const nativeCSS = vm.runInNewContext(literal[1], Object.create(null), {timeout: 1000});
+const globalLiteral = [...bundle.matchAll(/`(?:\\.|[^`\\])*`/g)].find(match => match[0].includes('@font-face'));
+assert.ok(globalLiteral, 'native global CSS is discoverable');
+const globalCSS = vm.runInNewContext(globalLiteral[0], {
+  f: '/forced_square.woff2', p: '/forced_square.woff', g: '/forced_square.ttf',
+}, {timeout: 1000});
+const renderer = slice(bundle, 'function qe(e){return Qe(e)+Je(e)}', ';var it,rt,at,st,ot,lt');
+const eventHelpers = slice(eventSource, 'export function eventOrdinal(', 'export function eventTrackName(').replace(/^export /, '')
+  + slice(eventSource, '  function syncFinishPlace(){', '  function tick(');
+const sheets = ['/events/events.css', '/home-ui.css', '/responsive-ui.css', '/practice-responsive.css', '/help-controls.css'];
+const position = '.time-announcer-ui > .current > .position';
 let browser, server;
 before(async () => {
   server = await startResponsiveServer();
@@ -41,17 +38,24 @@ before(async () => {
 after(async () => {
   try { await browser?.close(); } finally { await server?.close(); }
 });
-
 const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+const finishAnimations = page => page.evaluate(() => {
+  for (const animation of document.getAnimations()) animation.finish();
+});
 
-async function openFixture(t, {width = 1280, height = 800, reducedMotion = 'no-preference'} = {}) {
-  const context = await browser.newContext({viewport: {width, height}, reducedMotion, serviceWorkers: 'block'});
+async function openPair(t, {reducedMotion = 'no-preference', enhance = true} = {}) {
+  const context = await browser.newContext({viewport: {width: 1280, height: 800}, reducedMotion, serviceWorkers: 'block'});
   const unexpected = [], errors = [];
-  const allowed = new Set(['/responsive-ui.css', '/tools/finish-presentation.mjs', '/forced_square.woff2']);
+  const allowed = new Set([...sheets, '/tools/finish-presentation.mjs', '/forced_square.woff2']);
   await context.route('**/*', route => {
     const url = new URL(route.request().url());
-    if (url.origin === server.url && url.pathname === '/finish-fixture.html') {
-      return route.fulfill({contentType: 'text/html', body: fixture});
+    if (url.origin === server.url && ['/native.html', '/production.html'].includes(url.pathname)) {
+      const production = url.pathname === '/production.html';
+      return route.fulfill({contentType: 'text/html', body: `<!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>${globalCSS}\n${nativeCSS}</style>
+        ${production ? sheets.map(href => `<link rel="stylesheet" href="${href}">`).join('') : ''}
+        </head><body><div id="ui"></div></body></html>`});
     }
     if (url.origin === server.url && allowed.has(url.pathname) && route.request().method() === 'GET') return route.continue();
     unexpected.push(url.href);
@@ -59,506 +63,221 @@ async function openFixture(t, {width = 1280, height = 800, reducedMotion = 'no-p
   });
   t.after(async () => {
     await context.close();
-    assert.deepEqual(unexpected, [], 'fixture must not request Firebase, the game, or external resources');
-    assert.deepEqual(errors, [], 'no browser runtime errors');
+    assert.deepEqual(unexpected, [], 'no Firebase, game bootstrap, or external requests');
+    assert.deepEqual(errors, [], 'no browser errors');
   });
-  const page = await context.newPage();
-  page.on('pageerror', error => errors.push(error.message));
-  await page.goto(server.url + '/finish-fixture.html');
-  await page.evaluate(async () => {
-    const NativeObserver = window.MutationObserver;
-    window.observerStats = {created: 0, delivered: 0, runaway: false};
-    window.MutationObserver = class extends NativeObserver {
-      constructor(callback) {
-        let deliveries = 0;
-        super((records, observer) => {
-          if (!observer.finishTestTracked) return callback(records, observer);
-          window.observerStats.delivered++;
-          // Fail instead of hanging the renderer if enhancement recursively mutates itself.
-          if (++deliveries > 200) {
-            window.observerStats.runaway = true;
-            observer.disconnect();
-            return;
-          }
-          callback(records, observer);
-        });
+  const pages = [];
+  for (const kind of ['native', 'production']) {
+    const page = await context.newPage();
+    page.setDefaultTimeout(10000);
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/${kind}.html`);
+    await page.evaluate(async ({renderer, eventHelpers, production, enhance}) => {
+      const R = {gn: (self, store, kind, method) => kind === 'm' ? method : store.get(self),
+        GG: (self, store, value) => {store.set(self, value); return value;}};
+      const {NativeAnnouncer, format} = new Function('R', 'He', renderer + ';return {NativeAnnouncer:nt,format:qe};')(
+        R, {A: {formatTimeString: value => value.text}});
+      window.nativeFormat = format;
+      const time = {text: '00:24.531', difference: previous => ({text: previous.delta, isNegative: () => previous.negative})};
+      window.announcer = new NativeAnnouncer(document.querySelector('#ui'), {get: key => key}, {getBuffer: () => null},
+        'Rolling Hills Racer', time, {delta: '-00:00.123', negative: true}, 'personal-best',
+        {record: {delta: '+00:00.456', negative: false}, nickname: 'Previous racer'},
+        new Promise(resolve => {window.resolveRank = resolve;}));
+      window.nativeRanks = [];
+      new MutationObserver(() => window.nativeRanks.push(document.querySelector('.position').textContent))
+        .observe(document.querySelector('.position'), {childList:true, characterData:true, subtree:true});
+      window.eventPlace = {rank: 3, fieldSize: 64, provisional: true};
+      if (production) {
+        window.finish = await import('/tools/finish-presentation.mjs');
+        window.syncEvent = new Function('place', `
+          const latestFinish = {periodId:'daily',accountId:'fixture'};
+          const sessions = {current: () => ({periodId:'daily'})};
+          const bridge = {accountId: () => 'fixture'};
+          const finishPlace = () => place;
+          ${eventHelpers}
+          return syncFinishPlace;
+        `)(window.eventPlace);
+        if (enhance) window.finish.enhanceFinishAnnouncers(document);
       }
-      observe(node, options) {
-        if (!this.finishTestTracked && node.matches?.('.time-announcer-ui > .current > .position')) {
-          this.finishTestTracked = true;
-          window.observerStats.created++;
-        }
-        return super.observe(node, options);
-      }
-    };
-    window.finish = await import('/tools/finish-presentation.mjs');
-    await document.fonts.ready;
-    if (!document.fonts.check('24px ForcedSquare')) throw new Error('native font did not load');
-  });
-  return page;
-}
-
-async function assertRank(page, number, suffix, selector = positionSelector) {
-  const actual = await page.locator(selector).evaluate(node => ({
-    label: node.getAttribute('aria-label'), text: node.textContent,
-    children: [...node.childNodes].map(child => ({tag: child.nodeName, className: child.className, text: child.textContent})),
-  }));
-  assert.deepEqual(actual, {
-    label: `${number}${suffix} place`, text: `${number}${suffix}`,
-    children: [
-      {tag: 'SPAN', className: 'sq-finish-number', text: String(number)},
-      {tag: 'SUP', className: 'sq-finish-ordinal', text: suffix},
-    ],
-  });
-}
-
-async function setRank(page, text) {
-  await page.locator(positionSelector).evaluate((node, value) => { node.textContent = value; }, text);
-  await settle(page);
-}
-
-test('native async rank updates replace text with accessible ordinals without changing siblings', {timeout: 30000}, async t => {
-  const page = await openFixture(t);
-  const siblingSelector = '.record, .track-name, .time, .position-dash, .difference';
-  const before = await page.locator(siblingSelector).evaluateAll(nodes => nodes.map(node => node.outerHTML));
-  await page.evaluate(() => window.finish.enhanceFinishAnnouncers(document));
-  assert.equal(await page.locator(positionSelector).innerHTML(), '', 'initial pending rank stays empty');
-  for (const [text, number, suffix] of [
-    ['113th', 113, 'th'], ['112th', 112, 'th'], ['111th', 111, 'th'], ['103rd', 103, 'rd'],
-    ['23rd', 23, 'rd'], ['22nd', 22, 'nd'], ['21st', 21, 'st'], ['13th', 13, 'th'],
-    ['12th', 12, 'th'], ['11th', 11, 'th'], ['4th', 4, 'th'], ['3rd', 3, 'rd'],
-    ['2nd', 2, 'nd'], ['1st', 1, 'st'], ['1st', 1, 'st'], ['1003', 1003, 'rd'],
-    [' 1\u202f003 X ', 1003, 'rd'], ['22\u00d7', 22, 'nd'], ['23RD', 23, 'rd'],
-  ]) {
-    await setRank(page, text);
-    await assertRank(page, number, suffix);
+      await document.fonts.ready;
+      if (!document.fonts.check('48px ForcedSquare')) throw Error('native ForcedSquare did not load');
+    }, {renderer, eventHelpers, production: kind === 'production', enhance});
+    await finishAnimations(page);
+    pages.push(page);
   }
-  assert.deepEqual(await page.locator(siblingSelector).evaluateAll(nodes => nodes.map(node => node.outerHTML)), before);
-  assert.equal(await page.evaluate(() => window.observerStats.created), 1);
-  assert.equal(await page.evaluate(() => window.observerStats.runaway), false);
-});
+  return pages;
+}
 
-test('enhancement is idempotent and observers settle after child and character-data mutations', {timeout: 30000}, async t => {
-  const page = await openFixture(t);
-  await setRank(page, '21st');
-  await page.evaluate(() => {
-    window.finish.enhanceFinishAnnouncers(document);
-    window.originalChildren = [...document.querySelector('.position').childNodes];
-    for (let i = 0; i < 25; i++) window.finish.enhanceFinishAnnouncers(document);
-  });
-  await settle(page);
-  assert.deepEqual(await page.evaluate(() => ({...window.observerStats})), {created: 1, delivered: 0, runaway: false});
-  assert.equal(await page.locator(positionSelector).evaluate(node => [...node.childNodes].every((child, i) => child === window.originalChildren[i])), true);
-  await page.locator('.sq-finish-number').evaluate(node => { node.firstChild.data = '31'; });
-  await settle(page);
-  await assertRank(page, 31, 'st');
-  await page.locator('.sq-finish-number').evaluate(node => { node.firstChild.data = '32'; });
-  await settle(page);
-  await assertRank(page, 32, 'nd');
-  await page.locator(positionSelector).evaluate(node => node.replaceChildren(document.createTextNode('11th')));
-  await settle(page);
-  await assertRank(page, 11, 'th');
-  const settled = await page.evaluate(() => ({...window.observerStats}));
-  assert.equal(settled.created, 1);
-  assert.equal(settled.runaway, false);
-  assert.ok(settled.delivered >= 3 && settled.delivered <= 6, 'bounded native observer delivery');
-  await settle(page);
-  assert.deepEqual(await page.evaluate(() => ({...window.observerStats})), settled, 'no continuing observer feedback loop');
-});
-
-test('event finish suffix and contextual title survive enhancement and repeated native sync calls', {timeout: 30000}, async t => {
-  const source = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
-  const syncStart = source.indexOf('  function syncFinishPlace(){');
-  const syncEnd = source.indexOf('  function tick(', syncStart);
-  const ordinalStart = source.indexOf('export function eventOrdinal(');
-  const ordinalEnd = source.indexOf('export function eventTrackName(', ordinalStart);
-  assert.ok(syncStart >= 0 && syncEnd > syncStart && ordinalStart >= 0 && ordinalEnd > ordinalStart,
-    'native event finish helpers remain discoverable');
-  const helpers = source.slice(ordinalStart, ordinalEnd).replace(/^export /, '') + source.slice(syncStart, syncEnd);
-
-  for (const attachFirst of [false, true]) {
-    const page = await openFixture(t);
-    const label = attachFirst ? 'event arrives after observer attaches' : 'event exists before enhancement';
-    await page.evaluate(({helpers, attachFirst}) => {
-      window.eventPlace = {rank: 21, fieldSize: 64, provisional: true};
-      // Run only the real DOM synchronizer with local session data, never the event bootstrap.
-      window.syncEventFinish = new Function('place', `
-        const latestFinish = {periodId: 'daily', accountId: 'fixture'};
-        const sessions = {current: () => ({periodId: 'daily'})};
-        const bridge = {accountId: () => 'fixture'};
-        const finishPlace = () => place;
-        ${helpers}
-        return syncFinishPlace;
-      `)(window.eventPlace);
-      const node = document.querySelector('.time-announcer-ui > .current > .position');
-      const replaceChildren = node.replaceChildren;
-      window.eventRewrites = 0;
-      node.replaceChildren = function (...children) {
-        window.eventRewrites++;
-        return replaceChildren.apply(this, children);
-      };
-      if (attachFirst) window.finish.enhanceFinishAnnouncers(document);
-      window.syncEventFinish();
-      window.eventChildren = [...node.childNodes];
-      window.eventMarkup = node.innerHTML;
-      window.finish.enhanceFinishAnnouncers(document);
-    }, {helpers, attachFirst});
-    await settle(page);
-
-    const assertEvent = async (rank, suffix, title, rewrites) => {
-      const actual = await page.locator(positionSelector).evaluate(node => ({
-        text: node.textContent, title: node.title, aria: node.getAttribute('aria-label'),
-        children: [...node.childNodes].map(child => ({
-          tag: child.nodeName, className: child.nodeType === Node.ELEMENT_NODE ? child.className : null,
-          text: child.textContent,
-        })),
-        sameNodes: node.childNodes.length === window.eventChildren.length
-          && [...node.childNodes].every((child, index) => child === window.eventChildren[index]),
-        sameMarkup: node.innerHTML === window.eventMarkup,
-        rewrites: window.eventRewrites, observers: window.observerStats.created,
-        runaway: window.observerStats.runaway,
-      }));
-      assert.deepEqual(actual, {
-        text: `${rank}${suffix}`, title, aria: title || `${rank}${suffix} place`,
-        children: [
-          {tag: '#text', className: null, text: String(rank)},
-          {tag: 'SPAN', className: 'sq-event-ordinal-suffix', text: suffix},
-        ],
-        sameNodes: true, sameMarkup: true, rewrites, observers: 1, runaway: false,
-      }, label);
-    };
-    await assertEvent(21, 'st', 'Event place 21 of 64 (provisional)', 1);
-    const settled = await page.evaluate(() => ({...window.observerStats}));
-    for (let tick = 0; tick < 25; tick++) {
-      await page.evaluate(() => {
-        window.syncEventFinish();
-        window.finish.enhanceFinishAnnouncers(document);
-      });
-      await settle(page);
-    }
-    await assertEvent(21, 'st', 'Event place 21 of 64 (provisional)', 1);
-    assert.deepEqual(await page.evaluate(() => ({...window.observerStats})), settled,
-      label + ': repeated event ticks and enhancement calls cause no mutation feedback');
-
-    await page.evaluate(() => {
-      Object.assign(window.eventPlace, {rank: 22, fieldSize: 65, provisional: false});
-      window.syncEventFinish();
-      const node = document.querySelector('.time-announcer-ui > .current > .position');
-      window.eventChildren = [...node.childNodes];
-      window.eventMarkup = node.innerHTML;
-    });
-    await settle(page);
-    await assertEvent(22, 'nd', 'Event place 22 of 65', 2);
-
-    await page.locator(positionSelector).evaluate(node => {
-      node.removeAttribute('title');
-      node.firstChild.data = '23';
-      node.lastChild.firstChild.data = 'rd';
-      window.eventMarkup = node.innerHTML;
-    });
-    await settle(page);
-    await assertEvent(23, 'rd', '', 2);
-  }
-});
-
-test('invalid ranks and lookalike nodes outside the native direct-child structure remain untouched', {timeout: 30000}, async t => {
-  const page = await openFixture(t);
-  const values = ['', '0', '-1', '1.5', 'NaN', 'Infinity', '9007199254740992', 'DNF', '3rd place', '<b>1st</b>'];
-  await page.evaluate(values => {
-    const current = document.querySelector('.current');
-    current.querySelector('.position').remove();
-    for (const text of values) {
-      const node = document.createElement('div');
-      node.className = 'position'; node.textContent = text; current.append(node);
-    }
-    const other = document.createElement('section');
-    other.id = 'unrelated';
-    other.innerHTML = '<div class="position">2nd</div><div class="current"><div class="position">3rd</div></div>';
-    document.body.append(other);
-    const nested = document.createElement('section');
-    nested.innerHTML = '<div class="position">4th</div>';
-    current.append(nested);
-    window.finish.enhanceFinishAnnouncers(document);
-  }, values);
-  await settle(page);
-  assert.deepEqual(await page.locator(positionSelector).allTextContents(), values);
-  assert.equal(await page.locator('[aria-label], .sq-finish-number, .sq-finish-ordinal').count(), 0);
-  assert.equal(await page.locator('#unrelated').textContent(), '2nd3rd');
-  assert.equal(await page.locator('.current > section').textContent(), '4th');
-  await page.locator(positionSelector).first().evaluate(node => { node.textContent = '2nd'; });
-  await settle(page);
-  await assertRank(page, 2, 'nd', positionSelector + '[aria-label]');
-});
-
-test('rescanning discovers a replacement announcer while reusing observers on reattached nodes', {timeout: 30000}, async t => {
-  const page = await openFixture(t);
-  await setRank(page, '3rd');
-  await page.evaluate(() => {
-    window.finish.enhanceFinishAnnouncers(document);
-    const original = document.querySelector('.time-announcer-ui');
-    original.remove(); document.querySelector('#ui').append(original);
-    window.finish.enhanceFinishAnnouncers(document);
-    const replacement = original.cloneNode(true);
-    replacement.querySelector('.position').textContent = '12th';
-    original.replaceWith(replacement);
-    window.finish.enhanceFinishAnnouncers(document);
-    window.finish.enhanceFinishAnnouncers(document);
-  });
-  await settle(page);
-  await assertRank(page, 12, 'th');
-  await setRank(page, '2nd');
-  await assertRank(page, 2, 'nd');
-  assert.equal(await page.evaluate(() => window.observerStats.created), 2);
-  assert.equal(await page.evaluate(() => window.observerStats.runaway), false);
-});
-
-const viewports = [
-  [320, 568], [375, 667], [390, 844], [440, 956], [667, 375], [844, 390],
-  [600, 960], [768, 1024], [820, 1180], [1024, 768], [1100, 500], [1100, 501],
-  [1366, 600], [1920, 1080], [2560, 1440], [3440, 1440], [5120, 1440],
-];
-const inside = (inner, outer) => inner.x >= outer.x - 1 && inner.right <= outer.right + 1
-  && inner.y >= outer.y - 1 && inner.bottom <= outer.bottom + 1;
-
-async function geometry(page) {
+async function snapshot(page) {
   return page.evaluate(() => {
-    const rect = node => {
-      const r = node.getBoundingClientRect();
-      return {x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height};
-    };
-    const sample = selector => {
-      const node = document.querySelector(selector), style = getComputedStyle(node);
-      return {...rect(node), font: parseFloat(style.fontSize), opacity: style.opacity,
-        verticalAlign: style.verticalAlign, transition: style.transitionDuration};
-    };
-    return {
-      announcer: sample('.time-announcer-ui'), current: sample('.current'),
-      time: sample('.time'), dash: sample('.position-dash'), position: sample('.position'),
-      number: sample('.sq-finish-number'), suffix: sample('.sq-finish-ordinal'),
-      track: sample('.track-name'), record: sample('.record'),
-      scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth,
-    };
+    const properties = ['fontFamily', 'fontSize', 'fontStyle', 'fontWeight', 'fontFeatureSettings', 'fontVariantLigatures',
+      'letterSpacing', 'lineHeight', 'textTransform', 'textAlign', 'position', 'display', 'overflow', 'opacity', 'transform',
+      'transformOrigin', 'transitionProperty', 'transitionDelay', 'transitionDuration', 'transitionTimingFunction',
+      'animationName', 'animationDelay', 'animationDuration', 'animationTimingFunction', 'animationFillMode'];
+    const root = document.querySelector('.time-announcer-ui');
+    return [root, ...root.querySelectorAll('*')].map(node => {
+      const style = getComputedStyle(node), r = node.getBoundingClientRect();
+      return {tag: node.tagName, className: node.className, text: node.children.length ? null : node.textContent,
+        box: {x: r.x, y: r.y, width: r.width, height: r.height},
+        style: Object.fromEntries(properties.map(key => [key, style[key]]))};
+    });
   });
 }
-
-test('native-shaped finish layout keeps time and superscript ranks readable across responsive widths', {timeout: 90000}, async t => {
-  const page = await openFixture(t);
-  await setRank(page, '1003rd');
-  await page.evaluate(async () => {
-    window.finish.enhanceFinishAnnouncers(document);
-    document.querySelector('.current').classList.add('show-position');
-    await Promise.all(document.getAnimations().map(animation => animation.finished));
-  });
-  const output = process.env.POLYTRACK_FINISH_SCREENSHOTS;
-  if (output) await fs.mkdir(output, {recursive: true});
-  for (const [width, height] of viewports) {
-    await page.setViewportSize({width, height});
-    await settle(page);
-    for (const [rank, suffix] of [[1, 'st'], [11, 'th'], [23, 'rd'], [1003, 'rd'], [9999999, 'th']]) {
-      await setRank(page, String(rank));
-      await assertRank(page, rank, suffix);
-      const g = await geometry(page), label = `${width}x${height}, rank ${rank}`;
-      const viewport = {x: 0, y: 0, right: width, bottom: height};
-      assert.ok(g.current.width > 0 && g.current.height > 0, label + ': current row is visible');
-      for (const key of ['time', 'dash', 'position', 'number', 'suffix', 'track', 'record']) {
-        assert.ok(g[key].width > 0 && g[key].height > 0, label + ': visible ' + key);
-        assert.ok(inside(g[key], viewport) && inside(g[key], g.announcer), label + ': unclipped ' + key + ' ' + JSON.stringify(g[key]));
-      }
-      assert.equal(g.position.opacity, '1', label + ': native reveal completes');
-      assert.ok(g.time.right < g.dash.x && g.dash.right < g.position.x, label + ': time, dash, rank do not overlap');
-      assert.ok(g.number.right < g.suffix.x, label + ': separate ordinal glyphs');
-      assert.ok(Math.abs((g.time.x + g.position.right) / 2 - width / 2) <= 1,
-        label + ': complete time and placement group is centered');
-      assert.ok(Math.abs(g.number.font - g.current.font) < .02, label + ': number inherits row font size');
-      assert.ok(Math.abs(g.suffix.font / g.number.font - .54) < .002, label + ': consistent suffix ratio');
-      assert.ok(g.suffix.font < g.number.font && g.suffix.y < g.number.y, label + ': raised smaller suffix');
-      assert.equal(g.suffix.verticalAlign, 'super');
-      assert.ok(g.scroll <= g.client, label + ': no horizontal overflow');
-      assert.ok(Math.abs(g.current.font - Math.max(24, Math.min(48, width * 0.032))) < 0.02, label + ': responsive font clamp');
-      assert.ok(Math.abs(g.announcer.y - height * (height <= 500 ? 0.2 : 0.35)) < 1, label + ': short-height positioning');
-    }
-    if (output) await page.screenshot({path: path.join(output, `finish-${width}x${height}.png`)});
+async function parity(native, production, label) {
+  assert.deepEqual(await snapshot(production), await snapshot(native), label);
+  assert.equal(await production.locator(position).locator('*').count(), 0, `${label}: native plain-text rank, no suffix spans`);
+}
+async function reveal(pages, previousPosition = 3) {
+  for (const page of pages) await page.evaluate(previousPosition => window.resolveRank({newPosition: 3, previousPosition}), previousPosition);
+  for (const page of pages) {
+    await page.waitForFunction(() => document.querySelector('.current').classList.contains('show-position'));
+    await finishAnimations(page);
   }
-  t.diagnostic(`${viewports.length} viewports, five ranks each; screenshots ${output || 'disabled (set POLYTRACK_FINISH_SCREENSHOTS)'}`);
-});
-
-test('native reveal transitions remain enabled normally and disabled for reduced motion', {timeout: 30000}, async t => {
-  for (const reducedMotion of ['no-preference', 'reduce']) {
-    const page = await openFixture(t, {width: 390, height: 844, reducedMotion});
-    await setRank(page, '2nd');
-    await page.evaluate(async () => {
-      window.finish.enhanceFinishAnnouncers(document);
-      await Promise.all(document.getAnimations().map(animation => animation.finished));
-    });
-    const before = await geometry(page);
-    assert.equal(before.position.opacity, '0', 'rank stays hidden before native reveal');
-    for (const key of ['time', 'dash', 'position']) {
-      assert.equal(before[key].transition, reducedMotion === 'reduce' ? '0s' : '0.5s, 0.5s');
+  if (previousPosition !== 3) {
+    for (const page of pages) {
+      await page.waitForFunction(() => document.querySelector('.position').textContent === '3rd');
+      const ranks = await page.evaluate(() => window.nativeRanks);
+      assert.equal(ranks[0], '15th', 'actual native reveal begins at previous place');
+      assert.equal(ranks.at(-1), '3rd', 'actual native countdown finishes at new place');
+      assert.ok(ranks.some(value => parseInt(value, 10) > 3 && parseInt(value, 10) < 15), 'native countdown paints intermediate ranks');
+      await finishAnimations(page);
     }
-    await page.evaluate(async () => {
-      document.querySelector('.current').classList.add('show-position');
-      await Promise.all(document.getAnimations().map(animation => animation.finished));
-    });
-    await settle(page);
-    const after = await geometry(page);
-    assert.equal(after.position.opacity, '1');
-    assert.ok(after.time.right < after.dash.x && after.dash.right < after.position.x);
-    await assertRank(page, 2, 'nd');
   }
-});
-
-test('actual native renderer and event synchronizer paint third place with readable font ownership', {timeout: 45000}, async t => {
-  const page = await openFixture(t);
-  const source = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
-  const slice = (text, start, end) => {
-    const a = text.indexOf(start), b = text.indexOf(end, a);
-    assert.ok(a >= 0 && b > a, 'real native/event renderer anchors must exist');
-    return text.slice(a, b);
-  };
-  const renderer = slice(bundle, 'function qe(e){return Qe(e)+Je(e)}', ';var it,rt,at,st,ot,lt');
-  const eventHelpers = slice(source, 'export function eventOrdinal(', 'export function eventTrackName(').replace(/^export /, '')
-    + slice(source, '  function syncFinishPlace(){', '  function tick(');
-  await page.addStyleTag({content: await fs.readFile(new URL('../events/events.css', import.meta.url), 'utf8')});
-  await page.evaluate(({renderer, eventHelpers}) => {
-    // Execute the actual DOM renderer only. Audio, translation and times are local inputs.
-    const R = {gn: (self, store, kind, method) => kind === 'm' ? method : store.get(self),
-      GG: (self, store, value) => {store.set(self, value); return value;}};
-    const NativeAnnouncer = new Function('R', 'He', renderer + ';return nt;')(R, {A: {formatTimeString: value => value}});
-    document.querySelector('#ui').replaceChildren();
-    window.nativeAnnouncer = new NativeAnnouncer(document.querySelector('#ui'), {get: key => key},
-      {getBuffer: () => null}, 'Weekly event: Winter 5', '00:24.531', null, 'personal-best', null,
-      Promise.resolve({newPosition: 3, previousPosition: 3}));
-    window.eventPlace = {rank: 3, fieldSize: 64, provisional: true};
-    window.syncRealEvent = new Function('place', `
-      const latestFinish = {periodId: 'weekly', accountId: 'fixture'};
-      const sessions = {current: () => ({periodId: 'weekly'})};
-      const bridge = {accountId: () => 'fixture'};
-      const finishPlace = () => place;
-      ${eventHelpers}
-      return syncFinishPlace;
-    `)(window.eventPlace);
-  }, {renderer, eventHelpers});
-  await page.waitForFunction(() => document.querySelector('.position')?.textContent === '3rd');
-  await page.evaluate(async () => Promise.all(document.getAnimations().map(animation => animation.finished)));
-  const directory = process.env.POLYTRACK_FINISH_SCREENSHOTS;
-  if (directory) await fs.mkdir(directory, {recursive: true});
-  const records = [];
-  const capture = async label => {
-    records.push(await page.locator(positionSelector).evaluate((node, label) => {
-      const suffix = node.querySelector('span.sq-event-ordinal-suffix,sup');
-      const style = getComputedStyle(suffix || node);
-      return {label, text: node.textContent, html: node.innerHTML, title: node.title,
-        font: style.fontFamily, size: style.fontSize, spacing: style.letterSpacing,
-        transform: style.textTransform, features: style.fontFeatureSettings, ligatures: style.fontVariantLigatures};
-    }, label));
-    if (directory) await page.locator('.time-announcer-ui').screenshot({path: path.join(directory, label + '.png')});
-  };
-  await capture('actual-native-third');
-  await page.evaluate(() => window.finish.enhanceFinishAnnouncers(document));
+}
+async function rank(page, value, event = false) {
+  await page.evaluate(({value, event}) => {
+    if (event) {window.eventPlace.rank = value; window.syncEvent();}
+    else document.querySelector('.position').textContent = window.nativeFormat(value);
+  }, {value, event});
   await settle(page);
-  await capture('enhanced-native-third');
-  await assertRank(page, 3, 'rd');
-  const nativeSuffix = await page.locator('.sq-finish-ordinal').evaluate(node => ({font:getComputedStyle(node).fontFamily,style:getComputedStyle(node).fontStyle}));
-  assert.equal(nativeSuffix.font, 'Arial, sans-serif', 'only enhancer-owned suffix switches to a text face');
-  assert.equal(nativeSuffix.style, 'normal', 'small suffix is not synthetically slanted');
-  assert.match(await page.locator('.sq-finish-number').evaluate(node => getComputedStyle(node).fontFamily), /ForcedSquare/, 'native number remains unchanged');
-  await page.evaluate(() => window.syncRealEvent());
-  await settle(page);
-  await capture('actual-event-third');
-  assert.equal(await page.locator('.sq-event-ordinal-suffix').textContent(), 'rd');
+}
+async function fontAudit(page) {
   const client = await page.context().newCDPSession(page);
-  await client.send('DOM.enable');await client.send('CSS.enable');
-  const {root} = await client.send('DOM.getDocument');
-  const {nodeId} = await client.send('DOM.querySelector', {nodeId: root.nodeId, selector: '.sq-event-ordinal-suffix'});
-  const {fonts} = await client.send('CSS.getPlatformFontsForNode', {nodeId});
-  assert.ok(fonts.length > 0 && fonts.every(font => !font.isCustomFont), 'event suffix uses rendered system-font glyphs, not ForcedSquare');
-  assert.equal(fonts.reduce((sum, font) => sum + font.glyphCount, 0), 2, 'rd renders as two glyphs, not an X ligature');
-  const original = await page.locator(positionSelector).innerHTML();
-  for (let i = 0; i < 10; i++) {
-    await page.evaluate(() => {window.syncRealEvent();window.finish.enhanceFinishAnnouncers(document);});
-  }
-  await settle(page);
-  assert.equal(await page.locator(positionSelector).innerHTML(), original, 'enhancer never replaces the event-owned ordinal');
-  await page.evaluate(() => {window.eventPlace.fieldSize=65;window.eventPlace.provisional=false;window.syncRealEvent();});
-  await settle(page);
-  assert.equal(await page.locator(positionSelector).getAttribute('aria-label'), 'Event place 3 of 65', 'same-rank field-size changes update accessible context');
-  assert.equal(await page.locator(positionSelector).innerHTML(), original, 'context updates do not rewrite event-owned markup');
-  for (const [width, height, scale] of [[375,667,1],[667,375,1.25],[1200,800,1.25],[1920,1080,1]]) {
-    await page.setViewportSize({width,height});
-    await page.locator('.current').evaluate((node, scale) => node.style.fontSize = (Math.max(24, Math.min(48, innerWidth * .032)) * scale) + 'px', scale);
-    await settle(page);
-    const boxes = await page.locator('.position,.sq-event-ordinal-suffix').evaluateAll(nodes => nodes.map(node => {
-      const r = node.getBoundingClientRect();return {x:r.x,right:r.right,y:r.y,bottom:r.bottom};
-    }));
-    assert.ok(boxes.every(box => box.x >= 0 && box.right <= width && box.y >= 0 && box.bottom <= height), 'actual event rank stays in viewport');
-    await capture(`event-third-${width}x${height}-text${scale}`);
-  }
-  if (directory) await fs.writeFile(path.join(directory, 'native-event-font-audit.json'), JSON.stringify({records, fonts}, null, 2));
-  t.diagnostic('Real native formatter + DOM renderer + event synchronizer, local rank 3; rendered fonts: ' + JSON.stringify(fonts));
-  await page.evaluate(() => window.nativeAnnouncer.dispose());
-});
-
-test('native and event placements stay centered and equally sized through rank, time, font and UI scale changes', {timeout: 90000}, async t => {
-  const page = await openFixture(t, {reducedMotion: 'reduce'});
-  const source = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
-  const helpers = source.slice(source.indexOf('export function eventOrdinal('), source.indexOf('export function eventTrackName(')).replace(/^export /, '')
-    + source.slice(source.indexOf('  function syncFinishPlace(){'), source.indexOf('  function tick('));
-  // Load production event styles after responsive CSS to exercise their !important rules.
-  await page.addStyleTag({content: await fs.readFile(new URL('../events/events.css', import.meta.url), 'utf8')});
-  await page.evaluate(helpers => {
-    window.eventPlace = {rank: 1, fieldSize: 10000, provisional: true};
-    window.syncPlacement = new Function('place', `
-      const latestFinish = {periodId: 'daily', accountId: 'fixture'};
-      const sessions = {current: () => ({periodId: 'daily'})};
-      const bridge = {accountId: () => 'fixture'};
-      const finishPlace = () => place;
-      ${helpers}
-      return syncFinishPlace;
-    `)(window.eventPlace);
-    window.finish.enhanceFinishAnnouncers(document);
-    document.querySelector('.current').classList.add('show-position');
-  }, helpers);
-  await page.evaluate(async () => Promise.all(document.getAnimations().map(animation => animation.finished)));
+  try {
+    await client.send('DOM.enable');
+    await client.send('CSS.enable');
+    const {root} = await client.send('DOM.getDocument');
+    const {nodeId} = await client.send('DOM.querySelector', {nodeId: root.nodeId, selector: position});
+    const {fonts} = await client.send('CSS.getPlatformFontsForNode', {nodeId});
+    return fonts.map(({familyName, isCustomFont, glyphCount}) => ({familyName, isCustomFont, glyphCount}));
+  } finally { await client.detach(); }
+}
+async function capture(pages, label) {
   const output = process.env.POLYTRACK_FINISH_SCREENSHOTS;
-  if (output) await fs.mkdir(output, {recursive: true});
+  if (!output) return;
+  await fs.mkdir(output, {recursive: true});
+  for (let i = 0; i < pages.length; i++) {
+    await pages[i].screenshot({path: path.join(output, `${label}-${i ? 'production' : 'native-baseline'}.png`), animations: 'disabled'});
+  }
+}
+
+const viewports = [[1920,1080,1], [1366,768,1.25], [320,568,1], [390,844,.8], [390,844,1.25], [844,390,1], [667,375,1.25]];
+test('actual native PB and event finish retain native typography, geometry, glyphs and reveal timings', {timeout: 45000}, async t => {
+  const pages = await openPair(t), [native, production] = pages;
+  await parity(native, production, 'pending native rank');
+  assert.equal(await production.locator(position).textContent(), '');
+  await reveal(pages, 15);
+  await parity(native, production, 'actual NT asynchronous 15th-to-3rd reveal and countdown');
+  const nativeFonts = await fontAudit(native), productionFonts = await fontAudit(production);
+  assert.ok(nativeFonts.length && nativeFonts.every(font => font.isCustomFont), 'native rank uses loaded custom ForcedSquare glyphs');
+  t.diagnostic('Native rendered ordinal glyph audit: ' + JSON.stringify(nativeFonts));
+  assert.deepEqual(productionFonts, nativeFonts, 'production uses the same rendered font and ligature glyph counts');
   let cases = 0;
-  for (const [width, height, scale] of [[320,568,1],[390,844,1],[844,390,.8],[1366,768,1.25],[1920,1080,1]]) {
-    await page.setViewportSize({width, height});
-    await page.locator('#ui').evaluate((node, scale) => {
-      node.style.width = (100 / scale) + '%';node.style.height = (100 / scale) + '%';
-      node.style.transform = `scale(${scale})`;
-    }, scale);
-    for (const owner of ['native', 'event']) {
-      for (const rank of [1,2,3,11,12,13,21,22,23,113,1003,9999999]) {
-        await page.evaluate(({owner, rank}) => {
-          const row = document.querySelector('.current');
-          row.style.fontSize = (Math.max(24, Math.min(48, innerWidth * .032)) * (rank === 113 ? 1.25 : 1)) + 'px';
-          row.querySelector('.time').textContent = rank === 113 ? '01:42.123' : '00:24.531';
-          if (owner === 'event') {window.eventPlace.rank = rank;window.syncPlacement();}
-          else row.querySelector('.position').textContent = String(rank);
-        }, {owner, rank});
-        await settle(page);
-        const g = await page.evaluate(() => {
-          const row = document.querySelector('.current'), time = row.querySelector('.time'), position = row.querySelector('.position');
-          const a = time.getBoundingClientRect(), b = position.getBoundingClientRect(), r = row.getBoundingClientRect();
-          const suffix = position.lastElementChild, style = getComputedStyle(suffix);
-          return {center:(a.left+b.right)/2, target:(r.left+r.right)/2, left:a.left, right:b.right,
-            size:parseFloat(style.fontSize), rowSize:parseFloat(getComputedStyle(row).fontSize),
-            align:style.verticalAlign, font:style.fontFamily, italic:style.fontStyle,
-            label:position.getAttribute('aria-label'), text:position.textContent};
-        });
-        const label = `${owner} ${rank}, ${width}x${height}, UI scale ${scale}`;
-        assert.ok(Math.abs(g.center-g.target) <= scale, label + ': centered ' + JSON.stringify(g));
-        assert.ok(g.left >= -1 && g.right <= width+1, label + ': unclipped');
-        assert.ok(Math.abs(g.size/g.rowSize-.54) < .002, label + ': suffix size');
-        assert.equal(g.align, 'super', label + ': raised suffix');
-        assert.equal(g.font, 'Arial, sans-serif', label + ': readable suffix font');
-        assert.equal(g.italic, 'normal', label + ': upright suffix');
-        if (owner === 'event') assert.equal(g.label, `Event place ${rank} of 10000 (provisional)`);
+  for (const [width, height, scale] of viewports) {
+    for (const page of pages) {
+      await page.setViewportSize({width, height});
+      await page.evaluate(scale => {
+        const ui = document.querySelector('#ui');
+        document.documentElement.style.setProperty('--ui-scale-factor', String(scale));
+        document.documentElement.style.setProperty('--sq-ui-scale', String(scale));
+        ui.style.width = `${100 / scale}%`; ui.style.height = `${100 / scale}%`;
+        ui.style.transform = `scale(${scale})`;
+      }, scale);
+    }
+    for (const owner of ['PB', 'event']) {
+      await production.evaluate(owner => {
+        document.body.classList.toggle('sq-event-active', owner === 'event');
+        if (owner === 'PB') document.querySelector('.position').removeAttribute('title');
+      }, owner);
+      for (const value of [1, 3, 11, 22, 113, 1003, 9999999]) {
+        await rank(native, value);
+        await rank(production, value, owner === 'event');
+        await parity(native, production, `${owner} ${value}: ${width}x${height}, UI scale ${scale}`);
+        assert.equal(await production.locator(position).getAttribute('aria-label'), owner === 'event'
+          ? `Event place ${value} of 64 (provisional)` : `${value}${value === 1 ? 'st' : value === 3 || value === 1003 ? 'rd' : value === 22 ? 'nd' : 'th'} place`);
         cases++;
       }
-      if (output) await page.screenshot({path:path.join(output, `centered-${owner}-${width}x${height}-scale${scale}.png`)});
+      if (width === 1920 || width === 844 || (width === 390 && scale === .8)) await capture(pages, `${owner}-${width}x${height}-scale${scale}`);
     }
   }
-  t.diagnostic(`${cases} native/event centering and typography cases; production event sync, CSS, UI scaling, time and font changes`);
+  t.diagnostic(`${cases} exact native/production comparisons; screenshots ${process.env.POLYTRACK_FINISH_SCREENSHOTS || 'disabled (set POLYTRACK_FINISH_SCREENSHOTS)'}`);
+});
+
+test('repeated syncs and late accessibility updates do not rewrite native text or mutate layout', {timeout: 20000}, async t => {
+  for (const attachFirst of [false, true]) {
+    const pages = await openPair(t, {enhance: attachFirst}), [native, production] = pages;
+    await reveal(pages);
+    await rank(native, 1003);
+    await rank(production, 1003, true);
+    await production.evaluate(() => window.finish.enhanceFinishAnnouncers(document));
+    await settle(production);
+    await parity(native, production, 'event sync before/after enhancer attachment');
+    await production.evaluate(() => {
+      const root = document.querySelector('.time-announcer-ui');
+      window.originalText = root.querySelector('.position').firstChild;
+      window.mutations = [];
+      window.audit = new MutationObserver(records => window.mutations.push(...records.map(record => ({type:record.type, name:record.attributeName}))));
+      window.audit.observe(root, {subtree:true, childList:true, characterData:true, attributes:true});
+      for (let i = 0; i < 30; i++) {window.syncEvent(); window.finish.enhanceFinishAnnouncers(document);}
+    });
+    await settle(production);
+    assert.deepEqual(await production.evaluate(() => window.mutations), [], 'unchanged ticks/enhancement perform zero DOM mutations');
+    const before = await snapshot(production);
+    await production.evaluate(() => {
+      window.eventPlace.fieldSize = 65; window.eventPlace.provisional = false; window.syncEvent();
+    });
+    await settle(production);
+    assert.equal(await production.locator(position).getAttribute('aria-label'), 'Event place 1003 of 65');
+    assert.equal(await production.locator(position).getAttribute('title'), 'Event place 1003 of 65');
+    assert.deepEqual(await snapshot(production), before, 'late title/aria updates leave all layout and typography unchanged');
+    assert.equal(await production.evaluate(() => document.querySelector('.position').firstChild === window.originalText), true);
+    assert.deepEqual(await production.evaluate(() => window.mutations), [
+      {type:'attributes',name:'title'}, {type:'attributes',name:'aria-label'},
+    ], 'only accessibility attributes change, without feedback');
+    await production.evaluate(() => {
+      window.mutations.length = 0;
+      const node = document.querySelector('.position');
+      node.removeAttribute('title'); node.firstChild.data = window.nativeFormat(23);
+    });
+    await settle(production);
+    await rank(native, 23);
+    await parity(native, production, 'late native character-data rank update');
+    assert.equal(await production.locator(position).getAttribute('aria-label'), '23rd place');
+    assert.equal(await production.evaluate(() => document.querySelector('.position').firstChild === window.originalText), true);
+    const settled = await production.evaluate(() => window.mutations.length);
+    await settle(production);
+    assert.equal(await production.evaluate(() => window.mutations.length), settled, 'observer settles without a mutation loop');
+  }
+});
+
+test('reduced motion is the intentional native reveal transition exception, not a typography exception', {timeout: 15000}, async t => {
+  const pages = await openPair(t, {reducedMotion:'reduce'}), [native, production] = pages;
+  const compare = async label => {
+    const a = await snapshot(native), b = await snapshot(production);
+    for (let i = 0; i < a.length; i++) {
+      if (['time', 'position-dash', 'position'].includes(a[i].className)) {
+        assert.equal(a[i].style.transitionDuration, '0.5s, 0.5s', 'native transition is retained in the reference');
+        assert.equal(b[i].style.transitionDuration, '0s', 'production respects reduced motion');
+        assert.equal(b[i].style.transitionProperty, 'none');
+        for (const key of ['transitionProperty', 'transitionDuration', 'transitionDelay', 'transitionTimingFunction']) {
+          delete a[i].style[key]; delete b[i].style[key];
+        }
+      }
+    }
+    assert.deepEqual(b, a, label);
+  };
+  await compare('reduced-motion pending state otherwise matches native');
+  await reveal(pages);
+  await compare('reduced-motion revealed state otherwise matches native');
+  assert.equal(await production.locator(position).evaluate(node => getComputedStyle(node).opacity), '1');
 });

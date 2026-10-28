@@ -59,7 +59,7 @@ test('unknown date correction preserves verification icons and pending state whi
   ui.decorateEventRowPresentation(f.button,{rank:1,pbAt:received},now);
   assert.equal(f.state.dataset.sqRunStatus,'verified');assert.equal(f.state.dataset.sqPbAt,String(received));
 });
-test('event finish ordinal uses a readable suffix without changing the place or mutating every tick',()=>{
+test('event finish keeps the native plain-text ordinal and stable updates',()=>{
   const f=rowButton(),place={rank:1,fieldSize:4,provisional:false},classes=new Set();
   f.position.querySelector=()=>f.position.childNodes.find(node=>node.className==='sq-event-ordinal-suffix')||null;
   const current={querySelector:()=>f.position,classList:{contains:value=>classes.has(value),toggle:(value,on)=>on?classes.add(value):classes.delete(value)}};
@@ -71,6 +71,8 @@ test('event finish ordinal uses a readable suffix without changing the place or 
     sessions:{current:()=>({periodId:'daily'})},bridge:{accountId:()=> 'mine'},finishPlace:()=>place,eventOrdinal:ui.eventOrdinal,
   });
   sync();assert.equal(f.position.textContent,'1st');assert.equal(f.position.title,'Event place 1 of 4');
-  const suffix=f.position.childNodes[1];sync();assert.equal(f.position.childNodes[1],suffix,'stable ticks do not replace suffix nodes');
+  assert.equal(f.position.childNodes.length,1);assert.equal(f.position.childNodes[0].nodeType,3);
+  const text=f.position.childNodes[0];sync();assert.equal(f.position.childNodes[0],text,'stable ticks do not replace native text');
   place.rank=21;sync();assert.equal(f.position.textContent,'21st');assert.equal(place.rank,21);
+  place.rank=1001;place.fieldSize=2048;sync();assert.equal(f.position.textContent,'1\u202f001st');assert.equal(f.position.childNodes.length,1);
 });

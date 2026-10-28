@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 229,
+  "number": 230,
   "version": "0.6.3",
-  "revision": 198,
+  "revision": 199,
   "notes": [
-    "Event Play refreshes indexed replay authorization before launch without rereading replay files.",
-    "Snapshot assembly reuses validated archived boards and avoids redundant local file reads.",
-    "Failed event publication source scans receive durable retry backoff.",
-    "Expanded layout checks cover rotation, text scaling and short-screen dialogs."
+    "Restored Kodub's original PB time, placement typography, sizing and position.",
+    "Event finish placements use native formatting while retaining event status and accessibility labels.",
+    "Finish display tests now compare against the untouched native renderer."
   ],
-  "preparedAt": "2026-10-28T20:19:53.450Z"
+  "preparedAt": "2026-10-28T21:52:41.611Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
