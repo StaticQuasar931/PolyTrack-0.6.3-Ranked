@@ -91,3 +91,10 @@ test('Help module cache follows the next client revision',()=>{
  const result=stampClientRelease(patch+"import('../tools/help-controls.mjs?v=190');",index,999);
  assert.match(result.patch,/help-controls\.mjs\?v=999/);
 });
+
+test('central release metadata follows the client cache revision, not the manual number',()=>{
+ const result=stampClientRelease(patch+"import('./tools/release-info.mjs?v=192');",index,193);
+ assert.match(result.patch,/release-info\.mjs\?v=193/);
+ assert.deepEqual(stampClientRelease(result.patch,result.index,193),result);
+ assert.doesNotMatch(result.patch,/release-info\.mjs\?v=224/);
+});

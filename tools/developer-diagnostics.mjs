@@ -1,3 +1,4 @@
+import {serializeDiagnosticReport} from './diagnostic-codec.mjs';
 import {normalizeControlUsage} from './control-usage.mjs';
 import {summarizeClientUsage} from './diagnostics-usage.mjs';
 const finite = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
@@ -117,14 +118,16 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
 export function openDiagnostics({ report, returnFocus = document.activeElement } = {}) {
  document.getElementById('polytrackDeveloperDialog')?.remove();
  const dialog = document.createElement('dialog'); dialog.id = 'polytrackDeveloperDialog'; dialog.className = 'sq-developer-dialog';
- dialog.innerHTML = '<header><h2>Export developer diagnostics</h2><button type="button" data-close aria-label="Close developer diagnostics">Close</button></header><main><p>Copy or download a report. Nothing uploads automatically.</p><label><input type="checkbox" data-public-id checked> Include local profiles, public IDs and PBs</label><details><summary>More export options</summary><p>Saved-track metadata is included. Private track codes are off by default and may reveal tracks.</p><label><input type="checkbox" data-saved-codes disabled> Include saved track codes</label><p>Credentials are excluded. Review the JSON before sharing.</p></details><p role="status" aria-live="polite" data-status></p></main><footer><button type="button" data-download>Download JSON</button><button type="button" data-copy>Copy JSON</button></footer>';
+ dialog.innerHTML = '<header><h2>Export developer diagnostics</h2><button type="button" data-close aria-label="Close developer diagnostics">Close</button></header><main><p>Copy or download a report. Nothing uploads automatically.</p><label><input type="checkbox" data-public-id checked> Include local profiles, public IDs and PBs</label><details><summary>More export options</summary><p>Saved-track metadata is included. Private track codes are off by default and may reveal tracks.</p><label><input type="checkbox" data-saved-codes disabled> Include saved track codes</label><label><input type="checkbox" data-readable-json> Readable JSON (larger, legacy format)</label><p>Compact JSON is smaller, not encrypted. Developers can decode it. Credentials are excluded.</p></details><p role="status" aria-live="polite" data-status></p></main><footer><button type="button" data-download>Download JSON</button><button type="button" data-copy>Copy JSON</button></footer>';
  const status = dialog.querySelector('[data-status]');
  const profileChoice=dialog.querySelector('[data-public-id]'),codesChoice=dialog.querySelector('[data-saved-codes]');
  codesChoice.disabled=!profileChoice.checked;
- const makeJson = () => JSON.stringify(report(profileChoice.checked ? {includePublicId:true,includeSavedTrackCodes:codesChoice.checked} : false));
+ const readableChoice=dialog.querySelector('[data-readable-json]');
+ const makeJson = () => serializeDiagnosticReport(report(profileChoice.checked ? {includePublicId:true,includeSavedTrackCodes:codesChoice.checked} : false),{format:readableChoice.checked?'json':'compact'});
  const changed = () => {const button=dialog.querySelector('[data-copy]');button.classList.remove('is-success');button.textContent='Copy JSON';status.textContent='Export options changed. Copy again to update the clipboard.';};
  profileChoice.addEventListener('change',()=>{codesChoice.disabled=!profileChoice.checked;if(codesChoice.disabled)codesChoice.checked=false;changed();});
  codesChoice.addEventListener('change',changed);
+ readableChoice.addEventListener('change',changed);
  const close = () => dialog.close();
  dialog.querySelector('[data-close]').addEventListener('click', close);
  dialog.addEventListener('close', () => { dialog.remove(); if (returnFocus?.isConnected && !returnFocus.disabled) returnFocus.focus({ preventScroll: true }); });

@@ -1,35 +1,67 @@
-# PolyTrack Ranked
+# PolyTrack Ranked | PolyTrack 0.6.3 Mod
 
-Race PolyTrack, chase personal bests, and compare times with other players.
+**Hunt PBs, compare racers and choose your next track.**
 
 [Play PolyTrack Ranked](https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/)
 
-## What you can do
+A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events, ghosts, a route planner and local practice history. No installation is needed to play.
 
-- Race official, community, event, custom, and Extra Tracks.
-- Watch available replays and race against ghosts on supported tracks.
-- Earn Ranked and Event RP on eligible tracks. Check each event for its scoring and end time.
-- Matching-track finishes count toward live events from any track menu. Event races also keep your normal track PB; only finishes submitted while the exact event is active can earn its Event RP. Event launches show event placement, while normal launches show normal placement.
-- Explore Extra Tracks by name, tags, difficulty, and progress. Favorite tracks, rate them, suggest tag edits, or import them to play later.
-- Personalize your racer in Racer Studio. Some designs unlock as you play.
-- Make a friends-only leaderboard with Advanced Filters. Include or hide racers, match countries, badges or shared six-digit group tags, and save or share filter loadouts.
+## For PB Hunters
+
+- **Rankings:** compare Overall RP, Event RP, track wins, completion and more.
+- **Route Planner:** find opportunities by potential benefit, ease or practice focus. Suggestions are estimates, not guaranteed gains.
+- **Practice History:** review tracked attempts, finishes, active practice time and improvements. Tracking is local and partial, not a complete lifetime history.
+- **Ghosts and player groups:** choose opponents, save ghost-selection presets, or build friends-only leaderboards with Advanced Filters.
+- **Events:** race Kodub's featured track, daily and weekly events, and Rolling Hills Racer. Each card shows its scoring and timing.
+- **Extra Tracks:** search a curated catalog by progress, tags, rating and difficulty, then import a track to play.
+- **Racer Studio:** customize your car, nameplate and profile with supported cosmetics and earned designs.
+
+## Find Your Way Around
+
+Open **Help & Controls** for searchable shortcuts and your current key bindings.
+
+| Where | Shortcut | Action |
+| --- | --- | --- |
+| Track selection | Shift + 1 / 2 / 3 | Official / Community / Custom tracks |
+| Overall Rankings | 1 / 2 / 3 / 4 | Your four Quick Rankings |
+| Leaderboards | A / D or Left / Right | Change pages when not typing |
+
+Other shortcuts depend on the screen and your bindings. Help separates driving, replay, editor, filtering and ghost-selection controls.
+
+## Understand the Standings
+
+Public standings normally come from published snapshots, rather than a database query on every click. Package publication, individual data confirmation and the last standings change are different dates. A snapshot can be published later than the runs it contains.
+
+Your local PBs can affect a **local ranking estimate** before the next publication. That does not verify a run or change public standings. Hover or focus supported score/rank values for their provenance. Published standings can lag behind new submissions.
+
+Replays are checked separately. Unverified or held runs do not automatically receive verified ranking eligibility. Verification cannot guarantee detection of every possible form of cheating. Some older replay files may be unavailable.
+
+Only eligible finishes submitted during the exact active event can earn its Event RP. Playing an archived track does not reopen that event's scoring. Extra Tracks marked unranked do not award Ranked RP.
 
 ## Your Leaderboard
 
-Open **Filters** to choose who you see. **Normal** keeps published Rank Points (RP). **Smart** calculates a separate group score from results loaded on your device. Choose global or group placements, and apply filters to Ranked or all leaderboards.
+Use **Filters** to include or exclude racers, select countries, badges or public group tags, and save or share loadouts. Normal filtering retains published RP; Smart mode calculates a separate group score from available loaded results. Missing results are marked rather than invented. Filters do not change public verification or rankings.
 
-The button shows **Filters-Active** or **Filters-Inactive**. Right-click it to pause or resume, or right-click a racer in Ranked to include or exclude them. Save loadouts and share them by code; imports keep a recovery copy of your previous filter.
+Six-digit group tags are public labels, not passwords or private multiplayer rooms. Multiplayer depends on network conditions; a wired connection alone does not guarantee a direct peer connection.
 
-Filters never change public rankings or verification. Missing results are marked rather than guessed. Lifetime Event RP stays published; individual live events can show a group score. Six-digit group tags are public labels, not passwords or private lobbies.
+## Diagnostics and Feedback
 
-When a newer website update is published, the menu can offer **Update available**. Reload when you are ready; updates never interrupt a race automatically.
+Help contains the loaded release information and a developer diagnostics export. Nothing uploads automatically. Review the profile and private-track options before sharing a report.
 
-Unverified results may appear while replay checks are pending. Their status can change after verification. Extra Tracks marked unranked do not award Ranked RP.
+Compact exports preserve report data with fewer repeated field names and IDs. They are **not encrypted or anonymized**. A readable JSON option is also available. Decode a compact report locally with:
 
-When a personal best is submitted, its saved result includes the website origin (scheme, hostname, and optional port only; no page path, query string, or referrer data) so maintainers can privately summarize submitted PBs by hostname. This reports only the latest retained PB document per player and track, not visits or every run.
+```sh
+node tools/decode-developer-report.mjs input.json readable-report.json
+```
 
-## Controls
+Please include the loaded release/client revision, browser, available game area and reproduction steps when reporting a bug. Do not post passwords, credentials, service-account files or private track codes.
 
-Use the controls shown in-game for driving. In leaderboards, number keys select racers, Enter or Space starts a race, and arrow keys or A/D change pages when you are not typing. Racer Studio supports Shift+1 through Shift+4 to switch tabs.
+## Development and Releases
 
-PolyTrack was created by Kodub. Community tracks remain credited to their respective creators, including DoraChad and the KackyThrowback contributors where applicable. This is a community Ranked edition, not Kodub's official site.
+Before every manual commit or push, follow the [release checklist](docs/manual-release-checklist.md). Release notes, client cache revisions, workflow compatibility and privacy checks belong to the same release. See [CDN publication](docs/cdn-release.md) for publishing and deferred-propagation behavior.
+
+Public PB submissions retain the submitting website's origin for private maintenance summaries, not its paths, query strings or referrers. Browser diagnostics estimate only instrumented device activity, not total billed Firebase usage.
+
+## Credits
+
+PolyTrack was created by **Kodub**. Ranked mod maintained by **StaticQuasar931**. Thanks to **Window Cleaner** for track grading help. Community tracks remain credited to their creators in-game, including DoraChad and the KackyThrowback contributors where applicable. This is not Kodub's official PolyTrack website.

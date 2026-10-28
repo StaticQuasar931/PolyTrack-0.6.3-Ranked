@@ -484,7 +484,7 @@ test('current native track-open failure clears only its owned event intent',asyn
  assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
  assert.match(await p.locator('.sq-events-dialog main').innerText(),/could not be opened/);
 });
-async function addNativePlay(p){await p.evaluate(()=>{window.normalStarts=0;const play=document.createElement('button');play.className='button play';play.textContent='Play';play.onclick=()=>normalStarts++;document.querySelector('.side-panel').append(play);});}
+async function addNativePlay(p){await p.evaluate(()=>{window.normalStarts=0;const root=document.querySelector('.track-info-ui');root.__pt062EventWatch={version:1,trackId:id};const play=document.createElement('button');play.className='button play';play.textContent='Play';play.onclick=()=>normalStarts++;root.querySelector('.side-panel').append(play);});}
 test('event Play never falls through to normal PB launch; leaving restores normal Play',async t=>{
  const p=await fixture(t);await addNativePlay(p);await enter(p);
  await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),0);assert.match(await p.locator('.sq-event-inline-status').innerText(),/safe event race launch/);
@@ -650,12 +650,76 @@ const eventBridge=section('  let pendingEventLaunch=null;','  async function eve
 test('event bridge rejects duplicate native launches until the first launch is consumed',async t=>{
  const p=await fixture(t);assert.deepEqual(await p.evaluate(source=>{
   const activeRankedAccountId=()=>id;window.__pt062NativeEventLaunchVersion=1;
-  const start=eval('(()=>{'+source+';return startEventRace})()');let invokes=0,current=true,rejected=false;
+  const start=eval('(()=>{'+source+';return startEventRace})()');let invokes=0,rejected=false;
   const context={periodId:'daily-fixture',trackId:id,accountId:id,endsAt:Date.now()+10000};
-  start(context,()=>invokes++,()=>current);try{start(context,()=>invokes++,()=>true);}catch{rejected=true;}
-  const first=window.__pt062PrepareEventRace(id,null);start(context,()=>invokes++,()=>current);current=false;start(context,()=>invokes++,()=>true);
+  start(context,()=>invokes++,()=>true);try{start(context,()=>invokes++,()=>true);}catch(error){rejected=error.message==='An event launch is already pending';}
+  const first=window.__pt062PrepareEventRace(id,null);start(context,()=>invokes++,()=>true);
   return {invokes,rejected,first,last:window.__pt062PrepareEventRace(id,null)};
- },eventBridge),{invokes:3,rejected:true,first:{ownGhost:null,opponents:[]},last:{ownGhost:null,opponents:[]}});
+ },eventBridge),{invokes:2,rejected:true,first:{ownGhost:null,opponents:[]},last:{ownGhost:null,opponents:[]}});
+});
+test('invalid old event launch A cannot be replaced by or consume launch B',async t=>{
+ const p=await fixture(t);assert.deepEqual(await p.evaluate(source=>{
+  const activeRankedAccountId=()=>id;window.__pt062NativeEventLaunchVersion=1;
+  const start=eval('(()=>{'+source+';return startEventRace})()');
+  const context={periodId:'daily-fixture',trackId:id,accountId:id,endsAt:Date.now()+10000};
+  let currentA=true,callbackA,callbackB,replacementError=null,oldError=null;const invoked=[];
+  start({...context,opponents:[{marker:'A'}]},()=>{invoked.push('A');callbackA=()=>window.__pt062PrepareEventRace(id,null);},()=>currentA);
+  currentA=false;
+  const startB=()=>start({...context,opponents:[{marker:'B'}]},()=>{invoked.push('B');callbackB=()=>window.__pt062PrepareEventRace(id,null);},()=>true);
+  try{startB();}catch(error){replacementError=error.message;}
+  const beforeOldCallback={invoked:[...invoked],callbackBExists:typeof callbackB==='function'};
+  try{callbackA();}catch(error){oldError=error.message;}
+  startB();const policyB=callbackB();
+  return {replacementError,beforeOldCallback,oldError,invoked,policyB,remaining:window.__pt062PrepareEventRace(id,null)};
+ },eventBridge),{
+  replacementError:'An event launch is already pending',beforeOldCallback:{invoked:['A'],callbackBExists:false},
+  oldError:'Event launch context changed',invoked:['A','B'],policyB:{ownGhost:null,opponents:[{marker:'B'}]},remaining:false
+ });
+});
+async function installDelayedNativePlay(page){
+ await addNativePlay(page);
+ await page.evaluate(source=>{
+  const activeRankedAccountId=()=>bridgeFixture.accountId();window.__pt062NativeEventLaunchVersion=1;
+  const hooks=eval('(()=>{'+source+';return {startEventRace,pending:()=>!!pendingEventLaunch}})()');
+  bridgeFixture.startEventRace=(context,...args)=>{window.nativeEventEndsAt=context.endsAt;return hooks.startEventRace(context,...args);};
+  window.pendingNativeEvent=hooks.pending;
+  window.nativeHandoffs=[];window.nativePolicies=[];window.nativeLaunchErrors=[];window.nativeDispatches=0;
+  const root=document.querySelector('.track-info-ui');
+  document.querySelector('.side-panel .play').onclick=()=>{
+   nativeDispatches++;root.remove();
+   // Release only after the test has exercised the detached-panel lifecycle.
+   nativeHandoffs.push((trackId=id,multiplayer=null)=>{
+    try{const policy=window.__pt062PrepareEventRace(trackId,multiplayer);if(policy)nativePolicies.push(policy);else normalStarts++;}
+    catch(error){nativeLaunchErrors.push(error.message);}
+   });
+  };
+  window.releaseNativeEvent=(...args)=>{const handoff=nativeHandoffs.shift();if(!handoff)throw Error('No native handoff queued');handoff(...args);};
+ },eventBridge);
+}
+test('actual event bridge launches after disposed panel and delayed native handoff',async t=>{
+ const p=await fixture(t);await installDelayedNativePlay(p);await enter(p);
+ await p.locator('.side-panel .play').click();await p.waitForFunction(()=>nativeHandoffs.length===1);
+ assert.equal(await p.locator('.track-info-ui').count(),0);
+ await p.evaluate(()=>ui.tick({cachedOnly:true}));
+ assert.deepEqual(await p.evaluate(()=>({entered:ui.isEntered(id),pending:pendingNativeEvent(),policies:nativePolicies,dispatches:nativeDispatches})),{entered:true,pending:true,policies:[],dispatches:1});
+ await p.evaluate(()=>releaseNativeEvent());
+ assert.deepEqual(await p.evaluate(()=>({policies:nativePolicies,errors:nativeLaunchErrors,normalStarts,pending:pendingNativeEvent()})),{policies:[{ownGhost:null,opponents:[]}],errors:[],normalStarts:0,pending:false});
+ assert.equal(await p.evaluate(()=>window.__pt062PrepareEventRace(id,null)),false);
+});
+for(const change of ['cancellation','racer','expiry','wrong-track','multiplayer'])test('actual event bridge rejects '+change+' during delayed native handoff',async t=>{
+ const p=await fixture(t);await installDelayedNativePlay(p);await enter(p);
+ await p.locator('.side-panel .play').click();await p.waitForFunction(()=>nativeHandoffs.length===1);
+ assert.equal(await p.locator('.track-info-ui').count(),0);
+ assert.equal(await p.evaluate(()=>pendingNativeEvent()),true);
+ await p.evaluate(change=>{
+  if(change==='cancellation')ui.leave();
+  else if(change==='racer')bridgeFixture.accountId=()=> 'b'.repeat(64);
+  else if(change==='expiry')Date.now=()=>nativeEventEndsAt;
+  ui.tick({cachedOnly:true});
+  releaseNativeEvent(change==='wrong-track'?'c'.repeat(64):id,change==='multiplayer'?{}:null);
+ },change);
+ assert.deepEqual(await p.evaluate(()=>({policies:nativePolicies,errors:nativeLaunchErrors,normalStarts,pending:pendingNativeEvent(),dispatches:nativeDispatches})),{policies:[],errors:['Event launch context changed'],normalStarts:0,pending:false,dispatches:1});
+ assert.equal(await p.evaluate(()=>window.__pt062PrepareEventRace(id,null)),false);
 });
 test('actual event bridge permits native click once and rejects stale launch context',async t=>{
  const p=await fixture(t);await addNativePlay(p);await p.evaluate(source=>{

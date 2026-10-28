@@ -134,16 +134,16 @@ test('untrusted key labels, release data and attribute values are escaped, never
   assert.doesNotMatch(html,/id="[^"]*<|data-hc-search-text="[^"]*</);
 });
 
-test('revision and commit are configurable, never assumed, and unconfirmed commit is omitted',()=>{
-  const normal=renderHelpControls();
-  assert.doesNotMatch(normal,/data-hc-view="release"|Client revision|Commit|189|217/);
-  const draft=renderHelpControls({release:{revision:189,commit:217}});
-  assert.match(draft,/Client revision/);assert.match(draft,/>189</);assert.doesNotMatch(draft,/>217<|<dt>Commit/);
-  const confirmed=renderHelpControls({release:{revision:189,commit:217,commitConfirmed:true,notes:['Verified local controls.']}});
-  assert.match(confirmed,/<dt>Commit<\/dt><dd>217/);assert.match(confirmed,/Verified local controls\./);
-  assert.match(renderHelpControls({release:{revision:999,commit:123,commitConfirmed:true}}),/<dt>Commit<\/dt><dd>123/);
+test('release number and revision are separate; only confirmed hexadecimal Git hashes display',()=>{
+  assert.doesNotMatch(renderHelpControls(),/data-hc-view="release"|Client revision|Commit/);
+  const html=renderHelpControls({release:{number:224,revision:193,commit:'224',commitConfirmed:true,notes:['Local controls.']}});
+  assert.match(html,/<dt>Release number<\/dt><dd>224/);
+  assert.match(html,/<dt>Client revision<\/dt><dd>193/);
+  assert.doesNotMatch(html,/<dt>Commit/);
+  assert.match(html,/Local controls\./);
+  assert.match(renderHelpControls({release:{commit:'abcdef123',commitConfirmed:true}}),/<dt>Commit<\/dt><dd>abcdef123/);
+  assert.doesNotMatch(renderHelpControls({release:{commit:'abcdef123'}}),/<dt>Commit/);
 });
-
 test('HTML has semantic native disclosures, labels, status and one keycap per chord key',()=>{
   const html=renderHelpControls({idPrefix:'help-test'});
   assert.match(html,/aria-labelledby="help-test-title"/);
@@ -260,4 +260,20 @@ test('highlight matching respects remaps, ranges, punctuation and modifier label
  assert.equal(match('1-4','Digit4','4'),true);assert.equal(match('1-4','Digit5','5'),false);
  assert.equal(match('1-9, 0','Digit0','0'),true);assert.equal(match('1-9','Digit0','0'),false);
  assert.equal(match('+','Equal','+'),true);assert.equal(match('Esc','Escape','Escape'),true);
+});
+
+test('track tabs are explicit searchable chords matching the shipped track menu handler',async()=>{
+  const groups=createHelpControlGroups(),control=find(groups,'track-tab-direct');
+  assert.deepEqual(control.keys,[['Shift','1'],['Shift','2'],['Shift','3']]);
+  for(const term of ['official','community','custom']) assert.ok(searchHelpControls(groups,'shift '+term).some(group=>group.rows.some(row=>row.id===control.id)));
+  const html=renderHelpControls();
+  assert.match(html,/aria-label="Track selection shortcuts"/);
+  for(const name of ['Official','Community','Custom']) assert.ok(html.includes('</kbd> '+name));
+  const source=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
+  const start=source.indexOf('  function handleTrackMenuShortcut(event)');
+  const handler=source.slice(start,source.indexOf('\n  }',start));
+  assert.ok(handler.includes('const digit=/^Digit([1-3])$/.exec(event.code'));
+  assert.ok(handler.includes('if(event.shiftKey&&digit)index=Number(digit[1])-1'));
+  assert.ok(handler.includes('tabs[index].click()'));
+  assert.ok(handler.includes('target?.isContentEditable'));
 });

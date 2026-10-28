@@ -67,6 +67,8 @@ jobs:
           printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$TOOL_DIR/actionlint.tar.gz" | sha256sum --check --status
           tar -xzf "$TOOL_DIR/actionlint.tar.gz" -C "$TOOL_DIR" actionlint
           "$TOOL_DIR/actionlint" -no-color -shellcheck= -pyflakes=
+      - name: Check Help release information
+        run: node tools/check-release-info.mjs
       - name: Test CDN publication safeguards
         run: node --test tools/publish-cdn-release.test.mjs tools/workflow-release-contract.test.mjs
       - name: Validate immutable assets, publish pointer, and confirm CDN refresh

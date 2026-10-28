@@ -338,6 +338,19 @@ async function updateMeta(root, generationDirectory) {
   const expression = /<meta\s+name=["']polytrack-snapshot["'][^>]*>/i;
   html = expression.test(html) ? html.replace(expression, meta) : html.replace(/<head\b[^>]*>/i, match => `${match}\n    ${meta}`);
   if (!html.includes(meta)) throw new Error('Could not insert snapshot meta tag into index.html');
+  const packageIndex=await readJsonIfPresent(path.join(root,generationDirectory,'index.json'));
+  const publication=Number.isSafeInteger(packageIndex?.publishedAt)&&packageIndex.publishedAt>0
+    ?{generation:packageIndex.generation,publishedAt:packageIndex.publishedAt}:null;
+  const publicationTag=/<meta\s+name=["']polytrack-snapshot-publication["'][^>]*>/i;
+  if(publication){
+    const tag="<meta name=\"polytrack-snapshot-publication\" content='"+JSON.stringify(publication)+"'>";
+    html=publicationTag.test(html)?html.replace(publicationTag,tag):html.replace(meta,meta+'\n    '+tag);
+  }else if(publicationTag.test(html)){
+    const tag=html.match(publicationTag)[0],content=/content='([^']+)'/.exec(tag)?.[1];
+    let same=false;try{same=JSON.parse(content).generation===packageIndex?.generation;}catch{}
+    if(!same)html=html.replace(publicationTag,'');
+  }
+
   const temporary = `${indexPath}.${process.pid}.tmp`;
   await fs.writeFile(temporary, html, { flag: 'wx' });
   await fs.rename(temporary, indexPath);

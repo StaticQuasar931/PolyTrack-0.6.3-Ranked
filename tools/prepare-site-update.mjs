@@ -14,5 +14,5 @@ let index = await readFile(indexPath, 'utf8');
 ({patch, index} = stampClientRelease(patch, index, revision));
 await writeFile(patchPath, patch);
 await writeFile(indexPath, index);
-await writeFile(new URL('site-version.json', root), JSON.stringify({revision}, null, 2) + '\n');
+await writeFile(new URL('site-version.json', root), JSON.stringify({...manifest, revision}, null, 2) + '\n');
 console.log(`Prepared website revision ${revision}. Review and commit these files together.`);

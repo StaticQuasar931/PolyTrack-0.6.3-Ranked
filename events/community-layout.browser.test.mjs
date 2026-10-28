@@ -23,7 +23,7 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   if(width<=480)assert(rects.every(rect=>Math.abs(rect.width-featured.width)<=1),'Phone cards use the full section width: '+JSON.stringify({width,rects}));
   else assert(rects[0].width>rects[1].width,'Kodub is wider than the supporting cards: '+JSON.stringify({width,rects}));
   for(const rect of rects.slice(2))assert(Math.abs(rect.width-rects[1].width)<=1,'Supporting cards share a coherent native width');
-  if(width>1200)for(const rect of rects)assert.equal(Math.round(rect.y),Math.round(rects[0].y));
+  if(width>1700)for(const rect of rects)assert.equal(Math.round(rect.y),Math.round(rects[0].y));
   else assert(rects.slice(1).every(rect=>rect.y>rects[0].y),'Responsive layouts place supporting cards below Kodub');
   const titleBoxes=[];for(const e of await page.locator('.sq-permanent-track .track-title,.sq-event-card strong').all())titleBoxes.push(await e.boundingBox());
   assert.equal(titleBoxes.length,3);const titleOffset=titleBoxes[0].y-rects[1].y;for(const [index,box] of titleBoxes.entries())assert(Math.abs(box.y-rects[index+1].y-titleOffset)<=1,'Titles align within their cards');
@@ -38,14 +38,12 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   const card=await page.locator('.sq-kodub-weekly>button').boundingBox();
   const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
   assert(artwork.width>0&&artwork.height>0,'Artwork has visible width and height');
-  assert(Math.abs(artwork.width/artwork.height-1.9)<.005,'Artwork uses its deliberate near-native ratio');
-  assert.equal(artwork.fit,'cover');assert.equal(artwork.position,'50% 50%');
-  const ratio=artwork.width/artwork.height;
-  assert(Math.min(ratio/artwork.nativeRatio,artwork.nativeRatio/ratio)>=.94,'Local cover crop stays below 6%');
-  assert(artwork.left>=card.x-1&&artwork.right<=info.x+1,'Artwork remains left of the details inside the card');
-  assert(artwork.top>=card.y-1&&artwork.bottom<=card.y+card.height+1,'Artwork height stays inside the card');
-  assert(artwork.height<=300,'Artwork is bounded, not forced to the outer card height');
-  if(width>480)assert.equal(card.height,300,'Desktop/tablet outer card keeps its original height');
+  assert(Math.abs(artwork.left-card.x)<1,'Artwork is flush with the left edge');
+  assert.equal(artwork.fit,'cover');assert.equal(artwork.position,'0% 100%');
+  const stacked=info.y>=artwork.bottom-1;
+  assert(artwork.top>=card.y-1&&artwork.bottom<=card.y+card.height+1,'Artwork stays inside card');
+  if(stacked)assert(Math.abs(artwork.width-card.width)<1,'Stacked artwork uses full width');
+  else {assert(Math.abs(artwork.bottom-card.y-card.height)<1,'Artwork fills full left-panel height');assert(Math.abs(artwork.right-info.x)<1,'Details sit flush beside artwork');}
   const tabs=await page.locator('.community-track-versions>.button').all();
   assert.equal((await tabs[0].boundingBox()).width,(await tabs[1].boundingBox()).width);
   if(width>650)assert.equal(await page.locator('.community-track-versions').evaluate(e=>e.scrollWidth),await page.locator('.community-track-versions').evaluate(e=>e.clientWidth));
