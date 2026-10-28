@@ -10,26 +10,28 @@ function installPartialReplayStyles(document) {
   const style = document.createElement('style');
   style.id = 'sq-partial-replay-style';
   style.textContent = `
-.sq-partial-replay-dialog{box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border:2px solid #80d9ef;border-radius:0;background:#172947;color:#effaff;font:italic 20px/1.3 ForcedSquare,sans-serif;overflow:auto;overflow-wrap:anywhere;overscroll-behavior:contain;touch-action:pan-y;box-shadow:8px 8px 0 #080f2599}
+.sq-partial-replay-dialog{box-sizing:border-box;width:min(calc(520px * var(--sq-ui-scale,1)),calc(100vw - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border:2px solid #80d9ef;border-radius:0;background:#172947;color:#effaff;font:italic calc(20px * var(--sq-ui-scale,1))/1.3 ForcedSquare,Arial,sans-serif;overflow:hidden;overflow-wrap:anywhere;overscroll-behavior:contain;touch-action:pan-y;box-shadow:8px 8px 0 #080f2599}
+.sq-partial-replay-dialog[open]{display:flex;flex-direction:column}
 .sq-partial-replay-dialog::backdrop{background:#080f25c9}
 .sq-partial-replay-dialog *{box-sizing:border-box;line-height:inherit}
 .sq-partial-replay-dialog header{padding:18px 22px 14px;background:#213b64;border-bottom:2px solid #80d9ef}
-.sq-partial-replay-dialog header small{display:block;color:#9deaff;font-size:16px;letter-spacing:1px;margin-bottom:5px}
-.sq-partial-replay-dialog h2{margin:0;font:inherit;font-size:30px;line-height:1.05;font-weight:normal}
+.sq-partial-replay-dialog header small{display:block;color:#9deaff;font-size:.8em;letter-spacing:1px;margin-bottom:5px}
+.sq-partial-replay-dialog h2{margin:0;font:inherit;font-size:1.5em;line-height:1.05;font-weight:normal}
+.sq-partial-replay-dialog .sq-partial-body{min-height:0;overflow:auto;overscroll-behavior:contain}
 .sq-partial-replay-dialog .sq-partial-content{padding:16px 22px 4px}
 .sq-partial-replay-dialog p{margin:0 0 12px}
-.sq-partial-replay-dialog .sq-partial-note{font-size:16px;color:#c1d7ed}
+.sq-partial-replay-dialog .sq-partial-note{font-size:.8em;color:#c1d7ed}
 .sq-partial-replay-dialog ul{margin:0 0 16px;padding:10px 14px 10px 32px;background:#102039;border-left:3px solid #80d9ef;max-height:24vh;overflow:auto}
 .sq-partial-replay-dialog li{padding:2px 0}
 .sq-partial-replay-dialog ul:focus-visible{outline:2px solid #effaff;outline-offset:2px}
-.sq-partial-replay-dialog footer{display:flex;flex-wrap:wrap;gap:10px;padding:12px 22px 20px}
+.sq-partial-replay-dialog footer{flex-shrink:0;display:flex;flex-wrap:wrap;gap:10px;padding:12px 22px 20px}
 .sq-partial-replay-dialog button{position:relative;flex:1 1 160px;min-width:0;min-height:48px;margin:0;padding:12px 16px;border:0;border-radius:0;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);background:#345982;color:#effaff;font:inherit;white-space:normal;cursor:pointer;touch-action:manipulation}
 .sq-partial-replay-dialog button[data-partial-replay-continue]{background:#82def0;color:#102039}
 .sq-partial-replay-dialog button:hover{background:#4775a5}
 .sq-partial-replay-dialog button[data-partial-replay-continue]:hover{background:#b5f2ff}
 .sq-partial-replay-dialog button:focus-visible{outline:0;box-shadow:inset 0 0 0 3px #fff;text-decoration:underline;text-underline-offset:4px}
 .sq-partial-replay-dialog button:active{filter:brightness(.85)}
-@media(max-width:400px){.sq-partial-replay-dialog header{padding:14px}.sq-partial-replay-dialog h2{font-size:26px}.sq-partial-replay-dialog .sq-partial-content{padding:14px 14px 0}.sq-partial-replay-dialog footer{padding:10px 14px 14px}.sq-partial-replay-dialog button{flex-basis:100%}}
+@media(max-width:400px){.sq-partial-replay-dialog header{padding:14px}.sq-partial-replay-dialog h2{font-size:1.3em}.sq-partial-replay-dialog .sq-partial-content{padding:14px 14px 0}.sq-partial-replay-dialog footer{padding:10px 14px 14px}.sq-partial-replay-dialog button{flex-basis:100%}}
 @media(forced-colors:active){.sq-partial-replay-dialog button{clip-path:none;border:2px solid ButtonText}.sq-partial-replay-dialog button:focus-visible{outline:3px solid Highlight;outline-offset:-5px}}
 `;
   document.head.append(style);
@@ -107,7 +109,10 @@ export function confirmPartialReplaySelection({document, ready, failed, isCurren
   proceed.dataset.partialReplayContinue = '';
   controls.append(cancel, proceed);
   content.append(summary, list, note);
-  dialog.append(header, content, controls);
+  const body = document.createElement('div');
+  body.className = 'sq-partial-body';
+  body.append(header, content);
+  dialog.append(body, controls);
   return new Promise(resolve => {
     const scope = document.defaultView;
     let settled = false, timer;

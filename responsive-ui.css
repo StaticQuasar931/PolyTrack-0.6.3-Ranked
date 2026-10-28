@@ -383,7 +383,9 @@ html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-
 /* Keep the native finish tween; separate ordinal glyphs so they cannot merge into an x. */
 html body .time-announcer-ui > .current{font-size:clamp(24px,3.2vw,48px);line-height:1.35;min-height:1.35em}
 html body .time-announcer-ui > .current > .position{white-space:nowrap;overflow:visible}
-html body .time-announcer-ui .sq-finish-ordinal{font-size:.54em;line-height:0;vertical-align:super;margin-inline-start:.08em}
+html body .time-announcer-ui > .current > .position > .sq-finish-number{font:inherit}
+html body .time-announcer-ui > .current > .position > :is(.sq-finish-ordinal,.sq-event-ordinal-suffix){font-family:Arial,sans-serif!important;font-style:normal!important;font-variant:normal!important;font-weight:400!important;font-size:.54em!important;line-height:0!important;letter-spacing:normal!important;vertical-align:super!important;display:inline!important;min-width:0!important;margin-inline-start:.08em}
+html body .time-announcer-ui > .current.show-position > div{left:calc(50% + var(--sq-finish-center-offset,0px))}
 html body .time-announcer-ui > .record{font-size:clamp(26px,4.5vw,64px)}
 html body .time-announcer-ui > .track-name{font-size:clamp(24px,4vw,60px);line-height:1.2}
 @media(max-height:500px){html body .time-announcer-ui{top:20%}html body .time-announcer-ui > .track-name{margin-bottom:4px}}
