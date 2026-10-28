@@ -30,14 +30,15 @@ test('weekly import rejects oversized streams, foreign origin, and late cancelle
 function navigation(overrides={}){
  const notices=[],listeners=new Map();let imports=0;
  const context={Map,Error,String,Date,Promise,setTimeout:fn=>{fn();},activeRankedAccountId:()=> 'account',eventUi:{leave(){}},eventTrackReturnContext:null,eventTrackReturnEpoch:0,localInsights:null,warmPracticeTrack(){},loadKodubTrackHistory:async()=>{},trackInfo:()=>({type:'official',name:'Missing'}),nativeWeeklySelection:null,kodubTrackHistory:new Map(),document:{addEventListener:(type,fn)=>listeners.set(type,fn),removeEventListener:type=>listeners.delete(type),getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[]},closeOverallPanel(){},log(){},showRankedTrackNavigationError:value=>notices.push(value),...overrides};
+ let replayInvalidations=0;context.invalidateNativePartialReplay=()=>{replayInvalidations++;};
  const navigationSource=extract('focusTrackFromRanked');
  const focus=navigationSource.replace(/await import\(new URL\('\.\.\/tools\/kodub-practice-track\.mjs\?v=\d+',eventsModuleUrl\)\.href\)/,'await loadTrackReader()');
  assert.notEqual(focus,navigationSource,'mock the reader module independently of the client release query');
  vm.createContext(context);runClientSource('let rankedTrackNavigationEpoch=0;'+focus,context);
- return {context,notices,listeners,imports:()=>imports};
+ return {context,notices,listeners,imports:()=>imports,replayInvalidations:()=>replayInvalidations};
 }
 test('missing track navigation resolves false with a friendly error instead of rejecting',async()=>{
- const h=navigation();assert.equal(await h.context.focusTrackFromRanked(id),false);assert.match(h.notices[0],/try again/);assert.equal(h.listeners.size,0);
+ const h=navigation();assert.equal(await h.context.focusTrackFromRanked(id),false);assert.match(h.notices[0],/try again/);assert.equal(h.listeners.size,0);assert.equal(h.replayInvalidations(),1);
 });
 test('Escape during history loading prevents delayed navigation and removes listeners',async()=>{
  let release;const h=navigation({trackInfo:()=>({type:'custom'}),loadKodubTrackHistory:()=>new Promise(resolve=>release=resolve)});
@@ -85,16 +86,19 @@ test('native import fills only the importer after cancellation checks',async()=>
  runClientSource(extract('importRankedTrackCode'),ctx);assert.equal(await ctx.importRankedTrackCode(code.toString(),()=>true),true);assert.equal(clicks,1);assert.equal(typed,code.toString());
  assert.equal(await ctx.importRankedTrackCode(code.toString(),()=>false),false);assert.equal(clicks,1);
 });
-function events({saved=null,payload,fetcher}={}){
+function events({saved=null,payload,fetcher,snapshotOnly=false}={}){
  let now=Date.UTC(2026,9,22,12),calls=0,resolveFetch;
  const period={id:'d_20261022',kind:'daily',trackId:'a'.repeat(64),startsAt:Date.UTC(2026,9,22),endsAt:Date.UTC(2026,9,23),maxRp:100};
- const ctx={Map,Date:class extends Date{static now(){return now;}},Number,Math,Error,Promise,URL,encodeURIComponent,eventCloudRequests:new Map(),eventCloudCache:new Map(),eventCloudRetryAt:new Map(),eventRequestSignal:()=>undefined,rankedBrokerUrl:()=> 'https://worker.test',snapshotOnlyForNewAccount:()=>true,localEventCatalog:async()=>({periods:[period],archives:[]}),readPublicSnapshotBackup:async()=>saved,noteFirebaseQuota(){},log(){},fetch:async()=>{calls++;if(fetcher)return fetcher();return {ok:true,status:200,headers:new Headers({'content-type':'application/json'}),json:async()=>payload||{period,updatedAt:now,entries:[]}};}};
+ const ctx={Map,Date:class extends Date{static now(){return now;}},Number,Math,Error,Promise,URL,encodeURIComponent,eventCloudRequests:new Map(),eventCloudCache:new Map(),eventCloudRetryAt:new Map(),eventRequestSignal:()=>undefined,rankedBrokerUrl:()=> 'https://worker.test',snapshotOnlyForNewAccount:()=>snapshotOnly,localEventCatalog:async()=>({periods:[period],archives:[]}),readPublicSnapshotBackup:async()=>saved,noteFirebaseQuota(){},log(){},fetch:async()=>{calls++;if(fetcher)return fetcher();return {ok:true,status:200,headers:new Headers({'content-type':'application/json'}),json:async()=>payload||{period,updatedAt:now,entries:[]}};}};
  vm.createContext(ctx);
  const start=patch.indexOf('  function chooseEventReadValue('),end=patch.indexOf('  const archiveMonthReads=',start);runClientSource(patch.slice(start,end),ctx);
  return {ctx,period,calls:()=>calls,advance:value=>now+=value,read:force=>ctx.eventCloudRead('/v1/events/'+period.id+'/snapshot','0.6.2_event_public',period.id,force)};
 }
-test('missing current daily snapshot uses one coalesced Worker read even for a new account',async()=>{
+test('dormant legacy live mode coalesces a current daily read',async()=>{
  const h=events();const values=await Promise.all([h.read(),h.read(),h.read()]);assert.equal(h.calls(),1);assert.equal(values[0].period.id,h.period.id);assert.ok(values[0]._eventLiveCheckedAt);await h.read();assert.equal(h.calls(),1);
+});
+test('official snapshot-only daily never contacts Worker when missing, including force refresh',async()=>{
+ for(const force of [false,true]){const h=events({snapshotOnly:true});await assert.rejects(h.read(force),/Saved standings are unavailable/);assert.equal(h.calls(),0);}
 });
 test('wrong day, track, kind or time boundaries never become confirmed live standings',async()=>{
  for(const field of ['id','trackId','kind','startsAt','endsAt']){const h=events();h.ctx.fetch=async()=>({ok:true,status:200,headers:new Headers({'content-type':'application/json'}),json:async()=>({period:{...h.period,[field]:typeof h.period[field]==='number'?h.period[field]+1:'wrong'},updatedAt:Date.now(),entries:[]})});await assert.rejects(h.read(),/not included/);await assert.rejects(h.read(),/retry paused/);}

@@ -160,3 +160,17 @@ test('official and finished filters combine and survive refresh without overlapp
   assert.equal(await page.locator('[data-pp-official]').getAttribute('aria-pressed'),'true');
  }
 });
+
+test('practice layout controls stay at the right edge across resized panels',async t=>{
+ const page=await fixture(t);
+ for(const [width,height] of [[1920,1080],[1366,768],[1000,700],[820,1180],[390,844],[844,390],[320,568],[1366,768]]){
+  await page.setViewportSize({width,height});
+  const layout=await page.locator('.pp-toolbar').evaluate(toolbar=>{
+   const group=toolbar.querySelector('[aria-label="Track layout"]'),buttons=[...group.querySelectorAll('button')];
+   const box=toolbar.getBoundingClientRect(),last=buttons.at(-1).getBoundingClientRect();
+   return {rightGap:box.right-last.right,overflow:toolbar.scrollWidth>toolbar.clientWidth+1};
+  });
+  assert.ok(layout.rightGap<2&&layout.rightGap>=-1,'layout buttons right aligned at '+width+': '+layout.rightGap);
+  assert.equal(layout.overflow,false,'toolbar overflow at '+width);
+ }
+});

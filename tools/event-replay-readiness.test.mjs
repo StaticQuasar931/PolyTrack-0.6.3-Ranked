@@ -10,8 +10,8 @@ const run=createClientSourceRunner(source),period='kodub_1793563200000',account=
 const waiting={periodId:period,accountId:account,trackId:track,runId,timeMs:38000,frames:38000,replayHash:hash,replay:'payload',pending:true,verified:false,eventRpEligible:false};
 const target={trackId:track,timeMs:38000,runId,replayHash:hash};
 const reply=(value,status=200,headers={})=>({ok:status===200,status,headers:new Headers(headers),text:async()=>JSON.stringify(value)});
-function setup({saved,pending,archived=false,enabled=true,fetchImpl=async()=>reply(waiting)}={}){
- const calls=[],context=vm.createContext({eventReplayRequests:new Map(),compatibilityOnlineAllowed:enabled,crypto:globalThis.crypto,TextEncoder,
+function setup({saved,pending,archived=false,enabled=true,snapshotOnly=false,fetchImpl=async()=>reply(waiting)}={}){
+ const calls=[],context=vm.createContext({eventReplayRequests:new Map(),compatibilityOnlineAllowed:enabled,snapshotOnlyForNewAccount:()=>snapshotOnly,crypto:globalThis.crypto,TextEncoder,
  readPublicSnapshotBackup:async kind=>kind==='event'?{archived}:kind==='event-playback'?pending:saved,
  rankedEdgeAvailable:()=>false,markRankedEdgeUnavailable:()=>assert.fail('replay failures must not poison other endpoints'),rankedBrokerUrl:()=> 'https://worker.test',eventRequestSignal:()=>undefined,
  fetch:async(url,options)=>{calls.push(url);return fetchImpl(url,options);}});
@@ -48,11 +48,22 @@ test('archived missing recordings never trigger paid recovery and compatibility 
  const archived=setup({archived:true});await assert.rejects(archived.read(),/Archived replay/);assert.equal(archived.calls.length,0);
  const disabled=setup({enabled:false});await assert.rejects(disabled.read(),/matching recording/);assert.equal(disabled.calls.length,0);
 });
-test('replay failure UI uses a short retry and respects explicit quota cooldown',()=>{
+test('replay failure UI caches failures for one minute and respects bounded quota cooldown',()=>{
  const client=fs.readFileSync(new URL('../events/client.mjs',import.meta.url),'utf8');const begin=client.indexOf('  function replayFailure('),end=client.indexOf('  async function selectEventRows(',begin);let now=100;
  const context=vm.createContext({replayFailures:new Map(),now:()=>now});vm.runInContext(client.slice(begin,end),context);
- context.rememberReplayFailure('one',Error('temporary'));assert.equal(context.replayFailures.get('one').until,15100);now=15101;assert.equal(context.replayFailure('one'),null);
- context.rememberReplayFailure('quota',{message:'wait',retryAfterMs:120000});assert.equal(context.replayFailures.get('quota').until,135101);
+ for(const [key,error,delay] of [
+  ['temporary',Error('temporary'),60000],
+  ['short',{message:'wait',retryAfterMs:1000},60000],
+  ['quota',{message:'wait',retryAfterMs:120000},120000],
+  ['capped',{message:'wait',retryAfterMs:1800000},900000],
+  ['nonfinite',{message:'wait',retryAfterMs:Infinity},60000]
+ ]){
+  now=100;context.rememberReplayFailure(key,error);
+  assert.equal(context.replayFailures.get(key).until,100+delay,key);
+  now=100+delay-1;assert.equal(context.replayFailure(key),error.message,'failure remains cached before its exact expiry');
+  now=100+delay;assert.equal(context.replayFailure(key),null,'failure becomes retryable at its exact expiry');
+  assert.equal(context.replayFailures.has(key),false,'expired failure is removed');
+ }
 });
 
 test('corrupt live inputs are rejected before caching and can be fetched again',async()=>{
@@ -80,3 +91,5 @@ test('active weekly tracks do not wait seven days for an Overall summary before 
  const manifest={trackBackupsMissing:0,eventsMissing:0,pendingPlaybackCoverage:{complete:true},replayCoverage:{known:2,published:1,missing:1,complete:false}},exported={complete:true,coverage:{complete:true}};
  assert.equal(context.makeCoverage({complete:true},manifest,exported,null,null).complete,false);manifest.replayCoverage.complete=true;assert.equal(context.makeCoverage({complete:true},manifest,exported,null,null).complete,true);
  });
+
+test('official snapshot-only replay misses never read the live replay service',async()=>{const h=setup({snapshotOnly:true});await assert.rejects(h.read(),/not in this snapshot/);assert.equal(h.calls.length,0);});

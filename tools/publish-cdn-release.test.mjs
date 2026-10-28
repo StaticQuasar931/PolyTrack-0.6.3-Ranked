@@ -9,6 +9,15 @@ import {execFileSync} from 'node:child_process';
 import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
 
 const sha='a'.repeat(40),hash=b=>createHash('sha256').update(b).digest('hex');
+function isolatedGitEnvironment(inherited,overrides={}){
+  const env={...inherited,...overrides};
+  for(const key of Object.keys(env)){
+    const local=/^GIT_(?:DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|PREFIX|SHALLOW_FILE|GRAFT_FILE|IMPLICIT_WORK_TREE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i.test(key);
+    // Publisher overrides copy process.env too; only a deliberate new value is local to this fixture.
+    if(local&&(!Object.hasOwn(overrides,key)||overrides[key]===inherited[key]))delete env[key];
+  }
+  return env;
+}
 function fixture(){
   const payload=Buffer.from('rankings fixture'),id=hash(payload);
   const files=new Map(Object.entries({
@@ -235,11 +244,26 @@ test('cooldown checkpoints are bounded, path-specific, and optional',async()=>{
 test('forks and non-default branches cannot publish',async()=>{
   for(const options of [{repository:'fork/repo',branch:'main'},{repository:REPOSITORY,branch:'dev'}])await assert.rejects(publishRelease({...options,git:()=>assert.fail('must not run git')}),/canonical/);
 });
+test('bare-remote Git environment drops inherited routing even when publisher overrides copy it',()=>{
+  const inherited={PATH:'test-path',GIT_INDEX_FILE:'caller.index',GIT_DIR:'caller.git',GIT_WORK_TREE:'caller-work',
+    GIT_COMMON_DIR:'caller-common',GIT_OBJECT_DIRECTORY:'caller-objects',GIT_ALTERNATE_OBJECT_DIRECTORIES:'caller-alternates',
+    GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'core.worktree',GIT_CONFIG_VALUE_0:'caller-work'};
+  for(const overrides of [{},{...inherited,GIT_AUTHOR_NAME:'Release Test'}]){
+    const env=isolatedGitEnvironment(inherited,overrides);
+    assert.equal(env.PATH,'test-path');
+    for(const key of Object.keys(inherited).filter(key=>key.startsWith('GIT_')))assert.equal(env[key],undefined,key);
+  }
+  assert.equal(isolatedGitEnvironment(inherited,{...inherited,GIT_INDEX_FILE:'publisher-temporary.index'}).GIT_INDEX_FILE,
+    'publisher-temporary.index','intentional isolated publisher indexes must still work');
+  assert.equal(inherited.GIT_INDEX_FILE,'caller.index','never mutate the caller environment');
+});
+
 test('real local bare remote: no source changes, first publish, no-op repeat, next commit and retries',async()=>{
   const temp=await mkdtemp(path.join(os.tmpdir(),'polytrack-cdn-release-'));
   const config=path.join(temp,'gitconfig');await writeFile(config,'');
-  const env={...process.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:config};
-  const run=(cwd,args,options={})=>execFileSync('git',['-c','safe.directory='+cwd,...args],{cwd,encoding:'utf8',stdio:['pipe','pipe','pipe'],...options,env:{...env,...options.env,GIT_CONFIG_GLOBAL:config}});
+  const env=isolatedGitEnvironment(process.env,{GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:config,GIT_ALLOW_PROTOCOL:'file'});
+  const run=(cwd,args,options={})=>execFileSync('git',['-c','safe.directory='+cwd,...args],{cwd,encoding:'utf8',stdio:['pipe','pipe','pipe'],...options,
+    env:isolatedGitEnvironment(process.env,{...env,...options.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:config,GIT_ALLOW_PROTOCOL:'file'})});
   const remote=path.join(temp,'remote.git');run(temp,['init','--bare','--initial-branch=main',remote]);
   const root=path.join(temp,'work');run(temp,['clone',remote,root]);
   run(root,['config','user.name','Release Test']);run(root,['config','user.email','test@example.invalid']);

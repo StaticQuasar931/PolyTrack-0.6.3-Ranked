@@ -72,7 +72,7 @@ test('real controller hooks expose inline estimates without cards, preserve cano
   await f.ctx.acknowledgeLocalOverallPb('b',{trackId,timeMs:9000},Date.now());await f.ctx.syncLocalOverallProjection();
   assert.equal(f.nodes.has('localOverallEstimate'),false);assert.ok(f.ctx.currentLocalOverallResult()?.projection);
   assert.equal(f.ctx.currentLocalOverallResult().projection.localPending,true);
-  assert.match(f.nodes.get('overallFreshness').textContent,/Snapshot \+ local recalculation/);
+  assert.match(f.nodes.get('overallFreshness').textContent,/Snapshot package \+ local recalculation/);
   assert.equal(JSON.stringify(f.overall),before);const count=f.reads();
   f.ctx.closeOverallPanel(f.panel);await f.ctx.syncLocalOverallProjection();assert.equal(f.nodes.has('localOverallEstimate'),false);
   f.panel.style.display='flex';await f.ctx.syncLocalOverallProjection();assert.ok(f.ctx.currentLocalOverallResult());assert.equal(f.nodes.has('localOverallEstimate'),false);assert.equal(f.reads(),count);

@@ -23,6 +23,19 @@ test('missing tracks, malicious paths, corrupt bytes and wrong decoded identitie
 });
 test('canceled archive imports never hand back a code',async()=>{
  const f=fixture();assert.equal(await readSavedArchiveTrack({trackId:id},{...f.options,isCurrent:()=>false}),null);
+ assert.equal(f.requests.length,0);
+});
+
+test('canceling while the manifest loads does not start a second asset read',async()=>{
+ const f=fixture();let current=true;
+ const fetcher=async(...args)=>{const result=await f.options.fetcher(...args);current=false;return result;};
+ assert.equal(await readSavedArchiveTrack({trackId:id},{...f.options,fetcher,isCurrent:()=>current}),null);
+ assert.equal(f.requests.length,1);
+});
+
+test('missing track assets do not promise that final standings exist',async()=>{
+ const f=fixture({manifest:[]});
+ await assert.rejects(readSavedArchiveTrack({trackId:id},f.options),/standings, if available/);
 });
 test('saved selections preserve repeated tracks in different weeks and all details',()=>{
  const first={trackId:id,name:'Old track',author:'Author',environment:1,endTime:'2026-09-20T20:00:00Z',trackUrl:`assets/${hash}.track`};

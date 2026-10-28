@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function snapshot('),source.indexOf('  function updateEventRefreshControl('));
-function fixture(readSnapshot,readArchivedSnapshot){
+function fixture(readSnapshot,readArchivedSnapshot,snapshotOnly=false){
  const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),saved=new Map();let at=1000000;
- const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,bridge:{readSnapshot,readArchivedSnapshot}};
+ const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,bridge:{readSnapshot,readArchivedSnapshot,snapshotOnly:()=>snapshotOnly}};
  return {cache,snapshotFetching,snapshotAttempts,saved,advance:ms=>{at+=ms;},run:vm.runInNewContext('('+fn+')',context)};
 }
 const period={id:'p',trackId:'a'.repeat(64)};
@@ -76,11 +76,31 @@ test('finalized archive reads only the saved static snapshot and reuses it perma
  assert.equal(staticReads,1);assert.equal(live,0);
 });
 
-test('missing or incomplete static archive never falls through to live reads',async()=>{
- for(const staticRead of [undefined,async()=>null,async()=>board(20)]){
+test('missing or malformed static archive never falls through to live reads',async()=>{
+ for(const staticRead of [undefined,async()=>null,async()=>({period,updatedAt:20}),
+  async()=>({...board(20),period:{...period,id:'wrong-event'}}),
+  async()=>({...board(20),period:{...period,trackId:'c'.repeat(64)}}),
+  async()=>({...board(20),period:{...period,kind:'weekly'}})]){
   let live=0;const f=fixture(async()=>{live++;return board(30);},staticRead);
   await assert.rejects(f.run({...period,archived:true}),/archive/i);
   assert.equal(live,0);
+ }
+});
+
+test('bound static non-final and partial archives preserve uncertainty without borrowing live data or finality',async()=>{
+ for(const source of [board(20),{...board(20),archived:false},
+  {...board(20),archived:true,complete:false,totalEntries:2},
+  {...board(20),archived:true,sourceComplete:false}]){
+  let staticReads=0;
+  const f=fixture(()=>assert.fail('No live request'),async()=>{staticReads++;return source;},true);
+  const result=await f.run({...period,archived:true});
+  assert.equal(staticReads,1);
+  for(const key of ['archived','complete','sourceComplete','totalEntries']){
+   assert.equal(result[key],source[key],key);
+   assert.equal(Object.hasOwn(result,key),Object.hasOwn(source,key),key+' must not be invented');
+  }
+  assert.equal(result.entries,source.entries);
+  assert.equal(f.cache.get(period.id),result);
  }
 });
 
@@ -88,4 +108,38 @@ test('cached finalized archive does not refresh through the live service',async(
  let live=0;const f=fixture(async()=>{live++;return board(30);});
  const saved={...board(20),archived:true,fetchedAt:1};f.cache.set(period.id,saved);
  assert.equal(await f.run(period,true),saved);assert.equal(live,0);
+});
+
+
+test('snapshot-only reopening replaces persisted live data once then reuses this package',async()=>{
+ let reads=0;const f=fixture(async()=>{reads++;return {...board(10),_dataSource:'snapshot',_snapshotPackageAt:50};},undefined,true);
+ f.saved.set('test-p',{...board(999),fetchedAt:1000000,_eventLiveCheckedAt:1000000});
+ const first=await f.run(period);assert.equal(first.updatedAt,10);assert.equal(first._snapshotPackageAt,50);
+ for(let i=0;i<5;i++)assert.equal(await f.run(period),first);assert.equal(reads,1);
+});
+test('persisted archives are rebound to this snapshot once without using live endpoints',async()=>{
+ let reads=0;const f=fixture(()=>assert.fail('No live request'),async()=>{reads++;return {...board(10),archived:true,_snapshotPackageAt:50};},true);
+ f.saved.set('test-p',{...board(999),archived:true,fetchedAt:1000000});
+ const first=await f.run({...period,archived:true});assert.equal(first.updatedAt,10);assert.equal(first._snapshotPackageAt,50);
+ assert.equal(await f.run({...period,archived:true},true),first);assert.equal(reads,1);
+});
+test('a missing current archive does not silently claim an old stored board is current',async()=>{
+ const f=fixture(()=>assert.fail('No live request'),async()=>null,true);f.saved.set('test-p',{...board(999),archived:true});
+ await assert.rejects(f.run({...period,archived:true}),/Invalid saved archive/);
+ assert.equal(f.cache.has(period.id),false,'missing current package must not rebind the old stored board');
+ assert.equal(f.saved.get('test-p').updatedAt,999,'failed read does not overwrite stored evidence');
+});
+
+test('production archive bridge keeps bound ended captures nonfinal and rejects wrong identities',async()=>{
+ const patch=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
+ const start=patch.indexOf('readArchivedSnapshot:async id=>{'),end=patch.indexOf('        readArchivedReplay:',start);
+ assert.ok(start>0&&end>start);
+ const body=patch.slice(start+'readArchivedSnapshot:'.length,end).trim().replace(/,$/,'');
+ let value;const reads=[];
+ const read=vm.runInNewContext('('+body+')',{Date:{now:()=>1000},Number,Array,readPublicSnapshotBackup:async(...args)=>{reads.push(args);return value;}});
+ const saved={id:'old',period:{id:'old',trackId:'a'.repeat(64),endsAt:999},entries:[],archived:false,complete:false};
+ value=saved;assert.equal(await read('old'),saved);assert.equal(saved.archived,false);assert.equal(saved.complete,false);
+ for(const invalid of [{...saved,id:'different'},{...saved,period:{...saved.period,id:'different'}},{...saved,period:{...saved.period,trackId:'bad'}},{...saved,entries:null},{...saved,period:{...saved.period,endsAt:1001}}]){value=invalid;assert.equal(await read('old'),null);}
+ const before=reads.length;assert.equal(await read('../wrong'),null);assert.equal(reads.length,before);
+ assert.ok(reads.every(([kind,id])=>kind==='event'&&id==='old'));
 });

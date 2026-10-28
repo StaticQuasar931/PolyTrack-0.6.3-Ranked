@@ -8,7 +8,7 @@ const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const revision=JSON.parse(fs.readFileSync(new URL('../site-version.json',import.meta.url),'utf8')).revision;
 const helper=patch.match(/  function rankedFetch\([\s\S]*?\r?\n  \}/)[0];
 test('Ranked transport adds release without dropping auth, payload or cancellation',async()=>{
- let call;const ctx=vm.createContext({Headers,fetch:(...args)=>{call=args;return Promise.resolve('ok');}});
+ let call;const ctx=vm.createContext({Headers,observedWorkerFetch:(...args)=>{call=args;return Promise.resolve('ok');}});
  vm.runInContext(helper,ctx);
  const signal=new AbortController().signal;
  const options={method:'POST',headers:{Authorization:'Bearer fixture','Content-Type':'application/json'},body:'{}',signal};

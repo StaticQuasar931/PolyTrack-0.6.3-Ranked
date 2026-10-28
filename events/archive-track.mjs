@@ -24,12 +24,14 @@ async function savedBytes(url, fetcher, limit) {
 // Only packaged, content-addressed assets. Never query a Worker or the live feed.
 export async function readSavedArchiveTrack(period, { baseUrl = import.meta.url, fetcher = fetch, decode, isCurrent = () => true } = {}) {
   if (!HASH.test(period?.trackId || '')) throw Error('Archived track identity is missing.');
+  if (!isCurrent()) return null;
   const base = new URL('./kodub/', baseUrl);
   const bytes = await savedBytes(new URL('trusted-tracks.json', base), fetcher, 256 * 1024);
+  if (!isCurrent()) return null;
   const manifest = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   if (!Array.isArray(manifest) || manifest.length > 520) throw Error('Saved track manifest is invalid.');
   const asset = manifest.find(row => row?.trackId === period.trackId && HASH.test(row.codeHash || '') && row.assetPath === `assets/${row.codeHash}.track`);
-  if (!asset) throw Error('This historical track code was not saved locally. Its standings remain available; practice needs an archival capture.');
+  if (!asset) throw Error('This historical track code was not saved locally. Saved event standings, if available, are separate; practice needs an archival track capture.');
   return readKodubPracticeTrack({id:period.trackId,codeHash:asset.codeHash,trackUrl:new URL(asset.assetPath,base).href},
     {fetcher,decode,baseUrl,isCurrent});
 }

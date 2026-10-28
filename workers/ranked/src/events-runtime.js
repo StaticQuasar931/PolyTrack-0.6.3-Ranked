@@ -10,6 +10,17 @@ export function eventRuntime(request, { projectId = 'polytrack-052', now = Date.
 const decode = doc => eventDecode({ mapValue: { fields: doc.fields || {} } });
 const post = (runtime, path, body) => runtime.request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export const eventReceiptRetry = code => ['event_queue_capacity', 'event_replay_capacity'].includes(code);
+export const EVENT_INBOX_RETRY_MAX_MS = 15 * 60000;
+function capacityRetry(previous, data, inboxId, at, retryUntil) {
+  const same = previous?.attemptId === data.attemptId &&
+    previous.receivedAt?.__firestoreTimestamp === data.receivedAt?.__firestoreTimestamp;
+  const prior = same && Number.isSafeInteger(previous.attempts) && previous.attempts > 0 ? previous.attempts : 0;
+  const attempts = Math.min(prior + 1, 16);
+  const delay = Math.min(60000 * 2 ** Math.min(attempts - 1, 4), EVENT_INBOX_RETRY_MAX_MS);
+  // The admission transaction supplies its already-read period deadline.
+  const notBefore = Number.isSafeInteger(retryUntil) && retryUntil > 0 ? Math.min(at + delay, retryUntil) : at + delay;
+  return { inboxId, attemptId: data.attemptId, receivedAt: data.receivedAt, attempts, notBefore };
+}
 export async function cleanupEvents(runtime) {
   const doc = await runtime.request('/' + C.catalog + '/main');
   const periods = doc ? decode(doc).periods || [] : [], at = runtime.now();
@@ -102,13 +113,14 @@ export async function consumeEventInbox(runtime, { preferRetry = false, recentAc
     documents.splice(0, documents.length, current);
   }
   const doc = documents[0], data = decode(doc), inboxId = doc.name.split('/').at(-1);
-  let result;
+  let result, retryUntil;
   try { result = await runtime.service.consumeInbox(data); }
   catch (error) {
     if (error?.deferred === true) throw error;
     // Infrastructure errors leave the scan cursor untouched for retry. Terminal
     // receipt rejection is recorded privately, never by modifying the client PB.
     const retry = eventReceiptRetry(error.code);
+    if (retry) retryUntil = error.retryUntil;
     if (![400, 403, 404, 409, 429].includes(error.status) && error.code !== 'events_disabled') throw error;
     result = { status: error.code, rejected: !retry, retry };
   }
@@ -120,8 +132,8 @@ export async function consumeEventInbox(runtime, { preferRetry = false, recentAc
     const currentInbox = await tx.get(C.inbox + '/' + inboxId);
     const same = currentInbox?.attemptId === data.attemptId &&
       currentInbox.receivedAt?.__firestoreTimestamp === data.receivedAt?.__firestoreTimestamp;
-    if (same && result.retry) await tx.set(retryPath, { inboxId, attemptId: data.attemptId,
-      receivedAt: data.receivedAt, notBefore: runtime.now() + 60000 });
+    if (same && result.retry) await tx.set(retryPath,
+      capacityRetry(previousRetry, data, inboxId, runtime.now(), retryUntil));
     else if (previousRetry && (!retryDoc || previousRetry.attemptId === decode(retryDoc).attemptId)) await tx.delete(retryPath);
     if (same && result.rejected && receipt?.attemptId !== data.attemptId) await tx.set(receiptPath,
       { attemptId: data.attemptId, receivedAt: data.receivedAt, status: result.status, runId: null });
@@ -142,23 +154,28 @@ async function dueRetry(runtime) {
   return result.find(row => row.document)?.document || null;
 }
 
-export async function eventWork(runtime, { projectedInbox = true, inspectInbox = true } = {}) {
+export async function eventWork(runtime, { projectedInbox = true, inspectInbox = true, existenceOnly = false } = {}) {
   const raw = await runtime.request('/' + C.catalog + '/main');
   const periods = raw ? decode(raw).periods || [] : [];
   const at = runtime.now();
+  const closing = periods.find(p => !p.archived && at >= p.endsAt + p.graceMs);
+  // A preflight only needs one work signal. Processing still performs full discovery.
+  if (existenceOnly && closing) return { hasWork: true, periodIds: [], inbox: false, archiveId: closing.id };
   // Daily+weekly generate at most eleven live or draining periods in this window.
   const active = periods.filter(p => p.enabled === true && !p.cleaned && p.startsAt <= at && at < p.endsAt + p.graceMs + 7 * 86400000).slice(0, 16);
   const due = [];
   for (const p of active) {
     const queue = await runtime.request('/' + C.queues + '/' + p.id);
-    if (queue && (decode(queue).slots || []).some(s => exhaustedEventLease(s, at) || s.notBefore <= at && s.leaseUntil <= at && s.attempts < L.verificationAttempts)) due.push(p.id);
+    if (queue && (decode(queue).slots || []).some(s => exhaustedEventLease(s, at) || s.notBefore <= at && s.leaseUntil <= at && s.attempts < L.verificationAttempts)) {
+      due.push(p.id);
+      if (existenceOnly) return { hasWork: true, periodIds: due, inbox: false, archiveId: null };
+    }
   }
   let inbox = false;
   if (inspectInbox) {
     const page = await inboxPage(runtime, { projected: projectedInbox });
     inbox = page.documents.length > 0 || !!(await dueRetry(runtime));
   }
-  const closing = periods.find(p => !p.archived && at >= p.endsAt + p.graceMs);
   if (due.length) { const rotation = Math.floor(at / 900000) % due.length; due.push(...due.splice(0, rotation)); }
   return { hasWork: !!(due.length || inbox || closing), periodIds: due, inbox, archiveId: closing?.id || null };
 }

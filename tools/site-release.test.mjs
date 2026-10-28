@@ -5,6 +5,17 @@ import {stampClientRelease} from './site-release.mjs';
 const index = '<script src="polytrack_062_patch.js?v=44"></script>';
 const patch = "const eventsModuleUrl=new URL('./events/client.mjs',base).href;const extraCatalogRevision='40';import('filter-menu.mjs?v=44');import('site-updates.mjs?v=44');installSiteUpdates({revision:44});";
 
+test('manual snapshot update and partial replay selection helpers follow the client cache stamp',()=>{
+  const input=patch+"import('./tools/snapshot-update-check.mjs?v=193');import('./tools/partial-replay-selection.mjs');";
+  const result=stampClientRelease(input,index,194);
+  assert.ok(result.patch.includes('snapshot-update-check.mjs?v=194'));
+  assert.ok(result.patch.includes('partial-replay-selection.mjs?v=194'));
+  assert.deepEqual(stampClientRelease(result.patch,result.index,194),result);
+  const next=stampClientRelease(result.patch,result.index,195);
+  assert.ok(next.patch.includes('snapshot-update-check.mjs?v=195'));
+  assert.ok(next.patch.includes('partial-replay-selection.mjs?v=195'));
+});
+
 test('responsive styles and viewport adapter advance together',()=>{
   const html=index+'<link href="responsive-ui.css?v=167"><link href="practice-responsive.css?v=167"><script type="module" src="tools/responsive-ui.mjs?v=167"></script>';
   const result=stampClientRelease(patch,html,168);

@@ -42,10 +42,11 @@ test('a new PB detaches the old receipt request and keeps the replacement result
 });
 
 
-test('snapshot-only visitors do not read nonexistent event receipts until they submit a run',async()=>{
+test('snapshot-only visitors do not poll event receipts even after submitting a run',async()=>{
  let calls=0;const bestRecords={},f=fixture(async()=>{calls++;return {status:'waiting'};},{snapshotOnly:()=>true,bestRecords});
  assert.equal(await f.read('period','self'),null);assert.equal(calls,0);
- bestRecords.period_self={timeMs:20000};assert.equal((await f.read('period','self')).status,'waiting');assert.equal(calls,1);
+ bestRecords.period_self={timeMs:20000};assert.equal(await f.read('period','self'),null);assert.equal(calls,0);
+ f.ownReceipts.set('period_self',{status:'waiting'});f.advance(60000);assert.equal((await f.read('period','self',true)).status,'waiting');assert.equal(calls,0);
 });
 
 

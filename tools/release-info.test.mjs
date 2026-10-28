@@ -55,6 +55,57 @@ test('guard is local-only and current capture workflow titles remain recognized'
 });
 
 import {checkReleaseInfo} from './check-release-info.mjs';
+import {parseReleasePreparedAt,releaseAge} from './release-info.mjs';
+import {prepareReleaseInfo} from './prepare-release-info.mjs';
+
+test('preparation metadata is strict UTC, never guessed from missing or malformed dates',()=>{
+  for(const value of [undefined,null,'','yesterday','2026-02-30T12:00:00.000Z','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00.000+00:00',42]){
+    assert.equal(parseReleasePreparedAt(value),null,String(value));
+    assert.deepEqual(releaseAge(value),{text:'Preparation time not recorded',nextUpdateMs:null});
+  }
+});
+
+test('release age crosses precise minute, hour, day and week boundaries using wall time',()=>{
+  const at='2026-10-01T12:00:00.000Z',base=Date.parse(at);
+  for(const [elapsed,text] of [[0,'Less than a minute ago'],[59999,'Less than a minute ago'],[60000,'1 minute ago'],[120000,'2 minutes ago'],[3599999,'59 minutes ago'],[3600000,'1 hour ago'],[7200000,'2 hours ago'],[86399999,'23 hours ago'],[86400000,'1 day ago'],[172800000,'2 days ago'],[604799999,'6 days ago'],[604800000,'1 week ago'],[1209600000,'2 weeks ago']]){
+    const age=releaseAge(at,base+elapsed);assert.equal(age.text,text);assert.ok(age.nextUpdateMs>0&&age.nextUpdateMs<=60000);
+  }
+  assert.equal(releaseAge(at,base+59999).nextUpdateMs,1);
+  assert.equal(releaseAge(at,base+3599999).nextUpdateMs,1);
+  assert.equal(releaseAge(at,base-1).text,'Device clock is before preparation time');
+  assert.equal(releaseAge(at,NaN).nextUpdateMs,null);
+});
+
+test('release 225 guard requires a real, later, nonfuture preparation instant',()=>{
+  const info={...RELEASE_INFO,number:225,revision:194,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const options={manual:{title:'224-Previous release'},expectedNext:225,revision:194,now:Date.parse('2026-10-02T13:00:00.000Z')};
+  assert.deepEqual(validateReleaseInfo(info,options),[]);
+  for(const preparedAt of [undefined,'2026-02-30T12:00:00.000Z','2026-10-03T12:00:00.000Z'])assert.ok(validateReleaseInfo({...info,preparedAt},options).length);
+  assert.ok(validateReleaseInfo(info,{...options,previousInfo:{notes:['Older notes'],preparedAt:info.preparedAt}}).some(error=>/later preparation/.test(error)));
+});
+
+test('explicit release prep is deterministic, preserves notes and helpers, and refuses restamping',()=>{
+  const source='const releaseInfo = '+JSON.stringify(RELEASE_INFO)+';\nexport const RELEASE_INFO=Object.freeze(releaseInfo);\n// Preserve helper code.';
+  const input={number:225,revision:194,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const next=prepareReleaseInfo(source,input),info=parseReleaseInfo(next);
+  assert.deepEqual(info,{...RELEASE_INFO,...input});
+  assert.ok(next.endsWith('// Preserve helper code.'));
+  assert.equal(prepareReleaseInfo(source,input),next);
+  assert.equal(prepareReleaseInfo(next,input),next);
+  assert.throws(()=>prepareReleaseInfo(next,{...input,preparedAt:'2026-10-03T12:00:00.000Z'}),/restamped/);
+  for(const change of [{number:227},{number:223},{revision:193},{preparedAt:'invalid'}])assert.throws(()=>prepareReleaseInfo(source,{...input,...change}));
+  assert.throws(()=>prepareReleaseInfo(next,{...input,number:226,revision:195}),/later/);
+});
+
+test('release checklist documents the existing CDN gate and generic preparation process',async()=>{
+  const checklist=await fs.readFile(new URL('../docs/manual-release-checklist.md',import.meta.url),'utf8');
+  const workflow=await fs.readFile(new URL('../.github/workflows/publish-cdn-release.yml',import.meta.url),'utf8');
+  assert.match(checklist,/prepare-release-info\.mjs RELEASE_NUMBER CLIENT_REVISION ACTUAL_PREPARATION_UTC/);
+  assert.match(checklist,/--test-concurrency=1/);
+  assert.doesNotMatch(checklist,/Parent Integration For 224|precommit 224|No workflow was changed|v=193/);
+  assert.match(workflow,/name: Check Help release information\s+run: node tools\/check-release-info\.mjs/);
+  assert.ok(workflow.indexOf('name: Check Help release information')<workflow.indexOf('name: Validate immutable assets'));
+});
 function fixture({info=RELEASE_INFO,prior,head=224,captures=0,dirty=false,integrated=true,stamped=true,missing=false,cache=193,installed=193}={}) {
   const encode=record=>'const releaseInfo = '+JSON.stringify(record)+';';
   const bot=Array.from({length:captures},(_,i)=>`bot${i}\0github-actions[bot]\x0041898282+github-actions[bot]@users.noreply.github.com\0Sync public ranked snapshots`);

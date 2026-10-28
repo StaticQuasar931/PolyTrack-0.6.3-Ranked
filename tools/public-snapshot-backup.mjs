@@ -174,13 +174,24 @@ export function publicTrackBackup(value, trackId) {
 // Only for full internal boards after frozenOverallSource validates the authenticated
 // payload digest, complete catalog, exact counts and published track bindings.
 export function authenticatedOverallTrackBackup(value, trackId) {
+  const p = value?.pagination;
+  const materializedPages = p && p.version === 1 && TRACK_ID.test(p.generation || '') &&
+    p.complete === true && p.pageSize === 100 && p.totalEntries === value.entries?.length &&
+    p.pageCount === Math.ceil(p.totalEntries / 100);
   if (!TRACK_ID.test(trackId) || !value || typeof value !== 'object' || value.trackId !== trackId ||
       !Number.isSafeInteger(value.updatedAt) || !Array.isArray(value.entries) || value.entries.length > 10000 ||
       !Number.isSafeInteger(value.totalEntries) || value.totalEntries !== value.entries.length ||
+      value.totalEntriesExact === false || value.ranksExact === false || value.sourceComplete === false ||
+      Object.hasOwn(value, 'pagination') && !materializedPages ||
+      value.complete === false && !(materializedPages && value.sourceComplete === true) ||
       value.complete !== true && value.sourceComplete !== true) {
     throw Error('Invalid authenticated Overall track snapshot');
   }
-  return projectTrackBackup(value);
+  // Frozen source expansion replaces entries, but keeps the public preview's
+  // complete:false. Only a fully materialized, source-complete generation can
+  // promote that preview flag; never repair counts or explicit inexactness.
+  return projectTrackBackup(materializedPages && value.sourceComplete === true
+    ? {...value, complete: true, paginatedSource: true} : value);
 }
 
 // Hash only the normalized public board. Object key order is not evidence;
@@ -192,7 +203,7 @@ export function publicTrackConfirmationDigest(value, trackId) {
 }
 
 function projectTrackBackup(value) {
-  const snapshot = project(value, ['trackId', 'complete', 'totalEntries', 'updatedAt', 'builtAt', 'schemaVersion',
+  const snapshot = project(value, ['trackId', 'complete', 'totalEntries', 'totalEntriesExact', 'ranksExact', 'updatedAt', 'builtAt', 'schemaVersion',
     'algorithmVersion', 'revision', 'sourceRevision', 'sourceComplete', 'paginatedSource', 'pagination']);
   snapshot.entries = value.entries.map(entry => {
     const result = project(entry, trackEntryFields);

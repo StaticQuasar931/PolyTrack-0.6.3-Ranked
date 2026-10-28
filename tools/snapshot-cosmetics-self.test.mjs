@@ -56,10 +56,12 @@ test('Extra Track profile links call the native importer on the selected Custom 
   const tab={classList:{contains:()=>true},click:()=>{throw Error('Already selected tab should not be clicked');}};
   const context=vm.createContext({rankedTrackNavigationEpoch:0,eventTrackReturnContext:{},eventTrackReturnEpoch:0,activeRankedAccountId:()=> 'account',localInsights:null,warmPracticeTrack:()=>{},eventUi:{leave:()=>left++},trackInfo:()=>({type:'extra'}),kodubTrackHistory:new Map(),nativeWeeklySelection:null,loadExtraTracksCatalog:async()=>[entry],document:{getElementById:()=>({}),querySelectorAll:()=>[],querySelector:()=>tab,addEventListener:(type,handler,capture)=>{assert.equal(capture,true);listeners.set(type,handler);},removeEventListener:(type,handler,capture)=>{assert.equal(capture,true);assert.equal(listeners.get(type),handler);listeners.delete(type);}},closeOverallPanel:()=>closed++,importExtraTrack:async(row,options)=>{imported=row;importOptions=options;assert.equal(options.isCurrent(),true);},isElementVisible:()=>true,log:()=>{},showRankedTrackNavigationError:message=>errors.push(message)});
   const start=source.indexOf('  async function focusTrackFromRanked('),end=source.indexOf('  function trackSummaryLine(',start);
+  let replayInvalidations=0;context.invalidateNativePartialReplay=()=>{replayInvalidations++;};
   assert.ok(start>=0&&end>start,'complete production navigation function exists');
   vm.runInContext(source.slice(start,end),context);
   assert.equal(await context.focusTrackFromRanked(trackId),true);
   assert.equal(imported,entry);assert.equal(left,1);assert.equal(closed,1);
+  assert.equal(replayInvalidations,1);
   assert.equal(context.eventTrackReturnContext,null);assert.equal(context.eventTrackReturnEpoch,1);
   assert.equal(context.rankedTrackNavigationEpoch,1);assert.equal(listeners.size,0);assert.deepEqual(errors,[]);
   context.activeRankedAccountId=()=> 'another-account';assert.equal(importOptions.isCurrent(),false,'import cancellation remains bound to the initiating account');

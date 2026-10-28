@@ -402,3 +402,94 @@ test('native reveal transitions remain enabled normally and disabled for reduced
     await assertRank(page, 2, 'nd');
   }
 });
+
+test('actual native renderer and event synchronizer paint third place with readable font ownership', {timeout: 45000}, async t => {
+  const page = await openFixture(t);
+  const source = await fs.readFile(new URL('../events/client.mjs', import.meta.url), 'utf8');
+  const slice = (text, start, end) => {
+    const a = text.indexOf(start), b = text.indexOf(end, a);
+    assert.ok(a >= 0 && b > a, 'real native/event renderer anchors must exist');
+    return text.slice(a, b);
+  };
+  const renderer = slice(bundle, 'function qe(e){return Qe(e)+Je(e)}', ';var it,rt,at,st,ot,lt');
+  const eventHelpers = slice(source, 'export function eventOrdinal(', 'export function eventTrackName(').replace(/^export /, '')
+    + slice(source, '  function syncFinishPlace(){', '  function tick(');
+  await page.addStyleTag({content: await fs.readFile(new URL('../events/events.css', import.meta.url), 'utf8')});
+  await page.evaluate(({renderer, eventHelpers}) => {
+    // Execute the actual DOM renderer only. Audio, translation and times are local inputs.
+    const R = {gn: (self, store, kind, method) => kind === 'm' ? method : store.get(self),
+      GG: (self, store, value) => {store.set(self, value); return value;}};
+    const NativeAnnouncer = new Function('R', 'He', renderer + ';return nt;')(R, {A: {formatTimeString: value => value}});
+    document.querySelector('#ui').replaceChildren();
+    window.nativeAnnouncer = new NativeAnnouncer(document.querySelector('#ui'), {get: key => key},
+      {getBuffer: () => null}, 'Weekly event: Winter 5', '00:24.531', null, 'personal-best', null,
+      Promise.resolve({newPosition: 3, previousPosition: 3}));
+    window.eventPlace = {rank: 3, fieldSize: 64, provisional: true};
+    window.syncRealEvent = new Function('place', `
+      const latestFinish = {periodId: 'weekly', accountId: 'fixture'};
+      const sessions = {current: () => ({periodId: 'weekly'})};
+      const bridge = {accountId: () => 'fixture'};
+      const finishPlace = () => place;
+      ${eventHelpers}
+      return syncFinishPlace;
+    `)(window.eventPlace);
+  }, {renderer, eventHelpers});
+  await page.waitForFunction(() => document.querySelector('.position')?.textContent === '3rd');
+  await page.evaluate(async () => Promise.all(document.getAnimations().map(animation => animation.finished)));
+  const directory = process.env.POLYTRACK_FINISH_SCREENSHOTS;
+  if (directory) await fs.mkdir(directory, {recursive: true});
+  const records = [];
+  const capture = async label => {
+    records.push(await page.locator(positionSelector).evaluate((node, label) => {
+      const suffix = node.querySelector('span.sq-event-ordinal-suffix,sup');
+      const style = getComputedStyle(suffix || node);
+      return {label, text: node.textContent, html: node.innerHTML, title: node.title,
+        font: style.fontFamily, size: style.fontSize, spacing: style.letterSpacing,
+        transform: style.textTransform, features: style.fontFeatureSettings, ligatures: style.fontVariantLigatures};
+    }, label));
+    if (directory) await page.locator('.time-announcer-ui').screenshot({path: path.join(directory, label + '.png')});
+  };
+  await capture('actual-native-third');
+  await page.evaluate(() => window.finish.enhanceFinishAnnouncers(document));
+  await settle(page);
+  await capture('enhanced-native-third');
+  await assertRank(page, 3, 'rd');
+  const nativeSuffix = await page.locator('.sq-finish-ordinal').evaluate(node => ({font:getComputedStyle(node).fontFamily,style:getComputedStyle(node).fontStyle}));
+  assert.equal(nativeSuffix.font, 'Arial, sans-serif', 'only enhancer-owned suffix switches to a text face');
+  assert.equal(nativeSuffix.style, 'normal', 'small suffix is not synthetically slanted');
+  assert.match(await page.locator('.sq-finish-number').evaluate(node => getComputedStyle(node).fontFamily), /ForcedSquare/, 'native number remains unchanged');
+  await page.evaluate(() => window.syncRealEvent());
+  await settle(page);
+  await capture('actual-event-third');
+  assert.equal(await page.locator('.sq-event-ordinal-suffix').textContent(), 'rd');
+  const client = await page.context().newCDPSession(page);
+  await client.send('DOM.enable');await client.send('CSS.enable');
+  const {root} = await client.send('DOM.getDocument');
+  const {nodeId} = await client.send('DOM.querySelector', {nodeId: root.nodeId, selector: '.sq-event-ordinal-suffix'});
+  const {fonts} = await client.send('CSS.getPlatformFontsForNode', {nodeId});
+  assert.ok(fonts.length > 0 && fonts.every(font => !font.isCustomFont), 'event suffix uses rendered system-font glyphs, not ForcedSquare');
+  assert.equal(fonts.reduce((sum, font) => sum + font.glyphCount, 0), 2, 'rd renders as two glyphs, not an X ligature');
+  const original = await page.locator(positionSelector).innerHTML();
+  for (let i = 0; i < 10; i++) {
+    await page.evaluate(() => {window.syncRealEvent();window.finish.enhanceFinishAnnouncers(document);});
+  }
+  await settle(page);
+  assert.equal(await page.locator(positionSelector).innerHTML(), original, 'enhancer never replaces the event-owned ordinal');
+  await page.evaluate(() => {window.eventPlace.fieldSize=65;window.eventPlace.provisional=false;window.syncRealEvent();});
+  await settle(page);
+  assert.equal(await page.locator(positionSelector).getAttribute('aria-label'), 'Event place 3 of 65', 'same-rank field-size changes update accessible context');
+  assert.equal(await page.locator(positionSelector).innerHTML(), original, 'context updates do not rewrite event-owned markup');
+  for (const [width, height, scale] of [[375,667,1],[667,375,1.25],[1200,800,1.25],[1920,1080,1]]) {
+    await page.setViewportSize({width,height});
+    await page.locator('.current').evaluate((node, scale) => node.style.fontSize = (Math.max(24, Math.min(48, innerWidth * .032)) * scale) + 'px', scale);
+    await settle(page);
+    const boxes = await page.locator('.position,.sq-event-ordinal-suffix').evaluateAll(nodes => nodes.map(node => {
+      const r = node.getBoundingClientRect();return {x:r.x,right:r.right,y:r.y,bottom:r.bottom};
+    }));
+    assert.ok(boxes.every(box => box.x >= 0 && box.right <= width && box.y >= 0 && box.bottom <= height), 'actual event rank stays in viewport');
+    await capture(`event-third-${width}x${height}-text${scale}`);
+  }
+  if (directory) await fs.writeFile(path.join(directory, 'native-event-font-audit.json'), JSON.stringify({records, fonts}, null, 2));
+  t.diagnostic('Real native formatter + DOM renderer + event synchronizer, local rank 3; rendered fonts: ' + JSON.stringify(fonts));
+  await page.evaluate(() => window.nativeAnnouncer.dispose());
+});

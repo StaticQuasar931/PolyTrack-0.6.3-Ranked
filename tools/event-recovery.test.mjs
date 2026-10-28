@@ -43,3 +43,38 @@ test('public cloud recovery is disabled by default without touching Firebase or 
  runClientSource(extract('readDirectPublicSnapshot'),c);
  await assert.rejects(c.readDirectPublicSnapshot('tracks','a'),/Direct public Firebase reads disabled/);assert.equal(calls,0);
 });
+
+test('official snapshot-only daily event has no live fallback even when missing or forced',async()=>{
+ const start=Date.UTC(2026,9,27),period={id:'d_20261027',kind:'daily',trackId:'a'.repeat(64),startsAt:start,endsAt:start+86400000,maxRp:100};
+ for(const force of [false,true])for(const available of [false,true]){
+  let calls=0;const published=available?{period,entries:[],updatedAt:start}:null;
+  const c=vm.createContext({Date:{now:()=>start+1000},encodeURIComponent,snapshotOnlyForNewAccount:()=>true,
+   readPublicSnapshotBackup:async()=>published,readEventCatalog:async()=>({periods:[period]}),currentDailyEventPeriod:()=>period,
+   readEventSnapshot:(value,p)=>value?.period===p,rankedFetch:async()=>{calls++;throw Error('must not call live backend');}});
+  runClientSource(extract('loadEventCloudRead'),c);
+  if(available)assert.equal(await c.loadEventCloudRead('/v1/events/'+period.id+'/snapshot','unused',period.id,force),published);
+  else await assert.rejects(c.loadEventCloudRead('/v1/events/'+period.id+'/snapshot','unused',period.id,force),/Saved standings/);
+  assert.equal(calls,0);
+ }
+});
+test('event replay recovery never silently reads live data in official snapshot-only mode',async()=>{
+ let calls=0;const c=vm.createContext({eventReplayRequests:new Map(),readPublicSnapshotBackup:async()=>null,
+  snapshotOnlyForNewAccount:()=>true,compatibilityOnlineAllowed:true,rankedFetch:async()=>{calls++;throw Error('must not read live');}});
+ runClientSource(extract('readEventReplay'),c);
+ await assert.rejects(c.readEventReplay('kodub_1793102400000','a'.repeat(64)),/not in this snapshot/);
+ assert.equal(calls,0);
+});
+
+
+test('missing packaged catalog never falls back to live services for an official client',async()=>{
+ let calls=0;const c=vm.createContext({snapshotOnlyForNewAccount:()=>true,readEventCatalog:async()=>{throw Error('static unavailable');},readPublicSnapshotBackup:async()=>{calls++;},rankedFetch:async()=>{calls++;}});
+ runClientSource(extract('loadEventCloudRead'),c);
+ await assert.rejects(c.loadEventCloudRead('/v1/events/catalog','unused','catalog'),/Saved event catalog/);assert.equal(calls,0);
+});
+
+
+test('a bound official snapshot replaces legacy live cache as one whole board',()=>{
+ const c=vm.createContext({snapshotOnlyForNewAccount:()=>true});runClientSource(extract('chooseEventReadValue'),c);
+ const previous={period:{id:'period',trackId:'track'},updatedAt:999,entries:[{accountId:'old'}]},incoming={period:previous.period,updatedAt:10,_dataSource:'snapshot',entries:[]};
+ assert.equal(c.chooseEventReadValue(previous,incoming,'period'),incoming);assert.equal(previous.entries.length,1);
+});

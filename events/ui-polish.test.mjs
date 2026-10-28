@@ -53,8 +53,8 @@ test('featured event metadata and PB icons fit desktop and phone viewports',asyn
    assert.equal(cardHeights.length,4);
    if(width>480)assert(Math.max(...cardHeights)-Math.min(...cardHeights)<=1,`featured card heights match at ${width}: ${cardHeights}`);
    else{
-    assert(cardHeights.slice(1,3).every(height=>height<=250),`short-copy phone cards stay compact at ${width}: ${cardHeights}`);
-    assert(cardHeights[3]<=300,`long-copy daily phone card grows only for content at ${width}: ${cardHeights}`);
+    assert(Math.max(...cardHeights)-Math.min(...cardHeights)<=1,`poster cards remain equal height at ${width}: ${cardHeights}`);
+    assert(cardHeights.every(height=>height<=width/2.1+250),`phone poster height stays bounded by image and text at ${width}: ${cardHeights}`);
     const phoneCards=await page.locator('.sq-kodub-weekly>.button,.sq-permanent-track>.button,.sq-event-track-buttons>.sq-event-card').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,width:node.getBoundingClientRect().width,ratio:getComputedStyle(node).aspectRatio})));
     assert(phoneCards.every(card=>card.width>=width-48&&card.ratio==='auto'),`phone cards use full-width content sizing at ${width}: ${JSON.stringify(phoneCards)}`);
     assert(phoneCards.every((card,index)=>index===0||card.top>phoneCards[index-1].top),`phone cards form one column at ${width}`);

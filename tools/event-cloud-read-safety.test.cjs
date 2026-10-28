@@ -27,6 +27,7 @@ function harness({status=200,fetchError=null,backup=null,snapshotOnly=false}={})
     db:async()=>({collection:()=>({doc:()=>({get:async()=>{firestoreReads++;return {exists:true,data:()=>({firestore:true})};}})})}),
     eventsModuleUrl:'https://game.test/',localEventCatalog:async()=>{throw Error('not used');},
   };
+  context.rankedFetch=context.fetch;
   vm.createContext(context);vm.runInContext(source.slice(edgeStart,edgeEnd),context);vm.runInContext(source.slice(start,end),context);
   return {context,backupReads,get workerCalls(){return workerCalls;},get firestoreReads(){return firestoreReads;},get quotaNotes(){return quotaNotes;},advance:ms=>{now+=ms;}};
 }

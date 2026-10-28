@@ -42,7 +42,7 @@ jobs:
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access
         # Offline, dependency-free checks catch regressions before any production read.
-        run: node --test tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs
+        run: node --test tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs workers/ranked/test/event-preflight-cost.test.js
       - name: Check for due verification work
         id: queue
         timeout-minutes: 2

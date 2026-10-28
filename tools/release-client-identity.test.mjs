@@ -34,9 +34,11 @@ const board = (id, revision = 2) => ({entries: [row(id)], updatedAt: 200, revisi
 
 function trackHarness(initial = {}, unranked = []) {
   const cache = new Map(Object.entries(initial)), metadata = [], loads = [], extraLoads = [], timers = [], repaints = [], classes = new Set(), visibility = [];
+  const replayInvalidations = [];
   let account='one', host={visible:true};
   const context = vm.createContext({
     Date: {now: () => 1000000}, trackLoadGeneration: 0, currentTrackLoadState: {},
+    invalidateNativePartialReplay: (...args) => replayInvalidations.push(args),
     TRACK_REFRESH_MS: 600000, TRACK_CACHE_SCHEMA: 6, RANK_MODEL: 'model', snapshotTrackStatistics: {},
     unrankedExtraTrackIds: new Set(unranked), publicSnapshotRetryAt: 0,
     readTrackSnapshotCache: id => cache.get(id) || null,
@@ -59,7 +61,7 @@ function trackHarness(initial = {}, unranked = []) {
   runClientSource(section('  const trackCloudRetryAt=new Map();', '  function computeOverallFromRaceRows('), context);
   context.scheduleNativeTrackSnapshotRefresh = id => repaints.push(id);
   return {
-    context, cache, metadata, loads, extraLoads, repaints, timers, visibility,
+    context, cache, metadata, loads, extraLoads, repaints, timers, visibility, replayInvalidations,
     setAccount:value=>{account=value;},setHost:value=>{host=value;},
     get: (...args) => context.getTrackEntries(...args),
     state: () => plain(context.currentTrackLoadState),
@@ -83,6 +85,7 @@ test('cached A metadata cannot reclaim selection after cached B', async () => {
   gate.resolve({}); await a;
   assert.equal(h.state().trackId, 'B'); assert.equal(h.context.trackLoadGeneration, generation);
   assert.equal(h.loads.length, 0); assert.equal(h.loading(), false);
+  assert.deepEqual(h.replayInvalidations, [[], []], 'both selections invalidate replay work; stale metadata cannot invalidate again');
 });
 
 test('cached A -> B -> A ignores the first A continuation and rereads the latest cache', async () => {
@@ -526,6 +529,7 @@ test('twenty unchanged warm selections never hide rows or reload the board', asy
   for(let i=0;i<20;i++)assert.equal((await h.get('A'))[0].name,'A');
   assert.equal(h.loads.length,0);assert.deepEqual(h.repaints,[]);
   assert.ok(!h.visibility.includes('hide'));assert.equal(h.loading(),false);
+  assert.equal(h.replayInvalidations.length,20,'replay cancellation does not force a board reload');
 });
 
 for(const changed of [false,true])test(`background refresh keeps cached rows visible (changed=${changed})`,async()=>{

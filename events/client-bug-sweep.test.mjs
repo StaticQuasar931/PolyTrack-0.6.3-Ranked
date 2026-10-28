@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {eventExactRunAt,eventVerificationLabel} from './client.mjs';
+import {archiveSnapshotState} from './archive-view.mjs';
 
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const selectionSource=source.slice(source.indexOf('  const replayContextActive='),source.indexOf('  function selectTopEventRows('));
@@ -52,7 +53,7 @@ test('a late archived-track failure cannot clear a newer navigation intent',asyn
  const pending=new Map(),messages=[];
  const context={bridge:{accountId:()=> 'viewer',openTrack:track=>new Promise((resolve,reject)=>pending.set(track,{resolve,reject}))},
   sessions:{leave(){}},knownPeriods:new Map(),cache:new Map(),read:()=>null,STORE:'test',
-  close(){},message:text=>messages.push(text),tick(){}};
+  archiveSnapshotState,close(){},message:text=>messages.push(text),tick(){}};
  const code=source.slice(source.indexOf('  async function openArchivedTrack('),source.indexOf('  let launching='));
  const api=vm.runInNewContext(`(()=>{let entryRequest=0,eventIntent=null,archiveIntent=null,nativeOpenPermit=false;${code};return {openArchivedTrack,current:()=>archiveIntent};})()`,context);
  const first={id:'old',kind:'daily',trackId:'old-track'},second={id:'new',kind:'daily',trackId:'new-track'};

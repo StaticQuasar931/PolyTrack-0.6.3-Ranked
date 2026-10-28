@@ -23,7 +23,7 @@ function runtime(db, now = Date.now) {
   return eventRuntime((path, init) => db.call(path, init?.body ? JSON.parse(init.body) : undefined), { now });
 }
 export async function checkEventWork(db, { now = Date.now } = {}) {
-  return eventWork(runtime(db, typeof now === 'function' ? now : () => now));
+  return eventWork(runtime(db, typeof now === 'function' ? now : () => now), {existenceOnly:true});
 }
 export async function runEventVerification(db, root, { now = Date.now, verifyBatch, limit = EVENT_JOB_LIMIT, intakeLimit = 16, canSpend = () => true, selectionState } = {}) {
   const r = runtime(db, typeof now === 'function' ? now : () => now);

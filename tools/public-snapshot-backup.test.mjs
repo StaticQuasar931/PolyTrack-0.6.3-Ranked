@@ -8,6 +8,7 @@ import {deflateSync} from 'node:zlib';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {publicOverallBackup, publicTrackBackup, publicEventBackup, publicTrackRegistry, chooseTrackFetches,
+  authenticatedOverallTrackBackup,
   publicEventReplayBackup, runPublicSnapshotBackup, PUBLIC_SNAPSHOT_LIMITS,
   isReusableArchivedEventBackup, createAdminArchiveCaptureFetch, promotePublicEventPlayback} from './public-snapshot-backup.mjs';
 
@@ -22,6 +23,92 @@ const overall = {updatedAt: 300, revision: 9, builtRevision: 9, sourceRevision: 
     ownerUid: 'private', resultSamples: [{replay: 'private'}], bestTracks: [{trackId, rank: 1, replayHash: 'private'}]}],
   trackSummaries: [{trackId, updatedAt: 250, fieldSize: 2, leader: {accountId: 'racer', name: 'Racer', replay: 'private'}}],
   authorityAudit: {ownerUid: 'private'}, resultBundleLocation: 'main_results'};
+
+function materializedTrack(count = 501) {
+  return {trackId, updatedAt: 250, revision: 7, sourceRevision: 7, complete: false, sourceComplete: true,
+    totalEntriesExact: true, ranksExact: true, totalEntries: count,
+    pagination: {version: 1, generation: 'b'.repeat(64), pageSize: 100, pageCount: Math.ceil(count / 100),
+      totalEntries: count, complete: true},
+    entries: Array.from({length: count}, (_, i) => ({accountId: (i + 1).toString(16).padStart(64, '0'), timeMs: 1000 + i}))};
+}
+
+test('authenticated materialized pages normalize only the preview flag and preserve exactness without mutating input', () => {
+  for (const count of [0, 5, 501, 10000]) {
+    const source = materializedTrack(count), before = structuredClone(source);
+    const saved = authenticatedOverallTrackBackup(source, trackId);
+    assert.equal(saved.complete, true);
+    assert.equal(saved.sourceComplete, true);
+    assert.equal(saved.paginatedSource, true);
+    assert.equal(saved.totalEntries, count);
+    assert.equal(saved.totalEntriesExact, true);
+    assert.equal(saved.ranksExact, true);
+    assert.deepEqual(saved.pagination, source.pagination);
+    assert.deepEqual(saved.entries, source.entries);
+    assert.deepEqual(source, before);
+    assert.deepEqual(authenticatedOverallTrackBackup(saved, trackId), saved, 'materialization is idempotent');
+    assert.deepEqual(publicTrackBackup(saved, trackId), saved);
+  }
+});
+
+test('authenticated materialization rejects truncated pages, invalid manifests and explicit inexact or incomplete sources', () => {
+  const changes = [
+    b => {b.entries.pop();}, b => {b.totalEntries++;}, b => {b.totalEntries = String(b.totalEntries);},
+    b => {delete b.totalEntries;}, b => {b.totalEntries = 0;},
+    b => {b.totalEntriesExact = false;}, b => {b.ranksExact = false;},
+    b => {b.sourceComplete = false;}, b => {delete b.sourceComplete;},
+    b => {delete b.pagination;}, b => {b.pagination = null;},
+    b => {b.pagination.complete = false;}, b => {b.pagination.totalEntries++;},
+    b => {delete b.pagination.totalEntries;}, b => {b.pagination.totalEntries = 0;},
+    b => {b.pagination.pageCount--;}, b => {b.pagination.pageSize = 500;},
+    b => {b.pagination.version = 2;}, b => {b.pagination.generation = 'invalid';}
+  ];
+  for (const change of changes) {
+    const source = materializedTrack(); change(source);
+    assert.throws(() => authenticatedOverallTrackBackup(source, trackId), /Invalid authenticated Overall track snapshot/);
+  }
+  assert.throws(() => authenticatedOverallTrackBackup(materializedTrack(10001), trackId), /Invalid authenticated/);
+  const direct = {...materializedTrack(5), complete: true}; delete direct.pagination;
+  for (const key of ['sourceComplete', 'totalEntriesExact', 'ranksExact']) {
+    assert.throws(() => authenticatedOverallTrackBackup({...direct, [key]: false}, trackId), /Invalid authenticated/);
+  }
+  const legacy = {...direct}; delete legacy.totalEntriesExact; delete legacy.ranksExact;
+  assert.equal(authenticatedOverallTrackBackup(legacy, trackId).complete, true);
+  assert.equal(Object.hasOwn(authenticatedOverallTrackBackup(legacy, trackId), 'totalEntriesExact'), false);
+  assert.equal(Object.hasOwn(authenticatedOverallTrackBackup(legacy, trackId), 'ranksExact'), false);
+  const pagedLegacy = materializedTrack(); delete pagedLegacy.totalEntriesExact; delete pagedLegacy.ranksExact;
+  const normalized = authenticatedOverallTrackBackup(pagedLegacy, trackId);
+  assert.equal(normalized.complete, true);
+  assert.equal(Object.hasOwn(normalized, 'totalEntriesExact'), false, 'exact row count does not invent a flag');
+  assert.equal(Object.hasOwn(normalized, 'ranksExact'), false);
+});
+
+test('public projection keeps negative exactness flags and never upgrades a preview', () => {
+  const source = {...materializedTrack(), entries: materializedTrack().entries.slice(0, 500),
+    totalEntriesExact: false, ranksExact: false};
+  const saved = publicTrackBackup(source, trackId);
+  assert.equal(saved.complete, false);
+  assert.equal(saved.totalEntries, 501);
+  assert.equal(saved.entries.length, 500);
+  assert.equal(saved.totalEntriesExact, false);
+  assert.equal(saved.ranksExact, false);
+});
+
+test('capture reuses normalized authenticated pages without fetching track data', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'materialized-source-capture-'));
+  t.after(() => fs.rm(directory, {recursive: true, force: true}));
+  const board = authenticatedOverallTrackBackup(materializedTrack(), trackId), calls = [];
+  const result = await runPublicSnapshotBackup({directory, trackIds: [trackId], capturedOverall: overall,
+    capturedTracks: new Map([[trackId, board]]), trackFetchLimit: 0, log: () => {}, fetchImpl: async input => {
+      const pathname = new URL(input).pathname; calls.push(pathname);
+      if (pathname === '/v1/events/catalog') return Response.json({periods: [], archives: []});
+      assert.equal(pathname, '/v1/events/permanent-rolling-hills/snapshot');
+      return new Response('', {status: 404});
+    }});
+  assert.equal(result.trackBackupsPresent, 1);
+  assert.equal(calls.length, 2);
+  const saved = JSON.parse(await fs.readFile(path.join(directory, `tracks/${trackId}.json`), 'utf8'));
+  assert.deepEqual(saved, board);
+});
 
 async function pendingCaptureFixture(t,count=2){
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'pending-capture-invariant-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));

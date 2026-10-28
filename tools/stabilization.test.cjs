@@ -144,7 +144,7 @@ test('authoritative public design is not masked by a legacy aggregate clock',()=
 });
 // Source guards complement the isolated browser interaction matrix in the UI handoff.
 test('dialog focus enumeration includes summaries and excludes inactive tabs',()=>{
- let selector='';const result=run('visibleDialogFocusables',{isElementVisible:x=>x.visible})({querySelectorAll:s=>{selector=s;return[{visible:true},{visible:false}]}});
+ let selector='';const result=run('visibleDialogFocusables',{isElementVisible:x=>x.visible})({querySelectorAll:s=>{selector=s;return[{visible:true,closest:()=>null,parentElement:null},{visible:false,closest:()=>null,parentElement:null}]}});
  assert.equal(result.length,1);assert.ok(selector.includes('summary'));assert.ok(selector.includes('button:not([disabled]):not([tabindex="-1"])'));
 });
 test('Studio markup retains drafts and offers explicit discard',()=>{

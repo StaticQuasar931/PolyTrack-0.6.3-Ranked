@@ -10,8 +10,8 @@ function setup(saved=null){
 const row=(id='a',rp=20,rank=1)=>({accountId:id,name:'Event Racer',rp,rank,events:2});
 test('Event RP display rounds fractional totals without changing the snapshot',()=>{
  const {ctx}=setup();const entry=row('a',27.4);const html=ctx.renderEventEntryRow(entry,0);
- assert.match(html,/class="overall-score">27<\/div>/);assert.doesNotMatch(html,/27\.4/);
- assert.equal(entry.rp,27.4);
+ assert.match(html,/class="overall-score"[^>]*>27<\/div>/);assert.doesNotMatch(html,/27\.4/);
+ assert.equal(entry.rp,27.4);assert.match(html,/aria-label="Verified Event RP - 27. Pending runs are excluded."/);
 });
 test('event sorting preserves server ties and only joins cached presentation',()=>{
  const {ctx}=setup({updatedAt:1,entries:[row('b',20,1),row('a',20,1),row('c',2,3)]});
@@ -134,4 +134,13 @@ test('Event RP normalization retains public presentation and drops private field
 test('Event RP omits redundant summary and uses the middle for event information',()=>{
  const {ctx}=setup({updatedAt:5,entries:[row('a',100,1)]});ctx.updateOverallPager=()=>{};
  const list={innerHTML:'',scrollTop:0};ctx.renderEventEntries(list);assert.doesNotMatch(list.innerHTML,/event-rp-summary/);assert.match(list.innerHTML,/Average 50 ERP per event/);
+});
+
+
+test('official Event RP uses the bound snapshot even when legacy live storage has a newer timestamp',async()=>{
+ const {ctx,getSaved}=setup({updatedAt:999,source:'cloud',entries:[row('old',99)]});ctx.snapshotOnlyForNewAccount=()=>true;
+ ctx.readPublicSnapshotBackup=async()=>({updatedAt:10,_snapshotPackageAt:400,_snapshotCapturedAt:300,entries:[row('new',20)]});
+ ctx.eventCloudRead=()=>assert.fail('No backend fallback');await ctx.fetchEventTotals(true);
+ assert.equal(ctx.eventTotalsSnapshot.entries[0].accountId,'new');assert.equal(ctx.eventTotalsSnapshot.source,'snapshot');assert.equal(ctx.eventTotalsState.status,'snapshot');
+ assert.equal(getSaved().snapshotPackageAt,400);assert.equal(ctx.normalizeEventTotals(getSaved()).snapshotPackageAt,400);
 });

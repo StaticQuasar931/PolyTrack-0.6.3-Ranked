@@ -26,7 +26,7 @@ function bridge({assets=new Map(),moduleUrl='https://game.test/events/client.mjs
 test('archive bridge reads only matching saved boards and replays',async()=>{
  const accountId='a'.repeat(64),id='daily_20261001';
  const assets=new Map([
-  ['event/'+id+'/',{period:{id},archived:true,entries:[]}],
+  ['event/'+id+'/',{period:{id,trackId:'c'.repeat(64)},archived:true,entries:[]}],
   ['event-replay/'+id+'/'+accountId,{periodId:id,accountId,replay:'saved'}]
  ]);
  const {hooks,reads,requests}=bridge({assets});

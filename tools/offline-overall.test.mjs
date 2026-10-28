@@ -7,6 +7,7 @@ import {buildOfflineOverall} from './offline-overall.mjs';
 import {computeOverall, rankTrustedTrackEntries, packPlannerResults} from '../workers/ranked/src/index.js';
 import {decodeProjectionResults, decodeOverallProjectionBundle} from './overall-projection-bundle.mjs';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
+import {authenticatedOverallTrackBackup, publicTrackBackup} from './public-snapshot-backup.mjs';
 
 const ids = ['5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038',
   '7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0',
@@ -23,6 +24,80 @@ function fixture() {
     trackSummaries: [], trackCatalog: tracks.map(b => ({trackId: b.trackId, updatedAt: b.updatedAt}))}, expectedTrackIds: ids, now: 2000};
 }
 const overall = result => result.files.get('overall.json');
+
+test('materialized authenticated pagination reaches the offline scorer with exact counts', async () => {
+  const f = populationFixture(501), expected = await buildOfflineOverall(f);
+  const board = f.tracks[0];
+  Object.assign(board, {complete: false, sourceComplete: true, totalEntriesExact: true,
+    pagination: {version: 1, generation: 'a'.repeat(64), pageSize: 100, pageCount: 6, totalEntries: 501, complete: true}});
+  await assert.rejects(buildOfflineOverall(f), /complete-false/, 'the scorer must not silently relax completeness');
+  f.tracks[0] = authenticatedOverallTrackBackup(board, board.trackId);
+  const actual = await buildOfflineOverall(f);
+  assert.deepEqual(actual.files, expected.files);
+  assert.equal(actual.report.sourceRows, 501);
+});
+
+test('inexact public counts and ranks survive projection and still fail closed', async () => {
+  for (const key of ['totalEntriesExact', 'ranksExact']) {
+    const f = fixture();
+    f.tracks[0][key] = false;
+    f.tracks[0] = publicTrackBackup(f.tracks[0], f.tracks[0].trackId);
+    await assert.rejects(buildOfflineOverall(f), error => {
+      assert.equal(error.diagnostic.trackId, ids[0]);
+      assert.equal(error.diagnostic[key], false);
+      return true;
+    });
+  }
+});
+
+test('incomplete track errors identify the track, counts and exact failed conditions without row data', async () => {
+  const cases = [
+    [b => {b.complete = false;}, 'complete-false'],
+    [b => {b.sourceComplete = false;}, 'source-complete-false'],
+    [b => {b.totalEntries++;}, 'total-entries-mismatch'],
+    [b => {b.entries = null;}, 'invalid-entries'],
+    [b => {b.pagination = {complete: false, totalEntries: 5};}, 'pagination-incomplete'],
+    [b => {b.pagination = {complete: true, totalEntries: 6};}, 'pagination-total-mismatch'],
+    [b => {b.entries = new Array(10001); b.totalEntries = 10001;}, 'track-row-limit']
+  ];
+  for (const [change, reason] of cases) {
+    const f = fixture(), board = f.tracks[1];
+    board.ownerUid = 'PRIVATE_SENTINEL'; board.entries[0].name = 'PRIVATE_SENTINEL'; change(board);
+    await assert.rejects(buildOfflineOverall(f), error => {
+      assert.equal(error.code, 'OFFLINE_TRACK_BOARD_INVALID');
+      assert.equal(error.diagnostic.trackId, ids[1]);
+      assert.equal(error.diagnostic.totalRowsBefore, 5);
+      assert.equal(error.diagnostic.entryCount, board.entries?.length ?? null);
+      assert.equal(error.diagnostic.totalEntries, board.totalEntries);
+      assert.ok(error.diagnostic.reasons.includes(reason));
+      assert.match(error.message, new RegExp(ids[1]));
+      assert.doesNotMatch(error.message, /PRIVATE_SENTINEL/);
+      return true;
+    });
+  }
+});
+
+test('aggregate row budget remains fail closed and reports the exact crossing track', async () => {
+  const f = fixture();
+  f.tracks = Array.from({length: 11}, (_, index) => {
+    const trackId = (80000 + index).toString(16).padStart(64, '0');
+    const entries = rankTrustedTrackEntries(Array.from({length: index < 10 ? 10000 : 1}, (_, i) => ({
+      accountId: (i + 1).toString(16).padStart(64, '0'), trackId, timeMs: 10000 + i,
+      runVerified: true, integrityVerified: true
+    })), trackId);
+    return {...meta, trackId, complete: true, totalEntries: entries.length, entries};
+  });
+  f.expectedTrackIds = f.tracks.map(b => b.trackId);
+  f.previousOverall.trackCatalog = f.tracks.map(b => ({trackId: b.trackId, updatedAt: b.updatedAt}));
+  await assert.rejects(buildOfflineOverall(f), error => {
+    assert.equal(error.code, 'OFFLINE_TRACK_BOARD_INVALID');
+    assert.equal(error.diagnostic.trackId, f.tracks[10].trackId);
+    assert.deepEqual(error.diagnostic.reasons, ['aggregate-row-limit']);
+    assert.equal(error.diagnostic.totalRowsBefore, 100000);
+    assert.equal(error.diagnostic.totalRowsIncludingTrack, 100001);
+    return true;
+  });
+});
 
 test('authoritative scores, qualification, medals, planner encoding and projection bindings agree', async () => {
   const f = fixture(), result = await buildOfflineOverall(f);

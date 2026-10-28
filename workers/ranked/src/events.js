@@ -396,8 +396,9 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const queuePath = path(C.queues, periodId), queue = await tx.get(queuePath);
         demand(queue, 'event_queue_unavailable', 503);
         demand(queue.admitted < p.capacity.admissionsPerPeriod, 'event_admission_capacity', 429);
-        demand(queue.slots.length < L.queued, 'event_queue_capacity', 429);
-        demand(queue.replayBytes + replay.length <= p.capacity.replayBytesPerPeriod, 'event_replay_capacity', 429);
+        const capacityError = !(queue.slots.length < L.queued) ? 'event_queue_capacity' :
+          !(queue.replayBytes + replay.length <= p.capacity.replayBytesPerPeriod) ? 'event_replay_capacity' : null;
+        if (capacityError) throw Object.assign(new EventError(capacityError, 429), { retryUntil: p.endsAt + p.graceMs });
         demand(quota || queue.entrants < p.capacity.entrants, 'event_entrant_capacity', 429);
         const livePath = path(C.live, periodId), board = await tx.get(livePath);
         const retention = p.storageVersion===2 ? await prepareEventRetention(tx,periodId,queue,runId,accountId,ownerHash,!quota) : null;

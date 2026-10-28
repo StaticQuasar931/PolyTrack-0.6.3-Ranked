@@ -46,7 +46,7 @@ const id='a'.repeat(64);
 const run=(attemptId='one',timeMs=20000)=>({accountId:id,trackId:id,periodId:'daily-fixture',attemptId,timeMs,frames:timeMs,replay:'AAAA',carStyle:'',endsAt:Date.now()+3600000});
 let browser,server,base;
 before(async()=>{
- server=http.createServer((req,res)=>{const name=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Isolated event integration</title>');return;}if(!/^\/events\/[a-z-]+\.(mjs|css)$/.test(name)&&!/^\/tools\/(?:kodub-practice-track|playback-worker-bridge|playback-engine-session|playback-engine-pin|public-replay-playback)\.mjs$/.test(name)){res.writeHead(404).end();return;}try{res.setHeader('Content-Type',name.endsWith('.mjs')?'text/javascript':'text/css');res.end(fs.readFileSync(path.join(repo,name)));}catch{res.writeHead(404).end();}});
+ server=http.createServer((req,res)=>{const name=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Isolated event integration</title>');return;}if(!/^\/events\/[a-z-]+\.(mjs|css)$/.test(name)&&!/^\/tools\/(?:kodub-practice-track|playback-worker-bridge|playback-engine-session|playback-engine-pin|public-replay-playback|partial-replay-selection)\.mjs$/.test(name)){res.writeHead(404).end();return;}try{res.setHeader('Content-Type',name.endsWith('.mjs')?'text/javascript':'text/css');res.end(fs.readFileSync(path.join(repo,name)));}catch{res.writeHead(404).end();}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
 });
@@ -73,7 +73,7 @@ const setup=async ({focus,nativeRow,nativeTimeFormatter,queue,deferReady,receipt
   Io.set(owner,{get:value=>value});el.set(owner,[]);zo.set(owner,{playUIClick(){}});Do.set(owner,()=>{throw Error('Native recording selection must not leak into event selection');});
   const render=eval('('+nativeRow+')');
   document.querySelector('.leaderboard-ui').__pt062EventRows={version:1,render:(container,row)=>{Oo.set(owner,container);return render.call(owner,row.rank,row.name,row.countryCode||null,row.timeMs,new Date(row.runAt),null,row.pending?0:1,row.isSelf,row.accountId,new Date(),{isCancelled:false},{event:true});}};
-  const localInsights=null,warmPracticeTrack=()=>{};
+  const localInsights=null,warmPracticeTrack=()=>{},invalidateNativePartialReplay=()=>{};
   // Parent navigation owns the token; these tests exercise the events-side bridge.
   let eventTrackReturnContext=null,eventTrackReturnEpoch=0,rankedTrackNavigationEpoch=0;
   const activeRankedAccountId=()=>window.bridgeFixture?.accountId?.()||id,kodubTrackHistory=new Map(),nativeWeeklySelection=null;
@@ -218,8 +218,56 @@ test('closing during the local event preparation checkpoint cancels before nativ
  assert.equal(await p.locator('.sq-events-overlay').count(),0);
 });
 
-test('archived standings use the native track panel as frozen rows and launch normal practice',async t=>{const p=await fixture(t);await addNativePlay(p);await p.evaluate(()=>window.initialNativeBoard=document.querySelector('.track-info-ui>.leaderboard-ui'));await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));await p.getByRole('button',{name:'Jump to month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);assert.match(await p.locator('.sq-event-board h2').innerText(),/Archived event leaderboard/);assert.match(await p.locator('.sq-event-board .container').innerText(),/Archived racer/);assert.equal(await p.locator('.sq-event-board .sq-event-refresh').count(),0);assert.equal(await p.locator('.sq-event-board [data-event-race],.sq-event-board [data-event-practice]').count(),0);assert.equal(await p.locator('.sq-event-board .container .main[aria-disabled="true"]').count(),1);assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);assert.equal(await p.evaluate(()=>reads),1);await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),1);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>initialNativeBoard.isConnected&&!initialNativeBoard.classList.contains('sq-event-board')&&initialNativeBoard.textContent.includes('Normal leaderboard 9999')),true);});
-test('zero-racer archive remains accessible for saved-track practice without event scoring',async t=>{const p=await fixture(t);await p.evaluate(()=>{bridgeFixture.readArchivedSnapshot=async()=>({id:'empty-event',period:{id:'empty-event',trackId:id,kind:'daily',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,maxRp:100},updatedAt:Date.now(),archived:true,entries:[],complete:true,totalEntries:0});bridgeFixture.readArchiveMonth=async()=>({periods:[{...{id:'empty-event',trackId:id,kind:'daily',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,maxRp:100},racerCount:0}]});});await p.locator('#open').click();await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));await p.getByRole('button',{name:'Jump to month',exact:true}).click();const state=await p.locator('[data-archive-event-id="empty-event"]').evaluate(details=>({open:details.open,disabled:details.querySelector('summary').getAttribute('aria-disabled'),tabIndex:details.querySelector('summary').tabIndex,empty:details.classList.contains('sq-archive-event-empty')}));assert.equal(state.open,false);assert.equal(state.disabled,null);assert.equal(state.tabIndex,0);await p.locator('[data-archive-event-id="empty-event"] summary').click();await p.getByText('No verified finishes were recorded.',{exact:true}).waitFor();assert.equal(await p.locator('[data-event-race]').count(),0);assert.equal(await p.evaluate(()=>submits.length),0);});
+test('archived standings use the native track panel as frozen rows and launch normal practice',async t=>{
+ const p=await fixture(t);await addNativePlay(p);
+ await p.evaluate(()=>{
+  window.initialNativeBoard=document.querySelector('.track-info-ui>.leaderboard-ui');
+  const read=bridgeFixture.readArchivedSnapshot;
+  bridgeFixture.readArchivedSnapshot=async id=>({...await read(id),complete:true,totalEntries:1,racerCount:1});
+ });
+ await p.locator('#open').click();await p.locator('[data-event-archives]').click();
+ await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
+ await p.getByRole('button',{name:'Jump to month',exact:true}).click();
+ await p.locator('[data-archive-event-id="old-event"] summary').click();
+ await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();
+ assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);
+ assert.equal(await p.locator('.sq-event-board h2').innerText(),'Frozen final event standings');
+ assert.match(await p.locator('.sq-event-board .total-players').innerText(),/1 saved result \/ 1 event entrant/);
+ assert.match(await p.locator('.sq-event-board .container').innerText(),/Archived racer/);
+ assert.equal(await p.locator('.sq-event-board .sq-event-refresh').count(),0);
+ assert.equal(await p.locator('.sq-event-board [data-event-race],.sq-event-board [data-event-practice]').count(),0);
+ assert.equal(await p.locator('.sq-event-board .container .main[aria-disabled="true"]').count(),1);
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);assert.equal(await p.evaluate(()=>reads),1);
+ await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),1);
+ assert.equal(await p.evaluate(()=>submits.length),0);
+ await p.evaluate(()=>ui.leave());
+ assert.equal(await p.evaluate(()=>initialNativeBoard.isConnected&&!initialNativeBoard.classList.contains('sq-event-board')&&initialNativeBoard.textContent.includes('Normal leaderboard 9999')),true);
+});
+test('zero-racer archive remains accessible for saved-track practice without event scoring',async t=>{
+ const p=await fixture(t);await addNativePlay(p);
+ await p.evaluate(()=>{
+  window.archiveSnapshotReads=0;
+  const period={id:'empty-event',trackId:id,kind:'daily',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,maxRp:100};
+  bridgeFixture.readArchivedSnapshot=async()=>{archiveSnapshotReads++;return {id:period.id,period,updatedAt:Date.now(),archived:true,entries:[],complete:true,totalEntries:0};};
+  bridgeFixture.readArchiveMonth=async()=>({periods:[{...period,racerCount:0}]});
+ });
+ await p.locator('#open').click();await p.locator('[data-event-archives]').click();
+ await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
+ await p.getByRole('button',{name:'Jump to month',exact:true}).click();
+ const state=await p.locator('[data-archive-event-id="empty-event"]').evaluate(details=>({open:details.open,disabled:details.querySelector('summary').getAttribute('aria-disabled'),tabIndex:details.querySelector('summary').tabIndex}));
+ assert.equal(state.open,false);assert.equal(state.disabled,null);assert.equal(state.tabIndex,0);
+ await p.locator('[data-archive-event-id="empty-event"] summary').click();
+ await p.getByText('The saved event catalog lists 0 racers. No final standings have been loaded.',{exact:true}).waitFor();
+ assert.equal(await p.evaluate(()=>archiveSnapshotReads),0,'catalog-only zero must not fabricate or fetch final standings');
+ assert.equal(await p.locator('[data-event-race]').count(),0);
+ await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();
+ assert.equal(await p.locator('.sq-event-board h2').innerText(),'Frozen final event standings');
+ assert.equal(await p.locator('.sq-event-board .container').innerText(),'No verified results are present in the saved final standings.');
+ assert.equal(await p.evaluate(()=>archiveSnapshotReads),1,'practice opens the explicitly complete saved board');
+ assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
+ await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),1);
+ assert.equal(await p.evaluate(()=>submits.length),0);
+});
 test('a pending cloud event PB is visible on a device without its local record',async t=>{const p=await fixture(t,{receipt:{accountId:id,attemptId:'another-device',timeMs:18000,status:'waiting'}});await enter(p);const text=await p.locator('.sq-event-board').innerText();assert.match(text,/00:18\.000/);assert.match(text,/Waiting for replay verification/);});
 
 test('native event template shows a new local finish immediately as pending, never normal PB',async t=>{

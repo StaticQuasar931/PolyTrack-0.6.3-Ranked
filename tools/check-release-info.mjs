@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {parseReleasePreparedAt} from './release-info.mjs';
 
 const botTitles = new Set(['Sync public ranked snapshots', 'Sync Kodub weekly fallback']);
 export function isCaptureCommit(commit) {
@@ -17,13 +18,18 @@ export function parseReleaseInfo(source) {
   if (!match) throw new Error('Missing central release-info record');
   return JSON.parse(match[1]);
 }
-export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, revision} = {}) {
+export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, revision, now = Date.now()} = {}) {
   const errors = [];
   if (!Number.isSafeInteger(info?.number) || info.number < 1) errors.push('Missing positive manual release number.');
   if (!Number.isSafeInteger(info?.revision) || info.revision < 1) errors.push('Missing positive client revision.');
   if (typeof info?.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(info.version)) errors.push('Missing game version.');
   if (!Array.isArray(info?.notes) || !info.notes.length || info.notes.some(note => typeof note !== 'string' || !note.trim() || /\b(?:TODO|TBD|placeholder)\b/i.test(note))) errors.push('Release notes must be nonempty, finished plain text.');
   if (info?.commit !== undefined || info?.commitConfirmed !== undefined) errors.push('Do not store a prospective or fabricated commit hash in release info.');
+  const prepared = parseReleasePreparedAt(info?.preparedAt);
+  if ((info?.number >= 225 || info?.preparedAt !== undefined) && prepared === null) errors.push('Record the actual release preparation timestamp in canonical UTC with prepare-release-info.mjs.');
+  if (prepared !== null && prepared > now) errors.push('Release preparation timestamp cannot be in the future.');
+  const previousPrepared = parseReleasePreparedAt(previousInfo?.preparedAt);
+  if (prepared !== null && previousPrepared !== null && prepared <= previousPrepared) errors.push('Each manual release needs a later preparation timestamp; never reuse a previous release date.');
   const latest = manualReleaseNumber(manual?.title);
   if (latest === null) errors.push('Latest non-capture commit needs a numbered manual Git title, such as 224-Help and Release Safety.');
   if (expectedNext !== undefined) {

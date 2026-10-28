@@ -134,10 +134,30 @@ export async function buildOfflineOverall({tracks, previousOverall, previousCalc
     if (!positive(board.sourceRevision) || !count(board.updatedAt) ||
         board.revision !== undefined && board.revision !== board.sourceRevision ||
         board.builtRevision !== undefined && board.builtRevision !== board.sourceRevision) throw Error('Invalid track source binding');
-    if ((board.complete !== true && board.sourceComplete !== true) || board.complete === false || board.sourceComplete === false ||
-        board.totalEntriesExact === false || board.ranksExact === false || !Array.isArray(board.entries) ||
-        board.totalEntries !== board.entries.length || board.entries.length > 10000 || (totalRows += board.entries.length) > 100000 ||
-        board.pagination && (board.pagination.complete !== true || board.pagination.totalEntries !== board.entries.length)) throw Error('Incomplete track board or absurd row limit');
+    const entryCount = Array.isArray(board.entries) ? board.entries.length : null;
+    const reasons = [];
+    if (board.complete !== true && board.sourceComplete !== true) reasons.push('missing-completeness');
+    if (board.complete === false) reasons.push('complete-false');
+    if (board.sourceComplete === false) reasons.push('source-complete-false');
+    if (board.totalEntriesExact === false) reasons.push('total-entries-inexact');
+    if (board.ranksExact === false) reasons.push('ranks-inexact');
+    if (entryCount === null) reasons.push('invalid-entries');
+    if (board.totalEntries !== entryCount) reasons.push('total-entries-mismatch');
+    if (entryCount > 10000) reasons.push('track-row-limit');
+    if (entryCount !== null && totalRows + entryCount > 100000) reasons.push('aggregate-row-limit');
+    if (board.pagination && board.pagination.complete !== true) reasons.push('pagination-incomplete');
+    if (board.pagination && board.pagination.totalEntries !== entryCount) reasons.push('pagination-total-mismatch');
+    if (reasons.length) {
+      const diagnostic = {trackId: board.trackId, reasons, entryCount, totalRowsBefore: totalRows,
+        totalRowsIncludingTrack: entryCount === null ? null : totalRows + entryCount,
+        ...pick(board, ['sourceRevision', 'updatedAt', 'complete', 'sourceComplete', 'totalEntries', 'totalEntriesExact', 'ranksExact']),
+        pagination: board.pagination ? pick(board.pagination, ['complete', 'totalEntries', 'pageCount', 'pageSize', 'generation']) : null};
+      const error = Error('Incomplete track board or absurd row limit: ' + JSON.stringify(diagnostic));
+      error.code = 'OFFLINE_TRACK_BOARD_INVALID';
+      error.diagnostic = diagnostic;
+      throw error;
+    }
+    totalRows += entryCount;
     const accounts = new Set();
     const entries = board.entries.map(row => {
       publicOnly(row);

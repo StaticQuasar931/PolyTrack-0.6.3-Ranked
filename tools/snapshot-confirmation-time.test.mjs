@@ -80,10 +80,11 @@ test('paged tracks retain their specific check time with unchanged standings',()
 });
 
 function readerFixture(files,{packed=false,now=()=>9000}={}){
+  const directory="public-snapshots1";
   const calls=[];
-  const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots68/',packed,now,
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/'+directory+'/',packed,now,
     fetchImpl:async url=>{
-      const path=new URL(url).pathname.split('/public-snapshots68/')[1];calls.push(path);
+      const path=new URL(url).pathname.split('/'+directory+'/')[1];calls.push(path);
       const value=typeof files[path]==='function'?files[path]():files[path];
       return value?Response.json(value):new Response('',{status:404});
     }});
@@ -112,8 +113,10 @@ test('missing metadata does not invent a confirmation from updatedAt or the loca
   assert.equal((await f.read('track',id))._snapshotCapturedAt,undefined);
 });
 
-test('snapshot 68 packaged Overall, track and event clocks reflect their own confirmation evidence',async()=>{
-  const root=new URL('../public-snapshots68/',import.meta.url);
+test('current packaged Overall, track and event clocks reflect their own confirmation evidence',async()=>{
+  const directory=JSON.parse(readFileSync(new URL('../snapshot-current.json',import.meta.url))).currentdir;
+  assert.match(directory,/^public-snapshots[1-9]\d*$/);
+  const root=new URL('../'+directory+'/',import.meta.url);
   const index=JSON.parse(readFileSync(new URL('index.json',root)));
   const decode=logical=>{
     const bytes=readFileSync(new URL(index.files[logical].path,root));
@@ -121,15 +124,17 @@ test('snapshot 68 packaged Overall, track and event clocks reflect their own con
     return JSON.parse(gunzipSync(bytes));
   };
   const metadata=decode('manifest.json');
-  const read=createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots68/',packed:true,now:()=>Date.UTC(2030,0,1),
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/'+directory+'/',packed:true,now:()=>Date.UTC(2030,0,1),
     fetchImpl:async url=>{
-      const name=new URL(url).pathname.split('/public-snapshots68/')[1];
+      const name=new URL(url).pathname.split('/'+directory+'/')[1];
       return new Response(readFileSync(new URL(name,root)));
     }});
   for(const [kind,id,page] of [['overall'],['overall-preview'],['overall-manifest'],['overall-page','',1]]){
     const board=await read(kind,id,page);
     assert.ok(board);
-    assert.equal(board._snapshotCapturedAt,Date.parse(metadata.overallCapture.readTime));
+    const expected=metadata.overallCapture.source==='snapshot-computed-overall'?metadata.overall.checkedAt:Date.parse(metadata.overallCapture.readTime);
+    assert.ok(Number.isSafeInteger(expected)&&expected>=board.updatedAt);
+    assert.equal(board._snapshotCapturedAt,expected);
     assert.equal(board.updatedAt,metadata.overall.updatedAt);
   }
   const [trackId,trackRecord]=Object.entries(metadata.tracks).find(([,row])=>row.path&&row.checkedAt&&index.files[row.path]);

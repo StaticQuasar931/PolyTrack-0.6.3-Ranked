@@ -131,12 +131,14 @@ test('selecting a cached track advances generation and rejects an older response
   const context=vm.createContext({document:{documentElement:{classList:{remove:()=>{}}}},TRACK_REFRESH_MS:60000,
     setTimeout:()=>{},updateTrackFreshnessBanner:()=>{}});
   runClientSource('let currentTrackLoadState={trackId:"old-track",status:"loading"};let trackLoadGeneration=4;',context);
+  let replayInvalidations=0;context.invalidateNativePartialReplay=()=>{replayInvalidations++;};
   runClientSource(section('  function selectCachedTrackState(', '  async function getTrackEntries('),context);
   runClientSource(section('  function setTrackLoadStateForGeneration(', '  async function getTrackEntries('),context);
   const result=runClientSource(`(()=>{const oldGeneration=trackLoadGeneration;selectCachedTrackState('new-track',{serverUpdatedAt:700,fetchedAt:650,checkedAt:640});const rejected=setTrackLoadStateForGeneration(oldGeneration,{trackId:'old-track',status:'stale',fetchedAt:999});return {state:currentTrackLoadState,rejected,generation:trackLoadGeneration};})()`,context);
   assert.equal(result.state.trackId,'new-track');assert.equal(result.state.status,'cache');
   assert.equal(result.state.fetchedAt,700);assert.equal(result.state.checkedAt,640);
   assert.equal(result.rejected,false);assert.equal(result.generation,5);
+  assert.equal(replayInvalidations,1);
 });
 
 test('newer published track metadata bypasses an apparently fresh local cache',()=>{
@@ -436,7 +438,7 @@ test('selected live event replay bypasses a stale saved binding but matching sna
  const saved={periodId:period,accountId:account,trackId:track,timeMs:10000,runId:'old'},live={...saved,timeMs:9000,runId:'new',replay:'payload',replayHash:'239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5'};
  let cloud=0,gate;
  const context=vm.createContext({eventReplayRequests:new Map(),readPublicSnapshotBackup:async kind=>kind==='event'?{archived:false}:saved,
- crypto:globalThis.crypto,TextEncoder,compatibilityOnlineAllowed:true,rankedEdgeAvailable:()=>true,rankedBrokerUrl:()=> 'https://example.test',eventRequestSignal:()=>undefined,markRankedEdgeUnavailable:()=>{},
+ crypto:globalThis.crypto,TextEncoder,compatibilityOnlineAllowed:true,snapshotOnlyForNewAccount:()=>false,rankedEdgeAvailable:()=>true,rankedBrokerUrl:()=> 'https://example.test',eventRequestSignal:()=>undefined,markRankedEdgeUnavailable:()=>{},
  fetch:async()=>{cloud++;if(gate)await gate;return {ok:true,headers:new Headers(),text:async()=>JSON.stringify(live)};}});
  runClientSource(section('  async function readEventReplay(', '  async function ensureEventUi('),context);
  assert.equal(await context.readEventReplay(period,account,null,{timeMs:10000,trackId:track,runId:'old'}),saved);assert.equal(cloud,0);

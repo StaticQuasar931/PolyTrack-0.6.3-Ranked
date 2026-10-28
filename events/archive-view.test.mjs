@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { archivePeriodCounts, catalogArchivePeriods, mountArchiveView, normalizeArchivePeriods, paginateArchivePeriods, summarizeArchives } from './archive-view.mjs';
+import { archivePeriodCounts, archiveSnapshotState, catalogArchivePeriods, mountArchiveView, normalizeArchivePeriods, paginateArchivePeriods, summarizeArchives } from './archive-view.mjs';
 import { liveTimedEventPeriods } from './client.mjs';
 
 class TestNode {
@@ -57,7 +57,7 @@ test('archive cards prefer safe period artwork and expose accessible cached stan
   const period = { id: 'past', kind: 'daily', endsAt: 100, maxRp: 100, racerCount: 2, thumbnailUrl: '/tracks/past.png', thumbnail: 'javascript:alert(1)' };
   const winner = { accountId: 'winner', name: 'Fast Racer', timeMs: 1234, rp: 100 };
   let fallbackCalls = 0, snapshotCalls = 0;
-  const cached = new Map([['past', { racerCount: 2, entries: [winner, { accountId: 'next', name: 'Next', timeMs: 1400 }] }]]);
+  const cached = new Map([['past', { archived: true, racerCount: 2, entries: [winner, { accountId: 'next', name: 'Next', timeMs: 1400 }] }]]);
   mountArchiveView(root, {
     periods: [period], snapshots: cached,
     loadSnapshot: async () => { snapshotCalls += 1; return { entries: [] }; },
@@ -69,7 +69,7 @@ test('archive cards prefer safe period artwork and expose accessible cached stan
   const image = descendants(card, node => node.tagName === 'IMG')[0];
   assert.equal(card.dataset.eventKind, 'daily');
   assert.equal(summary.dataset.eventKind, 'daily');
-  assert.equal(summary.attributes['aria-label'], 'Daily: Past Track; 2 racers; 2 verified; winner Fast Racer, 0:01.234');
+  assert.equal(summary.attributes['aria-label'], 'Daily: Past Track; 2 racers; 2 verified; winner Fast Racer, 0:01.234; Saved final event standings.');
   assert.equal(image.src, '/tracks/past.png');
   assert.equal(image.loading, 'lazy');
   assert.equal(image.alt, 'Past Track thumbnail');
@@ -105,7 +105,7 @@ test('unsafe or missing period artwork falls back to bridge thumbnail and snapsh
   fallback.alt = 'Cached track preview';
   mountArchiveView(root, {
     periods: [period],
-    loadSnapshot: async () => { snapshotCalls += 1; return { entries: [{ accountId: 'a', name: 'Winner', timeMs: 900 }] }; },
+    loadSnapshot: async () => { snapshotCalls += 1; return { archived: true, entries: [{ accountId: 'a', name: 'Winner', timeMs: 900 }] }; },
     renderThumbnail: () => { fallbackCalls += 1; return fallback; }
   });
   const card = descendants(root, node => node.tagName === 'DETAILS')[0];
@@ -244,7 +244,7 @@ test('archive periods are validated, deduplicated and newest-first', () => {
   assert.deepEqual(periods.map(period => period.id), ['daily-new', 'weekly-old', 'odd']);
   assert.equal(periods[1].endsAt, 200);
   assert.equal(periods[2].kind, 'custom');
-  assert.equal(periods[2].maxRp, 0);
+  assert.equal(periods[2].maxRp, null);
 });
 
 test('catalog archives include every ended timed kind and exclude permanent Rolling Hills', () => {
@@ -271,11 +271,11 @@ test('archive summary reports event types and only loaded verified finishes', ()
     { id: 'k1', kind: 'kodub', endsAt: 100 }
   ];
   const snapshots = new Map([
-    ['d1', { entries: [
+    ['d1', { archived: true, entries: [
       { accountId: 'a', timeMs: 1000 },
       { accountId: 'b', timeMs: 1100, pending: true }
     ] }],
-    ['w1', { entries: [
+    ['w1', { archived: true, entries: [
       { accountId: 'a', timeMs: 900 },
       { accountId: 'c', timeMs: 950, status: 'pending' },
       null
@@ -293,7 +293,7 @@ test('archive summary reports event types and only loaded verified finishes', ()
 test('period counts prefer safe racer totals and exclude pending rows', () => {
   const period = { id: 'd1', racerCount: 9, entrantCount: 8 };
   const snapshot = { racerCount: Number.MAX_SAFE_INTEGER + 1, entrantCount: 7, entries: [
-    { accountId: 'a' },
+    { accountId: 'a', timeMs: 1000 },
     { accountId: 'b', pending: true },
     { accountId: 'c', status: 'pending' }
   ] };
@@ -310,7 +310,7 @@ test('period counts prefer safe racer totals and exclude pending rows', () => {
 });
 
 test('archive standings deduplicate racers by fastest verified result and identify the winner', () => {
-  const counts = archivePeriodCounts({ id: 'w1' }, { entries: [
+  const counts = archivePeriodCounts({ id: 'w1' }, { archived: true, entries: [
     { accountId: 'b', name: 'B slower duplicate', timeMs: 1300, rank: 3 },
     { accountId: 'a', name: 'Winner', timeMs: 1000, rank: 1 },
     { accountId: 'b', name: 'B best', timeMs: 1100, rank: 2 },
@@ -388,4 +388,85 @@ test('selection-only and empty archives retain practice actions even without fin
  for(const button of descendants(card,node=>node.tagName==='BUTTON'))button.emit('click');
  assert.equal(opened,1);assert.equal(imported,1);assert.equal(loads,0);
  assert.match(card.textContent,/no final standings or Event RP were captured/);assert.match(card.textContent,/Saved author/);
+});
+
+test('Spite-like saved live captures preserve entrant totals without inventing a final winner', () => {
+  const {root} = archiveFixture();
+  const period = {id:'spite', kind:'kodub', trackId:'a'.repeat(64), endsAt:100, racerCount:21};
+  const snapshot = {period, archived:false, racerCount:21,
+    entries:Array.from({length:17}, (_,i) => ({accountId:`racer-${i}`, timeMs:1000+i, rp:100-i}))};
+  mountArchiveView(root, {periods:[period], snapshots:new Map([[period.id,snapshot]])});
+  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  assert.equal(card.dataset.standingsState, 'non-final');
+  assert.equal(descendants(card,node=>node.className==='sq-archive-standings')[0].children[0].className,'sq-archive-standings-status');
+  assert.match(card.textContent, /21 racers/);
+  assert.match(card.textContent, /17 verified in saved capture/);
+  assert.match(card.textContent, /Final standings are unavailable/);
+  assert.match(card.textContent, /100 RP \(saved\)/);
+  assert.match(card.textContent, /ordinary track leaderboard, not these historic event standings/);
+  assert.equal(descendants(card, node => node.className === 'sq-archive-winner').length, 0);
+  assert.equal(archivePeriodCounts(period,snapshot).winner, null);
+  assert.equal(summarizeArchives([period],new Map([[period.id,snapshot]])).verifiedFinishes, 0);
+});
+
+test('final partial boards preserve saved ranks and do not fabricate missing RP or a winner', () => {
+  const {root} = archiveFixture();
+  const period = {id:'partial',kind:'daily',trackId:'a'.repeat(64),endsAt:100};
+  const snapshot = {period,archived:true,complete:false,totalEntries:20,
+    entries:[{accountId:'a',timeMs:1000,rank:11},{accountId:'b',timeMs:1100}]};
+  mountArchiveView(root,{periods:[period],snapshots:new Map([[period.id,snapshot]])});
+  assert.match(root.textContent, /Only part of the final event standings was saved/);
+  assert.match(root.textContent, /#11/);
+  assert.match(root.textContent, /Rank unavailable/);
+  assert.match(root.textContent, /RP unavailable/);
+  assert.doesNotMatch(root.textContent, /Winner|0 RP/);
+  for (const change of [{complete:false},{sourceComplete:false},{totalEntries:3},{pagination:{hasMore:true}},{publicationPending:true}]) {
+    assert.equal(archiveSnapshotState(period,{...snapshot,complete:true,totalEntries:2,...change}), 'partial-final');
+  }
+});
+
+test('unbound or ordinary practice boards cannot be passed to the archive launch callback', () => {
+  const {root} = archiveFixture();
+  const period = {id:'event',kind:'kodub',trackId:'a'.repeat(64),endsAt:100};
+  let passed = 'not-called';
+  const practice = {trackId:period.trackId,complete:true,totalEntries:9,entries:[{accountId:'a',timeMs:1}]};
+  mountArchiveView(root,{periods:[period],snapshots:new Map([[period.id,practice]]),onOpenPeriod:(_,snapshot)=>{passed=snapshot;}});
+  descendants(root,node=>node.tagName==='BUTTON'&&node.textContent==='Track details / practice')[0].emit('click');
+  assert.equal(passed,null);
+  assert.equal(archivePeriodCounts(period,practice).verified,null);
+  assert.equal(archiveSnapshotState(period,practice),'mismatched');
+});
+
+test('explicitly unverified, rejected, malformed and waiting rows never become verified results', () => {
+  const period = {id:'event'};
+  const rejected = [{pending:true},{verified:false},{runVerified:false},{eventRpEligible:false},
+    {status:'pending'},{status:'mismatch'},{verificationStatus:'waiting'},{timeMs:0},{timeMs:NaN},{timeMs:1.5}];
+  const snapshot = {archived:true,entries:[{accountId:'winner',timeMs:900},
+    ...rejected.map((flags,i)=>({accountId:`bad-${i}`,timeMs:100,...flags}))]};
+  assert.deepEqual(archivePeriodCounts(period,snapshot).verifiedEntries.map(row=>row.accountId),['winner']);
+  assert.equal(archivePeriodCounts(period,{entries:[],pendingPlaybacks:[{accountId:'waiting'}]}).racers,1);
+});
+
+test('non-final empty captures and catalog-only zeros do not assert an empty final board', () => {
+  const {root} = archiveFixture();
+  const period = {id:'empty',kind:'daily',endsAt:100,racerCount:3};
+  mountArchiveView(root,{periods:[period],snapshots:{empty:{entries:[],archived:false}}});
+  assert.match(root.textContent,/Final results are not known/);
+  assert.doesNotMatch(root.textContent,/No verified finishes were recorded/);
+  mountArchiveView(root,{periods:[{...period,racerCount:0}]});
+  const card=descendants(root,node=>node.tagName==='DETAILS')[0];card.open=true;card.emit('toggle');
+  assert.match(root.textContent,/No final standings have been loaded/);
+});
+
+test('synchronous snapshot loader failures use the retry message and leave imports available', async () => {
+  const {root}=archiveFixture();let loads=0,imports=0;
+  mountArchiveView(root,{periods:[{id:'missing',kind:'kodub',endsAt:100}],
+    loadSnapshot:()=>{loads++;throw Error('not saved');},onImportPeriod:()=>imports++});
+  const card=descendants(root,node=>node.tagName==='DETAILS')[0];card.open=true;card.emit('toggle');
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.match(root.textContent,/could not be loaded/);
+  card.open=false;card.emit('toggle');card.open=true;card.emit('toggle');
+  await new Promise(resolve=>setTimeout(resolve,0));
+  descendants(root,node=>node.tagName==='BUTTON'&&node.textContent==='Import saved track')[0].emit('click');
+  assert.equal(loads,2);assert.equal(imports,1);
 });

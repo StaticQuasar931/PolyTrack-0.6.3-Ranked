@@ -164,11 +164,137 @@ test('binding an absent host is a safe no-op',()=>{
   const cleanup=bindHelpControls(null);assert.equal(typeof cleanup,'function');cleanup();cleanup();
 });
 
+async function keyboardGuardFixture() {
+  const source=await fs.readFile(new URL('./help-controls.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('const keyboardGuards=new WeakMap();');
+  const end=source.indexOf('/** Bind a rendered fragment',start);
+  assert.ok(start>=0&&end>start);
+  const install=vm.runInNewContext(source.slice(start,end)+'\nguardHelpKeyboard;');
+  const listeners=new Map();
+  const view={
+    addEventListener(type,handler,capture){
+      if(type!=='blur')assert.equal(capture,true,'intercept before document and native listeners');
+      const list=listeners.get(type)||[];list.push(handler);listeners.set(type,list);
+    },
+    removeEventListener(type,handler){listeners.set(type,(listeners.get(type)||[]).filter(item=>item!==handler));}
+  };
+  const doc={defaultView:view};
+  const emit=(type,key='=',code='Equal')=>{
+    const event={type,key,code,cancelBubble:false,defaultPrevented:false,immediate:false,
+      stopPropagation(){this.cancelBubble=true;},
+      stopImmediatePropagation(){this.cancelBubble=true;this.immediate=true;},
+      preventDefault(){this.defaultPrevented=true;}};
+    for(const handler of [...(listeners.get(type)||[])]){handler(event);if(event.immediate)break;}
+    return event;
+  };
+  return {install:binding=>install(doc,binding),listeners,emit};
+}
+
+test('Help guard runs feedback before containment, preserves defaults and drains keyup after close',async()=>{
+  const f=await keyboardGuardFixture(),seen=[];
+  const cleanup=f.install({accepts:()=>true,down:event=>seen.push('down:'+event.key),up:event=>seen.push('up:'+event.key),blur:()=>seen.push('blur')});
+  const down=f.emit('keydown');
+  assert.deepEqual(seen,['down:=']);assert.equal(down.immediate,true);assert.equal(down.defaultPrevented,false);
+  cleanup();
+  assert.equal(f.listeners.get('keyup').length,1,'retain only until held key is released');
+  const up=f.emit('keyup');assert.equal(up.immediate,true);assert.equal(up.defaultPrevented,false);
+  assert.equal(f.listeners.get('keyup').length,0);assert.equal(f.listeners.get('keydown').length,0);
+  assert.equal(f.emit('keyup').immediate,false,'normal game input resumes');
+});
+
+test('Help guard delegates Tab and Escape to the parent but contains consumed search Escape',async()=>{
+  const f=await keyboardGuardFixture();let consumed=false;
+  const cleanup=f.install({accepts:()=>true,down:event=>{if(consumed){event.preventDefault();event.stopPropagation();}},up:()=>{},blur:()=>{}});
+  for(const key of ['Tab','Escape']){
+    const event=f.emit('keydown',key,key);assert.equal(event.immediate,false);assert.equal(event.defaultPrevented,false);
+    assert.equal(f.emit('keyup',key,key).immediate,true);
+  }
+  consumed=true;
+  const event=f.emit('keydown','Escape','Escape');assert.equal(event.immediate,true);assert.equal(event.defaultPrevented,true);
+  f.emit('keyup','Escape','Escape');cleanup();
+});
+
+test('Help guard rebind shares one interceptor and blur releases retained cleanup state',async()=>{
+  const f=await keyboardGuardFixture();let up=0,blur=0;
+  const old=f.install({accepts:()=>true,down:()=>{},up:()=>{},blur:()=>{}});
+  f.emit('keydown');old();
+  const cleanup=f.install({accepts:()=>true,down:()=>{},up:()=>up++,blur:()=>blur++});
+  assert.equal(f.listeners.get('keyup').length,1);
+  assert.equal(f.emit('keyup').immediate,true);assert.equal(up,1);
+  f.emit('blur');assert.equal(blur,1);
+  f.emit('keydown');cleanup();f.emit('blur');
+  assert.equal(f.listeners.get('keydown').length,0);assert.equal(f.listeners.get('keyup').length,0);
+});
+
+test('Help guard leaves foreign modal or hidden Help events alone',async()=>{
+  const f=await keyboardGuardFixture();let feedback=0;
+  const cleanup=f.install({accepts:()=>false,down:()=>feedback++,up:()=>{},blur:()=>{}});
+  assert.equal(f.emit('keydown').immediate,false);assert.equal(f.emit('keyup').immediate,false);assert.equal(feedback,0);
+  cleanup();assert.equal(f.listeners.get('keyup').length,0);
+});
+
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 let chromium;
 try{({chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'));}catch{}
 
-test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and responsive layout',{skip:!chromium},async t=>{
+test('Help actual patch modal boundary blocks native keys and preserves keyboard defaults',{skip:!chromium||process.env.HELP_UNIT_ONLY==='1'},async t=>{
+  const patch=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
+  const main=await fs.readFile(new URL('../main.bundle.js',import.meta.url),'utf8');
+  const help=await fs.readFile(new URL('./help-controls.mjs',import.meta.url),'utf8');
+  const release=await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8');
+  const focusStart=patch.indexOf('  let overallDialogReturnFocus=null;');
+  const focusEnd=patch.indexOf('  /* Keep the select',focusStart);
+  const keyStart=patch.indexOf("    panel.addEventListener('keydown', (event)=>{");
+  const keyEnd=patch.indexOf('\n    });',keyStart)+'\n    });'.length;
+  assert.ok(focusStart>=0&&focusEnd>focusStart&&keyStart>=0&&keyEnd>keyStart);
+  const fps='window.addEventListener("keyup",(e=>{r.checkKeyBinding(e,ge.A.ToggleFpsCounter)&&M.toggle()}))';
+  assert.ok(main.includes(fps),'exercise the exact shipped unconditional FPS keyup listener');
+  const browser=await chromium.launch({headless:true});t.after(()=>browser.close());
+  const page=await browser.newPage({viewport:{width:1000,height:800}});
+  const requests=[];await page.route('**/*',route=>{requests.push(route.request().url());return route.abort();});
+  await page.setContent('<button id="opener">Open Help</button><main id="overallLeaderboardPanel"><div id="overallProfilePopup" style="display:none"></div><div id="overallHelpPopup" style="display:none"><section role="dialog" aria-modal="true" aria-label="Help"><button id="overallHelpClose">Close</button><div id="help-content"></div></section></div></main>');
+  await page.addScriptTag({content:(release+help.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+`
+    window.nativeKeys=[];window.fpsToggles=0;
+    for(const type of ['keydown','keyup'])window.addEventListener(type,event=>nativeKeys.push(type+':'+event.key));
+    const r={checkKeyBinding:event=>event.code==='Equal'},ge={A:{ToggleFpsCounter:24}},M={toggle:()=>fpsToggles++};
+    ${fps};
+    function isElementVisible(node){return Boolean(node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');}
+    function closeOverallPanel(){throw Error('Help must not close the underlying panel');}
+    ${patch.slice(focusStart,focusEnd)}
+    const panel=document.querySelector('#overallLeaderboardPanel'),popup=document.querySelector('#overallHelpPopup'),content=document.querySelector('#help-content'),close=document.querySelector('#overallHelpClose');
+    content.innerHTML=renderHelpControls({idPrefix:'actual-boundary',release:{number:225,revision:194}});
+    ${patch.slice(keyStart,keyEnd)}
+    close.onclick=()=>closeRankedDialog(popup);
+    window.openHelp=()=>{popup.__helpCleanup=bindHelpControls(content);openRankedDialog(popup,close);};
+    window.focusLast=()=>visibleDialogFocusables(popup).at(-1).focus();
+    window.isLastFocused=()=>visibleDialogFocusables(popup).at(-1)===document.activeElement;
+  `});
+  const open=async()=>{await page.locator('#opener').focus();await page.evaluate(()=>openHelp());await page.waitForFunction(()=>document.activeElement.id==='overallHelpClose');};
+  await open();
+  await page.keyboard.down('=');
+  assert.ok(await page.locator('[data-hc-key="="].is-pressed').count()>0,'Close-focus feedback survives capture containment');
+  await page.keyboard.up('=');assert.equal(await page.locator('kbd.is-pressed').count(),0);
+  for(const key of ['y','u','i'])await page.keyboard.press(key);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('[data-hc-view="controls"]').evaluate(node=>node===document.activeElement),true,'ordinary Tab retains its default');
+  await page.evaluate(()=>focusLast());await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'overallHelpClose');
+  await page.keyboard.press('Shift+Tab');assert.equal(await page.evaluate(()=>isLastFocused()),true);
+  const input=page.locator('[data-hc-search]');await input.focus();await input.pressSequentially('checkpoint');
+  assert.equal(await input.inputValue(),'checkpoint');assert.equal(await page.locator('[data-hc-row]:visible').count(),1);
+  await page.keyboard.press('Escape');assert.equal(await input.inputValue(),'');assert.equal(await page.locator('#overallHelpPopup').isVisible(),true);
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#overallHelpPopup').isVisible(),false);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'opener');
+  assert.deepEqual(await page.evaluate(()=>nativeKeys),[]);assert.equal(await page.evaluate(()=>fpsToggles),0);
+  for(const key of ['Enter','Space']){await open();await page.keyboard.press(key);assert.equal(await page.locator('#overallHelpPopup').isVisible(),false,'native Close activation: '+key);}
+  await open();await page.keyboard.down('=');await page.locator('#overallHelpClose').click();await page.keyboard.up('=');
+  assert.deepEqual(await page.evaluate(()=>nativeKeys),[],'held releases after Close do not reach the native game');
+  assert.equal(await page.evaluate(()=>fpsToggles),0);
+  await page.keyboard.press('=');assert.equal(await page.evaluate(()=>fpsToggles),1,'native handler resumes after closure');
+  assert.deepEqual(requests,[]);
+});
+
+test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and responsive layout',{skip:!chromium||process.env.HELP_UNIT_ONLY==='1'},async t=>{
   const browser=await chromium.launch({headless:true});
   t.after(()=>browser.close());
   const page=await browser.newPage({viewport:{width:1100,height:900},hasTouch:true});
@@ -181,7 +307,7 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   ]);
   await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#09142c}#fixture{max-width:1040px;margin:auto}</style><main id="fixture"></main>');
   await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css});
-  await page.addScriptTag({content:module.replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+  await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+module.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
   await page.evaluate(()=>{
     const root=document.querySelector('#fixture');
     root.innerHTML=window.helpAPI.renderHelpControls({idPrefix:'test-help',ghostShortcut:'KeyF',release:{revision:189,commit:217,commitConfirmed:false,notes:['Offline fixture.']}});
@@ -190,6 +316,15 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   });
   const input=page.locator('[data-hc-search]'),group=page.locator('[data-hc-group="driving"]');
   assert.equal(await group.getAttribute('open'),'');
+  await page.evaluate(()=>{
+    const fixture=document.querySelector('#fixture');fixture.setAttribute('role','dialog');
+    const close=document.createElement('button');close.id='fixture-close';close.textContent='Close';fixture.prepend(close);close.focus();
+    window.cleanupHelp=window.helpAPI.bindHelpControls(fixture);
+  });
+  await page.keyboard.down('w');
+  assert.ok(await page.locator('[data-hc-key="W"].is-pressed').count()>0,'Close button focus lights keys before any Help-content click');
+  await page.keyboard.up('w');
+  await page.evaluate(()=>{window.bubbledKeys=[];});
   await input.fill('checkpoint');
   assert.equal(await page.locator('[data-hc-row]:visible').count(),1);
   assert.equal(await page.locator('[data-hc-status]').textContent(),'1 control found');
@@ -199,16 +334,15 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   assert.equal(await page.locator('[data-hc-group="menus"]').getAttribute('open'),null);
   assert.deepEqual(await page.evaluate(()=>window.bubbledKeys),[]);
   await input.press('Escape');assert.deepEqual(await page.evaluate(()=>window.bubbledKeys),['Escape']);
-  await page.locator('[data-hc-topic="editor"]').click();
+  await page.locator('[data-hc-topic-select]').selectOption('editor');
   assert.equal(await page.locator('[data-hc-group]:visible').count(),1);
   await input.fill('not an actual control');
   assert.equal(await page.locator('[data-hc-empty]').isVisible(),true);
   await page.locator('[data-hc-reset]').click();assert.equal(await input.inputValue(),'');
-  assert.equal(await page.locator('[data-hc-topic="all"]').getAttribute('aria-pressed'),'true');
-  await page.locator('[data-hc-topic="all"]').focus();await page.keyboard.press('ArrowDown');
-  assert.equal(await page.locator('[data-hc-topic="driving"]').evaluate(node=>node===document.activeElement),true);
-  await page.keyboard.press('End');assert.equal(await page.locator('[data-hc-topic="access"]').evaluate(node=>node===document.activeElement),true);
-  await page.keyboard.press('Enter');assert.equal(await page.locator('[data-hc-topic="access"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('[data-hc-topic-select]').inputValue(),'all');
+  await page.locator('[data-hc-topic-select]').focus();await page.keyboard.press('End');
+  await page.keyboard.press('Tab');assert.equal(await page.locator('[data-hc-topic-select]').inputValue(),'access');
+  assert.ok((await page.evaluate(()=>window.bubbledKeys)).includes('Tab'),'Tab reaches the outer modal trap');
   await input.fill('touch');await page.locator('[data-hc-clear]').click();assert.equal(await input.inputValue(),'');
   assert.equal(await input.evaluate(node=>node===document.activeElement),true);
   await page.locator('[data-hc-view="release"]').click();
@@ -216,7 +350,7 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   assert.equal(await page.locator('[data-hc-panel="controls"]').isVisible(),false);
   assert.equal(await page.locator('.hc-release').textContent().then(text=>text.includes('217')),false);
   await page.locator('[data-hc-view="controls"]').click();
-  await page.locator('[data-hc-topic="all"]').click();
+  await page.locator('[data-hc-topic-select]').selectOption('all');
   // Fully expanded rows exercise wrapping, not only collapsed headings.
   await page.evaluate(()=>{for(const node of document.querySelectorAll('details'))node.open=true;});
   for(const width of [320,390,620,768,1100]){
@@ -232,15 +366,17 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('.hc-header').evaluate(node=>getComputedStyle(node).animationName),'none');
   await page.setViewportSize({width:390,height:844});
-  await page.locator('[data-hc-topic="ghosts"]').tap();
-  assert.equal(await page.locator('[data-hc-topic="ghosts"]').getAttribute('aria-pressed'),'true');
-  await page.locator('[data-hc-topic="rankings"]').click();
+  await page.locator('[data-hc-topic-select]').selectOption('ghosts');
+  assert.equal(await page.locator('[data-hc-topic-select]').inputValue(),'ghosts');
+  await page.locator('[data-hc-topic-select]').selectOption('rankings');
+  await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
   await page.keyboard.down('d');
   assert.ok(await page.locator('[data-hc-key="D"].is-pressed:visible').count()>0);
   if(process.env.HELP_REVIEW_SCREENSHOT)await page.screenshot({path:process.env.HELP_REVIEW_SCREENSHOT,fullPage:true});
   await page.keyboard.up('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);
   await input.focus();await page.keyboard.down('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('d');
-  await input.fill('');await page.locator('[data-hc-topic="ghosts"]').click();
+  await input.fill('');await page.locator('[data-hc-topic-select]').selectOption('ghosts');await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
+  await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
   await page.keyboard.down('f');assert.ok(await page.locator('[data-hc-key="F"].is-pressed:visible').count()>0);
   await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('f');
   await page.evaluate(()=>{window.cleanupHelp();window.cleanupHelp();});
@@ -267,8 +403,9 @@ test('track tabs are explicit searchable chords matching the shipped track menu 
   assert.deepEqual(control.keys,[['Shift','1'],['Shift','2'],['Shift','3']]);
   for(const term of ['official','community','custom']) assert.ok(searchHelpControls(groups,'shift '+term).some(group=>group.rows.some(row=>row.id===control.id)));
   const html=renderHelpControls();
-  assert.match(html,/aria-label="Track selection shortcuts"/);
-  for(const name of ['Official','Community','Custom']) assert.ok(html.includes('</kbd> '+name));
+  assert.doesNotMatch(html,/hc-track-quick|Track selection shortcuts/);
+  assert.match(html,/data-hc-topic-select/);
+  for(const name of ['Official','Community','Custom']) assert.ok(html.includes(name));
   const source=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
   const start=source.indexOf('  function handleTrackMenuShortcut(event)');
   const handler=source.slice(start,source.indexOf('\n  }',start));
