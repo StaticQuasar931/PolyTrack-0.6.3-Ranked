@@ -1085,3 +1085,11 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 
 /* Announce recalculation provenance without consuming leaderboard space. */
 .overall-snapshot-notice{position:absolute!important;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}
+
+/* Static update checks never mutate a running snapshot package. */
+.sq-snapshot-update-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:24px;border:2px solid #87cef0;background:#182b55;color:#f1f7ff;font:18px ForcedSquare,sans-serif}
+.sq-snapshot-update-dialog::backdrop{background:#030b1fbb}
+.sq-snapshot-update-dialog h2{font-size:26px;margin:0 0 12px}.sq-snapshot-update-dialog p{line-height:1.4;margin:0 0 20px}
+.sq-snapshot-update-dialog>div{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.sq-snapshot-update-dialog button{min-height:44px;padding:8px 16px;font:inherit;border:2px solid #89b5dc;background:#29477c;color:#fff;cursor:pointer}
+.sq-snapshot-update-dialog button:focus-visible{outline:3px solid #8be5ff;outline-offset:3px}

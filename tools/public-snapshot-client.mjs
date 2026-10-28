@@ -5,7 +5,7 @@ import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confi
 import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 // Public, same-origin backups never replace the authoritative PB submission path.
-export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,onGenerationChange,prepareRecording,onPlaybackFailure}){
+export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,beforeGenerationChange,onGenerationChange,prepareRecording,onPlaybackFailure}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
   const lookupCache=new Map(),lookupPending=new Map(),lookupRetryAt=new Map();let manifestValue=null;
 
@@ -165,6 +165,8 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(nextBase.origin!==packageBase.origin||nextBase.pathname!==`${parent.pathname}${pointer.currentdir}/`)return invalidPointer('Invalid snapshot pointer path');
         if(nextBase.href===packageBase.href)return false;
         const previousBaseUrl=packageBase.href;
+        // Synchronous veto: consumers with retained session data must opt in before any mutation.
+        if(beforeGenerationChange&&beforeGenerationChange({previousBaseUrl,baseUrl:nextBase.href,generation:generation+1})!==true)return invalidPointer('Snapshot update requires a reload. Finish your current race, then reload the game.');
         packageBase=nextBase;packagePublishedAt=0;
         generation++;fastIndexDisabled=false;
         indexRequest=null;bootstrapRequest=null;

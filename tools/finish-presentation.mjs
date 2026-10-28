@@ -18,9 +18,12 @@ export function enhanceFinishAnnouncers(document){
    const number=document.createElement('span'),suffix=document.createElement('sup');
    number.className='sq-finish-number';number.textContent=value.number;
    suffix.className='sq-finish-ordinal';suffix.textContent=value.suffix;
+   // Keep the number native, but do not shrink ForcedSquare's angular suffix glyphs.
+   suffix.style.fontFamily='Arial,sans-serif';suffix.style.fontStyle='normal';
+   suffix.style.fontVariant='normal';suffix.style.letterSpacing='normal';
    node.replaceChildren(number,suffix);
   };
   const observer=new document.defaultView.MutationObserver(update);
-  observed.set(node,observer);update();observer.observe(node,{childList:true,subtree:true,characterData:true});
+  observed.set(node,observer);update();observer.observe(node,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['title']});
  }
 }

@@ -23,14 +23,25 @@ function validEntries(snapshot) {
 
 function snapshotMatchesPeriod(snapshot, period) {
   if (!snapshot || !Array.isArray(snapshot.entries)) return false;
-  if (!period.trackId) return true;
+  if (!period.trackId && !snapshot.period) return true;
   return snapshot.period?.id === period.id &&
     snapshot.period.trackId === period.trackId &&
     snapshot.period.kind === period.kind;
 }
 
 function isPending(row) {
-  return row.pending === true || row.status === 'pending';
+  return row.pending === true || row.verified === false || row.runVerified === false || row.eventRpEligible === false ||
+    ['status', 'verificationStatus'].some(field => row[field] !== undefined && row[field] !== 'verified');
+}
+
+export function archiveSnapshotState(period, snapshot) {
+  if (!snapshot) return period.historyOnly ? 'selection-only' : 'unavailable';
+  if (!snapshotMatchesPeriod(snapshot, period)) return 'mismatched';
+  if (snapshot.archived !== true) return 'non-final';
+  if (snapshot.complete === false || snapshot.sourceComplete === false || snapshot.publicationPending === true ||
+      Number.isSafeInteger(snapshot.totalEntries) && snapshot.totalEntries > snapshot.entries.length ||
+      snapshot.pagination?.hasMore === true) return 'partial-final';
+  return 'final';
 }
 
 function racerIdentity(row, index) {
@@ -40,7 +51,7 @@ function racerIdentity(row, index) {
 function dedupeVerifiedEntries(snapshot) {
   const best = new Map();
   for (const [index, row] of validEntries(snapshot).entries()) {
-    if (isPending(row)) continue;
+    if (isPending(row) || !Number.isSafeInteger(row.timeMs) || row.timeMs <= 0) continue;
     const key = racerIdentity(row, index);
     const prior = best.get(key);
     const time = Number.isFinite(row.timeMs) && row.timeMs > 0 ? row.timeMs : Number.POSITIVE_INFINITY;
@@ -69,12 +80,18 @@ function declaredRacerCount(value) {
 }
 
 export function archivePeriodCounts(period, snapshot) {
+  if (snapshot && !snapshotMatchesPeriod(snapshot, period)) snapshot = null;
   const entries = validEntries(snapshot);
   const verifiedEntries = dedupeVerifiedEntries(snapshot);
-  const uniqueRacers = new Set(entries.map(racerIdentity));
+  const pending = Array.isArray(snapshot?.pendingPlaybacks) ? snapshot.pendingPlaybacks.filter(row => row && typeof row === 'object') : [];
+  const uniqueRacers = new Set([...entries, ...pending].map(racerIdentity));
   const racers = declaredRacerCount(snapshot) ?? declaredRacerCount(snapshot?.period) ??
     declaredRacerCount(period) ?? (snapshot ? uniqueRacers.size : null);
-  return Object.freeze({ racers, verified: snapshot ? verifiedEntries.length : null, verifiedEntries, winner: verifiedEntries[0] || null });
+  const state = archiveSnapshotState(period, snapshot);
+  const rows = state === 'partial-final' ? verifiedEntries.map(row => ({ ...row,
+    rank: validEntries(snapshot).find(entry => entry.accountId === row.accountId && entry.timeMs === row.timeMs)?.rank || null })) : verifiedEntries;
+  return Object.freeze({ racers, verified: snapshot ? rows.length : null, verifiedEntries: rows,
+    winner: state === 'final' ? rows[0] || null : null });
 }
 
 export function normalizeArchivePeriods(periods) {
@@ -86,7 +103,7 @@ export function normalizeArchivePeriods(periods) {
       kind: KIND_LABELS[value.kind] ? value.kind : 'custom',
       startsAt: finiteInteger(value.startsAt),
       endsAt: finiteInteger(value.endsAt),
-      maxRp: Math.max(0, finiteInteger(value.maxRp))
+      maxRp: safeCount(value.maxRp)
     };
     if (period.endsAt <= 0) continue;
     const prior = unique.get(period.id);
@@ -128,7 +145,7 @@ export function summarizeArchives(periods, snapshots = new Map()) {
   for (const period of normalized) {
     kindCounts[period.kind] += 1;
     const snapshot = snapshotFor(snapshots, period.id);
-    if (!snapshotMatchesPeriod(snapshot, period)) continue;
+    if (archiveSnapshotState(period, snapshot) !== 'final') continue;
     loadedEvents += 1;
     const counts = archivePeriodCounts(period, snapshot);
     verifiedFinishes += counts.verified;
@@ -194,7 +211,7 @@ function renderStats(document, target, periods, snapshots) {
     ['Events', summary.events],
     ['Daily', summary.kindCounts.daily],
     ['Weekly', summary.kindCounts.weekly + summary.kindCounts.kodub],
-    [summary.loadedEvents === summary.events ? 'Verified finishes' : 'Finishes loaded', summary.verifiedFinishes]
+    [summary.loadedEvents === summary.events ? 'Final verified finishes' : 'Final finishes loaded', summary.verifiedFinishes]
   ];
   target.replaceChildren();
   for (const [label, value] of values) {
@@ -208,24 +225,28 @@ function renderStats(document, target, periods, snapshots) {
   target.dataset.totalEvents = String(summary.events);
 }
 
-function renderRows(document, target, entries, formatTime, accountId) {
+function renderRows(document, target, entries, formatTime, accountId, state = 'final', description = '') {
   target.replaceChildren();
+  if (description) appendText(document, target, 'p', 'sq-archive-standings-status', description);
   if (!entries.length) {
-    appendText(document, target, 'p', 'sq-archive-empty', 'No verified finishes were recorded.');
+    appendText(document, target, 'p', 'sq-archive-empty', state === 'final'
+      ? 'No verified finishes are present in the saved final standings.'
+      : 'No verified finishes are present in this saved capture. Final results are not known.');
     return;
   }
   const list = document.createElement('ol');
   list.className = 'sq-event-results';
   for (const [index, row] of entries.entries()) {
     const item = document.createElement('li');
-    appendText(document, item, 'b', '', `#${finiteInteger(row.rank, index + 1)}`);
+    appendText(document, item, 'b', '', Number.isSafeInteger(row.rank) && row.rank > 0 ? `#${row.rank}` : 'Rank unavailable');
     const racer = appendText(document, item, 'span', '', typeof row.name === 'string' && row.name ? row.name : 'Racer');
     if (accountId && row.accountId === accountId) {
       racer.append(document.createTextNode(' '));
       appendText(document, racer, 'strong', 'sq-event-you', 'YOU');
     }
     appendText(document, item, 'time', '', formatTime(row.timeMs));
-    appendText(document, item, 'strong', '', `${Math.max(0, finiteInteger(row.rp))} RP`);
+    appendText(document, item, 'strong', '', Number.isSafeInteger(row.rp) && row.rp >= 0
+      ? `${row.rp} RP${state === 'non-final' ? ' (saved)' : ''}` : 'RP unavailable');
     list.append(item);
   }
   target.append(list);
@@ -261,7 +282,7 @@ export function mountArchiveView(root, options = {}) {
   toolbar.className = 'sq-archive-toolbar';
   const intro = document.createElement('div');
   appendText(document, intro, 'h3', '', options.title || 'Past events');
-  appendText(document, intro, 'p', '', 'Search or filter saved event standings.');
+  appendText(document, intro, 'p', '', 'Search or filter saved event standings. These are separate from the ordinary track leaderboard used for practice.');
   toolbar.append(intro);
   let jumpToMonth = () => {};
   {
@@ -367,7 +388,8 @@ export function mountArchiveView(root, options = {}) {
     title.className = 'sq-archive-title';
     appendText(document, title, 'strong', '', String(resolveName(period) || 'Archived event'));
     appendText(document, title, 'small', 'sq-archive-kind', KIND_LABELS[period.kind]);
-    appendText(document, title, 'small', 'sq-archive-date', `${formatDate(period.endsAt, locale)} | ${period.historyOnly ? 'Saved selection; results unavailable' : `Up to ${period.maxRp} RP`}`);
+    appendText(document, title, 'small', 'sq-archive-date', `${formatDate(period.endsAt, locale)} | ${period.historyOnly
+      ? 'Saved selection; results unavailable' : period.maxRp === null ? 'Event RP limit unavailable' : `Up to ${period.maxRp} RP`}`);
     summary.append(title);
     const initialRacers = declaredRacerCount(period);
     const count = appendText(document, summary, 'span', 'sq-archive-count',
@@ -378,14 +400,20 @@ export function mountArchiveView(root, options = {}) {
     board.className = 'sq-archive-board';
     appendText(document, board, 'p', 'sq-archive-track-details',
       [period.author ? `Author: ${period.author}` : '', period.trackId ? `Track: ${period.trackId}` : '',
-        'Closed event. Practice does not change its final Event RP.'].filter(Boolean).join(' | '));
-    if (typeof options.onOpenPeriod === 'function') {
+        'Closed event. Practice uses the ordinary track leaderboard, not these historic event standings, and does not change its final Event RP.'].filter(Boolean).join(' | '));
+    const canImport = typeof options.onImportPeriod === 'function' && (period.kind === 'kodub' || period.kind === 'custom');
+    if (typeof options.onOpenPeriod === 'function' || canImport) {
       const actions = document.createElement('div');
       actions.className = 'sq-event-actions sq-archive-actions';
-      const open = appendText(document, actions, 'button', 'button', 'Track details / practice');
-      open.type = 'button';
-      open.addEventListener('click', () => options.onOpenPeriod(period, snapshots.get(period.id) || null));
-      if (typeof options.onImportPeriod === 'function' && (period.kind === 'kodub' || period.kind === 'custom')) {
+      if (typeof options.onOpenPeriod === 'function') {
+        const open = appendText(document, actions, 'button', 'button', 'Track details / practice');
+        open.type = 'button';
+        open.addEventListener('click', () => {
+          const saved = snapshots.get(period.id);
+          options.onOpenPeriod(period, snapshotMatchesPeriod(saved, period) ? saved : null);
+        });
+      }
+      if (canImport) {
         const importButton = appendText(document, actions, 'button', 'button', 'Import saved track');
         importButton.type = 'button';
         importButton.addEventListener('click', () => options.onImportPeriod(period));
@@ -401,16 +429,22 @@ export function mountArchiveView(root, options = {}) {
     let loading = null;
     const showSnapshot = snapshot => {
       const counts = archivePeriodCounts(period, snapshot);
+      const state = archiveSnapshotState(period, snapshot);
+      details.dataset.standingsState = state;
       snapshots.set(period.id, snapshot);
       count.replaceChildren();
       appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}`);
-      appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified`);
+      appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified${state === 'final' ? '' : ' in saved capture'}`);
       if (counts.winner) {
         const winnerName = typeof counts.winner.name === 'string' && counts.winner.name ? counts.winner.name : 'Racer';
         appendText(document, count, 'span', 'sq-archive-winner', `Winner ${winnerName} ${formatTime(counts.winner.timeMs)}`);
       }
-      summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}; ${counts.verified} verified${counts.winner ? `; winner ${counts.winner.name || 'Racer'}, ${formatTime(counts.winner.timeMs)}` : ''}`);
-      renderRows(document, results, counts.verifiedEntries, formatTime, options.accountId || '');
+      const countLabel = `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}; ${counts.verified} verified${counts.winner ? `; winner ${counts.winner.name || 'Racer'}, ${formatTime(counts.winner.timeMs)}` : ''}`;
+      const description = state === 'final' ? 'Saved final event standings.' : state === 'partial-final'
+        ? 'Only part of the final event standings was saved. The full ranking and winner are unavailable.'
+        : 'Final standings are unavailable. Showing the last saved event capture, not final results. Saved RP and positions may have changed before closure.';
+      renderRows(document, results, counts.verifiedEntries, formatTime, options.accountId || '', state, description);
+      summary.setAttribute('aria-label', `${countLabel}; ${description}`);
       renderStats(document, stats, visiblePeriods(), snapshots);
     };
     if (snapshots.has(period.id) && snapshotMatchesPeriod(snapshots.get(period.id), period)) showSnapshot(snapshots.get(period.id));
@@ -423,7 +457,8 @@ export function mountArchiveView(root, options = {}) {
         return;
       }
       if (initialRacers === 0) {
-        renderRows(document, results, [], formatTime, options.accountId || '');
+        results.replaceChildren();
+        appendText(document, results, 'p', 'sq-archive-empty', 'The saved event catalog lists 0 racers. No final standings have been loaded.');
         return;
       }
       if (!loadSnapshot) {
@@ -433,7 +468,7 @@ export function mountArchiveView(root, options = {}) {
       }
       results.replaceChildren();
       appendText(document, results, 'p', 'sq-archive-loading', 'Loading final standings...');
-      loading = Promise.resolve(loadSnapshot(period))
+      loading = Promise.resolve().then(() => loadSnapshot(period))
         .then(snapshot => {
           if (!snapshotMatchesPeriod(snapshot, period)) throw new Error('Invalid archive snapshot');
           showSnapshot(snapshot);

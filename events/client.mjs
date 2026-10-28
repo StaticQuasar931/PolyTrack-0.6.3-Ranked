@@ -1,11 +1,12 @@
-import {archivePeriodCounts,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=173';
-import {readSavedArchiveTrack} from './archive-track.mjs';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=194';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=194';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=194';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -266,7 +267,7 @@ export function installEvents(bridge){
     if(now()-permanentAt<300000)return permanent;
     permanentAt=now();permanentFetching=bridge.readPermanent().then(value=>{
       if(value?.id!=='permanent-rolling-hills'||value.kind!=='permanent'||value.trackId!==ROLLING_TRACK_ID||value.complete!==true||!Array.isArray(value.entries)||value.maxRp!==1001)throw Error('Incomplete permanent event standings');
-      if(!permanent||value.sourceRevision>=permanent.sourceRevision){permanent=value;cacheWrite(STORE+'-permanent',value);}
+      if(bridge.snapshotOnly?.()||!permanent||value.sourceRevision>=permanent.sourceRevision){permanent=value;cacheWrite(STORE+'-permanent',value);}
       return permanent;
     }).catch(()=>permanent).finally(()=>{permanentFetching=null;tick();});
     return permanentFetching;
@@ -281,10 +282,11 @@ export function installEvents(bridge){
     const candidate=cache.get(period.id)||read(STORE+'-'+period.id,null),saved=valid(candidate)?candidate:null;
     if(snapshotFetching.has(period.id))return snapshotFetching.get(period.id);
     if(period.archived===true||saved?.archived===true){
-      if(saved?.archived===true)return saved;
+      if(cache.get(period.id)===saved&&saved?.archived===true)return saved;
       if(typeof bridge.readArchivedSnapshot!=='function')throw Error('Saved final archive is unavailable');
       const pending=Promise.resolve().then(()=>bridge.readArchivedSnapshot(period.id)).then(archived=>{
-        if(!valid(archived)||archived.archived!==true)throw Error('Invalid final archive snapshot');
+        // An ended catalog period is not evidence that its saved board is final.
+        if(!valid(archived))throw Error('Invalid saved archive snapshot');
         const final={...archived,fetchedAt:now(),saved:false};
         cache.set(period.id,final);cacheWrite(STORE+'-'+period.id,final);
         return final;
@@ -292,10 +294,10 @@ export function installEvents(bridge){
       snapshotFetching.set(period.id,pending);
       return pending;
     }
-    if(!force&&saved){cache.set(period.id,saved);return saved;}
+    // Browser storage can belong to an older package. Read this package once before reusing it.
+    if(!force&&saved&&cache.get(period.id)===saved)return saved;
     const attempt=snapshotAttempts.get(period.id);
     if(attempt&&now()<attempt.nextAt){if(saved)return saved;if(attempt.error)throw attempt.error;}
-    if(!force&&saved&&now()-saved.fetchedAt<120000)return saved;
     const state={nextAt:now()+60000,error:null};snapshotAttempts.set(period.id,state);
     if(snapshotAttempts.size>128)snapshotAttempts.delete(snapshotAttempts.keys().next().value);
     const confirmSchedulePeriod=value=>{
@@ -307,7 +309,7 @@ export function installEvents(bridge){
       cacheWrite(STORE,catalog);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(catalog.periods,catalogAt);
     };
     let pending;pending=(async()=>{
-      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const current=cache.get(period.id)||saved;if(valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
+      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const current=cache.get(period.id)||saved;if(!bridge.snapshotOnly?.()&&valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
       catch(error){state.error=error;state.nextAt=now()+120000;if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
       finally{if(snapshotFetching.get(period.id)===pending)snapshotFetching.delete(period.id);}
     })();
@@ -316,6 +318,7 @@ export function installEvents(bridge){
   }
   function updateEventRefreshControl(){
     const button=dialog?.querySelector('[data-event-refresh]');if(!button||!selected)return;
+    if(bridge.snapshotOnly?.()){button.disabled=true;button.textContent='Snapshot standings';button.title='Standings update with the published snapshot.';return;}
     const remaining=Math.max(0,Math.ceil(((snapshotAttempts.get(selected.id)?.nextAt||0)-now())/1000));
     button.disabled=remaining>0;
     const label=remaining?'Refresh in '+remaining+'s':'Refresh standings';
@@ -527,7 +530,8 @@ export function installEvents(bridge){
       try{snapshot=await loadArchivedBoard(period);}catch{if(dialog===owner&&requestId===token)message('Final standings are unavailable. Use Import saved track for practice.');return false;}
       if(dialog!==owner||requestId!==token)return false;
     }
-    if(!period?.id||!period.trackId||!snapshot||!Array.isArray(snapshot.entries)||snapshot.period?.id&&snapshot.period.id!==period.id||snapshot.period?.trackId&&snapshot.period.trackId!==period.trackId){message('Archived standings are not loaded or do not match this track. Reopen the archive card and try again.');return false;}
+    if(!period?.id||!period.trackId||!period.kind||snapshot?.period?.id!==period.id||snapshot.period.trackId!==period.trackId||snapshot.period.kind!==period.kind||
+      !['final','partial-final','non-final'].includes(archiveSnapshotState(period,snapshot))){message('Archived standings are not loaded or do not match this event and track. Reopen the archive card and try again.');return false;}
     entryRequest++;sessions.leave();eventIntent=null;archiveIntent={archive:true,period,periodId:period.id,trackId:period.trackId,accountId:bridge.accountId(),snapshot};knownPeriods.set(period.id,period);close();message('Opening archived track for normal practice.');
     const intent=archiveIntent;
     nativeOpenPermit=true;try{if(await bridge.openTrack(period.trackId)===false)throw Error('The archived track could not open. Please try again.');}catch(error){if(archiveIntent===intent&&bridge.accountId()===intent.accountId){archiveIntent=null;message(error?.message||'Archived track could not be opened.');}return false;}finally{nativeOpenPermit=false;}
@@ -653,7 +657,7 @@ export function installEvents(bridge){
     try{
       const failure=replayFailure(failureKey);if(failure)throw Error(failure);
       let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
-      if(session.archive&&!payload)throw Error('Saved archived replay is unavailable.');
+      if(!payload)throw Error(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');
       if(pendingGhosts.get(row.accountId)!==pending)return;
       if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
       const ghostKey=key+'_'+viewer;
@@ -683,7 +687,7 @@ export function installEvents(bridge){
     replayFailures.delete(key);return null;
   }
   function rememberReplayFailure(key,error){
-    const delay=Number.isFinite(error?.retryAfterMs)?Math.max(1000,Math.min(900000,error.retryAfterMs)):15000;
+    const delay=Number.isFinite(error?.retryAfterMs)?Math.max(60000,Math.min(900000,error.retryAfterMs)):60000;
     replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+delay});
     if(replayFailures.size>32)replayFailures.delete(replayFailures.keys().next().value);
   }
@@ -691,18 +695,25 @@ export function installEvents(bridge){
     const view=nativeView,session=sessions.current()||archiveIntent,accountId=bridge.accountId();
     if(!view||!session||session.periodId!==view.periodId||session.accountId!==accountId)return;
     const readReplay=session.archive?bridge.readArchivedReplay:bridge.readReplay;
+    if(typeof readReplay!=='function'){message(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');return;}
     const period=view.period||knownPeriods.get(view.periodId)||(catalog.periods||[]).find(row=>row.id===view.periodId);if(!period)return;
     const offset=fromTop?0:view.page*20,sourceRows=(view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows).filter(row=>!view.onlyVerified||!row.pending);
-    const chosen=(explicitRows||sourceRows.slice(offset+first-1,offset+last)).slice(0,10).filter(row=>(!row.pending||/^[a-f0-9]{64}$/.test(row.runId||''))&&typeof readReplay==='function');
+    const chosen=(explicitRows||sourceRows.slice(offset+first-1,offset+last)).slice(0,10).map(row=>({...row}));
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
     const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
     const pendingActive=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId),groupToken=pendingActive[0]?.groupToken;
     const pendingSame=chosen.length>0&&Number.isSafeInteger(groupToken)&&pendingActive.length===chosen.length&&chosen.every(row=>{const pending=pendingGhosts.get(row.accountId);return pending?.groupToken===groupToken&&pending.targetTimeMs===row.timeMs&&pending.targetRunId===(row.runId||null)&&pending.targetPending===!!row.pending;});
     if(fromTop)view.page=0;
-    clearEventGhostSelection(period.id,accountId,{render:false});
-    if(same||pendingSame){message('Event ghosts unselected.');tick();return;}
+    if(same||pendingSame){clearEventGhostSelection(period.id,accountId,{render:false});message('Event ghosts unselected.');tick();return;}
+    for(const [id,row] of pendingGhosts)if(row.periodId===period.id&&row.accountId===accountId)pendingGhosts.delete(id);
     if(!chosen.length){message('No playable replays in these places.');tick();return;}
-    const token=++topSelectionToken,requestToken=++replayRequest;
+    const token=++topSelectionToken,requestToken=++replayRequest,page=view.page,trackId=period.trackId,onlyVerified=view.onlyVerified;
+    const current=()=>{
+      if(token!==topSelectionToken||requestToken!==replayRequest||nativeView!==view||view.page!==page||view.onlyVerified!==onlyVerified||period.trackId!==trackId||view.root&&!view.root.isConnected||!replayContextActive(session))return false;
+      const latestRows=new Map((view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows).map(row=>[row.accountId,row]));
+      return chosen.every(row=>{const latest=latestRows.get(row.accountId);return latest&&latest.timeMs===row.timeMs&&(latest.runId||null)===(row.runId||null)&&!!latest.pending===!!row.pending&&(latest.replayHash||null)===(row.replayHash||null);});
+    };
+    const release=()=>{for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);};
     for(const row of chosen)pendingGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,groupToken:token});
     message(`Loading up to ${chosen.length} event replays...`);
     tick();
@@ -711,8 +722,9 @@ export function installEvents(bridge){
       try{
         const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
         const failureKey=key+'_'+accountId,failure=replayFailure(failureKey);if(failure)throw Error(failure);
+        if(typeof readReplay!=='function'||row.pending&&!/^[a-f0-9]{64}$/.test(row.runId||''))throw Error('Saved event replay unavailable.');
         let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
-        if(session.archive&&!payload)throw Error('Saved archived replay is unavailable.');
+        if(!payload)throw Error(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');
         if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||!replayContextActive(session))return null;
         const ghostKey=key+'_'+accountId;let ghost=preparedGhosts.get(ghostKey);
         if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer:accountId});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
@@ -721,16 +733,24 @@ export function installEvents(bridge){
         return {row,ghost};
       }catch(error){if(token===topSelectionToken&&requestToken===replayRequest&&pendingGhosts.get(row.accountId)===pending)rememberReplayFailure((session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'')+'_'+accountId,error);return null;}
     }));
-    if(token!==topSelectionToken||requestToken!==replayRequest)return;
-    if(!replayContextActive(session)){for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);tick();return;}
-    const ready=prepared.filter(Boolean);
+    if(token!==topSelectionToken||requestToken!==replayRequest){release();tick();return;}
+    if(!current()){release();tick();return;}
+    const ready=prepared.filter(Boolean),failed=chosen.filter((_row,index)=>!prepared[index]).map(row=>({row}));
+    if(!ready.length){release();message('Saved event replays unavailable or failed playback validation. Your selection is unchanged.');tick();return;}
+    if(failed.length){
+      let accepted=false;
+      try{accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',returnFocus:document.activeElement});}catch{}
+      if(!current()){release();tick();return;}
+      if(!accepted){release();message('Event ghost selection cancelled. Your previous selection is unchanged.');tick();return;}
+    }
+    clearEventGhostSelection(period.id,accountId,{render:false});
     for(const {row,ghost} of ready){
       const selection={periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,ghost};
       if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
       selectedGhosts.set(row.accountId,selection);selectedGhost=selection;
     }
     for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);
-    message(chosen.length?`${ready.length} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. Play to race them.`:'No playable replays in these places.');
+    message(`${ready.length} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. ${session.archive?'Use Watch to view them.':'Play to race them.'}`);
     tick();
   }
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
@@ -814,7 +834,7 @@ export function installEvents(bridge){
   }
   async function readReceipt(periodId,accountId){
     const key=periodId+'_'+accountId;
-    if(bridge.snapshotOnly?.()&&!bestRecords[key])return ownReceipts.get(key)||null;
+    if(bridge.snapshotOnly?.())return ownReceipts.get(key)||null;
     if(ownReceiptRequests.has(key))return ownReceiptRequests.get(key);
     if(ownReceiptAt.has(key)&&now()-ownReceiptAt.get(key)<60000)return ownReceipts.get(key);
     const at=now();ownReceiptAt.set(key,at);
@@ -891,27 +911,47 @@ export function installEvents(bridge){
   }
   function syncNativeArchiveBoard(view){
     const {period,snapshot}=view;
-    const archived=archivePeriodCounts(period,snapshot).verifiedEntries;
-    if(view.watch)view.watch.disabled=typeof bridge.watchEvent!=='function'||![...selectedGhosts.values()].some(row=>row.periodId===period.id&&row.accountId===view.accountId);
-    const rows=archived.map((row,index)=>({...row,name:displayName(row),rank:Number.isSafeInteger(row.rank)&&row.rank>0?row.rank:index+1,pending:false}));
-    const signature=JSON.stringify([bridge.identityRevision?.(),snapshot.updatedAt,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.name,row.rp])]);
+    const state=archiveSnapshotState(period,snapshot),bound=!!period.id&&!!period.trackId&&!!period.kind&&
+      snapshot?.period?.id===period.id&&snapshot.period.trackId===period.trackId&&snapshot.period.kind===period.kind&&
+      ['final','partial-final','non-final'].includes(state);
+    const counts=archivePeriodCounts(period,bound?snapshot:null),archived=bound?counts.verifiedEntries:[];
+    if(view.watch)view.watch.disabled=!bound||typeof bridge.watchEvent!=='function'||![...selectedGhosts.values()].some(row=>row.periodId===period.id&&row.accountId===view.accountId);
+    const rows=archived.map(row=>{
+      const saved=snapshot.entries.find(entry=>entry?.accountId===row.accountId&&entry.timeMs===row.timeMs);
+      return {...row,name:displayName(row),rank:Number.isSafeInteger(saved?.rank)&&saved.rank>0?saved.rank:null,pending:false};
+    });
+    const source=snapshot?._publicBackup?'Snapshot data':snapshot?.saved?'Cached data':'Saved event data';
+    const label=!bound?'Standings unavailable':state==='final'?'Frozen final event standings':state==='partial-final'?'Saved partial final event standings':'Saved non-final event standings';
+    const description=!bound?'Saved standings do not match this event and track.':state==='final'
+      ?'Frozen final event standings as saved. Practice uses the separate ordinary track leaderboard and does not change Event RP.'
+      :state==='partial-final'?'Only part of the final event standings was saved. Missing ranks and Event RP are unknown.'
+      :'Final standings are unavailable. These are saved event results, not final awards or the ordinary practice leaderboard.';
+    const signature=JSON.stringify([bridge.identityRevision?.(),snapshot?.updatedAt,state,bound,counts.racers,source,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.name,row.rp])]);
     for(const button of view.board.querySelectorAll(':scope > .container > button.main')){const selected=selectedGhosts.get(button.dataset.eventAccountId),pending=pendingGhosts.get(button.dataset.eventAccountId),matches=row=>row?.periodId===period.id&&row.accountId===view.accountId&&row.targetTimeMs===Number(button.dataset.eventTime);const active=matches(selected),busy=matches(pending);button.classList.toggle('selected',!!(active||busy));button.classList.toggle('pending-selection',!!busy);button.setAttribute('aria-pressed',String(!!(active||busy)));button.setAttribute('aria-busy',String(!!busy));}
     if(signature===view.signature)return;
-    view.signature=signature;view.board.querySelector('h3').textContent=eventName(period.kind)+' archive';
-    view.board.querySelector('h3').title=snapshot._publicBackup?'Snapshot data: frozen archived standings':snapshot.saved?'Cached data: saved archived standings':'Fresh data: published archived standings';
-    view.board.querySelector('.total-players').textContent=rows.length+' archived '+(rows.length===1?'racer':'racers')+' · '+(snapshot._publicBackup?'Snapshot data':snapshot.saved?'Cached data':'Fresh data');
+    view.signature=signature;view.board.title=description;
+    view.board.querySelector('h2').textContent=label;
+    view.board.querySelector('h3').textContent=eventName(period.kind)+' archive';
+    view.board.querySelector('h3').title=source+': '+description;
+    view.board.querySelector('.total-players').textContent=rows.length+' saved result'+(rows.length===1?'':'s')+
+      (counts.racers===null?'':' / '+counts.racers+' event entrant'+(counts.racers===1?'':'s'))+' | '+label+' | '+source;
     const container=view.board.querySelector('.container');container.replaceChildren();
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     for(const row of rows.slice(view.page*20,view.page*20+20)){
       const renderer=view.board.__pt062EventRows;if(renderer?.version!==1)break;
       const runAt=eventDisplayRunAt(row,now());
-      const button=renderer.render(container,nativeEventRow(row,view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readArchivedReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Saved archived replay is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
+      const button=renderer.render(container,nativeEventRow({...row,rank:row.rank??''},view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readArchivedReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Saved archived replay is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
+      if(row.rank===null){const position=button.querySelector('.left .position');position.textContent='Rank unavailable';position.title='No rank was saved for this event result.';}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
-      const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+' ERP';points.title='Archived Event RP';state.prepend(points);bridge.decorateRacer?.(button,row);
+      const points=document.createElement('span');points.className='sq-event-earned-rp';
+      const hasRp=Number.isSafeInteger(row.rp)&&row.rp>=0,isFinal=snapshot.archived===true;
+      points.textContent=hasRp?row.rp+' ERP'+(isFinal?'':' (saved)'):'ERP unavailable';
+      points.title=!hasRp?'No Event RP was saved for this result.':isFinal?'Event RP from saved final standings.':'Event RP from a non-final capture, not a final award.';
+      state.prepend(points);bridge.decorateRacer?.(button,row);
     }
-    if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent='No verified archived times were recorded.';container.append(empty);}
+    if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent=!bound?description:state==='final'?'No verified results are present in the saved final standings.':'No verified results are present in this saved capture. Final results are not known.';container.append(empty);}
     const pages=view.board.querySelector('.pages');pages.replaceChildren();
     for(let page=0;page<count;page++){const button=document.createElement('button');button.type='button';button.className='button page'+(page===view.page?' selected':'');button.textContent=String(page+1);button.disabled=page===view.page;button.onclick=()=>{view.page=page;view.signature='';syncNativeArchiveBoard(view);};pages.append(button);}
   }
@@ -1153,7 +1193,7 @@ export function installEvents(bridge){
     if(activeChanged)bridge.eventLayoutChanged?.();
   }
   document.addEventListener('keydown',event=>{
-    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey||!nativeView?.board?.getClientRects().length||dialog||document.querySelector('.sq-extra-overlay:not([hidden])'))return;
+    if(event.defaultPrevented||event.repeat||event.ctrlKey||event.altKey||event.metaKey||!nativeView?.board?.getClientRects().length||dialog||document.querySelector('.sq-extra-overlay:not([hidden]),.sq-partial-replay-dialog[open]'))return;
     const target=event.target;
     if(['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable)return;
     if((event.key==='Enter'||event.key===' ')&&target?.closest?.('button,a[href],[role="button"]'))return;
@@ -1197,7 +1237,7 @@ export function installEvents(bridge){
     if(!eventDigitsHeld.has(identity))return;
     const digit=eventDigitsHeld.get(identity),chord=eventDigitsConsumed.delete(identity),board=eventDigitBoard;
     eventDigitsHeld.delete(identity);
-    if(board===nativeView?.board&&board?.getClientRects().length&&!dialog&&!chord){
+    if(board===nativeView?.board&&board?.getClientRects().length&&!dialog&&!chord&&!document.querySelector('.sq-partial-replay-dialog[open]')){
       if(eventTopHeld||Date.now()<eventTopPrefixUntil)void selectTopEventRows(digit);
       else{const row=board.querySelectorAll(':scope > .container > button.main')[digit-1];if(row?.getAttribute('aria-disabled')!=='true')row?.click();}
       eventTopPrefixUntil=0;

@@ -1,3 +1,6 @@
+// Keep this dependency on the same client cache revision as the loaded Help module.
+const {parseReleasePreparedAt,releaseAge}=await import(new URL('./release-info.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+
 // Native action names and IDs mirror main.bundle.js: defaultKeyBindings / module 3277.
 const nativeRows = [
   ['VehicleAccelerate',0,'driving','Accelerate',['KeyW','ArrowUp'],'Build speed.'],
@@ -166,7 +169,7 @@ function keycaps(item) {
 
 let serial=0;
 /** HTML fragment, not a modal. The host owns opening, closing and its focus trap.
- * release: {number,version,revision,commit,commitConfirmed,notes:string[]}. Use RELEASE_INFO from release-info.mjs.
+ * release: {number,version,revision,preparedAt,commit,commitConfirmed,notes:string[]}. Use RELEASE_INFO from release-info.mjs.
  * Existing data-help-action hooks: profile, filters, ghost-shortcut. No callback or network needed.
  */
 export function renderHelpControls(options={}) {
@@ -176,23 +179,59 @@ export function renderHelpControls(options={}) {
   const metadata=[['Release number',release.number],['Game version',release.version],['Client revision',release.revision],['Commit',release.commitConfirmed===true&&/^[a-f0-9]{7,40}$/i.test(String(release.commit||''))?release.commit:null]].filter(([,value])=>value!==undefined&&value!==null&&String(value).trim()!=='');
   const notes=Array.isArray(release.notes)?release.notes.filter(note=>typeof note==='string'&&note.trim()):[];
   const hasRelease=metadata.length>0||notes.length>0;
+  const prepared=parseReleasePreparedAt(release.preparedAt);
+  const age=releaseAge(release.preparedAt);
+  const preparedLabel=prepared===null?'Not recorded':release.preparedAt.replace('T',' ').replace(/\.\d{3}Z$/,' UTC');
   return `<section class="pt-help-controls" data-help-controls aria-labelledby="${prefix}-title">
-    <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Release info</button></div>`:''}</header>
+    <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Current Release</button></div>`:''}</header>
     <div id="${prefix}-controls" data-hc-panel="controls">
-      <aside class="hc-track-quick" aria-label="Track selection shortcuts"><strong>Track selection</strong><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="1">1</kbd> Official</span><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="2">2</kbd> Community</span><span><kbd data-hc-key="Shift">Shift</kbd> + <kbd data-hc-key="3">3</kbd> Custom</span></aside>
-      <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Press a key to highlight it here. Shortcuts do not run while Help is open. Change game keys in Settings &gt; Controls.</p></div>
-      <div class="hc-layout"><nav class="hc-topics" aria-label="Control topics"><p class="hc-eyebrow">BROWSE BY SCREEN</p><button type="button" data-hc-topic="all" aria-pressed="true" aria-controls="${prefix}-results"><span>All controls</span><span class="hc-count">${total}</span></button>${groups.map(group=>`<button type="button" data-hc-topic="${escape(group.id)}" aria-pressed="false" aria-controls="${prefix}-results"><span>${escape(group.title)}</span><span class="hc-count">${group.rows.length}</span></button>`).join('')}</nav>
+      <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Press any key to see it light up. To change game keys, open Settings &gt; Controls.</p></div>
+      <div class="hc-topic-picker"><label for="${prefix}-topic">Browse controls</label><select id="${prefix}-topic" data-hc-topic-select aria-controls="${prefix}-results"><option value="all">All controls</option>${groups.map(group=>`<option value="${escape(group.id)}">${escape(group.title)}</option>`).join('')}</select></div>
+      <div class="hc-layout">
       <div class="hc-results" id="${prefix}-results"><div class="hc-results-head"><h3 data-hc-results-title>All controls</h3><p role="status" aria-live="polite" aria-atomic="true" data-hc-status>${total} controls</p></div><div class="hc-empty" data-hc-empty hidden><h3>No matching controls</h3><p>Try an action, key or screen name.</p><button type="button" data-hc-reset>Show all controls</button></div>
-      ${groups.map((group,index)=>`<details class="hc-group" data-hc-group="${escape(group.id)}"${group.open?' open':''}><summary><span class="hc-section-number" aria-hidden="true">${String(index+1).padStart(2,'0')}</span><span class="hc-summary-copy"><strong>${escape(group.title)}</strong><small>${escape(group.note)}</small></span><span class="hc-count" data-hc-group-count>${group.rows.length}</span><span class="hc-chevron" aria-hidden="true"></span></summary><dl>${group.rows.map(item=>`<div class="hc-row" data-hc-row="${escape(item.id)}" data-hc-search-text="${escape(searchable(group,item))}"><dt><span>${escape(item.title)}</span>${item.custom?'<span class="hc-custom">Custom</span>':''}${item.description?`<small>${escape(item.description)}</small>`:''}</dt><dd class="hc-keycaps">${keycaps(item)}</dd></div>`).join('')}</dl>${group.id==='ghosts'?'<div class="hc-group-footer"><button type="button" data-help-action="ghost-shortcut">Set up your ghost shortcut <span aria-hidden="true">&gt;</span></button></div>':''}</details>`).join('')}
+      ${groups.map(group=>`<details class="hc-group" data-hc-group="${escape(group.id)}"${group.open?' open':''}><summary><span class="hc-summary-copy"><strong>${escape(group.title)}</strong><small>${escape(group.note)}</small></span><span class="hc-count" data-hc-group-count>${group.rows.length}</span><span class="hc-chevron" aria-hidden="true"></span></summary><dl>${group.rows.map(item=>`<div class="hc-row" data-hc-row="${escape(item.id)}" data-hc-search-text="${escape(searchable(group,item))}"><dt><span>${escape(item.title)}</span>${item.custom?'<span class="hc-custom">Custom</span>':''}${item.description?`<small>${escape(item.description)}</small>`:''}</dt><dd class="hc-keycaps">${keycaps(item)}</dd></div>`).join('')}</dl>${group.id==='ghosts'?'<div class="hc-group-footer"><button type="button" data-help-action="ghost-shortcut">Set up your ghost shortcut <span aria-hidden="true">&gt;</span></button></div>':''}</details>`).join('')}
       <p class="hc-default-note">${options.bindings||options.getBindings?'Supplied game bindings are shown; any missing actions use their defaults.':'Driving, replay and editor keys shown here are defaults. Your custom game bindings take priority.'}</p></div></div>
       <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
-    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><p class="hc-eyebrow">BUILD INFORMATION</p><h3 id="${prefix}-release-title">Your current release</h3>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>In this release</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Release number identifies the manual update. Client revision identifies the loaded client build, not a Git commit. This is not an update check. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
+    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">Current Release</h3><section class="hc-release-age" aria-label="Release preparation age"><p class="hc-eyebrow">AGE SINCE PREPARATION</p><p class="hc-age-value" data-hc-release-age data-prepared-at="${prepared===null?'':escape(release.preparedAt)}">${escape(age.text)}</p><p class="hc-prepared-date">Prepared: ${prepared===null?'Not recorded':`<time datetime="${escape(release.preparedAt)}">${escape(preparedLabel)}</time>`}</p></section>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Age uses the recorded release preparation time and your device clock, not a Git publication date. It updates locally while Help is open, without checking for updates. Client revision identifies this loaded build. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
     <footer class="hc-credits"><p>Track ratings &amp; difficulty gradings: <strong>Window Cleaner</strong>.</p></footer>
   </section>`;
 }
 
 const bindingsByRoot=new WeakMap();
+const keyboardGuards=new WeakMap();
+function guardHelpKeyboard(doc, binding) {
+  let state=keyboardGuards.get(doc);
+  if(!state){
+    const view=doc.defaultView,bindings=new Set(),held=new Set();
+    const current=event=>[...bindings].reverse().find(item=>item.accepts(event));
+    const disposeIfIdle=()=>{
+      if(bindings.size||held.size)return;
+      view.removeEventListener('keydown',down,true);view.removeEventListener('keyup',up,true);view.removeEventListener('blur',blur);
+      keyboardGuards.delete(doc);
+    };
+    const down=event=>{
+      const item=current(event);if(!item)return;
+      held.add(event.code||event.key);
+      item.down(event);
+      // Help processes its own keys before shielding earlier document/native handlers.
+      // Escape and Tab must still reach the parent's close/focus-trap boundary.
+      if(event.cancelBubble||!['Escape','Tab'].includes(event.key))event.stopImmediatePropagation();
+    };
+    const up=event=>{
+      const suppress=Boolean(current(event))||held.has(event.code||event.key);
+      for(const item of bindings)item.up(event);
+      held.delete(event.code||event.key);
+      if(suppress)event.stopImmediatePropagation();
+      disposeIfIdle();
+    };
+    const blur=()=>{held.clear();for(const item of bindings)item.blur();disposeIfIdle();};
+    state={bindings,disposeIfIdle};keyboardGuards.set(doc,state);
+    view.addEventListener('keydown',down,true);view.addEventListener('keyup',up,true);view.addEventListener('blur',blur);
+  }
+  state.bindings.add(binding);
+  return ()=>{state.bindings.delete(binding);state.disposeIfIdle();};
+}
 /** Bind a rendered fragment (or its host). Returns an idempotent cleanup function.
  * Uses local DOM events; key highlights never dispatch gameplay actions or fetch data.
  */
@@ -202,14 +241,26 @@ export function bindHelpControls(root) {
   bindingsByRoot.get(host)?.();
   const input=host.querySelector('[data-hc-search]'),status=host.querySelector('[data-hc-status]');
   const title=host.querySelector('[data-hc-results-title]'),empty=host.querySelector('[data-hc-empty]');
-  const topics=[...host.querySelectorAll('[data-hc-topic]')],views=[...host.querySelectorAll('[data-hc-view]')];
+  const topicSelect=host.querySelector('[data-hc-topic-select]'),views=[...host.querySelectorAll('[data-hc-view]')];
   const groups=[...host.querySelectorAll('[data-hc-group]')].map(node=>({node,rows:[...node.querySelectorAll('[data-hc-row]')],count:node.querySelector('[data-hc-group-count]')}));
   let topic='all',snapshot=null,active=true;
-  const keyScope=host.closest('[role="dialog"]')||host,view=host.ownerDocument.defaultView;
+  const keyScope=host.closest('[role="dialog"]')||host,doc=host.ownerDocument,view=doc.defaultView;
+  const ageNode=host.querySelector('[data-hc-release-age]');
+  let ageTimer=null;
+  function updateAge(){
+    if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
+    if(!active||!ageNode||!host.isConnected||!host.getClientRects().length)return;
+    const age=releaseAge(ageNode.dataset.preparedAt);
+    ageNode.textContent=age.text;
+    if(!doc.hidden&&age.nextUpdateMs!==null)ageTimer=view.setTimeout(updateAge,age.nextUpdateMs);
+  }
+  function visibilityChanged(){releaseKeys();updateAge();}
   const pressed=new Map();
   const releaseKeys=()=>{for(const caps of pressed.values())for(const cap of caps)cap.classList.remove('is-pressed');pressed.clear();};
   function showKey(event){
-    if(!active||!host.getClientRects().length||event.isComposing||event.target.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+    if(!active||!host.getClientRects().length||event.isComposing||event.target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
+    const dialog=event.target.closest?.('[role="dialog"],dialog');
+    if(dialog&&dialog!==keyScope)return;
     const id=event.code||event.key;if(pressed.has(id))return;
     const caps=[...host.querySelectorAll('[data-hc-key]')].filter(cap=>cap.getClientRects().length&&helpKeyMatches(cap.dataset.hcKey,event));
     for(const cap of caps)cap.classList.add('is-pressed');
@@ -235,8 +286,8 @@ export function bindHelpControls(root) {
     if(!filtering)snapshot=null;
     empty.hidden=count>0;
     status.textContent=count+' '+(count===1?'control':'controls')+(tokens.length?' found':'');
-    title.textContent=topics.find(button=>button.dataset.hcTopic===topic)?.querySelector('span')?.textContent||'All controls';
-    for(const button of topics)button.setAttribute('aria-pressed',String(button.dataset.hcTopic===topic));
+    topicSelect.value=topic;
+    title.textContent=topicSelect.selectedOptions[0]?.textContent||'All controls';
     host.querySelector('[data-hc-clear]').disabled=!input.value;
   }
   function click(event) {
@@ -244,9 +295,9 @@ export function bindHelpControls(root) {
     if(!button||!host.contains(button))return;
     if(button.hasAttribute('data-hc-clear')){input.value='';filter();input.focus();}
     else if(button.hasAttribute('data-hc-reset')){topic='all';input.value='';filter();input.focus();}
-    else if(button.hasAttribute('data-hc-topic')){topic=button.dataset.hcTopic;filter();}
     else if(button.hasAttribute('data-hc-view')) {
       releaseKeys();
+      updateAge();
       const view=button.dataset.hcView;
       for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==view;
       for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle===button));
@@ -259,7 +310,7 @@ export function bindHelpControls(root) {
       return;
     }
     if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) {
-      const list=topics.includes(event.target)?topics:views.includes(event.target)?views:null;
+      const list=views.includes(event.target)?views:null;
       if(list){
         const index=list.indexOf(event.target),next=event.key==='Home'?0:event.key==='End'?list.length-1:(index+(['ArrowLeft','ArrowUp'].includes(event.key)?list.length-1:1))%list.length;
         list[next].focus();event.preventDefault();
@@ -268,13 +319,28 @@ export function bindHelpControls(root) {
     // Bubble through the outer modal trap on Tab; contain gameplay shortcuts otherwise.
     if(event.key!=='Tab')event.stopPropagation();
   }
-  keyScope.addEventListener('keydown',showKey,true);keyScope.addEventListener('keyup',hideKey,true);keyScope.addEventListener('focusout',leaveScope);view?.addEventListener('blur',releaseKeys);
-  host.addEventListener('input',filter);host.addEventListener('click',click);host.addEventListener('keydown',keydown);
-  filter();
+  const stopKeyboard=guardHelpKeyboard(doc,{
+    accepts:event=>{
+      if(!active||!host.getClientRects().length)return false;
+      const dialog=event.target.closest?.('[role="dialog"],dialog');
+      return !dialog||dialog===keyScope;
+    },
+    down:event=>{showKey(event);keydown(event);},up:hideKey,blur:releaseKeys
+  });
+  keyScope.addEventListener('focusout',leaveScope);view?.addEventListener('blur',releaseKeys);
+  doc.addEventListener('visibilitychange',visibilityChanged);view?.addEventListener('focus',updateAge);
+  const selectTopic=()=>{topic=topicSelect.value;filter();};
+  topicSelect.addEventListener('change',selectTopic);
+  const searchInput=event=>{if(event.target===input)filter();};
+  host.addEventListener('input',searchInput);host.addEventListener('click',click);
+  filter();updateAge();
   const cleanup=()=>{
     if(!active)return;active=false;releaseKeys();
-    keyScope.removeEventListener('keydown',showKey,true);keyScope.removeEventListener('keyup',hideKey,true);keyScope.removeEventListener('focusout',leaveScope);view?.removeEventListener('blur',releaseKeys);
-    host.removeEventListener('input',filter);host.removeEventListener('click',click);host.removeEventListener('keydown',keydown);
+    stopKeyboard();keyScope.removeEventListener('focusout',leaveScope);view?.removeEventListener('blur',releaseKeys);
+    doc.removeEventListener('visibilitychange',visibilityChanged);view?.removeEventListener('focus',updateAge);
+    topicSelect.removeEventListener('change',selectTopic);
+    if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
+    host.removeEventListener('input',searchInput);host.removeEventListener('click',click);
     if(bindingsByRoot.get(host)===cleanup)bindingsByRoot.delete(host);
   };
   bindingsByRoot.set(host,cleanup);return cleanup;
