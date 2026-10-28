@@ -9,18 +9,22 @@ const start=client.indexOf('  async function playEvent(){');
 const launch=client.slice(start,client.indexOf('  const ownReceipts=',start));
 const nativeStart=patch.indexOf('  window.__pt062PrepareEventRace=function');
 const native=patch.slice(nativeStart,patch.indexOf('  const eventCloudRequests=',nativeStart));
-async function setup(page,{missingView=false,disabled=false,disposePanel=false,deferHandoff=false,kind='weekly'}={}){
+async function setup(page,{missingView=false,disabled=false,disposePanel=false,deferHandoff=false,cleanupSelection=false,kind='weekly'}={}){
  await page.route('**/*',route=>route.abort());
  await page.setContent('<div class="track-info-ui"><div class="side-panel"><button class="play">Play</button></div></div>');
  await page.evaluate(({launch,native,options})=>{
   window.__pt062NativeEventGhostVersion=1;window.__pt062NativeEventLaunchVersion=1;
   window.caseState=new Function('options',`
-   let pendingEventLaunch=null,launching=false,nativePlayPermit=false,accountId='racer',at=Date.now();
+   let pendingEventLaunch=null,launching=false,nativePlayPermit=false,replayRequest=0,accountId='racer',at=Date.now();
    Date.now=()=>at;
    const messages=[],errors=[],policies=[],handoffs=[],pendingGhosts=new Map(),selectedGhosts=new Map();
    let session=Object.freeze({periodId:options.kind,accountId,trackId:'track',endsAt:at+60000});
    const sessions={current:()=>session&&at<session.endsAt?session:null},now=()=>at,activeRankedAccountId=()=>accountId;
-   const getOwnReplay=()=>null,raceGhosts=()=>({ownGhost:null,opponents:[]});
+   const period={id:session.periodId,trackId:session.trackId},knownPeriods=new Map([[period.id,period]]);
+   const row={accountId:'opponent',timeMs:1000,runId:'run',replayHash:'hash'},ghost={nickname:'Cached racer'};
+   if(options.cleanupSelection)selectedGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,ghost});
+   const eventDisplayRows=()=>({rows:[row]}),getPlaybackWorkerBridge=()=>{throw Error('Legacy ghost must not attest');};
+   const getOwnReplay=()=>null,raceGhosts=()=>({ownGhost:null,opponents:[...selectedGhosts.values()].map(value=>value.ghost)});
    const root=document.querySelector('.track-info-ui');root.__pt062EventWatch={version:1,trackId:'track'};
    const nativeView=options.missingView?null:{root,periodId:session.periodId,accountId};
    const message=value=>messages.push(value);let nativeCalls=0,normalCalls=0,nativeDispatches=0;
@@ -31,6 +35,7 @@ async function setup(page,{missingView=false,disabled=false,disposePanel=false,d
     nativeDispatches++;
     // Native Play disposes TrackInfo before track loading and the start-game handoff.
     if(options.disposePanel)root.remove();
+    if(options.cleanupSelection){replayRequest++;selectedGhosts.clear();knownPeriods.clear();}
     const handoff=(trackId='track',multiplayer=null)=>{
      try{const policy=window.__pt062PrepareEventRace(trackId,multiplayer);if(policy){nativeCalls++;policies.push(policy);}else normalCalls++;}
      catch(error){errors.push(error.message);}
@@ -51,11 +56,12 @@ async function setup(page,{missingView=false,disabled=false,disposePanel=false,d
      else if(change==='detach')root.remove();
      else if(change==='replace-panel')root.replaceWith(root.cloneNode(true));
      else if(change==='disabled')play.disabled=true;
+     else if(change==='selection'){replayRequest++;selectedGhosts.clear();}
      else throw Error('Unknown fixture mutation: '+change);
     },play
    };
   `)(options);
- },{launch,native,options:{missingView,disabled,disposePanel,deferHandoff,kind}});
+ },{launch,native,options:{missingView,disabled,disposePanel,deferHandoff,cleanupSelection,kind}});
 }
 async function fixture(t,options){
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
@@ -83,14 +89,14 @@ for(const kind of ['weekly','daily'])test(kind+' event Play survives disposed pa
  assert.deepEqual(await page.evaluate(()=>({calls:caseState.calls(),normal:caseState.normalCalls(),pending:caseState.pending(),errors:caseState.errors(),policies:caseState.policies()})),{calls:1,normal:0,pending:false,errors:[],policies:[{ownGhost:null,opponents:[]}]});
  assert.equal(await page.evaluate(()=>window.__pt062PrepareEventRace('track',null)),false);
 });
-for(const change of ['cancel','racer','expiry','session','detach','replace-panel','disabled'])test('event Play rejects '+change+' before native dispatch',async t=>{
+for(const change of ['cancel','racer','expiry','session','detach','replace-panel','disabled','selection'])test('event Play rejects '+change+' before native dispatch',async t=>{
  const page=await fixture(t,{deferHandoff:true});
  await page.evaluate(change=>{caseState.play.click();caseState.mutate(change);},change);
  await page.waitForFunction(()=>!caseState.launching(),null,{timeout:1500});
  assert.deepEqual(await page.evaluate(()=>({calls:caseState.calls(),normal:caseState.normalCalls(),dispatches:caseState.dispatches(),pending:caseState.pending(),queued:caseState.queued()})),{calls:0,normal:0,dispatches:0,pending:false,queued:0});
 });
 for(const change of ['cancel','racer','expiry','session','wrong-track','multiplayer'])test('event Play rejects '+change+' after panel disposal without normal fallback',async t=>{
- const page=await fixture(t,{disposePanel:true,deferHandoff:true});
+ const page=await fixture(t,{disposePanel:true,deferHandoff:true,cleanupSelection:true});
  await page.locator('button.play').click();
  await page.waitForFunction(()=>caseState.queued()===1&&!caseState.launching(),null,{timeout:1500});
  assert.equal(await page.locator('.track-info-ui').count(),0);
@@ -102,4 +108,12 @@ for(const change of ['cancel','racer','expiry','session','wrong-track','multipla
  },change);
  assert.deepEqual(await page.evaluate(()=>({calls:caseState.calls(),normal:caseState.normalCalls(),dispatches:caseState.dispatches(),pending:caseState.pending(),errors:caseState.errors()})),{calls:0,normal:0,dispatches:1,pending:false,errors:['Event launch context changed']});
  assert.equal(await page.evaluate(()=>window.__pt062PrepareEventRace('track',null)),false);
+});
+
+for(const kind of ['weekly','daily'])test(kind+' committed Play survives panel disposal and replay selection cleanup before native handoff',async t=>{
+ const page=await fixture(t,{kind,disposePanel:true,deferHandoff:true,cleanupSelection:true});
+ await page.locator('button.play').click();
+ await page.waitForFunction(()=>caseState.queued()===1&&!caseState.launching(),null,{timeout:1500});
+ await page.evaluate(()=>caseState.release());
+ assert.deepEqual(await page.evaluate(()=>({calls:caseState.calls(),normal:caseState.normalCalls(),pending:caseState.pending(),errors:caseState.errors(),policies:caseState.policies()})),{calls:1,normal:0,pending:false,errors:[],policies:[{ownGhost:null,opponents:[{nickname:'Cached racer'}]}]});
 });

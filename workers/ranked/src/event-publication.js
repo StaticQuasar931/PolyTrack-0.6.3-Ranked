@@ -22,7 +22,7 @@ function rollingRevision(source) {
 }
 // One fixed-snapshot source query per page, no per-racer verification or menu scan.
 // Authoritative per-account PB/total documents already exist; only display storage was capped.
-export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined,{coalesceFiniteTotals=false}={}) {
+export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined,{coalesceFiniteTotals=false,beforeSourceRead}={}) {
  const kind=periodId?'event':'event_totals',id=periodId||'main',jobId=kind+'_'+id;
  const rootPath=C.public+'/'+(periodId||'totals'),targetPath=C.public+'/'+(periodId||'totals_full');
  const root=knownRoot===undefined?decode(await runtime.request('/'+rootPath)):knownRoot;
@@ -68,6 +68,7 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
    const structuredQuery={from:[{collectionId:collection}],limit:PAGE,orderBy:[{field:{fieldPath:'__name__'},direction:'ASCENDING'}],
      ...(periodId?{where:{fieldFilter:{field:{fieldPath:'periodId'},op:'EQUAL',value:{stringValue:periodId}}}}:{}),
      ...(state.afterName?{startAt:{before:false,values:[{referenceValue:state.afterName}]}}:{})};
+   if(beforeSourceRead)await beforeSourceRead();
    const rows=await post(runtime,':runQuery',{structuredQuery,...(state.readTime?{readTime:state.readTime}:{})});
    if(!Array.isArray(rows))throw Error('EVENT_PUBLICATION_QUERY_INVALID');
    const documents=rows.filter(r=>r.document).map(r=>r.document);
@@ -185,7 +186,21 @@ export async function publishEventCapacity(runtime) {
  if(index===undefined)return {pending:true,deferred:true,reason:'publication_backoff',
    retryAt:Math.min(...Object.values(retries).map(retry=>retry.retryAt))};
  const periodId=candidates[index],key=keyFor(periodId);
- let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work,{coalesceFiniteTotals:true});
+ let expectedCursor=cursor,reserved=false;
+ const beforeSourceRead=async()=>{
+   if(reserved)return;
+   // Reserve retry durably BEFORE paying for source rows. No post-error quota or
+   // request budget is needed to protect a scan whose later checkpoint fails.
+   const reservation={active:false,periodId,offset:(index+1)%candidates.length,
+     retries:{...retries,[key]:publicationRetry(retries[key],'publication_failed',now)}};
+   await runtime.store.transaction(async tx=>{
+     const current=await tx.get(cursorPath);
+     if(!samePublicationState(current,cursor))throw new EventError('event_publication_conflict',409);
+     await tx.set(cursorPath,reservation);
+   });
+   expectedCursor=reservation;reserved=true;
+ };
+ let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work,{coalesceFiniteTotals:true,beforeSourceRead});
  if(result.idle)result={pending:true,deferred:true,kind:periodId?'event':'event_totals',id:periodId||'main',reason:'event_source_not_ready'};
  if(result.published)delete retries[key];
  else if(result.deferred){
@@ -195,10 +210,10 @@ export async function publishEventCapacity(runtime) {
  }
  const nextCursor={active:!!result.pending&&!result.deferred,periodId,offset:(index+1)%candidates.length,
    ...(Object.keys(retries).length?{retries}:{})};
- if(!samePublicationState(cursor,nextCursor))
+ if(!samePublicationState(expectedCursor,nextCursor))
  await runtime.store.transaction(async tx=>{
    const current=await tx.get(cursorPath);
-   if(!samePublicationState(current,cursor))throw new EventError('event_publication_conflict',409);
+   if(!samePublicationState(current,expectedCursor))throw new EventError('event_publication_conflict',409);
    await tx.set(cursorPath,nextCursor);
  });
  return result;

@@ -37,6 +37,8 @@ try{
  await page.getByRole('button',{name:'Close fullscreen help',exact:true}).last().click();
  await page.locator('#injectedRankingsBtn.ranked-ready').click({timeout:45000});
  await page.locator('#overallLeaderboardList .overall-entry[data-userid]').first().waitFor({state:'visible',timeout:45000});
+ // Measure layout only after the shell entrance scale settles; scrollWidth is untransformed CSS pixels.
+ await page.locator('#overallLeaderboardPanel .overall-shell').evaluate(async node=>{await Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  for(const [width,height]of [[440,780],[440,680],[390,720],[375,600],[320,500],[956,360],[844,320],[667,300],[1366,600],[1920,1080]]){
   await page.setViewportSize({width,height});await page.waitForFunction(size=>Math.abs(parseFloat(document.documentElement.style.getPropertyValue('--sq-available-width'))-size.width)<2&&Math.abs(parseFloat(document.documentElement.style.getPropertyValue('--sq-available-height'))-size.height)<2,{width,height});
   const metrics=await page.evaluate(()=>{const rect=s=>document.querySelector(s).getBoundingClientRect().toJSON();return {footer:rect('#overallDailyGrid'),list:rect('#overallLeaderboardList'),mode:document.querySelector('#overallDailyGrid').dataset.mobileAxis||'desktop',scrollWidth:document.querySelector('#overallDailyGrid').scrollWidth,category:rect('.sq-category-trigger')};});

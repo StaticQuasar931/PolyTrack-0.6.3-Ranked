@@ -22,7 +22,7 @@ test('Ranked follows the native entrance, never appears during loading, and rema
     await page.evaluate(code=>{
       window.rankTest=[];
       new Function(`let rankingsSpawnedOnce=false,rankedSpawnTimer=0,lastRankedSpawnAt=0,mainButtonsWereVisible=false,mainButtonsShownAt=0,nativeMenuButtonsAnimating=false,rankingsButtonRef=null;
-        const tRankedWord=()=>"Ranked",openRankedPanel=()=>{};
+        const tRankedWord=()=>"Ranked",openRankedPanel=()=>{},warmOverallFirstPreview=()=>{};
         const isElementVisible=el=>!!el&&el.isConnected&&getComputedStyle(el).display!=="none"&&el.getClientRects().length>0;
         ${code}
         window.injectRankingsButton=injectRankingsButton;

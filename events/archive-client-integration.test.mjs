@@ -29,10 +29,13 @@ function navigationFixture() {
   return {...api, opened, messages, imports, state};
 }
 
-test('archive dependencies use the requested v194 cache keys', () => {
-  assert.match(source, /import \{[^\n]*archiveSnapshotState[^\n]*\} from '\.\/archive-view\.mjs\?v=194'/);
-  assert.match(source, /import \{readSavedArchiveTrack\} from '\.\/archive-track\.mjs\?v=194'/);
-  assert.match(source, /import \{confirmPartialReplaySelection\} from '\.\.\/tools\/partial-replay-selection\.mjs\?v=194'/);
+test('archive dependencies use the current client cache revision', () => {
+  const revision=JSON.parse(fs.readFileSync(new URL('../site-version.json',import.meta.url),'utf8')).revision;
+  for(const [symbol,path] of [['archiveSnapshotState','./archive-view.mjs'],['readSavedArchiveTrack','./archive-track.mjs'],['confirmPartialReplaySelection','../tools/partial-replay-selection.mjs']]){
+    const line=source.split('\n').find(line=>line.startsWith('import ')&&line.includes(symbol)&&line.includes(path));
+    assert.ok(line,'Expected imported '+symbol);
+    assert.ok(line.endsWith("from '"+path+'?v='+revision+"';"),'Dependency cache key must match current manifest: '+line);
+  }
 });
 
 test('archive navigation rejects absent or mismatched event, kind, track and entry bindings before native navigation', async () => {

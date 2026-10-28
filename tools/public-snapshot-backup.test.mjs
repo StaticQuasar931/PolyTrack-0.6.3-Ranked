@@ -1105,3 +1105,48 @@ test('compact track catalog discovers low-participation boards and avoids unchan
 import './event-verification-dates.test.mjs';
 
 import './public-event-export-regression.test.mjs';
+
+for (const mode of ['archive', 'fresh', 'unavailable']) {
+  test(mode + ' event boards avoid redundant local reads without losing fallback', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-board-read-reuse-'));
+    t.after(() => fs.rm(directory, {recursive:true, force:true}));
+    const id = 'daily_read_reuse', trackId = 'a'.repeat(64);
+    const archived = mode === 'archive';
+    const period = {id, trackId, startsAt:100, endsAt:archived ? 200 : 100000, kind:'daily', maxRp:100};
+    const board = {id, period, updatedAt:300, archived, complete:true, totalEntries:0, entries:[]};
+    const file = path.join(directory, 'events', id + '.json');
+    await fs.mkdir(path.dirname(file), {recursive:true});
+    await fs.writeFile(file, JSON.stringify(board) + '\n');
+    await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({schemaVersion:1, tracks:{},
+      events:{[id]:{path:'events/' + id + '.json', updatedAt:300, checkedAt:500}}}));
+    const original = fs.readFile;
+    let reads = 0, boardRequests = 0;
+    fs.readFile = async function(input, ...args) {
+      if (path.resolve(String(input)) === file) reads++;
+      return original.call(this, input, ...args);
+    };
+    t.after(() => { fs.readFile = original; });
+    const result = await runPublicSnapshotBackup({directory, trackIds:[], trackFetchLimit:0, now:1000,
+      capturedOverall:{updatedAt:300, entries:[], trackSummaries:[]}, log:()=>{},
+      fetchImpl:async input => {
+        const pathname = new URL(input).pathname;
+        if (pathname.endsWith('/catalog')) return Response.json({periods:archived ? [] : [period], archives:archived ? [period] : []});
+        if (pathname === '/v1/events/' + id + '/snapshot') {
+          boardRequests++;
+          assert.equal(archived, false, 'immutable archives must never be fetched');
+          return mode === 'unavailable' ? new Response('', {status:404}) : Response.json({...board, updatedAt:400});
+        }
+        assert.equal(pathname, '/v1/events/permanent-rolling-hills/snapshot');
+        return new Response('', {status:404});
+      }});
+    // Includes the final write-if-changed comparison, which must still read disk.
+    assert.equal(reads, mode === 'fresh' ? 1 : 2);
+    assert.equal(boardRequests, archived ? 0 : 1);
+    assert.equal(result.events[id].updatedAt, mode === 'fresh' ? 400 : 300);
+    assert.equal(result.events[id].checkedAt, mode === 'fresh' ? 1000 : 500);
+    fs.readFile = original;
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+    assert.equal(saved.updatedAt, mode === 'fresh' ? 400 : 300);
+    assert.deepEqual(saved.entries, []);
+  });
+}

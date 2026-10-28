@@ -2,7 +2,7 @@ export const EVENT_PUBLICATION_RETRY_BASE_MS = 5 * 60000;
 export const EVENT_PUBLICATION_RETRY_MAX_MS = 30 * 60000;
 
 const reasons = new Set(['permanent_source_unavailable', 'permanent_source_changed',
-  'finite_source_changed', 'finite_totals_coalescing', 'source_parts_missing', 'snapshot_expired', 'event_source_not_ready']);
+  'finite_source_changed', 'finite_totals_coalescing', 'source_parts_missing', 'snapshot_expired', 'event_source_not_ready', 'publication_failed']);
 
 export function publicationRetries(value, keys, now) {
   const output = {};

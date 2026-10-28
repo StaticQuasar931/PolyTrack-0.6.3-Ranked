@@ -46,6 +46,9 @@ function harness({read = async () => null, playback = async () => row(false)} = 
   const calls = [];
   const context = {
     currentTrackLoadState:{trackId},
+    nativePartialReplayRevision:0, nativePartialReplaySelection:null,
+    playbackWorkerBridgePromise:Promise.resolve(null),
+    invalidateEventSnapshotCaches() {}, publicSnapshotPublishedAt:0,
     readRecordingStore:ids => ids.map(() => null),
     normalizeReplayPayloadString:value => value,
     safePositiveInt:(value, fallback) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : fallback,
@@ -86,7 +89,7 @@ test('actual generation callback increments replay epoch and clears all three ca
 
 test('generation refresh promotes cached pending playback to the new verified status', async () => {
   let verified = false;
-  const h = harness({read:async kind => kind === 'recording' ? verified ? row(true) : null : {entries:[pendingEntry]}});
+  const h = harness({read:async kind => kind === 'recording' ? verified ? row(true) : null : verified ? null : {entries:[pendingEntry]}});
   const first = (await h.cache.read([uploadId]))[0];
   assert.equal(first.verifiedState, 0);
   assert.equal(first.playbackPending, true);
@@ -99,7 +102,7 @@ test('generation refresh promotes cached pending playback to the new verified st
   assert.equal(fresh.verifiedState, 1);
   assert.equal(fresh.playbackPending, false);
   assert.equal(fresh.verificationStatus, 'verified');
-  assert.equal(h.calls.length, before + 1);
+  assert.equal(h.calls.length, before + 2);
   assert.equal(pendingEntry.runVerified, false, 'published entry flags are not promoted or mutated');
   assert.equal(pendingEntry.verifiedState, 0);
 });
@@ -108,6 +111,7 @@ test('retired direct response returns null and cannot remove a newer in-flight r
   const oldGate = deferred(), freshGate = deferred();
   let reads = 0;
   const h = harness({read:kind => {
+    if (kind === 'track') return null;
     assert.equal(kind, 'recording');
     return ++reads === 1 ? oldGate.promise : freshGate.promise;
   }});
@@ -130,7 +134,7 @@ test('retired pending playback cannot overwrite a newer verified cache entry', a
   const entered = deferred(), oldPlayback = deferred();
   let verified = false;
   const h = harness({
-    read:async kind => kind === 'recording' ? verified ? row(true, 'current-verified') : null : {entries:[pendingEntry]},
+    read:async kind => kind === 'recording' ? verified ? row(true, 'current-verified') : null : verified ? null : {entries:[pendingEntry]},
     playback:async (entry, options) => {
       assert.equal(entry, pendingEntry);
       assert.equal(options.allowPending, true);

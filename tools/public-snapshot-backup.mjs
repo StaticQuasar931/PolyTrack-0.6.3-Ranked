@@ -510,6 +510,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   const liveIds = new Set((catalog.periods || []).filter(row=>!(Number.isFinite(row.endsAt)&&row.endsAt+Math.max(0,Number(row.graceMs)||0)<=now)).map(row => row.id));
   const archiveRepairIds=new Set(adminCapture?archiveExport.periodIds:[]);
   const eventFetchIds = [];
+  const cachedEventValues = new Map();
   let archivedEventsReused = 0, archivedEventsUnavailable = 0;
   for (const id of selectedEvents) {
     const record = previous.events?.[id];
@@ -521,6 +522,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
         // Completed finite event standings are immutable. Repair only missing,
         // invalid or incomplete captures, not every archive on a rolling timer.
         reusable = isReusableArchivedEventBackup(cached, id);
+        if (reusable) cachedEventValues.set(id, publicEventBackup(cached, id));
       } catch { /* A missing or invalid backup must be fetched again. */ }
     }
     if (reusable) archivedEventsReused++;
@@ -603,9 +605,12 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
   });
 
   const eventValues = new Map();
+  // Reuse loaded boards while preserving prior event order for bounded replay selection.
+  for (const {id, value} of eventRows) if (value) cachedEventValues.set(id, value);
   for (const [id, record] of Object.entries(previous.events || {})) {
     if (!EVENT_ID.test(id) || record.path !== `events/${id}.json`) continue;
-    try { eventValues.set(id, publicEventBackup(JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8')), id)); } catch {}
+    if (cachedEventValues.has(id)) eventValues.set(id, cachedEventValues.get(id));
+    else try { eventValues.set(id, publicEventBackup(JSON.parse(await fs.readFile(path.join(directory, record.path), 'utf8')), id)); } catch {}
   }
   for (const {id, value} of eventRows) if (value) eventValues.set(id, value);
   const replayCandidates = [], retainedReplays = {}, promotedReplays = new Map();

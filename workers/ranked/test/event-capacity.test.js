@@ -412,6 +412,120 @@ function readMeter(f) {
  return {audit,total:()=>audit.documentReadEstimate+f.counts.slice(start).reduce((sum,value)=>sum+value.reads,0),
    writes:()=>(audit.writeEstimate||0)+(audit.deleteEstimate||0)+f.counts.slice(start).reduce((sum,value)=>sum+value.writes,0)};
 }
+
+test('24h thrown profile lookup failure backs off before repeating a successful source scan',async()=>{
+ const f=fixture(),start=Date.UTC(2026,9,20);
+ await f.service.createPeriod(period);
+ const old={entries:[{accountId:'previous',name:'Published racer'}],revision:1,publicationPending:true};
+ f.data.set(C.public+'/'+period.id,structuredClone(old));
+ f.data.set(C.public+'/totals',{pendingPeriodIds:[period.id],publicationPending:false});
+ for(let i=0;i<200;i++)f.data.set(C.pbs+'/'+period.id+'_'+i,{periodId:period.id,accountId:hash('legacy-'+i),timeMs:10000+i,submittedAt:2000});
+ const request=f.runtime.request,error=Error('FIRESTORE_503');let attempts=0;
+ f.runtime.request=async(route,init)=>{
+   if(route===':batchGet'&&JSON.parse(init.body).documents.some(name=>name.includes('/'+C.profiles+'/'))){attempts++;throw error;}
+   return request(route,init);
+ };
+ const meter=readMeter(f);
+ for(let minute=0;minute<1440;minute++)if([2,4].includes(minute%5)){
+   f.time(start+minute*60000);
+   try{assert.equal((await publishEventCapacity({...f.runtime})).reason,'publication_backoff');}
+   catch(caught){assert.equal(caught,error,'failed attempts retain the original error');}
+ }
+ assert.equal(attempts,50,'durable exponential backoff bounds failed attempts across fresh runtimes');
+ assert.equal(meter.audit.collections[C.pbs],attempts*200);
+ assert.equal(meter.total(),11352,'includes job/root/coordinator and transaction reads, excludes failed requests');
+ assert.deepEqual(f.data.get(C.public+'/'+period.id),old,'failure never replaces the last published board');
+ assert.deepEqual(f.data.get(C.public+'/totals').pendingPeriodIds,[period.id]);
+ console.log('EVENT_THROW_COST 24h: attempts='+attempts+' sourceReads='+meter.audit.collections[C.pbs]+' totalReads='+meter.total());
+ f.runtime.request=request;advanceRetryClock(f);
+ assert.equal((await publishEventCapacity({...f.runtime})).published,true,'due retry recovers without discarding pending work');
+ assert.equal(f.data.get(C.cursors+'/public_capacity').retries,undefined);
+});
+
+test('reserved source failure yields to healthy work; unavailable reservation bookkeeping starts no scan',async()=>{
+ const f=fixture();await f.service.createPeriod(period);
+ await f.service.createPeriod({...period,id:'healthy_day',kind:'weekly',maxRp:500});f.time(2000);
+ f.data.set(C.public+'/'+period.id,{publicationPending:true,revision:1});
+ f.data.set(C.public+'/healthy_day',{publicationPending:true,revision:1});
+ f.data.set(C.public+'/totals',{pendingPeriodIds:[period.id,'healthy_day']});
+ f.data.set(C.pbs+'/'+period.id+'_legacy',{periodId:period.id,accountId:hash('legacy'),timeMs:10000,submittedAt:2000});
+ const request=f.runtime.request,error=Error('FIRESTORE_503');
+ f.runtime.request=async(route,init)=>{
+   if(route===':batchGet'&&JSON.parse(init.body).documents.some(name=>name.includes('/'+C.profiles+'/')))throw error;
+   return request(route,init);
+ };
+ await assert.rejects(publishEventCapacity(f.runtime),caught=>caught===error);
+ assert.equal((await publishEventCapacity(f.runtime)).id,'healthy_day');
+ assert.deepEqual(f.data.get(C.public+'/totals').pendingPeriodIds,[period.id]);
+ advanceRetryClock(f);
+ const before=f.calls.filter(route=>route===':runQuery').length;
+ f.runtime.store.transaction=async()=>{throw Error('BOOKKEEPING_UNAVAILABLE');};
+ await assert.rejects(publishEventCapacity(f.runtime),/BOOKKEEPING_UNAVAILABLE/);
+ assert.equal(f.calls.filter(route=>route===':runQuery').length,before,'no source scan starts without durable reservation');
+});
+
+for(const message of ['FIRESTORE_429','FIRESTORE_503','OVERALL_REQUEST_BUDGET_EXHAUSTED','Too many subrequests'])
+test('reserved scan needs no post-failure bookkeeping: '+message,async()=>{
+ const f=fixture();await f.service.createPeriod(period);f.time(2000);
+ f.data.set(C.public+'/'+period.id,{publicationPending:true,revision:1});
+ f.data.set(C.public+'/totals',{pendingPeriodIds:[period.id]});
+ for(let i=0;i<200;i++)f.data.set(C.pbs+'/'+period.id+'_'+i,{periodId:period.id,accountId:hash('legacy-'+i),timeMs:10000+i,submittedAt:2000});
+ const request=f.runtime.request,transaction=f.runtime.store.transaction,error=Error(message);
+ let stopped=false,sourceReads=0,transactionsAfterFailure=0;
+ f.runtime.store.transaction=async fn=>{
+   if(stopped){transactionsAfterFailure++;throw Error('NO_BOOKKEEPING_BUDGET');}
+   return transaction(fn);
+ };
+ f.runtime.request=async(route,init)=>{
+   assert.equal(stopped,false,'quota/budget failure stops all subsequent Firestore requests in this invocation');
+   if(route===':batchGet'){stopped=true;throw error;}
+   const result=await request(route,init);
+   if(route===':runQuery')sourceReads+=result.filter(row=>row.document).length;
+   return result;
+ };
+ await assert.rejects(publishEventCapacity({...f.runtime}),caught=>caught===error);
+ assert.equal(transactionsAfterFailure,0);
+ assert.equal(sourceReads,200);
+ assert.ok(f.data.get(C.cursors+'/public_capacity').retries['event_'+period.id].retryAt>f.runtime.now());
+ // A new invocation has a fresh request budget but must honor the durable gate.
+ stopped=false;
+ assert.equal((await publishEventCapacity({...f.runtime})).reason,'publication_backoff');
+ assert.equal(sourceReads,200,'bookkeeping exhaustion cannot immediately repeat the successful source scan');
+ assert.equal(f.data.get(C.public+'/'+period.id).publicationPending,true);
+});
+
+for(const conflict of [new Error('FIRESTORE_409'),new Error('FIRESTORE_412'),Object.assign(new Error('conflict'),{code:'event_publication_conflict'})])
+test('publication conflict does not persist failure backoff: '+conflict.message,async()=>{
+ const f=fixture();await f.service.createPeriod(period);f.time(2000);
+ f.data.set(C.public+'/'+period.id,{publicationPending:true});
+ f.data.set(C.public+'/totals',{pendingPeriodIds:[period.id]});
+ const request=f.runtime.request,before=f.counts.length;
+ f.runtime.request=async(route,init)=>{
+   if(route==='/0.6.2_event_publication_jobs/event_'+period.id)throw conflict;
+   return request(route,init);
+ };
+ await assert.rejects(publishEventCapacity(f.runtime),caught=>caught===conflict);
+ assert.equal(f.counts.length,before,'conflicting work causes no coordinator transaction');
+ assert.equal(f.data.has(C.cursors+'/public_capacity'),false);
+});
+
+for(const phase of ['reservation','completion'])test('source reservation CAS race never rewinds winning state: '+phase,async()=>{
+ const f=fixture();await f.service.createPeriod(period);f.time(2000);
+ f.data.set(C.public+'/'+period.id,{publicationPending:true,revision:1});
+ f.data.set(C.public+'/totals',{pendingPeriodIds:[period.id]});
+ const path=C.cursors+'/public_capacity',transaction=f.runtime.store.transaction;
+ const winning={active:true,periodId:'newer_period',offset:7,retries:{}};
+ let turns=0;
+ f.runtime.store.transaction=async fn=>{
+   turns++;
+   if(turns===(phase==='reservation'?1:4))f.data.set(path,structuredClone(winning));
+   return transaction(fn);
+ };
+ await assert.rejects(publishEventCapacity(f.runtime),error=>error.code==='event_publication_conflict');
+ assert.deepEqual(f.data.get(path),winning);
+ if(phase==='reservation')assert.equal(f.calls.includes(':runQuery'),false,'lost admission CAS performs no source query');
+ else assert.equal(f.data.get('0.6.2_event_publication_jobs/event_'+period.id).complete,true,'completed source checkpoint is not rewound');
+});
 async function finishedEventFixture(extra=0) {
  const f=fixture();await f.service.createPeriod(period);f.time(2000);
  const accountId=hash('plateau-racer'),ownerUid='plateau-owner';
@@ -483,8 +597,8 @@ test('100 unchanged-RP PB cycles meter submission, verification and event public
    assert.equal((await publishEventCapacity(f.runtime)).published,true);
  }
  assert.equal(meter.audit.collections[C.totals]||0,0);
- assert.equal(meter.total(),4501);
- assert.equal(meter.writes(),2601);
+ assert.equal(meter.total(),4700,'reservation plus clearing costs 199 extra reads across 100 cycles');
+ assert.equal(meter.writes(),2800,'reservation plus clearing costs 199 extra writes across 100 cycles');
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
  console.log('EVENT_COST 100 unchanged-RP active cycles: reads='+meter.total()+' writes='+meter.writes()+' finite total scans=0');
 });

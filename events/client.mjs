@@ -1,12 +1,13 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=197';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=197';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=198';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=198';
 import {preparePublishedEventGhost} from './public-replay.mjs';
+import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
 import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs';
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=197';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=198';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -855,22 +856,38 @@ export function installEvents(bridge){
     const nativeTrack=()=>root?.isConnected&&root===document.querySelector('.track-info-ui')&&root.__pt062EventWatch?.version===1&&root.__pt062EventWatch.trackId===session.trackId;
     if(!nativeTrack()){message('The event track is still opening. Please try Play again.');return;}
     const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session);
-    // Native Play disposes this panel before its asynchronous race handoff.
-    // The handoff must retain session/replay checks, not require the old DOM.
-    const current=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+    const token=replayRequest,selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
+    const period=knownPeriods.get(session.periodId);
+    const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null]);
+    const bindings=selections.map(selection=>binding(eventDisplayRows(period).rows.find(row=>row.accountId===selection.targetAccountId)));
+    // Before dispatch, selections must stay exact. Native disposal may clear them after the click.
+    let committed=false;
+    const handoffCurrent=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&now()<session.endsAt;
+    const current=()=>handoffCurrent()&&replayRequest===token&&
+      selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&
+      selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
     try{
       // A nested HTMLElement.click() is suppressed while its original click is dispatching.
       await Promise.resolve();
       if(!nativeTrack()||!current())throw Error('Event launch context changed');
+      // Parsed ghosts outlive workers. Reauthorize only indexed inputs, using cached engine assets.
+      const indexed=[ownGhost,...opponents].filter(ghost=>ghost?.requiredPlaybackEngine);
+      if(indexed.length>11)throw Error('Too many indexed event ghosts');
+      if(indexed.length){
+        const workerBridge=getPlaybackWorkerBridge();if(!workerBridge)throw Error('Indexed event playback unavailable');
+        const recordings=new Map(indexed.map(ghost=>[ghost.recording.serialize(),ghost.time.numberOfFrames]));
+        await Promise.all([...recordings].map(([recording,frames])=>workerBridge.prepareEventRecording(recording,frames)));
+      }
+      if(!nativeTrack()||!current())throw Error('Event launch context changed');
       await bridge.startEventRace({...session,ownGhost,opponents},()=>{
         if(!nativeTrack()||!current())throw Error('Event launch context changed');
         const play=root.querySelector('.side-panel button.play');if(!play||play.disabled)throw Error('Native Play is unavailable');
-        let dispatched=false;const observed=()=>{dispatched=true;};
+        let dispatched=false;const observed=()=>{dispatched=true;committed=true;};
         play.addEventListener('click',observed,{once:true,capture:true});
         nativePlayPermit=true;try{play.click();}finally{nativePlayPermit=false;play.removeEventListener('click',observed,true);}
         if(!dispatched)throw Error('Native Play click was not dispatched');
-      },current);
+      },()=>committed?handoffCurrent():current());
     }
     catch{if(sessions.current()===session)message('Event race could not start safely. No normal PB ghost was loaded.');}
     finally{launching=false;}
