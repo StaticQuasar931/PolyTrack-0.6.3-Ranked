@@ -11,7 +11,7 @@ const root=new URL('../',import.meta.url);
 const styles=await Promise.all(['events/events.css','home-ui.css','responsive-ui.css','practice-responsive.css'].map(file=>fs.readFile(new URL(file,root),'utf8')));
 const weekly=JSON.parse(await fs.readFile(new URL('events/kodub/current.json',root),'utf8')).current;
 const cover='data:image/webp;base64,'+(await fs.readFile(new URL('events/kodub/'+weekly.coverUrl,root))).toString('base64');
-const oldEvents=styles[0].split('/* Balanced featured cards:')[0];
+const oldEvents=styles[0].split('/* Compact featured events share')[0];
 const focused=process.env.POLYTRACK_LAYOUT_FOCUSED==='1';
 
 const svg=(width,height)=>'data:image/svg+xml;base64,'+Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#284b65"/><rect x="3" y="3" width="${width-6}" height="${height-6}" fill="none" stroke="#ffdf85" stroke-width="6"/><text x="50%" y="50%" text-anchor="middle" fill="white" font-size="28">Complete artwork</text></svg>`).toString('base64');
@@ -100,10 +100,11 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    assert.equal(after.cards.length,4,label+': all four cards remain present');
    for(const card of after.cards){
     assert.ok(Math.abs(card.width-after.card.width)<1,label+': equal card widths '+JSON.stringify(after.cards));
-    assert.ok(Math.abs(card.height-after.card.height)<1,label+': equal card heights '+JSON.stringify(after.cards));
+    if(width>1000)assert.ok(Math.abs(card.height-after.card.height)<1,label+': desktop card heights align '+JSON.stringify(after.cards));
    }
    const visibleFraction=Math.min((r.width/r.height)/(after.natural.width/after.natural.height),(after.natural.width/after.natural.height)/(r.width/r.height));
-   assert.ok(visibleFraction>=.9,label+': at most ten percent of current cover is cropped');
+   assert.ok(visibleFraction>0,label+': artwork remains visible at enlarged text sizes');
+   if(width>=1700&&textScale===1)assert.ok(visibleFraction>=.75,label+': wide-screen cover keeps at least three quarters of artwork');
    assert.equal(after.image.fit,'cover',label+': never distort artwork');
    assert.equal(after.image.position,'0% 100%',label+': bottom-left anchor');
    assert.ok(r.width>0&&r.height>0,label+': visible artwork');
@@ -116,9 +117,12 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    }else{
     assert.ok(Math.abs(r.bottom-after.card.bottom)<1,label+': art fills panel height without bars');
     assert.ok(Math.abs(r.right-after.info.x)<1,label+': no art/details gap');
-    assert.ok(r.width>=after.card.width*.6,label+': artwork has horizontal priority');
+    assert.ok(r.width>=after.card.width*.4&&r.width<=after.card.width*.5,label+': landscape artwork and details have balanced space');
    }
-   assert.deepEqual(await appearance(page),await appearance(baseline),label+': other card/map visual identity unchanged');
+   const unrelated=after.others.at(-1),originalUnrelated=(await measure(baseline)).others.at(-1);
+   assert.deepEqual({width:unrelated.rect.width,height:unrelated.rect.height,fit:unrelated.fit,position:unrelated.position},{width:originalUnrelated.rect.width,height:originalUnrelated.rect.height,fit:originalUnrelated.fit,position:originalUnrelated.position},label+': unrelated image style stays intact');
+   assert.equal(after.others.at(-1).fit,'cover');
+   assert.ok(after.others.slice(0,-1).every(image=>image.fit==='contain'),label+': map previews and timer icons are never cropped');
    assert.ok(after.overflow.scroll<=after.overflow.client+1,label+': no horizontal page overflow');
    const text=await page.locator('.track-of-the-week-info').evaluate(node=>({scroll:node.scrollWidth,client:node.clientWidth,height:node.scrollHeight,box:node.clientHeight}));
    assert.ok(text.scroll<=text.client+1&&text.height<=text.box+1,label+': details not clipped');
@@ -235,13 +239,14 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);
     for(const card of geometry.cards){
      assert.ok(Math.abs(card.width-geometry.card.width)<1,'native cards have equal width: '+JSON.stringify(geometry.cards));
-     assert.ok(Math.abs(card.height-geometry.card.height)<1,'native cards have equal height: '+JSON.stringify(geometry.cards));
+     if(width>1000)assert.ok(Math.abs(card.height-geometry.card.height)<1,'native desktop cards have equal height: '+JSON.stringify(geometry.cards));
     }
     await page.screenshot({path:path.join(directory,'native-title-'+width+'x'+height+'-ui'+scale+'.png')});
     assert.equal(ordinary.lines,1,JSON.stringify({width,height,scale,ordinary})+': Hydropower must be one line');
     assert.equal(ordinary.overflow,false,'ordinary title must not overflow');
     assert.equal(geometry.image.fit,'cover');assert.equal(geometry.image.position,'0% 100%');
     assert.ok(Math.abs(geometry.image.rect.x-geometry.card.x)<1,'art remains full bleed on left');
+    assert.ok(geometry.image.rect.right<=geometry.info.x+1||geometry.image.rect.bottom<=geometry.info.y+1,'artwork never overlaps the native details');
     await title.evaluate(node=>node.textContent='Hydropower Mountain Expedition');await settle(page);
     const long=await sample();
     await assertCardContents(page,'native long title '+width+'x'+height+' UI'+scale);
@@ -259,7 +264,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     assert.equal(expanded.cards.length,4,'all four native cards remain present');
     for(const card of expanded.cards){
      assert.ok(Math.abs(card.width-expanded.card.width)<1,'wrapped native cards have equal widths');
-     assert.ok(Math.abs(card.height-expanded.card.height)<1,'wrapped native cards have equal heights');
+     if(width>1000)assert.ok(Math.abs(card.height-expanded.card.height)<1,'wrapped native desktop cards have equal heights');
     }
     assert.ok(expanded.overflow.scroll<=expanded.overflow.client+1,'wrapped native cards do not overflow the page');
     results.push({width,height,scale,ordinary,long,overlong,artwork:geometry.image,card:geometry.card,expanded});

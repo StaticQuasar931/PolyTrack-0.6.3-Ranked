@@ -726,8 +726,8 @@ test('real default event processor safely handles both queues empty', async () =
     }}),verifyNormal:async()=>{throw Error('No simulation should run');}});
   assert.deepEqual(calls,[
     ['/0.6.2_event_cursors/scan',undefined,undefined],
-    [':runQuery','0.6.2_event_inbox',1],
     [':runQuery','0.6.2_event_retries',1],
+    [':runQuery','0.6.2_event_inbox',1],
     ['/0.6.2_event_catalog/main',undefined,undefined],
     [':runQuery',VERIFICATION_COLLECTION,8],
     [':runQuery',EXTRA_VERIFICATION_COLLECTION,8],

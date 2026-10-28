@@ -6,6 +6,7 @@ import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './p
 import {publicDisplayName} from './public-display-name.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
 import {eventReplayCoverage} from './event-replay-coverage.mjs';
+import {validatePublicReplayForPublication} from './public-replay-playback.mjs';
 import {projectEventDates} from './public-event-dates.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs';
 export {publicEventPlaybackForPublication as publicEventPlaybackBackup} from './public-event-playback.mjs';
@@ -360,6 +361,18 @@ export function publicEventReplayBackup(value, {periodId, trackId, entry}) {
     ...eventDates(value)};
 }
 
+async function validatedEventReplayBackup(value, binding) {
+  const replay = publicEventReplayBackup(value, binding);
+  if (replay.frames < 1 || replay.frames > 300000) throw Error('Invalid event replay frame limit');
+  // A matching hash authenticates bytes, not their playback structure. Apply the
+  // same bounded event limits as the publication audit before export or reuse.
+  const structure = await validatePublicReplayForPublication(replay.replay, replay.frames);
+  if (!structure.indexedPlaybackWithinBudget || structure.inflatedBytes > 30015 ||
+      structure.transitions > 10000 || structure.maxChannelTransitions > 4096)
+    throw Error('Invalid event replay playback limits');
+  return replay;
+}
+
 export async function promotePublicEventPlayback(value, {periodId, trackId, entry}) {
   if (entry?.physicsVerified !== true || entry.replayIntegrityVerified !== true ||
       !TRACK_ID.test(entry.runId || '') || !TRACK_ID.test(entry.replayHash || '') ||
@@ -608,7 +621,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       if (prior?.path === relative && prior.timeMs === entry.timeMs) {
         try {
           const replay = JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
-          const projected=publicEventReplayBackup({...replay, verificationStatus:'verified', verified:true, eventRpEligible:true}, {periodId:id, trackId:value.period.trackId, entry});
+          const projected=await validatedEventReplayBackup({...replay, verificationStatus:'verified', verified:true, eventRpEligible:true}, {periodId:id, trackId:value.period.trackId, entry});
           if (JSON.stringify(projected) !== JSON.stringify(replay)) throw Error('Replay is not a public projection');
           retainedReplays[relative] = prior; entry.runId = replay.runId; entry.replayHash = replay.replayHash;
           applyReplayDates(entry, replay);
@@ -675,7 +688,7 @@ async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outpu
       const resource = candidate.pendingPlayback ? `playbacks/${candidate.entry.runId}` : `replays/${candidate.entry.accountId}`;
       const url = `${WORKER}/v1/events/${encodeURIComponent(candidate.periodId)}/${resource}`;
       const replay = await fetchJson(fetchImpl, url, {optional: true, maxBytes: PUBLIC_SNAPSHOT_LIMITS.eventReplayResponseBytes});
-      return {candidate, value: replay ? candidate.pendingPlayback ? await publicEventPlaybackProjection(replay,candidate) : publicEventReplayBackup(replay, candidate) : null};
+      return {candidate, value: replay ? candidate.pendingPlayback ? await publicEventPlaybackProjection(replay,candidate) : await validatedEventReplayBackup(replay, candidate) : null};
     } catch (error) {
       if (error instanceof PublicBackupDeferredError) { replayFetchDeferred = error; throw error; }
       return {candidate, value: null};

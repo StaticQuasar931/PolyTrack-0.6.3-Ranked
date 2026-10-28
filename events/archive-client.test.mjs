@@ -7,17 +7,20 @@ import {archiveSnapshotState} from './archive-view.mjs';
 
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 
-test('closed archived Watch uses a matching native replay hook, not the live-only bridge',()=>{
+test('closed archived Watch uses a matching native replay hook, not the live-only bridge',async()=>{
  const code=source.slice(source.indexOf('  function watchEvent('),source.indexOf('  async function playEvent('));
  for(const matching of [true,false]){
   const session={archive:true,periodId:'old',trackId:'saved-track',accountId:'viewer'},opened=[],messages=[];
+  const period={id:'old',trackId:'saved-track'},row={accountId:'row',timeMs:1000,runId:'run',replayHash:'hash'};
+  const root={isConnected:true,__pt062EventWatch:{version:1,trackId:matching?'saved-track':'wrong-track',open:ghosts=>opened.push(...ghosts)}};
   const api=vm.runInNewContext(`(()=>{${code};return watchEvent;})()`,{
    sessions:{current:()=>null},archiveIntent:session,pendingGhosts:new Map(),
-   selectedGhosts:new Map([['row',{periodId:'old',accountId:'viewer',ghost:'saved-ghost'}]]),
-   bridge:{accountId:()=>session.accountId,watchEvent:()=>{throw Error('Live bridge must not be used');}},
-   document:{querySelector:()=>({__pt062EventWatch:{version:1,trackId:matching?'saved-track':'wrong-track',open:ghosts=>opened.push(...ghosts)}})},
+   selectedGhosts:new Map([['row',{periodId:'old',accountId:'viewer',targetAccountId:'row',targetTimeMs:1000,targetPending:false,targetRunId:'run',targetReplayHash:'hash',ghost:'old-ghost'}]]),selectedGhost:null,
+   nativeView:{period},knownPeriods:new Map(),replayRequest:0,replayCache:new Map(),archivePeriodCounts:()=>({verifiedEntries:[row]}),preparePublishedEventGhost:async()=> 'saved-ghost',
+   bridge:{accountId:()=>session.accountId,require:()=>({}),readArchivedReplay:async()=>({}),watchEvent:()=>{throw Error('Live bridge must not be used');}},
+   document:{querySelector:()=>root},
    replayContextActive:current=>current===session,message:text=>messages.push(text)
-  });api();
+  });await api();
   assert.deepEqual(opened,matching?['saved-ghost']:[]);
   if(!matching)assert.match(messages.at(-1),/context changed/);
  }

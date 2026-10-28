@@ -188,6 +188,76 @@ function eventPromotionFixture(){
   entry:{accountId,runId,timeMs:23,frames:23,replayHash,physicsVerified:true,replayIntegrityVerified:true}};
 }
 
+async function verifiedReplayCaptureFixture(t) {
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'verified-replay-integrity-'));
+ t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+ const f=eventPromotionFixture(),calls=[];
+ const entry={...f.entry,rp:10,rank:1};
+ const value={...f.value,verificationStatus:'verified',verified:true,eventRpEligible:true};
+ const relative=`event-replays/${period.id}/${entry.accountId}.json`;
+ const fetchImpl=async input=>{
+  const url=new URL(input);calls.push(url.pathname);
+  if(url.pathname.endsWith('/overall'))return Response.json({...overall,trackSummaries:[]});
+  if(url.pathname.endsWith('/catalog'))return Response.json({periods:[livePeriod],archives:[]});
+  if(url.pathname===`/v1/events/${period.id}/snapshot`)return Response.json({id:period.id,period:livePeriod,
+   updatedAt:200,archived:false,entries:[entry]});
+  if(url.pathname.includes('/replays/'))return Response.json(value);
+  return new Response('',{status:404});
+ };
+ return {directory,calls,entry,value,relative,
+  capture:()=>runPublicSnapshotBackup({directory,fetchImpl,trackIds:[],now:1000,log:()=>{}}),
+  board:()=>fs.readFile(path.join(directory,`events/${period.id}.json`),'utf8').then(JSON.parse),
+  replace(replay){value.replay=replay;entry.replayHash=value.replayHash=createHash('sha256').update(replay).digest('hex');}};
+}
+
+test('verified export rejects hash-matching malformed recordings without hiding scores',async t=>{
+ const unordered=Buffer.alloc(21);unordered.writeUIntLE(2,0,3);
+ const pastFinish=Buffer.alloc(18);pastFinish.writeUIntLE(1,0,3);pastFinish.writeUIntLE(24,3,3);
+ const oversizedChannel=Buffer.alloc(15+4097*3);oversizedChannel.writeUIntLE(4097,0,3);
+ for(let i=0;i<4097;i++)oversizedChannel.writeUIntLE(1,3+i*3,3);
+ const cases=['encoded','AAAA','not-base64!',
+  ...[Buffer.alloc(14),Buffer.alloc(16),unordered,pastFinish,oversizedChannel,Buffer.alloc(150019)]
+   .map(bytes=>deflateSync(bytes).toString('base64url'))];
+ for(const replay of cases){
+  const f=await verifiedReplayCaptureFixture(t);f.replace(replay);
+  const manifest=await f.capture();
+  assert.equal(manifest.eventReplays[f.relative],undefined,'matching SHA-256 is not playback integrity');
+  await assert.rejects(fs.stat(path.join(f.directory,f.relative)),{code:'ENOENT'});
+  assert.deepEqual((await f.board()).entries,[f.entry],'standings and scores must survive unavailable recordings');
+  assert.equal(f.calls.filter(url=>url.includes('/replays/')).length,1,'no additional retries');
+ }
+});
+
+test('verified cache revalidates recording structure even with exact fresh board bindings',async t=>{
+ const f=await verifiedReplayCaptureFixture(t);await f.capture();
+ f.replace('AAAA');
+ const saved=publicEventReplayBackup(f.value,{periodId:period.id,trackId,entry:f.entry});
+ await fs.writeFile(path.join(f.directory,f.relative),JSON.stringify(saved));
+ const manifestPath=path.join(f.directory,'manifest.json');
+ const prior=JSON.parse(await fs.readFile(manifestPath));prior.eventReplays[f.relative].replayHash=f.entry.replayHash;
+ await fs.writeFile(manifestPath,JSON.stringify(prior));f.calls.length=0;
+ const manifest=await f.capture();
+ assert.equal(manifest.eventReplays[f.relative],undefined,'legacy malformed cache must not be retained indefinitely');
+ await assert.rejects(fs.stat(path.join(f.directory,f.relative)),{code:'ENOENT'});
+ assert.deepEqual((await f.board()).entries,[f.entry]);
+ assert.equal(f.calls.filter(url=>url.includes('/replays/')).length,1,'replacement remains within the existing candidate budget');
+});
+
+test('verified export retains indexed-safe recordings and reuses valid bytes without requests',async t=>{
+ const f=await verifiedReplayCaptureFixture(t);
+ const bytes=Buffer.alloc(15+200*3);bytes.writeUIntLE(200,0,3);
+ for(let i=0;i<200;i++)bytes.writeUIntLE(1,3+i*3,3);
+ f.replace(deflateSync(bytes).toString('base64url'));
+ f.entry.timeMs=f.entry.frames=f.value.timeMs=f.value.frames=300000;
+ const first=await f.capture();assert.ok(first.eventReplays[f.relative]);
+ assert.equal(first.replayCoverage.indexed,1,'legacy work limit must not reject indexed-safe bytes');
+ assert.equal(first.replayCoverage.complete,true);
+ f.calls.length=0;const second=await f.capture();
+ assert.ok(second.eventReplays[f.relative]);
+ assert.equal(f.calls.some(url=>url.includes('/replays/')),false);
+ assert.equal(JSON.parse(await fs.readFile(path.join(f.directory,f.relative))).replay,f.value.replay);
+});
+
 test('event promotion requires exact fresh verified binding and preserves bytes without invented verdict dates',async()=>{
  const f=eventPromotionFixture();const context={periodId:period.id,trackId,entry:f.entry};
  const promoted=await promotePublicEventPlayback(f.value,context);
@@ -273,7 +343,7 @@ test('validated legacy archives and recordings are reused indefinitely with no c
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'polytrack-legacy-archive-'));
   t.after(()=>fs.rm(directory,{recursive:true,force:true}));
   const archived={...period,id:'daily_old',entrantLimit:200};
-  const accountId='b'.repeat(64),replay='encoded',replayHash=createHash('sha256').update(replay).digest('hex');
+  const accountId='b'.repeat(64),replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=createHash('sha256').update(replay).digest('hex');
   const calls=[],logs=[];
   const fetchImpl=async input=>{
     const url=new URL(input);calls.push(url.pathname);
@@ -426,7 +496,7 @@ test('archived standings and validated replays survive catalog rollover without 
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'polytrack-static-archive-'));
   t.after(()=>fs.rm(directory,{recursive:true,force:true}));
   const archived={...period,id:'daily_old',startsAt:Date.UTC(2026,8,1),endsAt:Date.UTC(2026,8,2)};
-  const accountId='e'.repeat(64), replay='encoded', replayHash=createHash('sha256').update(replay).digest('hex');
+  const accountId='e'.repeat(64), replay=deflateSync(Buffer.alloc(15)).toString('base64url'), replayHash=createHash('sha256').update(replay).digest('hex');
   let listed=true,replayRequests=0;
   const fetchImpl=async input=>{
     const url=new URL(input);
@@ -754,7 +824,7 @@ test('bounded export keeps prior tracks, exports permanent event, and continues 
   t.after(() => fs.rm(directory, {recursive: true, force: true}));
   const calls = [];
   let overallReadCount = 0;
-  const replayAccount = 'e'.repeat(64), replayData = 'PolyTrackAA==';
+  const replayAccount = 'e'.repeat(64), replayData = deflateSync(Buffer.alloc(15)).toString('base64url');
   const replayHash = createHash('sha256').update(replayData).digest('hex');
   const oldTrack = 'f'.repeat(64);
   await fs.mkdir(path.join(directory, 'tracks'), {recursive: true});
@@ -862,7 +932,8 @@ test('same-time replay replacements cannot reuse or publish a conflicting run bi
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-replay-binding-'));
   t.after(() => fs.rm(directory, {recursive: true, force: true}));
   const accountId = 'b'.repeat(64);
-  const versions = ['old-replay', 'new-replay'].map((replay, index) => ({
+  const alternate = Buffer.alloc(18); alternate.writeUIntLE(1,0,3); alternate.writeUIntLE(1,3,3);
+  const versions = [Buffer.alloc(15), alternate].map(bytes=>deflateSync(bytes).toString('base64url')).map((replay, index) => ({
     replay, replayHash: createHash('sha256').update(replay).digest('hex'), runId: String(index + 1).repeat(64)
   }));
   let boardVersion = 0, replayVersion = 0, replayRequests = 0;

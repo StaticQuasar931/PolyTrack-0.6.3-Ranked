@@ -17,15 +17,15 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  for(const [width,height] of [[1366,768],[390,844],[768,1024],[639,460],[640,460],[641,460],[700,700],[701,700],[1199,900],[1200,900],[1201,900],[1700,900],[1701,900],[2560,1279]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
-  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:width>1000?160:136);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),Math.min(1760,width-(width<=700?32:120)));assert.equal(Math.round(featured.x),Math.round((width-featured.width)/2));
+  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:width>1000?160:136);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),Math.min(1500,width-(width<=700?32:96)));assert.equal(Math.round(featured.x),Math.round((width-featured.width)/2));
   assert(featured.x+featured.width<=width+1,'Section must fit the page');
   const rects=[];for(const card of await page.locator('.sq-kodub-weekly,.sq-permanent-track,.sq-event-card').all())rects.push(await card.boundingBox());
   assert.equal(rects.length,4);for(const rect of rects)assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1,'Every event card stays in the section');
   for(const rect of rects){
    assert(Math.abs(rect.width-rects[0].width)<=1,'All four cards have equal width: '+JSON.stringify({width,rects}));
-   assert(Math.abs(rect.height-rects[0].height)<=1,'All four cards have equal height: '+JSON.stringify({width,rects}));
+   if(width>1000)assert(Math.abs(rect.height-rects[0].height)<=1,'Desktop cards have equal height: '+JSON.stringify({width,rects}));
   }
-  const columns=width<=640?1:width<=1200?2:4;
+  const columns=width<=1000?1:2;
   assert.equal(new Set(rects.map(rect=>Math.round(rect.x))).size,columns,'Expected responsive column count');
   assert.equal(new Set(rects.map(rect=>Math.round(rect.y))).size,4/columns,'No orphaned supporting card');
   for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){
@@ -36,7 +36,7 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   assert.equal(titleBoxes.length,3);const titleOffset=titleBoxes[0].y-rects[1].y;for(const [index,box] of titleBoxes.entries())assert(Math.abs(box.y-rects[index+1].y-titleOffset)<=1,'Titles align within their cards');
   const rewardBoxes=[];for(const e of await page.locator('.sq-permanent-track .record,.sq-event-card .sq-event-record').all())rewardBoxes.push(await e.boundingBox());
   const thumbBoxes=[];for(const e of await page.locator('.sq-permanent-track .thumbnail,.sq-event-card .sq-event-thumb').all())thumbBoxes.push(await e.boundingBox());
-  assert.equal(rewardBoxes.length,3);assert.equal(thumbBoxes.length,3);for(const [index,box] of rewardBoxes.entries()){assert(box.y>=thumbBoxes[index].y+thumbBoxes[index].height-1,'Record row must not overlap its artwork');assert(box.y+box.height<=rects[index+1].y+rects[index+1].height+1,'Record row stays inside its card');}
+  assert.equal(rewardBoxes.length,3);assert.equal(thumbBoxes.length,3);for(const [index,box] of rewardBoxes.entries()){assert(box.x>=thumbBoxes[index].x+thumbBoxes[index].width-1,'Record sits beside, not on top of, its artwork');assert(box.y+box.height<=rects[index+1].y+rects[index+1].height+1,'Record row stays inside its card');}
   if(width>=1366)for(const rect of rects)assert(rect.x+rect.width<=width+1);
   const artwork=await page.locator('.sq-kodub-weekly>button>img').evaluate(image=>{
    const rect=image.getBoundingClientRect(),style=getComputedStyle(image);

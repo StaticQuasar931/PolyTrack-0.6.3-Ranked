@@ -4,10 +4,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import {publicEventBackup,publicEventReplayBackup,runPublicSnapshotBackup} from './public-snapshot-backup.mjs';
 const period={id:'w_20261019',kind:'weekly',trackId:'a'.repeat(64),startsAt:100,endsAt:200,graceMs:100,maxRp:500,targetMs:23};
 const entry={accountId:'b'.repeat(64),name:'Racer',timeMs:23,rp:400,rank:1,submittedAt:150};
-const replay='encoded',replayHash=createHash('sha256').update(replay).digest('hex');
+const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=createHash('sha256').update(replay).digest('hex');
 const payload={periodId:period.id,trackId:period.trackId,accountId:entry.accountId,runId:'c'.repeat(64),timeMs:23,frames:23,
   replay,replayHash,carStyle:'public',verifiedAt:250,verificationStatus:'verified',verified:true,eventRpEligible:true};
 test('snapshot preserves source PB date and actual verdict date separately, not private proof',()=>{

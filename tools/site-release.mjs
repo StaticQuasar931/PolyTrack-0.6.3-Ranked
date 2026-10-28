@@ -20,3 +20,10 @@ export function stampClientRelease(patch, index, revision) {
     .replace(/(events\/(?:events\.css|client\.mjs))(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`);
   return {patch, index};
 }
+
+// Event imports and the native bridge must share one dialog instance/cache version.
+export function stampEventClientRelease(source, revision) {
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new TypeError('Invalid release revision');
+  if (!source.includes('../tools/partial-replay-selection.mjs')) throw Error('Event release anchors are missing. No files were changed.');
+  return source.replace(/(\.\.\/tools\/partial-replay-selection\.mjs|\.\/archive-(?:view|track)\.mjs)(?:\?v=\d+)?(['"])/g, '$1?v='+revision+'$2');
+}

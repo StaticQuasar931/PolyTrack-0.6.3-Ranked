@@ -39,6 +39,11 @@ test('cancelled event batch keeps good replays cached but does not silently sele
   await h.selectTopEventRows(3); await h.selectTopEventRows(3);
   assert.equal(h.selected().length, 0); assert.equal(h.pending(), 0); assert.equal(h.reads, 3); assert.equal(h.prepares, 2); assert.equal(h.prompts, 2);
 });
+test('event partial selection requires boolean consent, not a truthy response', async () => {
+  const h = harness({confirm: () => 'yes'});
+  await h.selectTopEventRows(3);
+  assert.equal(h.selected().length, 0); assert.equal(h.pending(), 0); assert.equal(h.prompts, 1);
+});
 test('all missing event replays never offer Continue or live recovery', async () => {
   for (const archive of [false, true]) {
     const h = harness({read: () => null}); if (archive) h.archive();

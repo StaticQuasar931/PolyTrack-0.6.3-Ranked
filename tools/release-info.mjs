@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 225,
+  "number": 226,
   "version": "0.6.3",
-  "revision": 194,
+  "revision": 195,
   "notes": [
-    "Event browsing stays on snapshots, including missing replays and submission status.",
-    "Continue with working ghosts when part of your selection cannot load.",
-    "Balanced event cards, simpler Help with reacting keys, and a static snapshot update check.",
-    "Clearer archive completeness, consistent package data, and fewer verification preflight reads."
+    "Compact event cards with consistent details and responsive artwork.",
+    "A clearer replay dialog lets Play and Watch skip unavailable replays after confirmation.",
+    "Stricter saved event replay validation and fewer unused event-intake reads."
   ],
-  "preparedAt": "2026-10-28T03:55:06.119Z"
+  "preparedAt": "2026-10-28T15:05:06.409Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -32,7 +32,7 @@ test('mixed results wait for explicit consent, preserve positional names and sel
   assert.deepEqual(offered.failed.map(item => item.row.recordingId), [2]);
   answer.resolve(true); assert.equal(await run, 'launched');
   assert.deepEqual(f.selected, [rows()[0], rows()[2]]); assert.equal(f.launches, 1);
-  assert.deepEqual(f.validations.map(({payload, row}) => [payload.frames, row.nickname]), [[100, 'Racer 1'], [300, 'Racer 3']]);
+  assert.deepEqual(f.validations.map(({payload, row}) => [payload.frames, row.nickname]), [[100, 'Racer 1'], [300, 'Racer 3'], [100, 'Racer 1'], [300, 'Racer 3']]);
 });
 test('cancel is not consent, leaves selection untouched, and cached failures are not re-read', async () => {
   const f = fixture({confirm: () => false});
@@ -81,6 +81,19 @@ test('watch allows exactly two working replays after consent; never truncates a 
   const valid = fixture({read: ids => ids.map(id => ({recording: String(id)}))});
   assert.equal(await valid.run('watch'), 'watch-limit'); assert.equal(valid.prompts, 0); assert.equal(valid.launches, 0); assert.equal(valid.writes.length, 0);
   assert.equal(await valid.run('play'), 'launched'); assert.equal(valid.calls, 1);
+});
+
+test('Watch consent is action-specific and a changed engine after consent leaves selection intact', async () => {
+  let accepted=false;
+  const f=fixture({confirm: options=>{assert.equal(options.mode,'watch');accepted=true;return true;},validate:()=>!accepted});
+  assert.equal(await f.run('watch'),'error');
+  assert.equal(f.prompts,1);assert.equal(f.launches,0);assert.equal(f.writes.length,0);assert.deepEqual(f.selected,rows());
+});
+
+test('Watch Cancel preserves every selected replay, including unavailable ones', async () => {
+  const f=fixture({confirm:()=>false});
+  assert.equal(await f.run('watch'),'declined');assert.deepEqual(f.selected,rows());
+  assert.equal(f.launches,0);assert.equal(f.writes.length,0);
 });
 test('bad batch shape and rejected requests fail closed and are cached', async () => {
   for (const read of [() => [], () => null, () => { throw Error('offline'); }]) {

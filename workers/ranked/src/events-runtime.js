@@ -75,8 +75,7 @@ export async function cleanupEvents(runtime) {
   }
   return target ? runtime.service.cleanupPeriod(target.id) : { idle: true };
 }
-export async function inboxPage(runtime, { projected = false, limit = 1, recentActivityOnly = false } = {}) {
-  if (limit !== 1) throw Error('Event inbox page must be one');
+async function inboxCursor(runtime, { recentActivityOnly = false } = {}) {
   const raw = await runtime.request('/' + C.cursors + '/scan');
   const cursor = raw ? decode(raw) : null;
   // This is an activity hint, never proof of an empty queue. The Worker still
@@ -85,22 +84,32 @@ export async function inboxPage(runtime, { projected = false, limit = 1, recentA
     const age = runtime.now() - cursor?.processedAt;
     if (!Number.isSafeInteger(cursor?.processedAt) || cursor.processedAt < 0 ||
         !Number.isFinite(age) || age < 0 || age >= 300000)
-      return { cursor, documents: [], pollDeferred: true };
+      return { cursor, pollDeferred: true };
   }
+  return { cursor };
+}
+async function inboxDocuments(runtime, cursor, { projected = false } = {}) {
   const query = { from: [{ collectionId: C.inbox }], orderBy: [
     { field: { fieldPath: 'receivedAt' }, direction: 'ASCENDING' },
-    { field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit };
+    { field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit: 1 };
   if (cursor) query.startAt = { before: false, values: [
     { timestampValue: cursor.receivedAt.__firestoreTimestamp }, { referenceValue: cursor.name }] };
   if (projected) query.select = { fields: [{ fieldPath: 'receivedAt' }] };
   const result = await post(runtime, ':runQuery', { structuredQuery: query });
   if (!Array.isArray(result)) throw Error('Unexpected event inbox query response');
-  return { cursor, documents: result.filter(row => row.document).map(row => row.document) };
+  return result.filter(row => row.document).map(row => row.document);
+}
+export async function inboxPage(runtime, { projected = false, limit = 1, recentActivityOnly = false } = {}) {
+  if (limit !== 1) throw Error('Event inbox page must be one');
+  const page = await inboxCursor(runtime, {recentActivityOnly});
+  return { ...page, documents: page.pollDeferred ? [] : await inboxDocuments(runtime, page.cursor, {projected}) };
 }
 export async function consumeEventInbox(runtime, { preferRetry = false, recentActivityOnly = false } = {}) {
-  const { cursor, documents, pollDeferred } = await inboxPage(runtime, {recentActivityOnly});
+  const { cursor, pollDeferred } = await inboxCursor(runtime, {recentActivityOnly});
   if (pollDeferred) return { consumed: 0, pollDeferred: true };
   let retryDoc = preferRetry ? await dueRetry(runtime) : null;
+  // A selected retry consumes this turn; do not fetch and discard a fresh receipt.
+  const documents = retryDoc ? [] : await inboxDocuments(runtime, cursor);
   if (retryDoc || !documents.length) {
     if (!retryDoc && !preferRetry) retryDoc = await dueRetry(runtime);
     if (!retryDoc) return { consumed: 0 };
@@ -125,11 +134,14 @@ export async function consumeEventInbox(runtime, { preferRetry = false, recentAc
     result = { status: error.code, rejected: !retry, retry };
   }
   await runtime.store.transaction(async tx => {
-    const path = C.cursors + '/scan', current = await tx.get(path);
-    const receiptPath = C.cursors + '/' + inboxId, receipt = await tx.get(receiptPath);
-    const statusPath = C.receipts + '/' + inboxId, previousStatus = await tx.get(statusPath);
+    // Admission already committed success. Only failures need receipt/status CAS guards;
+    // retry turns never advance the fresh-inbox scan cursor.
+    const failed = result.rejected || result.retry;
+    const path = C.cursors + '/scan', current = retryDoc ? null : await tx.get(path);
+    const receiptPath = C.cursors + '/' + inboxId, receipt = result.rejected ? await tx.get(receiptPath) : null;
+    const statusPath = C.receipts + '/' + inboxId, previousStatus = failed ? await tx.get(statusPath) : null;
     const retryPath = C.retries + '/' + inboxId, previousRetry = await tx.get(retryPath);
-    const currentInbox = await tx.get(C.inbox + '/' + inboxId);
+    const currentInbox = failed ? await tx.get(C.inbox + '/' + inboxId) : null;
     const same = currentInbox?.attemptId === data.attemptId &&
       currentInbox.receivedAt?.__firestoreTimestamp === data.receivedAt?.__firestoreTimestamp;
     if (same && result.retry) await tx.set(retryPath,

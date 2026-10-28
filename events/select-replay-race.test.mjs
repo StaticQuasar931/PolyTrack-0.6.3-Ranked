@@ -440,8 +440,12 @@ test('refresh drops a selected ghost when time, run ID or waiting status changes
  }
 });
 
-test('Watch explains its current two-replay limit before calling the native bridge',()=>{
+test('Watch explains its current two-replay limit before calling the native bridge',async()=>{
  const start=source.indexOf('  function watchEvent(){'),end=source.indexOf('  async function playEvent(',start),messages=[];let calls=0;
- const ctx=vm.createContext({sessions:{current:()=>({periodId:'period',accountId:'viewer'})},archiveIntent:null,bridge:{accountId:()=> 'viewer',watchEvent:()=>calls++},pendingGhosts:new Map(),raceGhosts:()=>({ownGhost:null,opponents:[{},{},{}]}),message:value=>messages.push(value)});
- vm.runInContext(source.slice(start,end),ctx);ctx.watchEvent();assert.equal(calls,0);assert.match(messages[0],/Watch supports 2 replays/);
+ const period={id:'period',trackId:'track'},session={periodId:period.id,trackId:period.trackId,accountId:'viewer'},rows=[1,2,3].map(id=>({accountId:String(id),timeMs:1000,runId:'run',replayHash:'hash'}));
+ const root={isConnected:true,__pt062EventWatch:{version:1,trackId:'track'}};
+ const ctx=vm.createContext({sessions:{current:()=>session},archiveIntent:null,bridge:{accountId:()=> 'viewer',require:()=>({}),readReplay:async()=>({}),watchEvent:()=>calls++},pendingGhosts:new Map(),message:value=>messages.push(value),
+  nativeView:{period},document:{querySelector:()=>root},knownPeriods:new Map(),replayRequest:0,replayCache:new Map(),replayContextActive:()=>true,eventDisplayRows:()=>({rows}),preparePublishedEventGhost:async()=>({}),
+  selectedGhosts:new Map(rows.map(row=>[row.accountId,{periodId:period.id,accountId:'viewer',targetAccountId:row.accountId,targetTimeMs:1000,targetRunId:'run',targetPending:false,targetReplayHash:'hash'}]))});
+ vm.runInContext(source.slice(start,end),ctx);await ctx.watchEvent();assert.equal(calls,0);assert.match(messages.at(-1),/Watch supports 2 replays/);
 });

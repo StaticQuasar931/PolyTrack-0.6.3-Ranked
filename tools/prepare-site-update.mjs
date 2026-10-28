@@ -1,5 +1,5 @@
 import {readFile, writeFile} from 'node:fs/promises';
-import {stampClientRelease} from './site-release.mjs';
+import {stampClientRelease, stampEventClientRelease} from './site-release.mjs';
 
 const root = new URL('../', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('site-version.json', root), 'utf8'));
@@ -9,9 +9,13 @@ if (!Number.isSafeInteger(revision) || revision <= manifest.revision) {
 }
 const patchPath = new URL('polytrack_062_patch.js', root);
 const indexPath = new URL('index.html', root);
+const eventPath = new URL('events/client.mjs', root);
+const eventSource = await readFile(eventPath, 'utf8');
 let patch = await readFile(patchPath, 'utf8');
 let index = await readFile(indexPath, 'utf8');
 ({patch, index} = stampClientRelease(patch, index, revision));
+const events = stampEventClientRelease(eventSource, revision);
+await writeFile(eventPath, events);
 await writeFile(patchPath, patch);
 await writeFile(indexPath, index);
 await writeFile(new URL('site-version.json', root), JSON.stringify({...manifest, revision}, null, 2) + '\n');

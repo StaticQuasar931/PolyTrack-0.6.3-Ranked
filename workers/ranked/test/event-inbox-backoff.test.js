@@ -15,7 +15,7 @@ const period = {id:'backoff', enabled:true, trackId, startsAt:1000, endsAt:86401
 
 // Real admission service, in-memory transactional storage, and only the two existing limit-one queries.
 async function fixture(kind = 'queue') {
-  const data = new Map(), queries = [], gets = [], costs = {reads:0, writes:0};
+  const data = new Map(), queries = [], gets = [], transactions = [], costs = {reads:0, writes:0};
   let now = 0, submissions = 0;
   const store = {async transaction(fn) {
     const copy = structuredClone(data), reads = new Set(), writes = new Set();
@@ -33,6 +33,7 @@ async function fixture(kind = 'queue') {
     }, create:(k,v) => write(k,v,'create'), set:(k,v) => write(k,v,'set'),
     patch:(k,v) => write(k,v,'patch'), delete:k => write(k,null,'delete')});
     costs.writes += writes.size;
+    transactions.push({reads:[...reads], writes:[...writes]});
     data.clear(); for (const [key,value] of copy) data.set(key,value);
     return result;
   }};
@@ -80,7 +81,7 @@ async function fixture(kind = 'queue') {
     queue.replayBytes = enabled && kind === 'replay' ? period.capacity.replayBytesPerPeriod : 0;
   };
   pressure(true); costs.reads = costs.writes = 0;
-  return {data, runtime, service, costs, queries, gets, pressure, now:() => now, time:at => {now=at;},
+  return {data, runtime, service, costs, queries, gets, transactions, pressure, now:() => now, time:at => {now=at;},
     submissions:() => submissions, retry:() => data.get(retryPath),
     run:options => consumeEventInbox(runtime, options)};
 }
@@ -98,7 +99,7 @@ for (const kind of ['queue','replay']) {
       assert.deepEqual(f.data.get(inboxPath), original);
       assert.equal(f.data.get(statusPath).status, 'waiting');
       assert.equal(f.data.has(C.cursors + '/' + inboxId), false, 'not terminally consumed');
-      assert.equal(f.costs.reads - before.reads, attempt === 1 ? 19 : 21);
+      assert.equal(f.costs.reads - before.reads, attempt === 1 ? 18 : 19);
       assert.equal(f.costs.writes - before.writes, attempt === 1 ? 3 : 2);
       assert.equal(f.queries.length - queries, attempt === 1 ? 1 : 2);
       f.time(at + expected - 1);
@@ -155,12 +156,67 @@ test('one hour of minute-by-minute polling bounds admission work without removin
   }
   assert.deepEqual(attemptedMinutes, [0,1,3,7,15,30,45]);
   // Fixed-one-minute policy: first intake 19R/3W, then 59 due retries at 21R/2W.
-  assert.deepEqual(f.costs, {reads:304, writes:15});
-  assert.equal(19 + 59*21 - f.costs.reads, 954);
+  assert.deepEqual(f.costs, {reads:291, writes:15});
+  assert.equal(304 - f.costs.reads, 13, 'Release 225 used the same delays but read unused bookkeeping documents');
+  assert.equal(19 + 59*21 - f.costs.reads, 967);
   assert.equal(3 + 59*2 - f.costs.writes, 106);
   assert.equal(f.queries.length, 119, 'poll query count is unchanged');
   assert.deepEqual(f.data.get(inboxPath), original);
   assert.equal(f.retry().notBefore, start + 60*60000);
+});
+
+for (const retry of [false,true]) {
+  test(`${retry ? 'retry' : 'fresh'} successful intake skips only unused bookkeeping reads`, async () => {
+    const f = await fixture();
+    if (retry) {await f.run(); f.time(f.retry().notBefore);}
+    f.pressure(false);
+    const scanBefore = structuredClone(f.data.get(C.cursors + '/scan'));
+    const queryStart = f.queries.length;
+    const result = await f.run({preferRetry:retry});
+    assert.equal(result.status, 'waiting'); assert.equal(result.duplicate, false);
+    assert.deepEqual(f.transactions.at(-1).reads, retry ? [retryPath] : [C.cursors + '/scan',retryPath]);
+    assert.deepEqual(f.queries.slice(queryStart).map(q=>q.from[0].collectionId), [retry ? C.retries : C.inbox]);
+    assert.equal(f.data.get(queuePath).admitted, 1);
+    assert.equal(f.data.get(queuePath).slots.length, 1);
+    assert.equal(f.data.get(C.runs + '/' + result.runId).status, 'waiting', 'intake does not award unverified scores');
+    assert.equal(f.data.get(statusPath).attemptId, 'first');
+    assert.equal(f.retry(), undefined);
+    if (retry) assert.deepEqual(f.data.get(C.cursors + '/scan'), scanBefore, 'retry cannot advance fresh cursor');
+    else assert.equal(f.data.get(C.cursors + '/scan').receivedAt.__firestoreTimestamp,
+      f.data.get(inboxPath).receivedAt.__firestoreTimestamp);
+  });
+}
+
+test('retry-priority capacity failure saves the discarded fresh query and unused cursor/receipt reads', async () => {
+  const f = await fixture(); await f.run(); f.time(f.retry().notBefore);
+  const before = {...f.costs}, queryStart = f.queries.length;
+  assert.equal((await f.run({preferRetry:true})).retry, true);
+  assert.equal(f.costs.reads-before.reads, 18, 'Release 225 used 21 reads for the same failed retry');
+  assert.equal(f.costs.writes-before.writes, 2);
+  assert.deepEqual(f.queries.slice(queryStart).map(q=>q.from[0].collectionId), [C.retries]);
+  assert.deepEqual(f.transactions.at(-1).reads, [statusPath,retryPath,inboxPath]);
+  assert.equal(f.retry().notBefore, f.now()+120000);
+  assert.equal(f.data.get(statusPath).status, 'waiting');
+});
+
+test('successful retry bookkeeping preserves a concurrently replaced inbox, status and retry', async () => {
+  const f = await fixture(); await f.run(); f.time(f.retry().notBefore); f.pressure(false);
+  const consume = f.runtime.service.consumeInbox;
+  const nextInbox = {...f.data.get(inboxPath), attemptId:'newer', timeMs:10000, frames:10000,
+    receivedAt:{__firestoreTimestamp:new Date(f.now()).toISOString()}};
+  const nextStatus = {...nextInbox,status:'waiting'}, nextRetry = {...f.retry(),attemptId:'newer',receivedAt:nextInbox.receivedAt};
+  f.runtime.service.consumeInbox = async row => {
+    const result = await consume(row);
+    f.data.set(inboxPath, structuredClone(nextInbox));
+    f.data.set(statusPath, structuredClone(nextStatus));
+    f.data.set(retryPath, structuredClone(nextRetry));
+    return result;
+  };
+  assert.equal((await f.run({preferRetry:true})).status, 'waiting');
+  assert.deepEqual(f.data.get(inboxPath), nextInbox);
+  assert.deepEqual(f.data.get(statusPath), nextStatus);
+  assert.deepEqual(f.retry(), nextRetry);
+  assert.deepEqual(f.transactions.at(-1), {reads:[retryPath],writes:[]});
 });
 
 test('legacy or invalid counters restart safely, and oversized counters saturate', async () => {

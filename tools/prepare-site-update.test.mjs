@@ -15,6 +15,7 @@ async function fixture(t, manifest, overrides = {}) {
     await rm(directory, {recursive:true, force:true});
   });
   await mkdir(join(directory, 'tools'));
+  await mkdir(join(directory, 'events'));
   for (const name of ['prepare-site-update.mjs', 'site-release.mjs']) {
     await copyFile(new URL('./' + name, import.meta.url), join(directory, 'tools', name));
   }
@@ -22,6 +23,7 @@ async function fixture(t, manifest, overrides = {}) {
     'site-version.json': JSON.stringify(manifest, null, 2) + '\n',
     'polytrack_062_patch.js': patch,
     'index.html': index,
+    'events/client.mjs': "import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=193';",
     ...overrides
   };
   for (const [name, content] of Object.entries(files)) await writeFile(join(directory, name), content);
@@ -49,6 +51,7 @@ test('default increment preserves minimumSupportedRevision and unknown manifest 
   assert.match(await f.read('polytrack_062_patch.js'), /installSiteUpdates\(\{revision:194\}\)/);
   assert.match(await f.read('index.html'), /polytrack_062_patch\.js\?v=194/);
   assert.match(result.stdout, /Prepared website revision 194/);
+  assert.match(await f.read('events/client.mjs'), /partial-replay-selection\.mjs\?v=194/);
 });
 
 test('explicit revision jump preserves fields and does not invent absent manifest policies', async t => {
@@ -77,5 +80,11 @@ test('missing stamping anchors leave manifest and entry files unchanged', async 
   const result = f.run('194');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Release anchors are missing/);
+  for (const [name, before] of Object.entries(f.files)) assert.equal(await f.read(name), before, name);
+});
+
+test('missing event stamping anchors leave every file unchanged', async t => {
+  const f = await fixture(t, {revision:193}, {'events/client.mjs':'// Missing anchor.'});
+  assert.notEqual(f.run('194').status, 0);
   for (const [name, before] of Object.entries(f.files)) assert.equal(await f.read(name), before, name);
 });

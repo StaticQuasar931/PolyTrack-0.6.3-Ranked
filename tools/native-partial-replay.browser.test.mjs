@@ -151,11 +151,12 @@ async function fixture(t, options = {}) {
   t.after(async () => { assert.deepEqual(errors, []); assert.deepEqual(external, []); assert.equal(await page.evaluate(() => stats.firebase), 0); await page.close(); });
   return page;
 }
-const proceed = page => page.getByRole('button', {name: 'Continue with working replays'});
+const proceed = page => page.locator('[data-partial-replay-continue]');
 const chooser = page => page.locator('.sq-partial-replay-dialog');
 
-test('patch wiring uses v194 and only the existing native reader, with synchronous lifecycle hooks', () => {
-  assert.match(patch, /partial-replay-selection\.mjs\?v=194/);
+test('patch wiring uses the current cache version and only the existing native reader, with synchronous lifecycle hooks', async () => {
+  const {revision}=JSON.parse(await fs.readFile(path.join(root,'site-version.json'),'utf8'));
+  assert.ok(patch.includes('partial-replay-selection.mjs?v='+revision));
   assert.match(helpers, /readRecordings:ids=>readNativeRecordings\(ids\)/);
   assert.doesNotMatch(helpers, /firebase|\bfetch\(/i);
   assert.equal((patch.match(/invalidateNativePartialReplayAccount\(accountId\);/g) || []).length, 3);

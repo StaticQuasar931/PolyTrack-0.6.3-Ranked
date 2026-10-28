@@ -13,6 +13,7 @@ const methodStart = main.indexOf('getRecordings(e){');
 const nativeMethod = main.slice(methodStart, main.indexOf('submitLeaderboard(', methodStart));
 const eventSource = await fs.readFile(path.join(root, 'events/client.mjs'), 'utf8');
 const eventBlock = eventSource.slice(eventSource.indexOf('  const replayContextActive='), eventSource.indexOf('  function raceGhosts('));
+const watchBlock = eventSource.slice(eventSource.indexOf('  function watchEvent(){'), eventSource.indexOf('  async function playEvent('));
 const patchSource = await fs.readFile(path.join(root, 'polytrack_062_patch.js'), 'utf8');
 const keyboardStart = patchSource.indexOf("    window.addEventListener('keydown', (event)=>{");
 const keyboardEnd = patchSource.indexOf("    window.addEventListener('blur',resetOverallPageOffset);", keyboardStart);
@@ -44,7 +45,8 @@ async function fixture(t, options = {}) {
     catch { return route.fulfill({status: 404, body: ''}); }
   });
   await page.goto('http://localhost/');
-  await page.evaluate(async ({factories, nativeMethod, eventBlock, options}) => {
+  await page.addStyleTag({content: '@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2) format("woff2")}'});
+  await page.evaluate(async ({factories, nativeMethod, eventBlock, watchBlock, options}) => {
     const table = new Function('return (' + factories + ')')(), cache = {};
     const require = id => {
       if (cache[id]) return cache[id].exports;
@@ -85,18 +87,22 @@ async function fixture(t, options = {}) {
       const view = {root, board, period, periodId: period.id, page: 0};
       const bridge = {accountId: () => account, require: () => require, readReplay: async (_period, id) => {
         stats.reads.push(id); await gate;
-        if (options.allMissing || id === '2'.repeat(64)) return null;
+        if (options.allMissing || !options.allValid && id === '2'.repeat(64)) return null;
         const row = rows.find(row => row.accountId === id);
         return {...row, periodId: period.id, trackId: track, frames: row.timeMs, replay: recording, carStyle, replayHash: options.corrupt && id === '3'.repeat(64) ? '0'.repeat(64) : replayHash};
       }};
+      root.__pt062EventWatch={version:1,trackId:track,open:ghosts=>{stats.races.push(ghosts.map(ghost=>({name:ghost.nickname,frames:ghost.time.numberOfFrames,isSelf:ghost.isSelf})));}};
+      bridge.watchEvent=(_session,ghosts)=>root.__pt062EventWatch.open(ghosts);
       const api = new Function('bridge', 'sessions', 'nativeView', 'eventDisplayRows', 'preparePublishedEventGhost', 'confirmPartialReplaySelection', 'period', `
         let archiveIntent=null,selectedGhost=null,replayRequest=0,topSelectionToken=0;
         const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),replayFailures=new Map(),knownPeriods=new Map([[period.id,period]]),catalog={periods:[period]};
         const now=Date.now,tick=()=>{},displayName=row=>row.name,message=text=>document.querySelector('#status').textContent=text;
         ${eventBlock}
-        return {selectTopEventRows,selectReplay,clearEventGhostSelection,selected:()=>[...selectedGhosts.values()],pending:()=>pendingGhosts.size};
+        ${watchBlock}
+        return {selectTopEventRows,selectReplay,clearEventGhostSelection,watchEvent,damageSelectedReplay:()=>{for(const [key,payload] of replayCache)if(key.includes('3'.repeat(64)))payload.carStyle='AAAA';},selected:()=>[...selectedGhosts.values()],pending:()=>pendingGhosts.size};
       `)(bridge, {current: () => session}, view, () => ({rows}), preparePublishedEventGhost, module.confirmPartialReplaySelection, period);
       root.querySelector('.play').onclick = () => { window.loading = api.selectTopEventRows(3); };
+      root.querySelector('.watch').onclick = () => { window.loading = api.watchEvent(); };
       window.fixture = {api, release, selected: () => api.selected(), change: kind => {
         if (kind === 'account') account = 'c'.repeat(64); else if (kind === 'session') session = {...session}; else if (kind === 'track') period.trackId = 'other';
         else if (kind === 'selection') api.clearEventGhostSelection(period.id, account); else if (kind === 'standings') rows[0].replayHash = 'changed'; else root.remove();
@@ -141,12 +147,12 @@ async function fixture(t, options = {}) {
       root.querySelector('.back').onclick = () => root.remove();
     }
     document.addEventListener('keydown', () => stats.keys++);
-  }, {factories, nativeMethod, eventBlock, options});
+  }, {factories, nativeMethod, eventBlock, watchBlock, options});
   t.after(async () => { assert.deepEqual(errors, []); assert.deepEqual(external, [], 'no production, Firebase or live recovery traffic'); await page.close(); });
   return page;
 }
 const chooser = page => page.locator('.sq-partial-replay-dialog');
-const proceed = page => page.getByRole('button', {name: 'Continue with working replays'});
+const proceed = page => page.locator('[data-partial-replay-continue]');
 const shot = async (page, name) => {
   if (!process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR) return;
   await fs.mkdir(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR, {recursive: true});
@@ -156,6 +162,12 @@ const shot = async (page, name) => {
 test('ordinary mixed selection: modal, desktop/mobile layout, safe names, native handoff and no extra reads', async t => {
   const page = await fixture(t);
   await page.getByRole('button', {name: 'Play', exact: true}).click(); await proceed(page).waitFor();
+  await page.evaluate(()=>document.fonts.ready);
+  assert.ok(main.includes('font-family: ForcedSquare;'), 'uses the exact family declared by the native game');
+  assert.equal(await page.evaluate(()=>[...document.fonts].some(face=>face.family==='ForcedSquare'&&face.status==='loaded')&&document.fonts.check('20px ForcedSquare')),true,'repository ForcedSquare font loaded, not a generic fallback');
+  assert.equal(await proceed(page).textContent(),'Skip & play');
+  assert.equal(await chooser(page).evaluate(el=>getComputedStyle(el).borderRadius),'0px');
+  assert.equal(await page.getByRole('dialog',{name:'Skip unavailable replays?'}).count(),1);
   assert.equal(await page.evaluate(() => stats.dispatched), 0); assert.equal(await chooser(page).locator('img').count(), 0);
   await shot(page, 'partial-replay-desktop');
   for (const [width, height] of [[320, 568], [390, 844], [844, 390]]) {
@@ -173,11 +185,51 @@ test('ordinary cancel, Escape, keyboard activation and repeat clicks do not sile
   const page = await fixture(t);
   await page.locator('.play').click(); await proceed(page).waitFor();
   await page.keyboard.press('Escape'); await chooser(page).waitFor({state: 'detached'});
+  assert.equal(await page.locator('.play').evaluate(el=>el===document.activeElement),true);
   assert.equal(await page.evaluate(() => fixture.selected().length), 3); assert.equal(await page.evaluate(() => stats.dispatched), 0);
   await page.locator('.play').focus(); await page.keyboard.press('Enter'); await proceed(page).waitFor();
+  assert.equal(await page.getByRole('button', {name:'Cancel',exact:true}).evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Enter'); await chooser(page).waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>fixture.selected().length),3);assert.equal(await page.evaluate(()=>stats.dispatched),0);
+  await page.locator('.play').click();await proceed(page).waitFor();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await page.locator('.play').click(); await proceed(page).waitFor(); await proceed(page).focus(); await page.keyboard.press('Enter');
   await page.waitForFunction(() => stats.races.length === 1); assert.deepEqual(await page.evaluate(() => stats.reads), [1, 2, 3]);
+});
+
+test('native-style modal traps focus, handles long names and remains operable at large text',async t=>{
+  const page=await fixture(t);await page.setViewportSize({width:320,height:568});
+  await page.evaluate(async()=>{
+    const {confirmPartialReplaySelection}=await import('/tools/partial-replay-selection.mjs');
+    window.modalResult=confirmPartialReplaySelection({document,ready:[{}],failed:Array.from({length:9},(_,i)=>({row:{name:'Racer '+i+' '+ '<script>'.repeat(28)}})),isCurrent:()=>true,mode:'watch',returnFocus:document.querySelector('.watch')});
+  });
+  await proceed(page).waitFor();await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.getByRole('button',{name:'Cancel',exact:true}).evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Shift+Tab');assert.equal(await chooser(page).locator('ul').evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Shift+Tab');assert.equal(await proceed(page).evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Tab');assert.equal(await chooser(page).locator('ul').evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Tab');assert.equal(await page.getByRole('button',{name:'Cancel',exact:true}).evaluate(el=>el===document.activeElement),true);
+  await chooser(page).evaluate(el=>el.style.fontSize='40px');
+  await proceed(page).focus();
+  assert.equal(await chooser(page).evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
+  assert.equal(await chooser(page).locator('script').count(),0);
+  await shot(page,'partial-replay-long-names-large-text');
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>modalResult),false);
+  assert.equal(await page.locator('.watch').evaluate(el=>el===document.activeElement),true);
+});
+
+test('event Watch rechecks a selected replay and offers Skip & watch without silently removing it',async t=>{
+  const page=await fixture(t,{event:true});await page.locator('.play').click();await proceed(page).waitFor();await proceed(page).click();
+  await page.waitForFunction(()=>fixture.selected().length===2);
+  await page.evaluate(()=>fixture.api.damageSelectedReplay());
+  await page.locator('.watch').click();await proceed(page).waitFor();
+  assert.equal(await proceed(page).textContent(),'Skip & watch');assert.equal(await page.evaluate(()=>fixture.selected().length),2);
+  assert.equal(await page.evaluate(()=>stats.races.length),0);await shot(page,'event-watch-partial-desktop');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await page.evaluate(()=>fixture.selected().length),2);
+  await page.locator('.watch').click();await proceed(page).waitFor();await proceed(page).click();
+  await page.waitForFunction(()=>stats.races.length===1);
+  assert.deepEqual(await page.evaluate(()=>stats.races[0]),[{name:'Event racer 1',frames:1001,isSelf:false}]);
+  assert.equal(await page.evaluate(()=>fixture.selected().length),1);
 });
 for (const change of ['account', 'track', 'revision', 'selection', 'history', 'navigation']) test(`ordinary chooser cancels on ${change}`, async t => {
   const page = await fixture(t); await page.locator('.play').click(); await proceed(page).waitFor();
@@ -211,7 +263,7 @@ test('malformed native payload and engine failure are excluded only after consen
 test('event mixed group uses real integrity/native parsers and waits for Continue', async t => {
   const page = await fixture(t, {event: true, corrupt: true}); await page.locator('.play').click(); await proceed(page).waitFor();
   assert.equal(await page.evaluate(() => fixture.api.pending()), 3); assert.equal(await page.evaluate(() => fixture.selected().length), 0);
-  assert.match(await chooser(page).textContent(), /Your run and event points are unchanged/); assert.match(await chooser(page).textContent(), /1 of 3/); await shot(page, 'partial-event-replay');
+  assert.match(await chooser(page).textContent(), /Saved PBs and points are unchanged/); assert.match(await chooser(page).textContent(), /1 of 3/); await shot(page, 'partial-event-replay');
   await proceed(page).click(); await page.evaluate(() => window.loading);
   assert.deepEqual(await page.evaluate(() => fixture.selected().map(row => row.ghost.nickname)), ['Event racer 1']); assert.equal(await page.evaluate(() => fixture.api.pending()), 0);
 });

@@ -51,9 +51,9 @@ test('featured event metadata and PB icons fit desktop and phone viewports',asyn
    await page.setViewportSize({width,height});
    const cardHeights=await page.locator('.sq-kodub-weekly>.button,.sq-permanent-track>.button,.sq-event-track-buttons>.sq-event-card').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
    assert.equal(cardHeights.length,4);
-   if(width>480)assert(Math.max(...cardHeights)-Math.min(...cardHeights)<=1,`featured card heights match at ${width}: ${cardHeights}`);
-   else{
-    assert(Math.max(...cardHeights)-Math.min(...cardHeights)<=1,`poster cards remain equal height at ${width}: ${cardHeights}`);
+   if(width>1000)assert(Math.max(...cardHeights)-Math.min(...cardHeights)<=1,`featured card heights match at ${width}: ${cardHeights}`);
+   else if(width<=480){
+    assert(cardHeights.every(height=>height>=130),`narrow cards retain usable content space at ${width}: ${cardHeights}`);
     assert(cardHeights.every(height=>height<=width/2.1+250),`phone poster height stays bounded by image and text at ${width}: ${cardHeights}`);
     const phoneCards=await page.locator('.sq-kodub-weekly>.button,.sq-permanent-track>.button,.sq-event-track-buttons>.sq-event-card').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,width:node.getBoundingClientRect().width,ratio:getComputedStyle(node).aspectRatio})));
     assert(phoneCards.every(card=>card.width>=width-48&&card.ratio==='auto'),`phone cards use full-width content sizing at ${width}: ${JSON.stringify(phoneCards)}`);
@@ -67,7 +67,7 @@ test('featured event metadata and PB icons fit desktop and phone viewports',asyn
     assert(reward.y+reward.height<=reset.y+1,`metadata does not overlap ${width}`);
     assert.equal(await card.locator('.sq-event-assignment').count(),0,'one concise practice-only notice replaces duplicate warnings');
     assert.equal(await card.locator('.sq-event-capacity').isVisible(),false);
-    if(width>700)assert.equal(await card.locator('.sq-event-reset').evaluate(node=>getComputedStyle(node).textAlign),'center');
+    assert.equal(await card.locator('.sq-event-reset').evaluate(node=>getComputedStyle(node).textAlign),'left','landscape metadata aligns with its title at every width');
    }
    const icon=await page.locator('.personal-best img').boundingBox(),line=await page.locator('.personal-best>div').boundingBox();
    assert.equal(icon.height,22);assert.equal(icon.width,22);

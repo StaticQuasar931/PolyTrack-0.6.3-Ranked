@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {stampClientRelease} from './site-release.mjs';
+import {stampClientRelease, stampEventClientRelease} from './site-release.mjs';
 
 const index = '<script src="polytrack_062_patch.js?v=44"></script>';
 const patch = "const eventsModuleUrl=new URL('./events/client.mjs',base).href;const extraCatalogRevision='40';import('filter-menu.mjs?v=44');import('site-updates.mjs?v=44');installSiteUpdates({revision:44});";
@@ -108,4 +108,23 @@ test('central release metadata follows the client cache revision, not the manual
  assert.match(result.patch,/release-info\.mjs\?v=193/);
  assert.deepEqual(stampClientRelease(result.patch,result.index,193),result);
  assert.doesNotMatch(result.patch,/release-info\.mjs\?v=224/);
+});
+
+test('event dialog and archive dependency stamps advance together and reject missing anchors', () => {
+  const source = "import '../tools/partial-replay-selection.mjs?v=194';import './archive-view.mjs?v=194';import './archive-track.mjs?v=194';import './native-binding.mjs?v=153';";
+  const next = stampEventClientRelease(source,195);
+  for (const file of ['partial-replay-selection','archive-view','archive-track']) assert.ok(next.includes(file+'.mjs?v=195'));
+  assert.ok(next.includes('native-binding.mjs?v=153'));
+  assert.equal(stampEventClientRelease(next,195),next);
+  assert.throws(()=>stampEventClientRelease('',195),/anchors/);
+  assert.throws(()=>stampEventClientRelease(source,NaN),/Invalid release/);
+});
+
+test('installed native and event replay choosers use the same current cache version', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const root=new URL('../',import.meta.url);
+  const manifest=JSON.parse(await readFile(new URL('site-version.json',root),'utf8'));
+  const events=await readFile(new URL('events/client.mjs',root),'utf8');
+  const native=await readFile(new URL('polytrack_062_patch.js',root),'utf8');
+  for(const source of [events,native])assert.ok(source.includes('partial-replay-selection.mjs?v='+manifest.revision));
 });
