@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 228,
+  "number": 229,
   "version": "0.6.3",
-  "revision": 197,
+  "revision": 198,
   "notes": [
-    "Four event cards share one row on desktop, with clearer text and responsive artwork.",
-    "Finish placements stay centered with readable ordinal text.",
-    "Replay confirmation scales with UI text and keeps its action buttons visible."
+    "Event Play refreshes indexed replay authorization before launch without rereading replay files.",
+    "Snapshot assembly reuses validated archived boards and avoids redundant local file reads.",
+    "Failed event publication source scans receive durable retry backoff.",
+    "Expanded layout checks cover rotation, text scaling and short-screen dialogs."
   ],
-  "preparedAt": "2026-10-28T19:11:35.648Z"
+  "preparedAt": "2026-10-28T20:19:53.450Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
