@@ -1,14 +1,16 @@
 const releaseInfo = {
-  "number": 236,
+  "number": 237,
   "version": "0.6.3",
-  "revision": 205,
+  "revision": 206,
   "notes": [
-    "Replay loading keeps four slots working and shares the snapshot board lookup.",
-    "Space activates the focused menu button without opening Play instead.",
-    "Cancel and Escape restore previewed display preferences; Apply keeps them.",
-    "Track leaderboard controls reserve their filter slot to prevent mobile layout jumps."
+    "Shared page-jump shortcuts now work across Overall, track, event and archive pages.",
+    "Search loaded rankings by racer name or public ID; Ctrl+F focuses search.",
+    "Installed-release notices wait for a safe menu and persist acknowledgement.",
+    "Snapshot checks use gentle inline feedback when no newer package is found.",
+    "Help has clearer controls, readable native styling and a compact header.",
+    "Cold-device snapshot chunks have a longer bounded read window, with no extra requests."
   ],
-  "preparedAt": "2026-10-29T03:10:43.335Z"
+  "preparedAt": "2026-10-29T04:20:41.747Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

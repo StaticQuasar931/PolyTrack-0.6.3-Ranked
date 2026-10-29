@@ -8,76 +8,175 @@ const generationOf = value => {
 };
 
 export function createSnapshotUpdateCheck({fetchImpl = globalThis.fetch, now = Date.now,
-  timeoutMs = 8000, cooldownMs = 60000} = {}) {
-  let pending = null, saved = null, checkedAt = -Infinity;
-  const read = async url => {
+  timeoutMs = 8000, cooldownMs = 60000,
+  setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
+  let pending = null, saved = null, checkedAt = -Infinity, disposed = false;
+  const read = async (url, signal) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer, reader, rejectAbort;
+    const abort = () => { controller.abort(); rejectAbort?.(Error('Update check cancelled')); };
     try {
-      const response = await fetchImpl(url, {credentials: 'omit', redirect: 'error',
-        cache: 'no-cache', referrerPolicy: 'no-referrer', signal: controller.signal,
-        headers: {Accept: 'application/json'}});
-      if (!response.ok || response.redirected || Number(response.headers.get('content-length')) > 16384) throw Error('Update check unavailable');
-      const reader = response.body.getReader(), chunks = []; let length = 0;
-      try {
+      const cancelled = new Promise((_, reject) => { rejectAbort = reject; });
+      signal.addEventListener('abort', abort, {once: true});
+      if (signal.aborted) abort();
+      timer = schedule(abort, timeoutMs);
+      return await Promise.race([cancelled, (async () => {
+        if (controller.signal.aborted) throw Error('Update check cancelled');
+        const response = await fetchImpl(url, {credentials: 'omit', redirect: 'error',
+          cache: 'no-cache', referrerPolicy: 'no-referrer', signal: controller.signal,
+          headers: {Accept: 'application/json'}});
+        if (!response.ok || response.redirected || Number(response.headers.get('content-length')) > 16384) throw Error('Update check unavailable');
+        if (controller.signal.aborted) throw Error('Update check cancelled');
+        reader = response.body.getReader();
+        const chunks = []; let length = 0;
         for (;;) {
           const {value, done} = await reader.read(); if (done) break;
           length += value.byteLength;
           if (length > 16384) throw Error('Update response too large');
           chunks.push(value);
         }
-      } finally { await reader.cancel().catch(() => {}); }
-      const bytes = new Uint8Array(length); let offset = 0;
-      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-      const data = JSON.parse(new TextDecoder().decode(bytes));
-      const generation = generationOf(url === POINTER ? data.snapshotDirectory : data.currentdir);
-      if (generation === null) throw Error('Invalid snapshot release');
-      return generation;
-    } finally { clearTimeout(timer); }
+        const bytes = new Uint8Array(length); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        const data = JSON.parse(new TextDecoder().decode(bytes));
+        const generation = generationOf(url === POINTER ? data.snapshotDirectory : data.currentdir);
+        if (generation === null) throw Error('Invalid snapshot release');
+        return generation;
+      })()]);
+    } finally {
+      unschedule(timer); signal.removeEventListener('abort', abort);
+      // Do not let a stalled stream's cancel promise hold the UI open.
+      try { void reader?.cancel().catch(() => {}); } catch { /* Already closed. */ }
+    }
   };
+  const cancel = () => { pending?.controller.abort(); pending = null; };
   return Object.freeze({
-    async check(currentGeneration) {
+    cancel,
+    dispose() { disposed = true; cancel(); saved = null; },
+    async check(currentGeneration, {signal} = {}) {
+      if (disposed || signal?.aborted) return {status: 'cancelled'};
       if (!Number.isSafeInteger(currentGeneration) || currentGeneration < 1) return {status: 'unavailable'};
       if (!pending && (!saved || now() - checkedAt >= cooldownMs)) {
-        checkedAt = now();
-        pending = (async () => {
-          let newest = null;
+        const flight = {controller: new AbortController(), clients: 0};
+        pending = flight;
+        flight.promise = (async () => {
+          let newest = null, successes = 0;
           for (const endpoint of SNAPSHOT_UPDATE_ENDPOINTS) {
+            if (flight.controller.signal.aborted) return {status: 'cancelled'};
             try {
-              const generation = await read(endpoint);
+              const generation = await read(endpoint, flight.controller.signal);
               newest = Math.max(newest || 0, generation);
-              if (generation > currentGeneration) return {generation};
+              successes++;
             } catch { /* Try the other static host. */ }
           }
-          return newest ? {generation: newest} : {status: 'unavailable'};
-        })().then(value => (saved = value)).finally(() => { pending = null; });
+          return {generation: newest, complete: successes === SNAPSHOT_UPDATE_ENDPOINTS.length};
+        })().then(value => {
+          if (disposed || flight.controller.signal.aborted) return {status: 'cancelled'};
+          checkedAt = now(); saved = value; return value;
+        }).finally(() => { if (pending === flight) pending = null; });
       }
-      const value = pending ? await pending : saved;
-      return value?.generation ? {...value, status: value.generation > currentGeneration ? 'newer' : value.generation === currentGeneration ? 'current' : 'stale'} : {status: 'unavailable'};
+      let value = saved;
+      if (pending) {
+        const flight = pending;
+        flight.clients++;
+        let abort;
+        try {
+          value = await Promise.race([flight.promise, new Promise(resolve => {
+            abort = () => resolve({status: 'cancelled'});
+            signal?.addEventListener('abort', abort, {once: true});
+            if (signal?.aborted) abort();
+          })]);
+        } finally {
+          signal?.removeEventListener('abort', abort);
+          if (--flight.clients === 0 && pending === flight) cancel();
+        }
+      }
+      if (disposed || signal?.aborted || value?.status === 'cancelled') return {status: 'cancelled'};
+      if (value?.generation > currentGeneration) return {generation: value.generation, status: 'newer'};
+      if (!value?.complete) return {status: 'unavailable'};
+      return {generation: value.generation, status: value.generation === currentGeneration ? 'current' : 'stale'};
     }
   });
 }
 
-let activeDialog = null;
-export function showSnapshotUpdateResult(result, {document = globalThis.document, reload = () => globalThis.location.reload()} = {}) {
+const activeDialogs = new WeakMap(), feedback = new WeakMap();
+const noop = Object.freeze({dispose() {}});
+let feedbackId = 0;
+function showInlineResult(result, {document, origin, signal, isCurrent}) {
+  if (!origin?.isConnected || !origin.parentNode || !origin.matches('button,[role="button"]')) return noop;
+  feedback.get(origin)?.dispose();
+  const status = document.createElement('span');
+  status.id = `sq-snapshot-check-status-${++feedbackId}`;
+  status.className = 'sq-snapshot-check-status';
+  status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
+  Object.assign(status.style, {display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box',
+    padding: '4px 8px', borderLeft: '2px solid #7ee7ff', color: 'inherit', font: 'inherit', fontSize: '0.85em'});
+  origin.insertAdjacentElement('afterend', status);
+  const description = origin.getAttribute('aria-describedby');
+  origin.setAttribute('aria-describedby', [description, status.id].filter(Boolean).join(' '));
+  let animation = null, announcement = null, disposed = false;
+  const view = document.defaultView;
+  const dispose = () => {
+    if (disposed) return; disposed = true;
+    if (announcement !== null) view.clearTimeout(announcement);
+    animation?.cancel(); status.remove();
+    const remaining = (origin.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== status.id).join(' ');
+    if (remaining) origin.setAttribute('aria-describedby', remaining); else origin.removeAttribute('aria-describedby');
+    signal?.removeEventListener('abort', dispose); view?.removeEventListener('pagehide', dispose);
+    if (feedback.get(origin)?.dispose === dispose) feedback.delete(origin);
+  };
+  const handle = Object.freeze({dispose}); feedback.set(origin, handle);
+  signal?.addEventListener('abort', dispose, {once: true}); view?.addEventListener('pagehide', dispose, {once: true});
+  // A separate task lets assistive technology register the empty live region.
+  announcement = view.setTimeout(() => {
+    announcement = null;
+    if (disposed) return;
+    if (signal?.aborted || !origin.isConnected || !isCurrent()) { dispose(); return; }
+    status.textContent = result.status === 'current' ? 'No newer snapshot reported.' : result.status === 'stale'
+      ? 'Release files are older than this snapshot. Try later.' : 'Snapshot check failed. Try again later.';
+    const reduced = !view?.matchMedia || view.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      document.documentElement.classList.contains('sq-reduced-effects') || document.body.classList.contains('sq-reduced-effects');
+    if (result.status === 'current' && !reduced && typeof origin.animate === 'function') {
+      try { animation = origin.animate([{translate: '0px'}, {translate: '-3px'}, {translate: '3px'},
+        {translate: '-2px'}, {translate: '2px'}, {translate: '0px'}], {duration: 280, iterations: 1, easing: 'ease-out'}); } catch { /* Text is the motion-free fallback. */ }
+    }
+  }, 30);
+  return handle;
+}
+export function showSnapshotUpdateResult(result, {document = globalThis.document, reload = () => globalThis.location.reload(),
+  origin = document?.activeElement, signal, isCurrent = () => true} = {}) {
+  if (signal?.aborted || result?.status === 'cancelled' || !isCurrent() || !origin?.isConnected) return noop;
+  if (result?.status !== 'newer') return showInlineResult(result || {}, {document, origin, signal, isCurrent});
+  feedback.get(origin)?.dispose();
   installReplayModalKeyboardGuard({document});
-  if (activeDialog?.isConnected) { activeDialog.querySelector('button')?.focus(); return; }
-  const prior = document.activeElement, dialog = document.createElement('dialog'); activeDialog = dialog;
+  const active = activeDialogs.get(document);
+  if (active?.node.isConnected) return active.handle;
+  const prior = origin, dialog = document.createElement('dialog');
   dialog.className = 'sq-snapshot-update-dialog';
   dialog.setAttribute('aria-labelledby', 'sq-snapshot-update-title');
   dialog.setAttribute('aria-describedby', 'sq-snapshot-update-description');
   const heading = document.createElement('h2'); heading.id = 'sq-snapshot-update-title';
-  heading.textContent = result.status === 'newer' ? `Snapshot ${result.generation} available` : result.status === 'current' ? 'No newer snapshot reported' : 'Update check unavailable';
+  heading.textContent = `Snapshot ${result.generation} available`;
   const text = document.createElement('p'); text.id = 'sq-snapshot-update-description';
-  text.textContent = result.status === 'newer' ? 'A static release file reports a newer snapshot. You can try reloading this page. Pinned links and embedded games may reopen the same build; reopen the game from its launcher to check for an updated version. Reloading does not delete your saved runs.' : result.status === 'current' ? 'The reachable release files report no newer snapshot. CDN updates may take time to appear.' : 'Keeping your current snapshot. Try again later.';
+  text.textContent = 'A static release file reports a newer snapshot. You can try reloading this page. Pinned links and embedded games may reopen the same build; reopen the game from its launcher to check for an updated version. Reloading does not delete your saved runs.';
   const actions = document.createElement('div');
   const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close';
   close.onclick = () => dialog.close(); actions.append(close);
-  if (result.status === 'newer') {
-    const update = document.createElement('button'); update.type = 'button'; update.textContent = 'Reload this page';
-    update.onclick = () => { dialog.close(); reload(); }; actions.append(update);
-  }
+  const update = document.createElement('button'); update.type = 'button'; update.textContent = 'Reload this page';
+  update.onclick = () => { if (signal?.aborted || !isCurrent() || !prior.isConnected) { dispose(); return; } dialog.close(); reload(); }; actions.append(update);
   dialog.addEventListener('keydown', event => { event.stopPropagation(); });
-  dialog.addEventListener('close', () => { dialog.remove(); if (activeDialog === dialog) activeDialog = null; if (prior?.isConnected) prior.focus(); }, {once: true});
-  dialog.append(heading, text, actions); document.body.append(dialog); dialog.showModal(); close.focus();
+  let disposed = false;
+  const cleanup = (restore = false) => {
+    if (disposed) return; disposed = true;
+    dialog.remove();
+    if (activeDialogs.get(document)?.node === dialog) activeDialogs.delete(document);
+    signal?.removeEventListener('abort', dispose); document.defaultView?.removeEventListener('pagehide', dispose);
+    if (restore && prior?.isConnected && isCurrent()) prior.focus();
+  };
+  const dispose = () => cleanup();
+  const handle = Object.freeze({dispose}); activeDialogs.set(document, {node: dialog, handle});
+  dialog.addEventListener('close', () => cleanup(true), {once: true});
+  signal?.addEventListener('abort', dispose, {once: true}); document.defaultView?.addEventListener('pagehide', dispose, {once: true});
+  dialog.append(heading, text, actions); document.body.append(dialog);
+  try { dialog.showModal(); close.focus(); } catch { cleanup(); return showInlineResult({status: 'unavailable'}, {document, origin, signal, isCurrent}); }
+  return handle;
 }

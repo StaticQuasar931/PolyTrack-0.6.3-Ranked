@@ -4,6 +4,7 @@ import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
 import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confirmation-time.mjs';
 import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
+const SNAPSHOT_CHUNK_TIMEOUT_MS=15000;
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,beforeGenerationChange,onGenerationChange,prepareRecording,onPlaybackFailure}){
   const pending=new Map(),saved=new Map(),retryAt=new Map();
@@ -195,7 +196,8 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     let response=null,fromDisk=false;
     const disk=await compressedCache();
     if(disk&&cache!=='reload')try{response=await disk.match(diskKey);fromDisk=Boolean(response);}catch{byteCacheDisabled=true;}
-    if(!response)response=await fetchSnapshot(url,{credentials:'omit',cache,signal:AbortSignal.timeout(5000)});
+    // Cold WebGL startup can delay a larger immutable body; keep short index/pointer limits.
+    if(!response)response=await fetchSnapshot(url,{credentials:'omit',cache,signal:AbortSignal.timeout(SNAPSHOT_CHUNK_TIMEOUT_MS)});
     if(!response.ok){const error=Error('Snapshot unavailable');error.status=response.status;error.base=pack.base.href;throw error;}
     const bytes=new Uint8Array(await responseBody(response,'arrayBuffer'));if(bytes.length>2*1024*1024)throw integrityError('Snapshot payload too large');
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
