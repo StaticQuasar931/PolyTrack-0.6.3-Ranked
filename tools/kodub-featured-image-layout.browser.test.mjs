@@ -124,6 +124,12 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    assert.equal(after.others.at(-1).fit,'cover');
    assert.ok(after.others.slice(0,-1).every(image=>image.fit==='contain'),label+': map previews and timer icons are never cropped');
    assert.ok(after.overflow.scroll<=after.overflow.client+1,label+': no horizontal page overflow');
+   const fullWidth=await page.locator('.sq-featured-events').evaluate(grid=>{
+    const row=grid.getBoundingClientRect(),parent=grid.parentElement.getBoundingClientRect();
+    return {left:row.left-parent.left,right:parent.right-row.right,width:row.width,parentWidth:parent.width};
+   });
+   assert.ok(Math.abs(fullWidth.left-16)<=1&&Math.abs(fullWidth.right-16)<=1,
+    label+': events span the available width with only 16px edge gutters: '+JSON.stringify(fullWidth));
    const text=await page.locator('.track-of-the-week-info').evaluate(node=>({scroll:node.scrollWidth,client:node.clientWidth,height:node.scrollHeight,box:node.clientHeight}));
    assert.ok(text.scroll<=text.client+1&&text.height<=text.box+1,label+': details not clipped');
    const decoration=await page.locator('.sq-kodub-weekly>.button').evaluate(e=>({border:getComputedStyle(e).borderTopWidth,shadow:getComputedStyle(e).boxShadow}));

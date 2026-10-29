@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 230,
+  "number": 231,
   "version": "0.6.3",
-  "revision": 199,
+  "revision": 200,
   "notes": [
-    "Restored Kodub's original PB time, placement typography, sizing and position.",
-    "Event finish placements use native formatting while retaining event status and accessibility labels.",
-    "Finish display tests now compare against the untouched native renderer."
+    "Events now span the available screen width instead of being capped in the center.",
+    "Consistent edge spacing retains four cards across on laptops and desktops."
   ],
-  "preparedAt": "2026-10-28T21:52:41.611Z"
+  "preparedAt": "2026-10-29T00:27:40.405Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
