@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 232,
+  "number": 233,
   "version": "0.6.3",
-  "revision": 201,
+  "revision": 202,
   "notes": [
-    "Slimmer full-width event cards use compact previews and tighter spacing.",
-    "Artwork sits above details on narrower cards and beside them when there is room."
+    "Restored the established event layout with a wider image-led Kodub card and centered map cards.",
+    "Kept full-width spacing and corrected enlarged-text clipping without reverting gameplay fixes."
   ],
-  "preparedAt": "2026-10-29T00:37:52.805Z"
+  "preparedAt": "2026-10-29T00:48:16.346Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
