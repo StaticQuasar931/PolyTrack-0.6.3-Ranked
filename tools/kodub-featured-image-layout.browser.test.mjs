@@ -104,7 +104,10 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    }
    const visibleFraction=Math.min((r.width/r.height)/(after.natural.width/after.natural.height),(after.natural.width/after.natural.height)/(r.width/r.height));
    assert.ok(visibleFraction>0,label+': artwork remains visible at enlarged text sizes');
-   if(width>=1700&&textScale===1)assert.ok(visibleFraction>=.75,label+': wide-screen cover keeps at least three quarters of artwork');
+   if(textScale===1)assert.ok(visibleFraction>=.3,label+': compact cover retains recognizable artwork');
+   if(textScale===1&&width>=900)assert.ok(after.card.height<340,label+': normal-size event row stays compact');
+   if(width>=1800)assert.ok(after.info.x>r.x,label+': wide cards put artwork beside details');
+   if(width>=600&&width<1800)assert.ok(after.info.y>=r.bottom-1,label+': narrow cards put artwork above details');
    assert.equal(after.image.fit,'cover',label+': never distort artwork');
    assert.equal(after.image.position,'0% 100%',label+': bottom-left anchor');
    assert.ok(r.width>0&&r.height>0,label+': visible artwork');

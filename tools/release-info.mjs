@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 231,
+  "number": 232,
   "version": "0.6.3",
-  "revision": 200,
+  "revision": 201,
   "notes": [
-    "Events now span the available screen width instead of being capped in the center.",
-    "Consistent edge spacing retains four cards across on laptops and desktops."
+    "Slimmer full-width event cards use compact previews and tighter spacing.",
+    "Artwork sits above details on narrower cards and beside them when there is room."
   ],
-  "preparedAt": "2026-10-29T00:27:40.405Z"
+  "preparedAt": "2026-10-29T00:37:52.805Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
