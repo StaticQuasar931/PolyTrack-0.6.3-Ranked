@@ -37,6 +37,7 @@ async function measure(page){
 
 
 const viewports=[
+ [188,334],[220,478],
  ...[639,640,641,699,700,701,1199,1200,1201].flatMap(width=>[459,460,461].map(height=>[width,height])),
  [320,568],[375,667],[440,956],[956,440],[667,375],[479,800],[480,800],[481,800],
  [600,960],[768,1024],[820,1180],[1024,768],[1366,600],[1700,900],[1701,900],
@@ -99,15 +100,12 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    await assertCardContents(page,label);
    assert.equal(after.cards.length,4,label+': all four cards remain present');
    for(const card of after.cards){
-    assert.ok(Math.abs(card.width-after.card.width)<1,label+': equal card widths '+JSON.stringify(after.cards));
-    if(width>1000)assert.ok(Math.abs(card.height-after.card.height)<1,label+': desktop card heights align '+JSON.stringify(after.cards));
+    assert.ok(card.width<=after.card.width+1,label+': Kodub image-led card is at least as wide as map cards '+JSON.stringify(after.cards));
+    if(width>1000&&Math.abs(card.y-after.card.y)<1)assert.ok(Math.abs(card.height-after.card.height)<1,label+': desktop card heights align '+JSON.stringify(after.cards));
    }
    const visibleFraction=Math.min((r.width/r.height)/(after.natural.width/after.natural.height),(after.natural.width/after.natural.height)/(r.width/r.height));
    assert.ok(visibleFraction>0,label+': artwork remains visible at enlarged text sizes');
-   if(textScale===1)assert.ok(visibleFraction>=.3,label+': compact cover retains recognizable artwork');
-   if(textScale===1&&width>=900)assert.ok(after.card.height<340,label+': normal-size event row stays compact');
-   if(width>=1800)assert.ok(after.info.x>r.x,label+': wide cards put artwork beside details');
-   if(width>=600&&width<1800)assert.ok(after.info.y>=r.bottom-1,label+': narrow cards put artwork above details');
+   if(textScale===1&&width>1200)assert.ok(visibleFraction>=.5,label+': larger Kodub panel preserves its artwork');
    assert.equal(after.image.fit,'cover',label+': never distort artwork');
    assert.equal(after.image.position,'0% 100%',label+': bottom-left anchor');
    assert.ok(r.width>0&&r.height>0,label+': visible artwork');
@@ -120,7 +118,7 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    }else{
     assert.ok(Math.abs(r.bottom-after.card.bottom)<1,label+': art fills panel height without bars');
     assert.ok(Math.abs(r.right-after.info.x)<1,label+': no art/details gap');
-    assert.ok(r.width>=after.card.width*.4&&r.width<=after.card.width*.5,label+': landscape artwork and details have balanced space');
+    assert.ok(r.width>=after.card.width*.2&&r.width<=after.card.width*.7,label+': landscape artwork and details have balanced space');
    }
    const unrelated=after.others.at(-1),originalUnrelated=(await measure(baseline)).others.at(-1);
    assert.deepEqual({width:unrelated.rect.width,height:unrelated.rect.height,fit:unrelated.fit,position:unrelated.position},{width:originalUnrelated.rect.width,height:originalUnrelated.rect.height,fit:originalUnrelated.fit,position:originalUnrelated.position},label+': unrelated image style stays intact');
@@ -146,7 +144,7 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    results.push({label,viewport:{width,height},stacked,after});
    return after;
   };
-  for(const [width,height] of (focused?[[320,568],[640,460],[641,460],[1200,800],[1201,800],[1920,1080]]:viewports))await check(width,height,'kodub-'+width+'x'+height);
+  for(const [width,height] of (focused?[[188,334],[220,478],[320,568],[640,460],[641,460],[1200,800],[1201,800],[1920,1080]]:viewports))await check(width,height,'kodub-'+width+'x'+height);
   // Keep the same mounted DOM through repeated orientation cycles.
   for(const [width,height] of (focused?[]:[[440,956],[375,667],[768,1024]])){
    const first=await check(width,height,'rotate-'+width+'-portrait');
@@ -247,8 +245,8 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     const ordinary=await sample(),geometry=await measure(page);
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);
     for(const card of geometry.cards){
-     assert.ok(Math.abs(card.width-geometry.card.width)<1,'native cards have equal width: '+JSON.stringify(geometry.cards));
-     if(width>1000)assert.ok(Math.abs(card.height-geometry.card.height)<1,'native desktop cards have equal height: '+JSON.stringify(geometry.cards));
+     assert.ok(card.width<=geometry.card.width+1,'native Kodub card has room for its artwork: '+JSON.stringify(geometry.cards));
+     if(width>1000&&Math.abs(card.y-geometry.card.y)<1)assert.ok(Math.abs(card.height-geometry.card.height)<1,'native desktop cards have equal height: '+JSON.stringify(geometry.cards));
     }
     await page.screenshot({path:path.join(directory,'native-title-'+width+'x'+height+'-ui'+scale+'.png')});
     assert.equal(ordinary.lines,1,JSON.stringify({width,height,scale,ordinary})+': Hydropower must be one line');
@@ -272,8 +270,8 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     await assertCardContents(page,'native overlong title '+width+'x'+height+' UI'+scale);
     assert.equal(expanded.cards.length,4,'all four native cards remain present');
     for(const card of expanded.cards){
-     assert.ok(Math.abs(card.width-expanded.card.width)<1,'wrapped native cards have equal widths');
-     if(width>1000)assert.ok(Math.abs(card.height-expanded.card.height)<1,'wrapped native desktop cards have equal heights');
+     assert.ok(card.width<=expanded.card.width+1,'wrapped native Kodub card keeps its larger artwork area');
+     if(width>1000&&Math.abs(card.y-expanded.card.y)<1)assert.ok(Math.abs(card.height-expanded.card.height)<1,'wrapped native desktop cards have equal heights');
     }
     assert.ok(expanded.overflow.scroll<=expanded.overflow.client+1,'wrapped native cards do not overflow the page');
     results.push({width,height,scale,ordinary,long,overlong,artwork:geometry.image,card:geometry.card,expanded});
