@@ -75,12 +75,13 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     fs.readFile(new URL('../help-controls.css',import.meta.url),'utf8'),
     fs.readFile(new URL('../forced_square.woff2',import.meta.url))
   ]);
+  const proposal=process.env.HELP_CSS_PROPOSAL?await fs.readFile(process.env.HELP_CSS_PROPOSAL,'utf8'):'';
   const output=process.env.HELP_RELEASE_EVIDENCE;
   if(output)await fs.mkdir(output,{recursive:true});
   for(const [width,height] of [[1366,900],[844,390],[390,844],[320,568]]){
     await page.setViewportSize({width,height});
     await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#09142c}main{max-width:1040px;margin:auto}</style><p style="margin:0;padding:8px;color:white;font:12px sans-serif;text-align:center">Offline fixture: sample preparation time and notes, not a published release.</p><main></main>');
-    await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css});
+    await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css+proposal});
     await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+source.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
     await page.evaluate(release=>{
       const root=document.querySelector('main');
@@ -89,12 +90,20 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     },RELEASE_FIXTURE);
     await page.evaluate(()=>document.fonts.ready);
     await page.locator('.hc-header').evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished)));
+    const metrics=await page.evaluate(()=>{
+      const root=document.querySelector('[data-help-controls]'),first=root.querySelector('.hc-row'),label=first.querySelector('dt');
+      const description=root.querySelector('.hc-row dt small'),keys=first.querySelector('kbd');
+      return {viewport:innerWidth,firstControlTop:Math.round(first.getBoundingClientRect().top),labelFont:getComputedStyle(label).fontSize,descriptionFont:getComputedStyle(description).fontSize,keyFont:getComputedStyle(keys).fontSize,drivingHeight:Math.round(root.querySelector('[data-hc-group="driving"]').getBoundingClientRect().height)};
+    });
+    t.diagnostic(JSON.stringify({helpOpening:metrics,cssProposal:Boolean(proposal)}));
     if(output)await page.screenshot({path:join(output,`help-opening-${width}.png`)});
     assert.equal(await page.locator('.hc-track-quick').count(),0);
     await page.keyboard.down('i');
     assert.ok(await page.locator('[data-hc-key="I"].is-pressed').count()>0,'keys react immediately without a focus click');
     await page.keyboard.up('i');
     assert.ok(await page.locator('[data-hc-row="VehicleAccelerate"]').textContent().then(text=>text.includes('Custom')));
+    await page.keyboard.press('Control+f');
+    assert.equal(await page.locator('[data-hc-search]').evaluate(node=>node===document.activeElement),true);
     await page.locator('[data-hc-topic-select]').selectOption('tracks');
     await page.locator('[data-hc-search]').fill('shift custom');
     assert.equal(await page.locator('[data-hc-row]:visible').count(),1);
@@ -103,6 +112,19 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.keyboard.down('Shift');await page.keyboard.down('1');
     assert.equal(await page.locator('[data-hc-row="track-tab-direct"] [data-hc-key="1"].is-pressed').count(),1);
     await page.keyboard.up('1');await page.keyboard.up('Shift');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    const motion=await page.locator('.hc-header').evaluate(node=>getComputedStyle(node).animationName);
+    assert.equal(motion,'none');
+    await page.keyboard.down('Shift');
+    assert.ok(await page.locator('[data-hc-key="Shift"].is-pressed:visible').count()>0,'key feedback survives reduced motion');
+    await page.keyboard.up('Shift');
+    await page.locator('[data-hc-search]').focus();
+    const focus=await page.locator('[data-hc-search]').evaluate(node=>({width:parseFloat(getComputedStyle(node).outlineWidth),style:getComputedStyle(node).outlineStyle}));
+    assert.ok(focus.width>=2&&focus.style!=='none','keyboard search focus remains visible');
+    await page.evaluate(()=>{for(const node of document.querySelectorAll('[data-hc-group]')){node.hidden=false;node.open=true;for(const row of node.querySelectorAll('[data-hc-row]'))row.hidden=false;}});
+    const controlsOverflow=await page.evaluate(()=>[...document.querySelectorAll('.hc-row,.hc-keycaps,.hc-group')].filter(node=>node.scrollWidth>node.clientWidth+1).map(node=>node.className));
+    assert.deepEqual(controlsOverflow,[],`all control rows fit at ${width}x${height}`);
+    await page.locator('[data-hc-topic-select]').selectOption('tracks');
     await page.evaluate(()=>scrollTo(0,0));
     if(output)await page.screenshot({path:join(output,`help-controls-${width}.png`),fullPage:true});
     await page.locator('[data-hc-view="release"]').tap();
@@ -117,6 +139,7 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.evaluate(()=>scrollTo(0,0));
     if(output)await page.screenshot({path:join(output,`help-release-${width}.png`),fullPage:true});
     await page.evaluate(()=>window.cleanup());
+    await page.emulateMedia({reducedMotion:'no-preference'});
   }
   assert.deepEqual(requests,[],'no external or local network requests, including Firebase');
 });

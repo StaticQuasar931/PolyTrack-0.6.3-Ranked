@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=205';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=205';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=206';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=206';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,7 +7,7 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=205';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=206';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -1259,6 +1259,15 @@ export function installEvents(bridge){
     const board=nativeView.board,rows=[...board.querySelectorAll(':scope > .container > button.main')];
     if(eventDigitBoard!==board){eventDigitBoard=board;eventDigitsHeld.clear();eventDigitsConsumed.clear();eventTopPrefixUntil=0;eventTopHeld=false;}
     const pages=[...board.querySelectorAll(':scope > .pages > button.page')];
+    const currentPage=pages.findIndex(button=>button.classList.contains('selected'))+1;
+    const navigation=bridge.pageNavigation?.(event,board,currentPage||1,Math.max(1,pages.length));
+    if(navigation){
+      ++topSelectionToken;
+      const page=navigation.page?pages[navigation.page-1]:null;
+      event.preventDefault();event.stopImmediatePropagation();
+      if(page&&!page.disabled)page.click();
+      return;
+    }
     const code=String(event.code||'').match(/^(?:Digit|Numpad)([0-9])$/);
     const digit=code?Number(code[1])||10:/^[0-9]$/.test(event.key)?Number(event.key)||10:null;
     let action=null;

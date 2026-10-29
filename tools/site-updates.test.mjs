@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { installSiteUpdates, UPDATED_GAME_URL, CANONICAL_SITE_VERSION_URL } from './site-updates.mjs';
+import { installSiteUpdates, installInstalledRevisionNotice, UPDATED_GAME_URL, CANONICAL_SITE_VERSION_URL, CANONICAL_RELEASE_POINTER_URL } from './site-updates.mjs';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -130,7 +130,7 @@ test('explicit relative and absolute same-origin manifests retain local support'
       const expected = new URL(endpoint, 'https://game.example/path/');
       const actual = new URL(url);
       assert.equal(actual.origin + actual.pathname, expected.origin + expected.pathname);
-      assert.equal(options.credentials, 'same-origin');
+      assert.equal(options.credentials, 'omit');
       assert.equal(options.mode, 'same-origin');
       assert.equal(options.redirect, 'error');
       return {ok: true, json: async () => ({revision: 44})};
@@ -165,7 +165,7 @@ test('cross-origin allowlist excludes every other host, path, scheme, port, quer
   }
 });
 
-test('canonical CORS errors and redirects fail open without fallback to a fork manifest', async () => {
+test('canonical errors try only the fixed CDN pointer, then fail open without a fork manifest', async () => {
   for (const failure of ['cors', 'redirect']) {
     let fail = false;
     const requested = [];
@@ -179,10 +179,93 @@ test('canonical CORS errors and redirects fail open without fallback to a fork m
     fail = true; h.setTime(1000 + 30 * 60 * 1000); await h.handle.check();
     assert.equal(h.handle.getCompatibility().onlineAllowed, true);
     assert.equal(h.document.dialog, undefined);
-    assert.equal(requested.length, 2);
-    assert.ok(requested.every(url => url.startsWith(`${CANONICAL_SITE_VERSION_URL}?_updateCheck=`)));
+    assert.equal(requested.length, 3);
+    assert.ok(requested.slice(0,2).every(url => url.startsWith(`${CANONICAL_SITE_VERSION_URL}?_updateCheck=`)));
+    assert.equal(requested[2], CANONICAL_RELEASE_POINTER_URL);
     h.handle.dispose();
   }
+});
+
+const cdnPointer = {schemaVersion: 1, repository: 'StaticQuasar931/PolyTrack-0.6.3-Ranked',
+  commit: 'a'.repeat(40), indexSha256: 'b'.repeat(64), snapshotDirectory: 'public-snapshots69', publishedAt: '2026-10-28T00:00:00.000Z'};
+const cdnVersionUrl = `https://cdn.jsdelivr.net/gh/${cdnPointer.repository}@${cdnPointer.commit}/site-version.json`;
+const jsonResponse = data => new Response(JSON.stringify(data));
+
+test('school embeds blocked from Pages detect client updates through the existing immutable CDN release', async () => {
+  const requested = [];
+  const h = harness({revision: 205, endpoint: CANONICAL_SITE_VERSION_URL, fetch: async (url, options) => {
+    requested.push(url);
+    assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
+    assert.equal(options.referrerPolicy, 'no-referrer'); assert.equal(options.cache, 'no-store');
+    if (url.startsWith(CANONICAL_SITE_VERSION_URL)) throw TypeError('Blocked by school');
+    if (url === CANONICAL_RELEASE_POINTER_URL) return jsonResponse({...cdnPointer, revision: 9999,
+      minimumSupportedRevision: 9999, url: 'https://untrusted.invalid/site-version.json'});
+    assert.equal(url, cdnVersionUrl); return jsonResponse({revision: 206});
+  }});
+  await h.handle.check();
+  assert.deepEqual(requested, [`${CANONICAL_SITE_VERSION_URL}?_updateCheck=1000`, CANONICAL_RELEASE_POINTER_URL, cdnVersionUrl]);
+  assert.equal(h.document.button.textContent, 'Update available');
+  assert.equal(h.handle.getCompatibility().latestRevision, 206, 'pointer fields are not version policy');
+  assert.equal(h.handle.getCompatibility().onlineAllowed, true);
+  await h.handle.check(); assert.equal(requested.length, 3, 'fallback uses the same network cooldown');
+  h.handle.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test('invalid CDN identity or commit cannot expand the allowlist', async () => {
+  for (const replacement of [null, {...cdnPointer, repository: 'other/repo'}, {...cdnPointer, schemaVersion: 2},
+    ...['main','a'.repeat(39),'a'.repeat(40)+'/../other','https://evil.test','a'.repeat(40)+'?x=1'].map(commit => ({...cdnPointer, commit})),
+    {...cdnPointer, snapshotDirectory: '../public-snapshots69'}, {...cdnPointer, indexSha256: 'bad'}, {...cdnPointer, publishedAt: 'bad'}]) {
+    const requested = [];
+    const h = harness({endpoint: CANONICAL_SITE_VERSION_URL, fetch: async url => {
+      requested.push(url); if (url.startsWith(CANONICAL_SITE_VERSION_URL)) throw Error('blocked');
+      assert.equal(url, CANONICAL_RELEASE_POINTER_URL); return jsonResponse(replacement);
+    }});
+    await h.handle.check(); assert.equal(requested.length, 2); assert.equal(h.document.button, undefined);
+    assert.equal(h.handle.getCompatibility().onlineAllowed, true); h.handle.dispose();
+  }
+});
+
+test('fallback does not run for local endpoints or a successful canonical manifest', async () => {
+  for (const endpoint of ['site-version.json', CANONICAL_SITE_VERSION_URL]) {
+    let calls = 0;
+    const h = harness({endpoint, fetch: async () => { calls++; if (endpoint === 'site-version.json') throw Error('local failed'); return jsonResponse({revision: 43}); }});
+    await h.handle.check(); assert.equal(calls, 1); h.handle.dispose();
+  }
+});
+
+test('CDN pointer redirects, HTTP errors, malformed and oversized JSON stay fail-open and bounded', async () => {
+  for (const makeResponse of [() => ({ok: true, redirected: true}), () => ({ok: false}),
+    () => new Response('{'), () => jsonResponse({...cdnPointer, padding: 'x'.repeat(17000)}),
+    () => new Response('{}', {headers: {'content-length': '17000'}})]) {
+    let calls = 0;
+    const h = harness({endpoint: CANONICAL_SITE_VERSION_URL, fetch: async url => {
+      calls++; if (url.startsWith(CANONICAL_SITE_VERSION_URL)) throw Error('blocked'); return makeResponse();
+    }});
+    await h.handle.check(); assert.equal(calls, 2); assert.equal(h.document.button, undefined);
+    assert.equal(h.handle.getCompatibility().onlineAllowed, true); h.handle.dispose();
+  }
+});
+
+test('canonical timeout can reach CDN, and disposal during fallback prevents the commit request', async () => {
+  let calls = 0;
+  const h = harness({endpoint: CANONICAL_SITE_VERSION_URL, fetch: async url => {
+    calls++;
+    if (url.startsWith(CANONICAL_SITE_VERSION_URL)) return new Promise(() => {});
+    return jsonResponse(url === CANONICAL_RELEASE_POINTER_URL ? cdnPointer : {revision: 44});
+  }});
+  const pending = h.handle.check(); await Promise.resolve();
+  [...h.timers.values()].find(timer => timer.delay === 8000).fn(); await pending;
+  assert.equal(calls, 3); assert.ok(h.document.button); h.handle.dispose(); assert.equal(h.timers.size, 0);
+  let pointerRequested = false, finishPointer;
+  const stopped = harness({endpoint: CANONICAL_SITE_VERSION_URL, fetch: async url => {
+    if (url.startsWith(CANONICAL_SITE_VERSION_URL)) throw Error('blocked');
+    assert.equal(url, CANONICAL_RELEASE_POINTER_URL); pointerRequested = true;
+    return new Promise(done => { finishPointer = done; });
+  }});
+  const request = stopped.handle.check();
+  for (let tick = 0; tick < 30 && !pointerRequested; tick++) await Promise.resolve();
+  assert.equal(pointerRequested, true); stopped.handle.dispose(); finishPointer(jsonResponse(cdnPointer)); await request;
+  assert.equal(stopped.document.button, undefined); assert.equal(stopped.timers.size, 0);
 });
 
 test('contains fetch failures and removes the notification on disposal', async () => {
@@ -205,6 +288,90 @@ test('checked-in updater, client loader and published revision agree', () => {
 const INTERVAL = 30 * 60 * 1000;
 const unsupported = { revision: 160, minimumSupportedRevision: 159 };
 function choices(document) { return document.dialog.children[2].children; }
+
+const memoryStorage = () => {
+  const values = new Map();
+  return {getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value)};
+};
+function noticeHarness(options = {}) {
+  const document = options.document || new FakeDocument();
+  document.defaultView ||= new EventTarget();
+  const handle = installInstalledRevisionNotice({revision: 205, document, isReady: () => true,
+    storage: null, sessionStorage: null, ...options});
+  return {document, handle};
+}
+test('installed notice waits for UI, blocked menu and race, then acknowledges only explicit OK', () => {
+  let ready = false, idle = false;
+  const storage = memoryStorage();
+  const h = noticeHarness({storage, isReady: () => ready, isIdle: () => idle});
+  assert.equal(h.document.dialog, undefined);
+  ready = true; h.handle.resume(); assert.equal(h.document.dialog, undefined);
+  idle = true; h.handle.resume();
+  const first = h.document.dialog; assert.ok(first?.open);
+  assert.equal(storage.getItem('polytrack-site-update-ack-v1:205'), null);
+  for (let i = 0; i < 20; i++) h.handle.resume();
+  assert.equal(h.document.dialog, first, 'UI reconciliation does not duplicate the notice');
+  idle = false; h.handle.resume(); assert.equal(h.document.dialog, undefined);
+  idle = true; h.handle.resume(); assert.notEqual(h.document.dialog, first);
+  h.document.dialog.children[3].listeners.click();
+  assert.equal(storage.getItem('polytrack-site-update-ack-v1:205'), 'acknowledged');
+  h.handle.resume(); assert.equal(h.document.dialog, undefined); h.handle.dispose();
+  const refresh = noticeHarness({storage}); assert.equal(refresh.document.dialog, undefined); refresh.handle.dispose();
+  const next = noticeHarness({storage, revision: 206}); assert.ok(next.document.dialog); next.handle.dispose();
+});
+
+test('Escape acknowledges, but hidden, failed, removed and disposed notices remain pending', () => {
+  const storage = memoryStorage(), document = new FakeDocument();
+  document.visibilityState = 'hidden';
+  const h = noticeHarness({document, storage}); assert.equal(document.dialog, undefined);
+  document.visibilityState = 'visible'; document.dialogFailure = true;
+  document.dispatchEvent(new Event('visibilitychange')); assert.equal(document.dialog, undefined);
+  document.dialogFailure = false; h.handle.resume(); document.dialog.remove();
+  h.handle.resume(); assert.ok(document.dialog?.open);
+  h.handle.dispose(); assert.equal(storage.getItem('polytrack-site-update-ack-v1:205'), null);
+  const retry = noticeHarness({document, storage}); assert.ok(document.dialog);
+  let prevented = false;
+  document.dialog.listeners.cancel({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true); retry.handle.dispose();
+  const refreshed = noticeHarness({storage}); assert.equal(refreshed.document.dialog, undefined); refreshed.handle.dispose();
+});
+
+test('storage unavailable falls back to session, then memory without repeated in-page notices', () => {
+  const broken = {getItem() { throw Error('denied'); }, setItem() { throw Error('quota'); }};
+  const sessionStorage = memoryStorage();
+  const h = noticeHarness({storage: broken, sessionStorage}); h.document.dialog.children[3].listeners.click(); h.handle.dispose();
+  const refresh = noticeHarness({storage: broken, sessionStorage}); assert.equal(refresh.document.dialog, undefined); refresh.handle.dispose();
+  const memory = noticeHarness({storage: broken, sessionStorage: broken});
+  memory.document.dialog.children[3].listeners.click(); memory.handle.dispose();
+  const again = noticeHarness({document: memory.document, storage: broken, sessionStorage: broken});
+  assert.equal(again.document.dialog, undefined); again.handle.dispose();
+  const document = new FakeDocument(); document.defaultView = new EventTarget();
+  for (const key of ['localStorage', 'sessionStorage']) Object.defineProperty(document.defaultView, key, {get() { throw Error('denied'); }});
+  const denied = noticeHarness({document, storage: undefined, sessionStorage: undefined});
+  assert.ok(document.dialog); document.dialog.children[3].listeners.click(); denied.handle.resume();
+  assert.equal(document.dialog, undefined); denied.handle.dispose();
+});
+
+test('cross-tab acknowledgement and disposal release notice listeners without polling', () => {
+  const storage = memoryStorage(), h = noticeHarness({storage});
+  assert.equal(installInstalledRevisionNotice({revision: 205, document: h.document}), h.handle);
+  storage.setItem('polytrack-site-update-ack-v1:205', 'acknowledged');
+  const event = new Event('storage'); event.key = 'polytrack-site-update-ack-v1:205';
+  h.document.defaultView.dispatchEvent(event); assert.equal(h.document.dialog, undefined);
+  h.handle.dispose(); h.handle.dispose(); h.document.defaultView.dispatchEvent(new Event('pageshow'));
+  assert.equal(h.document.dialog, undefined);
+});
+
+test('manifest received during a race resumes immediately without another network check', async () => {
+  let idle = true, resolve;
+  const h = harness({revision: 158, isIdle: () => idle, fetch: () => new Promise(done => { resolve = done; })});
+  const pending = h.handle.check(); await Promise.resolve(); idle = false;
+  resolve({ok: true, json: async () => unsupported}); await pending;
+  assert.equal(h.document.dialog, undefined); assert.equal(h.document.button, undefined);
+  idle = true; h.handle.resume(); assert.ok(h.document.dialog?.open); assert.ok(h.document.button);
+  const dialog = h.document.dialog; await h.handle.check(); assert.equal(h.document.dialog, dialog);
+  h.handle.dispose(); assert.equal(h.timers.size, 0);
+});
 
 test('minimum policy is dormant when absent and boundary revisions remain supported', async () => {
   for (const response of [{ revision: 160 }, { revision: 160, minimumSupportedRevision: 0 },
@@ -454,6 +621,63 @@ test('unsafe callback hooks and timer failures cannot leave compatibility blocke
 let chromium;
 try { ({chromium} = createRequire(new URL('./verifier/package.json', import.meta.url))(
   process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch { /* Unit tests remain dependency-free. */ }
+test('installed revision notice uses native keyboard focus, waits for safe menus and persists explicit acknowledgement',
+  {skip: !chromium}, async () => {
+    const browser = await chromium.launch({headless: true});
+    try {
+      const page = await browser.newPage();
+      const source = readFileSync(new URL('./site-updates.mjs', import.meta.url), 'utf8');
+      let external = 0;
+      await page.route('**/*', route => {
+        const url = new URL(route.request().url());
+        if (url.hostname !== 'notice.test') { external++; return route.abort(); }
+        return route.fulfill({contentType: url.pathname.endsWith('.mjs') ? 'text/javascript' : 'text/html',
+          body: url.pathname.endsWith('.mjs') ? source : '<button id="play">Play</button><div id="menu" hidden>Settings</div>'});
+      });
+      const install = async () => page.evaluate(async () => {
+        window.module = await import('/site-updates.mjs'); window.ready = false; window.racing = false;
+        window.nativeKeys = [];
+        document.addEventListener('keydown', event => nativeKeys.push(event.key), true);
+        document.addEventListener('keyup', event => nativeKeys.push(event.key), true);
+        document.getElementById('play').focus();
+        window.notice = module.installInstalledRevisionNotice({revision: 205,
+          release: {number: 236, notes: ['Fixture update note.']},
+          isReady: () => ready, isIdle: () => !racing && document.getElementById('menu').hidden});
+      });
+      await page.goto('https://notice.test/'); await install();
+      assert.equal(await page.locator('dialog').count(), 0);
+      await page.evaluate(() => { ready = true; document.getElementById('menu').hidden = false; notice.resume(); });
+      assert.equal(await page.locator('dialog').count(), 0);
+      await page.evaluate(() => { document.getElementById('menu').hidden = true; racing = true; notice.resume(); });
+      assert.equal(await page.locator('dialog').count(), 0);
+      await page.evaluate(() => { racing = false; notice.resume(); });
+      assert.equal(await page.getByRole('dialog', {name: 'PolyTrack update 236'}).count(), 1);
+      for (const [width,height] of [[320,568],[844,320],[1366,768]]) {
+        await page.setViewportSize({width,height});
+        assert.equal(await page.locator('dialog').evaluate(node => {
+          const rect = node.getBoundingClientRect();
+          return rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && node.scrollWidth <= node.clientWidth;
+        }), true);
+      }
+      for (const key of ['Tab','Shift+Tab','=','y']) await page.keyboard.press(key);
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), 'OK');
+      assert.deepEqual(await page.evaluate(() => nativeKeys), []);
+      assert.equal(await page.evaluate(() => localStorage.getItem('polytrack-site-update-ack-v1:205')), null);
+      await page.reload(); await install(); await page.evaluate(() => { ready = true; notice.resume(); });
+      assert.equal(await page.locator('dialog').count(), 1, 'merely showing the notice does not consume it');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('dialog').count(), 0);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'play');
+      assert.deepEqual(await page.evaluate(() => nativeKeys), []);
+      await page.reload(); await install(); await page.evaluate(() => { ready = true; notice.resume(); });
+      assert.equal(await page.locator('dialog').count(), 0, 'acknowledgement survives a real refresh');
+      await page.evaluate(() => { notice.dispose(); window.notice = module.installInstalledRevisionNotice({revision: 206, isReady: () => true, isIdle: () => true}); });
+      assert.equal(await page.locator('dialog').count(), 1, 'a different installed revision gets one notice');
+      await page.keyboard.press('Enter'); assert.equal(await page.locator('dialog').count(), 0);
+      await page.keyboard.press('='); assert.ok((await page.evaluate(() => nativeKeys)).includes('='));
+      await page.evaluate(() => notice.dispose()); assert.equal(external, 0);
+    } finally { await browser.close(); }
+  });
 test('native dialog keyboard focus, mobile fit and new-tab navigation preserve the current page',
   {skip: !chromium}, async () => {
     const browser = await chromium.launch({headless: true});

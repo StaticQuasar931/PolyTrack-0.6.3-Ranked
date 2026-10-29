@@ -32,6 +32,7 @@ function fixture() {
   const pageJumps = [];
   const context = vm.createContext({
     document,
+    invalidateNativePartialReplay:()=>{},
     isElementVisible: value => Boolean(value),
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     requestAnimationFrame: callback => callback(),

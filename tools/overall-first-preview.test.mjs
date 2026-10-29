@@ -27,7 +27,7 @@ function harness({saved=null,previewValue=preview(),full=deferred(),history=defe
   const list={children:[],innerHTML:''};
   const context=vm.createContext({console,Date,Number,String,Array,Object,Map,Set,Promise,Error,Math,
     RANK_MODEL:'test',TRACK_CACHE_SCHEMA:6,AVERAGE_FINISH_VERSION:2,AVERAGE_PLACEMENT_VERSION:2,
-    overallCategory:'overall',overallLoadGeneration:0,overallCloudRetryAt:0,overallLoadState:{},overallEntriesCache:[],overallPage:0,
+    overallRacerQuery:'',overallCategory:'overall',overallLoadGeneration:0,overallCloudRetryAt:0,overallLoadState:{},overallEntriesCache:[],overallPage:0,
     rankedFreshnessTimer:0,OVERALL_PB_DIRTY_KEY:'dirty',OVERALL_REFRESH_CHECK_MS:60000,OVERALL_PAGE_SIZE:15,rankedFilterResult:null,
     document:{getElementById:id=>id==='overallLeaderboardPanel'?panel:id==='overallLeaderboardList'?list:id==='overallFindMeBtn'?button:null,
       querySelector:()=>null,documentElement:{classList:{contains:()=>true}}},CSS:{escape:String},
@@ -125,7 +125,7 @@ test('partial observations never persist inferred category movements',()=>{
 });
 test('partial notice is visible and populated; published-score projection fence is explicit',()=>{
   const notice={hidden:true},summary={textContent:'',setAttribute(){}};
-  const c=vm.createContext({Math,Number,String,overallCategory:'overall',overallPage:0,OVERALL_PAGE_SIZE:15,
+  const c=vm.createContext({Math,Number,String,overallCategory:'overall',overallRacerQuery:'',overallPage:0,OVERALL_PAGE_SIZE:15,
     currentLeaderboardCount:()=>15,LEADERBOARD_LABELS:{overall:'Overall RP'},rankedFilterResult:null,
     overallFirstPreview:{},overallEntriesCache:entries.slice(0,15),rankedFilterSnapshotMeta:{complete:false,totalEntries:200,totalEntriesExact:true},
     FILTERABLE_RANKED_CATEGORIES:new Set(['overall']),syncCategorySelect:()=>{},

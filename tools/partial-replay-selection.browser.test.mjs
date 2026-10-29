@@ -342,7 +342,7 @@ test('actual patch/native listeners registered BEFORE window guard cannot act th
     const module = await import('/tools/partial-replay-selection.mjs');
     window[Symbol.for('polytrack.replay-modal-keyboard.v1')].dispose();
     const counts = window.keyboardCounts = {patch: 0, native: 0, earlyDocument: 0};
-    const names = ['handleModeratorSequence', 'closeOverallPanel', 'handleArchivePageShortcut', 'handleOverallLeaderboardShortcut',
+    const names = ['handleModeratorSequence', 'handleRankedSearchShortcut', 'closeOverallPanel', 'handleArchivePageShortcut', 'handleOverallLeaderboardShortcut',
       'handleOpponentPresetShortcut', 'handleTrackLeaderboardShortcut', 'handleOfficialTrackShortcut', 'handleTrackMenuShortcut',
       'handleLobbyShortcut', 'handleTrackLeaderboardDigitRelease', 'handleOverallLeaderboardModifierRelease'];
     new Function('isElementVisible', 'closeRankedDialog', ...names, patchKeyboard)(
@@ -357,7 +357,7 @@ test('actual patch/native listeners registered BEFORE window guard cannot act th
     module.installReplayModalKeyboardGuard({document});
     window.openReplay = () => { window.modalResult = module.confirmPartialReplaySelection({document, ready: [{row: {nickname: 'Working'}}], failed: [{row: {nickname: 'Unavailable'}}], isCurrent: () => true}); };
     const snapshot = await import('/tools/snapshot-update-check.mjs');
-    window.openSnapshot = () => snapshot.showSnapshotUpdateResult({status: 'current'}, {document});
+    window.openSnapshot = () => snapshot.showSnapshotUpdateResult({status: 'newer', generation:70}, {document,origin:document.querySelector('.watch')});
     openReplay();
   }, {patchKeyboard, patchCancel, nativeKeyboard});
   await proceed(page).waitFor();

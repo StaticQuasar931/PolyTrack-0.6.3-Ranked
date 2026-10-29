@@ -30,7 +30,7 @@ test('all established help topics are present with unique action IDs',()=>{
   assert.deepEqual(groups.map(group=>group.id),['driving','menus','rankings','tracks','ghosts','events','replay','editor','access']);
   assert.equal(new Set(ids).size,ids.length);
   for(const group of groups)assert.ok(group.rows.length&&group.note);
-  assert.match(find(groups,'page-offset').description,/Ranked only/);
+  assert.doesNotMatch(find(groups,'page-offset').description,/Ranked only/);
   assert.match(find(groups,'extra-rate').description,/review menu/);
   assert.match(groups.find(group=>group.id==='ghosts').note,/not an Event board/);
 });
@@ -40,15 +40,36 @@ test('Event ghost rows describe the actual Event handler and do not invent a sav
   const start=source.indexOf("  document.addEventListener('keydown',event=>{",source.indexOf('  function selectEventYouGroup()'));
   const handler=source.slice(start,source.indexOf("  window.addEventListener('blur'",start));
   const group=createHelpControlGroups().find(group=>group.id==='events');
-  assert.equal(group.rows.length,10);
+  assert.equal(group.rows.length,7);
   assert.deepEqual(find([group],'event-ghost-clear').keys,[['C']]);
   assert.deepEqual(find([group],'event-ghost-you').keys,[['='],['Backspace']]);
   assert.deepEqual(find([group],'event-ghost-ahead').keys,[['-']]);
-  for(const action of ['selectEventYouGroup()','clearEventGhostSelection(','selectEventRange(','selectTopEventRows(digit)','pages[digit-1]'])assert.ok(handler.includes(action),action);
+  for(const action of ['selectEventYouGroup()','clearEventGhostSelection(','selectEventRange(','selectTopEventRows(digit)'])assert.ok(handler.includes(action),action);
   assert.ok(handler.includes('eventTopPrefixUntil=Date.now()+2500'));
   assert.ok(source.includes('const chosen=rows.slice(0,9),mine=rows.find'));
   assert.ok(!group.rows.some(row=>row.id==='ghost-group'));
   assert.equal(searchHelpControls(createHelpControlGroups(),'event ghost','events')[0].rows.some(row=>row.id==='event-ghost-top'),true);
+});
+
+test('shared navigation documents page chords without replacing plain-digit ghost selection',()=>{
+  const groups=createHelpControlGroups(),rankings=groups.find(group=>group.id==='rankings');
+  assert.match(rankings.note,/All ranked boards and archives/);
+  assert.deepEqual(find(groups,'page-jump').keys,[['Shift','1-9, 0']]);
+  assert.match(find(groups,'page-jump').description,/0 = page 10/);
+  const offset=find(groups,'page-offset');
+  assert.deepEqual(offset.keys,[['Shift','+ / -'],['1-9, 0']]);assert.equal(offset.sequence,true);
+  assert.match(offset.description,/Hold Shift/);assert.match(offset.description,/0 = 10/);
+  assert.deepEqual(find(groups,'page-previous').keys,[['Left'],['A']]);
+  assert.deepEqual(find(groups,'page-next').keys,[['Right'],['D']]);
+  const search=find(groups,'overall-search');
+  assert.deepEqual(search.keys,[['Ctrl','F']]);assert.match(search.description,/across all loaded pages in Overall/);
+  for(const id of ['ghost-row','event-ghost-row']){
+    assert.deepEqual(find(groups,id).keys,[['1-9'],['0']]);assert.match(find(groups,id).description,/Without Shift/);
+  }
+  for(const term of ['overall shift page','normal track shift page','event shift page','ctrl racer']){
+    assert.ok(searchHelpControls(groups,term).some(group=>group.id==='rankings'),term);
+  }
+  assert.match(groups.find(group=>group.id==='events').note,/Rankings & pages/);
 });
 
 test('current native bindings override defaults by name, numeric ID, Map or callback',()=>{
@@ -246,13 +267,17 @@ test('Help actual patch modal boundary blocks native keys and preserves keyboard
   const focusEnd=patch.indexOf('  /* Keep the select',focusStart);
   const keyStart=patch.indexOf("    panel.addEventListener('keydown', (event)=>{");
   const keyEnd=patch.indexOf('\n    });',keyStart)+'\n    });'.length;
+  const searchStart=patch.indexOf('  function handleRankedSearchShortcut(event){');
+  const searchEnd=patch.indexOf('\n  function showRankingSearchEmpty',searchStart);
   assert.ok(focusStart>=0&&focusEnd>focusStart&&keyStart>=0&&keyEnd>keyStart);
+  assert.ok(searchStart>=0&&searchEnd>searchStart,'include the real panel search guard');
   const fps='window.addEventListener("keyup",(e=>{r.checkKeyBinding(e,ge.A.ToggleFpsCounter)&&M.toggle()}))';
   assert.ok(main.includes(fps),'exercise the exact shipped unconditional FPS keyup listener');
   const browser=await chromium.launch({headless:true});t.after(()=>browser.close());
   const page=await browser.newPage({viewport:{width:1000,height:800}});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const requests=[];await page.route('**/*',route=>{requests.push(route.request().url());return route.abort();});
-  await page.setContent('<button id="opener">Open Help</button><main id="overallLeaderboardPanel"><div id="overallProfilePopup" style="display:none"></div><div id="overallHelpPopup" style="display:none"><section role="dialog" aria-modal="true" aria-label="Help"><button id="overallHelpClose">Close</button><div id="help-content"></div></section></div></main>');
+  await page.setContent('<button id="opener">Open Help</button><main id="overallLeaderboardPanel"><input id="overallRacerSearch" aria-label="Find a racer"><div id="overallProfilePopup" style="display:none"></div><div id="overallHelpPopup" style="display:none"><section role="dialog" aria-modal="true" aria-label="Help"><button id="overallHelpClose">Close</button><div id="help-content"></div></section></div></main>');
   await page.addScriptTag({content:(release+help.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+`
     window.nativeKeys=[];window.fpsToggles=0;
     for(const type of ['keydown','keyup'])window.addEventListener(type,event=>nativeKeys.push(type+':'+event.key));
@@ -260,6 +285,7 @@ test('Help actual patch modal boundary blocks native keys and preserves keyboard
     ${fps};
     function isElementVisible(node){return Boolean(node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');}
     function closeOverallPanel(){throw Error('Help must not close the underlying panel');}
+    ${patch.slice(searchStart,searchEnd)}
     ${patch.slice(focusStart,focusEnd)}
     const panel=document.querySelector('#overallLeaderboardPanel'),popup=document.querySelector('#overallHelpPopup'),content=document.querySelector('#help-content'),close=document.querySelector('#overallHelpClose');
     content.innerHTML=renderHelpControls({idPrefix:'actual-boundary',release:{number:225,revision:194}});
@@ -292,6 +318,7 @@ test('Help actual patch modal boundary blocks native keys and preserves keyboard
   assert.equal(await page.evaluate(()=>fpsToggles),0);
   await page.keyboard.press('=');assert.equal(await page.evaluate(()=>fpsToggles),1,'native handler resumes after closure');
   assert.deepEqual(requests,[]);
+  assert.deepEqual(errors,[],'modal integration must not hide missing host dependencies');
 });
 
 test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and responsive layout',{skip:!chromium||process.env.HELP_UNIT_ONLY==='1'},async t=>{
@@ -316,6 +343,7 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   });
   const input=page.locator('[data-hc-search]'),group=page.locator('[data-hc-group="driving"]');
   assert.equal(await group.getAttribute('open'),'');
+  assert.equal(await page.locator('.hc-results-head.hc-sr-only').count(),1,'avoid a duplicate All controls heading before searching');
   await page.evaluate(()=>{
     const fixture=document.querySelector('#fixture');fixture.setAttribute('role','dialog');
     const close=document.createElement('button');close.id='fixture-close';close.textContent='Close';fixture.prepend(close);close.focus();
@@ -328,6 +356,7 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   await input.fill('checkpoint');
   assert.equal(await page.locator('[data-hc-row]:visible').count(),1);
   assert.equal(await page.locator('[data-hc-status]').textContent(),'1 control found');
+  assert.equal(await page.locator('.hc-results-head.hc-sr-only').count(),0,'search results keep a visible count and live announcement');
   assert.equal(await page.locator('[data-hc-group]:visible').count(),1);
   await input.press('Escape');assert.equal(await input.inputValue(),'');
   assert.equal(await group.getAttribute('open'),'');
@@ -349,7 +378,12 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   assert.equal(await page.locator('[data-hc-panel="release"]').isVisible(),true);
   assert.equal(await page.locator('[data-hc-panel="controls"]').isVisible(),false);
   assert.equal(await page.locator('.hc-release').textContent().then(text=>text.includes('217')),false);
-  await page.locator('[data-hc-view="controls"]').click();
+  await page.keyboard.press('Control+f');
+  assert.equal(await page.locator('[data-hc-panel="controls"]').isVisible(),true,'Help find opens Controls from Current Release');
+  assert.equal(await input.evaluate(node=>node===document.activeElement),true,'Ctrl+F focuses Help search, not the underlying ranking');
+  await input.fill('checkpoint');await page.keyboard.press('Control+f');
+  assert.equal(await input.evaluate(node=>node.selectionEnd-node.selectionStart),10,'find selects the existing query');
+  await input.fill('');
   await page.locator('[data-hc-topic-select]').selectOption('all');
   // Fully expanded rows exercise wrapping, not only collapsed headings.
   await page.evaluate(()=>{for(const node of document.querySelectorAll('details'))node.open=true;});
@@ -374,6 +408,13 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   assert.ok(await page.locator('[data-hc-key="D"].is-pressed:visible').count()>0);
   if(process.env.HELP_REVIEW_SCREENSHOT)await page.screenshot({path:process.env.HELP_REVIEW_SCREENSHOT,fullPage:true});
   await page.keyboard.up('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);
+  await page.keyboard.down('ShiftLeft');await page.keyboard.down('ShiftRight');
+  assert.ok(await page.locator('[data-hc-row="page-offset"] [data-hc-key="Shift"].is-pressed').count()>0);
+  await page.keyboard.up('ShiftLeft');
+  assert.ok(await page.locator('[data-hc-row="page-offset"] [data-hc-key="Shift"].is-pressed').count()>0,'other Shift remains held');
+  await page.keyboard.down('-');
+  assert.equal(await page.locator('[data-hc-row="page-offset"] [data-hc-key="+ / -"].is-pressed').count(),1);
+  await page.keyboard.up('-');await page.keyboard.up('ShiftRight');assert.equal(await page.locator('kbd.is-pressed').count(),0);
   await input.focus();await page.keyboard.down('d');assert.equal(await page.locator('kbd.is-pressed').count(),0);await page.keyboard.up('d');
   await input.fill('');await page.locator('[data-hc-topic-select]').selectOption('ghosts');await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
   await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
@@ -396,6 +437,8 @@ test('highlight matching respects remaps, ranges, punctuation and modifier label
  assert.equal(match('1-4','Digit4','4'),true);assert.equal(match('1-4','Digit5','5'),false);
  assert.equal(match('1-9, 0','Digit0','0'),true);assert.equal(match('1-9','Digit0','0'),false);
  assert.equal(match('+','Equal','+'),true);assert.equal(match('Esc','Escape','Escape'),true);
+ for(const [code,key] of [['Equal','+'],['Minus','_'],['NumpadAdd','+'],['NumpadSubtract','-']])assert.equal(match('+ / -',code,key),true);
+ assert.equal(match('+ / -','KeyA','a'),false);
 });
 
 test('track tabs are explicit searchable chords matching the shipped track menu handler',async()=>{
@@ -413,4 +456,11 @@ test('track tabs are explicit searchable chords matching the shipped track menu 
   assert.ok(handler.includes('if(event.shiftKey&&digit)index=Number(digit[1])-1'));
   assert.ok(handler.includes('tabs[index].click()'));
   assert.ok(handler.includes('target?.isContentEditable'));
+});
+
+test('context-first Help opens the relevant group without losing native controls',()=>{
+  const normal=createHelpControlGroups(),ranked=createHelpControlGroups({initialGroup:'rankings'});
+  assert.equal(ranked[0].id,'rankings');assert.deepEqual(ranked.filter(group=>group.open).map(group=>group.id),['rankings']);
+  assert.equal(flat(ranked).length,flat(normal).length);assert.equal(normal[0].id,'driving');
+  const unknown=createHelpControlGroups({initialGroup:'unknown'});assert.equal(unknown[0].id,'driving');
 });

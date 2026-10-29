@@ -23,6 +23,17 @@ async function packedFixture(value,logical='overall.json',change=()=>{}){
   return {read,calls:()=>calls,urls};
 }
 
+test('immutable chunk reads tolerate cold-device startup without adding requests or extending index checks',async()=>{
+  const original=AbortSignal.timeout,budgets=[];
+  AbortSignal.timeout=ms=>{budgets.push(ms);return original(ms);};
+  try{
+    const id='a'.repeat(64),fixture=await packedFixture({updatedAt:10,entries:{[id]:{updatedAt:10,name:'Racer'}}},'racer-directory.json');
+    assert.equal((await fixture.read('racer-directory')).entries[id].name,'Racer');
+    assert.deepEqual(budgets,[5000,15000]);assert.equal(fixture.calls(),2);
+    await fixture.read('racer-directory');assert.equal(fixture.calls(),2);
+  }finally{AbortSignal.timeout=original;}
+});
+
 async function packedEntry(value){
   const bytes=await encodeSnapshot(value),hash=createHash('sha256').update(bytes).digest('hex');
   return {bytes,record:{path:hash+'.bin',sha256:hash,decodedBytes:Buffer.byteLength(JSON.stringify(value))}};

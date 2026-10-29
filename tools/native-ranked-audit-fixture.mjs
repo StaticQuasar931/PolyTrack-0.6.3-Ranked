@@ -1,3 +1,5 @@
+import {readFile} from 'node:fs/promises';
+const {revision}=JSON.parse(await readFile(new URL('../site-version.json',import.meta.url),'utf8'));
 const FIREBASE_COMPAT_SDK = /^https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.2\/firebase-(?:app|auth|firestore)-compat\.js$/;
 
 const FIREBASE_AUDIT_BOOTSTRAP = `(() => {
@@ -52,7 +54,7 @@ const FIREBASE_AUDIT_BOOTSTRAP = `(() => {
   window.firebase = firebase;
 })();`;
 
-export async function installNativeRankedAuditFixture(page, {rejectWrites = false} = {}) {
+export async function installNativeRankedAuditFixture(page, {rejectWrites = false, acknowledgeInstalledRevision = true} = {}) {
   if (!page || typeof page.route !== 'function' || typeof page.addInitScript !== 'function') {
     throw new TypeError('A Playwright page is required.');
   }
@@ -62,6 +64,10 @@ export async function installNativeRankedAuditFixture(page, {rejectWrites = fals
     body: '/* Firebase compat is supplied by native-ranked-audit-fixture.mjs. */'
   }));
   await page.addInitScript({ content: `window.__ptNativeRankedAuditRejectWrites = ${Boolean(rejectWrites)};\n` + FIREBASE_AUDIT_BOOTSTRAP });
+  // Unrelated UI audits start after acknowledgement; notice tests explicitly opt out.
+  if(acknowledgeInstalledRevision)await page.addInitScript(value=>{
+    localStorage.setItem(`polytrack-site-update-ack-v1:${value}`,'acknowledged');
+  },revision);
 }
 
 async function clickNativeMenuButton(page, label, timeout) {

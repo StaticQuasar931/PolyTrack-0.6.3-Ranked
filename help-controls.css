@@ -185,3 +185,131 @@
   .pt-help-controls .hc-release-meta > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--hc-line); background: transparent; }
   .pt-help-controls .hc-release-meta dd { margin-top: 0; }
 }
+
+/* Compact native Help presentation and responsive control rows. */
+html body #overallHelpPopup .overall-help-card { width: min(1120px,calc(var(--sq-available-width,100vw) - 24px)) !important; }
+html body #overallHelpPopup .overall-help-head { padding: 10px 16px !important; border-bottom-width: 1px; }
+html body #overallHelpPopup .overall-help-head h3 { font-size: 28px !important; }
+#overallHelpPopup .overall-help-content:has(> .pt-help-controls) { padding: 0 !important; }
+.overall-help-content > .pt-help-controls { padding: 0; margin: 0; box-sizing: border-box; }
+.overall-help-content .pt-help-controls p { margin-bottom: 0; font-size: inherit; line-height: 1.3 !important; }
+.overall-help-content .pt-help-controls :is(.hc-release,.hc-release-age,.hc-briefing section) { margin-bottom: 0; }
+.pt-help-controls * { font-style: normal; line-height: inherit; }
+#overallHelpPopup .pt-help-controls .hc-age-value { font-size: 28px !important; }
+.pt-help-controls {
+  --hc-deep: #1d2c5c;
+  --hc-muted: #c0d2ee;
+  --hc-line: #4b6396;
+  font: 20px/1.3 ForcedSquare, "Trebuchet MS", sans-serif;
+}
+.pt-help-controls :is(button,input,select), .pt-help-controls .hc-group, .pt-help-controls .hc-view-switch { border-radius: 0; }
+.pt-help-controls .hc-header { padding: 12px 16px; gap: 10px; align-items: center; border-bottom-width: 1px; background: #253b75; }
+.pt-help-controls .hc-header::after { display: none; }
+.pt-help-controls .hc-header h2 { margin: 0; font-size: 30px; }
+.pt-help-controls .hc-view-switch { gap: 2px; padding: 2px; }
+.pt-help-controls .hc-view-switch button { font-size: 20px; font-weight: normal; padding: 6px 12px; }
+.pt-help-controls .hc-view-switch button[aria-pressed="true"] { font-weight: normal; }
+.pt-help-controls .hc-search { padding: 12px 16px 8px; }
+.pt-help-controls .hc-search label { margin-bottom: 5px; font-size: 22px; font-weight: normal; }
+.pt-help-controls .hc-search-field { padding: 0 4px 0 12px; }
+.pt-help-controls .hc-search input { font-size: 20px; }
+.pt-help-controls .hc-search button { font-size: 18px; }
+.pt-help-controls .hc-search > p { margin-top: 6px; font-size: 17px; line-height: 1.3; }
+.pt-help-controls .hc-topic-picker { padding: 0 16px 10px; gap: 10px; flex-wrap: nowrap; }
+.pt-help-controls .hc-topic-picker label { font-size: 18px; }
+.pt-help-controls .hc-topic-picker select { padding: 6px 10px; font-size: 20px; flex-basis: auto; }
+.pt-help-controls .hc-layout { padding: 0 16px 14px; gap: 12px; }
+.pt-help-controls .hc-results-head { padding-bottom: 7px; }
+.pt-help-controls .hc-results-head h3 { font-size: 22px; font-weight: normal; }
+.pt-help-controls .hc-results-head p, .pt-help-controls .hc-count { font: 17px/1.3 ForcedSquare, sans-serif; }
+.pt-help-controls .hc-group { margin-bottom: 6px; background: #17264f; }
+.pt-help-controls .hc-group summary { min-height: 54px; padding: 8px 12px; gap: 10px; background: #263d74; }
+.pt-help-controls .hc-summary-copy strong { font-size: 22px; font-weight: normal; }
+.pt-help-controls .hc-summary-copy small { font-size: 17px; line-height: 1.25; margin-top: 2px; }
+.pt-help-controls .hc-group dl { padding: 0 12px; }
+.pt-help-controls .hc-row { grid-template-columns: minmax(0,1fr) minmax(90px,40%); gap: 10px; min-height: 44px; padding: 8px 0; }
+.pt-help-controls .hc-row dt { font-size: 20px; font-weight: normal; }
+.pt-help-controls .hc-row dt small { margin-top: 3px; font-size: 17px; line-height: 1.25; }
+.pt-help-controls .hc-custom { font-size: 15px; margin-left: 5px; }
+.pt-help-controls .hc-keycaps { justify-content: flex-end; gap: 4px; }
+.pt-help-controls .hc-keycaps kbd { padding: 2px 6px; border-radius: 2px; font: 18px/1.3 ForcedSquare, sans-serif; }
+.pt-help-controls .hc-key-separator, .pt-help-controls .hc-plus, .pt-help-controls .hc-unbound { font-size: 17px; }
+.pt-help-controls .hc-group-footer { padding: 0 12px 6px; }
+.pt-help-controls .hc-briefing button, .pt-help-controls .hc-group-footer button { margin-top: 4px; font-size: 20px; font-weight: normal; }
+.pt-help-controls .hc-default-note { font-size: 17px; margin-top: 10px; }
+.pt-help-controls .hc-essentials { margin: 0 16px 14px; border-radius: 0; }
+.pt-help-controls .hc-essentials > summary { min-height: 48px; padding: 8px 12px; }
+.pt-help-controls .hc-essentials > summary strong { font-weight: normal; }
+.pt-help-controls .hc-essentials > summary > span:not(.hc-chevron) { font-size: 17px; }
+.pt-help-controls .hc-briefing { padding: 12px; gap: 12px; }
+.pt-help-controls .hc-briefing section { padding: 0 12px; }
+.pt-help-controls .hc-briefing h3 { font-size: 22px; font-weight: normal; }
+.pt-help-controls .hc-briefing p { font-size: 18px; line-height: 1.3; }
+.pt-help-controls .hc-empty { padding: 18px 12px; }
+.pt-help-controls .hc-empty h3 { font-size: 24px; font-weight: normal; }
+.pt-help-controls .hc-empty p { font-size: 18px; }
+.pt-help-controls .hc-release { min-height: 0; padding: 16px; background: transparent; }
+.pt-help-controls .hc-release h3 { font-size: 26px; margin-bottom: 12px; }
+.pt-help-controls .hc-release-age { margin-bottom: 12px; padding: 8px 12px; }
+.pt-help-controls .hc-eyebrow { font-size: 17px; font-weight: normal; letter-spacing: .03em; }
+.pt-help-controls .hc-age-value { font-size: 28px; margin: 4px 0; }
+.pt-help-controls .hc-prepared-date { font-size: 18px; }
+.pt-help-controls .hc-release-meta { grid-template-columns: 1fr; gap: 0; border-top: 1px solid var(--hc-line); }
+.pt-help-controls .hc-release-meta > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--hc-line); background: transparent; }
+.pt-help-controls .hc-release-meta dt { font-size: 18px; }
+.pt-help-controls .hc-release-meta dd { font-size: 22px; margin-top: 0; text-align: right; }
+.pt-help-controls .hc-release h4 { font-size: 22px; font-weight: normal; margin: 16px 0 6px; }
+.pt-help-controls .hc-release ul { font-size: 20px; margin-top: 6px; margin-bottom: 12px; }
+.pt-help-controls .hc-release-note { font-size: 17px; margin-top: 12px; }
+.pt-help-controls .hc-credits { padding: 10px 16px; }
+.pt-help-controls .hc-credits p { font-size: 17px; }
+@container (min-width: 780px) {
+  .pt-help-controls .hc-toolbar { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr); }
+  .pt-help-controls .hc-topic-picker { display: block; padding: 12px 16px 8px 0; }
+  .pt-help-controls .hc-topic-picker label { display: block; margin-bottom: 5px; font-size: 22px; }
+  .pt-help-controls .hc-topic-picker select { width: 100%; }
+  .pt-help-controls .hc-group dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 24px; }
+}
+@container (max-width: 700px) {
+  .pt-help-controls .hc-briefing section { padding: 0 0 0 10px; }
+  .pt-help-controls .hc-row:is([data-hc-row="page-offset"],[data-hc-row="track-tab-direct"]) { grid-template-columns: 1fr; gap: 6px; }
+  .pt-help-controls .hc-row:is([data-hc-row="page-offset"],[data-hc-row="track-tab-direct"]) .hc-keycaps { justify-content: flex-start; }
+}
+@container (max-width: 400px) {
+  .pt-help-controls .hc-header { gap: 8px; padding: 10px 12px; }
+  .pt-help-controls .hc-header h2 { font-size: 28px; }
+  .pt-help-controls .hc-search { padding: 10px 12px 8px; }
+  .pt-help-controls .hc-search-field { gap: 6px; }
+  .pt-help-controls .hc-search input { font-size: 18px; }
+  .pt-help-controls .hc-topic-picker { padding: 0 12px 8px; }
+  .pt-help-controls .hc-layout { padding: 0 12px 12px; }
+  .pt-help-controls .hc-group summary { padding: 8px 10px; }
+  .pt-help-controls .hc-group dl { padding: 0 10px; }
+  .pt-help-controls .hc-row { grid-template-columns: minmax(0,1fr) minmax(80px,40%); gap: 6px; }
+  .pt-help-controls .hc-row:is([data-hc-row="page-offset"],[data-hc-row="track-tab-direct"]) { grid-template-columns: 1fr; }
+  .pt-help-controls .hc-essentials { margin-left: 12px; margin-right: 12px; }
+  .pt-help-controls .hc-release, .pt-help-controls .hc-credits { padding: 12px; }
+}
+
+/* The native dialog owns one toolbar; controls remain bound when moved into it. */
+html body #overallHelpPopup .overall-help-head{min-height:56px;padding:8px 12px!important;box-sizing:border-box;gap:8px}
+html body #overallHelpPopup .hc-header{display:none}
+html body #overallHelpPopup .overall-help-head h3{flex:0 0 auto}
+html body #overallHelpPopup .overall-help-head>.hc-view-switch{display:flex;flex:0 0 auto;align-items:center;position:static;transform:none;margin-inline:auto;padding:2px;gap:2px;border:1px solid #799bc8;background:#14234b;min-width:0}
+html body #overallHelpPopup .overall-help-head>.hc-view-switch button{border:0;border-radius:0;background:transparent;color:#e8f4ff;font:18px/1.2 ForcedSquare,sans-serif;padding:6px 10px;min-height:36px;cursor:pointer}
+html body #overallHelpPopup .overall-help-head>.hc-view-switch button[aria-pressed=true]{background:#8eeaff;color:#102440}
+html body #overallHelpPopup .overall-help-head>.hc-view-switch button:focus-visible{outline:2px solid #ffdf85;outline-offset:2px}
+html body #overallHelpPopup .hc-search>label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+html body #overallHelpPopup .hc-search>p{font-size:15px;line-height:1.25!important;margin-top:4px}
+@media(max-width:600px){
+ html body #overallHelpPopup .overall-help-head h3{font-size:24px!important}
+ html body #overallHelpPopup #overallHelpClose{font-size:16px;min-height:36px;padding:4px 8px}
+ html body #overallHelpPopup .overall-help-head>.hc-view-switch{padding:1px;gap:1px}
+ html body #overallHelpPopup .overall-help-head>.hc-view-switch button{font-size:16px;padding:4px 6px}
+}
+@media(max-width:340px){
+ html body #overallHelpPopup .overall-help-head{padding:8px 6px!important;gap:4px}
+ html body #overallHelpPopup .overall-help-head h3{font-size:22px!important}
+ html body #overallHelpPopup .overall-help-head>.hc-view-switch button{font-size:14px;padding:4px}
+ html body #overallHelpPopup #overallHelpClose{font-size:14px;padding:4px;min-width:44px}
+}

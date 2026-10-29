@@ -42,10 +42,59 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
   assert.equal(await page.evaluate(()=>document.activeElement.id),'status');
   assert.deepEqual(await page.evaluate(()=>window.nativeKeys),[],'native keys and Escape release do not escape the modal');
  }
- await page.evaluate(()=>check.showSnapshotUpdateResult({status:'current'}));
- assert.equal(await page.getByRole('button',{name:'Reload this page'}).count(),0);
- await page.getByRole('button',{name:'Close',exact:true}).focus();await page.keyboard.press('Enter');await page.locator('dialog').waitFor({state:'detached'});
+ await page.evaluate(()=>{
+  window.shakes=[];const origin=document.getElementById('status'),animate=origin.animate.bind(origin);
+  origin.animate=(frames,options)=>{shakes.push({frames,options});return animate(frames,options);};
+  origin.setAttribute('aria-describedby','existing-description');
+ });
+ for(const reducedMotion of ['no-preference','reduce']){
+  await page.emulateMedia({reducedMotion});
+  const before=await page.evaluate(()=>shakes.length);
+  for(let click=0;click<2;click++){
+   await page.evaluate(()=>{window.feedback=check.showSnapshotUpdateResult({status:'current'},{origin:document.getElementById('status')});});
+   await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent==='No newer snapshot reported.');
+   assert.equal(await page.locator('dialog').count(),0,'no-update must never open a modal');
+   assert.equal(await page.getByRole('status').count(),1,'repeat feedback replaces, not stacks');
+   assert.equal(await page.getByRole('status').textContent(),'No newer snapshot reported.');
+   assert.equal(await page.getByRole('status').getAttribute('aria-live'),'polite');
+   assert.equal(await page.evaluate(()=>document.activeElement.id),'status');
+   assert.match(await page.locator('#status').getAttribute('aria-describedby'),/^existing-description sq-snapshot-check-status-/);
+  }
+  assert.equal(await page.evaluate(()=>shakes.length),before+(reducedMotion==='reduce'?0:2));
+  await page.evaluate(()=>feedback.dispose());
+  assert.equal(await page.getByRole('status').count(),0);
+  assert.equal(await page.locator('#status').getAttribute('aria-describedby'),'existing-description');
+ }
+ assert.deepEqual(await page.evaluate(()=>shakes[0].frames.map(frame=>frame.translate)),['0px','-3px','3px','-2px','2px','0px']);
+ for(const status of ['unavailable','stale']){
+  await page.evaluate(status=>{window.feedback=check.showSnapshotUpdateResult({status});},status);
+  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent);
+  assert.equal(await page.locator('dialog').count(),0);
+  assert.match(await page.getByRole('status').textContent(),status==='stale'?/older than/:/check failed/);
+  assert.doesNotMatch(await page.getByRole('status').textContent(),/No newer/);
+  await page.evaluate(()=>feedback.dispose());
+ }
+ await page.evaluate(()=>{
+  check.showSnapshotUpdateResult({status:'cancelled'});
+  check.showSnapshotUpdateResult({status:'current'},{isCurrent:()=>false});
+  const detached=document.createElement('button');check.showSnapshotUpdateResult({status:'current'},{origin:detached});
+ });
+ assert.equal(await page.getByRole('status').count(),0);
+ await page.evaluate(()=>{
+  const controller=new AbortController();
+  check.showSnapshotUpdateResult({status:'current'},{signal:controller.signal});controller.abort();
+ });
+ assert.equal(await page.getByRole('status').count(),0,'cancel cleans up before announcement');
+ await page.evaluate(()=>{
+  const controller=new AbortController();
+  check.showSnapshotUpdateResult({status:'newer',generation:69},{signal:controller.signal});controller.abort();
+ });
+ assert.equal(await page.locator('dialog').count(),0,'panel lifecycle removes late prompts');
+ await page.evaluate(()=>{window.feedback=check.showSnapshotUpdateResult({status:'current'},{origin:document.getElementById('status')});});
+ await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+ assert.equal(await page.getByRole('status').count(),0,'page lifecycle releases feedback');
  assert.equal(await page.evaluate(()=>reloads),0,'no automatic reload');
+ await page.locator('#status').focus();
  await page.evaluate(()=>check.showSnapshotUpdateResult({status:'newer',generation:69},{reload:()=>reloads++}));
  await page.getByRole('button',{name:'Reload this page'}).focus();await page.keyboard.press('Space');assert.equal(await page.evaluate(()=>reloads),1);
  assert.deepEqual(await page.evaluate(()=>window.nativeKeys),[]);

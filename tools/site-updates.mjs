@@ -1,8 +1,42 @@
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
+const noticeInstallations = new WeakMap();
+const acknowledgedRevisions = new WeakMap();
 export const UPDATED_GAME_URL = 'https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/';
 export const CANONICAL_SITE_VERSION_URL = `${UPDATED_GAME_URL}site-version.json`;
+const CDN_REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
+const CDN_BASE = `https://cdn.jsdelivr.net/gh/${CDN_REPOSITORY}@`;
+export const CANONICAL_RELEASE_POINTER_URL = `${CDN_BASE}cdn-release/release.json`;
+
+function releaseVersionUrl(pointer) {
+  if (pointer?.schemaVersion !== 1 || pointer.repository !== CDN_REPOSITORY ||
+      !/^[a-f0-9]{40}$/.test(pointer.commit || '') || !/^[a-f0-9]{64}$/.test(pointer.indexSha256 || '') ||
+      !/^public-snapshots[1-9][0-9]{0,8}$/.test(pointer.snapshotDirectory || '') ||
+      typeof pointer.publishedAt !== 'string' || !Number.isFinite(Date.parse(pointer.publishedAt))) {
+    throw new TypeError('Invalid CDN release pointer');
+  }
+  // Ignore all URLs in the pointer. Only the immutable commit controls this path.
+  return new URL(`${CDN_BASE}${pointer.commit}/site-version.json`);
+}
+
+async function readManifest(response) {
+  if (!response?.ok || response.redirected || Number(response.headers?.get('content-length')) > 16384) throw Error('Update request failed');
+  if (!response.body?.getReader) return response.json();
+  const reader = response.body.getReader(), chunks = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const {value, done} = await reader.read(); if (done) break;
+      length += value.byteLength;
+      if (length > 16384) throw Error('Update response too large');
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(length); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } finally { void reader.cancel().catch(() => {}); }
+}
 
 const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 function themeControl(element) {
@@ -14,6 +48,114 @@ function themeControl(element) {
 function isVisible(document) { return document.visibilityState !== 'hidden'; }
 function defaultIdle(document) { return isVisible(document) && (typeof document.hasFocus !== 'function' || document.hasFocus()); }
 
+/** Local installed-build notice, independent of the remote manifest/check interval.
+ * Parent must supply gameplay-aware readiness/safety predicates and call resume()
+ * after UI transitions. Mounting is NOT acknowledgement; only OK/Escape is.
+ * Local storage persists across refreshes, session storage is the fallback, and
+ * memory is the final fallback when both stores are denied (this page only).
+ */
+export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
+  isReady = () => false, isIdle = defaultIdle, storage, sessionStorage} = {}) {
+  if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
+  if (!document?.addEventListener) throw new TypeError('document is required');
+  const existing = noticeInstallations.get(document);
+  if (existing) return existing;
+  const view = document.defaultView;
+  const key = `polytrack-site-update-ack-v1:${revision}`;
+  let remembered = acknowledgedRevisions.get(document);
+  if (!remembered) acknowledgedRevisions.set(document, remembered = new Set());
+  const stores = () => {
+    const result = [];
+    for (const [provided, name] of [[storage, 'localStorage'], [sessionStorage, 'sessionStorage']]) {
+      try { const store = provided === undefined ? view?.[name] : provided; if (store) result.push(store); } catch { /* Sandboxed/blocked storage. */ }
+    }
+    return result;
+  };
+  const acknowledged = () => {
+    if (remembered.has(revision)) return true;
+    for (const store of stores()) {
+      try { if (store.getItem(key) === 'acknowledged') { remembered.add(revision); return true; } } catch { /* Try next store. */ }
+    }
+    return false;
+  };
+  let disposed = false, dialog = null, previousFocus = null;
+  const close = (restoreFocus = false) => {
+    const node = dialog; dialog = null;
+    if (!node) return;
+    try { node.close?.(); } catch { /* Removal is sufficient. */ }
+    node.remove();
+    if (restoreFocus && previousFocus?.isConnected) { try { previousFocus.focus(); } catch { /* Best effort. */ } }
+  };
+  const acknowledge = () => {
+    if (disposed || !dialog?.isConnected) return;
+    remembered.add(revision);
+    for (const store of stores()) { try { store.setItem(key, 'acknowledged'); } catch { /* Keep the in-page acknowledgement. */ } }
+    close(true);
+  };
+  const resume = () => {
+    if (disposed) return;
+    if (acknowledged()) { close(); return; }
+    let safe = false;
+    try { safe = !!document.body && isVisible(document) && isReady(document) && isIdle(document); } catch { /* Defer. */ }
+    if (!safe) { close(); return; }
+    if (dialog?.isConnected && dialog.open) return;
+    close();
+    const node = document.createElement('dialog');
+    dialog = node; previousFocus = document.activeElement;
+    node.dataset.siteInstalledRevision = String(revision);
+    node.setAttribute('aria-labelledby', 'pt-installed-update-title');
+    node.setAttribute('aria-describedby', 'pt-installed-update-description');
+    Object.assign(node.style, {width: 'min(480px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 32px)',
+      overflow: 'auto', boxSizing: 'border-box', padding: '24px', border: '2px solid #7e9bd1',
+      borderRadius: '0', background: '#17274d', color: '#f5f7ff', fontFamily: 'ForcedSquare, sans-serif',
+      fontSize: '18px', lineHeight: '1.5'});
+    const title = document.createElement('h2'); title.id = 'pt-installed-update-title';
+    title.textContent = validRevision(release.number) ? `PolyTrack update ${release.number}` : 'PolyTrack updated';
+    Object.assign(title.style, {margin: '0 0 12px', fontSize: '24px'});
+    const description = document.createElement('p'); description.id = 'pt-installed-update-description';
+    description.textContent = `You are running client revision ${revision}. Your saved runs are unchanged.`;
+    const notes = document.createElement('ul');
+    for (const text of (Array.isArray(release.notes) ? release.notes : []).filter(text => typeof text === 'string' && text.trim()).slice(0, 8)) {
+      const item = document.createElement('li'); item.textContent = text; notes.append(item);
+    }
+    const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
+    ok.addEventListener('click', acknowledge);
+    node.addEventListener('cancel', event => { event.preventDefault(); acknowledge(); });
+    node.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Tab') { event.preventDefault(); ok.focus(); }
+    });
+    node.append(title, description, notes, ok); document.body.append(node);
+    try { node.showModal(); ok.focus(); } catch { close(); }
+  };
+  // Stop game shortcuts, including the keyup following Escape/Enter dismissal.
+  const held = new Set();
+  const guard = event => {
+    const code = event.code || event.key;
+    if (dialog?.open || event.type === 'keyup' && held.has(code)) event.stopImmediatePropagation();
+    if (dialog?.open && event.type === 'keydown') {
+      held.add(code);
+      if (event.key === 'Tab') { event.preventDefault(); dialog.children[3].focus(); }
+    }
+    if (event.type === 'keyup') held.delete(code);
+  };
+  const storageChanged = event => { if (event.key === key || event.key === null) resume(); };
+  document.addEventListener('visibilitychange', resume);
+  for (const type of ['focus', 'pageshow']) view?.addEventListener(type, resume);
+  for (const type of ['keydown', 'keyup']) view?.addEventListener(type, guard, true);
+  view?.addEventListener('storage', storageChanged);
+  const handle = Object.freeze({resume, dispose() {
+    if (disposed) return;
+    disposed = true; close(); held.clear();
+    document.removeEventListener('visibilitychange', resume);
+    for (const type of ['focus', 'pageshow']) view?.removeEventListener(type, resume);
+    for (const type of ['keydown', 'keyup']) view?.removeEventListener(type, guard, true);
+    view?.removeEventListener('storage', storageChanged);
+    noticeInstallations.delete(document);
+  }});
+  noticeInstallations.set(document, handle); resume(); return handle;
+}
+
 /**
  * Manifest: {revision: N, minimumSupportedRevision?: M}, with 0 <= M <= N.
  * Omit the minimum to leave compatibility policy inactive. Errors fail open.
@@ -24,7 +166,10 @@ function defaultIdle(document) { return isVisible(document) && (typeof document.
  * This UI policy cannot affect older clients lacking this code and is not security.
  * Default endpoint is canonical, including on copied builds. Pass 'site-version.json'
  * explicitly for local testing. Only same-origin HTTP(S) or the exact canonical
- * manifest URL is accepted. Cross-origin requests omit credentials; redirects fail.
+ * manifest URL is accepted. If canonical fails, try the fixed CDN release pointer
+ * and its validated immutable commit's site-version.json (at most 3 requests).
+ * No fallback for explicit local endpoints. All requests omit credentials, reject
+ * redirects, and have bounded time/body size. The pointer supplies no policy.
  */
 export function installSiteUpdates({ revision, document = globalThis.document, fetch: fetchImpl = globalThis.fetch,
   now = Date.now, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout,
@@ -38,7 +183,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
 
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
-  let compatibility = null;
+  let compatibility = null, pendingManifest = null;
   const clearDialog = () => {
     if (!dialog) return;
     const { node, previousFocus } = dialog;
@@ -128,8 +273,33 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     }
     publish(state);
   };
+  const resume = () => {
+    if (disposed || !pendingManifest) return;
+    try {
+      if (!document.body || !isVisible(document) || !isIdle(document)) return;
+      const data = pendingManifest;
+      pendingManifest = null;
+      // Invalid policy must not suppress an otherwise valid optional update offer.
+      try { applyCompatibility(data); } catch { failOpen(); }
+      if (data.revision <= revision) { button?.remove(); button = null; return; }
+      if (button?.isConnected) return;
+      button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Update available';
+      button.setAttribute('aria-label', 'Update available. Reload to update.');
+      button.dataset.siteUpdate = 'available';
+      themeControl(button);
+      Object.assign(button.style, { position: 'fixed', right: '16px', bottom: '16px', maxWidth: 'calc(100vw - 32px)',
+        zIndex: '2147483647', fontFamily: 'ForcedSquare, sans-serif' });
+      button.addEventListener('click', () => {
+        try { if (isVisible(document) && canReload()) globalThis.location?.reload(); } catch { failOpen(); }
+      });
+      document.body.append(button);
+    } catch { /* Keep gameplay independent of notification UI. */ }
+  };
   const check = async () => {
     if (disposed) return;
+    resume();
     try { if (!isVisible(document) || !isIdle(document)) return; }
     catch { failOpen(); return; }
     if (inFlight) return inFlight;
@@ -138,55 +308,56 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     if (startedAt - lastCheckedAt < intervalMs) return;
     lastCheckedAt = startedAt;
     inFlight = Promise.resolve().then(async () => {
-      let timeout = null;
+      const read = async url => {
+        if (disposed) throw Error('Update check disposed');
+        controller = new AbortController();
+        let timeout = null;
+        try {
+          const request = async () => {
+            const response = await fetchImpl(url.href, {method: 'GET', credentials: 'omit',
+              mode: url.origin === new URL(document.baseURI).origin ? 'same-origin' : 'cors',
+              redirect: 'error', referrerPolicy: 'no-referrer', cache: 'no-store',
+              headers: {Accept: 'application/json'}, signal: controller.signal});
+            return readManifest(response);
+          };
+          return await Promise.race([request(), new Promise((_, reject) => {
+            cancelRequest = () => reject(new Error('Update check disposed'));
+            timeout = schedule(() => { controller?.abort(); reject(new Error('Update request timed out')); }, timeoutMs);
+          })]);
+        } finally {
+          if (timeout !== null) unschedule(timeout);
+          cancelRequest = null;
+        }
+      };
+      const version = async url => {
+        const data = await read(url);
+        if (!validRevision(data?.revision)) throw new Error('Invalid update manifest');
+        return data;
+      };
       try {
         if (disposed) return;
-        controller = new AbortController();
         const url = new URL(endpoint, document.baseURI);
         const sameOrigin = url.origin === new URL(document.baseURI).origin;
         if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password ||
             (!sameOrigin && url.href !== CANONICAL_SITE_VERSION_URL)) throw new Error('Disallowed update endpoint');
+        const canonical = url.href === CANONICAL_SITE_VERSION_URL;
         url.searchParams.set('_updateCheck', String(startedAt));
-        const request = async () => {
-          const response = await fetchImpl(url.href, { method: 'GET', credentials: sameOrigin ? 'same-origin' : 'omit',
-            mode: sameOrigin ? 'same-origin' : 'cors', redirect: 'error', referrerPolicy: 'no-referrer', cache: 'no-store',
-            headers: { Accept: 'application/json' }, signal: controller.signal });
-          if (!response?.ok || response.redirected) throw new Error('Update request failed');
-          return response.json();
-        };
-        const data = await Promise.race([request(), new Promise((_, reject) => {
-          cancelRequest = () => reject(new Error('Update check disposed'));
-          timeout = schedule(() => { controller?.abort(); reject(new Error('Update request timed out')); }, timeoutMs);
-        })]);
-        if (disposed) return;
-        if (!validRevision(data?.revision) || !document.body) throw new Error('Invalid update manifest');
-        // A request may finish after a run starts. Do not open a modal then.
-        if (!isVisible(document) || !isIdle(document)) { failOpen('deferred'); return; }
-        // Invalid compatibility policy must not suppress an otherwise valid update offer.
-        try { applyCompatibility(data); } catch { failOpen(); }
-        if (data.revision <= revision) {
-          button?.remove();
-          button = null;
-          return;
+        let data;
+        try { data = await version(url); }
+        catch (error) {
+          if (disposed || !canonical) throw error;
+          const pointer = await read(new URL(CANONICAL_RELEASE_POINTER_URL));
+          data = await version(releaseVersionUrl(pointer));
         }
-        if (button) return;
-        button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = 'Update available';
-        button.setAttribute('aria-label', 'Update available. Reload to update.');
-        button.dataset.siteUpdate = 'available';
-        themeControl(button);
-        Object.assign(button.style, { position: 'fixed', right: '16px', bottom: '16px', maxWidth: 'calc(100vw - 32px)',
-          zIndex: '2147483647', fontFamily: 'ForcedSquare, sans-serif' });
-        button.addEventListener('click', () => {
-          try { if (isVisible(document) && canReload()) globalThis.location?.reload(); } catch { failOpen(); }
-        });
-        document.body.append(button);
+        if (disposed) return;
+        // A run/menu may start during fetch. Retain the result, independently of
+        // the network cooldown, until the parent reports a safe UI transition.
+        pendingManifest = data;
+        resume();
       } catch {
         // Update checks are best-effort and must not affect gameplay.
         if (!disposed) failOpen();
       } finally {
-        try { if (timeout !== null) unschedule(timeout); } catch { if (!disposed) failOpen(); }
         controller = null;
         cancelRequest = null;
       }
@@ -200,10 +371,15 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   const onVisibilityChange = () => { if (isVisible(document)) void check(); };
   document.addEventListener('visibilitychange', onVisibilityChange);
-  const handle = Object.freeze({ check, getCompatibility: () => ({ ...compatibility }), dispose() {
+  document.defaultView?.addEventListener('focus', resume);
+  document.defaultView?.addEventListener('pageshow', resume);
+  const handle = Object.freeze({ check, resume, getCompatibility: () => ({ ...compatibility }), dispose() {
     if (disposed) return;
     disposed = true;
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    document.defaultView?.removeEventListener('focus', resume);
+    document.defaultView?.removeEventListener('pageshow', resume);
+    pendingManifest = null;
     try { if (timer !== null) unschedule(timer); } catch { /* Disposal must still release compatibility. */ }
     controller?.abort();
     cancelRequest?.();

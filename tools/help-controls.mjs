@@ -3,14 +3,14 @@ const {parseReleasePreparedAt,releaseAge}=await import(new URL('./release-info.m
 
 // Native action names and IDs mirror main.bundle.js: defaultKeyBindings / module 3277.
 const nativeRows = [
-  ['VehicleAccelerate',0,'driving','Accelerate',['KeyW','ArrowUp'],'Build speed.'],
+  ['VehicleAccelerate',0,'driving','Accelerate',['KeyW','ArrowUp'],''],
   ['VehicleTurnRight',1,'driving','Steer right',['KeyD','ArrowRight'],''],
   ['VehicleBrake',2,'driving','Brake / reverse',['KeyS','ArrowDown'],'Slow down; reverse when stopped.'],
   ['VehicleTurnLeft',3,'driving','Steer left',['KeyA','ArrowLeft'],''],
-  ['VehicleCheckpointReset',4,'driving','Reset to checkpoint',['KeyR','Enter'],'Return to the last checkpoint.'],
-  ['VehicleStartReset',5,'driving','Restart track',['KeyT','Backspace'],'Start a new attempt from the beginning.'],
-  ['VehicleCockpitCamera',6,'driving','Cockpit camera',['KeyC','KeyM'],'Switch the driving camera.'],
-  ['ToggleUI',7,'driving','Race UI',['KeyH',null],'Show or hide the race interface.'],
+  ['VehicleCheckpointReset',4,'driving','Reset to checkpoint',['KeyR','Enter'],''],
+  ['VehicleStartReset',5,'driving','Restart track',['KeyT','Backspace'],''],
+  ['VehicleCockpitCamera',6,'driving','Cockpit camera',['KeyC','KeyM'],''],
+  ['ToggleUI',7,'driving','Show / hide race UI',['KeyH',null],''],
   ['Pause',8,'driving','Pause',['KeyP','Space'],'Open the pause menu.'],
   ['EditorRotatePart',9,'editor','Rotate part',['KeyR','Space'],'Rotate the selected part.'],
   ['EditorHeightModifier',10,'editor','Height modifier',['ShiftLeft','ShiftRight'],'Hold while adjusting height.'],
@@ -27,7 +27,7 @@ const nativeRows = [
   ['EditorMoveUp',21,'editor','Move up',['KeyC',null],''],
   ['EditorTest',22,'editor','Test track',['KeyT',null],'Drive the track you are editing.'],
   ['EditorPick',23,'editor','Pick part',['KeyG',null],''],
-  ['ToggleFpsCounter',24,'driving','FPS counter',['Equal',null],'Show or hide frame-rate information.'],
+  ['ToggleFpsCounter',24,'driving','Show / hide FPS',['Equal',null],''],
   ['ToggleSpectatorCamera',25,'replay','Spectator camera',['Slash',null],'Toggle the spectator camera.'],
   ['SpectatorMoveForwards',26,'replay','Move forward',['KeyW','ArrowUp'],'With the spectator camera active.'],
   ['SpectatorMoveRight',27,'replay','Move right',['KeyD','ArrowRight'],''],
@@ -70,9 +70,9 @@ const row = (id,title,keys,description='',extra={}) => ({id,title,keys,descripti
  * getBindings(name,id) may return a current binding array, or undefined for defaults.
  * No game settings are read here. Re-render when bindings change.
  */
-export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G'}={}) {
+export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G',initialGroup=null}={}) {
   const groups = [
-    {id:'driving',title:'Driving',note:'In a race. Remappable in Settings > Controls.',open:true,rows:[]},
+    {id:'driving',title:'Driving',note:'During a race.',open:true,rows:[]},
     {id:'menus',title:'Main menu',note:'From the main menu, outside text fields.',rows:[
       row('menu-play','Play',[['P'],['Space']]),row('menu-rankings','Rankings',[['R']]),
       row('menu-garage','Garage',[['G']]),row('menu-settings','Settings',[['S']]),
@@ -80,13 +80,14 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G'}
       row('menu-community','Community',[['C']]),row('menu-help','Help',[['H']]),
       row('menu-number','Open menu button',[['1-9']],'The number follows the visible button order.')
     ]},
-    {id:'rankings',title:'Rankings & pages',note:'On the open ranking, board or archive.',rows:[
-      row('quick-ranking','Quick Ranking',[['1-4']],'Open that saved Quick Ranking in Ranked.'),
-      row('page-previous','Previous page',[['Left'],['A']],'Rankings, track boards, Extra Tracks and archives.'),
-      row('page-next','Next page',[['Right'],['D']],'Rankings, track boards, Extra Tracks and archives.'),
-      row('page-jump','Go to page',[['Shift','1-9, 0']],'0 means page 10.'),
-      row('page-offset','Move by several pages',[['Shift','+'],['Shift','-']],'Ranked only. Hold Shift, press + or -, then a number. 0 = ten pages.'),
+    {id:'rankings',title:'Rankings & pages',note:'All ranked boards and archives. Outside text fields.',rows:[
+      row('page-previous','Previous page',[['Left'],['A']]),
+      row('page-next','Next page',[['Right'],['D']]),
+      row('page-jump','Go to page 1-10',[['Shift','1-9, 0']],'0 = page 10.',{aliases:['Overall normal track Event archive pages']}),
+      row('page-offset','Jump forward / back',[['Shift','+ / -'],['1-9, 0']],'Hold Shift. Press + or -, then a number. 0 = 10.',{sequence:true,aliases:['Overall normal track Event archive pages']}),
+      row('overall-search','Find a racer',[['Ctrl','F']],'Find names across all loaded pages in Overall.'),
       row('page-field','Type a page',[['Enter']],'Enter a page number in the page field, then confirm.'),
+      row('quick-ranking','Quick Ranking',[['1-4']],'Open that saved Quick Ranking in Ranked.'),
       row('filters-toggle','Pause / resume filters',[['Right-click']],'On the Ranked Filters button.'),
       row('category-move','Move through categories',[['Up'],['Down'],['Home'],['End']],'While the ranking-category menu is open.'),
       row('category-select','Choose / close category',[['Enter'],['Esc']],'Enter selects; Escape closes the category menu.')
@@ -101,29 +102,27 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G'}
     ]},
     {id:'ghosts',title:'Ghosts & track boards',note:'On a normal track leaderboard, not an Event board.',rows:[
       row('ghost-group','Saved ghost group',ghostShortcut?[String(ghostShortcut).split('+').map(keyLabel)]:[],'Choose the shortcut and group in Filters > Ghost shortcut.',{custom:ghostShortcut!=='G'&&ghostShortcut!=='KeyG'}),
-      row('ghost-row','Toggle a ghost',[['1-9'],['0']],'Select a visible racer row. 0 = row 10. Clicking a racer works too.'),
-      row('ghost-range','Select a range',[['Two numbers']],'Hold two row numbers together to select the rows between them.'),
-      row('ghost-top','Select leading racers',[['T'],['1-9, 0']],'Hold T or press a number within 2.5 seconds. 0 = ten racers.',{sequence:true}),
+      row('ghost-row','Toggle a ghost',[['1-9'],['0']],'Without Shift: select a visible racer, not a page. 0 = row 10. Clicking works too.'),
+      row('ghost-range','Select a range',[['Two numbers']],'Hold two row numbers together; both ends are included.'),
+      row('ghost-top','Select leading racers',[['T'],['1-9, 0']],'Hold T with a number, or press T then the number within 2.5 seconds. 0 = ten racers.',{sequence:true}),
       row('ghost-clear','Clear selections',[['C']]),
       row('ghost-leading','Leaders + your ghost',[['='],['Backspace']],'Select leading racers and your ghost when visible. = can fill the tenth slot.'),
       row('ghost-ahead','Racer ahead',[['-']],'Toggle the visible racer immediately above you.'),
       row('ghost-play','Play track',[['Enter'],['Space']],'Outside text fields. A focused button keeps its own action.')
     ]},
-    {id:'events',title:'Event ghosts',note:'On an Event track board. Only available Event replays can be selected.',rows:[
-      row('event-ghost-row','Toggle Event ghost',[['1-9'],['0']],'Select a visible Event racer. 0 = row 10. Clicking the row works too.'),
-      row('event-ghost-range','Select Event ghost range',[['Two numbers']],'Hold two row numbers together to select the rows between them.'),
-      row('event-ghost-top','Select leading Event ghosts',[['T'],['1-9, 0']],'Hold T or press a number within 2.5 seconds. 0 = ten racers.',{sequence:true}),
+    {id:'events',title:'Event ghosts',note:'Available Event replays only. Shared navigation is in Rankings & pages.',rows:[
+      row('event-ghost-row','Toggle Event ghost',[['1-9'],['0']],'Without Shift: select a visible Event racer. 0 = row 10. Clicking works too.'),
+      row('event-ghost-range','Select Event ghost range',[['Two numbers']],'Hold two row numbers together; both ends are included.'),
+      row('event-ghost-top','Select leading Event ghosts',[['T'],['1-9, 0']],'Hold T with a number, or press T then the number within 2.5 seconds. 0 = ten racers.',{sequence:true}),
       row('event-ghost-clear','Clear Event ghosts',[['C']],'Clear selected and pending Event ghosts.'),
       row('event-ghost-you','Event leaders + your ghost',[['='],['Backspace']],'Top nine + your Event ghost; otherwise top ten.'),
       row('event-ghost-ahead','Event racer ahead',[['-']],'Toggle the racer immediately above your Event PB.'),
-      row('event-page','Go to Event page',[['Shift','1-9, 0']],'0 means page 10.'),
-      row('event-page-previous','Previous Event page',[['Left'],['A']]),
-      row('event-page-next','Next Event page',[['Right'],['D']]),
       row('event-play','Play Event track',[['Enter'],['Space']],'A focused button keeps its normal action.')
     ]},
     {id:'replay',title:'Replay & spectator',note:'Spectator movement requires the spectator camera. Keys are remappable.',rows:[]},
     {id:'editor',title:'Track editor',note:'While editing a track. Keys are remappable.',rows:[]},
     {id:'access',title:'Menus & touch',note:'Use the controls on the screen you have open.',rows:[
+      row('help-search','Search this Help',[['Ctrl','F']],'While Help is open, focus its control search instead of searching racers.'),
       row('focus-next','Move focus',[['Tab'],['Shift','Tab']],'Tab moves forward; Shift + Tab moves backward.'),
       row('focus-activate','Activate focused button',[['Enter'],['Space']]),
       row('dialog-close','Close / go back',[['Esc']],'Close the top dialog or return from a menu.'),
@@ -141,6 +140,8 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G'}
     const custom=supplied!==undefined&&JSON.stringify(codes)!==JSON.stringify(defaults.filter(Boolean));
     groups.find(item=>item.id===group).rows.push(row(action,title,keys,description,{binding:action,bindingId:id,custom,defaultBinding:supplied===undefined,aliases:codes}));
   }
+  const initial=groups.findIndex(group=>group.id===initialGroup);
+  if(initial>=0){for(const group of groups)group.open=group.id===initialGroup;groups.unshift(...groups.splice(initial,1));}
   return groups;
 }
 
@@ -156,6 +157,7 @@ export function searchHelpControls(groups,query='',groupId='all') {
 export function helpKeyMatches(label,event) {
   const code=String(event.code||''),key=String(event.key||'');
   const shown=keyLabel(code),digit=/^(?:Digit|Numpad)(\d)$/.exec(code)?.[1];
+  if(label==='+ / -')return ['Equal','Minus','NumpadAdd','NumpadSubtract'].includes(code)||['+','-','_'].includes(key);
   const range=/^([1-9])-([1-9])(?:, 0)?$/.exec(label);
   if(range&&digit)return Number(digit)>=Number(range[1])&&Number(digit)<=Number(range[2])||digit==='0'&&label.endsWith(', 0');
   if(['Shift','Ctrl','Alt','Meta'].includes(label))return key===(label==='Ctrl'?'Control':label);
@@ -183,14 +185,14 @@ export function renderHelpControls(options={}) {
   const age=releaseAge(release.preparedAt);
   const preparedLabel=prepared===null?'Not recorded':release.preparedAt.replace('T',' ').replace(/\.\d{3}Z$/,' UTC');
   return `<section class="pt-help-controls" data-help-controls aria-labelledby="${prefix}-title">
-    <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Current Release</button></div>`:''}</header>
+    <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Release</button></div>`:''}</header>
     <div id="${prefix}-controls" data-hc-panel="controls">
-      <div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Try checkpoint, ghosts or Shift" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Press any key to see it light up. To change game keys, open Settings &gt; Controls.</p></div>
-      <div class="hc-topic-picker"><label for="${prefix}-topic">Browse controls</label><select id="${prefix}-topic" data-hc-topic-select aria-controls="${prefix}-results"><option value="all">All controls</option>${groups.map(group=>`<option value="${escape(group.id)}">${escape(group.title)}</option>`).join('')}</select></div>
+      <div class="hc-toolbar"><div class="hc-search"><label for="${prefix}-search">Find a control</label><div class="hc-search-field"><span class="hc-search-icon" aria-hidden="true"></span><input id="${prefix}-search" type="search" data-hc-search placeholder="Action, key or screen" autocomplete="off" spellcheck="false" aria-controls="${prefix}-results" aria-describedby="${prefix}-hint"><button type="button" data-hc-clear aria-label="Clear control search">Clear</button></div><p id="${prefix}-hint">Keys light up outside text fields. Remap in Settings &gt; Controls.</p></div>
+      <div class="hc-topic-picker"><label for="${prefix}-topic">Topic</label><select id="${prefix}-topic" data-hc-topic-select aria-controls="${prefix}-results"><option value="all">All controls</option>${groups.map(group=>`<option value="${escape(group.id)}">${escape(group.title)}</option>`).join('')}</select></div></div>
       <div class="hc-layout">
-      <div class="hc-results" id="${prefix}-results"><div class="hc-results-head"><h3 data-hc-results-title>All controls</h3><p role="status" aria-live="polite" aria-atomic="true" data-hc-status>${total} controls</p></div><div class="hc-empty" data-hc-empty hidden><h3>No matching controls</h3><p>Try an action, key or screen name.</p><button type="button" data-hc-reset>Show all controls</button></div>
+      <div class="hc-results" id="${prefix}-results"><div class="hc-results-head hc-sr-only"><h3 data-hc-results-title>All controls</h3><p role="status" aria-live="polite" aria-atomic="true" data-hc-status>${total} controls</p></div><div class="hc-empty" data-hc-empty hidden><h3>No matching controls</h3><p>Try an action, key or screen name.</p><button type="button" data-hc-reset>Show all controls</button></div>
       ${groups.map(group=>`<details class="hc-group" data-hc-group="${escape(group.id)}"${group.open?' open':''}><summary><span class="hc-summary-copy"><strong>${escape(group.title)}</strong><small>${escape(group.note)}</small></span><span class="hc-count" data-hc-group-count>${group.rows.length}</span><span class="hc-chevron" aria-hidden="true"></span></summary><dl>${group.rows.map(item=>`<div class="hc-row" data-hc-row="${escape(item.id)}" data-hc-search-text="${escape(searchable(group,item))}"><dt><span>${escape(item.title)}</span>${item.custom?'<span class="hc-custom">Custom</span>':''}${item.description?`<small>${escape(item.description)}</small>`:''}</dt><dd class="hc-keycaps">${keycaps(item)}</dd></div>`).join('')}</dl>${group.id==='ghosts'?'<div class="hc-group-footer"><button type="button" data-help-action="ghost-shortcut">Set up your ghost shortcut <span aria-hidden="true">&gt;</span></button></div>':''}</details>`).join('')}
-      <p class="hc-default-note">${options.bindings||options.getBindings?'Supplied game bindings are shown; any missing actions use their defaults.':'Driving, replay and editor keys shown here are defaults. Your custom game bindings take priority.'}</p></div></div>
+      <p class="hc-default-note">${options.bindings||options.getBindings?'Your saved game keys are shown. Unchanged actions use defaults.':'Default game keys shown. Custom bindings take priority.'}</p></div></div>
       <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
     ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">Current Release</h3><section class="hc-release-age" aria-label="Release preparation age"><p class="hc-eyebrow">AGE SINCE PREPARATION</p><p class="hc-age-value" data-hc-release-age data-prepared-at="${prepared===null?'':escape(release.preparedAt)}">${escape(age.text)}</p><p class="hc-prepared-date">Prepared: ${prepared===null?'Not recorded':`<time datetime="${escape(release.preparedAt)}">${escape(preparedLabel)}</time>`}</p></section>${metadata.length?`<dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`:''}${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Age uses the recorded release preparation time and your device clock, not a Git publication date. It updates locally while Help is open, without checking for updates. Client revision identifies this loaded build. Snapshot confirmation is shown on each leaderboard.</p></section>`:''}
@@ -242,6 +244,7 @@ export function bindHelpControls(root) {
   const input=host.querySelector('[data-hc-search]'),status=host.querySelector('[data-hc-status]');
   const title=host.querySelector('[data-hc-results-title]'),empty=host.querySelector('[data-hc-empty]');
   const topicSelect=host.querySelector('[data-hc-topic-select]'),views=[...host.querySelectorAll('[data-hc-view]')];
+  const viewSwitch=views[0]?.parentElement;
   const groups=[...host.querySelectorAll('[data-hc-group]')].map(node=>({node,rows:[...node.querySelectorAll('[data-hc-row]')],count:node.querySelector('[data-hc-group-count]')}));
   let topic='all',snapshot=null,active=true;
   const keyScope=host.closest('[role="dialog"]')||host,doc=host.ownerDocument,view=doc.defaultView;
@@ -286,25 +289,28 @@ export function bindHelpControls(root) {
     if(!filtering)snapshot=null;
     empty.hidden=count>0;
     status.textContent=count+' '+(count===1?'control':'controls')+(tokens.length?' found':'');
+    title.parentElement.classList.toggle('hc-sr-only',!filtering);
     topicSelect.value=topic;
     title.textContent=topicSelect.selectedOptions[0]?.textContent||'All controls';
     host.querySelector('[data-hc-clear]').disabled=!input.value;
   }
+  function showView(name) {
+    releaseKeys();updateAge();
+    for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==name;
+    for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle.dataset.hcView===name));
+  }
   function click(event) {
     const button=event.target.closest?.('button');
-    if(!button||!host.contains(button))return;
+    if(!button||!host.contains(button)&&!views.includes(button))return;
     if(button.hasAttribute('data-hc-clear')){input.value='';filter();input.focus();}
     else if(button.hasAttribute('data-hc-reset')){topic='all';input.value='';filter();input.focus();}
-    else if(button.hasAttribute('data-hc-view')) {
-      releaseKeys();
-      updateAge();
-      const view=button.dataset.hcView;
-      for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==view;
-      for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle===button));
-    }
+    else if(button.hasAttribute('data-hc-view'))showView(button.dataset.hcView);
   }
   function keydown(event) {
     // The host still owns Escape-to-close and the modal Tab loop. Never prevent text input.
+    if(!event.isComposing&&!event.altKey&&!event.shiftKey&&(event.ctrlKey||event.metaKey)&&(event.code==='KeyF'||event.key.toLowerCase()==='f')) {
+      showView('controls');input.focus();input.select();event.preventDefault();event.stopPropagation();return;
+    }
     if(event.key==='Escape') {
       if(event.target===input&&input.value){input.value='';filter();event.preventDefault();event.stopPropagation();}
       return;
@@ -332,7 +338,9 @@ export function bindHelpControls(root) {
   const selectTopic=()=>{topic=topicSelect.value;filter();};
   topicSelect.addEventListener('change',selectTopic);
   const searchInput=event=>{if(event.target===input)filter();};
+  const detachedViewClick=event=>{if(!host.contains(viewSwitch))click(event);};
   host.addEventListener('input',searchInput);host.addEventListener('click',click);
+  viewSwitch?.addEventListener('click',detachedViewClick);
   filter();updateAge();
   const cleanup=()=>{
     if(!active)return;active=false;releaseKeys();
@@ -341,6 +349,7 @@ export function bindHelpControls(root) {
     topicSelect.removeEventListener('change',selectTopic);
     if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
     host.removeEventListener('input',searchInput);host.removeEventListener('click',click);
+    viewSwitch?.removeEventListener('click',detachedViewClick);
     if(bindingsByRoot.get(host)===cleanup)bindingsByRoot.delete(host);
   };
   bindingsByRoot.set(host,cleanup);return cleanup;
