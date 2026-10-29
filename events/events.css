@@ -1056,7 +1056,7 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 }
 /* Compact featured events share the native landscape-card layout. */
 #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{
- width:calc(100% - 32px)!important;max-width:1500px!important;margin:0 auto 20px!important;padding:0 0 20px!important;
+ width:calc(100% - 32px)!important;max-width:none!important;margin:0 16px 20px!important;padding:0 0 20px!important;
 }
 #ui .track-selection-ui .sq-featured-events{
  grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-template-rows:auto!important;
@@ -1151,9 +1151,6 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best,
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{
  font-size:calc(19px * var(--sq-ui-scale,1))!important;line-height:1.2!important;white-space:normal!important;flex-wrap:wrap;
-}
-@media(min-width:701px){
- #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{width:calc(100% - 96px)!important}
 }
 @media(max-width:1000px){
  #ui .track-selection-ui .sq-featured-events{grid-template-columns:minmax(0,1fr)!important;grid-auto-rows:auto}
