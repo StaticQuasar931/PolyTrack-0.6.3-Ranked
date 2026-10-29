@@ -40,6 +40,7 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
     throw Error('Invalid Firestore read retry limit');
   }
   let requests = 0, returnedDocuments = 0, queryCount = 0, emptyQueryMinimumReads = 0, estimatedDocumentReads = 0;
+  let failedRequests = 0, unknownReadOutcomes = 0, commitAttempts = 0, writeAttempts = 0, unknownCommitOutcomes = 0;
   let quotaFailure = null;
   const call = async (path, body, {onRetry} = {}) => {
     if (quotaFailure) throw quotaFailure;
@@ -47,13 +48,33 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
     for (let retry = 0; ; retry++) {
       if (quotaFailure) throw quotaFailure;
       if (retry > 0) onRetry?.();
-      requests++;
-      const response = await fetchImpl(base + path, {
+      // Serialize before charging: local validation failures are not transport attempts.
+      const options = {
         method: body ? 'POST' : 'GET',
         headers: {authorization: 'Bearer ' + access, 'content-type': 'application/json'},
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(20000)
-      });
+      };
+      requests++;
+      if (path === ':commit') {
+        commitAttempts++;
+        writeAttempts += Array.isArray(body?.writes) ? body.writes.length : 0;
+      }
+      let response;
+      try { response = await fetchImpl(base + path, options); }
+      catch (error) {
+        failedRequests++;
+        if (safeRead) unknownReadOutcomes++;
+        if (path === ':commit') unknownCommitOutcomes++;
+        throw error;
+      }
+      if (!response.ok) {
+        failedRequests++;
+        if ([408, 500, 502, 503, 504].includes(response.status)) {
+          if (safeRead) unknownReadOutcomes++;
+          if (path === ':commit') unknownCommitOutcomes++;
+        }
+      }
       if (mode === 'scheduled' && response.status === 429) {
         // Latch before reading an error body: no read, write, rollback or retry
         // may probe an exhausted database again in this invocation.
@@ -69,7 +90,27 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
         return null;
       }
       if (response.ok) {
-        const result = await response.json();
+        let result;
+        try { result = await response.json(); }
+        catch {
+          failedRequests++;
+          if (safeRead) unknownReadOutcomes++;
+          if (path === ':commit') unknownCommitOutcomes++;
+          throw Error('Firestore response decoding failed');
+        }
+        if (path === ':commit' && (!Array.isArray(result?.writeResults) || !Array.isArray(body?.writes) ||
+            result.writeResults.length !== body.writes.length)) unknownCommitOutcomes++;
+        const validReadShape = path === ':runQuery'
+          ? Array.isArray(result) && result.every(row => row && !row.error && (row.document || typeof row.readTime === 'string'))
+          : path === ':batchGet'
+            ? Array.isArray(result) && result.every(row => row && !row.error && (row.found || typeof row.missing === 'string')) &&
+              (!Array.isArray(body?.documents) || result.length === body.documents.length)
+            : result && typeof result.name === 'string';
+        if (safeRead && !validReadShape) {
+          failedRequests++;
+          unknownReadOutcomes++;
+          return result;
+        }
         if (path === ':runQuery' && Array.isArray(result)) {
           const count = result.filter(row => row?.document).length;
           returnedDocuments += count;
@@ -112,7 +153,10 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
   };
   return {call, requests: () => requests, returnedDocuments: () => returnedDocuments,
     queryCount: () => queryCount, emptyQueryMinimumReads: () => emptyQueryMinimumReads,
-    estimatedDocumentReads: () => estimatedDocumentReads};
+    estimatedDocumentReads: () => estimatedDocumentReads, httpRequests: () => requests,
+    failedRequests: () => failedRequests, unknownReadOutcomes: () => unknownReadOutcomes,
+    commitAttempts: () => commitAttempts, writeAttempts: () => writeAttempts,
+    unknownCommitOutcomes: () => unknownCommitOutcomes};
 }
 
 export async function connect(raw, {mode = firestoreQuotaMode()} = {}){
@@ -124,5 +168,5 @@ export async function connect(raw, {mode = firestoreQuotaMode()} = {}){
  const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:unsigned+'.'+sig}),signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Firebase authentication failed: '+r.status);
  const access=(await r.json()).access_token,base='https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents';
  const firestore = createFirestoreCaller({base, access, mode});
- return {call:firestore.call,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}}),requests:firestore.requests,returnedDocuments:firestore.returnedDocuments,queryCount:firestore.queryCount,emptyQueryMinimumReads:firestore.emptyQueryMinimumReads,estimatedDocumentReads:firestore.estimatedDocumentReads};
+ return {...firestore,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}})};
 }

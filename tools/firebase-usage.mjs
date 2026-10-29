@@ -3,9 +3,9 @@ const originals=new WeakMap();
 const queryMethods=new Set(['where','orderBy','limit','limitToLast','startAt','startAfter','endAt','endBefore']);
 export const FIREBASE_USAGE_COVERAGE=Object.freeze({
  scope:'Observed instrumented compat SDK activity on this browser device only',
- documentReads:'Direct get and each transaction-attempt get; estimates require server/cache metadata',
+ documentReads:'Direct get, each transaction-attempt get and partial listener estimates; estimates require server/cache metadata',
  acknowledgedWrites:'Successful set/update/delete/add mutations; batches and final transaction attempts only after acknowledgment',
- listeners:'Uninstrumented; no listener read-cost estimate',
+ listeners:'Partial compat onSnapshot estimates: first server result, cache zero, subsequent query added/modified changes and query metadata-only zero; removals, reconnections, missing metadata and subsequent document events remain unknown. Pending writes and query change lists over 10000 are unknown. No retained paths, IDs or document data',
  uninstrumented:'Other SDK operations and raw references returned by SDK promises or snapshots are not automatically instrumented',
  deletes:'Acknowledged delete mutations included; not a billed delete total',
  serverProjectUsage:'Unknown: backend fanout, rules/index charges, other clients and hidden SDK retries are not observed',
@@ -29,7 +29,7 @@ function unwrap(value,seen=new WeakMap()){
 }
 
 // Local, partial operation estimates only. Never polls, changes SDK prototypes,
-// instruments listeners, or treats observed client traffic as billed usage.
+// or treats observed client traffic as billed usage.
 export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.now()}={}){
  database=originals.get(database)||database;
  if(!database||typeof database!=='object')throw TypeError('Firestore database required');
@@ -62,6 +62,53 @@ export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.no
    emit({source:'firestore',...(reads===undefined?{}:{reads}),writes:0,...timing(start)});
   }catch{emit({source:'firestore',writes:0,...timing(start)});}
  };
+ const listenerArgs=(args,kind)=>{
+  const isObserver=value=>value&&typeof value==='object'&&['next','error','complete'].some(key=>typeof value[key]==='function');
+  const index=typeof args[0]==='function'||isObserver(args[0])?0:1;
+  const listener=args[index],observer=isObserver(listener);
+  const next=observer?listener.next:listener;
+  if(typeof next!=='function')return args;
+  let serverSeen=false,uncertain=false;
+  const record=snapshot=>{
+   const unknown=()=>emit({source:'firestore',writes:0});
+   try{
+    const cache=snapshot?.metadata?.fromCache;
+    if(cache===true){if(serverSeen)uncertain=true;emit({source:'cache',reads:0,writes:0});return;}
+    if(cache!==false||snapshot.metadata.hasPendingWrites===true){uncertain=true;unknown();return;}
+    if(!serverSeen){
+     serverSeen=true;
+     // A cache-first delivery must not consume the initial server estimate.
+     const size=kind==='doc'?1:snapshot.size??(Array.isArray(snapshot.docs)?snapshot.docs.length:undefined);
+     if(Number.isSafeInteger(size)&&size>=0&&size<=1e9)emit({source:'firestore',reads:Math.max(1,size),writes:0});
+     else unknown();
+     uncertain=false;return;
+    }
+    if(kind==='doc'){unknown();return;}
+    const changes=snapshot.docChanges();
+    // Bound inspection without storing snapshots, document identities or data.
+    if(!Array.isArray(changes)||changes.length>10000){uncertain=true;unknown();return;}
+    let reads=0,ambiguous=uncertain;uncertain=false;
+    for(const change of changes){
+     if(change.type==='added'||change.type==='modified')reads++;
+     else ambiguous=true; // A removal cannot distinguish deletion from a changed filter match.
+    }
+    if(reads||!ambiguous)emit({source:'firestore',reads,writes:0});
+    if(ambiguous)unknown();
+   }catch{uncertain=true;unknown();}
+  };
+  const wrapped=function(...values){record(values[0]);return Reflect.apply(next,observer?listener:this,values);};
+  const result=args.slice();
+  if(observer){
+   // A facade avoids proxy invariants on frozen observers and preserves private-field receivers.
+   const facade={next:wrapped};
+   for(const key of ['error','complete']){
+    const handler=listener[key];
+    if(typeof handler==='function')facade[key]=function(...values){return Reflect.apply(handler,listener,values);};
+   }
+   result[index]=facade;
+  }else result[index]=wrapped;
+  return result;
+ };
  function wrap(target,kind,state){
   if(!target||typeof target!=='object')return target;
   if(originals.has(target))return target;
@@ -80,6 +127,7 @@ export function wrapFirestoreUsage(database,{observeUsage,now=()=>performance.no
     }
     if(methods.has(key)&&methods.get(key).original===value)return methods.get(key).wrapped;
     const invoke=function(...args){
+     if((kind==='doc'||kind==='query')&&key==='onSnapshot')return Reflect.apply(value,native,listenerArgs(args,kind));
      const nativeArgs=args.map(value=>unwrap(value));
      const start=clock();
      if(kind==='database'&&key==='runTransaction'&&typeof args[0]==='function'){

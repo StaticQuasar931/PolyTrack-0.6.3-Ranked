@@ -13,7 +13,7 @@ test('usage exports disclose coverage and unknown backend/billing totals even wi
   assert.deepEqual(report.firebaseUsage.coverage,FIREBASE_USAGE_COVERAGE);
   assert.match(report.firebaseUsage.coverage.serverProjectUsage,/Unknown/);
   assert.match(report.firebaseUsage.coverage.billedUsage,/Unavailable/);
-  assert.match(report.firebaseUsage.coverage.listeners,/Uninstrumented/);
+  assert.match(report.firebaseUsage.coverage.listeners,/Partial/);
   assert.equal(report.firebaseUsage.estimatedDocuments,null);
   report.firebaseUsage.coverage.scope='modified export';
   assert.notEqual(FIREBASE_USAGE_COVERAGE.scope,'modified export');
@@ -31,6 +31,28 @@ test('acknowledged deletes reach the exported estimate without becoming billed u
  assert.deepEqual(usage.billed,{reads:null,writes:null,cost:null});
  assert.match(usage.coverage.deletes,/Acknowledged/);
  assert.deepEqual(insights,before);
+});
+
+test('partial listener read estimates and unknowns survive diagnostics export without private data or schema changes',()=>{
+ const h=createLocalInsights({now:()=>1000});let deliver;
+ const unsubscribe=()=>{};
+ const query={onSnapshot(options,next){assert.equal(options.includeMetadataChanges,true);deliver=next;return unsubscribe;}};
+ const database={collection:()=>query};
+ const wrapped=wrapFirestoreUsage(database,{observeUsage:h.observeUsage});
+ assert.equal(wrapped.collection('secret-collection').onSnapshot({includeMetadataChanges:true},()=>{}),unsubscribe);
+ const snapshot=(fromCache,size,types)=>({metadata:{fromCache},size,
+  docChanges:()=>types.map(type=>({type,doc:{id:'secret-id',data:{token:'secret-token'}}}))});
+ deliver(snapshot(true,2,['added','added']));deliver(snapshot(false,2,[]));
+ deliver(snapshot(false,2,['added','modified','removed']));deliver(snapshot(false,2,[]));
+ deliver({size:2});
+ const insights=h.report(),before=structuredClone(insights),usage=buildDeveloperReport({insights}).firebaseUsage;
+ assert.deepEqual(usage.estimatedDocuments,{reads:4,writes:0,unknownReadOperations:2,unknownWriteOperations:0});
+ assert.deepEqual(usage.observedOperations,{snapshot:0,cache:1,firestore:5,worker:0});
+ assert.deepEqual(usage.billed,{reads:null,writes:null,cost:null});
+ assert.match(usage.coverage.listeners,/Partial/);assert.match(usage.limitations,/reconnections/);
+ assert.match(usage.limitations,/separate known and unknown observations/);
+ assert.equal(insights.clientUsage.version,1);assert.deepEqual(insights,before);
+ assert.doesNotMatch(JSON.stringify(usage),/secret-collection|secret-id|secret-token/);
 });
 
 test('opting out reports omitted per-profile PBs without exporting them',()=>{

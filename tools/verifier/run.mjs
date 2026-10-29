@@ -98,6 +98,37 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
     queueSample};
 }
 
+const usageCounters = Object.freeze({
+  firestoreHttpRequests: 'httpRequests', firestoreRequestReservations: 'requestReservations',
+  firestoreReturnedDocuments: 'returnedDocuments', firestoreQueryCount: 'queryCount',
+  firestoreEmptyQueryMinimumReads: 'emptyQueryMinimumReads', firestoreEstimatedDocumentReads: 'estimatedDocumentReads',
+  firestoreFailedRequests: 'failedRequests', firestoreUnknownReadOutcomes: 'unknownReadOutcomes',
+  firestoreCommitAttempts: 'commitAttempts', firestoreWriteAttempts: 'writeAttempts',
+  firestoreUnknownCommitOutcomes: 'unknownCommitOutcomes'
+});
+
+// Numeric allowlist only: never serialize errors, credentials, paths or database payloads.
+export function verifierAccounting(db) {
+  return Object.fromEntries(Object.entries(usageCounters).map(([name, method]) => {
+    let value;
+    try { value = method === 'httpRequests' && typeof db?.httpRequests !== 'function'
+      ? db?.requests?.() : db?.[method]?.(); }
+    catch { value = null; }
+    return [name, Number.isSafeInteger(value) && value >= 0 ? value : null];
+  }));
+}
+
+function reportAccounting(db, phase, outcome, env, log) {
+  const usage = {phase, outcome, ...verifierAccounting(db)};
+  // Reporting must not replace a transport error or turn a committed result into failure.
+  try { log(JSON.stringify({firestoreUsage: usage})); } catch {}
+  try {
+    if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
+      '\n## Firestore accounting\n' + JSON.stringify(usage) +
+      '\nReservations are admission charges, not HTTP attempts. Read estimates are not billed usage, exclude index-entry charges, and omit unknown outcomes. Commit/write attempts are not confirmed writes. Failed requests include HTTP, transport and read-decoding failures. Unknown outcomes count attempts, not documents. OAuth is excluded.\n');
+  } catch {}
+}
+
 export async function runVerifier({check = false, drain = false, catchUp = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
   validateEngine = validateEnginePin, log = console.log, eventCheck = checkEvents,
   eventRun = runEvents, prioritizeNormal = prioritizeQueueDocuments, selectNormal = selectJobs,
@@ -109,52 +140,61 @@ export async function runVerifier({check = false, drain = false, catchUp = false
   if (!check) await validateEngine();
   const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
   if (!raw) throw Error('Set the private FIREBASE_VERIFIER_SERVICE_ACCOUNT Actions secret.');
-  const db = await connectDatabase(raw);
-  delete env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
-  if (check) {
-    try { return await checkForWork(db, {env, log, eventCheck}); }
-    catch (error) {
-      if (error?.status !== 429 && !error?.deferred) throw error;
-      const message = 'Firestore throttled verification preflight. Queue state is unknown; no runs were processed or removed. The next scheduled run will retry.';
-      if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=deferred\npreflight_status=throttled\n');
-      if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, '## Verification preflight deferred\n' + message + '\n');
-      log(message);
-      return {hasWork: null, deferred: true, reason: 'firestore_429'};
+  let db;
+  try { db = await connectDatabase(raw); }
+  catch (error) {
+    reportAccounting(null, 'connect', 'failed', env, log);
+    throw error;
+  } finally { delete env.FIREBASE_VERIFIER_SERVICE_ACCOUNT; }
+  let accountingDb = db, outcome = 'failed';
+  const finish = result => {
+    outcome = result.deferred === true || result.interruptedRound === true ? 'deferred'
+      : result.infrastructureFailure || result.stop === 'infrastructure_failure' ? 'failed' : 'completed';
+    return result;
+  };
+  try {
+    if (check) {
+      try { return finish(await checkForWork(db, {env, log, eventCheck})); }
+      catch (error) {
+        if (error?.status !== 429 && !error?.deferred) throw error;
+        const message = 'Firestore throttled verification preflight. Queue state is unknown; no runs were processed or removed. The next scheduled run will retry.';
+        if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, 'has_work=deferred\npreflight_status=throttled\n');
+        if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, '## Verification preflight deferred\n' + message + '\n');
+        log(message);
+        return finish({hasWork: null, deferred: true, reason: 'firestore_429'});
+      }
     }
-  }
-  const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity:createSimilarityReviewer(root),eventSelectionState:{}};
-  if (!drain) {
-    try { return await runRound(db,roundOptions); }
-    catch (error) {
-      const eventConflict=isDeferredEventConflict(error);
-      if (!eventConflict && !isDeferredFirestoreThrottle(error)) throw error;
-      const summary={deferred:true,reason:eventConflict?'event_conflict':'firestore_throttled',interruptedRound:true,countsComplete:false};
-      const message=eventConflict?EVENT_CONFLICT_MESSAGE:'Firestore throttled verification. This invocation deferred without replaying a write; queue state will be reread on the next scheduled run.';
-      log(JSON.stringify(summary));
-      if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,'## Verification deferred\n'+message+'\n\n'+JSON.stringify(summary)+'\n');
-      return summary;
+    const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity:createSimilarityReviewer(root),eventSelectionState:{}};
+    if (!drain) {
+      try { return finish(await runRound(db,roundOptions)); }
+      catch (error) {
+        const eventConflict=isDeferredEventConflict(error);
+        if (!eventConflict && !isDeferredFirestoreThrottle(error)) throw error;
+        const summary={deferred:true,reason:eventConflict?'event_conflict':'firestore_throttled',interruptedRound:true,countsComplete:false};
+        const message=eventConflict?EVENT_CONFLICT_MESSAGE:'Firestore throttled verification. This invocation deferred without replaying a write; queue state will be reread on the next scheduled run.';
+        log(JSON.stringify(summary));
+        if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY,'## Verification deferred\n'+message+'\n\n'+JSON.stringify(summary)+'\n');
+        return finish(summary);
+      }
     }
-  }
-  const bounded=budgetDatabase(db,limits.requests,limits);
-  const summary=await drainVerification({requests:bounded.requests,now:clock,log,limits,
-    runRound:()=>runRound(bounded,{...roundOptions,borrowUnusedEvents:true})});
-  summary.mode=catchUp?'catch-up':'normal';
-  summary.firestoreHttpRequests=bounded.requests();
-  summary.firestoreReturnedDocuments=bounded.returnedDocuments();
-  summary.firestoreQueryCount=bounded.queryCount();
-  summary.firestoreEmptyQueryMinimumReads=bounded.emptyQueryMinimumReads();
-  summary.firestoreEstimatedDocumentReads=bounded.estimatedDocumentReads();
-  if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
-    '\n## Bounded drain\n'+JSON.stringify(summary)+'\nMode: '+summary.mode+'. Limits: '+limits.rounds+
-    ' rounds, '+limits.rounds*TOTAL_JOB_LIMIT+' total native attempts, '+limits.requests+' Firestore HTTP requests. Returned documents, query count, empty-query minimum reads, and estimated document reads are separate counters; the estimate is not billed usage and excludes index-entry charges. '+
-    (catchUp?'Catch-Up spends a larger per-run budget to drain due work with one setup. It stops early on empty work, throttling, or infrastructure failure. It does not bypass verification limits or retry future-dated jobs. ':'')+
-    'Time admission is measured, not a completion guarantee; the workflow step timeout remains the hard stop. '+
-    'Interrupted-round publication counts are incomplete, not zero. `stop` explains why this invocation ended; a round is not a GitHub workflow run number. '+
-    'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n'+
-    `\nVerified tracks:\n${verifiedTrackCounts(summary.verifiedByTrack).map(track=>`- ${track.trackName}: ${track.count}`).join('\n') || '- None'}\n`+
-    (summary.stop==='firestore_throttled'?'Firestore returned a deferred throttle response. No commit was replayed; queue state will be reread by a later scheduled run. Publication counts for the interrupted round are incomplete.\n':'')+
-    (summary.stop==='event_conflict'?EVENT_CONFLICT_MESSAGE+'\n':''));
-  return summary;
+    const bounded=budgetDatabase(db,limits.requests,limits);
+    accountingDb = bounded;
+    const summary=await drainVerification({requests:bounded.requests,now:clock,log,limits,
+      runRound:()=>runRound(bounded,{...roundOptions,borrowUnusedEvents:true})});
+    summary.mode=catchUp?'catch-up':'normal';
+    Object.assign(summary, verifierAccounting(bounded));
+    if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
+      '\n## Bounded drain\n'+JSON.stringify(summary)+'\nMode: '+summary.mode+'. Limits: '+limits.rounds+
+      ' rounds, '+limits.rounds*TOTAL_JOB_LIMIT+' total native attempts, '+limits.requests+' Firestore HTTP requests. Returned documents, query count, empty-query minimum reads, and estimated document reads are separate counters; the estimate is not billed usage and excludes index-entry charges. '+
+      (catchUp?'Catch-Up spends a larger per-run budget to drain due work with one setup. It stops early on empty work, throttling, or infrastructure failure. It does not bypass verification limits or retry future-dated jobs. ':'')+
+      'Time admission is measured, not a completion guarantee; the workflow step timeout remains the hard stop. '+
+      'Interrupted-round publication counts are incomplete, not zero. `stop` explains why this invocation ended; a round is not a GitHub workflow run number. '+
+      'Unknown or untrusted tracks remain unavailable rather than admitting user-supplied track data.\n'+
+      `\nVerified tracks:\n${verifiedTrackCounts(summary.verifiedByTrack).map(track=>`- ${track.trackName}: ${track.count}`).join('\n') || '- None'}\n`+
+      (summary.stop==='firestore_throttled'?'Firestore returned a deferred throttle response. No commit was replayed; queue state will be reread by a later scheduled run. Publication counts for the interrupted round are incomplete.\n':'')+
+      (summary.stop==='event_conflict'?EVENT_CONFLICT_MESSAGE+'\n':''));
+    return finish(summary);
+  } finally { reportAccounting(accountingDb, check ? 'preflight' : drain ? 'drain' : 'single-round', outcome, env, log); }
 }
 
 export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity,eventSelectionState}) {
@@ -253,7 +293,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
   const totals = await publishNormal(db, jobs, results);
   const reasons = totals.reasons;
   announceReviewFindings(totals.reviewInboxAdded,log);
-  log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...idleCounts, ...totals, reasons, firestoreRequests: db.requests()}));
+  log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...idleCounts, ...totals, reasons, firestoreRequests: typeof db.httpRequests === 'function' ? db.httpRequests() : db.requests?.() ?? null}));
   const tracks = verifiedTrackCounts(totals.verifiedByTrack);
   if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,`## Replay verification\nProcessed: ${jobs.length}. Verified: ${totals.verified}. Corrected legacy times: ${totals.corrected}. Waiting: ${totals.unavailable}. Deferred conflicts: ${totals.deferred}. Review inbox additions: ${totals.reviewInboxAdded||0} (manual review, not cheating verdicts).\n\nVerified tracks:\n${tracks.length ? tracks.map(track=>`- ${track.trackName}: ${track.count}`).join('\n') : '- None'}\n\n${Object.entries(reasons).map(([reason,count])=>'- '+reason+': '+count).join('\n')}\n`);
   if(results.some(r=>r.reason==='engine_unavailable')){console.error('Verifier startup failed. Runs remain waiting; inspect the startup diagnostic.');process.exitCode=1;}

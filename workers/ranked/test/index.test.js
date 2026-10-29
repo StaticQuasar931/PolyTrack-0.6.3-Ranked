@@ -474,7 +474,7 @@ test('public read limiter errors fail closed before Firestore', async () => {
     PUBLIC_READ_RATE_LIMITER: { limit: async () => { throw new Error('binding unavailable'); } },
     __TEST_FIRESTORE: async () => { firestoreReads++; return null; }
   };
-  const response = await handleRequest(new Request('https://ranked.example/v1/extra-tracks/unranked?trackId=invalid', {
+  const response = await handleRequest(new Request('https://ranked.example/v1/extra-tracks/unranked?trackId=586fbb2ef6e638f8d22e050342896497f22da6302ff081e434aa17bf6f75cf87', {
     headers: { Origin: 'https://staticquasar931.github.io', 'CF-Connecting-IP': '203.0.113.4' }
   }), env);
   assert.equal(response.status, 429);

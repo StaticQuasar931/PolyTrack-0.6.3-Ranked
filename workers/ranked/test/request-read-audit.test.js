@@ -24,7 +24,9 @@ test('cached public request reports zero Firestore reads without logging query v
     assert.equal(lines.length,1);
     assert.equal(lines[0].startsWith('Ranked request Firestore reads '),true);
     assert.deepEqual(JSON.parse(lines[0].slice('Ranked request Firestore reads '.length)),{
-      routeCategory:'public_status',measurementScope:'request_synchronous',httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{},billingEstimateOnly:true});
+      routeCategory:'public_status',measurementScope:'request_synchronous',operationAttempts:0,failedOperations:0,preTransportFailures:0,
+      httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{},
+      writeEstimate:0,deleteEstimate:0,writeCollections:{},unknownReadRequests:0,unknownWriteRequests:0,billingEstimateOnly:true});
     assert.equal(lines[0].includes('private-value'),false);
   } finally {
     if(previousCaches===undefined)delete globalThis.caches;else globalThis.caches=previousCaches;

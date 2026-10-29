@@ -17,7 +17,7 @@ export class VerificationEventConflictError extends Error {
   }
 }
 
-// Counts HTTP requests, not billed document reads/writes. Never retries denied work.
+// Reservations enforce admission, including retries. Transport counters remain separate.
 export function budgetDatabase(db, limit=DRAIN_LIMITS.requests, limits=DRAIN_LIMITS) {
   validateLimits(limits);
   if (!Number.isInteger(limit) || limit<1 || limit>limits.requests) throw Error('Invalid request budget');
@@ -30,7 +30,13 @@ export function budgetDatabase(db, limit=DRAIN_LIMITS.requests, limits=DRAIN_LIM
     reserve();
     return db.call(path, body, {onRetry:reserve});
   };
-  return {call, requests:()=>used, returnedDocuments:()=>db.returnedDocuments?.() ?? null,
+  return {call, requests:()=>used, requestReservations:()=>used,
+    httpRequests:()=>typeof db.httpRequests === 'function' ? db.httpRequests() : db.requests?.() ?? null,
+    failedRequests:()=>db.failedRequests?.() ?? null,
+    unknownReadOutcomes:()=>db.unknownReadOutcomes?.() ?? null,
+    commitAttempts:()=>db.commitAttempts?.() ?? null, writeAttempts:()=>db.writeAttempts?.() ?? null,
+    unknownCommitOutcomes:()=>db.unknownCommitOutcomes?.() ?? null,
+    returnedDocuments:()=>db.returnedDocuments?.() ?? null,
     queryCount:()=>db.queryCount?.() ?? null,
     emptyQueryMinimumReads:()=>db.emptyQueryMinimumReads?.() ?? null,
     estimatedDocumentReads:()=>db.estimatedDocumentReads?.() ?? null,

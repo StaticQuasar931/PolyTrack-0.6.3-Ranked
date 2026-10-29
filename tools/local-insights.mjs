@@ -33,7 +33,7 @@ export function summarizeClientUsage(value,at=Date.now()){
   estimatedDocuments:{reads:sum('knownReadEstimate'),writes:sum('knownWriteEstimate'),unknownReadOperations:sum('unknownReadOperations'),unknownWriteOperations:sum('unknownWriteOperations')},
   elapsedAverages:{knownEstimatedReadsPerHour:elapsedMs?round2(sum('knownReadEstimate')*3600000/elapsedMs):null,knownEstimatedWritesPerHour:elapsedMs?round2(sum('knownWriteEstimate')*3600000/elapsedMs):null},
   observedOperationTiming:{samples:sum('durationSamples'),totalMs:Math.round(sum('durationMs')),averageMs:sum('durationSamples')?Math.round(sum('durationMs')/sum('durationSamples')):null},
-  limitations:'Snapshot/cache operations contribute zero Firebase documents. Worker backend fanout is unknown. Known estimates omit uninstrumented operations, hidden retries, listeners and rule/index charges; request durations may overlap.'};
+  limitations:'Snapshot/cache operations contribute zero Firebase documents. Worker backend fanout is unknown. Listener estimates are partial: removals, reconnections, pending writes, missing metadata and subsequent document events may be unknown. Known estimates omit uninstrumented operations, hidden retries and rule/index charges; request durations may overlap. Mixed listener changes may produce separate known and unknown observations.'};
 }
 export function createLocalInsights({storage,now=Date.now,revision=0}={}){
  const timestamp=value=>Number.isFinite(value)&&value>0?Math.min(now(),value):0;

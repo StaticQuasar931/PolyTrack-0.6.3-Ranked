@@ -156,12 +156,13 @@ test('observer/clock failures cannot change native operation returns or create u
  let event;const f=fixture(value=>{event=value;},()=>{throw Error('clock');});
  await f.wrapped.doc('native').get();assert.equal(event.reads,1);assert.equal(Object.hasOwn(event,'durationMs'),false);
 });
-test('listeners are intentionally uninstrumented and preserve callbacks, receiver and exact unsubscribe',()=>{
+test('listeners preserve callbacks, receiver and exact unsubscribe with missing metadata unknown',()=>{
  const f=fixture(),q=f.wrapped.collection('private');
  const callback=function(value){assert.equal(this,f.context);assert.equal(value.marker,'unchanged snapshot');return 'callback-return';};
  assert.equal(q.onSnapshot({includeMetadataChanges:true},callback),f.unsubscribe);
  const observer={next(value){assert.equal(this,observer);assert.equal(value.marker,'unchanged snapshot');return 'callback-return';}};
- assert.equal(q.onSnapshot(observer),f.unsubscribe);assert.equal(f.events.length,0);
+ assert.equal(q.onSnapshot(observer),f.unsubscribe);assert.equal(f.events.length,2);
+ assert.ok(f.events.every(e=>!Object.hasOwn(e,'reads')&&e.writes===0));
 });
 test('custom thenable identity and consumer then return values are preserved',()=>{
  const sentinel={},thenable={then(success){success({metadata:{fromCache:false}});return sentinel;}};
@@ -171,10 +172,204 @@ test('custom thenable identity and consumer then return values are preserved',()
 });
 test('coverage metadata explicitly marks listeners, uninstrumented activity and server/billing metrics unknown',()=>{
  assert.ok(Object.isFrozen(FIREBASE_USAGE_COVERAGE));
- assert.match(FIREBASE_USAGE_COVERAGE.listeners,/Uninstrumented/);
+ assert.match(FIREBASE_USAGE_COVERAGE.listeners,/Partial/);
+ assert.match(FIREBASE_USAGE_COVERAGE.listeners,/removals, reconnections, missing metadata/);
  assert.match(FIREBASE_USAGE_COVERAGE.uninstrumented,/not automatically instrumented/);
  assert.match(FIREBASE_USAGE_COVERAGE.serverProjectUsage,/Unknown/);
  assert.match(FIREBASE_USAGE_COVERAGE.billedUsage,/Unavailable/);
  assert.match(FIREBASE_USAGE_COVERAGE.deletes,/Acknowledged/);
  assert.doesNotMatch(JSON.stringify(FIREBASE_USAGE_COVERAGE),/https:|accountId|credential|Bearer/);
+});
+
+function listenerFixture(observeUsage){
+ const events=[],subscriptions=[],context={native:true},result={callbackResult:true},failure={nativeFailure:true};
+ const unsubscribe=function(){assert.equal(this,context);return result;};
+ class Reference{
+  #brand=true;
+  onSnapshot(...args){
+   assert.equal(this.#brand,true);
+   const index=typeof args[0]==='function'||['next','error','complete'].some(key=>typeof args[0]?.[key]==='function')?0:1;
+   const observer=args[index];
+   subscriptions.push({args,
+    next(...values){return typeof observer==='function'?observer.apply(context,values):observer.next.apply(observer,values);},
+    error(...values){const fn=typeof observer==='function'?args[index+1]:observer.error;return fn?.apply(typeof observer==='function'?context:observer,values);},
+    complete(...values){const fn=typeof observer==='function'?args[index+2]:observer.complete;return fn?.apply(typeof observer==='function'?context:observer,values);}
+   });
+   if(args[0]?.reject)throw failure;
+   return unsubscribe;
+  }
+ }
+ const database={doc:()=>new Reference(),collection:()=>new Reference()};
+ const wrapped=wrapFirestoreUsage(database,{observeUsage:observeUsage||((e)=>events.push(e)),now:()=>0});
+ return {wrapped,events,subscriptions,context,result,failure,unsubscribe};
+}
+const querySnapshot=(size=2,types=[],metadata={fromCache:false})=>({size,metadata,docChanges(){return types.map(type=>({type}));}});
+const readCounts=events=>events.map(e=>Object.hasOwn(e,'reads')?e.reads:'unknown');
+
+for(const kind of ['doc','collection'])for(const options of [false,true])for(const form of ['callback','observer']){
+ test(`listener overload ${kind}, options=${options}, ${form} preserves arguments/receivers/results`,()=>{
+  const f=listenerFixture(),snapshot=querySnapshot(),extra={extra:true},opts=Object.freeze({includeMetadataChanges:true});
+  const callback=function(value,rest){assert.equal(this,f.context);assert.equal(value,snapshot);assert.equal(rest,extra);return f.result;};
+  const error=function(value){assert.equal(this,f.context);assert.equal(value,f.failure);return f.result;};
+  const complete=function(){assert.equal(this,f.context);return f.result;};
+  class Observer{
+   #result=f.result;
+   next(value,rest){assert.equal(this,observer);assert.equal(value,snapshot);assert.equal(rest,extra);return this.#result;}
+   error(value){assert.equal(value,f.failure);return this.#result;}
+   complete(){return this.#result;}
+  }
+  const observer=Object.freeze(new Observer());
+  const args=form==='callback'?[callback,error,complete]:[observer];if(options)args.unshift(opts);
+  assert.equal(f.wrapped[kind]('private-path').onSnapshot(...args),f.unsubscribe);
+  const subscription=f.subscriptions[0];
+  if(options)assert.equal(subscription.args[0],opts);
+  if(form==='callback'){
+   assert.equal(subscription.args[options?2:1],error);
+   assert.equal(subscription.args[options?3:2],complete);
+  }
+  assert.equal(subscription.next(snapshot,extra),f.result);
+  assert.equal(subscription.error(f.failure),f.result);assert.equal(subscription.complete(),f.result);
+  assert.deepEqual(readCounts(f.events),[kind==='doc'?1:2]);
+  assert.equal(f.unsubscribe.call(f.context),f.result);
+  assert.deepEqual(Object.keys(f.events[0]).sort(),['reads','source','writes']);
+  assert.doesNotMatch(JSON.stringify(f.events),/private-path|callbackResult|nativeFailure|extra/);
+ });
+}
+
+test('query listener cache-first, first server minimum and incremental/metadata sequence',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot({includeMetadataChanges:true},()=>{});
+ const s=f.subscriptions[0];
+ s.next(querySnapshot(3,['added','added','added'],{fromCache:true}));
+ s.next(querySnapshot(3,[])); // Cache already supplied the docs: docChanges can be empty here.
+ s.next(querySnapshot(4,['added','modified']));
+ s.next(querySnapshot(4,[]));
+ assert.deepEqual(readCounts(f.events),[0,3,2,0]);assert.equal(f.events[0].source,'cache');
+ f.wrapped.collection().onSnapshot(()=>{});f.subscriptions[1].next(querySnapshot(0,[]));
+ assert.equal(f.events.at(-1).reads,1);
+ assert.ok(f.events.every(e=>e.writes===0));
+});
+
+test('listener removals preserve known changes separately from unknown reads; no empty-result minimum on updates',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ s.next(querySnapshot(3));s.next(querySnapshot(3,['added','modified','removed']));
+ s.next(querySnapshot(0,['removed']));s.next(querySnapshot(0,[]));
+ assert.deepEqual(readCounts(f.events),[3,2,'unknown','unknown',0]);
+});
+
+test('cache/server transitions disclose reconnection uncertainty without resetting the initial estimate',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ s.next(querySnapshot(5));s.next(querySnapshot(5,[],{fromCache:true}));s.next(querySnapshot(5,[]));
+ s.next(querySnapshot(6,['added']));s.next(querySnapshot(6,[],{fromCache:true}));s.next(querySnapshot(7,['added']));
+ assert.deepEqual(readCounts(f.events),[5,0,'unknown',1,0,1,'unknown']);
+});
+
+test('missing metadata never creates known reads and does not consume the first server result',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ s.next({size:4});s.next(querySnapshot(4,[],{}));s.next(querySnapshot(4));
+ s.next({size:4});s.next(querySnapshot(4,['modified']));
+ assert.deepEqual(readCounts(f.events),['unknown','unknown',4,'unknown',1,'unknown']);
+});
+
+test('document listeners do not inspect or retain raw data and report subsequent events conservatively',()=>{
+ const f=listenerFixture();f.wrapped.doc().onSnapshot(()=>{});const s=f.subscriptions[0];
+ const doc=metadata=>({metadata,get data(){throw Error('must not inspect data');},get id(){throw Error('must not inspect IDs');}});
+ s.next(doc({fromCache:true}));s.next(doc(undefined));s.next(doc({fromCache:false}));
+ s.next(doc({fromCache:false}));s.next(doc({fromCache:true}));s.next(doc({fromCache:false}));
+ assert.deepEqual(readCounts(f.events),[0,'unknown',1,'unknown',0,'unknown']);
+});
+
+test('pending local writes are not treated as known server document reads',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ s.next(querySnapshot(2,['added'],{fromCache:false,hasPendingWrites:true}));
+ s.next(querySnapshot(2));s.next(querySnapshot(3,['added'],{fromCache:false,hasPendingWrites:true}));
+ s.next(querySnapshot(3,[]));
+ assert.deepEqual(readCounts(f.events),['unknown',2,'unknown','unknown']);
+});
+
+test('malformed/throwing metadata and changes stay unknown without preventing delivery; inspection is bounded',()=>{
+ const f=listenerFixture();let delivered=0;f.wrapped.collection().onSnapshot(()=>++delivered);const s=f.subscriptions[0];
+ s.next({get metadata(){throw Error('bad metadata');}});
+ s.next({metadata:{fromCache:false}}); // No size, still unknown.
+ s.next({metadata:{fromCache:false},docChanges(){throw Error('bad changes');}});
+ s.next({metadata:{fromCache:false},docChanges(){return null;}});
+ const changes=new Array(10001);Object.defineProperty(changes,0,{get(){throw Error('must not iterate over cap');}});
+ s.next({metadata:{fromCache:false},docChanges(){return changes;}});
+ s.next(querySnapshot(2,['unexpected']));s.next(querySnapshot(2,[]));
+ assert.equal(delivered,7);assert.deepEqual(readCounts(f.events),['unknown','unknown','unknown','unknown','unknown','unknown',0]);
+});
+
+test('query change inspection uses the snapshot receiver and default metadata filtering only',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ s.next(querySnapshot(1));
+ class Snapshot{
+  #changes=[{type:'modified',get doc(){throw Error('do not inspect document');}}];
+  metadata={fromCache:false};
+  docChanges(...args){assert.equal(args.length,0);return this.#changes;}
+ }
+ s.next(new Snapshot());assert.deepEqual(readCounts(f.events),[1,1]);
+});
+
+test('listener state is independent per registration and registration errors remain identical',()=>{
+ const f=listenerFixture(),q=f.wrapped.collection();q.onSnapshot(()=>{});q.onSnapshot(()=>{});
+ f.subscriptions[0].next(querySnapshot(4));f.subscriptions[1].next(querySnapshot(4));f.subscriptions[0].next(querySnapshot(4,[]));
+ assert.deepEqual(readCounts(f.events),[4,4,0]);
+ const before=f.events.length;assert.throws(()=>q.onSnapshot({reject:true},()=>{}),e=>e===f.failure);
+ assert.equal(f.events.length,before);
+});
+
+test('consumer next/error/complete exceptions and rejected next return values are untouched',async()=>{
+ const f=listenerFixture(),failure=new Error('consumer');
+ const throwing=()=>{throw failure;};
+ f.wrapped.collection().onSnapshot(throwing,throwing,throwing);
+ const s=f.subscriptions[0];
+ assert.throws(()=>s.next(querySnapshot(1)),e=>e===failure);
+ assert.throws(()=>s.error(f.failure),e=>e===failure);assert.throws(()=>s.complete(),e=>e===failure);
+ assert.deepEqual(readCounts(f.events),[1]);
+ const rejected=Promise.reject(failure);rejected.catch(()=>{});
+ f.wrapped.doc().onSnapshot(()=>rejected);assert.equal(f.subscriptions[1].next(querySnapshot()),rejected);
+ await assert.rejects(rejected,e=>e===failure);
+ const observer=Object.freeze({next:throwing,error:throwing,complete:throwing});
+ f.wrapped.doc().onSnapshot(observer);const o=f.subscriptions[2];
+ assert.throws(()=>o.next(querySnapshot()),e=>e===failure);
+ assert.throws(()=>o.error(f.failure),e=>e===failure);assert.throws(()=>o.complete(),e=>e===failure);
+});
+
+test('error-only observers are passed through unchanged and usage observer failures never affect listeners',async()=>{
+ const f=listenerFixture(),observer=Object.freeze({error(){assert.equal(this,observer);return f.result;}});
+ f.wrapped.doc().onSnapshot(observer);assert.equal(f.subscriptions[0].args[0],observer);
+ assert.equal(f.subscriptions[0].error(f.failure),f.result);assert.equal(f.events.length,0);
+ for(const observeUsage of [()=>{throw Error('usage observer');},()=>Promise.reject(Error('usage rejection'))]){
+  const fixture=listenerFixture(observeUsage);
+  fixture.wrapped.collection().onSnapshot(()=>fixture.result);
+  assert.equal(fixture.subscriptions[0].next(querySnapshot()),fixture.result);
+  fixture.subscriptions[0].next({});
+ }
+ await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('frozen own observer methods preserve their original receiver without proxy invariant failures',()=>{
+ const f=listenerFixture(),observer=Object.freeze({
+  next(){assert.equal(this,observer);return f.result;},
+  error(){assert.equal(this,observer);return f.result;},
+  complete(){assert.equal(this,observer);return f.result;}
+ });
+ f.wrapped.doc().onSnapshot({includeMetadataChanges:true},observer);const s=f.subscriptions[0];
+ assert.equal(s.next(querySnapshot()),f.result);assert.equal(s.error(f.failure),f.result);assert.equal(s.complete(),f.result);
+});
+
+test('synchronous native listener delivery preserves callback throws without relabeling them registration failures',()=>{
+ const failure=new Error('next failure'),events=[],receiver={},unsubscribe=()=>{};
+ const reference={onSnapshot(next){assert.equal(this,reference);assert.equal(next.call(receiver,querySnapshot(2)),7);return unsubscribe;}};
+ const database={collection:()=>reference},q=wrapFirestoreUsage(database,{observeUsage:e=>events.push(e)}).collection();
+ assert.equal(q.onSnapshot(function(){assert.equal(this,receiver);return 7;}),unsubscribe);
+ assert.throws(()=>q.onSnapshot(()=>{throw failure;}),e=>e===failure);
+ assert.deepEqual(readCounts(events),[2,2]);
+ assert.equal(reference.onSnapshot.name,'onSnapshot');
+});
+
+test('invalid metadata flags and oversized initial estimates remain unknown',()=>{
+ const f=listenerFixture();f.wrapped.collection().onSnapshot(()=>{});const s=f.subscriptions[0];
+ for(const fromCache of [null,0,1,'false'])s.next(querySnapshot(1,[],{fromCache}));
+ s.next(querySnapshot(1e9+1));
+ assert.deepEqual(readCounts(f.events),['unknown','unknown','unknown','unknown','unknown']);
 });

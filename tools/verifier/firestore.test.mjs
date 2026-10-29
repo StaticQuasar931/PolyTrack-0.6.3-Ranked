@@ -387,3 +387,94 @@ test('workflow quota mode is scoped only to production preflight and verificatio
     assert.doesNotMatch(step, /run: (?:node --test|npm test)/);
   }
 });
+
+
+test('latched calls keep admission reservations separate from actual HTTP attempts', async () => {
+  let calls = 0;
+  const raw = createFirestoreCaller({base:'https://offline.invalid',access:'fake',mode:'scheduled',
+    fetchImpl:async()=>{calls++;return response(429);}});
+  const bounded = budgetDatabase(raw, 3);
+  for (let i=0;i<3;i++) await assert.rejects(bounded.call('/queue/one'), {code:'FIRESTORE_READ_THROTTLED'});
+  await assert.rejects(bounded.call('/queue/one'), VerificationBudgetError);
+  assert.equal(calls,1);assert.equal(raw.requests(),1);assert.equal(bounded.httpRequests(),1);
+  assert.equal(bounded.requestReservations(),3);assert.equal(bounded.requests(),3);
+  assert.equal(bounded.remainingRequests(),0);assert.equal(bounded.failedRequests(),1);
+  assert.equal(bounded.unknownReadOutcomes(),0);
+});
+
+test('local serialization errors reserve admission without fabricating transport or read outcomes', async () => {
+  const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',fetchImpl:()=>assert.fail('No transport')});
+  const bounded=budgetDatabase(raw,1), body={};body.circular=body;
+  await assert.rejects(bounded.call(':runQuery',body),TypeError);
+  assert.equal(bounded.requests(),1);assert.equal(bounded.httpRequests(),0);
+  assert.equal(bounded.failedRequests(),0);assert.equal(bounded.unknownReadOutcomes(),0);
+});
+
+test('unreadable success bodies report unknown read or commit outcomes without exposing body errors', async () => {
+  for (const path of ['/queue/one',':runQuery',':batchGet',':commit']) {
+    let calls=0;
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'PRIVATE_TOKEN',
+      fetchImpl:async()=>{calls++;return {status:200,ok:true,json:async()=>{throw Error('PRIVATE_RESPONSE');}};}});
+    const bounded=budgetDatabase(raw,1);
+    await assert.rejects(bounded.call(path,path.startsWith(':')?{writes:[{},{}]}:undefined),error=>{
+      assert.equal(error.message,'Firestore response decoding failed');
+      assert.doesNotMatch(JSON.stringify(error),/PRIVATE/);return true;
+    });
+    assert.equal(calls,1);assert.equal(bounded.httpRequests(),1);assert.equal(bounded.failedRequests(),1);
+    assert.equal(bounded.estimatedDocumentReads(),0);
+    assert.equal(bounded.unknownReadOutcomes(),path===':commit'?0:1);
+    assert.equal(bounded.commitAttempts(),path===':commit'?1:0);
+    assert.equal(bounded.writeAttempts(),path===':commit'?2:0);
+    assert.equal(bounded.unknownCommitOutcomes(),path===':commit'?1:0);
+  }
+});
+
+test('malformed successful read shapes never masquerade as empty-query minimums', async () => {
+  for (const [path,body,result] of [
+    [':runQuery',{},{}],[':runQuery',{},[{error:{status:'INTERNAL'}}]],
+    [':batchGet',{documents:['one']},[]],[':batchGet',{},[{}]],['/queue/one',undefined,null]]) {
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',fetchImpl:async()=>response(200,result)});
+    assert.deepEqual(await raw.call(path,body),result);
+    assert.equal(raw.unknownReadOutcomes(),1);assert.equal(raw.estimatedDocumentReads(),0);
+    assert.equal(raw.emptyQueryMinimumReads(),0);assert.equal(raw.requests(),1);
+  }
+});
+
+test('network exceptions charge one attempt and retain explicit unknown read or commit outcomes', async () => {
+  for (const path of [':runQuery',':commit']) {
+    const failure=Error('PRIVATE_TRANSPORT');
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',
+      fetchImpl:async()=>{throw failure;},sleep:()=>assert.fail('No network retry')});
+    await assert.rejects(raw.call(path,{writes:[{},{}]}),error=>error===failure);
+    assert.equal(raw.requests(),1);assert.equal(raw.failedRequests(),1);
+    assert.equal(raw.unknownReadOutcomes(),path===':runQuery'?1:0);
+    assert.equal(raw.unknownCommitOutcomes(),path===':commit'?1:0);
+    assert.equal(raw.writeAttempts(),path===':commit'?2:0);
+  }
+});
+
+
+test('server and timeout responses mark potentially spent reads and ambiguous commits without retries', async () => {
+  for(const status of [408,500,502,503,504]) for(const path of [':runQuery',':commit']) {
+    let calls=0;
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',
+      fetchImpl:async()=>{calls++;return response(status);},sleep:()=>assert.fail('No retry')});
+    await assert.rejects(raw.call(path,{writes:[{}]}),{status});
+    assert.equal(raw.requests(),1);assert.equal(raw.failedRequests(),1);assert.equal(calls,1);
+    assert.equal(raw.unknownReadOutcomes(),path===':runQuery'?1:0);
+    assert.equal(raw.unknownCommitOutcomes(),path===':commit'?1:0);
+    assert.equal(raw.estimatedDocumentReads(),0);
+  }
+});
+
+
+test('unusable commit acknowledgements remain unknown rather than confirmed write counts', async () => {
+  for (const result of [null,{}, {writeResults:[]}, {writeResults:[{},{}]}]) {
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',fetchImpl:async()=>response(200,result)});
+    assert.deepEqual(await raw.call(':commit',{writes:[{}]}),result);
+    assert.equal(raw.commitAttempts(),1);assert.equal(raw.writeAttempts(),1);assert.equal(raw.unknownCommitOutcomes(),1);
+  }
+  const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',fetchImpl:async()=>response(200,{writeResults:[{}]})});
+  await raw.call(':commit',{writes:[{}]});
+  assert.equal(raw.unknownCommitOutcomes(),0);assert.equal(raw.writeAttempts(),1);
+});

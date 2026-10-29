@@ -1,3 +1,4 @@
+import {createPublicMissGuard} from './public-miss-guard.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
 import {recallPublicResponse, rememberPublicResponse} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
@@ -13,7 +14,7 @@ import {compactOverallEntries, compactOverallSnapshot, unpackOverallDetails, OVE
 import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
 import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
-import { recordFirestoreReads } from './firestore-read-cost.js';
+import { createFirestoreAudit, recordFirestoreReads, recordFirestoreFailure } from './firestore-read-cost.js';
 import {loadOverallSources, sourceCatalogAfterTrackWrite, sourceCatalogNeedsScan, sourceCatalogIsReady, SOURCE_CATALOG_RESCAN_MS} from './overall-source-cache.js';
 import {SOURCE_PUBLICATION_COLLECTION, sourcePublicationIds, prepareSourcePublication, decodeSourcePublication} from './overall-source-publication.js';
 import {ENTITLEMENT_COLLECTION, ENTITLEMENT_CACHE_COLLECTION, entitlementPolicyKey, entitlementEpoch,
@@ -221,6 +222,9 @@ let firebaseJwksRefresh = null;
 let firebaseJwksRefreshAfter = 0;
 let serviceToken = { value: '', expiresAt: 0 };
 const publicSnapshotLoads = new Map();
+const publicMissGuards = new WeakMap();
+function publicMissGuard(env){const owner=env.__FIRESTORE_ROOT_ENV||env;let guard=publicMissGuards.get(owner);if(!guard)publicMissGuards.set(owner,guard=createPublicMissGuard());return guard;}
+const unrankedBoardLoads = new WeakMap();
 
 function allowedOrigins(env) {
   return new Set(String(env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean));
@@ -402,18 +406,27 @@ function decodeFields(fields) {
 
 async function firestoreRequest(env, path, init = {}) {
   const audit=env.__FIRESTORE_READ_AUDIT;
+  const quota=env.__FIRESTORE_QUOTA_STATE || audit;
   // Catch-and-continue maintenance must not spend more calls after quota exhaustion.
-  if (audit?.quotaStopped) throw new Error('FIRESTORE_429');
+  if (quota?.quotaStopped) throw new Error('FIRESTORE_429');
   takeOverallRequest(env);
   if (!audit) return loadFirestoreRequest(env,path,init);
-  audit.httpRequests++;
+  audit.operationAttempts = (audit.operationAttempts || 0) + 1;
+  let transported = false;
   try {
-    const value=await loadFirestoreRequest(env,path,init);
+    const value=await loadFirestoreRequest(env,path,init,() => {
+      transported = true;
+      audit.httpRequests++;
+    });
     recordFirestoreReads(audit,path,init,value);
     return value;
   } catch(error) {
-    audit.failedRequests++;
-    if (error?.status === 429 || error?.message === 'FIRESTORE_429') audit.quotaStopped = true;
+    audit.failedOperations = (audit.failedOperations || 0) + 1;
+    if (transported) {
+      audit.failedRequests++;
+      recordFirestoreFailure(audit,path,init);
+    } else audit.preTransportFailures = (audit.preTransportFailures || 0) + 1;
+    if (error?.status === 429 || error?.message === 'FIRESTORE_429') quota.quotaStopped = true;
     throw error;
   }
 }
@@ -425,13 +438,19 @@ function takeOverallRequest(env) {
   budget.used++;
 }
 
-async function loadFirestoreRequest(env, path, init = {}) {
-  if (typeof env.__TEST_FIRESTORE === 'function') return env.__TEST_FIRESTORE(path, init);
+async function loadFirestoreRequest(env, path, init = {}, onTransport = () => {}) {
+  if (typeof env.__TEST_FIRESTORE === 'function') {
+    onTransport();
+    return env.__TEST_FIRESTORE(path, init);
+  }
   const token = await serviceAccessToken(env);
-  const response = await fetch(`${documentBase(env)}${path}`, {
+  const url = `${documentBase(env)}${path}`;
+  const fetchInit = {
     ...init,
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, ...(init.headers || {}) }
-  });
+  };
+  onTransport();
+  const response = await fetch(url, fetchInit);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`FIRESTORE_${response.status}`);
   if (response.status === 204) return null;
@@ -1357,7 +1376,7 @@ export async function bootstrapSnapshotVerification(env) {
 }
 
 export async function reconcileCanonicalChanges(env, {scanResults = true, now = Date.now()} = {}) {
-  env = {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.httpRequests || 0),limit:42}};
+  env = {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.operationAttempts ?? env.__FIRESTORE_READ_AUDIT?.httpRequests ?? 0),limit:42}};
   // New namespace discards any cursor poisoned by legacy client-clock timestamps.
   const jobId='canonical_reconcile_v2';
   const document=await readDocument(env,COLLECTIONS.jobs,jobId);
@@ -1569,7 +1588,7 @@ export function rebuildOverall(env, force = false, {adminRecovery = false} = {})
 async function loadOverallRebuild(env, force = false) {
   // Include earlier scheduled/request Firestore work; reserve five of an assumed
   // fifty subrequests for cold auth/other external work. Cache calls count too.
-  env = {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.httpRequests || 0),limit:42}};
+  env = {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.operationAttempts ?? env.__FIRESTORE_READ_AUDIT?.httpRequests ?? 0),limit:42}};
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   const now = Date.now();
@@ -1971,8 +1990,15 @@ async function notifyProfile(request, env, context, uid, body) {
     ? [...new Set([...(existing.pendingTrackIds || []), ...trackIds])]
     : trackIds;
   const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active: pendingTrackIds.length > 0, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now() },existingDoc?.updateTime||'');
-  const task = processProfileJob(env, jobId, { kind: 'profile', active: true, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds },written?.updateTime||'');
-  if (context.waitUntil) context.waitUntil(task.catch((error) => console.error('Deferred profile job failed', String(error?.message || error))));
+  const backgroundAudit = createFirestoreAudit();
+  const backgroundEnv = {...env, __FIRESTORE_READ_AUDIT:backgroundAudit};
+  const task = processProfileJob(backgroundEnv, jobId, { kind: 'profile', active: true, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds },written?.updateTime||'')
+    .catch((error) => console.error('Deferred profile job failed', String(error?.message || error)))
+    .finally(() => console.log('Ranked background Firestore reads',JSON.stringify({routeCategory:'profile',
+      measurementScope:'background_profile_job_final',...backgroundAudit,billingEstimateOnly:true})));
+  if (context.waitUntil) {
+    try { context.waitUntil(task); } catch { await task; }
+  } else await task;
   return json(request.headers.get('Origin') || '', env, 202, { accepted: true, accountId, queued: pendingTrackIds.length, betaEntitlement });
 }
 
@@ -2079,11 +2105,27 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
   const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
   const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
   if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) return json(origin, env, 403, { error: 'cosmetic_locked' });
-  const identityUpdatedAt = Date.now();
-  await writeDocument(env, COLLECTIONS.profiles, accountId, { ...profile.data, profileCosmetics: cosmetics, identityUpdatedAt, updatedAt: identityUpdatedAt }, profile.updateTime);
-  if (overall?.data && Array.isArray(overall.data.entries)) {
+  if (!overall) {
+    // Reconstruct rankings only through the existing bounded publisher, never
+    // fabricate a partial Overall from a single cosmetics request.
+    const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
+    if (metaDoc?.data?.dirty !== true) await commitDocuments(env, [{collection:COLLECTIONS.meta,id:'current',prior:metaDoc,
+      data:{...metaDoc?.data,dirty:true,revision:Math.max(0,Number(metaDoc?.data?.revision || 0))+1}}]);
+  }
+  const sameCosmetics = value => value?.version === PROFILE_COSMETICS_VERSION &&
+    JSON.stringify(sanitizeProfileCosmetics(value)) === JSON.stringify(cosmetics);
+  const profileCurrent = sameCosmetics(profile.data.profileCosmetics) &&
+    Number.isSafeInteger(profile.data.identityUpdatedAt) && profile.data.identityUpdatedAt > 0;
+  const identityUpdatedAt = profileCurrent ? profile.data.identityUpdatedAt : Date.now();
+  if (!profileCurrent) await writeDocument(env, COLLECTIONS.profiles, accountId, { ...profile.data, profileCosmetics: cosmetics, identityUpdatedAt, updatedAt: identityUpdatedAt }, profile.updateTime);
+  // Profile equality alone is not proof of propagation. Repair stale Overall and
+  // always consult notifyProfile so missing/inactive jobs still recover.
+  const overallIdentityUpdatedAt = Number.isSafeInteger(entry.identityUpdatedAt) && entry.identityUpdatedAt > 0
+    ? Math.max(identityUpdatedAt, entry.identityUpdatedAt) : identityUpdatedAt;
+  if (overall?.data && Array.isArray(overall.data.entries) && Object.keys(entry).length &&
+      (!sameCosmetics(entry.profileCosmetics) || entry.identityUpdatedAt !== overallIdentityUpdatedAt)) {
     const entries = overall.data.entries.map((row) => safeText(row.userId || row.accountId, 128) === accountId ? { ...row, profileCosmetics: cosmetics } : row);
-    await writeOverallSnapshot(env, overall, { ...overall.data, entries: entries.map(row => safeText(row.userId || row.accountId, 128) === accountId ? {...row, identityUpdatedAt} : row) });
+    await writeOverallSnapshot(env, overall, { ...overall.data, entries: entries.map(row => safeText(row.userId || row.accountId, 128) === accountId ? {...row, identityUpdatedAt:overallIdentityUpdatedAt} : row) });
   }
   return notifyProfile(request, env, context, uid, { accountId });
 }
@@ -2329,6 +2371,8 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
   const remembered = recallPublicResponse(env, cacheKey.url);
   if (remembered) return remembered;
   if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
+  const missGuard=publicMissGuard(env),missClient=(request.headers.get('CF-Connecting-IP')||'unknown').slice(0,128);
+  if(!missGuard.permits(missClient))return rateLimited(origin,env);
   const key = cacheKey.url;
   let load = publicSnapshotLoads.get(key);
   if (!load) {
@@ -2345,6 +2389,7 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         }
         const snapshot = pageReady ? await readDocument(env, collection, id) : null;
         if (!snapshot) {
+          missGuard.missing(missClient);
           const response = json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10');
           if (cache) {
             const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
@@ -2457,13 +2502,45 @@ async function submitExtraTrackReport(request, env, origin, uid, body) {
   return json(origin, env, 503, {error:'service_unavailable'});
 }
 
+async function publicUnrankedBoard(request, env, context, origin) {
+  const trackId = new URL(request.url).searchParams.get('trackId');
+  if (trackId !== UNRANKED_EXTRA_TRACK_ID) return json(origin, env, 400, {error:'invalid_track_id'});
+  const url = new URL('/__ranked_unranked_board/' + encodeURIComponent(env.FIREBASE_PROJECT_ID || PROJECT_ID), request.url);
+  url.searchParams.set('origin', origin);
+  const key = new Request(url), cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cached = await cache?.match(key).catch(() => null);
+  if (cached) return cached;
+  const remembered = recallPublicResponse(env, key.url);
+  if (remembered) return remembered;
+  if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
+  const owner = env.__FIRESTORE_ROOT_ENV || env;
+  let loads = unrankedBoardLoads.get(owner);
+  if (!loads) unrankedBoardLoads.set(owner, loads = new Map());
+  let pending = loads.get(key.url);
+  if (!pending) {
+    if (loads.size >= 64) return json(origin, env, 503, {error:'public_cache_busy'});
+    pending = Promise.resolve().then(async () => {
+      const startedAt = Date.now();
+      const board = await readDocument(env, COLLECTIONS.unrankedExtra, trackId);
+      const response = json(origin, env, 200, {trackId,unranked:true,entries:board?.data.entries||[],total:board?.data.total||0}, 'public, max-age=10');
+      await rememberPublicResponse(env, key.url, response, startedAt);
+      if (cache) {
+        const fill = Promise.resolve().then(() => cache.put(key, response.clone())).catch(() => {});
+        if (context.waitUntil) {
+          try { context.waitUntil(fill); } catch { await fill; }
+        }
+        await fill;
+      }
+      return response;
+    }).finally(() => { if (loads.get(key.url) === pending) loads.delete(key.url); });
+    loads.set(key.url, pending);
+  }
+  return (await pending).clone();
+}
+
 async function unrankedExtraBoard(request, env, origin, uid, body) {
   const trackId = request.method === 'GET' ? new URL(request.url).searchParams.get('trackId') : body?.trackId;
   if (trackId !== UNRANKED_EXTRA_TRACK_ID) return json(origin, env, 400, {error:'invalid_track_id'});
-  if (request.method === 'GET') {
-    const board = await readDocument(env, COLLECTIONS.unrankedExtra, trackId);
-    return json(origin, env, 200, {trackId,unranked:true,entries:board?.data.entries||[],total:board?.data.total||0}, 'public, max-age=10');
-  }
   const accountId = safeText(body.accountId,64), timeMs = Number(body.timeMs), frames = Number(body.frames);
   if (!/^[a-f0-9]{64}$/.test(accountId) || !Number.isSafeInteger(timeMs) || timeMs < 1 || timeMs > 86400000 || frames !== timeMs || typeof body.recording !== 'string' || !/^[A-Za-z0-9+/_=-]{16,65536}$/.test(body.recording)) return json(origin, env, 400, {error:'invalid_run'});
   const profile = await readDocument(env, COLLECTIONS.profiles, accountId);
@@ -2501,8 +2578,8 @@ function requestRouteCategory(request) {
 }
 
 export async function handleRequest(request, env, context = {}) {
-  const audit = {httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
-  const auditedEnv = {...env,__FIRESTORE_READ_AUDIT:audit,__FIRESTORE_ROOT_ENV:env};
+  const audit = createFirestoreAudit();
+  const auditedEnv = {...env,__FIRESTORE_READ_AUDIT:audit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{}};
   const routeCategory = requestRouteCategory(request);
   try {
     return await handleRequestInternal(request,auditedEnv,context);
@@ -2558,8 +2635,7 @@ async function handleRequestInternal(request, env, context = {}) {
     return publicSnapshot(request, env, context, origin, COLLECTIONS.overall, 'main');
   }
   if (request.method === 'GET' && path === '/v1/extra-tracks/unranked') {
-    if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
-    return unrankedExtraBoard(request, env, origin);
+    return publicUnrankedBoard(request, env, context, origin);
   }
   if (request.method === 'GET' && path === '/v1/snapshot/track') {
     const trackId = safeText(new URL(request.url).searchParams.get('trackId'), 80);
@@ -2651,8 +2727,8 @@ export default {
       const scheduledAt = _event.scheduledTime;
       if (!scheduledIntervalDue(scheduledAt, BACKGROUND_REPAIR_INTERVAL_MS)) return;
     }
-    const readAudit={httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
-    env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env};
+    const readAudit=createFirestoreAudit();
+    env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{}};
     context.waitUntil((async()=>{
       if (_event.cron === '*/2 * * * *') {
         let rollingRefreshed = false;

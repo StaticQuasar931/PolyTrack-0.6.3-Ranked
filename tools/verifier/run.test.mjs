@@ -3,7 +3,8 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {runRound, runVerifier} from './run.mjs';
+import {runRound, runVerifier, verifierAccounting} from './run.mjs';
+import {createFirestoreCaller} from './firestore.mjs';
 import {VerificationEventConflictError} from './throughput.mjs';
 import {prioritizeQueueDocuments} from './runner.mjs';
 import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION} from '../../workers/ranked/src/verification.js';
@@ -152,7 +153,8 @@ test('non-drain exact tagged event conflict defers once with incomplete counts a
     const result = await runVerifier(f.options);
     assert.deepEqual(result, {deferred: true, reason: 'event_conflict', interruptedRound: true, countsComplete: false});
     assert.equal(f.eventCalls(), 1);
-    assert.deepEqual(f.logs.map(line => JSON.parse(line)), [result]);
+    assert.deepEqual(f.logs.map(line => JSON.parse(line)).filter(row=>!row.firestoreUsage), [result]);
+    assert.equal(JSON.parse(f.logs.at(-1)).firestoreUsage.outcome,'deferred');
     if (summaryPath) {
       const text = fs.readFileSync(summaryPath, 'utf8');
       assert.match(text, /## Verification deferred/);
@@ -180,8 +182,11 @@ test('non-drain event deferral rejects untagged conflicts, lookalikes and non-AB
     const f = failureFixture(failure, {summaryPath});
     await assert.rejects(runVerifier(f.options), error => error === failure);
     assert.equal(f.eventCalls(), 1);
-    assert.deepEqual(f.logs, []);
-    assert.equal(fs.existsSync(summaryPath), false, 'failed work must not be summarized as deferred');
+    assert.equal(f.logs.length,1);
+    assert.equal(JSON.parse(f.logs[0]).firestoreUsage.outcome,'failed');
+    const text=fs.readFileSync(summaryPath,'utf8');
+    assert.match(text,/## Firestore accounting/);
+    assert.doesNotMatch(text,/## Verification deferred|## Bounded drain/);
   }
 });
 
@@ -224,4 +229,76 @@ test('new committed review findings raise workflow warnings without another quer
  assert.equal(messages.length,0);announceReviewFindings(1,m=>messages.push(m));announceReviewFindings(2,m=>messages.push(m));
  assert.equal(messages.length,2);assert.match(messages[0],/^::warning title=Replay review required::1 new replay review finding\./);
  assert.match(messages[1],/2 new replay review findings\./);assert.match(messages[0],/remain held pending human review/);
+});
+
+
+test('failure accounting survives preflight throttle, parse failures and unexpected drain exceptions', async t => {
+  for (const check of [true,false]) for (const kind of ['throttle','parse','network']) {
+    const summaryPath=summaryFile(t), logs=[];
+    const failure=Error('PRIVATE_TRANSPORT_PAYLOAD');let calls=0;
+    const raw=createFirestoreCaller({base:'https://offline.invalid',access:'PRIVATE_ACCESS',mode:'scheduled',
+      fetchImpl:async()=>{
+        calls++;
+        if(kind==='network')throw failure;
+        if(kind==='throttle')return new Response('{}',{status:429});
+        return {status:200,ok:true,json:async()=>{throw Error('PRIVATE_PARSE_BODY');}};
+      }});
+    const options={check,drain:!check,clock:()=>0,env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'PRIVATE_CREDENTIAL',GITHUB_STEP_SUMMARY:summaryPath},
+      validateEngine:async()=>{},connectDatabase:async()=>raw,log:line=>logs.push(line),
+      eventRun:async db=>{await db.call(':runQuery',{});assert.fail('must stop');},
+      eventCheck:()=>assert.fail('No extra preflight discovery')};
+    if(kind==='throttle')await runVerifier(options);
+    else await assert.rejects(runVerifier(options),error=>kind==='network'?error===failure:error.message==='Firestore response decoding failed');
+    const receipt=JSON.parse(logs.at(-1)).firestoreUsage;
+    assert.equal(receipt.phase,check?'preflight':'drain');
+    assert.equal(receipt.outcome,kind==='throttle'?'deferred':'failed');
+    assert.equal(receipt.firestoreHttpRequests,1);assert.equal(receipt.firestoreFailedRequests,1);
+    assert.equal(receipt.firestoreRequestReservations,check?null:1);
+    assert.equal(receipt.firestoreUnknownReadOutcomes,kind==='throttle'?0:1);
+    assert.equal(receipt.firestoreEstimatedDocumentReads,0);assert.equal(calls,1);
+    assert.doesNotMatch(logs.join('')+fs.readFileSync(summaryPath,'utf8'),/PRIVATE_|offline.invalid/);
+    assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT' in options.env,false);
+  }
+});
+
+test('accounting getters are numeric-only, tolerate unavailable counters and cannot leak details', () => {
+  const result=verifierAccounting({requests:()=>7,returnedDocuments:()=>{throw Error('PRIVATE');},
+    failedRequests:()=>-1,writeAttempts:()=>({token:'PRIVATE'}),unknownReadOutcomes:()=>Infinity});
+  assert.equal(result.firestoreHttpRequests,7);assert.equal(result.firestoreRequestReservations,null);
+  assert.equal(result.firestoreReturnedDocuments,null);assert.equal(result.firestoreFailedRequests,null);
+  assert.ok(Object.values(result).every(value=>value===null||Number.isSafeInteger(value)&&value>=0));
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE/);
+});
+
+test('accounting reporter failures do not replace original exceptions', async t => {
+  const failure=Error('original'),summaryPath=path.join(path.dirname(summaryFile(t)),'missing','summary');
+  await assert.rejects(runVerifier({check:true,
+    env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'fake',GITHUB_STEP_SUMMARY:summaryPath},
+    connectDatabase:async()=>({call:async()=>{throw failure;}}),log:()=>{throw Error('logger');}}),error=>error===failure);
+});
+
+test('accounting getter failures cannot change successful work', async () => {
+  const result=await runVerifier({check:true,env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'fake'},log:()=>{},
+    connectDatabase:async()=>({call:async()=>[],failedRequests:()=>{throw Error('PRIVATE_COUNTER');}}),
+    eventCheck:async()=>({hasWork:false})});
+  assert.equal(result.hasWork,false);
+});
+
+test('unavailable transport counters never fall back to budget reservations', async () => {
+  const {budgetDatabase}=await import('./throughput.mjs');
+  const raw={call:async()=>[],httpRequests:()=>null,requests:()=>999};
+  const bounded=budgetDatabase(raw,2);
+  await bounded.call(':runQuery',{});
+  const result=verifierAccounting(bounded);
+  assert.equal(result.firestoreHttpRequests,null);assert.equal(result.firestoreRequestReservations,1);
+});
+
+test('authentication exceptions emit unavailable accounting and clear credentials without a DB probe', async t => {
+  const logs=[],summaryPath=summaryFile(t),failure=Error('PRIVATE_AUTH');
+  const env={FIREBASE_VERIFIER_SERVICE_ACCOUNT:'PRIVATE_CREDENTIAL',GITHUB_STEP_SUMMARY:summaryPath};
+  await assert.rejects(runVerifier({check:true,env,log:line=>logs.push(line),connectDatabase:async()=>{throw failure;}}),error=>error===failure);
+  const receipt=JSON.parse(logs[0]).firestoreUsage;
+  assert.equal(receipt.phase,'connect');assert.equal(receipt.outcome,'failed');
+  assert.equal(receipt.firestoreHttpRequests,null);assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT' in env,false);
+  assert.doesNotMatch(logs.join('')+fs.readFileSync(summaryPath,'utf8'),/PRIVATE/);
 });

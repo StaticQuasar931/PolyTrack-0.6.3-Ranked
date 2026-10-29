@@ -1,4 +1,46 @@
 // Diagnostic estimates, not a billing meter: excludes index entries and Rules reads.
+export function createFirestoreAudit() {
+  return {operationAttempts:0, failedOperations:0, preTransportFailures:0,
+    httpRequests:0, failedRequests:0, documentReadEstimate:0, collections:{},
+    writeEstimate:0, deleteEstimate:0, writeCollections:{}, unknownReadRequests:0, unknownWriteRequests:0};
+}
+
+// A failed transport/response does not prove that the server did no billable work.
+// Null is deliberately sticky: later successes cannot turn unknown cost into zero.
+export function recordFirestoreFailure(audit, path, init = {}) {
+  const method = String(init.method || 'GET').toUpperCase();
+  if (path === ':runQuery' || path === ':batchGet' || path.startsWith('/') && method === 'GET') {
+    audit.documentReadEstimate = null;
+    audit.unknownReadRequests = (audit.unknownReadRequests || 0) + 1;
+    try {
+      const body = JSON.parse(init.body || '{}');
+      const collections = path === ':runQuery' ? [body.structuredQuery?.from?.[0]?.collectionId || 'query'] :
+        path === ':batchGet' ? (body.documents || []).map(collectionForDocument) : [collectionForDocument(path.split('?')[0])];
+      for (const collection of collections) if (collection) audit.collections[collection] = null;
+    } catch {}
+  }
+  if (path === ':commit' || method === 'PATCH' || method === 'DELETE') {
+    let writes;
+    try {
+      writes = path === ':commit' ? JSON.parse(init.body || '{}').writes || [] :
+        [method === 'DELETE' ? {delete:path} : {update:{name:path}}];
+      if (!Array.isArray(writes)) throw Error('Invalid writes');
+    } catch { writes = null; }
+    if (writes?.length === 0) return;
+    audit.unknownWriteRequests = (audit.unknownWriteRequests || 0) + 1;
+    if (!writes) { audit.writeEstimate = null; audit.deleteEstimate = null; return; }
+    audit.writeCollections ||= {};
+    for (const write of writes) {
+      const deleting = typeof write.delete === 'string';
+      const collection = collectionForDocument(write.delete || write.update?.name || write.transform?.document || '');
+      if (deleting) audit.deleteEstimate = null; else audit.writeEstimate = null;
+      if (!collection) continue;
+      audit.writeCollections[collection] ||= {writes:0, deletes:0};
+      audit.writeCollections[collection][deleting ? 'deletes' : 'writes'] = null;
+    }
+  }
+}
+
 export function recordFirestoreReads(audit, path, init, payload) {
   recordFirestoreWrites(audit, path, init);
   let collection = '', reads = 0;
@@ -9,8 +51,8 @@ export function recordFirestoreReads(audit, path, init, payload) {
   } else if (path === ':batchGet') {
     for (const name of JSON.parse(init.body).documents || []) {
       const key = name.split('/documents/')[1]?.split('/')[0] || 'batch';
-      audit.collections[key] = (audit.collections[key] || 0) + 1;
-      audit.documentReadEstimate++;
+      if (audit.collections[key] !== null) audit.collections[key] = (audit.collections[key] || 0) + 1;
+      if (audit.documentReadEstimate !== null) audit.documentReadEstimate++;
     }
     return;
   } else if (path.startsWith('/') && (!init.method || init.method === 'GET')) {
@@ -18,8 +60,8 @@ export function recordFirestoreReads(audit, path, init, payload) {
     reads = 1;
   }
   if (reads) {
-    audit.collections[collection] = (audit.collections[collection] || 0) + reads;
-    audit.documentReadEstimate += reads;
+    if (audit.collections[collection] !== null) audit.collections[collection] = (audit.collections[collection] || 0) + reads;
+    if (audit.documentReadEstimate !== null) audit.documentReadEstimate += reads;
   }
 }
 
@@ -44,21 +86,21 @@ function recordFirestoreWrites(audit, path, init) {
 
   if (!writeNames.length && !deletes.length) return;
   audit.writeCollections ||= {};
-  audit.writeEstimate ||= 0;
-  audit.deleteEstimate ||= 0;
+  if (audit.writeEstimate === undefined) audit.writeEstimate = 0;
+  if (audit.deleteEstimate === undefined) audit.deleteEstimate = 0;
   for (const name of writeNames) {
     const collection = collectionForDocument(name);
     if (!collection) continue;
     audit.writeCollections[collection] ||= {writes: 0, deletes: 0};
-    audit.writeCollections[collection].writes++;
-    audit.writeEstimate++;
+    if (audit.writeCollections[collection].writes !== null) audit.writeCollections[collection].writes++;
+    if (audit.writeEstimate !== null) audit.writeEstimate++;
   }
   for (const name of deletes) {
     const collection = collectionForDocument(name);
     if (!collection) continue;
     audit.writeCollections[collection] ||= {writes: 0, deletes: 0};
-    audit.writeCollections[collection].deletes++;
-    audit.deleteEstimate++;
+    if (audit.writeCollections[collection].deletes !== null) audit.writeCollections[collection].deletes++;
+    if (audit.deleteEstimate !== null) audit.deleteEstimate++;
   }
 }
 
