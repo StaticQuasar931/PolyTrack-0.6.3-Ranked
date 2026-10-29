@@ -1,12 +1,15 @@
 const releaseInfo = {
-  "number": 233,
+  "number": 234,
   "version": "0.6.3",
-  "revision": 202,
+  "revision": 203,
   "notes": [
-    "Restored the established event layout with a wider image-led Kodub card and centered map cards.",
-    "Kept full-width spacing and corrected enlarged-text clipping without reverting gameplay fixes."
+    "Developer diagnostics include partial listener-read estimates and disclose unknown costs.",
+    "Verifier accounting separates request reservations, transport attempts and uncertain outcomes.",
+    "Backend caching and idempotent cosmetic saves reduce repeated shared work.",
+    "Background profile jobs report their final costs separately from foreground requests.",
+    "Repeated missing-board probes back off without restricting future custom-track publication."
   ],
-  "preparedAt": "2026-10-29T00:48:16.346Z"
+  "preparedAt": "2026-10-29T01:32:04.473Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
