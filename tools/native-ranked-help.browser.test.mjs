@@ -8,7 +8,7 @@ import {startResponsiveServer} from './responsive-server.mjs';
 
 const url=String(process.env.POLYTRACK_NATIVE_AUDIT_URL||'').trim();
 
-test('native Ranked Help fits phone, portrait, landscape, and desktop viewports', {timeout:120000}, async t=>{
+test('native Ranked Help fits phone, portrait, landscape, and desktop viewports', {timeout:180000}, async t=>{
  const server=url?null:await startResponsiveServer();
  if(server)t.after(()=>server.close());
  const target=url||server.url;
@@ -54,7 +54,7 @@ test('native Ranked Help fits phone, portrait, landscape, and desktop viewports'
   await page.locator('#overallHelpClose').focus();
   const screenshotDir=process.env.POLYTRACK_NATIVE_HELP_SCREENSHOT_DIR;
   if(screenshotDir)await fs.mkdir(screenshotDir,{recursive:true});
-  for(const [width,height] of [[1366,768],[390,844],[844,390],[320,568]]){
+  for(const [width,height] of [[1366,768],[390,844],[844,390],[320,568],[768,1024],[1024,768],[540,720],[720,540],[344,882],[882,344]]){
    await page.setViewportSize({width,height});
     await card.evaluate(node=>{node.scrollTop=0;});
     const toolbar=await popup.evaluate(node=>{

@@ -396,7 +396,8 @@ test('unsupported client shows labelled native blue square dialog with fixed saf
   assert.equal(dialog['aria-labelledby'], dialog.children[0].id);
   assert.equal(dialog['aria-describedby'], dialog.children[1].id);
   assert.equal(dialog.style.borderRadius, '0');
-  assert.equal(dialog.style.background, '#17274d');
+  assert.equal(dialog.style.background, '#1c2959');
+  assert.equal(dialog.style.font, 'clamp(18px, 5dvh, 22px)/1.35 ForcedSquare, sans-serif');
   const [open, offline] = choices(h.document);
   assert.equal(open.textContent, 'Open updated game');
   assert.equal(open.href, 'https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/');
@@ -652,6 +653,8 @@ test('installed revision notice uses native keyboard focus, waits for safe menus
       assert.equal(await page.locator('dialog').count(), 0);
       await page.evaluate(() => { racing = false; notice.resume(); });
       assert.equal(await page.getByRole('dialog', {name: 'PolyTrack update 236'}).count(), 1);
+      assert.equal(await page.locator('dialog').evaluate(node=>getComputedStyle(node).fontSize),'22px');
+      assert.equal(await page.getByRole('button',{name:'OK',exact:true}).evaluate(node=>getComputedStyle(node).borderRadius),'0px');
       for (const [width,height] of [[320,568],[844,320],[1366,768]]) {
         await page.setViewportSize({width,height});
         assert.equal(await page.locator('dialog').evaluate(node => {
@@ -718,6 +721,8 @@ test('native dialog keyboard focus, mobile fit and new-tab navigation preserve t
       const before = await session();
       const dialog = page.getByRole('dialog', {name: 'Update needed for online play'});
       assert.equal(await dialog.isVisible(), true);
+      assert.equal(await dialog.evaluate(node=>getComputedStyle(node).fontSize),'22px');
+      assert.equal(await dialog.locator('h2').evaluate(node=>getComputedStyle(node).fontWeight),'400');
       assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Stay here offline');
       await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Open updated game');

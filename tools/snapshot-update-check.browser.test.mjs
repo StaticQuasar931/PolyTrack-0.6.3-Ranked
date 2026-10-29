@@ -10,13 +10,14 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
  const source=await fs.readFile(new URL('./snapshot-update-check.mjs',import.meta.url),'utf8');
  const guardSource=await fs.readFile(new URL('./partial-replay-selection.mjs',import.meta.url),'utf8');
  const css=await fs.readFile(new URL('../home-ui.css',import.meta.url),'utf8');
+ const font=await fs.readFile(new URL('../forced_square.woff2',import.meta.url));
  const evidence=process.env.SNAPSHOT_UPDATE_EVIDENCE;
  if(evidence)await fs.mkdir(evidence,{recursive:true});
  await page.route('**/*',route=>{
   const url=new URL(route.request().url());if(url.hostname!=='snapshot.test'){external++;return route.abort();}
-  return route.fulfill({contentType:url.pathname.endsWith('.mjs')?'text/javascript':'text/html',body:url.pathname.endsWith('partial-replay-selection.mjs')?guardSource:url.pathname.endsWith('.mjs')?source:'<button id="status">Snapshot package</button>'});
+  return route.fulfill({contentType:url.pathname.endsWith('.mjs')?'text/javascript':'text/html',body:url.pathname.endsWith('partial-replay-selection.mjs')?guardSource:url.pathname.endsWith('.mjs')?source:'<button id="status">Snapshot package</button><span id="after">Following control</span>'});
  });
- await page.goto('http://snapshot.test/');await page.addStyleTag({content:css});
+ await page.goto('http://snapshot.test/');await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css});
  await page.evaluate(async()=>{
   window.nativeKeys=[];window.reloads=0;
   for(const type of ['keydown','keyup']){
@@ -29,6 +30,10 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
   await page.setViewportSize({width,height});await page.locator('#status').focus();
   await page.evaluate(()=>check.showSnapshotUpdateResult({status:'newer',generation:69},{reload:()=>reloads++}));
   const box=await page.locator('dialog').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1);
+  assert.equal(await page.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true,'dialog does not overflow horizontally');
+  assert.equal(await page.locator('dialog').evaluate(node=>getComputedStyle(node).fontSize),height<400?'18px':'22px');
+  assert.equal(await page.locator('dialog').evaluate(node=>node.scrollTop),0,'initial focus does not clip the dialog heading');
+  assert.equal(await page.getByRole('button',{name:'Reload this page'}).evaluate(node=>getComputedStyle(node).borderRadius),'0px');
   assert.equal(await page.getByRole('button',{name:'Reload this page'}).count(),1);
   assert.match(await page.locator('#sq-snapshot-update-description').textContent(),/Pinned links and embedded games may reopen the same build/);
   assert.doesNotMatch(await page.locator('#sq-snapshot-update-description').textContent(),/Reload to load the latest/);
@@ -50,6 +55,8 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
  for(const reducedMotion of ['no-preference','reduce']){
   await page.emulateMedia({reducedMotion});
   const before=await page.evaluate(()=>shakes.length);
+  const layout=()=>page.locator('#after').evaluate(node=>{const rect=node.getBoundingClientRect();return {x:rect.x,y:rect.y,width:document.documentElement.scrollWidth,height:document.body.scrollHeight};});
+  const beforeLayout=await layout();
   for(let click=0;click<2;click++){
    await page.evaluate(()=>{window.feedback=check.showSnapshotUpdateResult({status:'current'},{origin:document.getElementById('status')});});
    await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent==='No newer snapshot reported.');
@@ -57,6 +64,12 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
    assert.equal(await page.getByRole('status').count(),1,'repeat feedback replaces, not stacks');
    assert.equal(await page.getByRole('status').textContent(),'No newer snapshot reported.');
    assert.equal(await page.getByRole('status').getAttribute('aria-live'),'polite');
+   const hiddenStatus=await page.getByRole('status').evaluate(node=>{
+    const style=getComputedStyle(node),rect=node.getBoundingClientRect();
+    return {position:style.position,clip:style.clipPath,width:rect.width,height:rect.height,display:style.display,visibility:style.visibility,ariaHidden:node.getAttribute('aria-hidden')};
+   });
+   assert.deepEqual(hiddenStatus,{position:'absolute',clip:'inset(50%)',width:1,height:1,display:'block',visibility:'visible',ariaHidden:null},'CURRENT is visually clipped, not removed from accessibility');
+   assert.deepEqual(await layout(),beforeLayout,'CURRENT announcement never shifts following content or adds scrolling');
    assert.equal(await page.evaluate(()=>document.activeElement.id),'status');
    assert.match(await page.locator('#status').getAttribute('aria-describedby'),/^existing-description sq-snapshot-check-status-/);
   }
@@ -72,6 +85,8 @@ test('static snapshot update results fit phones and restore keyboard focus',asyn
   assert.equal(await page.locator('dialog').count(),0);
   assert.match(await page.getByRole('status').textContent(),status==='stale'?/older than/:/check failed/);
   assert.doesNotMatch(await page.getByRole('status').textContent(),/No newer/);
+  assert.equal(await page.getByRole('status').evaluate(node=>getComputedStyle(node).clipPath),'none','errors remain visible');
+  assert.ok((await page.getByRole('status').boundingBox()).width>1);
   await page.evaluate(()=>feedback.dispose());
  }
  await page.evaluate(()=>{

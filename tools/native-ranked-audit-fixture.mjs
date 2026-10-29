@@ -82,8 +82,20 @@ export async function auditNativeRankedClick(page, { timeout = 45000, reconcilia
   const onPageError = error => pageErrors.push(String(error?.stack || error));
   page.on('pageerror', onPageError);
   try {
-    await clickNativeMenuButton(page, 'Exit', timeout);
-    await clickNativeMenuButton(page, 'Back', timeout);
+    const ready=()=>page.locator('#injectedRankingsBtn.ranked-ready').isVisible();
+    const startup=page.getByRole('button',{name:'Exit',exact:true});
+    await page.waitForFunction(()=>{
+      const visible=node=>!!node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden';
+      return visible(document.querySelector('#injectedRankingsBtn.ranked-ready'))||[...document.querySelectorAll('button')].some(node=>node.textContent.trim()==='Exit'&&visible(node));
+    },null,{timeout});
+    if(!await ready()){
+      await startup.click({timeout});
+      await page.waitForFunction(()=>{
+        const visible=node=>!!node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden';
+        return visible(document.querySelector('#injectedRankingsBtn.ranked-ready'))||[...document.querySelectorAll('button')].some(node=>node.textContent.trim()==='Back'&&visible(node));
+      },null,{timeout});
+      if(!await ready())await clickNativeMenuButton(page,'Back',timeout);
+    }
     await page.waitForSelector('#injectedRankingsBtn.ranked-ready', { state: 'visible', timeout });
     await page.waitForTimeout(reconciliationDelay);
     await page.waitForSelector('#injectedRankingsBtn.ranked-ready', { state: 'visible', timeout });

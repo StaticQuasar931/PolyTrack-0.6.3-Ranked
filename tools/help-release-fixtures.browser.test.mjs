@@ -96,8 +96,20 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
       return {viewport:innerWidth,firstControlTop:Math.round(first.getBoundingClientRect().top),labelFont:getComputedStyle(label).fontSize,descriptionFont:getComputedStyle(description).fontSize,keyFont:getComputedStyle(keys).fontSize,drivingHeight:Math.round(root.querySelector('[data-hc-group="driving"]').getBoundingClientRect().height)};
     });
     t.diagnostic(JSON.stringify({helpOpening:metrics,cssProposal:Boolean(proposal)}));
+    assert.ok(parseFloat(metrics.labelFont)>=22,'control labels remain readable');
+    assert.ok(parseFloat(metrics.descriptionFont)>=19,'descriptions remain readable');
+    assert.ok(parseFloat(metrics.keyFont)>=20,'key labels remain readable');
+    const clearAlignment=await page.locator('.hc-search-field').evaluate(field=>{
+      const button=field.querySelector('[data-hc-clear]'),box=field.getBoundingClientRect(),clear=button.getBoundingClientRect();
+      return {end:box.right-clear.right,top:clear.top-box.top,bottom:box.bottom-clear.bottom,radius:getComputedStyle(field).borderRadius};
+    });
+    for(const edge of ['end','top','bottom'])assert.ok(Math.abs(clearAlignment[edge]-1)<=0.5,`Clear is flush with the field's inner ${edge} at ${width}: ${JSON.stringify(clearAlignment)}`);
+    assert.equal(clearAlignment.radius,'0px');
     if(output)await page.screenshot({path:join(output,`help-opening-${width}.png`)});
     assert.equal(await page.locator('.hc-track-quick').count(),0);
+    const searchGuide=await page.locator('[data-hc-row="overall-search"]').textContent();
+    for(const example of ['>3.19 (selected ranking)','playtime:>42h','rank:<=10','h/m/s/d/w','Missing data is excluded'])assert.ok(searchGuide.includes(example),example);
+    for(const field of ['score/rp','tracks','wins','weight','players','pbs','official','community','average','podium'])assert.ok(searchGuide.includes(field),field);
     await page.keyboard.down('i');
     assert.ok(await page.locator('[data-hc-key="I"].is-pressed').count()>0,'keys react immediately without a focus click');
     await page.keyboard.up('i');
@@ -108,6 +120,8 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.locator('[data-hc-search]').fill('shift custom');
     assert.equal(await page.locator('[data-hc-row]:visible').count(),1);
     await page.locator('[data-hc-clear]').click();
+    assert.equal(await page.locator('[data-hc-search]').evaluate(node=>node===document.activeElement),true,'Clear returns focus to search');
+    assert.equal(await page.locator('[data-hc-clear]').isDisabled(),true);
     await page.locator('[data-hc-results-title]').evaluate(node=>{node.tabIndex=-1;node.focus();});
     await page.keyboard.down('Shift');await page.keyboard.down('1');
     assert.equal(await page.locator('[data-hc-row="track-tab-direct"] [data-hc-key="1"].is-pressed').count(),1);
@@ -130,6 +144,14 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.locator('[data-hc-view="release"]').tap();
     const release=page.locator('[data-hc-panel="release"]');
     assert.equal(await release.isVisible(),true);
+    const releaseLayout=await release.evaluate(node=>({
+      metadataBottom:node.querySelector('.hc-release-meta').getBoundingClientRect().bottom,
+      ageTop:node.querySelector('.hc-release-age').getBoundingClientRect().top,
+      notesFont:parseFloat(getComputedStyle(node.querySelector('ul')).fontSize),
+      detailFont:parseFloat(getComputedStyle(node.querySelector('.hc-release-note')).fontSize)
+    }));
+    assert.ok(releaseLayout.metadataBottom<=releaseLayout.ageTop,'release identity comes before preparation age');
+    assert.ok(releaseLayout.notesFont>=22&&releaseLayout.detailFont>=19,'Release details use readable text');
     assert.ok((await release.textContent()).includes('Release number'+RELEASE_FIXTURE.number+'Game version'+RELEASE_FIXTURE.version+'Client revision'+RELEASE_FIXTURE.revision));
     assert.doesNotMatch(await release.textContent(),/countdown|unlocks/i);
     assert.equal(await page.locator('.hc-track-quick').count(),0);

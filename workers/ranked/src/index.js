@@ -2098,13 +2098,36 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
   const issuedBeta = await ensureProfileBetaEntitlement(env, accountId, profile.data.accountCreatedAt);
   const cosmetics = sanitizeProfileCosmetics(body.cosmetics);
   if(profile.data.cosmeticsSyncedAt && JSON.stringify(cosmetics)!==JSON.stringify(sanitizeProfileCosmetics(profile.data.profileCosmetics)))return json(origin,env,409,{error:'cosmetics_superseded'});
+  // Capture before propagation: never acknowledge a replacement queued while we publish.
+  const cosmeticJob = await readDocument(env, COLLECTIONS.cosmeticJobs, accountId);
+  if (!await propagateProfileCosmetics(env, accountId, profile, cosmetics, issuedBeta)) return json(origin, env, 403, { error: 'cosmetic_locked' });
+  const response = await notifyProfile(request, env, context, uid, { accountId });
+  // An accepted profile job durably owns any remaining per-track repairs.
+  if (response.ok) await completeCosmeticJob(env, cosmeticJob, accountId, uid, cosmetics);
+  return response;
+}
+
+async function completeCosmeticJob(env, job, accountId, ownerUid, cosmetics) {
+  if (!job?.updateTime || job.data.active !== true || job.data.accountId !== accountId ||
+      job.data.ownerUid !== ownerUid ||
+      JSON.stringify(sanitizeProfileCosmetics(job.data.cosmetics)) !== JSON.stringify(cosmetics)) return;
+  try {
+    await writeDocument(env, COLLECTIONS.cosmeticJobs, job.id,
+      { ...job.data, active: false, completedAt: Date.now(), error: '' }, job.updateTime);
+  } catch (error) {
+    // A newer draft (including the same design saved again) retains its own retry.
+    if (!/^FIRESTORE_(409|412)$/.test(String(error?.message))) throw error;
+  }
+}
+
+async function propagateProfileCosmetics(env, accountId, profile, cosmetics, issuedBeta) {
   const [overall, badge] = await Promise.all([
     readOverallSnapshot(env),
     readDocument(env, COLLECTIONS.badges, accountId)
   ]);
   const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
   const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
-  if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) return json(origin, env, 403, { error: 'cosmetic_locked' });
+  if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) return false;
   if (!overall) {
     // Reconstruct rankings only through the existing bounded publisher, never
     // fabricate a partial Overall from a single cosmetics request.
@@ -2127,7 +2150,7 @@ async function updateProfileCosmetics(request, env, context, uid, body) {
     const entries = overall.data.entries.map((row) => safeText(row.userId || row.accountId, 128) === accountId ? { ...row, profileCosmetics: cosmetics } : row);
     await writeOverallSnapshot(env, overall, { ...overall.data, entries: entries.map(row => safeText(row.userId || row.accountId, 128) === accountId ? {...row, identityUpdatedAt:overallIdentityUpdatedAt} : row) });
   }
-  return notifyProfile(request, env, context, uid, { accountId });
+  return true;
 }
 
 async function processProfileJob(env, jobId, job, updateTime='') {
@@ -2216,27 +2239,15 @@ async function processCosmeticJobs(env) {
     }
     const cosmetics = sanitizeProfileCosmetics(job.data.cosmetics);
     const issuedBeta = await ensureProfileBetaEntitlement(env, accountId, profile.data.accountCreatedAt);
-    const [overall, badge] = await Promise.all([
-      readOverallSnapshot(env),
-      readDocument(env, COLLECTIONS.badges, accountId)
-    ]);
-    const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
-    const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
-    if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) {
+    if (!await propagateProfileCosmetics(env, accountId, profile, cosmetics, issuedBeta)) {
       await writeDocument(env, COLLECTIONS.cosmeticJobs, job.id, { ...job.data, active: false, error: 'cosmetic_locked', completedAt: Date.now() },job.updateTime);
       continue;
     }
-    const identityUpdatedAt = Number(profile.data.identityUpdatedAt || profile.data.profileUpdatedAt || job.data.updatedAt || Date.now());
-    await writeDocument(env, COLLECTIONS.profiles, accountId, { ...profile.data, profileCosmetics: cosmetics, identityUpdatedAt, updatedAt: Math.max(Number(profile.data.updatedAt || 0), identityUpdatedAt) }, profile.updateTime);
-    if (overall?.data && Array.isArray(overall.data.entries)) {
-      const entries = overall.data.entries.map((row) => safeText(row.userId || row.accountId, 128) === accountId ? { ...row, profileCosmetics: cosmetics, identityUpdatedAt } : row);
-      await writeOverallSnapshot(env, overall, { ...overall.data, entries });
-    }
     const deferred = [];
     const origin = [...allowedOrigins(env)][0] || '';
-    await notifyProfile(new Request('https://polytrack-ranked.internal/v1/profile/notify', { headers: { Origin: origin } }), env, { waitUntil(task) { deferred.push(task); } }, ownerUid, { accountId });
+    const response = await notifyProfile(new Request('https://polytrack-ranked.internal/v1/profile/notify', { headers: { Origin: origin } }), env, { waitUntil(task) { deferred.push(task); } }, ownerUid, { accountId });
     await Promise.allSettled(deferred);
-    await writeDocument(env, COLLECTIONS.cosmeticJobs, job.id, { ...job.data, active: false, completedAt: Date.now(), error: '' },job.updateTime);
+    if (response.ok) await completeCosmeticJob(env, job, accountId, ownerUid, cosmetics);
   }
 }
 

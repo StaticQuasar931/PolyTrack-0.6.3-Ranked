@@ -31,3 +31,35 @@ test('search is counted consistently across Overall, Event RP, Top Tracks and ac
   c.overallCategory='overall';c.rankedFilterResult={available:true,filter:{category:'overall'},rows:rows.slice(0,20)};assert.equal(c.currentLeaderboardCount(),0);
   c.overallCategory='events';c.rankedFilterResult={available:true,filter:{category:'events'},rows:[rows[190]]};assert.equal(c.currentLeaderboardCount(),1);
 });
+
+test('score comparisons combine with names, preserve row identity and support all operators',()=>{
+  const {c}=fixture(),rows=[{name:'Friend A',score:3.19},{name:'Friend B',score:3.2},{name:'Other',score:4}];
+  for(const [query,expected]of [['friend >3.19',[rows[1]]],['rp:<=3.19',[rows[0]]],['score:3.2',[rows[1]]],['>=4',[rows[2]]],['!=3.19',[rows[1],rows[2]]],['"Friend A"',[rows[0]]]]){
+    c.overallRacerQuery=query;assert.deepEqual(Array.from(c.searchRankingRows(rows)),expected,query);assert.equal(c.searchRankingRows.error,'');
+  }
+});
+
+test('duration filters use hours by default, support explicit units, and never invent missing values',()=>{
+  const {c}=fixture(),rows=[{name:'Long',totalPlaytimeMs:43*3600000},{name:'Short',totalPlaytimeMs:30*60000},{name:'Unknown'},{name:'Null',totalPlaytimeMs:null},{name:'Zero',totalPlaytimeMs:0}];
+  for(const query of ['playtime:>42h','time:>42','playtime:>1.75d','playtime:>=2580m']){
+    c.overallRacerQuery=query;assert.deepEqual(Array.from(c.searchRankingRows(rows)),[rows[0]],query);
+  }
+  c.overallRacerQuery='playtime:<1h';assert.deepEqual(Array.from(c.searchRankingRows(rows)),[rows[1],rows[4]]);
+  c.overallCategory='playtime';c.overallRacerQuery='>42h';assert.deepEqual(Array.from(c.searchRankingRows(rows)),[rows[0]]);
+});
+
+test('bare comparisons follow the visible category, rank and weight use published numbers',()=>{
+  const {c}=fixture(),a={rp:900,score:2,categoryRank:3,rank:8,weight:6,fieldSize:42,officialCount:17},b={rp:100,score:4,categoryRank:9,rank:4,weight:2,fieldSize:2};
+  for(const [category,query,expected]of [['events','>500',[a]],['topTracks','>3',[a]],['topTracks','weight:>3',[a]],['overall','>3',[b]],['overall','rank:<=3',[a]],['topTracks','players:>10',[a]],['overall','official:>=17',[a]]]){
+    c.overallCategory=category;c.overallRacerQuery=query;assert.deepEqual(Array.from(c.searchRankingRows([a,b])),expected);
+  }
+  c.overallRacerQuery='rank:<10';assert.equal(c.searchRankingRows([{categoryRank:null,rank:1}]).length,0);
+});
+
+test('invalid filters report concise guidance, are bounded and never execute expressions',()=>{
+  const {c,rows}=fixture();
+  for(const query of ['playtime:>oops','rp:>3h','playtime:>3%','>>3','score:>Infinity','score:>1e9','score:>1;alert(1)']){
+    c.overallRacerQuery=query;assert.equal(c.searchRankingRows(rows).length,0,query);assert.ok(c.searchRankingRows.error,query);
+  }
+  c.overallRacerQuery='';assert.equal(c.searchRankingRows(rows),rows);assert.equal(c.searchRankingRows.error,'');
+});

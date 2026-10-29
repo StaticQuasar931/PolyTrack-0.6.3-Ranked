@@ -13,8 +13,10 @@ function eventPageCacheName(kind,id,generation,page){
   return 'page/'+kind+'/'+id+'/'+generation+'/'+page;
 }
 const EVENT_CACHE_FILL_LIMIT = 64;
+const EVENT_PAGE_MISS_TTL_SECONDS = 10;
 const eventCacheFills = new Map();
 const eventPublicMemories = new WeakMap();
+const eventPageMissMemories = new WeakMap();
 const publicCacheMatch=async(cache,key)=>{try{return await cache?.match(key);}catch{return undefined;}};
 
 export function eventWorkerHandler(env, { request, authenticate, origins, context = {}, now = Date.now }) {
@@ -23,6 +25,8 @@ export function eventWorkerHandler(env, { request, authenticate, origins, contex
   const memoryOwner=env.__FIRESTORE_ROOT_ENV||env;
   let memory=eventPublicMemories.get(memoryOwner);
   if(!memory){memory=createPublicReadMemory();eventPublicMemories.set(memoryOwner,memory);}
+  let pageMisses=eventPageMissMemories.get(memoryOwner);
+  if(!pageMisses){pageMisses=createPublicReadMemory({maxEntries:64,maxBytes:16384});eventPageMissMemories.set(memoryOwner,pageMisses);}
   const cachedHits = new WeakMap();
   const admittedRequests = new WeakSet();
   const cacheKeyFor = incoming => {
@@ -96,6 +100,8 @@ export function eventWorkerHandler(env, { request, authenticate, origins, contex
       const hit = cachedHits.get(incoming)?.get(key.url) || cache && await publicCacheMatch(cache,key);
       // A Cache API hit has an unknown original expiry. Do not renew it in memory.
       if (hit) return hit.json();
+      const isPage=name.startsWith('page/');
+      if(isPage&&pageMisses.get(key.url,now())!==undefined)throw new EventError('snapshot_not_ready',404);
       const staleKey = new Request(keyUrl.toString() + '?stale=1');
       const stale = name === 'catalog' && cache ? await publicCacheMatch(cache,staleKey) : null;
       try {
@@ -104,7 +110,14 @@ export function eventWorkerHandler(env, { request, authenticate, origins, contex
             throw new EventError('event_ingress_limit', 429);
           }
           const loadedAt=now();
-          const value = await load();
+          let value;
+          try { value = await load(); }
+          catch(error) {
+            // Only confirmed public-page absence is reusable; never cache auth or transport failures.
+            if(isPage&&error instanceof EventError&&error.status===404&&error.code==='snapshot_not_ready')
+              pageMisses.put(key.url,'missing',EVENT_PAGE_MISS_TTL_SECONDS,loadedAt);
+            throw error;
+          }
           const body = JSON.stringify(value);
           memory.put(key.url,body,ttl,loadedAt);
           if (cache) {

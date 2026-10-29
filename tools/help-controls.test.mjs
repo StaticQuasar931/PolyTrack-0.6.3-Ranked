@@ -66,7 +66,7 @@ test('shared navigation documents page chords without replacing plain-digit ghos
   for(const id of ['ghost-row','event-ghost-row']){
     assert.deepEqual(find(groups,id).keys,[['1-9'],['0']]);assert.match(find(groups,id).description,/Without Shift/);
   }
-  for(const term of ['overall shift page','normal track shift page','event shift page','ctrl racer']){
+  for(const term of ['overall shift page','normal track shift page','event shift page','ctrl racer','players','playtime']){
     assert.ok(searchHelpControls(groups,term).some(group=>group.id==='rankings'),term);
   }
   assert.match(groups.find(group=>group.id==='events').note,/Rankings & pages/);
@@ -171,8 +171,9 @@ test('HTML has semantic native disclosures, labels, status and one keycap per ch
   assert.match(html,/<label for="help-test-search">/);
   assert.match(html,/id="help-test-search" type="search"/);
   assert.match(html,/role="status" aria-live="polite" aria-atomic="true"/);
-  assert.equal((html.match(/<details /g)||[]).length,10);
-  assert.equal((html.match(/<summary>/g)||[]).length,10);
+  assert.equal((html.match(/<details /g)||[]).length,11);
+  assert.equal((html.match(/<summary>/g)||[]).length,11);
+  assert.match(html,/<details class="hc-query-guide"><summary>More filters<\/summary>/);
   assert.match(html,/<kbd data-hc-key="Shift">Shift<\/kbd>.*?<kbd data-hc-key="Tab">Tab<\/kbd>/s);
   assert.doesNotMatch(html,/<kbd>Shift \+ Tab<\/kbd>|role="dialog"|tabindex="-1"|autofocus/);
   for(const action of ['profile','filters','ghost-shortcut'])assert.ok(html.includes(`data-help-action="${action}"`));

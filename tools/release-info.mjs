@@ -1,16 +1,17 @@
 const releaseInfo = {
-  "number": 237,
+  "number": 238,
   "version": "0.6.3",
-  "revision": 206,
+  "revision": 207,
   "notes": [
-    "Shared page-jump shortcuts now work across Overall, track, event and archive pages.",
-    "Search loaded rankings by racer name or public ID; Ctrl+F focuses search.",
-    "Installed-release notices wait for a safe menu and persist acknowledgement.",
-    "Snapshot checks use gentle inline feedback when no newer package is found.",
-    "Help has clearer controls, readable native styling and a compact header.",
-    "Cold-device snapshot chunks have a longer bounded read window, with no extra requests."
+    "Official tracks stay visible when a saved search has no official matches; other tabs keep filtering.",
+    "Ranking search supports score, rank and playtime comparisons, combined with racer names.",
+    "Search focus and clear buttons use cleaner native styling.",
+    "Help and Release use more room, larger text and clearer control groups.",
+    "Update notices use native buttons; no-update snapshot checks shake without adding visible text.",
+    "Search and quick filters operate on loaded snapshots without additional Firebase reads.",
+    "Repeated missing-page lookups and redundant cosmetic retry writes are reduced."
   ],
-  "preparedAt": "2026-10-29T04:20:41.747Z"
+  "preparedAt": "2026-10-29T05:02:08.229Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

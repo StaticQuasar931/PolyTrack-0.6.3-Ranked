@@ -42,7 +42,17 @@ const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 function themeControl(element) {
   Object.assign(element.style, { padding: '10px 14px', minHeight: '44px', boxSizing: 'border-box',
     border: '2px solid #7e9bd1', borderRadius: '0', background: '#28346a', color: '#ffffff',
-    font: 'inherit', cursor: 'pointer', textAlign: 'center', textDecoration: 'none' });
+    font: 'clamp(18px, 5dvh, 22px)/1.25 ForcedSquare, sans-serif', cursor: 'pointer', textAlign: 'center', textDecoration: 'none',
+    boxShadow: 'inset 0 -3px 0 #17234f' });
+}
+
+function themeDialog(node, title, description) {
+  Object.assign(node.style, {width: 'min(640px, calc(100vw - 24px))', maxHeight: 'calc(100dvh - 24px)',
+    overflow: 'auto', boxSizing: 'border-box', padding: 'clamp(12px, 3dvh, 24px)', border: '2px solid #6389bf',
+    borderRadius: '0', background: '#1c2959', color: '#fff', font: 'clamp(18px, 5dvh, 22px)/1.35 ForcedSquare, sans-serif'});
+  Object.assign(title.style, {margin: '0 0 14px', paddingBottom: '12px', borderBottom: '2px solid #a7d5ff',
+    fontSize: 'clamp(22px, min(4vw, 7dvh), 30px)', fontWeight: 'normal', lineHeight: '1.15'});
+  Object.assign(description.style, {margin: '0 0 18px'});
 }
 
 function isVisible(document) { return document.visibilityState !== 'hidden'; }
@@ -105,20 +115,18 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     node.dataset.siteInstalledRevision = String(revision);
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
     node.setAttribute('aria-describedby', 'pt-installed-update-description');
-    Object.assign(node.style, {width: 'min(480px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 32px)',
-      overflow: 'auto', boxSizing: 'border-box', padding: '24px', border: '2px solid #7e9bd1',
-      borderRadius: '0', background: '#17274d', color: '#f5f7ff', fontFamily: 'ForcedSquare, sans-serif',
-      fontSize: '18px', lineHeight: '1.5'});
     const title = document.createElement('h2'); title.id = 'pt-installed-update-title';
     title.textContent = validRevision(release.number) ? `PolyTrack update ${release.number}` : 'PolyTrack updated';
-    Object.assign(title.style, {margin: '0 0 12px', fontSize: '24px'});
     const description = document.createElement('p'); description.id = 'pt-installed-update-description';
     description.textContent = `You are running client revision ${revision}. Your saved runs are unchanged.`;
+    themeDialog(node, title, description);
     const notes = document.createElement('ul');
+    Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
     for (const text of (Array.isArray(release.notes) ? release.notes : []).filter(text => typeof text === 'string' && text.trim()).slice(0, 8)) {
       const item = document.createElement('li'); item.textContent = text; notes.append(item);
     }
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
+    Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
     ok.addEventListener('click', acknowledge);
     node.addEventListener('cancel', event => { event.preventDefault(); acknowledge(); });
     node.addEventListener('keydown', event => {
@@ -229,19 +237,15 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       node.dataset.siteCompatibility = 'unsupported';
       node.setAttribute('aria-labelledby', 'pt-site-compatibility-title');
       node.setAttribute('aria-describedby', 'pt-site-compatibility-description');
-      Object.assign(node.style, { width: 'min(480px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 32px)',
-        overflow: 'auto', boxSizing: 'border-box', padding: '24px', border: '2px solid #7e9bd1',
-        borderRadius: '0', background: '#17274d', color: '#f5f7ff',
-        fontFamily: 'ForcedSquare, sans-serif', fontSize: '18px', lineHeight: '1.5' });
       const title = document.createElement('h2');
       title.id = 'pt-site-compatibility-title';
       title.textContent = 'Update needed for online play';
-      Object.assign(title.style, { margin: '0 0 12px', fontSize: '24px' });
       const description = document.createElement('p');
       description.id = 'pt-site-compatibility-description';
       description.textContent = 'This version is no longer supported for online play. Open the updated game in a new tab, or stay here offline. Your current session will not reload.';
+      themeDialog(node, title, description);
       const actions = document.createElement('div');
-      Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', gap: '12px' });
+      Object.assign(actions.style, { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '10px' });
       const open = document.createElement('a');
       open.href = UPDATED_GAME_URL;
       open.target = '_blank';

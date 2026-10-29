@@ -119,7 +119,10 @@ test('local preview remains device-local while the Worker validates publication'
   assert.match(extractFunction('resolveCosmeticsForEntry'),/readJsonStorage\(PROFILE_COSMETICS_KEY,null\)/);
   assert.match(extractFunction('saveRankedProfileCosmetics'),/queueCosmeticPublish\(safeId,user\.uid,cosmetics\)/);
   assert.match(extractFunction('flushPendingCosmeticPublishes'),/\/v1\/profile\/cosmetics/);
-  assert.match(workerSource,/if\s*\(!profileCosmeticsUnlocked\(cosmetics,\s*entry,\s*betaTester\)\)\s*return json\(origin,\s*env,\s*403,\s*\{\s*error:\s*'cosmetic_locked'\s*\}\)/);
+  const propagation=workerSource.slice(workerSource.indexOf('async function propagateProfileCosmetics('),workerSource.indexOf('async function processProfileJob('));
+  const handler=workerSource.slice(workerSource.indexOf('async function updateProfileCosmetics('),workerSource.indexOf('async function completeCosmeticJob('));
+  assert.match(propagation,/if\s*\(!profileCosmeticsUnlocked\(cosmetics,\s*entry,\s*betaTester\)\)\s*return false/);
+  assert.match(handler,/if\s*\(!await propagateProfileCosmetics\(env,\s*accountId,\s*profile,\s*cosmetics,\s*issuedBeta\)\)\s*return json\(origin,\s*env,\s*403,\s*\{\s*error:\s*'cosmetic_locked'\s*\}\)/);
 });
 
 test('the ranked Extra catalog IDs and Worker registry remain aligned',()=>{

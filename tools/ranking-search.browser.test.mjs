@@ -48,7 +48,15 @@ test('native Overall search finds later-page racers with no remote reads and fit
     await page.locator('#overallRacerSearch').fill('no-such-racer-unique-check');
     await page.getByRole('button',{name:'Clear search',exact:true}).click();
     assert.equal(await page.locator('#overallRacerSearch').inputValue(),'');
-    for(const [width,height]of [[1366,768],[390,844],[844,390],[768,1024],[320,568],[1920,1080]]){
+    await page.locator('#overallRacerSearch').fill('rank:<=3');
+    const ranks=await page.locator('#overallLeaderboardList .overall-rank').allTextContents();
+    assert.ok(ranks.length>0&&ranks.every(rank=>Number(rank.replace(/\D/g,''))<=3),'numeric rank filters cover the loaded standing, not just the visible page');
+    await page.locator('#overallRacerSearch').fill('playtime:>bad');
+    assert.equal(await page.locator('#overallRacerSearch').getAttribute('aria-invalid'),'true');
+    assert.match(await page.locator('#overallLeaderboardList').textContent(),/playtime:>42h/);
+    await page.getByRole('button',{name:'Clear search',exact:true}).click();
+    assert.equal(await page.locator('#overallRacerSearch').getAttribute('aria-invalid'),'false');
+    for(const [width,height]of [[1366,768],[390,844],[844,390],[768,1024],[320,568],[1920,1080],[540,720],[720,540],[344,882],[882,344]]){
       await page.setViewportSize({width,height});
       const geometry=await page.locator('#overallRacerSearch').evaluate(input=>{
         const r=input.getBoundingClientRect(),header=input.closest('.overall-top').getBoundingClientRect();
