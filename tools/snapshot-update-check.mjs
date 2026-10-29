@@ -110,6 +110,10 @@ function showInlineResult(result, {document, origin, signal, isCurrent}) {
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
   Object.assign(status.style, {display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box',
     padding: '4px 8px', borderLeft: '2px solid #7ee7ff', color: 'inherit', font: 'inherit', fontSize: '0.85em'});
+  // Keep CURRENT feedback accessible without adding a visible label or shifting the row.
+  if (result.status === 'current') Object.assign(status.style, {position: 'absolute', width: '1px',
+    height: '1px', padding: '0', margin: '-1px', overflow: 'hidden', clipPath: 'inset(50%)',
+    whiteSpace: 'nowrap', border: '0'});
   origin.insertAdjacentElement('afterend', status);
   const description = origin.getAttribute('aria-describedby');
   origin.setAttribute('aria-describedby', [description, status.id].filter(Boolean).join(' '));
@@ -137,7 +141,7 @@ function showInlineResult(result, {document, origin, signal, isCurrent}) {
       document.documentElement.classList.contains('sq-reduced-effects') || document.body.classList.contains('sq-reduced-effects');
     if (result.status === 'current' && !reduced && typeof origin.animate === 'function') {
       try { animation = origin.animate([{translate: '0px'}, {translate: '-3px'}, {translate: '3px'},
-        {translate: '-2px'}, {translate: '2px'}, {translate: '0px'}], {duration: 280, iterations: 1, easing: 'ease-out'}); } catch { /* Text is the motion-free fallback. */ }
+        {translate: '-2px'}, {translate: '2px'}, {translate: '0px'}], {duration: 280, iterations: 1, easing: 'ease-out'}); } catch { /* The live announcement remains available without motion. */ }
     }
   }, 30);
   return handle;
@@ -152,16 +156,25 @@ export function showSnapshotUpdateResult(result, {document = globalThis.document
   if (active?.node.isConnected) return active.handle;
   const prior = origin, dialog = document.createElement('dialog');
   dialog.className = 'sq-snapshot-update-dialog';
+  Object.assign(dialog.style, {width: 'min(640px, calc(100vw - 24px))', maxHeight: 'calc(100dvh - 24px)',
+    boxSizing: 'border-box', overflow: 'auto', padding: 'clamp(12px, 3dvh, 24px)', border: '2px solid #6389bf',
+    borderRadius: '0', background: '#1c2959', color: '#fff', font: 'clamp(18px, 5dvh, 22px)/1.35 ForcedSquare, sans-serif'});
   dialog.setAttribute('aria-labelledby', 'sq-snapshot-update-title');
   dialog.setAttribute('aria-describedby', 'sq-snapshot-update-description');
   const heading = document.createElement('h2'); heading.id = 'sq-snapshot-update-title';
   heading.textContent = `Snapshot ${result.generation} available`;
+  Object.assign(heading.style, {fontSize: 'clamp(22px, min(4vw, 7dvh), 30px)', fontWeight: 'normal', lineHeight: '1.15',
+    margin: '0 0 14px', paddingBottom: '12px', borderBottom: '2px solid #a7d5ff'});
   const text = document.createElement('p'); text.id = 'sq-snapshot-update-description';
   text.textContent = 'A static release file reports a newer snapshot. You can try reloading this page. Pinned links and embedded games may reopen the same build; reopen the game from its launcher to check for an updated version. Reloading does not delete your saved runs.';
   const actions = document.createElement('div');
+  Object.assign(actions.style, {display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '10px'});
   const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close';
   close.onclick = () => dialog.close(); actions.append(close);
   const update = document.createElement('button'); update.type = 'button'; update.textContent = 'Reload this page';
+  for (const button of [close, update]) Object.assign(button.style, {minHeight: '44px', padding: '8px 16px',
+    border: '2px solid #7e9bd1', borderRadius: '0', background: '#28346a', color: '#fff',
+    font: 'inherit', cursor: 'pointer', boxShadow: 'inset 0 -3px 0 #17234f'});
   update.onclick = () => { if (signal?.aborted || !isCurrent() || !prior.isConnected) { dispose(); return; } dialog.close(); reload(); }; actions.append(update);
   dialog.addEventListener('keydown', event => { event.stopPropagation(); });
   let disposed = false;
