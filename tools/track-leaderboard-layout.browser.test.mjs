@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {installNativeTrackFooterReservation} from './responsive-ui.mjs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('./verifier/package.json', import.meta.url));
@@ -146,6 +147,8 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
     await page.addStyleTag({ content: rankedCss });
     await page.addStyleTag({ content: homeCss });
 
+    await page.evaluate(`(${installNativeTrackFooterReservation.toString()})({document})`);
+
     for (const [width, height] of viewports) {
       for (const filterLabel of ['Filters +', 'Filters']) {
         await page.locator('.track-info-ui [data-personal-filter-button]').evaluate((button, label) => { button.textContent = label; }, filterLabel);
@@ -187,10 +190,27 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
       }
     }
 
-    for(const [width,height] of [[390,844],[1920,1080]]){
+    // Exercise both filter arrival and removal across portrait, landscape, and breakpoint transitions.
+    for(const [width,height] of [...viewports,[390,844],[844,390],[390,844],[599,780],[600,780],[601,780]]){
       await page.setViewportSize({width,height});
-      const movement=await page.evaluate(()=>{const wrapper=document.querySelector('.track-info-ui .button-wrapper'),filter=wrapper.querySelector('[data-personal-filter-button]');const measure=()=>['.back','.only-verified','.icon-button.first'].map(selector=>{const r=wrapper.querySelector(selector).getBoundingClientRect();return [r.x,r.y,r.width,r.height];});const withFilter=measure();filter.remove();const withoutFilter=measure();wrapper.querySelector('.back').after(filter);return {withFilter,withoutFilter};});
-      assert.ok(movement.withFilter.every((r,i)=>r.every((v,j)=>Math.abs(v-movement.withoutFilter[i][j])<=1)),'native footer slots do not jump when the filter arrives at '+width);
+      const movement=await page.evaluate(()=>{
+        const wrapper=document.querySelector('.track-info-ui .button-wrapper');
+        const filter=wrapper.querySelector('[data-personal-filter-button]');
+        const measure=()=>[wrapper,...['.back','.only-verified','.icon-button.first'].map(selector=>wrapper.querySelector(selector))].map(node=>{
+          const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];
+        });
+        const withFilter=measure();filter.remove();const withoutFilter=measure();
+        const placeholder=getComputedStyle(wrapper,'::before');
+        const reservation={content:placeholder.content,column:placeholder.gridColumnStart,row:placeholder.gridRowStart,
+          visibility:placeholder.visibility,fakeFilter:!!wrapper.querySelector('[data-personal-filter-button]')};
+        wrapper.querySelector('.back').after(filter);
+        return {withFilter,withoutFilter,reinserted:measure(),reservation};
+      });
+      for(const state of ['withoutFilter','reinserted'])assert.ok(
+        movement.withFilter.every((r,i)=>r.every((v,j)=>Math.abs(v-movement[state][i][j])<=1)),
+        'native footer slots do not jump at '+width+'x'+height+' '+state+': '+JSON.stringify(movement));
+      assert.deepEqual(movement.reservation,{content:'""',column:'2',row:'1',visibility:'hidden',fakeFilter:false},
+        'valid generated grid placeholder reserves the filter slot without a fake control');
     }
     await page.evaluate(()=>{
       document.querySelector('#gameRoot').id='ui';document.body.classList.add('sq-event-active');

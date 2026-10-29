@@ -1,12 +1,14 @@
 const releaseInfo = {
-  "number": 235,
+  "number": 236,
   "version": "0.6.3",
-  "revision": 204,
+  "revision": 205,
   "notes": [
-    "Watch supports up to ten selected replays on normal and event tracks.",
-    "Unavailable replays are skipped only after confirmation, without discarding working selections."
+    "Replay loading keeps four slots working and shares the snapshot board lookup.",
+    "Space activates the focused menu button without opening Play instead.",
+    "Cancel and Escape restore previewed display preferences; Apply keeps them.",
+    "Track leaderboard controls reserve their filter slot to prevent mobile layout jumps."
   ],
-  "preparedAt": "2026-10-29T02:43:25.113Z"
+  "preparedAt": "2026-10-29T03:10:43.335Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

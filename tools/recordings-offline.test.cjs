@@ -21,7 +21,7 @@ function extract(name){
 function harness(localRows,readSnapshot=async()=>null){
   let dbCalls=0;
   const context={
-    Map,Promise,nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),rememberNativeRecording:()=>{},noteFirebaseQuota:()=>{},
+    Map,Promise,nativeRecordingEpoch:0,currentTrackLoadState:{trackId:''},playbackWorkerBridgePromise:Promise.resolve(null),nativeRecordingMemory:new Map(),nativeRecordingRequests:new Map(),nativeRecordingRetryAt:new Map(),rememberNativeRecording:()=>{},noteFirebaseQuota:()=>{},
     readRecordingStore:ids=>ids.map(id=>localRows.get(id)||null),
     normalizeReplayPayloadString:value=>String(value),
     safePositiveInt:(value,fallback)=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):fallback,
@@ -45,14 +45,14 @@ test('all cached native recordings bypass an unavailable database',async()=>{
   const local=new Map([[7,{recording:'cached',frames:123,verifiedState:0,carStyle:'style'}]]);
   const fixture=harness(local),rows=await fixture.read([7]);
   assert.equal(fixture.dbCalls(),0);
-  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{recording:'cached',frames:123,verifiedState:0,carStyle:'style'}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{recording:'cached',frames:123,verifiedState:0,playbackPending:false,carStyle:'style'}]);
 });
 
 test('mixed offline recording batches preserve cached rows and leave only misses null',async()=>{
   const local=new Map([[7,{recording:'cached',frames:123,verifiedState:0,carStyle:'style'}]]);
   const fixture=harness(local),rows=await fixture.read([7,8]);
   assert.equal(fixture.dbCalls(),0);
-  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{recording:'cached',frames:123,verifiedState:0,carStyle:'style'},null]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{recording:'cached',frames:123,verifiedState:0,playbackPending:false,carStyle:'style'},null]);
   assert.equal(rows[0].verifiedState,0);
 });
 test('saved replay snapshot fills an offline cache miss without querying the database',async()=>{
@@ -60,7 +60,7 @@ test('saved replay snapshot fills an offline cache miss without querying the dat
   const fixture=harness(new Map(),async(kind,id)=>{assert.equal(kind,'recording');assert.equal(id,'8');snapshotReads++;return saved;});
   const rows=await fixture.read([8]);
   assert.equal(snapshotReads,1);assert.equal(fixture.dbCalls(),0);
-  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[saved]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)),[{...saved,playbackPending:false}]);
 });
 
 test('repeated unavailable recording clicks never query the database',async()=>{

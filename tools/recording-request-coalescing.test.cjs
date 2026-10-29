@@ -4,7 +4,7 @@ const start=source.indexOf('  async function readNativeRecordings(ids){'),end=so
 assert.ok(start>=0&&end>start);
 function harness(){
  const calls=[],pending=new Map();
- const context={Map,Set,Promise,nativeRecordingRequests:pending,loadNativeRecordings:ids=>new Promise((resolve,reject)=>calls.push({ids:Array.from(ids),resolve,reject}))};
+ const context={Map,Set,Promise,playbackWorkerBridgePromise:Promise.resolve(null),nativeRecordingRequests:pending,loadNativeRecordings:ids=>new Promise((resolve,reject)=>calls.push({ids:Array.from(ids),resolve,reject}))};
  vm.createContext(context);vm.runInContext(source.slice(start,end),context);
  return {read:context.readNativeRecordings,calls,pending};
 }
