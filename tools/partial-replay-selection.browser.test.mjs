@@ -314,8 +314,8 @@ test('malformed native payload and engine failure are excluded only after consen
     assert.equal(await page.evaluate(() => stats.dispatched), 0); await proceed(page).click(); await page.waitForFunction(() => stats.races.length === 1);
     assert.deepEqual(await page.evaluate(() => stats.nativeRequests), [[1, 3]]);
   }
-  const page = await fixture(t, {allValid: true}); await page.locator('.watch').click(); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('Watch supports 2'));
-  assert.equal(await page.evaluate(() => fixture.selected().length), 3); assert.equal(await page.evaluate(() => stats.dispatched), 0); assert.equal(await chooser(page).count(), 0);
+  const page = await fixture(t, {allValid: true}); await page.locator('.watch').click(); await page.waitForFunction(() => stats.races.length === 1);
+  assert.equal(await page.evaluate(() => fixture.selected().length), 3); assert.equal(await page.evaluate(() => stats.dispatched), 1); assert.equal(await chooser(page).count(), 0);
 });
 test('event mixed group uses real integrity/native parsers and waits for Continue', async t => {
   const page = await fixture(t, {event: true, corrupt: true}); await page.locator('.play').click(); await proceed(page).waitFor();

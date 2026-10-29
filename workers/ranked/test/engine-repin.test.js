@@ -2,14 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifiedTargetMs,bootstrapSlots,pendingSlot,verificationKey,VERIFIER_ENGINE_DIGEST,
   VERIFIER_VERSION,VERIFICATION_BOOTSTRAP_ID,verifiedVerdict,PRE_REPLAY_UI_PROOF_ENGINE} from '../src/verification.js';
+import {reviewedWatchUiBaseline} from '../../../tools/verifier/watch-ui-review.mjs';
 import {PRE_EVENT_LAUNCH_ENGINE} from '../src/event-engine-compatibility.js';
 
 async function reviewedOpponentFiles(manifest) {
  const fs=await import('node:fs'),{createHash}=await import('node:crypto');
  const sha=value=>createHash('sha256').update(value).digest('hex');
  const root=new URL('../../../',import.meta.url);
+ const baseline=reviewedWatchUiBaseline(manifest);
+ manifest={...manifest,files:baseline.files};
  const indexed=JSON.parse(fs.readFileSync(new URL('tools/verifier/indexed-playback-review.json',root),'utf8'));
- assert.equal(indexed.currentEngine,VERIFIER_ENGINE_DIGEST);
+ assert.equal(indexed.currentEngine,baseline.review.previousEngine);
  assert.equal(indexed.currentEngine,'3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0');
  assert.equal(indexed.previousEngine,'7cd54f05e02b66c67133fd856f025c829c21d600d8ef6a9071df62b4fb5905c4');
  assert.equal(indexed.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
@@ -75,15 +78,15 @@ test('manifest, opponent review chain and reviewed Worker compatibility use the 
 });
 
 import {PRE_GHOST_PROOF_ENGINE,hasAcceptedVerifiedProof} from '../src/verification.js';
-import {compatibleEventEngine,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE} from '../src/event-engine-compatibility.js';
+import {compatibleEventEngine,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,EVENT_OPPONENT_SHORTCUT_UI_ENGINE,EVENT_INDEXED_PLAYBACK_ENGINE} from '../src/event-engine-compatibility.js';
 const previousKey=JSON.parse(verificationKey(row));previousKey[1]=PRE_GHOST_PROOF_ENGINE;
 const previous={...current,key:JSON.stringify(previousKey),engineDigest:PRE_GHOST_PROOF_ENGINE};
 const reviewedGhostEngine='32bfe32b8680597d9f1322dbcbb19242be38bee9ab243a379f5e449c3f4030fd';
 const proofFor=digest=>{const key=JSON.parse(verificationKey(row));key[1]=digest;return {...current,key:JSON.stringify(key),engineDigest:digest};};
-const previousNative=proofFor(EVENT_NATIVE_ROW_UI_ENGINE);
+const previousNative=proofFor(EVENT_NATIVE_ROW_UI_ENGINE),previousOpponent=proofFor(EVENT_OPPONENT_SHORTCUT_UI_ENGINE),previousIndexed=proofFor(EVENT_INDEXED_PLAYBACK_ENGINE);
 const oldCurrent=proofFor(PRE_REPLAY_UI_PROOF_ENGINE),reviewedGhost=proofFor(reviewedGhostEngine),previousUi=proofFor(EVENT_REPLAY_UI_ENGINE);
 test('reviewed previous exact physics proof survives bootstrap and supplies verified target',()=>{
- for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative]) {
+ for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,previousOpponent,previousIndexed]) {
   assert.equal(verifiedVerdict(row,proof),true);
   assert.equal(bootstrapSlots(row.trackId,[row],{racer:proof}).racer,proof);
   assert.equal(verifiedTargetMs([row],{racer:proof}),19997);
@@ -92,11 +95,11 @@ test('reviewed previous exact physics proof survives bootstrap and supplies veri
  }
 });
 test('prior proof requires every exact run field and trusted verdict, never a client label',()=>{
- for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative]) for(const change of [{accountId:'other'},{trackId:'c'.repeat(64)},{timeMs:19996},{frames:19996},{raceTimeFrames:19998},{uploadId:2},{replayHash:'d'.repeat(64)}]){
+ for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,previousOpponent,previousIndexed]) for(const change of [{accountId:'other'},{trackId:'c'.repeat(64)},{timeMs:19996},{frames:19996},{raceTimeFrames:19998},{uploadId:2},{replayHash:'d'.repeat(64)}]){
   const changed={...row,...change};assert.equal(verifiedVerdict(changed,proof),false,proof.engineDigest+JSON.stringify(change));
   if(changed.trackId===row.trackId) assert.equal(bootstrapSlots(row.trackId,[changed],{racer:proof})[changed.accountId].status,'waiting');
  }
- for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative]) for(const change of [{status:'waiting'},{verifierVersion:'future'},{engineDigest:'f'.repeat(64)},{key:'untrusted'}])assert.equal(verifiedVerdict(row,{...proof,...change}),false);
+ for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,previousOpponent,previousIndexed]) for(const change of [{status:'waiting'},{verifierVersion:'future'},{engineDigest:'f'.repeat(64)},{key:'untrusted'}])assert.equal(verifiedVerdict(row,{...proof,...change}),false);
  assert.equal(verifiedVerdict(row,{runVerified:true,verified:true}),false);
  assert.equal(verifiedVerdict(row,current),true);
 });
@@ -113,18 +116,18 @@ test('future repin cannot implicitly inherit proof or immutable-period compatibi
    .replace("import { EXTRA_TRACK_IDS } from './extra-track-ids.js';",'const EXTRA_TRACK_IDS = new Set();')
    .replace("export const VERIFIER_ENGINE_DIGEST = '"+VERIFIER_ENGINE_DIGEST+"'","export const VERIFIER_ENGINE_DIGEST = '"+future+"'");
  const module=await importTransformedSource(source,new URL('../src/verification.js',import.meta.url));
- for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,current])assert.equal(module.verifiedVerdict(row,proof),false);
+ for(const proof of [oldCurrent,reviewedGhost,previous,previousUi,previousNative,previousOpponent,previousIndexed,current])assert.equal(module.verifiedVerdict(row,proof),false);
  assert.equal(module.VERIFICATION_BOOTSTRAP_ID,'verification_snapshot_v3_'+VERIFIER_VERSION+'_'+future);
  const held={...pendingSlot(row),status:'unavailable',reason:'similar_replay_pending_manual_review',retryAt:Number.MAX_SAFE_INTEGER};
  assert.equal(module.bootstrapSlots(row.trackId,[row],{racer:held}).racer,held,'future repin loads the real hold guard');
  const compat=fs.readFileSync(new URL('../src/event-engine-compatibility.js',import.meta.url),'utf8').replace("import { VERIFIER_ENGINE_DIGEST } from './verification.js';","const VERIFIER_ENGINE_DIGEST = '"+future+"';");
  const next=await importTransformedSource(compat,new URL('../src/event-engine-compatibility.js',import.meta.url));
- for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(next.compatibleEventEngine(digest),false);
- for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(compatibleEventEngine(digest),true);
+ for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,EVENT_OPPONENT_SHORTCUT_UI_ENGINE,EVENT_INDEXED_PLAYBACK_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(next.compatibleEventEngine(digest),false);
+ for(const digest of [PRE_EVENT_LAUNCH_ENGINE,EVENT_LAUNCH_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,EVENT_OPPONENT_SHORTCUT_UI_ENGINE,EVENT_INDEXED_PLAYBACK_ENGINE,VERIFIER_ENGINE_DIGEST])assert.equal(compatibleEventEngine(digest),true);
 });
 test('preserved previous approval is not permission for a new obsolete completion',async()=>{
  const {completedSlot}=await import('../../../tools/verifier/queue.mjs');
- for(const engineDigest of [PRE_REPLAY_UI_PROOF_ENGINE,reviewedGhostEngine,PRE_GHOST_PROOF_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE])
+ for(const engineDigest of [PRE_REPLAY_UI_PROOF_ENGINE,reviewedGhostEngine,PRE_GHOST_PROOF_ENGINE,EVENT_REPLAY_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,EVENT_OPPONENT_SHORTCUT_UI_ENGINE,EVENT_INDEXED_PLAYBACK_ENGINE])
   assert.throws(()=>completedSlot(pendingSlot(row),{status:'verified',engineDigest}),/engine pin mismatch/);
  assert.equal(completedSlot(pendingSlot(row),{status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST}).engineDigest,VERIFIER_ENGINE_DIGEST);
 });
@@ -151,7 +154,7 @@ test('opponent review proves two UI insertions are the entire bundle change and 
  const root=new URL('../../../',import.meta.url);
  const review=JSON.parse(fs.readFileSync(new URL('docs/events/opponent-shortcut-ui-engine-review.json',root),'utf8'));
  const sha=value=>createHash('sha256').update(value).digest('hex');
- let bundle=fs.readFileSync(new URL('main.bundle.js',root),'utf8').replace(/\r\n?/g,'\n');
+ let bundle=reviewedWatchUiBaseline(JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'))).bundle;
  const manifest=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
  const geometry=JSON.parse(fs.readFileSync(new URL('tools/verifier/track-geometry.json',root),'utf8'));
  const opponentFiles=(await reviewedOpponentFiles(manifest)).files;
@@ -220,7 +223,7 @@ test('native-row event periods stay usable while fresh completions require the n
  const [job]=await service.leaseJobs('day1');assert.ok(job);
  const verdict=digest=>({status:'verified',resultId:job.resultId,trackId:job.trackId,timeMs:job.timeMs,replayHash:job.replayHash,engineDigest:digest,
    binding:{resultId:job.resultId,trackId:job.trackId,nativeTrackId:job.trackId,timeMs:job.timeMs,replayHash:job.replayHash,actualReplayHash:job.replayHash,engineDigest:digest,verifierVersion:VERIFIER_VERSION}});
- for(const digest of [EVENT_NATIVE_ROW_UI_ENGINE,EVENT_REPLAY_UI_ENGINE,PRE_REPLAY_UI_PROOF_ENGINE]){
+ for(const digest of [EVENT_INDEXED_PLAYBACK_ENGINE,EVENT_OPPONENT_SHORTCUT_UI_ENGINE,EVENT_NATIVE_ROW_UI_ENGINE,EVENT_REPLAY_UI_ENGINE,PRE_REPLAY_UI_PROOF_ENGINE]){
    const before=JSON.stringify([...data]);
    await assert.rejects(service.completeJob('day1',job,verdict(digest)),/verifier_proof_mismatch/);
    assert.equal(JSON.stringify([...data]),before,'an obsolete completion cannot publish any state');
@@ -231,3 +234,59 @@ test('native-row event periods stay usable while fresh completions require the n
 });
 
 test('indexed review chain rejects changed assets and fabricated prior restoration',async()=>{const fs=await import('node:fs');const manifest=JSON.parse(fs.readFileSync(new URL('../../../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));for(const [name,value]of [['simulation_worker.bundle.js','f'.repeat(64)],['main.bundle.js','f'.repeat(64)],['polytrack_physics.wasm','f'.repeat(64)]])await assert.rejects(reviewedOpponentFiles({...manifest,files:{...manifest.files,[name]:value}}));});
+
+test('Watch review binds the exact guard edit, current playback pin and immutable indexed baseline', async () => {
+ const fs=await import('node:fs'),{PLAYBACK_ENGINE_PIN}=await import('../../../tools/playback-engine-pin.mjs');
+ const root=new URL('../../../',import.meta.url);
+ const manifest=JSON.parse(fs.readFileSync(new URL('tools/verifier/engine-manifest.json',root),'utf8'));
+ const baseline=reviewedWatchUiBaseline(manifest);
+ assert.equal(baseline.review.currentEngine,VERIFIER_ENGINE_DIGEST);
+ assert.equal(baseline.review.previousEngine,EVENT_INDEXED_PLAYBACK_ENGINE);
+ assert.equal(baseline.review.bootstrapId,VERIFICATION_BOOTSTRAP_ID);
+ assert.equal(PLAYBACK_ENGINE_PIN.engineDigest,VERIFIER_ENGINE_DIGEST);
+ assert.equal(PLAYBACK_ENGINE_PIN.mainSha256,manifest.files['main.bundle.js']);
+ assert.equal(PLAYBACK_ENGINE_PIN.workerSha256,manifest.files['simulation_worker.bundle.js']);
+ assert.deepEqual(Object.keys(manifest.files).filter(file=>manifest.files[file]!==baseline.files[file]),['main.bundle.js']);
+});
+
+test('Watch review rejects extra edits, altered evidence, geometry and track pins', async () => {
+ const fs=await import('node:fs'),root=new URL('../../../',import.meta.url);
+ const read=file=>fs.readFileSync(new URL(file,root),'utf8').replace(/\r\n?/g,'\n');
+ const manifest=JSON.parse(read('tools/verifier/engine-manifest.json'));
+ const review=JSON.parse(read('docs/events/watch-limit-ui-engine-review.json'));
+ const geometry=JSON.parse(read('tools/verifier/track-geometry.json'));
+ for(const options of [
+   {bundle:read('main.bundle.js')+' '},
+   {bundle:read('main.bundle.js')+review.normalizedUiReplacement.after},
+   {previousReviewText:read(review.previousReview)+' '},
+   {review:{...review,previousAssets:{'main.bundle.js':'f'.repeat(64)}}},
+   {review:{...review,normalizedUiReplacement:{...review.normalizedUiReplacement,before:'unreviewed'}}},
+   {geometry:{...geometry,tracks:geometry.tracks.slice(1)}},
+   {geometry:{...geometry,engineDigest:review.previousEngine}}
+ ])assert.throws(()=>reviewedWatchUiBaseline(manifest,options));
+ assert.throws(()=>reviewedWatchUiBaseline({...manifest,tracks:{...manifest.tracks,unreviewed:'f'.repeat(64)}}));
+ assert.throws(()=>reviewedWatchUiBaseline({...manifest,engineDigest:review.previousEngine}));
+});
+
+test('actual native Event Watch bridge accepts one through ten ghosts and preserves context guards', async () => {
+ const fs=await import('node:fs'),vm=await import('node:vm');
+ const bundle=fs.readFileSync(new URL('../../../main.bundle.js',import.meta.url),'utf8');
+ const matches=[...bundle.matchAll(/__pt062EventWatch=\{version:1,trackId:u,(open:ghosts=>\{if\([\s\S]*?;y\(ghosts\)\})\}/g)];
+ assert.equal(matches.length,1,'exactly one actual native Watch bridge');
+ assert.match(matches[0][1],/!ghosts\.length\|\|ghosts\.length>10\)throw Error/);
+ const state={closed:false,isConnected:true};let opened;
+ const bridge=vm.runInNewContext('({'+matches[0][1]+'})',{
+   R:{gn:(_owner,key)=>key==='closed'?state.closed:state},Sl:'closed',gl:'root',y:ghosts=>{opened=ghosts;}
+ });
+ for(let count=1;count<=10;count++){
+   const ghosts=Array.from({length:count},(_,i)=>({recordingId:i+1}));
+   opened=null;bridge.open(ghosts);assert.equal(opened,ghosts);
+ }
+ for(const ghosts of [[],Array(11).fill({}),null,{},'ghosts']){
+   opened=null;assert.throws(()=>bridge.open(ghosts),/Event replay context changed/);assert.equal(opened,null);
+ }
+ for(const change of [{closed:true},{isConnected:false}]){
+   Object.assign(state,{closed:false,isConnected:true},change);
+   opened=null;assert.throws(()=>bridge.open([{}]),/Event replay context changed/);assert.equal(opened,null);
+ }
+});

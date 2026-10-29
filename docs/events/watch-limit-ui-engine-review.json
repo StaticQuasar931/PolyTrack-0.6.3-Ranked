@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "previousReview": "tools/verifier/indexed-playback-review.json",
+  "previousReviewSha256": "1a439c99732e228694de5ff0d1392ed6d2110064e1fcf3c7f0db015af13d58c8",
+  "previousEngine": "3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0",
+  "currentEngine": "7203ead74e290932abafe7f45ae5d121b5e1488b788f7dbe9ea95c8eb30d1ed1",
+  "scope": "UI-only Watch guard: allow up to ten event ghosts instead of two, matching the existing selection bound. No replay decoding, simulation, physics, timing, scoring, track assets or verifier admission limits changed. Previously accepted exact proofs and immutable event periods remain compatible; new completions require the current engine.",
+  "changedAssets": [
+    "main.bundle.js"
+  ],
+  "previousAssets": {
+    "main.bundle.js": "ac4c96b08a49574d2194bc9de83349680d50b6ffe70deedd546c333af9313b4d"
+  },
+  "currentAssets": {
+    "main.bundle.js": "7894cfc15c79d3a829f9e8574ae6f04fa6bf78fce0b4dd32d54b6d6338d13f50"
+  },
+  "normalizedUiReplacement": {
+    "before": "!ghosts.length||ghosts.length>2)throw Error(\"Event replay context changed\")",
+    "after": "!ghosts.length||ghosts.length>10)throw Error(\"Event replay context changed\")"
+  },
+  "reviewMethod": "Reverse the single exact UTF-8/LF guard replacement and require the prior bundle SHA-256. Restore that sole manifest entry and require the complete prior engine digest. All other engine assets, track pins and geometry rows are unchanged; historical reviews are immutable.",
+  "trackPinsSha256": "e3edd8f947e261e27120bceed9a553f509b60a8ee7cfa965b1aa20427711d7cf",
+  "geometryRowsSha256": "3f56ae47e4ad30dbedc0280fbaa820d67f4dba249de411caf723a5ec0d640f99",
+  "historicalBootstrapUnchanged": true,
+  "bootstrapId": "verification_snapshot_v3_polytrack-native-bounded-v1_46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3"
+}

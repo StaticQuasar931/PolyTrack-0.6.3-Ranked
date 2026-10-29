@@ -5,7 +5,7 @@ import {createPartialReplaySelection} from './partial-replay-selection.mjs';
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return {resolve, promise}; };
 const rows = () => [1, 2, 3].map(recordingId => ({recordingId, nickname: 'Racer ' + recordingId, isSelf: recordingId === 3}));
 function fixture(options = {}) {
-  let selected = rows(), account = 'account', track = 'track', revision = 1, live = true, clock = 0, calls = 0, prompts = 0, launches = 0;
+  let selected = options.rows || rows(), account = 'account', track = 'track', revision = 1, live = true, clock = 0, calls = 0, prompts = 0, launches = 0;
   const reads = [], validations = [], writes = [], messages = [];
   const selection = {trackId: () => track, accountId: () => account, get: () => selected.map(row => ({...row})), set(value) { writes.push(value); selected = value; }};
   const api = createPartialReplaySelection({
@@ -76,11 +76,20 @@ test('overlapping clicks coalesce reads and only newest request can launch', asy
   const old = f.run(), next = f.run(); gate.resolve();
   assert.equal(await old, 'cancelled'); assert.equal(await next, 'launched'); assert.equal(f.calls, 1); assert.equal(f.launches, 1);
 });
-test('watch allows exactly two working replays after consent; never truncates a larger valid group', async () => {
+test('Watch keeps working groups of three through ten intact, and skips failures only with consent', async () => {
   const mixed = fixture(); assert.equal(await mixed.run('watch'), 'launched'); assert.equal(mixed.selected.length, 2);
-  const valid = fixture({read: ids => ids.map(id => ({recording: String(id)}))});
-  assert.equal(await valid.run('watch'), 'watch-limit'); assert.equal(valid.prompts, 0); assert.equal(valid.launches, 0); assert.equal(valid.writes.length, 0);
-  assert.equal(await valid.run('play'), 'launched'); assert.equal(valid.calls, 1);
+  for (const count of [3, 10]) {
+    const selected = Array.from({length: count}, (_, i) => ({recordingId: i + 1, nickname: 'Racer ' + i, isSelf: false}));
+    const valid = fixture({rows: selected, read: ids => ids.map(id => ({recording: String(id)}))});
+    assert.equal(await valid.run('watch'), 'launched'); assert.equal(valid.prompts, 0); assert.equal(valid.launches, 1); assert.equal(valid.writes.length, 0);
+    assert.deepEqual(valid.selected, selected);
+    assert.equal(await valid.run('play'), 'launched'); assert.equal(valid.calls, 1);
+  }
+});
+
+test('more than ten selected replays fail before any loading or launch', async () => {
+  const f = fixture({rows: Array.from({length: 11}, (_, i) => ({recordingId: i + 1, nickname: 'Racer', isSelf: false}))});
+  assert.equal(await f.run('watch'), 'error'); assert.equal(f.calls, 0); assert.equal(f.launches, 0);
 });
 
 test('Watch consent is action-specific and a changed engine after consent leaves selection intact', async () => {

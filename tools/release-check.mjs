@@ -10,6 +10,8 @@ import {privatePublicationPaths} from './publication-privacy.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {snapshot} from './verifier/assets.cjs';
+import {reviewedWatchUiBaseline} from './verifier/watch-ui-review.mjs';
+import {PLAYBACK_ENGINE_PIN} from './playback-engine-pin.mjs';
 import {sameHashMap} from './verifier/engine-pin.cjs';
 import {VERIFIER_ENGINE_DIGEST,VERIFICATION_BOOTSTRAP_ID} from '../workers/ranked/src/verification.js';
 const root = resolve(import.meta.dirname, '..');
@@ -28,19 +30,23 @@ try {
  const actual=snapshot(root);
  assert.equal(actual.engineFingerprint,VERIFIER_ENGINE_DIGEST);assert.equal(pin.engineDigest,VERIFIER_ENGINE_DIGEST);
  assert(sameHashMap(actual.manifest,pin.files));assert(sameHashMap(actual.tracks,pin.tracks));
- assert.equal(indexed.currentEngine,VERIFIER_ENGINE_DIGEST);
+ const baseline=reviewedWatchUiBaseline(pin),indexedFiles=baseline.files;
+ assert.equal(PLAYBACK_ENGINE_PIN.engineDigest,VERIFIER_ENGINE_DIGEST);
+ assert.equal(PLAYBACK_ENGINE_PIN.mainSha256,pin.files['main.bundle.js']);
+ assert.equal(PLAYBACK_ENGINE_PIN.workerSha256,pin.files['simulation_worker.bundle.js']);
+ assert.equal(indexed.currentEngine,baseline.review.previousEngine);
  assert.equal(indexed.currentEngine,'3cb2e59839b5ad85ea34d892e1f10ca7dc04f9d8cec17770fbd843673614a3a0');
  assert.equal(indexed.previousEngine,'7cd54f05e02b66c67133fd856f025c829c21d600d8ef6a9071df62b4fb5905c4');
  assert.equal(indexed.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
  assert.equal(sha(lf(indexed.previousReview)),indexed.previousReviewSha256);
  assert.deepEqual(indexed.changedAssets,['simulation_worker.bundle.js']);
  assert.deepEqual(Object.keys(indexed.currentAssets),indexed.changedAssets);assert.deepEqual(Object.keys(indexed.previousAssets),indexed.changedAssets);
- for(const [file,hash]of Object.entries({...indexed.unchangedAssets,...indexed.currentAssets}))assert.equal(pin.files[file],hash);
- assert.equal(sha(JSON.stringify(pin.files)),indexed.currentEngine);
- const correction=indexed.persistentCapabilityCorrection;assert.equal(correction.currentEngine,VERIFIER_ENGINE_DIGEST);assert.equal(correction.consumerPassed,true);assert.equal(correction.browserClosed,true);assert.equal(correction.serverClosed,true);assert.equal(correction.physicsAndLookupUnchanged,true);
+ for(const [file,hash]of Object.entries({...indexed.unchangedAssets,...indexed.currentAssets}))assert.equal(indexedFiles[file],hash);
+ assert.equal(sha(JSON.stringify(indexedFiles)),indexed.currentEngine);
+ const correction=indexed.persistentCapabilityCorrection;assert.equal(correction.currentEngine,indexed.currentEngine);assert.equal(correction.consumerPassed,true);assert.equal(correction.browserClosed,true);assert.equal(correction.serverClosed,true);assert.equal(correction.physicsAndLookupUnchanged,true);
  const worker=lf('simulation_worker.bundle.js');assert.equal(sha(worker),correction.currentWorkerSha256);assert.equal(worker.split(correction.after).length,2);assert.equal(sha(worker.replace(correction.after,correction.before)),correction.priorDraftWorkerSha256);
  assert.equal(sha(indexed.lookupEvidence.indexedExpression),indexed.lookupEvidence.indexedExpressionSha256);assert(worker.includes('ka='+indexed.lookupEvidence.indexedExpression));
- const opponentFiles={...pin.files,...indexed.previousAssets};assert.equal(sha(JSON.stringify(opponentFiles)),indexed.previousEngine);
+ const opponentFiles={...indexedFiles,...indexed.previousAssets};assert.equal(sha(JSON.stringify(opponentFiles)),indexed.previousEngine);
  const opponent=json(indexed.previousReview),native=json('docs/events/native-row-ui-engine-review.json'),replay=json('docs/events/replay-ui-engine-review.json'),historical=json('docs/migration/engine-review.json');
  assert.equal(opponent.currentEngine,indexed.previousEngine);assert.equal(opponent.previousEngine,native.currentEngine);assert.equal(native.previousEngine,replay.currentEngine);assert.equal(replay.previousEngine,historical.engineDigest);
  for(const review of [opponent,native,replay])if(review.previousReviewSha256)assert.equal(sha(lf(review.previousReview)),review.previousReviewSha256);
@@ -62,7 +68,7 @@ try {
  assert.equal(VERIFICATION_BOOTSTRAP_ID,'verification_snapshot_v3_polytrack-native-bounded-v1_46aba6e247567f5954d412e0988e3d2cd04e9ec154c294bdf3fcaa830d9d12f3');
  assert.equal(indexed.nativeAB.pairCount,11);assert.equal(indexed.nativeAB.pairs.length,11);assert.equal(indexed.nativeAB.browserClosed,true);assert.equal(indexed.nativeAB.serverClosed,true);
  for(const pair of indexed.nativeAB.pairs){assert.equal(pair.equal,true);assert.match(pair.streamSha256,/^[a-f0-9]{64}$/);assert.equal(pair.baseStates,pair.frames);assert.equal(pair.candidateStates,pair.frames);assert.equal(pair.baseBytes,pair.candidateBytes);}
-} catch(error) { failures.push('Indexed playback immutable review chain: '+error.message); }
+} catch(error) { failures.push('Watch UI / indexed playback immutable review chain: '+error.message); }
 
 try { await buildNamePolicy({check:true}); }
 catch (error) { failures.push('Shared name policy: ' + error.message); }

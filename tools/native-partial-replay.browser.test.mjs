@@ -63,8 +63,8 @@ async function fixture(t, options = {}) {
     const track = 'b'.repeat(64), account = 'a'.repeat(64);
     localStorage.setItem('polytrack-0.6.2-active-account-id', account);
     const entries = [], payloads = new Map();
-    for (const id of [1, 2, 3]) {
-      const entry = {uploadId: id, trackId: track, accountId: id === 3 ? account : String(id).repeat(64), frames: 1000 + id, timeMs: 1000 + id,
+    for (const id of Array.from({length: options.count || 3}, (_, i) => i + 1)) {
+      const entry = {uploadId: id, trackId: track, accountId: id === 3 ? account : (id === 10 ? '0' : id.toString(16)).repeat(64), frames: 1000 + id, timeMs: 1000 + id,
         replayHash: await hash(recording), integrityVerified: true, runVerified: false, verified: false, verifiedState: 0};
       const payload = {...entry, recording, carStyle};
       if (id === 2) {
@@ -78,7 +78,7 @@ async function fixture(t, options = {}) {
       entries.push(entry); payloads.set(id, options.allMissing || id === 2 && !options.allValid ? null : payload);
     }
     const root = document.querySelector('.track-info-ui'), board = root.querySelector('.leaderboard-ui');
-    let selected = [1, 2, 3].map(recordingId => ({recordingId, nickname: 'Racer ' + recordingId, isSelf: recordingId === 3}));
+    let selected = Array.from({length: options.count || 3}, (_, i) => i + 1).map(recordingId => ({recordingId, nickname: 'Racer ' + recordingId, isSelf: recordingId === 3}));
     if (options.empty) selected = [];
     const selection = board.__pt062OpponentSelection = {version: 1, trackId: () => track,
       accountId: () => localStorage.getItem('polytrack-0.6.2-active-account-id'), get: () => selected.map(row => ({...row})),
@@ -235,12 +235,12 @@ test('native determinism gate is still enforced after consent', async t => {
   assert.equal(await page.evaluate(() => stats.races.length), 0);
 });
 
-test('all valid Play bypasses chooser; Watch overflow and all-fail do not change selection', async t => {
+test('valid Play and Watch bypass chooser; all-fail does not change selection', async t => {
   const play = await fixture(t, {allValid: true}); await play.locator('.play').click(); await play.waitForFunction(() => stats.races.length === 1);
   assert.equal(await chooser(play).count(), 0); assert.equal(await play.evaluate(() => stats.writes), 0);
   const watch = await fixture(t, {allValid: true}); await watch.locator('.watch').click();
-  await watch.waitForFunction(() => document.querySelector('#status').textContent.includes('Watch supports 2'));
-  assert.equal(await watch.evaluate(() => stats.native + stats.writes), 0);
+  await watch.waitForFunction(() => stats.races.length === 1);
+  assert.equal(await watch.evaluate(() => stats.native), 1); assert.equal(await watch.evaluate(() => stats.writes), 0);
   const missing = await fixture(t, {allMissing: true}); await missing.locator('.play').click();
   await missing.waitForFunction(() => document.querySelector('#status').textContent.includes('No selected replay'));
   assert.equal(await missing.evaluate(() => stats.native + stats.writes), 0);
@@ -261,4 +261,14 @@ test('startup guard blocks selected replay clicks until installation and install
   await page.locator('.play').click(); await proceed(page).waitFor();
   await proceed(page).click(); await page.waitForFunction(() => stats.races.length === 1);
   assert.equal(await page.evaluate(() => stats.native), 1);
+});
+
+for (const count of [3, 10]) test(`Watch launches all ${count} valid replays through native parsing without extra reads`, async t => {
+  const page = await fixture(t, {allValid: true, count}); await page.locator('.watch').click();
+  await page.waitForFunction(() => stats.races.length === 1);
+  assert.equal(await page.evaluate(() => stats.races[0].length), count);
+  assert.equal(await page.evaluate(() => fixture.selected().length), count);
+  assert.equal(await chooser(page).count(), 0);
+  assert.equal(await page.evaluate(() => stats.writes), 0);
+  assert.equal(await page.evaluate(() => stats.reads.length === stats.readsAtNative), true);
 });

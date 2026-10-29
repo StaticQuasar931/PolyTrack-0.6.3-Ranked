@@ -1,15 +1,12 @@
 const releaseInfo = {
-  "number": 234,
+  "number": 235,
   "version": "0.6.3",
-  "revision": 203,
+  "revision": 204,
   "notes": [
-    "Developer diagnostics include partial listener-read estimates and disclose unknown costs.",
-    "Verifier accounting separates request reservations, transport attempts and uncertain outcomes.",
-    "Backend caching and idempotent cosmetic saves reduce repeated shared work.",
-    "Background profile jobs report their final costs separately from foreground requests.",
-    "Repeated missing-board probes back off without restricting future custom-track publication."
+    "Watch supports up to ten selected replays on normal and event tracks.",
+    "Unavailable replays are skipped only after confirmation, without discarding working selections."
   ],
-  "preparedAt": "2026-10-29T01:32:04.473Z"
+  "preparedAt": "2026-10-29T02:43:25.113Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

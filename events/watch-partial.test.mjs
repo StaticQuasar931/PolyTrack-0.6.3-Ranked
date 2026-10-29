@@ -20,7 +20,7 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 function fixture(options={}){
   const period={id:'daily-watch',trackId:'b'.repeat(64)},session={periodId:period.id,trackId:period.trackId,accountId:'a'.repeat(64),...(options.archive?{archive:true}:{})};
   let account=session.accountId,active=session,own=null,reads=0,prepares=0;
-  const rows=Array.from({length:options.count??3},(_,i)=>({accountId:String(i+1).repeat(64),timeMs:1000+i,runId:String(i+1).repeat(64),replayHash,name:'Racer '+(i+1)}));
+  const rows=Array.from({length:options.count??3},(_,i)=>({accountId:(i===9?'0':(i+1).toString(16)).repeat(64),timeMs:1000+i,runId:String(i+1).repeat(64),replayHash,name:'Racer '+(i+1)}));
   const payloads=rows.map(row=>({...row,periodId:period.id,trackId:period.trackId,frames:row.timeMs,replay,carStyle}));
   options.edit?.(payloads);
   const selectedGhosts=new Map(rows.map(row=>[row.accountId,{periodId:period.id,accountId:session.accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetRunId:row.runId,targetPending:false,targetReplayHash:row.replayHash,ghost:{nickname:'Old parsed ghost',poison:true}}]));
@@ -57,12 +57,17 @@ for(const archive of [false,true])test(`${archive?'archived':'live'} Watch valid
 for(const consent of [false,undefined,'yes'])test(`Watch cancellation (${String(consent)}) does not mutate selection`,async()=>{
   const f=fixture({edit:rows=>{rows[1].replay='AAAA';},confirm:()=>consent});await f.watch();assert.equal(f.selectedGhosts.size,3);assert.equal(f.opened.length,0);
 });
-test('Watch does not truncate more than two valid replays or offer an all-failed launch',async()=>{
-  for(const allFailed of [false,true]){
-    const f=fixture({edit:rows=>{if(allFailed)for(const row of rows)row.carStyle='AAAA';}});await f.watch();
-    assert.equal(f.opened.length,0);assert.equal(f.selectedGhosts.size,3);assert.equal(f.prompts.length,0);
-    assert.match(f.messages.at(-1),allFailed?/No selected replay/:/Watch supports 2/);
-  }
+test('Watch never offers an all-failed launch',async()=>{
+  const f=fixture({edit:rows=>{for(const row of rows)row.carStyle='AAAA';}});await f.watch();
+  assert.equal(f.opened.length,0);assert.equal(f.selectedGhosts.size,3);assert.equal(f.prompts.length,0);
+  assert.match(f.messages.at(-1),/No selected replay/);
+});
+
+for(const archive of [false,true])for(const count of [3,10,11])test(`${archive?'archived':'live'} Watch preserves ${count} replays or rejects more than ten`,async()=>{
+  const f=fixture({archive,count});await f.watch();
+  assert.equal(f.selectedGhosts.size,count);assert.equal(f.prompts.length,0);
+  assert.equal(f.opened.length,count<=10?1:0);
+  if(count<=10)assert.equal(f.opened[0].length,count);else assert.match(f.messages.at(-1),/up to 10/);
 });
 test('Watch never plays a mismatched identity, run, time, track, hash or stale selection binding',async()=>{
   for(const edit of [{accountId:'c'.repeat(64)},{runId:'c'.repeat(64)},{timeMs:999},{trackId:'c'.repeat(64)},{replayHash:'0'.repeat(64)}]){
@@ -82,6 +87,12 @@ test('engine failure after consent and failed native handoff preserve the origin
   await f.watch();assert.equal(f.opened.length,0);assert.equal(f.selectedGhosts.size,3);
   const native=fixture({nativeError:true,edit:rows=>{rows[1].carStyle='AAAA';}});await native.watch();assert.equal(native.selectedGhosts.size,3);
 });
+test('ten selected event replays do not acquire an eleventh automatic own ghost',async()=>{
+  const f=fixture({count:10,own:true});await f.watch();
+  assert.equal(f.opened.length,1);assert.equal(f.opened[0].length,10);
+  assert.equal(f.prompts.length,0);assert.equal(f.selectedGhosts.size,10);
+});
+
 test('local own PB failure requires consent without deleting the PB or receipts',async()=>{
   const f=fixture({count:1,own:true,badOwn:true});const before=JSON.stringify(f.bestRecords);await f.watch();
   assert.equal(f.prompts.length,1);assert.equal(f.opened[0].length,1);assert.equal(JSON.stringify(f.bestRecords),before);assert.equal(f.selectedGhosts.size,1);
