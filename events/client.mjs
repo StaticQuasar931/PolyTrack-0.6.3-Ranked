@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=203';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=203';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=204';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=204';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,7 +7,7 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=203';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=204';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -799,7 +799,7 @@ export function installEvents(bridge){
         const nativeWatch=root?.__pt062EventWatch;
         if(!root?.isConnected||nativeWatch?.version!==1||nativeWatch.trackId!==session.trackId||period?.id!==session.periodId||period.trackId!==session.trackId)throw Error('Event replay context changed. Reopen this track.');
         const selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
-        const own=!session.archive&&!selections.some(row=>row.targetAccountId===session.accountId)&&bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;
+        const own=!session.archive&&selections.length<10&&!selections.some(row=>row.targetAccountId===session.accountId)&&bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;
         const boardRows=()=>session.archive?archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period).rows;
         const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name]);
         const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
@@ -827,7 +827,7 @@ export function installEvents(bridge){
         if(!current())return;
         const ready=checked.filter(item=>!item.error),failed=checked.filter(item=>item.error);
         if(!ready.length){message('No selected replay is ready to watch. Your selection is unchanged.');return;}
-        if(ready.length>2){message('Watch supports 2 replays. Unselect extras, or choose Play to race all selected ghosts.');return;}
+        if(ready.length>10){message('Watch supports up to 10 replays. Unselect extras to continue.');return;}
         if(failed.length){
           const accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',mode:'watch',returnFocus:root.querySelector('.side-panel button.watch')});
           if(!current())return;

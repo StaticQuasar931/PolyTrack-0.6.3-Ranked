@@ -221,7 +221,6 @@ export function createPartialReplaySelection({readRecordings, validateRecording,
       if (!available(current)) return 'cancelled';
       const ready = checked.filter(item => !item.error), failed = checked.filter(item => item.error);
       if (!ready.length) { status('Saved replays unavailable or failed playback validation. No selected replay can be used.', true); return 'all-failed'; }
-      if (mode === 'watch' && ready.length > 2) { status('Watch supports 2 replays. Choose Play to race all selected ghosts, or select at most 2 for Watch.', true); return 'watch-limit'; }
       if (failed.length) {
         const accepted = await confirm({ready, failed, isCurrent: current, signal: job.abort.signal, returnFocus, mode});
         if (!available(current)) return 'cancelled';
