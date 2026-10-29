@@ -57,7 +57,42 @@ export function installResponsiveViewport({document=globalThis.document,window=g
   };
 }
 
+// Reserve native footer slots without impersonating the asynchronously created filter button.
+export function installNativeTrackFooterReservation({document=globalThis.document}={}){
+  if(!document?.head||document.getElementById('sq-native-footer-reservation'))return;
+  const style=document.createElement('style');style.id='sq-native-footer-reservation';
+  const footer='html body .track-info-ui .leaderboard-ui:not(.sq-event-board) > .button-wrapper:not(:has(> [data-personal-filter-button])):has(> .back):has(> .only-verified):has(> .icon-button.first)';
+  style.textContent=`
+    ${footer}{display:grid!important;grid-template-columns:minmax(126px,1fr) 96px minmax(170px,1.25fr) 48px!important;grid-template-rows:minmax(48px,auto);align-items:stretch;gap:8px!important;width:min(100%,540px);min-width:0;min-height:60px!important;height:auto!important;padding:6px 0!important;box-sizing:border-box;flex:0 0 auto!important;align-self:center;overflow:visible!important}
+    ${footer}>button{width:100%;min-width:0!important;max-width:100%;min-height:48px!important;margin:0!important;padding:8px 12px!important;box-sizing:border-box;float:none!important;line-height:1.15!important;white-space:nowrap!important}
+    ${footer}::before{content:"";visibility:hidden;grid-column:2;grid-row:1;min-width:0;min-height:48px}
+    ${footer}>.back{grid-column:1;grid-row:1}
+    ${footer}>.only-verified{display:flex!important;grid-column:3;grid-row:1;align-items:center;justify-content:center;gap:6px}
+    ${footer}>.icon-button.first{grid-column:4;grid-row:1;min-width:48px!important}
+    ${footer}>.only-verified img{width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important;margin:0!important;object-fit:contain}
+    @media(max-width:650px) and (orientation:landscape){
+      ${footer}{grid-template-columns:minmax(48px,1fr) minmax(48px,1fr) minmax(62px,1.2fr) 44px!important;gap:4px!important;min-height:48px!important;padding:0!important}
+      ${footer}>button{min-height:44px!important;padding:3px!important;font-size:12px!important;line-height:1!important;white-space:normal!important;overflow-wrap:anywhere}
+      ${footer}::before{min-height:44px}
+      ${footer}>.icon-button.first{min-width:44px!important}
+      ${footer}>.only-verified{gap:3px}
+      ${footer}>.only-verified img{width:16px!important;height:16px!important;max-width:16px!important;max-height:16px!important}
+    }
+    @media(max-width:600px) and (orientation:portrait){
+      ${footer}{grid-template-columns:minmax(88px,1fr) minmax(80px,.9fr) 48px!important;grid-template-rows:minmax(44px,auto) minmax(44px,auto);min-height:94px!important}
+      ${footer}>.icon-button.first{grid-column:3;grid-row:1}
+      ${footer}>.only-verified{grid-column:1 / -1;grid-row:2}
+    }
+    @media(max-width:600px) and (max-height:650px) and (orientation:portrait){
+      ${footer}{grid-template-rows:44px 44px!important;min-height:96px!important;padding:0!important}
+      ${footer}>button{min-height:44px!important;height:44px!important;padding-block:4px!important}
+      ${footer}::before{min-height:44px}
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 if(typeof document!=='undefined'&&typeof window!=='undefined'){
-  const start=()=>{installResponsiveViewport({document,window,container:document.querySelector('[data-polytrack-container]')||undefined});installCompactRankedLayout({document,window});installMobileFullscreen({document,window});};
+  const start=()=>{installNativeTrackFooterReservation({document});installResponsiveViewport({document,window,container:document.querySelector('[data-polytrack-container]')||undefined});installCompactRankedLayout({document,window});installMobileFullscreen({document,window});};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 }
