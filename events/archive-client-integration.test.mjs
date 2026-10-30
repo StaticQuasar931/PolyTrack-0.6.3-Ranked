@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {archivePeriodCounts, archiveSnapshotState} from './archive-view.mjs';
-import {decorateEventRowPresentation, eventDisplayRunAt} from './client.mjs';
+import {decorateEventRowPresentation, eventDisplayRunAt, eventRowVerified, eventPagination, renderEventPagination} from './client.mjs';
 
 const source = fs.readFileSync(new URL('./client.mjs', import.meta.url), 'utf8');
 const section = (start, end) => {
@@ -119,7 +119,7 @@ function nativeFixture(snapshot) {
       rendered.push(button); container.append(button); return button;
     }}};
   const selectedGhosts = new Map([[row.accountId, {periodId: period.id, accountId: 'viewer', targetTimeMs: row.timeMs}]]);
-  const context = {archivePeriodCounts, archiveSnapshotState, decorateEventRowPresentation, eventDisplayRunAt,
+  const context = {archivePeriodCounts, archiveSnapshotState, decorateEventRowPresentation, eventDisplayRunAt, eventRowVerified, eventPagination, renderEventPagination,
     document, selectedGhosts, pendingGhosts: new Map(), now: () => Date.now(),
     bridge: {watchEvent() {}, readArchivedReplay() {throw Error('Tests must not load recordings');}},
     displayName: value => value.name, eventName: () => 'Kodub weekly', selectReplay() {throw Error('Tests must not select replays');}};
@@ -185,4 +185,26 @@ test('native empty non-final and partial captures never claim zero final finishe
     assert.match(f.nodes['.container'].textContent, /Final results are not known/);
     assert.doesNotMatch(f.nodes.h2.textContent, /Frozen/);
   }
+});
+
+test('native archive reaches saved ranks beyond 200 with bounded numbered arrows',()=>{
+  const entries=Array.from({length:241},(_,i)=>({...row,accountId:(i+1).toString(16).padStart(64,'0'),rank:i+1,timeMs:1000+i}));
+  const f=nativeFixture(board({entries,archived:true,complete:true,totalEntries:241,racerCount:241}));
+  f.sync();assert.equal(f.view.pageCount,13);assert.equal(f.nodes['.pages'].childNodes.length,9);
+  for(let page=1;page<=12;page++)f.nodes['.pages'].childNodes.at(-1).onclick();
+  assert.equal(f.view.page,12);assert.match(f.nodes['.total-players'].textContent,/Page 13 of 13/);
+  const visible=f.nodes['.container'].childNodes;
+  assert.equal(visible.length,1);assert.equal(visible[0].value.rank,241);
+  assert.equal(f.nodes['.pages'].childNodes.at(-1).disabled,true);
+  f.view.page=-4;f.view.signature='';f.sync();assert.equal(f.view.page,0);
+});
+
+test('native archive clamps to loaded pages when declared source total exceeds saved rows',()=>{
+  const entries=Array.from({length:201},(_,i)=>({...row,accountId:(i+1).toString(16).padStart(64,'0'),rank:i+1,timeMs:1000+i}));
+  const f=nativeFixture(board({entries,archived:true,complete:false,totalEntries:600,racerCount:650}));
+  f.view.page=40;f.sync();
+  assert.equal(f.view.page,10);assert.equal(f.view.pageCount,11);
+  assert.match(f.nodes['.total-players'].textContent,/201 saved results \/ 650 event entrants/);
+  assert.match(f.nodes['.total-players'].textContent,/Page 11 of 11/);
+  assert.equal(f.nodes['.container'].childNodes[0].value.rank,201);
 });

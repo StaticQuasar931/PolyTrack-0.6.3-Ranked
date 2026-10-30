@@ -13,7 +13,7 @@ assert.ok(controlStart > 0 && controlEnd > controlStart);
 const nativeControls = nativeBundle.slice(controlStart, controlEnd).replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
 const font = await readFile(new URL('../forced_square.woff2', import.meta.url));
 const release = {number: 241, revision: 209, preparedAt: '2026-10-01T12:00:00.000Z',
-  notes: ['Play a focused racer with Space.', 'Saved runs and settings stay unchanged.']};
+  notes: ['Play a focused racer with Space.', 'Clearer update information.']};
 
 test('release UI keeps native hover, keyboard acknowledgement, live local age and phone fit', {timeout: 90000}, async t => {
   const browser = await chromium.launch({headless: true}); t.after(() => browser.close());
@@ -32,11 +32,14 @@ test('release UI keeps native hover, keyboard acknowledgement, live local age an
     body{background:#101a35;color:#fff;font:22px ForcedSquare,sans-serif}${nativeControls}`});
   await page.evaluate(async release => {
     const api = await import('/tools/site-updates.mjs'); window.updateAPI = api;
-    window.localNow = Date.parse(release.preparedAt); window.ageTimers = new Map(); let next = 0;
-    window.ageOptions = {now: () => localNow, setTimeout: (fn, delay) => { ageTimers.set(++next, {fn, delay}); return next; },
+    window.publicationDate = '2026-10-02T12:00:00.000Z';
+    window.localNow = Date.parse(publicationDate); window.ageTimers = new Map(); let next = 0;
+    window.ageOptions = {verifiedReleasePointer:{schemaVersion:1,repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',
+      commit:'a'.repeat(40),indexSha256:'b'.repeat(64),snapshotDirectory:'public-snapshots70',publishedAt:publicationDate},
+      installedCommit:'a'.repeat(40),now: () => localNow, setTimeout: (fn, delay) => { ageTimers.set(++next, {fn, delay}); return next; },
       clearTimeout: id => ageTimers.delete(id)};
     window.advance = elapsed => {
-      window.localNow = Date.parse(release.preparedAt) + elapsed;
+      window.localNow = Date.parse(publicationDate) + elapsed;
       for (const [id, {fn}] of [...ageTimers]) { ageTimers.delete(id); fn(); }
     };
     window.racing = true; window.nativeKeys = [];
@@ -50,13 +53,13 @@ test('release UI keeps native hover, keyboard acknowledgement, live local age an
   assert.equal(await page.locator('dialog').count(), 0);
   assert.equal(await page.evaluate(() => ageTimers.size), 1, 'Help API works without mounting a notice');
   await page.evaluate(() => { racing = false; notice.resume(); });
-  const dialog = page.getByRole('dialog', {name: 'PolyTrack update 241'}), age = dialog.locator('time');
-  assert.doesNotMatch(await dialog.innerText(), /209|client revision/);
-  assert.equal(await age.getAttribute('datetime'), release.preparedAt);
-  assert.equal(await age.getAttribute('title'), await page.evaluate(time => `Release prepared: ${new Date(time).toLocaleString()}`, release.preparedAt));
+  const dialog = page.getByRole('dialog', {name: 'PolyTrack Ranked - Update 241'}), age = dialog.locator('time');
+  assert.doesNotMatch(await dialog.innerText(), /209|client revision|saved runs/i);
+  assert.equal(await age.getAttribute('datetime'), '2026-10-02T12:00:00.000Z');
+  assert.equal(await age.getAttribute('title'), await page.evaluate(() => `Updated: ${new Date(publicationDate).toLocaleString()}`));
   for (const [elapsed, text] of [[60000, '1 minute'], [3600000, '1 hour'], [86400000, '1 day'], [604800000, '7 days']]) {
     await page.evaluate(elapsed => advance(elapsed), elapsed);
-    assert.equal(await age.textContent(), `Release prepared ${text} ago`);
+    assert.equal(await age.textContent(), `Updated ${text} ago`);
     assert.equal(await page.locator('#help-age').textContent(), await age.textContent());
     assert.equal(await page.evaluate(() => ageTimers.size), 2);
   }

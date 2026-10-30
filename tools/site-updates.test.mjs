@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { installSiteUpdates, installInstalledRevisionNotice, releaseUpdateAge, bindReleaseUpdateAge, UPDATED_GAME_URL, CANONICAL_SITE_VERSION_URL, CANONICAL_RELEASE_POINTER_URL } from './site-updates.mjs';
+import { installSiteUpdates, installInstalledRevisionNotice, releaseUpdateAge, formatReleaseUpdateAge, bindReleaseUpdateAge, UPDATED_GAME_URL, CANONICAL_SITE_VERSION_URL, CANONICAL_RELEASE_POINTER_URL } from './site-updates.mjs';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -620,20 +620,24 @@ test('unsafe callback hooks and timer failures cannot leave compatibility blocke
 });
 
 const releaseFixture = {number: 241, revision: 209, preparedAt: '2026-10-01T12:00:00.000Z',
-  notes: ['Play a focused racer with Space.', 'Saved runs and settings stay unchanged.']};
+  notes: ['Play a focused racer with Space.', 'Clearer update information.']};
 const preparedAt = Date.parse(releaseFixture.preparedAt);
+const verifiedAge = {installedCommit:cdnPointer.commit,verifiedSiteCommitMetadata:{
+  repository:cdnPointer.repository,commit:cdnPointer.commit,publishedAt:releaseFixture.preparedAt}};
 
 test('local age uses minutes, hours and days, records local date and never invents publication', () => {
   for (const [elapsed, text] of [[0, 'less than a minute'], [60000, '1 minute'], [120000, '2 minutes'],
     [3600000, '1 hour'], [7200000, '2 hours'], [86400000, '1 day'], [1209600000, '14 days']]) {
-    const age = releaseUpdateAge({...releaseFixture, publishedAt: '2026-10-02T00:00:00.000Z'}, {now: preparedAt + elapsed});
-    assert.equal(age.text, `Release prepared ${text} ago`);
+    const age = releaseUpdateAge({...releaseFixture, publishedAt: '2026-10-02T00:00:00.000Z'}, {...verifiedAge,now: preparedAt + elapsed});
+    assert.equal(age.text, `Updated ${text} ago`);
     assert.equal(age.dateTime, releaseFixture.preparedAt);
-    assert.equal(age.title, `Release prepared: ${new Date(preparedAt).toLocaleString()}`);
+    assert.equal(age.title, `Updated: ${new Date(preparedAt).toLocaleString()}`);
     assert.ok(age.nextUpdateMs > 0 && age.nextUpdateMs <= 60000);
-    assert.equal(age.source, 'prepared');
+    assert.equal(age.source, 'updated');
   }
-  assert.equal(releaseUpdateAge(releaseFixture, {now: preparedAt - 1}).text, 'Device clock is before preparation time');
+  assert.equal(releaseUpdateAge(releaseFixture, {...verifiedAge,now: preparedAt - 1}).text, 'Device clock is before update time');
+  assert.equal(releaseUpdateAge(releaseFixture).text, 'Publication time unavailable');
+  assert.equal(formatReleaseUpdateAge(releaseFixture.preparedAt,'prepared').text,'Publication time unavailable');
   for (const value of [undefined, '', 1790856000000, 'bad', '2026-02-30T12:00:00.000Z']) {
     assert.equal(releaseUpdateAge({preparedAt: value}).nextUpdateMs, null);
   }
@@ -646,25 +650,75 @@ test('Updated age requires an already verified pointer matching the installed co
   for (const replacement of [{installedCommit: 'c'.repeat(40)}, {installedCommit: undefined},
     {verifiedReleasePointer: {...verifiedReleasePointer, repository: 'other/repo'}},
     {verifiedReleasePointer: {...verifiedReleasePointer, publishedAt: 'bad'}}]) {
-    assert.equal(releaseUpdateAge(releaseFixture, {...options, ...replacement}).source, 'prepared');
+    assert.equal(releaseUpdateAge(releaseFixture, {...options, ...replacement}).source, 'unknown');
   }
+});
+
+test('verified site publication, push and commit dates stay distinct and bound to the installed full commit', () => {
+  const date = '2026-10-02T12:00:00Z', now = Date.parse(date) + 3600000;
+  for (const [field, source, text] of [['publishedAt','updated','Updated'], ['pushedAt','pushed','Pushed'], ['committedAt','committed','Committed']]) {
+    const verifiedSiteCommitMetadata = {repository:cdnPointer.repository, commit:cdnPointer.commit, [field]:date};
+    const options = {now, installedCommit:cdnPointer.commit, verifiedSiteCommitMetadata};
+    const age = releaseUpdateAge(releaseFixture, options);
+    assert.equal(age.text, `${text} 1 hour ago`); assert.equal(age.source, source);
+    assert.equal(age.title, `${text}: ${new Date(date).toLocaleString()}`);
+    assert.equal(age.dateTime, '2026-10-02T12:00:00.000Z');
+    for (const replacement of [{installedCommit:'a'.repeat(7)}, {installedCommit:'c'.repeat(40)},
+      {verifiedSiteCommitMetadata:{...verifiedSiteCommitMetadata,repository:'other/repo'}},
+      ...['2026-02-30T12:00:00Z','2026-10-02','2026-10-02T12:00:00+00:00',0].map(value=>({verifiedSiteCommitMetadata:{...verifiedSiteCommitMetadata,[field]:value}}))]) {
+      assert.equal(releaseUpdateAge(releaseFixture,{...options,...replacement}).source,'unknown');
+    }
+    assert.equal(releaseUpdateAge({...releaseFixture,...verifiedSiteCommitMetadata},{now}).source,'unknown','ordinary release fields cannot attest publication');
+  }
+  assert.equal(releaseUpdateAge({}).text,'Publication time unavailable');
+  assert.equal(formatReleaseUpdateAge(date,'invented',now).nextUpdateMs,null);
+  const preferred = releaseUpdateAge(releaseFixture,{now,installedCommit:cdnPointer.commit,
+    verifiedReleasePointer:{...cdnPointer,publishedAt:date},
+    verifiedSiteCommitMetadata:{repository:cdnPointer.repository,commit:cdnPointer.commit,committedAt:releaseFixture.preparedAt}});
+  assert.equal(preferred.source,'updated','actual pointer publication takes priority over commit/preparation');
+});
+
+test('existing canonical CDN fallback supplies a matching automatic launcher age without another request', async () => {
+  const document = new FakeDocument(); document.defaultView = new EventTarget();
+  document.location = {href:'https://script.googleusercontent.com/userCodeAppPanel'};
+  document.baseURI = `https://cdn.jsdelivr.net/gh/${cdnPointer.repository}@${cdnPointer.commit}/`;
+  document.defaultView.__polytrackAutomaticLoad = Promise.resolve();
+  const element = document.createElement('time'); document.body.append(element);
+  let next = 0, calls = 0; const timers = new Map();
+  const now = Date.parse(cdnPointer.publishedAt) + 3600000;
+  const binding = bindReleaseUpdateAge(element,{document,release:releaseFixture,now:()=>now,
+    setTimeout:fn=>{timers.set(++next,fn);return next;},clearTimeout:id=>timers.delete(id)});
+  assert.equal(element.textContent,'Publication time unavailable');
+  const h = harness({document,endpoint:CANONICAL_SITE_VERSION_URL,fetch:async url=>{
+    calls++;
+    if (url.startsWith(CANONICAL_SITE_VERSION_URL)) throw TypeError('Blocked Pages');
+    if (url === CANONICAL_RELEASE_POINTER_URL) return jsonResponse(cdnPointer);
+    assert.equal(url,cdnVersionUrl); return jsonResponse({revision:44});
+  }});
+  await h.handle.check();
+  assert.equal(calls,3); assert.equal(element.textContent,'Updated 1 hour ago');
+  assert.equal(timers.size,1);
+  assert.equal(releaseUpdateAge(releaseFixture,{document,now}).source,'updated');
+  document.location.href='https://foreign.example/';
+  assert.equal(releaseUpdateAge(releaseFixture,{document,now}).source,'unknown','a foreign host does not inherit launcher trust');
+  h.handle.dispose(); binding.dispose(); assert.equal(timers.size,0);
 });
 
 test('Help age binding reuses one local timer and cleans up on hide, pagehide, rebind, detach and disposal', () => {
   const document = new FakeDocument(); document.defaultView = new EventTarget();
   const element = document.createElement('time'); document.body.append(element);
   let time = preparedAt, next = 0; const timers = new Map();
-  const options = {document, release: releaseFixture, now: () => time,
+  const options = {document, release: releaseFixture, ...verifiedAge, now: () => time,
     setTimeout: (fn, delay) => { timers.set(++next, {fn, delay}); return next; }, clearTimeout: id => timers.delete(id)};
   const binding = bindReleaseUpdateAge(element, options);
-  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Release prepared less than a minute ago');
+  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Updated less than a minute ago');
   for (let i = 0; i < 20; i++) binding.refresh();
   assert.equal(timers.size, 1);
   time += 3600000; [...timers.values()][0].fn();
-  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Release prepared 1 hour ago');
+  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Updated 1 hour ago');
   document.visibilityState = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); assert.equal(timers.size, 0);
   time += 86400000; document.visibilityState = 'visible'; document.dispatchEvent(new Event('visibilitychange'));
-  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Release prepared 1 day ago');
+  assert.equal(timers.size, 1); assert.equal(element.textContent, 'Updated 1 day ago');
   document.defaultView.dispatchEvent(new Event('pagehide')); assert.equal(timers.size, 0);
   document.defaultView.dispatchEvent(new Event('focus')); assert.equal(timers.size, 0);
   document.defaultView.dispatchEvent(new Event('pageshow')); assert.equal(timers.size, 1);
@@ -673,17 +727,17 @@ test('Help age binding reuses one local timer and cleans up on hide, pagehide, r
   element.remove(); [...timers.values()][0].fn(); assert.equal(timers.size, 0);
   rebound.dispose(); rebound.dispose(); document.defaultView.dispatchEvent(new Event('focus')); assert.equal(timers.size, 0);
   document.body.append(element);
-  const unknown = bindReleaseUpdateAge(element, {...options, release: {}});
+  const unknown = bindReleaseUpdateAge(element, {...options, release: {},verifiedSiteCommitMetadata:undefined,installedCommit:undefined});
   assert.equal(element.datetime, undefined); assert.equal(timers.size, 0); unknown.dispose();
 });
 
 test('installed notice shows only the public release, bounds local notes and disposes age without acknowledging', () => {
   let next = 0; const timers = new Map(), storage = memoryStorage();
-  const h = noticeHarness({storage, release: {...releaseFixture, notes: ['a'.repeat(500), ...Array(20).fill('Short note.')]},
+  const h = noticeHarness({storage, ...verifiedAge, release: {...releaseFixture, notes: ['a'.repeat(500), ...Array(20).fill('Short note.')]},
     now: () => preparedAt, setTimeout: fn => { timers.set(++next, fn); return next; }, clearTimeout: id => timers.delete(id)});
   const dialog = h.document.dialog;
-  assert.equal(dialog.children[0].textContent, 'PolyTrack update 241');
-  assert.equal(dialog.children[1].textContent, 'Your saved runs are unchanged.');
+  assert.equal(dialog.children[0].textContent, 'PolyTrack Ranked - Update 241');
+  assert.doesNotMatch(String(dialog.children[1].textContent || ''), /saved runs|client|209/i);
   assert.equal(dialog.children[2].children.length, 4);
   assert.ok(dialog.children[2].children.every(item => item.textContent.length <= 220));
   assert.equal(timers.size, 1);
@@ -691,6 +745,19 @@ test('installed notice shows only the public release, bounds local notes and dis
   assert.equal(timers.size, 0); assert.equal(storage.getItem('polytrack-site-update-ack-v1:205'), null);
   h.document.visibilityState = 'visible'; h.handle.resume(); assert.equal(timers.size, 1);
   h.handle.dispose(); assert.equal(timers.size, 0);
+});
+
+test('installed notice forwards the explicit local release commit date to its live binding', () => {
+  let next=0,time=preparedAt+3600000; const timers=new Map();
+  const h=noticeHarness({release:releaseFixture,verifiedReleaseCommitAt:releaseFixture.preparedAt,
+    now:()=>time,setTimeout:fn=>{timers.set(++next,fn);return next;},clearTimeout:id=>timers.delete(id)});
+  const age=h.document.dialog.children[1].children[0];
+  assert.equal(age.textContent,'Committed 1 hour ago'); assert.equal(timers.size,1);
+  h.document.dispatchEvent(new Event('polytrack-release-publication'));
+  assert.equal(age.textContent,'Committed 1 hour ago'); assert.equal(timers.size,1);
+  time+=86400000; [...timers.values()][0]();
+  assert.equal(age.textContent,'Committed 1 day ago'); assert.equal(timers.size,1);
+  h.handle.dispose(); assert.equal(timers.size,0);
 });
 
 test('foreign hosts offer only a fixed explicit new-tab link, and click safety still applies', async () => {
@@ -765,7 +832,7 @@ test('foreign copies cannot gain launcher reload privileges from a base tag or m
 
 // Optional local browser verification. No install/download and no external requests.
 let chromium;
-try { ({chromium} = createRequire(new URL('./verifier/package.json', import.meta.url))(
+try { if (process.env.POLYTRACK_UNIT_ONLY !== '1') ({chromium} = createRequire(new URL('./verifier/package.json', import.meta.url))(
   process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch { /* Unit tests remain dependency-free. */ }
 test('installed revision notice uses native keyboard focus, waits for safe menus and persists explicit acknowledgement',
   {skip: !chromium}, async () => {
@@ -797,7 +864,7 @@ test('installed revision notice uses native keyboard focus, waits for safe menus
       await page.evaluate(() => { document.getElementById('menu').hidden = true; racing = true; notice.resume(); });
       assert.equal(await page.locator('dialog').count(), 0);
       await page.evaluate(() => { racing = false; notice.resume(); });
-      assert.equal(await page.getByRole('dialog', {name: 'PolyTrack update 236'}).count(), 1);
+      assert.equal(await page.getByRole('dialog', {name: 'PolyTrack Ranked - Update 236'}).count(), 1);
       assert.equal(await page.locator('dialog').evaluate(node=>getComputedStyle(node).fontSize),'22px');
       assert.equal(await page.getByRole('button',{name:'OK',exact:true}).evaluate(node=>getComputedStyle(node).borderRadius),'0px');
       for (const [width,height] of [[320,568],[844,320],[1366,768]]) {

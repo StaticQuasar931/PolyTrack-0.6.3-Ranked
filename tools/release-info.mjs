@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 242,
+  "number": 243,
   "version": "0.6.3",
-  "revision": 211,
+  "revision": 212,
   "notes": [
-    "More reliable replay availability, including pending runs.",
-    "Updated standings and clearer snapshot coverage."
+    "Clearer event pages, placements and update notices.",
+    "More reliable local PB saving and replay selection."
   ],
-  "preparedAt": "2026-10-30T07:53:22.385Z"
+  "preparedAt": "2026-10-30T11:24:24.679Z",
+  "committedAt": "2026-10-30T11:33:52.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

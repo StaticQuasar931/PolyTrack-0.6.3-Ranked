@@ -1278,7 +1278,7 @@ test('published metric arrow toggles preserve missing-last ordering and filter c
   api.destroy();
 });
 
-test('Popular uses snapshot racers only, distinguishes zero and unknown, and keeps the header unchanged', async () => {
+test('Popular shows plain player counts from snapshots, distinguishes zero and unknown, and keeps the header unchanged', async () => {
   const ids = ['a', 'b', 'c', 'd', 'e'].map(char => char.repeat(64));
   const items = ids.map((trackId, i) => entry(i + 1, {trackId, sourceCopies: 999 - i}));
   const {root, api} = fixture(items); api.open();
@@ -1297,7 +1297,7 @@ test('Popular uses snapshot racers only, distinguishes zero and unknown, and kee
   assert.deepEqual(names(), ['Track 03', 'Track 04', 'Track 01', 'Track 02', 'Track 05']);
   assert.match(cls(root, 'sq-extra-count')[0].textContent, /3 exact, 2 unknown/);
   assert.deepEqual(cls(root, 'sq-extra-popularity').map(node => node.textContent), [
-    '7 snapshot racers', '7 snapshot racers', '0 snapshot racers', 'Snapshot racers unknown', 'Snapshot racers unknown']);
+    '7 players', '7 players', '0 players', 'Player count unknown', 'Player count unknown']);
   await click(cls(root, 'sq-extra-sort-direction')[0]);
   assert.deepEqual(names(), ['Track 01', 'Track 03', 'Track 04', 'Track 02', 'Track 05']);
   assert.match(sort.getAttribute('aria-description'), /fewest first.*unknown coverage stays last/);
@@ -1331,4 +1331,26 @@ test('snapshot popularity is normalized once per generation, never during search
   api.destroy();
   assert.equal(api.setSnapshotStatistics({generation: 71, statistics}), false);
   assert.equal(reads, afterLoad);
+});
+
+test('popularity labels handle singular, plural and unknown without implying live plays', async () => {
+  const ids = ['a', 'b', 'c', 'd'].map(char => char.repeat(64));
+  const {root, api} = fixture(ids.map((trackId, i) => entry(i + 1, {trackId})));
+  api.setSnapshotStatistics({generation: 1, statistics: {schemaVersion: 1, tracks: {
+    [ids[0]]: {complete: true, players: 1, count: 1, totalEntries: 1},
+    [ids[1]]: {complete: true, players: 28, count: 28, totalEntries: 28},
+    [ids[2]]: {complete: true, players: 0, count: 0, totalEntries: 0}
+  }}});
+  api.open();
+  const sort = tag(field(root, 'Sort'), 'select')[0];
+  sort.value = 'popular'; await sort.dispatch('change');
+  const labels = cls(root, 'sq-extra-popularity');
+  assert.deepEqual(labels.map(node => node.textContent), ['28 players', '1 player', '0 players', 'Player count unknown']);
+  for (const label of labels) assert.match(label.title, /saved snapshot.*Not live plays/);
+  const controls = cls(root, 'sq-extra-controls')[0];
+  assert.equal(cls(root, 'sq-extra-search-field')[0].parent, controls);
+  const toggle = cls(root, 'sq-extra-advanced-toggle')[0];
+  assert.equal(toggle.parent, controls);
+  assert.equal(toggle.getAttribute('aria-controls'), cls(root, 'sq-extra-advanced')[0].id);
+  api.destroy();
 });

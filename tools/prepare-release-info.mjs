@@ -14,7 +14,17 @@ export function prepareReleaseInfo(source, {number, revision, preparedAt}) {
   if (number === info.number && (revision !== info.revision || preparedAt !== info.preparedAt)) throw new Error('An existing release preparation timestamp cannot be restamped.');
   if (info.preparedAt && number > info.number && parseReleasePreparedAt(preparedAt) <= parseReleasePreparedAt(info.preparedAt)) throw new Error('Preparation must be later than the previous release.');
   const next = {...info, number, revision, preparedAt};
+  if (number > info.number) delete next.committedAt;
   return source.replace(/const releaseInfo = (\{[\s\S]*?\});/, () => 'const releaseInfo = ' + JSON.stringify(next, null, 2) + ';');
+}
+
+// Set immediately before committing and use the same instant for Git's actual
+// committer date. The post-commit release guard checks that they match exactly.
+export function stampReleaseCommitTime(source, committedAt) {
+  const info = parseReleaseInfo(source), time = parseReleasePreparedAt(committedAt);
+  if (time === null || time % 1000 !== 0 || time > Date.now() || time < parseReleasePreparedAt(info.preparedAt))
+    throw Error('Provide the actual commit instant after release preparation.');
+  return source.replace(/const releaseInfo = (\{[\s\S]*?\});/, () => 'const releaseInfo = ' + JSON.stringify({...info, committedAt}, null, 2) + ';');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

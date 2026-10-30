@@ -56,7 +56,7 @@ test('guard is local-only and current capture workflow titles remain recognized'
 
 import {checkReleaseInfo} from './check-release-info.mjs';
 import {parseReleasePreparedAt,releaseAge} from './release-info.mjs';
-import {prepareReleaseInfo} from './prepare-release-info.mjs';
+import {prepareReleaseInfo,stampReleaseCommitTime} from './prepare-release-info.mjs';
 
 test('preparation metadata is strict UTC, never guessed from missing or malformed dates',()=>{
   for(const value of [undefined,null,'','yesterday','2026-02-30T12:00:00.000Z','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00.000+00:00',42]){
@@ -137,4 +137,18 @@ test('repository guard blocks inline metadata, unstamped revision and uncommitte
   for(const options of [{integrated:false},{stamped:false},{dirty:true},{missing:true},{cache:192},{installed:1930}]) assert.ok(checkReleaseInfo(fixture(options)).errors.length,JSON.stringify(options));
   const stale=fixture({prior:{...RELEASE_INFO,number:223}});
   assert.ok(checkReleaseInfo(stale).errors.some(error=>/every manual commit/.test(error)));
+});
+
+test('the recorded public commit date must match Git, not preparation or capture time',()=>{
+  const committedAt='2026-10-01T12:00:00.000Z',info={...RELEASE_INFO,preparedAt:'2026-10-01T11:00:00.000Z',committedAt};
+  const f=fixture({info,prior:{...info,number:223,notes:['Earlier release.'],preparedAt:'2026-09-30T12:00:00.000Z',committedAt:'2026-09-30T13:00:00.000Z'}});
+  const check=date=>checkReleaseInfo({...f,runGit:(...args)=>args[0]==='show'&&args[2]==='--format=%cI'?date:f.runGit(...args)});
+  assert.deepEqual(check(committedAt).errors,[]);
+  assert.ok(check('2026-10-01T11:00:00Z').errors.some(error=>/actual manual Git commit/.test(error)));
+  const source='const releaseInfo = '+JSON.stringify({...info,committedAt:undefined})+';';
+  assert.equal(parseReleaseInfo(stampReleaseCommitTime(source,committedAt)).committedAt,committedAt);
+  assert.throws(()=>stampReleaseCommitTime(source,'2026-10-01T12:00:00.123Z'),/actual commit instant/);
+  const next=prepareReleaseInfo('const releaseInfo = '+JSON.stringify(info)+';',
+    {number:225,revision:194,preparedAt:'2026-10-02T12:00:00.000Z'});
+  assert.equal(parseReleaseInfo(next).committedAt,undefined,'a new release cannot inherit the prior commit date');
 });

@@ -15,9 +15,10 @@ test('real keyboard chords navigate Overall, normal tracks, event boards and arc
     await page.setContent('<section id="overallLeaderboardPanel"><input id="overallInput"></section><section id="normal" class="track-info-ui"><div class="leaderboard-ui"><div class="container"></div><div class="pages"></div></div><input></section><section id="event" class="track-info-ui"><div class="leaderboard-ui sq-event-board"><div class="container"></div><div class="pages"></div></div><input></section><section id="archive" class="sq-events-dialog"><nav class="sq-archive-pagination"><button>Back</button><span class="sq-archive-page-count"></span><button>Next</button></nav><input></section>');
     await page.evaluate(({code,eventCode})=>{
       const views=['overallLeaderboardPanel','normal','event','archive'].map(id=>document.getElementById(id));
-      const numbers=new Map(views.map(view=>[view,5]));let active=views[0];
+      const numbers=new Map(views.map(view=>[view,5]));let active=views[0],eventState=null;
       const draw=(view,page)=>{
         const value=Math.max(1,Math.min(20,page));numbers.set(view,value);
+        if(eventState&&view===views[2])eventState.page=value-1;
         const pages=view.querySelector('.pages');if(pages)for(const button of pages.children)button.classList.toggle('selected',Number(button.textContent)===value);
         const count=view.querySelector('.sq-archive-page-count');if(count)count.textContent=`Page ${value} of 20`;
       };
@@ -35,11 +36,13 @@ test('real keyboard chords navigate Overall, normal tracks, event boards and arc
           navigation:readPageNavigation,reset:resetOverallPageOffset,setOverall:page=>{overallPage=page-1;},getOverall:()=>overallPage+1};
       `)(visible,code);
       const eventBoard=document.querySelector('#event .leaderboard-ui');
+      eventState={board:eventBoard,root:document.getElementById('event'),page:4,pageCount:20,
+        changePage:page=>draw(views[2],page+1)};
       new Function('bridge','nativeView',`
         let dialog=null,eventDigitBoard=null,eventTopPrefixUntil=0,eventTopHeld=false,topSelectionToken=0;
         const eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
         ${eventCode}
-      `)({pageNavigation:api.navigation},{board:eventBoard,root:document.getElementById('event')});
+      `)({pageNavigation:api.navigation},eventState);
       window.addEventListener('keydown',event=>{
         if(active===views[0])api.overall(event);else if(active===views[1])api.normal(event);else if(active===views[3])api.archive(event);
       });

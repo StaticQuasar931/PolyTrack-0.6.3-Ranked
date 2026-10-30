@@ -16,6 +16,16 @@ test('manual snapshot update and partial replay selection helpers follow the cli
   assert.ok(next.patch.includes('partial-replay-selection.mjs?v=195'));
 });
 
+test('own local PB playback and event ordinals share the installed client cache revision',()=>{
+ const input=patch+"import('../tools/local-pb-lifecycle.mjs');";
+ assert.match(stampClientRelease(input,index,212).patch,/local-pb-lifecycle\.mjs\?v=212/);
+ const events="import('../tools/partial-replay-selection.mjs?v=211');import('../tools/finish-presentation.mjs');";
+ const stamped=stampEventClientRelease(events,212);
+ assert.match(stamped,/finish-presentation\.mjs\?v=212/);
+ assert.match(stamped,/partial-replay-selection\.mjs\?v=212/);
+ assert.equal(stampEventClientRelease(stamped,212),stamped);
+});
+
 test('responsive styles and viewport adapter advance together',()=>{
   const html=index+'<link href="responsive-ui.css?v=167"><link href="practice-responsive.css?v=167"><script type="module" src="tools/responsive-ui.mjs?v=167"></script>';
   const result=stampClientRelease(patch,html,168);

@@ -24,7 +24,10 @@ test('event ordinals remain readable and receipt dates survive the real shared s
     const page=await browser.newPage();await page.route('**/*',route=>route.abort());
     await page.setContent('<div class="leaderboard-ui sq-event-board"><button class="main"><div class="left"><p class="position" style="font-size:36px">1<span>X</span></p></div><div class="verified-state">1 hour ago<img alt="Verified"></div></button></div>');
     await page.addStyleTag({content:css});await page.addStyleTag({content:rankedCss});
-    const helpers=client.slice(client.indexOf('export function eventRunDate('),client.indexOf('export function eventStandingsLabel('))+
+    const ordinalHelper=fs.readFileSync(new URL('../tools/finish-presentation.mjs',import.meta.url),'utf8');
+    const helpers=ordinalHelper.slice(ordinalHelper.indexOf('export function finishOrdinal('),ordinalHelper.indexOf('export function enhanceFinishAnnouncers('))+
+      client.slice(client.indexOf('export function eventRowVerified('),client.indexOf('export function eventSnapshotRows('))+
+      client.slice(client.indexOf('export function eventRunDate('),client.indexOf('export function eventStandingsLabel('))+
       client.slice(client.indexOf('export function eventOrdinal('),client.indexOf('export function eventTrackName('));
     const shared=patch.slice(patch.indexOf('  function syncIntegrityStateLabels(){'),patch.indexOf('  let nativeDecorationLookupCache='));
     await page.evaluate(({helpers,shared})=>{
@@ -34,8 +37,7 @@ test('event ordinals remain readable and receipt dates survive the real shared s
     },{helpers,shared});
     assert.equal(await page.locator('.position').innerText(),'1st');
     assert.equal(await page.locator('.position').getAttribute('aria-label'),'1st');
-    assert.match(await page.locator('.sq-event-ordinal-suffix').evaluate(node=>getComputedStyle(node).fontFamily),/sans-serif/);
-    assert.equal(await page.locator('.sq-event-ordinal-suffix').evaluate(node=>getComputedStyle(node).textTransform),'none');
+    assert.equal(await page.locator('.position > span').count(),0,'plain text avoids the opaque native suffix font');
     assert.match(await page.locator('.verified-state').getAttribute('title'),/^Received .* - Run verified$/);
     assert.doesNotMatch(await page.locator('.verified-state').getAttribute('aria-label'),/Date unavailable/);
   }finally{await browser.close();}

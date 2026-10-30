@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {eventSnapshotRows,eventRowVerified,eventDisplayRunAt,eventVerificationLabel,eventRecordPlacement,retainEventSnapshotDates} from './client.mjs';
+import {eventSnapshotRows,eventSnapshotFields,eventRowVerified,eventDisplayRunAt,eventVerificationLabel,eventRecordPlacement,retainEventSnapshotDates,decorateEventRowPresentation} from './client.mjs';
 
 const hash=n=>n.toString(16).padStart(64,'0');
 const period={id:'weekly-fixture',trackId:hash(999),kind:'weekly'};
@@ -44,6 +44,36 @@ test('negative proof/status flags never become verified; private holds never ent
   }
   for(const flag of [{needsReview:true},{reviewHold:true},{status:'rejected'},{verificationStatus:'unavailable_final'},{verificationStatus:'review_hold'}])
     for(const onlyVerified of [false,true])assert.equal(eventSnapshotRows(board([{...row(1),...flag}]),{onlyVerified}).rows.length,0);
+});
+
+test('finite event physics proof maps to native verified UI without legacy flags or proof mutations',()=>{
+  const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
+  const nativeRow=vm.runInNewContext(source.slice(source.indexOf('function nativeEventRow('),source.indexOf('export function handleEventCarIntersections('))+';nativeEventRow;',{eventRowVerified});
+  const proof={...row(1),physicsVerified:true,replayIntegrityVerified:true,verifiedState:0,submittedAt:Date.now()-1000};
+  const before=structuredClone(proof),saved=board([proof]);
+  const visible=eventSnapshotFields(saved).verified.rows;
+  assert.equal(visible.length,1);assert.equal(visible[0].pending,false);
+  const native=nativeRow(visible[0],hash(1),proof.submittedAt);
+  assert.equal(native.verifiedState,1);assert.equal(native.runVerified,true);assert.equal(native.pending,false);
+  assert.deepEqual(proof,before,'native client flags are never written back into snapshot authority');
+  for(const change of [{pending:true},{verificationStatus:'waiting'},{verified:false},{runVerified:false},
+    {eventRpEligible:false},{physicsVerified:false},{replayIntegrityVerified:false},{needsReview:true},{reviewHold:true}]){
+    const pending=nativeRow({...proof,...change},hash(1),proof.submittedAt);
+    assert.equal(pending.verifiedState,0);assert.equal(pending.runVerified,false);assert.equal(pending.pending,true);
+  }
+});
+
+test('event status decoration maps authoritative proof to icon, class and shared status dataset',()=>{
+  const classes=new Set(),icon={},state={dataset:{},childNodes:[],
+    classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},querySelector:()=>icon,setAttribute() {}};
+  const button={querySelector:selector=>selector==='.verified-state'?state:null};
+  const proof={...row(1),physicsVerified:true,replayIntegrityVerified:true};
+  decorateEventRowPresentation(button,proof);
+  assert.equal(state.dataset.sqRunStatus,'verified');assert.equal(classes.has('verified'),true);
+  assert.equal(icon.src,'images/state_verified.svg');assert.match(state.title,/Verified$/);
+  decorateEventRowPresentation(button,{...proof,pending:true,verificationStatus:'waiting'});
+  assert.equal(state.dataset.sqRunStatus,'unchecked');assert.equal(classes.has('verified'),false);
+  assert.equal(classes.has('pending'),true);assert.equal(icon.src,'images/state_pending.svg');assert.match(state.title,/Pending$/);
 });
 test('record placement never approves an explicitly unverified entry and matches its all-row field',()=>{
   const saved=board([{...row(1,1000),physicsVerified:false},row(2,2000)]);

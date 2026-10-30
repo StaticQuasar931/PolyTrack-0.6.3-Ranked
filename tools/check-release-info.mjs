@@ -28,6 +28,11 @@ export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, r
   const prepared = parseReleasePreparedAt(info?.preparedAt);
   if ((info?.number >= 225 || info?.preparedAt !== undefined) && prepared === null) errors.push('Record the actual release preparation timestamp in canonical UTC with prepare-release-info.mjs.');
   if (prepared !== null && prepared > now) errors.push('Release preparation timestamp cannot be in the future.');
+  if (info?.committedAt !== undefined) {
+    const committed = parseReleasePreparedAt(info.committedAt);
+    if (committed === null || committed > now || prepared !== null && committed < prepared)
+      errors.push('Recorded commit time must be canonical UTC, after preparation, and not in the future.');
+  }
   const previousPrepared = parseReleasePreparedAt(previousInfo?.preparedAt);
   if (prepared !== null && previousPrepared !== null && prepared <= previousPrepared) errors.push('Each manual release needs a later preparation timestamp; never reuse a previous release date.');
   const latest = manualReleaseNumber(manual?.title);
@@ -58,6 +63,11 @@ export function checkReleaseInfo({root = fileURLToPath(new URL('../', import.met
   const info = parseReleaseInfo(read('tools/release-info.mjs'));
   const manifest = JSON.parse(read('site-version.json'));
   const errors = validateReleaseInfo(info, {manual,previousInfo,expectedNext,revision:manifest.revision});
+  if (expectedNext === undefined && info.committedAt !== undefined) {
+    const actual = Date.parse(git('show', '-s', '--format=%cI', manual.hash).trim());
+    if (!Number.isFinite(actual) || actual !== parseReleasePreparedAt(info.committedAt))
+      errors.push('Release commit time does not match the actual manual Git commit.');
+  }
   const patch = read('polytrack_062_patch.js');
   if (!patch.includes('release-info.mjs') || !/release:\s*(?:\{\s*\.\.\.\s*)?(?:\w+\.)?RELEASE_INFO\b/.test(patch)) errors.push('Help must receive the central RELEASE_INFO record, not inline notes.');
   const metadataImports = [...patch.matchAll(/release-info\.mjs\?v=(\d+)/g)];

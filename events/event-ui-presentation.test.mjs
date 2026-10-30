@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {eventRowVerified} from './client.mjs';
+import {finishOrdinal} from '../tools/finish-presentation.mjs';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const dates=source.slice(source.indexOf('export function eventRunDate('),source.indexOf('export function eventStandingsLabel('));
 const ordinals=source.slice(source.indexOf('export function eventOrdinal('),source.indexOf('export function eventTrackName('));
-const ui=vm.runInNewContext(`(()=>{${(dates+ordinals).replace(/export function /g,'function ')};return {eventRunDate,eventExactRunAt,eventDisplayRunAt,eventVerificationLabel,decorateEventRowPresentation,eventOrdinal};})()`,{Date,Number,String,Object,Math});
+const ui=vm.runInNewContext(`(()=>{${(dates+ordinals).replace(/export function /g,'function ')};return {eventRunDate,eventExactRunAt,eventDisplayRunAt,eventVerificationLabel,decorateEventRowPresentation,eventOrdinal};})()`,{Date,Number,String,Object,Math,eventRowVerified,finishOrdinal});
 const now=Date.now(),received=now-3600000;
 function rowButton(){
   const element=()=>({dataset:{},childNodes:[],attributes:{},setAttribute(key,value){this.attributes[key]=value;},
@@ -42,9 +44,9 @@ test('live and archived event row presentation replaces an opaque native suffix 
     const fixture=rowButton(),row={rank,rp:87,timeMs:20000,submittedAt:received},before=JSON.stringify(row);
     ui.decorateEventRowPresentation(fixture.button,row,now);
     assert.equal(fixture.position.textContent,ui.eventOrdinal(rank));
-    assert.equal(fixture.position.childNodes[1].textContent,ui.eventOrdinal(rank).slice(String(rank).length));
+    assert.equal(fixture.position.childNodes.length,1,'no opaque native ordinal suffix span');
     assert.equal(fixture.position.attributes['aria-label'],ui.eventOrdinal(rank));
-    assert.equal(fixture.position.childNodes[1].className,'sq-event-ordinal-suffix');
+    assert.equal(fixture.position.childNodes[0].nodeType,3);
     assert.equal(fixture.state.dataset.sqPbAt,undefined,'receipt time must not masquerade as exact PB creation');
     assert.match(fixture.state.dataset.sqNativeDate,/^Received /);
     assert.match(fixture.state.title,/^Received .* - Verified$/);

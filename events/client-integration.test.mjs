@@ -46,11 +46,11 @@ const id='a'.repeat(64);
 const run=(attemptId='one',timeMs=20000)=>({accountId:id,trackId:id,periodId:'daily-fixture',attemptId,timeMs,frames:timeMs,replay:'AAAA',carStyle:'',endsAt:Date.now()+3600000});
 let browser,server,base;
 before(async()=>{
- server=http.createServer((req,res)=>{const name=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Isolated event integration</title>');return;}if(!/^\/events\/[a-z-]+\.(mjs|css)$/.test(name)&&!/^\/tools\/(?:kodub-practice-track|playback-worker-bridge|playback-engine-session|playback-engine-pin|public-replay-playback|partial-replay-selection)\.mjs$/.test(name)){res.writeHead(404).end();return;}try{res.setHeader('Content-Type',name.endsWith('.mjs')?'text/javascript':'text/css');res.end(fs.readFileSync(path.join(repo,name)));}catch{res.writeHead(404).end();}});
+ server=http.createServer((req,res)=>{const name=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Isolated event integration</title>');return;}if(!/^\/events\/[a-z-]+\.(mjs|css)$/.test(name)&&!/^\/tools\/(?:kodub-practice-track|playback-worker-bridge|playback-engine-session|playback-engine-pin|public-replay-playback|partial-replay-selection|finish-presentation)\.mjs$/.test(name)){res.writeHead(404).end();return;}try{res.setHeader('Content-Type',name.endsWith('.mjs')?'text/javascript':'text/css');res.end(fs.readFileSync(path.join(repo,name)));}catch{res.writeHead(404).end();}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
 });
-after(async()=>{await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());});
+after(async()=>{try{await browser?.close();assert.ok(!browser?.isConnected(),'integration browser is disconnected after cleanup');}finally{await new Promise(resolve=>server?server.close(resolve):resolve());}});
 const setup=async ({focus,nativeRow,nativeTimeFormatter,queue,deferReady,receipt,noIntersectionObserver,controlledIntersectionObserver,deferCatalog=false,cachedPeriods=null})=>{
   localStorage.clear(); if(queue) localStorage.setItem("polytrack-062-events-v1-queue",JSON.stringify(queue));if(cachedPeriods)localStorage.setItem('polytrack-062-events-v1',JSON.stringify({periods:cachedPeriods,archives:[]})); const id='a'.repeat(64); window.id=id;window.submits=[];window.reads=0;window.catalogReads=0;
   if(noIntersectionObserver)window.IntersectionObserver=undefined;
@@ -385,7 +385,7 @@ test('event rows use native names, flags, self labels and verification icons',as
  const mine=p.locator('.sq-event-board button.main.self'),waiting=p.locator('.sq-event-board button.main:not(.self)');
  assert.equal(await mine.locator('.event-time').innerText(),'00:19.000');assert.equal(await waiting.locator('.event-time').innerText(),'00:20.000');
  assert.equal(await mine.locator('.name').innerText(),'Real Racer Name');assert.equal(await mine.locator('.name-container > .self').innerText(),'(You)');assert.equal(await mine.locator('.country-flag').count(),1);
- assert.equal(await mine.locator('.position > span').innerText(),'st');assert.match(await mine.locator('.verified-state').getAttribute('title'),/Verified/);assert.equal(await mine.locator('.verified-state img[src="images/state_verified.svg"]').count(),1);
+ assert.equal(await mine.locator('.position').innerText(),'1st');assert.equal(await mine.locator('.position > span').count(),0);assert.match(await mine.locator('.verified-state').getAttribute('title'),/Verified/);assert.equal(await mine.locator('.verified-state img[src="images/state_verified.svg"]').count(),1);
  assert.equal(await waiting.locator('.name').innerText(),'<b>Not HTML</b>');assert.equal(await waiting.locator('.name b').count(),0);assert.match(await waiting.locator('.verified-state').getAttribute('title'),/Pending/);assert.equal(await waiting.locator('.verified-state img[src="images/state_pending.svg"]').count(),1);assert.equal(await waiting.locator('.sq-event-earned-rp').count(),0);
  await p.addStyleTag({content:nativeCss});await p.addStyleTag({content:fs.readFileSync(path.join(repo,'events/events.css'),'utf8')});
  assert.equal(await mine.locator('.right').evaluate(node=>getComputedStyle(node).display),'inline-block','event CSS preserves native row layout');
@@ -400,6 +400,51 @@ test('Only verified filters cached event rows without reading another snapshot',
  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'true');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),1);
  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'false');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),2);assert.equal(await p.evaluate(()=>snapshotCalls),reads);
 });
+async function publishedReceiptFixture(t){
+ const p=await fixture(t,{receipt:{accountId:id,periodId:'daily-fixture',attemptId:'cached-old',timeMs:21000,status:'waiting'}});
+ p.setDefaultTimeout(5000);
+ await p.evaluate(()=>{
+  window.ownStatusReads=0;const read=bridgeFixture.readOwnStatus;
+  bridgeFixture.readOwnStatus=async(...args)=>{ownStatusReads++;const receipt=await read(...args);window.cachedWaitingReceipt=receipt;return receipt;};
+ });
+ await enter(p);await p.waitForFunction(()=>window.cachedWaitingReceipt?.status==='waiting',null,{timeout:5000});
+ await p.evaluate(()=>{
+  window.primedStatusReads=ownStatusReads;window.receiptBefore=JSON.stringify(cachedWaitingReceipt);
+  window.queueBefore=localStorage.getItem('polytrack-062-events-v1-queue');
+  bridgeFixture.snapshotOnly=()=>true;
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),_publicBackup:true,
+   entries:[{accountId:id,name:'Published you',timeMs:19000,rank:1,rp:100,physicsVerified:true,replayIntegrityVerified:true}]});
+ });
+ await p.locator('.sq-event-refresh').click();
+ await p.waitForFunction(()=>document.querySelector('.sq-event-board button.main.self')?.dataset.eventPending==='false',null,{timeout:5000});
+ return p;
+}
+
+test('published native event PB overrides cached waiting receipt without additional OwnStatus polling',async t=>{
+ const p=await publishedReceiptFixture(t);
+ assert.equal(await p.locator('.sq-event-board .sq-event-inline-status').innerText(),'');
+ assert.equal(await p.locator('.sq-event-board button.main.self .event-time').innerText(),'00:19.000');
+ assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.verified').count(),1);
+ assert.equal(await p.evaluate(()=>ownStatusReads),await p.evaluate(()=>primedStatusReads));
+ assert.equal(await p.evaluate(()=>JSON.stringify(cachedWaitingReceipt)),await p.evaluate(()=>receiptBefore));
+ assert.equal(await p.evaluate(()=>localStorage.getItem('polytrack-062-events-v1-queue')),await p.evaluate(()=>queueBefore));
+});
+
+test('faster unsaved event PB retains waiting and queue despite verified published result',async t=>{
+ const p=await publishedReceiptFixture(t);
+ await p.waitForFunction(()=>!!window.car,null,{timeout:5000});
+ await p.evaluate(()=>{bridgeFixture.submit=async()=>{throw Error('Synthetic offline upload');};car.finish(18000);});
+ await p.waitForFunction(()=>JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').some(row=>row.timeMs===18000),null,{timeout:5000});
+ await p.locator('.sq-event-refresh').click();
+ assert.match(await p.locator('.sq-event-board .sq-event-inline-status').innerText(),/Waiting/);
+ assert.equal(await p.locator('.sq-event-board button.main.self .event-time').innerText(),'00:18.000');
+ assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.pending').count(),1);
+ assert.equal(await p.locator('.sq-event-board button.main.self .verified-state.verified').count(),0);
+ assert.equal(await p.evaluate(()=>ownStatusReads),await p.evaluate(()=>primedStatusReads));
+ assert.equal(await p.evaluate(()=>JSON.stringify(cachedWaitingReceipt)),await p.evaluate(()=>receiptBefore));
+ assert.equal(await p.evaluate(()=>JSON.parse(localStorage.getItem('polytrack-062-events-v1-queue')||'[]').filter(row=>row.timeMs===18000).length),1);
+});
+
 test('verification field owns ranks, counts, pagination and Find me without additional reads',async t=>{
  const p=await fixture(t);await p.evaluate(()=>{
   window.snapshotCalls=0;bridgeFixture.snapshotOnly=()=>true;
@@ -411,10 +456,10 @@ test('verification field owns ranks, counts, pagination and Find me without addi
  });
  await enter(p);const board=p.locator('.sq-event-board');await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .pages .page').length===4);
  const reads=await p.evaluate(()=>snapshotCalls);
- assert.match(await board.locator('.total-players').innerText(),/72 racers.*50 verified, 22 waiting.*Page 1 of 4/);
+ assert.match(await board.locator('.total-players').innerText(),/72 players · 50 verified.*Page 1 of 4/);
  assert.equal(await board.locator('.container > button.main').count(),20);
  await board.locator('.only-verified').click();
- assert.match(await board.locator('.total-players').innerText(),/50 racers.*50 verified, 0 waiting.*Page 1 of 3/);
+ assert.match(await board.locator('.total-players').innerText(),/50 verified players.*Page 1 of 3/);
  assert.equal(await board.locator('.pages .page').count(),3);
  assert.equal(await board.locator('.container > button.main').first().locator('.position').innerText(),'1st');
  await board.locator('.sq-event-find-me').click();
@@ -642,7 +687,7 @@ test('cold event rows supply exact cars and refreshed directory names',async t=>
  });await enter(p);await p.waitForFunction(()=>renderCalls.length===1);
  assert.deepEqual(await p.evaluate(()=>renderCalls),['row-style']);
  assert.match(await p.locator('.sq-event-board').innerText(),/Refreshed racer/);
- assert.equal(await p.locator('.sq-event-board .total-players').innerText(),'1 racer · Published standings');
+ assert.equal(await p.locator('.sq-event-board .total-players').innerText(),'1 player · 1 verified · Published standings · Page 1 of 1');
 });
 
 test('event car falls back to an account-matched persisted style and native renderer',async t=>{
@@ -659,7 +704,7 @@ test('event leaderboard validates each cached car style once across repeated men
   bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>{deserializeCalls.push(s);return {serialize:()=>s};}}}:prior(n);
   window.BT=async()=> 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';
   const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:5},(_,i)=>({accountId:String(i+1).repeat(64),name:'Racer '+i,carStyle:'menu-style-'+i,timeMs:20000+i,rank:i+1,rp:100}))});
- });await enter(p);await p.locator('.sq-event-board .total-players').getByText('5 racers').waitFor();
+ });await enter(p);await p.locator('.sq-event-board .total-players').getByText('5 players').waitFor();
  await p.evaluate(()=>{for(let i=0;i<60;i++)ui.tick();});
  assert.deepEqual(await p.evaluate(()=>deserializeCalls),Array.from({length:5},(_,i)=>'menu-style-'+i));
 });
@@ -714,8 +759,8 @@ test('event car queue overflow retries when IntersectionObserver is unavailable'
  const p=await fixture(t,{noIntersectionObserver:true});await p.evaluate(()=>{
   const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
   window.renderCalls=[];window.BT=async style=>{renderCalls.push(style);return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';};
-  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:13},(_,i)=>({accountId:String(i+1).repeat(64),name:'Racer '+i,carStyle:'fallback-'+i,timeMs:20000+i,rank:i+1}))});
- });await enter(p);await p.waitForFunction(()=>renderCalls.length===13,{timeout:10000});
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:13},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Racer '+i,carStyle:'fallback-'+i,timeMs:20000+i,rank:i+1}))});
+ });await enter(p);assert.equal(await p.locator('.sq-event-board .container > button.main').count(),13);await p.waitForFunction(()=>renderCalls.length===13,null,{timeout:10000});
  await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .image-container img[src^="data:image/png;base64,"]').length===13);
  assert.equal(await p.evaluate(()=>new Set(renderCalls).size),13);
 });

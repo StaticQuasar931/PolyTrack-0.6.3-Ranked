@@ -15,7 +15,7 @@ function fixture(){
     eventsModuleUrl:'https://game.test/events/client.mjs',RANK_MODEL:'model',TRACK_CACHE_SCHEMA:6,
     trackCacheGeneration:0,localRaceGeneration:0,placementRenderTimer:0,
     trackSnapshotStore:()=>store,readOverallSnapshotCache:()=>null,
-    readTrackSnapshotCache:trackId=>store[trackId],TRACK_CATALOG:{[id]:{name:'Summer 1'}},
+    readTrackSnapshotCache:trackId=>store[trackId],TRACK_CATALOG:new Map([[id,{id,name:'Summer 1'}]]),
     activeRankedAccountId:()=> 'me',localStorage:{getItem:()=>null},personalFilterRuntime:null,
     cleanUserId:value=>String(value||''),canonicalRaceTimeMs:row=>Number(row?.timeMs)||0,
     localBestRowsForAccount:()=>[{trackId:id,accountId:'me',timeMs:950}],
@@ -72,4 +72,27 @@ test('active group filters never mislabel a global-only warmed placement',async(
   assert.equal(f.options.mapPlacement(place,id),null);
   f.ctx.personalFilterRuntime={active:()=>false,getFilter:()=>({scope:'all'})};
   assert.equal(f.options.mapPlacement(place,id),place);
+});
+
+test('Kodub card binds its normal PB placement to exact native identity, not a duplicate name',async()=>{
+  const f=fixture(),card={dataset:{kodubIdentity:otherId+'@2026-11-01T12:00:00Z'},querySelector:()=>({textContent:'Summer 1'})};
+  f.ctx.document.querySelector=()=>card;
+  await f.ctx.ensureRecordPlacementUi();
+  const tracks=f.options.tracks();
+  assert.equal(tracks.get(otherId).id,otherId);
+  assert.equal(f.ctx.TRACK_CATALOG.has(otherId),false,'do not mutate the registry');
+  const timerLine={},container={querySelector:selector=>selector==='.personal-best>div'?timerLine:null};
+  const title={textContent:'Summer 1',closest:selector=>selector==='.sq-kodub-weekly'?card:container};
+  assert.equal(f.options.resolveTrackId(title,[...tracks.values()]),otherId);
+  assert.equal(f.options.findRecordElement(title),timerLine,'keep the native trophy row intact');
+  card.dataset.kodubIdentity='bad@date';
+  assert.equal(f.options.resolveTrackId(title,[...tracks.values()]),'');
+  assert.equal(f.options.tracks(),f.ctx.TRACK_CATALOG);
+});
+
+test('ordinary track cards retain name lookup and the original PB element',async()=>{
+  const f=fixture();f.ctx.document.querySelector=()=>null;await f.ctx.ensureRecordPlacementUi();
+  const record={},button={querySelector:()=>record},title={textContent:' Summer 1 ',closest:selector=>selector==='.sq-kodub-weekly'?null:button};
+  assert.equal(f.options.resolveTrackId(title,[...f.options.tracks().values()]),id);
+  assert.equal(f.options.findRecordElement(title),record);
 });

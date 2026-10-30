@@ -11,10 +11,10 @@ test('release age stays accurate while open, after sleep, on rebind and after cl
   const browser=await chromium.launch({headless:true});t.after(()=>browser.close());
   const page=await browser.newPage();
   const requests=[];await page.route('**/*',route=>{requests.push(route.request().url());return route.abort();});
-  const infoSource=await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8');
+  const infoSource=await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8');
   const helpSource=await fs.readFile(new URL('./help-controls.mjs',import.meta.url),'utf8');
   await page.setContent('<main></main>');
-  await page.addScriptTag({content:(infoSource+helpSource.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+  await page.addScriptTag({content:(infoSource+helpSource.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
   await page.evaluate(()=>{
     const nativeSet=window.setTimeout,nativeClear=window.clearTimeout;
     window.ageTimers=new Map();let id=-1;
@@ -25,16 +25,17 @@ test('release age stays accurate while open, after sleep, on rebind and after cl
     window.clearTimeout=handle=>{if(!window.ageTimers.delete(handle))nativeClear(handle);};
     window.fixtureTime=Date.parse('2026-10-01T12:00:00.000Z');Date.now=()=>window.fixtureTime;
     window.advanceAge=elapsed=>{window.fixtureTime=Date.parse('2026-10-01T12:00:00.000Z')+elapsed;for(const [id,{callback}] of [...window.ageTimers]){window.ageTimers.delete(id);callback();}};
-    window.renderFixture=preparedAt=>{
+    window.renderFixture=(preparedAt,publication={})=>{
       window.cleanup?.();
-      document.querySelector('main').innerHTML=window.helpAPI.renderHelpControls({release:{number:225,revision:194,preparedAt,notes:['Offline fixture only.']}});
+      document.querySelector('main').innerHTML=window.helpAPI.renderHelpControls({...publication,release:{number:225,revision:194,preparedAt,notes:['Offline fixture only.']}});
       window.cleanup=window.helpAPI.bindHelpControls(document.querySelector('main'));
     };
-    window.renderFixture('2026-10-01T12:00:00.000Z');
+    window.renderFixture('2026-10-01T12:00:00.000Z',{installedCommit:'a'.repeat(40),
+      verifiedSiteCommitMetadata:{repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',commit:'a'.repeat(40),committedAt:'2026-10-01T12:00:00Z'}});
   });
   const age=page.locator('[data-hc-release-age]');
   await page.locator('[data-hc-view="release"]').click();
-  for(const [elapsed,text] of [[0,'Less than a minute ago'],[60000,'1 minute ago'],[3600000,'1 hour ago'],[86400000,'1 day ago'],[604800000,'1 week ago'],[1209600000,'2 weeks ago'],[-1,'Device clock is before preparation time']]){
+  for(const [elapsed,text] of [[0,'less than a minute ago'],[60000,'1 minute ago'],[3600000,'1 hour ago'],[86400000,'1 day ago'],[604800000,'7 days ago'],[1209600000,'14 days ago'],[-1,'Device clock is before commit time']]){
     await page.evaluate(elapsed=>window.advanceAge(elapsed),elapsed);
     assert.equal(await age.textContent(),text);
     assert.equal(await page.evaluate(()=>window.ageTimers.size),1);
@@ -54,8 +55,28 @@ test('release age stays accurate while open, after sleep, on rebind and after cl
   assert.equal(await page.evaluate(()=>window.ageTimers.size),1,'rebind does not duplicate local timer');
   await page.evaluate(()=>{window.cleanup();window.cleanup();});
   assert.equal(await page.evaluate(()=>window.ageTimers.size),0);
+  await page.evaluate(()=>{
+    window.renderFixture('2026-10-01T12:00:00.000Z',{installedCommit:'a'.repeat(40),
+      verifiedSiteCommitMetadata:{repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',commit:'a'.repeat(40),publishedAt:'2026-10-02T12:00:00Z'}});
+    window.advanceAge(86400000+3600000);
+  });
+  assert.equal(await page.evaluate(()=>window.ageTimers.size),0,'hidden Release does not keep a timer');
+  await page.locator('[data-hc-view="release"]').click();
+  assert.equal(await age.textContent(),'1 hour ago');
+  assert.equal(await page.locator('.hc-release-age .hc-eyebrow').textContent(),'UPDATED');
+  assert.equal(await age.getAttribute('title'),await page.evaluate(()=>`Updated: ${new Date('2026-10-02T12:00:00Z').toLocaleString()}`));
+  await page.evaluate(()=>window.advanceAge(86400000+7200000));
+  assert.equal(await age.textContent(),'2 hours ago');
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  assert.equal(await page.evaluate(()=>window.ageTimers.size),0);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  assert.equal(await page.evaluate(()=>window.ageTimers.size),0,'focus cannot restart a suspended page');
+  await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+  assert.equal(await page.evaluate(()=>window.ageTimers.size),1);
+  await page.locator('[data-hc-view="controls"]').click();
+  assert.equal(await page.evaluate(()=>window.ageTimers.size),0);
   await page.evaluate(()=>window.renderFixture(undefined));
-  assert.equal(await age.textContent(),'Preparation time not recorded');
+  assert.equal(await age.textContent(),'Publication time unavailable');
   assert.equal(await page.evaluate(()=>window.ageTimers.size),0,'missing dates do not start a timer');
   await page.evaluate(()=>window.renderFixture('2026-10-01T12:00:00.000Z'));
   await page.evaluate(()=>{document.querySelector('main').remove();window.advanceAge(180000);});
@@ -82,7 +103,7 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.setViewportSize({width,height});
     await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#09142c}main{max-width:1040px;margin:auto}</style><p style="margin:0;padding:8px;color:white;font:12px sans-serif;text-align:center">Offline fixture: sample preparation time and notes, not a published release.</p><main></main>');
     await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css+proposal});
-    await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+source.replace(/^const \{parseReleasePreparedAt,releaseAge\}=await import\([^\n]+;\r?\n/m,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+    await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8')+source.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
     await page.evaluate(release=>{
       const root=document.querySelector('main');
       root.innerHTML=window.helpAPI.renderHelpControls({idPrefix:'fixture',release,bindings:{VehicleAccelerate:['KeyI','ArrowUp']}});
@@ -152,9 +173,9 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     }));
     assert.equal(releaseLayout.technicalOpen,false,'technical version numbers are not expanded by default');
     assert.ok(releaseLayout.notesFont>=22&&releaseLayout.detailFont>=19,'Release details use readable text');
-    assert.equal(await release.locator('h3').textContent(),'Update '+RELEASE_FIXTURE.number);
+    assert.equal(await release.locator('h3').textContent(),'PolyTrack Ranked - Update '+RELEASE_FIXTURE.number);
     assert.equal(await release.locator('.hc-release-meta').isVisible(),false);
-    assert.ok(await release.locator('[data-hc-release-age]').getAttribute('title'));
+    assert.equal(await release.locator('[data-hc-release-age]').getAttribute('title'),'','preparation alone must not supply a public date tooltip');
     await release.locator('.hc-release-technical summary').click();
     assert.ok((await release.locator('.hc-release-meta').textContent()).includes('Game version'+RELEASE_FIXTURE.version+'Client revision'+RELEASE_FIXTURE.revision));
     assert.doesNotMatch(await release.textContent(),/countdown|unlocks/i);
