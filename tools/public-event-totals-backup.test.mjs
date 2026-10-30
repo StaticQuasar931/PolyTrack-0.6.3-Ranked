@@ -146,3 +146,77 @@ test('unchanged totals confirm again without changing standings or adding reques
  await assert.rejects(capturePublicEventTotals({directory:f.directory,now:()=>1,fetchImpl:async()=>Response.json(totalsValue())}),/confirmation time/);
  assert.equal(JSON.parse(await fs.readFile(f.target,'utf8')).capturedAt,new Date(3000).toISOString());
 });
+
+const highlightTrack='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+function highlightBoards(){
+ const entries=[{accountId:'a'.repeat(64),rp:20,timeMs:1000,verified:true}];
+ return [{id:'permanent-rolling-hills',kind:'permanent',trackId:highlightTrack,entries,complete:true,totalEntries:1},
+  {id:'weekly-fixture',period:{id:'weekly-fixture',kind:'weekly',trackId:'c'.repeat(64),trackName:'Saved weekly',startsAt:1,endsAt:2},entries,complete:true,totalEntries:1}];
+}
+
+test('totals projection appends only derived bounded highlights and never modifies awarded ERP',()=>{
+ const input={...totalsValue(),entries:[{...totalsValue().entries[0],eventHighlights:[{name:'Injected',eventRp:99999,ownerUid:'private'}]}]};
+ const before=structuredClone(input),projected=publicEventTotals(input,{capturedBoards:highlightBoards()});
+ assert.equal(projected.entries[0].rp,50);assert.equal(projected.entries[0].eventHighlights.length,2);
+ assert.deepEqual(projected.entries[0].eventHighlights.map(row=>[row.kind,row.eventRp,row.rank,row.fieldSize]),[['permanent',20,1,1],['weekly',20,1,1]]);
+ assert.equal(JSON.stringify(projected).includes('Injected'),false);assert.equal(JSON.stringify(projected).includes('private'),false);
+ assert.equal(publicEventTotals(input).entries[0].eventHighlights,undefined);assert.deepEqual(input,before);
+});
+
+test('totals capture derives highlights from existing manifest boards without another request',async t=>{
+ const f=await totalsFixture(t),boards=highlightBoards();let requests=0;
+ await fs.mkdir(path.join(f.directory,'events'));
+ await fs.writeFile(path.join(f.directory,'manifest.json'),JSON.stringify({events:Object.fromEntries(boards.map(board=>[board.id,{path:`events/${board.id}.json` }]))}));
+ for(const board of boards)await fs.writeFile(path.join(f.directory,'events',board.id+'.json'),JSON.stringify(board));
+ await capturePublicEventTotals({directory:f.directory,now:()=>2000,fetchImpl:async()=>{requests++;return Response.json(totalsValue());}});
+ const saved=JSON.parse(await fs.readFile(f.target,'utf8'));
+ assert.equal(requests,1);assert.equal(saved.entries[0].rp,50);assert.equal(saved.entries[0].eventHighlights.length,2);
+ assert.equal(saved.entries[0].eventHighlights[0].name,'Rolling Hills Racer');
+ assert.deepEqual([saved.entries[0].eventHighlights[0].rank,saved.entries[0].eventHighlights[0].fieldSize],[1,1]);
+});
+
+test('caller-supplied captured boards need no manifest and preserve unknown partial placement',async t=>{
+ const f=await totalsFixture(t),capturedBoards=highlightBoards();let requests=0;
+ capturedBoards[0].complete=false;
+ await fs.writeFile(path.join(f.directory,'manifest.json'),'invalid and never needed');
+ await capturePublicEventTotals({directory:f.directory,capturedBoards,now:()=>2000,fetchImpl:async()=>{requests++;return Response.json(totalsValue());}});
+ const saved=JSON.parse(await fs.readFile(f.target,'utf8'));
+ assert.equal(requests,1);assert.equal(saved.entries[0].eventHighlights.length,2);
+ assert.deepEqual([saved.entries[0].eventHighlights[0].rank,saved.entries[0].eventHighlights[0].fieldSize],[null,null]);
+});
+
+test('missing, corrupt, unsafe and misbound local captures never trigger network recovery',async t=>{
+ const f=await totalsFixture(t);let requests=0;
+ await fs.mkdir(path.join(f.directory,'events'));
+ const invalid={...highlightBoards()[1],id:'another-period'};
+ await fs.writeFile(path.join(f.directory,'events','misbound.json'),JSON.stringify(invalid));
+ await fs.writeFile(path.join(f.directory,'events','corrupt.json'),'not JSON');
+ const events={missing:{path:'events/missing.json'},corrupt:{path:'events/corrupt.json'},misbound:{path:'events/misbound.json'},
+  'unsafe':{path:'../credentials.json'},'../escape':{path:'events/../escape.json'}};
+ await fs.writeFile(path.join(f.directory,'manifest.json'),JSON.stringify({events}));
+ await capturePublicEventTotals({directory:f.directory,now:()=>2000,fetchImpl:async()=>{requests++;return Response.json(totalsValue());}});
+ assert.equal(requests,1);assert.equal(JSON.parse(await fs.readFile(f.target,'utf8')).entries[0].eventHighlights,undefined);
+});
+
+test('capture preserves finite ERP evidence and rejects components that collectively exceed the total',async t=>{
+ const f=await totalsFixture(t),capturedBoards=highlightBoards();let requests=0;
+ capturedBoards[0].entries=[{accountId:'a'.repeat(64),rp:900,timeMs:1000,verified:true}];
+ capturedBoards[1].entries=[{accountId:'a'.repeat(64),rp:200,timeMs:1000,verified:true}];
+ const source={...totalsValue(),entries:[{accountId:'a'.repeat(64),rp:1000,finiteEventRp:100,permanentRollingHillsRp:900}]};
+ await capturePublicEventTotals({directory:f.directory,capturedBoards,now:()=>2000,fetchImpl:async()=>{requests++;return Response.json(source);}});
+ const row=JSON.parse(await fs.readFile(f.target,'utf8')).entries[0];
+ assert.equal(requests,1);assert.equal(row.rp,1000);assert.equal(row.finiteEventRp,100);
+ assert.deepEqual(row.eventHighlights.map(highlight=>[highlight.kind,highlight.eventRp]),[['permanent',900]]);
+ assert.ok(row.eventHighlights.reduce((sum,highlight)=>sum+highlight.eventRp,0)<=row.rp);
+});
+
+test('projection reserves unloaded RH contribution and does not treat unknown RH as zero',()=>{
+ const finite=highlightBoards()[1];finite.entries=[{accountId:'a'.repeat(64),rp:200,timeMs:1000,verified:true}];
+ const source={...totalsValue(),entries:[{accountId:'a'.repeat(64),rp:1000,rollingHillsEventRpContribution:900}]};
+ assert.equal(publicEventTotals(source,{capturedBoards:[finite]}).entries[0].eventHighlights,undefined);
+ finite.entries[0].rp=80;
+ const row=publicEventTotals(source,{capturedBoards:[finite]}).entries[0];
+ assert.equal(row.eventHighlights[0].eventRp,80);assert.ok(900+row.eventHighlights[0].eventRp<=row.rp);
+ delete source.entries[0].rollingHillsEventRpContribution;
+ assert.equal(publicEventTotals(source,{capturedBoards:[finite]}).entries[0].eventHighlights,undefined);
+});

@@ -45,7 +45,7 @@ jobs:
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access
         # Offline, dependency-free checks catch regressions before any production read.
-        run: node --test tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs workers/ranked/test/event-preflight-cost.test.js
+        run: node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs workers/ranked/test/event-preflight-cost.test.js
       - name: Check for due verification work
         id: queue
         timeout-minutes: 2
@@ -82,7 +82,7 @@ jobs:
           printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
           node -e "(async()=>{const {chromium}=require('playwright');const browser=await chromium.launch({executablePath:chromium.executablePath(),chromiumSandbox:true,headless:true});await browser.close();console.log('Sandboxed browser startup passed.')})().catch(error=>{console.error(error);process.exit(1)})"
-      # Scheduled runs keep normal limits. Catch-Up amortizes setup, never overlaps another verifier.
+      # Scheduled drains get more rounds within the same document caps and hard runtime.
       - name: Verify queued runs
         id: verification
         timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 15 || 10 }}
@@ -92,6 +92,7 @@ jobs:
           VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
           VERIFIER_DOCUMENT_READ_LIMIT: '1500'
           VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'
+          VERIFIER_SCHEDULED_DRAIN: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           VERIFIER_CATCH_UP: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 'true' || 'false' }}
         run: |
           if [ "$VERIFIER_CATCH_UP" = "true" ]; then

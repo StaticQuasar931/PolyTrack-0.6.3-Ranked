@@ -1,4 +1,5 @@
 const { normalizeSearchText, searchMatches, searchAliases } = await import(new URL(`../tools/search-text.mjs${new URL(import.meta.url).search}`, import.meta.url));
+const { snapshotPopularity } = await import(new URL(`snapshot-popularity.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, reviewTagOptions, tagLabel, reviewExportRow, hasReviewExportData } =
   await import(new URL(`review.mjs${new URL(import.meta.url).search}`, import.meta.url));
 
@@ -102,6 +103,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let reportRequest = null;
   let cachedRecords = null;
   let sortedRecordsCache = null;
+  let popularityGeneration = -1;
+  let popularityCounts = new Map();
   let expandedCardMenu = null;
   let expandedCardTrigger = null;
   let cardMenuNumber = 0;
@@ -219,7 +222,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const progressLabels = {all: 'All tracks', activity: 'Has my activity', untouched: 'No activity yet', completed: 'Completed', uncompleted: 'Not completed', loaded: 'Imported, not completed'};
   const completionField = selectField('Progress', Object.entries(progressLabels));
   const reviewField = selectField('Review status', [['all', 'All tracks'], ['edited', 'Reviewed by me'], ['not-edited', 'Not reviewed by me'], ['published', 'Has published ratings'], ['no-published', 'No published ratings']]);
-  const baseSortChoices = [['recommended', 'Recommended'], ['name', 'Name'], ['author', 'Author']];
+  const baseSortChoices = [['recommended', 'Recommended'], ['popular', 'Popular'], ['name', 'Name'], ['author', 'Author']];
   const sortField = selectField('Sort', baseSortChoices);
   sortField.count.remove();
   let sortCapabilityKey = '';
@@ -633,6 +636,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if(entry.ranked===false)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes appear on an unranked leaderboard.'));
     const facts = make('p', 'sq-extra-facts');
     facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
+    if (state.sort === 'popular') {
+      const players = popularityCounts.get(entry.trackId);
+      facts.append(make('span', 'sq-extra-popularity', players === undefined ? 'Snapshot racers unknown' : `${players.toLocaleString()} snapshot ${players === 1 ? 'racer' : 'racers'}`));
+    }
     const copies = Number.isSafeInteger(entry.sourceCopies) ? entry.sourceCopies : null;
     const plays = Number.isSafeInteger(entry.sourcePlays) ? entry.sourcePlays : null;
     if (copies !== null && copies >= 0) facts.append(make('span', 'sq-extra-plays', `${copies.toLocaleString()} source copies`));
@@ -897,7 +904,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const all = currentEntries();
     syncSortChoices(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
-    const description = REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
+    const description = state.sort === 'popular'
+      ? `Snapshot racers, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Exact counts only; unknown coverage stays last. Not live plays.`
+      : REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
     sortField.select.title = description;
     if (description) sortField.select.setAttribute('aria-description', description);
     else sortField.select.removeAttribute('aria-description');
@@ -987,6 +996,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
           return state.sort === 'review-quality' ? review.quality : state.sort === 'review-difficulty' ? review.difficulty : review.votes ? review.up - review.down : null;
         }
         if (state.sort === 'my-rating') return record.rating;
+        if (state.sort === 'popular') return popularityCounts.get(entry.trackId) ?? null;
         if (state.sort === 'my-reviews') return Number(record.edited);
         if (state.sort === 'forum') return forumActivity(entry);
         if (state.sort === 'date') {
@@ -1047,6 +1057,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const pages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
     page = Math.min(page, pages);
     count.textContent = `${records.length} of ${all.length} tracks`;
+    if (state.sort === 'popular') {
+      const exact = records.filter(record => popularityCounts.has(record.entry.trackId)).length;
+      count.textContent += ` · Snapshot counts: ${exact} exact, ${records.length - exact} unknown`;
+    }
     for (const [field, value, predicate] of [
       [qualityField, state.reviewedQuality, (r, v) => r.quality !== null && r.quality >= Number(v)],
       [reviewedDifficultyField, state.reviewedDifficulty, (r, v) => r.difficulty !== null && Math.round(r.difficulty) === Number(v)],
@@ -1398,6 +1412,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   render();
   return {
     open, close, refresh() { cachedRecords = null; render(); },
+    setSnapshotStatistics({ generation, statistics } = {}) {
+      if (destroyed || !Number.isSafeInteger(generation) || generation < 0 || generation <= popularityGeneration) return false;
+      popularityGeneration = generation;
+      popularityCounts = snapshotPopularity(statistics);
+      sortedRecordsCache = null;
+      render();
+      return true;
+    },
     destroy() {
       if (destroyed) return;
       close();

@@ -27,6 +27,14 @@ node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls
 3. Review the existing project release checks and exact staged diff. Stage only the authorized files; never revert or stage unrelated agents' changes. The checked working files and staged files must match.
 4. When committing is separately authorized, use a title in the form `RELEASE_NUMBER-Short descriptive title`. Commit the central metadata and stamped entry files together. Preparation and offline testing do not authorize a commit, push, capture or deployment.
 
+## Firebase Impact Review
+
+1. Identify every changed path that can cause document reads, writes, rule-dependent reads, retries or derived publication. A static UI change must not silently add a live fallback or per-row query.
+2. Record measured fixture costs before and after backend changes, including deferred batch work. Distinguish HTTP requests, estimated document operations and actual billed usage; do not omit reconciliation, rule or index costs from a savings claim.
+3. Keep browsing, searches, popularity and local recalculation on the loaded snapshot. Reuse exact replay bindings and frozen archives; never trust stale cached ownership or a physics proof for a changed replay.
+4. Confirm document/request budgets, conflict handling, quota backoff, queue durability and preservation of the previous valid snapshot. No capture or verification retries are allowed merely to repair CDN propagation.
+5. Review the one public update number, concise player-facing Help notes and timestamp meaning. Developer identities belong in the closed technical disclosure, not beside the public number.
+
 ## Before Push Or Publication
 
 1. After an authorized commit, run `node tools/check-release-info.mjs` without `--precommit`. It checks the latest non-capture manual Git title and rejects dirty release metadata or entry files. Unchanged notes on a new manual release fail. The timestamp is now a committed preparation instant, still not proof of when Git was published.

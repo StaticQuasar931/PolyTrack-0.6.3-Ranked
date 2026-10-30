@@ -6,6 +6,7 @@ import {startResponsiveServer} from './responsive-server.mjs';
 import {installNativeRankedAuditFixture} from './native-ranked-audit-fixture.mjs';
 const require=createRequire(new URL('./verifier/package.json',import.meta.url)),{chromium}=require('playwright');
 const {revision}=JSON.parse(await readFile(new URL('../site-version.json',import.meta.url),'utf8'));
+const {RELEASE_INFO}=await import('./release-info.mjs');
 test('installed release notice defers to home, acknowledges exactly once and preserves local preferences',{timeout:150000},async()=>{
   const server=await startResponsiveServer(),browser=await chromium.launch({headless:true});
   try{
@@ -32,8 +33,11 @@ test('installed release notice defers to home, acknowledges exactly once and pre
     await page.goto(server.url,{waitUntil:'domcontentloaded'});await home();
     const notice=page.locator('dialog[data-site-installed-revision][open]');await notice.waitFor({timeout:20000});
     assert.equal(await notice.getAttribute('data-site-installed-revision'),String(revision));
+    assert.equal(await notice.locator('h2').textContent(), `PolyTrack update ${RELEASE_INFO.number}`);
+    assert.doesNotMatch(await notice.innerText(), /client revision/i);
+    assert.match(await notice.locator('[data-site-update-age]').textContent(), /Release prepared|Device clock/);
     await page.keyboard.press('Escape');await notice.waitFor({state:'detached'});
-    assert.equal(await page.evaluate(value=>localStorage.getItem(`polytrack-site-update-ack-v1:${value}`),revision),'acknowledged');
+    assert.equal(await page.evaluate(value=>localStorage.getItem(`polytrack-site-update-ack-release-v1:${value}`),RELEASE_INFO.number),'acknowledged');
     assert.equal(await page.evaluate(()=>localStorage.getItem('polytrack-0.6.2-ui-font-scale')),'110');
     await page.reload({waitUntil:'domcontentloaded'});await home();
     await page.waitForTimeout(6000);

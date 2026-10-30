@@ -565,6 +565,7 @@ test('failed background refresh retains the exact saved board without repaint',a
 });
 
 function receiveTrackStatistics(h,tracks){
+  h.context.extraTracksUi=null;
   const from=source.indexOf("        if(kind==='track-statistics'){");
   const to=source.indexOf("        }else if(kind==='cosmetic-directory'){",from);
   assert.ok(from>=0&&to>from);

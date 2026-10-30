@@ -400,6 +400,87 @@ test('Only verified filters cached event rows without reading another snapshot',
  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'true');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),1);
  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'false');assert.equal(await p.locator('.sq-event-board .container > button.main').count(),2);assert.equal(await p.evaluate(()=>snapshotCalls),reads);
 });
+test('verification field owns ranks, counts, pagination and Find me without additional reads',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  window.snapshotCalls=0;bridgeFixture.snapshotOnly=()=>true;
+  bridgeFixture.readOwnStatus=()=>{throw Error('Snapshot client must not read live receipts');};
+  bridgeFixture.readSnapshot=async()=>{snapshotCalls++;return {
+   period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),_publicBackup:true,complete:true,
+   entries:Array.from({length:50},(_,i)=>({accountId:i===49?id:(i+1).toString(16).padStart(64,'0'),name:'Verified '+i,timeMs:2000+i,rank:i+1,rp:100})),
+   pendingPlaybacks:Array.from({length:22},(_,i)=>({accountId:(i+100).toString(16).padStart(64,'0'),runId:(i+500).toString(16).padStart(64,'0'),name:'Waiting '+i,timeMs:1000+i,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}))};};
+ });
+ await enter(p);const board=p.locator('.sq-event-board');await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .pages .page').length===4);
+ const reads=await p.evaluate(()=>snapshotCalls);
+ assert.match(await board.locator('.total-players').innerText(),/72 racers.*50 verified, 22 waiting.*Page 1 of 4/);
+ assert.equal(await board.locator('.container > button.main').count(),20);
+ await board.locator('.only-verified').click();
+ assert.match(await board.locator('.total-players').innerText(),/50 racers.*50 verified, 0 waiting.*Page 1 of 3/);
+ assert.equal(await board.locator('.pages .page').count(),3);
+ assert.equal(await board.locator('.container > button.main').first().locator('.position').innerText(),'1st');
+ await board.locator('.sq-event-find-me').click();
+ assert.equal(await board.locator('.container > button.main').count(),10);
+ assert.equal(await board.locator('button.main.self .position').innerText(),'50th');
+ assert.match(await p.locator('.sq-event-personal .sq-event-place').getAttribute('title'),/Visible event place #50 of 50 loaded racers/);
+ assert.match(await board.locator('.total-players').innerText(),/Page 3 of 3/);
+ await board.locator('.only-verified').click();
+ assert.equal(await board.locator('.pages .page').count(),4);
+ assert.equal(await p.evaluate(()=>snapshotCalls),reads);
+});
+test('verified PB survives a faster waiting attempt and ties rebase with original placement available',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),_publicBackup:true,
+   entries:[{accountId:id,name:'You',rank:1,timeMs:1000,rp:100},{accountId:'b'.repeat(64),name:'Tied',rank:1,timeMs:1000,rp:100},{accountId:'c'.repeat(64),name:'Third verified',rank:4,timeMs:3000,rp:90}],
+   pendingPlaybacks:[{accountId:id,runId:'d'.repeat(64),name:'You',timeMs:500,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'},
+   {accountId:'e'.repeat(64),runId:'f'.repeat(64),name:'Waiting gap',timeMs:2000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}]});
+ });await enter(p);const board=p.locator('.sq-event-board');await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .container > button.main').length===4);
+ assert.equal(await board.locator('button.main.self').getAttribute('data-event-pending'),'true');
+ await board.locator('.only-verified').click();
+ assert.deepEqual(await board.locator('.position').allTextContents(),['1st','1st','3rd']);
+ assert.equal(await board.locator('button.main.self').getAttribute('data-event-time'),'1000');
+ assert.equal(await board.locator('button.main.self').getAttribute('data-event-pending'),'false');
+ assert.equal(await board.locator('.position').last().getAttribute('data-sq-original-rank'),'4');
+ assert.match(await board.locator('.position').last().getAttribute('title'),/Saved snapshot place #4; visible field place #3/);
+});
+test('date-only and proof-status refreshes keep exact bound dates and render verification-only dates honestly',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  window.datedAt=Date.now()-3600000;window.proofPhase=0;window.dateBoardAt=Date.now();bridgeFixture.snapshotOnly=()=>true;
+  bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:dateBoardAt,_publicBackup:true,
+   entries:proofPhase?[{accountId:'b'.repeat(64),runId:'d'.repeat(64),name:'Dated',rank:1,timeMs:1000,rp:100,...(proofPhase===2?{pbAt:datedAt-1000}:{})},{accountId:'c'.repeat(64),name:'Verdict only',rank:2,timeMs:2000,rp:90,verifiedAt:datedAt}]:[],
+   pendingPlaybacks:proofPhase?[]:[{accountId:'b'.repeat(64),runId:'d'.repeat(64),name:'Dated',timeMs:1000,submittedAt:datedAt,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}]});
+ });await enter(p);const board=p.locator('.sq-event-board');await p.waitForFunction(()=>document.querySelector('.sq-event-board [data-event-pending="true"]'));
+ await p.evaluate(()=>proofPhase=1);await board.locator('.sq-event-refresh').click();
+ await p.waitForFunction(()=>document.querySelectorAll('.sq-event-board .verified-state.verified').length===2);
+ const first=board.locator('.verified-state').first(),last=board.locator('.verified-state').last();
+ assert.match(await first.getAttribute('title'),/^Received .* - Verified$/);
+ assert.match(await last.innerText(),/Verification date/);assert.match(await last.getAttribute('title'),/^Verification date .* - Verified$/);
+ await p.evaluate(()=>proofPhase=2);await board.locator('.sq-event-refresh').click();
+ await p.waitForFunction(()=>Number(document.querySelector('.sq-event-board .verified-state').dataset.sqPbAt)===datedAt-1000);
+ assert.doesNotMatch(await first.getAttribute('title'),/^Received /);
+});
+test('archived filtered standings share visible ranks and local pagination without live reads',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  window.archiveReads=0;bridgeFixture.snapshotOnly=()=>true;
+  bridgeFixture.readSnapshot=()=>{throw Error('Archived filtering must not read live standings');};
+  bridgeFixture.filterRows=rows=>({active:true,groupGrading:false,rows:rows.filter(row=>row.timeMs>=1003)});
+  bridgeFixture.readArchivedSnapshot=async()=>{archiveReads++;return {
+   period:{id:'old-event',trackId:id,kind:'daily',startsAt:Date.now()-172800000,endsAt:Date.now()-86400000,racerCount:30},updatedAt:Date.now(),archived:true,_publicBackup:true,
+   entries:Array.from({length:26},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Saved '+i,timeMs:1000+i,rank:i+1,rp:100,...(i===0?{verified:false}:i===1?{needsReview:true}:{} )}))};};
+ });
+ await p.locator('#open').click();await p.locator('[data-event-archives]').click();
+ await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
+ await p.getByRole('button',{name:'Jump to month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();
+ await p.getByRole('button',{name:'Track details / practice'}).click();
+ const board=p.locator('.sq-event-board');await board.waitFor();
+ assert.match(await board.locator('.total-players').innerText(),/23 saved results.*30 event entrants.*personal filters.*Page 1 of 2/);
+ assert.equal(await board.locator('.container > button.main').count(),20);
+ assert.equal(await board.locator('.position').first().innerText(),'1st');
+ assert.equal(await board.locator('.position').first().getAttribute('data-sq-original-rank'),'4');
+ await board.locator('.pages .page').last().click();
+ assert.equal(await board.locator('.container > button.main').count(),3);
+ assert.equal(await board.locator('.position').first().innerText(),'21st');
+ assert.match(await board.locator('.total-players').innerText(),/Page 2 of 2/);
+ assert.equal(await p.evaluate(()=>archiveReads),1);
+});
 test('live event mode reuses the native leaderboard element and restores its contents',async t=>{const p=await fixture(t);await p.evaluate(()=>{window.initialNativeBoard=document.querySelector('.track-info-ui>.leaderboard-ui');bridgeFixture.filterButton=footer=>{const button=document.createElement('button');button.type='button';button.dataset.personalFilterButton='';button.textContent='Filters-Inactive';footer.append(button);};bridgeFixture.readSnapshot=async()=>({period:{id:'daily-fixture',trackId:id,kind:'daily'},updatedAt:Date.now(),entries:[{accountId:'b'.repeat(64),name:'Native row',rank:1,timeMs:19000,rp:100}]});});await enter(p);assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);assert.equal(await p.locator('.sq-event-board > .button-wrapper > button').count(),4);assert.equal(await p.locator('.sq-event-board > h2 > .sq-event-refresh').count(),1);assert.equal(await p.locator('.sq-event-board button.main .checkmark').evaluate(node=>node.parentElement.matches('button.main')),true);assert.equal(await p.locator('.sq-event-board button.main .verified-state img.sq-event-verification-icon').count(),1);await p.evaluate(()=>ui.leave());assert.equal(await p.evaluate(()=>initialNativeBoard.isConnected&&!initialNativeBoard.classList.contains('sq-event-board')&&initialNativeBoard.textContent.includes('Normal leaderboard 9999')),true);});
 test('event footer suppresses native reads and restores native controls on leave',async t=>{
   const p=await fixture(t);

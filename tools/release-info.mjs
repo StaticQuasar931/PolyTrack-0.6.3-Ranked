@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 240,
+  "number": 241,
   "version": "0.6.3",
-  "revision": 209,
+  "revision": 210,
   "notes": [
-    "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
-    "Holding Space cannot launch twice or activate a racer when the key is released.",
-    "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
-    "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
+    "Cleaner update notices, local dates and a larger racer search.",
+    "Verified-only event standings keep matching ranks, counts and dates.",
+    "Sort Extra Tracks by snapshot popularity.",
+    "More accurate route targets and clearer Event RP summaries."
   ],
-  "preparedAt": "2026-10-30T05:14:01.792Z"
+  "preparedAt": "2026-10-30T06:31:08.049Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

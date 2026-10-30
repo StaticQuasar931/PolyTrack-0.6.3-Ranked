@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import {reviewedWatchUiBaseline} from '../tools/verifier/watch-ui-review.mjs';
 
 const digest=value=>crypto.createHash('sha256').update(value).digest('hex');
 const opponentReview=JSON.parse(fs.readFileSync(new URL('../docs/events/opponent-shortcut-ui-engine-review.json',import.meta.url),'utf8'));
@@ -21,7 +22,8 @@ function removeReviewedOpponentInsertions(source,review=opponentReview){
 }
 
 test('native event row hook changes only reviewed UI anchors in the bundle',()=>{
- let source=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8').replace(/\r\n?/g,'\n');
+ const manifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
+ let source=reviewedWatchUiBaseline(manifest).bundle;
  source=removeReviewedOpponentInsertions(source);
  const hookStart=source.indexOf('(0,R.gn)(this,Fo,"f").__pt062EventRows='),hookEnd=source.indexOf('},e.appendChild',hookStart);
  assert(hookStart>0&&hookEnd>hookStart,'native row adapter is installed once');
@@ -39,7 +41,9 @@ test('opponent UI review remains chained to the prior proof and immutable physic
  const priorBytes=fs.readFileSync(new URL('../'+opponentReview.previousReview,import.meta.url));
  assert.equal(opponentReview.previousReview,'docs/events/native-row-ui-engine-review.json');
  assert.equal(digest(priorBytes.toString('utf8').replace(/\r\n?/g,'\n')),opponentReview.previousReviewSha256);
- const prior=JSON.parse(priorBytes),manifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
+ const prior=JSON.parse(priorBytes),currentManifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
+ const baseline=reviewedWatchUiBaseline(currentManifest);
+ const manifest={...currentManifest,engineDigest:baseline.review.previousEngine,files:baseline.files};
  assert.equal(opponentReview.previousEngine,prior.currentEngine);
  const extension=JSON.parse(fs.readFileSync(new URL('../tools/verifier/indexed-playback-review.json',import.meta.url),'utf8'));
  assert.equal(extension.previousReview,'docs/events/opponent-shortcut-ui-engine-review.json');
@@ -50,7 +54,8 @@ test('opponent UI review remains chained to the prior proof and immutable physic
  assert.equal(extension.nativeAB.pairCount,11);assert.equal(extension.nativeAB.pairs.length,11);
  for(const pair of extension.nativeAB.pairs){assert.equal(pair.equal,true);assert.match(pair.streamSha256,/^[a-f0-9]{64}$/);assert.equal(pair.baseStates,pair.candidateStates);assert.equal(pair.baseBytes,pair.candidateBytes);}
  assert.equal(extension.historicalBootstrapUnchanged,true);
- for(const [asset,hash] of Object.entries(extension.unchangedAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash);
+ for(const [asset,hash] of Object.entries(extension.unchangedAssets))assert.equal(
+  asset==='main.bundle.js'?digest(baseline.bundle):digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash);
  for(const [asset,hash] of Object.entries(extension.currentAssets))assert.equal(digest(fs.readFileSync(new URL('../'+asset,import.meta.url))),hash);
  assert.equal(opponentReview.trackPinsUnchanged,true);assert.equal(opponentReview.geometryPinsReusedBecausePhysicsAndTracksUnchanged,true);assert.equal(opponentReview.historicalBootstrapUnchanged,true);
  assert.deepEqual(opponentReview.unchangedPhysicsAssets,prior.unchangedPhysicsAssets);
@@ -65,9 +70,24 @@ test('opponent UI review remains chained to the prior proof and immutable physic
 });
 
 test('reviewed opponent UI stripping rejects extra edits, duplicate anchors and changed review allowances',()=>{
- const source=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8').replace(/\r\n?/g,'\n');
+ const manifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
+ const source=reviewedWatchUiBaseline(manifest).bundle;
  for(const altered of [source+' ',source+opponentReview.normalizedUiInsertions[0]])assert.throws(()=>removeReviewedOpponentInsertions(altered));
  assert.throws(()=>removeReviewedOpponentInsertions(source,{...opponentReview,currentMainBundleSha256:digest(source+' ')}));
  assert.throws(()=>removeReviewedOpponentInsertions(source,{...opponentReview,normalizedUiInsertions:[...opponentReview.normalizedUiInsertions,'arbitrary extra UI edit']}));
  assert.throws(()=>removeReviewedOpponentInsertions(source,{...opponentReview,normalizedUiInsertions:[opponentReview.normalizedUiInsertions[0],opponentReview.normalizedUiInsertions[1]+'unreviewed']}));
+});
+test('current watch review rejects extra bundle changes and unreviewed engine identities',()=>{
+ const manifest=JSON.parse(fs.readFileSync(new URL('../tools/verifier/engine-manifest.json',import.meta.url),'utf8'));
+ const bundle=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8').replace(/\r\n?/g,'\n');
+ const baseline=reviewedWatchUiBaseline(manifest);
+ assert.notEqual(baseline.review.currentEngine,baseline.review.previousEngine);
+ assert.deepEqual(baseline.review.normalizedUiReplacement,{
+  before:'!ghosts.length||ghosts.length>2)throw Error("Event replay context changed")',
+  after:'!ghosts.length||ghosts.length>10)throw Error("Event replay context changed")'
+ });
+ assert.throws(()=>reviewedWatchUiBaseline({...manifest,engineDigest:'f'.repeat(64)}));
+ assert.throws(()=>reviewedWatchUiBaseline(manifest,{bundle:bundle+' '}));
+ assert.throws(()=>reviewedWatchUiBaseline(manifest,{bundle:bundle.replace(baseline.review.normalizedUiReplacement.after,
+  baseline.review.normalizedUiReplacement.after.replace('>10','>11'))}));
 });

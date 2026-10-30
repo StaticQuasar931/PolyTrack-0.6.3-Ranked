@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import {spawnSync} from 'node:child_process';
 import {generateKeyPairSync} from 'node:crypto';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
-import {DRAIN_LIMITS, CATCH_UP_LIMITS, budgetDatabase} from './verifier/throughput.mjs';
+import {DRAIN_LIMITS, CATCH_UP_LIMITS, SCHEDULED_DRAIN_LIMITS, budgetDatabase} from './verifier/throughput.mjs';
 
 const names=['sync-event-catalog.yml','publish-verified-snapshots.yml','sync-kodub-weekly.yml',
   'publish-cdn-release.yml','verify-runs.yml'];
@@ -203,10 +203,21 @@ test('normal verifier budget enforces 400 requests and expanded catch-up remains
   assert.ok(runtime.indexOf("catchUp && env.GITHUB_EVENT_NAME !== 'workflow_dispatch'")<runtime.indexOf('const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT'));
 });
 
+test('scheduled throughput expands rounds, never the configured document caps or manual mode',()=>{
+  assert.equal(SCHEDULED_DRAIN_LIMITS.rounds,12);
+  assert.equal(SCHEDULED_DRAIN_LIMITS.admissionMs,DRAIN_LIMITS.admissionMs);
+  const verify=step(verifier,'Verify queued runs');
+  assert.match(verify,/VERIFIER_DOCUMENT_READ_LIMIT: '1500'/);
+  assert.match(verify,/VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'/);
+  assert.match(verify,/VERIFIER_SCHEDULED_DRAIN: \$\{\{ github.event_name == 'schedule' && 'true' \|\| 'false' \}\}/);
+  assert.doesNotMatch(step(verifier,'Check for due verification work'),/VERIFIER_SCHEDULED_DRAIN/);
+});
+
 
 test('queue and publication regression gates run offline before verifier preflight',()=>{
  const guard=step(verifier,'Test queue and publication contracts before quota access');
- assert.match(guard,/node --test tools\/verifier\/queue.test.mjs tools\/verifier\/publication-queue.test.mjs/);
+ assert.match(guard,/node --test --test-concurrency=2 tools\/verifier\/queue.test.mjs tools\/verifier\/publication-queue.test.mjs/);
+ assert.match(guard,/tools\/verifier\/scheduled-drain.test.mjs tools\/verifier\/proof-cache-file.test.mjs/);
  assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
  assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
 });

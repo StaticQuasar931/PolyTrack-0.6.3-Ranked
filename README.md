@@ -13,7 +13,7 @@ A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events,
 - **Practice History:** review tracked attempts, finishes, active practice time and improvements. Tracking is local and partial, not a complete lifetime history.
 - **Ghosts and player groups:** choose opponents, save ghost-selection presets, or build friends-only leaderboards with Advanced Filters.
 - **Events:** race Kodub's featured track, daily and weekly events, and Rolling Hills Racer. Each card shows its scoring and timing.
-- **Extra Tracks:** search a curated catalog by progress, tags, rating and difficulty, then import a track to play.
+- **Extra Tracks:** search by progress, tags, rating and difficulty, or sort by snapshot popularity, then import a track to play. Incomplete player counts are marked unknown.
 - **Racer Studio:** customize your car, nameplate and profile with supported cosmetics and earned designs.
 
 ## Find Your Way Around
@@ -30,7 +30,7 @@ Other shortcuts depend on the screen and your bindings. Help separates driving, 
 
 ## Understand the Standings
 
-Public standings normally come from published snapshots, rather than a database query on every click. Package publication, individual data confirmation and the last standings change are different dates. A snapshot can be published later than the runs it contains.
+Public standings come from published snapshots, rather than a database query on every click. Package publication, individual data confirmation and the last standings change are different dates. A snapshot can be published later than the runs it contains. Opening leaderboards, searching and sorting do not need live Firebase leaderboard reads.
 
 Your local PBs can affect a **local ranking estimate** before the next publication. That does not verify a run or change public standings. Hover or focus supported score/rank values for their provenance. Published standings can lag behind new submissions.
 
@@ -59,6 +59,8 @@ Please include the loaded release/client revision, browser, available game area 
 ## Development and Releases
 
 Before every manual commit or push, follow the [release checklist](docs/manual-release-checklist.md). Release notes, client cache revisions, workflow compatibility and privacy checks belong to the same release. See [CDN publication](docs/cdn-release.md) for publishing and deferred-propagation behavior.
+
+The update screen shows one player-facing update number. Developer details keep the separate cache revision and game version available without presenting them as competing update numbers.
 
 Public PB submissions retain the submitting website's origin for private maintenance summaries, not its paths, query strings or referrers. Browser diagnostics estimate only instrumented device activity, not total billed Firebase usage.
 

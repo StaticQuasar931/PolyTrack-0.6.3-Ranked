@@ -293,7 +293,7 @@ async function simulate(session, job) {
   }, { trackId: job.trackId, replay: job.replay, timeMs: job.timeMs });
 }
 
-async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard'} = {}) {
+async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard', deadline = Infinity} = {}) {
   const limits = resourceLimits(profile);
   if (!Array.isArray(jobs) || jobs.length > limits.jobs) throw new TypeError(`jobs must be an array of at most ${limits.jobs} jobs`);
   if (jobs.length === 0) return [];
@@ -301,6 +301,12 @@ async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard'} = {
   jobs = jobs.map(job => ({ ...publicJob(job), resourceProfile: profile, replay: typeof job?.replay === 'string' ? job.replay : null }));
   const output = new Array(jobs.length);
   const pending = [];
+  if (deadline !== Infinity && !Number.isFinite(deadline)) throw Error('invalid_deadline_configuration');
+  const remainingWall = () => {
+    const remaining = Math.min(wallMs, Math.floor(deadline-performance.now()-5000));
+    if (remaining < 1) throw Object.assign(Error('deadline_invocation'), {reason:'deadline_invocation'});
+    return remaining;
+  };
   let rejectedTracks = new Map();
   let engine;
   let host;
@@ -334,7 +340,7 @@ async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard'} = {
     host = await serve(engine);
     const createSession = async () => {
       const server = await chromium.launchServer({
-        headless: true, timeout: wallMs, host: '127.0.0.1', env: browserEnvironment(),
+        headless: true, timeout: remainingWall(), host: '127.0.0.1', env: browserEnvironment(),
         chromiumSandbox: process.platform === 'linux',
         executablePath: chromium.executablePath(),
         ...(process.env.VERIFIER_CHROMIUM_PATH ? { executablePath: process.env.VERIFIER_CHROMIUM_PATH } : {}),
@@ -342,11 +348,11 @@ async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard'} = {
       const next={server,dead:false,resourceProfile:profile};
       session=next;
       trace('browser launched');
-      next.browser=await chromium.connect(server.wsEndpoint(),{timeout:wallMs});
+      next.browser=await chromium.connect(server.wsEndpoint(),{timeout:remainingWall()});
       trace('browser connected');
       next.system=await next.browser.newBrowserCDPSession();
       trace('CPU monitor connected');
-      return (await bounded(()=>initialize(next,engine,host.origin,trusted),next,wallMs,cpuMs)).value;
+      return (await bounded(()=>initialize(next,engine,host.origin,trusted),next,remainingWall(),cpuMs)).value;
     };
     let catalog=await createSession();
     trace(`initialized ${catalog.size} trusted tracks`);
@@ -359,7 +365,7 @@ async function verifyBatch(root, jobs, trustedTracks, {profile = 'standard'} = {
       }
       if (session.dead) throw Object.assign(Error('isolate_terminated'),{reason:'isolate_terminated'});
       const started = performance.now();
-      const result=await bounded(()=>simulate(session,job),session,wallMs,cpuMs);
+      const result=await bounded(()=>simulate(session,job),session,remainingWall(),cpuMs);
       const native=requireCleanNativeResult(session,result.value);
       output[index]=verdict(job,native.status,native.reason,engine,track,{
         deterministic:native.deterministic??null,

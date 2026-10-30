@@ -35,19 +35,23 @@ export function plannerEaseEstimate(action,snapshot,accountId,practiceRow=null,c
   const practice=plannerPracticeEvidence(practiceRow,coverage);
   const unknown={known:false,effortScore:null,practice,gapMs:null,relativeGap:null,
     reason:'A matching complete placement field is unavailable; no personal ease is invented.'};
-  if(!action?.currentRank||!Array.isArray(snapshot?.entries)||snapshot.complete!==true||
-    snapshot.totalEntriesExact===false||!Number.isSafeInteger(snapshot.totalEntries)||snapshot.totalEntries!==snapshot.entries.length)return unknown;
-  const sourceAt=Math.max(positive(snapshot.serverUpdatedAt),positive(snapshot.updatedAt));
+  if(!Number.isSafeInteger(action?.currentRank)||action.currentRank<1||!Array.isArray(snapshot?.entries)||snapshot.complete!==true||
+    snapshot.totalEntriesExact===false||snapshot.ranksExact===false||snapshot.sourceComplete===false||
+    (snapshot.trackId&&snapshot.trackId!==action.trackId)||
+    !Number.isSafeInteger(snapshot.totalEntries)||snapshot.totalEntries!==snapshot.entries.length)return unknown;
+  const sourceAt=positive(snapshot.serverUpdatedAt)||positive(snapshot.updatedAt);
   if(positive(action.cachedAt)>sourceAt)return unknown;
-  const rows=snapshot.entries,ids=rows.map(r=>String(r.accountId||r.userId||''));
-  if(ids.some(id=>!id)||new Set(ids).size!==ids.length||rows.some(r=>!positive(r.timeMs)))return unknown;
+  const rows=snapshot.entries,ids=rows.map(r=>String(r?.accountId||r?.userId||''));
+  if(ids.some(id=>!id)||new Set(ids).size!==ids.length||rows.some(r=>!Number.isSafeInteger(r.timeMs)||r.timeMs<1))return unknown;
+  const ranked=[...rows].sort((a,b)=>a.timeMs-b.timeMs||String(a.accountId||a.userId).localeCompare(String(b.accountId||b.userId)));
+  if(ranked.findIndex(r=>String(r.accountId||r.userId)===String(accountId))+1!==action.currentRank)return unknown;
   const own=rows.find(r=>String(r.accountId||r.userId||'')===String(accountId));
   const current=positive(own?.timeMs);
   if(!current||positive(action.timeMs)&&action.timeMs!==current)return unknown;
-  if(!Number.isSafeInteger(action.targetRank)||action.targetRank<1)return unknown;
-  const target=rows.filter(r=>String(r.accountId||r.userId||'')!==String(accountId))
-    .sort((a,b)=>a.timeMs-b.timeMs)[action.targetRank-1];
-  const targetTime=positive(target?.timeMs);
+  if(!Number.isSafeInteger(action.targetRank)||action.targetRank<1||action.targetRank>=action.currentRank)return unknown;
+  const target=ranked.filter(r=>String(r.accountId||r.userId||'')!==String(accountId))[action.targetRank-1];
+  // Permanent placements break tied milliseconds by account ID, not shared rank.
+  const targetTime=positive(target?.timeMs)-(String(accountId).localeCompare(String(target?.accountId||target?.userId||''))>0?1:0);
   if(!targetTime||targetTime>=current)return unknown;
   const field=rows.map(r=>r.timeMs).sort((a,b)=>a-b);
   const gaps=field.slice(1).map((time,i)=>time-field[i]).sort((a,b)=>a-b),middle=Math.floor(gaps.length/2);
@@ -66,7 +70,15 @@ export function plannerBenefitEaseScore(action,maximumBenefit){
 }
 
 export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
-  const actions=[...(rival||[]),...(personal||[])].filter(a=>a?.trackId);
+  // Select each track's benefit target before applying any ordering preference.
+  const unique=new Map();
+  for(const action of [...(rival||[]),...(personal||[])]){
+    if(!action?.trackId)continue;
+    const previous=unique.get(action.trackId);
+    if(!previous||positive(action.value)>positive(previous.value)||positive(action.value)===positive(previous.value)&&
+      String(action.kind||'').localeCompare(String(previous.kind||''))<0)unique.set(action.trackId,action);
+  }
+  const actions=[...unique.values()];
   const maximum=Math.max(0,...actions.map(a=>positive(a.value)));
   const effort=a=>Number.isFinite(a?.ease?.effortScore)&&a.ease.effortScore>=0?a.ease.effortScore:null;
   const value=a=>positive(a.value),practice=a=>positive(a.practice?.factor)||1;
@@ -88,6 +100,5 @@ export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
     }
     return value(b)-value(a)||(positive(b.weight)-positive(a.weight))||String(a.trackId).localeCompare(String(b.trackId));
   };
-  const unique=new Map();for(const action of actions){const previous=unique.get(action.trackId);if(!previous||compare(action,previous)<0)unique.set(action.trackId,action);}
-  return [...unique.values()].sort(compare).slice(0,Number.isSafeInteger(limit)&&limit>=0?limit:8);
+  return actions.map(action=>({...action,benefitReference:maximum})).sort(compare).slice(0,Number.isSafeInteger(limit)&&limit>=0?limit:8);
 }

@@ -1,3 +1,5 @@
+import {observeEventStore} from './event-outcomes.mjs';
+import {createEventService} from '../../workers/ranked/src/events.js';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { eventRuntime, eventWork, consumeEventInbox } from '../../workers/ranked/src/events-runtime.js';
@@ -25,14 +27,19 @@ function runtime(db, now = Date.now) {
 export async function checkEventWork(db, { now = Date.now } = {}) {
   return eventWork(runtime(db, typeof now === 'function' ? now : () => now), {existenceOnly:true});
 }
-export async function runEventVerification(db, root, { now = Date.now, verifyBatch, limit = EVENT_JOB_LIMIT, intakeLimit = 16, canSpend = () => true, selectionState } = {}) {
+export async function runEventVerification(db, root, { now = Date.now, verifyBatch, limit = EVENT_JOB_LIMIT, intakeLimit = 16, canSpend = () => true, selectionState, recordOutcome } = {}) {
   const r = runtime(db, typeof now === 'function' ? now : () => now);
+  const observed = new Set();
+  if(recordOutcome)r.service=createEventService({store:observeEventStore(r.store,(job,result,options)=>{
+    observed.add(job.runId||job.resultId);recordOutcome(job,result,options);
+  }),now:r.now});
   const verify = verifyBatch || createRequire(import.meta.url)('./verify.cjs').verifyBatch;
   const review = createSimilarityReviewer(root);
   return runEventCoordinator(r, root, {
     verifyBatch: verify,
     reviewSimilarity:async(jobs,results,period)=>review(await eventReviewJobs(db,jobs,period),results),
     limit, intakeLimit, canSpend, selectionState,
+    recordOutcome:recordOutcome ? (job,result,options)=>{if(!observed.has(job.runId||job.resultId))recordOutcome(job,result,options);} : undefined,
     writeFinding: async (periodId, job, verdict, evidence) => {
       const resultId = job.runId || job.resultId;
       const auditId = createHash('sha256').update(JSON.stringify([
@@ -47,7 +54,7 @@ export async function runEventVerification(db, root, { now = Date.now, verifyBat
 }
 export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_JOB_LIMIT, intakeLimit = 16,
   consumeInbox = consumeEventInbox, readWork = eventWork, canSpend = () => true, selectionState, reviewSimilarity,
-  writeFinding } = {}) {
+  writeFinding, recordOutcome } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > EVENT_JOB_LIMIT) throw Error('Event job limit');
   if (!Number.isInteger(intakeLimit) || intakeLimit < 1 || intakeLimit > 16) throw Error('Event intake limit');
   let consumed = 0, rejected = false, budgetDeferred = false;
@@ -88,7 +95,9 @@ export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_
     if (!canSpend(BATCH_REQUEST_RESERVE)) { budgetDeferred = true; break; }
     const periodId = pending.shift();
     const reviewCandidates = new Map();
+    const outcomeJobs = new Map();
     const published = await deferEventConflict(() => r.service.processBatch(periodId, (jobs,period)=>{
+        for(const job of jobs)outcomeJobs.set(job.runId||job.resultId,job);
         const verifyAndReview = async (trustedJobs, trustedPeriod, trustedTracks) => {
           const verified = await verifyBatch(root,trustedJobs,trustedTracks);
           if (reviewSimilarity) {
@@ -123,6 +132,7 @@ export async function runEventCoordinator(r, root, { verifyBatch, limit = EVENT_
         eventFindingWriteFailed++;
       }
     }
+    for(const result of published){const job=outcomeJobs.get(result.resultId);if(job)recordOutcome?.(job,result,{lane:'event',periodId,completed:true});}
     checked += published.length; results.push(...published);
     if (published.length && selectionState) selectionState.lastPeriodId = periodId;
     if (published.some(result => result.reason === 'engine_unavailable')) break;

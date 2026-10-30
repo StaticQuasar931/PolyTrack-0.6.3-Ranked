@@ -15,6 +15,8 @@
     "ALLOWED_ORIGINS": "https://staticquasar931.github.io,http://localhost:8080,http://127.0.0.1:8080,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-0lu-script.googleusercontent.com",
     "BETA_CUTOFF_MS": "1791759954000",
     "RANKED_WRITES_ENABLED": "true",
+    "PB_PUBLICATION_MODE": "coalesced",
+    "PB_COALESCED_TRACK_IDS_JSON": "[\"5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038\"]",
     "MIN_CLIENT_REVISION": "172",
     "MISSING_CLIENT_REVISION_POLICY": "allow",
     "WRITE_IP_RATE_LIMIT_REQUIRED": "true",

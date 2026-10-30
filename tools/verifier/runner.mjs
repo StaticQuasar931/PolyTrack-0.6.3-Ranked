@@ -147,7 +147,7 @@ export function isConflict(error) {
   return ['ABORTED', 'FAILED_PRECONDITION', 'ALREADY_EXISTS'].includes(error.code) || [409, 412].includes(Number(error.status)) || /(?:^|\s)(409|412)(?:$|\s)/.test(String(error.message));
 }
 
-export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_SELECTION_LIMIT, lookupLimit = NORMAL_SELECTION_LIMIT, perTrackLimit = PER_TRACK_SELECTION_LIMIT} = {}) {
+export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_SELECTION_LIMIT, lookupLimit = NORMAL_SELECTION_LIMIT, perTrackLimit = PER_TRACK_SELECTION_LIMIT, fillIdleSlots = false} = {}) {
   let jobs = [];
   let canonicalAttempts = 0, selectionConflicts = 0;
   const contexts=docs.map((source,index)=>{const slots={...source.data.slots},due=dueSlots(slots,now),controlReferences=Object.values(slots).map(slot=>verifiedControlReference(slot,source.data.trackId)).filter(Boolean);return {doc:{...source,priorityFastestMs:Math.min(...due.map(schedulingTime))},index,slots,due,controlReferences,changed:false,attempts:0};});
@@ -158,9 +158,12 @@ export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_
   const capacity=Math.min(jobLimit,lookupLimit);
   const reserved=overdue.slice(0,capacity>0?Math.max(1,Math.floor(capacity/4)):0);
   const reservedSet=new Set(reserved),ordered=[...reserved,...priority.filter(c=>!reservedSet.has(c))];
-  for(const {context,slot} of ordered){
+  const visited = new Set();
+  // First spread work across tracks; only then borrow slots that would otherwise sit idle.
+  for(const softLimit of fillIdleSlots?[perTrackLimit,lookupLimit]:[perTrackLimit])for(const {context,slot} of ordered){
     if(jobs.length>=jobLimit||canonicalAttempts>=lookupLimit)break;
-    if(context.attempts>=perTrackLimit)continue;
+    if(visited.has(slot)||context.attempts>=softLimit)continue;
+    visited.add(slot);
     const {doc}=context,queueCollection=doc.queueCollection||verificationCollectionForTrack(doc.data.trackId);
     if(![VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION].includes(queueCollection))throw Error('Invalid verification queue collection');
     context.attempts++;canonicalAttempts++;
@@ -191,7 +194,7 @@ export async function selectJobs(db, docs, now = Date.now(), {jobLimit = NORMAL_
   return {jobs:selected, canonicalAttempts, selectionConflicts};
 }
 
-export async function publishResults(db, jobs, results, {allowExtendedLocal = false} = {}) {
+export async function publishResults(db, jobs, results, {allowExtendedLocal = false, recordOutcome} = {}) {
   for (const result of results) {
     const profile = result?.binding?.resourceProfile || 'standard';
     if (profile === 'extended-local') {
@@ -217,6 +220,8 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
     if (!job) throw Error('Verifier returned unknown job');
     const queueCollection = job.queueCollection || verificationCollectionForTrack(job.trackId);
     if (![VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION].includes(queueCollection)) throw Error('Invalid verification queue collection');
+    let observed = false;
+    const observe = (status, reason, completed=false) => {if(!observed){observed=true;recordOutcome?.(job,{...result,status,reason},{lane:'normal',completed});}};
     const queueId = job.queueId || job.trackId;
     const queueCacheKey = queueCollection + '/' + queueId;
     const selectedPreimage=selectionQueuePreimages.get(job);
@@ -231,7 +236,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
       }
       const current = await db.get('0.6.2_race_results', job.resultId);
       if (!queue || !current || verificationKey(current.data) !== job.queueKey ||
-          queue.data.slots?.[job.accountId]?.key !== job.queueKey) {totals.superseded++; break;}
+          queue.data.slots?.[job.accountId]?.key !== job.queueKey) {totals.superseded++; observe('superseded','binding_changed'); break;}
       const frames = legacyTimingFrames(current.data);
       const candidate = job.correctionCandidate;
       const candidateValid = candidate && frames !== null && candidate.frames === frames &&
@@ -239,7 +244,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         job.trackId === current.data.trackId && job.replayHash === current.data.replayHash &&
         job.resultId === String(current.data.accountId || current.data.userId) + '_' + current.data.trackId;
       if ((candidate && !candidateValid) || (frames !== null && result.status === 'verified' && !candidateValid)) {
-        totals.superseded++; break;
+        totals.superseded++; observe('superseded','binding_changed'); break;
       }
       const existingSlot=queue.data.slots[job.accountId];
       if(isCompetitiveReviewHold(result)&&!hasMatchingCompetitiveReviewHold(current.data,existingSlot)){
@@ -253,7 +258,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
       // Receipt validity is independent of optional clone-comparison signatures.
       if(result.status==='unavailable'&&!isCompetitiveReviewHold(result)&&hasAcceptedVerifiedProof(current.data,existingSlot)&&
           existingSlot.accountId===job.accountId&&existingSlot.trackId===job.trackId&&existingSlot.resultId===job.resultId){
-        totals.deferred++;
+        totals.deferred++; observe('deferred','accepted_proof_preserved');
         totals.reasons.accepted_proof_preserved=(totals.reasons.accepted_proof_preserved||0)+1;
         break;
       }
@@ -264,7 +269,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         unconfirmed ? {...result, status: 'unavailable', reason: 'legacy_time_unconfirmed'} : result;
       const correct = Boolean(candidateValid && publication.status === 'verified');
       if (correct && (result.timeMs !== frames || result.trackId !== job.trackId || result.replayHash !== job.replayHash)) {
-        totals.superseded++; break;
+        totals.superseded++; observe('superseded','binding_changed'); break;
       }
       const corrected = correct ? {...current.data, timeMs: frames, timingVersion: 2} : null;
       const publishedKey = corrected ? verificationKey(corrected) : job.queueKey;
@@ -354,6 +359,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
           stateCacheLoaded = false;
         }
         totals[publication.status]++;
+        observe(publication.status,publication.reason,true);
         if (publication.status === 'verified') totals.verifiedByTrack[job.trackId] = (totals.verifiedByTrack[job.trackId] || 0) + 1;
         if(reviewWrite) totals.reviewInboxAdded++;
         if(similarityEvidence(result)) totals.reviewFlagged++;
@@ -369,7 +375,7 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
         queueCache.delete(queueCacheKey);
         stateCache = null;
         stateCacheLoaded = false;
-        if (attempt === 2) totals.deferred++;
+        if (attempt === 2) {totals.deferred++;observe('deferred','publication_conflict');}
       }
     }
   }

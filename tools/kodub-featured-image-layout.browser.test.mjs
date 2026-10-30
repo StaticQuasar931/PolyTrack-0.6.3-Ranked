@@ -10,9 +10,12 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=new URL('../',import.meta.url);
 const styles=await Promise.all(['events/events.css','home-ui.css','responsive-ui.css','practice-responsive.css'].map(file=>fs.readFile(new URL(file,root),'utf8')));
 const weekly=JSON.parse(await fs.readFile(new URL('events/kodub/current.json',root),'utf8')).current;
+const {RELEASE_INFO}=await import('./release-info.mjs');
 const cover='data:image/webp;base64,'+(await fs.readFile(new URL('events/kodub/'+weekly.coverUrl,root))).toString('base64');
 const oldEvents=styles[0].split('/* Compact featured events share')[0];
 const focused=process.env.POLYTRACK_LAYOUT_FOCUSED==='1';
+const releaseAudit=process.env.POLYTRACK_LAYOUT_RELEASE241==='1';
+const requestedViewports=[[320,568],[390,844],[844,390],[768,1024],[1366,768],[1920,1080]];
 
 const svg=(width,height)=>'data:image/svg+xml;base64,'+Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#284b65"/><rect x="3" y="3" width="${width-6}" height="${height-6}" fill="none" stroke="#ffdf85" stroke-width="6"/><text x="50%" y="50%" text-anchor="middle" fill="white" font-size="28">Complete artwork</text></svg>`).toString('base64');
 const asset=async(file,mime)=>'data:'+mime+';base64,'+(await fs.readFile(new URL(file,root))).toString('base64');
@@ -144,9 +147,9 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    results.push({label,viewport:{width,height},stacked,after});
    return after;
   };
-  for(const [width,height] of (focused?[[188,334],[220,478],[320,568],[640,460],[641,460],[1200,800],[1201,800],[1920,1080]]:viewports))await check(width,height,'kodub-'+width+'x'+height);
+  for(const [width,height] of (releaseAudit?requestedViewports:focused?[[188,334],[220,478],[320,568],[640,460],[641,460],[1200,800],[1201,800],[1920,1080]]:viewports))await check(width,height,'kodub-'+width+'x'+height);
   // Keep the same mounted DOM through repeated orientation cycles.
-  for(const [width,height] of (focused?[]:[[440,956],[375,667],[768,1024]])){
+  for(const [width,height] of (releaseAudit?[[390,844]]:focused?[]:[[440,956],[375,667],[768,1024]])){
    const first=await check(width,height,'rotate-'+width+'-portrait');
    for(let cycle=1;cycle<=2;cycle++){
     await check(height,width,'rotate-'+width+'-landscape-'+cycle);
@@ -154,13 +157,13 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    }
   }
   // Desktop browser zoom reduces the CSS viewport while physical pixels stay fixed.
-  for(const scale of (focused?[1.25]:[1,1.25,1.5,2])){
+  for(const scale of (releaseAudit?[]:focused?[1.25]:[1,1.25,1.5,2])){
    for(const [width,height] of [[1366,600],[2560,1279],[440,956],[956,440],[375,667],[667,375]]){
     await check(Math.round(width/scale),Math.round(height/scale),'zoom-'+scale+'-'+width+'x'+height);
    }
   }
   // Text-only enlargement: preserve layout pixels and enlarge actual computed text.
-  for(const scale of (focused?[1.25]:[1,1.25,1.5,2])){
+  for(const scale of (releaseAudit?[]:focused?[1.25]:[1,1.25,1.5,2])){
    textScale=scale;
    for(const [width,height] of [[440,956],[375,667],[956,440],[667,375],[1366,600],[2560,1279]])await check(width,height,'text-'+scale+'-'+width+'x'+height);
   }
@@ -194,6 +197,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
   for(const scale of [100,125]){
    const context=await browser.newContext({viewport:{width:1920,height:1080},serviceWorkers:'block'});
    await context.addInitScript(scale=>localStorage.setItem('polytrack-0.6.2-ui-font-scale',String(scale)),scale);
+   await context.addInitScript(number=>localStorage.setItem('polytrack-site-update-ack-release-v1:'+number,'acknowledged'),RELEASE_INFO.number);
    const page=await context.newPage();
    page.on('pageerror',error=>t.diagnostic('Native page error: '+String(error)));
    await context.route('**/*',route=>{
@@ -239,7 +243,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      offset+=word.length+1;
     }
    };
-   for(const [width,height] of (focused?[[1920,1080],[375,667],[956,440]]:[[1920,1080],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
+   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[320,568],[1920,1080],[375,667],[956,440]]:[[320,568],[1920,1080],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
     await page.setViewportSize({width,height});await page.mouse.move(0,0);await settle(page);
     await title.evaluate(node=>node.textContent='Hydropower');await settle(page);
     const ordinary=await sample(),geometry=await measure(page);

@@ -155,10 +155,12 @@ test('untrusted key labels, release data and attribute values are escaped, never
   assert.doesNotMatch(html,/id="[^"]*<|data-hc-search-text="[^"]*</);
 });
 
-test('release number and revision are separate; only confirmed hexadecimal Git hashes display',()=>{
+test('one public update number; technical identities stay in a closed disclosure',()=>{
   assert.doesNotMatch(renderHelpControls(),/data-hc-view="release"|Client revision|Commit/);
   const html=renderHelpControls({release:{number:224,revision:193,commit:'224',commitConfirmed:true,notes:['Local controls.']}});
-  assert.match(html,/<dt>Release number<\/dt><dd>224/);
+  assert.match(html,/>Update 224<\/h3>/);
+  assert.match(html,/<details class="hc-release-technical"><summary>Developer details<\/summary>/);
+  assert.doesNotMatch(html,/<details class="hc-release-technical" open|<dt>Release number/);
   assert.match(html,/<dt>Client revision<\/dt><dd>193/);
   assert.doesNotMatch(html,/<dt>Commit/);
   assert.match(html,/Local controls\./);

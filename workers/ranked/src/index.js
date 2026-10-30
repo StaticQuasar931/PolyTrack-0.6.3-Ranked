@@ -1,5 +1,6 @@
 import {createPublicMissGuard} from './public-miss-guard.js';
 import {verifyCaptureRead} from './capture-read-auth.js';
+import {enqueueCanonicalPublication} from './coalesced-pb-publication.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
 import {recallPublicResponse, rememberPublicResponse} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
@@ -2752,11 +2753,28 @@ async function handleRequestInternal(request, env, context = {}) {
   if (path === '/v1/profile/notify') return notifyProfile(request, env, context, uid, body);
   const resultId = safeText(body.resultId, 220);
   if (!/^[A-Za-z0-9_.:-]{3,220}$/.test(resultId)) return json(origin, env, 400, { error: 'invalid_result_id' });
+  if (env.PB_PUBLICATION_MODE !== undefined && !['immediate', 'coalesced'].includes(env.PB_PUBLICATION_MODE))
+    return json(origin, env, 503, { error: 'invalid_pb_publication_mode' });
+  let coalescedTracks=null;
+  if(env.PB_PUBLICATION_MODE==='coalesced'&&env.PB_COALESCED_TRACK_IDS_JSON!==undefined){
+    try{
+      const ids=JSON.parse(env.PB_COALESCED_TRACK_IDS_JSON);
+      if(!Array.isArray(ids)||ids.length>32||ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)))throw Error();
+      coalescedTracks=new Set(ids);
+    }catch{return json(origin,env,503,{error:'invalid_pb_publication_scope'});}
+  }
   const result = await readDocument(env, COLLECTIONS.raceResults, resultId);
   if (!result || result.data.ownerUid !== uid || resultId !== `${result.data.accountId}_${result.data.trackId}`) return json(origin, env, 403, { error: 'result_not_owned' });
   if (!structurallyValidResult(result.data)) return json(origin, env, 422, { error: 'result_failed_structural_validation' });
   const integrityVerified = await replayIntegrityValid(result.data);
   const trackId = safeText(result.data.trackId, 80);
+  if(env.PB_PUBLICATION_MODE==='coalesced'&&(!coalescedTracks||coalescedTracks.has(trackId))){
+    const queued=await enqueueCanonicalPublication({trackId,resultId,canonicalBindingKey:verificationKey(result.data),
+      read:id=>readDocument(env,COLLECTIONS.jobs,id),
+      commit:(id,data,prior)=>commitDocuments(env,[{collection:COLLECTIONS.jobs,id,data,prior}])});
+    return json(origin,env,200,{accepted:true,...queued,trackId,overallPending:true,integrityVerified,
+      validationState:integrityVerified?'integrity':'pending'});
+  }
   const rebuilt = await mergeCanonicalResultIntoTrack(env, trackId, result.data, integrityVerified);
   // Track publication already marks Overall dirty. Only its isolated cron aggregates.
   return json(origin, env, 200, { accepted: true, changed: rebuilt.changed, trackId, revision: rebuilt.revision, overallPending: rebuilt.changed && rebuilt.overallChanged !== false, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' });

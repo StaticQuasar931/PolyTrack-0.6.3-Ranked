@@ -3,8 +3,9 @@ import {decode} from './firestore.mjs';
 export const DRAIN_LIMITS = Object.freeze({rounds:4, requests:400, reserveRequests:128,
   minimumFinalRoundRequests:51, admissionMs:360000, minimumRoundMs:30000, finishReserveMs:60000});
 export const CATCH_UP_LIMITS = Object.freeze({...DRAIN_LIMITS, rounds:12, requests:1200, admissionMs:720000});
+export const SCHEDULED_DRAIN_LIMITS = Object.freeze({...DRAIN_LIMITS, rounds:12, requests:1200});
 function validateLimits(limits) {
-  if (limits !== DRAIN_LIMITS && limits !== CATCH_UP_LIMITS) throw Error('Invalid drain limits');
+  if (limits !== DRAIN_LIMITS && limits !== CATCH_UP_LIMITS && limits !== SCHEDULED_DRAIN_LIMITS) throw Error('Invalid drain limits');
 }
 export class VerificationBudgetError extends Error {
   constructor() { super('verification_request_budget'); this.code='VERIFICATION_REQUEST_BUDGET'; }

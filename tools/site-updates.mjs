@@ -3,6 +3,7 @@ const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
 const noticeInstallations = new WeakMap();
 const acknowledgedRevisions = new WeakMap();
+const ageBindings = new WeakMap();
 export const UPDATED_GAME_URL = 'https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/';
 export const CANONICAL_SITE_VERSION_URL = `${UPDATED_GAME_URL}site-version.json`;
 const CDN_REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
@@ -40,10 +41,12 @@ async function readManifest(response) {
 
 const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 function themeControl(element) {
+  element.className = 'button';
   Object.assign(element.style, { padding: '10px 14px', minHeight: '44px', boxSizing: 'border-box',
-    border: '2px solid #7e9bd1', borderRadius: '0', background: '#28346a', color: '#ffffff',
-    font: 'clamp(18px, 5dvh, 22px)/1.25 ForcedSquare, sans-serif', cursor: 'pointer', textAlign: 'center', textDecoration: 'none',
-    boxShadow: 'inset 0 -3px 0 #17234f' });
+    display: 'inline-block', position: 'relative', isolation: 'isolate', border: 'none', borderRadius: '0',
+    clipPath: 'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',
+    background: 'var(--button-color, #112052)', color: 'var(--text-color, #ffffff)',
+    font: 'clamp(18px, 5dvh, 22px)/1.25 ForcedSquare, sans-serif', cursor: 'pointer', textAlign: 'center' });
 }
 
 function themeDialog(node, title, description) {
@@ -58,6 +61,122 @@ function themeDialog(node, title, description) {
 function isVisible(document) { return document.visibilityState !== 'hidden'; }
 function defaultIdle(document) { return isVisible(document) && (typeof document.hasFocus !== 'function' || document.hasFocus()); }
 
+function preparedTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return null;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && time > 0 && new Date(time).toISOString() === value ? time : null;
+}
+
+/** Local-only age API for the installed notice and Help Release renderer.
+ * verifiedReleasePointer must come from the launcher's existing verified pointer,
+ * not a new fetch or an untrusted manifest field. It must match installedCommit.
+ */
+export function releaseUpdateAge(release = {}, {now = Date.now(), verifiedReleasePointer, installedCommit} = {}) {
+  let time = preparedTime(release.preparedAt), source = 'prepared';
+  try {
+    releaseVersionUrl(verifiedReleasePointer);
+    if (verifiedReleasePointer.commit === installedCommit && preparedTime(verifiedReleasePointer.publishedAt) !== null) {
+      time = preparedTime(verifiedReleasePointer.publishedAt); source = 'updated';
+    }
+  } catch { /* Missing/unverified publication uses the recorded preparation time. */ }
+  const label = source === 'updated' ? 'Updated' : 'Release prepared';
+  const details = {source, dateTime: time === null ? '' : new Date(time).toISOString(),
+    title: time === null ? '' : `${label}: ${new Date(time).toLocaleString()}`};
+  if (time === null || !Number.isFinite(now)) return {...details, text: 'Preparation time not recorded', nextUpdateMs: null};
+  const elapsed = now - time;
+  if (elapsed < 0) return {...details, text: `Device clock is before ${source === 'updated' ? 'update' : 'preparation'} time`, nextUpdateMs: Math.min(-elapsed, 60000)};
+  const [unit, size] = elapsed >= 86400000 ? ['day', 86400000] : elapsed >= 3600000 ? ['hour', 3600000] : ['minute', 60000];
+  const count = Math.floor(elapsed / size);
+  return {...details, text: `${label} ${count ? `${count} ${unit}${count === 1 ? '' : 's'} ago` : 'less than a minute ago'}`,
+    nextUpdateMs: Math.min(size - elapsed % size, 60000)};
+}
+
+/** Bind one local age timer. Rebinding disposes the previous binding. The caller
+ * should dispose when closing Help; a detached node also stops at the next tick.
+ * refresh() handles parent UI transitions without requesting any data.
+ */
+export function bindReleaseUpdateAge(element, {release = {}, document = element?.ownerDocument,
+  verifiedReleasePointer, installedCommit, now = Date.now,
+  setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
+  if (!element || !document?.addEventListener) throw new TypeError('age element and document are required');
+  ageBindings.get(element)?.dispose();
+  let timer = null, disposed = false, suspended = false;
+  const view = document.defaultView;
+  const stop = () => {
+    if (timer !== null) { try { unschedule(timer); } catch { /* Best effort. */ } }
+    timer = null;
+  };
+  const refresh = () => {
+    stop();
+    if (disposed || suspended || !element.isConnected || !isVisible(document)) return;
+    try {
+      const age = releaseUpdateAge(release, {now: now(), verifiedReleasePointer, installedCommit});
+      if (element.textContent !== age.text) element.textContent = age.text;
+      if (element.title !== age.title) element.title = age.title;
+      if (age.dateTime) {
+        if (element.getAttribute?.('datetime') !== age.dateTime) element.setAttribute('datetime', age.dateTime);
+      } else if (element.getAttribute?.('datetime') !== null) element.removeAttribute?.('datetime');
+      if (age.nextUpdateMs !== null) timer = schedule(refresh, age.nextUpdateMs);
+    } catch { /* A local clock/timer failure must not affect the surrounding UI. */ }
+  };
+  const pagehide = () => { suspended = true; stop(); };
+  const pageshow = () => { suspended = false; refresh(); };
+  document.addEventListener('visibilitychange', refresh);
+  view?.addEventListener('focus', refresh);
+  view?.addEventListener('pagehide', pagehide);
+  view?.addEventListener('pageshow', pageshow);
+  const handle = Object.freeze({refresh, dispose() {
+    if (disposed) return;
+    disposed = true; stop();
+    document.removeEventListener('visibilitychange', refresh);
+    view?.removeEventListener('focus', refresh);
+    view?.removeEventListener('pagehide', pagehide);
+    view?.removeEventListener('pageshow', pageshow);
+    if (ageBindings.get(element) === handle) ageBindings.delete(element);
+  }});
+  ageBindings.set(element, handle); refresh(); return handle;
+}
+
+function canUpdateHere(document, endpoint) {
+  try {
+    const page = new URL(document.location?.href || document.baseURI);
+    const canonical = new URL(UPDATED_GAME_URL);
+    if (page.origin === canonical.origin && (page.pathname === canonical.pathname.slice(0, -1) ||
+        page.pathname === canonical.pathname || page.pathname === `${canonical.pathname}index.html`)) return true;
+    // Explicit local manifests support development without treating copied hosts as current.
+    return endpoint !== CANONICAL_SITE_VERSION_URL && ['http:', 'https:'].includes(page.protocol) &&
+      new URL(endpoint, document.baseURI).origin === page.origin;
+  } catch { return false; }
+}
+
+function automaticLauncherCommit(document) {
+  try {
+    const page = new URL(document.location?.href || document.baseURI);
+    const base = new URL(document.baseURI);
+    const commit = base.href.match(/^https:\/\/cdn\.jsdelivr\.net\/gh\/StaticQuasar931\/PolyTrack-0\.6\.3-Ranked@([a-f0-9]{40})\/(?:index\.html)?$/)?.[1];
+    if (!commit || typeof document.defaultView?.__polytrackAutomaticLoad?.then !== 'function') return null;
+    const appsScript = page.protocol === 'https:' && !page.port && !page.username && !page.password &&
+      (page.hostname === 'script.google.com' && /^\/macros\/s\/[A-Za-z0-9_-]+\/(?:exec|dev)$/.test(page.pathname) ||
+       (page.hostname === 'script.googleusercontent.com' || /^[a-z0-9-]+-script\.googleusercontent\.com$/.test(page.hostname)) &&
+       /^\/(?:userCodeAppPanel|macros\/echo)$/.test(page.pathname));
+    const cdnLauncher = /^https:\/\/cdn\.jsdelivr\.net\/gh\/StaticQuasar931\/PolyTrack-0\.6\.3-Ranked@(?:[a-f0-9]{40}|main|cdn-assets)\/(?:apps-script\/)?index\.html$/.test(page.origin + page.pathname);
+    return appsScript || cdnLauncher ? commit : null;
+  } catch { return null; }
+}
+
+function expireLauncherDiscovery(document, commit) {
+  // Audited automatic loader cache only. Never clear game saves or accept a URL.
+  try {
+    const storage = document.defaultView?.localStorage;
+    const key = 'polytrack-automatic-release-v2', value = storage?.getItem(key);
+    if (!value || value.length > 2048) return;
+    const saved = JSON.parse(value);
+    if (saved?.sha === commit && /^[a-f0-9]{64}$/.test(saved.indexSha256 || '')) {
+      storage.setItem(key, JSON.stringify({...saved, checkedAt: 0}));
+    }
+  } catch { /* With storage blocked, the loader already bypasses its cache. */ }
+}
+
 /** Local installed-build notice, independent of the remote manifest/check interval.
  * Parent must supply gameplay-aware readiness/safety predicates and call resume()
  * after UI transitions. Mounting is NOT acknowledgement; only OK/Escape is.
@@ -65,13 +184,15 @@ function defaultIdle(document) { return isVisible(document) && (typeof document.
  * memory is the final fallback when both stores are denied (this page only).
  */
 export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
-  isReady = () => false, isIdle = defaultIdle, storage, sessionStorage} = {}) {
+  isReady = () => false, isIdle = defaultIdle, storage, sessionStorage,
+  verifiedReleasePointer, installedCommit,
+  now = Date.now, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
   if (!document?.addEventListener) throw new TypeError('document is required');
   const existing = noticeInstallations.get(document);
   if (existing) return existing;
   const view = document.defaultView;
-  const key = `polytrack-site-update-ack-v1:${revision}`;
+  const key = validRevision(release.number) ? `polytrack-site-update-ack-release-v1:${release.number}` : `polytrack-site-update-ack-v1:${revision}`;
   let remembered = acknowledgedRevisions.get(document);
   if (!remembered) acknowledgedRevisions.set(document, remembered = new Set());
   const stores = () => {
@@ -82,14 +203,15 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     return result;
   };
   const acknowledged = () => {
-    if (remembered.has(revision)) return true;
+    if (remembered.has(key)) return true;
     for (const store of stores()) {
-      try { if (store.getItem(key) === 'acknowledged') { remembered.add(revision); return true; } } catch { /* Try next store. */ }
+      try { if (store.getItem(key) === 'acknowledged') { remembered.add(key); return true; } } catch { /* Try next store. */ }
     }
     return false;
   };
-  let disposed = false, dialog = null, previousFocus = null;
+  let disposed = false, dialog = null, previousFocus = null, ageBinding = null;
   const close = (restoreFocus = false) => {
+    ageBinding?.dispose(); ageBinding = null;
     const node = dialog; dialog = null;
     if (!node) return;
     try { node.close?.(); } catch { /* Removal is sufficient. */ }
@@ -98,7 +220,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   };
   const acknowledge = () => {
     if (disposed || !dialog?.isConnected) return;
-    remembered.add(revision);
+    remembered.add(key);
     for (const store of stores()) { try { store.setItem(key, 'acknowledged'); } catch { /* Keep the in-page acknowledgement. */ } }
     close(true);
   };
@@ -108,33 +230,47 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     let safe = false;
     try { safe = !!document.body && isVisible(document) && isReady(document) && isIdle(document); } catch { /* Defer. */ }
     if (!safe) { close(); return; }
-    if (dialog?.isConnected && dialog.open) return;
+    if (dialog?.isConnected && dialog.open) { ageBinding?.refresh(); return; }
     close();
     const node = document.createElement('dialog');
     dialog = node; previousFocus = document.activeElement;
     node.dataset.siteInstalledRevision = String(revision);
+    if (validRevision(release.number)) node.dataset.siteInstalledRelease = String(release.number);
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
     node.setAttribute('aria-describedby', 'pt-installed-update-description');
     const title = document.createElement('h2'); title.id = 'pt-installed-update-title';
     title.textContent = validRevision(release.number) ? `PolyTrack update ${release.number}` : 'PolyTrack updated';
     const description = document.createElement('p'); description.id = 'pt-installed-update-description';
-    description.textContent = `You are running client revision ${revision}. Your saved runs are unchanged.`;
+    description.textContent = 'Your saved runs are unchanged.';
+    const ageNode = document.createElement('time');
+    ageNode.dataset.siteUpdateAge = '';
+    Object.assign(ageNode.style, {display: 'block', marginTop: '8px', color: '#a7d5ff', fontSize: '0.85em'});
+    description.append(ageNode);
     themeDialog(node, title, description);
     const notes = document.createElement('ul');
     Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
-    for (const text of (Array.isArray(release.notes) ? release.notes : []).filter(text => typeof text === 'string' && text.trim()).slice(0, 8)) {
-      const item = document.createElement('li'); item.textContent = text; notes.append(item);
+    for (const text of (Array.isArray(release.notes) ? release.notes : []).slice(0, 8).filter(text => typeof text === 'string' && text.slice(0, 1024).trim()).slice(0, 4)) {
+      const item = document.createElement('li');
+      const compact = text.slice(0, 1024).trim().replace(/\s+/g, ' ');
+      item.textContent = compact.length > 220 ? `${compact.slice(0, 217).trimEnd()}...` : compact;
+      Object.assign(item.style, {marginBottom: '8px', overflowWrap: 'anywhere'});
+      notes.append(item);
     }
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
     ok.addEventListener('click', acknowledge);
+    node.addEventListener('close', () => { if (dialog === node) close(); });
     node.addEventListener('cancel', event => { event.preventDefault(); acknowledge(); });
     node.addEventListener('keydown', event => {
       event.stopPropagation();
       if (event.key === 'Tab') { event.preventDefault(); ok.focus(); }
     });
     node.append(title, description, notes, ok); document.body.append(node);
-    try { node.showModal(); ok.focus(); } catch { close(); }
+    try {
+      node.showModal(); ok.focus();
+      ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, installedCommit,
+        now, setTimeout: schedule, clearTimeout: unschedule});
+    } catch { close(); }
   };
   // Stop game shortcuts, including the keyup following Escape/Enter dismissal.
   const held = new Set();
@@ -150,6 +286,8 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   const storageChanged = event => { if (event.key === key || event.key === null) resume(); };
   document.addEventListener('visibilitychange', resume);
   for (const type of ['focus', 'pageshow']) view?.addEventListener(type, resume);
+  const suspend = () => close();
+  view?.addEventListener('pagehide', suspend);
   for (const type of ['keydown', 'keyup']) view?.addEventListener(type, guard, true);
   view?.addEventListener('storage', storageChanged);
   const handle = Object.freeze({resume, dispose() {
@@ -157,6 +295,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     disposed = true; close(); held.clear();
     document.removeEventListener('visibilitychange', resume);
     for (const type of ['focus', 'pageshow']) view?.removeEventListener(type, resume);
+    view?.removeEventListener('pagehide', suspend);
     for (const type of ['keydown', 'keyup']) view?.removeEventListener(type, guard, true);
     view?.removeEventListener('storage', storageChanged);
     noticeInstallations.delete(document);
@@ -287,16 +426,27 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       try { applyCompatibility(data); } catch { failOpen(); }
       if (data.revision <= revision) { button?.remove(); button = null; return; }
       if (button?.isConnected) return;
-      button = document.createElement('button');
-      button.type = 'button';
+      const launcherCommit = automaticLauncherCommit(document);
+      const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
+      button = document.createElement(reloadHere ? 'button' : 'a');
+      if (reloadHere) button.type = 'button';
+      else { button.href = UPDATED_GAME_URL; button.target = '_blank'; button.rel = 'noopener noreferrer'; }
       button.textContent = 'Update available';
-      button.setAttribute('aria-label', 'Update available. Reload to update.');
+      button.setAttribute('aria-label', reloadHere ? 'Update available. Reload to update.' : 'Update available. Open updated game (opens in a new tab).');
+      button.title = launcherCommit ? 'Reload this launcher to check the latest CDN release. Your saved runs stay here.' :
+        reloadHere ? 'Reload this page when you are ready.' : 'Open the official updated game. This copy and your current session will stay open.';
       button.dataset.siteUpdate = 'available';
       themeControl(button);
       Object.assign(button.style, { position: 'fixed', right: '16px', bottom: '16px', maxWidth: 'calc(100vw - 32px)',
         zIndex: '2147483647', fontFamily: 'ForcedSquare, sans-serif' });
-      button.addEventListener('click', () => {
-        try { if (isVisible(document) && canReload()) globalThis.location?.reload(); } catch { failOpen(); }
+      button.addEventListener('click', event => {
+        try {
+          if (!isVisible(document) || !canReload()) { event?.preventDefault(); return; }
+          if (reloadHere) {
+            if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
+            document.defaultView?.location?.reload();
+          }
+        } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
     } catch { /* Keep gameplay independent of notification UI. */ }

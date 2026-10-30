@@ -1,10 +1,13 @@
 import fs from 'node:fs';
+import {createOutcomeReport} from './outcome-report.mjs';
+import {createCachedVerifier} from './proof-cache.mjs';
+import {loadPrivateProofCache,writePrivateProofCache} from './proof-cache-file.mjs';
 import {sameHashMap} from './engine-pin.cjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {connect, decode} from './firestore.mjs';
 import {QUEUE_CANDIDATE_LIMIT, highestPriorityTrack, prioritizeQueueDocuments, selectJobs, publishResults, verifiedTrackCounts} from './runner.mjs';
-import {budgetDatabase, drainVerification, DRAIN_LIMITS, CATCH_UP_LIMITS, VerificationEventConflictError, firestoreDeferralReason} from './throughput.mjs';
+import {budgetDatabase, drainVerification, DRAIN_LIMITS, CATCH_UP_LIMITS, SCHEDULED_DRAIN_LIMITS, VerificationEventConflictError, firestoreDeferralReason} from './throughput.mjs';
 import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
 import {createSimilarityReviewer} from './similarity.mjs';
 import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
@@ -18,7 +21,7 @@ const EVENT_CONFLICT_MESSAGE = 'An event transaction conflicted. Earlier writes 
 const DOCUMENT_BUDGET_MESSAGE = 'The Firestore document-budget guard stopped verification. Earlier writes may have committed; interrupted-round publication counts are incomplete. No write was replayed; the next invocation will reread queue state.';
 const checkEvents = async (db, options) => (await import('./events.mjs')).checkEventWork(db, options);
 const runEvents = async (db, directory, options) => (await import('./events.mjs')).runEventVerification(db, directory, options);
-const simulate = async (directory, jobs, trustedTracks) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks);
+const simulate = async (directory, jobs, trustedTracks, options) => (await import('./verify.cjs')).verifyBatch(directory, jobs, trustedTracks, options);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export async function validateEnginePin() {
   const {snapshot} = await import('./assets.cjs');
@@ -84,7 +87,7 @@ export async function checkForWork(db, {env = process.env, now = Date.now(), log
     'No canonical replay reads or Firestore writes.\n' +
     `Observed Firestore usage: ${db.requests?.() == null ? 'HTTP count unavailable' : db.requests() - requestsBefore} HTTP calls, ${db.returnedDocuments?.() == null ? 'returned-document count unavailable' : db.returnedDocuments() - documentsBefore} returned documents, ${db.emptyQueryMinimumReads?.() == null ? 'empty-query minimum count unavailable' : db.emptyQueryMinimumReads() - emptyQueryMinimumBefore} empty-query minimum reads, and ${db.estimatedDocumentReads?.() == null ? 'read estimate unavailable' : db.estimatedDocumentReads() - estimatedReadsBefore} estimated document reads. This estimate is not billed usage and excludes index-entry charges.\n` +
     (hasWork ? 'This is not a backlog count. Processing remains bounded per invocation.\n' :
-      'Future-dated retries are not due work. The next scheduled check is nominally in 15 minutes; GitHub may delay it.\n'));
+      'Future-dated retries are not due work. The next scheduled verification window; GitHub may delay it.\n'));
   return {hasWork, normalHasWork, coreHasWork, extraHasWork, eventHasWork, queueQueries: 2,
     eventCheckSkipped: normalHasWork,
     returnedDocuments: queueRows.length,
@@ -140,13 +143,22 @@ function reportAccounting(db, phase, outcome, env, log) {
   } catch {}
 }
 
-export async function runVerifier({check = false, drain = false, catchUp = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
+export async function runVerifier({check = false, drain = false, catchUp = false, scheduledDrain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,
   validateEngine = validateEnginePin, log = console.log, eventCheck = checkEvents,
   eventRun = runEvents, prioritizeNormal = prioritizeQueueDocuments, selectNormal = selectJobs,
   verifyNormal = simulate, publishNormal = publishResults} = {}) {
+  if(env.VERIFIER_SCHEDULED_DRAIN!==undefined && !['true','false'].includes(env.VERIFIER_SCHEDULED_DRAIN))throw Error('Invalid scheduled drain option');
+  if(env.VERIFIER_SCHEDULED_DRAIN==='true')scheduledDrain=true;
   if (typeof catchUp !== 'boolean' || catchUp && (!drain || check)) throw Error('Catch-Up requires --drain without --check');
   if (catchUp && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw Error('Catch-Up requires a manually dispatched GitHub workflow');
-  const limits = catchUp ? CATCH_UP_LIMITS : DRAIN_LIMITS;
+  if (typeof scheduledDrain !== 'boolean' || scheduledDrain && (!drain || check || catchUp || env.GITHUB_EVENT_NAME !== 'schedule'))
+    throw Error('Scheduled drain requires a scheduled --drain without --check or --catch-up');
+  if (scheduledDrain && (!/^[1-9][0-9]*$/.test(env.VERIFIER_DOCUMENT_READ_LIMIT || '') ||
+      !/^[1-9][0-9]*$/.test(env.VERIFIER_DOCUMENT_WRITE_LIMIT || '') ||
+      Number(env.VERIFIER_DOCUMENT_READ_LIMIT)>1500 || Number(env.VERIFIER_DOCUMENT_WRITE_LIMIT)>1000))
+    throw Error('Scheduled drain requires document caps at most 1500 reads and 1000 writes');
+  const limits = catchUp ? CATCH_UP_LIMITS : scheduledDrain ? SCHEDULED_DRAIN_LIMITS : DRAIN_LIMITS;
+
   // Preflight never loads or hashes physics assets. Actual processing still pins the engine first.
   if (!check) await validateEngine();
   const raw = env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;
@@ -157,10 +169,12 @@ export async function runVerifier({check = false, drain = false, catchUp = false
     reportAccounting(null, 'connect', 'failed', env, log);
     throw error;
   } finally { delete env.FIREBASE_VERIFIER_SERVICE_ACCOUNT; }
-  let accountingDb = db, outcome = 'failed';
+  const report = createOutcomeReport({file:env.VERIFIER_OUTCOME_REPORT,root});
+  let accountingDb = db, outcome = 'failed', reportComplete = false, proofCache, proofContext;
   const finish = result => {
     outcome = result.deferred === true || result.interruptedRound === true ? 'deferred'
       : result.infrastructureFailure || result.stop === 'infrastructure_failure' ? 'failed' : 'completed';
+    reportComplete = result.countsComplete !== false && result.interruptedRound !== true && result.deferred !== true && result.events?.countsComplete !== false && result.eventCountsComplete !== false;
     const usage = verifierAccounting(accountingDb);
     // Preserve legacy result shapes when document caps are not configured.
     if (usage.firestoreDocumentReadLimit !== null || usage.firestoreDocumentWriteLimit !== null) Object.assign(result, usage);
@@ -183,7 +197,22 @@ export async function runVerifier({check = false, drain = false, catchUp = false
           ...(documentBudget ? {countsComplete:false} : {})});
       }
     }
-    const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity:createSimilarityReviewer(root),eventSelectionState:{}};
+    const deadline = scheduledDrain ? performance.now()+480000 : Infinity;
+    let initializedCache;
+    const cachedVerify = async (...args) => {
+      if(!initializedCache){
+        const native = await import('./verify.cjs');
+        initializedCache=createCachedVerifier({root,verify:(directory,jobs,tracks)=>verifyNormal(directory,jobs,tracks,{deadline}),
+          verifierFingerprint:native.verifierFingerprint,engineDigest:VERIFIER_ENGINE_DIGEST});
+        proofContext={root,engineDigest:VERIFIER_ENGINE_DIGEST,verifierFingerprint:native.verifierFingerprint};
+        loadPrivateProofCache(initializedCache,{...proofContext,file:env.VERIFIER_PROOF_CACHE_INPUT,sha256:env.VERIFIER_PROOF_CACHE_SHA256});
+        proofCache=initializedCache;
+      }
+      return initializedCache(...args);
+    };
+    cachedVerify.stats=()=>initializedCache?.stats()||{hits:0,misses:0,entries:0,bytes:0};
+    const roundOptions={env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal:cachedVerify,publishNormal,borrowUnusedEvents,
+      recordOutcome:report.record,reviewSimilarity:createSimilarityReviewer(root),eventSelectionState:{}};
     if (!drain) {
       try { return finish(await runRound(db,roundOptions)); }
       catch (error) {
@@ -203,7 +232,8 @@ export async function runVerifier({check = false, drain = false, catchUp = false
     accountingDb = bounded;
     const summary=await drainVerification({requests:bounded.requests,now:clock,log,limits,
       runRound:()=>runRound(bounded,{...roundOptions,borrowUnusedEvents:true})});
-    summary.mode=catchUp?'catch-up':'normal';
+    summary.mode=catchUp?'catch-up':scheduledDrain?'scheduled-drain':'normal';
+    summary.proofCache=cachedVerify.stats();
     Object.assign(summary, verifierAccounting(bounded));
     if(env.GITHUB_STEP_SUMMARY)fs.appendFileSync(env.GITHUB_STEP_SUMMARY,
       '\n## Bounded drain\n'+JSON.stringify(summary)+'\nMode: '+summary.mode+'. Limits: '+limits.rounds+
@@ -217,15 +247,20 @@ export async function runVerifier({check = false, drain = false, catchUp = false
       (summary.stop==='firestore_document_budget'?DOCUMENT_BUDGET_MESSAGE+'\n':'')+
       (summary.stop==='event_conflict'?EVENT_CONFLICT_MESSAGE+'\n':''));
     return finish(summary);
-  } finally { reportAccounting(accountingDb, check ? 'preflight' : drain ? 'drain' : 'single-round', outcome, env, log); }
+  } finally {
+    if(proofCache && env.VERIFIER_PROOF_CACHE_OUTPUT){
+      try{const saved=writePrivateProofCache(proofCache,{...proofContext,file:env.VERIFIER_PROOF_CACHE_OUTPUT});log(JSON.stringify({privateProofCache:saved}));}
+      catch{log('Private proof cache output failed; no publication was replayed.');process.exitCode=1;}
+    }
+    report.finish({countsComplete:reportComplete}); reportAccounting(accountingDb, check ? 'preflight' : drain ? 'drain' : 'single-round', outcome, env, log); }
 }
 
-export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity,eventSelectionState}) {
+export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNormal,verifyNormal,publishNormal,borrowUnusedEvents,reviewSimilarity,eventSelectionState,recordOutcome}) {
   const now = Date.now();
   // Events must get their reservation before normal canonical reads/commits. Otherwise
   // normal selection can spend the request budget and strand both sources.
   const eventLimit = TOTAL_JOB_LIMIT - NORMAL_JOB_LIMIT;
-  const events = await eventRun(db, root, {limit: eventLimit, intakeLimit: TOTAL_JOB_LIMIT, canSpend:db.canSpend, selectionState:eventSelectionState});
+  const events = await eventRun(db, root, {limit: eventLimit, intakeLimit: TOTAL_JOB_LIMIT, canSpend:db.canSpend, selectionState:eventSelectionState,verifyBatch:verifyNormal,recordOutcome});
   if (!Number.isInteger(events.checked) || events.checked<0 || events.checked>eventLimit) throw Error('Invalid event native count');
   let selectedJobs = [], canonicalAttempts = 0, selectionConflicts = 0;
   let normalQueueReturnedDocuments = 0;
@@ -269,10 +304,10 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
     const extraDocs = await dueDocs(EXTRA_VERIFICATION_COLLECTION,priorityCollection===EXTRA_VERIFICATION_COLLECTION?targetTrack:null);
     normalQueueReturnedDocuments = coreDocs.length + extraDocs.length;
     const coreLimit = normalCapacity - Number(extraDocs.length > 0);
-    const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now, priorityCache), now, {jobLimit: coreLimit, lookupLimit: coreLimit});
+    const core = await selectNormal(db, await prioritizeNormal(db, coreDocs, now, priorityCache), now, {jobLimit: coreLimit, lookupLimit: coreLimit, fillIdleSlots:true});
     // Extra runs have the last reservation, but can use every slot left idle by core tracks.
     const extraLimit = Math.max(0, Math.min(normalCapacity - core.jobs.length, normalCapacity - core.canonicalAttempts));
-    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now, priorityCache), now, {jobLimit: extraLimit, lookupLimit: extraLimit}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
+    const extra = extraLimit && extraDocs.length ? await selectNormal(db, await prioritizeNormal(db, extraDocs, now, priorityCache), now, {jobLimit: extraLimit, lookupLimit: extraLimit, fillIdleSlots:true}) : {jobs: [], canonicalAttempts: 0, selectionConflicts: 0};
     selectedJobs = [...core.jobs, ...extra.jobs];
     canonicalAttempts = core.canonicalAttempts + extra.canonicalAttempts;
     selectionConflicts = core.selectionConflicts + extra.selectionConflicts;
@@ -313,7 +348,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
   const results = await verifyNormal(root, jobs, trustedTracks);
   if (results.length !== jobs.length || new Set(results.map(r => r.resultId)).size !== jobs.length) throw Error('Incomplete verifier result set');
   if(reviewSimilarity) await reviewSimilarity(jobs,results);
-  const totals = await publishNormal(db, jobs, results);
+  const totals = await publishNormal(db, jobs, results, {recordOutcome});
   const reasons = totals.reasons;
   announceReviewFindings(totals.reviewInboxAdded,log);
   log(JSON.stringify({processed: jobs.length, canonicalAttempts, selectionConflicts, ...idleCounts, ...totals, reasons, firestoreRequests: typeof db.httpRequests === 'function' ? db.httpRequests() : db.requests?.() ?? null}));
@@ -325,7 +360,7 @@ export async function runRound(db,{env,log,eventRun,prioritizeNormal,selectNorma
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await runVerifier({check: process.argv.includes('--check'), drain: process.argv.includes('--drain'), catchUp: process.argv.includes('--catch-up'), borrowUnusedEvents: true});
+  await runVerifier({check: process.argv.includes('--check'), drain: process.argv.includes('--drain'), catchUp: process.argv.includes('--catch-up'), scheduledDrain: process.argv.includes('--scheduled-drain'), borrowUnusedEvents: true});
 }
 
 

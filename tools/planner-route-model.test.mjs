@@ -9,6 +9,45 @@ const practice={activeTimeVersion:2,activeMs:240000,legacyActiveMs:0,movingMs:18
   attempts:12,finishes:10,recentFinishes:[{timeMs:12500},{timeMs:12400},{timeMs:12100},{timeMs:12000}]};
 const route=(id,value,effortScore,weight=1)=>({trackId:id,value,weight,currentRank:5,ease:{effortScore}});
 
+test('duplicate targets and benefit reference stay fixed across sorts and truncation',()=>{
+  const rival={...route('track',80,8),kind:'rival',targetRank:2};
+  const personal={...route('track',11,.1),kind:'improve',targetRank:4};
+  for(const sort of ['impact','practice','ease','training','benefit-ease']){
+    const rows=orderPlannerRoutes([rival],[personal,route('best',100,9)],99,sort);
+    const chosen=rows.find(row=>row.trackId==='track');
+    assert.equal(chosen.targetRank,2,sort);assert.equal(chosen.value,80,sort);
+    assert.equal(chosen.benefitReference,100,sort);
+    assert.equal(orderPlannerRoutes([rival],[personal,route('best',100,9)],1,sort)[0].benefitReference,100);
+  }
+  assert.equal(rival.benefitReference,undefined,'inputs stay unchanged');
+});
+
+test('ease time threshold actually reaches the requested rank under existing tie order',()=>{
+  const tied={...board,entries:[{accountId:'first',timeMs:10000},{accountId:'second',timeMs:10000},{accountId:'me',timeMs:12000}]};
+  for(const snapshot of [board,tied])for(const targetRank of [1,2]){
+    const estimate=plannerEaseEstimate({...action,targetRank},snapshot,'me');
+    assert.equal(estimate.known,true);
+    const placed=time=>snapshot.entries.map(row=>row.accountId==='me'?{...row,timeMs:time}:row)
+      .sort((a,b)=>a.timeMs-b.timeMs||a.accountId.localeCompare(b.accountId)).findIndex(row=>row.accountId==='me')+1;
+    assert.ok(placed(estimate.targetTime)<=targetRank);
+    assert.ok(placed(estimate.targetTime+1)>targetRank,'threshold is the slowest qualifying millisecond');
+    assert.equal(estimate.gapMs,12000-estimate.targetTime);
+    assert.equal(estimate.relativeGap,estimate.gapMs/12000,'relative time improvement, not percentile');
+  }
+  const sameTime={...board,entries:board.entries.map(row=>({...row,timeMs:12000}))};
+  assert.equal(plannerEaseEstimate({...action,currentRank:2,targetRank:1},sameTime,'me').gapMs,1);
+});
+
+test('contradictory placement, board identity, source age and fractional times fail closed',()=>{
+  for(const snapshot of [{...board,ranksExact:false},{...board,sourceComplete:false},
+    {...board,trackId:'other'}, {...board,serverUpdatedAt:50,updatedAt:99999},
+    {...board,entries:[board.entries[0],null,board.entries[2]]},
+    {...board,entries:board.entries.map(row=>row.accountId==='first'?{...row,timeMs:10000.5}:row)}])
+    assert.equal(plannerEaseEstimate(action,snapshot,'me').known,false);
+  for(const change of [{currentRank:2},{currentRank:3.5},{targetRank:3},{targetRank:4}])
+    assert.equal(plannerEaseEstimate({...action,...change},board,'me').known,false);
+});
+
 test('sparse, all-zero and pre-observer practice remain neutral, not fabricated ability',()=>{
   for(const row of [null,{}, {...practice,activeMs:0}, {...practice,attempts:2},
     {...practice,movingMs:0}, {...practice,motionObservedMs:0}, {...practice,activeTimeVersion:1},
@@ -26,6 +65,17 @@ test('actual active moving attempts and finish observations meaningfully change 
   assert.ok(good.known&&struggling.known);assert.ok(good.effortScore<struggling.effortScore);
   assert.ok(good.practice.factor>=.75&&struggling.practice.factor<=1.25);
   assert.equal(good.gapMs,1000);assert.equal(good.practice.abilityProbability,null);
+});
+
+test('time-gap and practice-trend arithmetic retain their distinct denominators',()=>{
+  const estimate=plannerEaseEstimate(action,board,'me');
+  assert.equal(estimate.relativeGap,1000/12000);
+  assert.equal(estimate.fieldSpacingMs,1000);assert.equal(estimate.fieldEffort,1);
+  assert.equal(estimate.effortScore,1);
+  const evidence=plannerPracticeEvidence(practice,{coverageFraction:1});
+  assert.equal(evidence.improvementTrend,400/12450);
+  assert.equal(evidence.completionRatio,10/12);
+  assert.equal(evidence.abilityProbability,null);
 });
 test('partial coverage dampens hints without pretending it is complete lifetime history',()=>{
   const full=plannerPracticeEvidence(practice,{coverageFraction:1});

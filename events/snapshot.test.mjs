@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {retainEventSnapshotDates} from './client.mjs';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function snapshot('),source.indexOf('  function updateEventRefreshControl('));
 function fixture(readSnapshot,readArchivedSnapshot,snapshotOnly=false){
  const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),saved=new Map();let at=1000000;
- const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,bridge:{readSnapshot,readArchivedSnapshot,snapshotOnly:()=>snapshotOnly}};
+ const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,retainEventSnapshotDates,bridge:{readSnapshot,readArchivedSnapshot,snapshotOnly:()=>snapshotOnly}};
  return {cache,snapshotFetching,snapshotAttempts,saved,advance:ms=>{at+=ms;},run:vm.runInNewContext('('+fn+')',context)};
 }
 const period={id:'p',trackId:'a'.repeat(64)};

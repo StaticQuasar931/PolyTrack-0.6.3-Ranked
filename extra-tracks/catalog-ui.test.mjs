@@ -1277,3 +1277,58 @@ test('published metric arrow toggles preserve missing-last ordering and filter c
   assert.equal(cls(root, 'sq-extra-advanced-toggle')[0].textContent, 'Filters (1)');
   api.destroy();
 });
+
+test('Popular uses snapshot racers only, distinguishes zero and unknown, and keeps the header unchanged', async () => {
+  const ids = ['a', 'b', 'c', 'd', 'e'].map(char => char.repeat(64));
+  const items = ids.map((trackId, i) => entry(i + 1, {trackId, sourceCopies: 999 - i}));
+  const {root, api} = fixture(items); api.open();
+  const header = cls(root, 'sq-extra-header')[0].textContent;
+  const sort = tag(field(root, 'Sort'), 'select')[0];
+  assert.equal(sort.children.find(option => option.value === 'popular').textContent, 'Popular');
+  sort.value = 'popular'; await sort.dispatch('change');
+  assert.match(cls(root, 'sq-extra-count')[0].textContent, /0 exact, 5 unknown/);
+  assert.equal(api.setSnapshotStatistics({generation: 69, statistics: {schemaVersion: 1, complete: false, tracks: {
+    [ids[0]]: {complete: true, count: 0, players: 0, totalEntries: 0},
+    [ids[1]]: {complete: false, count: 99, players: null, totalEntries: 100},
+    [ids[2]]: {complete: true, count: 7, players: 7, totalEntries: 7},
+    [ids[3]]: {complete: true, count: 7, players: 7, totalEntries: 7}
+  }}}), true);
+  const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
+  assert.deepEqual(names(), ['Track 03', 'Track 04', 'Track 01', 'Track 02', 'Track 05']);
+  assert.match(cls(root, 'sq-extra-count')[0].textContent, /3 exact, 2 unknown/);
+  assert.deepEqual(cls(root, 'sq-extra-popularity').map(node => node.textContent), [
+    '7 snapshot racers', '7 snapshot racers', '0 snapshot racers', 'Snapshot racers unknown', 'Snapshot racers unknown']);
+  await click(cls(root, 'sq-extra-sort-direction')[0]);
+  assert.deepEqual(names(), ['Track 01', 'Track 03', 'Track 04', 'Track 02', 'Track 05']);
+  assert.match(sort.getAttribute('aria-description'), /fewest first.*unknown coverage stays last/);
+  assert.equal(cls(root, 'sq-extra-header')[0].textContent, header);
+  api.destroy();
+});
+
+test('snapshot popularity is normalized once per generation, never during search, refresh, paging or reopen', async () => {
+  const trackId = 'a'.repeat(64);
+  const items = Array.from({length: 15}, (_, i) => entry(i + 1, {trackId: i ? 'b'.repeat(64) : trackId}));
+  const {root, api} = fixture(items); let reads = 0;
+  const statistics = {schemaVersion: 1, get tracks() {
+    reads++; return {[trackId]: {complete: true, count: 8, players: 8, totalEntries: 8}};
+  }};
+  assert.equal(api.setSnapshotStatistics({generation: 69, statistics}), true);
+  const afterLoad = reads; assert.equal(afterLoad, 1);
+  api.open();
+  const sort = tag(field(root, 'Sort'), 'select')[0];
+  sort.value = 'popular'; await sort.dispatch('change');
+  await click(tag(cls(root, 'sq-extra-pagination')[0], 'button')[1]);
+  const search = tag(cls(root, 'sq-extra-search-field')[0], 'input')[0];
+  for (const query of ['track', 'track 01', '']) {search.value = query; await search.dispatch('input');}
+  api.refresh(); api.close(); api.open();
+  assert.equal(api.setSnapshotStatistics({generation: 69, statistics}), false);
+  assert.equal(api.setSnapshotStatistics({generation: 68, statistics}), false);
+  assert.equal(reads, afterLoad);
+  assert.match(cls(root, 'sq-extra-count')[0].textContent, /1 exact, 14 unknown/);
+  assert.equal(api.setSnapshotStatistics({generation: 70, statistics: null}), true);
+  assert.match(cls(root, 'sq-extra-count')[0].textContent, /0 exact, 15 unknown/);
+  for (const generation of [undefined, NaN, -1, 70.1, '71']) assert.equal(api.setSnapshotStatistics({generation, statistics}), false);
+  api.destroy();
+  assert.equal(api.setSnapshotStatistics({generation: 71, statistics}), false);
+  assert.equal(reads, afterLoad);
+});

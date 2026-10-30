@@ -145,14 +145,18 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     const release=page.locator('[data-hc-panel="release"]');
     assert.equal(await release.isVisible(),true);
     const releaseLayout=await release.evaluate(node=>({
-      metadataBottom:node.querySelector('.hc-release-meta').getBoundingClientRect().bottom,
+      technicalOpen:node.querySelector('.hc-release-technical').open,
       ageTop:node.querySelector('.hc-release-age').getBoundingClientRect().top,
       notesFont:parseFloat(getComputedStyle(node.querySelector('ul')).fontSize),
       detailFont:parseFloat(getComputedStyle(node.querySelector('.hc-release-note')).fontSize)
     }));
-    assert.ok(releaseLayout.metadataBottom<=releaseLayout.ageTop,'release identity comes before preparation age');
+    assert.equal(releaseLayout.technicalOpen,false,'technical version numbers are not expanded by default');
     assert.ok(releaseLayout.notesFont>=22&&releaseLayout.detailFont>=19,'Release details use readable text');
-    assert.ok((await release.textContent()).includes('Release number'+RELEASE_FIXTURE.number+'Game version'+RELEASE_FIXTURE.version+'Client revision'+RELEASE_FIXTURE.revision));
+    assert.equal(await release.locator('h3').textContent(),'Update '+RELEASE_FIXTURE.number);
+    assert.equal(await release.locator('.hc-release-meta').isVisible(),false);
+    assert.ok(await release.locator('[data-hc-release-age]').getAttribute('title'));
+    await release.locator('.hc-release-technical summary').click();
+    assert.ok((await release.locator('.hc-release-meta').textContent()).includes('Game version'+RELEASE_FIXTURE.version+'Client revision'+RELEASE_FIXTURE.revision));
     assert.doesNotMatch(await release.textContent(),/countdown|unlocks/i);
     assert.equal(await page.locator('.hc-track-quick').count(),0);
     assert.equal(await release.locator('dt').filter({hasText:/^Commit$/}).count(),0);
