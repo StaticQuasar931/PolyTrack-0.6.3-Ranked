@@ -1,17 +1,15 @@
 const releaseInfo = {
-  "number": 238,
+  "number": 239,
   "version": "0.6.3",
-  "revision": 207,
+  "revision": 208,
   "notes": [
-    "Official tracks stay visible when a saved search has no official matches; other tabs keep filtering.",
-    "Ranking search supports score, rank and playtime comparisons, combined with racer names.",
-    "Search focus and clear buttons use cleaner native styling.",
-    "Help and Release use more room, larger text and clearer control groups.",
-    "Update notices use native buttons; no-update snapshot checks shake without adding visible text.",
-    "Search and quick filters operate on loaded snapshots without additional Firebase reads.",
-    "Repeated missing-page lookups and redundant cosmetic retry writes are reduced."
+    "Ordinary leaderboard browsing continues to use saved snapshots without Firebase reads.",
+    "Private capture authentication prevents public Worker data requests from triggering Firebase reads.",
+    "Four coordinated daily verification and capture windows replace repeated scheduled checks.",
+    "Replay-binding repairs update the affected racer instead of rescanning a complete leaderboard.",
+    "Verification document budgets and operation accounting make backend costs easier to audit."
   ],
-  "preparedAt": "2026-10-29T05:02:08.229Z"
+  "preparedAt": "2026-10-30T04:36:07.816Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
