@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 239,
+  "number": 240,
   "version": "0.6.3",
-  "revision": 208,
+  "revision": 209,
   "notes": [
-    "Ordinary leaderboard browsing continues to use saved snapshots without Firebase reads.",
-    "Private capture authentication prevents public Worker data requests from triggering Firebase reads.",
-    "Four coordinated daily verification and capture windows replace repeated scheduled checks.",
-    "Replay-binding repairs update the affected racer instead of rescanning a complete leaderboard.",
-    "Verification document budgets and operation accounting make backend costs easier to audit."
+    "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
+    "Holding Space cannot launch twice or activate a racer when the key is released.",
+    "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
+    "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
   ],
-  "preparedAt": "2026-10-30T04:36:07.816Z"
+  "preparedAt": "2026-10-30T05:14:01.792Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
