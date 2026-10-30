@@ -149,6 +149,47 @@ test('stable input digest and complete outputs have no clock or capture-metadata
   assert.equal(second.report.unchanged, true);
 });
 
+test('a bound calculated baseline reuses exact outputs without treating its revision as a backend read', async () => {
+  const f=fixture(), first=await buildOfflineOverall(f);
+  const next={...f,previousOverall:first.files.get('overall.json'),previousCalculation:first.calculation,
+    previousFiles:first.files,now:999999};
+  const second=await buildOfflineOverall(next);
+  assert.deepEqual(second.calculation,first.calculation);
+  assert.deepEqual(second.files,first.files);
+  assert.equal(second.report.unchanged,true);
+  assert.equal(second.report.backendRevision,first.calculation.backendRevision);
+  second.files.get('overall.json').entries[0].name='Changed returned copy';
+  assert.notEqual(first.files.get('overall.json').entries[0].name,'Changed returned copy');
+});
+
+test('calculated-baseline reuse never bypasses source changes, identities or companion hashes', async () => {
+  for(const kind of ['source','identity','companion']){
+    const f=fixture(),first=await buildOfflineOverall(f);
+    const next={...f,previousOverall:structuredClone(first.files.get('overall.json')),previousCalculation:first.calculation,
+      previousFiles:structuredClone(first.files),now:999999};
+    if(kind==='source'){
+      const board=next.tracks[0];board.updatedAt++;board.sourceRevision++;if(board.revision!==undefined)board.revision=board.sourceRevision;
+      if(board.builtRevision!==undefined)board.builtRevision=board.sourceRevision;
+    }else if(kind==='identity')next.previousOverall.entries[0].name='New public identity';
+    else next.previousFiles.get('overall-results.json').resultBundle='corrupted';
+    const result=await buildOfflineOverall(next);
+    assert.equal(result.report.unchanged,false,kind);
+    assert.ok(result.calculation.revision>first.calculation.revision,kind);
+    if(kind==='identity')assert.equal(result.files.get('overall.json').entries[0].name,'New public identity');
+    else assert.equal(result.calculation.backendRevision,first.calculation.backendRevision);
+  }
+});
+
+test('malformed output binding receipts fail closed and legacy receipts remain compatible', async () => {
+  const f=fixture(),first=await buildOfflineOverall(f);
+  for(const change of [{sourceDigest:'bad'},{artifactHashes:{}},{artifactHashes:{...first.calculation.artifactHashes,extra:'a'.repeat(64)}}])
+    await assert.rejects(buildOfflineOverall({...f,previousCalculation:{...first.calculation,...change}}),/artifact bindings/);
+  const {sourceDigest,artifactHashes,...legacy}=first.calculation;
+  const result=await buildOfflineOverall({...f,previousCalculation:legacy});
+  assert.equal(result.report.unchanged,true);
+  assert.ok(result.calculation.artifactHashes);
+});
+
 test('changed boards and public identities update fingerprint and revision monotonically', async () => {
   const f = fixture(), first = await buildOfflineOverall(f);
   f.previousCalculation = {...first.calculation, revision: 50}; f.tracks[0].entries[0].timeMs++;

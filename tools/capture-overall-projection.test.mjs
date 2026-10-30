@@ -355,7 +355,13 @@ test('backup advances only exact retained public bytes and preserves source time
       }});
     assert.equal(result.deferred,undefined);assert.equal(calls.length,2);
     const saved=result.tracks[track];
-    assert.equal(saved.checkedAt,scenario==='exact'?Date.parse(point):['wrong-path','missing-board'].includes(scenario)?undefined:previousCheck,scenario);
+    // A positive current-source confirmation contradicts these retained bytes.
+    // Keep the file for recovery, but never retain its advertised path/freshness.
+    const quarantined=['digest-mismatch','newer-cached','wrong-path','missing-board'].includes(scenario);
+    assert.equal(saved.checkedAt,scenario==='exact'?Date.parse(point):quarantined?undefined:previousCheck,scenario);
+    assert.equal(saved.path,quarantined?null:relative,scenario);
+    assert.equal(Object.hasOwn(saved,'checkedAt'),!quarantined,scenario);
+    if(quarantined)assert.equal(saved.missing,false,scenario+' remains eligible for bounded repair, not a fabricated 404');
     assert.equal(saved.updatedAt,record.updatedAt);assert.equal(saved.sourceUpdatedAt,record.sourceUpdatedAt);
     if(scenario!=='missing-board')assert.equal(await fs.readFile(path.join(directory,relative),'utf8'),before);
     assert.doesNotMatch(JSON.stringify(result),/confirmedTracks|sourceCatalog|signature|PRIVATE_/);

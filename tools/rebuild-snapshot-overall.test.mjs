@@ -202,3 +202,23 @@ for (const provenance of ['backend capture', 'absent', 'explicit null']) {
     }
   });
 }
+
+test('rebuilding a changed PB once retains its movement and exact output bytes on subsequent passes',async t=>{
+  const f=await fixture(t),board=f.tracks[0];
+  const entries=board.entries.map((row,index)=>({...row,timeMs:index===4?5000:row.timeMs}));
+  const changed={...board,revision:11,sourceRevision:11,builtRevision:11,updatedAt:1500,
+    entries:rankTrustedTrackEntries(entries,board.trackId)};
+  f.tracks[0]=changed;
+  await write(f.directory,'tracks/'+board.trackId+'.json',changed);
+  f.manifest.tracks[board.trackId]={path:'tracks/'+board.trackId+'.json',updatedAt:1500,sourceUpdatedAt:1500,revision:11};
+  await write(f.directory,'manifest.json',f.manifest);
+  const first=await rebuildSnapshotOverall({directory:f.directory,now:()=>2000});
+  const names=['overall.json','overall-results.json','projection-source.json','overall-calculation.json'];
+  const before=await Promise.all(names.map(name=>fs.readFile(path.join(f.directory,name),'utf8')));
+  const moved=await read(f.directory,'overall.json');
+  assert.ok(moved.entries.some(row=>row.movement!==0),'fixture must exercise a real ranking change');
+  const second=await rebuildSnapshotOverall({directory:f.directory,now:()=>3000});
+  assert.equal(second.unchanged,true);
+  assert.equal(second.backendRevision,first.backendRevision);
+  assert.deepEqual(await Promise.all(names.map(name=>fs.readFile(path.join(f.directory,name),'utf8'))),before);
+});

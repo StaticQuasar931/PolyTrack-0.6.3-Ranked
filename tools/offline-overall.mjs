@@ -113,7 +113,7 @@ function identity(row) {
  * This function performs no I/O and does not establish backend publication or verification.
  * now is a positive millisecond timestamp (or a function returning one).
  */
-export async function buildOfflineOverall({tracks, previousOverall, previousCalculation = null, expectedTrackIds, now} = {}) {
+export async function buildOfflineOverall({tracks, previousOverall, previousCalculation = null, previousFiles = null, expectedTrackIds, now} = {}) {
   now = typeof now === 'function' ? now() : now;
   if (!positive(now)) throw Error('Invalid calculation time');
   model(previousOverall); publicOnly(previousOverall);
@@ -196,12 +196,43 @@ export async function buildOfflineOverall({tracks, previousOverall, previousCalc
       complete: true, sourceComplete: true, totalEntries: entries.length, entries};
   }).sort((a, b) => a.trackId.localeCompare(b.trackId));
   const inputDigest = digest({scoringDigest: SCORING_DIGEST, sourceBoards, prior, expectedTrackIds: [...expected].sort()});
+  const sourceDigest = digest({scoringDigest: SCORING_DIGEST, sourceBoards, expectedTrackIds: [...expected].sort()});
+  const artifactNames = ['overall.json', 'overall-results.json', 'projection-source.json'];
   if (previousCalculation !== null) model(previousCalculation);
   if (previousCalculation !== null && (previousCalculation.version !== 1 || previousCalculation.source !== 'snapshot-computed-overall' ||
       !ID.test(previousCalculation.inputDigest) || !ID.test(previousCalculation.scoringDigest) ||
       !positive(previousCalculation.revision) || !positive(previousCalculation.updatedAt) || !positive(previousCalculation.backendRevision))) throw Error('Invalid previous calculation receipt');
+  if (previousCalculation && (previousCalculation.sourceDigest !== undefined || previousCalculation.artifactHashes !== undefined) &&
+      (!ID.test(previousCalculation.sourceDigest || '') || !previousCalculation.artifactHashes ||
+       Object.keys(previousCalculation.artifactHashes).length !== artifactNames.length ||
+       artifactNames.some(name => !ID.test(previousCalculation.artifactHashes[name] || '')))) throw Error('Invalid previous calculation artifact bindings');
+  // A derived revision is not a new backend revision. Exact output bindings also
+  // let unchanged rebuilds retain their movement history and publication times.
+  const ownComputedOverall = previousCalculation?.artifactHashes?.['overall.json'] === digest(previousOverall) &&
+    previousCalculation.revision === previousOverall.sourceRevision && previousCalculation.sourceRevision === previousOverall.sourceRevision &&
+    previousCalculation.updatedAt === previousOverall.updatedAt;
+  const backendRevision = ownComputedOverall ? previousCalculation.backendRevision : previousOverall.sourceRevision;
+  const finish = (files, calculation, unchanged, artifactBytes) => ({files, calculation,
+    report: {source: 'snapshot-computed-overall', firestorePublished: false, backendRevision: calculation.backendRevision,
+      revision: calculation.revision, updatedAt: calculation.updatedAt, unchanged, complete: true, catalogComplete: true,
+      ranksExact: true, totalEntries: files.get('overall.json').entries.length, boardCount: sourceBoards.length,
+      sourceRows: totalRows, trustedRows: sourceBoards.reduce((n,b) => n + b.entries.filter(row => row.runVerified && row.integrityVerified).length, 0),
+      artifactBytes,
+      projectionReady: true, networkRequests: 0, writes: 0}});
+  if (ownComputedOverall && previousCalculation.sourceDigest === sourceDigest && previousCalculation.scoringDigest === SCORING_DIGEST &&
+      previousFiles instanceof Map && previousFiles.size === artifactNames.length &&
+      artifactNames.every(name => previousFiles.has(name) && digest(previousFiles.get(name)) === previousCalculation.artifactHashes[name])) {
+    const artifactBytes = Object.fromEntries([...previousFiles].map(([name,value]) => [name,artifactBudget(name,value)]));
+    const boards = sourceBoards.map(board => {
+      const entries = rankTrustedTrackEntries(board.entries.filter(row => row.runVerified && row.integrityVerified),board.trackId);
+      return {...board,totalEntries:entries.length,totalEntriesExact:true,entries};
+    });
+    const bundle = await createOverallProjectionBundle({overall:previousOverall,results:previousFiles.get('overall-results.json'),tracks:boards});
+    if (digest(bundle) !== previousCalculation.artifactHashes['projection-source.json']) throw Error('Retained calculation source binding mismatch');
+    return finish(structuredClone(previousFiles),structuredClone(previousCalculation),true,artifactBytes);
+  }
   const unchanged = previousCalculation?.inputDigest === inputDigest && previousCalculation.scoringDigest === SCORING_DIGEST &&
-    previousCalculation.backendRevision === previousOverall.sourceRevision;
+    previousCalculation.backendRevision === backendRevision && !ownComputedOverall;
   const revision = unchanged ? previousCalculation.revision : Math.max(previousOverall.sourceRevision, (previousCalculation?.revision ?? 0) + 1);
   const updatedAt = unchanged ? previousCalculation.updatedAt : now;
   if (!positive(revision) || revision < previousOverall.sourceRevision) throw Error('Invalid or exhausted calculation revision');
@@ -237,11 +268,9 @@ export async function buildOfflineOverall({tracks, previousOverall, previousCalc
     'overall-results.json': artifactBudget('overall-results.json', results)};
   const bundle = await createOverallProjectionBundle({overall, results, tracks: boards});
   artifactBytes['projection-source.json'] = artifactBudget('projection-source.json', bundle);
+  const files = new Map([['overall.json',overall],['overall-results.json',results],['projection-source.json',bundle]]);
   const calculation = {version: 1, source: 'snapshot-computed-overall', ...MODEL, scoringDigest: SCORING_DIGEST,
-    inputDigest, sourceFingerprint: inputDigest, revision, sourceRevision: revision, updatedAt, backendRevision: previousOverall.sourceRevision};
-  return {files: new Map([['overall.json', overall], ['overall-results.json', results], ['projection-source.json', bundle]]), calculation,
-    report: {source: 'snapshot-computed-overall', firestorePublished: false, backendRevision: previousOverall.sourceRevision,
-      revision, updatedAt, unchanged, complete: true, catalogComplete: true, ranksExact: true, totalEntries: entries.length,
-      boardCount: boards.length, sourceRows: totalRows, trustedRows: boards.reduce((n, b) => n + b.entries.length, 0),
-      artifactBytes, projectionReady: true, networkRequests: 0, writes: 0}};
+    inputDigest, sourceFingerprint: inputDigest, sourceDigest, revision, sourceRevision: revision, updatedAt, backendRevision,
+    artifactHashes: Object.fromEntries([...files].map(([name,value]) => [name,digest(value)]))};
+  return finish(files,calculation,unchanged,artifactBytes);
 }

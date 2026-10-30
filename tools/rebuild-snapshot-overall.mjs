@@ -7,6 +7,10 @@ export async function rebuildSnapshotOverall({directory,now=Date.now}={}){
  const read=async name=>JSON.parse(await fs.readFile(path.join(directory,name),'utf8'));
  const manifest=await read('manifest.json'),previousOverall=await read('overall.json');
  let previousCalculation=null;try{previousCalculation=await read('overall-calculation.json');}catch(error){if(error.code!=='ENOENT')throw error;}
+ const previousFiles=new Map([['overall.json',previousOverall]]);
+ if(previousCalculation?.artifactHashes)for(const name of ['overall-results.json','projection-source.json']){
+  try{previousFiles.set(name,await read(name));}catch(error){if(error.code!=='ENOENT')throw error;}
+ }
  const required=new Set((previousOverall.trackCatalog||[]).map(row=>row.trackId));
  const tracks=[];
  for(const [id,record] of Object.entries(manifest.tracks||{})){
@@ -17,7 +21,7 @@ export async function rebuildSnapshotOverall({directory,now=Date.now}={}){
   if(board.trackId!==id||board.updatedAt!==record.updatedAt||record.sourceUpdatedAt!==undefined&&record.sourceUpdatedAt!==board.updatedAt||record.revision!==undefined&&record.revision!==Number(board.revision||board.sourceRevision||0))throw Error('Snapshot track binding mismatch');
   tracks.push(board);required.add(id);
  }
- const result=await buildOfflineOverall({tracks,previousOverall,previousCalculation,expectedTrackIds:[...required].sort(),now});
+ const result=await buildOfflineOverall({tracks,previousOverall,previousCalculation,previousFiles,expectedTrackIds:[...required].sort(),now});
  const backendCapture=Object.hasOwn(manifest.overallCapture||{},'backendCapture')?manifest.overallCapture.backendCapture:manifest.overallCapture||null;
  const report={...result.report,publishedRevision:result.report.revision,projectionReason:null,calculatedAt:result.report.updatedAt,readTime:backendCapture?.readTime||null,
   sourceReadsReused:true,additionalFirestoreReads:0,additionalFirestoreWrites:0,backendCapture};
