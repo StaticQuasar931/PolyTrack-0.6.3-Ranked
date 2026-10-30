@@ -108,7 +108,7 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G',
       row('ghost-clear','Clear selections',[['C']]),
       row('ghost-leading','Leaders + your ghost',[['='],['Backspace']],'Select leading racers and your ghost when visible. = can fill the tenth slot.'),
       row('ghost-ahead','Racer ahead',[['-']],'Toggle the visible racer immediately above you.'),
-      row('ghost-play','Play track',[['Enter'],['Space']],'Outside text fields. A focused button keeps its own action.')
+      row('ghost-play','Play track',[['Enter'],['Space']],'Space plays when a racer is focused. Enter toggles the focused racer; other buttons keep their own action.')
     ]},
     {id:'events',title:'Event ghosts',note:'Available Event replays only. Shared navigation is in Rankings & pages.',rows:[
       row('event-ghost-row','Toggle Event ghost',[['1-9'],['0']],'Without Shift: select a visible Event racer. 0 = row 10. Clicking works too.'),
@@ -117,7 +117,7 @@ export function createHelpControlGroups({bindings,getBindings,ghostShortcut='G',
       row('event-ghost-clear','Clear Event ghosts',[['C']],'Clear selected and pending Event ghosts.'),
       row('event-ghost-you','Event leaders + your ghost',[['='],['Backspace']],'Top nine + your Event ghost; otherwise top ten.'),
       row('event-ghost-ahead','Event racer ahead',[['-']],'Toggle the racer immediately above your Event PB.'),
-      row('event-play','Play Event track',[['Enter'],['Space']],'A focused button keeps its normal action.')
+      row('event-play','Play Event track',[['Enter'],['Space']],'Space plays when a racer is focused. Enter toggles the focused racer; other buttons keep their own action.')
     ]},
     {id:'replay',title:'Replay & spectator',note:'Spectator movement requires the spectator camera. Keys are remappable.',rows:[]},
     {id:'editor',title:'Track editor',note:'While editing a track. Keys are remappable.',rows:[]},
