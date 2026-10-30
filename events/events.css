@@ -1150,9 +1150,17 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best{
  gap:6px 14px;margin-block:8px!important;font-variant-numeric:tabular-nums;
+ justify-content:flex-start!important;text-align:left!important;
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{
  gap:7px;min-width:0;line-height:1.3!important;
+ justify-content:flex-start!important;text-align:left!important;
+}
+.track-info-ui .side-panel .personal-best.sq-kodub-personal-best{
+ align-items:flex-start!important;text-align:left!important;
+}
+.track-info-ui .side-panel .personal-best.sq-kodub-personal-best>div{
+ justify-content:flex-start!important;text-align:left!important;
 }
 #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>.sq-event-card-details{
  gap:6px;line-height:1.35!important;
