@@ -291,8 +291,9 @@ const conflictVerdict = job => ({ ...job, status: 'verified', reason: 'native_ex
 
 // Real service and REST adapter; all transport state and native results stay in memory.
 async function conflictFixture(stage) {
-  const docs = new Map(), versions = new Map(), transactions = new Map();
-  const stats = { native: 0, normalQueries: 0, rollbacks: 0, completionAttempts: 0, committed: 0, aborts: 0 };
+  const docs = new Map(), versions = new Map(), transactions = new Map(), failedTransactions = new Set();
+  const stats = { native: 0, normalQueries: 0, rollbacks: 0, readOnlyRollbacks: 0, errorRollbacks: 0,
+    rollbackFailures: 0, rollbackTransactions: [], completionAttempts: 0, committed: 0, aborts: 0 };
   const trackId = 'a'.repeat(64), periodId = 'conflict_day';
   const period = { id: periodId, enabled: true, trackId, startsAt: 1000, endsAt: 86401000, graceMs: 3600000,
     targetMs: 10000, maxRp: 1000, eligibility: 'best-submitted-during-period',
@@ -307,7 +308,18 @@ async function conflictFixture(stage) {
       transactions.set(transaction, new Set());
       return { transaction };
     }
-    if (route === ':rollback') { stats.rollbacks++; transactions.delete(body.transaction); return {}; }
+    if (route === ':rollback') {
+      assert.deepEqual(Object.keys(body), ['transaction']);
+      assert.ok(transactions.has(body.transaction), 'rollback must close an active transaction exactly once');
+      if (armed) {
+        stats.rollbacks++; stats.rollbackTransactions.push(body.transaction);
+        if (failedTransactions.has(body.transaction)) stats.errorRollbacks++;
+        else if (stage === 'period-read' && [...transactions.get(body.transaction)].join() === EC.periods + '/' + periodId) {
+          stats.aborts++; stats.rollbackFailures++; throw failure;
+        } else stats.readOnlyRollbacks++;
+      }
+      transactions.delete(body.transaction); failedTransactions.delete(body.transaction); return {};
+    }
     if (route === ':runQuery') { stats.normalQueries++; return []; }
     if (route.startsWith('/')) {
       const [key, query] = route.slice(1).split('?');
@@ -316,15 +328,16 @@ async function conflictFixture(stage) {
         updateTime: 'v' + (versions.get(key) || 0) } : null;
     }
     assert.equal(route, ':commit');
+    assert.ok(body.writes.length > 0, 'read-only transactions must finish through rollback, never an empty commit');
     const keyOf = write => (write.update?.name || write.delete).split('/documents/')[1];
     const keys = body.writes.map(keyOf);
     const completion = keys.some(key => key.startsWith(EC.runs + '/'));
     if (armed && completion) stats.completionAttempts++;
     const kind = keys.some(key => key.startsWith(EC.archives + '/')) ? 'archive' : completion ? 'completion' :
-      keys.includes(EC.quotas + '/verification_global') ? 'lease' : !keys.length &&
-      [...transactions.get(body.transaction)].join() === EC.periods + '/' + periodId ? 'period-read' : 'other';
+      keys.includes(EC.quotas + '/verification_global') ? 'lease' : 'other';
     if (armed && (stage === kind || stage === 'completion2' && kind === 'completion' && stats.completionAttempts === 2)) {
       stats.aborts++;
+      failedTransactions.add(body.transaction);
       throw failure;
     }
     for (const write of body.writes) {
@@ -390,8 +403,8 @@ async function conflictFixture(stage) {
     disarm: () => { armed = false; }, expireLease: () => { now += EL.leaseMs; } };
 }
 
-for (const [stage, native, quota, committed] of [
-  ['lease', 0, 0, 0], ['period-read', 0, 2, 0], ['completion2', 2, 2, 1], ['archive', 2, 2, 2],
+for (const [stage, native, quota, committed, readOnlyRollbacks] of [
+  ['lease', 0, 0, 0, 0], ['period-read', 0, 2, 0, 0], ['completion2', 2, 2, 1, 1], ['archive', 2, 2, 2, 2],
 ]) test(`real event ${stage} abort stops drain and Catch-Up without retry or invented counts`, async () => {
   for (const catchUp of [false, true]) {
     const f = await conflictFixture(stage);
@@ -406,7 +419,11 @@ for (const [stage, native, quota, committed] of [
     assert.equal(f.stats.native, native);
     assert.equal(f.stats.normalQueries, 0);
     assert.equal(f.stats.aborts, 1);
-    assert.equal(f.stats.rollbacks, 1);
+    assert.equal(f.stats.rollbacks, readOnlyRollbacks + 1);
+    assert.equal(f.stats.readOnlyRollbacks, readOnlyRollbacks);
+    assert.equal(f.stats.errorRollbacks, stage === 'period-read' ? 0 : 1);
+    assert.equal(f.stats.rollbackFailures, stage === 'period-read' ? 1 : 0);
+    assert.equal(new Set(f.stats.rollbackTransactions).size, f.stats.rollbacks, 'no transaction is rolled back twice');
     assert.equal(f.stats.committed, committed);
     assert.equal(f.stats.completionAttempts, native);
     assert.equal(f.docs.get(EC.quotas + '/verification_global')?.used || 0, quota);

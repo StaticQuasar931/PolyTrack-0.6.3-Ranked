@@ -663,7 +663,11 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const proof = { key: run.eventKey, verifierVersion: VERIFIER_VERSION, engineDigest: result.engineDigest || null,
           status: result.status, checkedAt: at, reason: text(result.reason, 100) };
         let entries;
-        if (eventImproved) entries = eventLeaderboard(p, [...(board?.entries || []).filter(e => e.accountId !== run.accountId), run]).slice(0,200);
+        if (eventImproved) {
+          const verifiedRun = {...run,physicsVerified:true,replayIntegrityVerified:true,runVerified:true,integrityVerified:true,
+            verified:true,eventRpEligible:true,pending:false,verificationStatus:'verified',verifiedAt:at,runCreatedAt:run.receivedAt};
+          entries = eventLeaderboard(p, [...(board?.entries || []).filter(e => e.accountId !== run.accountId), verifiedRun]).slice(0,200);
+        }
         const priorPending = board?.pendingPlaybacks || board?.playbacks;
         const pendingPlaybacks = status === 'waiting' ? upsertPlayback(priorPending, pendingPlaybackEntry(run), L.queued) :
           visiblePendingPlaybacks(priorPending).filter(row => row.runId !== run.runId);

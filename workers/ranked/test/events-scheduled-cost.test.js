@@ -19,15 +19,22 @@ const wire = (key, data) => ({name:'projects/polytrack-052/databases/(default)/d
 
 function quietFixture() {
   const calls = [], audit = {documentReadEstimate:0, collections:{}};
-  let now = start, upstream = 0, cursor = null;
+  let now = start, upstream = 0, cursor = null, activeTransaction = false;
   const request = async (path, init = {}) => {
     calls.push(path);
     let result = null;
-    if (path === ':beginTransaction') result = {transaction:'quiet'};
-    else if (path === ':commit') {
-      assert.deepEqual(JSON.parse(init.body).writes, [], 'idle work must not write heartbeats');
+    if (path === ':beginTransaction') {
+      assert.equal(activeTransaction, false, 'previous read-only transaction must be closed');
+      assert.deepEqual(JSON.parse(init.body), {options:{readWrite:{}}});
+      activeTransaction = true;
+      result = {transaction:'quiet'};
+    } else if (path === ':rollback') {
+      assert.equal(activeTransaction, true);
+      assert.deepEqual(JSON.parse(init.body), {transaction:'quiet'});
+      activeTransaction = false;
       result = {};
-    } else if (path === ':runQuery') result = [];
+    } else if (path === ':commit') assert.fail('idle work must not send a commit or write heartbeats');
+    else if (path === ':runQuery') result = [];
     else if (path === '/' + C.cursors + '/scan') result = cursor && wire(C.cursors + '/scan', cursor);
     else if (path === '/' + C.catalog + '/main') result = wire(C.catalog + '/main', {periods:[]});
     else if (path === '/' + C.public + '/totals') result = wire(C.public + '/totals', {publicationPending:false});
@@ -49,7 +56,7 @@ function quietFixture() {
         trackUrl:'https://vps.kodub.com/v6/trackOfTheWeek/track/' + hash,
         thumbnailUrl:'https://vps.kodub.com/v6/trackOfTheWeek/image/' + hash, coverUrl:null}});
     }};
-  return {calls, audit, options, upstream:() => upstream, setCursor:value => {cursor = value;},
+  return {calls, audit, options, upstream:() => upstream, activeTransaction:() => activeTransaction, setCursor:value => {cursor = value;},
     run:async minute => {now = start + minute * 60000; return eventWorkerMaintenance(env, {...options, at:now});}};
 }
 
@@ -62,7 +69,11 @@ test('24h quiet event cron: 2880 estimated reads, zero writes, bounded discovery
   assert.equal(f.audit.documentReadEstimate, 2880);
   assert.equal(f.audit.writeEstimate || 0, 0);
   assert.equal(f.audit.deleteEstimate || 0, 0);
-  assert.equal(f.calls.length, 3072, '96 read-only transactions add begin/commit requests, not writes');
+  assert.equal(f.calls.length, 3072, '96 read-only transactions add begin/rollback requests, not writes');
+  assert.equal(f.calls.filter(path => path === ':beginTransaction').length, 96);
+  assert.equal(f.calls.filter(path => path === ':rollback').length, 96);
+  assert.equal(f.calls.filter(path => path === ':commit').length, 0);
+  assert.equal(f.activeTransaction(), false);
   assert.equal(f.calls.filter(path => path === ':runQuery').length, 576);
   assert.equal(f.audit.collections[C.catalog], 288);
   assert.equal(f.audit.collections[C.periods], 288);
@@ -78,6 +89,10 @@ test('four coordinated event windows bound quiet daily reads without heartbeat w
   }
   assert.equal(f.audit.writeEstimate||0,0);
   assert.equal(f.audit.documentReadEstimate,360);
+  assert.equal(f.calls.filter(path => path === ':rollback').length,
+    f.calls.filter(path => path === ':beginTransaction').length);
+  assert.equal(f.calls.filter(path => path === ':commit').length,0);
+  assert.equal(f.activeTransaction(),false);
 });
 
 test('off-cadence provisioning and invalid cron timestamps perform no I/O', async () => {

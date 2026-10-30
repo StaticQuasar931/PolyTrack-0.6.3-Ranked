@@ -210,6 +210,20 @@ async function verifiedReplayCaptureFixture(t) {
   replace(replay){value.replay=replay;entry.replayHash=value.replayHash=createHash('sha256').update(replay).digest('hex');}};
 }
 
+test('validated verified recordings restore legacy event labels and keep them on cache reuse',async t=>{
+ const f=await verifiedReplayCaptureFixture(t);
+ delete f.entry.physicsVerified;delete f.entry.replayIntegrityVerified;
+ delete f.entry.runId;delete f.entry.replayHash;
+ await f.capture();
+ for(const key of ['physicsVerified','replayIntegrityVerified','runVerified','integrityVerified','verified'])assert.equal((await f.board()).entries[0][key],true);
+ assert.equal((await f.board()).entries[0].verifiedAt,undefined,'missing dates are not invented');
+ f.calls.length=0;await f.capture();
+ assert.equal(f.calls.some(url=>url.includes('/replays/')),false,'validated bytes and labels are reused without reads');
+ assert.equal((await f.board()).entries[0].physicsVerified,true);
+ f.entry.physicsVerified=false;f.calls.length=0;await f.capture();
+ assert.equal((await f.board()).entries[0].physicsVerified,false,'explicitly unverified sources are never upgraded');
+});
+
 test('verified export rejects hash-matching malformed recordings without hiding scores',async t=>{
  const unordered=Buffer.alloc(21);unordered.writeUIntLE(2,0,3);
  const pastFinish=Buffer.alloc(18);pastFinish.writeUIntLE(1,0,3);pastFinish.writeUIntLE(24,3,3);

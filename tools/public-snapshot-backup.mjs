@@ -66,6 +66,9 @@ function eventDates(source) {
   return projectEventDates(source);
 }
 function applyReplayDates(entry, replay) {
+  // Callers have already validated a retained or newly published verified replay.
+  Object.assign(entry,{physicsVerified:true,replayIntegrityVerified:true,runVerified:true,
+    integrityVerified:true,verified:true,verificationStatus:'verified',eventRpEligible:true});
   // A PB submission date and a successful verification date are different evidence.
   const dates = eventDates(replay);
   if (dates.verifiedAt) entry.verifiedAt = dates.verifiedAt;

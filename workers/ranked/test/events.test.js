@@ -446,6 +446,38 @@ test('canonical event promotion uses receipt time, not delayed verifier time', a
   const f = fixture(); await f.start(); await f.submit(); f.time(50000); await f.publish();
   assert.equal(f.canonical().pbAt, 1000); assert.equal(f.canonical().createdAt, 1000); assert.equal(f.canonical().updatedAt, 50000);
 });
+
+test('actual verified event completion publishes proof flags and separate receipt/verification dates without extra reads', async () => {
+  const f = fixture(); await f.start(); const intake = await f.submit();
+  const [job] = await f.service.leaseJobs('day1'); f.time(50000);
+  const result = await f.service.completeJob('day1', job, verdict(job));
+  assert.equal(result.eventImproved, true);
+  assert.deepEqual(f.store.counts.at(-1), {reads:14,writes:11});
+  const saved = f.data.get(`${C.live}/day1`).entries[0];
+  for (const key of ['physicsVerified','replayIntegrityVerified','runVerified','integrityVerified','verified','eventRpEligible'])
+    assert.equal(saved[key],true,key);
+  assert.equal(saved.pending,false); assert.equal(saved.verificationStatus,'verified');
+  assert.equal(saved.runId,intake.runId); assert.equal(saved.replayHash,job.replayHash);
+  assert.equal(saved.submittedAt,1000); assert.equal(saved.runCreatedAt,1000); assert.equal(saved.verifiedAt,50000);
+  assert.equal(saved.verifiedAt,f.data.get(`${C.replays}/day1_${account}`).verifiedAt);
+  assert.equal(saved.verifiedAt,f.run(intake.runId).completedAt);
+  assert.equal((await f.service.snapshot('day1')).entries[0].verifiedAt,50000);
+  assert.equal(f.canonical().verified,false,'event authority must not invent approval on canonical client fields');
+  assert.equal(f.canonical().verifiedState,0);
+  for (const key of ['ownerUid','proof','replay','periodBinding','eventKey']) assert.equal(key in saved,false,key);
+});
+
+test('slower verified event completion cannot replace best-row proof flags or dates',async()=>{
+  const f=fixture();await f.start();await f.submit(15000,'fast');f.time(2000);await f.submit(20000,'slower');
+  const jobs=await f.service.leaseJobs('day1'),fast=jobs.find(job=>job.timeMs===15000),slower=jobs.find(job=>job.timeMs===20000);
+  f.time(5000);assert.equal((await f.service.completeJob('day1',fast,verdict(fast))).eventImproved,true);
+  const before=structuredClone(f.data.get(`${C.live}/day1`).entries);
+  f.time(6000);assert.equal((await f.service.completeJob('day1',slower,verdict(slower))).eventImproved,false);
+  assert.deepEqual(f.data.get(`${C.live}/day1`).entries,before);
+  assert.equal(before[0].physicsVerified,true);assert.equal(before[0].replayIntegrityVerified,true);
+  assert.equal(before[0].runCreatedAt,1000);assert.equal(before[0].verifiedAt,5000);
+  assert.equal(f.run(slower.resultId).completedAt,6000);
+});
 test('reviewed policy is mandatory, period is immutable, and RP is bounded with tied ranks', async () => {
   assert.throws(() => eventPeriod({ ...inputPeriod, capacity: undefined }), /reviewed_capacity/);
   assert.throws(() => eventPeriod({ ...inputPeriod, maxRp: 1001 }), /scoring/);

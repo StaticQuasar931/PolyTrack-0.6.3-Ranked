@@ -12,6 +12,7 @@ import {publicCatalogBackup} from './sync-event-catalog.mjs';
 import {publicOverallBackup, publicTrackBackup} from './public-snapshot-backup.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
+import {EVENT_HIGHLIGHT_LIMITS} from './event-rp-highlights.mjs';
 
 const STATE = 'tools/workflow-capture-state.json';
 const FILE_LIMIT = 20 * 1024 * 1024;
@@ -35,22 +36,35 @@ function validateCatalog(catalog) {
   }
 }
 
-function validateTotalsArtifact(value) {
-  if (!Array.isArray(value?.entries) || value.entries.length <= 200) {publicEventTotals(value);return;}
-  if (!object(value) || value.entries.length > 10000 || value.complete !== true || value.totalEntries !== value.entries.length ||
-      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries'].includes(key))) throw Error('Invalid projected event totals artifact');
+function validateTotalsArtifact(value, capturedBoards = []) {
+  const captured = object(value) && Object.hasOwn(value, 'capturedAt');
+  if (captured) {
+    const at = typeof value.capturedAt === 'string' && value.capturedAt.length <= 27 ? Date.parse(value.capturedAt) : NaN;
+    // The producer records new Date(checkedAt).toISOString(), never a source-publication date.
+    if (!Number.isSafeInteger(at) || at <= 0 || at < value.updatedAt || new Date(at).toISOString() !== value.capturedAt)
+      throw Error('Invalid event totals capture timestamp');
+  }
+  if (!object(value) || !Array.isArray(value.entries) || value.entries.length > 10000 ||
+      value.entries.length > 200 && (value.complete !== true || value.totalEntries !== value.entries.length) ||
+      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries','capturedAt'].includes(key))) throw Error('Invalid projected event totals artifact');
+  // Reuse the producer projection for public metadata, including its highlight allowlist/budgets.
+  const metadata=publicEventTotals({...value,entries:[]});
   const rows=[], seen=new Set();
   for(let offset=0;offset<value.entries.length;offset+=200){
     const source=value.entries.slice(offset,offset+200);
-    const projected=publicEventTotals({updatedAt:value.updatedAt,entries:source}).entries;
-    for(let index=0;index<source.length;index++)if(Object.hasOwn(source[index],'nickname')){
-      if(typeof source[index].nickname!=='string')throw Error('Invalid public event nickname');
-      projected[index].nickname=publicDisplayName(source[index].nickname);
+    const projected=publicEventTotals({updatedAt:value.updatedAt,entries:source},{capturedBoards}).entries;
+    for(let index=0;index<source.length;index++){
+      if(!Object.hasOwn(source[index],'eventHighlights'))delete projected[index].eventHighlights;
+      if(Object.hasOwn(source[index],'nickname')){
+        if(typeof source[index].nickname!=='string')throw Error('Invalid public event nickname');
+        projected[index].nickname=publicDisplayName(source[index].nickname);
+      }
     }
     rows.push(...projected);
   }
   for(const row of rows) {if(seen.has(row.accountId))throw Error('Duplicate projected event total identity');seen.add(row.accountId);}
-  if (!isDeepStrictEqual(value,{updatedAt:value.updatedAt,entries:rows,complete:true,totalEntries:rows.length}))
+  if (!isDeepStrictEqual(value,{...metadata,entries:rows,
+    ...(captured ? {capturedAt:value.capturedAt} : {})}))
     throw Error('Non-public projected event totals fields');
 }
 
@@ -99,7 +113,7 @@ async function validateConsumerPackage(root, directory, index) {
     const read = relative => json(temporary, relative);
     const overall = await read('overall.json');
     validateOverallArtifact(overall);
-    validateTotalsArtifact(await read('event-totals.json'));
+    const totals = await read('event-totals.json');
     const coverage = await read('coverage.json'), summary = await read('public-export-summary.json');
     if (!object(coverage) || coverage.schemaVersion !== 1 || typeof coverage.complete !== 'boolean' ||
         !object(summary) || typeof summary.complete !== 'boolean' || !object(summary.counts) ||
@@ -108,6 +122,16 @@ async function validateConsumerPackage(root, directory, index) {
     const manifest = await read('manifest.json'), statistics = await read('track-statistics.json');
     if (!object(manifest) || manifest.schemaVersion !== 1 || !object(manifest.tracks) || !object(statistics) || statistics.schemaVersion !== 1)
       throw Error('Invalid capture manifest/statistics');
+    const capturedBoards = new Map();
+    if (Array.isArray(totals?.entries) && totals.entries.some(row => object(row) && Object.hasOwn(row,'eventHighlights'))) {
+      const records = Object.entries(manifest.events || {});
+      if (records.length > EVENT_HIGHLIGHT_LIMITS.boards) throw Error('Event highlight board limit exceeded');
+      for (const [id, record] of records) {
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || record?.path !== `events/${id}.json` || !Object.hasOwn(index.files,record.path)) continue;
+        capturedBoards.set(id, await read(record.path));
+      }
+    }
+    validateTotalsArtifact(totals, capturedBoards);
     const paging = await read('snapshot-paging.json');
     const expectedPaging = new Set(['snapshot-paging.json']);
     const tracks = new Map();

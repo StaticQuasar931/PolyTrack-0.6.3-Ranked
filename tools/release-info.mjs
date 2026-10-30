@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 241,
+  "number": 242,
   "version": "0.6.3",
-  "revision": 210,
+  "revision": 211,
   "notes": [
-    "Cleaner update notices, local dates and a larger racer search.",
-    "Verified-only event standings keep matching ranks, counts and dates.",
-    "Sort Extra Tracks by snapshot popularity.",
-    "More accurate route targets and clearer Event RP summaries."
+    "More reliable replay availability, including pending runs.",
+    "Updated standings and clearer snapshot coverage."
   ],
-  "preparedAt": "2026-10-30T06:31:08.049Z"
+  "preparedAt": "2026-10-30T07:53:22.385Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

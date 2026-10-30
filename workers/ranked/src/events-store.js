@@ -76,16 +76,24 @@ export function createEventFirestoreStore({ request, projectId, retries = 2, pau
           if (new TextEncoder().encode(JSON.stringify(output)).byteLength > 800000) throw Error('Event document budget');
           writes.set(documentPath, output);
         };
+        let result;
         try {
-          const result = await fn({ get, create: (p, d) => write(p, d, 'create'), set: (p, d) => write(p, d, 'set'),
+          result = await fn({ get, create: (p, d) => write(p, d, 'create'), set: (p, d) => write(p, d, 'set'),
             patch: (p, d) => write(p, d, 'patch'), delete: p => write(p, null, 'delete') });
-          await post(':commit', { transaction, writes: [...writes.values()] });
-          return result;
+          if (writes.size) {
+            await post(':commit', { transaction, writes: [...writes.values()] });
+            return result;
+          }
         } catch (error) {
           await post(':rollback', { transaction }).catch(() => {});
           if (!conflict(error) || attempt >= retries) throw error;
           await pause(25 * (attempt + 1));
+          continue;
         }
+        // Successful read-only work needs cleanup, not a commit. Keep this out
+        // of the retry catch so a failed cleanup is propagated exactly once.
+        await post(':rollback', { transaction });
+        return result;
       }
     }
   });

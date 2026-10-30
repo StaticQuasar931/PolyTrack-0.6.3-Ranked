@@ -195,7 +195,13 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
           if (path === ':commit') unknownCommitOutcomes++;
           throw Error('Firestore response decoding failed');
         }
-        const validCommit = path !== ':commit' || (Array.isArray(result?.writeResults) && Array.isArray(body?.writes) &&
+        // Firestore's protobuf JSON omits an empty repeated writeResults field.
+        // Require an actual commit timestamp before accepting that zero-write case.
+        const emptyCommitAck=path===':commit'&&Array.isArray(body?.writes)&&body.writes.length===0&&
+          result&&typeof result==='object'&&!Array.isArray(result)&&!Object.hasOwn(result,'writeResults')&&
+          typeof result.commitTime==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(result.commitTime)&&
+          Number.isFinite(Date.parse(result.commitTime));
+        const validCommit = path !== ':commit' || emptyCommitAck || (Array.isArray(result?.writeResults) && Array.isArray(body?.writes) &&
             result.writeResults.length === body.writes.length &&
             (!budgetEnabled || result.writeResults.every(row => row && typeof row === 'object' && !row.error)));
         if (!validCommit) {

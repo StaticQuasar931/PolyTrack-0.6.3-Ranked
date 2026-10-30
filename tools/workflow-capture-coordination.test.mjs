@@ -9,7 +9,7 @@ import {spawnSync} from 'node:child_process';
 import {checkCapture, recordCapture, requestedAfter} from './workflow-capture-coordination.mjs';
 import {publishSnapshot, encodeSnapshot, decodeSnapshot, buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex} from './track-snapshot-paging.mjs';
-import {publicEventTotals} from './public-event-totals-backup.mjs';
+import {publicEventTotals,capturePublicEventTotals} from './public-event-totals-backup.mjs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
@@ -56,7 +56,7 @@ async function fixture(t, {mixed=false, omitted=null, totalsCount=0}={}) {
   await fs.writeFile(path.join(root,'index.html'),`<meta name="polytrack-snapshot" content="./${result.directory}/">`);
   await fs.writeFile(path.join(root,'events/public-catalog.json'),JSON.stringify({periods:[],archives:[]}));
   const index=JSON.parse(await fs.readFile(path.join(root,result.directory,'index.json'),'utf8'));
-  return {root,sha:index.files['overall.json']?.sha256,track,directory:result.directory};
+  return {root,stage,sha:index.files['overall.json']?.sha256,track,directory:result.directory};
 }
 async function mutatePayload(f, logical, transform, {raw=false,encoded=false,decodedBytes}={}) {
   const indexPath=path.join(f.root,f.directory,'index.json');
@@ -159,6 +159,101 @@ test('profile-enriched event totals accept public nicknames but still reject pri
   assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
   await mutatePayload(f,'event-totals.json',value=>({...value,entries:value.entries.map((row,index)=>index===0?{...row,ownerUid:'private-owner'}:row)}));
   await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Non-public/);
+});
+
+test('263-row event totals preserve the producer canonical UTC capture timestamp through receipt validation',async t=>{
+  forbidNetwork(t);
+  const f=await fixture(t,{totalsCount:263}),capturedAt=new Date(now-5000).toISOString();
+  await mutatePayload(f,'event-totals.json',value=>({...value,capturedAt}));
+  assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+  assert.equal((await checkCapture({root:f.root,requestedAt:String(now-2000),now})).reuse,true);
+  const index=JSON.parse(await fs.readFile(path.join(f.root,f.directory,'index.json'),'utf8'));
+  const saved=JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(path.join(f.root,f.directory,index.files['event-totals.json'].path)))).toString());
+  assert.equal(saved.capturedAt,capturedAt,'receipt validation must retain, not strip, capture provenance');
+  assert.equal(saved.entries.length,263);
+});
+
+test('event totals capture timestamps reject malformed, noncanonical and pre-source values at both row-count branches',async t=>{
+  forbidNetwork(t);
+  for(const totalsCount of [0,263]){
+    const f=await fixture(t,{totalsCount});
+    await mutatePayload(f,'event-totals.json',value=>({...value,capturedAt:new Date(now-5000).toISOString()}));
+    await recordCapture({root:f.root,startedAt:String(now-1000),now});
+    for(const capturedAt of [null,now,'','not-a-date','2026-10-25T00:39:55Z',
+      '2026-10-25T00:39:55.000+00:00','2026-10-25T00:39:55.000z','2026-02-30T00:00:00.000Z',
+      ' 2026-10-25T00:39:55.000Z','2026-10-25T00:39:55.000000Z',
+      '1970-01-01T00:00:00.000Z','1970-01-01T00:00:00.001Z']){
+      await mutatePayload(f,'event-totals.json',value=>({...value,capturedAt}));
+      await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/capture timestamp/);
+      await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}),/capture timestamp/);
+    }
+  }
+});
+
+test('canonical capturedAt does not admit unknown/private totals fields or cross-chunk duplicate identities',async t=>{
+  forbidNetwork(t);
+  const f=await fixture(t,{totalsCount:263}),capturedAt=new Date(now-5000).toISOString();
+  await mutatePayload(f,'event-totals.json',value=>({...value,capturedAt}));
+  const index=JSON.parse(await fs.readFile(path.join(f.root,f.directory,'index.json'),'utf8'));
+  const clean=JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(path.join(f.root,f.directory,index.files['event-totals.json'].path)))).toString());
+  for(const extra of [{unexpected:true},{ownerUid:'private-owner'},{publishedAt:capturedAt}]){
+    await mutatePayload(f,'event-totals.json',()=>({...clean,...extra}));
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Invalid projected/);
+  }
+  await mutatePayload(f,'event-totals.json',()=>({...clean,entries:clean.entries.map((row,i)=>i===262?{...row,ownerUid:'private-owner'}:row)}));
+  await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Non-public/);
+  await mutatePayload(f,'event-totals.json',()=>({...clean,entries:clean.entries.map((row,i)=>i===262?clean.entries[0]:row)}));
+  await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Duplicate/);
+});
+
+test('real paginated totals producer roundtrips 263 rows with capturedAt and bound highlights through package receipts',async t=>{
+  forbidNetwork(t);
+  const f=await fixture(t),generation='e'.repeat(64),totalEntries=263,pageCount=3;
+  const entries=Array.from({length:totalEntries},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Fixture',
+    rank:i+1,rp:70,finiteEventRp:50,permanentRollingHillsRp:20,rollingHillsEventRpContribution:20,rollingHillsTimeMs:1000+i}));
+  const savedRows=entries.map((row,i)=>({accountId:row.accountId,timeMs:1000+i,rp:20,verified:true}));
+  const boards=[{id:'permanent-rolling-hills',kind:'permanent',trackId:'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778',
+    updatedAt:10,entries:savedRows,complete:true,totalEntries},
+    {id:'weekly-fixture',period:{id:'weekly-fixture',kind:'weekly',trackId:'c'.repeat(64),trackName:'Saved weekly',startsAt:1,endsAt:2},
+      updatedAt:10,entries:savedRows.map(row=>({...row,rp:50})),complete:true,totalEntries}];
+  await fs.mkdir(path.join(f.stage,'events'));
+  const manifest=JSON.parse(await fs.readFile(path.join(f.stage,'manifest.json'),'utf8'));
+  manifest.events=Object.fromEntries(boards.map(board=>[board.id,{path:`events/${board.id}.json`,updatedAt:10}]));
+  await fs.writeFile(path.join(f.stage,'manifest.json'),JSON.stringify(manifest));
+  for(const board of boards)await fs.writeFile(path.join(f.stage,'events',board.id+'.json'),JSON.stringify(board));
+  const root={updatedAt:10,sourceRevision:7,totalEntries,entries:[],pagination:{version:1,generation,pageSize:100,pageCount,totalEntries,complete:true}};
+  let requests=0;
+  const capture=await capturePublicEventTotals({directory:f.stage,now:()=>now-5000,fetchImpl:async url=>{
+    requests++;const parsed=new URL(url),page=parsed.searchParams.get('page');
+    assert.equal(parsed.hostname,'polytrack-ranked-worker.staticquasar931.workers.dev');
+    return Response.json(page===null?root:{generation,page:Number(page),pageSize:100,pageCount,totalEntries,complete:true,sourceRevision:7,
+      entries:entries.slice(Number(page)*100,(Number(page)+1)*100)});
+  }});
+  assert.equal(requests,4);assert.equal(capture.entries,totalEntries);
+  const clean=JSON.parse(await fs.readFile(path.join(f.stage,'event-totals.json'),'utf8'));
+  assert.equal(clean.capturedAt,new Date(now-5000).toISOString());
+  assert.equal(clean.entries.filter(row=>row.eventHighlights?.length===2).length,totalEntries);
+  assert.deepEqual(clean.entries[0].eventHighlights.map(row=>[row.kind,row.eventRp,row.rank,row.fieldSize]),[['permanent',20,1,263],['weekly',50,1,263]]);
+  const published=await publishOfflineFixture(f);
+  assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+  assert.equal((await checkCapture({root:f.root,requestedAt:String(now-2000),now})).reuse,true);
+  const payload=published.index.files['event-totals.json'];
+  assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(path.join(f.root,published.directory,payload.path)))).toString()),clean);
+  const invalid=[
+    {...clean,privateField:'private'},
+    {...clean,entries:clean.entries.map((row,i)=>i===262?{...row,ownerUid:'private'}:row)},
+    ...[{ownerUid:'private'},{unexpected:true},{eventRp:99999},{rank:99999}].map(extra=>({...clean,entries:clean.entries.map((row,i)=>i===262?
+      {...row,eventHighlights:row.eventHighlights.map((highlight,j)=>j?highlight:{...highlight,...extra})}:row)})),
+    {...clean,entries:clean.entries.map((row,i)=>i===262?{...row,eventHighlights:[...row.eventHighlights,row.eventHighlights[0]]}:row)}
+  ];
+  for(const value of invalid){
+    await mutatePayload(published,'event-totals.json',()=>value);
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Invalid projected|Non-public/);
+    await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}),/Invalid projected|Non-public/);
+  }
+  await mutatePayload(published,'event-totals.json',()=>clean);
+  await mutatePayload(published,'manifest.json',value=>({...value,events:{...value.events,'weekly-fixture':{path:'../private.json'}}}));
+  await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Non-public/,'highlights require a safe package-bound board, not an arbitrary path');
 });
 
 test('legacy success receipts and null receipts cannot bypass the upgraded package validation contract', async t => {

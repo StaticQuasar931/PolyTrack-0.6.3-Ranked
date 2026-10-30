@@ -73,6 +73,14 @@ test('actual Worker routes accept seven-field run without session and publish ma
     binding, status: 'verified', reason: 'native_exact_finish' });
   assert.equal(published.canonicalImproved, true); assert.equal(published.eventImproved, true);
   assert.deepEqual(commits.at(-1), { reads: 14, writes: 11 });
+  const liveEntry = data.get(`${C.live}/${periodId}`).entries[0];
+  const completedRun = data.get(`${C.runs}/${job.resultId}`);
+  assert.equal(liveEntry.physicsVerified, true); assert.equal(liveEntry.replayIntegrityVerified, true);
+  assert.equal(liveEntry.runId, job.resultId); assert.equal(liveEntry.replayHash, job.replayHash);
+  assert.equal(liveEntry.submittedAt, completedRun.receivedAt);
+  assert.equal(liveEntry.runCreatedAt, completedRun.receivedAt);
+  assert.equal(liveEntry.verifiedAt, completedRun.completedAt);
+  assert.equal(liveEntry.verifiedAt, data.get(`${C.replays}/${periodId}_${accountId}`).verifiedAt);
   assert(commits.every(c => c.reads <= 16 && c.writes <= 16));
   assert.equal(data.get(`${C.receipts}/${periodId}_${accountId}`).status, 'verified');
   assert.equal(data.get(`${C.profiles}/${accountId}`).pbCount, 1);

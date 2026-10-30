@@ -490,6 +490,23 @@ const pending = () => {
   return {promise,resolve};
 };
 
+test('zero-write protobuf commit acknowledgement accepts omitted writeResults only with commitTime',async()=>{
+  const ack={commitTime:'2026-10-30T07:00:00.123456789Z'};
+  const db=budgetCaller({fetchImpl:async url=>url.endsWith(':commit')?response(200,ack):response(200,{name:'rows/next'})});
+  assert.deepEqual(await db.call(':commit',{writes:[],transaction:'offline-transaction'}),ack);
+  assert.equal(db.unknownCommitOutcomes(),0);assert.equal(db.estimatedDocumentWrites(),0);
+  assert.equal(db.documentBudget().usedWrites,0);
+  await db.call('/rows/next');assert.equal(db.estimatedDocumentReads(),1);
+  for(const invalid of [{},{commitTime:'not-a-date'},{commitTime:1},{commitTime:ack.commitTime,writeResults:null}]){
+    const guarded=budgetCaller({fetchImpl:async()=>response(200,invalid)});
+    await assert.rejects(guarded.call(':commit',{writes:[]}),error=>error.code==='FIRESTORE_DOCUMENT_BUDGET');
+    assert.equal(guarded.unknownCommitOutcomes(),1);assert.equal(guarded.estimatedDocumentWrites(),0);
+  }
+  const write=budgetCaller({fetchImpl:async()=>response(200,ack)});
+  await assert.rejects(write.call(':commit',{writes:[{}]}),error=>error.code==='FIRESTORE_DOCUMENT_BUDGET');
+  assert.equal(write.unknownCommitOutcomes(),1);
+});
+
 test('100-document query reserves 100 document reads before one HTTP attempt, then settles actual documents', async () => {
   let db, calls = 0;
   db = budgetCaller({fetchImpl:async()=>{
