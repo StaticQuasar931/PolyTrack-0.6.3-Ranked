@@ -271,6 +271,11 @@ html body #overallHelpPopup .overall-help-head h3 { font-size: 28px !important; 
 .pt-help-controls .hc-release ul { font-size: 22px; margin-top: 6px; margin-bottom: 12px; padding-left: 24px; }
 .pt-help-controls .hc-release li { margin-bottom: 8px; }
 .pt-help-controls .hc-release-note { font-size: 19px; margin-top: 12px; }
+.pt-help-controls .hc-release-technical { margin-top: 16px; border-top: 1px solid var(--hc-line); }
+.pt-help-controls .hc-release-technical > summary { cursor: pointer; padding: 12px 0; font-size: 20px; color: var(--hc-muted); }
+.pt-help-controls .hc-release-technical > summary:hover { color: var(--hc-cyan); }
+.pt-help-controls .hc-release-technical > summary:focus-visible { outline: 2px solid var(--hc-cyan); outline-offset: 2px; }
+.pt-help-controls .hc-release-technical > p { font-size: 18px; line-height: 1.4; }
 .pt-help-controls .hc-credits { padding: 10px 16px; }
 .pt-help-controls .hc-credits p { font-size: 17px; }
 @container (min-width: 780px) {

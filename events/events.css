@@ -1089,6 +1089,8 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 @media(max-width:480px){
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{grid-template-columns:minmax(0,36%) minmax(0,1fr)!important}
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){width:36%!important}
+ /* Keep native single-word titles intact on 320px phones without shrinking the artwork. */
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{padding-inline:16px!important}
 }
 
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record,

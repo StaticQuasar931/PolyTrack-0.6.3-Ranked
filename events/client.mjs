@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=209';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=209';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=210';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=210';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,7 +7,7 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=209';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=210';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -58,6 +58,10 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
     suffix.className='sq-event-ordinal-suffix';suffix.textContent=ordinal.slice(number.length);
     position.replaceChildren(button.ownerDocument.createTextNode(number),suffix);
     position.setAttribute('aria-label',ordinal);
+    if(Number.isSafeInteger(row.originalRank)&&row.originalRank>0){
+      position.dataset.sqOriginalRank=String(row.originalRank);
+      position.title='Saved snapshot place #'+row.originalRank+(row.originalRank!==row.rank?'; visible field place #'+row.rank: '');
+    }
   }
   const state=button.querySelector('.verified-state');
   if(!state)return;
@@ -67,6 +71,8 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
   const label=eventVerificationLabel(row,!!row.pending);
   // The shared status decorator preserves this date, including its receipt-time qualifier.
   state.dataset.sqNativeDate=label.slice(0,label.lastIndexOf(' - '));
+  const dateText=[...state.childNodes].find(node=>node.nodeType===3);
+  if(dateText&&!eventDisplayRunAt(row,at)&&!row.pending&&validEventTimestamp(row?.verifiedAt,at))dateText.textContent=state.dataset.sqNativeDate;
   if(!eventDisplayRunAt(row,at)&&(row.pending||!validEventTimestamp(row?.verifiedAt,at))){
     const text=[...state.childNodes].find(node=>node.nodeType===3);
     if(text)text.textContent='Date unavailable';
@@ -118,6 +124,54 @@ export function eventPendingRows(pending){
   }
   return [...byAccount.values()];
 }
+export function eventRowVerified(row){
+  return !!row&&row.pending!==true&&row.needsReview!==true&&row.reviewHold!==true&&
+    !['verified','runVerified','physicsVerified','replayIntegrityVerified','integrityVerified','eventRpEligible'].some(field=>row[field]===false)&&
+    !['status','verificationStatus'].some(field=>row[field]!==undefined&&row[field]!=='verified');
+}
+export function eventSnapshotRows(board,{onlyVerified=false,local=null,filterRows,context={}}={}){
+  const byAccount=new Map();
+  const add=row=>{
+    if(!EVENT_RECORD_HASH.test(row?.accountId||'')||!Number.isSafeInteger(row.timeMs)||row.timeMs<=0||row.timeMs>EVENT_TIME_LIMIT||
+      row.needsReview===true||row.reviewHold===true||
+      ['status','verificationStatus'].some(field=>row[field]!==undefined&&!['verified','waiting','pending'].includes(row[field])))return;
+    const pending=!eventRowVerified(row);
+    if(onlyVerified&&pending)return;
+    const prior=byAccount.get(row.accountId);
+    if(!prior||row.timeMs<prior.timeMs||row.timeMs===prior.timeMs&&prior.pending&&!pending)
+      byAccount.set(row.accountId,{...row,pending,originalRank:Number.isSafeInteger(row.rank)&&row.rank>0?row.rank:null});
+  };
+  for(const row of Array.isArray(board?.entries)?board.entries:[])add(row);
+  if(!onlyVerified)for(const row of eventPendingRows(board?.pendingPlaybacks))add(row);
+  if(local&&!onlyVerified)add(local);
+  const rankRows=values=>{
+    const sorted=[...values].sort((a,b)=>a.timeMs-b.timeMs||a.accountId.localeCompare(b.accountId));
+    let rank=0;
+    return sorted.map((row,index)=>{if(!index||row.timeMs!==sorted[index-1].timeMs)rank=index+1;return {...row,rank,groupRank:rank};});
+  };
+  const sourceRows=rankRows(byAccount.values()).map(row=>({...row,globalRank:row.originalRank??row.rank}));
+  const filtered=filterRows?.(sourceRows,context);
+  const rows=rankRows(filtered?.rows||sourceRows);
+  return {rows,sourceRows,filterResult:filtered?{...filtered,rows,filteredCount:rows.length}:null};
+}
+export function retainEventSnapshotDates(board,prior,at=Date.now()){
+  if(!prior||board?.period?.id!==prior.period?.id||board.period.trackId!==prior.period.trackId||board.period.kind!==prior.period.kind)return board;
+  const previous=[...(prior.entries||[]),...eventPendingRows(prior.pendingPlaybacks)];
+  const entries=(board.entries||[]).map(row=>{
+    if(!row||typeof row!=='object')return row;
+    const saved=previous.find(old=>old?.accountId===row.accountId&&old.timeMs===row.timeMs&&
+      ((row.runId&&old.runId===row.runId)||(row.replayHash&&old.replayHash===row.replayHash))&&
+      (!row.runId||!old.runId||row.runId===old.runId)&&(!row.replayHash||!old.replayHash||row.replayHash===old.replayHash));
+    if(!saved)return row;
+    const dates={};
+    for(const field of ['runCreatedAt','pbAt','createdAt','runAt','submittedAt','receivedAt','verifiedAt'])
+      if(!validEventTimestamp(row[field],at)&&validEventTimestamp(saved[field],at)&&
+        (field!=='verifiedAt'||eventRowVerified(row)&&eventRowVerified(saved)))dates[field]=saved[field];
+    if(!row.uploadId&&eventExactRunAt({uploadId:saved.uploadId},at))dates.uploadId=saved.uploadId;
+    return {...row,...dates};
+  });
+  return {...board,entries};
+}
 export function readEventPlacementSettings(storage=globalThis.localStorage){
   try{return {enabled:storage?.getItem('polytrack-0.6.2-pb-podiums')!=='0',policy:storage?.getItem('polytrack-0.6.2-pb-podiums-verified-only')==='1'?'verified':'all'};}
   catch{return {enabled:true,policy:'all'};}
@@ -129,12 +183,14 @@ export function eventRecordPlacement({board,period,accountId,timeMs,policy='all'
   const published=[],accounts=new Set();
   for(const row of board.entries){
     if(!EVENT_RECORD_HASH.test(row?.accountId||'')||accounts.has(row.accountId)||!Number.isSafeInteger(row.timeMs)||row.timeMs<=0||!Number.isSafeInteger(row.rank)||row.rank<=0)return null;
-    accounts.add(row.accountId);published.push({accountId:row.accountId,timeMs:row.timeMs,rank:row.rank,pending:false});
+    accounts.add(row.accountId);published.push({...row});
   }
   published.sort((a,b)=>a.timeMs-b.timeMs||a.accountId.localeCompare(b.accountId));
   let expectedRank=0;
   for(let index=0;index<published.length;index++){if(!index||published[index].timeMs!==published[index-1].timeMs)expectedRank=index+1;if(published[index].rank!==expectedRank)return null;}
-  const byAccount=new Map(published.map(row=>[row.accountId,row]));
+  const byAccount=new Map(published.filter(row=>eventRowVerified(row)||policy!=='verified'&&row.needsReview!==true&&row.reviewHold!==true&&
+    !['status','verificationStatus'].some(field=>row[field]!==undefined&&!['verified','waiting','pending'].includes(row[field])))
+    .map(row=>[row.accountId,{...row,pending:!eventRowVerified(row)}]));
   if(policy!=='verified'){
     const pending=board.pendingPlaybacks??[];
     if(!Array.isArray(pending)||pending.length>EVENT_PENDING_LIMIT)return null;
@@ -155,7 +211,9 @@ export function eventRecordPlacement({board,period,accountId,timeMs,policy='all'
 export function eventPlacementPresentation(place){
   if(!place||!Number.isSafeInteger(place.rank)||place.rank<=0)return null;
   const podium=['','gold','silver','bronze'][place.rank]||'';
-  const title=(place.provisional?`Provisional event place #${place.rank} from verified and waiting snapshot records. `:`Verified event place #${place.rank}. `)+'Complete field size is unavailable.';
+  const title=place.visibleField?`Visible event place #${place.rank} of ${place.knownFieldSize} loaded racers${place.provisional?' (provisional)':''}. `+
+    (Number.isSafeInteger(place.originalRank)?`Saved snapshot place #${place.originalRank}. `:'')+'This is the filtered loaded field, not the complete event field.':
+    (place.provisional?`Provisional event place #${place.rank} from verified and waiting snapshot records. `:`Verified event place #${place.rank}. `)+'Complete field size is unavailable.';
   return Object.freeze({text:`#${place.rank}${place.provisional?'*':''}`,className:'sq-event-place'+(podium?' '+podium:''),title,ariaLabel:title});
 }
 export function eventOrdinal(rank){
@@ -280,7 +338,7 @@ export function installEvents(bridge){
   }
   async function snapshot(period,force=false){
     const valid=value=>value&&Array.isArray(value.entries)&&value.period?.id===period.id&&value.period.trackId===period.trackId&&value.period.kind===period.kind&&Number.isSafeInteger(value.updatedAt)&&value.updatedAt>=0;
-    const candidate=cache.get(period.id)||read(STORE+'-'+period.id,null),saved=valid(candidate)?candidate:null;
+    const candidate=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null),saved=valid(candidate)?candidate:null;
     if(snapshotFetching.has(period.id))return snapshotFetching.get(period.id);
     if(period.archived===true||saved?.archived===true){
       if(cache.get(period.id)===saved&&saved?.archived===true)return saved;
@@ -298,7 +356,7 @@ export function installEvents(bridge){
     // Browser storage can belong to an older package. Read this package once before reusing it.
     if(!force&&saved&&cache.get(period.id)===saved)return saved;
     const attempt=snapshotAttempts.get(period.id);
-    if(attempt&&now()<attempt.nextAt){if(saved)return saved;if(attempt.error)throw attempt.error;}
+    if(attempt&&now()<attempt.nextAt&&(!force||!bridge.snapshotOnly?.())){if(saved)return saved;if(attempt.error)throw attempt.error;}
     const state={nextAt:now()+60000,error:null};snapshotAttempts.set(period.id,state);
     if(snapshotAttempts.size>128)snapshotAttempts.delete(snapshotAttempts.keys().next().value);
     const confirmSchedulePeriod=value=>{
@@ -310,7 +368,7 @@ export function installEvents(bridge){
       cacheWrite(STORE,catalog);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(catalog.periods,catalogAt);
     };
     let pending;pending=(async()=>{
-      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const current=cache.get(period.id)||saved;if(!bridge.snapshotOnly?.()&&valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...value,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
+      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const current=cache.get(period.id)||saved;if(!bridge.snapshotOnly?.()&&valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...retainEventSnapshotDates(value,current,now()),fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
       catch(error){state.error=error;state.nextAt=now()+120000;if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
       finally{if(snapshotFetching.get(period.id)===pending)snapshotFetching.delete(period.id);}
     })();
@@ -416,7 +474,7 @@ export function installEvents(bridge){
   const body=html=>{if(!dialog)return;const main=dialog.querySelector('main');const restore=main.contains(document.activeElement);main.innerHTML=html;if(restore)dialog.querySelector('[data-event-close]').focus({preventScroll:true});};
   function displayedRecordPlacement(period,own,board,filterResult){
     const settings=readEventPlacementSettings();
-    if(settings.enabled&&own&&filterResult?.active&&filterResult.groupGrading)return {rank:own.groupRank,fieldSize:filterResult.rows.length,knownFieldSize:filterResult.rows.length,provisional:board?.complete!==true,policy:settings.policy};
+    if(settings.enabled&&own&&filterResult?.active)return {rank:own.rank,fieldSize:filterResult.rows.length,knownFieldSize:filterResult.rows.length,provisional:filterResult.rows.some(row=>row.pending),policy:settings.policy,visibleField:true,originalRank:own.originalRank};
     return settings.enabled&&own?eventRecordPlacement({board,period,accountId:bridge.accountId(),timeMs:own.timeMs,policy:settings.policy}):null;
   }
   function recordMarkup(period){
@@ -428,9 +486,12 @@ export function installEvents(bridge){
   }
   function cardStandings(period){
     if(period.scheduleOnly)return '';
-    const board=cache.get(period.id)||read(STORE+'-'+period.id,null);
+    const board=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null);
     if(!board)return '<small class="sq-event-card-summary">View standings and replays</small>';
-    const entries=Array.isArray(board.entries)?board.entries:[],pending=Array.isArray(board.pendingPlaybacks)?board.pendingPlaybacks:[];
+    const entries=(Array.isArray(board.entries)?board.entries:[]).filter(row=>row&&row.pending!==true&&row.needsReview!==true&&row.reviewHold!==true&&
+      !['verified','runVerified','physicsVerified','replayIntegrityVerified','integrityVerified','eventRpEligible'].some(field=>row[field]===false)&&
+      !['status','verificationStatus'].some(field=>row[field]!==undefined&&row[field]!=='verified'));
+    const pending=(Array.isArray(board.pendingPlaybacks)?board.pendingPlaybacks:[]).filter(row=>row?.pending===true&&row.verified===false&&row.verificationStatus==='waiting'&&row.source==='pending-event-playback'&&row.needsReview!==true&&row.reviewHold!==true);
     const loaded=new Set([...entries,...pending].map(row=>row.accountId)).size;
     const count=Number.isInteger(board.racerCount)?board.racerCount:Number.isInteger(board.entrantCount)?board.entrantCount:loaded;
     const leader=[...entries].sort((a,b)=>a.timeMs-b.timeMs)[0];
@@ -476,8 +537,9 @@ export function installEvents(bridge){
       const provisional=local&&(!submitted||local.timeMs<=submitted.timeMs)?local:submitted;
       const isLocal=provisional&&(!published||provisional.timeMs<published.timeMs),best=isLocal?provisional:published;
       const actions=closed?'<button class="button" type="button" data-event-practice>Practice track</button>':'<button class="button" type="button" data-event-race>Race event</button><button class="button" type="button" data-event-refresh>Refresh standings</button>';
-      const counts=closed?archivePeriodCounts(period,board):null,rawStandings=counts?counts.verifiedEntries:board.entries;
-      const filtered=bridge.filterRows?.(rawStandings,{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board.complete===true}),standings=filtered?.rows||rawStandings;
+      const counts=closed?archivePeriodCounts(period,board):null,rawStandings=(counts?counts.verifiedEntries:board.entries).filter(eventRowVerified);
+      const display=eventSnapshotRows({...board,entries:rawStandings,pendingPlaybacks:[]},{onlyVerified:true,filterRows:bridge.filterRows,context:{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board.complete===true}});
+      const filtered=display.filterResult,standings=counts&&!filtered?.active?rawStandings:display.rows;
       const winner=counts?.winner?` · Winner ${escape(displayName(counts.winner))} ${time(counts.winner.timeMs)}`:'';
       const archiveMeta=counts?`<p>${counts.racers} ${counts.racers===1?'racer':'racers'}${winner}</p>`:'';
       body(`<div class="sq-event-heading"><span class="sq-event-thumb">${bridge.thumbnail(period.trackId)}</span><div><h3>${escape(periodName(period))}</h3><p>${escape(reset(period))} · ${closed?'Closed':'Open'}</p>${archiveMeta}<p>Your event PB: <b>${time(best?.timeMs)}</b> ${best?(isLocal?(provisional===local?'(saved on this device)':'(submitted)'):'(published)'):''}</p></div></div><div class="sq-event-actions">${actions}</div>${receiptText(receipt,local,period)?`<p class="sq-event-receipt" role="status">${escape(receiptText(receipt,local,period))}</p>`:''}<p class="${board.saved?'sq-event-saved':''}">${escape(eventStandingsLabel(board,now(),!!snapshotAttempts.get(period.id)?.error))}</p><ol class="sq-event-results sq-event-verified-results">${rows(standings)||'<li>No verified event times yet.</li>'}</ol>`);
@@ -487,7 +549,7 @@ export function installEvents(bridge){
   }
   async function practice(period){
     if(period.kind==='custom'||period.historyOnly)return importArchived(period);
-    const saved=cache.get(period.id)||read(STORE+'-'+period.id,null);
+    const saved=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null);
     if(!saved||!Array.isArray(saved.entries)){message('Archived standings are not loaded. Reopen the archive card and try again.');return;}
     openArchivedTrack(period,saved);
   }
@@ -608,7 +670,7 @@ export function installEvents(bridge){
     const period=knownPeriods.get(periodId)||(catalog.periods||[]).find(p=>p.id===periodId),accountId=bridge.accountId();if(!period)return null;
     const best=localBest(period),row=localReplayRows().slice(0,8).find(row=>row&&typeof row==='object'&&row.periodId===periodId&&row.accountId===accountId&&row.trackId===period.trackId);
     if(!best||!row||typeof row.attemptId!=='string'||!row.attemptId.length||row.attemptId.length>128||row.attemptId!==best.attemptId||row.timeMs!==best.timeMs||row.frames!==row.timeMs||!Number.isSafeInteger(row.frames)||row.frames<1||row.frames>300000||typeof row.replay!=='string'||!row.replay.length||row.replay.length>65536||!/^[A-Za-z0-9_-]+$/.test(row.replay)||typeof row.carStyle!=='string'||row.carStyle.length>256)return null;
-    const shown=eventDisplayRows(period).rows.find(entry=>entry.accountId===accountId);if(shown&&shown.timeMs<row.timeMs)return null;
+    const shown=eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(entry=>entry.accountId===accountId);if(shown&&shown.timeMs<row.timeMs)return null;
     const receipt=ownReceipts.get(periodId+'_'+accountId);if(receipt?.attemptId===row.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status))return null;
     return Object.freeze({...row,source:'local-event-recording'});
   }
@@ -698,7 +760,7 @@ export function installEvents(bridge){
     const readReplay=session.archive?bridge.readArchivedReplay:bridge.readReplay;
     if(typeof readReplay!=='function'){message(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');return;}
     const period=view.period||knownPeriods.get(view.periodId)||(catalog.periods||[]).find(row=>row.id===view.periodId);if(!period)return;
-    const offset=fromTop?0:view.page*20,sourceRows=(view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows).filter(row=>!view.onlyVerified||!row.pending);
+    const offset=fromTop?0:view.page*20,sourceRows=view.archive?view.visibleRows||archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows;
     const chosen=(explicitRows||sourceRows.slice(offset+first-1,offset+last)).slice(0,10).map(row=>({...row}));
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
     const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
@@ -711,7 +773,7 @@ export function installEvents(bridge){
     const token=++topSelectionToken,requestToken=++replayRequest,page=view.page,trackId=period.trackId,onlyVerified=view.onlyVerified;
     const current=()=>{
       if(token!==topSelectionToken||requestToken!==replayRequest||nativeView!==view||view.page!==page||view.onlyVerified!==onlyVerified||period.trackId!==trackId||view.root&&!view.root.isConnected||!replayContextActive(session))return false;
-      const latestRows=new Map((view.archive?archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period).rows).map(row=>[row.accountId,row]));
+      const latestRows=new Map((view.archive?view.visibleRows||archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows).map(row=>[row.accountId,row]));
       return chosen.every(row=>{const latest=latestRows.get(row.accountId);return latest&&latest.timeMs===row.timeMs&&(latest.runId||null)===(row.runId||null)&&!!latest.pending===!!row.pending&&(latest.replayHash||null)===(row.replayHash||null);});
     };
     const release=()=>{for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);};
@@ -758,14 +820,14 @@ export function installEvents(bridge){
   function selectEventRange(first,last){return selectEventRows(first,last,false);}
   function selectEventYouGroup(){
     const view=nativeView;if(!view)return;
-    const rows=(view.archive?archivePeriodCounts(view.period,view.snapshot).verifiedEntries:eventDisplayRows(view.period).rows).filter(row=>!view.onlyVerified||!row.pending);
+    const rows=view.archive?view.visibleRows||archivePeriodCounts(view.period,view.snapshot).verifiedEntries:eventDisplayRows(view.period,{onlyVerified:view.onlyVerified}).rows;
     const chosen=rows.slice(0,9),mine=rows.find(row=>row.accountId===bridge.accountId());
     if(mine&&!chosen.some(row=>row.accountId===mine.accountId))chosen.push(mine);else if(rows[9])chosen.push(rows[9]);
     return selectEventRows(1,10,true,chosen);
   }
-  function raceGhosts(session){
+  function raceGhosts(session,onlyVerified=false){
     const period=knownPeriods.get(session.periodId);
-    if(period){const allowed=new Map(eventDisplayRows(period).rows.map(row=>[row.accountId,row]));for(const [id,row] of selectedGhosts){const current=allowed.get(id);if(row.periodId===session.periodId&&(!current||row.targetTimeMs!==current.timeMs||row.targetRunId!==(current.runId||null)||row.targetPending!==!!current.pending||row.targetReplayHash!==(current.replayHash||null)))selectedGhosts.delete(id);}}
+    if(period){const allowed=new Map(eventDisplayRows(period,{onlyVerified}).rows.map(row=>[row.accountId,row]));for(const [id,row] of selectedGhosts){const current=allowed.get(id);if(row.periodId===session.periodId&&(!current||row.targetTimeMs!==current.timeMs||row.targetRunId!==(current.runId||null)||row.targetPending!==!!current.pending||row.targetReplayHash!==(current.replayHash||null)))selectedGhosts.delete(id);}}
     const replay=bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;let ownGhost=null;
     if(replay){
       const key=session.periodId+'_'+session.accountId,best=bestRecords[key],cached=preparedOwnGhosts.get(key);
@@ -784,7 +846,7 @@ export function installEvents(bridge){
     if(!eventIntent&&!sessions.current())return false;
     const session=sessions.current();
     if(!session||session.trackId!==trackId||session.accountId!==bridge.accountId()){message('This event replay cannot start a race after its event closes or racer changes.');return true;}
-    try{bridge.startEventRace({...session,...raceGhosts(session)},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
+    try{bridge.startEventRace({...session,...raceGhosts(session,nativeView?.onlyVerified===true)},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
     return true;
   }
   function watchEvent(){
@@ -800,7 +862,7 @@ export function installEvents(bridge){
         if(!root?.isConnected||nativeWatch?.version!==1||nativeWatch.trackId!==session.trackId||period?.id!==session.periodId||period.trackId!==session.trackId)throw Error('Event replay context changed. Reopen this track.');
         const selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
         const own=!session.archive&&selections.length<10&&!selections.some(row=>row.targetAccountId===session.accountId)&&bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;
-        const boardRows=()=>session.archive?archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period).rows;
+        const boardRows=()=>session.archive?view?.visibleRows||archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view?.onlyVerified===true}).rows;
         const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name]);
         const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
         const current=()=>watchEvent.pending===job&&replayContextActive(session)&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
@@ -855,17 +917,17 @@ export function installEvents(bridge){
     const root=nativeView?.root||document.querySelector('.track-info-ui');
     const nativeTrack=()=>root?.isConnected&&root===document.querySelector('.track-info-ui')&&root.__pt062EventWatch?.version===1&&root.__pt062EventWatch.trackId===session.trackId;
     if(!nativeTrack()){message('The event track is still opening. Please try Play again.');return;}
-    const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session);
+    const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session,nativeView?.onlyVerified===true);
     const token=replayRequest,selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
     const period=knownPeriods.get(session.periodId);
     const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null]);
-    const bindings=selections.map(selection=>binding(eventDisplayRows(period).rows.find(row=>row.accountId===selection.targetAccountId)));
+    const bindings=selections.map(selection=>binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId)));
     // Before dispatch, selections must stay exact. Native disposal may clear them after the click.
     let committed=false;
     const handoffCurrent=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&now()<session.endsAt;
     const current=()=>handoffCurrent()&&replayRequest===token&&
       selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&
-      selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+      selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
     try{
       // A nested HTMLElement.click() is suppressed while its original click is dispatching.
@@ -943,35 +1005,22 @@ export function installEvents(bridge){
     try{await snapshot(period);await readReceipt(period.id,accountId);if(!session||!replayContextActive(session))return;if(nativeView)nativeView.signature='';syncNativeBoard(session);}
     catch{if(sessions.current()===session){message('Standings unavailable. Your event runs save locally.');if(nativeView)nativeView.signature='';syncNativeBoard(session);}}
   }
-  function eventDisplayRows(period){
+  function eventDisplayRows(period,{onlyVerified=false}={}){
     const accountId=bridge.accountId();
-    const isHash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
-    const board=cache.get(period.id)||read(STORE+'-'+period.id,null);
-    const validBoard=board?.period?.id===period.id&&board.period.trackId===period.trackId&&Array.isArray(board.entries);
-    const entries=validBoard?board.entries:[];
-    const rows=entries.map(row=>({...row,pending:false}));
-    const pending=validBoard?eventPendingRows(board.pendingPlaybacks):[];
-    for(const replay of pending){
-      const at=rows.findIndex(row=>row.accountId===replay.accountId);
-      if(at>=0&&rows[at].timeMs<=replay.timeMs)continue;
-      if(at>=0)rows.splice(at,1);
-      rows.push(replay);
-    }
+    const candidate=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null);
+    const board=candidate?.period?.id===period.id&&candidate.period.trackId===period.trackId&&candidate.period.kind===period.kind&&Array.isArray(candidate.entries)?candidate:null;
     const local=localBest(period),receipt=ownReceipts.get(period.id+'_'+accountId);
     const remote=receipt&&['waiting','verified'].includes(receipt.status)&&Number.isSafeInteger(receipt.timeMs)&&receipt.timeMs>0?receipt:null;
     const rejectedLocal=local&&receipt?.attemptId===local.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status);
     const provisional=!rejectedLocal&&local&&(!remote||local.timeMs<=remote.timeMs)?local:remote;
-    const published=rows.find(row=>row.accountId===accountId);
-    if(provisional&&(!published||provisional.timeMs<published.timeMs)){
-      const at=rows.findIndex(row=>row.accountId===accountId);if(at>=0)rows.splice(at,1);
-      const unscored=receipt?.attemptId===provisional.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt?.status);
-      rows.push({accountId,name:published?.name||'You',timeMs:provisional.timeMs,pending:true,unscored,rank:null});
-    }
-    for(const row of rows)row.name=displayName(row);
-    rows.sort((a,b)=>a.timeMs-b.timeMs||String(a.accountId).localeCompare(String(b.accountId)));
-    let rank=0;for(let index=0;index<rows.length;index++){if(!index||rows[index].timeMs!==rows[index-1].timeMs)rank=index+1;rows[index].rank=rank;}
-    const filtered=bridge.filterRows?.(rows,{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board?.complete===true});
-    return {rows:filtered?.rows||rows,board,filterResult:filtered,sourceOwn:rows.find(row=>row.accountId===accountId)};
+    const published=board?.entries.find(row=>row.accountId===accountId);
+    const localRow=provisional?{...provisional,accountId,name:published?.name||'You',pending:true,rank:null,
+      ...(validEventTimestamp(provisional.at,now())?{runAt:provisional.at}:{}),
+      unscored:receipt?.attemptId===provisional.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt?.status)}:null;
+    const display=eventSnapshotRows(board,{onlyVerified,local:localRow,filterRows:bridge.filterRows,
+      context:{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board?.complete===true}});
+    for(const row of display.rows)row.name=displayName(row);
+    return {...display,board,sourceOwn:display.sourceRows.find(row=>row.accountId===accountId)};
   }
   function syncNativeArchiveBoard(view){
     const {period,snapshot}=view;
@@ -980,17 +1029,27 @@ export function installEvents(bridge){
       ['final','partial-final','non-final'].includes(state);
     const counts=archivePeriodCounts(period,bound?snapshot:null),archived=bound?counts.verifiedEntries:[];
     if(view.watch)view.watch.disabled=!bound||typeof bridge.watchEvent!=='function'||![...selectedGhosts.values()].some(row=>row.periodId===period.id&&row.accountId===view.accountId);
-    const rows=archived.map(row=>{
+    const eligible=archived.filter(row=>row.needsReview!==true&&row.reviewHold!==true&&
+      !['physicsVerified','replayIntegrityVerified','integrityVerified'].some(field=>row[field]===false));
+    const savedRows=eligible.map(row=>{
       const saved=snapshot.entries.find(entry=>entry?.accountId===row.accountId&&entry.timeMs===row.timeMs);
-      return {...row,name:displayName(row),rank:Number.isSafeInteger(saved?.rank)&&saved.rank>0?saved.rank:null,pending:false};
+      const originalRank=Number.isSafeInteger(saved?.rank)&&saved.rank>0?saved.rank:null;
+      return {...row,name:displayName(row),rank:originalRank,originalRank,pending:false};
     });
+    const filtered=bridge.filterRows?.(savedRows,{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:state==='final'});
+    let rows=filtered?.rows||savedRows;
+    if(filtered?.active||bound&&eligible.length!==snapshot.entries.length){
+      rows=[...rows].sort((a,b)=>a.timeMs-b.timeMs||String(a.accountId).localeCompare(String(b.accountId)));
+      let rank=0;rows=rows.map((row,index)=>{if(!index||row.timeMs!==rows[index-1].timeMs)rank=index+1;return {...row,rank,groupRank:rank};});
+    }
+    view.visibleRows=rows;
     const source=snapshot?._publicBackup?'Snapshot data':snapshot?.saved?'Cached data':'Saved event data';
     const label=!bound?'Standings unavailable':state==='final'?'Frozen final event standings':state==='partial-final'?'Saved partial final event standings':'Saved non-final event standings';
     const description=!bound?'Saved standings do not match this event and track.':state==='final'
       ?'Frozen final event standings as saved. Practice uses the separate ordinary track leaderboard and does not change Event RP.'
       :state==='partial-final'?'Only part of the final event standings was saved. Missing ranks and Event RP are unknown.'
       :'Final standings are unavailable. These are saved event results, not final awards or the ordinary practice leaderboard.';
-    const signature=JSON.stringify([bridge.identityRevision?.(),snapshot?.updatedAt,state,bound,counts.racers,source,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.name,row.rp])]);
+    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),view.page,snapshot?.updatedAt,state,bound,counts.racers,source,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.name,row.rp,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
     for(const button of view.board.querySelectorAll(':scope > .container > button.main')){const selected=selectedGhosts.get(button.dataset.eventAccountId),pending=pendingGhosts.get(button.dataset.eventAccountId),matches=row=>row?.periodId===period.id&&row.accountId===view.accountId&&row.targetTimeMs===Number(button.dataset.eventTime);const active=matches(selected),busy=matches(pending);button.classList.toggle('selected',!!(active||busy));button.classList.toggle('pending-selection',!!busy);button.setAttribute('aria-pressed',String(!!(active||busy)));button.setAttribute('aria-busy',String(!!busy));}
     if(signature===view.signature)return;
     view.signature=signature;view.board.title=description;
@@ -998,7 +1057,7 @@ export function installEvents(bridge){
     view.board.querySelector('h3').textContent=eventName(period.kind)+' archive';
     view.board.querySelector('h3').title=source+': '+description;
     view.board.querySelector('.total-players').textContent=rows.length+' saved result'+(rows.length===1?'':'s')+
-      (counts.racers===null?'':' / '+counts.racers+' event entrant'+(counts.racers===1?'':'s'))+' | '+label+' | '+source;
+      (counts.racers===null?'':' / '+counts.racers+' event entrant'+(counts.racers===1?'':'s'))+' | '+label+' | '+source+(filtered?.active?' | personal filters':'')+' | Page '+Math.min(view.page+1,Math.max(1,Math.ceil(rows.length/20)))+' of '+Math.max(1,Math.ceil(rows.length/20));
     const container=view.board.querySelector('.container');container.replaceChildren();
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
     for(const row of rows.slice(view.page*20,view.page*20+20)){
@@ -1053,7 +1112,7 @@ export function installEvents(bridge){
           buttonWrapper=nativeButtonWrapper;
         }
       }
-      if(archiveMode)buttonWrapper.querySelectorAll('button:not(.back)').forEach(button=>button.remove());
+      if(archiveMode){buttonWrapper.querySelectorAll('button:not(.back)').forEach(button=>button.remove());bridge.filterButton?.(buttonWrapper);}
       else{
         const verified=buttonWrapper.querySelector('.only-verified');verified.classList.add('disabled');verified.setAttribute('aria-pressed','false');verified.title='Show only verified event runs';
         bridge.filterButton?.(buttonWrapper);const findMe=buttonWrapper.querySelector('.icon-button.first');findMe.disabled=false;findMe.classList.add('sq-event-find-me');findMe.title='Find your event result';findMe.setAttribute('aria-label','Find your event result');
@@ -1066,7 +1125,7 @@ export function installEvents(bridge){
       view.deferredCarRows=new Set();
       if(!archiveMode){if(typeof IntersectionObserver==='function')view.carObserver=new IntersectionObserver(entries=>handleEventCarIntersections(view,entries,renderCachedCar),{root:board.querySelector('.container'),rootMargin:'50px'});board.addEventListener('contextmenu',contextMenuHandler);
         const verified=buttonWrapper.querySelector('.only-verified');verified.onclick=()=>{view.onlyVerified=!view.onlyVerified;verified.classList.toggle('disabled',!view.onlyVerified);verified.setAttribute('aria-pressed',String(view.onlyVerified));view.page=0;view.signature='';view.quickSignature='';syncNativeBoard(session);};
-        const findMe=buttonWrapper.querySelector('.sq-event-find-me');findMe.onclick=()=>{const index=eventDisplayRows(period).rows.filter(row=>!view.onlyVerified||!row.pending).findIndex(row=>row.accountId===accountId);if(index<0){message(view.onlyVerified?'Your run is not verified yet. Turn off Only verified to see it.':'Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
+        const findMe=buttonWrapper.querySelector('.sq-event-find-me');findMe.onclick=()=>{const index=eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows.findIndex(row=>row.accountId===accountId);if(index<0){message(view.onlyVerified?'Your run is not verified yet. Turn off Only verified to see it.':'Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
         board.querySelector('.sq-event-refresh').onclick=async()=>{const button=board.querySelector('.sq-event-refresh');button.disabled=true;profilesAt=0;try{await snapshot(period,true);await readReceipt(period.id,accountId,true);if(nativeView!==view||bridge.accountId()!==accountId||sessions.current()!==session)return;view.signature='';syncNativeBoard(session);}catch{if(nativeView===view)message('Event standings could not refresh. Your saved event PB is unchanged.');}finally{button.disabled=false;}};
       }
       if(!archiveMode&&nativeButtonWrapper){
@@ -1092,7 +1151,8 @@ export function installEvents(bridge){
       const selection=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetRunId,row.targetTimeMs,row.targetPending]);
       const pendingSelection=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId).map(row=>[row.targetAccountId,row.targetRunId,row.targetTimeMs,row.targetPending,row.groupToken||0]);
       const quickSignature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),quickBoard.updatedAt,quickBoard.saved,quickLocal?.attemptId,quickLocal?.timeMs,quickReceipt?.attemptId,quickReceipt?.status,quickReceipt?.timeMs,view.page,view.onlyVerified,Math.floor(now()/120000),selection,pendingSelection]);
-      if(quickSignature===view.quickSignature)return;
+      if(quickBoard===view.quickBoard&&quickSignature===view.quickSignature)return;
+      view.quickBoard=quickBoard;
       view.quickSignature=quickSignature;
     }
     const activeGhosts=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
@@ -1100,16 +1160,16 @@ export function installEvents(bridge){
     const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select published racers to add their replays.':'Select published racers to load event ghosts. Normal PB ghosts are not used.';
     if(view.opponentsNote.textContent!==opponentsText)view.opponentsNote.textContent=opponentsText;
 
-    const display=eventDisplayRows(period),{board,filterResult}=display,loading=!board&&!snapshotAttempts.get(period.id)?.error,mine=display.rows.find(row=>row.accountId===accountId),rows=display.rows.filter(row=>!view.onlyVerified||!row.pending);
+    const display=eventDisplayRows(period,{onlyVerified:view.onlyVerified}),{board,filterResult,rows}=display,loading=!board&&!snapshotAttempts.get(period.id)?.error,mine=rows.find(row=>row.accountId===accountId);
     if(filterResult?.active){const visible=new Set(rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===period.id&&!visible.has(id))selectedGhosts.delete(id);}
     let place=displayedRecordPlacement(period,mine,board);
     if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
-    if(mine&&filterResult?.active&&filterResult.groupGrading)place={rank:mine.groupRank,fieldSize:display.rows.length,knownFieldSize:display.rows.length,provisional:board?.complete!==true,policy:'all'};
+    if(mine&&(view.onlyVerified||filterResult?.active)&&readEventPlacementSettings().enabled)place={rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),policy:view.onlyVerified?'verified':'all',visibleField:true,originalRank:mine.originalRank};
     const placement=eventPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId);const statusDescription=receipt?receiptText(receipt,localBest(period),period):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt])]);
+    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,board?._publicBackup,board?.complete,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -1130,7 +1190,8 @@ export function installEvents(bridge){
     const waitingCount=rows.filter(row=>row.pending).length,verifiedCount=rows.length-waitingCount;
     const sourceLabel=!board?(loading?'Loading standings':'Standings unavailable'):board._publicBackup?'Snapshot data'+(board.complete===false?' · partial':''):board.saved?'Saved standings':'Published standings';
     view.board.querySelector('h3').title=sourceLabel;
-    view.board.querySelector('.total-players').textContent=(!board?sourceLabel:rows.length+(rows.length===1?' racer':' racers')+' · '+sourceLabel)+(board?._publicBackup?` · ${verifiedCount} verified, ${waitingCount} waiting`:waitingCount?` · ${waitingCount} waiting`:'')+(view.onlyVerified?' · verified only':'')+(filterResult?.active?' - personal filters':'');
+    const pageCount=Math.max(1,Math.ceil(rows.length/20));
+    view.board.querySelector('.total-players').textContent=(!board?sourceLabel:rows.length+(rows.length===1?' racer':' racers')+' · '+sourceLabel)+(board?._publicBackup?` · ${verifiedCount} verified, ${waitingCount} waiting`:waitingCount?` · ${waitingCount} waiting`:'')+(view.onlyVerified?' · verified only':'')+(filterResult?.active?' - personal filters':'')+(board?` · Page ${Math.min(view.page+1,pageCount)} of ${pageCount}`:'');
     const count=Math.max(1,Math.ceil(rows.length/20));view.page=Math.min(view.page,count-1);
      const container=view.board.querySelector('.container');container.setAttribute('aria-busy',String(loading));view.carObserver?.disconnect();view.deferredCarRows.clear();container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
@@ -1287,7 +1348,7 @@ export function installEvents(bridge){
     else if(event.key==='c'||event.key==='C'){event.preventDefault();event.stopImmediatePropagation();clearEventGhostSelection(nativeView.periodId,bridge.accountId());message('Event ghosts unselected.');return;}
     else if(!event.shiftKey&&(event.key==='='||event.key==='Backspace')){event.preventDefault();event.stopImmediatePropagation();void selectEventYouGroup();return;}
     else if(!event.shiftKey&&event.key==='-'){
-      const period=nativeView.period,ranked=eventDisplayRows(period).rows.filter(row=>!nativeView.onlyVerified||!row.pending),at=ranked.findIndex(row=>row.accountId===bridge.accountId());
+      const period=nativeView.period,ranked=eventDisplayRows(period,{onlyVerified:nativeView.onlyVerified}).rows,at=ranked.findIndex(row=>row.accountId===bridge.accountId());
       if(at>0){event.preventDefault();event.stopImmediatePropagation();void selectReplay(period,ranked[at-1]);}return;
     }
     else if(['ArrowLeft','a','A','ArrowRight','d','D'].includes(event.key)){
@@ -1360,18 +1421,18 @@ export function installEvents(bridge){
   window.addEventListener('online',()=>void flush());
   window.addEventListener('storage',event=>{if(event.key===QUEUE){hasPending=read(QUEUE,[]).length>0;void flush();}if(event.key===PROFILE_CACHE)profilesAt=0;if(event.key===BEST){bestRecords=read(BEST,{});lastInline='';}});
   window.addEventListener('pt-personal-filters-changed',()=>{
-    if(nativeView&&!nativeView.archive){nativeView.signature='';nativeView.quickSignature='';syncNativeBoard(sessions.current()||eventIntent||archiveIntent);}
+    if(nativeView){nativeView.page=0;nativeView.signature='';nativeView.quickSignature='';syncNativeBoard(sessions.current()||eventIntent||archiveIntent);}
     const list=dialog?.querySelector('.sq-event-results');
-    if(selected&&list){const board=cache.get(selected.id)||read(STORE+'-'+selected.id,null);if(board){const raw=now()>=selected.endsAt?archivePeriodCounts(selected,board).verifiedEntries:board.entries||[];const filtered=bridge.filterRows?.(raw,{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true});list.innerHTML=rows(filtered?.rows||raw)||'<li>No racers match these filters.</li>';message(filtered?.active?'Personal filters are active.':'Published standings.');}}
+    if(selected&&list){const board=cache.get(selected.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+selected.id,null):null);if(board){const display=eventSnapshotRows(board,{onlyVerified:true,filterRows:bridge.filterRows,context:{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true}});list.innerHTML=rows(display.rows)||'<li>No racers match these filters.</li>';message(display.filterResult?.active?'Personal filters are active.':'Published standings.');}}
   });
   function finishPlace(run){
-    const board=cache.get(run.periodId)||read(STORE+'-'+run.periodId,null);
+    const board=cache.get(run.periodId)||(!bridge.snapshotOnly?.()?read(STORE+'-'+run.periodId,null):null);
     let place=eventFinishPlace({board,...run});
     const period=knownPeriods.get(run.periodId);
     if(period){const display=eventDisplayRows(period);if(display.filterResult?.active){
       const mine=display.rows.find(row=>row.accountId===run.accountId);
       if(!mine)return null;
-      if(display.filterResult.groupGrading)place={rank:1+display.rows.filter(row=>row.accountId!==run.accountId&&row.timeMs<run.timeMs).length,fieldSize:display.rows.length,provisional:board?.complete!==true};
+      place={rank:1+display.rows.filter(row=>row.accountId!==run.accountId&&row.timeMs<run.timeMs).length,fieldSize:display.rows.length,provisional:board?.complete!==true||display.rows.some(row=>row.pending)};
     }}
     return place;
   }
