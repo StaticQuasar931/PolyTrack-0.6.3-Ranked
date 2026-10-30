@@ -16,7 +16,8 @@ function fixture({ordinal='4th',percentage=' (13.793%)',current=trackId,weekly=t
   const image={src:'images/trophy.svg'},rank={nodeType:3,textContent:ordinal};
   const row={childNodes:[image,rank,faded],querySelector:selector=>selector==='img[src="images/trophy.svg"]'?(trophy?image:null):selector==='span.faded'?faded:null};
   const timer={textContent:'00:16.027',querySelector:()=>null};
-  const record={children:[timer,row]};
+  const classes=new Set();
+  const record={children:[timer,row],classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name),contains:name=>classes.has(name)}};
   const panel={__pt062EventWatch:{trackId:current},querySelector:selector=>selector==='.sq-event-board'?(event?{}:null):selector==='.side-panel .personal-best'?record:null};
   const context=vm.createContext({
     document:{querySelector:selector=>selector==='.track-info-ui'?panel:null},
@@ -29,6 +30,7 @@ function fixture({ordinal='4th',percentage=' (13.793%)',current=trackId,weekly=t
 
 test('Kodub native PB keeps its trophy, ordinal and time with compact percentage, not a badge',()=>{
   const f=fixture(),children=[...f.row.childNodes];f.render();
+  assert.equal(f.record.classList.contains('sq-kodub-personal-best'),true);
   assert.equal(f.faded.textContent,' (13.8%)');
   assert.equal(f.rank.textContent,'4th');assert.equal(f.timer.textContent,'00:16.027');
   assert.deepEqual(f.row.childNodes,children);assert.equal(f.record.children.length,2);
@@ -51,9 +53,17 @@ test('an archived Kodub native board gets the same presentation without an activ
   const f=fixture({weekly:null,archived:true});f.render();assert.equal(f.faded.textContent,' (13.8%)');
 });
 
+test('switching away from a Kodub board removes its scoped alignment',()=>{
+  const f=fixture();f.render();
+  assert.equal(f.record.classList.contains('sq-kodub-personal-best'),true);
+  f.context.nativeWeeklySelection=null;f.render();
+  assert.equal(f.record.classList.contains('sq-kodub-personal-best'),false);
+});
+
 test('ordinary tracks, unknown native bindings and event-only boards remain untouched',()=>{
   for(const options of [{current:otherId},{current:''},{current:'Hydropower'},{event:true}]){
     const f=fixture(options);f.render();assert.equal(f.writes,0);assert.equal(f.faded.textContent,' (13.793%)');
+    assert.equal(f.record.classList.contains('sq-kodub-personal-best'),false);
   }
 });
 
