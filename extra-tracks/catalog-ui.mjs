@@ -638,7 +638,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
     if (state.sort === 'popular') {
       const players = popularityCounts.get(entry.trackId);
-      facts.append(make('span', 'sq-extra-popularity', players === undefined ? 'Snapshot racers unknown' : `${players.toLocaleString()} snapshot ${players === 1 ? 'racer' : 'racers'}`));
+      const popularity = make('span', 'sq-extra-popularity', players === undefined ? 'Player count unknown' : `${players.toLocaleString()} ${players === 1 ? 'player' : 'players'}`);
+      popularity.title = 'Unique players in the saved snapshot. Not live plays; incomplete coverage is unknown.';
+      facts.append(popularity);
     }
     const copies = Number.isSafeInteger(entry.sourceCopies) ? entry.sourceCopies : null;
     const plays = Number.isSafeInteger(entry.sourcePlays) ? entry.sourcePlays : null;

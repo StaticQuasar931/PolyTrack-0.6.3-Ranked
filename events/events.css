@@ -1133,3 +1133,35 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
  #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button>.record,
  #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card[data-event-kind]>.sq-event-record{grid-row:4!important}
 }
+
+/* Bounded interior polish: retain card geometry and native artwork. */
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record,
+#ui .track-selection-ui .sq-featured-events .sq-permanent-track .record{
+ display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+ gap:4px 10px;min-width:0;line-height:1.3!important;
+ color:#fff!important;font-size:18px!important;font-variant-numeric:tabular-nums;
+}
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record time{
+ white-space:nowrap;letter-spacing:.02em;
+}
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record small{
+ font-size:14px!important;line-height:1.3!important;color:#c4eaff;
+ max-height:none!important;overflow:visible;
+}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best{
+ gap:6px 14px;margin-block:8px!important;font-variant-numeric:tabular-nums;
+}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{
+ gap:7px;min-width:0;line-height:1.3!important;
+}
+#ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>.sq-event-card-details{
+ gap:6px;line-height:1.35!important;
+}
+#ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>.sq-event-card-details>small,
+#ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card>span:last-child>.sq-event-card-details>.sq-event-reward{
+ line-height:1.35!important;color:#d5e6ff;
+}
+@media(max-width:480px){
+ #ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record,
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record{justify-content:flex-start}
+}

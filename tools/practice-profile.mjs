@@ -89,6 +89,7 @@ function art(row, callback) {
 function evidenceSource(record) {
   if ((record.local === true || record.localPending === true || record.source === 'local') && record.cloudConfirmed !== true) return 'local';
   if(record.cloudConfirmed===true)return 'cloud';
+  if(record.cloudConfirmed===false)return 'saved';
   if (record.source === 'cloud') return 'cloud';
   if (record.source === 'snapshot' || num(record.snapshotCapturedAt)) return 'snapshot';
   if (record.source === 'saved') return 'saved';

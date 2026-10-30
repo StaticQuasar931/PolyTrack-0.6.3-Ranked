@@ -1,5 +1,6 @@
 // Keep this dependency on the same client cache revision as the loaded Help module.
-const {parseReleasePreparedAt,releaseAge}=await import(new URL('./release-info.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {parseReleasePreparedAt}=await import(new URL('./release-info.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {releaseUpdateAge,formatReleaseUpdateAge}=await import(new URL('./site-updates.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 // Native action names and IDs mirror main.bundle.js: defaultKeyBindings / module 3277.
 const nativeRows = [
@@ -172,6 +173,8 @@ function keycaps(item) {
 let serial=0;
 /** HTML fragment, not a modal. The host owns opening, closing and its focus trap.
  * release: {number,version,revision,preparedAt,commit,commitConfirmed,notes:string[]}. Use RELEASE_INFO from release-info.mjs.
+ * installedCommit + verifiedReleasePointer/verifiedSiteCommitMetadata follow releaseUpdateAge's trust contract.
+ * verifiedReleaseCommitAt must come explicitly from the parent's local RELEASE_INFO import.
  * Existing data-help-action hooks: profile, filters, ghost-shortcut. No callback or network needed.
  */
 export function renderHelpControls(options={}) {
@@ -179,10 +182,15 @@ export function renderHelpControls(options={}) {
   const groups=createHelpControlGroups(options),total=groups.reduce((sum,group)=>sum+group.rows.length,0);
   const release=options.release||{};
   const metadata=[['Game version',release.version],['Client revision',release.revision],['Commit',release.commitConfirmed===true&&/^[a-f0-9]{7,40}$/i.test(String(release.commit||''))?release.commit:null]].filter(([,value])=>value!==undefined&&value!==null&&String(value).trim()!=='');
-  const notes=Array.isArray(release.notes)?release.notes.filter(note=>typeof note==='string'&&note.trim()):[];
+  const notes=(Array.isArray(release.notes)?release.notes:[]).slice(0,8).filter(note=>typeof note==='string'&&note.slice(0,1024).trim()).slice(0,4).map(note=>{
+    const compact=note.slice(0,1024).trim().replace(/\s+/g,' ');
+    return compact.length>220?compact.slice(0,217).trimEnd()+'...':compact;
+  });
   const hasRelease=release.number!==undefined||metadata.length>0||notes.length>0;
   const prepared=parseReleasePreparedAt(release.preparedAt);
-  const age=releaseAge(release.preparedAt);
+  if(options.installedReleaseCommittedAt!==undefined)options={...options,verifiedReleaseCommitAt:options.installedReleaseCommittedAt};
+  const age=releaseUpdateAge(release,{...options,document:options.document||globalThis.document});
+  const ageCommit=/^[a-f0-9]{40}$/.test(options.installedCommit||'')?options.installedCommit:'';
   const preparedLabel=prepared===null?'Not recorded':new Date(prepared).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   return `<section class="pt-help-controls" data-help-controls aria-labelledby="${prefix}-title">
     <header class="hc-header"><h2 id="${prefix}-title">Help &amp; controls</h2>${hasRelease?`<div class="hc-view-switch" role="group" aria-label="Help view"><button type="button" data-hc-view="controls" aria-pressed="true" aria-controls="${prefix}-controls">Controls</button><button type="button" data-hc-view="release" aria-pressed="false" aria-controls="${prefix}-release">Release</button></div>`:''}</header>
@@ -195,7 +203,7 @@ export function renderHelpControls(options={}) {
       <p class="hc-default-note">${options.bindings||options.getBindings?'Your saved game keys are shown. Unchanged actions use defaults.':'Default game keys shown. Custom bindings take priority.'}</p></div></div>
       <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
-    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">${release.number===undefined?'Current Release':'Update '+escape(release.number)}</h3><section class="hc-release-age" aria-label="Release preparation age"><p class="hc-eyebrow">PREPARED</p><p class="hc-age-value" data-hc-release-age data-prepared-at="${prepared===null?'':escape(release.preparedAt)}" title="${escape(preparedLabel)}">${escape(age.text)}</p></section>${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Hover over the age for your local date and time.</p>${metadata.length?`<details class="hc-release-technical"><summary>Developer details</summary><dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><p>Prepared ${escape(preparedLabel)}. This is not a deployment timestamp.</p></details>`:''}</section>`:''}
+    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">${release.number===undefined?'Current Release':'PolyTrack Ranked - Update '+escape(release.number)}</h3><section class="hc-release-age" aria-label="Release age"><p class="hc-eyebrow">${escape((age.label||'Publication time').toUpperCase())}</p><p class="hc-age-value" data-hc-release-age data-release-at="${escape(age.dateTime)}" data-release-source="${escape(age.source)}" data-release-commit="${ageCommit}" data-release-fixed="${options.verifiedReleaseCommitAt!==undefined}" title="${escape(age.title)}">${escape(age.label&&age.text.startsWith(age.label+' ')?age.text.slice(age.label.length+1):age.text)}</p></section>${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Hover over the age for your local date and time.</p>${metadata.length?`<details class="hc-release-technical"><summary>Developer details</summary><dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><p>Prepared ${escape(preparedLabel)}. This is not a deployment timestamp.</p></details>`:''}</section>`:''}
     <footer class="hc-credits"><p>Track ratings &amp; difficulty gradings: <strong>Window Cleaner</strong>.</p></footer>
   </section>`;
 }
@@ -249,15 +257,21 @@ export function bindHelpControls(root) {
   let topic='all',snapshot=null,active=true;
   const keyScope=host.closest('[role="dialog"]')||host,doc=host.ownerDocument,view=doc.defaultView;
   const ageNode=host.querySelector('[data-hc-release-age]');
-  let ageTimer=null;
+  let ageTimer=null,ageSuspended=false;
   function updateAge(){
     if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
-    if(!active||!ageNode||!host.isConnected||!host.getClientRects().length)return;
-    const age=releaseAge(ageNode.dataset.preparedAt);
-    ageNode.textContent=age.text;
-    if(!doc.hidden&&age.nextUpdateMs!==null)ageTimer=view.setTimeout(updateAge,age.nextUpdateMs);
+    if(!active||ageSuspended||!ageNode||!host.isConnected||!host.getClientRects().length)return;
+    // The renderer selected this public timestamp from already-verified context.
+    const publication=ageNode.dataset.releaseFixed==='true'?null:releaseUpdateAge({},{document:doc,installedCommit:ageNode.dataset.releaseCommit||undefined});
+    const age=publication?.source==='updated'?publication:formatReleaseUpdateAge(ageNode.dataset.releaseAt,ageNode.dataset.releaseSource);
+    ageNode.textContent=age.label&&age.text.startsWith(age.label+' ')?age.text.slice(age.label.length+1):age.text;
+    ageNode.title=age.title;
+    ageNode.closest('.hc-release-age').querySelector('.hc-eyebrow').textContent=(age.label||'Publication time').toUpperCase();
+    if(!doc.hidden&&!ageNode.closest('[hidden]')&&age.nextUpdateMs!==null)ageTimer=view.setTimeout(updateAge,age.nextUpdateMs);
   }
   function visibilityChanged(){releaseKeys();updateAge();}
+  function suspendAge(){ageSuspended=true;if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;}
+  function resumeAge(){ageSuspended=false;updateAge();}
   const pressed=new Map();
   const releaseKeys=()=>{for(const caps of pressed.values())for(const cap of caps)cap.classList.remove('is-pressed');pressed.clear();};
   function showKey(event){
@@ -295,9 +309,10 @@ export function bindHelpControls(root) {
     host.querySelector('[data-hc-clear]').disabled=!input.value;
   }
   function showView(name) {
-    releaseKeys();updateAge();
+    releaseKeys();
     for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==name;
     for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle.dataset.hcView===name));
+    updateAge();
   }
   function click(event) {
     const button=event.target.closest?.('button');
@@ -335,6 +350,8 @@ export function bindHelpControls(root) {
   });
   keyScope.addEventListener('focusout',leaveScope);view?.addEventListener('blur',releaseKeys);
   doc.addEventListener('visibilitychange',visibilityChanged);view?.addEventListener('focus',updateAge);
+  doc.addEventListener('polytrack-release-publication',updateAge);
+  view?.addEventListener('pagehide',suspendAge);view?.addEventListener('pageshow',resumeAge);
   const selectTopic=()=>{topic=topicSelect.value;filter();};
   topicSelect.addEventListener('change',selectTopic);
   const searchInput=event=>{if(event.target===input)filter();};
@@ -346,6 +363,8 @@ export function bindHelpControls(root) {
     if(!active)return;active=false;releaseKeys();
     stopKeyboard();keyScope.removeEventListener('focusout',leaveScope);view?.removeEventListener('blur',releaseKeys);
     doc.removeEventListener('visibilitychange',visibilityChanged);view?.removeEventListener('focus',updateAge);
+    doc.removeEventListener('polytrack-release-publication',updateAge);
+    view?.removeEventListener('pagehide',suspendAge);view?.removeEventListener('pageshow',resumeAge);
     topicSelect.removeEventListener('change',selectTopic);
     if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
     host.removeEventListener('input',searchInput);host.removeEventListener('click',click);

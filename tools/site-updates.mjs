@@ -4,6 +4,7 @@ const installations = new WeakMap();
 const noticeInstallations = new WeakMap();
 const acknowledgedRevisions = new WeakMap();
 const ageBindings = new WeakMap();
+const verifiedPointers = new WeakMap();
 export const UPDATED_GAME_URL = 'https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/';
 export const CANONICAL_SITE_VERSION_URL = `${UPDATED_GAME_URL}site-version.json`;
 const CDN_REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
@@ -61,34 +62,97 @@ function themeDialog(node, title, description) {
 function isVisible(document) { return document.visibilityState !== 'hidden'; }
 function defaultIdle(document) { return isVisible(document) && (typeof document.hasFocus !== 'function' || document.hasFocus()); }
 
-function preparedTime(value) {
+function utcTime(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return null;
   const time = Date.parse(value);
   return Number.isFinite(time) && time > 0 && new Date(time).toISOString() === value ? time : null;
 }
 
-/** Local-only age API for the installed notice and Help Release renderer.
- * verifiedReleasePointer must come from the launcher's existing verified pointer,
- * not a new fetch or an untrusted manifest field. It must match installedCommit.
- */
-export function releaseUpdateAge(release = {}, {now = Date.now(), verifiedReleasePointer, installedCommit} = {}) {
-  let time = preparedTime(release.preparedAt), source = 'prepared';
+function publicationTime(value) {
+  // Git commit metadata uses whole-second UTC; release pointers use milliseconds.
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)) {
+    return utcTime(value.replace(/Z$/, '.000Z'));
+  }
+  return utcTime(value);
+}
+
+function embeddedSiteCommit(release, document) {
   try {
-    releaseVersionUrl(verifiedReleasePointer);
-    if (verifiedReleasePointer.commit === installedCommit && preparedTime(verifiedReleasePointer.publishedAt) !== null) {
-      time = preparedTime(verifiedReleasePointer.publishedAt); source = 'updated';
-    }
-  } catch { /* Missing/unverified publication uses the recorded preparation time. */ }
-  const label = source === 'updated' ? 'Updated' : 'Release prepared';
-  const details = {source, dateTime: time === null ? '' : new Date(time).toISOString(),
+    // A copied host/base tag cannot attest the official Pages deployment. This
+    // metadata is generated into the deployment artifact, never before commit.
+    const canonical = new URL(UPDATED_GAME_URL);
+    const page = new URL(document.location?.href || document.baseURI);
+    const base = new URL(document.baseURI);
+    const official = url => !url.username && !url.password && url.origin === canonical.origin &&
+      [canonical.pathname, canonical.pathname.slice(0,-1), canonical.pathname+'index.html'].includes(url.pathname);
+    if (!official(page) || !official(base)) return null;
+    const raw = document.querySelector?.('meta[name="polytrack-site-publication"]')?.getAttribute('content');
+    if (typeof raw !== 'string' || raw.length > 2048) return null;
+    const value = JSON.parse(raw);
+    const fields = ['schemaVersion','repository','commit','revision','releaseNumber','committedAt'];
+    if (!value || Array.isArray(value) || Object.keys(value).some(key => !fields.includes(key)) ||
+        value.schemaVersion !== 1 || value.repository !== CDN_REPOSITORY || !/^[a-f0-9]{40}$/.test(value.commit || '') ||
+        !validRevision(release.number) || !validRevision(release.revision) || value.releaseNumber !== release.number ||
+        value.revision !== release.revision || publicationTime(value.committedAt) === null) return null;
+    return value;
+  } catch { return null; }
+}
+
+/** Formatting only, not publication verification. Help may retain the already
+ * selected public timestamp/source in its rendered markup for local-only ticks.
+ */
+export function formatReleaseUpdateAge(dateTime, source = 'unknown', now = Date.now()) {
+  const labels = {updated: 'Updated', pushed: 'Pushed', committed: 'Committed'};
+  const label = Object.hasOwn(labels, source) ? labels[source] : null;
+  const time = label ? publicationTime(dateTime) : null;
+  const details = {source: time === null ? 'unknown' : source, label: time === null ? '' : label,
+    dateTime: time === null ? '' : new Date(time).toISOString(),
     title: time === null ? '' : `${label}: ${new Date(time).toLocaleString()}`};
-  if (time === null || !Number.isFinite(now)) return {...details, text: 'Preparation time not recorded', nextUpdateMs: null};
+  if (time === null || !Number.isFinite(now)) return {...details, text: 'Publication time unavailable', nextUpdateMs: null};
   const elapsed = now - time;
-  if (elapsed < 0) return {...details, text: `Device clock is before ${source === 'updated' ? 'update' : 'preparation'} time`, nextUpdateMs: Math.min(-elapsed, 60000)};
+  if (elapsed < 0) return {...details, text: `Device clock is before ${source === 'committed' ? 'commit' : source === 'pushed' ? 'push' : 'update'} time`, nextUpdateMs: Math.min(-elapsed, 60000)};
   const [unit, size] = elapsed >= 86400000 ? ['day', 86400000] : elapsed >= 3600000 ? ['hour', 3600000] : ['minute', 60000];
   const count = Math.floor(elapsed / size);
   return {...details, text: `${label} ${count ? `${count} ${unit}${count === 1 ? '' : 's'} ago` : 'less than a minute ago'}`,
     nextUpdateMs: Math.min(size - elapsed % size, 60000)};
+}
+
+/** Local-only age API for the installed notice and Help Release renderer.
+ * verifiedReleaseCommitAt is supplied only from locally imported RELEASE_INFO
+ * after the parent's audited commit-date stamp. It wins over all discovery.
+ * Verified inputs must come from existing trusted publication/commit validation,
+ * not a new fetch, storage, or arbitrary release fields. Both require the exact
+ * installed full commit. A commit date is never labelled as publication time.
+ */
+export function releaseUpdateAge(release = {}, {now = Date.now(), verifiedReleasePointer,
+  verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit, document} = {}) {
+  if (installedReleaseCommittedAt !== undefined) verifiedReleaseCommitAt=installedReleaseCommittedAt;
+  if (verifiedReleaseCommitAt !== undefined) {
+    const time = publicationTime(verifiedReleaseCommitAt);
+    // Git commit objects store whole seconds, not milliseconds.
+    return formatReleaseUpdateAge(time !== null && time % 1000 === 0 ? verifiedReleaseCommitAt : undefined,'committed',now);
+  }
+  installedCommit ||= automaticLauncherCommit(document);
+  const embedded = embeddedSiteCommit(release, document);
+  installedCommit ||= embedded?.commit;
+  verifiedSiteCommitMetadata ||= embedded;
+  verifiedReleasePointer ||= verifiedPointers.get(document);
+  let dateTime, source = 'unknown';
+  const matches = value => /^[a-f0-9]{40}$/.test(installedCommit || '') &&
+    value?.repository === CDN_REPOSITORY && value.commit === installedCommit;
+  if (matches(verifiedSiteCommitMetadata)) {
+    for (const [field, kind] of [['publishedAt', 'updated'], ['pushedAt', 'pushed'], ['committedAt', 'committed']]) {
+      if (publicationTime(verifiedSiteCommitMetadata[field]) === null) continue;
+      dateTime = verifiedSiteCommitMetadata[field]; source = kind; break;
+    }
+  }
+  try {
+    releaseVersionUrl(verifiedReleasePointer);
+    if (matches(verifiedReleasePointer) && publicationTime(verifiedReleasePointer.publishedAt) !== null) {
+      dateTime = verifiedReleasePointer.publishedAt; source = 'updated';
+    }
+  } catch { /* Missing/unverified publication remains explicitly unavailable. */ }
+  return formatReleaseUpdateAge(dateTime, source, now);
 }
 
 /** Bind one local age timer. Rebinding disposes the previous binding. The caller
@@ -96,7 +160,7 @@ export function releaseUpdateAge(release = {}, {now = Date.now(), verifiedReleas
  * refresh() handles parent UI transitions without requesting any data.
  */
 export function bindReleaseUpdateAge(element, {release = {}, document = element?.ownerDocument,
-  verifiedReleasePointer, installedCommit, now = Date.now,
+  verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit, now = Date.now,
   setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!element || !document?.addEventListener) throw new TypeError('age element and document are required');
   ageBindings.get(element)?.dispose();
@@ -108,9 +172,11 @@ export function bindReleaseUpdateAge(element, {release = {}, document = element?
   };
   const refresh = () => {
     stop();
-    if (disposed || suspended || !element.isConnected || !isVisible(document)) return;
+    if (disposed) return;
+    if (!element.isConnected) { handle.dispose(); return; }
+    if (suspended || !isVisible(document)) return;
     try {
-      const age = releaseUpdateAge(release, {now: now(), verifiedReleasePointer, installedCommit});
+      const age = releaseUpdateAge(release, {now: now(), verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit, document});
       if (element.textContent !== age.text) element.textContent = age.text;
       if (element.title !== age.title) element.title = age.title;
       if (age.dateTime) {
@@ -122,6 +188,7 @@ export function bindReleaseUpdateAge(element, {release = {}, document = element?
   const pagehide = () => { suspended = true; stop(); };
   const pageshow = () => { suspended = false; refresh(); };
   document.addEventListener('visibilitychange', refresh);
+  document.addEventListener('polytrack-release-publication', refresh);
   view?.addEventListener('focus', refresh);
   view?.addEventListener('pagehide', pagehide);
   view?.addEventListener('pageshow', pageshow);
@@ -129,6 +196,7 @@ export function bindReleaseUpdateAge(element, {release = {}, document = element?
     if (disposed) return;
     disposed = true; stop();
     document.removeEventListener('visibilitychange', refresh);
+    document.removeEventListener('polytrack-release-publication', refresh);
     view?.removeEventListener('focus', refresh);
     view?.removeEventListener('pagehide', pagehide);
     view?.removeEventListener('pageshow', pageshow);
@@ -185,7 +253,7 @@ function expireLauncherDiscovery(document, commit) {
  */
 export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
   isReady = () => false, isIdle = defaultIdle, storage, sessionStorage,
-  verifiedReleasePointer, installedCommit,
+  verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
   now = Date.now, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
   if (!document?.addEventListener) throw new TypeError('document is required');
@@ -239,9 +307,8 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
     node.setAttribute('aria-describedby', 'pt-installed-update-description');
     const title = document.createElement('h2'); title.id = 'pt-installed-update-title';
-    title.textContent = validRevision(release.number) ? `PolyTrack update ${release.number}` : 'PolyTrack updated';
+    title.textContent = validRevision(release.number) ? `PolyTrack Ranked - Update ${release.number}` : 'PolyTrack Ranked - Updated';
     const description = document.createElement('p'); description.id = 'pt-installed-update-description';
-    description.textContent = 'Your saved runs are unchanged.';
     const ageNode = document.createElement('time');
     ageNode.dataset.siteUpdateAge = '';
     Object.assign(ageNode.style, {display: 'block', marginTop: '8px', color: '#a7d5ff', fontSize: '0.85em'});
@@ -268,7 +335,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     node.append(title, description, notes, ok); document.body.append(node);
     try {
       node.showModal(); ok.focus();
-      ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, installedCommit,
+      ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
         now, setTimeout: schedule, clearTimeout: unschedule});
     } catch { close(); }
   };
@@ -502,6 +569,11 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
           if (disposed || !canonical) throw error;
           const pointer = await read(new URL(CANONICAL_RELEASE_POINTER_URL));
           data = await version(releaseVersionUrl(pointer));
+          if (!disposed && pointer.commit === automaticLauncherCommit(document)) {
+            // Reuse the existing credential-free check, never fetch just for age.
+            verifiedPointers.set(document, Object.freeze({...pointer}));
+            document.dispatchEvent(new Event('polytrack-release-publication'));
+          }
         }
         if (disposed) return;
         // A run/menu may start during fetch. Retain the result, independently of
@@ -548,3 +620,5 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   scheduleNext();
   return handle;
 }
+
+export const installInstalledUpdateNotice = installInstalledRevisionNotice;
