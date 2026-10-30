@@ -5,6 +5,7 @@ import {decode} from './verifier/firestore.mjs';
 import {publicOverallBackup} from './public-snapshot-backup.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
 import {PublicBackupDeferredError} from './public-backup-fetch.mjs';
+import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
 
 export function publicEventTotals(value){
   if(!Number.isSafeInteger(value?.updatedAt)||value.updatedAt<0||!Array.isArray(value.entries)||value.entries.length>10000||value.entries.length>200&&!(value.paginatedSource===true&&value.complete===true&&value.totalEntries===value.entries.length))throw Error('Invalid public event totals');
@@ -41,7 +42,7 @@ async function totalsJson(response){
   return JSON.parse(text);
 }
 
-export async function capturePublicEventTotals({directory,fetchImpl=fetch,log=()=>{},now=Date.now}){
+export async function capturePublicEventTotals({directory,fetchImpl=createWorkerCaptureFetch(),log=()=>{},now=Date.now}){
   const request=(...args)=>totalsNetworkRead(()=>fetchImpl(...args));
   try{
     const response=await request('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/totals',{headers:{Accept:'application/json',Origin:'https://staticquasar931.github.io'},signal:AbortSignal.timeout(10000)});

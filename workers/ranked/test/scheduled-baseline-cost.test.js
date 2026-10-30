@@ -7,10 +7,10 @@ import {PERMANENT_ROLLING_HILLS} from '../src/permanent-rolling-hills.js';
 import {eventEncode} from '../src/events-store.js';
 import {recordFirestoreReads} from '../src/firestore-read-cost.js';
 
-async function checkDailyBaseline(jitterMs) {
+async function checkDailyBaseline(jitterMs, mode) {
   const audit = {documentReadEstimate:0, collections:{}}, errors = [], logs = [];
   const jobs = '/0.6.2_s1_worker_jobs/', calls = [];
-  const env = {EVENTS_ENABLED:'false', __TEST_FIRESTORE:async (path, init = {}) => {
+  const env = {EVENTS_ENABLED:'false', BACKGROUND_MAINTENANCE_MODE:mode, __TEST_FIRESTORE:async (path, init = {}) => {
     calls.push(path);
     let data;
     if (path === ':runQuery') {
@@ -51,6 +51,11 @@ async function checkDailyBaseline(jitterMs) {
     }
   } finally {console.log = previousLog; console.error = previousError;}
   assert.deepEqual(errors, []);
+  if (mode === 'four-window') {
+    assert.equal(audit.writeEstimate || 0, 0);
+    assert(audit.documentReadEstimate < 200, 'bounded quiet maintenance must stay below 200 reads/day');
+    return {reads:audit.documentReadEstimate, calls:calls.length};
+  }
   assert.equal(audit.documentReadEstimate, 1440);
   assert.equal(audit.writeEstimate || 0, 0);
   assert.equal(calls.length, 1440);
@@ -68,6 +73,10 @@ async function checkDailyBaseline(jitterMs) {
 
 for (const jitter of [0,39338,59999]) {
   test('24h non-event baseline stays at 1440 reads and zero writes with cron jitter '+jitter+'ms',()=>checkDailyBaseline(jitter));
+  test('four-window non-event baseline is bounded with cron jitter '+jitter+'ms',async()=>{
+    const result=await checkDailyBaseline(jitter,'four-window');
+    assert.deepEqual(result,{reads:104,calls:104});
+  });
 }
 
 test('cron interval gating uses the scheduled minute and rejects malformed timestamps/intervals',()=>{

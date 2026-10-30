@@ -111,3 +111,103 @@ function collectionForDocument(name) {
   try { return decodeURIComponent(parts.at(-2)); }
   catch { return parts.at(-2); }
 }
+
+// One actual transport call only, never a pre-transport attempt. This returns no
+// references to inputs and intentionally excludes paths, bodies and error text.
+export function describeFirestoreOperation({path, init = {}, method = init?.method || 'GET', payload, failed = false} = {}) {
+  const audit = createFirestoreAudit();
+  // Collection names such as __proto__ must behave as data in the old counters.
+  audit.collections = Object.create(null);
+  audit.writeCollections = Object.create(null);
+  const verb = typeof method === 'string' ? method.toUpperCase() : '';
+  const cleanPath = typeof path === 'string' ? path.split(/[?#]/)[0] : '';
+  const action = cleanPath.match(/:(runQuery|batchGet|commit)$/)?.[1];
+  const operationKind = action || ({GET:'get', PATCH:'patch', DELETE:'delete'}[verb]) || 'unknown';
+  let requestedDocumentCount = null, returnedDocumentCount = null, minimumEmptyQuery = null;
+  let valid = operationKind !== 'unknown', safePath = '', body, safeBody;
+  try {
+    if (action) {
+      body = JSON.parse(init?.body || '{}');
+      safePath = ':' + action;
+      if (action === 'runQuery') {
+        const from = body.structuredQuery?.from;
+        if (!Array.isArray(from) || from.length !== 1) throw Error();
+        body = {structuredQuery:{from:[{collectionId:auditCollectionName(from[0]?.collectionId)}]}};
+        safeBody = body;
+        if (!failed) {
+          if (!Array.isArray(payload) || payload.some(row => !row || typeof row !== 'object' || row.error)) throw Error();
+          returnedDocumentCount = payload.filter(row => row.document).length;
+          minimumEmptyQuery = returnedDocumentCount === 0;
+        }
+      } else if (action === 'batchGet') {
+        if (!Array.isArray(body.documents)) throw Error();
+        body = {documents:body.documents.map(auditDocumentName)};
+        safeBody = body;
+        requestedDocumentCount = body.documents.length;
+        if (!failed) {
+          if (!Array.isArray(payload) || payload.some(row => !row || (!row.found && !row.missing) || row.error)) throw Error();
+          if (payload.length !== requestedDocumentCount) throw Error();
+          returnedDocumentCount = payload.filter(row => row.found).length;
+        }
+      } else {
+        if (!Array.isArray(body.writes)) throw Error();
+        body = {writes:body.writes.map(write => {
+          if (typeof write?.delete === 'string') return {delete:auditDocumentName(write.delete)};
+          if (typeof write?.update?.name === 'string') return {update:{name:auditDocumentName(write.update.name)}};
+          if (typeof write?.transform?.document === 'string') return {transform:{document:auditDocumentName(write.transform.document)}};
+          throw Error();
+        })};
+      }
+    } else if (valid) {
+      safePath = '/' + auditDocumentName(cleanPath).split('/documents/')[1];
+      requestedDocumentCount = verb === 'GET' ? 1 : null;
+      returnedDocumentCount = !failed && verb === 'GET' ? (payload == null ? 0 : 1) : null;
+    }
+    const safeInit = {method:verb, ...(body ? {body:JSON.stringify(body)} : {})};
+    if (failed) recordFirestoreFailure(audit, safePath, safeInit);
+    else recordFirestoreReads(audit, safePath, safeInit,
+      action === 'runQuery' ? Array.from({length:returnedDocumentCount}, () => ({document:{}})) : null);
+  } catch {
+    valid = false;
+    requestedDocumentCount = returnedDocumentCount = minimumEmptyQuery = null;
+  }
+  if (!valid) {
+    // Unparseable operations cannot safely be called free. Keep unrelated costs
+    // at zero when the operation type still tells us which dimension is unknown.
+    const reads = ['get','runQuery','batchGet','unknown'].includes(operationKind);
+    const writes = ['patch','commit','unknown'].includes(operationKind);
+    const deletes = ['delete','commit','unknown'].includes(operationKind);
+    audit.documentReadEstimate = reads ? null : 0;
+    audit.writeEstimate = writes ? null : 0;
+    audit.deleteEstimate = deletes ? null : 0;
+    audit.unknownReadRequests = reads ? 1 : 0;
+    audit.unknownWriteRequests = writes || deletes ? 1 : 0;
+    audit.collections = Object.create(null);
+    audit.writeCollections = Object.create(null);
+    // A malformed response still has a known target when its request was valid.
+    if (safePath && safeBody && ['runQuery','batchGet'].includes(action)) {
+      try { recordFirestoreFailure(audit, safePath, {method:verb, body:JSON.stringify(safeBody)}); } catch {}
+      audit.unknownReadRequests = 1;
+    }
+  }
+  return {schemaVersion:1, operationKind, outcome:failed || !valid ? 'unknown' : 'success', failed:Boolean(failed),
+    requestedDocumentCount, returnedDocumentCount, minimumEmptyQuery,
+    documentReadEstimate:audit.documentReadEstimate, collections:{...audit.collections},
+    writeEstimate:audit.writeEstimate, deleteEstimate:audit.deleteEstimate, writeCollections:{...audit.writeCollections},
+    unknownReadRequests:audit.unknownReadRequests, unknownWriteRequests:audit.unknownWriteRequests,
+    billingEstimateOnly:true};
+}
+
+function auditCollectionName(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(value)) throw Error();
+  return value;
+}
+
+function auditDocumentName(value) {
+  if (typeof value !== 'string') throw Error();
+  const relative = value.split('/documents/')[1] ?? value.replace(/^\//, '');
+  const parts = relative.split('/');
+  if (parts.length < 2 || parts.length % 2 || parts.some(part => !part)) throw Error();
+  const collection = auditCollectionName(decodeURIComponent(parts.at(-2)));
+  return 'projects/_/databases/_/documents/' + collection + '/_';
+}

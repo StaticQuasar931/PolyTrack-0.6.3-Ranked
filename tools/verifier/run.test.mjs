@@ -3,8 +3,9 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {generateKeyPairSync} from 'node:crypto';
 import {runRound, runVerifier, verifierAccounting} from './run.mjs';
-import {createFirestoreCaller} from './firestore.mjs';
+import {createFirestoreCaller,FirestoreDocumentBudgetError} from './firestore.mjs';
 import {VerificationEventConflictError} from './throughput.mjs';
 import {prioritizeQueueDocuments} from './runner.mjs';
 import {VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION} from '../../workers/ranked/src/verification.js';
@@ -301,4 +302,188 @@ test('authentication exceptions emit unavailable accounting and clear credential
   assert.equal(receipt.phase,'connect');assert.equal(receipt.outcome,'failed');
   assert.equal(receipt.firestoreHttpRequests,null);assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT' in env,false);
   assert.doesNotMatch(logs.join('')+fs.readFileSync(summaryPath,'utf8'),/PRIVATE/);
+});
+
+function syntheticCredentials() {
+  const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+  return JSON.stringify({project_id:'polytrack-052',client_email:'synthetic@example.invalid',
+    private_key:privateKey.export({format:'pem',type:'pkcs8'})});
+}
+
+test('real connect uses the supplied env in preflight and reports local read-cap deferral without claiming HTTP 429',async t=>{
+  const prior=process.env.VERIFIER_DOCUMENT_READ_LIMIT;
+  process.env.VERIFIER_DOCUMENT_READ_LIMIT='INVALID_PROCESS_DEFAULT_MUST_NOT_BE_USED';
+  t.after(()=>{if(prior===undefined)delete process.env.VERIFIER_DOCUMENT_READ_LIMIT;else process.env.VERIFIER_DOCUMENT_READ_LIMIT=prior;});
+  const summaryPath=summaryFile(t),outputPath=path.join(path.dirname(summaryPath),'output'),logs=[];
+  let oauth=0,queries=0;
+  t.mock.method(globalThis,'fetch',async(url,init)=>{
+    if(url==='https://oauth2.googleapis.com/token') {oauth++;return Response.json({access_token:'PRIVATE_SYNTHETIC_ACCESS'});}
+    assert.ok(url.startsWith('https://firestore.googleapis.com/v1/projects/polytrack-052/'));
+    assert.ok(url.endsWith(':runQuery'));
+    assert.equal(JSON.parse(init.body).structuredQuery.limit,1);
+    queries++;return Response.json([]);
+  });
+  const env={FIREBASE_VERIFIER_SERVICE_ACCOUNT:syntheticCredentials(),GITHUB_EVENT_NAME:'schedule',
+    VERIFIER_DOCUMENT_READ_LIMIT:'1',VERIFIER_DOCUMENT_WRITE_LIMIT:'1000',
+    GITHUB_OUTPUT:outputPath,GITHUB_STEP_SUMMARY:summaryPath};
+  const result=await runVerifier({check:true,env,log:line=>logs.push(line),
+    validateEngine:()=>assert.fail('Preflight must not load engine'),
+    eventCheck:()=>assert.fail('Preflight must stop after second queue query admission fails')});
+  assert.equal(result.hasWork,null);
+  assert.equal(result.deferred,true);
+  assert.equal(result.reason,'firestore_document_budget');
+  assert.equal(result.countsComplete,false);
+  assert.equal(result.firestoreDocumentReadLimit,1);
+  assert.equal(result.firestoreDocumentWriteLimit,1000);
+  assert.equal(result.firestoreDocumentReadsUsed,1);
+  assert.equal(result.firestoreDocumentWritesUsed,0);
+  assert.equal(result.firestoreHttpRequests,1);
+  assert.equal(oauth,1);assert.equal(queries,1);
+  assert.equal('FIREBASE_VERIFIER_SERVICE_ACCOUNT'in env,false);
+  const receipt=JSON.parse(logs.at(-1)).firestoreUsage;
+  assert.equal(receipt.phase,'preflight');assert.equal(receipt.outcome,'deferred');
+  assert.equal(receipt.firestoreDocumentReadLimit,1);
+  assert.equal(receipt.firestoreDocumentReadsUsed,1);
+  assert.equal(receipt.firestoreRemainingDocumentReads,0);
+  const output=fs.readFileSync(outputPath,'utf8'),summary=fs.readFileSync(summaryPath,'utf8');
+  assert.match(output,/has_work=deferred\npreflight_status=document_budget/);
+  assert.match(summary,/Queue state is unknown/);
+  assert.match(summary,/"firestoreDocumentReadLimit":1/);
+  assert.match(summary,/"firestoreDocumentReadsUsed":1/);
+  assert.doesNotMatch(logs.join('')+output+summary,/429|throttl|PRIVATE_|PRIVATE KEY|synthetic@example/);
+});
+
+test('real connect single-round and drain caps preserve confirmed prefix writes without retry or stale publication',async t=>{
+  const raw=syntheticCredentials();
+  let oauth=0,reads=0,commits=0;
+  t.mock.method(globalThis,'fetch',async(url,init)=>{
+    if(url==='https://oauth2.googleapis.com/token') {oauth++;return Response.json({access_token:'PRIVATE_SYNTHETIC_ACCESS'});}
+    assert.ok(url.startsWith('https://firestore.googleapis.com/v1/projects/polytrack-052/'));
+    if(url.endsWith(':commit')) {
+      commits++;
+      return Response.json({writeResults:JSON.parse(init.body).writes.map(()=>({}))});
+    }
+    assert.equal(init.method,'GET');reads++;return Response.json({name:'queue/one'});
+  });
+  for(const mode of ['single','drain','catch-up']) for(const kind of ['read','write']) {
+    const before={oauth,reads,commits},logs=[],summaryPath=summaryFile(t);
+    let eventCalls=0;
+    const result=await runVerifier({drain:mode!=='single',catchUp:mode==='catch-up',clock:()=>0,
+      env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:raw,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_STEP_SUMMARY:summaryPath,
+        VERIFIER_DOCUMENT_READ_LIMIT:'1',VERIFIER_DOCUMENT_WRITE_LIMIT:'1'},
+      validateEngine:async()=>{},log:line=>logs.push(line),eventRun:async db=>{
+        eventCalls++;
+        const previous=await db.call('/queue/one');
+        await db.call(':commit',{writes:[{update:{name:previous.name}}]});
+        try {
+          if(kind==='read')await db.call('/queue/two');
+          else await db.call(':commit',{writes:[{}]});
+          assert.fail('Must stop at the document cap');
+        } catch(error) {
+          assert.ok(error instanceof FirestoreDocumentBudgetError);
+          await assert.rejects(db.call(':commit',{writes:[{proof:'MUST_NOT_PUBLISH_STALE'}]}),failure=>failure===error);
+          throw error;
+        }
+      },selectNormal:()=>assert.fail('No selection after budget stop'),
+      verifyNormal:()=>assert.fail('No simulation after budget stop'),publishNormal:()=>assert.fail('No publication after budget stop')});
+    assert.equal(mode==='single'?result.reason:result.stop,'firestore_document_budget');
+    assert.equal(result.interruptedRound,true);assert.equal(result.countsComplete,false);
+    if(mode==='single')assert.equal(result.deferred,true);
+    else {assert.equal(result.rounds,0);assert.equal(result.verified,0);assert.equal(result.eventCountsComplete,false);}
+    assert.equal(eventCalls,1);
+    assert.equal(oauth-before.oauth,1);assert.equal(reads-before.reads,1);assert.equal(commits-before.commits,1);
+    assert.equal(result.firestoreDocumentReadLimit,1);assert.equal(result.firestoreDocumentWriteLimit,1);
+    assert.equal(result.firestoreDocumentReadsUsed,1);assert.equal(result.firestoreDocumentWritesUsed,1);
+    assert.equal(result.firestoreEstimatedDocumentWrites,1);assert.equal(result.firestoreHttpRequests,2);
+    const receipt=JSON.parse(logs.at(-1)).firestoreUsage;
+    assert.equal(receipt.outcome,'deferred');assert.equal(receipt.firestoreDocumentWritesUsed,1);
+    assert.equal(receipt.firestoreEstimatedDocumentWrites,1);
+    const summary=fs.readFileSync(summaryPath,'utf8');
+    assert.match(summary,/document-budget guard stopped verification/);
+    assert.match(summary,/Earlier writes may have committed/);
+    assert.match(summary,/No write was replayed/);
+    assert.match(summary,/next invocation will reread queue state/);
+    assert.match(summary,/"firestoreDocumentWritesUsed":1/);
+    assert.doesNotMatch(logs.join('')+summary,/429|Firestore throttled|deferred throttle response|PRIVATE_|MUST_NOT_PUBLISH_STALE/);
+  }
+});
+
+test('workflow-sized caps reach a successful real preflight and are included in results and accounting',async t=>{
+  const logs=[];let oauth=0,queries=0;
+  t.mock.method(globalThis,'fetch',async(url,init)=>{
+    if(url==='https://oauth2.googleapis.com/token') {oauth++;return Response.json({access_token:'SYNTHETIC_ACCESS'});}
+    assert.ok(url.endsWith(':runQuery'));
+    assert.equal(JSON.parse(init.body).structuredQuery.limit,1);
+    queries++;return Response.json([]);
+  });
+  const result=await runVerifier({check:true,log:line=>logs.push(line),eventCheck:async()=>({hasWork:false}),
+    env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:syntheticCredentials(),GITHUB_EVENT_NAME:'schedule',
+      VERIFIER_DOCUMENT_READ_LIMIT:'1500',VERIFIER_DOCUMENT_WRITE_LIMIT:'1000'}});
+  assert.equal(result.hasWork,false);
+  assert.equal(result.firestoreDocumentReadLimit,1500);assert.equal(result.firestoreDocumentWriteLimit,1000);
+  assert.equal(result.firestoreDocumentReadsUsed,2);assert.equal(result.firestoreDocumentWritesUsed,0);
+  const receipt=JSON.parse(logs.at(-1)).firestoreUsage;
+  assert.equal(receipt.outcome,'completed');
+  assert.equal(receipt.firestoreDocumentReadLimit,1500);assert.equal(receipt.firestoreDocumentWriteLimit,1000);
+  assert.equal(receipt.firestoreDocumentReadsUsed,2);assert.equal(receipt.firestoreRemainingDocumentReads,1498);
+  assert.equal(oauth,1);assert.equal(queries,2);
+});
+
+test('preflight and single-round handlers reject unrecognized deferred errors instead of relabeling them as a quota stop',async()=>{
+  for(const check of [true,false]) for(const failure of [
+    Object.assign(Error('unrelated deferral'),{deferred:true}),
+    Object.assign(Error('unrecognized'),{deferred:true,code:'UNRECOGNIZED'}),
+    Object.assign(Error('untagged budget'),{code:'FIRESTORE_DOCUMENT_BUDGET'})]) {
+    const logs=[];
+    await assert.rejects(runVerifier({check,log:line=>logs.push(line),
+      env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'SYNTHETIC_ONLY'},validateEngine:async()=>{},
+      connectDatabase:async(_raw,{env})=>{
+        assert.equal(env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,'SYNTHETIC_ONLY');
+        return {call:async()=>{throw failure;}};
+      },eventRun:async()=>{throw failure;}}),error=>error===failure);
+    assert.equal(JSON.parse(logs.at(-1)).firestoreUsage.outcome,'failed');
+    assert.doesNotMatch(logs.join(''),/firestore_429|firestore_document_budget/);
+  }
+});
+
+test('document-budget accounting is numeric-only and never serializes unexpected state or failing getters',()=>{
+  const data={readLimit:1500,writeLimit:1000,usedReads:101,usedWrites:2,remainingReads:1399,remainingWrites:998,
+    token:'PRIVATE_TOKEN',path:'PRIVATE_PATH'};
+  const result=verifierAccounting({documentBudget:()=>data,estimatedDocumentWrites:()=>2});
+  assert.equal(result.firestoreDocumentReadLimit,1500);assert.equal(result.firestoreDocumentWriteLimit,1000);
+  assert.equal(result.firestoreDocumentReadsUsed,101);assert.equal(result.firestoreDocumentWritesUsed,2);
+  assert.equal(result.firestoreEstimatedDocumentWrites,2);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE/);
+  for(const state of [null,{readLimit:Infinity,writeLimit:-1,usedReads:'100',usedWrites:{token:'PRIVATE'},remainingReads:NaN},
+    new Proxy({},{get:()=>{throw Error('PRIVATE_GETTER');}})]) {
+    const receipt=verifierAccounting({documentBudget:()=>state});
+    assert.equal(receipt.firestoreDocumentReadLimit,null);
+    assert.equal(receipt.firestoreDocumentReadsUsed,null);
+    assert.ok(Object.values(receipt).every(value=>value===null||Number.isSafeInteger(value)&&value>=0));
+    assert.doesNotMatch(JSON.stringify(receipt),/PRIVATE/);
+  }
+  assert.equal(verifierAccounting({documentBudget:()=>{throw Error('PRIVATE_STATE');}}).firestoreDocumentReadsUsed,null);
+});
+
+test('retained unknown document reservations are reported separately from successful read estimates',async()=>{
+  let calls=0;
+  const db=createFirestoreCaller({base:'https://offline.invalid',access:'SYNTHETIC_ACCESS',
+    documentReadLimit:100,documentWriteLimit:1000,fetchImpl:async()=>{calls++;return new Response('{}',{status:503});}});
+  const logs=[];
+  const result=await runVerifier({log:line=>logs.push(line),validateEngine:async()=>{},
+    env:{FIREBASE_VERIFIER_SERVICE_ACCOUNT:'SYNTHETIC_ONLY'},connectDatabase:async()=>db,eventRun:async()=>{
+      await assert.rejects(db.call(':runQuery',{structuredQuery:{limit:100}}),{status:503});
+      await db.call('/queue/fresh');
+      assert.fail('Full retained reservation must block new reads');
+    }});
+  assert.equal(result.reason,'firestore_document_budget');
+  assert.equal(result.firestoreDocumentReadsUsed,100);
+  assert.equal(result.firestoreEstimatedDocumentReads,0);
+  assert.equal(result.firestoreUnknownReadOutcomes,1);
+  assert.equal(result.firestoreHttpRequests,1);
+  assert.equal(calls,1);
+  const receipt=JSON.parse(logs.at(-1)).firestoreUsage;
+  assert.equal(receipt.firestoreDocumentReadsUsed,100);
+  assert.equal(receipt.firestoreEstimatedDocumentReads,0);
+  assert.equal(receipt.firestoreUnknownReadOutcomes,1);
 });

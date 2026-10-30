@@ -7,6 +7,7 @@ import {EVENT_COLLECTIONS as C} from '../src/events.js';
 import {eventEncode} from '../src/events-store.js';
 import {recordFirestoreReads} from '../src/firestore-read-cost.js';
 import {KODUB_METADATA_URL} from '../src/kodub-event.js';
+import {maintenanceWindowAllows} from '../src/index.js';
 
 const start = Date.UTC(2026, 9, 20), trackId = 'a'.repeat(64), endsAt = start + 3 * 86400000;
 const code = 'PolyTrack2' + 'A'.repeat(128), hash = createHash('sha256').update(code).digest('hex');
@@ -68,6 +69,15 @@ test('24h quiet event cron: 2880 estimated reads, zero writes, bounded discovery
   assert.equal(f.audit.collections[C.public], 576);
   assert.equal(f.audit.collections[C.cursors], 1152);
   assert.equal(f.upstream(), 96);
+});
+
+test('four coordinated event windows bound quiet daily reads without heartbeat writes', async () => {
+  const f=quietFixture();
+  for(let minute=0;minute<1440;minute++) {
+    if(maintenanceWindowAllows('* * * * *',start+minute*60000,'four-window'))await f.run(minute);
+  }
+  assert.equal(f.audit.writeEstimate||0,0);
+  assert.equal(f.audit.documentReadEstimate,360);
 });
 
 test('off-cadence provisioning and invalid cron timestamps perform no I/O', async () => {

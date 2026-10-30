@@ -31,10 +31,11 @@ async function fixture(t){
  return {output,staging,requests:()=>requests};
 }
 
-test('scheduled Sunday skips snapshot capture but preserves archives with no staging or extra reads',async t=>{
- const context={github:{event_name:'schedule',event:{schedule:'19 20 * * 0'}},steps:{catalog:{outcome:'success',outputs:{capture_status:'complete'}},snapshot:{outcome:'skipped',outputs:{}}}};
+test('manual fallback preserves archives after a snapshot failure with no staging or extra reads',async t=>{
+ const context={github:{event_name:'workflow_dispatch',event:{}},steps:{catalog:{outcome:'success',outputs:{capture_status:'complete'}},snapshot:{outcome:'failure',outputs:{}}}};
  assert.match(step('Capture public event assignments'),/^        id: catalog$/m);
- assert.equal(enabled(capture,context),false);assert.equal(enabled(merge,context),true);
+ assert.equal(enabled(capture,context),true);assert.equal(enabled(merge,context),true);
+ assert.equal(enabled('Commit changed assignments',context),false);
  const f=await fixture(t);
  const result=await mergeSavedArchiveFiles(f);
  assert.deepEqual(result.periods,fresh.periods);
@@ -43,8 +44,8 @@ test('scheduled Sunday skips snapshot capture but preserves archives with no sta
  await assert.rejects(fs.stat(f.staging),{code:'ENOENT'});
 });
 
-test('failed daily snapshot still merges locally without erasing saved archive history or publishing partial capture',async t=>{
- const context={github:{event_name:'schedule',event:{schedule:'20 0 * * *'}},steps:{catalog:{outcome:'success',outputs:{capture_status:'complete'}},snapshot:{outcome:'failure',outputs:{}}}};
+test('failed manual snapshot still merges locally without erasing saved archive history or publishing partial capture',async t=>{
+ const context={github:{event_name:'workflow_dispatch',event:{}},steps:{catalog:{outcome:'success',outputs:{capture_status:'complete'}},snapshot:{outcome:'failure',outputs:{}}}};
  assert.equal(enabled(capture,context),true);assert.equal(enabled(merge,context),true);
  const f=await fixture(t),frozen={...old,id:'staged-frozen',startsAt:2,endsAt:3};
  await assert.rejects((async()=>{
@@ -67,13 +68,13 @@ test('local history merge is gated by successful catalog sync and never runs aft
 });
 
 test('deferred catalog skips snapshot reads, archive merge and publication',()=>{
- const context={github:{event_name:'schedule',event:{schedule:'20 0 * * *'}},
+ const context={github:{event_name:'workflow_dispatch',event:{}},
   steps:{catalog:{outcome:'success',outputs:{capture_status:'deferred'}},snapshot:{outcome:'skipped',outputs:{}}}};
  for(const name of [capture,merge,'Commit changed assignments'])assert.equal(enabled(name,context),false,name);
 });
 
 test('only completed captures publish, while deferred or failed attempts may retain private retry state',()=>{
- for(const [event_name,schedule]of [['schedule','20 0 * * *'],['workflow_dispatch',undefined]]){
+ for(const [event_name,schedule]of [['workflow_dispatch',undefined]]){
   for(const status of ['complete','deferred',undefined]){
    const context={github:{event_name,event:{schedule}},steps:{
     catalog:{outcome:'success',outputs:{capture_status:'complete'}},
@@ -85,18 +86,19 @@ test('only completed captures publish, while deferred or failed attempts may ret
  }
  const sunday={github:{event_name:'schedule',event:{schedule:'19 20 * * 0'}},steps:{
   catalog:{outcome:'success',outputs:{capture_status:'complete'}},snapshot:{outcome:'skipped',outputs:{}}}};
- assert.equal(enabled('Commit changed assignments',sunday),true);
+ assert.equal(enabled('Commit changed assignments',sunday),false,'removed catalog-only shortcut cannot publish a skipped snapshot');
  assert.equal(enabled('Commit changed assignments',{...sunday,github:{event_name:'schedule',event:{schedule:'unknown'}}}),false);
 });
 
 test('ordered coordination runs first and a reusable published capture suppresses duplicate reads',()=>{
- const check=step('Reuse a later published bounded capture');
+ const check=step('Check explicit manual capture coordination');
  assert.match(check,/^        id: coordination$/m);
  assert.match(check,/node tools\/workflow-capture-coordination\.mjs check/);
  assert.ok(workflow.indexOf(check)<workflow.indexOf(step('Capture public event assignments')));
- assert.match(workflow,/- cron: '19 20 \* \* 0'/);
- for(const event_name of ['schedule','workflow_dispatch']){
-  const context={github:{event_name,event:{schedule:'20 0 * * *'}},steps:{
+ assert.doesNotMatch(workflow,/^  schedule:|cron:/m);
+ assert.match(workflow,/^  workflow_dispatch:$/m);
+ for(const event_name of ['workflow_dispatch']){
+  const context={github:{event_name,event:{}},steps:{
    coordination:{outcome:'success',outputs:{reuse:'true'}},catalog:{outcome:'skipped',outputs:{}},
    snapshot:{outcome:'skipped',outputs:{}},retry_prepare:{outcome:'success'}}};
   for(const name of ['Capture public event assignments',capture,merge,'Commit changed assignments',

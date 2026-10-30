@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {createEventService,EVENT_COLLECTIONS as C,eventPeriod} from '../src/events.js';
 import {eventEncode,eventDecode} from '../src/events-store.js';
 import {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION,pendingSlot,VERIFICATION_COLLECTION} from '../src/verification.js';
-import {mergeCanonicalResultIntoTrack} from '../src/index.js';
+import {mergeCanonicalResultIntoTrack,maintenanceWindowAllows} from '../src/index.js';
 import {PERMANENT_ROLLING_HILLS as R} from '../src/permanent-rolling-hills.js';
 import {advanceEventPublication,publishEventCapacity} from '../src/event-publication.js';
 import {EVENT_RETENTION_COLLECTION} from '../src/event-capacity.js';
@@ -732,6 +732,8 @@ for(const kind of ['event','event_totals'])test('10000-row '+kind+' publication 
    pendingPeriodIds:kind==='event'?[period.id]:[]});
  const meter=readMeter(f);let result,minute,passes=0;
  for(minute=2;minute<54;minute++)if([2,4].includes(minute%5)){
+   assert.equal(maintenanceWindowAllows('* * * * *',Date.UTC(2026,9,29,0,minute),'four-window'),true,
+     'coordinated maintenance must allow enough consecutive pages before snapshot expiry');
    f.time(minute*60000);passes++;
    result=await publishEventCapacity({...f.runtime});
    assert.notEqual(result.reason,'snapshot_expired');

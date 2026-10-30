@@ -19,9 +19,21 @@ function nextSlot(row, slot) {
 
 // Each move removes legacy slots only in the same CAS commit as their new homes.
 // An old runner writing the legacy root consequently conflicts, never resurrects a proof.
-export async function migrateVerificationChunk({trackId, collection, root, read, readMany, commit}) {
-  const selected = Object.entries(root?.data?.slots || {}).slice(0, VERIFICATION_MIGRATION_BATCH);
-  if (!selected.length && root?.data?.storageVersion === VERIFICATION_SHARD_VERSION) return root;
+export async function migrateVerificationChunk({trackId, collection, root, read, readMany, commit, accountIds}) {
+  let requested;
+  if (accountIds !== undefined) {
+    if (!Array.isArray(accountIds) || accountIds.length > VERIFICATION_MIGRATION_BATCH)
+      throw Error('INVALID_VERIFICATION_MIGRATION_ACCOUNTS');
+    for (const accountId of accountIds) {
+      if (typeof accountId !== 'string') throw Error('INVALID_VERIFICATION_MIGRATION_ACCOUNTS');
+      verificationShardId(trackId, accountId);
+    }
+    requested = new Set(accountIds);
+  }
+  // PB hotpaths move only their own legacy slots; bulk maintenance keeps its cap.
+  const selected = Object.entries(root?.data?.slots || {})
+    .filter(([accountId]) => !requested || requested.has(accountId)).slice(0, VERIFICATION_MIGRATION_BATCH);
+  if (!selected.length && (requested || root?.data?.storageVersion === VERIFICATION_SHARD_VERSION)) return root;
   const slots = {...root?.data?.slots}, writes = [];
   const documents = readMany ? await readMany(collection,selected.map(([accountId])=>verificationShardId(trackId,accountId))) : null;
   for (const [accountId, legacySlot] of selected) {

@@ -599,7 +599,7 @@ test('single-round processing reports a deferred Firestore commit throttle expli
 
 test('workflow keeps all expensive steps due-gated and credentials restricted to preflight and processing',()=>{
   const workflow=fs.readFileSync(new URL('../../.github/workflows/verify-runs.yml',import.meta.url),'utf8');
-  assert.match(workflow,/cron: '7,22,37,52 \* \* \* \*'/);
+  assert.match(workflow,/cron: '50 0,8,12,20 \* \* \*'/);
   assert.match(workflow,/contents: read/);
   assert.match(workflow,/persist-credentials: false/);
   assert.match(workflow,/cancel-in-progress: false/);
@@ -615,7 +615,9 @@ test('workflow keeps all expensive steps due-gated and credentials restricted to
   const processing=workflow.slice(0,publisherAt),publisher=workflow.slice(publisherAt);
   assert.equal((processing.match(/FIREBASE_VERIFIER_SERVICE_ACCOUNT:/g)||[]).length,2);
   assert.equal((publisher.match(/FIREBASE_VERIFIER_SERVICE_ACCOUNT:/g)||[]).length,1);
-  assert.match(publisher,/needs.verify.result == 'success' && needs.verify.outputs.snapshot_needed == 'true'/);
+  assert.match(publisher,/needs.verify.result == 'success' && \(\(github.event_name == 'schedule'/);
+  assert.match(publisher,/needs.verify.outputs.queue_has_work == 'false'/);
+  assert.match(publisher,/\|\| needs.verify.outputs.snapshot_needed == 'true'/);
   assert.match(publisher,/uses: \.\/\.github\/workflows\/publish-verified-snapshots\.yml/);
   assert.match(publisher,/secrets:\s+FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);
   assert.doesNotMatch(workflow,/secrets: inherit/);

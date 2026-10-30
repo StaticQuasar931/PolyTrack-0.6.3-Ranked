@@ -1,8 +1,9 @@
-name: Verify PolyTrack runs
+name: Verify PolyTrack runs and refresh public snapshots
 on:
-  # GitHub must wake a runner to query Firestore; normal and event work share the same due gate.
+  # Daily UTC and Sunday Kodub rotations are provisioned before the :50 windows.
+  # Verification is due-gated; each successful scheduled check requests bounded capture.
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    - cron: '50 0,8,12,20 * * *'
   workflow_dispatch:
     inputs:
       catch_up:
@@ -19,6 +20,8 @@ jobs:
       cancel-in-progress: false
     outputs:
       snapshot_needed: ${{ steps.verification.outputs.snapshot_needed }}
+      capture_ready: ${{ steps.verification.outputs.capture_ready }}
+      queue_has_work: ${{ steps.queue.outputs.has_work }}
       capture_requested_at: ${{ steps.capture_request.outputs.requested_at }}
     if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
@@ -49,6 +52,8 @@ jobs:
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
           VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+          VERIFIER_DOCUMENT_READ_LIMIT: '1500'
+          VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'
         run: node tools/verifier/run.mjs --check
       - name: Install pinned verifier dependencies
         if: steps.queue.outputs.has_work == 'true'
@@ -85,6 +90,8 @@ jobs:
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
           VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+          VERIFIER_DOCUMENT_READ_LIMIT: '1500'
+          VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'
           VERIFIER_CATCH_UP: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 'true' || 'false' }}
         run: |
           if [ "$VERIFIER_CATCH_UP" = "true" ]; then
@@ -92,14 +99,15 @@ jobs:
           else
             node tools/post-verification-run.mjs --drain
           fi
-      - name: Timestamp the completed publication request
+      - name: Timestamp the scheduled or changed capture request
         id: capture_request
-        if: steps.verification.outputs.snapshot_needed == 'true'
+        if: (github.event_name == 'schedule' && (steps.queue.outputs.has_work == 'false' || (steps.queue.outputs.has_work == 'true' && steps.verification.outputs.capture_ready == 'true'))) || steps.verification.outputs.snapshot_needed == 'true'
         run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'requested_at=' + Date.now() + '\n')"
 
   publish_snapshots:
     needs: verify
-    if: needs.verify.result == 'success' && needs.verify.outputs.snapshot_needed == 'true' && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false'
+    # Empty queues still refresh pending/public data; a throttled preflight is not an empty queue.
+    if: needs.verify.result == 'success' && ((github.event_name == 'schedule' && (needs.verify.outputs.queue_has_work == 'false' || (needs.verify.outputs.queue_has_work == 'true' && needs.verify.outputs.capture_ready == 'true'))) || needs.verify.outputs.snapshot_needed == 'true') && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false'
     permissions:
       contents: write
     uses: ./.github/workflows/publish-verified-snapshots.yml

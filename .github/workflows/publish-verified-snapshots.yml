@@ -123,10 +123,14 @@ jobs:
       - name: Capture public event assignments
         id: catalog
         if: steps.coordination.outputs.reuse != 'true'
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
         run: |
           node --input-type=module <<'CATALOG'
+          import {checkWorkerCaptureAccess} from './tools/check-worker-capture-access.mjs';
           import {syncPublicEventCatalog} from './tools/sync-event-catalog.mjs';
           import {reportCaptureOutcome} from './tools/update-public-snapshot.mjs';
+          await checkWorkerCaptureAccess();
           await reportCaptureOutcome(await syncPublicEventCatalog());
           CATALOG
       # Best-effort capture of published data, not a verifier-revision barrier.
@@ -135,7 +139,7 @@ jobs:
         id: snapshot
         if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
         # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
-        # Bounded authenticated reads only. No credential reaches catalog, cache, tests, or publishing.
+        # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
         run: node tools/update-public-snapshot.mjs --refresh-replays

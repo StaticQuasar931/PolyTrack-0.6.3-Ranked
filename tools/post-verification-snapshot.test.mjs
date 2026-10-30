@@ -64,14 +64,14 @@ test('wrapper preserves verifier options and adds no fetch or database discovery
     assert.equal(typeof options.eventRun,'function'); return complete({verified:23,processed:27,eventChecked:8});
   }});
   assert.equal(calls,1); assert.equal(result.snapshotNeeded,true);
-  assert.equal(await f.output(),'snapshot_needed=false\nsnapshot_needed=true\n');
+  assert.equal(await f.output(),'snapshot_needed=false\ncapture_ready=false\nsnapshot_needed=true\ncapture_ready=true\n');
   assert.match(await fs.readFile(f.env.GITHUB_STEP_SUMMARY,'utf8'),/completed verdicts, competitive-review holds and archives/);
 });
 
 test('wrapper leaves only the false output on thrown verifier failure', async t => {
   const f=await fixture(t);
   await assert.rejects(verifyAndSignal({env:f.env,verify:async()=>{throw Error('offline infrastructure failure');}}),/infrastructure failure/);
-  assert.equal(await f.output(),'snapshot_needed=false\n');
+  assert.equal(await f.output(),'snapshot_needed=false\ncapture_ready=false\n');
 });
 
 test('unavailable, superseded and intake-only events do not request snapshots', async t => {
@@ -124,17 +124,38 @@ test('sidecar CLI rejects unsupported modes before any production connection', (
   assert.equal(result.status,1);assert.match(result.stderr,/Expected --drain/);
 });
 
-test('caller requires successful changed-publication output and preserves an explicit opt-out', () => {
+test('caller captures every successful scheduled check, retains manual change gating and explicit opt-out', () => {
   const call=verifier.slice(verifier.indexOf('  publish_snapshots:'));
   assert.match(call,/needs: verify/);assert.match(call,/uses: \.\/\.github\/workflows\/publish-verified-snapshots.yml/);
   assert.match(call,/contents: write/);assert.match(call,/secrets:\n      FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);assert.doesNotMatch(call,/secrets: inherit/);
-  for (const result of ['success','failure','cancelled','skipped']) for (const needed of ['true','false','',undefined]) for (const enabled of ['true','false','',undefined]) {
-    const actual=evaluate(condition(call),{needs:{verify:{result,outputs:{snapshot_needed:needed}}},vars:{POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:enabled}});
-    assert.equal(actual,result==='success'&&needed==='true'&&enabled!=='false');
+  for (const event_name of ['schedule','workflow_dispatch']) for (const queue of ['true','false','deferred','',undefined,'unknown'])
+  for (const result of ['success','failure','cancelled','skipped']) for (const needed of ['true','false','',undefined]) for (const enabled of ['true','false','',undefined]) for(const ready of ['true','false','',undefined]) {
+    const actual=evaluate(condition(call),{github:{event_name},needs:{verify:{result,outputs:{snapshot_needed:needed,queue_has_work:queue,capture_ready:ready}}},vars:{POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:enabled}});
+    const requested=needed==='true'||event_name==='schedule'&&(queue==='false'||queue==='true'&&ready==='true');
+    assert.equal(actual,result==='success'&&requested&&enabled!=='false');
   }
   assert.match(verifier,/snapshot_needed: \$\{\{ steps.verification.outputs.snapshot_needed \}\}/);
+  assert.match(verifier,/queue_has_work: \$\{\{ steps.queue.outputs.has_work \}\}/);
   assert.match(step(verifier,'Verify queued runs'),/id: verification/);
   assert.match(step(verifier,'Verify queued runs'),/node tools\/post-verification-run.mjs --drain --catch-up/);
+});
+
+test('scheduled and changed capture requests are timestamped without waking native work for empty queues', () => {
+  const timestamp=step(verifier,'Timestamp the scheduled or changed capture request');
+  const gate=/^        if: (.+)$/m.exec(timestamp)[1];
+  for(const event_name of ['schedule','workflow_dispatch']) for(const has_work of ['true','false','deferred','',undefined])
+  for(const snapshot_needed of ['true','false','',undefined]) for(const capture_ready of ['true','false','',undefined]) {
+    const actual=evaluate(gate,{github:{event_name},steps:{queue:{outputs:{has_work}},verification:{outputs:{snapshot_needed,capture_ready}}}});
+    assert.equal(actual,snapshot_needed==='true'||event_name==='schedule'&&(has_work==='false'||has_work==='true'&&capture_ready==='true'));
+  }
+  assert.match(timestamp,/requested_at=.*Date.now\(\)/);
+  for(const name of ['Install pinned verifier dependencies','Test verifier safeguards','Cache the pinned Playwright browser',
+    'Install Chromium and system dependencies','Allow the pinned browser sandbox on Ubuntu','Verify queued runs']) {
+    assert.match(step(verifier,name),/^        if: steps.queue.outputs.has_work == 'true'$/m,name);
+  }
+  assert.equal((verifier.match(/id: verification$/gm)||[]).length,1);
+  assert.equal((verifier.match(/uses: \.\/\.github\/workflows\/publish-verified-snapshots.yml/g)||[]).length,1);
+  assert.doesNotMatch(verifier,/node tools\/update-public-snapshot.mjs/);
 });
 
 test('reusable publisher is default-branch/repository restricted and cannot wake itself', () => {
@@ -183,17 +204,17 @@ test('deferred public captures cannot publish and public commits reuse the robus
   assert.doesNotMatch(commit,/git push|--force|git add \./);
 });
 
-test('daily and manual captures always reconcile regardless of combined-publishing variables', () => {
+test('manual fallback captures reconcile regardless of combined-publishing variables', () => {
   const capture=step(catalog,'Capture bounded public snapshots');
   assert.match(capture,/run: node tools\/update-public-snapshot.mjs --refresh-replays/);
   assert.doesNotMatch(capture,/COMBINED_SNAPSHOTS|vars\.|Catalog-only|echo 'capture_status=complete'/);
   const gate=/^        if: (.+)$/m.exec(capture)[1];
   for(const verifierEnabled of ['true','false','',undefined]) for(const combined of ['true','false','',undefined]) {
     const vars={POLYTRACK_VERIFIER_ENABLED:verifierEnabled,POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:combined};
-    for(const [event_name,schedule,expected] of [['schedule','20 0 * * *',true],['workflow_dispatch',undefined,true],['schedule','19 20 * * 0',false]]) {
+    for(const [event_name,schedule,expected] of [['workflow_dispatch',undefined,true]]) {
       assert.equal(evaluate(gate,{vars,github:{event_name,event:{schedule}},steps:{coordination:{outputs:{reuse:'false'}},catalog:{outputs:{capture_status:'complete'}}}}),expected);
     }
-    assert.equal(evaluate(gate,{vars,github:{event_name:'schedule',event:{schedule:'20 0 * * *'}},steps:{coordination:{outputs:{reuse:'false'}},catalog:{outputs:{capture_status:'deferred'}}}}),false);
+    assert.equal(evaluate(gate,{vars,github:{event_name:'workflow_dispatch',event:{}},steps:{coordination:{outputs:{reuse:'false'}},catalog:{outputs:{capture_status:'deferred'}}}}),false);
   }
 });
 
@@ -237,21 +258,35 @@ test('helper explicitly warns that capture is not a published-revision freshness
   assert.match(source,/new package is not proof of aggregate freshness/);
 });
 
-test('one daily reconciliation prevents last-verdict staleness without adding idle polling', () => {
+test('scheduled reconciliation has no independent full fallback and manual recovery remains bounded', () => {
   const cron=[...catalog.matchAll(/cron: '([^']+)'/g)].map(match=>match[1]);
-  assert.deepEqual(cron,['20 0 * * *','19 20 * * 0']);
+  assert.deepEqual(cron,[]);
+  assert.match(catalog,/^  workflow_dispatch:$/m);
+  assert.doesNotMatch(catalog,/^  (schedule|workflow_call|workflow_run|push):/m);
   assert.equal((catalog.match(/node tools\/update-public-snapshot.mjs --refresh-replays/g)||[]).length,1);
   assert.doesNotMatch(step(catalog,'Capture bounded public snapshots'),/--full-public|while |until |sleep |continue-on-error/);
   assert.match(step(publisher,'Capture bounded public snapshots'),/steps.catalog.outputs.capture_status == 'complete'/);
   assert.doesNotMatch(publisher,/^  schedule:/m);
 });
 
-test('daily reconciliation stays at 00:20 UTC and Sunday catalog follows bounded Kodub capture', async () => {
-  assert.match(catalog,/cron: '20 0 \* \* \*'/);
-  assert.doesNotMatch(catalog,/30 10 \* \* \*/);
-  assert.match(catalog,/cron: '19 20 \* \* 0'/);
-  assert.match(await readWorkflow('sync-kodub-weekly.yml'),/cron: "3 20 \* \* \*"/);
-  assert.equal((catalog.match(/'20 0 \* \* \*'/g)||[]).length,4);
+test('actual daily cadence is four UTC pipeline windows, with unchanged pure Kodub and CDN schedules', async () => {
+  const minutes=source=>[...source.matchAll(/cron: ['"]([^'"]+)['"]/g)].flatMap(([,cron])=>{
+    const [minute,hour,day,month,weekday]=cron.split(' ');
+    assert.deepEqual([day,month,weekday],['*','*','*']);
+    const matches=(field,value)=>field==='*'||field.split(',').map(Number).includes(value);
+    return Array.from({length:1440},(_,i)=>i).filter(i=>matches(minute,i%60)&&matches(hour,Math.floor(i/60)));
+  });
+  const windows=minutes(verifier);
+  assert.deepEqual(windows,[50,530,770,1250]);
+  assert.equal((verifier.match(/cron:/g)||[]).length,1);
+  assert.deepEqual(minutes(catalog),[]);
+  assert.deepEqual(minutes(publisher),[]);
+  const kodub=await readWorkflow('sync-kodub-weekly.yml'),cdn=await readWorkflow('publish-cdn-release.yml');
+  assert.deepEqual(minutes(kodub),[1203]);
+  assert.doesNotMatch(kodub,/FIREBASE|secrets\./);
+  assert.equal(minutes(cdn).length,96);
+  assert.equal(windows.length+minutes(catalog).length,4,'only four scheduled verification/capture entries');
+  assert.equal(windows.length+minutes(kodub).length+minutes(cdn).length,101,'CDN and Kodub remain independent, not four total workflows/day');
 });
 
 

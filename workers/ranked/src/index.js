@@ -1,9 +1,10 @@
 import {createPublicMissGuard} from './public-miss-guard.js';
+import {verifyCaptureRead} from './capture-read-auth.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
 import {recallPublicResponse, rememberPublicResponse} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
-import {prepareShardedVerification, migrateVerificationChunk, verificationShardId} from './verification-shards.js';
+import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS, TRACK_BUILD_PAGE_SIZE} from './track-build.js';
 import { safePublicName } from './public-name-policy.js';
 import {kodubWeekly} from './kodub-weekly.js';
@@ -14,7 +15,7 @@ import {compactOverallEntries, compactOverallSnapshot, unpackOverallDetails, OVE
 import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
 import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
-import { createFirestoreAudit, recordFirestoreReads, recordFirestoreFailure } from './firestore-read-cost.js';
+import { createFirestoreAudit, recordFirestoreReads, recordFirestoreFailure, describeFirestoreOperation } from './firestore-read-cost.js';
 import {loadOverallSources, sourceCatalogAfterTrackWrite, sourceCatalogNeedsScan, sourceCatalogIsReady, SOURCE_CATALOG_RESCAN_MS} from './overall-source-cache.js';
 import {SOURCE_PUBLICATION_COLLECTION, sourcePublicationIds, prepareSourcePublication, decodeSourcePublication} from './overall-source-publication.js';
 import {ENTITLEMENT_COLLECTION, ENTITLEMENT_CACHE_COLLECTION, entitlementPolicyKey, entitlementEpoch,
@@ -51,6 +52,19 @@ export function scheduledIntervalDue(scheduledAt, intervalMs) {
   return Number.isSafeInteger(scheduledAt) && scheduledAt >= 0 &&
     Number.isSafeInteger(intervalMs) && intervalMs >= 60000 && intervalMs % 60000 === 0 &&
     Math.floor(scheduledAt / 60000) % (intervalMs / 60000) === 0;
+}
+
+export function maintenanceWindowAllows(cron,scheduledAt,mode) {
+  if(mode!=='four-window')return true;
+  if(!Number.isSafeInteger(scheduledAt)||scheduledAt<0)return false;
+  const date=new Date(scheduledAt),minute=date.getUTCMinutes();
+  if(![0,8,12,20].includes(date.getUTCHours()))return false;
+  if(cron==='* * * * *')return minute<45;
+  if(cron==='*/2 * * * *')return minute===0;
+  if(cron==='*/5 * * * *')return minute>=5&&minute<=40&&minute%5===0;
+  if(cron==='1-59/5 * * * *')return minute===41;
+  if(cron==='2-59/5 * * * *')return [2,7,12].includes(minute);
+  return false;
 }
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
@@ -412,15 +426,18 @@ async function firestoreRequest(env, path, init = {}) {
   takeOverallRequest(env);
   if (!audit) return loadFirestoreRequest(env,path,init);
   audit.operationAttempts = (audit.operationAttempts || 0) + 1;
-  let transported = false;
+  let transported = false,payload,failed=false;
+  const started=performance.now();
   try {
     const value=await loadFirestoreRequest(env,path,init,() => {
       transported = true;
       audit.httpRequests++;
     });
     recordFirestoreReads(audit,path,init,value);
+    payload=value;
     return value;
   } catch(error) {
+    failed=true;
     audit.failedOperations = (audit.failedOperations || 0) + 1;
     if (transported) {
       audit.failedRequests++;
@@ -428,6 +445,12 @@ async function firestoreRequest(env, path, init = {}) {
     } else audit.preTransportFailures = (audit.preTransportFailures || 0) + 1;
     if (error?.status === 429 || error?.message === 'FIRESTORE_429') quota.quotaStopped = true;
     throw error;
+  } finally {
+    if(transported&&env.FIRESTORE_OPERATION_LOGGING==='true'){
+      try{console.log('Ranked Firestore operation',JSON.stringify({auditId:env.__FIRESTORE_AUDIT_ID,
+        scope:env.__FIRESTORE_AUDIT_SCOPE||'unknown',durationMs:Math.max(0,Math.round(performance.now()-started)),
+        ...describeFirestoreOperation({path,init,payload,failed}),billingEstimateOnly:true}));}catch{}
+    }
   }
 }
 
@@ -1177,6 +1200,7 @@ async function persistVerificationRows(env, trackId, rows, prior, complete = fal
   }
   if (prior?.data?.storageVersion === 2 || Object.keys(slots).length > TRACK_LIMIT) {
     const root = await migrateVerificationChunk({trackId,collection:queueCollection,root:prior,
+      ...(!complete&&rows.length<=VERIFICATION_MIGRATION_BATCH?{accountIds:rows.filter(row=>structurallyValidResult(row,trackId)).map(row=>safeText(row.accountId||row.userId,128))}:{}),
       read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
     return prepareShardedVerification({trackId,collection:queueCollection,rows:rows.filter(row=>structurallyValidResult(row,trackId)),root,
       read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
@@ -1259,9 +1283,12 @@ export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResul
   if (prior.data.pagination) prior.data.entries = await loadPublicationEntries(prior.data,'track',trackId,(c,id)=>readDocument(env,c,id));
   const existing=prior.data.entries.find(row=>safeText(row.accountId||row.userId,128)===normalized.accountId);
   // Equal PB repair must use current canonical data, not a delayed notification payload.
-  if(existing && Number(existing.timeMs)===normalized.timeMs && Number(existing.uploadId||0)===Number(normalized.uploadId||0) &&
-    (existing.replayHash!==normalized.replayHash || (existing.integrityVerified===true)!==(normalized.integrityVerified===true)))return rebuildTrack(env,trackId);
-  if(existing && (Number(existing.timeMs)<normalized.timeMs || (Number(existing.timeMs)===normalized.timeMs && Number(existing.uploadId||0)>=Number(normalized.uploadId||0)))) {
+  const bindingRepair=existing && Number(existing.timeMs)===normalized.timeMs && Number(existing.uploadId||0)===Number(normalized.uploadId||0) &&
+    (existing.replayHash!==normalized.replayHash || (existing.integrityVerified===true)!==(normalized.integrityVerified===true));
+  // One canonical replay repair must not rescan every other racer. Incomplete
+  // publications still require authoritative reconstruction before reranking.
+  if(bindingRepair && !trackSnapshotIsCurrent(prior.data,prior.data.signature))return rebuildTrack(env,trackId);
+  if(!bindingRepair && existing && (Number(existing.timeMs)<normalized.timeMs || (Number(existing.timeMs)===normalized.timeMs && Number(existing.uploadId||0)>=Number(normalized.uploadId||0)))) {
     if (Number(existing.timeMs) === normalized.timeMs && Number(existing.uploadId || 0) === Number(normalized.uploadId || 0)) {
       await prepareVerification(env, trackId, [canonicalResult]);
     }
@@ -1991,11 +2018,12 @@ async function notifyProfile(request, env, context, uid, body) {
     : trackIds;
   const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active: pendingTrackIds.length > 0, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now() },existingDoc?.updateTime||'');
   const backgroundAudit = createFirestoreAudit();
-  const backgroundEnv = {...env, __FIRESTORE_READ_AUDIT:backgroundAudit};
+  const backgroundEnv = {...env, __FIRESTORE_READ_AUDIT:backgroundAudit,
+    __FIRESTORE_AUDIT_ID:crypto.randomUUID(),__FIRESTORE_AUDIT_SCOPE:'background_profile'};
   const task = processProfileJob(backgroundEnv, jobId, { kind: 'profile', active: true, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds },written?.updateTime||'')
     .catch((error) => console.error('Deferred profile job failed', String(error?.message || error)))
     .finally(() => console.log('Ranked background Firestore reads',JSON.stringify({routeCategory:'profile',
-      measurementScope:'background_profile_job_final',...backgroundAudit,billingEstimateOnly:true})));
+      auditId:backgroundEnv.__FIRESTORE_AUDIT_ID,measurementScope:'background_profile_job_final',...backgroundAudit,billingEstimateOnly:true})));
   if (context.waitUntil) {
     try { context.waitUntil(task); } catch { await task; }
   } else await task;
@@ -2590,12 +2618,13 @@ function requestRouteCategory(request) {
 
 export async function handleRequest(request, env, context = {}) {
   const audit = createFirestoreAudit();
-  const auditedEnv = {...env,__FIRESTORE_READ_AUDIT:audit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{}};
   const routeCategory = requestRouteCategory(request);
+  const auditedEnv = {...env,__FIRESTORE_READ_AUDIT:audit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{},
+    __FIRESTORE_AUDIT_ID:crypto.randomUUID(),__FIRESTORE_AUDIT_SCOPE:routeCategory};
   try {
     return await handleRequestInternal(request,auditedEnv,context);
   } finally {
-    console.log('Ranked request Firestore reads',JSON.stringify({routeCategory,measurementScope:'request_synchronous',...audit,billingEstimateOnly:true}));
+    console.log('Ranked request Firestore reads',JSON.stringify({auditId:auditedEnv.__FIRESTORE_AUDIT_ID,routeCategory,measurementScope:'request_synchronous',...audit,billingEstimateOnly:true}));
   }
 }
 
@@ -2611,6 +2640,14 @@ async function handleRequestInternal(request, env, context = {}) {
     }
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: responseHeaders(origin, env) });
+  const ownEventRead = /^\/v1\/events\/[A-Za-z0-9_-]{1,64}\/(receipt|runs\/[A-Za-z0-9_-]{1,128})$/.test(path);
+  const privateCaptureRead = request.method === 'GET' && env.PUBLIC_FIRESTORE_READ_MODE === 'capture-only' &&
+    !path.startsWith('/v1/admin/') && !path.startsWith('/v1/events/admin/') &&
+    !path.startsWith('/v1/kodub-weekly') && path !== '/v1/profile/group-code' && !ownEventRead;
+  if (path === '/v1/capture-auth' || privateCaptureRead) {
+    if (!await verifyCaptureRead(request, env)) return json(origin, env, 403, {error:'snapshot_capture_required', canonicalUrl:CANONICAL_CLIENT_URL});
+    if (path === '/v1/capture-auth') return new Response(null, {status:204, headers:responseHeaders(origin, env)});
+  }
   if (path.startsWith('/v1/events/')) {
     const response = await eventWorkerHandler(env, {
     request: (path, init) => firestoreRequest(env, path, init),
@@ -2734,12 +2771,16 @@ export default {
     });
   },
   scheduled(_event, env, context) {
+    if(!maintenanceWindowAllows(_event.cron,_event.scheduledTime,env.BACKGROUND_MAINTENANCE_MODE))return;
     if (_event.cron === '*/2 * * * *') {
       const scheduledAt = _event.scheduledTime;
       if (!scheduledIntervalDue(scheduledAt, BACKGROUND_REPAIR_INTERVAL_MS)) return;
     }
     const readAudit=createFirestoreAudit();
-    env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{}};
+    env={...env,__FIRESTORE_READ_AUDIT:readAudit,__FIRESTORE_ROOT_ENV:env,__FIRESTORE_QUOTA_STATE:{},
+      __FIRESTORE_AUDIT_ID:crypto.randomUUID(),__FIRESTORE_AUDIT_SCOPE:({'* * * * *':'event_maintenance',
+        '*/2 * * * *':'queue_repair','*/5 * * * *':'canonical_reconcile','1-59/5 * * * *':'overall_publication',
+        '2-59/5 * * * *':'identity_maintenance'})[_event.cron]||'scheduled'};
     context.waitUntil((async()=>{
       if (_event.cron === '*/2 * * * *') {
         let rollingRefreshed = false;
@@ -2803,7 +2844,7 @@ export default {
       }
 
     })().catch((error) => console.error('Scheduled Ranked work failed', String(error?.message || error)))
-      .finally(()=>console.log('Ranked scheduled Firestore reads',JSON.stringify({cron:_event.cron,
+      .finally(()=>console.log('Ranked scheduled Firestore reads',JSON.stringify({auditId:env.__FIRESTORE_AUDIT_ID,cron:_event.cron,
         scheduledTime:_event.scheduledTime,quotaPolicy:'rev171-event-activity',...readAudit,billingEstimateOnly:true}))));
   }
 };

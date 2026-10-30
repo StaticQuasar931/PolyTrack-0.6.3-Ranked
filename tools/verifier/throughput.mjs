@@ -17,6 +17,15 @@ export class VerificationEventConflictError extends Error {
   }
 }
 
+// Share this classifier with preflight/single-round callers. A local document
+// cap is a deferral, not an HTTP 429 or a completed verification verdict.
+export function firestoreDeferralReason(error) {
+  if (error?.deferred !== true) return null;
+  if (error.code === 'FIRESTORE_DOCUMENT_BUDGET') return 'firestore_document_budget';
+  if (error.code === 'FIRESTORE_READ_THROTTLED' || error.code === 'FIRESTORE_COMMIT_THROTTLED') return 'firestore_throttled';
+  return null;
+}
+
 // Reservations enforce admission, including retries. Transport counters remain separate.
 export function budgetDatabase(db, limit=DRAIN_LIMITS.requests, limits=DRAIN_LIMITS) {
   validateLimits(limits);
@@ -40,6 +49,8 @@ export function budgetDatabase(db, limit=DRAIN_LIMITS.requests, limits=DRAIN_LIM
     queryCount:()=>db.queryCount?.() ?? null,
     emptyQueryMinimumReads:()=>db.emptyQueryMinimumReads?.() ?? null,
     estimatedDocumentReads:()=>db.estimatedDocumentReads?.() ?? null,
+    estimatedDocumentWrites:()=>db.estimatedDocumentWrites?.() ?? null,
+    documentBudget:()=>db.documentBudget?.() ?? null,
     remainingRequests:()=>limit-used, canSpend:count=>count<=limit-used, write:(...args)=>db.write(...args),
     get:async(collection,id)=>{
       const doc=await call('/'+collection+'/'+encodeURIComponent(id));
@@ -66,8 +77,10 @@ export async function drainVerification({runRound,requests,now=()=>performance.n
         // A batch may have committed a prefix. Keep only completed-round counts.
         interruptedRound=true;stop='event_conflict';break;
       }
-      if(error?.deferred===true && /^FIRESTORE_(READ|COMMIT)_THROTTLED$/.test(String(error.code||''))) {
-        interruptedRound=true;stop='firestore_throttled';break;
+      const firestoreStop=firestoreDeferralReason(error);
+      if(firestoreStop) {
+        // Do not replay a partially published round or invent its missing counts.
+        interruptedRound=true;stop=firestoreStop;break;
       }
       if(error?.code!=='VERIFICATION_REQUEST_BUDGET') throw error;
       // Earlier atomic publications may have succeeded; do not invent their counts.

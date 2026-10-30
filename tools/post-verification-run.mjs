@@ -17,8 +17,8 @@ export function needsSnapshot(summary, eventPublications = 0) {
 // Observe existing committed-result APIs; no additional database calls or core edits.
 export async function verifyAndSignal({env = process.env, verify = runVerifier,
   eventRun = runEventVerification, catchUp = false} = {}) {
-  const output = async needed => {
-    if (env.GITHUB_OUTPUT) await fs.appendFile(env.GITHUB_OUTPUT, 'snapshot_needed=' + needed + '\n');
+  const output = async (needed,ready=false) => {
+    if (env.GITHUB_OUTPUT) await fs.appendFile(env.GITHUB_OUTPUT, 'snapshot_needed=' + needed + '\ncapture_ready=' + ready + '\n');
   };
   await output(false);
   let eventPublications = 0;
@@ -30,7 +30,9 @@ export async function verifyAndSignal({env = process.env, verify = runVerifier,
     return result;
   }});
   const needed = !process.exitCode && needsSnapshot(summary, eventPublications);
-  await output(needed);
+  const ready=!process.exitCode&&summary?.countsComplete===true&&summary.interruptedRound===false&&
+    summary.deferred!==true&&COMPLETE_STOPS.has(summary.stop);
+  await output(needed,ready);
   if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY,
     '\n## Post-verification publication\nPublic snapshot capture requested: ' + needed +
     '. Gate uses completed verdicts, competitive-review holds and archives, not due-work, native attempts, or process success alone. ' +

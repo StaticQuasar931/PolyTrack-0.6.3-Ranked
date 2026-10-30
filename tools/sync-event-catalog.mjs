@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {fetchPublicBackupJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 
 import {mergeFrozenEventCatalog} from './merge-frozen-event-catalog.mjs';
+import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
 
 const endpoint = 'https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/catalog';
 const output = new URL('../events/public-catalog.json', import.meta.url);
@@ -17,7 +18,7 @@ export function publicCatalogBackup(value) {
   return { periods: value.periods, archives: value.archives };
 }
 
-export async function syncPublicEventCatalog({fetchImpl = fetch, outputFile = output, log = console.log} = {}) {
+export async function syncPublicEventCatalog({fetchImpl = createWorkerCaptureFetch(), outputFile = output, log = console.log} = {}) {
   try {
     const backup = publicCatalogBackup(await fetchPublicBackupJson(fetchImpl, endpoint));
     if (!backup.periods.length && !backup.archives.length) {

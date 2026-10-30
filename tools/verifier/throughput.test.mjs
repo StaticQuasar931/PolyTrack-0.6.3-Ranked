@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {budgetDatabase,drainVerification,DRAIN_LIMITS,CATCH_UP_LIMITS,VerificationBudgetError,VerificationEventConflictError} from './throughput.mjs';
+import {budgetDatabase,drainVerification,DRAIN_LIMITS,CATCH_UP_LIMITS,VerificationBudgetError,VerificationEventConflictError,firestoreDeferralReason} from './throughput.mjs';
 import {runVerifier} from './run.mjs';
-import {encode} from './firestore.mjs';
+import {encode,createFirestoreCaller,FirestoreDocumentBudgetError} from './firestore.mjs';
 
 const round=(overrides={})=>({processed:16,verified:16,canonicalAttempts:16,selectionConflicts:0,
   events:{checked:0,consumed:0},...overrides});
@@ -170,6 +170,145 @@ test('deferred Firestore throttles stop drain without inventing publication coun
   assert.equal(result.countsComplete,false);
   assert.equal(result.processed,0);
   assert.equal(result.verified,0);
+});
+
+test('shared Firestore deferral classification distinguishes local budgets from throttles and unrelated errors',()=>{
+  assert.equal(firestoreDeferralReason(new FirestoreDocumentBudgetError('read_limit')),'firestore_document_budget');
+  for(const code of ['FIRESTORE_READ_THROTTLED','FIRESTORE_COMMIT_THROTTLED']) {
+    assert.equal(firestoreDeferralReason({code,deferred:true}),'firestore_throttled');
+  }
+  for(const failure of [null,undefined,Error('unrelated'),{deferred:true,status:429},
+    {code:'FIRESTORE_DOCUMENT_BUDGET'}, {code:'FIRESTORE_DOCUMENT_BUDGET',deferred:'true'},
+    {code:'FIRESTORE_READ_THROTTLED',deferred:false},{code:'FIRESTORE_DOCUMENT_BUDGET_EXTRA',deferred:true},
+    {code:'PERMISSION_DENIED',deferred:true},new VerificationBudgetError()]) {
+    assert.equal(firestoreDeferralReason(failure),null);
+  }
+});
+
+test('document-budget interruptions preserve completed verdicts and event outcomes without replaying partial rounds',async()=>{
+  for(const limits of [DRAIN_LIMITS,CATCH_UP_LIMITS]) for(const reason of ['read_limit','write_limit','unbounded_operation','invalid_response','response_exceeded_reservation']) {
+    let calls=0,publications=0;
+    const logs=[];
+    const result=await drainVerification({limits,now:()=>0,requests:()=>10,log:line=>logs.push(JSON.parse(line)),runRound:async()=>{
+      calls++;
+      if(calls===1) {
+        publications++;
+        return round({processed:4,verified:2,mismatch:1,unavailable:1,deferred:0,
+          reasons:{native_exact_finish:2,native_mismatch:1,missing_trusted_track:1},verifiedByTrack:{summer:2},
+          events:{checked:2,consumed:1,reported:2,countsComplete:true,
+            statuses:{verified:1,waiting:1},reasons:{native_exact_finish:1,scan_work_limit:1}}});
+      }
+      publications++; // The interrupted round may have committed a prefix.
+      throw new FirestoreDocumentBudgetError(reason);
+    }});
+    assert.equal(calls,2);
+    assert.equal(publications,2,'interrupted writes must never be replayed');
+    assert.equal(result.stop,'firestore_document_budget');
+    assert.equal(result.interruptedRound,true);
+    assert.equal(result.countsComplete,false);
+    assert.equal(result.eventCountsComplete,false);
+    assert.equal(result.rounds,1);
+    assert.equal(result.processed,4);
+    assert.equal(result.verified,2);
+    assert.equal(result.mismatch,1);
+    assert.equal(result.unavailable,1);
+    assert.equal(result.deferred,0,'job deferral count is not replaced with a boolean');
+    assert.equal(result.eventChecked,2);
+    assert.equal(result.eventReported,2);
+    assert.deepEqual(result.reasons,{native_exact_finish:2,native_mismatch:1,missing_trusted_track:1});
+    assert.deepEqual(result.verifiedByTrack,{summer:2});
+    assert.deepEqual(result.eventStatuses,{verified:1,waiting:1});
+    assert.deepEqual(result.eventReasons,{native_exact_finish:1,scan_work_limit:1});
+    assert.deepEqual(logs,[{drain:result}]);
+    assert.doesNotMatch(JSON.stringify(result),/read_limit|write_limit|invalid_response/);
+  }
+});
+
+test('first-round document-budget stop returns unknown completeness, not successful zero-work completion',async()=>{
+  for(const limits of [DRAIN_LIMITS,CATCH_UP_LIMITS]) {
+    let calls=0;
+    const result=await drainVerification({limits,now:()=>0,requests:()=>0,log:quiet,runRound:async()=>{
+      calls++;
+      throw new FirestoreDocumentBudgetError('write_limit');
+    }});
+    assert.equal(calls,1);
+    assert.equal(result.rounds,0);
+    assert.equal(result.processed,0);
+    assert.equal(result.verified,0);
+    assert.equal(result.eventChecked,0);
+    assert.equal(result.countsComplete,false);
+    assert.equal(result.eventCountsComplete,false);
+    assert.equal(result.interruptedRound,true);
+    assert.equal(result.stop,'firestore_document_budget');
+  }
+});
+
+test('untagged document-budget lookalikes remain failures, not successful workflow deferrals',async()=>{
+  for(const failure of [Object.assign(Error('bad config'),{code:'FIRESTORE_DOCUMENT_BUDGET'}),
+    Object.assign(Error('bad config'),{code:'FIRESTORE_DOCUMENT_BUDGET',deferred:false}),
+    Object.assign(Error('denied'),{code:'PERMISSION_DENIED',status:403,deferred:true})]) {
+    await assert.rejects(drainVerification({now:()=>0,requests:()=>0,log:quiet,runRound:async()=>{throw failure;}}),error=>error===failure);
+  }
+});
+
+test('real read/write document budgets stop the real drain without additional HTTP or stale publication',async()=>{
+  for(const kind of ['read','write']) {
+    let transports=0,commits=0,roundCalls=0;
+    const raw=createFirestoreCaller({base:'https://offline.invalid/documents',access:'PRIVATE_TOKEN',
+      documentReadLimit:1,documentWriteLimit:1,fetchImpl:async(url,options)=>{
+        transports++;
+        if(url.endsWith(':commit')) {
+          commits++;
+          return new Response(JSON.stringify({writeResults:JSON.parse(options.body).writes.map(()=>({}))}),{status:200});
+        }
+        return new Response(JSON.stringify({name:'queue/one'}),{status:200});
+      }});
+    const db=budgetDatabase(raw);
+    const result=await drainVerification({now:()=>0,requests:db.requests,log:quiet,runRound:async()=>{
+      roundCalls++;
+      if(roundCalls===1) {
+        await db.call('/queue/one');
+        await db.call(':commit',{writes:[{}]});
+        return round({processed:1,verified:1,events:{checked:0,consumed:0,countsComplete:true}});
+      }
+      if(kind==='read')await db.call('/queue/two');
+      else await db.call(':commit',{writes:[{}]});
+      assert.fail('Budget stop must interrupt publication');
+    }});
+    assert.equal(result.stop,'firestore_document_budget');
+    assert.equal(result.countsComplete,false);
+    assert.equal(result.eventCountsComplete,false);
+    assert.equal(result.interruptedRound,true);
+    assert.equal(result.verified,1);
+    assert.equal(result.processed,1);
+    assert.equal(roundCalls,2);
+    assert.equal(transports,2);
+    assert.equal(commits,1,'earlier confirmed mutation is neither reverted nor replayed');
+    await assert.rejects(db.call(':commit',{writes:[{proof:'MUST_NOT_PUBLISH_STALE'}]}),FirestoreDocumentBudgetError);
+    assert.equal(transports,2);
+    assert.equal(db.estimatedDocumentWrites(),1);
+    assert.equal(db.documentBudget().stopped,true);
+    assert.doesNotMatch(JSON.stringify(result),/PRIVATE_TOKEN|MUST_NOT_PUBLISH_STALE/);
+  }
+});
+
+test('runVerifier drain and Catch-Up expose document-budget interruption as deferred accounting',async()=>{
+  for(const catchUp of [false,true]) {
+    let roundCalls=0;
+    const logs=[];
+    const result=await runVerifier({drain:true,catchUp,clock:()=>0,
+      env:{GITHUB_EVENT_NAME:'workflow_dispatch',FIREBASE_VERIFIER_SERVICE_ACCOUNT:'SYNTHETIC_ONLY'},
+      validateEngine:async()=>{},connectDatabase:async()=>({call:()=>assert.fail('No extra database work')}),
+      log:line=>logs.push(line),eventRun:async()=>{roundCalls++;throw new FirestoreDocumentBudgetError('read_limit');},
+      selectNormal:()=>assert.fail('No selection after stop'),verifyNormal:()=>assert.fail('No simulation after stop'),
+      publishNormal:()=>assert.fail('No publication after stop')});
+    assert.equal(result.stop,'firestore_document_budget');
+    assert.equal(result.countsComplete,false);
+    assert.equal(result.interruptedRound,true);
+    assert.equal(result.rounds,0);
+    assert.equal(roundCalls,1);
+    assert.equal(JSON.parse(logs.at(-1)).firestoreUsage.outcome,'deferred');
+  }
 });
 
 test('empty, conflict-only and superseded-only work cannot repeatedly drain the same jobs',async()=>{

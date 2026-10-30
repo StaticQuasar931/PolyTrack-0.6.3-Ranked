@@ -2074,11 +2074,11 @@ test('high-entropy 200 by 78 planner compression benchmark publishes every resul
 });
 
 
-test('public event catalog backup runs daily plus weekly reset and manual dispatch', () => {
+test('public event catalog fallback is manual-only; coordinated verifier owns scheduled capture', () => {
   const workflow = readFileSync(new URL('../../../.github/workflows/sync-event-catalog.yml', import.meta.url), 'utf8');
-  assert.deepEqual([...workflow.matchAll(/^    - cron: '([^']+)'$/gm)].map(match => match[1]), ['20 0 * * *', '19 20 * * 0']);
+  assert.deepEqual([...workflow.matchAll(/^    - cron: '([^']+)'$/gm)].map(match => match[1]), []);
   assert.match(workflow, /^  workflow_dispatch:$/m);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch' \|\| github\.event\.schedule == '20 0 \* \* \*'/);
+  assert.doesNotMatch(workflow, /^  schedule:/m);
 });
 
 test('two-minute background repair skips off-window or invalid ticks before Firestore access', () => {

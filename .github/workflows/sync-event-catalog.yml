@@ -1,11 +1,7 @@
-name: Sync public event catalog fallback
+name: Manually sync public event catalog and bounded snapshots
 
 on:
-  schedule:
-    # Daily rotation is 00:00 UTC; allow the 15-minute provisioning cadence before refreshing.
-    - cron: '20 0 * * *'
-    # Kodub capture at 20:03 has a ten-minute bound; provisioning gets its :15 turn first.
-    - cron: '19 20 * * 0'
+  # Scheduled reconciliation belongs to verify-runs.yml; this is the manual fallback.
   workflow_dispatch:
 
 permissions:
@@ -38,16 +34,15 @@ jobs:
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
         run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
-      - name: Reuse a later published bounded capture
+      - name: Check explicit manual capture coordination
         id: coordination
         env:
           CAPTURE_REQUESTED_AT: ''
-          CAPTURE_SCHEDULE: ${{ github.event.schedule }}
+          CAPTURE_SCHEDULE: ''
         run: node tools/workflow-capture-coordination.mjs check
       # Workflow-private state, NOT secret storage: only public binding IDs and
       # retry timestamps/counters. Never cache the raw export checkpoint or repo.
       - name: Restore private replay retry ledger
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '20 0 * * *'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v4.2.3
         with:
@@ -57,7 +52,6 @@ jobs:
             replay-retries-v1-${{ github.repository_id }}-${{ github.event.repository.default_branch }}-
       - name: Prepare validated private replay retry checkpoint
         id: retry_prepare
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '20 0 * * *'
         run: |
           cat > "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" <<'NODE'
           import fs from 'node:fs/promises';
@@ -116,18 +110,22 @@ jobs:
       - name: Capture public event assignments
         id: catalog
         if: steps.coordination.outputs.reuse != 'true'
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
         run: |
           node --input-type=module <<'CATALOG'
+          import {checkWorkerCaptureAccess} from './tools/check-worker-capture-access.mjs';
           import {syncPublicEventCatalog} from './tools/sync-event-catalog.mjs';
           import {reportCaptureOutcome} from './tools/update-public-snapshot.mjs';
+          await checkWorkerCaptureAccess();
           await reportCaptureOutcome(await syncPublicEventCatalog());
           CATALOG
       - name: Capture bounded public snapshots
         id: snapshot
-        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '20 0 * * *')
+        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
         # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
-        # One daily reconciliation catches later aggregate publication even with no new verdicts.
-        # Bounded authenticated reads only. No credential reaches catalog, cache, tests, or publishing.
+        # Explicit manual recovery uses the same bounded capture as the scheduled pipeline.
+        # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
         run: node tools/update-public-snapshot.mjs --refresh-replays
@@ -156,7 +154,7 @@ jobs:
       - name: Commit changed assignments
         id: publication
         # A successful step can be explicitly deferred; never publish that capture.
-        if: success() && steps.catalog.outputs.capture_status == 'complete' && (steps.snapshot.outputs.capture_status == 'complete' || (github.event_name == 'schedule' && github.event.schedule == '19 20 * * 0' && steps.snapshot.outcome == 'skipped'))
+        if: success() && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |

@@ -95,7 +95,7 @@ node(){ printf 'node %s\\n' "$*" >> calls; return "$TEST_PUSH_EXIT"; }
   }
 });
 
-test('deferred or failed captures cannot open publication; weekly catalog-only publication remains valid',()=>{
+test('deferred, failed or skipped captures cannot open publication, including the removed weekly shortcut',()=>{
   for(const name of captures.slice(0,2)){
     const commit=step(workflows[name],'Commit changed assignments'),expression=/^        if: (.+)$/m.exec(commit)[1];
     for(const catalogStatus of ['complete','deferred',''])for(const snapshotStatus of ['complete','deferred','']){
@@ -105,9 +105,9 @@ test('deferred or failed captures cannot open publication; weekly catalog-only p
     }
     assert.equal(evaluate(expression,{success:()=>false,github:{event_name:'workflow_dispatch',event:{}},
       steps:{catalog:{outputs:{capture_status:'complete'}},snapshot:{outputs:{capture_status:'complete'},outcome:'success'}}}),false);
-    if(name==='sync-event-catalog.yml')assert.equal(evaluate(expression,{success:()=>true,
+    assert.equal(evaluate(expression,{success:()=>true,
       github:{event_name:'schedule',event:{schedule:'19 20 * * 0'}},
-      steps:{catalog:{outputs:{capture_status:'complete'}},snapshot:{outputs:{capture_status:''},outcome:'skipped'}}}),true);
+      steps:{catalog:{outputs:{capture_status:'complete'}},snapshot:{outputs:{capture_status:''},outcome:'skipped'}}}),false);
   }
 });
 
@@ -148,11 +148,13 @@ test('CDN-only purge checkpoint persists cooldown even on failure and contains n
 
 test('the existing privileged secret is step-scoped and forwarded explicitly, never passed to CDN or Kodub',()=>{
   for(const name of captures.slice(0,2)){
-    const exposed=steps(workflows[name]).filter(value=>/secrets\./.test(value));assert.equal(exposed.length,1);
-    assert.match(exposed[0],/name: Capture bounded public snapshots/);
-    assert.match(exposed[0],/FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);
-    assert.match(exposed[0],/node tools\/update-public-snapshot.mjs --refresh-replays/);
-    assert.doesNotMatch(exposed[0],/--full-public|--admin|--archive|continue-on-error/);
+    const exposed=steps(workflows[name]).filter(value=>/secrets\./.test(value));assert.equal(exposed.length,2);
+    assert.match(exposed[0],/name: Capture public event assignments/);
+    assert.match(exposed[0],/await checkWorkerCaptureAccess\(\)/);
+    assert.match(exposed[1],/name: Capture bounded public snapshots/);
+    assert.match(exposed[1],/FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);
+    assert.match(exposed[1],/node tools\/update-public-snapshot.mjs --refresh-replays/);
+    for(const step of exposed)assert.doesNotMatch(step,/--full-public|--admin|--archive|continue-on-error/);
   }
   const call=job(verifier,'publish_snapshots');
   assert.match(call,/secrets:\n      FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);

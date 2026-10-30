@@ -19,6 +19,8 @@
     "MISSING_CLIENT_REVISION_POLICY": "allow",
     "WRITE_IP_RATE_LIMIT_REQUIRED": "true",
     "PUBLIC_READ_RATE_LIMIT_REQUIRED": "true",
+    "PUBLIC_FIRESTORE_READ_MODE": "capture-only",
+    "FIRESTORE_OPERATION_LOGGING": "true",
     "MULTIPLAYER_ENABLED": "true",
     "EVENTS_ENABLED": "true",
     "EVENT_CAPACITY_JSON": "{\"policyVersion\":\"event-200-v1\",\"entrants\":200,\"admissionsPerPeriod\":2048,\"replayBytesPerPeriod\":16777216,\"minIntervalMs\":5000,\"verificationsPerDay\":1536}"
@@ -43,6 +45,6 @@
   },
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 0.1
+    "head_sampling_rate": 1
   }
 }

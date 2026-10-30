@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {boundedRetryAfter, createFirestoreCaller, firestoreQuotaMode, connect} from './firestore.mjs';
+import {boundedRetryAfter, createFirestoreCaller, firestoreQuotaMode, connect,
+  firestoreDocumentLimits, FirestoreDocumentBudgetError} from './firestore.mjs';
 import {budgetDatabase, VerificationBudgetError} from './throughput.mjs';
 import {generateKeyPairSync} from 'node:crypto';
 import fs from 'node:fs';
@@ -477,4 +478,375 @@ test('unusable commit acknowledgements remain unknown rather than confirmed writ
   const raw=createFirestoreCaller({base:'https://offline.invalid',access:'fake',fetchImpl:async()=>response(200,{writeResults:[{}]})});
   await raw.call(':commit',{writes:[{}]});
   assert.equal(raw.unknownCommitOutcomes(),0);assert.equal(raw.writeAttempts(),1);
+});
+
+const budgetQuery = limit => ({structuredQuery:{from:[{collectionId:'queue'}],limit}});
+const queryRows = count => Array.from({length:count}, (_, i) => ({document:{name:'queue/' + i}}));
+const budgetCaller = options => createFirestoreCaller({base:'https://offline.invalid/documents',access:'PRIVATE_ACCESS',
+  documentReadLimit:1500,documentWriteLimit:1000,...options});
+const pending = () => {
+  let resolve;
+  const promise = new Promise(done => {resolve = done;});
+  return {promise,resolve};
+};
+
+test('100-document query reserves 100 document reads before one HTTP attempt, then settles actual documents', async () => {
+  let db, calls = 0;
+  db = budgetCaller({fetchImpl:async()=>{
+    calls++;
+    assert.equal(db.documentBudget().usedReads,100);
+    assert.equal(db.httpRequests(),1);
+    return response(200,queryRows(100));
+  }});
+  await db.call(':runQuery',budgetQuery(100));
+  assert.equal(calls,1);
+  assert.equal(db.estimatedDocumentReads(),100);
+  assert.equal(db.returnedDocuments(),100);
+  assert.equal(db.documentBudget().usedReads,100);
+  assert.equal(db.documentBudget().remainingReads,1400);
+});
+
+test('successful empty and partial queries refund unused reservations, preserving empty minimum of one', async () => {
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:100,fetchImpl:async()=>response(200,++calls === 1 ? [] : queryRows(2))});
+  await db.call(':runQuery',budgetQuery(100));
+  assert.equal(db.documentBudget().usedReads,1);
+  assert.equal(db.documentBudget().remainingReads,99);
+  await db.call(':runQuery',budgetQuery(99));
+  assert.equal(db.documentBudget().usedReads,3);
+  assert.equal(db.estimatedDocumentReads(),3);
+  assert.equal(db.emptyQueryMinimumReads(),1);
+  assert.equal(db.httpRequests(),2);
+});
+
+test('direct GET misses and batchGet missing documents consume document reads, not just returned documents', async () => {
+  const db = budgetCaller({documentReadLimit:4,fetchImpl:async url=>url.endsWith(':batchGet')
+    ? response(200,[{found:{name:'queue/one'}},{missing:'queue/two'},{missing:'queue/three'}]) : response(404)});
+  await db.call(':batchGet',{documents:['queue/one','queue/two','queue/three']});
+  await db.call('/queue/missing');
+  assert.equal(db.documentBudget().usedReads,4);
+  assert.equal(db.returnedDocuments(),1);
+  assert.equal(db.estimatedDocumentReads(),4);
+  assert.equal(db.httpRequests(),2);
+  await assert.rejects(db.call('/queue/extra'),{code:'FIRESTORE_DOCUMENT_BUDGET',reason:'read_limit',deferred:true});
+  assert.equal(db.httpRequests(),2);
+});
+
+test('zero-document batch and transaction control calls do not fabricate document reads or writes', async () => {
+  const db = budgetCaller({fetchImpl:async url=>url.endsWith(':batchGet') ? response(200,[]) :
+    url.endsWith(':commit') ? response(200,{writeResults:[]}) : response(200,{transaction:'synthetic'})});
+  await db.call(':batchGet',{documents:[]});
+  await db.call(':beginTransaction',{});
+  await db.call(':commit',{writes:[]});
+  await db.call(':rollback',{transaction:'synthetic'});
+  assert.equal(db.documentBudget().usedReads,0);
+  assert.equal(db.documentBudget().usedWrites,0);
+  assert.equal(db.httpRequests(),4);
+});
+
+test('concurrent read reservations cannot oversubscribe; a stopped in-flight result cannot escape for stale publication', async () => {
+  const gate = pending();
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:100,fetchImpl:async()=>{calls++;return gate.promise;}});
+  const inFlight = db.call(':runQuery',budgetQuery(100));
+  assert.equal(db.documentBudget().usedReads,100);
+  let failure;
+  await assert.rejects(db.call('/queue/another'),error=>{
+    failure = error;
+    assert.ok(error instanceof FirestoreDocumentBudgetError);
+    assert.equal(error.reason,'read_limit');
+    return true;
+  });
+  const rejectedResult = assert.rejects(inFlight,error=>error===failure);
+  gate.resolve(response(200,queryRows(2)));
+  await rejectedResult;
+  assert.equal(db.documentBudget().usedReads,2,'actual successful response still releases unused reservation');
+  assert.equal(db.documentBudget().stopped,true,'refunds never reopen a stopped caller');
+  await assert.rejects(db.call(':commit',{writes:[{proof:'MUST_NOT_PUBLISH_STALE_OUTPUT'}]}),error=>error===failure);
+  await assert.rejects(db.call('/queue/fresh'),error=>error===failure);
+  assert.equal(calls,1);
+});
+
+test('admitted concurrent calls reserve and refund independently', async () => {
+  const gates = [pending(),pending()];
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:100,fetchImpl:async()=>gates[calls++].promise});
+  const first = db.call(':runQuery',budgetQuery(60));
+  const second = db.call(':runQuery',budgetQuery(40));
+  assert.equal(db.documentBudget().usedReads,100);
+  gates[1].resolve(response(200,[]));
+  await second;
+  assert.equal(db.documentBudget().usedReads,61);
+  gates[0].resolve(response(200,queryRows(10)));
+  await first;
+  assert.equal(db.documentBudget().usedReads,11);
+  assert.equal(db.documentBudget().stopped,false);
+  assert.equal(calls,2);
+});
+
+test('retries retain a failed full reservation and reserve the full query upper bound again', async () => {
+  const seen = [];
+  let db, retries = 0;
+  db = budgetCaller({documentReadLimit:200,fetchImpl:async()=>{
+    seen.push(db.documentBudget().usedReads);
+    return seen.length === 1 ? response(429) : response(200,queryRows(3));
+  },sleep:quiet});
+  await db.call(':runQuery',budgetQuery(100),{onRetry:()=>{retries++;}});
+  assert.deepEqual(seen,[100,200]);
+  assert.equal(retries,1);
+  assert.equal(db.documentBudget().usedReads,103);
+  assert.equal(db.estimatedDocumentReads(),3);
+  assert.equal(db.httpRequests(),2);
+});
+
+test('retry admission exhaustion sends no second HTTP and permanently blocks read and write catch-and-continue', async () => {
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:100,fetchImpl:async()=>{calls++;return response(429);},sleep:quiet});
+  await assert.rejects(db.call(':runQuery',budgetQuery(100)),{reason:'read_limit',deferred:true});
+  assert.equal(db.documentBudget().usedReads,100);
+  for (const [endpoint,body] of [['/queue/one'],[':runQuery',budgetQuery(1)],[':batchGet',{documents:[]}],
+    [':commit',{writes:[{}]}],[':commit',{writes:[]}],[':beginTransaction',{}]]) {
+    await assert.rejects(db.call(endpoint,body),FirestoreDocumentBudgetError);
+  }
+  assert.equal(calls,1);
+  assert.equal(db.httpRequests(),1);
+});
+
+test('a concurrent stop during retry backoff prevents retry transport and publication from earlier successful output', async () => {
+  const sleeping = pending(), release = pending();
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:11,fetchImpl:async()=>++calls === 1
+    ? response(200,{name:'queue/previous'}) : response(429), sleep:async()=>{sleeping.resolve();await release.promise;}});
+  const previous = await db.call('/queue/previous');
+  const retrying = db.call(':runQuery',budgetQuery(10));
+  await sleeping.promise;
+  await assert.rejects(db.call('/queue/one'),{reason:'read_limit'});
+  const stoppedRetry = assert.rejects(retrying,FirestoreDocumentBudgetError);
+  release.resolve();
+  await stoppedRetry;
+  await assert.rejects(db.call(':commit',{writes:[{update:{name:previous.name,fields:{proof:'MUST_NOT_PUBLISH'}}}]}),FirestoreDocumentBudgetError);
+  assert.equal(calls,2);
+  assert.equal(db.httpRequests(),2);
+});
+
+test('failed HTTP, network and unreadable responses keep the full reservation', async () => {
+  for (const fail of [()=>response(400),()=>response(503),()=>{throw Error('synthetic transport');},
+    ()=>({ok:true,status:200,json:async()=>{throw Error('PRIVATE_RESPONSE');}})]) {
+    const db = budgetCaller({documentReadLimit:100,fetchImpl:async()=>fail()});
+    await assert.rejects(db.call(':runQuery',budgetQuery(100)));
+    assert.equal(db.documentBudget().usedReads,100);
+    assert.equal(db.estimatedDocumentReads(),0);
+    await assert.rejects(db.call('/queue/another'),{reason:'read_limit'});
+    assert.equal(db.httpRequests(),1);
+  }
+});
+
+test('write budgets count every commit write including deletes/transforms, not one HTTP call', async () => {
+  const writes = [{update:{name:'queue/one'}},{delete:'queue/two'},{transform:{document:'queue/three'}}];
+  let db, calls = 0;
+  db = budgetCaller({documentWriteLimit:3,fetchImpl:async()=>{
+    calls++;
+    assert.equal(db.documentBudget().usedWrites,3);
+    return response(200,{writeResults:[{},{},{}]});
+  }});
+  await db.call(':commit',{writes});
+  assert.equal(db.estimatedDocumentWrites(),3);
+  assert.equal(db.documentBudget().usedWrites,3);
+  assert.equal(db.documentBudget().usedReads,0);
+  assert.equal(db.httpRequests(),1);
+  await assert.rejects(db.call(':commit',{writes:[{}]}),{reason:'write_limit',deferred:true});
+  await assert.rejects(db.call('/queue/fresh'),FirestoreDocumentBudgetError);
+  assert.equal(calls,1);
+});
+
+test('concurrent commits reserve atomically and failed commits never release potential writes', async () => {
+  const gate = pending();
+  let calls = 0;
+  const db = budgetCaller({documentWriteLimit:3,fetchImpl:async()=>{calls++;return gate.promise;}});
+  const first = db.call(':commit',{writes:[{},{}]});
+  assert.equal(db.documentBudget().usedWrites,2);
+  await assert.rejects(db.call(':commit',{writes:[{},{}]}),{reason:'write_limit'});
+  const failure = assert.rejects(first,{status:503});
+  gate.resolve(response(503));
+  await failure;
+  assert.equal(db.documentBudget().usedWrites,2);
+  assert.equal(db.estimatedDocumentWrites(),0);
+  assert.equal(calls,1);
+});
+
+test('unknown commit outcomes keep all writes reserved and never automatically retry', async () => {
+  for (const fail of [()=>response(429),()=>response(503),()=>{throw Error('Synthetic network failure');},
+    ()=>({ok:true,status:200,json:async()=>{throw Error('PRIVATE_RESPONSE');}}),()=>response(200,{writeResults:[]})]) {
+    let calls = 0;
+    const db = budgetCaller({documentWriteLimit:2,fetchImpl:async()=>{calls++;return fail();},sleep:()=>assert.fail('No commit retry')});
+    await assert.rejects(db.call(':commit',{writes:[{},{}]}));
+    assert.equal(db.documentBudget().usedWrites,2);
+    assert.equal(db.estimatedDocumentWrites(),0);
+    await assert.rejects(db.call(':commit',{writes:[{}]}),FirestoreDocumentBudgetError);
+    assert.equal(calls,1);
+  }
+});
+
+test('only a proven zero-document rollback is allowed after a document-budget stop', async () => {
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:1,fetchImpl:async url=>{
+    calls++; assert.ok(url.endsWith(':rollback')); return response(200,{});
+  }});
+  await assert.rejects(db.call(':runQuery',budgetQuery(2)),{reason:'read_limit'});
+  assert.equal(calls,0);
+  for (const body of [undefined,{}, {transaction:''},{transaction:'synthetic',writes:[{}]}]) {
+    await assert.rejects(db.call(':rollback',body),FirestoreDocumentBudgetError);
+  }
+  await db.call(':rollback',{transaction:'synthetic'});
+  assert.equal(calls,1);
+  assert.equal(db.documentBudget().usedReads,0);
+  assert.equal(db.documentBudget().usedWrites,0);
+  await assert.rejects(db.call('/queue/one'),FirestoreDocumentBudgetError);
+  assert.equal(calls,1);
+});
+
+test('scheduled 429 remains latched for all operations including otherwise-free rollback with document budgets enabled', async () => {
+  let calls = 0;
+  const db = budgetCaller({mode:'scheduled',fetchImpl:async()=>{calls++;return response(429);},sleep:()=>assert.fail('No retry')});
+  await assert.rejects(db.call(':runQuery',budgetQuery(100)),{code:'FIRESTORE_READ_THROTTLED',deferred:true});
+  await assert.rejects(db.call(':rollback',{transaction:'synthetic'}),{code:'FIRESTORE_READ_THROTTLED'});
+  await assert.rejects(db.call(':commit',{writes:[{}]}),{code:'FIRESTORE_READ_THROTTLED'});
+  assert.equal(db.documentBudget().usedReads,100);
+  assert.equal(calls,1);
+});
+
+test('unbounded, offset, unsupported, and invalid requests latch without any network attempt', async () => {
+  for (const [endpoint,body] of [
+    [':runQuery',{}], [':runQuery',budgetQuery(0)], [':runQuery',budgetQuery(-1)],
+    [':runQuery',budgetQuery('100')], [':runQuery',budgetQuery(Infinity)],
+    [':runQuery',{structuredQuery:{limit:5,offset:0}}], [':runQuery',{structuredQuery:{limit:5,offset:10}}],
+    [':runQuery',{structuredQuery:{limit:5,findNearest:{limit:100}}}],
+    [':batchGet',{}], [':batchGet',{documents:'private'}], [':batchGet',{documents:[null]}],
+    [':commit',{}], [':commit',{writes:{length:1}}], [':unknownOperation',{}], ['/queue'],
+    ['/queue/id%2Fchild'], ['/queue/id:runQuery'], ['/queue/id/.././other/doc'],
+    ['/queue/id/%2e%2e/./other/doc'], ['/queue/id\\child\\other'], ['/queue/id%5Cchild']]) {
+    const db = budgetCaller({fetchImpl:()=>assert.fail('No transport allowed')});
+    await assert.rejects(db.call(endpoint,body),{code:'FIRESTORE_DOCUMENT_BUDGET',reason:'unbounded_operation',deferred:true});
+    await assert.rejects(db.call(':commit',{writes:[{proof:'MUST_NOT_PUBLISH'}]}),FirestoreDocumentBudgetError);
+    assert.equal(db.httpRequests(),0);
+    assert.equal(db.documentBudget().usedReads,0);
+    assert.equal(db.documentBudget().usedWrites,0);
+  }
+});
+
+test('malformed or over-bound read results are never exposed as successful output under budgeting', async () => {
+  for (const [endpoint,body,result] of [
+    [':runQuery',budgetQuery(2),{}], [':runQuery',budgetQuery(2),[{error:{message:'PRIVATE_ERROR'}}]],
+    [':runQuery',budgetQuery(2),queryRows(3)], [':runQuery',budgetQuery(2),[{readTime:'synthetic',skippedResults:1}]],
+    [':batchGet',{documents:['queue/one']},[]], ['/queue/one',undefined,null],
+    [':commit',{writes:[{}]},{writeResults:[]}], [':commit',{writes:[{}]},{writeResults:[null]}]]) {
+    const db = budgetCaller({fetchImpl:async()=>response(200,result)});
+    await assert.rejects(db.call(endpoint,body),error=>{
+      assert.ok(error instanceof FirestoreDocumentBudgetError);
+      assert.doesNotMatch(JSON.stringify(error),/PRIVATE/);
+      return true;
+    });
+    await assert.rejects(db.call(':commit',{writes:[{}]}),FirestoreDocumentBudgetError);
+    assert.equal(db.httpRequests(),1);
+  }
+});
+
+test('serialized budget requests cannot grow through input mutation or retry callbacks; call options cannot override caps', async () => {
+  const input = budgetQuery(10);
+  let calls = 0;
+  const db = budgetCaller({documentReadLimit:20,fetchImpl:async(_url,init)=>{
+    calls++;
+    assert.equal(JSON.parse(init.body).structuredQuery.limit,10);
+    input.structuredQuery.limit = 10000;
+    return calls === 1 ? response(429) : response(200,[]);
+  },sleep:quiet});
+  await db.call(':runQuery',input,{onRetry:()=>{input.structuredQuery.limit=20000;},documentReadLimit:999999});
+  assert.equal(db.documentBudget().usedReads,11);
+  assert.equal(calls,2);
+  await assert.rejects(db.call(':runQuery',budgetQuery(10),{documentReadLimit:999999}),{reason:'read_limit'});
+  assert.equal(calls,2);
+});
+
+test('local serialization failures do not reserve documents or fabricate HTTP attempts', async () => {
+  const db = budgetCaller({fetchImpl:()=>assert.fail('No transport')});
+  const body = budgetQuery(10); body.circular = body;
+  await assert.rejects(db.call(':runQuery',body),TypeError);
+  assert.equal(db.httpRequests(),0);
+  assert.equal(db.documentBudget().usedReads,0);
+  assert.equal(db.documentBudget().stopped,false);
+});
+
+test('document budget configuration accepts only finite positive safe-integer caps and unset defaults to Infinity', () => {
+  assert.deepEqual(firestoreDocumentLimits({}),{documentReadLimit:Infinity,documentWriteLimit:Infinity});
+  assert.deepEqual(firestoreDocumentLimits({VERIFIER_DOCUMENT_READ_LIMIT:'1500',VERIFIER_DOCUMENT_WRITE_LIMIT:'1000'}),
+    {documentReadLimit:1500,documentWriteLimit:1000});
+  assert.equal(createFirestoreCaller({base:'offline',access:'synthetic'}).documentBudget().readLimit,Infinity);
+  for (const value of [null,0,-1,1.5,NaN,Infinity,'1500',true,Number.MAX_SAFE_INTEGER+1]) {
+    for (const key of ['documentReadLimit','documentWriteLimit']) assert.throws(()=>budgetCaller({[key]:value}),/document .* limit/);
+  }
+  for (const value of ['', '0','-1','1.5','Infinity',' 1500','1500 ','1e3','0x10','001','9007199254740992',1500,true,null]) {
+    for (const key of ['VERIFIER_DOCUMENT_READ_LIMIT','VERIFIER_DOCUMENT_WRITE_LIMIT']) {
+      assert.throws(()=>firestoreDocumentLimits({[key]:value}),/document .* limit/);
+    }
+  }
+});
+
+test('either configured cap enables bounded-operation validation without consulting process env in the raw caller', async () => {
+  const prior = process.env.VERIFIER_DOCUMENT_READ_LIMIT;
+  process.env.VERIFIER_DOCUMENT_READ_LIMIT='INVALID';
+  try {
+    const readOnly = createFirestoreCaller({base:'offline',access:'synthetic',documentReadLimit:1,
+      fetchImpl:async()=>response(200,{writeResults:[{},{}]})});
+    await readOnly.call(':commit',{writes:[{},{}]});
+    assert.equal(readOnly.documentBudget().writeLimit,Infinity);
+    assert.equal(readOnly.documentBudget().usedWrites,2);
+    const writeOnly = createFirestoreCaller({base:'offline',access:'synthetic',documentWriteLimit:1,
+      fetchImpl:()=>assert.fail('Unbounded queries are not allowed')});
+    assert.equal(writeOnly.documentBudget().readLimit,Infinity);
+    await assert.rejects(writeOnly.call(':runQuery',{}),{reason:'unbounded_operation'});
+    const legacy = createFirestoreCaller({base:'offline',access:'synthetic',fetchImpl:async()=>response(200,[])});
+    await legacy.call(':runQuery',{});
+    assert.equal(legacy.documentBudget().readLimit,Infinity);
+  } finally {
+    if (prior === undefined) delete process.env.VERIFIER_DOCUMENT_READ_LIMIT;
+    else process.env.VERIFIER_DOCUMENT_READ_LIMIT=prior;
+  }
+});
+
+test('connect validates document env/options before OAuth and explicit caps override trusted env defaults', async t => {
+  const {privateKey} = generateKeyPairSync('rsa',{modulusLength:2048});
+  const raw = JSON.stringify({project_id:'polytrack-052',client_email:'synthetic@example.invalid',
+    private_key:privateKey.export({format:'pem',type:'pkcs8'})});
+  let calls = 0;
+  t.mock.method(globalThis,'fetch',async url=>{
+    calls++;
+    assert.equal(url,'https://oauth2.googleapis.com/token','No Firestore request should be admitted');
+    return response(200,{access_token:'SYNTHETIC_ACCESS'});
+  });
+  await assert.rejects(connect(raw,{env:{VERIFIER_DOCUMENT_READ_LIMIT:'0'}}),/document read limit/);
+  await assert.rejects(connect(raw,{env:{},documentWriteLimit:Infinity}),/document write limit/);
+  assert.equal(calls,0);
+  const configured = await connect(raw,{env:{VERIFIER_DOCUMENT_READ_LIMIT:'1500',VERIFIER_DOCUMENT_WRITE_LIMIT:'1000'}});
+  assert.equal(configured.documentBudget().readLimit,1500);
+  assert.equal(configured.documentBudget().writeLimit,1000);
+  const explicit = await connect(raw,{env:{VERIFIER_DOCUMENT_READ_LIMIT:'INVALID',VERIFIER_DOCUMENT_WRITE_LIMIT:'INVALID'},
+    documentReadLimit:2,documentWriteLimit:3});
+  assert.equal(explicit.documentBudget().readLimit,2);
+  assert.equal(explicit.documentBudget().writeLimit,3);
+  await assert.rejects(explicit.call(':runQuery',budgetQuery(3)),{reason:'read_limit'});
+  await assert.rejects(explicit.call(':commit',{writes:[{}]}),FirestoreDocumentBudgetError);
+  assert.equal(calls,2);
+  const keys = ['VERIFIER_DOCUMENT_READ_LIMIT','VERIFIER_DOCUMENT_WRITE_LIMIT'];
+  const prior = keys.map(key=>process.env[key]);
+  try {
+    process.env.VERIFIER_DOCUMENT_READ_LIMIT='1500'; process.env.VERIFIER_DOCUMENT_WRITE_LIMIT='1000';
+    const defaults = await connect(raw,{mode:'manual'});
+    assert.equal(defaults.documentBudget().readLimit,1500);
+    assert.equal(defaults.documentBudget().writeLimit,1000);
+    const legacy = await connect(raw,{env:{}});
+    assert.equal(legacy.documentBudget().readLimit,Infinity);
+    assert.equal(legacy.documentBudget().writeLimit,Infinity);
+  } finally {
+    keys.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];});
+  }
 });

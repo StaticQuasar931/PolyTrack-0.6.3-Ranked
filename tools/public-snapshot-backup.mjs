@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
 import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
@@ -309,7 +310,7 @@ export function isReusableArchivedEventBackup(value, eventId) {
 
 // Explicit manual capture only: credentials never go to public/live URLs,
 // redirects or arbitrary hosts. The Worker independently enforces frozen data.
-export function createAdminArchiveCaptureFetch({fetchImpl = fetch, token, periodIds, maxRequests = 16} = {}) {
+export function createAdminArchiveCaptureFetch({fetchImpl = fetch, adminFetchImpl = fetchImpl, token, periodIds, maxRequests = 16} = {}) {
   if (typeof token !== 'string' || !token || token.trim() !== token || token.length > 4096 ||
       !Array.isArray(periodIds) || !periodIds.length || periodIds.length > 120 ||
       periodIds.some(id => !EVENT_ID.test(id) || id === 'permanent-rolling-hills') ||
@@ -332,7 +333,7 @@ export function createAdminArchiveCaptureFetch({fetchImpl = fetch, token, period
     const headers = new Headers(init.headers);
     headers.set('Origin', 'https://staticquasar931.github.io');
     headers.set('X-Admin-Token', token);
-    const response = await fetchImpl(url.href, {...init, method:'GET', headers, redirect:'error'});
+    const response = await adminFetchImpl(url.href, {...init, method:'GET', headers, redirect:'error'});
     const reads = response.headers.get('X-Archive-Document-Reads');
     if (!/^[0-6]$/.test(reads || '')) {
       documentReads += 6;
@@ -485,12 +486,14 @@ async function writeJsonIfChanged(directory, relative, value) {
   return {changed: true, sha256: sha256(text)};
 }
 
-async function capturePublicSnapshotBackup({fetchImpl = fetch, directory = outputDirectory, now = Date.now(),
+async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now = Date.now(),
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
   trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches} = {}) {
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
     throw Error('Invalid trackFetchLimit');
-  const adminCapture = archiveExport ? createAdminArchiveCaptureFetch({...archiveExport, fetchImpl}) : null;
+  const adminFetchImpl=fetchImpl || fetch;
+  fetchImpl ||= createWorkerCaptureFetch();
+  const adminCapture = archiveExport ? createAdminArchiveCaptureFetch({...archiveExport, fetchImpl, adminFetchImpl}) : null;
   if (adminCapture) fetchImpl = adminCapture.fetch;
   const previous = await readManifest(directory);
   let pageFetches = 0;

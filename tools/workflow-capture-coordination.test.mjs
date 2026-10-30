@@ -353,14 +353,15 @@ test('reuse precedes production reads; receipt is recorded only after both captu
   }
   const verifier = await readWorkflow('verify-runs.yml');
   assert.match(verifier, /capture_requested_at: \$\{\{ needs.verify.outputs.capture_requested_at \}\}/);
-  assert.ok(verifier.indexOf('name: Timestamp the completed publication request') > verifier.indexOf('name: Verify queued runs'));
+  assert.ok(verifier.indexOf('name: Timestamp the scheduled or changed capture request') > verifier.indexOf('name: Verify queued runs'));
   assert.match(verifier, /if: steps.queue.outputs.has_work == 'true'/);
 });
 
-test('rollover wakes are staggered and CDN recovery cannot recapture Firebase', async () => {
+test('one four-window pipeline follows rotations, manual fallback has no cron and CDN cannot recapture Firebase', async () => {
   const catalog = await readWorkflow('sync-event-catalog.yml');
-  assert.match(catalog, /cron: '20 0 \* \* \*'/);
-  assert.match(catalog, /cron: '19 20 \* \* 0'/);
+  assert.doesNotMatch(catalog, /^  schedule:|cron:/m);
+  assert.match(catalog, /^  workflow_dispatch:$/m);
+  assert.match(await readWorkflow('verify-runs.yml'), /cron: '50 0,8,12,20 \* \* \*'/);
   assert.match(await readWorkflow('sync-kodub-weekly.yml'), /cron: "3 20 \* \* \*"/);
   const cdn = await readWorkflow('publish-cdn-release.yml');
   assert.match(cdn, /cron: '13,28,43,58 \* \* \* \*'/);
