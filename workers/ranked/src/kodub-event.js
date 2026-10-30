@@ -1,4 +1,5 @@
 import { EVENT_COLLECTIONS } from './events.js';
+import {eventCapacityUpgradeRequired} from './event-capacity.js';
 
 const ROOT = 'https://vps.kodub.com/v6';
 const WEEKLY_ROOT = `${ROOT}/trackOfTheWeek`;
@@ -174,6 +175,10 @@ export async function provisionKodubEvent(runtime, { capacity, fetch: fetcher = 
   const existing = await readExistingPeriod(runtime, id, current.trackId, endsAt);
   if (existing) {
     if (existing.kodub.privateSoftScoring === true) await claimSoftTargetBinding(runtime, existing.kodub.privateSoftScoringBinding);
+    if (eventCapacityUpgradeRequired(existing, capacity, now)) {
+      const upgraded = await runtime.service.upgradeCapacity(id, capacity);
+      return {created:null,existing:id,capacityUpgraded:id,...upgraded,period:existing};
+    }
     return { created: null, existing: id, period: existing };
   }
   const trackAsset = `${metadata.trackUrl}?version=${VERSION}`;

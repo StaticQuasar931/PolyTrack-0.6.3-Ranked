@@ -10,6 +10,7 @@ import {mergeCanonicalResultIntoTrack,maintenanceWindowAllows} from '../src/inde
 import {PERMANENT_ROLLING_HILLS as R} from '../src/permanent-rolling-hills.js';
 import {advanceEventPublication,publishEventCapacity} from '../src/event-publication.js';
 import {EVENT_RETENTION_COLLECTION} from '../src/event-capacity.js';
+import fs from 'node:fs';
 import {loadPublicationEntries,decodePublicationPage,preparePublicationPages,PUBLIC_PAGE_COLLECTION} from '../src/paged-publication.js';
 
 const track='a'.repeat(64),hash=v=>createHash('sha256').update(v).digest('hex');
@@ -45,6 +46,20 @@ function fixture(){
 }
 const verdict=job=>({resultId:job.resultId,trackId:job.trackId,timeMs:job.timeMs,replayHash:job.replayHash,status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST,
  binding:{resultId:job.resultId,trackId:job.trackId,nativeTrackId:job.trackId,timeMs:job.timeMs,replayHash:job.replayHash,actualReplayHash:job.replayHash,engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION}});
+
+test('production capacity upgrade preserves old run bindings with one four-document migration',async()=>{
+ const target=JSON.parse(JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8')).vars.EVENT_CAPACITY_JSON);
+ const f=fixture();await f.service.createPeriod({...period,capacity:{...target,storageVersion:undefined,entrants:200}});f.time(2000);
+ const accountId=hash('pre-upgrade-racer');f.data.set(C.profiles+'/'+accountId,{accountId,ownerUid:'owner',name:'Racer'});
+ const submitted=await f.service.submit(period.id,'owner',{accountId,trackId:track,attemptId:'attempt',timeMs:10000,frames:10000,replay:'abcd',carStyle:'style'});
+ const before=structuredClone(f.data.get(C.runs+'/'+submitted.runId));
+ const result=await f.service.upgradeCapacity(period.id,target);
+ assert.equal(result.entrants,2000);
+ assert.equal(f.counts.at(-1).reads,4);assert.equal(f.counts.at(-1).writes,4);
+ assert.deepEqual(f.data.get(C.runs+'/'+submitted.runId),before);
+ assert.equal(f.data.get(C.periods+'/'+period.id).proofCapacity.entrants,200);
+ assert.equal(f.data.get(C.public+'/catalog').periods[0].entrantLimit,2000);
+});
 
 test('storage-v2 admits racer 201, preserves pre-upgrade bindings, and pages real verified PBs and totals',async()=>{
  const f=fixture();await f.service.createPeriod({...period,capacity:{...capacity,storageVersion:undefined,entrants:200}});f.time(2000);

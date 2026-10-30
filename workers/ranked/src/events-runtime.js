@@ -2,6 +2,7 @@ import {utcEventCandidates} from '../../../events/schedule.mjs';
 export {utcEventCandidates} from '../../../events/schedule.mjs';
 import { createEventService, EVENT_COLLECTIONS as C, EVENT_LIMITS as L, eventPeriod, exhaustedEventLease } from './events.js';
 import { createEventFirestoreStore, eventDecode } from './events-store.js';
+import {eventCapacityUpgradeRequired} from './event-capacity.js';
 
 export function eventRuntime(request, { projectId = 'polytrack-052', now = Date.now } = {}) {
   const store = createEventFirestoreStore({ request, projectId, retries: 0 });
@@ -199,7 +200,14 @@ export async function provisionEvent(runtime, { officialIds, allIds, capacity, t
   const candidates = utcEventCandidates(runtime.now(), officialIds, allIds);
   if (Math.floor(runtime.now() / 300000) % 2) candidates.reverse();
   for (const candidate of candidates) {
-    if (await runtime.request('/' + C.periods + '/' + candidate.id)) continue;
+    const existing = await runtime.request('/' + C.periods + '/' + candidate.id);
+    if (existing) {
+      if (eventCapacityUpgradeRequired(decode(existing), capacity, runtime.now())) {
+        const upgraded = await runtime.service.upgradeCapacity(candidate.id, capacity);
+        return {created:null,capacityUpgraded:candidate.id,...upgraded};
+      }
+      continue;
+    }
     // Do not change the date-selected track because a target is temporarily missing.
     // Clients use the same bundled rotation; only server-verified targets enable scoring.
     {

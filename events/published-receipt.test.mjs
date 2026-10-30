@@ -12,7 +12,7 @@ const section=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a
 const receiptSource=section('  function receiptText(', '  function rows(');
 const receiptText=vm.runInNewContext('('+receiptSource+')',{eventPublishedPbCoversReceipt});
 const accountId='a'.repeat(64),period={id:'weekly_fixture',kind:'weekly',trackId:'b'.repeat(64),startsAt:Date.now()-10000,endsAt:Date.now()+3600000};
-const verified={accountId,timeMs:1000,rank:1,rp:50,physicsVerified:true,replayIntegrityVerified:true};
+const verified={accountId,timeMs:1000,rank:1,rp:50,replayHash:'d'.repeat(64),physicsVerified:true,replayIntegrityVerified:true};
 const board=()=>({period:{...period},entries:[{...verified}],updatedAt:Date.now(),_publicBackup:true});
 const waiting=()=>({accountId,periodId:period.id,timeMs:1100,attemptId:'old',status:'waiting'});
 
@@ -22,7 +22,7 @@ test('current verified snapshot suppresses stale waiting, cloud-status and expir
     assert.equal(receiptText(receipt,local,period,{board:board(),accountId}),'');
     assert.deepEqual({receipt,local},before);
   }
-  assert.equal(receiptText(null,{accountId,timeMs:1000},period,{board:board(),accountId}),'');
+  assert.equal(receiptText(null,{accountId,timeMs:1000,replayHash:verified.replayHash},period,{board:board(),accountId}),'');
   const closed={...period,endsAt:Date.now()-1000},saved={...board(),period:closed};
   assert.equal(receiptText(waiting(),null,closed,{board:saved,accountId}),'');
 });

@@ -49,7 +49,7 @@ test('archive month navigation rolls years correctly and returns to recent event
  const buttons=descendants(root,node=>node.tagName==='BUTTON');
  for(const label of ['Previous month','Next month','All saved events'])buttons.find(button=>button.textContent===label).emit('click');
  assert.deepEqual(months,['2026-01','2025-12','2026-01','']);
- assert.match(root.textContent,/Search or filter saved event standings/);
+ assert.match(root.textContent,/Final event results.*separate all-time leaderboard/);
 });
 
 test('archive cards prefer safe period artwork and expose accessible cached standings', () => {
@@ -69,7 +69,7 @@ test('archive cards prefer safe period artwork and expose accessible cached stan
   const image = descendants(card, node => node.tagName === 'IMG')[0];
   assert.equal(card.dataset.eventKind, 'daily');
   assert.equal(summary.dataset.eventKind, 'daily');
-  assert.equal(summary.attributes['aria-label'], 'Daily: Past Track; 2 racers; 2 verified; winner Fast Racer, 0:01.234; Saved final event standings.');
+  assert.equal(summary.attributes['aria-label'], 'Daily: Past Track; 2 event racers; 2 verified; winner Fast Racer, 0:01.234; Saved final event standings.');
   assert.equal(image.src, '/tracks/past.png');
   assert.equal(image.loading, 'lazy');
   assert.equal(image.alt, 'Past Track thumbnail');
@@ -118,15 +118,15 @@ test('unsafe or missing period artwork falls back to bridge thumbnail and snapsh
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(snapshotCalls, 1);
   assert.match(summary.attributes['aria-label'], /winner Winner/);
-  assert.equal(descendants(card, node => node.className === 'sq-archive-racer-count')[0].textContent, '1 racer');
+  assert.equal(descendants(card, node => node.className === 'sq-archive-racer-count')[0].textContent, '1 event racer');
 });
 
-test('zero-racer archive cards stay accessible for track practice without fetching empty boards', () => {
+test('catalog-only zero counts do not prevent loading a saved event board on demand', async () => {
   const { root } = archiveFixture();
   let snapshotCalls = 0;
   mountArchiveView(root, {
     periods: [{ id: 'empty', kind: 'custom', endsAt: 100, racerCount: 0 }],
-    loadSnapshot: async () => { snapshotCalls += 1; return { entries: [] }; }
+    loadSnapshot: async () => { snapshotCalls += 1; return { archived:true, racerCount:1, entries: [{accountId:'racer',timeMs:1000}] }; }
   });
   const card = descendants(root, node => node.tagName === 'DETAILS')[0];
   const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
@@ -135,7 +135,9 @@ test('zero-racer archive cards stay accessible for track practice without fetchi
   card.open = true;
   card.emit('toggle');
   assert.equal(card.open, true);
-  assert.equal(snapshotCalls, 0);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(snapshotCalls, 1);
+  assert.equal(descendants(card, node => node.className === 'sq-archive-racer-count')[0].textContent, '1 event racer');
 });
 
 test('archive pagination is local, newest-first and clamps bounds', () => {
@@ -325,6 +327,29 @@ test('archive standings deduplicate racers by fastest verified result and identi
   assert.equal(counts.winner.name, 'Winner');
 });
 
+test('saved event rows take precedence over stale lower catalog and board counts', () => {
+  const period={id:'past',kind:'kodub',trackId:'a'.repeat(64),racerCount:1};
+  const snapshot={period,archived:true,racerCount:1,entries:[
+    {accountId:'a',timeMs:1000},{accountId:'b',timeMs:1100},
+    {accountId:'a',timeMs:1200},{accountId:'c',timeMs:1300}],
+    pendingPlaybacks:[{accountId:'b',timeMs:900,pending:true},{accountId:'d',timeMs:1400,pending:true}]};
+  const counts=archivePeriodCounts(period,snapshot);
+  assert.equal(counts.racers,4);
+  assert.equal(counts.verified,3);
+});
+
+test('ordinary track racer counts cannot be substituted for bound event participants', () => {
+  const period={id:'velvoire',kind:'kodub',trackId:'a'.repeat(64),racerCount:1};
+  const event={period,archived:true,racerCount:1,entries:[{accountId:'me',name:'Static',timeMs:270425}]};
+  const ordinary={trackId:period.trackId,complete:true,totalEntries:4,entries:[
+    {accountId:'me',timeMs:270425},{accountId:'other',timeMs:310222},
+    {accountId:'third',timeMs:357306},{accountId:'fourth',timeMs:801634}]};
+  assert.equal(archivePeriodCounts(period,event).racers,1);
+  assert.equal(archivePeriodCounts(period,event).winner.name,'Static');
+  assert.equal(archivePeriodCounts(period,ordinary).verified,null);
+  assert.equal(archiveSnapshotState(period,ordinary),'mismatched');
+});
+
 test('archive search and chronological order reuse saved metadata without loading boards',()=>{
  const {root}=archiveFixture();let loads=0;
  mountArchiveView(root,{periods:[{id:'older',kind:'daily',trackName:'Alpine',endsAt:100,maxRp:100},{id:'newer',kind:'weekly',trackName:'Canyon',endsAt:200,maxRp:500}],loadSnapshot:()=>{loads++;}});
@@ -399,7 +424,7 @@ test('Spite-like saved live captures preserve entrant totals without inventing a
   const card = descendants(root, node => node.tagName === 'DETAILS')[0];
   assert.equal(card.dataset.standingsState, 'non-final');
   assert.equal(descendants(card,node=>node.className==='sq-archive-standings')[0].children[0].className,'sq-archive-standings-status');
-  assert.match(card.textContent, /21 racers/);
+  assert.match(card.textContent, /21 event racers/);
   assert.match(card.textContent, /17 verified in saved capture/);
   assert.match(card.textContent, /Final standings are unavailable/);
   assert.match(card.textContent, /100 RP \(saved\)/);

@@ -20,7 +20,7 @@ let browser;
 before(async () => { browser = await chromium.launch({headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {})}); });
 after(async () => { await browser?.close(); });
 
-const keys = ['reduced-effects', 'pb-podiums', 'pb-podiums-verified-only', 'compact-ranked', 'show-racer-codes', 'plain-racer-themes', 'ui-font-scale', 'rp-decimals'].map(key => 'polytrack-0.6.2-' + key).concat('polytrack-0.6.3-compact-track-data');
+const keys = ['reduced-effects', 'pb-podiums', 'pb-podiums-verified-only', 'compact-ranked', 'show-racer-codes', 'plain-racer-themes', 'ui-font-scale', 'rp-decimals'].map(key => 'polytrack-0.6.2-' + key).concat('polytrack-0.6.3-compact-track-data','polytrack-0.6.3-unplayed-player-counts');
 const credential = 'polytrack-0.6.2-turn-backup-code';
 async function fixture(t, seeded = false) {
   const page = await browser.newPage();

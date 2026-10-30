@@ -131,3 +131,15 @@ test('malformed or duplicate board identities are reported instead of silently c
   const wrong=await audit({'events/wrong.json':{period,entries:[record]}});
   assert.equal(wrong.timedBoards,0);assert.equal(wrong.issues.length,1);
 });
+
+test('archive count audits detect undercounts without equating entrants with verified finishes',async()=>{
+  const other={...record,accountId:'e'.repeat(64)};
+  const undercount=await audit({[boardKey]:{period,archived:true,racerCount:1,entries:[record,other]}});
+  assert.equal(undercount.periods[0].observedRacers,2);
+  assert.equal(undercount.periods[0].countUnderreported,true);
+  assert.match(undercount.issues[0].reason,/racer count is smaller/);
+  const admitted=await audit({[boardKey]:{period,archived:true,racerCount:4,entries:[record]}});
+  assert.equal(admitted.periods[0].observedRacers,1);
+  assert.equal(admitted.periods[0].countUnderreported,false);
+  assert.equal(admitted.issues.length,0);
+});

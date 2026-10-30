@@ -13,7 +13,7 @@ function fixture(){
   let options,readerResolve;const reads=[],metadataReads=[],timers=[];const store={};let visible=true;
   const ctx=vm.createContext({URL,Map,Set,Promise,Date,Number,String,Math,Array,Object,
     eventsModuleUrl:'https://game.test/events/client.mjs',RANK_MODEL:'model',TRACK_CACHE_SCHEMA:6,
-    trackCacheGeneration:0,localRaceGeneration:0,placementRenderTimer:0,
+    trackCacheGeneration:0,localRaceGeneration:0,placementRenderTimer:0,snapshotTrackStatistics:{},overallCacheGeneration:0,
     trackSnapshotStore:()=>store,readOverallSnapshotCache:()=>null,
     readTrackSnapshotCache:trackId=>store[trackId],TRACK_CATALOG:new Map([[id,{id,name:'Summer 1'}]]),
     activeRankedAccountId:()=> 'me',localStorage:{getItem:()=>null},personalFilterRuntime:null,
@@ -95,4 +95,53 @@ test('ordinary track cards retain name lookup and the original PB element',async
   const record={},button={querySelector:()=>record},title={textContent:' Summer 1 ',closest:selector=>selector==='.sq-kodub-weekly'?null:button};
   assert.equal(f.options.resolveTrackId(title,[...f.options.tracks().values()]),id);
   assert.equal(f.options.findRecordElement(title),record);
+});
+
+test('unplayed count installation consumes only already-loaded metadata and never starts a count-only read',async()=>{
+  const f=fixture(),statistics={[id]:{complete:true,players:7,count:7,totalEntries:7,revision:4}};
+  f.ctx.snapshotTrackStatistics=statistics;
+  await f.ctx.ensureRecordPlacementUi();
+  assert.equal(f.options.readTrackStatistics(),statistics);
+  f.options.readTrackStatistics();f.options.readTrackStatistics();
+  assert.deepEqual(f.reads,[]);assert.deepEqual(f.metadataReads,['track-statistics'],'existing startup read only');
+  const replacement={[id]:{...statistics[id],players:8,count:8,totalEntries:8,revision:5}};
+  f.ctx.snapshotTrackStatistics=replacement;
+  assert.equal(f.options.readTrackStatistics(),replacement,'no stale captured statistics reference');
+});
+
+test('ordinary duplicate names fail closed while exact Kodub identity stays independent',async()=>{
+  const f=fixture();await f.ctx.ensureRecordPlacementUi();
+  const title={textContent:'Summer 1',closest:()=>null};
+  assert.equal(f.options.resolveTrackId(title,[{id,name:'Summer 1'},{id:otherId,name:'Summer 1'}]),'');
+});
+
+test('personal-group placement never labels a different displayed PB time',async()=>{
+  const f=fixture();await f.ctx.ensureRecordPlacementUi();
+  f.store[id]=board();f.ctx.personalFilterRuntime={active:()=>true,getFilter:()=>({scope:'all'})};
+  f.ctx.applyPersonalFilters=()=>({groupGrading:true,rows:[{accountId:'me',timeMs:1000,groupRank:1}]});
+  const place={accountId:'me',timeMs:950,rank:1,fieldSize:3};
+  assert.equal(f.options.mapPlacement(place,id),null,'old group rank is not a local PB estimate');
+  const mapped=f.options.mapPlacement({...place,timeMs:1000},id);
+  assert.equal(mapped.label,'1/1');assert.equal(mapped.personalFilter,true);
+});
+
+test('count toggle and newly loaded statistics repaint immediately without additional snapshot warming',async()=>{
+  const f=fixture(),values=new Map(),classes=new Set();let updates=0;
+  const menu={};f.ctx.document.querySelector=()=>menu;
+  f.ctx.localStorage={getItem:key=>values.get(key)??null};
+  f.ctx.document.documentElement={classList:{contains:key=>classes.has(key),toggle:(key,on)=>{if(on)classes.add(key);else classes.delete(key);}},style:{setProperty(){}}};
+  f.ctx.placementModule.installRecordPlacement=value=>({update(){updates++;}});
+  await f.ctx.ensureRecordPlacementUi();
+  const a=source.indexOf('  let lastPlacementUpdateAt='),b=source.indexOf('  let settingsPreferenceTransaction=',a);
+  vm.runInContext(source.slice(a,b),f.ctx);
+  f.ctx.applyUiPreferences();assert.equal(updates,1);
+  f.ctx.applyUiPreferences();assert.equal(updates,1);
+  values.set(placement.RECORD_PLACEMENT_SETTINGS.showPlayerCounts,'1');
+  f.ctx.applyUiPreferences();assert.equal(updates,2);
+  f.ctx.snapshotTrackStatistics={[id]:{complete:true,players:7,count:7,totalEntries:7,revision:4}};
+  f.ctx.applyUiPreferences();assert.equal(updates,3);
+  assert.deepEqual(f.reads,[]);assert.deepEqual(f.metadataReads,['track-statistics']);
+  assert.match(source,/settingsToggle\('Player counts on unplayed tracks','polytrack-0\.6\.3-unplayed-player-counts',false\)/);
+  const keys=source.slice(source.indexOf('  const settingsPreferenceKeys='),source.indexOf('  function beginSettingsPreferenceTransaction('));
+  assert.ok(keys.includes(placement.RECORD_PLACEMENT_SETTINGS.showPlayerCounts),'Apply/Cancel transaction owns the toggle');
 });

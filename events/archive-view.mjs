@@ -85,8 +85,9 @@ export function archivePeriodCounts(period, snapshot) {
   const verifiedEntries = dedupeVerifiedEntries(snapshot);
   const pending = Array.isArray(snapshot?.pendingPlaybacks) ? snapshot.pendingPlaybacks.filter(row => row && typeof row === 'object') : [];
   const uniqueRacers = new Set([...entries, ...pending].map(racerIdentity));
-  const racers = declaredRacerCount(snapshot) ?? declaredRacerCount(snapshot?.period) ??
+  const declared = declaredRacerCount(snapshot) ?? declaredRacerCount(snapshot?.period) ??
     declaredRacerCount(period) ?? (snapshot ? uniqueRacers.size : null);
+  const racers = snapshot ? Math.max(declared ?? 0, uniqueRacers.size) : declared;
   const state = archiveSnapshotState(period, snapshot);
   const rows = state === 'partial-final' ? verifiedEntries.map(row => ({ ...row,
     rank: validEntries(snapshot).find(entry => entry.accountId === row.accountId && entry.timeMs === row.timeMs)?.rank || null })) : verifiedEntries;
@@ -282,7 +283,7 @@ export function mountArchiveView(root, options = {}) {
   toolbar.className = 'sq-archive-toolbar';
   const intro = document.createElement('div');
   appendText(document, intro, 'h3', '', options.title || 'Past events');
-  appendText(document, intro, 'p', '', 'Search or filter saved event standings. These are separate from the ordinary track leaderboard used for practice.');
+  appendText(document, intro, 'p', '', 'Final event results. Imported tracks open a separate all-time leaderboard.');
   toolbar.append(intro);
   let jumpToMonth = () => {};
   {
@@ -393,8 +394,8 @@ export function mountArchiveView(root, options = {}) {
     summary.append(title);
     const initialRacers = declaredRacerCount(period);
     const count = appendText(document, summary, 'span', 'sq-archive-count',
-      initialRacers === null ? 'Open standings' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`);
-    summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${initialRacers === null ? 'standings not loaded' : `${initialRacers} ${initialRacers === 1 ? 'racer' : 'racers'}`}`);
+      initialRacers === null ? 'Open standings' : `${initialRacers} event ${initialRacers === 1 ? 'racer' : 'racers'}`);
+    summary.setAttribute('aria-label', `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${initialRacers === null ? 'standings not loaded' : `${initialRacers} event ${initialRacers === 1 ? 'racer' : 'racers'}`}`);
     details.append(summary);
     const board = document.createElement('div');
     board.className = 'sq-archive-board';
@@ -433,13 +434,13 @@ export function mountArchiveView(root, options = {}) {
       details.dataset.standingsState = state;
       snapshots.set(period.id, snapshot);
       count.replaceChildren();
-      appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}`);
+      appendText(document, count, 'span', 'sq-archive-racer-count', `${counts.racers} event ${counts.racers === 1 ? 'racer' : 'racers'}`);
       appendText(document, count, 'span', 'sq-archive-verified-count', `${counts.verified} verified${state === 'final' ? '' : ' in saved capture'}`);
       if (counts.winner) {
         const winnerName = typeof counts.winner.name === 'string' && counts.winner.name ? counts.winner.name : 'Racer';
         appendText(document, count, 'span', 'sq-archive-winner', `Winner ${winnerName} ${formatTime(counts.winner.timeMs)}`);
       }
-      const countLabel = `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${counts.racers} ${counts.racers === 1 ? 'racer' : 'racers'}; ${counts.verified} verified${counts.winner ? `; winner ${counts.winner.name || 'Racer'}, ${formatTime(counts.winner.timeMs)}` : ''}`;
+      const countLabel = `${KIND_LABELS[period.kind]}: ${String(resolveName(period) || 'Archived event')}; ${counts.racers} event ${counts.racers === 1 ? 'racer' : 'racers'}; ${counts.verified} verified${counts.winner ? `; winner ${counts.winner.name || 'Racer'}, ${formatTime(counts.winner.timeMs)}` : ''}`;
       const description = state === 'final' ? 'Saved final event standings.' : state === 'partial-final'
         ? 'Only part of the final event standings was saved. The full ranking and winner are unavailable.'
         : 'Final standings are unavailable. Showing the last saved event capture, not final results. Saved RP and positions may have changed before closure.';
@@ -456,7 +457,7 @@ export function mountArchiveView(root, options = {}) {
         appendText(document, results, 'p', 'sq-archive-empty', 'The weekly selection was saved, but no final standings or Event RP were captured.');
         return;
       }
-      if (initialRacers === 0) {
+      if (initialRacers === 0 && !loadSnapshot) {
         results.replaceChildren();
         appendText(document, results, 'p', 'sq-archive-empty', 'The saved event catalog lists 0 racers. No final standings have been loaded.');
         return;

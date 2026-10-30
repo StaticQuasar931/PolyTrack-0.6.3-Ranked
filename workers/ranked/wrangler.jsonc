@@ -25,7 +25,7 @@
     "FIRESTORE_OPERATION_LOGGING": "true",
     "MULTIPLAYER_ENABLED": "true",
     "EVENTS_ENABLED": "true",
-    "EVENT_CAPACITY_JSON": "{\"policyVersion\":\"event-200-v1\",\"entrants\":200,\"admissionsPerPeriod\":2048,\"replayBytesPerPeriod\":16777216,\"minIntervalMs\":5000,\"verificationsPerDay\":1536}"
+    "EVENT_CAPACITY_JSON": "{\"policyVersion\":\"event-2000-v2\",\"storageVersion\":2,\"entrants\":2000,\"admissionsPerPeriod\":2048,\"replayBytesPerPeriod\":16777216,\"minIntervalMs\":5000,\"verificationsPerDay\":1536}"
   },
   "ratelimits": [
     {"name":"WRITE_IP_RATE_LIMITER","namespace_id":"6215","simple":{"limit":600,"period":60}},

@@ -7,7 +7,8 @@ const OVERALL_PLACEMENT_CACHE = new WeakMap();
 
 export const RECORD_PLACEMENT_SETTINGS = Object.freeze({
   enabled: 'polytrack-0.6.2-pb-podiums',
-  policy: 'polytrack-0.6.2-pb-podiums-verified-only'
+  policy: 'polytrack-0.6.2-pb-podiums-verified-only',
+  showPlayerCounts: 'polytrack-0.6.3-unplayed-player-counts'
 });
 
 const AUTHORITATIVE_SOURCES = new Set(['edge', 'firestore-snapshot', 'canonical-firestore', 'public-backup']);
@@ -193,11 +194,13 @@ export function preparePolyTrackOverallPlacements(snapshot, accountId, options =
 export function readRecordPlacementSettings(storage = globalThis.localStorage) {
   let enabled = true;
   let policy = 'all';
+  let showPlayerCounts = false;
   try {
     enabled = storage?.getItem(RECORD_PLACEMENT_SETTINGS.enabled) !== '0';
     policy = storage?.getItem(RECORD_PLACEMENT_SETTINGS.policy) === '1' ? 'verified' : 'all';
+    showPlayerCounts = storage?.getItem(RECORD_PLACEMENT_SETTINGS.showPlayerCounts) === '1';
   } catch {}
-  return { enabled, policy };
+  return { enabled, policy, showPlayerCounts };
 }
 
 export function preparePolyTrackCachedSnapshot(snapshot, options = {}) {
@@ -233,6 +236,7 @@ export function preparePolyTrackCachedSnapshot(snapshot, options = {}) {
 
 export function normalizeAuthoritativeSnapshot(snapshot, trackId, options = {}) {
   if (!snapshot || typeof snapshot !== 'object') return null;
+  if (snapshot.trackId != null && String(snapshot.trackId) !== String(trackId)) return null;
   const revision = revisionOf(snapshot);
   if (!revision || snapshot.authoritative !== true || snapshot.complete !== true) return null;
   if (!Array.isArray(snapshot.entries)) return null;
@@ -325,6 +329,30 @@ export function computeRecordPlacement({ snapshot, trackId, accountId, policy = 
   return placementFromNormalized(normalized, accountId, policy);
 }
 
+// Statistics must come from the already loaded public track-statistics index.
+// A preview length, unknown total, or contradictory same-revision field is not a count.
+function recordPlayerField({ snapshot, statistics, trackId, ...options }) {
+  const normalized = normalizeAuthoritativeSnapshot(snapshot, trackId, options);
+  const boardField = normalized ? { count: normalized.views.all.fieldSize, revision: normalized.revision } : null;
+  const valid = statistics?.complete === true &&
+    (statistics.trackId == null || statistics.trackId === trackId) &&
+    Number.isSafeInteger(statistics.players) && statistics.players >= 0 &&
+    statistics.players === statistics.count && statistics.players === statistics.totalEntries &&
+    Number.isSafeInteger(statistics.revision) && statistics.revision > 0;
+  const metadataField = valid ? { count: statistics.players, revision: statistics.revision } : null;
+  if (!valid) return boardField;
+  if (!snapshot) return metadataField;
+  const revision = revisionOf(snapshot);
+  if (statistics.revision > revision) return metadataField;
+  if (!normalized) return null;
+  if (statistics.revision === revision && statistics.count !== snapshot.entries.length) return null;
+  return boardField;
+}
+
+export function computeRecordPlayerCount(input) {
+  return recordPlayerField(input)?.count ?? null;
+}
+
 export function createRecordPlacementModel(options = {}) {
   const highestRevision = new Map();
   const invalidatedThrough = new Map();
@@ -392,6 +420,7 @@ function ensureStyle(document) {
 [${BADGE_ATTRIBUTE}].silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
 [${BADGE_ATTRIBUTE}].bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
 [${BADGE_ATTRIBUTE}].estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
+[${BADGE_ATTRIBUTE}].player-count{min-width:0;padding-inline:.1em;font-size:.72em}
 `;
   document.head.appendChild(style);
   return true;
@@ -416,7 +445,11 @@ function removeClass(node, className) {
 
 function renderDom(document, tracks, placements, options, state) {
   if (!document?.querySelectorAll) return;
-  const byName = new Map(tracks.filter(track => track.id && track.name).map(track => [String(track.name).trim().toLowerCase(), track.id]));
+  const byName = new Map();
+  for (const track of tracks.filter(track => track.id && track.name)) {
+    const name = String(track.name).trim().toLowerCase();
+    byName.set(name, byName.has(name) ? '' : track.id);
+  }
   const titles = document.querySelectorAll(options.titleSelector || '.track-title p');
   const retained = new Set();
   for (const title of titles) {
@@ -435,18 +468,24 @@ function renderDom(document, tracks, placements, options, state) {
     if (state?.settings?.enabled && state.accountId && trackId && Number(displayedTime) > 0) {
       options.requestSnapshot?.(trackId, title);
     }
-    if (Number.isSafeInteger(Number(displayedTime)) && Number(displayedTime) > 0 && (!placement || Number(displayedTime) !== placement.timeMs) && state?.settings?.policy !== 'verified') {
+    if (state?.settings?.enabled && state.accountId && Number.isSafeInteger(Number(displayedTime)) && Number(displayedTime) > 0 && (!placement || Number(displayedTime) !== placement.timeMs) && state?.settings?.policy !== 'verified') {
       placement = options.estimatePlacement?.(trackId, Number(displayedTime), state.accountId) || null;
     }
-    if (!placement || !Number.isSafeInteger(Number(displayedTime)) || Number(displayedTime) !== placement.timeMs) {
+    const recordText = displayedRecordText(record).trim();
+    const unplayed = displayedTime == null && (/^no\s+record$/i.test(recordText) || /^[-:.\s]+$/.test(recordText) && recordText.includes('-'));
+    const count = state?.settings?.showPlayerCounts && unplayed ? state.playerCounts.get(trackId) : null;
+    if (count != null) {
+      placement = { trackId, kind: 'player-count', fieldSize: count, label: String(count), podium: 'player-count' };
+    } else if (!placement || !Number.isSafeInteger(Number(displayedTime)) || Number(displayedTime) !== placement.timeMs) {
       badge?.remove();
       removeClass(record, HOST_CLASS);
       continue;
     }
-    placement = options.mapPlacement ? options.mapPlacement(placement, trackId) : placement;
+    placement = placement.kind !== 'player-count' && options.mapPlacement ? options.mapPlacement(placement, trackId) : placement;
     if (!placement) { badge?.remove(); removeClass(record, HOST_CLASS); continue; }
-    const signature = `${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}|${Number(placement.estimated)}|${placement.personalFilter || ''}`;
+    const signature = `${placement.kind || 'placement'}|${placement.label}|${placement.trackId}|${placement.accountId}|${placement.timeMs}|${placement.revision}|${placement.rank}|${placement.fieldSize}|${Number(placement.verified)}|${Number(placement.estimated)}|${placement.personalFilter || ''}`;
     if (badge?.dataset?.signature === signature) {
+      addClass(record, HOST_CLASS);
       retained.add(badge);
       continue;
     }
@@ -459,7 +498,7 @@ function renderDom(document, tracks, placements, options, state) {
     const className = `sq-record-placement ${placement.personalFilter?'is-personal-filter ':''}${placement.estimated?'estimated':placement.podium}`;
     if (badge.className !== className) badge.className = className;
     badge.textContent = placement.label;
-    badge.title = placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
+    badge.title = placement.kind === 'player-count' ? `${placement.fieldSize} player${placement.fieldSize === 1 ? '' : 's'} in saved standings` : placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
     if (placement.personalFilter) badge.title = `Personal group: ${badge.title}`;
     badge.setAttribute('aria-label', badge.title);
     addClass(record, HOST_CLASS);
@@ -522,6 +561,7 @@ export function installRecordPlacement(options = {}) {
   let destroyed = false;
   let lastState = null;
   const preparedSnapshots = new WeakMap();
+  const countRevisions = new Map(), countInvalidatedThrough = new Map();
 
   function prepareSnapshot(raw, trackId) {
     if (raw == null || !options.prepareSnapshot) return raw;
@@ -551,11 +591,22 @@ export function installRecordPlacement(options = {}) {
     const settings = { ...storedSettings, ...bridgeSettings, ...(input.settings || {}) };
     if (own(input, 'enabled')) settings.enabled = input.enabled;
     if (own(input, 'policy')) settings.policy = input.policy;
+    if (own(input, 'showPlayerCounts')) settings.showPlayerCounts = input.showPlayerCounts;
     settings.enabled = settings.enabled !== false;
+    settings.showPlayerCounts = settings.showPlayerCounts === true;
     settings.policy = normalizePolicy(settings.policy);
     const accountId = String(resolveValue(input, 'accountId', options.readAccountId) || '').trim();
     const authoritativePlacements = resolveValue(input, 'authoritativePlacements', options.readAuthoritativePlacements);
-    lastState = { tracks, snapshots, accountId, policy: settings.policy, authoritativePlacements, tracksNormalized: true };
+    const statistics = settings.showPlayerCounts ? resolveValue(input, 'trackStatistics', options.readTrackStatistics) : null;
+    const playerCounts = new Map();
+    if (settings.showPlayerCounts) for (const track of tracks) {
+      const field = recordPlayerField({ ...options, snapshot: snapshots.get(track.id), statistics: snapshotAt(statistics, track.id), trackId: track.id });
+      if (field && field.revision >= (countRevisions.get(track.id) || 0)) {
+        countRevisions.set(track.id, field.revision);
+        if (field.revision > (countInvalidatedThrough.get(track.id) || 0)) playerCounts.set(track.id, field.count);
+      }
+    }
+    lastState = { tracks, snapshots, accountId, policy: settings.policy, authoritativePlacements, tracksNormalized: true, settings, playerCounts };
     const placements = settings.enabled ? model.update(lastState) : new Map();
     render(placements, { ...lastState, settings });
     return placements;
@@ -564,8 +615,17 @@ export function installRecordPlacement(options = {}) {
   function invalidate(trackIds, throughRevision) {
     if (destroyed) return new Map();
     model.invalidate(trackIds, throughRevision);
-    const placements = lastState ? model.update(lastState) : new Map();
-    if (lastState) render(placements, { ...lastState, settings: { enabled: true, policy: lastState.policy } });
+    const placements = lastState?.settings.enabled ? model.update(lastState) : new Map();
+    if (lastState) {
+      // Invalidated board counts are not restored from stale render state.
+      const ids = trackIds == null ? countRevisions.keys() : Array.isArray(trackIds) || trackIds instanceof Set ? trackIds : [trackIds];
+      for (const value of ids) {
+        const id = String(value), revision = Number(throughRevision) > 0 ? Number(throughRevision) : countRevisions.get(id) || 0;
+        countInvalidatedThrough.set(id, Math.max(countInvalidatedThrough.get(id) || 0, revision));
+        lastState.playerCounts.delete(id);
+      }
+      render(placements, lastState);
+    }
     else clearDom(document);
     return placements;
   }

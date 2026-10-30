@@ -183,11 +183,11 @@ test('account switches recompute identity against the same accepted snapshot', (
 test('settings default enabled/all and tolerate unavailable storage', () => {
   const values = new Map();
   const storage = { getItem: key => values.get(key) ?? null };
-  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: true, policy: 'all' });
+  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: true, policy: 'all', showPlayerCounts: false });
   values.set('polytrack-0.6.2-pb-podiums', '0');
   values.set('polytrack-0.6.2-pb-podiums-verified-only', '1');
-  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: false, policy: 'verified' });
-  assert.deepEqual(readRecordPlacementSettings({ getItem() { throw Error('blocked'); } }), { enabled: true, policy: 'all' });
+  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: false, policy: 'verified', showPlayerCounts: false });
+  assert.deepEqual(readRecordPlacementSettings({ getItem() { throw Error('blocked'); } }), { enabled: true, policy: 'all', showPlayerCounts: false });
 });
 
 test('patch cache adapter requires explicit completeness and matching declared size', () => {

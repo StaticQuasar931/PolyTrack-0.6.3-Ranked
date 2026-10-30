@@ -97,10 +97,15 @@ export async function auditSavedEventFiles({keys, read, catalog = {}, at = Date.
   for (const board of boards.values()) if (!periods.has(board.period.id)) periods.set(board.period.id, board.period);
   const periodReports = [...periods.values()].map(period => {
     const board = boards.get(period.id);
+    const observedRacers = board ? new Set([...(board.entries || []), ...(board.pendingPlaybacks || [])]
+      .map(row => row.accountId).filter(id => typeof id === 'string' && id)).size : null;
+    const declared = board?.racerCount ?? board?.period?.racerCount ?? period.racerCount;
+    const countUnderreported = Number.isSafeInteger(declared) && observedRacers !== null && declared < observedRacers;
+    if (countUnderreported) issues.push({key:`events/${period.id}.json`, reason:'Event racer count is smaller than its saved participants'});
     return {id:period.id, kind:period.kind, trackName:period.trackName || null, trackId:period.trackId,
       endsAt:period.endsAt, ended:period.endsAt <= at, inCatalog:catalogPeriods.some(p => p.id === period.id),
       state:archiveSnapshotState(period, board), catalogRacers:period.racerCount ?? null,
-      capturedRacers:board?.racerCount ?? null, resultRows:board?.entries?.length ?? null,
+      capturedRacers:board?.racerCount ?? null, observedRacers, countUnderreported, resultRows:board?.entries?.length ?? null,
       pendingRows:board ? board.pendingPlaybacks?.length || 0 : null, capturedAt:board?.updatedAt ?? null};
   });
   const categories = {};

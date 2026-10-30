@@ -8,6 +8,21 @@ export const EVENT_REVIEWED_MAX_SUBMISSIONS = 32768;
 export function eventCapacityStorage(input) {
   return input?.storageVersion === 2 || input?.capacity?.storageVersion === 2 ? 2 : 1;
 }
+
+// Reuse the provisioning read. Only a monotonic, active-period upgrade may write.
+export function eventCapacityUpgradeRequired(period, capacity, at) {
+  if (!period || !capacity || capacity.storageVersion !== 2 || period.archived === true ||
+      period.enabled !== true || !Number.isSafeInteger(period.startsAt) || !Number.isSafeInteger(period.endsAt) ||
+      !Number.isSafeInteger(at) || at < period.startsAt || at >= period.endsAt) return false;
+  const previous = period.capacity;
+  if (!previous || !Number.isSafeInteger(previous.entrants) || !Number.isSafeInteger(previous.admissionsPerPeriod) ||
+      !Number.isSafeInteger(capacity.entrants) || capacity.entrants < previous.entrants ||
+      capacity.entrants > EVENT_REVIEWED_MAX_ENTRANTS ||
+      !Number.isSafeInteger(capacity.admissionsPerPeriod) || capacity.admissionsPerPeriod < previous.admissionsPerPeriod ||
+      capacity.admissionsPerPeriod > EVENT_REVIEWED_MAX_SUBMISSIONS) return false;
+  return eventCapacityStorage(period) !== 2 || capacity.entrants > previous.entrants ||
+    capacity.admissionsPerPeriod > previous.admissionsPerPeriod;
+}
 export async function prepareEventRetention(tx, periodId, queue, runId, accountId, ownerHash, newSubject) {
   const page = Math.floor(Number(queue.retentionCount || 0) / EVENT_RETENTION_PAGE_SIZE);
   const target = `${EVENT_RETENTION_COLLECTION}/${periodId}_${page}`;

@@ -37,7 +37,7 @@ test('archive controls and month jumps work offline at desktop and mobile widths
    assert.equal(await page.locator('details[data-event-kind="daily"]').count(),0);
    await page.locator('summary').first().click();
    await page.getByRole('button',{name:'Track details / practice',exact:true}).first().click();
-   assert.equal(await page.evaluate(()=>window.opens.length),1);assert.equal(await page.evaluate(()=>window.loads),0);
+   assert.equal(await page.evaluate(()=>window.opens.length),1);assert.equal(await page.evaluate(()=>window.loads),1);
    const metrics=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,
     height:document.querySelector('input[type=search]').getBoundingClientRect().height,
     color:getComputedStyle(document.querySelector('input[type=search]')).backgroundColor}));

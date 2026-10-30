@@ -166,6 +166,24 @@ test('an occupied deterministic id with different identity fails before asset or
   assert.equal(f.created(), undefined);
 });
 
+test('active Kodub capacity upgrades reuse the existing identity read and never fetch track or mutable targets', async () => {
+  const existing={id:`kodub_${endsAt}`,kind:'kodub',trackId,startsAt:endsAt-7*86400000,endsAt,
+    enabled:true,targetMs:21000,maxRp:700,capacity,
+    kodub:{source:'kodub-v6-track-of-the-week',trackCode:code,trackCodeHash:assetId,
+      officialTrackAssetHash:assetId,officialEndTime:endsAt,officialFastestVerifiedMs:21000}};
+  const f=fixture({existing});let upgrades=0;
+  const next={...capacity,policyVersion:'event-2000-v2',storageVersion:2,entrants:2000,admissionsPerPeriod:2048};
+  f.runtime.service.upgradeCapacity=async(id,policy)=>{
+    upgrades++;assert.equal(id,existing.id);assert.deepEqual(policy,next);
+    return {upgraded:true,entrants:2000,storageVersion:2};
+  };
+  const result=await provisionKodubEvent(f.runtime,{capacity:next,fetch:f.fetch});
+  assert.equal(upgrades,1);assert.equal(result.capacityUpgraded,existing.id);
+  assert.deepEqual(f.reads,[`0.6.2_event_periods/${existing.id}`]);
+  assert.deepEqual(f.calls.map(call=>call[0]),[KODUB_METADATA_URL]);
+  assert.equal(f.created(),undefined);
+});
+
 test('an existing period with code that disagrees with its frozen hash fails closed', async () => {
   const existing = {
     id: `kodub_${endsAt}`, kind: 'kodub', trackId, endsAt, targetMs: 21000,
