@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,6 +13,8 @@ import { capturePublicEventTotals } from './public-event-totals-backup.mjs';
 import { buildProfileSnapshotResults } from './build-profile-snapshot-results.mjs';
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {captureOverallProjection, applyCapturedOverallProjection, overallCaptureForBackup} from './capture-overall-projection.mjs';
+import {readRepositoryVerificationAuthority, verificationAuthority as validateVerificationAuthority} from './verifier/local-snapshot-verification.mjs';
+import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -406,8 +409,15 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   capture = runPublicSnapshotBackup, captureTotals = capture === runPublicSnapshotBackup ? capturePublicEventTotals : null,
   captureOverall = capture === runPublicSnapshotBackup ? captureOverallProjection : null, overallCaptureOptions = {},
   calculateOverall = capture === runPublicSnapshotBackup ? rebuildSnapshotOverall : null,
-  captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log } = {}) {
+  captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log,
+  verificationAuthority: authorityOverride, nativePhaseOptions = {},
+  env = process.env,
+  resolveSourceCommit = root => execFileSync('git',['rev-parse','--verify','HEAD'],
+    {cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),
+  prepareNativeCapture = async options => (await import('./native-snapshot-phase.mjs')).prepareNativeSnapshotCapture(options),
+  nativePhase = async options => (await import('./native-snapshot-phase.mjs')).runNativeSnapshotPhase(options) } = {}) {
   const absoluteRoot = path.resolve(root);
+  const authority = await readRepositoryVerificationAuthority(absoluteRoot, authorityOverride ?? env.VERIFICATION_AUTHORITY);
   const stagingDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-staging');
   const historyDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-history');
   const stageStat = await fs.stat(stagingDirectory).catch(error => error.code === 'ENOENT' ? null : Promise.reject(error));
@@ -435,6 +445,34 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     if (offline) throw new Error('Offline packaging needs staging data or a current packed generation');
     await fs.mkdir(stagingDirectory, { recursive: true });
   }
+  // A stored-proof publication overlay is independent of server verification.
+  // Pin and prepare its retained source before any capture can overwrite it.
+  const ledgerPointer = await fs.lstat(path.join(absoluteRoot,'verification-ledger-current.json')).then(()=>true,error=>{
+    if(error.code==='ENOENT')return false;throw error;
+  });
+  const proofPhase = authority === 'snapshot-native' || ledgerPointer;
+  let sourceCommit;
+  if(proofPhase){
+    sourceCommit = nativePhaseOptions.sourceCommit ?? env.SNAPSHOT_NATIVE_SOURCE_COMMIT ?? await resolveSourceCommit(absoluteRoot);
+    if(!/^[a-f0-9]{40}$/.test(sourceCommit||''))throw Error('A pinned snapshot source commit is required before capture');
+    if(env.GITHUB_ENV)await fs.appendFile(env.GITHUB_ENV,'SNAPSHOT_NATIVE_SOURCE_COMMIT='+sourceCommit+'\n');
+  }
+  const nativeCapture = proofPhase
+    ? await prepareNativeCapture({root:absoluteRoot, directory:stagingDirectory}) : null;
+  let reusePackagedOverlay = false;
+  if(offline && authority === 'firestore' && ledgerPointer){
+    const retained = await readJsonIfPresent(path.join(stagingDirectory,'manifest.json'));
+    if(retained?.nativeVerificationLedger){
+      if(retained.nativeVerificationLedger.manifestHash !== nativeCapture?.ledger?.manifestHash)
+        throw Error('Offline stored-proof overlay is stale; pristine source is required before reapplying');
+      if(retained.nativeVerificationLedger.policyFingerprint !== nativePolicyFingerprint(nativeCapture.policy))
+        throw Error('Offline stored-proof overlay policy is missing or stale; pristine source and policy revalidation are required');
+      reusePackagedOverlay = true;
+    }else{
+      const totals = await readJsonIfPresent(path.join(stagingDirectory,'event-totals.json'));
+      if(totals?.nativeEventOverlay)throw Error('Overlaid event totals have no matching stored-proof manifest');
+    }
+  }
   if (!offline) {
     let latest=null;
     if(captureOverall){
@@ -445,13 +483,14 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       }
     }
     backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
+      ...(nativeCapture?{nativeVerification:nativeCapture}:{}),
       ...(latest?{capturedOverall:overallCaptureForBackup(latest),confirmedTracks:latest.confirmedTracks,capturedTracks:latest.capturedTracks}:{})});
     if(backupResult?.deferred===true)return defer('snapshots',backupResult);
     if(latest){
       await applyCapturedOverallProjection({directory:stagingDirectory,capture:latest});
       backupResult=await readJsonIfPresent(path.join(stagingDirectory,'manifest.json'));
       log(JSON.stringify({overallCapture:latest.report}));
-      if(calculateOverall){
+      if(calculateOverall && !proofPhase){
         const calculation=await calculateOverall({directory:stagingDirectory});
         backupResult=await readJsonIfPresent(path.join(stagingDirectory,'manifest.json'));
         log(JSON.stringify({offlineOverall:calculation}));
@@ -490,6 +529,24 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     await fs.writeFile(path.join(stagingDirectory,'public-export-summary.json'),JSON.stringify(summary)+'\n');
   }
 
+  let nativeVerification = null;
+  if (reusePackagedOverlay) {
+    nativeVerification = {authority,reuseOnly:true,reusedOverlay:true,
+      ledgerManifestHash:nativeCapture.ledger.manifestHash,backendReads:0,backendWrites:0};
+    log(JSON.stringify({nativeVerification}));
+  } else if (proofPhase) {
+    const result = await nativePhase({...nativePhaseOptions, root:absoluteRoot, directory:stagingDirectory,
+      sourceCommit,reuseOnly:authority === 'firestore',
+      captureContext:nativeCapture});
+    if (!result || result.backendReads !== 0 || result.backendWrites !== 0)
+      throw Error('Proof publication phase did not establish zero Firebase publication usage');
+    if(authority === 'firestore' && (result.counts?.nativeDispatched !== 0 || result.counts?.newProofs !== 0))
+      throw Error('Stored-proof publication did not establish zero new physics/proofs');
+    nativeVerification = {authority,reuseOnly:authority === 'firestore',complete:result.complete === true,
+      counts:result.counts, ledgerManifestHash:result.ledgerManifestHash, backendReads:0, backendWrites:0};
+    log(JSON.stringify({nativeVerification}));
+  }
+
   const overall = await readJsonIfPresent(path.join(stagingDirectory, 'overall.json'));
   const manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
   const previousCoverage = await readJsonIfPresent(path.join(stagingDirectory, 'coverage.json'));
@@ -522,14 +579,22 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const archive = path.join(historyDirectory, `generation-${Number(match[1])}.snapshot.gz`);
     if (await fs.stat(archive).then(() => true, () => false)) await moveIntoHistory(absoluteRoot, name, `retired-${name}`);
   }
-  const summary = { ...result, deferred: false, published: true, coverage, backup: backupResult, profileReplay: exportResult };
+  const summary = { ...result, deferred: false, published: true, coverage, backup: backupResult, profileReplay: exportResult,
+    ...(nativeVerification ? {nativeVerification} : {}) };
   log(JSON.stringify({ updatePublicSnapshot: summary }));
   return summary;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const args = new Set(process.argv.slice(2));
+  const raw = process.argv.slice(2), modeIndex = raw.indexOf('--verification-authority');
+  let verificationAuthority;
+  if (modeIndex !== -1) {
+    if (raw.lastIndexOf('--verification-authority') !== modeIndex || !raw[modeIndex+1]) throw Error('Provide one verification authority');
+    verificationAuthority = validateVerificationAuthority(raw[modeIndex+1]);
+    raw.splice(modeIndex,2);
+  }
+  const args = new Set(raw);
   const unknown = [...args].filter(arg => !['--offline', '--full-public', '--refresh-replays'].includes(arg));
   if (unknown.length) throw new Error(`Unknown arguments: ${unknown.join(', ')}`);
-  await reportCaptureOutcome(await updatePublicSnapshot({ offline: args.has('--offline'), fullPublic: args.has('--full-public'), refreshReplays: args.has('--refresh-replays') }));
+  await reportCaptureOutcome(await updatePublicSnapshot({ offline: args.has('--offline'), fullPublic: args.has('--full-public'), refreshReplays: args.has('--refresh-replays'), verificationAuthority }));
 }

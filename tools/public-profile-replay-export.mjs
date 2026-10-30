@@ -19,7 +19,7 @@ const COSMETICS = ['version', 'theme', 'accent', 'finish', 'plate', 'edge', 'sta
   'nameWeight', 'nameColor', 'baseSecondary', 'title', 'badge', 'favoriteTrackId', 'overridePodium'];
 const RACE_FIELDS = ['accountId', 'trackId', 'name', 'nickname', 'countryCode', 'timeMs', 'frames',
   'raceTimeFrames', 'uploadId', 'verified', 'verifiedState', 'createdAt', 'pbAt', 'updatedAt', 'carStyle',
-  'replay', 'replayHash'];
+  'replay', 'replayHash', 'ingestedAt'];
 const MAX_DOCUMENTS_PER_RUN = 2000;
 const BATCH_GET_SIZE = 20;
 const EVENT_REUSE_LIMITS = Object.freeze({records:2000,boards:120,bytes:16*1024*1024});
@@ -33,6 +33,19 @@ const retryDelay = (record, baseMs) => Math.min(MAX_RETRY_DELAY_MS, baseMs * 2 *
 const ACCOUNT_ID = /^[a-f0-9]{64}$/;
 const TRACK_ID = /^[a-f0-9]{64}$/;
 const HASH = /^[a-f0-9]{64}$/;
+
+const SERVER_INGESTION_SOURCE = 'firestore-server-timestamp';
+function serverIngestionDate(value, source) {
+  if (!(Number.isSafeInteger(value) && value > 0 && value <= 8640000000000000)) {
+    if (typeof value !== 'string') return {};
+    const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/.exec(value);
+    const seconds = match && Date.parse(`${match[1]}Z`);
+    if (!Number.isFinite(seconds) || Date.parse(value) <= 0 ||
+        new Date(seconds).toISOString().slice(0, 19) !== match[1]) return {};
+  }
+  // Preserve Firestore sub-millisecond precision; never substitute PB/client dates.
+  return {ingestedAt: value, ...(source === SERVER_INGESTION_SOURCE ? {ingestedAtSource: source} : {})};
+}
 
 function decodeValue(value, depth = 0) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 12) throw Error('Invalid Firestore value');
@@ -266,7 +279,8 @@ async function savedMatchExists(directory, binding) {
   const carStyle = typeof replay.carStyle === 'string' && replay.carStyle.length <= 256 ? replay.carStyle : '';
   const promotedReplay = {recording: replay.recording, frames: binding.frames, verifiedState: 1, carStyle,
     accountId: binding.accountId, trackId: binding.trackId, replayHash: binding.replayHash, updatedAt};
-  const promotedCanonical = {...binding.metadata, accountId: binding.accountId, trackId: binding.trackId,
+  const promotedCanonical = {...binding.metadata, ...serverIngestionDate(canonical.ingestedAt, canonical.ingestedAtSource),
+    accountId: binding.accountId, trackId: binding.trackId,
     timeMs: binding.metadata.timeMs, frames: binding.frames, raceTimeFrames: binding.frames, uploadId: binding.uploadId,
     replayHash: binding.replayHash, carStyle, updatedAt, runVerified: true, integrityVerified: true,
     verified: true, verifiedState: 1};
@@ -364,6 +378,7 @@ async function reuseEventReplay(directory,binding,index) {
       return JSON.parse(await fs.readFile(path.join(directory,relative),'utf8'));}
     catch(error){if(error.code==='ENOENT')return null;throw error;}
   };
+  let savedIngestionDate = {};
   try{
     const replay=await read(replayPath),canonical=await read(canonicalPath);
     if(replay&&canonical)return false;
@@ -378,12 +393,13 @@ async function reuseEventReplay(directory,binding,index) {
         canonical.replayHash!==binding.replayHash||canonical.carStyle!==cached.carStyle||canonical.verified!==false||
         canonical.runVerified!==false||canonical.verifiedState!==0||canonical.integrityVerified!==true||
         canonical.raceTimeFrames!==undefined&&canonical.raceTimeFrames!==binding.frames))return false;
+    savedIngestionDate = serverIngestionDate(canonical?.ingestedAt, canonical?.ingestedAtSource);
   }catch{return false;}
   const updatedAt=[cached.submittedAt,cached.pbAt,cached.createdAt].find(value=>Number.isSafeInteger(value)&&value>=0)??0;
   const status={playbackPending:true,verificationStatus:'pending',eventRpEligible:false};
   const recording={recording:cached.replay,frames:binding.frames,verifiedState:0,carStyle:cached.carStyle,
     accountId:binding.accountId,trackId:binding.trackId,replayHash:binding.replayHash,updatedAt,...status};
-  const canonical={...binding.metadata,accountId:binding.accountId,trackId:binding.trackId,uploadId:binding.uploadId,
+  const canonical={...binding.metadata,...savedIngestionDate,accountId:binding.accountId,trackId:binding.trackId,uploadId:binding.uploadId,
     timeMs:binding.metadata.timeMs,frames:binding.frames,raceTimeFrames:binding.frames,replayHash:binding.replayHash,
     carStyle:cached.carStyle,updatedAt,runVerified:false,integrityVerified:true,verified:false,verifiedState:0,...status};
   if(!await atomicWrite(directory,replayPath,recording))return false;
@@ -392,10 +408,10 @@ async function reuseEventReplay(directory,binding,index) {
 
 export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directory, projectId = 'polytrack-052', maxDocuments = 2000,
   pageSize = 100, log = () => {}, fullSnapshot = false, includeProfiles = true, snapshotDirectory = directory,
-  retryInvalidAfterMs = 3600000, now = Date.now(), includePendingReplays = false} = {}) {
+  retryInvalidAfterMs = 3600000, now = Date.now(), includePendingReplays = false, trustServerIngestedAt = false} = {}) {
   if (typeof fetchImpl !== 'function' || typeof directory !== 'string' || !directory || typeof snapshotDirectory !== 'string' ||
       !Number.isSafeInteger(maxDocuments) || maxDocuments < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100 ||
-      typeof includeProfiles !== 'boolean' || typeof includePendingReplays !== 'boolean' || fullSnapshot && !includeProfiles ||
+      typeof includeProfiles !== 'boolean' || typeof includePendingReplays !== 'boolean' || typeof trustServerIngestedAt !== 'boolean' || fullSnapshot && !includeProfiles ||
       !Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(retryInvalidAfterMs) || retryInvalidAfterMs < 0 || retryInvalidAfterMs > 86400000 ||
       typeof projectId !== 'string' || !/^[a-z][a-z0-9-]{4,62}[a-z0-9]$/.test(projectId)) throw Error('Invalid public export options');
   maxDocuments = Math.min(maxDocuments, MAX_DOCUMENTS_PER_RUN);
@@ -537,7 +553,13 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
           const replay = {recording: row.replay, frames: binding.frames, verifiedState: binding.playbackPending ? 0 : 1,
             carStyle: row.carStyle ?? binding.metadata.carStyle ?? '', accountId: binding.accountId,
             trackId: binding.trackId, replayHash: binding.replayHash, updatedAt};
-          const canonical = {...binding.metadata, accountId: binding.accountId, trackId: binding.trackId,
+          // A REST timestamp discriminator is necessary, but rules must also forbid
+          // client backdating. Only a trusted caller's explicit rule gate stamps origin.
+          const rawIngestedAt = result.found.fields.ingestedAt;
+          const ingestionDate = typeof rawIngestedAt?.timestampValue === 'string'
+            ? serverIngestionDate(rawIngestedAt.timestampValue, trustServerIngestedAt ? SERVER_INGESTION_SOURCE : undefined) : {};
+          const canonical = {...binding.metadata, ...ingestionDate,
+            accountId: binding.accountId, trackId: binding.trackId,
             timeMs: row.timeMs, frames: binding.frames, raceTimeFrames: binding.frames, uploadId: binding.uploadId,
             replayHash: binding.replayHash, carStyle: row.carStyle ?? binding.metadata.carStyle ?? '', updatedAt,
             runVerified: !binding.playbackPending, integrityVerified: true, verified: !binding.playbackPending,

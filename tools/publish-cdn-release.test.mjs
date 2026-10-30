@@ -107,7 +107,7 @@ test('package-size denial is permanent and is not retried as a temporary 403',as
 });
 test('compact tree keeps current snapshots and runtime while excluding old generations and development files',()=>{
   for(const file of ['index.html','main.bundle.js','images/paste.svg','events/session.mjs','public-snapshots52/abc.bin','tools/public-snapshot-client.mjs'])assert.equal(includeReleaseAsset(file,'public-snapshots52'),true,file);
-  for(const file of ['public-snapshots37/abc.bin','.github/workflows/verify.yml','docs/notes.md','tools/verifier/run.mjs','workers/ranked/test/unit.test.js','tools/example.test.mjs'])assert.equal(includeReleaseAsset(file,'public-snapshots52'),false,file);
+  for(const file of ['public-snapshots37/abc.bin','.github/workflows/verify.yml','docs/notes.md','tools/verifier/run.mjs','workers/ranked/test/unit.test.js','tools/example.test.mjs','verification-ledger/manifest.json','verification-ledger/abc.json','verification-ledger-current.json'])assert.equal(includeReleaseAsset(file,'public-snapshots52'),false,file);
 });
 test('every CDN file, not only readiness probes, must be strictly below 20 MB',()=>{
   assert.doesNotThrow(()=>assertCdnAssetSizes([{path:'large.bin',bytes:19999999}]));

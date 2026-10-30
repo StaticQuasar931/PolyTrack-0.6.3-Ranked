@@ -141,7 +141,7 @@ export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now
 export function includeReleaseAsset(file, snapshotDirectory, requiredFiles = null) {
   const top = file.split('/')[0];
   if (/^public-snapshots\d+$/.test(top)) return top === snapshotDirectory;
-  if (['.github','.gitignore','docs','AGENTS.md','electron','README.md'].includes(top)) return false;
+  if (['.github','.gitignore','docs','AGENTS.md','electron','README.md','verification-ledger','verification-ledger-current.json'].includes(top)) return false;
   if (requiredFiles && ['tools','workers'].includes(top)) return requiredFiles.has(file);
   if (/^images\/icons\/cover(?:1920x1080|512x512)\.png$/.test(file)) return requiredFiles?.has(file) === true;
   if (file.startsWith('tools/verifier/') || file.startsWith('workers/ranked/test/')) return false;

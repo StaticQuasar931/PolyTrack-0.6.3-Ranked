@@ -6,6 +6,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import vm from 'node:vm';
 import {checkCapture, recordCapture, requestedAfter} from './workflow-capture-coordination.mjs';
 import {publishSnapshot, encodeSnapshot, decodeSnapshot, buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex} from './track-snapshot-paging.mjs';
@@ -435,12 +436,21 @@ test('locks protect just the mutation jobs, leaving downstream verification/capt
 test('reuse precedes production reads; receipt is recorded only after both captures succeed', async () => {
   for (const name of ['sync-event-catalog.yml', 'publish-verified-snapshots.yml']) {
     const source = await readWorkflow(name);
-    assert.ok(source.indexOf('workflow-capture-coordination.mjs check') < source.indexOf('name: Capture public event assignments'));
-    assert.match(source, /id: catalog\n        if: steps.coordination.outputs.reuse != 'true'/);
-    assert.match(source, /id: snapshot\n        if: steps.coordination.outputs.reuse != 'true'/);
-    assert.match(source, /CAPTURE_REQUESTED_AT: (?:''|\$\{\{ inputs.capture_requested_at \}\})\n/);
+    const check=source.indexOf('workflow-capture-coordination.mjs check'),catalog=source.indexOf('name: Capture public event assignments');
+    assert.ok(check>=0&&catalog>check,'coordination must exist before the first production capture');
+    assert.match(source, /id: catalog\n        if: steps.coordination.outputs.reuse != 'true'\n/);
+    assert.match(source, /id: snapshot\n        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'\n/);
+    if(name==='publish-verified-snapshots.yml'){
+      const expression=/CAPTURE_REQUESTED_AT: \$\{\{ (.+) \}\}\n/.exec(source)?.[1];
+      assert.equal(expression,"steps.authority.outputs.mode == 'firestore' && inputs.capture_requested_at || ''");
+      for(const mode of ['firestore','snapshot-native'])for(const requestedAt of ['','1793347030947']){
+        const value=vm.runInNewContext(expression,{steps:{authority:{outputs:{mode}}},inputs:{capture_requested_at:requestedAt}});
+        assert.equal(value,mode==='firestore'?requestedAt:'','only legacy captures may reuse a verifier request receipt');
+      }
+      assert.ok(source.indexOf('id: authority')<check,'resolve authority before deciding whether capture can be reused');
+    }else assert.match(source, /CAPTURE_REQUESTED_AT: ''\n/);
     const record = source.slice(source.indexOf('      - name: Record the successful'), source.indexOf('      - name: Commit changed assignments'));
-    assert.match(record, /if: success\(\) && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'/);
+    assert.match(record, /if: success\(\) && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'\n/);
     assert.doesNotMatch(record, /continue-on-error/);
     assert.match(record, /CAPTURE_STARTED_AT: \$\{\{ steps.coordination.outputs.started_at \}\}/);
     assert.match(source, /git add -- tools\/workflow-capture-state.json/);

@@ -6,6 +6,11 @@ on:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT:
         required: true
     inputs:
+      verification_authority:
+        description: 'Explicit authority, or empty to inherit the checked-in repository policy'
+        required: false
+        type: string
+        default: ''
       capture_requested_at:
         description: 'Completed verifier request timestamp; absent callers always capture'
         required: false
@@ -28,7 +33,8 @@ jobs:
       publication_changed: ${{ steps.publication.outputs.changed }}
     if: inputs.publication_changed && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Input may inherit checked-in native mode; step outputs are unavailable here.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -37,6 +43,22 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Validate verification authority
+        id: authority
+        env:
+          VERIFICATION_AUTHORITY: ${{ inputs.verification_authority }}
+          POLYTRACK_VERIFICATION_AUTHORITY: ${{ vars.POLYTRACK_VERIFICATION_AUTHORITY }}
+        run: |
+          node --input-type=module <<'AUTHORITY'
+          import fs from 'node:fs';
+          import {verificationAuthority,readRepositoryVerificationAuthority} from './tools/verifier/local-snapshot-verification.mjs';
+          const value=process.env.VERIFICATION_AUTHORITY;
+          const override=process.env.POLYTRACK_VERIFICATION_AUTHORITY;
+          if(value)verificationAuthority(value);
+          if(override)verificationAuthority(override);
+          const mode=await readRepositoryVerificationAuthority(process.cwd(),value || override);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+mode+'\n');
+          AUTHORITY
       # Resolve the current default branch only after acquiring the shared capture lock.
       # Never check out verifier artifacts or a workflow_run head ref.
       - name: Test conflict-safe publishing
@@ -44,13 +66,39 @@ jobs:
       - name: Check Extra catalog, registry, and pins
         # Local consistency check; fail before fetching or writing public captures.
         run: node tools/extra-verification-check.mjs
+      - name: Test offline native authority contracts
+        if: steps.authority.outputs.mode == 'snapshot-native'
+        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/snapshot-native-workflow.test.mjs
+      - name: Install offline native dependencies
+        if: steps.authority.outputs.mode == 'snapshot-native'
+        run: npm ci --prefix tools/verifier --ignore-scripts
+      - name: Cache the pinned offline browser
+        if: steps.authority.outputs.mode == 'snapshot-native'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tools/verifier/package-lock.json') }}
+      - name: Install the pinned offline browser
+        if: steps.authority.outputs.mode == 'snapshot-native'
+        working-directory: tools/verifier
+        run: npx playwright install --with-deps chromium
+      - name: Allow the pinned offline browser sandbox
+        if: steps.authority.outputs.mode == 'snapshot-native'
+        working-directory: tools/verifier
+        run: |
+          BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
+          test -x "$BROWSER"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
-        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
+        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/update-public-snapshot-overlay.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
       - name: Reuse a later published bounded capture
         id: coordination
         env:
-          CAPTURE_REQUESTED_AT: ${{ inputs.capture_requested_at }}
+          # External authority always captures once before offline processing;
+          # a previous server-verified package is not a fresh discovery receipt.
+          CAPTURE_REQUESTED_AT: ${{ steps.authority.outputs.mode == 'firestore' && inputs.capture_requested_at || '' }}
           CAPTURE_SCHEDULE: ${{ github.event.schedule }}
         run: node tools/workflow-capture-coordination.mjs check
       # Workflow-private state, NOT secret storage: only public binding IDs and
@@ -120,6 +168,9 @@ jobs:
           if(['restore','save'].includes(process.argv[2]))await run(process.argv[2],process.argv[3],process.argv[4]);
           NODE
           node "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" restore "$RUNNER_TEMP/polytrack-replay-retries/history.json" local-reports/snapshot-staging/export-progress.json
+      - name: Pin offline verification source commit
+        if: steps.authority.outputs.mode == 'snapshot-native' || hashFiles('verification-ledger-current.json') != ''
+        run: echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
       - name: Capture public event assignments
         id: catalog
         if: steps.coordination.outputs.reuse != 'true'
@@ -142,7 +193,15 @@ jobs:
         # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
-        run: node tools/update-public-snapshot.mjs --refresh-replays
+          VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
+        # The updater's parent-owned hook exports replays first, then invokes the
+        # credential-scrubbed offline capability before final rebuild/package.
+        run: |
+          if [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then
+            node tools/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native
+          else
+            node tools/update-public-snapshot.mjs --refresh-replays
+          fi
       - name: Index all saved frozen event periods
         if: always() && !cancelled() && steps.catalog.outcome == 'success' && steps.catalog.outputs.capture_status == 'complete'
         # Local files only, including catalog-only and failed-capture runs; staging is optional.
@@ -171,8 +230,19 @@ jobs:
         if: success() && steps.catalog.outputs.capture_status == 'complete' && steps.snapshot.outputs.capture_status == 'complete'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
+          SNAPSHOT_NATIVE_SOURCE_COMMIT: ${{ env.SNAPSHOT_NATIVE_SOURCE_COMMIT }}
         run: |
           git add -- events/public-catalog.json
+          if [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ] || [ -f verification-ledger-current.json ]; then
+            node --input-type=module <<'LEDGER'
+          import {execFileSync} from 'node:child_process';
+          import {nativeLedgerPublicationFiles} from './tools/verifier/local-snapshot-verification.mjs';
+          if(!/^[a-f0-9]{40}$/.test(process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT||''))throw Error('Missing pinned native source commit');
+          const files=await nativeLedgerPublicationFiles(process.cwd());
+          execFileSync('git',['add','--',...files],{stdio:'inherit'});
+          LEDGER
+          fi
           if [ -f tools/workflow-capture-state.json ]; then
             git add -- tools/workflow-capture-state.json
           fi

@@ -121,7 +121,15 @@ function periodBinding(p) {
   return JSON.stringify(normalized);
 }
 export function eventRp(period, timeMs) {
-  periodBinding(period); demand(int(timeMs, 1, L.timeMs), 'invalid_time');
+  periodBinding(period);
+  return capturedEventRp(period, timeMs);
+}
+// Shared presentation math only. This never establishes admission, ownership,
+// native verification, or permission to award a server-side event result.
+export function capturedEventRp(period, timeMs) {
+  demand(period && int(period.targetMs, 1, L.timeMs) && int(period.maxRp, 1, L.maxRp), 'invalid_scoring');
+  demand(period.scoringVersion === undefined || [EVENT_SCORING_V1, EVENT_SCORING_V2].includes(period.scoringVersion), 'invalid_scoring_version');
+  demand(int(timeMs, 1, L.timeMs), 'invalid_time');
   if (period.scoringVersion === EVENT_SCORING_V2) {
     // A logistic curve gives the frozen target 80% of the cap and penalizes
     // relative time gaps without depending on field size or entrant count.
@@ -151,12 +159,22 @@ export function prioritizedEventSlots(slots, period, at, limit, playbacks = []) 
 
 export function eventLeaderboard(period, rows) {
   demand(Array.isArray(rows) && rows.length <= period.capacity.entrants, 'leaderboard_capacity', 503);
+  return rankEventRows(period, rows, eventRp);
+}
+export function capturedEventLeaderboard(period, rows) {
+  const entrants = period?.entrantLimit ?? period?.capacity?.entrants;
+  demand(int(entrants, 1, EVENT_REVIEWED_MAX_ENTRANTS) && Array.isArray(rows) && rows.length <= entrants, 'leaderboard_capacity', 503);
+  demand(int(period.startsAt, 1) && int(period.endsAt, period.startsAt + 1), 'invalid_period_window');
+  capturedEventRp(period, period.targetMs);
+  return rankEventRows(period, rows, capturedEventRp);
+}
+function rankEventRows(period, rows, score) {
   const seen = new Set();
   const sorted = rows.map(row => {
     hex(row.accountId); demand(!seen.has(row.accountId), 'duplicate_account', 503); seen.add(row.accountId);
     const submittedAt = [row.submittedAt, row.receivedAt, row.pbAt].find(value =>
       int(value, period.startsAt, period.endsAt - 1));
-    return { accountId: row.accountId, timeMs: row.timeMs, rp: eventRp(period, row.timeMs),
+    return { accountId: row.accountId, timeMs: row.timeMs, rp: score(period, row.timeMs),
       name: text(row.name, 24) || 'Racer', carStyle: typeof row.carStyle==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(row.carStyle)?row.carStyle:'',
       ...(submittedAt === undefined ? {} : { submittedAt }), ...publicEventFinishMetadata(row) };
   }).sort((a, b) => a.timeMs - b.timeMs || (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));

@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {aggregateServerAchievements, OWNER_PUBLIC_ID, SPECIAL_ROLLING_HILLS_TRACK_ID} from '../workers/ranked/src/server-achievements.js';
 import {publicOverallBackup, publicTrackBackup, publicEventBackup, publicTrackRegistry, chooseTrackFetches,
   authenticatedOverallTrackBackup,
   publicEventReplayBackup, runPublicSnapshotBackup, PUBLIC_SNAPSHOT_LIMITS,
@@ -620,7 +621,7 @@ test('overall public projection omits private and unrelated account fields when 
   }
   assert.deepEqual(result.snapshot.entries[0].cosmeticUnlocks, ['stripe:overdrive', 'nameColor:aurora', 'future_unlock:variant-v2']);
   assert.deepEqual(result.snapshot.entries[0].serverAchievements.beatOwner.unlocks,
-    [{cosmeticId: 'emblem:target', unlockedAt: 44}]);
+    [], 'a cosmetic name and timestamp without a complete issued proof must not survive as authority');
   assert.deepEqual(result.snapshot.entries[0].serverAchievements.casual,
     {count: 12, rp: 1234.5, scoringVersion: 2});
   assert.equal(JSON.stringify(result.snapshot.entries[0]).includes('private-proof'), false);
@@ -641,6 +642,77 @@ test('overall projection does not publish legacy Casual scoring as version 2', (
   const {snapshot} = publicOverallBackup({...overall, entries: [{...overall.entries[0],
     serverAchievements: {casual: {count: 3, rp: 300, scoringVersion: 1}}}]});
   assert.deepEqual(snapshot.entries[0].serverAchievements.casual, {count: 3});
+});
+
+async function issuedAchievementFixture(){
+  const source=await fs.readFile(new URL('../workers/ranked/src/index.js',import.meta.url),'utf8');
+  const ids=name=>[...source.match(new RegExp(`const ${name} = new Set\\(\\[([^\\]]*)\\]\\)`))[1].matchAll(/['"]([a-f0-9]{64})['"]/g)].map(row=>row[1]);
+  const official=ids('OFFICIAL_IDS'),eligibleTrackIds=[...new Set([...official,...ids('COMMUNITY_IDS'),...ids('LEGACY_COMMUNITY_IDS')])];
+  const policy={eligibleTrackIds,beatOwnerTrackIds:[...official,SPECIAL_ROLLING_HILLS_TRACK_ID],ownerPublicId:OWNER_PUBLIC_ID,now:1000};
+  const userId='1'.repeat(64),boards=official.slice(0,3).map(trackId=>({trackId,complete:true,revision:9,sourceRevision:9,updatedAt:200,
+    signature:'signed_public_snapshot_123456',entries:[userId,OWNER_PUBLIC_ID].map((accountId,i)=>({accountId,timeMs:1000+i*100,pbAt:100,
+      runVerified:true,integrityVerified:true,rank:i+1,fieldSize:2,weight:1}))}));
+  return aggregateServerAchievements([{userId}],boards,new Map(),policy).entries[0];
+}
+
+test('overall projection round-trips exact Worker achievement schema without private proof fields or timestamp churn',async()=>{
+  const entry=await issuedAchievementFixture(),expected=structuredClone(entry),input=structuredClone(entry);
+  input.serverAchievements.ownerUid='PRIVATE_CANARY';
+  input.serverAchievements.casual.privateEvidence='PRIVATE_CANARY';
+  input.serverAchievements.beatOwner.unlocks[0].privateToken='PRIVATE_CANARY';
+  const result=publicOverallBackup({...overall,entries:[input]}).snapshot.entries[0];
+  assert.equal(result.casualRp,300);assert.equal(result.casualCompletionCount,3);
+  assert.deepEqual(result.serverAchievements,expected.serverAchievements);
+  assert.deepEqual(result.cosmeticUnlocks,expected.cosmeticUnlocks);
+  assert.equal(JSON.stringify(result).includes('PRIVATE_CANARY'),false);
+  assert.equal(result.serverAchievements.beatOwner.unlocks[0].unlockedAt,1000);
+  assert.equal(input.serverAchievements.ownerUid,'PRIVATE_CANARY','projection is non-mutating');
+});
+
+test('overall Casual RP preserves explicit unknown and rejects nonnumeric, negative and nonfinite public fields',()=>{
+  for(const value of [null,0,123.456]){
+    const row=publicOverallBackup({...overall,entries:[{userId:'1'.repeat(64),casualRp:value,casualCompletionCount:3}]}).snapshot.entries[0];
+    assert.equal(row.casualRp,value);assert.equal(row.casualCompletionCount,3);
+  }
+  for(const value of [NaN,Infinity,-1,'100',{},false]){
+    const row=publicOverallBackup({...overall,entries:[{userId:'1'.repeat(64),casualRp:value}]}).snapshot.entries[0];
+    assert.equal(Object.hasOwn(row,'casualRp'),false);
+  }
+  for(const value of [NaN,Infinity,-1,1.5,'3',null]){
+    const row=publicOverallBackup({...overall,entries:[{userId:'1'.repeat(64),casualCompletionCount:value}]}).snapshot.entries[0];
+    assert.equal(Object.hasOwn(row,'casualCompletionCount'),false);
+  }
+});
+
+test('achievement bitmaps require exact version, catalog, canonical bit length and matching decoded counts',async()=>{
+  const original=await issuedAchievementFixture();
+  const project=entry=>publicOverallBackup({...overall,entries:[entry]}).snapshot.entries[0];
+  for(const change of [a=>{a.version=2;},a=>{a.catalog='unrecognized';},a=>{delete a.version;}]){
+    const entry=structuredClone(original);change(entry.serverAchievements);
+    const checked=project(entry).serverAchievements;
+    assert.equal(checked.casual.ledger,undefined);assert.equal(checked.beatOwner.ledger,undefined);
+    assert.deepEqual(checked.beatOwner.unlocks,[]);
+  }
+  for(const kind of ['casual','beatOwner'])for(const change of [a=>{a.ledger+='00';},a=>{a.ledger='not-a-bitmap';},a=>{a.count++;}]){
+    const entry=structuredClone(original);change(entry.serverAchievements[kind]);
+    const checked=project(entry).serverAchievements[kind];assert.equal(checked.ledger,undefined);
+    if(kind==='beatOwner')assert.deepEqual(checked.unlocks,[]);
+  }
+  const unknown=structuredClone(original);unknown.casualRp=null;unknown.serverAchievements.casual.rp=null;
+  const checked=project(unknown);assert.equal(checked.casualRp,null);assert.equal(checked.serverAchievements.casual.rp,null);
+  assert.equal(checked.serverAchievements.casual.ledger,original.serverAchievements.casual.ledger);
+});
+
+test('issued owner unlocks reject partial, mismatched-stage, foreign-track and invalid source evidence',async()=>{
+  const original=await issuedAchievementFixture();
+  const mutations=[p=>{delete p.trackId;},p=>{p.threshold=999;},p=>{p.cosmeticId='emblem:admin';},p=>{p.id='unknown';},
+    p=>{p.trackId='f'.repeat(64);},p=>{p.source='client-local';},p=>{p.sourceSignature='short';},p=>{p.sourceRevision='9';},
+    p=>{p.sourceUpdatedAt=0;},p=>{p.playerTimeMs=p.targetTimeMs;},p=>{p.playerPbAt=-1;},p=>{delete p.targetPbAt;},p=>{p.unlockedAt=Infinity;}];
+  for(const mutate of mutations){
+    const entry=structuredClone(original),proof=entry.serverAchievements.beatOwner.unlocks[0];mutate(proof);
+    const result=publicOverallBackup({...overall,entries:[entry]}).snapshot.entries[0];
+    assert.equal(result.serverAchievements.beatOwner.unlocks.some(row=>row.id==='beat-owner-1'),false);
+  }
 });
 
 test('inline planner bundle is split into a revision-bound optional results file', () => {

@@ -15,6 +15,31 @@ test('a rebase conflict aborts rather than overwriting published files',()=>{
  assert(calls.some(args=>args[0]==='rebase'&&args[1]==='--abort'));
  assert.equal(calls.filter(args=>args[0]==='push').length,1);
 });
+test('snapshot-native publication never rebases proof decisions onto different source',()=>{
+ const sourceCommit='a'.repeat(40),calls=[];
+ assert.throws(()=>pushPublicCapture({branch:'main',sourceCommit,run:(_,args)=>{
+  calls.push(args);if(args[0]==='rev-parse')return sourceCommit+'\n';if(args[0]==='push')throw Error('remote moved');
+ }}),/Snapshot-native publication deferred/);
+ assert.equal(calls.filter(args=>args[0]==='push').length,1);
+ assert.equal(calls.filter(args=>['fetch','rebase'].includes(args[0])).length,0);
+});
+test('snapshot-native publication requires the exact checked source parent',()=>{
+ const calls=[];
+ assert.throws(()=>pushPublicCapture({branch:'main',sourceCommit:'a'.repeat(40),run:(_,args)=>{
+  calls.push(args);if(args[0]==='rev-parse')return 'b'.repeat(40);
+ }}),/checked source parent/);
+ assert.equal(calls.some(args=>args[0]==='push'),false);
+ assert.throws(()=>pushPublicCapture({branch:'main',sourceCommit:'main',run:()=>assert.fail('no Git call')}),/Invalid snapshot-native/);
+});
+
+test('retained-proof snapshots never rebase even for a legacy catalog caller without a source environment pin',()=>{
+ const calls=[];
+ assert.throws(()=>pushPublicCapture({branch:'main',preserveCohort:true,run:(_,args)=>{
+  calls.push(args);if(args[0]==='push')throw Error('remote moved');
+ }}),/preserve the candidate/);
+ assert.equal(calls.filter(args=>args[0]==='push').length,1);
+ assert.equal(calls.some(args=>['fetch','rebase'].includes(args[0])),false);
+});
 test('two captures starting at one revision preserve both updates in a local bare remote',()=>{
  const temp=mkdtempSync(path.join(os.tmpdir(),'polytrack-capture-push-'));
  const config=path.join(temp,'empty.gitconfig');writeFileSync(config,'');

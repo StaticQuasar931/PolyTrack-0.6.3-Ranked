@@ -18,6 +18,8 @@ const prefix='projects/polytrack-052/databases/(default)/documents/';
 const account='a'.repeat(64),track='b'.repeat(64);
 const fields=['name','nickname','countryCode','profileCosmetics','accountCreatedAt','totalPlaytimeMs',
   'pbCount','latestPbAt','updatedAt','carStyle','carColors','__name__'];
+const raceFields=['accountId','trackId','name','nickname','countryCode','timeMs','frames','raceTimeFrames','uploadId',
+  'verified','verifiedState','createdAt','pbAt','updatedAt','carStyle','replay','replayHash','ingestedAt'];
 const query=()=>({structuredQuery:{from:[{collectionId:'0.6.2_profiles_public'}],
   select:{fields:fields.map(fieldPath=>({fieldPath}))},orderBy:[{field:{fieldPath:'__name__'},direction:'ASCENDING'}],limit:100}});
 const options=body=>({method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -33,6 +35,19 @@ async function fixture(t) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'snapshot-export-auth-'));
   t.after(()=>fs.rm(root,{recursive:true,force:true}));return root;
 }
+
+test('canonical read boundary permits exactly the exporter mask plus ingestedAt, never arbitrary fields',async()=>{
+ const name=prefix+'0.6.2_race_results/'+account+'_'+track;
+ const h=harness();await h.read(base+':batchGet',options({documents:[name],mask:{fieldPaths:raceFields}}));
+ assert.equal(h.calls.length,1);assert.equal(h.oauth.length,1);
+ const denied=harness();
+ for(const mask of [[...raceFields,'email'],[...raceFields,'ingestedAtSource'],['ingestedAt'],raceFields.slice(0,-1),
+  [...raceFields,'ingestedAt'],[...raceFields].reverse()]){
+  await assert.rejects(denied.read(base+':batchGet',options({documents:[name],mask:{fieldPaths:mask}})),/read boundary/);
+ }
+ await assert.rejects(denied.read(base+':batchGet',options({documents:[name],mask:{fieldPaths:raceFields},readTime:'2026-10-30T08:00:00Z'})),/read boundary/);
+ assert.equal(denied.oauth.length,0);assert.equal(denied.calls.length,0);
+});
 
 test('lazy RS256 JWT exchange uses fixed OAuth audience/datastore scope; cache coalesces and refreshes before expiry',async()=>{
   const h=harness();assert.equal(h.oauth.length,0);
@@ -141,11 +156,15 @@ test('real exporter reads projected profiles and bound replay batches; no auth s
     if(url.endsWith(':runQuery'))return Response.json([{document:{name:prefix+'0.6.2_profiles_public/'+account,
       fields:{name:string('Racer'),privateEmail:string('never-export@example.com')}}}]);
     assert.equal(JSON.parse(init.body).documents[0],prefix+'0.6.2_race_results/'+account+'_'+track);
+    assert.deepEqual(JSON.parse(init.body).mask.fieldPaths,raceFields);
     return Response.json([{found:{name:prefix+'0.6.2_race_results/'+account+'_'+track,fields:{accountId:string(account),
-      trackId:string(track),uploadId:integer(42),frames:integer(900),timeMs:integer(15000),replay:string(replay),replayHash:string(hash)}}}]);
+      trackId:string(track),uploadId:integer(42),frames:integer(900),timeMs:integer(15000),replay:string(replay),replayHash:string(hash),
+      ingestedAt:{timestampValue:'2026-10-30T08:01:02.123456Z'}}}}]);
   }});
   const logs=[];const result=await exportPublicProfilesAndReplays({directory,fetchImpl:h.read,log:value=>logs.push(value)});
   assert.equal(result.counts.profiles,1);assert.equal(result.counts.recordings,1);assert.equal(result.fetchedDocumentsThisRun,2);
+  const canonical=JSON.parse(await fs.readFile(path.join(directory,`canonical/${track}/${account}.json`),'utf8'));
+  assert.equal(canonical.ingestedAt,'2026-10-30T08:01:02.123456Z');assert.equal(canonical.ingestedAtSource,undefined);
   const packaged=await updatePublicSnapshot({root,offline:true,refreshReplays:true,fullPublic:true,
     exportAuth:{serviceAccount:'invalid'},exportFetch:async()=>assert.fail('offline network'),
     capture:async()=>assert.fail('offline capture'),exportPublic:async()=>assert.fail('offline export'),log:value=>logs.push(value)});

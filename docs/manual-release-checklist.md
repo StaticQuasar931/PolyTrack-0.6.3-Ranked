@@ -12,8 +12,8 @@ metadata, notes and preparation timestamp unchanged.
 3. Finalize `tools/release-info.mjs` notes after all feature owners report implementation and test results. Describe only shipped behavior, update the actual game version if needed, and never reuse unchanged notes, leave placeholders or add a prospective Git hash. The preparation tool deliberately does not author notes.
 4. The integration owner stamps patch, index, events/client.mjs and site-version together using `prepare-site-update.mjs` or the existing `stampClientRelease` integration. Preserve the minimum-supported-client policy and other manifest fields unless deliberately reviewed. Keep imports, CSS URLs and the installed client revision coherent. The Help metadata import uses the client cache revision, not the manual release number.
 5. Pass the exported `RELEASE_INFO` object to `renderHelpControls` as `release`. Do not duplicate notes in the patch. Preserve actual native key bindings and the configurable ghost shortcut. Bind Help on opening or replacing its content and call its cleanup on closing or disposal. The host owns initial focus, Escape, the modal Tab loop, focus restoration and blocking gameplay shortcuts while Help is open.
-6. Check search, topic selection, Shift+1/2/3 labels, custom bindings, immediate key lighting before a click, Escape, Tab, touch, reduced motion and phone/landscape/desktop layouts. Current Release must show the preparation timestamp and age, with local minute/hour/day/week updates and visibility recovery. Missing or invalid timestamps must stay visibly unknown; a device clock before preparation must not display a negative or fabricated age.
-7. Keep timestamp meanings separate. Release age means time since the recorded preparation instant, not Git publication or deployment. Snapshot package publication age, board confirmation time and standings-change time describe different events. None is an unlock countdown or an instruction to poll a service.
+6. Check search, topic selection, Shift+1/2/3 labels, custom bindings, immediate key lighting before a click, Escape, Tab, touch, reduced motion and phone/landscape/desktop layouts. Current Release uses a real commit/publication timestamp and locally refreshed age, never preparation age. Missing or invalid timestamps remain unknown. Check visibility recovery and clock changes.
+7. Keep timestamp meanings separate. A Git commit date is not a deployment or push receipt. Snapshot source capture, package compilation and standings changes are different events. Offline verification does not newly confirm the current Firebase standings. None is an unlock countdown or an instruction to poll a service.
 
 ## Before The Manual Commit
 
@@ -37,7 +37,7 @@ node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls
 
 ## Before Push Or Publication
 
-1. After an authorized commit, run `node tools/check-release-info.mjs` without `--precommit`. It checks the latest non-capture manual Git title and rejects dirty release metadata or entry files. Unchanged notes on a new manual release fail. The timestamp is now a committed preparation instant, still not proof of when Git was published.
+1. Immediately before committing, record a whole-second UTC `committedAt` using `stampReleaseCommitTime` from `tools/prepare-release-info.mjs`, and use that exact instant as `GIT_COMMITTER_DATE`. After the authorized commit, run `node tools/check-release-info.mjs` without `--precommit`. It checks the actual manual Git commit date as well as the title, notes and stamped entry files. Never inherit the previous release's commit date or call a preparation date a release date.
 2. Run the offline regression command above plus `node --test --test-concurrency=1 tools/workflow-capture-coordination.test.mjs tools/workflow-release-contract.test.mjs tools/snapshot-retry-workflow.test.mjs`.
 3. Review `git status --short` and the outgoing diff. Keep private evidence outside the repository. Publication, live verification and CDN checks need separate authorization; passing offline tests does not certify propagation or live service health.
 
@@ -56,3 +56,11 @@ node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls
 4. Audit the current package using `node tools/archive-data-audit.mjs`. Separate valid published replay coverage from omitted or budget-deferred candidates. Missing archives are not empty final standings. Do not claim every run is represented or verified from a partial capture.
 5. For a manual live run, check active Actions first, use explicit read/request limits, stop on quota errors, and reuse captured data for offline Overall calculation. Keep measured requests, estimated document reads, and billed Firebase usage distinct. Do not repeat verification or capture to fix CDN propagation.
 6. Check portrait, landscape, in-between widths, text scaling, and rotation without a page reload. Include event cards, native Play/Watch, partial-replay consent, Help focus/keys, and generation-change behavior.
+
+## Snapshot-Native Verification
+
+1. Validate the checked-in authority configuration before source credentials are exposed. Capture sources and missing replay bytes once, then remove capture credentials before offline physics/review. Snapshot-native mode must not run the legacy Firestore verdict publisher.
+2. Bind every reusable proof to the racer, track, time, frames, upload/run/period identity, replay SHA, pinned engine and track bytes. Recheck the current review policy and preserve holds. A matching finish alone is not proof of fair play.
+3. Test a second capture of an unchanged source: keep approved flags, dates and playable replay metadata without refetching the same boards. Changed source bindings and holds must invalidate the relevant approval.
+4. Compile track boards, profiles, Event RP and Overall from the same applied ledger. Preserve pristine event/totals baselines so repeated captures cannot double-count rewards. Missing geometry, bytes, policy or review coverage stays explicitly unavailable/pending.
+5. Publish the manifest-pinned ledger and audited package together. Keep Node-only proof files out of the browser CDN asset archive. On a concurrent source change, stop and revalidate rather than rebasing verification decisions blindly.

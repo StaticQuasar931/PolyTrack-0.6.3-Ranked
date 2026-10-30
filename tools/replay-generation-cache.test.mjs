@@ -42,14 +42,14 @@ const row = (verified, recording = verified ? 'verified-payload' : 'pending-payl
   playbackPending:!verified, verificationStatus:verified ? 'verified' : 'pending'
 });
 
-function harness({read = async () => null, playback = async () => row(false)} = {}) {
+function harness({read = async () => null, playback = async () => row(false), local = new Map()} = {}) {
   const calls = [];
   const context = {
     currentTrackLoadState:{trackId},
     nativePartialReplayRevision:0, nativePartialReplaySelection:null,
     playbackWorkerBridgePromise:Promise.resolve(null),
     invalidateEventSnapshotCaches() {}, publicSnapshotPublishedAt:0,
-    readRecordingStore:ids => ids.map(() => null),
+    readRecordingStore:ids => ids.map(id => local.get(id) || null),
     normalizeReplayPayloadString:value => value,
     safePositiveInt:(value, fallback) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : fallback,
     __pt062NormalizeStyle:value => value,
@@ -105,6 +105,48 @@ test('generation refresh promotes cached pending playback to the new verified st
   assert.equal(h.calls.length, before + 2);
   assert.equal(pendingEntry.runVerified, false, 'published entry flags are not promoted or mutated');
   assert.equal(pendingEntry.verifiedState, 0);
+});
+
+test('persistent pending metadata cannot mask the current package verified playback or memory cache', async () => {
+  const local=new Map([[uploadId,row(false,'same-bytes')]]);
+  const entry={...pendingEntry,runVerified:true,verified:true,verifiedState:1};
+  const h=harness({local,read:async kind=>kind==='track'?{entries:[entry]}:row(true,'same-bytes'),playback:async()=>row(true,'same-bytes')});
+  const current=(await h.cache.read([uploadId]))[0];
+  assert.equal(current.verifiedState,1);assert.equal(current.playbackPending,false);
+  const before=h.calls.length;
+  assert.equal((await h.cache.read([uploadId]))[0].verifiedState,1);
+  assert.equal(h.calls.length,before,'same-package validated memory hit needs no further reads');
+  h.change();
+  assert.equal((await h.cache.read([uploadId]))[0].verifiedState,1);
+  assert.equal(local.get(uploadId).verifiedState,0,'persistent client metadata is not stamped as authoritative');
+});
+
+test('current package rejection never falls back to a cached verified recording', async () => {
+  const local=new Map([[uploadId,row(true,'same-bytes')]]);
+  const h=harness({local,read:async kind=>kind==='track'?{entries:[pendingEntry]}:row(true,'same-bytes'),playback:async()=>{throw Error('Public recording status not eligible');}});
+  assert.equal((await h.cache.read([uploadId]))[0],null);
+  assert.equal(local.get(uploadId).verifiedState,1);
+});
+
+test('a pending package cannot inherit verified flags from persistent metadata', async () => {
+  const local=new Map([[uploadId,row(true,'same-bytes')]]);
+  const h=harness({local,read:async kind=>kind==='track'?{entries:[pendingEntry]}:row(false,'same-bytes'),playback:async()=>row(false,'same-bytes')});
+  const result=(await h.cache.read([uploadId]))[0];
+  assert.equal(result.verifiedState,0);assert.equal(result.playbackPending,true);
+  assert.equal(pendingEntry.runVerified,false);assert.equal(local.get(uploadId).verifiedState,1);
+});
+
+test('ambiguous public bindings cannot borrow cached verification or request a guessed proof', async () => {
+  const local=new Map([[uploadId,row(true,'same-bytes')]]);
+  const h=harness({local,read:async kind=>kind==='track'?{entries:[pendingEntry,{...pendingEntry,accountId:'d'.repeat(64)}]}:row(true,'same-bytes'),playback:async()=>{assert.fail('ambiguous upload ID');}});
+  assert.equal((await h.cache.read([uploadId]))[0],null);
+});
+
+test('an unpublished local pending PB remains available when the public package has no binding', async () => {
+  const local=new Map([[uploadId,row(false,'own-unsaved-bytes')]]);
+  const h=harness({local,read:async kind=>kind==='track'?{entries:[]}:null,playback:async()=>{assert.fail('no public entry to validate');}});
+  const result=(await h.cache.read([uploadId]))[0];
+  assert.equal(result.recording,'own-unsaved-bytes');assert.equal(result.verifiedState,0);
 });
 
 test('retired direct response returns null and cannot remove a newer in-flight request', async () => {

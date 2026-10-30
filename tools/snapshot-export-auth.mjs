@@ -10,7 +10,7 @@ const PROFILE_FIELDS = ['name', 'nickname', 'countryCode', 'profileCosmetics', '
   'totalPlaytimeMs', 'pbCount', 'latestPbAt', 'updatedAt', 'carStyle', 'carColors', '__name__'];
 const RACE_FIELDS = ['accountId', 'trackId', 'name', 'nickname', 'countryCode', 'timeMs', 'frames',
   'raceTimeFrames', 'uploadId', 'verified', 'verifiedState', 'createdAt', 'pbAt', 'updatedAt', 'carStyle',
-  'replay', 'replayHash'];
+  'replay', 'replayHash', 'ingestedAt'];
 const RACE_NAME = new RegExp('^' + DOCUMENTS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '0\\.6\\.2_race_results/[a-f0-9]{64}_[a-f0-9]{64}$');
 
 function profileCursor(name) {

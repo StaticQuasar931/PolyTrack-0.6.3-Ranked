@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -128,10 +129,10 @@ test('caller captures every successful scheduled check, retains manual change ga
   const call=verifier.slice(verifier.indexOf('  publish_snapshots:'));
   assert.match(call,/needs: verify/);assert.match(call,/uses: \.\/\.github\/workflows\/publish-verified-snapshots.yml/);
   assert.match(call,/contents: write/);assert.match(call,/secrets:\n      FIREBASE_VERIFIER_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_VERIFIER_SERVICE_ACCOUNT \}\}/);assert.doesNotMatch(call,/secrets: inherit/);
-  for (const event_name of ['schedule','workflow_dispatch']) for (const queue of ['true','false','deferred','',undefined,'unknown'])
+  for (const mode of ['firestore','snapshot-native',undefined]) for (const event_name of ['schedule','workflow_dispatch']) for (const queue of ['true','false','deferred','',undefined,'unknown'])
   for (const result of ['success','failure','cancelled','skipped']) for (const needed of ['true','false','',undefined]) for (const enabled of ['true','false','',undefined]) for(const ready of ['true','false','',undefined]) {
-    const actual=evaluate(condition(call),{github:{event_name},needs:{verify:{result,outputs:{snapshot_needed:needed,queue_has_work:queue,capture_ready:ready}}},vars:{POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:enabled}});
-    const requested=needed==='true'||event_name==='schedule'&&(queue==='false'||queue==='true'&&ready==='true');
+    const actual=evaluate(condition(call),{github:{event_name},needs:{verify:{result,outputs:{verification_authority:mode,snapshot_needed:needed,queue_has_work:queue,capture_ready:ready}}},vars:{POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED:enabled}});
+    const requested=mode==='snapshot-native'||needed==='true'||event_name==='schedule'&&(queue==='false'||queue==='true'&&ready==='true');
     assert.equal(actual,result==='success'&&requested&&enabled!=='false');
   }
   assert.match(verifier,/snapshot_needed: \$\{\{ steps.verification.outputs.snapshot_needed \}\}/);
@@ -143,16 +144,23 @@ test('caller captures every successful scheduled check, retains manual change ga
 test('scheduled and changed capture requests are timestamped without waking native work for empty queues', () => {
   const timestamp=step(verifier,'Timestamp the scheduled or changed capture request');
   const gate=/^        if: (.+)$/m.exec(timestamp)[1];
-  for(const event_name of ['schedule','workflow_dispatch']) for(const has_work of ['true','false','deferred','',undefined])
+  for(const mode of ['firestore','snapshot-native',undefined]) for(const event_name of ['schedule','workflow_dispatch']) for(const has_work of ['true','false','deferred','',undefined])
   for(const snapshot_needed of ['true','false','',undefined]) for(const capture_ready of ['true','false','',undefined]) {
-    const actual=evaluate(gate,{github:{event_name},steps:{queue:{outputs:{has_work}},verification:{outputs:{snapshot_needed,capture_ready}}}});
-    assert.equal(actual,snapshot_needed==='true'||event_name==='schedule'&&(has_work==='false'||has_work==='true'&&capture_ready==='true'));
+    const actual=evaluate(gate,{github:{event_name},steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}},verification:{outputs:{snapshot_needed,capture_ready}}}});
+    assert.equal(actual,mode==='snapshot-native'||snapshot_needed==='true'||event_name==='schedule'&&(has_work==='false'||has_work==='true'&&capture_ready==='true'));
   }
   assert.match(timestamp,/requested_at=.*Date.now\(\)/);
   for(const name of ['Install pinned verifier dependencies','Test verifier safeguards','Cache the pinned Playwright browser',
     'Install Chromium and system dependencies','Allow the pinned browser sandbox on Ubuntu','Verify queued runs']) {
-    assert.match(step(verifier,name),/^        if: steps.queue.outputs.has_work == 'true'$/m,name);
+    const authorityGated=['Install pinned verifier dependencies','Verify queued runs'].includes(name);
+    const expected=authorityGated?"steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'":"steps.queue.outputs.has_work == 'true'";
+    const actual=/^        if: (.+)$/m.exec(step(verifier,name))?.[1];
+    assert.equal(actual,expected,name);
+    for(const mode of ['firestore','snapshot-native'])for(const has_work of ['true','false','',undefined])
+      assert.equal(evaluate(actual,{steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}}}}),
+        has_work==='true'&&(!authorityGated||mode==='firestore'),name);
   }
+  assert.equal(/^        if: (.+)$/m.exec(step(verifier,'Check for due verification work'))?.[1],"steps.authority.outputs.mode == 'firestore'");
   assert.equal((verifier.match(/id: verification$/gm)||[]).length,1);
   assert.equal((verifier.match(/uses: \.\/\.github\/workflows\/publish-verified-snapshots.yml/g)||[]).length,1);
   assert.doesNotMatch(verifier,/node tools\/update-public-snapshot.mjs/);
@@ -182,7 +190,13 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   const embedded=source=>source.match(/<<'NODE'\n([\s\S]*?)^          NODE$/m)?.[1];
   assert.ok(embedded(publisher));assert.equal(embedded(publisher),embedded(catalog));
   const paths=[...publisher.matchAll(/^          path: (.+)$/gm)].map(match=>match[1]);
-  assert.deepEqual(paths,['${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json']);
+  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json']);
+  const browser=step(publisher,'Cache the pinned offline browser');
+  assert.match(browser,/^        if: steps.authority.outputs.mode == 'snapshot-native'$/m);
+  assert.match(browser,/^          path: ~\/\.cache\/ms-playwright$/m);
+  assert.doesNotMatch(browser,/secrets\.|FIREBASE|local-reports|export-progress|history\.json/);
+  for(const name of ['Restore private replay retry ledger','Save private replay retry ledger'])
+    assert.deepEqual([...step(publisher,name).matchAll(/^          path: (.+)$/gm)].map(match=>match[1]),['${{ runner.temp }}/polytrack-replay-retries/history.json']);
   assert.match(publisher,/replay-retries-v1-\$\{\{ github.repository_id \}\}-\$\{\{ github.event.repository.default_branch \}\}/);
   assert.doesNotMatch(publisher,/git add[^\n]*(?:local-reports|export-progress|history\.json)/);
   assert.match(step(publisher,'Retain validated private replay retry ledger'),/steps.snapshot.outcome == 'failure'/);
@@ -247,7 +261,22 @@ test('newer main snapshot cannot be overwritten by an older post-verification pu
 
 test('post-verification capture is single-shot, projected read-only, and never requests archive recovery', () => {
   const capture=step(publisher,'Capture bounded public snapshots');
-  assert.equal((capture.match(/node tools\/update-public-snapshot.mjs --refresh-replays/g)||[]).length,1);
+  const marker='        run: |\n';assert.ok(capture.includes(marker));
+  const script=capture.slice(capture.indexOf(marker)+marker.length).trimEnd().replace(/^          /gm,'');
+  assert.equal(script,['if [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then',
+    '  node tools/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native',
+    'else','  node tools/update-public-snapshot.mjs --refresh-replays','fi'].join('\n'));
+  const bash=process.platform==='win32'&&existsSync('C:/Program Files/Git/bin/bash.exe')?'C:/Program Files/Git/bin/bash.exe':'bash';
+  for(const mode of ['firestore','snapshot-native'])for(const exit of [0,29]){
+    // Execute only the exact validated branch body, with node replaced by a
+    // shell mock. A failed capture must stop immediately, not retry the other lane.
+    const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',
+      'node(){ printf \'%s\\n\' "$*"; return "$MOCK_EXIT"; }\n'+script],{encoding:'utf8',
+      env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,VERIFICATION_AUTHORITY:mode,MOCK_EXIT:String(exit)}});
+    assert.equal(result.status,exit,result.stderr);
+    assert.deepEqual(result.stdout.trim().split('\n'),['tools/update-public-snapshot.mjs --refresh-replays'+
+      (mode==='snapshot-native'?' --verification-authority snapshot-native':'')]);
+  }
   assert.doesNotMatch(capture,/continue-on-error|while |until |--full-public|--archive|--admin|curl |sleep /);
   assert.doesNotMatch(publisher,/archiveExport:|--repair-archives|--rebuild|forceRebuild/);
 });
