@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 248,
+  "number": 249,
   "version": "0.6.3",
-  "revision": 217,
+  "revision": 218,
   "notes": [
-    "Cleaner settings and clearer unplayed-track counts.",
-    "Consistent event placements and a reliable weekly card."
+    "Better phone-landscape rankings and Settings spacing.",
+    "Settings controls stay clear of notches and home indicators."
   ],
-  "preparedAt": "2026-10-31T00:23:37.915Z",
-  "committedAt": "2026-10-31T00:28:16.000Z"
+  "preparedAt": "2026-10-31T00:49:23.365Z",
+  "committedAt": "2026-10-31T00:53:43.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

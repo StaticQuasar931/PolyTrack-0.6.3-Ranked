@@ -384,6 +384,15 @@ html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-
 @media(prefers-reduced-motion:reduce){html body .time-announcer-ui > .current > div{transition:none!important}}
 
 /* Keep common preferences paired; technical controls stay out of the main grid. */
+@media(max-width:1100px) and (max-height:500px){
+ html body #overallLeaderboardPanel .overall-top{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-rows:auto auto!important;gap:4px!important}
+ html body #overallLeaderboardPanel .overall-top .overall-title-group{grid-column:1!important;grid-row:1!important;min-width:0!important}
+ html body #overallLeaderboardPanel .overall-top .overall-actions{grid-column:2!important;grid-row:1!important;margin:0!important}
+ html body #overallLeaderboardPanel .overall-top #overallFilterPanel{grid-column:1/-1!important;grid-row:2!important;width:100%!important}
+}
+html body .settings-menu-ui>h2{padding-top:max(12px,env(safe-area-inset-top,0px))!important}
+html body .settings-menu-ui>.container{padding-left:max(10px,env(safe-area-inset-left,0px))!important;padding-right:max(10px,env(safe-area-inset-right,0px))!important}
+html body .settings-menu-ui>.button-wrapper{padding:8px max(8px,env(safe-area-inset-right,0px)) max(8px,env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))!important}
 .settings-menu-ui #sqRankedSettings{padding:12px!important;box-sizing:border-box;min-width:0}
 .settings-menu-ui #sqRankedSettings>h2{margin:0 0 12px!important;font-size:calc(28px * var(--sq-ui-scale,1))!important;font-weight:normal;line-height:1.15}
 .settings-menu-ui #sqRankedSettings .sq-settings-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;align-items:stretch}
