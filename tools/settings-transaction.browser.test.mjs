@@ -92,6 +92,7 @@ async function fixture(t, seeded = false) {
 }
 async function read(page) { return page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), keys); }
 async function change(page) {
+  await page.locator('.sq-settings-advanced').evaluate(node=>{node.open=true;});
   for (const button of await page.locator('#sqRankedSettings .sq-setting-row:not(.sq-setting-secret) button').all()) await button.click();
   await page.locator('#sqRpDecimals').selectOption('2');
   await page.getByRole('slider', {name: 'UI text size'}).fill('120');
@@ -155,12 +156,38 @@ test('temporary native hiding does not cancel; same-task disposal/reopen rolls b
 test('Cancel leaves untouched preferences and unsaved credential text alone', async t => {
   const page = await fixture(t);
   await page.locator('#sqRpDecimals').selectOption('2');
+  await page.locator('.sq-settings-advanced').evaluate(node=>{node.open=true;});
   await page.locator('input[type=password]').fill('not-saved');
   await page.evaluate(() => localStorage.setItem('polytrack-0.6.2-ui-font-scale', '105'));
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(key => localStorage.getItem(key), credential), 'old-code');
   assert.equal((await read(page))['polytrack-0.6.2-ui-font-scale'], '105', 'untouched keys are not restored from a whole-storage snapshot');
   assert.equal((await read(page))['polytrack-0.6.2-rp-decimals'], null);
+});
+
+test('common settings fill every grid row and keep technical controls collapsed',async t=>{
+  const page=await fixture(t);
+  const css=await fs.readFile(new URL('../responsive-ui.css',import.meta.url),'utf8');
+  const font=await fs.readFile(new URL('../forced_square.woff2',import.meta.url));
+  await page.addStyleTag({content:`@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font.toString('base64')})}body{margin:0;font-family:ForcedSquare}.settings-menu-ui{position:fixed;inset:0;margin:auto;width:min(800px,100vw);height:100dvh;display:flex;flex-direction:column;background:#263874;color:white}.settings-menu-ui>.container{flex:1;min-height:0;overflow:auto}.settings-menu-ui>.button-wrapper{flex:none}`+css});
+  await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.locator('.sq-settings-advanced').evaluate(node=>node.open),false);
+  assert.equal(await page.locator('#sqRankedSettings>.sq-settings-grid>.sq-setting-row').count(),8);
+  assert.equal(await page.getByRole('button',{name:'Unplayed track counts',exact:true}).getAttribute('aria-pressed'),'false');
+  for(const viewport of [{width:1280,height:800},{width:390,height:844},{width:844,height:390},{width:320,height:568}]){
+    await page.setViewportSize(viewport);
+    const metrics=await page.locator('#sqRankedSettings>.sq-settings-grid').evaluate(grid=>{
+      const rows=new Map();
+      for(const child of grid.children){const box=child.getBoundingClientRect(),y=Math.round(box.y);rows.set(y,(rows.get(y)||0)+1);}
+      return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,rows:[...rows.values()],overflow:grid.scrollWidth>grid.clientWidth};
+    });
+    assert.equal(metrics.overflow,false,JSON.stringify(viewport));
+    assert.ok(metrics.rows.every(count=>count===metrics.columns),JSON.stringify(metrics));
+    if(process.env.POLYTRACK_UI_CAPTURE_DIR){
+      await fs.mkdir(process.env.POLYTRACK_UI_CAPTURE_DIR,{recursive:true});
+      await page.screenshot({path:`${process.env.POLYTRACK_UI_CAPTURE_DIR}/settings-${viewport.width}.png`});
+    }
+  }
 });
 test('transaction rejects credential and arbitrary keys before storage access', async t => {
   const page = await fixture(t);

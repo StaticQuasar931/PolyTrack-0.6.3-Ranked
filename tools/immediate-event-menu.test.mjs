@@ -120,7 +120,7 @@ test('native menu switches, tab switches and reopen repaint immediately; Extra T
     const page = await browser.newPage();
     await page.route('**/*', route => route.abort());
     await page.setContent('<div id="menus"></div>');
-    await page.addScriptTag({ content: `${extract('isElementVisible')}\n${extract('ensureExtraTracksEntryContents')}\n${extract('ensureEventEntryContents')}` });
+    await page.addScriptTag({ content: `${extract('isElementVisible')}\n${extract('ensureExtraTracksEntryContents')}\n${extract('reconcileKodubWeeklyCard')}\n${extract('ensureEventEntryContents')}` });
     const result = await page.evaluate(async () => {
       let clock = 100000; Date.now = () => clock;
       Object.assign(window, { lastEventUiTickAt: clock, eventQueueChecked: true, eventUiPromise: null, eventModuleRetryAt: 0,

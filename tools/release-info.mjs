@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 247,
+  "number": 248,
   "version": "0.6.3",
-  "revision": 216,
+  "revision": 217,
   "notes": [
-    "More reliable snapshot and weekly event updates."
+    "Cleaner settings and clearer unplayed-track counts.",
+    "Consistent event placements and a reliable weekly card."
   ],
-  "preparedAt": "2026-10-30T23:41:54.722Z",
-  "committedAt": "2026-10-30T23:46:30.000Z"
+  "preparedAt": "2026-10-31T00:23:37.915Z",
+  "committedAt": "2026-10-31T00:28:16.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

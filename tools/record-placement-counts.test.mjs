@@ -73,7 +73,7 @@ test('newer sources win; conflicting or newer incomplete fields cannot borrow st
 
 test('unplayed badges use neutral counts and concise ARIA, never a rank or verification claim',()=>{
   const f=fixture();f.api.update({showPlayerCounts:true});
-  assert.equal(f.badge.textContent,'3');assert.equal(f.badge['aria-label'],'3 players in saved standings');
+  assert.equal(f.badge.textContent,'3');assert.equal(f.badge['aria-label'],'No record - 3 players');
   assert.equal(f.badge.className,'sq-record-placement player-count');assert.doesNotMatch(f.badge.title,/#|verified|live/i);
   const same=f.badge;f.api.update({showPlayerCounts:true});assert.equal(f.badge,same,'the badge text must not contaminate no-record detection');
   assert.deepEqual(f.requests,[],'known counts must never warm boards');

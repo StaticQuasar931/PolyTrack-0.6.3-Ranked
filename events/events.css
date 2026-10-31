@@ -199,7 +199,7 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 #ui .track-selection-ui .sq-featured-events .sq-kodub-label{display:none}
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly>.button>img:not(.environment){background:#111d3f;object-fit:contain}
 #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button,#ui .track-selection-ui .sq-featured-events .sq-event-card{display:grid!important;grid-template-columns:minmax(0,1fr);grid-template-rows:16px 28px minmax(0,1fr) 28px 34px;gap:6px!important;padding:12px!important;align-items:center;justify-items:center;text-align:center}
-#ui .track-selection-ui .sq-permanent-track>.button:before{content:'PERMANENT';grid-row:1;grid-column:1;color:#b2d8ed;font-size:13px;line-height:16px;letter-spacing:1px}
+#ui .track-selection-ui .sq-permanent-track>.button:before{content:'PERMANENT EVENT';grid-row:1;grid-column:1;color:#b2d8ed;font-size:13px;line-height:16px;letter-spacing:1px}
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title,#ui .track-selection-ui .sq-featured-events .sq-event-card strong{grid-row:2;grid-column:1;align-self:center;margin:0!important;padding:0!important;width:100%;font-size:20px!important;line-height:24px!important;background:transparent!important}
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p{font-size:20px!important;line-height:24px!important}
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track>.button>img.thumbnail,#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-thumb{grid-row:3;grid-column:1;position:static!important;width:100%!important;max-width:210px!important;height:100%!important;max-height:126px!important;min-height:0!important;padding:4px!important;box-sizing:border-box;object-fit:contain;align-self:stretch}
@@ -1038,13 +1038,18 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 @keyframes sq-event-loading-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.sq-event-loading::before{animation:none}}
 
-/* Event ordinals must remain readable instead of inheriting the tiny native suffix face. */
-.sq-event-board .left .position .sq-event-ordinal-suffix{
- font-family:ui-sans-serif,sans-serif!important;font-size:.55em!important;
- font-weight:600!important;line-height:1!important;letter-spacing:normal!important;
- text-transform:none!important;vertical-align:baseline!important;
- display:inline-block;min-width:1.15em;
+/* Use the same compact placement box as normal preview records, without the
+   shared data-record-placement marker (its owner manages normal records only). */
+.sq-event-record>.sq-event-place{
+ display:inline-flex;align-items:center;justify-content:center;min-width:2.65em;
+ margin-left:0;padding:.08em .35em;border:1px solid rgba(255,255,255,.34);
+ background:#263b73;color:#f4f8ff;font:700 .78em/1.2 ForcedSquare,Arial,sans-serif;
+ letter-spacing:.02em;box-shadow:0 1px 3px rgba(0,0,0,.28);pointer-events:none;
 }
+.sq-event-record>.sq-event-place.gold{background:#8a6818;color:#fff2a4;border-color:#ffe27a}
+.sq-event-record>.sq-event-place.silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
+.sq-event-record>.sq-event-place.bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
+.sq-event-record>.sq-event-place.estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
 
 /* Daily previews use the same crisp pixel-map sampling as native track tiles. */
 #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"] .sq-event-thumb .profile-track-image-frame {

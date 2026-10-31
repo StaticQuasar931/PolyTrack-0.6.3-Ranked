@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=216';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=216';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=217';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=217';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,8 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=216';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=216';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=217';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=217';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -55,8 +55,10 @@ export function eventDisplayRunAt(row,at=Date.now()){
 export function decorateEventRowPresentation(button,row,at=Date.now()){
   const position=button.querySelector('.left .position'),ordinal=eventOrdinal(row.rank);
   if(position&&ordinal){
-    // Avoid the native suffix span/font, which can render "th" as an opaque glyph.
-    position.textContent=ordinal;
+    // Match the native row: large numeric rank and a quiet inherited-font suffix.
+    const parts=finishOrdinal(row.rank),doc=position.ownerDocument||button.ownerDocument;
+    const suffix=doc.createElement('span');suffix.textContent=parts.suffix;
+    position.replaceChildren(doc.createTextNode(parts.number.replace(/\B(?=(\d{3})+(?!\d))/g,'\u202f')),suffix);
     position.setAttribute('aria-label',ordinal);
     if(Number.isSafeInteger(row.originalRank)&&row.originalRank>0){
       position.dataset.sqOriginalRank=String(row.originalRank);
@@ -326,7 +328,32 @@ export function eventOwnPlacementPresentation(place){
   if(!presentation)return null;
   const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
   const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:presentation.title;
-  return {...presentation,text:eventOrdinal(place.rank)+(known?' / '+size:'')+(place.provisional?'*':''),title,ariaLabel:title};
+  return {...presentation,text:String(place.rank)+(known?'/'+size:'')+(place.provisional?'*':''),
+    className:presentation.className+' sq-record-placement'+(place.provisional?' estimated':''),title,ariaLabel:title};
+}
+export function eventSidebarPlacementPresentation(place){
+  const presentation=eventOwnPlacementPresentation(place);
+  if(!presentation)return null;
+  const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
+  const value=known?Math.max(.0001,place.rank/size*100):null;
+  const percentile=value===null?null:String(Number(value.toFixed(value<10?4:value<100?3:2)));
+  const ordinal=eventOrdinal(place.rank)+(place.provisional?'*':'');
+  return {...presentation,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
+}
+export function renderEventPersonalBest(host,{timeText,placement,pending=false,unscored=false,hasRecord=true}){
+  const doc=host.ownerDocument;
+  host.replaceChildren();
+  const timer=doc.createElement('div'),clock=doc.createElement('img'),time=doc.createElement('span');
+  clock.src='images/timer.svg';time.textContent=timeText;if(!hasRecord)time.className='faded';timer.append(clock,time);
+  const result=doc.createElement('div'),trophy=doc.createElement('img');trophy.src='images/trophy.svg';result.append(trophy);
+  if(placement){
+    result.title=placement.title;result.setAttribute('aria-label',placement.text+'. '+placement.title);
+    result.append(doc.createTextNode(placement.ordinal));
+    if(placement.percentile!==null){const percent=doc.createElement('span');percent.className='faded';percent.textContent=' ('+placement.percentile+'%)';result.append(percent);}
+  }else{
+    const unknown=doc.createElement('span');unknown.className='faded';unknown.textContent=pending?(unscored?'Not scored':'Waiting'):'---';result.append(unknown);
+  }
+  host.append(timer,result);
 }
 export function eventTrackName(period,lookup){
   const publicName=typeof period?.trackName==='string'?period.trackName.trim():'';
@@ -1305,7 +1332,7 @@ export function installEvents(bridge){
     let place=displayedRecordPlacement(period,mine,board);
     if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
     if(mine&&(view.onlyVerified||filterResult?.active)&&readEventPlacementSettings().enabled)place={rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),policy:view.onlyVerified?'verified':'all',visibleField:true,originalRank:mine.originalRank};
-    const placement=eventOwnPlacementPresentation(place);
+    const placement=eventSidebarPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId),localRecord=localBest(period);
     const statusDescription=receipt||localRecord?receiptText(receipt,localRecord,period,{board,accountId}):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
@@ -1362,8 +1389,8 @@ export function installEvents(bridge){
     const status=document.createElement('p');status.className='sq-event-inline-status';status.setAttribute('role','status');status.textContent=statusDescription;container.append(status);
     bridge.filterNotice?.(view.board,filterResult);
     renderEventPagination(view,rows.length,()=>syncNativeBoard(session));
-    view.pb.replaceChildren();
-    for(const [icon,text] of [['timer',mine?time(mine.timeMs):'---'],['trophy',placement?.text||(mine?.pending?(mine.unscored?'Not scored':'Waiting'):'---')]]){const line=document.createElement('div'),image=document.createElement('img');image.src='images/'+icon+'.svg';if(icon==='trophy'&&placement){const badge=document.createElement('span');badge.className=placement.className;badge.title=placement.title;badge.setAttribute('aria-label',placement.ariaLabel);badge.textContent=text;line.append(image,badge);}else line.append(image,document.createTextNode(text));view.pb.append(line);}
+    renderEventPersonalBest(view.pb,{timeText:mine?time(mine.timeMs):'---',placement,pending:!!mine?.pending,
+      unscored:!!mine?.unscored,hasRecord:!!mine});
   }
 
   function syncFinishPlace(){

@@ -10,7 +10,7 @@ const ordinals=source.slice(source.indexOf('export function eventOrdinal('),sour
 const ui=vm.runInNewContext(`(()=>{${(dates+ordinals).replace(/export function /g,'function ')};return {eventRunDate,eventExactRunAt,eventDisplayRunAt,eventVerificationLabel,decorateEventRowPresentation,eventOrdinal};})()`,{Date,Number,String,Object,Math,eventRowVerified,finishOrdinal});
 const now=Date.now(),received=now-3600000;
 function rowButton(){
-  const element=()=>({dataset:{},childNodes:[],attributes:{},setAttribute(key,value){this.attributes[key]=value;},
+  const element=(tagName='span')=>({nodeType:1,tagName:tagName.toUpperCase(),dataset:{},childNodes:[],attributes:{},setAttribute(key,value){this.attributes[key]=value;},
     replaceChildren(...children){this.childNodes=children;},get textContent(){return this.childNodes.map(node=>node.textContent).join('');},
     set textContent(value){this.childNodes=[{nodeType:3,textContent:value}];}});
   const position=element();position.textContent='1X';
@@ -39,14 +39,18 @@ test('published runAt and exact creation timestamps render; publication, verific
     assert.equal(ui.eventVerificationLabel(row,false),row.verifiedAt?'Verification date '+new Date(received).toLocaleString(undefined,{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'})+' - Verified':'Date unavailable - Verified');
   }
 });
-test('live and archived event row presentation replaces an opaque native suffix with readable ordinals and does not change ranks or points',()=>{
+test('live and archived event rows retain native numeric rank plus quiet suffix markup without changing ranks or points',()=>{
   for(const rank of [1,2,3,4,11,12,13,21,22,23,101,111,112,113]){
     const fixture=rowButton(),row={rank,rp:87,timeMs:20000,submittedAt:received},before=JSON.stringify(row);
     ui.decorateEventRowPresentation(fixture.button,row,now);
     assert.equal(fixture.position.textContent,ui.eventOrdinal(rank));
-    assert.equal(fixture.position.childNodes.length,1,'no opaque native ordinal suffix span');
+    assert.equal(fixture.position.childNodes.length,2,'native numeric text followed by suffix span');
     assert.equal(fixture.position.attributes['aria-label'],ui.eventOrdinal(rank));
     assert.equal(fixture.position.childNodes[0].nodeType,3);
+    assert.equal(fixture.position.childNodes[0].textContent,String(rank));
+    assert.equal(fixture.position.childNodes[1].tagName,'SPAN');
+    assert.equal(fixture.position.childNodes[1].textContent,finishOrdinal(rank).suffix);
+    assert.equal(fixture.position.childNodes[1].className,undefined,'no custom suffix font class');
     assert.equal(fixture.state.dataset.sqPbAt,undefined,'receipt time must not masquerade as exact PB creation');
     assert.match(fixture.state.dataset.sqNativeDate,/^Received /);
     assert.match(fixture.state.title,/^Received .* - Verified$/);

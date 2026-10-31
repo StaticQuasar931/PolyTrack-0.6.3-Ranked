@@ -382,3 +382,25 @@ html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] .overall-
 
 /* Respect reduced-motion preferences without changing native finish typography or geometry. */
 @media(prefers-reduced-motion:reduce){html body .time-announcer-ui > .current > div{transition:none!important}}
+
+/* Keep common preferences paired; technical controls stay out of the main grid. */
+.settings-menu-ui #sqRankedSettings{padding:12px!important;box-sizing:border-box;min-width:0}
+.settings-menu-ui #sqRankedSettings>h2{margin:0 0 12px!important;font-size:calc(28px * var(--sq-ui-scale,1))!important;font-weight:normal;line-height:1.15}
+.settings-menu-ui #sqRankedSettings .sq-settings-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;align-items:stretch}
+.settings-menu-ui #sqRankedSettings .sq-settings-grid>.sq-setting-row{display:grid!important;grid-template-columns:minmax(0,1fr) calc(108px * var(--sq-ui-scale,1))!important;align-items:center!important;grid-column:auto!important;margin:0!important;padding:10px 12px!important;min-width:0!important;min-height:76px!important;border:1px solid #6079a2!important;background:#263a66!important;clip-path:none!important;box-sizing:border-box}
+.settings-menu-ui #sqRankedSettings .sq-setting-row>:is(p,label){margin:0!important;min-width:0!important;font-size:calc(18px * var(--sq-ui-scale,1))!important;line-height:1.3!important;color:#eef6ff!important;white-space:normal!important;overflow:visible!important}
+.settings-menu-ui #sqRankedSettings .sq-setting-row>.button-wrapper{margin:0!important;min-width:0!important;display:flex!important}
+.settings-menu-ui #sqRankedSettings .sq-setting-row .button{margin:0!important;min-width:0!important;min-height:44px!important;box-sizing:border-box;font-size:calc(17px * var(--sq-ui-scale,1))!important;line-height:1.2!important}
+.settings-menu-ui #sqRankedSettings .sq-setting-row>select{min-width:0!important;width:100%!important;font:calc(17px * var(--sq-ui-scale,1)) ForcedSquare,sans-serif!important;min-height:44px;box-sizing:border-box;padding:6px 10px;background:#142451;color:#eef6ff;border:1px solid #7fa9d0}
+.settings-menu-ui #sqRankedSettings .sq-range-controls{display:flex;align-items:center;gap:6px;min-width:0!important;width:100%!important}
+.settings-menu-ui #sqRankedSettings .sq-range-controls input{width:100%!important;min-width:0!important;flex:1;margin:0!important}
+.settings-menu-ui #sqRankedSettings .sq-range-controls output{font-size:15px!important;min-width:36px;text-align:right}
+.settings-menu-ui #sqRankedSettings .sq-settings-advanced{margin-top:10px;border-top:1px solid #6079a2;padding-top:4px}
+.settings-menu-ui #sqRankedSettings .sq-settings-advanced>summary{padding:10px 0;min-height:44px;box-sizing:border-box;cursor:pointer;color:#b9d9f4;font-size:20px}
+.settings-menu-ui #sqRankedSettings .sq-settings-advanced .sq-setting-secret{grid-column:1/-1!important;display:block!important}
+.settings-menu-ui #sqRankedSettings .sq-settings-advanced .sq-developer-export{grid-column:1/-1!important;margin:0!important;min-height:44px;font-size:18px}
+@media(max-width:700px){
+ .settings-menu-ui #sqRankedSettings{padding:8px!important}
+ .settings-menu-ui #sqRankedSettings .sq-settings-grid{grid-template-columns:minmax(0,1fr)!important}
+ .settings-menu-ui #sqRankedSettings .sq-settings-grid>.sq-setting-row{min-height:64px!important}
+}

@@ -30,10 +30,10 @@ function render(saved,{local=null,receipt=null,policy='all',enabled=true,filterR
     ';({rows:()=>eventDisplayRows(period),markup:()=>recordMarkup(period)});',{...context,period});
 }
 
-test('weekly card reconciles the exact verified snapshot PB and displays 4th / 200, never Pending',()=>{
+test('weekly card reconciles the exact verified snapshot PB and displays native 4/200 box, never Pending',()=>{
   const saved=board(),own=saved.entries[3],local={...own,periodId:period.id,trackId:period.trackId,attemptId:'local'},
     receipt={...local,status:'waiting'},before=structuredClone({saved,local,receipt}),ui=render(saved,{local,receipt});
-  assert.match(ui.markup(),/>4th \/ 200</);assert.doesNotMatch(ui.markup(),/Pending|provisional/);
+  assert.match(ui.markup(),/>4\/200</);assert.doesNotMatch(ui.markup(),/Pending|provisional/);
   assert.equal(ui.rows().rows.find(r=>r.accountId===own.accountId).pending,false);
   assert.equal(eventVerifiedPendingMatch(saved,waiting(local)),own);
   assert.equal(eventPublishedPbCoversReceipt(receipt,local,period,{board:saved,accountId:own.accountId}),true);
@@ -45,7 +45,7 @@ test('same-time different replay remains locally pending; verified-only keeps th
   const ui=render(saved,{local});
   assert.equal(eventVerifiedPendingMatch(saved,local),null);
   assert.equal(ui.rows().rows.find(r=>r.accountId===own.accountId).pending,true);
-  assert.match(ui.markup(),/>4th \/ 200\*</);
+  assert.match(ui.markup(),/>4\/200\*</);
   assert.equal(eventPublishedPbCoversReceipt(null,local,period,{board:saved,accountId:own.accountId}),false);
   assert.equal(eventSnapshotFields(saved,{local}).verified.rows.find(r=>r.accountId===own.accountId).replayHash,own.replayHash);
 });
@@ -74,11 +74,11 @@ test('period, track, account, run identity and explicit holds cannot reconcile f
 test('cards and sidebar presentation count the actual loaded union above 200, not intake limits or metadata',()=>{
   const saved=board(205);saved.complete=false;saved.totalEntries=999;
   saved.pendingPlaybacks=Array.from({length:36},(_,i)=>waiting(row(i+206)));
-  assert.match(render(saved).markup(),/>4th \/ 241\*</);
-  assert.match(render(saved,{policy:'verified'}).markup(),/>4th \/ 205</);
+  assert.match(render(saved).markup(),/>4\/241\*</);
+  assert.match(render(saved,{policy:'verified'}).markup(),/>4\/205</);
   assert.equal(eventSnapshotRows(saved).rows.length,241);
-  assert.equal(eventOwnPlacementPresentation({rank:4,knownFieldSize:241,provisional:true}).text,'4th / 241*');
-  assert.match(render(saved,{filterRows:rows=>({active:true,rows:rows.filter(r=>Number.parseInt(r.accountId,16)<=10)})}).markup(),/>4th \/ 10</);
+  assert.equal(eventOwnPlacementPresentation({rank:4,knownFieldSize:241,provisional:true}).text,'4/241*');
+  assert.match(render(saved,{filterRows:rows=>({active:true,rows:rows.filter(r=>Number.parseInt(r.accountId,16)<=10)})}).markup(),/>4\/10</);
   assert.doesNotMatch(render(saved,{enabled:false}).markup(),/4th|\/ 241/);
 });
 
