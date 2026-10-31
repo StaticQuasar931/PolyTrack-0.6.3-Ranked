@@ -189,6 +189,19 @@ test('common settings fill every grid row and keep technical controls collapsed'
     }
   }
 });
+test('settings footer reserves phone safe areas',async t=>{
+  const page=await fixture(t);
+  const css=await fs.readFile(new URL('../responsive-ui.css',import.meta.url),'utf8');
+  await page.addStyleTag({content:'.settings-menu-ui{position:fixed;inset:0;display:flex;flex-direction:column}.settings-menu-ui>.container{flex:1;min-height:0;overflow:auto}.settings-menu-ui>.button-wrapper{flex:none}'+css});
+  const cdp=await page.context().newCDPSession(page);
+  for(const [width,height,insets]of [[390,844,{top:44,bottom:34,left:0,right:0}],[844,390,{top:0,bottom:21,left:44,right:44}]]){
+    await page.setViewportSize({width,height});
+    await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets});
+    const padding=await page.locator('.settings-menu-ui>.button-wrapper').evaluate(node=>({bottom:parseFloat(getComputedStyle(node).paddingBottom),left:parseFloat(getComputedStyle(node).paddingLeft),right:parseFloat(getComputedStyle(node).paddingRight)}));
+    for(const side of ['bottom','left','right'])assert.ok(padding[side]>=insets[side],JSON.stringify({width,height,insets,padding}));
+  }
+  await cdp.detach();
+});
 test('transaction rejects credential and arbitrary keys before storage access', async t => {
   const page = await fixture(t);
   for (const key of [credential, 'unrelated-origin-key']) {

@@ -67,7 +67,12 @@ test('featured event metadata and PB icons fit desktop and phone viewports',asyn
     assert(reward.y+reward.height<=reset.y+1,`metadata does not overlap ${width}`);
     assert.equal(await card.locator('.sq-event-assignment').count(),0,'one concise practice-only notice replaces duplicate warnings');
     assert.equal(await card.locator('.sq-event-capacity').isVisible(),false);
-    assert.equal(await card.locator('.sq-event-reset').evaluate(node=>getComputedStyle(node).textAlign),'left','landscape metadata aligns with its title at every width');
+    const alignment=await card.evaluate(node=>Object.fromEntries([
+     ['title',node.querySelector('strong')],['reward',node.querySelector('.sq-event-reward')],['reset',node.querySelector('.sq-event-reset')]
+    ].map(([name,element])=>[name,getComputedStyle(element).textAlign])));
+    assert.equal(alignment.title,width<=480?'left':'center',`title follows the card layout at ${width}`);
+    assert.equal(alignment.reset,alignment.title,`reset aligns with its title at ${width}`);
+    assert.equal(alignment.reset,alignment.reward,`reset aligns with its reward at ${width}`);
    }
    const icon=await page.locator('.personal-best img').boundingBox(),line=await page.locator('.personal-best>div').boundingBox();
    assert.equal(icon.height,22);assert.equal(icon.width,22);

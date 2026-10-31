@@ -33,9 +33,9 @@ test('installed release notice defers to home, acknowledges exactly once and pre
     await page.goto(server.url,{waitUntil:'domcontentloaded'});await home();
     const notice=page.locator('dialog[data-site-installed-revision][open]');await notice.waitFor({timeout:20000});
     assert.equal(await notice.getAttribute('data-site-installed-revision'),String(revision));
-    assert.equal(await notice.locator('h2').textContent(), `PolyTrack update ${RELEASE_INFO.number}`);
+    assert.equal(await notice.locator('h2').textContent(), `PolyTrack Ranked - Update ${RELEASE_INFO.number}`);
     assert.doesNotMatch(await notice.innerText(), /client revision/i);
-    assert.match(await notice.locator('[data-site-update-age]').textContent(), /Release prepared|Device clock/);
+    assert.match(await notice.locator('[data-site-update-age]').textContent(), /Committed|Device clock/);
     await page.keyboard.press('Escape');await notice.waitFor({state:'detached'});
     assert.equal(await page.evaluate(value=>localStorage.getItem(`polytrack-site-update-ack-release-v1:${value}`),RELEASE_INFO.number),'acknowledged');
     assert.equal(await page.evaluate(()=>localStorage.getItem('polytrack-0.6.2-ui-font-scale')),'110');

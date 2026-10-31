@@ -73,16 +73,16 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=217',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=218',document.currentScript?.src||location.href).href;
   let nativePartialReplaySelection=null,nativePartialReplayRevision=0;
   document.addEventListener('click',nativePartialReplayStartupClick,true);
-  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=217',eventsModuleUrl).href)
+  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=218',eventsModuleUrl).href)
     .then(installNativePartialReplayFallback).catch(error=>{console.warn('Native partial replay controls unavailable',error);return null;});
   let helpControlsModule=null,releaseInfoModule=null,installedRevisionNotice=null;
-  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=217',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=217',eventsModuleUrl).href)]).then(([module,release])=>{releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
+  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=218',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=218',eventsModuleUrl).href)]).then(([module,release])=>{releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='217';
+  const extraCatalogRevision='218';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -123,7 +123,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=217',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=218',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -162,7 +162,7 @@
     const epoch=warmLocalWeeklyCatalog.snapshotEpoch||0,isCurrent=()=>epoch===(warmLocalWeeklyCatalog.snapshotEpoch||0);
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=217',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=218',eventsModuleUrl).href);
       if(!isCurrent())return;
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       if(!isCurrent())return;
@@ -308,7 +308,7 @@
         let payload=await response.json();
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=217');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=218');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
@@ -1774,8 +1774,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=217');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=217');
+    const module=await import('./tools/developer-diagnostics.mjs?v=218');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=218');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1844,15 +1844,15 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=217');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=218');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=217');
-        localInsights=module.createLocalInsights({storage,revision:217});
-        void import('./tools/control-usage.mjs?v=217').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=218');
+        localInsights=module.createLocalInsights({storage,revision:218});
+        void import('./tools/control-usage.mjs?v=218').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=217');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=218');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -1876,7 +1876,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=217');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=218');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2409,7 +2409,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       normalizeReplayPayloadString(row.replay||row.recording||'')===payload.recording);
     let prepared;
     if(own&&payload.verifiedState===0){
-      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=217',eventsModuleUrl).href);
+      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=218',eventsModuleUrl).href);
       const options={accountId:context.accountId,trackId:context.trackId,recordingId:selectedRow.recordingId,isSelf:true,explicitSelection:true};
       try{prepared=await module.prepareOwnLocalPbPlayback(own,payload,options);}
       catch(error){
@@ -2870,12 +2870,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=217').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=218').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null,firebaseUsageRetryAt=0;
   async function observeFirestore(database){
-    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=217',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
+    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=218',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
     if(!database||!firebaseUsageModule&&Date.now()<firebaseUsageRetryAt)return database;
     // Await the early-started observer, but never block saving on diagnostics failure.
     const module=firebaseUsageModule||await withTimeout(firebaseUsageModulePromise,1500,'Usage observer unavailable').catch(()=>{firebaseUsageRetryAt=Date.now()+60000;return null;});
@@ -2938,7 +2938,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=217',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=218',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -3075,7 +3075,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     style.textContent += "/* RC menu readability: scoped to custom menus, not driving HUD or game geometry. */\n#overallTrackScope[hidden],.studio-panel[hidden],.studio-track-options[hidden],.sq-category-submenu[hidden]{display:none!important}\n.profile-dialog-toolbar{position:sticky;top:-22px;z-index:15;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-22px -24px 18px;padding:10px 18px;background:#172650;border-bottom:2px solid #628dc0}\n.profile-dialog-toolbar>span{color:#b8dafa;font-size:18px;letter-spacing:.6px}\n#overallProfileClose{position:static!important;min-height:44px!important;min-width:90px!important;margin:0!important;font-size:20px!important}\n.profile-customizer>summary{min-height:64px!important;padding:14px 16px!important;gap:16px}\n.profile-customizer>summary b{font-size:23px!important}.profile-customizer>summary small{font-size:14px!important;line-height:1.4}\n.profile-customizer[open] .studio-open-label{font-size:0}.profile-customizer[open] .studio-open-label:after{content:'Close';font-size:13px}\n.profile-cosmetic-group>div{grid-template-columns:repeat(auto-fill,minmax(108px,1fr))!important;gap:8px!important}\n.profile-cosmetic-group.variant-text>div{grid-template-columns:repeat(auto-fill,minmax(145px,1fr))!important}\n.profile-cosmetic-group legend{font-size:18px!important}.profile-cosmetic-group>p{font:14px/1.45 'Trebuchet MS',sans-serif!important;color:#cad9ee!important;margin:5px 0 12px!important}\n.profile-cosmetic-choice{min-height:88px!important;padding:9px!important;gap:8px!important;border:1px solid #476396!important;border-radius:2px}\n.profile-cosmetic-choice>b{font:700 14px/1.25 'Trebuchet MS',sans-serif!important}.profile-cosmetic-choice>small{font:12px/1.2 'Trebuchet MS',sans-serif!important}\n.profile-cosmetic-choice .profile-cosmetic-preview{min-height:38px!important}.profile-cosmetic-choice:disabled{opacity:.62!important}.profile-cosmetic-choice.selected{outline:2px solid #7ee7ff;outline-offset:-2px}\n.profile-cosmetic-choice:focus-visible,.studio-tab:focus-visible,.profile-favorite-track input:focus-visible{outline:3px solid #fff!important;outline-offset:2px}\n.variant-text .profile-cosmetic-choice{min-height:52px!important}.profile-cosmetic-podium .button{font-size:17px!important;white-space:normal!important;line-height:1.25!important;min-height:48px!important}\n.profile-customizer-actions [role='status']{font:14px/1.4 'Trebuchet MS',sans-serif!important}.profile-customizer-actions{grid-template-columns:1fr!important}.profile-customizer-actions .button{width:100%;font-size:18px!important}\n.profile-preview-stage{min-height:96px!important}.showcase-row{min-height:60px!important}.showcase-row>span>b{font-size:16px!important}.showcase-row>span>small{font:12px/1.3 'Trebuchet MS',sans-serif!important}\n.studio-tabs{gap:6px!important}.studio-tab{min-height:48px!important;font-size:15px!important}\n.profile-favorite-track{position:relative}.profile-favorite-track input{width:100%;box-sizing:border-box;min-height:48px!important;font:17px/1.4 'Trebuchet MS',sans-serif!important}\n.studio-track-options{position:relative;z-index:5;width:100%;max-height:240px;overflow:auto;box-sizing:border-box;border:1px solid #86ccec;background:#14264e;margin-top:4px;scrollbar-color:#709ccd #14264e}\n.studio-track-options button{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;border-bottom:1px solid #354b72;padding:9px 12px;background:transparent;color:#fff;text-align:left;font:16px/1.3 'Trebuchet MS',sans-serif}\n.studio-track-options button small{font-size:12px;color:#adcce8}.studio-track-options button:hover,.studio-track-options button[aria-selected='true']{background:#2d5485;color:#fff}\n#overallProfilePopup .profile-stat-primary b{font-size:clamp(23px,2vw,32px)!important;line-height:1.2!important;overflow-wrap:anywhere}.profile-stat-primary span{min-width:0!important}\n.overall-help-content p{line-height:1.5!important}.overall-entry:focus-visible{outline:3px solid #fff;outline-offset:-3px}\n@media(max-width:900px){.profile-customizer-preview{position:static!important}.profile-customizer-body{gap:16px!important}.profile-customizer-preview .profile-preview-stage{padding:8px!important}.profile-customizer-preview{padding:10px!important}.profile-preview-stage>span b{font-size:18px!important}}\n@media(max-width:600px){\n.profile-dialog-toolbar{top:-14px;margin:-14px -14px 12px;padding:8px 12px}.profile-dialog-toolbar>span{font-size:16px}\n.profile-customizer-body{padding:10px!important}.profile-cosmetic-group{padding:10px!important}.profile-cosmetic-group>div{grid-template-columns:repeat(2,minmax(0,1fr))!important}.profile-cosmetic-group.variant-text>div{grid-template-columns:repeat(2,minmax(0,1fr))!important}\n.profile-cosmetic-choice>b{font-size:14px!important}.profile-customizer>summary small{font:13px/1.35 'Trebuchet MS',sans-serif!important}.profile-preview-stage{min-height:80px!important}.profile-customizer-preview header small{font:12px/1.3 'Trebuchet MS',sans-serif!important}.competition-track-main{flex-direction:column!important;align-items:flex-start!important;gap:2px!important}.competition-kicker{font-size:10px!important}.competition-track-name{font-size:16px!important;min-height:44px!important;padding:4px 0!important;white-space:normal!important;text-align:left!important}.competition-result{font:11px/1.3 'Trebuchet MS',sans-serif!important;white-space:normal!important}\n.overall-page-status{font-size:13px!important;min-width:0!important}.overall-freshness{font:12px/1.35 'Trebuchet MS',sans-serif!important;min-height:44px!important}.overall-pager{padding:4px!important;gap:8px!important}.overall-page-button{width:44px!important;min-width:44px!important;min-height:44px!important}\n}\n@media(max-height:500px){.overall-top{padding:8px 14px!important}.overall-top h2{font-size:27px!important}.overall-action-btn{min-height:40px!important;font-size:16px!important}.profile-customizer-preview{position:static!important}}\n@media(prefers-reduced-motion:reduce){.overall-entry,.overall-shell{animation:none!important;opacity:1!important;transform:none!important}.profile-cosmetic-choice,.overall-car-model>img{transition:none!important}}\r\n";
     style.textContent += "@media(max-width:600px){\n.profile-customizer-preview .profile-preview-stage{min-height:64px!important;padding:4px!important}.profile-customizer-preview .profile-preview-stage .overall-car-model{width:64px!important;height:64px!important;min-width:64px!important}\n.profile-customizer-preview header{margin-bottom:6px!important}.profile-customizer-preview header small{display:none!important}\n.profile-row-showcase{gap:4px!important;margin:6px 0!important}.profile-row-showcase .showcase-row{min-height:40px!important;padding:4px 6px!important;grid-template-columns:30px minmax(0,1fr) 42px!important}\n.profile-row-showcase .showcase-row>span>b{font-size:13px!important}.profile-row-showcase .showcase-row>span>small{font-size:11px!important}.profile-row-showcase .showcase-meta,.profile-row-showcase .showcase-badges{display:none!important}\n.profile-customizer-actions{gap:6px!important;margin-top:6px!important}.profile-customizer-actions [role=status]{font-size:12px!important}.profile-customizer-actions .button{min-height:44px!important}\n.track-info-ui>.side-panel>.thumbnail{min-width:0!important;min-height:0!important;box-sizing:border-box!important;padding:0!important;border:0!important;width:72px!important;height:72px!important}\n.track-info-ui .leaderboard-ui button.main .verified-state{width:100%!important;min-width:0!important;box-sizing:border-box!important;padding:3px!important;white-space:normal!important;flex-wrap:wrap!important;height:auto!important;max-height:none!important;line-height:1.3!important}\n.track-info-ui .leaderboard-ui button.main .sq-integrity-label{flex:none!important;font:700 11px/1.2 'Trebuchet MS',sans-serif!important}\n}\r\n";
     style.textContent += "@media(max-width:600px){}\nhtml:has(#overallLeaderboardPanel[style*=\"display: flex\"]),body:has(#overallLeaderboardPanel[style*=\"display: flex\"]){overflow-x:hidden!important}\r\n";
-    style.textContent += "@media(max-width:800px){\nbody>div:has(>.menu-ui>.settings-menu-ui:not(.hidden):not([hidden])){transform:none!important;width:100%!important;height:100%!important}\n.menu-ui>.settings-menu-ui:not(.hidden):not([hidden]){position:fixed!important;inset:0!important;width:100%!important;max-width:100vw!important;height:100dvh!important;min-width:0!important;transform:none!important;margin:0!important;box-sizing:border-box!important;display:flex;flex-direction:column!important}\n.settings-menu-ui>h2{font-size:28px!important;flex:none;margin:0!important;padding:12px!important}\n.settings-menu-ui>.container{flex:1 1 auto!important;min-height:0!important;width:100%!important;box-sizing:border-box!important;margin:0!important;padding:10px!important;overflow:auto!important}\n.settings-menu-ui>.button-wrapper{flex:0 0 auto!important;position:static!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;width:100%!important;box-sizing:border-box!important;padding:8px!important;gap:6px!important;margin:0!important}\n.settings-menu-ui>.button-wrapper>.button{position:static!important;width:100%!important;min-width:0!important;margin:0!important;padding:8px 4px!important;font-size:18px!important;min-height:44px!important;transform:none!important}.settings-menu-ui>.button-wrapper .button-icon{width:18px!important;height:18px!important}\n.settings-menu-ui .setting{min-width:0!important;box-sizing:border-box!important;gap:8px!important;flex-wrap:wrap!important}.settings-menu-ui .setting>p{min-width:0!important;font-size:17px!important}.settings-menu-ui .setting>.button-wrapper{min-width:0!important;display:flex!important;flex-wrap:wrap!important;gap:4px!important}.settings-menu-ui .setting .button{font-size:18px!important;padding:7px!important;min-height:40px!important;margin:0!important}\n#sqRankedSettings .sq-settings-grid{grid-template-columns:1fr!important;gap:6px!important}#sqRankedSettings .sq-setting-row{grid-column:auto!important;min-height:66px!important;padding:10px!important;display:flex!important;align-items:center!important;justify-content:space-between!important}#sqRankedSettings .sq-setting-row>p{flex:1;min-width:100px!important;margin:0!important}#sqRankedSettings .sq-setting-secret{display:block!important}#sqRankedSettings .sq-secret-controls{display:flex!important;gap:6px!important}#sqRankedSettings input{min-width:0!important;max-width:100%!important}#sqRankedSettings .sq-settings-note{font:14px/1.4 'Trebuchet MS',sans-serif!important}\n}\r\n";
+    style.textContent += "@media(max-width:800px),(max-width:1100px) and (max-height:500px){\nbody>div:has(>.menu-ui>.settings-menu-ui:not(.hidden):not([hidden])){transform:none!important;width:100%!important;height:100%!important}\n.menu-ui>.settings-menu-ui:not(.hidden):not([hidden]){position:fixed!important;inset:0!important;width:100%!important;max-width:100vw!important;height:100dvh!important;min-width:0!important;transform:none!important;margin:0!important;box-sizing:border-box!important;display:flex;flex-direction:column!important}\n.settings-menu-ui>h2{font-size:28px!important;flex:none;margin:0!important;padding:12px!important}\n.settings-menu-ui>.container{flex:1 1 auto!important;min-height:0!important;width:100%!important;box-sizing:border-box!important;margin:0!important;padding:10px!important;overflow:auto!important}\n.settings-menu-ui>.button-wrapper{flex:0 0 auto!important;position:static!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;width:100%!important;box-sizing:border-box!important;padding:8px!important;gap:6px!important;margin:0!important}\n.settings-menu-ui>.button-wrapper>.button{position:static!important;width:100%!important;min-width:0!important;margin:0!important;padding:8px 4px!important;font-size:18px!important;min-height:44px!important;transform:none!important}.settings-menu-ui>.button-wrapper .button-icon{width:18px!important;height:18px!important}\n.settings-menu-ui .setting{min-width:0!important;box-sizing:border-box!important;gap:8px!important;flex-wrap:wrap!important}.settings-menu-ui .setting>p{min-width:0!important;font-size:17px!important}.settings-menu-ui .setting>.button-wrapper{min-width:0!important;display:flex!important;flex-wrap:wrap!important;gap:4px!important}.settings-menu-ui .setting .button{font-size:18px!important;padding:7px!important;min-height:40px!important;margin:0!important}\n#sqRankedSettings .sq-settings-grid{grid-template-columns:1fr!important;gap:6px!important}#sqRankedSettings .sq-setting-row{grid-column:auto!important;min-height:66px!important;padding:10px!important;display:flex!important;align-items:center!important;justify-content:space-between!important}#sqRankedSettings .sq-setting-row>p{flex:1;min-width:100px!important;margin:0!important}#sqRankedSettings .sq-setting-secret{display:block!important}#sqRankedSettings .sq-secret-controls{display:flex!important;gap:6px!important}#sqRankedSettings input{min-width:0!important;max-width:100%!important}#sqRankedSettings .sq-settings-note{font:14px/1.4 'Trebuchet MS',sans-serif!important}\n}\r\n";
     style.textContent += "body>div:has(.multiplayer-ui>.join:not(.hidden)),body>div:has(.multiplayer-ui>.host:not(.hidden)){transform:none!important;width:100%!important;height:100%!important}\n.multiplayer-ui:has(>.join:not(.hidden),>.host:not(.hidden)){position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;align-items:center!important;gap:16px!important;padding:24px 16px!important;overflow:auto!important;background:#202e58;transform:none!important;z-index:100}\n.multiplayer-ui>.join:not(.hidden),.multiplayer-ui>.host:not(.hidden){position:relative!important;inset:auto!important;transform:none!important;width:min(760px,100%)!important;min-width:0!important;height:auto!important;flex:0 0 auto!important;margin:0!important;padding-bottom:0!important;box-sizing:border-box!important}\n.multiplayer-ui>.join>.main-box,.multiplayer-ui>.host>.main-box{position:relative!important;inset:auto!important;transform:none!important;width:100%!important;min-width:0!important;height:auto!important;box-sizing:border-box!important;margin:0!important}\n.multiplayer-ui>.sq-multiplayer-relay,.multiplayer-ui>.sq-multiplayer-relay.is-collapsed{position:relative!important;inset:auto!important;transform:none!important;width:min(760px,100%)!important;max-height:none!important;flex:0 0 auto!important;margin:0!important;clip-path:none!important;box-shadow:none!important}\n.multiplayer-ui .buttons{display:flex!important;gap:8px!important;position:static!important;padding:12px!important;box-sizing:border-box!important}.multiplayer-ui .buttons>.button{position:static!important;min-height:44px!important;flex:1!important;font-size:23px!important;margin:0!important;transform:none!important}.multiplayer-ui .buttons img{width:22px!important;height:22px!important}\n.sq-multiplayer-path>div>span,.sq-multiplayer-intro,.sq-multiplayer-note{font:14px/1.4 'Trebuchet MS',sans-serif!important}.sq-multiplayer-path>div>b{font-size:19px!important}\n@media(max-width:600px){.multiplayer-ui:has(>.join:not(.hidden),>.host:not(.hidden)){padding:8px!important;gap:8px!important}.multiplayer-ui .main-box>h2{font-size:24px!important;white-space:normal!important;margin:0!important;padding:12px!important}.multiplayer-ui .invite-code-container{margin:12px!important;width:auto!important}.multiplayer-ui .invite-code{width:100%!important;box-sizing:border-box!important;min-width:0!important;font-size:24px!important;padding:10px!important}.multiplayer-ui .experimental-warning{font-size:15px!important;padding:8px 12px!important;margin:0!important}.multiplayer-ui .experimental-warning img{width:20px!important;height:20px!important}.multiplayer-ui .buttons>.button{font-size:19px!important;min-width:0!important;padding:8px!important}.sq-multiplayer-relay .sq-multiplayer-path{padding:10px!important}.sq-multiplayer-relay .sq-multiplayer-path>div>span{font-size:13px!important}.multiplayer-ui .game-mode-container,.multiplayer-ui .maximum-players-container{padding:10px!important;margin:0!important}.multiplayer-ui .track-button{max-width:calc(100% - 20px)!important;margin:10px!important;box-sizing:border-box!important}}\r\n";
     style.textContent += ".studio-discard{background:#263963!important;color:#cbdff8!important;font-size:15px!important}\n@media(max-height:500px) and (min-width:600px){#overallDailyGrid .overall-arcade{display:none!important}#overallDailyGrid .overall-center-tools,#overallDailyGrid .overall-footer-right{grid-row:1!important;margin:0!important}#overallDailyGrid .overall-center-tools{grid-column:1!important}#overallDailyGrid .overall-footer-right{grid-column:2!important}#overallDailyGrid .overall-pager{padding:2px!important}#overallDailyGrid .overall-freshness{padding:4px!important;min-height:28px!important;font-size:12px!important}.overall-entry{min-height:82px!important;padding-top:5px!important;padding-bottom:5px!important}.overall-entry .overall-car-model{height:64px!important;width:64px!important}.overall-entry .overall-best-line{font-size:14px!important}.overall-entry .overall-rank{font-size:27px!important}}\r\n";
     style.textContent += "body:has(#overallLeaderboardPanel[style*=\"display: flex\"]) .menu-ui{contain:paint!important;overflow:hidden!important;max-width:100vw!important}\n.profile-customizer-actions .studio-discard{background:#263963!important;color:#cbdff8!important;font-size:15px!important;border:1px solid #617798!important}\n@media(max-height:500px) and (min-width:600px){#overallDailyGrid .leaderboard-arcade{display:none!important}#overallDailyGrid .overall-center-tools{display:grid!important;grid-template-rows:44px 32px!important;min-height:0!important;padding:3px!important;gap:3px!important}#overallDailyGrid .overall-pager{min-height:0!important;height:44px!important;margin:0!important;padding:0!important}#overallDailyGrid .overall-page-button{height:40px!important;min-height:40px!important}#overallDailyGrid .overall-page-status{font-size:14px!important;line-height:1.2!important;padding:3px!important}#overallDailyGrid .overall-freshness{box-sizing:border-box!important;height:32px!important;min-height:0!important;margin:0!important;white-space:normal!important;line-height:1.2!important;font:12px/1.2 'Trebuchet MS',sans-serif!important;padding:3px!important}#overallDailyGrid .overall-footer-right{align-self:center!important}.overall-entry .overall-car-model{min-height:64px!important;min-width:64px!important}}\n.multiplayer-ui .invite-code{transform:none!important;max-width:100%!important}\r\n";
@@ -3437,7 +3437,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=217',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=218',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -3944,7 +3944,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=217',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=218',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -6045,7 +6045,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=217').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=218').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -6071,7 +6071,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=217',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=218',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -6116,7 +6116,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=217',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=218',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -6136,8 +6136,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=217',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=217',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=217',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=218',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=218',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=218',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -6900,7 +6900,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=217',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=218',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -8066,7 +8066,7 @@ function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
     const isCurrent=()=>snapshotUpdateRequest===job&&!job.controller.signal.aborted&&origin?.isConnected&&origin===document.getElementById('overallFreshness')&&isElementVisible(document.getElementById('overallLeaderboardPanel'))&&!['overallHelpPopup','overallProfilePopup'].some(id=>isElementVisible(document.getElementById(id)));
     let module;
     try{
-      module=await import('./tools/snapshot-update-check.mjs?v=217');
+      module=await import('./tools/snapshot-update-check.mjs?v=218');
       if(!isCurrent())return;
       snapshotUpdateChecker||=module.createSnapshotUpdateCheck();
       const generation=Number(/public-snapshots([0-9]+)\//.exec(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'')?.[1]);
@@ -8293,7 +8293,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(217));
+    headers.set('X-PolyTrack-Revision', String(218));
     return observedWorkerFetch(url, {...options, headers});
   }
 
@@ -8450,7 +8450,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=217'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=218'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -8529,8 +8529,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     return false;
   }
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=217').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=217');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=218').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=218');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,publication:module.readSnapshotPublicationMeta(document),prepareRecording:ptPrepareGatedRecording,beforeGenerationChange:allowSnapshotGenerationChange,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent(metric.source==='memory'?'cache':'snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         invalidateNativePartialReplay(true);
@@ -8611,7 +8611,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=217');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=218');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -10787,7 +10787,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   });
 
   function boot(){
-    void import('./tools/finish-presentation.mjs?v=217').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
+    void import('./tools/finish-presentation.mjs?v=218').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
     void initializePracticeHistory();
     setInterval(()=>{const popup=document.getElementById('overallProfilePopup');if(popup&&isElementVisible(popup))schedulePracticeProfileRefresh();},30000);
     // Warm only same-origin schedule assets, never the database, before menus open.
@@ -10808,10 +10808,10 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=217'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=218'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=217',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=217',eventsModuleUrl).href)]).then(([module,release])=>{
-      module.installSiteUpdates({revision:217,document,
+    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=218',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=218',eventsModuleUrl).href)]).then(([module,release])=>{
+      module.installSiteUpdates({revision:218,document,
         onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false;},
         isIdle:()=>canShowInstalledRevisionNotice()&&!document.querySelector('dialog[data-site-installed-revision][open]'),
         canReload:()=>canShowInstalledRevisionNotice(),endpoint:module.CANONICAL_SITE_VERSION_URL});
@@ -10876,7 +10876,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=217').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=218').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -10903,7 +10903,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=217', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=218', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});

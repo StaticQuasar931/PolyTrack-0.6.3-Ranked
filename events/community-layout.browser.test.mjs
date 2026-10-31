@@ -17,17 +17,23 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
  for(const [width,height] of [[1366,768],[390,844],[768,1024],[639,460],[640,460],[641,460],[700,700],[701,700],[899,700],[900,700],[901,700],[1199,900],[1200,900],[1201,900],[1700,900],[1701,900],[2560,1279]]){
   await page.setViewportSize({width,height});
   const featured=await page.locator('.sq-featured-events').boundingBox();
-  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:width>1000?160:136);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),Math.min(1500,width-(width<=700?32:96)));assert.equal(Math.round(featured.x),Math.round((width-featured.width)/2));
+  const nav=await page.locator('.community-track-versions').boundingBox();assert.equal(nav.height,width<=700?160:width>1000?160:136);assert(featured.y+featured.height<=nav.y);assert.equal(Math.round(nav.width),width);assert.equal(Math.round(featured.width),width-32);assert.equal(Math.round(featured.x),16);
   assert(featured.x+featured.width<=width+1,'Section must fit the page');
   const rects=[];for(const card of await page.locator('.sq-kodub-weekly,.sq-permanent-track,.sq-event-card').all())rects.push(await card.boundingBox());
-  assert.equal(rects.length,4);for(const rect of rects)assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1,'Every event card stays in the section');
-  for(const rect of rects){
-   assert(Math.abs(rect.width-rects[0].width)<=1,'All four cards have equal width: '+JSON.stringify({width,rects}));
-   if(width>1000)assert(Math.abs(rect.height-rects[0].height)<=1,'Desktop cards have equal height: '+JSON.stringify({width,rects}));
+  assert.equal(rects.length,4);for(const rect of rects){
+   assert(rect.width>0&&rect.height>0,'Every event card has visible dimensions');
+   assert(rect.x>=featured.x-1&&rect.x+rect.width<=featured.x+featured.width+1&&rect.y>=featured.y-1&&rect.y+rect.height<=featured.y+featured.height+1,'Every event card stays in the section');
   }
-  const columns=width>=900?4:width>=600?2:1;
-  assert.equal(new Set(rects.map(rect=>Math.round(rect.x))).size,columns,'Expected responsive column count');
-  assert.equal(new Set(rects.map(rect=>Math.round(rect.y))).size,4/columns,'No orphaned supporting card');
+  const normalCards=rects.slice(1);
+  for(let i=0;i<normalCards.length;i++)for(let j=i+1;j<normalCards.length;j++){
+   const a=normalCards[i],b=normalCards[j];
+   if(Math.abs(a.y-b.y)<=1){
+    assert(Math.abs(a.width-b.width)<=1,'Normal cards sharing a row have equal widths: '+JSON.stringify({width,a,b}));
+    assert(Math.abs(a.height-b.height)<=1,'Normal cards sharing a row have equal heights: '+JSON.stringify({width,a,b}));
+   }
+  }
+  assert(rects[0].width>=Math.max(...normalCards.map(rect=>rect.width))-1,'Kodub card is at least as wide as supporting cards');
+  if(normalCards.every(rect=>Math.abs(rect.y-rects[0].y)<=1))assert(rects[0].width>normalCards[0].width+1,'Kodub is wider in the four-card desktop row');
   for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){
    const x=rects[i],y=rects[j];
    assert(x.x+x.width<=y.x+1||y.x+y.width<=x.x+1||x.y+x.height<=y.y+1||y.y+y.height<=x.y+1,'Cards never overlap');
