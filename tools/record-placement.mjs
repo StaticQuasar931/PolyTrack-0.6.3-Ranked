@@ -420,7 +420,7 @@ function ensureStyle(document) {
 [${BADGE_ATTRIBUTE}].silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
 [${BADGE_ATTRIBUTE}].bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
 [${BADGE_ATTRIBUTE}].estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
-[${BADGE_ATTRIBUTE}].player-count{min-width:0;padding-inline:.1em;font-size:.72em}
+[${BADGE_ATTRIBUTE}].player-count{min-width:2.25em;min-height:1.65em;padding:.14em .15em;font-size:.74em;background:#494137;color:#f8ddb0;border-color:#c39d63;box-shadow:none}
 `;
   document.head.appendChild(style);
   return true;
@@ -498,7 +498,7 @@ function renderDom(document, tracks, placements, options, state) {
     const className = `sq-record-placement ${placement.personalFilter?'is-personal-filter ':''}${placement.estimated?'estimated':placement.podium}`;
     if (badge.className !== className) badge.className = className;
     badge.textContent = placement.label;
-    badge.title = placement.kind === 'player-count' ? `${placement.fieldSize} player${placement.fieldSize === 1 ? '' : 's'} in saved standings` : placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
+    badge.title = placement.kind === 'player-count' ? `No record - ${placement.fieldSize} player${placement.fieldSize === 1 ? '' : 's'}` : placement.estimated ? `Estimated #${placement.rank} among ${placement.fieldSize} loaded racers. Awaiting the published leaderboard.` : `#${placement.rank} of ${placement.fieldSize} ranked drivers${placement.verified ? ' (verified)' : ''}`;
     if (placement.personalFilter) badge.title = `Personal group: ${badge.title}`;
     badge.setAttribute('aria-label', badge.title);
     addClass(record, HOST_CLASS);
