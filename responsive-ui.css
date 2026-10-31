@@ -1,4 +1,34 @@
 /* Available-space overlays. The native canvas, camera and page buttons stay game-owned. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media(max-width:1100px) and (orientation:landscape){
+ html body .track-selection-ui>.image-button-container{box-sizing:border-box!important;padding-inline:calc(8px / var(--ui-scale-factor,1))!important}
+}
+/* A status chip describes one run, not the width of its grid column. */
+html body .track-info-ui .leaderboard-ui button.main .verified-state{
+ width:fit-content!important;max-width:100%!important;min-width:0!important;
+ align-self:flex-start!important;justify-self:start!important;flex:0 0 auto!important;
+ white-space:nowrap!important;flex-wrap:nowrap!important;box-sizing:border-box!important;
+}
+@media(max-width:600px) and (orientation:portrait){
+ html body .menu-ui>.track-selection-ui:not(.hidden):not([hidden]),
+ html body .menu-ui>.track-info-ui:not(.hidden):not([hidden]){max-width:var(--sq-available-width,100vw)!important;min-width:0!important;box-sizing:border-box!important}
+ html body .track-selection-ui>.bar,
+ html body .track-selection-ui>.image-button-container{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
+ html body .track-selection-ui>.image-button-container{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important}
+ html body .track-selection-ui>.image-button-container>.button{min-width:0!important;max-width:100%!important;width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere;font-size:clamp(13px,3.6vw,17px)!important}
+ html body .track-info-ui .leaderboard-ui button.main{height:76px!important;min-height:76px!important;grid-template-columns:56px 72px minmax(0,1fr)!important}
+ html body .track-info-ui .leaderboard-ui button.main>.image-container,
+ html body .track-info-ui .leaderboard-ui button.main>.image-container img{width:56px!important;height:56px!important}
+ html body .track-info-ui .leaderboard-ui button.main>.right{overflow:hidden!important}
+ html body .track-info-ui .leaderboard-ui button.main .verified-state{font-size:12px!important;gap:4px!important;padding:2px 5px!important;min-height:22px!important;line-height:1.2!important}
+}
+@media(min-width:390px) and (max-width:600px) and (orientation:portrait){
+ html:root body .track-info-ui .leaderboard-ui:not(.sq-event-board)>.button-wrapper::before{min-height:44px!important}
+ html:root body .track-info-ui .leaderboard-ui:not(.sq-event-board)>.button-wrapper{grid-template-columns:minmax(58px,1fr) minmax(58px,.9fr) minmax(112px,1.4fr) 44px!important;grid-template-rows:44px!important;gap:4px!important;min-height:52px!important;padding:4px 0!important}
+ html:root body .track-info-ui .leaderboard-ui:not(.sq-event-board)>.button-wrapper>button{height:44px!important;min-height:44px!important;padding:4px!important;font-size:14px!important}
+ html:root body .track-info-ui .leaderboard-ui:not(.sq-event-board)>.button-wrapper>.only-verified{grid-column:3!important;grid-row:1!important}
+ html:root body .track-info-ui .leaderboard-ui:not(.sq-event-board)>.button-wrapper>.icon-button.first{grid-column:4!important;grid-row:1!important;min-width:44px!important}
+}
 .overall-mobile-tools[hidden],.overall-mobile-drawer[hidden] { display: none !important; }
 html body #overallLeaderboardPanel #overallDailyGrid[data-mobile-axis] {
   position: relative !important;
