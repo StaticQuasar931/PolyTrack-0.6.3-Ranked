@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=219';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=219';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=220';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=220';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,8 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=219';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=219';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=220';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=220';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -763,7 +763,11 @@ export function installEvents(bridge){
   async function loadArchivedBoard(period){return snapshot(period,false);}
   let launching=false,nativeOpenPermit=false,nativePlayPermit=false,selectedGhost=null,replayRequest=0,topSelectionToken=0,eventTopPrefixUntil=0,eventTopHeld=false,eventDigitBoard=null;const selectedGhosts=new Map(),pendingGhosts=new Map(),replayCache=new Map(),preparedGhosts=new Map(),preparedOwnGhosts=new Map(),replayFailures=new Map(),eventDigitsHeld=new Map(),eventDigitsConsumed=new Set();
   let replayRowsLoaded=false,replayRowsRaw=null,replayRowsCache=[];
-  const carImages=new Map(),validatedCarStyles=new Map();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
+  const carImages=new Map(),validatedCarStyles=new Map(),carLoadRequests=new WeakMap();let profileStyles=new Map(),profilesAt=0,rendering=0;const renderQueue=[];
+  function clearCarLoads(view){
+    for(const [button,timer]of view?.carLoadTimers||[]){clearTimeout(timer);const request=carLoadRequests.get(button);if(request)request.active=false;}
+    view?.carLoadTimers?.clear();
+  }
   function validCachedCarStyle(style){
     if(validatedCarStyles.has(style))return validatedCarStyles.get(style);
     let valid=false;
@@ -787,7 +791,8 @@ export function installEvents(bridge){
       if(typeof requestIdleCallback==='function'){
         let handle;
         const limit=setTimeout(()=>{if(typeof cancelIdleCallback==='function')cancelIdleCallback(handle);resolve(false);},3000);
-        handle=requestIdleCallback(()=>{clearTimeout(limit);resolve(true);});
+        try{handle=requestIdleCallback(()=>{clearTimeout(limit);resolve(true);},{timeout:1000});}
+        catch(error){clearTimeout(limit);throw error;}
       }else setTimeout(()=>resolve(true),48);
     });
     if(!idle)return '';
@@ -795,20 +800,28 @@ export function installEvents(bridge){
     if(nativeView!==view||!view.board.isConnected)return '';
     let renderButton=null;
     for(const subscriber of job.subscribers){
-      if(!subscriber.isConnected||!view.board.contains(subscriber)){job.subscribers.delete(subscriber);continue;}
+      if(!subscriber.isConnected||!view.board.contains(subscriber)||!carLoadRequests.get(subscriber)?.active){job.subscribers.delete(subscriber);continue;}
       if(typeof subscriber.getClientRects!=='function'||subscriber.getClientRects().length){renderButton=subscriber;break;}
     }
     if(!renderButton)return '';
-    const bounded=async invoke=>{let timer;try{return await Promise.race([Promise.resolve().then(invoke),new Promise(resolve=>{timer=setTimeout(()=>resolve(''),1500);})]);}catch{return '';}finally{clearTimeout(timer);}};
+    const bounded=async(invoke,native=false,budget=1500)=>{
+      let timer;const cancellations=[];
+      try{return await Promise.race([Promise.resolve().then(()=>invoke({addCancelCallback:callback=>cancellations.push(callback)})),new Promise(resolve=>{timer=setTimeout(()=>{if(native)view.carRendererRetryAt=now()+10000;for(const cancel of cancellations)try{cancel();}catch{}resolve('');},budget);})]);}
+      catch{return '';}
+      finally{clearTimeout(timer);}
+    };
     if(typeof window.BT==='function'){const src=imageSource(await bounded(()=>window.BT(style,'')));if(safeImage(src))return src;}
-    return imageSource(await bounded(()=>{const require=bridge.require(),value=require?.(8724)?.A.deserializeSafe(style),render=require?.(3787)?.F;return value&&typeof render==='function'?render(value,{addCancelCallback(){}},null):'';}));
+    if(now()<(view.carRendererRetryAt||0))return '';
+    // Shader/context startup can exceed the warm thumbnail budget on a cold view.
+    const nativeBudget=view.carRendererStarted?1500:5000;view.carRendererStarted=true;
+    return imageSource(await bounded(cancel=>{const require=bridge.require(),value=require?.(8724)?.A.deserializeSafe(style),render=require?.(3787)?.F;return value&&typeof render==='function'?render(value,cancel,null):'';},true,nativeBudget));
   }
   let drainingRenders=false;
   function drainRenders(){
     if(drainingRenders)return;drainingRenders=true;
     try{
       while(true){
-        while(rendering<1&&renderQueue.length){const job=renderQueue.shift();if(nativeView!==job.view||!job.view.board.isConnected){if(carImages.get(job.style)===job)carImages.delete(job.style);job.resolve('');job.subscribers.clear();job.button=null;job.view=null;job.resolve=null;job.promise=null;continue;}rendering++;void renderCar(job).then(src=>{if(carImages.get(job.style)===job){if(safeImage(src))carImages.set(job.style,src);else carImages.delete(job.style);}job.resolve(src);job.subscribers.clear();job.button=null;job.view=null;job.resolve=null;job.promise=null;}).finally(()=>{rendering--;drainRenders();});}
+        while(rendering<1&&renderQueue.length){const job=renderQueue.shift();if(nativeView!==job.view||!job.view.board.isConnected){if(carImages.get(job.style)===job)carImages.delete(job.style);job.resolve('');job.subscribers.clear();job.button=null;job.view=null;job.resolve=null;job.promise=null;continue;}rendering++;void renderCar(job).catch(()=>'').then(src=>{if(carImages.get(job.style)===job){if(safeImage(src))carImages.set(job.style,src);else carImages.delete(job.style);}job.resolve(src);job.subscribers.clear();job.button=null;job.view=null;job.resolve=null;job.promise=null;}).finally(()=>{rendering--;drainRenders();});}
         const view=nativeView;if(!view?.deferredCarRows.size||renderQueue.length>=12)break;
         const before=renderQueue.length;
         retryDeferredEventCarRenders(view,(button,style)=>renderCachedCar(button,style,false));
@@ -835,27 +848,41 @@ export function installEvents(bridge){
   }
   function renderCachedCar(button,style,drain=true){
     const image=button.querySelector('.image-container img');
+    if(!image)return true;
+    const current=carLoadRequests.get(button);
+    if(current?.view===nativeView&&current.style===style)return true;
     let label=button.querySelector('.sq-event-car-unavailable');if(!label){label=document.createElement('small');label.className='sq-event-car-unavailable';image.after(label);}label.textContent='Car unavailable';label.hidden=false;image.hidden=true;
     image.alt='Car unavailable';image.title='No cached car available';
+    const placeholder=()=>{image.onload=null;image.onerror=()=>{image.hidden=true;};image.src='images/car_thumbnail_placeholder.png';image.hidden=false;};
+    placeholder();
     if(!style)return;
+    const view=nativeView,request={view,style,active:true};carLoadRequests.set(button,request);
+    view.carLoadTimers||=new Map();
+    const finish=()=>{request.active=false;clearTimeout(view.carLoadTimers.get(button));view.carLoadTimers.delete(button);};
+    const unavailable=()=>{finish();image.alt='Car unavailable';image.title='Car preview unavailable; native placeholder, not this racer\'s car';label.hidden=false;label.textContent='Car unavailable';if(typeof carImages.get(style)==='string')carImages.delete(style);placeholder();};
+    const armDeadline=delay=>{clearTimeout(view.carLoadTimers.get(button));view.carLoadTimers.set(button,setTimeout(()=>{if(request.active){unavailable();view.carObserver?.unobserve(button);view.deferredCarRows.delete(button);}},delay));};
+    // Include cold native startup once, then bounded warm jobs already in the queue.
+    armDeadline(12000+6000*(renderQueue.length+rendering));
     image.alt='Loading cached car';image.title='Cached profile car, not an event replay';label.textContent='Loading car';
     const applyImage=(src,view)=>{
-      if(!button.isConnected)return;
+      if(!request.active||!button.isConnected||nativeView!==view)return;
       if(!safeImage(src)){
-        if(view===nativeView&&view?.board?.contains(button)&&typeof button.getClientRects==='function'&&!button.getClientRects().length){image.alt='Loading cached car';label.textContent='Loading car';view.deferredCarRows.add(button);return;}
-        image.alt='Car unavailable';label.textContent='Car unavailable';return;
+        if(view===nativeView&&view?.board?.contains(button)&&typeof button.getClientRects==='function'&&!button.getClientRects().length){finish();carLoadRequests.delete(button);image.alt='Loading cached car';label.textContent='Loading car';view.deferredCarRows.add(button);return;}
+        unavailable();return;
       }
       view?.carObserver?.unobserve(button);view?.deferredCarRows?.delete(button);
-      image.onload=()=>{image.hidden=false;label.hidden=true;};
-      image.onerror=()=>{image.alt='Car unavailable';image.hidden=true;label.hidden=false;label.textContent='Car unavailable';};
+      armDeadline(8000);
+      image.onload=()=>{if(!request.active)return;finish();image.hidden=false;label.hidden=true;};
+      image.onerror=unavailable;
       image.src=src;image.alt='Cached profile car';
+      if(image.complete&&image.naturalWidth>0)image.onload();
     };
     let cached=carImages.get(style);
     if(typeof cached==='string'){applyImage(cached,nativeView);return true;}
     let job=cached;if(job&&job.view!==nativeView)job=null;
-    if(!job){if(renderQueue.length>=12){image.alt='Loading cached car';label.textContent='Loading car';return false;}let resolve;const promise=new Promise(done=>{resolve=done;});job={style,button,view:nativeView,subscribers:new Set(),resolve,promise};renderQueue.push(job);carImages.set(style,job);if(carImages.size>200){const oldest=[...carImages].find(([,candidate])=>typeof candidate==='string');if(oldest)carImages.delete(oldest[0]);}if(drain)drainRenders();}
+    if(!job){if(renderQueue.length>=12){finish();carLoadRequests.delete(button);image.alt='Loading cached car';label.textContent='Loading car';return false;}let resolve;const promise=new Promise(done=>{resolve=done;});job={style,button,view:nativeView,subscribers:new Set(),resolve,promise};renderQueue.push(job);carImages.set(style,job);if(carImages.size>200){const oldest=[...carImages].find(([,candidate])=>typeof candidate==='string');if(oldest)carImages.delete(oldest[0]);}if(drain)drainRenders();}
     job.subscribers.add(button);
-    const view=job.view;void job.promise.then(src=>applyImage(src,view));
+    void job.promise.then(src=>applyImage(src,view));
     return true;
   }
   const replayContextActive=session=>session?.archive===true?archiveIntent===session&&bridge.accountId()===session.accountId:sessions.current()===session&&bridge.accountId()===session.accountId;
@@ -1136,6 +1163,7 @@ export function installEvents(bridge){
   }
   function clearNativeView(){
     if(!nativeView)return;
+    clearCarLoads(nativeView);
     if(nativeView.footerClickGuard)nativeView.nativeButtonWrapper?.removeEventListener('click',nativeView.footerClickGuard,true);
     nativeView.carObserver?.disconnect();nativeView.deferredCarRows?.clear();if(nativeView.contextMenuHandler)nativeView.board.removeEventListener('contextmenu',nativeView.contextMenuHandler);
     if(nativeView.nativeButtonWrapper){
@@ -1280,14 +1308,14 @@ export function installEvents(bridge){
         const refresh=document.createElement('button');refresh.type='button';refresh.className='button icon-button sq-event-refresh';refresh.setAttribute('aria-label','Refresh event standings');refresh.title='Refresh event standings';refresh.innerHTML='<img class="button-icon" src="images/refresh.svg" alt="">';board.querySelector('h2').append(refresh);
       }
       const side=root.querySelector('.side-panel'),watch=side?.querySelector('button.watch'),opponents=side?.querySelector('.opponents-container');let pbTitle=null,pb=null,opponentsNote=null;
-      if(!archiveMode){pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','block','important');const normalPb=side?.querySelector('.personal-best-title');if(normalPb)normalPb.before(pbTitle,pb);opponentsNote=document.createElement('div');opponentsNote.className='opponents-container sq-event-opponents';opponentsNote.textContent='Event ghosts are not available. Normal PB ghosts are not used.';opponents?.after(opponentsNote);}
+      if(!archiveMode){pbTitle=document.createElement('div');pbTitle.className='personal-best-title sq-event-personal-title';pbTitle.textContent='Event personal best';pb=document.createElement('div');pb.className='personal-best sq-event-personal';pb.style.setProperty('display','flex','important');const normalPb=side?.querySelector('.personal-best-title');if(normalPb)normalPb.before(pbTitle,pb);opponentsNote=document.createElement('div');opponentsNote.className='opponents-container sq-event-opponents';opponentsNote.textContent='Event ghosts are not available. Normal PB ghosts are not used.';opponents?.after(opponentsNote);}
       const contextMenuHandler=archiveMode?null:event=>event.stopPropagation();
       const view=nativeView={root,board,nativeMarkup,nativeButtonWrapper,buttonPlaceholder,nativeButtons,eventBack,nativeBack,nativeDisplay,nativeTitle,pb,pbTitle,watch,watchDisabled:watch?.disabled,opponents,opponentsNote,period,periodId:period.id,accountId,page:0,onlyVerified:false,signature:'',carStyles:new WeakMap(),archive:archiveMode,snapshot:session.snapshot,contextMenuHandler};
       view.deferredCarRows=new Set();
       if(!archiveMode){if(typeof IntersectionObserver==='function')view.carObserver=new IntersectionObserver(entries=>handleEventCarIntersections(view,entries,renderCachedCar),{root:board.querySelector('.container'),rootMargin:'50px'});board.addEventListener('contextmenu',contextMenuHandler);
         const verified=buttonWrapper.querySelector('.only-verified');verified.onclick=()=>{view.onlyVerified=!view.onlyVerified;verified.classList.toggle('disabled',!view.onlyVerified);verified.setAttribute('aria-pressed',String(view.onlyVerified));view.page=0;view.signature='';view.quickSignature='';syncNativeBoard(session);};
         const findMe=buttonWrapper.querySelector('.sq-event-find-me');findMe.onclick=()=>{const index=eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows.findIndex(row=>row.accountId===accountId);if(index<0){message(view.onlyVerified?'Your run is not verified yet. Turn off Only verified to see it.':'Your event result is not in these loaded standings.');return;}view.page=Math.floor(index/20);view.signature='';view.quickSignature='';syncNativeBoard(session);const mine=board.querySelector('button.main.self');mine?.scrollIntoView({block:'nearest'});mine?.focus({preventScroll:true});};
-        board.querySelector('.sq-event-refresh').onclick=async()=>{const button=board.querySelector('.sq-event-refresh');button.disabled=true;profilesAt=0;try{await snapshot(period,true);await readReceipt(period.id,accountId,true);if(nativeView!==view||bridge.accountId()!==accountId||sessions.current()!==session)return;view.signature='';syncNativeBoard(session);}catch{if(nativeView===view)message('Event standings could not refresh. Your saved event PB is unchanged.');}finally{button.disabled=false;}};
+        board.querySelector('.sq-event-refresh').onclick=async()=>{const button=board.querySelector('.sq-event-refresh');button.disabled=true;profilesAt=0;view.carRendererRetryAt=0;try{await snapshot(period,true);await readReceipt(period.id,accountId,true);if(nativeView!==view||bridge.accountId()!==accountId||sessions.current()!==session)return;view.signature='';syncNativeBoard(session);}catch{if(nativeView===view)message('Event standings could not refresh. Your saved event PB is unchanged.');}finally{button.disabled=false;}};
       }
       if(!archiveMode&&nativeButtonWrapper){
         view.footerClickGuard=event=>{
@@ -1323,7 +1351,7 @@ export function installEvents(bridge){
     }
     const activeGhosts=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
     if(view.watch)view.watch.disabled=typeof bridge.watchEvent!=='function'||!(getOwnReplay(period.id)||activeGhosts.length);
-    const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:bridge.supportsEventGhost?.()&&getOwnReplay(period.id)?'Play uses your event PB ghost. Select published racers to add their replays.':'Select published racers to load event ghosts. Normal PB ghosts are not used.';
+    const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:'Select racers to race their event runs.';
     if(view.opponentsNote.textContent!==opponentsText)view.opponentsNote.textContent=opponentsText;
 
     const display=eventDisplayRows(period,{onlyVerified:view.onlyVerified}),{board,filterResult,rows}=display,loading=!board&&!snapshotAttempts.get(period.id)?.error,mine=rows.find(row=>row.accountId===accountId);
@@ -1364,7 +1392,7 @@ export function installEvents(bridge){
       (reportedEntrants!==undefined?'Reported event entrants: '+reportedEntrants+'. ':'')+
       'One best PB per racer in each field. A newer pending PB may replace an older verified PB in All, while verified-only retains the verified PB. Pages contain only loaded results.';
     total.setAttribute('aria-label',total.textContent+'. '+total.title);
-     const container=view.board.querySelector('.container');container.setAttribute('aria-busy',String(loading));view.carObserver?.disconnect();view.deferredCarRows.clear();container.replaceChildren();
+     const container=view.board.querySelector('.container');container.setAttribute('aria-busy',String(loading));view.carObserver?.disconnect();view.deferredCarRows.clear();clearCarLoads(view);container.replaceChildren();
     for(const [index,row] of rows.slice(view.page*20,view.page*20+20).entries()){
       const renderer=view.board.__pt062EventRows;
       if(renderer?.version!==1){const error=document.createElement('p');error.className='error-message';error.textContent='Reload the game to load the native event leaderboard.';container.append(error);break;}
@@ -1412,7 +1440,7 @@ export function installEvents(bridge){
     syncFinishPlace();updateEventRefreshControl();
     if(!cachedOnly)void flush();
     const view=nativeView,at=now();
-    if(view&&!view.carObserver&&view.deferredCarRows.size&&at>=(view.nextDeferredCarRetryAt||0)){
+    if(view&&view.deferredCarRows.size&&at>=(view.nextDeferredCarRetryAt||0)){
       view.nextDeferredCarRetryAt=at+250;
       retryDeferredEventCarRenders(view,(button,style)=>renderCachedCar(button,style,false));
       drainRenders();

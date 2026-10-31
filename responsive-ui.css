@@ -1,5 +1,19 @@
 /* Available-space overlays. The native canvas, camera and page buttons stay game-owned. */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Native menus use scaled coordinates; Safari's chrome can shrink only the visual viewport. */
+@media(min-width:601px){
+ html body #ui:has(>.menu-ui>.track-info-ui:not(.hidden)),
+ html body #ui:has(>.menu-ui>.track-selection-ui:not(.hidden)){
+  height:calc(var(--sq-available-height,100vh) / var(--ui-scale-factor,1))!important;
+  top:var(--sq-visible-top,0px)!important;
+ }
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>.thumbnail{padding:12px!important;max-height:140px!important;min-height:32px!important}
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>:is(.personal-best-title,.opponents-title){font-size:24px!important;margin-top:6px!important}
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>.personal-best{margin-bottom:6px!important}
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>.personal-best>div{margin-block:4px!important;font-size:24px!important;line-height:26px!important}
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>.opponents-container{min-height:24px!important;flex:1 1 0!important;margin-block:4px!important;overflow:auto!important}
+ html[data-sq-space="short"] body .track-info-ui>.side-panel>.play{height:80px!important;font-size:40px!important}
+}
 @media(max-width:1100px) and (orientation:landscape){
  html body .track-selection-ui>.image-button-container{box-sizing:border-box!important;padding-inline:calc(8px / var(--ui-scale-factor,1))!important}
 }
