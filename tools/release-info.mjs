@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 249,
+  "number": 250,
   "version": "0.6.3",
-  "revision": 218,
+  "revision": 219,
   "notes": [
-    "Better phone-landscape rankings and Settings spacing.",
-    "Settings controls stay clear of notches and home indicators."
+    "Clearer phone leaderboards with compact status badges and controls.",
+    "Better weekly artwork, landscape event cards and track tabs."
   ],
-  "preparedAt": "2026-10-31T00:49:23.365Z",
-  "committedAt": "2026-10-31T00:53:43.000Z"
+  "preparedAt": "2026-10-31T01:11:53.434Z",
+  "committedAt": "2026-10-31T01:18:58.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

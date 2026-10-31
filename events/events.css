@@ -1178,3 +1178,63 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
  #ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record,
  #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record{justify-content:flex-start}
 }
+
+/* Phone artwork keeps its complete title instead of filling a narrow crop. */
+@media(max-width:700px) and (orientation:portrait){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  align-items:center!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment),
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){
+  position:static!important;grid-column:1!important;grid-row:1!important;
+  width:100%!important;height:auto!important;align-self:center!important;object-fit:contain!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
+  grid-row:1!important;padding:12px!important;overflow-wrap:anywhere;
+ }
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
+  font-size:clamp(22px,5.5vw,30px)!important;white-space:normal!important;
+ }
+}
+
+/* Short landscape shares the rail rather than reserving an empty poster row. */
+@media(min-width:600px) and (max-width:1200px) and (max-height:500px) and (orientation:landscape){
+ #ui .track-selection-ui .sq-featured-events{
+  --event-card-height:240px;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;
+ }
+ #ui .track-selection-ui .sq-featured-events>.sq-kodub-weekly,
+ #ui .track-selection-ui .sq-featured-events>.sq-kodub-unavailable{grid-column:1!important;grid-row:2!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track{grid-column:2!important;grid-row:2!important}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="weekly"]{grid-column:1!important;grid-row:3!important}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"]{grid-column:2!important;grid-row:3!important}
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;align-items:center!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment),
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){
+  position:static!important;grid-column:1!important;grid-row:1!important;
+  width:100%!important;height:auto!important;align-self:center!important;object-fit:contain!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
+  grid-row:1!important;padding:10px!important;overflow-wrap:anywhere;
+ }
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
+  font-size:22px!important;white-space:normal!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.time-remaining,
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best,
+ #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{font-size:16px!important}
+ #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button,
+ #ui .track-selection-ui .sq-featured-events>.sq-event-track-buttons>.sq-event-card{
+  grid-template-rows:minmax(16px,auto) minmax(36px,auto) minmax(64px,1fr) minmax(30px,auto) minmax(46px,auto)!important;
+  gap:4px!important;padding:10px!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .sq-permanent-track .track-title p,
+ #ui .track-selection-ui .sq-featured-events .sq-event-card strong{font-size:18px!important;line-height:1.1!important}
+}
+@media(min-width:840px) and (max-width:1200px) and (max-height:500px) and (orientation:landscape){
+ #ui .track-selection-ui .sq-featured-events{grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr))!important}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="weekly"]{grid-column:3!important;grid-row:2!important}
+ #ui .track-selection-ui .sq-featured-events .sq-event-card[data-event-kind="daily"]{grid-column:4!important;grid-row:2!important}
+}

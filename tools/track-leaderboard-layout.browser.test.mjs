@@ -12,6 +12,7 @@ const cssFragments = [...source.matchAll(/(?:style|rankedPolish)\.textContent\s*
 assert.ok(cssFragments.length > 1, 'native UI CSS injection remains discoverable');
 const rankedCss = cssFragments.map(fragment => JSON.parse(fragment[1])).join('\n');
 const homeCss = fs.readFileSync(new URL('../home-ui.css', import.meta.url), 'utf8');
+const responsiveCss = fs.readFileSync(new URL('../responsive-ui.css', import.meta.url), 'utf8');
 const eventsCss = fs.readFileSync(new URL('../events/events.css', import.meta.url), 'utf8');
 
 const viewports = [
@@ -146,6 +147,7 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
     </main></div></div>`);
     await page.addStyleTag({ content: rankedCss });
     await page.addStyleTag({ content: homeCss });
+    await page.addStyleTag({content:responsiveCss});
 
     await page.evaluate(`(${installNativeTrackFooterReservation.toString()})({document})`);
 
@@ -179,7 +181,7 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
         const firstRow = rows.filter(row => row.label !== 'Only verified').map(row => Math.round(row.top));
         assert.equal(new Set(firstRow).size, 1, `Back, Filters, and Find me share the first row at ${width}x${height}`);
         const onlyVerifiedTop = Math.round(rows.find(row => row.label === 'Only verified').top);
-        if (width <= 600 && height > width) {
+        if (width < 390 && height > width) {
           assert.ok(onlyVerifiedTop > firstRow[0], `Only verified occupies the second row at ${width}x${height}`);
         } else {
           assert.equal(onlyVerifiedTop, firstRow[0], `all four native controls share the row at ${width}x${height}`);
@@ -237,6 +239,7 @@ test('native track footer, Ranked Find me/filter, and event filters render withi
       </section></div>`);
     await page.addStyleTag({ content: rankedCss });
     await page.addStyleTag({ content: homeCss });
+    await page.addStyleTag({content:responsiveCss});
     await page.addStyleTag({ content: '#overallLeaderboardPanel .overall-shell{animation:none!important}' });
     for (const [width, height] of viewports) {
       await checkViewport(width, height, ['#overallFindMeBtn', '#overallFilterPanel .ranked-filter-panel > summary'], '.overall-shell', 'Ranked header');

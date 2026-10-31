@@ -88,6 +88,13 @@ export function installNativeTrackFooterReservation({document=globalThis.documen
       ${footer}>button{min-height:44px!important;height:44px!important;padding-block:4px!important}
       ${footer}::before{min-height:44px}
     }
+    @media(min-width:390px) and (max-width:600px) and (orientation:portrait){
+      ${footer}{grid-template-columns:minmax(58px,1fr) minmax(58px,.9fr) minmax(112px,1.4fr) 44px!important;grid-template-rows:44px!important;gap:4px!important;min-height:52px!important;padding:4px 0!important}
+      ${footer}>button{height:44px!important;min-height:44px!important;padding:4px!important;font-size:14px!important}
+      ${footer}::before{min-height:44px!important}
+      ${footer}>.only-verified{grid-column:3;grid-row:1}
+      ${footer}>.icon-button.first{grid-column:4;grid-row:1;min-width:44px!important}
+    }
   `;
   document.head.appendChild(style);
 }
