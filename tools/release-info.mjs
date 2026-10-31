@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 251,
+  "number": 252,
   "version": "0.6.3",
-  "revision": 220,
+  "revision": 221,
   "notes": [
-    "Landscape controls stay visible when Safari's toolbars open.",
-    "Consistent event controls and reliable car-thumbnail fallbacks."
+    "Menus stay aligned after phone rotation and Safari toolbar changes.",
+    "Clearer home credits and track lists that fit the visible screen."
   ],
-  "preparedAt": "2026-10-31T01:32:05.581Z",
-  "committedAt": "2026-10-31T02:02:18.000Z"
+  "preparedAt": "2026-10-31T02:17:09.835Z",
+  "committedAt": "2026-10-31T02:34:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

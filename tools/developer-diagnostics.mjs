@@ -82,7 +82,10 @@ export function buildDeveloperReport({ practice = [], coverage = null, finishes 
   privacy: { automaticUpload: false, includesPublicId: includesLocalData && (hash(publicId) || profileRows.some(row => opaqueId(row?.publicId || row?.accountId))), includesLocalProfiles: includesLocalData, includesSavedTrackCodes, limitations: 'Client observations are incomplete and untrusted. Timing notes are not cheating verdicts. Practice coverage is partial and does not imply legacy playtime was tracked. Request events are not billed Firebase operations.' },
   ...(includesLocalData && hash(publicId) ? { publicRacerId: publicId } : {}),
   snapshot: { generation: finite(snapshot.generation), capturedAt: finite(snapshot.capturedAt) },
-  viewport: selectNumbers(viewport, ['width', 'height', 'pixelRatio']),
+  viewport: {...selectNumbers(viewport, ['width', 'height', 'pixelRatio']),
+    ...Object.fromEntries(['clientWidth','clientHeight','visualWidth','visualHeight','visualLeft','visualTop','visualScale','scrollX','scrollY']
+      .filter(key=>typeof viewport?.[key]==='number'&&Number.isFinite(viewport[key])&&Math.abs(viewport[key])<=1000000)
+      .map(key=>[key,Math.round(viewport[key]*100)/100]))},
   practiceCoverage: coverage ? { version: 2, scope: 'Known reported/device visible-time estimate, not full historical driving coverage', ...selectNumbers(coverage, ['startedAt', 'baselinePlaytimeMs', 'knownPlaytimeMs', 'observedVisibleMs', 'coverageFraction']) } : null,
   practice: rows.map(row => ({ trackId: hash(row.trackId) ? row.trackId : '', trackName: cleanText(row.trackName), ...selectNumbers(row, numbers), ...practiceEvidence(row), resetTimingBuckets: Array.from({ length: 4 }, (_, i) => finite(row.restartBuckets?.[i])), recentFinishes: recentPracticeFinishes(row) })),
   loadedResults: (Array.isArray(finishes) ? finishes : []).slice(0, 256).map(sanitizeResult),

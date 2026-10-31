@@ -1,5 +1,14 @@
 /* Available-space overlays. The native canvas, camera and page buttons stay game-owned. */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{overflow-x:hidden}
+@media(max-width:1100px){
+ body:has(>#ui>.menu-ui){position:fixed;inset:0;width:100%;height:100%;overflow:hidden}
+}
+html body #staticMenu{
+ left:calc(var(--sq-visible-left,0px) + max(8px,env(safe-area-inset-left,0px)))!important;
+ top:calc(var(--sq-visible-top,0px) + max(8px,env(safe-area-inset-top,0px)))!important;
+ max-width:calc(var(--sq-available-width,100vw) - 16px)!important;
+}
 /* Native menus use scaled coordinates; Safari's chrome can shrink only the visual viewport. */
 @media(min-width:601px){
  html body #ui:has(>.menu-ui>.track-info-ui:not(.hidden)),
@@ -456,4 +465,21 @@ html body .settings-menu-ui>.button-wrapper{padding:8px max(8px,env(safe-area-in
  .settings-menu-ui #sqRankedSettings{padding:8px!important}
  .settings-menu-ui #sqRankedSettings .sq-settings-grid{grid-template-columns:minmax(0,1fr)!important}
  .settings-menu-ui #sqRankedSettings .sq-settings-grid>.sq-setting-row{min-height:64px!important}
+}
+/* Menu coordinates are logical pixels only while the native UI is scaled. */
+html:not(.sq-game-expanded) body #ui:has(>.menu-ui>:is(.main-buttons-container,.track-selection-ui,.track-info-ui,.settings-menu-ui):not(.hidden)){
+ --sq-menu-scale:var(--sq-menu-fit-scale,1);
+ --ui-scale-factor:var(--sq-menu-scale);
+ transform:scale(var(--sq-menu-scale))!important;transform-origin:top left!important;
+ left:var(--sq-visible-left,0px)!important;top:var(--sq-visible-top,0px)!important;
+ width:calc(var(--sq-available-width,100vw) / var(--sq-menu-scale))!important;
+ height:calc(var(--sq-available-height,100vh) / var(--sq-menu-scale))!important;
+}
+@media(max-width:600px) and (orientation:portrait){
+ html:not(.sq-game-expanded) body #ui:has(>.menu-ui>:is(.track-selection-ui,.track-info-ui):not(.hidden)){--sq-menu-scale:1}
+ html body #ui>.menu-ui>:is(.track-selection-ui,.track-info-ui):not(.hidden){height:100%!important;width:100%!important}
+}
+@media(max-width:800px),(max-width:1100px) and (max-height:500px){
+ html:not(.sq-game-expanded) body #ui:has(>.menu-ui>.settings-menu-ui:not(.hidden)){--sq-menu-scale:1}
+ html body #ui>.menu-ui>.settings-menu-ui:not(.hidden){height:100%!important;width:100%!important}
 }
