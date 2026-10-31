@@ -4,8 +4,10 @@ import {installCompactRankedLayout} from './compact-ranked-layout.mjs?v=183';
 export function availableViewport({document,window,container}){
   const html=document.documentElement,visual=window.visualViewport;
   const rootWidth=html.clientWidth||window.innerWidth,rootHeight=html.clientHeight||window.innerHeight;
-  let left=Math.max(0,visual?.offsetLeft||0),top=Math.max(0,visual?.offsetTop||0);
-  let right=Math.min(rootWidth,left+(visual?.width||rootWidth)),bottom=Math.min(rootHeight,top+(visual?.height||rootHeight));
+  const visibleWidth=Math.min(rootWidth,visual?.width||rootWidth),visibleHeight=Math.min(rootHeight,visual?.height||rootHeight);
+  let left=Math.min(Math.max(0,visual?.offsetLeft||0),Math.max(0,rootWidth-visibleWidth));
+  let top=Math.min(Math.max(0,visual?.offsetTop||0),Math.max(0,rootHeight-visibleHeight));
+  let right=left+visibleWidth,bottom=top+visibleHeight;
   const bounds=container?.getBoundingClientRect?.();
   if(bounds?.width>0&&bounds?.height>0){
     left=Math.max(left,bounds.left??0);top=Math.max(top,bounds.top??0);
@@ -21,12 +23,18 @@ export function installResponsiveViewport({document=globalThis.document,window=g
   const update=()=>{
     frame=0;if(disposed)return;
     const viewport=window.visualViewport;
+    if(Math.abs(window.scrollX||0)>1&&Math.abs((viewport?.scale||1)-1)<.01&&
+      document.querySelector?.('#ui>.menu-ui>:is(.main-buttons-container,.track-selection-ui,.track-info-ui,.settings-menu-ui):not(.hidden)')){
+      window.scrollTo?.({left:0,top:window.scrollY||0,behavior:'instant'});
+    }
     const {width,height,top,left}=availableViewport({document,window,container});
-    const signature=[width,height,top,left].join(':');if(signature===last)return;last=signature;
+    const menuScale=Math.max(.01,Math.min(1,Math.min(html.clientWidth||window.innerWidth,1.4375*(html.clientHeight||window.innerHeight))/1150));
+    const signature=[width,height,top,left,menuScale].join(':');if(signature===last)return;last=signature;
     html.style.setProperty('--sq-available-width',width+'px');
     html.style.setProperty('--sq-available-height',height+'px');
     html.style.setProperty('--sq-visible-top',top+'px');
     html.style.setProperty('--sq-visible-left',left+'px');
+    html.style.setProperty('--sq-menu-fit-scale',String(menuScale));
     html.dataset.sqSpace=height<460?'short':width<700?'narrow':height<700?'compact':'roomy';
     if(typeof window.CustomEvent==='function')document.dispatchEvent(new window.CustomEvent('sq-viewport-changed',{detail:{width,height,top,left}}));
     const focused=document.activeElement;
@@ -35,7 +43,7 @@ export function installResponsiveViewport({document=globalThis.document,window=g
     }
   };
   const schedule=()=>{if(!frame&&!disposed)frame=window.requestAnimationFrame(update);};
-  const events=['resize','orientationchange','pageshow'];
+  const events=['resize','orientationchange','pageshow','scroll'];
   for(const event of events)window.addEventListener(event,schedule,{passive:true});
   window.visualViewport?.addEventListener('resize',schedule,{passive:true});
   window.visualViewport?.addEventListener('scroll',schedule,{passive:true});

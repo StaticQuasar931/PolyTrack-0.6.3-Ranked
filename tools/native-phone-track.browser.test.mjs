@@ -9,12 +9,15 @@ const {chromium,webkit}=createRequire(new URL('./verifier/package.json',import.m
 test('native track screens keep tabs, chips and controls contained through phone rotations',{timeout:240000},async()=>{
  const server=await startResponsiveServer(),safari=process.env.POLYTRACK_PHONE_BROWSER==='webkit';
  const browser=await(safari?webkit:chromium).launch(safari?{headless:true}:{headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ let page;
  try{
-  const page=await browser.newPage({viewport:{width:440,height:800},isMobile:true,hasTouch:true});
+  page=await browser.newPage({viewport:{width:440,height:800},isMobile:true,hasTouch:true});
   await installNativeRankedAuditFixture(page,{rejectWrites:true});
   await page.route(url=>url.origin!==new URL(server.url).origin,route=>new URL(route.request().url()).pathname==='/v6/user'?route.fulfill({status:200,contentType:'application/json',body:'null'}):route.abort('blockedbyclient'));
   await page.goto(server.url,{waitUntil:'domcontentloaded'});
-  await page.getByRole('button',{name:'Exit',exact:true}).click({timeout:60000});
+  await page.waitForFunction(()=>[...document.querySelectorAll('.main-buttons-container:not(.hidden),.track-selection-ui:not(.hidden),button')].some(n=>n.getClientRects().length&&(n.matches('.main-buttons-container,.track-selection-ui')||n.textContent.trim()==='Exit')),null,{timeout:60000});
+  if(await page.getByRole('button',{name:'Exit',exact:true}).isVisible())await page.getByRole('button',{name:'Exit',exact:true}).click();
+  else if(await page.locator('.main-buttons-container:not(.hidden)').isVisible())await page.locator('.main-buttons-container>.button-image').filter({hasText:/^\s*Play\s*$/}).click();
   await page.locator('.track-selection-ui:not(.hidden)').waitFor();
   const capture=async label=>{
    if(!process.env.POLYTRACK_PHONE_CAPTURE)return;
@@ -69,19 +72,21 @@ test('native track screens keep tabs, chips and controls contained through phone
    await capture(`board-${width}x${height}`);
   }
   // Safari tab/address bars can reduce the visible height without changing innerHeight.
-  for(const [width,height,visibleHeight,top]of [[956,440,330,0],[844,390,280,12],[956,440,440,0]]){
+  for(const [width,height,visibleHeight,top,left=0]of [[956,440,330,0],[844,390,280,12],[440,800,720,12,26],[956,440,440,0]]){
    await page.setViewportSize({width,height});
-   await page.evaluate(({visibleHeight,top})=>{
+   await page.evaluate(({visibleHeight,top,left,width})=>{
     Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>visibleHeight});
     Object.defineProperty(visualViewport,'offsetTop',{configurable:true,get:()=>top});
+    Object.defineProperty(visualViewport,'width',{configurable:true,get:()=>width-left});
+    Object.defineProperty(visualViewport,'offsetLeft',{configurable:true,get:()=>left});
     visualViewport.dispatchEvent(new Event('resize'));
-   },{visibleHeight,top});
+   },{visibleHeight,top,left,width});
    await page.waitForFunction(value=>parseFloat(document.documentElement.style.getPropertyValue('--sq-available-height'))===value,visibleHeight);
    const controls=await page.locator('.track-info-ui .leaderboard-ui>.pages,.track-info-ui .leaderboard-ui>.button-wrapper,.track-info-ui>.side-panel>.play').evaluateAll(nodes=>nodes.map(n=>({name:n.textContent,...n.getBoundingClientRect().toJSON()})));
-   for(const box of controls)assert.ok(box.top>=top-1&&box.bottom<=top+visibleHeight+1,JSON.stringify({width,height,visibleHeight,top,box}));
+   for(const box of controls)assert.ok(box.x>=left-1&&box.right<=width+1&&box.top>=top-1&&box.bottom<=top+visibleHeight+1,JSON.stringify({width,height,visibleHeight,top,left,box}));
    await capture(`safari-chrome-${width}x${height}-${visibleHeight}`);
   }
-  await page.evaluate(()=>{delete visualViewport.height;delete visualViewport.offsetTop;visualViewport.dispatchEvent(new Event('resize'));});
+  await page.evaluate(()=>{for(const key of ['height','width','offsetTop','offsetLeft'])delete visualViewport[key];visualViewport.dispatchEvent(new Event('resize'));});
   await page.locator('.track-info-ui .leaderboard-ui>.button-wrapper>.back').click();
   await page.getByRole('button',{name:'Community tracks',exact:true}).click();
   await page.locator('.tracks-container.open .sq-event-card[data-event-kind="weekly"]').click();
@@ -99,5 +104,8 @@ test('native track screens keep tabs, chips and controls contained through phone
    if(height>width)assert.ok(footer.height<=56,JSON.stringify({width,height,footer}));
    await capture(`weekly-${width}x${height}`);
   }
+ }catch(error){
+  if(page&&process.env.POLYTRACK_PHONE_CAPTURE){await fs.mkdir(process.env.POLYTRACK_PHONE_CAPTURE,{recursive:true});await page.screenshot({path:process.env.POLYTRACK_PHONE_CAPTURE+'/failure.png'});await fs.writeFile(process.env.POLYTRACK_PHONE_CAPTURE+'/failure.txt',await page.locator('body').innerText());await fs.writeFile(process.env.POLYTRACK_PHONE_CAPTURE+'/failure.json',JSON.stringify(await page.evaluate(()=>({audit:window.__ptNativeRankedAudit,viewport:document.documentElement.style.cssText})),null,2));}
+  throw error;
  }finally{await browser.close();await server.close();}
 });

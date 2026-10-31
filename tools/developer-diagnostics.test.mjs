@@ -4,6 +4,13 @@ import assert from 'node:assert/strict';
 import {buildDeveloperReport} from './developer-diagnostics.mjs';
 import {createPracticeHistory,practiceAdvice} from './practice-history.mjs';
 const id='a'.repeat(64),track='b'.repeat(64);
+
+test('viewport diagnostics retain bounded signed offsets without unrelated browser data',()=>{
+ const report=buildDeveloperReport({viewport:{width:440,height:780,pixelRatio:3,clientWidth:440,visualLeft:26.1234,scrollX:-12.345,visualScale:Infinity,visualHeight:1000001,userAgent:'private-browser-data'}});
+ assert.deepEqual(report.viewport,{width:440,height:780,pixelRatio:3,clientWidth:440,visualLeft:26.12,scrollX:-12.34});
+ assert.doesNotMatch(JSON.stringify(report),/private-browser-data|userAgent/);
+ assert.deepEqual(buildDeveloperReport({viewport:null}).viewport,{width:0,height:0,pixelRatio:0});
+});
 test('developer export is an explicit whitelist, not a local storage or console dump',()=>{
  const report=buildDeveloperReport({publicId:id,email:'secret@test',token:'password',events:[{category:'snapshot',code:'PROFILE',message:'token=password',url:'https://private.test?token=x'}],practice:[{trackId:track,activeMs:100,ownerUid:'secret',replay:'secret',recentFinishes:[{timeMs:10,practiceMs:100,password:'secret'}]}]});
  const text=JSON.stringify(report);assert.doesNotMatch(text,/secret|password|private.test|ownerUid|publicRacerId/);assert.equal(report.privacy.automaticUpload,false);
