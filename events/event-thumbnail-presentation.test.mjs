@@ -31,13 +31,14 @@ test('event ordinals remain readable and receipt dates survive the real shared s
       client.slice(client.indexOf('export function eventOrdinal('),client.indexOf('export function eventTrackName('));
     const shared=patch.slice(patch.indexOf('  function syncIntegrityStateLabels(){'),patch.indexOf('  let nativeDecorationLookupCache='));
     await page.evaluate(({helpers,shared})=>{
-      const decorate=Function(helpers.replace(/export function /g,'function ')+';return decorateEventRowPresentation;')();
-      decorate(document.querySelector('button.main'),{rank:1,submittedAt:Date.now()-3600000});
+      const decorate=Function(helpers.replace(/export (async )?function /g,'$1function ')+';return decorateEventRowPresentation;')();
+      decorate(document.querySelector('button.main'),{rank:1,submittedAt:Date.now()-3600000,verified:true,integrityVerified:true,competition:'verified'});
       Function(shared+';syncIntegrityStateLabels();')();
     },{helpers,shared});
     assert.equal(await page.locator('.position').innerText(),'1st');
     assert.equal(await page.locator('.position').getAttribute('aria-label'),'1st');
-    assert.equal(await page.locator('.position > span').count(),0,'plain text avoids the opaque native suffix font');
+    assert.equal(await page.locator('.position > span').count(),1,'native ordinal suffix remains separate from the rank number');
+    assert.equal(await page.locator('.position > span').textContent(),'st');
     assert.match(await page.locator('.verified-state').getAttribute('title'),/^Received .* - Run verified$/);
     assert.doesNotMatch(await page.locator('.verified-state').getAttribute('aria-label'),/Date unavailable/);
   }finally{await browser.close();}

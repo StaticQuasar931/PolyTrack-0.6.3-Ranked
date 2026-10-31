@@ -149,7 +149,7 @@ test('actual active board renders page 13 offline, then clamps and counts its ve
     displayName:r=>r.name,eventName:()=> 'Weekly',periodName:()=> 'Fixture',now:()=>Date.now(),
     selectedGhosts:new Map(),pendingGhosts:new Map(),snapshotAttempts:new Map(),
     getOwnReplay:()=>null,displayedRecordPlacement:()=>null,eventSidebarPlacementPresentation:()=>null,renderEventPersonalBest,
-    cachedCarStyle:()=>null,renderCachedCar(){},statusText:'Saved standings',clearNativeView(){throw Error('Unexpected reset');}};
+    cachedCarStyle:()=>null,renderCachedCar(){},clearCarLoads(){},statusText:'Saved standings',clearNativeView(){throw Error('Unexpected reset');}};
   const display=source.slice(source.indexOf('  function eventDisplayRows('),source.indexOf('  function syncNativeArchiveBoard('));
   const adapter=source.slice(source.indexOf('function nativeEventRow('),source.indexOf('export function handleEventCarIntersections('));
   const sync=source.slice(source.indexOf('  function syncNativeBoard('),source.indexOf('  function syncFinishPlace('));

@@ -42,6 +42,7 @@ test('native track screens keep tabs, chips and controls contained through phone
   await page.getByRole('button',{name:'Official tracks',exact:true}).click();
   await page.locator('.track-title').filter({hasText:/^Summer 1$/}).first().click();
   await page.locator('.leaderboard-ui button.main .verified-state').first().waitFor({timeout:45000});
+  assert.equal(await page.locator('.track-info-ui>.side-panel>.opponents-container.no-opponents').textContent(),'Select racers from the leaderboard to race against.');
   for(const [width,height]of sizes){
    await page.setViewportSize({width,height});
    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -66,6 +67,37 @@ test('native track screens keep tabs, chips and controls contained through phone
    }
    if(width>=390&&width<=600&&height>width)assert.ok(result.footer.height<=56,JSON.stringify({width,height,footer:result.footer}));
    await capture(`board-${width}x${height}`);
+  }
+  // Safari tab/address bars can reduce the visible height without changing innerHeight.
+  for(const [width,height,visibleHeight,top]of [[956,440,330,0],[844,390,280,12],[956,440,440,0]]){
+   await page.setViewportSize({width,height});
+   await page.evaluate(({visibleHeight,top})=>{
+    Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>visibleHeight});
+    Object.defineProperty(visualViewport,'offsetTop',{configurable:true,get:()=>top});
+    visualViewport.dispatchEvent(new Event('resize'));
+   },{visibleHeight,top});
+   await page.waitForFunction(value=>parseFloat(document.documentElement.style.getPropertyValue('--sq-available-height'))===value,visibleHeight);
+   const controls=await page.locator('.track-info-ui .leaderboard-ui>.pages,.track-info-ui .leaderboard-ui>.button-wrapper,.track-info-ui>.side-panel>.play').evaluateAll(nodes=>nodes.map(n=>({name:n.textContent,...n.getBoundingClientRect().toJSON()})));
+   for(const box of controls)assert.ok(box.top>=top-1&&box.bottom<=top+visibleHeight+1,JSON.stringify({width,height,visibleHeight,top,box}));
+   await capture(`safari-chrome-${width}x${height}-${visibleHeight}`);
+  }
+  await page.evaluate(()=>{delete visualViewport.height;delete visualViewport.offsetTop;visualViewport.dispatchEvent(new Event('resize'));});
+  await page.locator('.track-info-ui .leaderboard-ui>.button-wrapper>.back').click();
+  await page.getByRole('button',{name:'Community tracks',exact:true}).click();
+  await page.locator('.tracks-container.open .sq-event-card[data-event-kind="weekly"]').click();
+  await page.locator('.sq-event-board button.main').first().waitFor({timeout:45000});
+  await page.waitForFunction(()=>[...document.querySelectorAll('.sq-event-board button.main')].slice(0,4).every(row=>{
+   const label=row.querySelector('.sq-event-car-unavailable');return !label||label.hidden||label.textContent!=='Loading car';
+  }),null,{timeout:40000});
+  const carResults=await page.locator('.sq-event-board button.main').evaluateAll(rows=>rows.slice(0,4).map(row=>({alt:row.querySelector('.image-container img')?.alt,label:row.querySelector('.sq-event-car-unavailable')?.textContent,labelHidden:row.querySelector('.sq-event-car-unavailable')?.hidden})));
+  console.log('First four event car previews: '+JSON.stringify(carResults));
+  for(const [width,height]of [[440,800],[956,330],[390,720]]){
+   await page.setViewportSize({width,height});
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   const footer=await page.locator('.sq-event-board>.button-wrapper').boundingBox();
+   assert.ok(footer.y+footer.height<=height+1,JSON.stringify({width,height,footer}));
+   if(height>width)assert.ok(footer.height<=56,JSON.stringify({width,height,footer}));
+   await capture(`weekly-${width}x${height}`);
   }
  }finally{await browser.close();await server.close();}
 });

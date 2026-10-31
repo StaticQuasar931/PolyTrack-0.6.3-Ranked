@@ -40,7 +40,7 @@ function functionSource(name){
  assert.fail(`production function ${name} has an unterminated body`);
 }
 const focus=section('  async function focusTrackFromRanked(', '  function trackSummaryLine(');
-const entry=section('  function ensureEventEntryContents(){','  function extraTrackIds(){');
+const entry=functionSource('ensureEventEntryContents');
 const QUEUE='polytrack-062-events-v1-queue';
 const id='a'.repeat(64);
 const run=(attemptId='one',timeMs=20000)=>({accountId:id,trackId:id,periodId:'daily-fixture',attemptId,timeMs,frames:timeMs,replay:'AAAA',carStyle:'',endsAt:Date.now()+3600000});
@@ -257,13 +257,13 @@ test('zero-racer archive remains accessible for saved-track practice without eve
  const state=await p.locator('[data-archive-event-id="empty-event"]').evaluate(details=>({open:details.open,disabled:details.querySelector('summary').getAttribute('aria-disabled'),tabIndex:details.querySelector('summary').tabIndex}));
  assert.equal(state.open,false);assert.equal(state.disabled,null);assert.equal(state.tabIndex,0);
  await p.locator('[data-archive-event-id="empty-event"] summary').click();
- await p.getByText('The saved event catalog lists 0 racers. No final standings have been loaded.',{exact:true}).waitFor();
- assert.equal(await p.evaluate(()=>archiveSnapshotReads),0,'catalog-only zero must not fabricate or fetch final standings');
+ await p.getByText('No verified finishes are present in the saved final standings.',{exact:true}).waitFor();
+ assert.equal(await p.evaluate(()=>archiveSnapshotReads),1,'explicit expansion validates the saved final capture rather than trusting catalog-only zero');
  assert.equal(await p.locator('[data-event-race]').count(),0);
  await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();
  assert.equal(await p.locator('.sq-event-board h2').innerText(),'Frozen final event standings');
  assert.equal(await p.locator('.sq-event-board .container').innerText(),'No verified results are present in the saved final standings.');
- assert.equal(await p.evaluate(()=>archiveSnapshotReads),1,'practice opens the explicitly complete saved board');
+ assert.equal(await p.evaluate(()=>archiveSnapshotReads),1,'practice reuses the explicitly complete saved board without another request');
  assert.equal(await p.evaluate(()=>ui.isEntered(id)),false);
  await p.locator('.side-panel .play').click();assert.equal(await p.evaluate(()=>normalStarts),1);
  assert.equal(await p.evaluate(()=>submits.length),0);
@@ -385,7 +385,7 @@ test('event rows use native names, flags, self labels and verification icons',as
  const mine=p.locator('.sq-event-board button.main.self'),waiting=p.locator('.sq-event-board button.main:not(.self)');
  assert.equal(await mine.locator('.event-time').innerText(),'00:19.000');assert.equal(await waiting.locator('.event-time').innerText(),'00:20.000');
  assert.equal(await mine.locator('.name').innerText(),'Real Racer Name');assert.equal(await mine.locator('.name-container > .self').innerText(),'(You)');assert.equal(await mine.locator('.country-flag').count(),1);
- assert.equal(await mine.locator('.position').innerText(),'1st');assert.equal(await mine.locator('.position > span').count(),0);assert.match(await mine.locator('.verified-state').getAttribute('title'),/Verified/);assert.equal(await mine.locator('.verified-state img[src="images/state_verified.svg"]').count(),1);
+ assert.equal(await mine.locator('.position').innerText(),'1st');assert.equal(await mine.locator('.position > span').count(),1);assert.equal(await mine.locator('.position > span').textContent(),'st');assert.match(await mine.locator('.verified-state').getAttribute('title'),/Verified/);assert.equal(await mine.locator('.verified-state img[src="images/state_verified.svg"]').count(),1);
  assert.equal(await waiting.locator('.name').innerText(),'<b>Not HTML</b>');assert.equal(await waiting.locator('.name b').count(),0);assert.match(await waiting.locator('.verified-state').getAttribute('title'),/Pending/);assert.equal(await waiting.locator('.verified-state img[src="images/state_pending.svg"]').count(),1);assert.equal(await waiting.locator('.sq-event-earned-rp').count(),0);
  await p.addStyleTag({content:nativeCss});await p.addStyleTag({content:fs.readFileSync(path.join(repo,'events/events.css'),'utf8')});
  assert.equal(await mine.locator('.right').evaluate(node=>getComputedStyle(node).display),'inline-block','event CSS preserves native row layout');
@@ -465,7 +465,7 @@ test('verification field owns ranks, counts, pagination and Find me without addi
  await board.locator('.sq-event-find-me').click();
  assert.equal(await board.locator('.container > button.main').count(),10);
  assert.equal(await board.locator('button.main.self .position').innerText(),'50th');
- assert.match(await p.locator('.sq-event-personal .sq-event-place').getAttribute('title'),/Visible event place #50 of 50 loaded racers/);
+ assert.equal(await p.locator('.sq-event-personal>div:last-child').getAttribute('title'),'50th of 50 loaded racers.');
  assert.match(await board.locator('.total-players').innerText(),/Page 3 of 3/);
  await board.locator('.only-verified').click();
  assert.equal(await board.locator('.pages .page').count(),4);
@@ -772,6 +772,45 @@ test('resolved event-car styles are reused after reopening the native event view
  });await enter(p);await p.waitForFunction(()=>renderCalls.length===1);await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();
  await p.evaluate(()=>ui.leave());await enter(p);await p.locator('.sq-event-board img[alt="Cached profile car"]').waitFor();
  assert.deepEqual(await p.evaluate(()=>renderCalls),['reopened-style']);
+});
+
+test('optional event car timeout preserves native fallback for the entire field',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.renderCalls=0;window.fallbackCalls=0;window.BT=()=>{renderCalls++;return new Promise(()=>{});};
+  const saved=bridgeFixture.require();bridgeFixture.require=()=>n=>n===3787?{F:async()=>{fallbackCalls++;return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';}}:saved(n);
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:Array.from({length:4},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Racer '+i,carStyle:'timeout-'+i,timeMs:20000+i,rank:i+1}))});
+ });await enter(p);
+ await p.waitForFunction(()=>document.querySelectorAll('.image-container img[alt="Cached profile car"]:not([hidden])').length===4,null,{timeout:15000});
+ assert.equal(await p.evaluate(()=>renderCalls),4);assert.equal(await p.evaluate(()=>fallbackCalls),4);
+ await p.evaluate(()=>{for(let i=0;i<20;i++)ui.tick();});assert.equal(await p.evaluate(()=>renderCalls),4);
+});
+
+test('unexpected event idle scheduling failure settles the row and releases the queue',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.requestIdleCallback=()=>{throw Error('fixture scheduler unavailable');};
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:[{accountId:id,name:'Racer',carStyle:'scheduler-style',timeMs:20000,rank:1}]});
+ });await enter(p);await p.waitForFunction(()=>document.querySelector('.sq-event-car-unavailable')?.textContent==='Car unavailable');
+});
+
+test('native event fallback timeout invokes cancellation and clears loading labels',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();window.cancelCalls=0;window.BT=async()=>'';
+  bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:n===3787?{F:(_style,cancel)=>new Promise(resolve=>cancel.addCancelCallback(()=>{cancelCalls++;resolve('');}))}:prior(n);
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:[{accountId:id,name:'Racer',carStyle:'cancel-style',timeMs:20000,rank:1}]});
+ });await enter(p);await p.waitForFunction(()=>cancelCalls===1&&document.querySelector('.sq-event-car-unavailable')?.textContent==='Car unavailable',null,{timeout:10000});
+});
+
+test('event car decode without load or error has a bounded honest fallback',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{
+  const prior=bridgeFixture.require();bridgeFixture.require=()=>n=>n===8724?{A:{deserializeSafe:s=>({serialize:()=>s})}}:prior(n);
+  window.BT=async()=> 'data:image/png;base64,fixture';
+  const descriptor=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
+  Object.defineProperty(HTMLImageElement.prototype,'src',{configurable:true,get:descriptor.get,set(value){if(value==='data:image/png;base64,fixture')return;descriptor.set.call(this,value);}});
+  const read=bridgeFixture.readSnapshot;bridgeFixture.readSnapshot=async key=>({...await read(key),entries:[{accountId:id,name:'Racer',carStyle:'decode-style',timeMs:20000,rank:1}]});
+ });await enter(p);await p.waitForFunction(()=>document.querySelector('.sq-event-car-unavailable')?.textContent==='Loading car');
+ await p.waitForFunction(()=>document.querySelector('.sq-event-car-unavailable')?.textContent==='Car unavailable',null,{timeout:11000});
 });
 test('unresolved Firebase readiness does not delay native event launch',async t=>{
  const p=await fixture(t,{deferReady:true});await showLiveRail(p);await p.locator('.sq-event-track-buttons [data-event-id]').click();

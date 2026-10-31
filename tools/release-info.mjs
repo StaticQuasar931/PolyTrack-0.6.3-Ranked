@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 250,
+  "number": 251,
   "version": "0.6.3",
-  "revision": 219,
+  "revision": 220,
   "notes": [
-    "Clearer phone leaderboards with compact status badges and controls.",
-    "Better weekly artwork, landscape event cards and track tabs."
+    "Landscape controls stay visible when Safari's toolbars open.",
+    "Consistent event controls and reliable car-thumbnail fallbacks."
   ],
-  "preparedAt": "2026-10-31T01:11:53.434Z",
-  "committedAt": "2026-10-31T01:18:58.000Z"
+  "preparedAt": "2026-10-31T01:32:05.581Z",
+  "committedAt": "2026-10-31T02:02:18.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
