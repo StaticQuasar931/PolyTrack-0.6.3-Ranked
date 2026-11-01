@@ -75,5 +75,16 @@
     "trackUrl": "assets/3c3206ae080a741d3b3ac9d387fa113ab7468122f3db02e8f3c00915fc61cffe.track",
     "thumbnailUrl": "assets/aae064e20b6e3444acf98372f104077c776a22236012082b189e606ffdfd281c.webp",
     "coverUrl": "assets/c9bc112aa7965f15d221b8dc16568b0be1d9102bd949fb9ed5c9be6ff6af21e7.webp"
+  },
+  {
+    "trackId": "1d496526b5ae956596d1988e4f205ba00708718cbb376c3ed39e11a33ba4a679",
+    "name": "Zonda",
+    "author": "Xander (route) + Vanyayuyay (deco)",
+    "lastModified": "2026-10-04T16:42:45.000Z",
+    "environment": 0,
+    "endTime": "2026-11-08T20:00:00.000Z",
+    "trackUrl": "assets/4537096722ec72f550bb8f5fb48f0c3bf9f7eb2ec11f5e062283d39dcb771be7.track",
+    "thumbnailUrl": "assets/9ebc2fedecf25ec0d86f212c3f0c05b910cbbfe03a7bb3d4f4152428ac9e622d.webp",
+    "coverUrl": "assets/cfc3a0a4f745f81e35141d445d6c6197af3f98403a8de537acadb8f491597f5e.webp"
   }
 ]
