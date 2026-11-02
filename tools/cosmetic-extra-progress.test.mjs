@@ -129,8 +129,9 @@ test('the ranked Extra catalog IDs and Worker registry remain aligned',()=>{
   const catalog=JSON.parse(fs.readFileSync(path.join(root,'extra-tracks/catalog.json'),'utf8'));
   const registry=fs.readFileSync(path.join(root,'workers/ranked/src/extra-track-ids.js'),'utf8');
   const registered=new Set([...registry.matchAll(/[a-f0-9]{64}/g)].map(match=>match[0]));
-  const ranked=catalog.filter(entry=>entry.ranked!==false);
-  assert.equal(ranked.length,254);
+  const ranked=catalog.filter(entry=>entry.ranked!==false&&entry.archiveImport!==true);
+  assert.equal(ranked.filter(entry=>entry.source!=='Kodub weekly').length,254);
+  assert.equal(ranked.filter(entry=>entry.source==='Kodub weekly').length,0);
   assert.deepEqual(ranked.filter(entry=>!registered.has(entry.trackId)).map(entry=>entry.id),[]);
   assert.deepEqual([...registered].filter(id=>!ranked.some(entry=>entry.trackId===id)),[]);
 });

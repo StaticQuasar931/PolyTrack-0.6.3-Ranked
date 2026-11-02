@@ -12,7 +12,7 @@ function extract(name){
  }
  assert.fail('No complete function: '+name);
 }
-function run(name,context={}){context.observeFirestore??=(database=>database);context.personalFilterRuntime??=null;context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}if(name==='loadOverallEntries'&&!context.publishedOverallRanksExact){context.cleanUserId=x=>String(x||'');context.MIN_RANKED_TRACKS=3;vm.runInContext(extract('publishedOverallRanksExact'),context);}
+function run(name,context={}){context.observeFirestore??=(database=>database);context.personalFilterRuntime??=null;context.cloudOwnerConflicts??=new Map();context.window??={firebase:{auth:()=>({currentUser:{uid:"test-owner"}})}};context.assertCloudOwner??=()=>{};context.safeRecordingId||=(x=>Number(x)||0);context.buildRecordingId||=(()=>999);context.plannerMetric??='overall';context.eventPlannerRoutes??=()=>[];context.trackInfo||=()=>({type:'official'});context.PINNED_EXTRA_TRACK_IDS??=new Set();vm.createContext(context);if(['recommendationAction','rivalRecommendationAction','simulateRecommendation'].includes(name)&&!context.projectedFinish){context.trackInfo||=()=>({type:'official'});vm.runInContext(extract('rankedTrackWeightParts')+'\n'+extract('projectedFinish'),context);}if(name==='loadOverallEntries'&&!context.publishedOverallRanksExact){context.cleanUserId=x=>String(x||'');context.MIN_RANKED_TRACKS=3;context.snapshotTrackStatistics??={};context.refreshOpenProfilePlanner??=()=>{};vm.runInContext(extract('hydratePlannerTrackSummaries')+'\n'+extract('publishedOverallRanksExact'),context);}
  if(name==='plannerEase')vm.runInContext(source.slice(source.indexOf('const plannerPositive='),source.indexOf('function plannerBenefitEaseScore(')),context);
  vm.runInContext(extract(name),context);return context[name];}
 test('rounded durations expose exact days, hours and minutes',()=>{
@@ -235,17 +235,17 @@ function receiptContext(rows,cloud){
  return {ctx,reads:()=>reads,store:()=>store};
 }
 test('confirmed PB receipts avoid all startup document reads',async()=>{
- const row={trackId:'one',timeMs:1000,replayHash:'hash'};const {ctx,reads}=receiptContext([row],{});
+ const row={accountId:'a',trackId:'one',timeMs:1000,replayHash:'a'.repeat(64)};const {ctx,reads}=receiptContext([row],{});
  ctx.rememberConfirmedLocalPb('a',row);const result=await ctx.reconcileLocalPersonalBestsToCloud('a');assert.equal(result.cached,true);assert.equal(reads(),0);
 });
 test('only unconfirmed tracks are checked and confirmed equality is remembered',async()=>{
- const a={trackId:'one',timeMs:1000,replayHash:'h'},b={trackId:'two',timeMs:2000,replayHash:'j'};
+ const a={accountId:'a',trackId:'one',timeMs:1000,replayHash:'a'.repeat(64)},b={accountId:'a',trackId:'two',timeMs:2000,replayHash:'b'.repeat(64)};
  const {ctx,reads}=receiptContext([a,b],{'a_two':b});ctx.rememberConfirmedLocalPb('a',a);
  await ctx.reconcileLocalPersonalBestsToCloud('a');assert.equal(reads(),1);
  await ctx.reconcileLocalPersonalBestsToCloud('a');assert.equal(reads(),1);
 });
 test('faster unsaved local PB is not suppressed by an older confirmation',async()=>{
- const old={trackId:'one',timeMs:2000,replayHash:'old'},row={trackId:'one',timeMs:1000,replayHash:'new',replay:'replay'};
+ const old={accountId:'a',trackId:'one',timeMs:2000,replayHash:'a'.repeat(64)},row={accountId:'a',trackId:'one',timeMs:1000,replayHash:'b'.repeat(64),replay:'replay'};
  const {ctx,reads}=receiptContext([row],{'a_one':old});ctx.rememberConfirmedLocalPb('a',old);let attempts=0;
  ctx.mirrorRaceResult=async()=>{attempts++;return {saved:false}};
  await ctx.reconcileLocalPersonalBestsToCloud('a');const deferred=await ctx.reconcileLocalPersonalBestsToCloud('a');assert.equal(attempts,1);assert.equal(reads(),1);assert.equal(deferred.deferred,true);
@@ -343,7 +343,7 @@ test('defense requires first place on every important known track and complete p
  const defense=run('plannerDefenseAllowed');const tracks=[{trackId:'a',fieldSize:5,weight:2},{trackId:'b',fieldSize:8,weight:3}];assert.equal(defense([{trackId:'a',rank:1}],{raceCount:1},tracks),false);assert.equal(defense([{trackId:'a',rank:1},{trackId:'b',rank:2}],{raceCount:2},tracks),false);assert.equal(defense([{trackId:'a',rank:1},{trackId:'b',rank:1}],{raceCount:2},tracks),true);assert.equal(defense([],{raceCount:0},[]),false);
 });
 test('planner reads new-track candidates from the existing overall summaries',()=>{
- assert.match(extract('profileGuideMarkup'),/overallTrackSummariesCache.find/);assert.doesNotMatch(extract('profileGuideMarkup'),/fetch\(|\.get\(\{source/);
+ assert.match(extract('profileGuideMarkup'),/plannerUnplayedField/);assert.match(extract('plannerUnplayedField'),/overallTrackSummariesCache.find/);assert.doesNotMatch(extract('profileGuideMarkup'),/fetch\(|\.get\(\{source/);
 });
 
 test('hosted verifier checks sandbox startup before processing replays',()=>{

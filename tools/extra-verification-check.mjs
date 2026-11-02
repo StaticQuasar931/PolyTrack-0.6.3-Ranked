@@ -5,13 +5,27 @@ import {fileURLToPath} from 'node:url';
 import {EXTRA_TRACK_IDS} from '../workers/ranked/src/extra-track-ids.js';
 
 const root = path.resolve(import.meta.dirname, '..');
-export function checkExtraVerification(catalog, registry, pins, readCode) {
+export function checkExtraVerification(catalog, registry, pins, readCode, trustedKodub = []) {
   const failures = [], seen = new Set(), ranked = new Set();
   for (const entry of catalog) {
     if (!/^[a-f0-9]{64}$/.test(entry.trackId || '') || seen.has(entry.trackId)) {
       failures.push(`Invalid or duplicate Extra track ID: ${entry.id}`); continue;
     }
     seen.add(entry.trackId);
+    if (entry.archiveImport === true) {
+      const descriptor = trustedKodub.find(row => row.trackId === entry.trackId && row.codeHash === entry.codeHash &&
+        row.assetPath === 'assets/' + entry.codeHash + '.track');
+      if (!/^[a-f0-9]{64}$/.test(entry.codeHash || '') || !descriptor ||
+          entry.trackPath !== 'events/kodub/' + descriptor.assetPath || entry.source !== 'Kodub weekly' || entry.ranked === false || entry.unranked === true || entry.importOnly === true) {
+        failures.push(`Invalid trusted Kodub archive alias: ${entry.id}`); continue;
+      }
+      if (registry.has(entry.trackId)) failures.push(`Archive alias must not register an Extra board: ${entry.id}`);
+      try {
+        const bytes = readCode(entry.trackPath);
+        if (crypto.createHash('sha256').update(bytes).digest('hex') !== descriptor.codeHash) failures.push(`Trusted Kodub alias hash mismatch: ${entry.id}`);
+      } catch { failures.push(`Missing trusted Kodub alias asset: ${entry.id}`); }
+      continue;
+    }
     if (entry.ranked === false) {
       if (registry.has(entry.trackId)) failures.push(`Unranked challenge is in Ranked registry: ${entry.id}`);
       continue;
@@ -34,7 +48,8 @@ export function checkExtraVerification(catalog, registry, pins, readCode) {
 export function checkRepositoryExtraVerification() {
   return checkExtraVerification(JSON.parse(fs.readFileSync(path.join(root, 'extra-tracks/catalog.json'), 'utf8')),
     EXTRA_TRACK_IDS, JSON.parse(fs.readFileSync(path.join(root, 'tools/verifier/engine-manifest.json'), 'utf8')).tracks,
-    name => fs.readFileSync(path.join(root, name), 'utf8'));
+    name => fs.readFileSync(path.join(root, name), 'utf8'),
+    JSON.parse(fs.readFileSync(path.join(root, 'events/kodub/trusted-tracks.json'), 'utf8')));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const failures = checkRepositoryExtraVerification();

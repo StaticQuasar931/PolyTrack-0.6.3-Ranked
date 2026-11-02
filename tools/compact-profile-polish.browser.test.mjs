@@ -6,8 +6,8 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=process.env.POLYTRACK_AUDIT_REPO||fileURLToPath(new URL('../',import.meta.url));
 const source=fs.readFileSync(resolve(root,'polytrack_062_patch.js'),'utf8');
-const css=[...source.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)].map(m=>JSON.parse(m[1])).join('\n')+'\n'+fs.readFileSync(resolve(root,'home-ui.css'),'utf8');
-const require=createRequire(import.meta.url);
+const css=[...source.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)].map(m=>JSON.parse(m[1])).join('\n')+'\n'+fs.readFileSync(resolve(root,'home-ui.css'),'utf8')+'\n'+fs.readFileSync(resolve(root,'responsive-ui.css'),'utf8');
+const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 let chromium;try{({chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'));}catch{}
 test('compact profiles keep car spacing, tabs, and close controls inside the card',{skip:!chromium},async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
@@ -29,6 +29,13 @@ test('compact profiles keep car spacing, tabs, and close controls inside the car
       assert.ok(layout.tabContent<=layout.tabWidth+2,'studio tabs overflow at '+label);
       assert.ok(layout.buttons.every(b=>b.content<=b.width+1&&b.height>=44),'readable touch tabs at '+label);
       assert.ok(layout.close.left>=0&&layout.close.right<=width&&layout.close.top>=0&&layout.close.bottom<=height,'close accessible at '+label);
+      for(const scrollTop of [0,120,400]){
+        const gap=await page.locator('.overall-profile-card').evaluate((card,scrollTop)=>{
+          card.scrollTop=scrollTop;
+          return card.querySelector('.profile-dialog-toolbar').getBoundingClientRect().top-card.getBoundingClientRect().top-card.clientTop;
+        },scrollTop);
+        assert.ok(Math.abs(gap)<=1,'toolbar stays flush at '+label+' scroll '+scrollTop+': '+gap);
+      }
       if(width<=620){assert.equal(layout.carMargin,0);assert.equal(layout.carPadding,0);}
       await page.locator('.studio-close-bottom').scrollIntoViewIfNeeded();
       const bottom=await page.locator('.studio-close-bottom').boundingBox();

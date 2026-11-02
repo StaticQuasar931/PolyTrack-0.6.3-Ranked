@@ -28,14 +28,15 @@ test('archive controls and month jumps work offline at desktop and mobile widths
     mountArchiveView(document.querySelector('main'),{periods,loadSnapshot:()=>{window.loads++;},onOpenPeriod:p=>window.opens.push(p.id)});
    });
    await page.getByLabel('Daily',{exact:true}).uncheck();
+   await page.getByText('Browse older dates',{exact:true}).click();
    await page.getByLabel('Archive month',{exact:true}).fill('2026-09');
-   await page.getByRole('button',{name:'Jump to month',exact:true}).click();
+   await page.getByRole('button',{name:'Go',exact:true}).click();
    assert.match(await page.locator('.sq-archive-page-count').innerText(),/Page 2 of 4/);
    assert.equal(await page.locator('details[data-event-kind="daily"]').count(),0);
    await page.getByRole('button',{name:'Next',exact:true}).click();
    assert.match(await page.locator('.sq-archive-page-count').innerText(),/Page 3 of 4/);
    assert.equal(await page.locator('details[data-event-kind="daily"]').count(),0);
-   await page.locator('summary').first().click();
+   await page.locator('details[data-event-kind] > summary').first().click();
    await page.getByRole('button',{name:'Track details / practice',exact:true}).first().click();
    assert.equal(await page.evaluate(()=>window.opens.length),1);assert.equal(await page.evaluate(()=>window.loads),1);
    const metrics=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,

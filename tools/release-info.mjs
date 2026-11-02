@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 263,
+  "number": 264,
   "version": "0.6.3",
-  "revision": 224,
+  "revision": 225,
   "notes": [
-    "Search and Filters stay together across screen sizes.",
-    "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
-    "Offline PB activity survives retries, with clearer profile publishing status."
+    "Extra Tracks now has daily and weekly discovery picks plus dated Kodub weekly selections.",
+    "Route recommendations use available snapshot fields before you open individual tracks.",
+    "Clearer profile participation, flush profile controls, and a roomier event archive."
   ],
-  "preparedAt": "2026-11-02T04:05:29.489Z",
-  "committedAt": "2026-11-02T04:08:26.000Z"
+  "preparedAt": "2026-11-02T04:38:43.970Z",
+  "committedAt": "2026-11-02T04:52:04.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

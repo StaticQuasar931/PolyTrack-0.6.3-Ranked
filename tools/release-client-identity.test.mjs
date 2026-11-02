@@ -40,6 +40,7 @@ function trackHarness(initial = {}, unranked = []) {
     Date: {now: () => 1000000}, trackLoadGeneration: 0, currentTrackLoadState: {},
     invalidateNativePartialReplay: (...args) => replayInvalidations.push(args),
     TRACK_REFRESH_MS: 600000, TRACK_CACHE_SCHEMA: 6, RANK_MODEL: 'model', snapshotTrackStatistics: {},
+    overallTrackSummariesCache: [], trackInfo: id => ({id, type:'custom'}), refreshOpenProfilePlanner: () => {},
     unrankedExtraTrackIds: new Set(unranked), publicSnapshotRetryAt: 0,
     readTrackSnapshotCache: id => cache.get(id) || null,
     writeTrackSnapshotCache: (id, entries, updatedAt, detail) => {
@@ -58,6 +59,7 @@ function trackHarness(initial = {}, unranked = []) {
     snapshotOnlyForNewAccount: () => true, db: () => { throw Error('Unexpected database access'); },
     noteFirebaseQuota: () => {}, localRaceRowsForTrack: () => [], ageLabel: () => 'old', log: () => {}
   });
+  runClientSource(extract('hydratePlannerTrackSummaries'), context);
   runClientSource(section('  const trackCloudRetryAt=new Map();', '  function computeOverallFromRaceRows('), context);
   context.scheduleNativeTrackSnapshotRefresh = id => repaints.push(id);
   return {
@@ -604,4 +606,17 @@ test('metadata does not fetch a board after its native view has closed',async()=
   const h=trackHarness({A:cached('A')});await h.get('A');h.setHost(null);
   receiveTrackStatistics(h,{A:{revision:2,updatedAt:200}});await tick();
   assert.equal(h.loads.length,0);assert.deepEqual(h.repaints,[]);
+});
+
+
+test('metadata wires the production planner hydration helper without taking native selection ownership',async()=>{
+  const id='a'.repeat(64),h=trackHarness({A:cached('A')});await h.get('A');
+  const selection=h.context.getTrackEntries.selection,generation=h.context.trackLoadGeneration,refreshes=[];
+  h.context.refreshOpenProfilePlanner=options=>refreshes.push({options,selection:h.context.getTrackEntries.selection,generation:h.context.trackLoadGeneration});
+  receiveTrackStatistics(h,{[id]:{complete:true,count:12,players:12,totalEntries:12,weight:4,updatedAt:200}});
+  assert.deepEqual(plain(h.context.overallTrackSummariesCache),[{trackId:id,type:'custom',fieldSize:12,weight:4,updatedAt:200,_plannerStatistics:true}]);
+  assert.equal(refreshes.length,1);assert.equal(refreshes[0].options.hydrate,true);
+  assert.equal(refreshes[0].selection,selection);assert.equal(refreshes[0].generation,generation);
+  assert.equal(h.context.getTrackEntries.selection,selection);assert.equal(h.context.trackLoadGeneration,generation);
+  assert.equal(h.loads.length,0);assert.deepEqual(h.repaints,[]);assert.equal(h.loading(),false);
 });

@@ -64,7 +64,7 @@ test('archive cards prefer safe period artwork and expose accessible cached stan
     renderThumbnail: () => { fallbackCalls += 1; const image = root.ownerDocument.createElement('img'); image.alt = 'Fallback'; return image; },
     resolveName: () => 'Past Track'
   });
-  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const card = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId))[0];
   const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
   const image = descendants(card, node => node.tagName === 'IMG')[0];
   assert.equal(card.dataset.eventKind, 'daily');
@@ -87,7 +87,7 @@ test('archive cards reject standings bound to a different event, track, or kind'
     periods: [period], snapshots: new Map([[period.id, wrong]]),
     loadSnapshot: async () => { loads++; return { period: { ...period, trackId: 'b'.repeat(64) }, entries: [] }; }
   });
-  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const card = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId))[0];
   assert.equal(descendants(card, node => node.className === 'sq-event-winner').length, 0);
   card.open = true;
   card.emit('toggle');
@@ -108,7 +108,7 @@ test('unsafe or missing period artwork falls back to bridge thumbnail and snapsh
     loadSnapshot: async () => { snapshotCalls += 1; return { archived: true, entries: [{ accountId: 'a', name: 'Winner', timeMs: 900 }] }; },
     renderThumbnail: () => { fallbackCalls += 1; return fallback; }
   });
-  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const card = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId))[0];
   const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
   assert.equal(descendants(card, node => node.tagName === 'IMG')[0], fallback);
   assert.equal(fallbackCalls, 1);
@@ -128,7 +128,7 @@ test('catalog-only zero counts do not prevent loading a saved event board on dem
     periods: [{ id: 'empty', kind: 'custom', endsAt: 100, racerCount: 0 }],
     loadSnapshot: async () => { snapshotCalls += 1; return { archived:true, racerCount:1, entries: [{accountId:'racer',timeMs:1000}] }; }
   });
-  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const card = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId))[0];
   const summary = descendants(card, node => node.tagName === 'SUMMARY')[0];
   assert.equal(summary.attributes['aria-disabled'], undefined);
   assert.equal(summary.tabIndex, 0);
@@ -186,7 +186,7 @@ test('archive kind checkboxes combine locally and leave unrelated archive kinds 
   mountArchiveView(root, { periods, snapshots: new Map(periods.map(period => [period.id, { entries: [] }])) });
   const inputs = descendants(root, node => node.tagName === 'INPUT' && node.type === 'checkbox');
   assert.deepEqual(inputs.map(input => [input.value, input.checked]), [['daily', true], ['weekly', true], ['kodub', true]]);
-  const visibleKinds = () => descendants(root, node => node.tagName === 'DETAILS').map(node => node.dataset.eventKind);
+  const visibleKinds = () => descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId)).map(node => node.dataset.eventKind);
   assert.deepEqual(visibleKinds(), ['daily', 'weekly', 'kodub', 'custom']);
   inputs[0].checked = false;
   inputs[0].emit('change');
@@ -208,7 +208,7 @@ test('late archive standings do not restore filtered-out events to the summary',
     { id: 'custom', kind: 'custom', endsAt: 100, racerCount: 1 }
   ];
   mountArchiveView(root, { periods, loadSnapshot: () => pendingSnapshot });
-  const weekly = descendants(root, node => node.tagName === 'DETAILS').find(node => node.dataset.archiveEventId === 'weekly');
+  const weekly = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId)).find(node => node.dataset.archiveEventId === 'weekly');
   weekly.open = true;
   weekly.emit('toggle');
   const weeklyFilter = descendants(root, node => node.tagName === 'INPUT').find(node => node.value === 'weekly');
@@ -391,7 +391,7 @@ test('month jumps across all saved periods while preserving search, type and ord
   const {root}=archiveFixture(); let loads=0;
   const periods=Array.from({length:60},(_,i)=>({id:`event-${i}`,kind:i%2?'daily':'kodub',trackName:'Saved track',endsAt:Date.UTC(2026,9,24-i),racerCount:1}));
   mountArchiveView(root,{periods,loadSnapshot:()=>{loads++;}});
-  const all=()=>descendants(root,node=>node.tagName==='DETAILS');
+  const all=()=>descendants(root,node=>node.tagName==='DETAILS' && Boolean(node.dataset.archiveEventId));
   const daily=descendants(root,node=>node.type==='checkbox'&&node.value==='daily')[0];daily.checked=false;daily.emit('change');
   const search=descendants(root,node=>node.type==='search')[0];search.value='saved';search.emit('input');
   const month=descendants(root,node=>node.type==='month')[0];month.value='2026-09';
@@ -409,7 +409,7 @@ test('selection-only and empty archives retain practice actions even without fin
  const {root}=archiveFixture();let opened=0,imported=0,loads=0;
  mountArchiveView(root,{periods:[{id:'selection',kind:'kodub',endsAt:100,historyOnly:true,trackId:'a'.repeat(64),author:'Saved author'}],
    onOpenPeriod:()=>opened++,onImportPeriod:()=>imported++,loadSnapshot:()=>loads++});
- const card=descendants(root,node=>node.tagName==='DETAILS')[0];card.open=true;card.emit('toggle');
+ const card=descendants(root,node=>node.tagName==='DETAILS' && Boolean(node.dataset.archiveEventId))[0];card.open=true;card.emit('toggle');
  for(const button of descendants(card,node=>node.tagName==='BUTTON'))button.emit('click');
  assert.equal(opened,1);assert.equal(imported,1);assert.equal(loads,0);
  assert.match(card.textContent,/no final standings or Event RP were captured/);assert.match(card.textContent,/Saved author/);
@@ -421,7 +421,7 @@ test('Spite-like saved live captures preserve entrant totals without inventing a
   const snapshot = {period, archived:false, racerCount:21,
     entries:Array.from({length:17}, (_,i) => ({accountId:`racer-${i}`, timeMs:1000+i, rp:100-i}))};
   mountArchiveView(root, {periods:[period], snapshots:new Map([[period.id,snapshot]])});
-  const card = descendants(root, node => node.tagName === 'DETAILS')[0];
+  const card = descendants(root, node => node.tagName === 'DETAILS' && Boolean(node.dataset.archiveEventId))[0];
   assert.equal(card.dataset.standingsState, 'non-final');
   assert.equal(descendants(card,node=>node.className==='sq-archive-standings')[0].children[0].className,'sq-archive-standings-status');
   assert.match(card.textContent, /21 event racers/);
@@ -479,7 +479,7 @@ test('non-final empty captures and catalog-only zeros do not assert an empty fin
   assert.match(root.textContent,/Final results are not known/);
   assert.doesNotMatch(root.textContent,/No verified finishes were recorded/);
   mountArchiveView(root,{periods:[{...period,racerCount:0}]});
-  const card=descendants(root,node=>node.tagName==='DETAILS')[0];card.open=true;card.emit('toggle');
+  const card=descendants(root,node=>node.tagName==='DETAILS' && Boolean(node.dataset.archiveEventId))[0];card.open=true;card.emit('toggle');
   assert.match(root.textContent,/No final standings have been loaded/);
 });
 
@@ -487,7 +487,7 @@ test('synchronous snapshot loader failures use the retry message and leave impor
   const {root}=archiveFixture();let loads=0,imports=0;
   mountArchiveView(root,{periods:[{id:'missing',kind:'kodub',endsAt:100}],
     loadSnapshot:()=>{loads++;throw Error('not saved');},onImportPeriod:()=>imports++});
-  const card=descendants(root,node=>node.tagName==='DETAILS')[0];card.open=true;card.emit('toggle');
+  const card=descendants(root,node=>node.tagName==='DETAILS' && Boolean(node.dataset.archiveEventId))[0];card.open=true;card.emit('toggle');
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.match(root.textContent,/could not be loaded/);
   card.open=false;card.emit('toggle');card.open=true;card.emit('toggle');

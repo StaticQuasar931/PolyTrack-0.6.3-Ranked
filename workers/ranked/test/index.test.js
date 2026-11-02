@@ -146,7 +146,7 @@ test('track types use the exact registry instead of treating every hash as commu
 
 test('every ranked catalog track has a pinned reduced-RP native ID', () => {
   const catalog=JSON.parse(readFileSync(new URL('../../../extra-tracks/catalog.json',import.meta.url),'utf8'));
-  const ids=catalog.filter(row=>row.ranked!==false).map(row=>row.trackId);
+  const ids=catalog.filter(row=>row.ranked!==false&&row.archiveImport!==true).map(row=>row.trackId);
   assert.equal(new Set(ids).size,ids.length);
   assert.deepEqual(new Set(ids),EXTRA_TRACK_IDS);
   for(const id of ids){

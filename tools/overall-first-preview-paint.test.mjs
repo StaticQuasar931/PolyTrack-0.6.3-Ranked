@@ -13,7 +13,7 @@ function harness(){
     {animationName:'cosmeticPulse',finish(){assert.fail('unrelated animation altered');}}
   ]}));}});
   const context=vm.createContext({Array,Boolean,Number,Object,Math,overallCategory:'overall',overallPage:0,OVERALL_PAGE_SIZE:15,
-    overallEntriesCache:[],overallLoadState:{},FILTERABLE_RANKED_CATEGORIES:new Set(['overall']),
+    overallEntriesCache:[],overallLoadState:{},overallRacerQuery:'',searchRankingRows:rows=>rows,FILTERABLE_RANKED_CATEGORIES:new Set(['overall']),
     document:{getElementById:id=>id==='overallLeaderboardList'?list:id==='overallLeaderboardPanel'?{setAttribute(){}}:null,querySelectorAll:()=>[]},
     overlaySnapshotRacerDirectory:rows=>rows,setRankedFilterSnapshotMeta:()=>{},updateOverallPager:()=>{},hydrateOverallCarModels:()=>{},
     sortedOverallEntries:()=>context.overallEntriesCache.map(r=>({...r,categoryRank:r.rank})),

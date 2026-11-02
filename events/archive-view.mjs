@@ -287,16 +287,20 @@ export function mountArchiveView(root, options = {}) {
   toolbar.append(intro);
   let jumpToMonth = () => {};
   {
+    const dates = document.createElement('details');
+    dates.className = 'sq-archive-dates';
+    appendText(document, dates, 'summary', '', 'Browse older dates');
     const form = document.createElement('form');
     form.className = 'sq-event-archive-filter';
-    const label = appendText(document, form, 'label', '', 'Jump to month (UTC) ');
+    const label = appendText(document, form, 'label', '', 'Month ');
     const input = document.createElement('input');
     input.type = 'month';
     input.name = 'archive-month';
     input.value = typeof options.month === 'string' ? options.month : '';
     input.setAttribute('aria-label', 'Archive month');
+    input.title = 'Grouped by event end month in UTC. Event dates are shown in your local time.';
     label.append(input);
-    const submit = appendText(document, form, 'button', 'button', 'Jump to month');
+    const submit = appendText(document, form, 'button', 'button', 'Go');
     submit.type = 'submit';
     for (const [text, offset] of [['Previous month', -1], ['Next month', 1], ['All saved events', 0]]) {
       const button = appendText(document, form, 'button', 'button', text);
@@ -313,7 +317,8 @@ export function mountArchiveView(root, options = {}) {
       event.preventDefault();
       if (/^\d{4}-(0[1-9]|1[0-2])$/.test(input.value)) jumpToMonth(input.value);
     });
-    toolbar.append(form);
+    dates.append(form);
+    toolbar.append(dates);
   }
   const filters = document.createElement('fieldset');
   filters.className = 'sq-archive-kind-filters';

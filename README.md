@@ -13,7 +13,7 @@ A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events,
 - **Practice History:** review tracked attempts, finishes, active practice time and improvements. Tracking is local and partial, not a complete lifetime history.
 - **Ghosts and player groups:** choose opponents, save ghost-selection presets, or build friends-only leaderboards with Advanced Filters.
 - **Events:** race Kodub's featured track, daily and weekly events, and Rolling Hills Racer. Each card shows its scoring and timing.
-- **Extra Tracks:** search by progress, tags, rating and difficulty, or sort by snapshot popularity, then import a track to play. Incomplete player counts are marked unknown.
+- **Extra Tracks:** discover daily and weekly picks, revisit dated Kodub weekly selections, or search by tags, progress and difficulty. Sort by player counts from published standings. Unknown counts stay unknown.
 - **Racer Studio:** customize your car, nameplate and profile with supported cosmetics and earned designs.
 
 ## Find Your Way Around
@@ -60,7 +60,9 @@ Please include the loaded release/client revision, browser, available game area 
 
 Before every manual commit or push, follow the [release checklist](docs/manual-release-checklist.md). Release notes, client cache revisions, workflow compatibility and privacy checks belong to the same release. See [CDN publication](docs/cdn-release.md) for publishing and deferred-propagation behavior.
 
-The update screen shows one player-facing update number. Developer details keep the separate cache revision and game version available without presenting them as competing update numbers.
+The update screen shows one player-facing update number, based on the actual Git commit count. Developer details keep the separate cache revision and game version available without presenting them as competing update numbers.
+
+Hosting a copy? Follow the [snapshot-only hosting checklist](docs/snapshot-only-hosting.md). A static deployment does not automatically provide an `/api/ranked` backend. Never enable direct live leaderboard queries just to hide a missing proxy.
 
 Public PB submissions retain the submitting website's origin for private maintenance summaries, not its paths, query strings or referrers. Browser diagnostics estimate only instrumented device activity, not total billed Firebase usage.
 

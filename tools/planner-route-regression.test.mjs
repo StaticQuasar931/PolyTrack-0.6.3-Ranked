@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import {savedEventPlannerRoutes} from './event-planner-model.mjs';
+import {capturedEventRp} from '../workers/ranked/src/events.js';
 const source=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const candidate=source;
 const fragment=id=>{
@@ -83,10 +84,7 @@ test('v2 next target above frozen target uses exact rounded cap threshold',()=>{
   }
 });
 test('ratio and curve numerics match actual Worker eventRp implementation offline',async()=>{
-  const worker=await fs.readFile(new URL('../workers/ranked/src/events.js',import.meta.url),'utf8');
-  const text=worker.slice(worker.indexOf('export function eventRp('),worker.indexOf('export function exhaustedEventLease(')).replace('export ','');
-  const canonical=new Function('periodBinding','demand','L','int','EVENT_SCORING_V2',text+';return eventRp;')(()=>{},()=>{},{timeMs:300000},
-    (n,min,max)=>Number.isSafeInteger(n)&&n>=min&&n<=max,'time-gap-v2');
+  const canonical=capturedEventRp;
   for(const version of ['time-ratio-v1','time-gap-v2'])for(const t of [1,2000,10000,10001,50000,300000]){
     const p={...periods[0],scoringVersion:version,targetMs:10000};assert.equal(score(p,t),canonical(p,t));
     const b={[p.id]:{period:p,updatedAt:at,complete:true,entries:[{accountId:'me',timeMs:t,rp:canonical(p,t)}]}};

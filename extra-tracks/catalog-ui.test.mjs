@@ -351,7 +351,7 @@ test('review status and sorting count ratings and tag edits, not just favorites'
   api.destroy();
 });
 
-test('tag filter reports vocabulary size and disables unused options without hiding them from tag editing', async () => {
+test('tag filter hides unused vocabulary without hiding it from tag editing', async () => {
   const { root, api } = fixture([entry(1, { tags: ['technical', 'difficulty-7', 'slide'] })], {
     getFeedback: () => ({}), onFeedback: () => {}
   });
@@ -359,7 +359,7 @@ test('tag filter reports vocabulary size and disables unused options without hid
   const tagField = cls(root, 'sq-extra-advanced')[0].children[1];
   const select = tag(tagField, 'select')[0];
   const scenic = [...select.children].find(option => option.value === 'scenic');
-  assert.equal(scenic.disabled, true);
+  assert.equal(scenic, undefined, 'unused tags do not clutter discovery');
   assert.equal(cls(tagField, 'sq-extra-filter-count')[0].textContent, `${select.children.length - 1} Tags`);
   assert.equal([...select.children].some(option => option.value === 'slide'), false);
   await click(cls(root, 'sq-extra-more')[0]);
@@ -1300,7 +1300,7 @@ test('Popular shows plain player counts from snapshots, distinguishes zero and u
     '7 players', '7 players', '0 players', 'Player count unknown', 'Player count unknown']);
   await click(cls(root, 'sq-extra-sort-direction')[0]);
   assert.deepEqual(names(), ['Track 01', 'Track 03', 'Track 04', 'Track 02', 'Track 05']);
-  assert.match(sort.getAttribute('aria-description'), /fewest first.*unknown coverage stays last/);
+  assert.match(sort.getAttribute('aria-description'), /fewest first.*unavailable counts stay last/);
   assert.equal(cls(root, 'sq-extra-header')[0].textContent, header);
   api.destroy();
 });
@@ -1352,5 +1352,141 @@ test('popularity labels handle singular, plural and unknown without implying liv
   const toggle = cls(root, 'sq-extra-advanced-toggle')[0];
   assert.equal(toggle.parent, controls);
   assert.equal(toggle.getAttribute('aria-controls'), cls(root, 'sq-extra-advanced')[0].id);
+  api.destroy();
+});
+
+test('featured discovery uses canonical callbacks, snapshot-only coverage and hides during filtering', async () => {
+  const items = [entry(1, {trackId: 'a'.repeat(64), trackPath: 'extra-tracks/track-data/test/a.track'}),
+    entry(2, {trackId: 'b'.repeat(64), trackPath: 'extra-tracks/track-data/test/b.track'})];
+  const played = [];
+  const {root, api} = fixture(items, {onPlay: value => played.push(value), now: () => Date.parse('2026-11-02T12:00:00Z')});
+  api.open();
+  assert.equal(cls(root, 'sq-extra-pick').length, 2);
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Discovery selection/);
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Normal leaderboard/);
+  api.setSnapshotStatistics({generation: 1, statistics: {schemaVersion: 1, tracks: {
+    [items[0].trackId]: {complete: true, players: 9, count: 9, totalEntries: 9}
+  }}});
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /9 players/);
+  const search = tag(cls(root, 'sq-extra-search-field')[0], 'input')[0];
+  search.value = 'Track'; await search.dispatch('input');
+  assert.equal(cls(root, 'sq-extra-featured')[0].hidden, true);
+  search.value = ''; await search.dispatch('input');
+  const pick = cls(root, 'sq-extra-pick')[0];
+  const name = tag(pick, 'h3')[0].textContent;
+  await click(tag(pick, 'button')[0]);
+  assert.equal(played[0], items.find(item => item.name === name));
+  api.destroy();
+});
+
+test('tag counts describe intersections and selected tags stay removable', async () => {
+  const {root, api} = fixture([entry(1, {tags: ['technical', 'scenic']}), entry(2, {tags: ['speed']}), entry(3, {tags: ['technical']})]);
+  api.open();
+  const select = tag(field(root, 'Tag'), 'select')[0];
+  select.value = 'technical'; await select.dispatch('change');
+  const scenic = select.children.find(option => option.value === 'scenic');
+  const speed = select.children.find(option => option.value === 'speed');
+  assert.equal(scenic.textContent, 'Scenic (1)');
+  assert.equal(speed.textContent, 'Speed (0)'); assert.equal(speed.disabled, true);
+  assert.equal(select.children.find(option => option.value === 'technical').disabled, true);
+  assert.equal(cls(root, 'sq-extra-selected-tag').length, 1);
+  await click(cls(root, 'sq-extra-selected-tag')[0]);
+  assert.equal(select.children.find(option => option.value === 'speed').disabled, false);
+  api.destroy();
+});
+
+
+test('one local UTC timer refreshes open spotlights without disturbing cards and cleans up on visibility, close and destroy', async () => {
+  let timestamp = Date.parse('2026-11-01T23:59:59Z'), nextId = 0;
+  const timers = new Map(), oldCallbacks = [];
+  const items = [entry(1, {trackId: 'a'.repeat(64), trackPath: 'extra-tracks/track-data/test/a.track', featuredSubmission: true})];
+  const {document, root, api} = fixture(items, {now: () => timestamp});
+  document.defaultView = {
+    setTimeout(callback, delay) { const id = ++nextId; timers.set(id, {callback, delay}); return id; },
+    clearTimeout(id) { const old = timers.get(id); if (old) oldCallbacks.push(old.callback); timers.delete(id); },
+    addEventListener() {}, removeEventListener() {}
+  };
+  assert.equal(timers.size, 0);
+  api.open(); assert.equal(timers.size, 1);
+  const timer = [...timers.values()][0];
+  assert.equal(timer.delay, 1025);
+  const nextPick=kind=>tag(cls(root, 'sq-extra-pick-'+kind)[0],'time')[0].getAttribute('datetime');
+  assert.equal(nextPick('daily'),'2026-11-02T00:00:00.000Z');
+  assert.equal(nextPick('weekly'),'2026-11-02T00:00:00.000Z');
+  assert.ok(cls(root, 'sq-extra-pick-daily')[0].textContent.includes(new Date(nextPick('daily')).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})));
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Player count unavailable/);
+  const card = cls(root, 'sq-extra-card')[0];
+  timestamp = Date.parse('2026-11-02T00:00:00.025Z');
+  timers.clear(); timer.callback();
+  assert.equal(timers.size, 1);
+  assert.equal(nextPick('daily'),'2026-11-03T00:00:00.000Z');
+  assert.equal(nextPick('weekly'),'2026-11-09T00:00:00.000Z');
+  assert.equal(cls(root, 'sq-extra-card')[0], card, 'open reviews are not rerendered at midnight');
+  document.hidden = true; document.listeners.get('visibilitychange')();
+  assert.equal(timers.size, 0);
+  timestamp = Date.parse('2026-11-04T12:00:00Z');
+  document.hidden = false; document.listeners.get('visibilitychange')();
+  assert.equal(timers.size, 1);
+  assert.equal(nextPick('daily'),'2026-11-05T00:00:00.000Z');
+  api.close(); assert.equal(timers.size, 0);
+  api.open(); assert.equal(timers.size, 1);
+  for (const callback of oldCallbacks) callback();
+  assert.equal(timers.size, 1, 'callbacks from earlier menu sessions cannot restart timers');
+  api.destroy(); assert.equal(timers.size, 0);
+  assert.equal(document.listeners.has('visibilitychange'), false);
+});
+
+
+test('generic practice-only entries state their actual support reason without claiming an oversized challenge or parallel board', () => {
+  const {root, api} = fixture([entry(1, {ranked: false, importOnly: true,
+    rankedUnavailableReason: 'Trusted verification support pending'})]);
+  api.open();
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Practice only.*no RP/);
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Trusted verification support pending/);
+  assert.doesNotMatch(cls(root, 'sq-extra-card')[0].textContent, /Very large|unranked leaderboard|Unranked challenge/);
+  api.destroy();
+});
+
+
+test('native catalog bridge never globally reclassifies archive-alias Kodub identities', async () => {
+  const {default: vm} = await import('node:vm');
+  const source = fs.readFileSync(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
+  const begin = source.indexOf('  async function loadExtraTracksCatalog()');
+  const end = source.indexOf('  async function importExtraTrack(', begin);
+  assert.ok(begin >= 0 && end > begin);
+  const catalog = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8'));
+  const context = {loadKodubTrackHistory: async () => {}, URL, extraTracksCatalogPromise: null, extraTracksBaseUrl: new URL('https://offline.test/extra-tracks/'),
+    extraCatalogRevision: 'offline', unrankedExtraTrackIds: new Set(), extraTrackInfoById: new Map(),
+    fetch: async () => ({ok: true, json: async () => catalog})};
+  const loaded = await vm.runInNewContext(source.slice(begin, end) + '\nloadExtraTracksCatalog()', context);
+  for (const row of catalog.filter(row => row.source === 'Kodub weekly')) {
+    assert.ok(loaded.some(entry => entry.trackId === row.trackId), row.name + ' alias must be admitted by the runtime');
+    assert.equal(context.extraTrackInfoById.has(row.trackId), false, row.name + ' must not register a parallel Extra board');
+    assert.equal(context.unrankedExtraTrackIds.has(row.trackId), false, row.name + ' must retain its original native board classification');
+  }
+  assert.equal(context.unrankedExtraTrackIds.has(catalog.find(row => row.id === 'poly-dip-2').trackId), true, 'legacy oversized challenge retains its separate behavior');
+});
+
+test('archive-alias PB lookup retains the existing normal snapshot board', async () => {
+  const {default: vm} = await import('node:vm');
+  const source = fs.readFileSync(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
+  const begin = source.indexOf('  function extraTrackPersonalBest(');
+  const end = source.indexOf('  async function loadExtraTracksCatalog()', begin);
+  const catalog = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8'));
+  const archive = catalog.find(row => row.archiveImport === true);
+  assert.ok(archive);
+  const context = {entry: archive, extraTrackKnownIds: {}, activeRankedAccountId: () => 'offline-racer',
+    readJsonStorage: () => ({}), unrankedExtraBestKey: 'unranked', extraTrackRaceRows: [],
+    readTrackSnapshotCache: () => ({entries: [{accountId: 'offline-racer', timeMs: 12345, rank: 3}]}),
+    canonicalRaceTimeMs: row => row.timeMs, cleanUserId: value => value};
+  const best = vm.runInNewContext(source.slice(begin, end) + '\nextraTrackPersonalBest(entry)', context);
+  assert.equal(best?.timeMs, 12345, 'archive aliases retain the existing normal-board PB');
+});
+
+
+test('archive alias cards identify their existing normal leaderboard without an unranked claim', () => {
+  const {root, api} = fixture([entry(1, {archiveImport: true})]); api.open();
+  assert.match(cls(root, 'sq-extra-card')[0].textContent, /Kodub archive.*original leaderboard/);
+  assert.doesNotMatch(cls(root, 'sq-extra-card')[0].textContent, /Practice only|Unranked challenge|Very large/);
   api.destroy();
 });

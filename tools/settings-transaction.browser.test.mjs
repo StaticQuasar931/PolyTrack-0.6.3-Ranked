@@ -173,7 +173,7 @@ test('common settings fill every grid row and keep technical controls collapsed'
   await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('.sq-settings-advanced').evaluate(node=>node.open),false);
   assert.equal(await page.locator('#sqRankedSettings>.sq-settings-grid>.sq-setting-row').count(),8);
-  assert.equal(await page.getByRole('button',{name:'Unplayed track counts',exact:true}).getAttribute('aria-pressed'),'false');
+  assert.equal(await page.getByRole('button',{name:'Unplayed track counts',exact:true}).getAttribute('aria-pressed'),'true');
   for(const viewport of [{width:1280,height:800},{width:390,height:844},{width:844,height:390},{width:320,height:568}]){
     await page.setViewportSize(viewport);
     const metrics=await page.locator('#sqRankedSettings>.sq-settings-grid').evaluate(grid=>{
