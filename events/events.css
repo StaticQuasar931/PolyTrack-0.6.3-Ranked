@@ -774,6 +774,10 @@ body.sq-event-active .track-info-ui{background:#1b2854}
 .sq-event-archive-filter{gap:8px 12px}
 .sq-event-archive-filter label{flex-wrap:wrap}
 .sq-event-archive-filter input{min-width:0;max-width:100%;box-sizing:border-box}
+.sq-archive-dates{width:100%;min-width:0;border-top:1px solid #405b91;padding-top:6px}
+.sq-archive-dates>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;color:#c5dcf4;box-sizing:border-box;padding:8px 0}
+.sq-archive-dates>summary:focus-visible{outline:2px solid #8eeaff;outline-offset:2px}
+.sq-events-dialog:has(.sq-archive-view){width:min(1320px,100%)}
 .sq-archive-view{gap:12px}
 .sq-archive-toolbar{align-items:flex-start;gap:10px 18px}
 .sq-archive-kind-filters{flex-wrap:wrap;gap:7px 12px;padding:8px 10px}

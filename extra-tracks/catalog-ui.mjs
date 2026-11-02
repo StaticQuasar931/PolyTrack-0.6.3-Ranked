@@ -1,3 +1,4 @@
+const { featuredPicks } = await import(new URL(`featured-picks.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { normalizeSearchText, searchMatches, searchAliases } = await import(new URL(`../tools/search-text.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { snapshotPopularity } = await import(new URL(`snapshot-popularity.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, reviewTagOptions, tagLabel, reviewExportRow, hasReviewExportData } =
@@ -87,10 +88,12 @@ function searchRelevance(record, query, tokens) {
   return 4;
 }
 
-export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport } = {}) {
+export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport, now = () => Date.now() } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
+  let featuredTimer = null;
+  let featuredTimerGeneration = 0;
   let viewGeneration = 0;
   let returnFocus = null;
   let submissionReturnFocus = null;
@@ -218,6 +221,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const selectedTags = make('div', 'sq-extra-selected-tags');
   selectedTags.setAttribute('aria-label', 'Selected tags');
   tagField.label.append(selectedTags);
+  const tagHint = make('span', 'sq-extra-tag-hint', 'Matches every selected tag');
+  tagField.label.append(tagHint);
   const difficultyField = selectField('Catalog level', [['', 'Any level'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
   const progressLabels = {all: 'All tracks', activity: 'Has my activity', untouched: 'No activity yet', completed: 'Completed', uncompleted: 'Not completed', loaded: 'Imported, not completed'};
   const completionField = selectField('Progress', Object.entries(progressLabels));
@@ -256,6 +261,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   advancedControls.append(reviewedControls);
   controls.append(searchLabel, sortControls, advancedToggle, advancedControls);
   dialog.append(controls);
+
+  const featured = make('section', 'sq-extra-featured');
+  featured.setAttribute('aria-label', 'Daily and weekly discovery picks');
+  featured.setAttribute('aria-description', 'Days start at 00:00 UTC; weeks start Monday at 00:00 UTC. Explicit curated, featured-submission and trusted Kodub candidates are preferred. A catalog fallback is labeled when no curated candidates exist. Racer counts come only from the existing published snapshot.');
+  dialog.append(featured);
 
   const summary = make('div', 'sq-extra-summary');
   const count = make('p', 'sq-extra-count');
@@ -566,7 +576,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const tier = text(entry.tier);
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
     if (entry.featuredSubmission === true) body.append(make('span', 'sq-extra-tier sq-extra-tier-submitted', 'New from players'));
-    if (entry.ranked === false) body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', 'Unranked challenge · no RP or verification'));
+    if (entry.archiveImport === true) body.append(make('span', 'sq-extra-tier', 'Kodub archive · original leaderboard'));
+    if (entry.ranked === false) {
+      body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', entry.rankedUnavailableReason ? 'Practice only · no RP' : 'Unranked challenge · no RP or verification'));
+      if (entry.rankedUnavailableReason) body.append(make('p', 'sq-extra-ranking-note', text(entry.rankedUnavailableReason)));
+    }
     if(entry.packName)body.append(make('span','sq-extra-pack-label',entry.packName));
     const titleRow = make('div', 'sq-extra-title-row');
     titleRow.append(make('h3', '', text(entry.name, 'Untitled track')));
@@ -597,6 +611,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     }
     if (entry.codeModifiedAt && Number.isFinite(Date.parse(entry.codeModifiedAt))) {
       trackDetails.append(make('p', 'sq-extra-code-date', `Modified ${new Date(entry.codeModifiedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}`));
+    }
+    if (entry.weeklyEndsAt && Number.isFinite(Date.parse(entry.weeklyEndsAt))) {
+      body.append(make('p', 'sq-extra-week-date', 'Week ending ' + new Date(entry.weeklyEndsAt).toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'})));
+      trackDetails.append(make('p', 'sq-extra-code-date', 'Kodub weekly end ' + new Date(entry.weeklyEndsAt).toISOString().replace('T', ' ').replace('.000Z', ' UTC')));
     }
     if (entry.submittedAt && Number.isFinite(Date.parse(entry.submittedAt))) {
       trackDetails.append(make('p', 'sq-extra-code-date', `Submitted ${new Date(entry.submittedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}`));
@@ -633,7 +651,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (mineValues.length) { mine.textContent = mineValues.join(' · '); body.append(mine); }
     const level = difficulty(entry);
     if (!reviewed.difficultyCount && level !== null) body.append(make('p', 'sq-extra-difficulty', `Catalog level ${level}/10 · ${DIFFICULTY_LABELS[level]}`));
-    if(entry.ranked===false)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes appear on an unranked leaderboard.'));
+    if(entry.ranked===false&&!entry.rankedUnavailableReason)body.append(make('p','sq-extra-large-warning','Very large track. May run slowly on school devices. Finishes appear on an unranked leaderboard.'));
     const facts = make('p', 'sq-extra-facts');
     facts.append(make('span', best === null ? 'sq-extra-progress' : 'sq-extra-best', best === null ? loaded ? 'Imported, not completed' : 'Not completed' : `Best ${timeLabel(best)}`));
     if (state.sort === 'popular') {
@@ -901,13 +919,85 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     return article;
   }
 
+  function renderFeatured(all = currentEntries()) {
+    if (destroyed) return;
+    const activeKind = [...featured.children].find(tile => tile.contains(document.activeElement))?.getAttribute('data-pick-kind');
+    let focusTarget = null;
+    featured.replaceChildren();
+    featured.hidden = Boolean(state.search || activeAdvancedFilterGroups() || page !== 1);
+    const picks = featured.hidden ? [] : featuredPicks(all, popularityCounts, now());
+    featured.hidden = featured.hidden || !picks.length;
+    if (!featured.hidden) for (const pick of picks) {
+      const tile = make('article', 'sq-extra-pick sq-extra-pick-' + pick.kind);
+      tile.setAttribute('data-pick-kind', pick.kind);
+      const imageUrl = safeUrl(document, pick.entry.thumbnailUrl);
+      if (imageUrl) {
+        const image = make('img'); image.alt = ''; image.loading = 'lazy'; image.decoding = 'async';
+        image.addEventListener('error', () => image.remove(), {once: true}); image.src = imageUrl; tile.append(image);
+      }
+      const content = make('div', 'sq-extra-pick-content');
+      content.append(make('span', 'sq-extra-pick-label', pick.kind === 'daily' ? 'DAILY PICK' : 'WEEKLY PICK'));
+      content.append(make('h3', '', text(pick.entry.name, 'Untitled track')));
+      content.append(make('p', '', 'By ' + displayAuthor(pick.entry)));
+      const coverage = pick.players === null ? 'Player count unavailable' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
+      const selectionNote=make('p', 'sq-extra-pick-note', pick.fallback ? 'Discovery selection' : 'Curated selection');
+      if(pick.fallback)selectionNote.title='Catalog fallback: no curated candidates are available.';
+      content.append(selectionNote);
+      const coverageNote=make('p', 'sq-extra-pick-note', coverage);
+      coverageNote.append(make('span','sq-extra-pick-board-note',' · Normal leaderboard'));
+      coverageNote.title='Player count from published standings, not live plays.';
+      content.append(coverageNote);
+      if (Number.isFinite(pick.quality)) content.append(make('p', 'sq-extra-pick-note sq-extra-pick-grade', 'Published grade ' + pick.quality.toFixed(1) + '/10'));
+      const nextPick=make('time', 'sq-extra-pick-note', 'Next pick ' + new Date(pick.endsAt).toLocaleString(undefined, {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
+      nextPick.setAttribute('datetime',new Date(pick.endsAt).toISOString());
+      nextPick.title=new Date(pick.endsAt).toString();
+      content.append(nextPick);
+      const play = button('Play ' + pick.kind + ' pick', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
+      content.append(play);
+      if (activeKind === pick.kind) focusTarget = play;
+      tile.append(content); featured.append(tile);
+    }
+    focusTarget?.focus({preventScroll: true});
+  }
+
+  function stopFeaturedTimer() {
+    featuredTimerGeneration++;
+    if (featuredTimer !== null) document.defaultView?.clearTimeout?.(featuredTimer);
+    featuredTimer = null;
+  }
+
+  function scheduleFeaturedRefresh() {
+    stopFeaturedTimer();
+    const view = document.defaultView;
+    if (!opened || destroyed || document.hidden || typeof view?.setTimeout !== 'function') return;
+    const timestamp = now();
+    if (!Number.isFinite(timestamp)) return;
+    const generation = featuredTimerGeneration;
+    const day = 86400000;
+    const delay = Math.min(day, Math.max(25, (Math.floor(timestamp / day) + 1) * day - timestamp + 25));
+    featuredTimer = view.setTimeout(() => {
+      if (generation !== featuredTimerGeneration) return;
+      featuredTimer = null;
+      if (!opened || destroyed || document.hidden) return;
+      renderFeatured();
+      scheduleFeaturedRefresh();
+    }, delay);
+  }
+
+  function onFeaturedVisibility() {
+    if (!opened || destroyed) return;
+    if (document.hidden) stopFeaturedTimer();
+    else { renderFeatured(); scheduleFeaturedRefresh(); }
+  }
+
   function render() {
     if (destroyed) return;
     const all = currentEntries();
     syncSortChoices(all);
+    renderFeatured(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
     const description = state.sort === 'popular'
-      ? `Snapshot racers, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Exact counts only; unknown coverage stays last. Not live plays.`
+      ? `Players, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Published counts; unavailable counts stay last.`
       : REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
     sortField.select.title = description;
     if (description) sortField.select.setAttribute('aria-description', description);
@@ -924,26 +1014,34 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     for (const entry of all) { const level = difficulty(entry); if (level !== null) difficultyCounts.set(String(level), (difficultyCounts.get(String(level)) || 0) + 1); }
     const sources = [...sourceCounts.keys()].sort((a, b) => a.localeCompare(b));
     const tags = reviewTagOptions(all);
-    const tagCounts = new Map();
+    const tagCounts = new Map(), matchingTagCounts = new Map();
+    let matchingTagEntries = 0;
     const feedbackById = new Map();
     for (const entry of all) {
       let feedback = {};
       try { feedback = getFeedback?.(entry) || {}; } catch { /* Device feedback is optional. */ }
       feedbackById.set(entry.id, feedback);
-      for (const tag of new Set(effectiveReviewTags(entry, feedback))) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      const effective = new Set(effectiveReviewTags(entry, feedback));
+      for (const tag of effective) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      if (state.tags.every(tag => effective.has(tag))) {
+        matchingTagEntries++;
+        for (const tag of effective) matchingTagCounts.set(tag, (matchingTagCounts.get(tag) || 0) + 1);
+      }
     }
     options(sourceField.select, sources, 'All sources', state.source, sourceCounts);
-    options(tagField.select, tags, `Add a tag (${tags.length} tags)`, '');
+    const availableTags = tags.filter(tag => tagCounts.has(tag) || state.tags.includes(tag));
+    options(tagField.select, availableTags, `Add a tag (${availableTags.length} tags)`, '');
     for (const option of tagField.select.children) if (option.value) {
-      option.textContent = `${tagLabel(option.value)} (${tagCounts.get(option.value) || 0})`;
-      if (!tagCounts.get(option.value)) option.disabled = true;
+      const matches = matchingTagCounts.get(option.value) || 0;
+      option.textContent = `${tagLabel(option.value)} (${matches})`;
+      option.disabled = state.tags.includes(option.value) || matches === 0;
     }
     options(difficultyField.select, DIFFICULTY_LABELS.slice(1).map((_, index) => String(index + 1)), 'Any level', state.difficulty, difficultyCounts);
     // The native select stays keyboard-accessible; the count is visually aligned at its right edge.
     for (const option of difficultyField.select.children) if (option.value) option.textContent = `${option.value} · ${DIFFICULTY_LABELS[Number(option.value)]} (${difficultyCounts.get(option.value) || 0})`;
     filterCount(sourceField, state.source ? sourceCounts.get(state.source) || 0 : all.length);
-    const tagMatches = state.tags.length ? all.filter(entry => state.tags.every(tag => effectiveReviewTags(entry, feedbackById.get(entry.id)).includes(tag))).length : null;
-    filterCount(tagField, tagMatches === null ? `${tags.length} Tags` : `${tagMatches} tracks`);
+    const tagMatches = state.tags.length ? matchingTagEntries : null;
+    filterCount(tagField, tagMatches === null ? `${availableTags.length} Tags` : `${tagMatches} tracks`);
     filterCount(difficultyField, state.difficulty ? difficultyCounts.get(state.difficulty) || 0 : all.length);
     syncAdvancedFilters();
     tagSuggestions.replaceChildren();
@@ -1186,6 +1284,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function close() {
     if (!opened || destroyed) return;
     opened = false;
+    stopFeaturedTimer();
     viewGeneration++;
     clearCardMenu();
     overlay.hidden = true;
@@ -1233,6 +1332,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     overlay.hidden = false;
     showStatus('');
     render();
+    scheduleFeaturedRefresh();
     search.focus();
   }
 
@@ -1407,6 +1507,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   }
   curated.addEventListener('change', () => { state.curated = curated.checked; page = 1; render(); });
   favorites.addEventListener('change', () => { state.favorites = favorites.checked; page = 1; render(); });
+  document.addEventListener('visibilitychange', onFeaturedVisibility);
   document.addEventListener('keydown', onKeydown, true);
   document.addEventListener('click', onCardMenuOutside, true);
   document.addEventListener('scroll', scheduleCardMenuPosition, true);
@@ -1426,6 +1527,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       if (destroyed) return;
       close();
       destroyed = true;
+      stopFeaturedTimer();
+      document.removeEventListener('visibilitychange', onFeaturedVisibility);
       document.removeEventListener('keydown', onKeydown, true);
       document.removeEventListener('click', onCardMenuOutside, true);
       document.removeEventListener('scroll', scheduleCardMenuPosition, true);

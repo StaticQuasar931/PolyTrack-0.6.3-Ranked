@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import {createHash} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,7 +68,14 @@ export function addCodeMetadata(entries) {
   return entries.map(entry => {
     const trustedPath = /^extra-tracks\/track-data\/[a-z0-9-]+\/[a-z0-9-]+\.track$/.test(entry.trackPath || '');
     const unrankedChallenge = entry.ranked === false && /^extra-tracks\/challenges\/[a-z0-9-]+\.track$/.test(entry.trackPath || '');
-    if (!trustedPath && !unrankedChallenge) {
+    let archiveAlias = false;
+    if (entry.archiveImport === true && /^[a-f0-9]{64}$/.test(entry.codeHash || '') &&
+        entry.trackPath === 'events/kodub/assets/' + entry.codeHash + '.track' && entry.ranked !== false) {
+      const trusted = JSON.parse(fs.readFileSync(path.join(root, 'events/kodub/trusted-tracks.json'), 'utf8'));
+      archiveAlias = trusted.some(row => row.trackId === entry.trackId && row.codeHash === entry.codeHash && row.assetPath === 'assets/' + entry.codeHash + '.track') &&
+        createHash('sha256').update(fs.readFileSync(path.join(root, entry.trackPath))).digest('hex') === entry.codeHash;
+    }
+    if (!trustedPath && !unrankedChallenge && !archiveAlias) {
       throw Error(`Invalid track path: ${entry.id}`);
     }
     const code = fs.readFileSync(path.join(root, entry.trackPath), 'utf8').trim();

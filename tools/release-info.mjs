@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 263,
+  "number": 265,
   "version": "0.6.3",
-  "revision": 224,
+  "revision": 226,
   "notes": [
-    "Search and Filters stay together across screen sizes.",
-    "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
-    "Offline PB activity survives retries, with clearer profile publishing status."
+    "Fewer repeated requests when published standings are temporarily unavailable.",
+    "Missing data recovers cleanly when a new snapshot arrives."
   ],
-  "preparedAt": "2026-11-02T04:05:29.489Z",
-  "committedAt": "2026-11-02T04:08:26.000Z"
+  "preparedAt": "2026-11-02T04:53:07.346Z",
+  "committedAt": "2026-11-02T04:54:13.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
