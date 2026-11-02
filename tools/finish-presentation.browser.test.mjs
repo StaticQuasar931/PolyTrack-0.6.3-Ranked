@@ -25,8 +25,10 @@ const globalCSS = vm.runInNewContext(globalLiteral[0], {
   f: '/forced_square.woff2', p: '/forced_square.woff', g: '/forced_square.ttf',
 }, {timeout: 1000});
 const renderer = slice(bundle, 'function qe(e){return Qe(e)+Je(e)}', ';var it,rt,at,st,ot,lt');
-const eventHelpers = slice(eventSource, 'export function eventOrdinal(', 'export function eventTrackName(').replace(/^export /, '')
+const eventHelpers = slice(eventSource, 'export function eventOrdinal(', 'export function eventOwnPlacementPresentation(').replace(/^export /, '')
   + slice(eventSource, '  function syncFinishPlace(){', '  function tick(');
+assert.doesNotMatch(eventHelpers, /^export /m, 'the browser fixture contains only the intended functions');
+new vm.Script(eventHelpers);
 const sheets = ['/events/events.css', '/home-ui.css', '/responsive-ui.css', '/practice-responsive.css', '/help-controls.css'];
 const position = '.time-announcer-ui > .current > .position';
 let browser, server;
@@ -89,14 +91,14 @@ async function openPair(t, {reducedMotion = 'no-preference', enhance = true} = {
       window.eventPlace = {rank: 3, fieldSize: 64, provisional: true};
       if (production) {
         window.finish = await import('/tools/finish-presentation.mjs');
-        window.syncEvent = new Function('place', `
+        window.syncEvent = new Function('place', 'finishOrdinal', `
           const latestFinish = {periodId:'daily',accountId:'fixture'};
           const sessions = {current: () => ({periodId:'daily'})};
           const bridge = {accountId: () => 'fixture'};
           const finishPlace = () => place;
           ${eventHelpers}
           return syncFinishPlace;
-        `)(window.eventPlace);
+        `)(window.eventPlace, window.finish.finishOrdinal);
         if (enhance) window.finish.enhanceFinishAnnouncers(document);
       }
       await document.fonts.ready;
