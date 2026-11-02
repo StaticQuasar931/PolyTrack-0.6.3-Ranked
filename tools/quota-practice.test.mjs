@@ -44,10 +44,14 @@ test('startup and practice preloading request static previews only and honor dat
  const boot=extract('boot');assert.doesNotMatch(boot,/track-preview',id\)\.then/);
 });
 test('unchanged profile saves retain ownership checks but skip a redundant write',()=>{
- const anchor=source.indexOf('const previousLocalName =');const segment=source.slice(anchor,source.indexOf("log('info','[FB202] profiles_public.set ok'",anchor));
+ const segment=extract('syncAcknowledgedPublicIdentity');
  assert.match(segment,/assertCloudOwner\(accountId,ownerUid,data\)/);
  assert.match(segment,/if\(!data\|\|Object.entries\(next\).some/);
  assert.ok(segment.indexOf('assertCloudOwner')<segment.indexOf('Object.entries(next)'));
+ const anchor=source.indexOf('const previousLocalName =');
+ assert.ok(anchor>=0);
+ const caller=source.slice(anchor,source.indexOf("log('info','[FB202] profiles_public.set ok'",anchor));
+ assert.match(caller,/safeName=await syncAcknowledgedPublicIdentity\(d,accountId,safeName,countryCode,carStyle\)/);
 });
 test('practice storage contains no replay, input, name, network or Firebase telemetry',()=>{
  const module=fs.readFileSync(path.join(sourceRoot,'tools/practice-history.mjs'),'utf8');

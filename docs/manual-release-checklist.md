@@ -34,6 +34,7 @@ node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls
 3. Keep browsing, searches, popularity and local recalculation on the loaded snapshot. Reuse exact replay bindings and frozen archives; never trust stale cached ownership or a physics proof for a changed replay.
 4. Confirm document/request budgets, conflict handling, quota backoff, queue durability and preservation of the previous valid snapshot. No capture or verification retries are allowed merely to repair CDN propagation.
 5. Review the one public update number, concise player-facing Help notes and timestamp meaning. Developer identities belong in the closed technical disclosure, not beside the public number.
+6. Test unchanged/no-op and failure paths explicitly. Use `workers/ranked/CLOUD_PATHS.md` to check the complete action, including deferred work. Local log summaries must not double count operation and request summaries or label unknown failed costs as zero.
 
 ## Before Push Or Publication
 

@@ -90,6 +90,7 @@ async function fixture(t, options = {}) {
       const TRACK_CACHE_KEY='track-cache',RECORDING_STORE_KEY='recording-cache',TRACK_REFRESH_MS=60000;
       let eventPending=options.eventPending===true,engineFailed=false;
       const eventUi={isEntered:()=>eventPending,isTrackNavigationCurrent:()=>eventPending};
+      const readLocalRaceRows=()=>[];
       const activeRankedAccountId=()=>localStorage.getItem('polytrack-0.6.2-active-account-id');
       const isElementVisible=node=>!!node?.isConnected&&!node.hidden&&!node.classList.contains('hidden');
       const opponentShortcutBoard=()=>isElementVisible(board)?board:null;
@@ -210,7 +211,7 @@ for (const change of ['account-back', 'track-back', 'selection-back', 'generatio
   });
 }
 
-for (const failure of ['badHash', 'badBinding', 'badStyle', 'badRecording', 'badFrames', 'badState', 'poisonedLocal']) {
+for (const failure of ['badHash', 'badBinding', 'badStyle', 'badRecording', 'badFrames', 'badState']) {
   test(`actual patch excludes ${failure} rather than treating cached payload as valid`, async t => {
     const page = await fixture(t, {allValid: true, [failure]: true});
     await page.locator('.play').click(); await proceed(page).waitFor();
@@ -219,6 +220,20 @@ for (const failure of ['badHash', 'badBinding', 'badStyle', 'badRecording', 'bad
   });
 }
 
+test('poisoned local cache is replaced by exact pinned public replays, never played as cached', async t => {
+  const page = await fixture(t, {allValid: true, poisonedLocal: true});
+  await page.locator('.play').click();
+  await page.waitForFunction(() => stats.races.length === 1);
+  assert.deepEqual(await page.evaluate(() => stats.races[0]), [
+    {recordingId: 1, nickname: 'Racer 1', isSelf: false, frames: 1001},
+    {recordingId: 2, nickname: 'Racer 2', isSelf: false, frames: 1002},
+    {recordingId: 3, nickname: 'Racer 3', isSelf: true, frames: 1003}
+  ]);
+  assert.ok(await page.evaluate(() => stats.prepares.includes(2)), 'the poisoned cache must be checked against the pinned public replay');
+  assert.equal(await chooser(page).count(), 0);
+  assert.equal(await page.evaluate(() => fixture.selected().length), 3);
+  assert.equal(await page.evaluate(() => stats.writes), 0);
+});
 test('engine refresh failure on a chooser cache hit fails closed', async t => {
   const page = await fixture(t); await page.locator('.play').click(); await proceed(page).waitFor();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();

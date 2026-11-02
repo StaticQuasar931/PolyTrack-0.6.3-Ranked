@@ -30,7 +30,8 @@ test('track fallbacks share a local race index and store writes invalidate it',(
   rows.push({trackId:'a',timeMs:90});ctx.localRaceGeneration++;
   assert.equal(ctx.localRaceRowsForTrack('a').length,2);assert.equal(reads,2);
   assert.match(source,/LOCAL_RACE_STORE_KEY\)localRaceGeneration\+\+/);
-  assert.match(extract('writeLocalRaceRows'),/if\(writeJsonStorage\(LOCAL_RACE_STORE_KEY,canonical\.slice\(0,5000\)\)\)\{\s*localRaceGeneration\+\+/);
+  assert.match(extract('writeLocalRaceRows'),/if\(canonical\.length>5000\)return false/);
+  assert.match(extract('writeLocalRaceRows'),/if\(writeJsonStorage\(LOCAL_RACE_STORE_KEY,canonical\)&&localStorage\.getItem\(LOCAL_RACE_STORE_KEY\)===JSON\.stringify\(canonical\)\)\{\s*localRaceGeneration\+\+/);
   assert.equal((extract('writeLocalRaceRows').match(/localRaceGeneration\+\+/g)||[]).length,1);
   assert.match(extract('loadTrackEntries'),/localRaceRowsForTrack\(trackId\)/);
   assert.match(extract('reconcileTrackEntriesWithLocal'),/localRaceRowsForTrack\(id\)/);

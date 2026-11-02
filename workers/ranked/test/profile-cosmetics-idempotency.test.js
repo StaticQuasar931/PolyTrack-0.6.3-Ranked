@@ -63,7 +63,7 @@ async function fixture(t) {
         assert.ok(['0.6.2_race_results','0.6.2_s1_cosmetic_jobs','0.6.2_s1_worker_jobs'].includes(collection));
         if(collection!=='0.6.2_race_results')assert.equal(query.limit,1);
         return [...db].filter(([key,data])=>key.startsWith(collection+'/')&&data[filter.field.fieldPath]===eventDecode(filter.value))
-          .slice(0,query.limit).map(([key,data])=>({document:{name:'projects/test/databases/(default)/documents/'+key,
+          .slice(0,query.limit).map(([key,data])=>({document:{name:'projects/polytrack-052/databases/(default)/documents/'+key,
             fields:eventEncode(data).mapValue.fields,updateTime:versions.get(key)||'2026-10-01T00:00:00Z'}}));
       }
       reads++;readPaths.push(path.slice(1));const data=db.get(path.slice(1));
@@ -106,7 +106,7 @@ test('an equal profile still recreates a missing propagation job',async t=>{
   const f=await fixture(t);f.db.delete(jobPath);
   assert.equal((await f.save()).status,202);
   assert.equal(f.queries(),1);assert.ok(f.db.has(jobPath));
-  assert.equal(f.writes.filter(path=>path===jobPath).length,2);
+  assert.equal(f.writes.filter(path=>path===jobPath).length,1,'empty discovery completes in the initial durable job write');
   assert.equal(f.writes.includes(profilePath),false);assert.equal(f.writes.includes(overallPath),false);
 });
 

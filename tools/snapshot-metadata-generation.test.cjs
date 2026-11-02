@@ -5,10 +5,17 @@ test('generation recovery rewarms metadata and ignores retired warm replies',asy
  const recoveryLibrary=await import('./snapshot-metadata-recovery.mjs');
  const requests=[],deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};let notify;
  const reader=kind=>{const item={kind,...deferred()};requests.push(item);return item.promise;};
- const context={recoveryLibrary,metadataRecovery:null,currentTrackLoadState:null,module:{createPublicSnapshotReader:options=>{notify=options.onGenerationChange;return reader;}},document:{addEventListener(){},querySelector:()=>({content:'./public-snapshots24/'}),getElementById:()=>null},window:{location:{href:'https://example.test/'}},URL,Date,queueMicrotask,
+ let replayInvalidations=0,eventInvalidations=0;
+ const context={recoveryLibrary,metadataRecovery:null,currentTrackLoadState:null,extraTracksUi:null,
+ nativeRecordingEpoch:0,nativeRecordingMemory:new Map([['old',1]]),nativeRecordingRequests:new Map([['old',1]]),nativeRecordingRetryAt:new Map([['old',1]]),
+ invalidateNativePartialReplay:clear=>{assert.equal(clear,true);replayInvalidations++;},invalidateEventSnapshotCaches:()=>{eventInvalidations++;},
+ ptPrepareGatedRecording:()=>{throw Error('Metadata warming must not prepare a recording');},allowSnapshotGenerationChange:()=>true,
+ module:{readSnapshotPublicationMeta:()=>null,createPublicSnapshotReader:options=>{assert.equal(options.baseUrl.href,'https://example.test/public-snapshots24/');notify=options.onGenerationChange;return reader;}},document:{baseURI:'https://example.test/',addEventListener(){},querySelector:()=>({content:'./public-snapshots24/'}),getElementById:()=>null},window:{location:{href:'https://example.test/'}},URL,Date,queueMicrotask,
  profileSnapshotEpoch:0,profileSnapshotResults:new Map(),profileSnapshotRequests:new Map(),profileSnapshotRetryAt:new Map(),profilePlacementRequests:new Map(),profileGuideCache:new Map(),snapshotTrackStatistics:{old:1},snapshotCosmeticEntries:{old:1},snapshotRacerDirectoryEntries:{old:1},publicSnapshotCapturedAt:1,cosmeticEpoch:0,overallCacheGeneration:0,overallEntriesCache:[],overallLoadState:{},updateTrackFreshnessBanner:()=>{},isElementVisible:()=>false,renderEntries:()=>{},decorateNativeLeaderboardCosmetics:()=>{}};
  vm.createContext(context);await vm.runInContext('(async()=>{'+source.slice(start,end).replace(/await import\([^;]+\)/,'recoveryLibrary')+'})()',context);await new Promise(resolve=>setImmediate(resolve));assert.equal(requests.length,4);
  notify();await new Promise(resolve=>setImmediate(resolve));assert.equal(requests.length,8);assert.equal(context.publicSnapshotCapturedAt,0);
+ assert.equal(context.nativeRecordingEpoch,1);assert.equal(replayInvalidations,1);assert.equal(eventInvalidations,1);
+ for(const cache of [context.nativeRecordingMemory,context.nativeRecordingRequests,context.nativeRecordingRetryAt])assert.equal(cache.size,0);
  for(const req of requests.slice(0,4))req.resolve({tracks:{retired:1},entries:{retired:1},capturedAt:'2020-01-01T00:00:00Z'});
  await new Promise(resolve=>setImmediate(resolve));assert.equal(Object.keys(context.snapshotTrackStatistics).length,0);assert.equal(context.publicSnapshotCapturedAt,0);
  for(const req of requests.slice(4))req.resolve({tracks:{current:1},entries:{current:1},capturedAt:'2021-01-01T00:00:00Z'});

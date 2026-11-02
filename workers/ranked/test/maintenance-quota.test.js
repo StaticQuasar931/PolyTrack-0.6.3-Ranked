@@ -157,6 +157,14 @@ test('all three ready tracks remain cheap and complete in one pass',async t=>{
  assert.equal(f.queries.length,1,'only the active profile job query');
 });
 
+test('an older queued identity cannot overwrite a newer published identity or trigger page writes',async t=>{
+ const f=fixture(t,[tracks[0]]);f.ready(tracks[0]);
+ const board=f.data.get(boards+'/'+tracks[0]);Object.assign(board.entries[0],{name:'Newer racer',carStyle:'newer-style',identityUpdatedAt:4000});
+ const before=structuredClone(board);await f.turn();
+ assert.deepEqual(f.data.get(boards+'/'+tracks[0]),before);assert.equal(f.job().active,false);
+ assert.equal(f.commits.flat().some(write=>write.update.name.startsWith(base+boards+'/')),false);
+});
+
 test('an absent racer on a complete board completes as a no-op without rebuilding',async t=>{
  const f=fixture(t,[tracks[0]]);f.ready(tracks[0],[race(tracks[0],1)]);
  await f.turn();assert.equal(f.starts().length,0);assert.equal(f.job().active,false);assert.equal(f.job().processed,1);assert.equal(f.job().changed,0);

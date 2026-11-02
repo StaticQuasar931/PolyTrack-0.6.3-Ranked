@@ -642,6 +642,29 @@ async function runQuery(env, collection, where = null, limit = 500) {
   }] : []);
 }
 
+async function profileTrackPage(env,accountId,after=''){
+  const reference=id=>documentBase(env).replace('https://firestore.googleapis.com/v1/','')+'/'+COLLECTIONS.raceResults+'/'+id;
+  const structuredQuery={from:[{collectionId:COLLECTIONS.raceResults}],limit:100,
+    select:{fields:[{fieldPath:'trackId'}]},
+    where:{fieldFilter:{field:{fieldPath:'accountId'},op:'EQUAL',value:encodeValue(accountId)}},
+    orderBy:[{field:{fieldPath:'__name__'},direction:'ASCENDING'}],
+    ...(after?{startAt:{before:false,values:[{referenceValue:reference(after)}]}}:{})};
+  const payload=await firestoreRequest(env,':runQuery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({structuredQuery})});
+  if(!Array.isArray(payload)||payload.some(item=>!item||typeof item!=='object'||item.error))throw Error('PROFILE_DISCOVERY_PAGE_INVALID');
+  const rows=payload.flatMap(item=>item.document?[item.document]:[]);
+  if(rows.length>100)throw Error('PROFILE_DISCOVERY_PAGE_INVALID');
+  let cursor=after;
+  const tracks=[];
+  for(const row of rows){
+    const id=String(row.name||'').split('/').pop();
+    const trackId=safeText(decodeFields(row.fields||{}).trackId,80);
+    if(!id||id<=cursor||row.name!==reference(id)||!id.startsWith(accountId+'_'))throw Error('PROFILE_DISCOVERY_CURSOR_INVALID');
+    cursor=id;
+    if(/^[A-Za-z0-9_-]{1,80}$/.test(trackId))tracks.push(trackId);
+  }
+  return {tracks:[...new Set(tracks)],cursor,complete:rows.length<100};
+}
+
 async function runChangedResultsQuery(env, timestamp, limit, afterId = '', legacy = false) {
   const reference = id => ({referenceValue:documentBase(env).replace('https://firestore.googleapis.com/v1/','')+'/'+COLLECTIONS.raceResults+'/'+id});
   const structuredQuery = {
@@ -2015,21 +2038,24 @@ async function notifyProfile(request, env, context, uid, body) {
   const signatureWithTimestamp = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(identity))).then((bytes) => base64Url(new Uint8Array(bytes)));
   if (!identityChanged && priorIdentityUpdatedAt > 0) {
     const queued = Array.isArray(existing.pendingTrackIds) ? existing.pendingTrackIds.length : 0;
-    if (!queued || existing.active === true) {
+    if ((!queued&&existing.trackDiscovery?.complete!==false) || existing.active === true) {
       // Scheduled processing continues existing work without re-reading completed tracks.
       return json(request.headers.get('Origin') || '', env, queued ? 202 : 200, { accepted: true, accountId, queued, unchanged: true, betaEntitlement });
     }
   }
-  const results = await runQuery(env, COLLECTIONS.raceResults, { field: 'accountId', value: accountId }, 100);
-  const trackIds = [...new Set(results.map((result) => safeText(result.data.trackId, 80)).filter(Boolean))].slice(0, 100);
+  const page=await profileTrackPage(env,accountId);
+  const trackIds=page.tracks;
   const pendingTrackIds = existing.signature === signatureWithTimestamp
     ? [...new Set([...(existing.pendingTrackIds || []), ...trackIds])]
     : trackIds;
-  const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active: pendingTrackIds.length > 0, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now() },existingDoc?.updateTime||'');
+  const trackDiscovery={version:1,cursor:page.cursor,complete:page.complete};
+  const active=pendingTrackIds.length>0||!page.complete;
+  const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds,trackDiscovery, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now(),...(!active?{completedAt:Date.now(),processed:0,changed:0}:{}) },existingDoc?.updateTime||'');
+  if(!active)return json(request.headers.get('Origin')||'',env,202,{accepted:true,accountId,queued:0,betaEntitlement});
   const backgroundAudit = createFirestoreAudit();
   const backgroundEnv = {...env, __FIRESTORE_READ_AUDIT:backgroundAudit,
     __FIRESTORE_AUDIT_ID:crypto.randomUUID(),__FIRESTORE_AUDIT_SCOPE:'background_profile'};
-  const task = processProfileJob(backgroundEnv, jobId, { kind: 'profile', active: true, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds },written?.updateTime||'')
+  const task = processProfileJob(backgroundEnv, jobId, { kind: 'profile', active: true, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds,trackDiscovery },written?.updateTime||'')
     .catch((error) => console.error('Deferred profile job failed', String(error?.message || error)))
     .finally(() => console.log('Ranked background Firestore reads',JSON.stringify({routeCategory:'profile',
       auditId:backgroundEnv.__FIRESTORE_AUDIT_ID,measurementScope:'background_profile_job_final',...backgroundAudit,billingEstimateOnly:true})));
@@ -2192,6 +2218,13 @@ async function propagateProfileCosmetics(env, accountId, profile, cosmetics, iss
 
 async function processProfileJob(env, jobId, job, updateTime='') {
   const pending = Array.isArray(job.pendingTrackIds) ? [...new Set(job.pendingTrackIds.map((value) => safeText(value, 80)).filter(Boolean))] : [];
+  let discovery=job.trackDiscovery;
+  if(!pending.length&&discovery?.complete===false){
+    if(discovery.version!==1||typeof discovery.cursor!=='string'||!discovery.cursor.startsWith(job.accountId+'_')||discovery.cursor.length>220)throw Error('PROFILE_DISCOVERY_STATE_INVALID');
+    const page=await profileTrackPage(env,job.accountId,discovery.cursor);
+    pending.push(...page.tracks);
+    discovery={version:1,cursor:page.cursor,complete:page.complete};
+  }
   const batch = pending.slice(0, 3), completed = new Set();
   const budget = {fullRebuildAttempted:false};
   let changed = 0;
@@ -2208,7 +2241,8 @@ async function processProfileJob(env, jobId, job, updateTime='') {
   }
   // Rotate unfinished checks behind untouched work without discarding them.
   const remaining = [...pending.slice(batch.length), ...batch.filter(trackId => !completed.has(trackId))];
-  await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, active: remaining.length > 0, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + completed.size, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: remaining.length ? 0 : Date.now() },updateTime);
+  const active=remaining.length>0||discovery?.complete===false;
+  await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, ...(discovery?{trackDiscovery:discovery}:{}),active, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + completed.size, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: active ? 0 : Date.now() },updateTime);
   // Track persistence marks Overall dirty; its isolated cron owns aggregation.
   return { checked: batch.length, changed, remaining: remaining.length };
 }
@@ -2233,6 +2267,9 @@ export async function updateTrackIdentity(env, trackId, identity, budget = {full
 
   const entries = snapshot.entries.slice();
   const existing = entries[index];
+  const priorIdentityTime=Number(existing.identityUpdatedAt),nextIdentityTime=Number(identity.identityUpdatedAt);
+  if(Number.isSafeInteger(priorIdentityTime)&&Number.isSafeInteger(nextIdentityTime)&&nextIdentityTime>0&&priorIdentityTime>nextIdentityTime)
+    return {changed:false,superseded:true,entries:snapshot.entries,revision:Number(snapshot.revision||0)};
   const cosmetics = sanitizeProfileCosmetics(identity.profileCosmetics || {});
   entries[index] = {
     ...existing,
@@ -2254,7 +2291,7 @@ async function processProfileJobs(env) {
   const jobs = await runQuery(env, COLLECTIONS.jobs, { field: 'active', value: true }, 1);
   for (const job of jobs.slice(0,1)) {
     if (job.data.kind !== 'profile') continue;
-    if (!Array.isArray(job.data.pendingTrackIds) || !job.data.pendingTrackIds.length) continue;
+    if ((!Array.isArray(job.data.pendingTrackIds) || !job.data.pendingTrackIds.length)&&job.data.trackDiscovery?.complete!==false) continue;
     await processProfileJob(env, job.id, job.data,job.updateTime);
   }
 }

@@ -5,14 +5,15 @@ const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../polytrack_062_patch.js'),'utf8');
 const start=source.indexOf('  function writeTrackSnapshotCache('),end=source.indexOf('  function reconcileTrackEntriesWithLocal(',start);
 function fixture(){
-  let store={},syncs=0,renders=0;
+  let store={},syncs=0,renders=0,invalidations=0;
   const context=vm.createContext({Date,Number,String,Array,Object,RANK_MODEL:'model',TRACK_CACHE_SCHEMA:6,
     TRACK_CACHE_KEY:'tracks',trackCacheGeneration:0,trackOverlayCache:null,
+    currentTrackLoadState:{trackId:'track'},invalidateNativePartialReplay:clear=>{assert.equal(clear,true);invalidations++;},
     trackSnapshotStore:()=>store,applyCanonicalTrackWeight:(_,rows)=>rows,
     schedulePersonalBestPlacementRender:()=>{renders++;},
     writeJsonStorage:(_,value)=>{store=value;},syncCachedRecordingVerification:()=>{syncs++;}});
   vm.runInContext(source.slice(start,end),context);
-  return {context,board:()=>store.track,syncs:()=>syncs,renders:()=>renders};
+  return {context,board:()=>store.track,syncs:()=>syncs,renders:()=>renders,invalidations:()=>invalidations};
 }
 test('older snapshot cannot replace verified loaded results or their check time',()=>{
   const f=fixture(),live=[{accountId:'racer',timeMs:100,runVerified:true}];
@@ -20,6 +21,7 @@ test('older snapshot cannot replace verified loaded results or their check time'
   assert.equal(f.context.writeTrackSnapshotCache('track',[{accountId:'racer',timeMs:100,runVerified:false}],150,
     {revision:2,source:'public-backup',checkedAt:0}),false);
   assert.equal(f.board().entries[0].runVerified,true);assert.equal(f.board().checkedAt,210);assert.equal(f.syncs(),1);
+  assert.equal(f.invalidations(),1,'only the accepted active-track generation invalidates replay selection');
 });
 test('higher revision wins even with an older timestamp; repeat live check is retained',()=>{
   const f=fixture();

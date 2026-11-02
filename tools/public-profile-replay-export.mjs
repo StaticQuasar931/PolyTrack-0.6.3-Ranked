@@ -462,18 +462,26 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
           throw Error('Firestore document name is outside the ordered profile query');
         }
         cursor = name;
+        let profile;
         try {
           const decoded = decodeDocument(item.document);
           if (!ACCOUNT_ID.test(decoded.id)) progress.profileSkipped++;
-          else {
-            const profile = projectProfile(decoded.id, decoded.fields);
-            if (await atomicWrite(directory, `profiles/${decoded.id}.json`, profile)) {
-              progress.profileCount++;
-              if (!progress.profiles.ids.includes(decoded.id)) progress.profiles.ids.push(decoded.id);
-            }
-            else progress.profileSkipped++;
-          }
+          else profile = projectProfile(decoded.id, decoded.fields);
         } catch { progress.profileSkipped++; }
+        if (profile) {
+          let written;
+          try { written = await atomicWrite(directory, `profiles/${profile.accountId}.json`, profile); }
+          catch (error) {
+            // Retain the saved prefix, but never checkpoint past a failed write.
+            await atomicWrite(directory, 'export-progress.json', progress);
+            throw error;
+          }
+          if (written) {
+            progress.profileCount++;
+            if (!progress.profiles.ids.includes(profile.accountId)) progress.profiles.ids.push(profile.accountId);
+          }
+          else progress.profileSkipped++;
+        }
         progress.profiles.cursor = name;
         progress.profiles.scanned++;
         usedThisRun++;
