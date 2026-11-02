@@ -1,17 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 267,
+    "number": 268,
     "version": "0.6.3",
-    "revision": 228,
+    "revision": 229,
     "notes": [
-      "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
-      "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
-      "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
-      "Complete weekly artwork, readable creator credits and better small-screen menus."
+      "Reliable delivery of recent menu, discovery and changelog improvements.",
+      "Builder contact links and Top Tracks filters are included in the updated menu package."
     ]
   },
   "entries": [
+    {
+      "number": 267,
+      "title": "Builder Contacts and Track Discovery",
+      "commit": "5837d1a48ef4426dc3b8e938e9eea78673de2dd1",
+      "committedAt": "2026-11-02T06:53:01.000Z",
+      "notes": [
+        "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
+        "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
+        "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
+        "Complete weekly artwork, readable creator credits and better small-screen menus."
+      ]
+    },
     {
       "number": 266,
       "title": "Native Finish Regression Coverage",
@@ -206,19 +216,6 @@
         "Holding Space cannot launch twice or activate a racer when the key is released.",
         "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
         "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
-      ]
-    },
-    {
-      "number": 239,
-      "title": "Quota Guard",
-      "commit": "9a25a3b2b59689a7e7174f82aff03d40c1c6c459",
-      "committedAt": "2026-10-30T05:01:20.000Z",
-      "notes": [
-        "Ordinary leaderboard browsing continues to use saved snapshots without Firebase reads.",
-        "Private capture authentication prevents public Worker data requests from triggering Firebase reads.",
-        "Four coordinated daily verification and capture windows replace repeated scheduled checks.",
-        "Replay-binding repairs update the affected racer instead of rescanning a complete leaderboard.",
-        "Verification document budgets and operation accounting make backend costs easier to audit."
       ]
     }
   ],

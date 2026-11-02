@@ -386,6 +386,19 @@ test('lazy browser tools and their shared dependencies remain in the readiness g
   assert.equal(includeReleaseAsset('images/icons/cover1920x1080.png','public-snapshots1',needed),true,'explicitly needed image cannot be trimmed');
 });
 
+test('cache-bound new URL module imports are packaged and checked recursively',async()=>{
+  const f=fixture();
+  f.files.set('polytrack_062_patch.js',Buffer.from("import('./tools/lazy-client.mjs?v=1');"));
+  f.files.set('tools/lazy-client.mjs',Buffer.from("import(new URL('./history.mjs'+new URL(import.meta.url).search,import.meta.url));new URL('../other-base.mjs',externalBase);new URL('https://example.invalid/remote.mjs',import.meta.url);"));
+  f.files.set('tools/history.mjs',Buffer.from('import(new URL(`contact.mjs${new URL(import.meta.url).search}`,import.meta.url));'));
+  f.files.set('tools/contact.mjs',Buffer.from('export const ready=true;'));
+  const plan=await releasePlan({commit:sha,...f}),needed=new Set(plan.files.map(file=>file.path));
+  for(const file of ['tools/history.mjs','tools/contact.mjs']){
+    assert.ok(needed.has(file),file+' is a readiness dependency');
+    assert.equal(includeReleaseAsset(file,'public-snapshots1',needed),true);
+  }
+});
+
 test('the current shipped snapshot fits the CDN tar budget without dropping any snapshot files',{timeout:120000},async t=>{
   const root=fileURLToPath(new URL('../',import.meta.url));
   const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options});

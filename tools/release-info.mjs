@@ -1,15 +1,13 @@
 const releaseInfo = {
-  "number": 267,
+  "number": 268,
   "version": "0.6.3",
-  "revision": 228,
+  "revision": 229,
   "notes": [
-    "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
-    "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
-    "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
-    "Complete weekly artwork, readable creator credits and better small-screen menus."
+    "Reliable delivery of recent menu, discovery and changelog improvements.",
+    "Builder contact links and Top Tracks filters are included in the updated menu package."
   ],
-  "preparedAt": "2026-11-02T06:44:34.202Z",
-  "committedAt": "2026-11-02T06:53:01.000Z"
+  "preparedAt": "2026-11-02T07:04:49.627Z",
+  "committedAt": "2026-11-02T07:05:52.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

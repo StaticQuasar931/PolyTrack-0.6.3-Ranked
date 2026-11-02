@@ -41,6 +41,7 @@ node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls
 1. Immediately before committing, record a whole-second UTC `committedAt` using `stampReleaseCommitTime` from `tools/prepare-release-info.mjs`, and use that exact instant as `GIT_COMMITTER_DATE`. After the authorized commit, run `node tools/check-release-info.mjs` without `--precommit`. It checks the actual manual Git commit date as well as the title, notes and stamped entry files. Never inherit the previous release's commit date or call a preparation date a release date.
 2. Run the offline regression command above plus `node --test --test-concurrency=1 tools/workflow-capture-coordination.test.mjs tools/workflow-release-contract.test.mjs tools/snapshot-retry-workflow.test.mjs`.
 3. Review `git status --short` and the outgoing diff. Keep private evidence outside the repository. Publication, live verification and CDN checks need separate authorization; passing offline tests does not certify propagation or live service health.
+4. For new browser dependencies, inspect the generated CDN readiness graph, including cache-bound `new URL(..., import.meta.url)` imports. Every required module must both be probed and included in the immutable runtime package. Run the real-commit CDN packaging tests before pushing; a green synthetic fixture alone is not sufficient.
 
 ## Existing CI Gate And Capture Exceptions
 

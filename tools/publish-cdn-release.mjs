@@ -63,10 +63,13 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     if (seen.has(file)) continue;
     seen.add(file);
     const source = (await read(file)).toString('utf8');
-    for (const match of source.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)['"](\.[^'"]+)['"]/g)) {
+    // Browser modules preserve the parent's cache revision through new URL().
+    const dependencies=[...source.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)['"](\.[^'"]+)['"]/g),
+      ...source.matchAll(/\bnew\s+URL\s*\(\s*['"`]((?:\.\.?\/)?[a-zA-Z0-9_./-]+\.(?:mjs|js|css|json))[^'"`\n]*['"`](?:\s*\+\s*new\s+URL\s*\(\s*import\.meta\.url\s*\)\.search)?\s*,\s*import\.meta\.url\s*\)/g)];
+    for (const match of dependencies) {
       const relative = match[1].split(/[?#]/)[0];
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(file),relative));
-      if (target.startsWith('../') || !/^[a-zA-Z0-9_./-]+$/.test(target)) throw Error('Unsafe module dependency');
+      if (target.startsWith('../') || !/^[a-zA-Z0-9_./-]+$/.test(target)) throw Error('Unsafe module dependency: '+file+' -> '+relative);
       if (!probes.has(target)) { probes.add(target); if(/\.[cm]?js$/.test(target)) modules.push(target); }
     }
     if (probes.size > 256) throw Error('Runtime graph requires review: too many release probes');
