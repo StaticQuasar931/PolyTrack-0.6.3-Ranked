@@ -245,6 +245,11 @@ html body #overallLeaderboardPanel #overallLeaderboardList {
   flex: 1 1 0 !important; min-height: 0 !important; max-height: none !important;
   box-sizing: border-box !important; min-width: 0; overflow-y: auto !important; overscroll-behavior: contain;
 }
+/* Short windows must scroll the shell when controls exceed its visible height. */
+@media (max-height: 420px) {
+  html body #overallLeaderboardPanel .overall-shell { overflow-y: auto !important; }
+  html body #overallLeaderboardPanel #overallLeaderboardList { min-height: 110px !important; flex-shrink: 0 !important; }
+}
 html body #overallLeaderboardList .overall-entry { animation-duration: .16s !important; }
 html body #overallLeaderboardList .overall-loading::before {
   content: '';

@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 253,
+  "number": 254,
   "version": "0.6.3",
-  "revision": 222,
+  "revision": 223,
   "notes": [
-    "More efficient cloud syncing while preserving saved runs and retry safety.",
-    "Restored scheduled leaderboard updates and reduced background work."
+    "More reliable profile updates and recovery from interrupted cloud publication.",
+    "Ranked controls stay reachable in short windows."
   ],
-  "preparedAt": "2026-11-02T01:41:32.245Z",
-  "committedAt": "2026-11-02T01:54:30.000Z"
+  "preparedAt": "2026-11-02T03:18:03.503Z",
+  "committedAt": "2026-11-02T03:22:01.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
