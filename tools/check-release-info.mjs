@@ -18,7 +18,7 @@ export function parseReleaseInfo(source) {
   if (!match) throw new Error('Missing central release-info record');
   return JSON.parse(match[1]);
 }
-export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, revision, now = Date.now()} = {}) {
+export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, commitCount, manualCommitCount, revision, now = Date.now()} = {}) {
   const errors = [];
   if (!Number.isSafeInteger(info?.number) || info.number < 1) errors.push('Missing positive manual release number.');
   if (!Number.isSafeInteger(info?.revision) || info.revision < 1) errors.push('Missing positive client revision.');
@@ -38,9 +38,12 @@ export function validateReleaseInfo(info, {manual, previousInfo, expectedNext, r
   const latest = manualReleaseNumber(manual?.title);
   if (latest === null) errors.push('Latest non-capture commit needs a numbered manual Git title, such as 224-Help and Release Safety.');
   if (expectedNext !== undefined) {
-    if (!Number.isSafeInteger(expectedNext) || expectedNext !== latest + 1) errors.push('Precommit release must be the next numbered manual release.');
+    const next = commitCount === undefined ? latest + 1 : commitCount + 1;
+    if (commitCount !== undefined && (!Number.isSafeInteger(commitCount) || commitCount < 1 || !Number.isSafeInteger(next))) errors.push('Invalid actual Git commit count.');
+    if (!Number.isSafeInteger(expectedNext) || expectedNext !== next) errors.push('Precommit release must be the next numbered manual release (actual Git commit count + 1).');
     if (info?.number !== expectedNext) errors.push('Central notes do not match the expected next manual release.');
   } else if (info?.number !== latest) errors.push('Central notes are stale or ahead of the latest numbered manual Git title.');
+  if (manualCommitCount !== undefined && (!Number.isSafeInteger(manualCommitCount) || manualCommitCount < 1 || latest !== manualCommitCount)) errors.push('Manual Git title must match the actual commit count at that manual commit.');
   if (previousInfo && JSON.stringify(info?.notes) === JSON.stringify(previousInfo.notes)) errors.push('Update Help notes for every manual commit; changing only the number is not enough.');
   if (revision !== undefined && info?.revision !== revision) errors.push('Central client revision does not match site-version.json.');
   return errors;
@@ -57,12 +60,21 @@ export function checkReleaseInfo({root = fileURLToPath(new URL('../', import.met
   }).filter(commit => !isCaptureCommit(commit));
   const manual = commits[0];
   if (!manual) throw new Error('No manual release commit found.');
+  const countAt = ref => {
+    const value = git('rev-list', '--count', ref).trim();
+    if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) throw new Error('Invalid actual Git commit count.');
+    return Number(value);
+  };
+  const commitCount = expectedNext === undefined ? undefined : countAt('HEAD');
+  // Release 263 migrates from historical title numbering to actual commit counts.
+  const migrated = commits.some(commit => manualReleaseNumber(commit.title) >= 263);
+  const manualCommitCount = expectedNext === undefined && migrated ? countAt(manual.hash) : undefined;
   const previous = expectedNext === undefined ? commits[1] : manual;
   let previousInfo;
   if (previous && git('ls-tree', '--name-only', previous.hash, '--', 'tools/release-info.mjs').trim()) previousInfo = parseReleaseInfo(git('show', previous.hash + ':tools/release-info.mjs'));
   const info = parseReleaseInfo(read('tools/release-info.mjs'));
   const manifest = JSON.parse(read('site-version.json'));
-  const errors = validateReleaseInfo(info, {manual,previousInfo,expectedNext,revision:manifest.revision});
+  const errors = validateReleaseInfo(info, {manual,previousInfo,expectedNext,commitCount,manualCommitCount,revision:manifest.revision});
   if (expectedNext === undefined && info.committedAt !== undefined) {
     const actual = Date.parse(git('show', '-s', '--format=%cI', manual.hash).trim());
     if (!Number.isFinite(actual) || actual !== parseReleasePreparedAt(info.committedAt))

@@ -106,7 +106,7 @@ test('release checklist documents the existing CDN gate and generic preparation 
   assert.match(workflow,/name: Check Help release information\s+run: node tools\/check-release-info\.mjs/);
   assert.ok(workflow.indexOf('name: Check Help release information')<workflow.indexOf('name: Validate immutable assets'));
 });
-function fixture({info=RELEASE_INFO,prior,head=224,captures=0,dirty=false,integrated=true,stamped=true,missing=false,cache=193,installed=193}={}) {
+function fixture({info=RELEASE_INFO,prior,head=224,captures=0,dirty=false,integrated=true,stamped=true,missing=false,cache=193,installed=193,commitCount=head+captures,manualCommitCount=head}={}) {
   const encode=record=>'const releaseInfo = '+JSON.stringify(record)+';';
   const bot=Array.from({length:captures},(_,i)=>`bot${i}\0github-actions[bot]\x0041898282+github-actions[bot]@users.noreply.github.com\0Sync public ranked snapshots`);
   const history=[...bot,`manual\0Human\0human@example.test\0${head}-Manual update`,`prior\0Human\0human@example.test\0${head-1}-Earlier update`].join('\n');
@@ -114,6 +114,7 @@ function fixture({info=RELEASE_INFO,prior,head=224,captures=0,dirty=false,integr
   const runGit=(...args)=>{
     calls.push(args);
     if(args[0]==='log')return history;
+    if(args[0]==='rev-list')return String(args[2]==='HEAD'?commitCount:manualCommitCount)+'\n';
     if(args[0]==='ls-tree')return missing?'':'tools/release-info.mjs\n';
     if(args[0]==='show')return encode(prior||{...info,notes:['Earlier release.']});
     if(args[0]==='diff')return dirty?'tools/release-info.mjs\n':'';
@@ -151,4 +152,69 @@ test('the recorded public commit date must match Git, not preparation or capture
   const next=prepareReleaseInfo('const releaseInfo = '+JSON.stringify(info)+';',
     {number:225,revision:194,preparedAt:'2026-10-02T12:00:00.000Z'});
   assert.equal(parseReleaseInfo(next).committedAt,undefined,'a new release cannot inherit the prior commit date');
+});
+
+
+test('actual commit count permits the 254 to 263 migration and byte-identical retries only',()=>{
+  const source='const releaseInfo = '+JSON.stringify({...RELEASE_INFO,number:254,preparedAt:'2026-10-01T12:00:00.000Z',committedAt:'2026-10-01T13:00:00.000Z'})+';';
+  const input={number:263,revision:194,preparedAt:'2026-10-02T12:00:00.000Z',commitCount:262};
+  const next=prepareReleaseInfo(source,input);
+  assert.equal(parseReleaseInfo(next).number,263);
+  assert.equal(parseReleaseInfo(next).committedAt,undefined);
+  assert.equal(prepareReleaseInfo(source,input),next);
+  assert.equal(prepareReleaseInfo(next,input),next);
+  for(const number of [254,255,262,264,300])assert.throws(()=>prepareReleaseInfo(source,{...input,number}),/actual Git commit count/);
+  for(const commitCount of [null,0,-1,1.5,NaN,Infinity,'262',Number.MAX_SAFE_INTEGER])assert.throws(()=>prepareReleaseInfo(source,{...input,commitCount}),/actual Git commit count/);
+  assert.throws(()=>prepareReleaseInfo(next,{...input,preparedAt:'2026-10-03T12:00:00.000Z'}),/restamped/);
+  assert.throws(()=>prepareReleaseInfo(source,{...input,revision:193}));
+  assert.throws(()=>prepareReleaseInfo(next,{...input,commitCount:263}),/actual Git commit count/);
+});
+
+test('count-aware precommit requires exact HEAD count plus one, not previous title plus one',()=>{
+  const info={...RELEASE_INFO,number:263,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const options={manual:{title:'254-Historical release'},expectedNext:263,commitCount:262};
+  assert.deepEqual(validate(info,options),[]);
+  for(const number of [255,262,264])assert.ok(validate({...info,number},{...options,expectedNext:number}).length);
+  for(const commitCount of [null,0,-1,1.5,NaN,Infinity,'262',Number.MAX_SAFE_INTEGER])assert.ok(validate(info,{...options,commitCount}).length);
+});
+
+test('repository precommit reads actual HEAD count while historical postcommit remains valid',()=>{
+  const prior={...RELEASE_INFO,number:254,notes:['Historical notes.']};
+  const info={...RELEASE_INFO,number:263,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const f=fixture({head:254,commitCount:262,info,prior});
+  assert.deepEqual(checkReleaseInfo({...f,expectedNext:263}).errors,[]);
+  assert.ok(f.calls.some(args=>args.join(' ')==='rev-list --count HEAD'));
+  for(const expectedNext of [255,262,264])assert.ok(checkReleaseInfo({...f,expectedNext}).errors.length);
+  const historical=fixture({head:254,info:{...RELEASE_INFO,number:254,preparedAt:'2026-10-02T12:00:00.000Z'},prior,commitCount:262});
+  assert.deepEqual(checkReleaseInfo(historical).errors,[]);
+  assert.ok(!historical.calls.some(([command])=>command==='rev-list'));
+  assert.throws(()=>checkReleaseInfo({...f,expectedNext:263,runGit:(...args)=>args[0]==='rev-list'?'invalid':f.runGit(...args)}),/commit count/);
+});
+
+test('migrated postcommit checks the manual commit count, not subsequent capture counts',()=>{
+  const info={...RELEASE_INFO,number:263,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const prior={...RELEASE_INFO,number:254,notes:['Historical notes.']};
+  const f=fixture({head:263,info,prior,captures:600,commitCount:863,manualCommitCount:263});
+  assert.deepEqual(checkReleaseInfo(f).errors,[]);
+  assert.ok(f.calls.some(args=>args.join(' ')==='rev-list --count manual'));
+  assert.ok(!f.calls.some(args=>args.join(' ')==='rev-list --count HEAD'));
+  assert.ok(checkReleaseInfo(fixture({head:263,info,prior,manualCommitCount:264})).errors.some(error=>/actual commit count/.test(error)));
+  const downgraded=fixture({head:262,info:{...info,number:262},prior,manualCommitCount:264});
+  assert.ok(checkReleaseInfo({...downgraded,runGit:(...args)=>args[0]==='log'?downgraded.runGit(...args).replace('261-Earlier update','263-Earlier update'):downgraded.runGit(...args)}).errors.some(error=>/actual commit count/.test(error)));
+});
+
+test('preparation CLI supplies the locally measured count to the pure helper',async()=>{
+  const source=await fs.readFile(new URL('./prepare-release-info.mjs',import.meta.url),'utf8');
+  assert.match(source,/spawnSync\('git', \['rev-list', '--count', 'HEAD'\]/);
+  assert.match(source,/prepareReleaseInfo\(source, \{[^\n]*commitCount:Number\(result.stdout.trim\(\)\)/);
+});
+
+
+test('captures advance the next required release and malformed Git counts fail closed',()=>{
+  const prior={...RELEASE_INFO,number:263,notes:['Earlier notes.'],preparedAt:'2026-10-01T12:00:00.000Z'};
+  const info={...RELEASE_INFO,number:272,preparedAt:'2026-10-02T12:00:00.000Z'};
+  const f=fixture({head:263,captures:8,info,prior});
+  assert.deepEqual(checkReleaseInfo({...f,expectedNext:272}).errors,[]);
+  assert.ok(checkReleaseInfo({...f,expectedNext:264}).errors.length);
+  for(const count of ['','0','-1','262.5','262junk','9007199254740992'])assert.throws(()=>checkReleaseInfo({...f,expectedNext:272,runGit:(...args)=>args[0]==='rev-list'?count:f.runGit(...args)}),/commit count/);
 });

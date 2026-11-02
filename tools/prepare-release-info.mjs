@@ -1,13 +1,15 @@
 import {readFileSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {parseReleaseInfo} from './check-release-info.mjs';
 import {parseReleasePreparedAt} from './release-info.mjs';
 
 /** Explicit input makes retries byte-identical. Notes are owned by release finalization. */
-export function prepareReleaseInfo(source, {number, revision, preparedAt}) {
+export function prepareReleaseInfo(source, {number, revision, preparedAt, commitCount}) {
   const info = parseReleaseInfo(source);
-  if (!Number.isSafeInteger(number) || number < info.number || number > info.number + 1 ||
+  if (commitCount !== undefined && (!Number.isSafeInteger(commitCount) || commitCount < 1 || !Number.isSafeInteger(commitCount + 1) || number !== commitCount + 1)) throw new Error('Release number must equal the actual Git commit count + 1.');
+  if (!Number.isSafeInteger(number) || number < info.number || (commitCount === undefined && number > info.number + 1) ||
       !Number.isSafeInteger(revision) || revision < info.revision ||
       (number > info.number && revision <= info.revision)) throw new Error('Use the next release number and a higher client revision, or an identical retry.');
   if (parseReleasePreparedAt(preparedAt) === null) throw new Error('Provide the actual preparation instant as canonical UTC: YYYY-MM-DDTHH:mm:ss.sssZ.');
@@ -34,7 +36,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (parseReleasePreparedAt(preparedAt) > Date.now()) throw new Error('Preparation time cannot be in the future.');
     const path = new URL('./release-info.mjs', import.meta.url);
     const source = readFileSync(path, 'utf8');
-    const next = prepareReleaseInfo(source, {number:Number(number), revision:Number(revision), preparedAt});
+    const result = spawnSync('git', ['rev-list', '--count', 'HEAD'], {cwd:fileURLToPath(new URL('../', import.meta.url)), encoding:'utf8'});
+    if (result.status !== 0 || !/^[1-9]\d*$/.test(result.stdout.trim())) throw new Error('Cannot read the actual local Git commit count.');
+    const next = prepareReleaseInfo(source, {number:Number(number), revision:Number(revision), preparedAt, commitCount:Number(result.stdout.trim())});
     if (next !== source) writeFileSync(path, next);
     console.log(`Prepared release ${number}, client ${revision}. Notes preserved: finalize all release notes and run the precommit guard. This is not a Git publication timestamp.`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }

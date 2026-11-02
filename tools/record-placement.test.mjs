@@ -183,11 +183,15 @@ test('account switches recompute identity against the same accepted snapshot', (
 test('settings default enabled/all and tolerate unavailable storage', () => {
   const values = new Map();
   const storage = { getItem: key => values.get(key) ?? null };
-  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: true, policy: 'all', showPlayerCounts: false });
+  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: true, policy: 'all', showPlayerCounts: true });
   values.set('polytrack-0.6.2-pb-podiums', '0');
   values.set('polytrack-0.6.2-pb-podiums-verified-only', '1');
-  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: false, policy: 'verified', showPlayerCounts: false });
-  assert.deepEqual(readRecordPlacementSettings({ getItem() { throw Error('blocked'); } }), { enabled: true, policy: 'all', showPlayerCounts: false });
+  assert.deepEqual(readRecordPlacementSettings(storage), { enabled: false, policy: 'verified', showPlayerCounts: true });
+  values.set('polytrack-0.6.3-unplayed-player-counts', '0');
+  assert.equal(readRecordPlacementSettings(storage).showPlayerCounts, false);
+  values.set('polytrack-0.6.3-unplayed-player-counts', '1');
+  assert.equal(readRecordPlacementSettings(storage).showPlayerCounts, true);
+  assert.deepEqual(readRecordPlacementSettings({ getItem() { throw Error('blocked'); } }), { enabled: true, policy: 'all', showPlayerCounts: true });
 });
 
 test('patch cache adapter requires explicit completeness and matching declared size', () => {
@@ -397,7 +401,7 @@ test('DOM renderer does not badge No record or a stale displayed PB time', () =>
   };
   const api = installRecordPlacement({ autoUpdate: false, document, tracks: [{ id: TRACK, name: 'Track A' }], expectedAlgorithmVersion: 'rank-v1' });
   const snapshots = { [TRACK]: snapshot([row('me', 1000)], 4) };
-  api.update({ accountId: 'me', snapshots });
+  api.update({ accountId: 'me', snapshots, showPlayerCounts: false });
   assert.equal(record.child, null);
   record.textContent = '0:00.999';
   api.update({ accountId: 'me', snapshots });

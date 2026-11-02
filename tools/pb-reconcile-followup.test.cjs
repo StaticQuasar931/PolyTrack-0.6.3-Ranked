@@ -3,6 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {createHash}=require('node:crypto');
+const replayHash=value=>createHash('sha256').update(value).digest('hex');
 
 const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'utf8');
 
@@ -56,7 +58,7 @@ test('returning online or to the page resumes PB sync without polling hidden tab
 });
 
 test('actual reconcile rotates past 16 permanently denied rows and uploads row 17 within batch limit',async()=>{
-  const rows=Array.from({length:17},(_,i)=>({trackId:`t${String(i).padStart(2,'0')}`,timeMs:10000+i,replayHash:`h${i}`,replay:i===16?'replay':''}));
+  const rows=Array.from({length:17},(_,i)=>({trackId:`t${String(i).padStart(2,'0')}`,timeMs:10000+i,replayHash:replayHash(i===16?'replay':`replay-${i}`),replay:i===16?'replay':''}));
   const read=[];let uploaded=0;
   const h=productionHarness({rows,readDoc:async id=>{read.push(id);if(!id.endsWith('_t16')){const e=Error('row denied');e.code='permission-denied';throw e;}return docMissing();}});
   h.mirrorRaceResult=async(url,payload)=>{uploaded++;h.rememberConfirmedLocalPb('acct',payload);return {saved:true};};
@@ -103,7 +105,7 @@ test('global quota raised during a row stops the current batch',async()=>{
 });
 
 test('unchanged missing-replay rows wait for changed local evidence without confirmation',async()=>{
-  const row={trackId:'t',timeMs:10000,replayHash:'same',replay:''};
+  const row={trackId:'t',timeMs:10000,replayHash:replayHash('previous replay'),replay:''};
   const h=productionHarness({rows:[row],readDoc:async()=>docMissing()});
   h.mirrorRaceResult=async(url,payload)=>{h.rememberConfirmedLocalPb('acct',payload);return {saved:true};};
   const first=await h.reconcileLocalPersonalBestsToCloud('acct');
@@ -113,7 +115,7 @@ test('unchanged missing-replay rows wait for changed local evidence without conf
   const readCount=h.timers.size;
   const notRetried=await h.reconcileLocalPersonalBestsToCloud('acct');
   assert.equal(notRetried.deferred,true,'cooldown prevents unchanged missing-replay rereads');
-  row.replay='now available';row.replayHash='changed';
+  row.replay='now available';row.replayHash=replayHash(row.replay);
   h.advance(5*60*1000);
   const second=await h.reconcileLocalPersonalBestsToCloud('acct');
   assert.equal(second.checked,1);
@@ -122,7 +124,7 @@ test('unchanged missing-replay rows wait for changed local evidence without conf
 });
 
 test('restored stored replay makes same-signature waiting PB eligible immediately',async()=>{
-  const row={trackId:'t',timeMs:10000,replayHash:'unchanged-hash',uploadId:'upload-1'};
+  const row={trackId:'t',timeMs:10000,replayHash:replayHash('restored replay'),uploadId:'upload-1'};
   let storedRecording='';let reads=0,uploads=0;
   const h=productionHarness({rows:[row],readDoc:async()=>{reads++;return docMissing();},readRecordingStore:()=>storedRecording?[{recording:storedRecording}]:[]});
   h.mirrorRaceResult=async(url,payload)=>{uploads++;assert.equal(payload.recording,'restored replay');h.rememberConfirmedLocalPb('acct',payload);return {saved:true};};

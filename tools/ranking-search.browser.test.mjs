@@ -62,12 +62,15 @@ test('native Overall search finds later-page racers with no remote reads and fit
         const r=input.getBoundingClientRect(),header=input.closest('.overall-top').getBoundingClientRect();
         const host=input.closest('#overallFilterPanel'),label=input.closest('label'),filter=host.querySelector('[data-personal-filter-button]');
         return {left:r.left,right:r.right,width:r.width,headerLeft:header.left,headerRight:header.right,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth,
-          hostWidth:host.getBoundingClientRect().width,labelWidth:label.getBoundingClientRect().width,filterWidth:filter?.getBoundingClientRect().width};
+          hostWidth:host.getBoundingClientRect().width,labelWidth:label.getBoundingClientRect().width,filterWidth:filter?.getBoundingClientRect().width,
+          searchBox:label.getBoundingClientRect().toJSON(),filterBox:filter?.getBoundingClientRect().toJSON()};
       });
       await page.screenshot({path:`${output}/${width}x${height}.png`});
       await fs.writeFile(`${output}/${width}x${height}.json`,JSON.stringify(geometry));
       assert.ok(geometry.width>=70&&geometry.left>=geometry.headerLeft-1&&geometry.right<=geometry.headerRight+1,JSON.stringify({width,height,geometry}));
       assert.ok(geometry.scroll<=geometry.client+1);
+      assert.ok(Math.abs(geometry.searchBox.y-geometry.filterBox.y)<=12,'search and Filters share a row: '+JSON.stringify({width,height,geometry}));
+      assert.ok(geometry.filterBox.x>=geometry.searchBox.right&&geometry.filterBox.x-geometry.searchBox.right<=12,'Filters immediately follows search');
     }
     // Search and paging do not trigger any remote backend request.
     assert.ok(remote.slice(remoteBeforeSearch).every(url=>!url.includes('firestore.googleapis.com')&&!url.includes('.workers.dev')),'search never falls back to a live database or Worker read');

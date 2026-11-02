@@ -1063,7 +1063,7 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
 #ui .track-selection-ui .tracks-container>.wrapper:has(>.community-track-versions)>.sq-featured-events{
  width:calc(100% - 32px)!important;max-width:none!important;margin:0 16px 20px!important;
 }
-#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){object-fit:cover!important;object-position:left bottom!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){object-fit:contain!important;object-position:left bottom!important}
 
 /* Let enlarged text grow without disturbing the original centered card layout. */
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record,

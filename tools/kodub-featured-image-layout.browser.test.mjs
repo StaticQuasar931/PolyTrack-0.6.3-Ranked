@@ -109,17 +109,17 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    const visibleFraction=Math.min((r.width/r.height)/(after.natural.width/after.natural.height),(after.natural.width/after.natural.height)/(r.width/r.height));
    assert.ok(visibleFraction>0,label+': artwork remains visible at enlarged text sizes');
    if(textScale===1&&width>1200)assert.ok(visibleFraction>=.5,label+': larger Kodub panel preserves its artwork');
-   assert.equal(after.image.fit,'cover',label+': never distort artwork');
+   assert.equal(after.image.fit,'contain',label+': show the complete artwork without cropping or distortion');
    assert.equal(after.image.position,'0% 100%',label+': bottom-left anchor');
    assert.ok(r.width>0&&r.height>0,label+': visible artwork');
    assert.ok(inside(r,after.card)&&inside(after.info,after.card),label+': art and details inside card');
-   assert.ok(Math.abs(r.x-after.card.x)<1&&Math.abs(r.y-after.card.y)<1,label+': no top/left bezel');
+   assert.ok(Math.abs(r.x-after.card.x)<1,label+': artwork starts at the left edge');
    const stacked=after.info.y>=r.bottom-1;
    if(stacked){
     assert.ok(Math.abs(r.width-after.card.width)<1,label+': full-width narrow art');
     assert.ok(Math.abs(r.bottom-after.info.y)<1,label+': no art/details gap');
    }else{
-    assert.ok(Math.abs(r.bottom-after.card.bottom)<1,label+': art fills panel height without bars');
+    assert.ok(r.bottom<=after.card.bottom+1,label+': complete artwork stays within its panel');
     assert.ok(Math.abs(r.right-after.info.x)<1,label+': no art/details gap');
     assert.ok(r.width>=after.card.width*.2&&r.width<=after.card.width*.7,label+': landscape artwork and details have balanced space');
    }
@@ -175,7 +175,8 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
     await page.locator('.sq-kodub-weekly>.button>img').evaluate(async(img,src)=>{img.className='thumbnail';img.src=src;await img.decode();},svg(w,h));
     const fallback=await measure(page);
     assert.equal(fallback.image.fit,'contain','map fallbacks must never crop');
-    assert.deepEqual(fallback.image.rect,original.image.rect,'fallback native ratio does not dictate layout');
+    assert.equal(fallback.image.rect.width,original.image.rect.width,'fallback uses the same artwork column');
+    assert.ok(inside(fallback.image.rect,fallback.card),'complete fallback stays inside its card');
     await page.screenshot({path:path.join(directory,'fallback-'+width+'x'+height+'-'+w+'x'+h+'.png'),fullPage:true});
    }
    await page.locator('.sq-kodub-weekly>.button>img').evaluate(async(img,src)=>{img.className='cover';img.src=src;await img.decode();},cover);

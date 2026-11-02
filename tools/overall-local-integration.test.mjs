@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {gzipSync} from 'node:zlib';
+import {createHash} from 'node:crypto';
+const replayHash=value=>createHash('sha256').update(value).digest('hex');
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
 import {createLocalOverallController} from './overall-local-controller.mjs';
 import {computeOverall,trackWeightParts} from '../workers/ranked/src/index.js';
@@ -29,10 +31,10 @@ test('confirmed-PB hook acknowledges only a new confirmed signature',async()=>{
     localPbSyncSignature:row=>`${row.timeMs}|${row.replayHash}`,canonicalRaceTimeMs:row=>row.timeMs,
     acknowledgeLocalOverallPb:async(...args)=>acks.push(args),Date});
   vm.runInContext(fn('rememberConfirmedLocalPb'),ctx);
-  const row={trackId,timeMs:10000,replayHash:'first'};
+  const row={accountId:'b',trackId,timeMs:10000,replayHash:replayHash('first replay')};
   ctx.rememberConfirmedLocalPb('b',row);ctx.rememberConfirmedLocalPb('b',row);await Promise.resolve();
   assert.equal(acks.length,1);assert.equal(acks[0][0],'b');assert.equal(acks[0][1],row);assert.ok(acks[0][2]>0);
-  ctx.rememberConfirmedLocalPb('b',{...row,timeMs:9000,replayHash:'second'});await Promise.resolve();assert.equal(acks.length,2);
+  ctx.rememberConfirmedLocalPb('b',{...row,timeMs:9000,replayHash:replayHash('second replay')});await Promise.resolve();assert.equal(acks.length,2);
 });
 
 function hooksFixture(){
@@ -57,7 +59,7 @@ function hooksFixture(){
     renderEntries:()=>{},overallCategory:'overall',overallLoadState:{status:'snapshot',serverUpdatedAt:100000},publicSnapshotCapturedAt:100000,
     rankedManualRefreshFailed:false,rankedFreshnessTimer:0,publicSnapshotReaderPromise:Promise.resolve(reader),guestAccountId:'',
     cleanUserId:String,escapeHtml:String,canonicalRaceTimeMs:row=>row.timeMs,readLocalRaceRows:()=>[],formatRp:value=>Number(value).toFixed(3),ageLabel:()=> '1h ago',
-    readOverallSnapshotCache:()=>({source:'public-backup'}),applyRankedRefreshCooldown:()=>{},
+    readOverallSnapshotCache:()=>({source:'public-backup'}),applyRankedRefreshCooldown:()=>{},cancelPublishedSnapshotUpdate:()=>{},
     isElementVisible:node=>Boolean(node&&node.style.display!=='none'),
     loadControllerModule:async()=>({createLocalOverallController})});
   const start=source.indexOf('  let localOverallController=null'),end=source.indexOf('  let publicSnapshotReaderPromise=null;',start);
