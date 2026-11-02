@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 252,
+  "number": 253,
   "version": "0.6.3",
-  "revision": 221,
+  "revision": 222,
   "notes": [
-    "Menus stay aligned after phone rotation and Safari toolbar changes.",
-    "Clearer home credits and track lists that fit the visible screen."
+    "More efficient cloud syncing while preserving saved runs and retry safety.",
+    "Restored scheduled leaderboard updates and reduced background work."
   ],
-  "preparedAt": "2026-10-31T02:17:09.835Z",
-  "committedAt": "2026-10-31T02:34:08.000Z"
+  "preparedAt": "2026-11-02T01:41:32.245Z",
+  "committedAt": "2026-11-02T01:54:30.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

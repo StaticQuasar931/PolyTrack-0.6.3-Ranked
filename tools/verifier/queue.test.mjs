@@ -608,14 +608,18 @@ test('workflow keeps all expensive steps due-gated and credentials restricted to
     'Allow the pinned browser sandbox on Ubuntu','Verify queued runs']) {
     const step=workflow.split('- name: '+name)[1]?.split('      - name:')[0];
     assert.ok(step,name);
-    assert.match(step,/if: steps.queue.outputs.has_work == 'true'/,name);
+    const condition=step.match(/^        if: (.+)$/m)?.[1].trim();
+    const expected=['Install pinned verifier dependencies','Verify queued runs'].includes(name)
+      ? "steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'"
+      : "steps.queue.outputs.has_work == 'true'";
+    assert.equal(condition,expected,name);
   }
   const publisherAt=workflow.indexOf('  publish_snapshots:');
   assert.ok(publisherAt>0);
   const processing=workflow.slice(0,publisherAt),publisher=workflow.slice(publisherAt);
   assert.equal((processing.match(/FIREBASE_VERIFIER_SERVICE_ACCOUNT:/g)||[]).length,2);
   assert.equal((publisher.match(/FIREBASE_VERIFIER_SERVICE_ACCOUNT:/g)||[]).length,1);
-  assert.match(publisher,/needs.verify.result == 'success' && \(\(github.event_name == 'schedule'/);
+  assert.match(publisher,/needs.verify.result == 'success' && \(needs.verify.outputs.verification_authority == 'snapshot-native' \|\| \(github.event_name == 'schedule'/);
   assert.match(publisher,/needs.verify.outputs.queue_has_work == 'false'/);
   assert.match(publisher,/\|\| needs.verify.outputs.snapshot_needed == 'true'/);
   assert.match(publisher,/uses: \.\/\.github\/workflows\/publish-verified-snapshots\.yml/);

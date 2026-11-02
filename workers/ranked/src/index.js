@@ -56,9 +56,12 @@ export function scheduledIntervalDue(scheduledAt, intervalMs) {
 }
 
 export function maintenanceWindowAllows(cron,scheduledAt,mode) {
-  if(mode!=='four-window')return true;
+  if(mode!=='four-window'&&mode!=='coordinated')return true;
   if(!Number.isSafeInteger(scheduledAt)||scheduledAt<0)return false;
   const date=new Date(scheduledAt),minute=date.getUTCMinutes();
+  // Fixed-read-time builds must keep draining across capture-window boundaries.
+  if(mode==='coordinated'&&cron==='*/5 * * * *')return minute%5===0;
+  if(mode==='coordinated'&&cron==='2-59/5 * * * *')return minute%5===2;
   if(![0,8,12,20].includes(date.getUTCHours()))return false;
   if(cron==='* * * * *')return minute<45;
   if(cron==='*/2 * * * *')return minute===0;
@@ -66,6 +69,11 @@ export function maintenanceWindowAllows(cron,scheduledAt,mode) {
   if(cron==='1-59/5 * * * *')return minute===41;
   if(cron==='2-59/5 * * * *')return [2,7,12].includes(minute);
   return false;
+}
+
+export function canonicalDiscoveryDue(scheduledAt,mode){
+  if(mode==='coordinated')return maintenanceWindowAllows('*/5 * * * *',scheduledAt,'four-window');
+  return scheduledIntervalDue(scheduledAt,RECONCILE_SCAN_INTERVAL_MS);
 }
 const OVERALL_INCOMPLETE_RETRY_LIMIT = 1;
 const MAX_REPLAY_LENGTH = 10000;
@@ -2849,12 +2857,14 @@ export default {
       // Overall budgets prior Firestore work plus its own Firestore/Cache calls.
       // Optional maintenance stays in a separate cron invocation.
       const maintenance=_event.cron==='2-59/5 * * * *';
-      const tasks=maintenance?[[processCosmeticJobs,processProfileJobs,resumeOrCreateMigration][Math.floor(Number(_event.scheduledTime||Date.now())/300000)%3]]:[bootstrapSnapshotVerification,reconcileCanonicalChanges];
+      const bootstrapDue=env.BACKGROUND_MAINTENANCE_MODE!=='coordinated'||maintenanceWindowAllows('*/5 * * * *',_event.scheduledTime,'four-window');
+      const tasks=maintenance?[[processCosmeticJobs,processProfileJobs,resumeOrCreateMigration][Math.floor(Number(_event.scheduledTime||Date.now())/300000)%3]]:
+        [...(bootstrapDue?[bootstrapSnapshotVerification]:[]),reconcileCanonicalChanges];
       for (const task of tasks) {
         try {
           if (task === reconcileCanonicalChanges) {
             const scheduledAt = Number(_event.scheduledTime);
-            const scanResults = scheduledIntervalDue(scheduledAt, RECONCILE_SCAN_INTERVAL_MS);
+            const scanResults = canonicalDiscoveryDue(scheduledAt,env.BACKGROUND_MAINTENANCE_MODE);
             await task(env, {scanResults});
           }else{const result=await task(env);if(result?.paged)return;}
         }

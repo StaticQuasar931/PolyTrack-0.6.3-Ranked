@@ -56,6 +56,11 @@ async function checkDailyBaseline(jitterMs, mode) {
     assert(audit.documentReadEstimate < 200, 'bounded quiet maintenance must stay below 200 reads/day');
     return {reads:audit.documentReadEstimate, calls:calls.length};
   }
+  if(mode==='coordinated'){
+    assert.equal(audit.writeEstimate||0,0);
+    assert(audit.documentReadEstimate<800,'continuation-safe quiet non-event work stays below 800 reads/day');
+    return {reads:audit.documentReadEstimate,calls:calls.length};
+  }
   assert.equal(audit.documentReadEstimate, 1440);
   assert.equal(audit.writeEstimate || 0, 0);
   assert.equal(calls.length, 1440);
@@ -76,6 +81,10 @@ for (const jitter of [0,39338,59999]) {
   test('four-window non-event baseline is bounded with cron jitter '+jitter+'ms',async()=>{
     const result=await checkDailyBaseline(jitter,'four-window');
     assert.deepEqual(result,{reads:104,calls:104});
+  });
+  test('coordinated non-event baseline bounds discovery without pausing builds '+jitter+'ms',async()=>{
+    const result=await checkDailyBaseline(jitter,'coordinated');
+    console.log('COORDINATED_BASELINE',JSON.stringify(result));
   });
 }
 

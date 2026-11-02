@@ -22,6 +22,7 @@
     "WRITE_IP_RATE_LIMIT_REQUIRED": "true",
     "PUBLIC_READ_RATE_LIMIT_REQUIRED": "true",
     "PUBLIC_FIRESTORE_READ_MODE": "capture-only",
+    "BACKGROUND_MAINTENANCE_MODE": "coordinated",
     "FIRESTORE_OPERATION_LOGGING": "true",
     "MULTIPLAYER_ENABLED": "true",
     "EVENTS_ENABLED": "true",

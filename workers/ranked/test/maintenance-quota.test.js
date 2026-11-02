@@ -41,9 +41,9 @@ function fixture(t,pending=tracks.slice(0,3)) {
   fail(stage,error='FIRESTORE_503'){f.failure={stage,error};},
   job:()=>data.get(jobKey),
   starts:()=>calls.filter(call=>call.path.startsWith('/'+TRACK_BUILD_JOBS+'/capacity_track_')),
-  async turn(){
+  async turn(scheduledTime=420000){
    const offset=calls.length;let completion;
-   worker.scheduled({cron:'2-59/5 * * * *',scheduledTime:420000},f.env,{waitUntil:task=>{completion=task;}});
+   worker.scheduled({cron:'2-59/5 * * * *',scheduledTime},f.env,{waitUntil:task=>{completion=task;}});
    await completion;
    const turn=calls.slice(offset);
    assert.ok(turn.filter(call=>call.path.startsWith('/'+TRACK_BUILD_JOBS+'/capacity_track_')).length<=1,'at most one fallback attempt, even when it fails');
@@ -95,6 +95,18 @@ test('three missing tracks share one fallback per invocation and eventually comp
  await f.turn();assert.equal(f.starts().length,1);assert.deepEqual(f.job().pendingTrackIds,tracks.slice(0,3));assert.equal(f.job().active,true);assert.equal(f.job().processed,0);
  for(let i=0;i<6&&f.job().active;i++)await f.turn();
  assert.equal(f.starts().length,3);assert.equal(f.job().active,false);assert.deepEqual(f.job().pendingTrackIds,[]);assert.equal(f.job().processed,3);
+});
+
+test('coordinated identity publication resumes a late build across the capture-window boundary',async t=>{
+ const trackId=tracks[0],f=fixture(t,[trackId]);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';f.addRows(trackId,101);
+ await f.turn(Date.UTC(2026,10,1,0,52));
+ assert.equal(f.job().active,true);assert.equal(f.data.has(boards+'/'+trackId),false);
+ await f.turn(Date.UTC(2026,10,1,1,7));
+ assert.equal(f.data.get(boards+'/'+trackId)?.sourceComplete,true,'continuation outside the discovery window must publish');
+ const beforeIdentity=f.starts().length;
+ await f.turn(Date.UTC(2026,10,1,1,22));
+ assert.equal(f.job().active,false);assert.equal(f.starts().length,beforeIdentity,'ready publication needs no further capacity-build access');
+ assert.equal(f.data.get(boards+'/'+trackId).entries.find(row=>row.accountId==='racer').name,identity.name);
 });
 
 test('a pending multi-page build stays queued through publication, then applies identity without rebuilding',async t=>{

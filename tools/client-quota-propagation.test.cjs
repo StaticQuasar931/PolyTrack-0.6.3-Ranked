@@ -47,22 +47,25 @@ function harness(){
   localStorage.setItem('name','Racer');
   localStorage.setItem('polytrack-0.6.2-active-account-id','acct');
   localStorage.setItem('polytrack-0.6.2-last-active-car-style','style');
+  const user={uid:'uid'};
   const context={
     Date:Clock,Intl,Error,EventTarget,Event,MessageEvent,
     CloseEvent:class extends Event{constructor(type,init){super(type);Object.assign(this,init);}},
     crypto:{randomUUID:()=> 'socket'},setTimeout,localStorage,
-    window:{firebase:{auth:()=>({currentUser:{uid:'uid'}})}},
+    window:{firebase:{auth:()=>({currentUser:user})}},
     FIREBASE_QUOTA_PAUSE_KEY:'quota',firestorePromise:Promise.resolve(database),firebaseRetryAt:0,
     assertOnlineCompatibility:()=>{},observeFirestore:value=>value,
     ensureFirebaseAuthApp:()=>assert.fail('Unexpected SDK bootstrap'),loadScript:()=>assert.fail('Unexpected SDK load'),
     readJsonStorage:(key,fallback)=>storage.has(key)?JSON.parse(storage.get(key)):fallback,
     writeJsonStorage:(key,value)=>{storage.set(key,JSON.stringify(value));return true;},
     COLLECTIONS:{profilesPublic:'profiles',moderationNames:'moderation',multiplayerMessages:'messages',multiplayerSessions:'sessions'},
-    manualModerationCache:new Map(),MODERATION_REFRESH_MS:600000,sanitizeDisplayName:value=>value,
+    manualModerationCache:new Map(),manualModerationRequests:new Map(),MODERATION_REFRESH_MS:600000,sanitizeDisplayName:value=>value,
+    activeRankedAccountId:()=>localStorage.getItem('polytrack-0.6.2-active-account-id'),
     LAST_ACTIVE_NAME_KEY:'name',guestAccountId:'acct',parsePayload:value=>value,
     accountIdFromPayload:async()=> 'acct',getOrCreateDefaultDisplayName:()=> 'Racer',
     enforceSafeDisplayName:async value=>value,__pt062NormalizeStyle:value=>value,getDefaultCarStyle:()=> 'style',
     setLastKnownName:()=>{},__pt062RememberStyle:()=>{},assertCloudOwner:()=>{},
+    invalidateNativePartialReplayAccount:()=>{},
     claimCloudProfileName:async(_d,_tx,_id,_uid,_previous,name)=>name,
     showPublicNameAdjustment:()=>{},showCloudOwnerConflict:()=>logs.push(['owner-conflict']),
     updateOverallIdentity:async()=>{},scheduleLocalPbCloudReconcile:()=>{},snapshotOnlyForNewAccount:()=>false,
@@ -70,7 +73,8 @@ function harness(){
     log:(...args)=>logs.push(args)
   };
   vm.createContext(context);
-  for(const name of ['firebaseQuotaRetryAt','firebaseQuotaPaused','noteFirebaseQuota','db','runFirebaseTransaction','resolveManualNameOverride','mockPayload'])vm.runInContext(extract(name),context);
+  vm.runInContext('let profileIdentityPostSequence=0,profileIdentityPostTail=Promise.resolve(),profileIdentityAcknowledgement=null;',context);
+  for(const name of ['firebaseQuotaRetryAt','firebaseQuotaPaused','noteFirebaseQuota','db','runFirebaseTransaction','resolveManualNameOverride','syncAcknowledgedPublicIdentity','mockPayload'])vm.runInContext(extract(name),context);
   const start=source.indexOf('  class FirebaseSignalingSocket'),end=source.indexOf('  FirebaseSignalingSocket.CONNECTING',start);
   assert.ok(start>=0&&end>start);
   vm.runInContext(source.slice(start,end)+'\nthis.Socket=FirebaseSignalingSocket;',context);
@@ -120,7 +124,7 @@ for(const stage of ['read','commit']){
 test('moderation quota failure retains fallback but pauses new SDK callers',async()=>{
   const h=harness();h.failures.get=failure('resource-exhausted');
   assert.equal(await h.moderation(),'Racer');assert.equal(h.stats.gets,1);
-  assert.equal(h.context.manualModerationCache.get('acct').name,'Racer');
+  assert.equal(h.context.manualModerationCache.get('acct').name,'','cache only replacements, not a caller-specific fallback');
   assert.ok(h.expiry()>h.context.Date.now());
   const before=counts(h);
   await assert.rejects(h.moderation(),error=>error.code==='local-quota-cooldown');
@@ -232,7 +236,7 @@ function pbHarness(rows){
     denyUploads:()=>{denied=false;uploadDenied=true;}
   };
 }
-function pb(trackId='denied',timeMs=10000){return {trackId,timeMs,replayHash:'hash',replay:'replay'};}
+function pb(trackId='denied',timeMs=10000){return {accountId:'acct',ownerUid:'uid',trackId,timeMs,replayHash:'a'.repeat(64),replay:'replay'};}
 
 test('permission-denied row retries exponentially from five minutes to a six-hour cap',async()=>{
   const h=pbHarness([pb()]);
@@ -346,8 +350,8 @@ test('actual mirror catch propagates only permission-denied while retaining loca
   assert.ok(start>=0&&end>start);
   for(const code of ['permission-denied','unavailable','resource-exhausted']){
     const c={error:failure(code),accountId:'acct',trackId:'track',timeMs:10000,frames:10000,name:'Racer',carStyle:'style',
-      uploadId:1,priorLocal:null,dailyRecorded:false,raceRow:{},replayData:'r',
-      noteFirebaseQuota:()=>{},recordDailyActivity:()=>{},addLocalRaceRow:()=>{},writeRecordingStore:()=>{},
+      uploadId:1,priorLocal:null,dailyRecorded:false,raceRow:{},replayData:'r',canonicalCommitted:false,localSaved:false,
+      noteFirebaseQuota:()=>{},recordDailyActivity:()=>{},addLocalRaceRow:()=>true,writeRecordingStore:()=>{},
       retainTrackSnapshotAfterLocalPb:()=>{},log:()=>{},showCloudOwnerConflict:()=>{},
       scheduleLocalPbCloudReconcile:()=>{},firebaseQuotaPaused:()=>false};
     const result=await vm.runInNewContext('(async()=>{'+source.slice(start,end)+'})()',c);
