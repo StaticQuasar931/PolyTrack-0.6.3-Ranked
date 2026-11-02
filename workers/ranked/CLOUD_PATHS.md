@@ -27,7 +27,28 @@ Profile discovery uses a field projection to reduce transferred replay data, not
 
 This reports only operations present in that sample. It cannot reconstruct historical billing totals, observe direct client SDK activity, or prove that no other deployment consumes quota. Collect representative successful traffic after reset before claiming project-wide savings.
 
-## Known Larger Work
+## Missing-Data Cooldowns
+
+Exact public `snapshot_not_ready` responses now share the existing bounded
+isolate-memory cache for at most ten seconds, even if edge cache writes fail.
+The authorization gate still runs before cache access. Other 404 bodies,
+authentication failures, quota errors and server failures are not cached here.
+Successful publication retires the memory scope so an older in-flight miss
+cannot refill it. The existing 64-entry/2 MiB limits remain unchanged.
+
+In the mocked repeated-miss test, eight identical requests require one document
+lookup instead of eight during that cache window. This is a path-specific test,
+not an estimate of total daily Firebase savings. It adds no Firestore writes.
+
+A missing static full-package index shares a thirty-second client cooldown
+across track lookups. Changing package generation clears the cooldown. This
+reduces repeated CDN requests, not demonstrated Firestore document reads.
+
+These fixes do not revoke direct Firestore access from an old copied client.
+Current canonical-list rules must be audited separately from Worker caches;
+a historical export is not proof of today's deployed rules.
+
+## Remaining Boundaries
 
 Client caching is not an abuse boundary: modified clients can bypass their own local suppression. Existing ownership rules, capture authentication and Worker rate limits remain essential, but legitimate owner-scoped direct SDK access is still a nonzero quota surface. Preventing all quota exhaustion under arbitrary traffic requires a separately designed trusted admission/budget boundary, not an Origin check or a hidden API key. This follow-up does not claim denial-of-service immunity or provision another service.
 

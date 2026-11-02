@@ -2,7 +2,7 @@ import {createPublicMissGuard} from './public-miss-guard.js';
 import {verifyCaptureRead} from './capture-read-auth.js';
 import {enqueueCanonicalPublication} from './coalesced-pb-publication.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
-import {recallPublicResponse, rememberPublicResponse} from './public-response-memory.js';
+import {recallPublicResponse, rememberPublicResponse, publicResponseCacheScope, clearPublicResponseMemory} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
@@ -513,7 +513,11 @@ async function prepareOverallSnapshotDocuments(env, prior, data) {
 }
 async function writeOverallSnapshot(env,prior,data){
   const documents=await prepareOverallSnapshotDocuments(env,prior,data);
-  if(documents.length===1&&!prior?.updateTime)return writeDocument(env,COLLECTIONS.overall,'main',documents[0].data);
+  if(documents.length===1&&!prior?.updateTime){
+    const result=await writeDocument(env,COLLECTIONS.overall,'main',documents[0].data);
+    if(result!=null)clearPublicResponseMemory(env);
+    return result;
+  }
   return commitDocuments(env,documents);
 }
 
@@ -556,7 +560,7 @@ async function writeDocument(env, collection, id, data, updateTime = '') {
 
 // Snapshot and dirty metadata must commit together; conflicts are retried by the caller/job.
 async function commitDocuments(env, documents) {
-  return firestoreRequest(env, ':commit', {
+  const result = await firestoreRequest(env, ':commit', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({writes: documents.map(({collection,id,data,prior,unconditional=false,remove=false}) => ({
       [remove ? 'delete' : 'update']: remove
@@ -565,6 +569,10 @@ async function commitDocuments(env, documents) {
       ...(unconditional ? {} : {currentDocument: prior ? {updateTime: prior.updateTime} : {exists: false}})
     }))})
   });
+  if (result != null && documents.some(({collection}) => [COLLECTIONS.track, COLLECTIONS.overall, PUBLIC_PAGE_COLLECTION, PUBLIC_MANIFEST_COLLECTION].includes(collection))) {
+    clearPublicResponseMemory(env);
+  }
+  return result;
 }
 
 export async function migrateExtraVerificationQueues(env, ids = EXTRA_TRACK_IDS) {
@@ -2459,11 +2467,12 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
   const missGuard=publicMissGuard(env),missClient=(request.headers.get('CF-Connecting-IP')||'unknown').slice(0,128);
   if(!missGuard.permits(missClient))return rateLimited(origin,env);
   const key = cacheKey.url;
-  let load = publicSnapshotLoads.get(key);
+  const scope = publicResponseCacheScope(env), loads = scope.pending;
+  let load = loads.get(key);
   if (!load) {
     load = (async () => {
       const release = () => {
-        if (publicSnapshotLoads.get(key) === load) publicSnapshotLoads.delete(key);
+        if (loads.get(key) === load) loads.delete(key);
       };
       try {
         let pageReady = true;
@@ -2476,8 +2485,9 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         if (!snapshot) {
           missGuard.missing(missClient);
           const response = json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10');
+          await rememberPublicResponse(env, key, response, Date.now(), scope);
           if (cache) {
-            const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
+            const fill = Promise.resolve().then(() => scope === publicResponseCacheScope(env) ? cache.put(cacheKey, response.clone()) : undefined)
               .catch(() => {})
               .finally(release);
             if (context.waitUntil) {
@@ -2503,9 +2513,9 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
           : overallData;
         const response = json(origin, env, 200, data, collection === PUBLIC_PAGE_COLLECTION
           ? 'public, max-age=86400, immutable' : 'public, max-age=300, stale-while-revalidate=30');
-        await rememberPublicResponse(env, cacheKey.url, response);
+        await rememberPublicResponse(env, cacheKey.url, response, Date.now(), scope);
         if (cache && context.waitUntil) {
-          const fill = Promise.resolve().then(() => cache.put(cacheKey, response.clone()))
+          const fill = Promise.resolve().then(() => scope === publicResponseCacheScope(env) ? cache.put(cacheKey, response.clone()) : undefined)
             .catch(() => {})
             .finally(release);
           try { context.waitUntil(fill); } catch { void fill; }
@@ -2518,7 +2528,7 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         throw error;
       }
     })();
-    publicSnapshotLoads.set(key, load);
+    loads.set(key, load);
   }
   return (await load).clone();
 }

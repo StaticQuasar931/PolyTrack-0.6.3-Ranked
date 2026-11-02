@@ -482,8 +482,9 @@ test('public read limiter errors fail closed before Firestore', async () => {
 });
 
 test('missing public snapshots share reads, cache briefly, and recover after expiry', async () => {
-  const prior = globalThis.caches, stored = new Map(), pending = [];
-  let reads = 0, permits = 0, now = 0, published = false, finishFill;
+  const prior = globalThis.caches, stored = new Map(), pending = [], originalNow = Date.now;
+  let reads = 0, permits = 0, now = originalNow(), published = false, finishFill;
+  const start = now;Date.now = () => now;
   globalThis.caches = { default: {
     match: async key => {
       const item = stored.get(key.url);
@@ -512,15 +513,15 @@ test('missing public snapshots share reads, cache briefly, and recover after exp
     assert.equal(first.status, 404);
     assert.deepEqual(await concurrent.json(), { error: 'snapshot_not_ready' });
     assert.equal(reads, 1, 'missing snapshot remains coalesced until cache fill settles');
-    assert.equal(permits, 2, 'cold callers receive independent admission checks');
+    assert.equal(permits, 1, 'the second completed request is a memory hit while edge fill waits');
     finishFill();
     await Promise.all(pending.splice(0));
     published = true;
-    now = 9999;
+    now = start + 9999;
     assert.equal((await handleRequest(request(), env, context)).status, 404);
     assert.equal(reads, 1);
-    assert.equal(permits, 2, 'cached absence does not consume additional school-network permits');
-    now = 10001;
+    assert.equal(permits, 1, 'cached absence does not consume additional school-network permits');
+    now = start + 10001;
     const fresh = await handleRequest(request(), env, context);
     assert.equal(fresh.status, 200);
     assert.equal((await fresh.json()).revision, 12);
@@ -529,13 +530,14 @@ test('missing public snapshots share reads, cache briefly, and recover after exp
   } finally {
     if (finishFill) finishFill();
     await Promise.all(pending);
+    Date.now = originalNow;
     if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior;
   }
 });
 
 test('missing snapshot cache-write failures retain 404 and allow a later retry', async () => {
-  const prior = globalThis.caches, pending = [];
-  let reads = 0;
+  const prior = globalThis.caches, pending = [], originalNow = Date.now;
+  let reads = 0, now = originalNow();Date.now = () => now;
   globalThis.caches = { default: {
     match: async () => null,
     put: async () => { throw Error('synthetic cache failure'); }
@@ -550,8 +552,10 @@ test('missing snapshot cache-write failures retain 404 and allow a later retry',
       assert.equal((await handleRequest(request(), env, context)).status, 404);
       await Promise.all(pending.splice(0));
     }
-    assert.equal(reads, 2);
-  } finally { if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
+    assert.equal(reads, 1, 'memory preserves the miss when edge writes fail');
+    now += 10000;assert.equal((await handleRequest(request(), env, context)).status, 404);
+    await Promise.all(pending.splice(0));assert.equal(reads, 2, 'expiry permits a fresh read');
+  } finally { Date.now = originalNow;if (prior === undefined) delete globalThis.caches; else globalThis.caches = prior; }
 });
 
 test('irrelevant query parameters cannot force repeat public snapshot reads', async () => {

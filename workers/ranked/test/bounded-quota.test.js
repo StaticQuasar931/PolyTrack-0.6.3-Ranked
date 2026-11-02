@@ -128,14 +128,16 @@ test('no-op optimization does not bypass ownership, authentication or write admi
 });
 
 function edgeCache() {
-  const previous = globalThis.caches, stored = new Map();
-  let now = 0;
+  const previous = globalThis.caches, stored = new Map(), originalNow = Date.now;
+  let now = originalNow();
+  // Both cache layers must observe the same advancing test clock.
+  Date.now = () => now;
   globalThis.caches = {default:{
     match:async key => {const row = stored.get(key.url); return row && row.until > now ? row.response.clone() : null;},
     put:async (key, response) => stored.set(key.url, {response:response.clone(),
       until:now + Number(/max-age=(\d+)/.exec(response.headers.get('Cache-Control'))[1]) * 1000})
   }};
-  return {advance:ms => {now += ms;}, restore() {if (previous === undefined) delete globalThis.caches; else globalThis.caches = previous;}};
+  return {advance:ms => {now += ms;}, restore() {Date.now = originalNow;if (previous === undefined) delete globalThis.caches; else globalThis.caches = previous;}};
 }
 
 for (const kind of ['overall','track']) for (const miss of ['manifest','range','page']) test(kind + ' ' + miss + ' misses are negative cached and expire', async () => {

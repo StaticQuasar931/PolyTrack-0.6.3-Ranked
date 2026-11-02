@@ -84,6 +84,8 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       tracked=request.catch(error=>{
         if(compact){if(bootstrapRequest===tracked)bootstrapRequest=null;}else if(indexRequest===tracked)indexRequest=null;
         if(compact&&optimizedIndex&&!fastIndexDisabled&&requestedGeneration===generation){fastIndexDisabled=true;return loadPackageIndex(true);}
+        // An absent full index affects every logical path, not just the first track.
+        if(!compact&&(error.status===404||error.status===410))transientFetchErrors.add(error);
         if(requestedGeneration===generation&&isTransientFailure(error))indexFailures.set(compact,{error,retryAt:now()+SHORT_RETRY_MS});
         throw error;
       });
