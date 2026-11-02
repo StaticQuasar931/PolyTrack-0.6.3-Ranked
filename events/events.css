@@ -1068,6 +1068,20 @@ body.sq-event-active .track-info-ui:not(.sq-event-layout-ready) .side-panel>.opp
  width:calc(100% - 32px)!important;max-width:none!important;margin:0 16px 20px!important;
 }
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){object-fit:contain!important;object-position:left bottom!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info>.author{
+ min-width:0!important;max-width:100%!important;white-space:normal!important;overflow-wrap:anywhere!important;overflow:visible!important;
+}
+/* Let artwork use spare width before sacrificing detail-column readability. */
+@media(min-width:701px) and (min-height:501px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
+  grid-template-columns:minmax(0,1.65fr) minmax(160px,1fr)!important;
+  align-items:center!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){
+  min-height:0!important;max-height:none!important;align-self:stretch!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{min-width:0!important;padding:14px!important;overflow-wrap:anywhere}
+}
 
 /* Let enlarged text grow without disturbing the original centered card layout. */
 #ui .track-selection-ui .sq-featured-events .sq-permanent-track .record,
@@ -1271,4 +1285,7 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
  html:root body .track-info-ui>.leaderboard-ui.sq-event-board>.button-wrapper>[data-personal-filter-button]{grid-column:2!important;grid-row:1!important}
  html:root body .track-info-ui>.leaderboard-ui.sq-event-board>.button-wrapper>.only-verified{grid-column:3!important;grid-row:1!important}
  html:root body .track-info-ui>.leaderboard-ui.sq-event-board>.button-wrapper>.sq-event-find-me.icon-button.first{grid-column:4!important;grid-row:1!important;min-width:44px!important;width:44px!important}
+}
+@media(max-width:340px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{padding-inline:8px!important}
 }

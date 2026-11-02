@@ -16,6 +16,12 @@ A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events,
 - **Extra Tracks:** discover daily and weekly picks, revisit dated Kodub weekly selections, or search by tags, progress and difficulty. Sort by player counts from published standings. Unknown counts stay unknown.
 - **Racer Studio:** customize your car, nameplate and profile with supported cosmetics and earned designs.
 
+## For Track Builders
+
+Open **Extra Tracks > Builder program** to share your own track or request a creator-credit review. Include a track code or link, original authorship evidence, and contributor credits. Ports must credit the original creators. Featuring is reviewed, not automatic.
+
+Use the [community Discord](https://discord.gg/jW2az4AQUH), or [public email backup](mailto:StaticQuasar931Games@gmail.com) when needed. The in-game checklist downloads locally and does not use Firebase or send a submission.
+
 ## Find Your Way Around
 
 Open **Help & Controls** for searchable shortcuts and your current key bindings.

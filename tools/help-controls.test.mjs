@@ -5,6 +5,11 @@ import {createRequire} from 'node:module';
 import vm from 'node:vm';
 import {HELP_BINDING_IDS,helpKeyMatches,readHelpBindings,createHelpControlGroups,searchHelpControls,renderHelpControls,bindHelpControls} from './help-controls.mjs';
 
+async function historyBrowserBundle() {
+  const source = await fs.readFile(new URL('./release-history.mjs',import.meta.url),'utf8');
+  return 'const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
+}
+
 const flat=groups=>groups.flatMap(group=>group.rows);
 const find=(groups,id)=>flat(groups).find(row=>row.id===id);
 
@@ -287,7 +292,7 @@ test('Help actual patch modal boundary blocks native keys and preserves keyboard
   const patch=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
   const main=await fs.readFile(new URL('../main.bundle.js',import.meta.url),'utf8');
   const help=await fs.readFile(new URL('./help-controls.mjs',import.meta.url),'utf8');
-  const release=await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8');
+  const release=await historyBrowserBundle()+await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+(await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8')).replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'');
   const focusStart=patch.indexOf('  let overallDialogReturnFocus=null;');
   const focusEnd=patch.indexOf('  /* Keep the select',focusStart);
   const keyStart=patch.indexOf("    panel.addEventListener('keydown', (event)=>{");
@@ -303,7 +308,7 @@ test('Help actual patch modal boundary blocks native keys and preserves keyboard
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const requests=[];await page.route('**/*',route=>{requests.push(route.request().url());return route.abort();});
   await page.setContent('<button id="opener">Open Help</button><main id="overallLeaderboardPanel"><input id="overallRacerSearch" aria-label="Find a racer"><div id="overallProfilePopup" style="display:none"></div><div id="overallHelpPopup" style="display:none"><section role="dialog" aria-modal="true" aria-label="Help"><button id="overallHelpClose">Close</button><div id="help-content"></div></section></div></main>');
-  await page.addScriptTag({content:(release+help.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+`
+  await page.addScriptTag({content:(release+help.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+`
     window.nativeKeys=[];window.fpsToggles=0;
     for(const type of ['keydown','keyup'])window.addEventListener(type,event=>nativeKeys.push(type+':'+event.key));
     const r={checkKeyBinding:event=>event.code==='Equal'},ge={A:{ToggleFpsCounter:24}},M={toggle:()=>fpsToggles++};
@@ -359,7 +364,7 @@ test('offline DOM behavior: search, disclosures, keyboard, views, cleanup and re
   ]);
   await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#09142c}#fixture{max-width:1040px;margin:auto}</style><main id="fixture"></main>');
   await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css});
-  await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8')+module.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+  await page.addScriptTag({content:(await historyBrowserBundle()+await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+(await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8')).replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'')+module.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
   await page.evaluate(()=>{
     const root=document.querySelector('#fixture');
     root.innerHTML=window.helpAPI.renderHelpControls({idPrefix:'test-help',ghostShortcut:'KeyF',release:{revision:189,commit:217,commitConfirmed:false,notes:['Offline fixture.']}});

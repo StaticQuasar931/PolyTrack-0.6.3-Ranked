@@ -5,6 +5,11 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
+function historyBrowserBundle() {
+  const source = readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8');
+  return 'const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
+}
+
 class FakeElement {
   constructor(tag, document) {
     Object.assign(this, { tag, document, style: {}, dataset: {}, listeners: {}, children: [], isConnected: false });
@@ -845,7 +850,7 @@ test('installed revision notice uses native keyboard focus, waits for safe menus
         const url = new URL(route.request().url());
         if (url.hostname !== 'notice.test') { external++; return route.abort(); }
         return route.fulfill({contentType: url.pathname.endsWith('.mjs') ? 'text/javascript' : 'text/html',
-          body: url.pathname.endsWith('.mjs') ? source : '<button id="play">Play</button><div id="menu" hidden>Settings</div>'});
+          body: url.pathname.endsWith('release-history.mjs') ? readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8') : url.pathname.endsWith('.mjs') ? source : '<button id="play">Play</button><div id="menu" hidden>Settings</div>'});
       });
       const install = async () => page.evaluate(async () => {
         window.module = await import('/site-updates.mjs'); window.ready = false; window.racing = false;
@@ -908,7 +913,7 @@ test('native dialog keyboard focus, mobile fit and new-tab navigation preserve t
         body {margin:0;padding:24px;background:#101a35;color:#f5f7ff;font:18px ForcedSquare,sans-serif}
         #before {padding:12px;border:2px solid #7e9bd1;background:#28346a;color:white;font:inherit}
       </style><button id="before">Existing game</button>`);
-      const source = readFileSync(new URL('./site-updates.mjs', import.meta.url), 'utf8');
+      const source = historyBrowserBundle()+readFileSync(new URL('./site-updates.mjs', import.meta.url), 'utf8').replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'');
       await page.evaluate(async source => {
         document.getElementById('before').focus();
         const blob = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));

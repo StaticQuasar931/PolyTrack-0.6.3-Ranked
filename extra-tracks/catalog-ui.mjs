@@ -6,9 +6,27 @@ const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, revie
 
 const SUBMIT_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSel-vg-VwzQuA2dRTEPoKiLIUgDvJ4bCvjMI8u4hqB33gkvrQ/viewform';
 const PAGE_SIZE = 12;
+// These exact legacy source captures were verified as Kodub 0.6.3; do not infer a version for unknown records.
+const KODUB_063_CAPTURE_HASHES = new Set([
+  "8a2b1caa2480351c1c5ac364262b5e31be3c60cf1678806183c6f4e70d74f817",
+  "aa5e949dbd8e18caab0fc3697f9ef10c72cf1d5acccfd0b9d618663f35131542",
+  "43e09022e4aeae3a15b0e6d74afc2cb5704c962cc1aa05fb54448034bd26d901",
+  "84129c91045797a07a0b2c5bb5337ca946c80b63ac68287b32704a81c4bf77ba",
+  "df61cff5a4982b0303bffb0a3a346bc26a2b031d7b1bfec1683acd2b26ceff65",
+  "a6ccd78cc443cd848a41da11d94904d2fffb7647d0ecafca64562eb53480ea2b",
+  "3c3206ae080a741d3b3ac9d387fa113ab7468122f3db02e8f3c00915fc61cffe",
+  "4537096722ec72f550bb8f5fb48f0c3bf9f7eb2ec11f5e062283d39dcb771be7"
+]);
+function captureVersion(entry) {
+  if (entry?.source !== 'Kodub weekly' || entry.archiveImport !== true || entry.dateProvenance !== 'events/kodub/selections.json') return '';
+  if (typeof entry.capturedVersion === 'string' && /^\d+\.\d+\.\d+$/.test(entry.capturedVersion)) return entry.capturedVersion;
+  return KODUB_063_CAPTURE_HASHES.has(entry.codeHash) ? '0.6.3' : '';
+}
+
 const SORT_ALIASES = {
   'size-largest': ['size', 'desc'], 'size-smallest': ['size', 'asc'],
   'date-newest': ['date', 'desc'], 'date-oldest': ['date', 'asc'],
+  'weekly-date-newest': ['weekly-date', 'desc'], 'weekly-date-oldest': ['weekly-date', 'asc'],
   'edited-first': ['my-reviews', 'desc'], 'unedited-first': ['my-reviews', 'asc'],
   'review-quality-high': ['review-quality', 'desc'], 'review-quality-low': ['review-quality', 'asc'],
   'review-difficulty-high': ['review-difficulty', 'desc'], 'review-difficulty-low': ['review-difficulty', 'asc'],
@@ -92,6 +110,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
+  let buildersView = false;
+  let contactGeneration = 0;
+  let contactApi = null;
+  const hiddenTrackNodes = new Map();
+  let activeSpotlight = 'daily';
+  let spotlightExpanded = false;
   let featuredTimer = null;
   let featuredTimerGeneration = 0;
   let viewGeneration = 0;
@@ -183,7 +207,13 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     submitName.focus();
   });
   closeButton.remove();
-  header.append(submit, closeButton);
+  const buildersButton = button('Builder program', 'sq-extra-builder-action', () => buildersView ? showTrackView() : openBuilderContact());
+  buildersButton.setAttribute('aria-expanded', 'false');
+  header.append(buildersButton, submit, closeButton);
+  const contactHost = make('section', 'sq-extra-contact-host');
+  contactHost.id = 'sq-extra-contact-' + mountNumber; contactHost.hidden = true;
+  buildersButton.setAttribute('aria-controls', contactHost.id);
+  dialog.append(contactHost);
   const gradingHelp = make('details', 'sq-extra-grading-help');
   gradingHelp.append(make('summary', '', 'About ratings & difficulty'));
   gradingHelp.append(make('p', '', 'Rating measures track quality; Difficulty measures challenge, both out of 10. Published grades stay separate from your ratings saved on this device. Thanks to Window Cleaner for help with track gradings.'));
@@ -263,8 +293,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   dialog.append(controls);
 
   const featured = make('section', 'sq-extra-featured');
-  featured.setAttribute('aria-label', 'Daily and weekly discovery picks');
-  featured.setAttribute('aria-description', 'Days start at 00:00 UTC; weeks start Monday at 00:00 UTC. Explicit curated, featured-submission and trusted Kodub candidates are preferred. A catalog fallback is labeled when no curated candidates exist. Racer counts come only from the existing published snapshot.');
+  featured.setAttribute('aria-label', 'Creator spotlight and underplayed discovery');
+  featured.setAttribute('aria-description', 'Creator spotlight rotates at 00:00 UTC daily; discovery rotates Monday at 00:00 UTC. Underplayed means the lowest exact racer-count quarter of the worthy editorial pool, including genuine zeroes. Unknown coverage is never treated as zero.');
   dialog.append(featured);
 
   const summary = make('div', 'sq-extra-summary');
@@ -274,6 +304,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   count.setAttribute('aria-live', 'polite');
   search.setAttribute('aria-describedby', count.id);
   summary.append(count, gradingHelp);
+  const builderCreditsRoot = make('section', 'sq-extra-builder-slot');
+  builderCreditsRoot.hidden = true;
+  builderCreditsRoot.setAttribute('data-sq-slot', 'builder-credits');
+  builderCreditsRoot.setAttribute('aria-label', 'Reviewed builder credits');
+  // Parent-owned integration supplies reviewed, play-gated credits; this slot has no ranking logic.
+  dialog.append(builderCreditsRoot);
   dialog.append(summary);
   const submissionModal = make('div', 'sq-extra-submission-modal');
   submissionModal.hidden = true;
@@ -406,6 +442,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (all.some(entry => reviewedSummary(entry).count)) choices.push(
       ['review-quality', 'Rating'], ['review-difficulty', 'Difficulty'], ['review-votes', 'Votes']);
     if (all.some(entry => Number.isFinite(Date.parse(entry.submittedAt || entry.codeModifiedAt)))) choices.push(['date', 'Track date']);
+    if (all.some(entry => Number.isFinite(Date.parse(entry.weeklyEndsAt)))) choices.push(['weekly-date', 'Kodub week date']);
 
     const capabilityKey = choices.map(([value]) => value).join('|');
     if (capabilityKey === sortCapabilityKey) return;
@@ -577,6 +614,12 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (tier.toLowerCase() === 'curated') body.append(make('span', 'sq-extra-tier', 'Featured'));
     if (entry.featuredSubmission === true) body.append(make('span', 'sq-extra-tier sq-extra-tier-submitted', 'New from players'));
     if (entry.archiveImport === true) body.append(make('span', 'sq-extra-tier', 'Kodub archive · original leaderboard'));
+    const version = captureVersion(entry);
+    if (version) {
+      const provenance = make('p', 'sq-extra-capture-version', 'Captured from Kodub v' + version);
+      provenance.title = 'Version of the captured source, not a claim about when or in which version this track was created.';
+      body.append(provenance);
+    }
     if (entry.ranked === false) {
       body.append(make('span', 'sq-extra-tier sq-extra-tier-unranked', entry.rankedUnavailableReason ? 'Practice only · no RP' : 'Unranked challenge · no RP or verification'));
       if (entry.rankedUnavailableReason) body.append(make('p', 'sq-extra-ranking-note', text(entry.rankedUnavailableReason)));
@@ -919,44 +962,116 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     return article;
   }
 
+  async function openBuilderContact() {
+    if (destroyed || !opened || buildersButton.disabled) return;
+    const generation = ++contactGeneration;
+    buildersButton.disabled = true; buildersButton.setAttribute('aria-busy', 'true');
+    try {
+      const {mountBuilderContact} = await import(new URL(`builder-contact.mjs${new URL(import.meta.url).search}`, import.meta.url));
+      if (destroyed || !opened || generation !== contactGeneration) return;
+      if (!contactApi) contactApi = mountBuilderContact({document, root: contactHost, onBack: () => showTrackView()});
+      clearCardMenu(); stopFeaturedTimer();
+      buildersView = true;
+      hiddenTrackNodes.clear();
+      for (const node of dialog.children) if (node !== header && node !== contactHost) {
+        hiddenTrackNodes.set(node, node.hidden); node.hidden = true;
+      }
+      contactHost.hidden = false;
+      buildersButton.textContent = 'Tracks'; buildersButton.setAttribute('aria-expanded', 'true');
+      contactApi.focus();
+    } catch {
+      if (!destroyed && opened && generation === contactGeneration) showStatus('Builder contact could not open. Please try again.', true);
+    } finally {buildersButton.disabled = false; buildersButton.removeAttribute('aria-busy');}
+  }
+
+  function showTrackView(restoreFocus = true, refresh = true) {
+    buildersView = false; contactHost.hidden = true;
+    for (const [node, hidden] of hiddenTrackNodes) node.hidden = hidden;
+    hiddenTrackNodes.clear();
+    buildersButton.textContent = 'Builder program'; buildersButton.setAttribute('aria-expanded', 'false');
+    if (!destroyed && opened && refresh) {render();scheduleFeaturedRefresh();}
+    if (restoreFocus) buildersButton.focus({preventScroll: true});
+  }
+
   function renderFeatured(all = currentEntries()) {
-    if (destroyed) return;
-    const activeKind = [...featured.children].find(tile => tile.contains(document.activeElement))?.getAttribute('data-pick-kind');
+    if (destroyed || buildersView) return;
+    const focusedKind = [...featured.children].find(tile => tile.getAttribute('data-pick-kind') && tile.contains(document.activeElement))?.getAttribute('data-pick-kind');
+    const focusedTab = document.activeElement?.getAttribute?.('data-pick-tab');
+    const focusedToggle = document.activeElement?.className?.split(' ').includes('sq-extra-featured-toggle');
     let focusTarget = null;
     featured.replaceChildren();
     featured.hidden = Boolean(state.search || activeAdvancedFilterGroups() || page !== 1);
     const picks = featured.hidden ? [] : featuredPicks(all, popularityCounts, now());
     featured.hidden = featured.hidden || !picks.length;
-    if (!featured.hidden) for (const pick of picks) {
+    if (featured.hidden) return;
+    const tabs = make('div', 'sq-extra-featured-tabs');
+    tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Discover a track');
+    const toggle = button('Show spotlights', 'sq-extra-featured-toggle', () => {
+      spotlightExpanded = !spotlightExpanded; activate(activeSpotlight);
+    });
+    if (focusedToggle) focusTarget = toggle;
+    toggle.setAttribute('aria-controls', 'sq-extra-spotlight-' + mountNumber + '-daily sq-extra-spotlight-' + mountNumber + '-weekly');
+    const tabButtons = [], tiles = [];
+    const activate = (kind, open = false) => {
+      activeSpotlight = kind;
+      if (open) spotlightExpanded = true;
+      featured.setAttribute('data-user-open', String(spotlightExpanded));
+      toggle.setAttribute('aria-expanded', String(spotlightExpanded));
+      toggle.textContent = spotlightExpanded ? 'Hide spotlights' : 'Show spotlights';
+      for (const tab of tabButtons) {
+        const selected = tab.getAttribute('data-pick-tab') === kind;
+        tab.setAttribute('aria-selected', String(selected)); tab.setAttribute('tabindex', selected ? '0' : '-1');
+      }
+      for (const tile of tiles) tile.setAttribute('data-mobile-active', String(tile.getAttribute('data-pick-kind') === kind));
+    };
+    for (const pick of picks) {
+      const panelId = 'sq-extra-spotlight-' + mountNumber + '-' + pick.kind;
+      const tab = button(pick.kind === 'daily' ? 'Creator' : 'Discover', 'sq-extra-featured-tab', () => activate(pick.kind, true));
+      tab.setAttribute('role', 'tab'); tab.setAttribute('data-pick-tab', pick.kind); tab.setAttribute('aria-controls', panelId);
+      tab.id = panelId + '-tab';
+      tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const target = event.key === 'Home' ? tabButtons[0] : event.key === 'End' ? tabButtons.at(-1) : tabButtons.find(value => value !== tab) || tab;
+        activate(target.getAttribute('data-pick-tab'), true); target.focus();
+      });
+      tabs.append(tab); tabButtons.push(tab);
+      if (focusedTab === pick.kind) focusTarget = tab;
       const tile = make('article', 'sq-extra-pick sq-extra-pick-' + pick.kind);
+      tile.id = panelId; tile.setAttribute('role', 'tabpanel'); tile.setAttribute('aria-labelledby', tab.id);
       tile.setAttribute('data-pick-kind', pick.kind);
+      const artwork = make('figure', 'sq-extra-pick-art');
+      const unavailable = make('span', 'sq-extra-preview-unavailable', 'Preview unavailable');
       const imageUrl = safeUrl(document, pick.entry.thumbnailUrl);
+      unavailable.hidden = Boolean(imageUrl); artwork.append(unavailable);
       if (imageUrl) {
-        const image = make('img'); image.alt = ''; image.loading = 'lazy'; image.decoding = 'async';
-        image.addEventListener('error', () => image.remove(), {once: true}); image.src = imageUrl; tile.append(image);
+        const image = make('img'); image.alt = 'Track preview: ' + text(pick.entry.name, 'Untitled track');
+        image.loading = 'lazy'; image.decoding = 'async';
+        image.addEventListener('error', () => { image.remove(); unavailable.hidden = false; }, {once: true});
+        image.src = imageUrl; artwork.append(image);
       }
       const content = make('div', 'sq-extra-pick-content');
-      content.append(make('span', 'sq-extra-pick-label', pick.kind === 'daily' ? 'DAILY PICK' : 'WEEKLY PICK'));
-      content.append(make('h3', '', text(pick.entry.name, 'Untitled track')));
-      content.append(make('p', '', 'By ' + displayAuthor(pick.entry)));
-      const coverage = pick.players === null ? 'Player count unavailable' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
-      const selectionNote=make('p', 'sq-extra-pick-note', pick.fallback ? 'Discovery selection' : 'Curated selection');
-      if(pick.fallback)selectionNote.title='Catalog fallback: no curated candidates are available.';
-      content.append(selectionNote);
-      const coverageNote=make('p', 'sq-extra-pick-note', coverage);
-      coverageNote.append(make('span','sq-extra-pick-board-note',' · Normal leaderboard'));
-      coverageNote.title='Player count from published standings, not live plays.';
-      content.append(coverageNote);
-      if (Number.isFinite(pick.quality)) content.append(make('p', 'sq-extra-pick-note sq-extra-pick-grade', 'Published grade ' + pick.quality.toFixed(1) + '/10'));
-      const nextPick=make('time', 'sq-extra-pick-note', 'Next pick ' + new Date(pick.endsAt).toLocaleString(undefined, {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
-      nextPick.setAttribute('datetime',new Date(pick.endsAt).toISOString());
-      nextPick.title=new Date(pick.endsAt).toString();
-      content.append(nextPick);
-      const play = button('Play ' + pick.kind + ' pick', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
-      content.append(play);
-      if (activeKind === pick.kind) focusTarget = play;
-      tile.append(content); featured.append(tile);
+      const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
+      content.append(make('span', 'sq-extra-pick-label', label));
+      const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
+      const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
+      author.title = author.textContent; content.append(author);
+      const metrics = make('p', 'sq-extra-pick-note');
+      metrics.textContent = pick.players === null ? 'Player count unknown' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
+      if (Number.isFinite(pick.quality)) metrics.textContent += ' · Published ' + pick.quality.toFixed(1) + '/10';
+      metrics.title = pick.underplayed ? 'Lowest exact racer-count quarter of eligible editorial tracks; unknown counts are excluded.' : pick.fallbackReason === 'coverage-unavailable' ? 'Editorial fallback: exact racer coverage is unavailable. Not an underplayed claim.' : 'Published review and snapshot information, not a local rating or live play count.';
+      content.append(metrics);
+      const footer = make('div', 'sq-extra-pick-footer');
+      const play = button(pick.kind === 'daily' ? 'Play spotlight' : 'Explore track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
+      play.setAttribute('aria-label', (pick.kind === 'daily' ? 'Play creator spotlight: ' : 'Explore discovery: ') + text(pick.entry.name, 'Untitled track'));
+      const period = make('time', 'sq-extra-pick-period', pick.kind === 'daily' ? 'Daily · UTC' : 'Weekly · UTC');
+      period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
+      period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
+      footer.append(play, period); content.append(footer);
+      if (focusedKind === pick.kind) focusTarget = play;
+      tile.append(artwork, content); tiles.push(tile);
     }
+    featured.append(toggle, tabs, ...tiles); activate(activeSpotlight);
     focusTarget?.focus({preventScroll: true});
   }
 
@@ -969,7 +1084,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   function scheduleFeaturedRefresh() {
     stopFeaturedTimer();
     const view = document.defaultView;
-    if (!opened || destroyed || document.hidden || typeof view?.setTimeout !== 'function') return;
+    if (!opened || destroyed || buildersView || document.hidden || typeof view?.setTimeout !== 'function') return;
     const timestamp = now();
     if (!Number.isFinite(timestamp)) return;
     const generation = featuredTimerGeneration;
@@ -991,14 +1106,14 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   }
 
   function render() {
-    if (destroyed) return;
+    if (destroyed || buildersView) return;
     const all = currentEntries();
     syncSortChoices(all);
     renderFeatured(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
     const description = state.sort === 'popular'
       ? `Players, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Published counts; unavailable counts stay last.`
-      : REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
+      : state.sort === 'weekly-date' ? 'Captured Kodub weekly end time (UTC). Unknown dates stay last in either direction; not a creation date.' : REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
     sortField.select.title = description;
     if (description) sortField.select.setAttribute('aria-description', description);
     else sortField.select.removeAttribute('aria-description');
@@ -1071,7 +1186,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       const searchName = normalizeSearchText(text(entry.name, 'Untitled track'));
       const feedback = feedbackById.get(entry.id) || {};
       const effectiveTags = effectiveReviewTags(entry, feedback);
-      const searchValues = [entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...effectiveTags];
+      const searchValues = [captureVersion(entry), entry.weeklyEndsAt, entry.name, entry.author, entry.codeName, entry.codeAuthor, entry.source, entry.description, ...effectiveTags];
       // Cache alias expansion alongside device feedback, not on each keystroke.
       const searchable = searchValues.flatMap(value => [value, ...searchAliases(value)]).map(normalizeSearchText).join(' ');
       return {
@@ -1099,6 +1214,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         if (state.sort === 'popular') return popularityCounts.get(entry.trackId) ?? null;
         if (state.sort === 'my-reviews') return Number(record.edited);
         if (state.sort === 'forum') return forumActivity(entry);
+        if (state.sort === 'weekly-date') {
+          const date = Date.parse(entry.weeklyEndsAt);
+          return Number.isFinite(date) ? date : null;
+        }
         if (state.sort === 'date') {
           const date = Date.parse(entry.submittedAt || entry.codeModifiedAt);
           return Number.isFinite(date) ? date : null;
@@ -1283,6 +1402,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
 
   function close() {
     if (!opened || destroyed) return;
+    contactGeneration++;
+    if (buildersView) showTrackView(false, false);
     opened = false;
     stopFeaturedTimer();
     viewGeneration++;
@@ -1343,6 +1464,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       if (expandedCardMenu) clearCardMenu(true);
       else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
+      else if (buildersView) showTrackView();
       else close();
       return;
     }
@@ -1366,7 +1488,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       // The review popup is outside dialog; let native Tab move within it.
       return;
     }
-    if ((!submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
+    if ((buildersView || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     const activeRating = document.activeElement?.getAttribute?.('data-quick-rating') === 'true';
@@ -1514,6 +1636,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   document.defaultView?.addEventListener('resize', scheduleCardMenuPosition);
   render();
   return {
+    builderCreditsRoot,
     open, close, refresh() { cachedRecords = null; render(); },
     setSnapshotStatistics({ generation, statistics } = {}) {
       if (destroyed || !Number.isSafeInteger(generation) || generation < 0 || generation <= popularityGeneration) return false;
@@ -1527,6 +1650,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       if (destroyed) return;
       close();
       destroyed = true;
+      contactGeneration++; contactApi?.destroy();
       stopFeaturedTimer();
       document.removeEventListener('visibilitychange', onFeaturedVisibility);
       document.removeEventListener('keydown', onKeydown, true);

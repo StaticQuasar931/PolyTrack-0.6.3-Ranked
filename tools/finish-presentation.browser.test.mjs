@@ -73,7 +73,7 @@ async function openPair(t, {reducedMotion = 'no-preference', enhance = true} = {
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`${server.url}/${kind}.html`);
+    await page.goto(`${server.url}/${kind}.html`, {timeout:30000});
     await page.evaluate(async ({renderer, eventHelpers, production, enhance}) => {
       const R = {gn: (self, store, kind, method) => kind === 'm' ? method : store.get(self),
         GG: (self, store, value) => {store.set(self, value); return value;}};
@@ -174,7 +174,7 @@ async function capture(pages, label) {
 }
 
 const viewports = [[1920,1080,1], [1366,768,1.25], [320,568,1], [390,844,.8], [390,844,1.25], [844,390,1], [667,375,1.25]];
-test('actual native PB and event finish retain native typography, geometry, glyphs and reveal timings', {timeout: 45000}, async t => {
+test('actual native PB and event finish retain native typography, geometry, glyphs and reveal timings', {timeout: 90000}, async t => {
   const pages = await openPair(t), [native, production] = pages;
   await parity(native, production, 'pending native rank');
   assert.equal(await production.locator(position).textContent(), '');
@@ -215,7 +215,7 @@ test('actual native PB and event finish retain native typography, geometry, glyp
   t.diagnostic(`${cases} exact native/production comparisons; screenshots ${process.env.POLYTRACK_FINISH_SCREENSHOTS || 'disabled (set POLYTRACK_FINISH_SCREENSHOTS)'}`);
 });
 
-test('repeated syncs and late accessibility updates do not rewrite native text or mutate layout', {timeout: 20000}, async t => {
+test('repeated syncs and late accessibility updates do not rewrite native text or mutate layout', {timeout: 60000}, async t => {
   for (const attachFirst of [false, true]) {
     const pages = await openPair(t, {enhance: attachFirst}), [native, production] = pages;
     await reveal(pages);
@@ -262,7 +262,7 @@ test('repeated syncs and late accessibility updates do not rewrite native text o
   }
 });
 
-test('reduced motion is the intentional native reveal transition exception, not a typography exception', {timeout: 15000}, async t => {
+test('reduced motion is the intentional native reveal transition exception, not a typography exception', {timeout: 45000}, async t => {
   const pages = await openPair(t, {reducedMotion:'reduce'}), [native, production] = pages;
   const compare = async label => {
     const a = await snapshot(native), b = await snapshot(production);

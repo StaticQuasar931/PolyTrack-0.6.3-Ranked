@@ -1356,14 +1356,14 @@ test('popularity labels handle singular, plural and unknown without implying liv
 });
 
 test('featured discovery uses canonical callbacks, snapshot-only coverage and hides during filtering', async () => {
-  const items = [entry(1, {trackId: 'a'.repeat(64), trackPath: 'extra-tracks/track-data/test/a.track'}),
-    entry(2, {trackId: 'b'.repeat(64), trackPath: 'extra-tracks/track-data/test/b.track'})];
+  const items = [entry(1, {tier: 'Curated', trackId: 'a'.repeat(64), trackPath: 'extra-tracks/track-data/test/a.track'}),
+    entry(2, {tier: 'Curated', trackId: 'b'.repeat(64), trackPath: 'extra-tracks/track-data/test/b.track'})];
   const played = [];
   const {root, api} = fixture(items, {onPlay: value => played.push(value), now: () => Date.parse('2026-11-02T12:00:00Z')});
   api.open();
   assert.equal(cls(root, 'sq-extra-pick').length, 2);
-  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Discovery selection/);
-  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Normal leaderboard/);
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /EDITORIAL DISCOVERY/);
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /CREATOR SPOTLIGHT/);
   api.setSnapshotStatistics({generation: 1, statistics: {schemaVersion: 1, tracks: {
     [items[0].trackId]: {complete: true, players: 9, count: 9, totalEntries: 9}
   }}});
@@ -1413,8 +1413,8 @@ test('one local UTC timer refreshes open spotlights without disturbing cards and
   const nextPick=kind=>tag(cls(root, 'sq-extra-pick-'+kind)[0],'time')[0].getAttribute('datetime');
   assert.equal(nextPick('daily'),'2026-11-02T00:00:00.000Z');
   assert.equal(nextPick('weekly'),'2026-11-02T00:00:00.000Z');
-  assert.ok(cls(root, 'sq-extra-pick-daily')[0].textContent.includes(new Date(nextPick('daily')).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})));
-  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Player count unavailable/);
+  assert.ok(tag(cls(root, 'sq-extra-pick-daily')[0], 'time')[0].title.includes(nextPick('daily')));
+  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Player count unknown/);
   const card = cls(root, 'sq-extra-card')[0];
   timestamp = Date.parse('2026-11-02T00:00:00.025Z');
   timers.clear(); timer.callback();
@@ -1489,4 +1489,83 @@ test('archive alias cards identify their existing normal leaderboard without an 
   assert.match(cls(root, 'sq-extra-card')[0].textContent, /Kodub archive.*original leaderboard/);
   assert.doesNotMatch(cls(root, 'sq-extra-card')[0].textContent, /Practice only|Unranked challenge|Very large/);
   api.destroy();
+});
+
+
+test('Kodub week date is a separate unknown-last sort and preserves search, source and tag filters', async () => {
+  const items = [entry(1, {name: 'Race old', source: 'Kodub weekly', tags: ['technical'], weeklyEndsAt: '2026-09-20T20:00:00Z', codeModifiedAt: '2030-01-01'}),
+    entry(2, {name: 'Race new', source: 'Kodub weekly', tags: ['technical'], weeklyEndsAt: '2026-11-08T20:00:00Z', codeModifiedAt: '2000-01-01'}),
+    entry(3, {name: 'Race unknown', source: 'Kodub weekly', tags: ['technical'], weeklyEndsAt: 'not a date'}),
+    entry(4, {name: 'Race elsewhere', source: 'Other', tags: ['technical'], weeklyEndsAt: '2027-01-01'})];
+  const {root, api} = fixture(items); api.open();
+  const source = tag(field(root, 'Source'), 'select')[0]; source.value = 'Kodub weekly'; await source.dispatch('change');
+  const tags = tag(field(root, 'Tag'), 'select')[0]; tags.value = 'technical'; await tags.dispatch('change');
+  const search = tag(cls(root, 'sq-extra-search-field')[0], 'input')[0]; search.value = 'Race'; await search.dispatch('input');
+  const sort = tag(field(root, 'Sort'), 'select')[0]; sort.value = 'weekly-date'; await sort.dispatch('change');
+  const names = () => cls(root, 'sq-extra-card').map(card => tag(card, 'h3')[0].textContent);
+  assert.deepEqual(names(), ['Race new', 'Race old', 'Race unknown']);
+  await click(cls(root, 'sq-extra-sort-direction')[0]);
+  assert.deepEqual(names(), ['Race old', 'Race new', 'Race unknown']);
+  api.refresh(); assert.equal(sort.value, 'weekly-date'); assert.equal(source.value, 'Kodub weekly'); assert.equal(search.value, 'Race');
+  assert.equal(cls(root, 'sq-extra-selected-tag').length, 1);
+  api.destroy();
+});
+
+test('verified legacy Kodub captures show 0.6.3 provenance without inventing a version for unknown captures', () => {
+  const known = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8')).find(entry => entry.archiveImport);
+  const unknown = {...known, id: 'unknown-capture', trackId: 'e'.repeat(64), codeHash: 'f'.repeat(64)};
+  const explicit = {...unknown, id: 'future-capture', trackId: 'd'.repeat(64), capturedVersion: '0.6.4'};
+  const {root, api} = fixture([known, unknown, explicit]); api.open();
+  const labels = cls(root, 'sq-extra-capture-version').map(node => node.textContent);
+  assert.deepEqual(labels.sort(), ['Captured from Kodub v0.6.3', 'Captured from Kodub v0.6.4']);
+  assert.ok(cls(root, 'sq-extra-capture-version').every(node => /not a claim/.test(node.title)));
+  api.destroy();
+});
+
+test('spotlights use real preview images and creator credit, mobile tabs, and a hidden parent-owned builder slot', async () => {
+  const items = [entry(1, {tier: 'Curated', trackId: 'a'.repeat(64), trackPath: 'extra-tracks/track-data/test/a.track', thumbnailUrl: 'extra-tracks/thumbnails/everlasting.png'}),
+    entry(2, {tier: 'Curated', trackId: 'b'.repeat(64), trackPath: 'extra-tracks/track-data/test/b.track'})];
+  const {root, api} = fixture(items); api.open();
+  const tiles = cls(root, 'sq-extra-featured')[0];
+  assert.match(tiles.textContent, /Created by Author/);
+  const image = tag(tiles, 'img')[0]; assert.match(image.alt, /Track preview:/);
+  await image.dispatch('error'); assert.ok(cls(root, 'sq-extra-preview-unavailable').some(node => !node.hidden));
+  const tabs = cls(root, 'sq-extra-featured-tab'); await click(tabs[1]);
+  assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+  assert.equal(cls(root, 'sq-extra-pick-weekly')[0].getAttribute('data-mobile-active'), 'true');
+  assert.equal(api.builderCreditsRoot.hidden, true); assert.equal(api.builderCreditsRoot.children.length, 0);
+  assert.equal(api.builderCreditsRoot.getAttribute('data-sq-slot'), 'builder-credits');
+  api.destroy();
+});
+
+
+test('Builder program opens in the same dialog, preserves track filters, and Escape returns to Tracks', async () => {
+  const {document,root,api}=fixture([entry(1),entry(2)]);api.open();
+  const search=tag(cls(root,'sq-extra-search-field')[0],'input')[0];search.value='Track 02';await search.dispatch('input');
+  const builder=cls(root,'sq-extra-builder-action')[0];const dialogs=walk(root).filter(n=>n.getAttribute('role')==='dialog').length;
+  await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,true);
+  assert.equal(walk(root).filter(n=>n.getAttribute('role')==='dialog').length,dialogs,'no second contact modal');
+  document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('hidden pagination must not change');}});
+  api.setSnapshotStatistics({generation:1,statistics:{schemaVersion:1,tracks:{}}});
+  document.listeners.get('keydown')({key:'Escape',preventDefault(){}});
+  assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(search.value,'Track 02');
+  assert.equal(cls(root,'sq-extra-card').length,1);assert.equal(tag(cls(root,'sq-extra-card')[0],'h3')[0].textContent,'Track 02');
+  assert.equal(document.activeElement,builder);api.destroy();
+});
+
+test('closing Builder program restores the track view on reopen and Back preserves chosen sort', async () => {
+  const {root,api}=fixture([entry(1),entry(2)]);api.open();
+  const sort=tag(field(root,'Sort'),'select')[0];sort.value='name';await sort.dispatch('change');
+  await click(cls(root,'sq-extra-builder-action')[0]);await click(cls(root,'sq-builder-back')[0]);assert.equal(sort.value,'name');
+  await click(cls(root,'sq-extra-builder-action')[0]);api.close();api.open();
+  assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);assert.equal(sort.value,'name');api.destroy();
+});
+
+
+test('short landscape toolbar uses one bounded row and short portrait retains optional spotlights', () => {
+  const css=fs.readFileSync(new URL('catalog.css',import.meta.url),'utf8');
+  const landscape=css.split('/* Short landscape windows keep the primary toolbar on one row. */')[1];
+  assert.match(landscape, /min-width:601px.*max-height:700px/);
+  assert.match(landscape, /sort-controls\{grid-column:3;grid-row:1;max-width:240px/);
+  assert.match(css, /@media\(max-height:700px\)/);
 });

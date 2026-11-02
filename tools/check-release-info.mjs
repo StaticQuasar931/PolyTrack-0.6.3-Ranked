@@ -95,6 +95,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const args = process.argv.slice(2);
     if (args.length && !(args.length === 2 && args[0] === '--precommit' && /^\d+$/.test(args[1]))) throw new Error('Usage: node tools/check-release-info.mjs [--precommit 224]');
     const result = checkReleaseInfo({expectedNext:args.length ? Number(args[1]) : undefined});
+    if (!result.errors.length) {
+      const {writeOrCheckReleaseHistory} = await import('./release-history.mjs');
+      await writeOrCheckReleaseHistory({precommit:args.length > 0});
+    }
     for (const error of result.errors) console.error(error);
     if (result.errors.length) process.exitCode = 1;
     else console.log(`Help release ${result.info.number}, client revision ${result.info.revision}: local release safety passed.`);

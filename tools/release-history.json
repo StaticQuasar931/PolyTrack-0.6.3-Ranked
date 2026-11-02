@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "current": {
+    "number": 267,
+    "version": "0.6.3",
+    "revision": 228,
+    "notes": [
+      "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
+      "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
+      "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
+      "Complete weekly artwork, readable creator credits and better small-screen menus."
+    ]
+  },
+  "entries": [
+    {
+      "number": 266,
+      "title": "Native Finish Regression Coverage",
+      "commit": "d3a1f44816ef01b5505bbaec466567b30a48e9d4",
+      "committedAt": "2026-11-02T05:01:54.000Z",
+      "notes": [
+        "Discover Extra Track picks and dated Kodub weekly selections.",
+        "Clearer profiles, player counts, route suggestions and responsive controls.",
+        "Less repeated loading, with native finish-screen compatibility checked across screen sizes."
+      ]
+    },
+    {
+      "number": 265,
+      "title": "Bounded Missing Snapshot Recovery",
+      "commit": "655e38a57b27c85834ea97d248d2184b1ae876a3",
+      "committedAt": "2026-11-02T04:54:13.000Z",
+      "notes": [
+        "Fewer repeated requests when published standings are temporarily unavailable.",
+        "Missing data recovers cleanly when a new snapshot arrives."
+      ]
+    },
+    {
+      "number": 264,
+      "title": "Track Discovery and Profile Polish",
+      "commit": "2fc76753478a38840f77a6881db7cccccab88ce8",
+      "committedAt": "2026-11-02T04:52:04.000Z",
+      "notes": [
+        "Extra Tracks now has daily and weekly discovery picks plus dated Kodub weekly selections.",
+        "Route recommendations use available snapshot fields before you open individual tracks.",
+        "Clearer profile participation, flush profile controls, and a roomier event archive."
+      ]
+    },
+    {
+      "number": 263,
+      "title": "Menu and Offline PB Polish",
+      "commit": "c0426519bdf230a095925debe5bbf9e429244638",
+      "committedAt": "2026-11-02T04:08:26.000Z",
+      "notes": [
+        "Search and Filters stay together across screen sizes.",
+        "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
+        "Offline PB activity survives retries, with clearer profile publishing status."
+      ]
+    },
+    {
+      "number": 254,
+      "title": "Cloud Recovery",
+      "commit": "aaa2fc34f489e7d58b51bc6363a7c1583ac7b64b",
+      "committedAt": "2026-11-02T03:22:01.000Z",
+      "notes": [
+        "More reliable profile updates and recovery from interrupted cloud publication.",
+        "Ranked controls stay reachable in short windows."
+      ]
+    },
+    {
+      "number": 253,
+      "title": "Cloud Quota Fixes",
+      "commit": "0981c4f4d9198c4454fb9f1bf899b79efa19140f",
+      "committedAt": "2026-11-02T01:54:30.000Z",
+      "notes": [
+        "More efficient cloud syncing while preserving saved runs and retry safety.",
+        "Restored scheduled leaderboard updates and reduced background work."
+      ]
+    },
+    {
+      "number": 252,
+      "title": "Viewport Fixes",
+      "commit": "94c454832e47db9243ebe8c71607f862ca8af0b9",
+      "committedAt": "2026-10-31T02:34:08.000Z",
+      "notes": [
+        "Menus stay aligned after phone rotation and Safari toolbar changes.",
+        "Clearer home credits and track lists that fit the visible screen."
+      ]
+    },
+    {
+      "number": 251,
+      "title": "Safari Fixes",
+      "commit": "aa35592cb5c8280f8a6f10c1263478d323011a9b",
+      "committedAt": "2026-10-31T02:02:18.000Z",
+      "notes": [
+        "Landscape controls stay visible when Safari's toolbars open.",
+        "Consistent event controls and reliable car-thumbnail fallbacks."
+      ]
+    },
+    {
+      "number": 250,
+      "title": "Phone UI",
+      "commit": "fbc5cbb0a58ed2b2b2f8074fee555880723cb8d9",
+      "committedAt": "2026-10-31T01:18:58.000Z",
+      "notes": [
+        "Clearer phone leaderboards with compact status badges and controls.",
+        "Better weekly artwork, landscape event cards and track tabs."
+      ]
+    },
+    {
+      "number": 249,
+      "title": "Responsive Polish",
+      "commit": "abee9f14ab7bdd35a2e911399896320f4c5ec560",
+      "committedAt": "2026-10-31T00:53:43.000Z",
+      "notes": [
+        "Better phone-landscape rankings and Settings spacing.",
+        "Settings controls stay clear of notches and home indicators."
+      ]
+    },
+    {
+      "number": 248,
+      "title": "UI Consistency",
+      "commit": "83ac2ba5514b4bfd497dbd2f4688e449757d3ded",
+      "committedAt": "2026-10-31T00:28:16.000Z",
+      "notes": [
+        "Cleaner settings and clearer unplayed-track counts.",
+        "Consistent event placements and a reliable weekly card."
+      ]
+    },
+    {
+      "number": 247,
+      "title": "Snapshot Stability",
+      "commit": "603265e84dd559de606b08e738efa799a29b0bba",
+      "committedAt": "2026-10-30T23:46:30.000Z",
+      "notes": [
+        "More reliable snapshot and weekly event updates."
+      ]
+    },
+    {
+      "number": 246,
+      "title": "Event Fixes",
+      "commit": "d11df70c0ca136de46802cd8bfd406f390534351",
+      "committedAt": "2026-10-30T23:16:13.000Z",
+      "notes": [
+        "Clearer event results and accurate verified PB placements.",
+        "Optional player counts on unplayed tracks.",
+        "Expanded event capacity with paged standings."
+      ]
+    },
+    {
+      "number": 245,
+      "title": "Weekly Alignment",
+      "commit": "f81022c8f1166a9ec8d8a10e32a763d8fd71bc30",
+      "committedAt": "2026-10-30T22:30:15.000Z",
+      "notes": [
+        "Left-aligned weekly event times and placements."
+      ]
+    },
+    {
+      "number": 244,
+      "title": "Verified Snapshots",
+      "commit": "71eda762b9a4e2eee39db760ec025e875a8efbd3",
+      "committedAt": "2026-10-30T22:20:09.000Z",
+      "notes": [
+        "Verified saved runs and refreshed snapshot standings.",
+        "Cleaner weekly placement and more reliable cached replays."
+      ]
+    },
+    {
+      "number": 243,
+      "title": "Event Polish",
+      "commit": "ad1073dcc8a1e752406af43e4d537588e96e0c03",
+      "committedAt": "2026-10-30T11:33:52.000Z",
+      "notes": [
+        "Clearer event pages, placements and update notices.",
+        "More reliable local PB saving and replay selection."
+      ]
+    },
+    {
+      "number": 242,
+      "title": "Snapshot Repair",
+      "commit": "bbed4aab8c1d0b780aae4b29977b19d720c72bba",
+      "committedAt": "2026-10-30T08:55:46.000Z",
+      "notes": [
+        "More reliable replay availability, including pending runs.",
+        "Updated standings and clearer snapshot coverage."
+      ]
+    },
+    {
+      "number": 241,
+      "title": "Update Polish",
+      "commit": "46381cb483a2fc193fc1210998d7c773068f3cf2",
+      "committedAt": "2026-10-30T06:52:55.000Z",
+      "notes": [
+        "Cleaner update notices, local dates and a larger racer search.",
+        "Verified-only event standings keep matching ranks, counts and dates.",
+        "Sort Extra Tracks by snapshot popularity.",
+        "More accurate route targets and clearer Event RP summaries."
+      ]
+    },
+    {
+      "number": 240,
+      "title": "Play Shortcut",
+      "commit": "4c3547860028cfa2a500978a9fa6565c8b2a4261",
+      "committedAt": "2026-10-30T05:19:52.000Z",
+      "notes": [
+        "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
+        "Holding Space cannot launch twice or activate a racer when the key is released.",
+        "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
+        "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
+      ]
+    },
+    {
+      "number": 239,
+      "title": "Quota Guard",
+      "commit": "9a25a3b2b59689a7e7174f82aff03d40c1c6c459",
+      "committedAt": "2026-10-30T05:01:20.000Z",
+      "notes": [
+        "Ordinary leaderboard browsing continues to use saved snapshots without Firebase reads.",
+        "Private capture authentication prevents public Worker data requests from triggering Firebase reads.",
+        "Four coordinated daily verification and capture windows replace repeated scheduled checks.",
+        "Replay-binding repairs update the affected racer instead of rescanning a complete leaderboard.",
+        "Verification document budgets and operation accounting make backend costs easier to audit."
+      ]
+    }
+  ],
+  "coverage": {
+    "limit": 20,
+    "olderOmitted": true
+  }
+}

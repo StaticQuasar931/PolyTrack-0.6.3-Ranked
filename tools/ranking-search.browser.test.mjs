@@ -29,7 +29,12 @@ test('native Overall search finds later-page racers with no remote reads and fit
     try{await page.locator('#overallLeaderboardList .overall-entry').first().waitFor();}catch(error){
       await page.screenshot({path:output+'/load-failure.png'});await fs.writeFile(output+'/load-failure.json',JSON.stringify({state:await page.evaluate(()=>({body:document.body.innerText,audit:window.__ptNativeRankedAudit})),messages,responses},null,2));throw error;
     }
-    await page.waitForFunction(()=>!document.getElementById('overallNextPage').disabled);
+    try {
+      await page.waitForFunction(()=>!document.getElementById('overallNextPage').disabled,null,{timeout:60000});
+    } catch (error) {
+      await fs.writeFile(output+'/paging-failure.json',JSON.stringify({text:await page.locator('#overallLeaderboardPanel').innerText(),messages,responses},null,2));
+      throw error;
+    }
     await page.locator('#overallNextPage').click();
     await page.waitForFunction(()=>document.getElementById('overallPageJump').value==='2');
     const target=await page.locator('#overallLeaderboardList .overall-entry').first().evaluate(row=>({id:row.dataset.userid,rank:row.querySelector('.overall-rank').textContent,name:row.querySelector('.overall-name-main').firstChild.textContent.trim()}));

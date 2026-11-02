@@ -249,6 +249,15 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     await title.evaluate(node=>node.textContent='Hydropower');await settle(page);
     const ordinary=await sample(),geometry=await measure(page);
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);
+    const previews=await page.locator('.track:not(.track-of-the-week):not(.sq-permanent-track)>.button').evaluateAll(nodes=>nodes.filter(node=>node.querySelector('.environment')&&node.getBoundingClientRect().width>0).map(node=>{
+     const icon=node.querySelector('.environment').getBoundingClientRect(),record=node.querySelector('.record')?.getBoundingClientRect();
+     return {width:node.getBoundingClientRect().width,iconBottom:icon.bottom,recordTop:record?.top};
+    }));
+    assert.ok(previews.length>0,'native community previews are present');
+    for(const preview of previews){
+     assert.ok(preview.width>=100,'native cards retain a usable intrinsic width');
+     assert.ok(preview.iconBottom<=preview.recordTop+1,'season icons stay above the record strip');
+    }
     for(const card of geometry.cards){
      assert.ok(card.width<=geometry.card.width+1,'native Kodub card has room for its artwork: '+JSON.stringify(geometry.cards));
      if(width>1000&&Math.abs(card.y-geometry.card.y)<1)assert.ok(Math.abs(card.height-geometry.card.height)<1,'native desktop cards have equal height: '+JSON.stringify(geometry.cards));
@@ -256,7 +265,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     await page.screenshot({path:path.join(directory,'native-title-'+width+'x'+height+'-ui'+scale+'.png')});
     assert.equal(ordinary.lines,1,JSON.stringify({width,height,scale,ordinary})+': Hydropower must be one line');
     assert.equal(ordinary.overflow,false,'ordinary title must not overflow');
-    assert.equal(geometry.image.fit,'cover');assert.equal(geometry.image.position,'0% 100%');
+    assert.equal(geometry.image.fit,'contain');assert.equal(geometry.image.position,'0% 100%');
     assert.ok(Math.abs(geometry.image.rect.x-geometry.card.x)<1,'art remains full bleed on left');
     assert.ok(geometry.image.rect.right<=geometry.info.x+1||geometry.image.rect.bottom<=geometry.info.y+1,'artwork never overlaps the native details');
     await title.evaluate(node=>node.textContent='Hydropower Mountain Expedition');await settle(page);

@@ -17,7 +17,7 @@ metadata, notes and preparation timestamp unchanged.
 
 ## Before The Manual Commit
 
-1. Run `node tools/check-release-info.mjs --precommit RELEASE_NUMBER` with the next manual title number. This validates working files against the preceding manual commit, not the staged index. From release 225 onward, a valid, nonfuture preparation timestamp is required. If the preceding release has a timestamp, the next one must be later.
+1. After finalizing central notes, run `node tools/release-history.mjs --write --precommit`, then `node tools/check-release-info.mjs --precommit RELEASE_NUMBER` with the next manual title number. The guard also rejects stale changelog archives. This validates working files against the preceding manual commit, not the staged index. From release 225 onward, a valid, nonfuture preparation timestamp is required. If the preceding release has a timestamp, the next one must be later.
 2. Run the serial offline regression command below. Store logs and screenshots outside the repository. Do not run browser test files or processes in parallel on a resource-constrained machine.
 
 ```sh

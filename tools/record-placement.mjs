@@ -420,7 +420,7 @@ function ensureStyle(document) {
 [${BADGE_ATTRIBUTE}].silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
 [${BADGE_ATTRIBUTE}].bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
 [${BADGE_ATTRIBUTE}].estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
-[${BADGE_ATTRIBUTE}].player-count{min-width:2.65em;min-height:1.8em;padding:.16em .3em;font:700 .88em/1.25 'Trebuchet MS',Verdana,sans-serif;font-variant-numeric:tabular-nums;background:#284b59;color:#d5f3f0;border-color:#81b5bd;box-shadow:none}
+[${BADGE_ATTRIBUTE}].player-count{min-width:2.65em;min-height:1.35em;box-sizing:border-box;padding:.1em .28em;font:700 .72em/1.15 'Trebuchet MS',Verdana,sans-serif;font-variant-numeric:tabular-nums;background:#284b59;color:#d5f3f0;border-color:#81b5bd;box-shadow:none}
 `;
   document.head.appendChild(style);
   return true;

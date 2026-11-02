@@ -6,6 +6,12 @@ import {join} from 'node:path';
 const RELEASE_FIXTURE={number:225,version:'0.6.3',revision:194,preparedAt:'2026-10-01T12:00:00.000Z',notes:['Offline fixture only. Final notes belong to release integration.']};
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+async function historyBrowserBundle() {
+  const source=await fs.readFile(new URL('./release-history.mjs',import.meta.url),'utf8');
+  const names='RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
+  return 'const {'+names+'}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {'+names+'};})();\n';
+}
+const stripImports=source=>source.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'');
 
 test('release age stays accurate while open, after sleep, on rebind and after clock changes',{timeout:30000},async t=>{
   const browser=await chromium.launch({headless:true});t.after(()=>browser.close());
@@ -14,7 +20,7 @@ test('release age stays accurate while open, after sleep, on rebind and after cl
   const infoSource=await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8');
   const helpSource=await fs.readFile(new URL('./help-controls.mjs',import.meta.url),'utf8');
   await page.setContent('<main></main>');
-  await page.addScriptTag({content:(infoSource+helpSource.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+  await page.addScriptTag({content:(await historyBrowserBundle()+stripImports(infoSource)+stripImports(helpSource)).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
   await page.evaluate(()=>{
     const nativeSet=window.setTimeout,nativeClear=window.clearTimeout;
     window.ageTimers=new Map();let id=-1;
@@ -103,7 +109,7 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.setViewportSize({width,height});
     await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#09142c}main{max-width:1040px;margin:auto}</style><p style="margin:0;padding:8px;color:white;font:12px sans-serif;text-align:center">Offline fixture: sample preparation time and notes, not a published release.</p><main></main>');
     await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font.toString('base64')+')}'+css+proposal});
-    await page.addScriptTag({content:(await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8')+source.replace(/^const \{(?:parseReleasePreparedAt|releaseUpdateAge,formatReleaseUpdateAge)\}=await import\([^\n]+;\r?\n/gm,'')).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
+    await page.addScriptTag({content:(await historyBrowserBundle()+await fs.readFile(new URL('./release-info.mjs',import.meta.url),'utf8')+stripImports(await fs.readFile(new URL('./site-updates.mjs',import.meta.url),'utf8'))+stripImports(source)).replace(/\bexport /g,'')+'\nwindow.helpAPI={renderHelpControls,bindHelpControls};'});
     await page.evaluate(release=>{
       const root=document.querySelector('main');
       root.innerHTML=window.helpAPI.renderHelpControls({idPrefix:'fixture',release,bindings:{VehicleAccelerate:['KeyI','ArrowUp']}});

@@ -1,3 +1,5 @@
+const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
@@ -254,7 +256,7 @@ function expireLauncherDiscovery(document, commit) {
 export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
   isReady = () => false, isIdle = defaultIdle, storage, sessionStorage,
   verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
-  now = Date.now, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
+  now = Date.now, releaseHistory = RELEASE_HISTORY, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
   if (!document?.addEventListener) throw new TypeError('document is required');
   const existing = noticeInstallations.get(document);
@@ -277,9 +279,10 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     }
     return false;
   };
-  let disposed = false, dialog = null, previousFocus = null, ageBinding = null;
+  let disposed = false, dialog = null, previousFocus = null, ageBinding = null, historyBinding = null;
   const close = (restoreFocus = false) => {
     ageBinding?.dispose(); ageBinding = null;
+    historyBinding?.dispose(); historyBinding = null;
     const node = dialog; dialog = null;
     if (!node) return;
     try { node.close?.(); } catch { /* Removal is sufficient. */ }
@@ -313,6 +316,17 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     ageNode.dataset.siteUpdateAge = '';
     Object.assign(ageNode.style, {display: 'block', marginTop: '8px', color: '#a7d5ff', fontSize: '0.85em'});
     description.append(ageNode);
+    const updates = countKnownUpdates(release, number => {
+      const previousKey = 'polytrack-site-update-ack-release-v1:'+number;
+      if (remembered.has(previousKey)) return true;
+      for (const store of stores()) { try { if (store.getItem(previousKey) === 'acknowledged') return true; } catch {} }
+      return false;
+    }, releaseHistory);
+    if (updates > 0) {
+      const count = document.createElement('small'); count.dataset.siteUpdatesSinceAck = '';
+      count.textContent = updates+' update'+(updates === 1 ? '' : 's')+' since your last acknowledged release';
+      Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'}); description.append(count);
+    }
     themeDialog(node, title, description);
     const notes = document.createElement('ul');
     Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
@@ -323,16 +337,28 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       Object.assign(item.style, {marginBottom: '8px', overflowWrap: 'anywhere'});
       notes.append(item);
     }
+    const archive = createReleaseHistory(document, {release,history:releaseHistory,now:now()});
+    if (archive) historyBinding = bindReleaseHistory(archive);
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
+    const trapTab = event => {
+      const controls = node.querySelectorAll ? [...node.querySelectorAll('button, summary, a[href], [tabindex]')].filter(control =>
+        control.tabIndex !== -1 && (!control.getClientRects || control.getClientRects().length)) : [ok];
+      const first = controls[0] || ok, last = controls.at(-1) || ok;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if ((!event.shiftKey && document.activeElement === last) || !controls.includes(document.activeElement)) { event.preventDefault(); first.focus(); }
+    };
+    node.__trapInstalledTab = trapTab;
     ok.addEventListener('click', acknowledge);
     node.addEventListener('close', () => { if (dialog === node) close(); });
     node.addEventListener('cancel', event => { event.preventDefault(); acknowledge(); });
     node.addEventListener('keydown', event => {
       event.stopPropagation();
-      if (event.key === 'Tab') { event.preventDefault(); ok.focus(); }
+      if (event.key === 'Tab') trapTab(event);
     });
-    node.append(title, description, notes, ok); document.body.append(node);
+    if (archive) node.append(title, description, notes, archive, ok);
+    else node.append(title, description, notes, ok);
+    document.body.append(node);
     try {
       node.showModal(); ok.focus();
       ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
@@ -346,7 +372,8 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     if (dialog?.open || event.type === 'keyup' && held.has(code)) event.stopImmediatePropagation();
     if (dialog?.open && event.type === 'keydown') {
       held.add(code);
-      if (event.key === 'Tab') { event.preventDefault(); dialog.children[3].focus(); }
+      if (event.key === 'Tab') dialog.__trapInstalledTab?.(event);
+      if (event.key === 'Escape') historyBinding?.collapse(event);
     }
     if (event.type === 'keyup') held.delete(code);
   };
