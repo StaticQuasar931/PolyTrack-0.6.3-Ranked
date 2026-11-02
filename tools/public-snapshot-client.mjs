@@ -256,8 +256,9 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       // Fetch capture metadata alongside the board instead of adding another round trip.
         const trackBoard=['track','track-preview','track-page','track-manifest'].includes(kind);
         const overallBoard=['overall','overall-preview','overall-page','overall-manifest'].includes(kind);
+        const overallSlice=overallBoard&&kind!=='overall';
         const knownTrack=trackBoard?saved.get('track-statistics.json')?.value?.tracks?.[id]:null;
-        const confirmationManifest=overallBoard||kind==='event'||kind==='track'&&!knownTrack?readAtGeneration('manifest','','',requestedGeneration):null;
+        const confirmationManifest=overallBoard&&!overallSlice||kind==='event'||kind==='track'&&!knownTrack?readAtGeneration('manifest','','',requestedGeneration):null;
       try{
         let body,materialized=null;
         if(packed){
@@ -301,7 +302,9 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(trackBoard||overallBoard||kind==='event'||kind==='event-totals'){
           // Matching statistics/paged track metadata already carry a board-specific check.
           const hasTrackCapture=kind==='event-totals'||trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);
-          const manifest=hasTrackCapture?manifestValue:await (confirmationManifest||readAtGeneration('manifest','','',requestedGeneration));
+          // First-page rendering must not wait for the larger capture catalog.
+          // A cold slice simply has no independently confirmed age yet.
+          const manifest=hasTrackCapture||overallSlice?manifestValue:await (confirmationManifest||readAtGeneration('manifest','','',requestedGeneration));
           const capturedAt=snapshotConfirmationTime(kind,value,{manifest,statistics:knownTrack});
           if(capturedAt!==null)result._snapshotCapturedAt=capturedAt;
         }

@@ -1,4 +1,4 @@
-const { featuredPicks } = await import(new URL(`featured-picks.mjs${new URL(import.meta.url).search}`, import.meta.url));
+const { featuredPicks, recommendationOrder } = await import(new URL(`featured-picks.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { normalizeSearchText, searchMatches, searchAliases } = await import(new URL(`../tools/search-text.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { snapshotPopularity } = await import(new URL(`snapshot-popularity.mjs${new URL(import.meta.url).search}`, import.meta.url));
 const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, reviewTagOptions, tagLabel, reviewExportRow, hasReviewExportData } =
@@ -251,7 +251,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   const selectedTags = make('div', 'sq-extra-selected-tags');
   selectedTags.setAttribute('aria-label', 'Selected tags');
   tagField.label.append(selectedTags);
-  const tagHint = make('span', 'sq-extra-tag-hint', 'Matches every selected tag');
+  const tagHint = make('span', 'sq-extra-tag-hint', 'Matches every selected tag. Track of the Week is a catalog tag, not proof of an official Kodub weekly selection or date.');
   tagField.label.append(tagHint);
   const difficultyField = selectField('Catalog level', [['', 'Any level'], ...DIFFICULTY_LABELS.slice(1).map((label, index) => [String(index + 1), label])]);
   const progressLabels = {all: 'All tracks', activity: 'Has my activity', untouched: 'No activity yet', completed: 'Completed', uncompleted: 'Not completed', loaded: 'Imported, not completed'};
@@ -293,8 +293,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   dialog.append(controls);
 
   const featured = make('section', 'sq-extra-featured');
-  featured.setAttribute('aria-label', 'Creator spotlight and underplayed discovery');
-  featured.setAttribute('aria-description', 'Creator spotlight rotates at 00:00 UTC daily; discovery rotates Monday at 00:00 UTC. Underplayed means the lowest exact racer-count quarter of the worthy editorial pool, including genuine zeroes. Unknown coverage is never treated as zero.');
+  featured.setAttribute('aria-label', 'Four ways to discover a track');
+  featured.setAttribute('aria-description', 'Creator Spotlight and Route Roulette rotate daily at 00:00 UTC; Underplayed Discovery and Critics Line refresh Monday at 00:00 UTC. These are local editorial spotlights, not official Kodub selections. Underplayed means the lowest exact racer-count quarter of the worthy editorial pool, including genuine zeroes. Unknown coverage is never treated as zero.');
   dialog.append(featured);
 
   const summary = make('div', 'sq-extra-summary');
@@ -662,6 +662,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (entry.submittedAt && Number.isFinite(Date.parse(entry.submittedAt))) {
       trackDetails.append(make('p', 'sq-extra-code-date', `Submitted ${new Date(entry.submittedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}`));
     }
+    if (entry.source === 'Kodub weekly') body.append(make('p', 'sq-extra-weekly-context', 'Kodub weekly archive' + (Number.isFinite(Date.parse(entry.weeklyEndsAt)) ? '' : ' · Selection date unknown')));
+    if ((entry.tags || []).includes('track-of-the-week')) body.append(make('p', 'sq-extra-weekly-context', 'Track of the Week: catalog tag; official Kodub selection not established by this tag.'));
     const tags = effectiveReviewTags(entry, feedback);
     if (tags.length) {
       const tagList = make('div', 'sq-extra-tags');
@@ -683,9 +685,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       opinions.title = label;
       const number = value => Number.isInteger(value) ? String(value) : value.toFixed(1);
       if (reviewed.quality !== null) opinions.append(make('span', 'sq-extra-reviewed-quality', `Rating ${number(reviewed.quality)}/10`));
+      else opinions.append(make('span', 'sq-extra-reviewed-quality', 'Rating unknown'));
       if (reviewed.difficulty !== null) opinions.append(make('span', 'sq-extra-reviewed-difficulty', `Difficulty ${number(reviewed.difficulty)}/10`));
       body.append(opinions);
-    }
+    } else body.append(make('p', 'sq-extra-rating-unknown', 'Rating unknown'));
     const mine = make('p', 'sq-extra-my-review');
     const mineValues = [];
     if (Number.isInteger(feedback.rating) && feedback.rating >= 1 && feedback.rating <= 10) mineValues.push(`My rating ${feedback.rating}/10`);
@@ -1010,7 +1013,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       spotlightExpanded = !spotlightExpanded; activate(activeSpotlight);
     });
     if (focusedToggle) focusTarget = toggle;
-    toggle.setAttribute('aria-controls', 'sq-extra-spotlight-' + mountNumber + '-daily sq-extra-spotlight-' + mountNumber + '-weekly');
+    toggle.setAttribute('aria-controls', picks.map(pick => 'sq-extra-spotlight-' + mountNumber + '-' + pick.kind).join(' '));
     const tabButtons = [], tiles = [];
     const activate = (kind, open = false) => {
       activeSpotlight = kind;
@@ -1026,13 +1029,13 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     };
     for (const pick of picks) {
       const panelId = 'sq-extra-spotlight-' + mountNumber + '-' + pick.kind;
-      const tab = button(pick.kind === 'daily' ? 'Creator' : 'Discover', 'sq-extra-featured-tab', () => activate(pick.kind, true));
+      const tab = button(({daily: 'Creator', weekly: 'Discover', critics: 'Critics', roulette: 'Roulette'})[pick.kind], 'sq-extra-featured-tab', () => activate(pick.kind, true));
       tab.setAttribute('role', 'tab'); tab.setAttribute('data-pick-tab', pick.kind); tab.setAttribute('aria-controls', panelId);
       tab.id = panelId + '-tab';
       tab.addEventListener('keydown', event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
-        const target = event.key === 'Home' ? tabButtons[0] : event.key === 'End' ? tabButtons.at(-1) : tabButtons.find(value => value !== tab) || tab;
+        const target = event.key === 'Home' ? tabButtons[0] : event.key === 'End' ? tabButtons.at(-1) : tabButtons[(tabButtons.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + tabButtons.length) % tabButtons.length];
         activate(target.getAttribute('data-pick-tab'), true); target.focus();
       });
       tabs.append(tab); tabButtons.push(tab);
@@ -1051,27 +1054,27 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         image.src = imageUrl; artwork.append(image);
       }
       const content = make('div', 'sq-extra-pick-content');
-      const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
+      const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.kind === 'critics' ? (pick.quality === null ? 'EDITORIAL LINE' : 'CRITICS LINE') : pick.kind === 'roulette' ? 'ROUTE ROULETTE' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
       content.append(make('span', 'sq-extra-pick-label', label));
       const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
       author.title = author.textContent; content.append(author);
       const metrics = make('p', 'sq-extra-pick-note');
       metrics.textContent = pick.players === null ? 'Player count unknown' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
-      if (Number.isFinite(pick.quality)) metrics.textContent += ' · Published ' + pick.quality.toFixed(1) + '/10';
+      metrics.textContent += Number.isFinite(pick.quality) ? ' · Published ' + pick.quality.toFixed(1) + '/10' : ' · Rating unknown';
       metrics.title = pick.underplayed ? 'Lowest exact racer-count quarter of eligible editorial tracks; unknown counts are excluded.' : pick.fallbackReason === 'coverage-unavailable' ? 'Editorial fallback: exact racer coverage is unavailable. Not an underplayed claim.' : 'Published review and snapshot information, not a local rating or live play count.';
       content.append(metrics);
       const footer = make('div', 'sq-extra-pick-footer');
       const play = button(pick.kind === 'daily' ? 'Play spotlight' : 'Explore track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
       play.setAttribute('aria-label', (pick.kind === 'daily' ? 'Play creator spotlight: ' : 'Explore discovery: ') + text(pick.entry.name, 'Untitled track'));
-      const period = make('time', 'sq-extra-pick-period', pick.kind === 'daily' ? 'Daily · UTC' : 'Weekly · UTC');
+      const period = make('time', 'sq-extra-pick-period', ['daily', 'roulette'].includes(pick.kind) ? 'Daily · UTC' : 'Weekly · UTC');
       period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
       period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
       footer.append(play, period); content.append(footer);
       if (focusedKind === pick.kind) focusTarget = play;
       tile.append(artwork, content); tiles.push(tile);
     }
-    featured.append(toggle, tabs, ...tiles); activate(activeSpotlight);
+    featured.append(toggle, tabs, ...tiles); activate(picks.some(pick => pick.kind === activeSpotlight) ? activeSpotlight : picks[0].kind);
     focusTarget?.focus({preventScroll: true});
   }
 
@@ -1111,7 +1114,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     syncSortChoices(all);
     renderFeatured(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
-    const description = state.sort === 'popular'
+    const description = state.sort === 'recommended' ? 'Published quality first, then editorial selection, then known exact racer counts. Unknown values stay last at each step; names break ties. Local ratings are not used.' : state.sort === 'popular'
       ? `Players, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Published counts; unavailable counts stay last.`
       : state.sort === 'weekly-date' ? 'Captured Kodub weekly end time (UTC). Unknown dates stay last in either direction; not a creation date.' : REVIEW_SORT_DESCRIPTIONS[reviewKey] || '';
     sortField.select.title = description;
@@ -1226,7 +1229,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         return Number.isSafeInteger(entry.sourceCopies) && entry.sourceCopies >= 0 ? entry.sourceCopies : Number.isSafeInteger(entry.sourcePlays) && entry.sourcePlays >= 0 ? entry.sourcePlays : null;
       };
       ordered.sort((a, b) => {
-        if (state.sort === 'recommended') return Number(b.entry.featuredSubmission === true) - Number(a.entry.featuredSubmission === true) || ((a.entry.featuredSubmission === true && b.entry.featuredSubmission === true) ? (Number(a.entry.submissionOrder) || 0) - (Number(b.entry.submissionOrder) || 0) : 0) || Number(text(b.entry.tier).toLowerCase() === 'curated') - Number(text(a.entry.tier).toLowerCase() === 'curated') || compare(a.entry.name, b.entry.name);
+        if (state.sort === 'recommended') return recommendationOrder(a.entry, b.entry, popularityCounts) || compare(a.entry.name, b.entry.name);
         if (state.sort === 'name') return (state.direction === 'asc' ? 1 : -1) * compare(a.entry.name, b.entry.name);
         if (state.sort === 'author') return (state.direction === 'asc' ? 1 : -1) * compare(displayAuthor(a.entry), displayAuthor(b.entry)) || compare(a.entry.name, b.entry.name);
         return numeric(metric(a), metric(b), a, b);

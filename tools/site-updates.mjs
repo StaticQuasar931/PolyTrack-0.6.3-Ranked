@@ -1,5 +1,29 @@
 const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
+const oldCopyBoots = new WeakMap();
+const OLD_COPY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function confirmedOldCopyBoot(document, revision, now) {
+  const prior = oldCopyBoots.get(document);
+  if (prior?.revision === revision) return prior.count;
+  try {
+    const page = new URL(document.location?.href || document.baseURI);
+    if (!['https:', 'http:'].includes(page.protocol) || page.pathname.length > 256 ||
+        /^https:\/\/cdn\.jsdelivr\.net\/gh\/StaticQuasar931\/PolyTrack-0\.6\.3-Ranked@/.test(page.href)) return 0;
+    const key = 'polytrack-old-copy-v1:' + encodeURIComponent(page.pathname);
+    const storage = document.defaultView?.localStorage, at = now();
+    if (!storage || !Number.isFinite(at) || at < 0) return 0;
+    const raw = storage.getItem(key);
+    let saved;
+    if (typeof raw === 'string' && raw.length <= 256) { try { saved = JSON.parse(raw); } catch { /* Reset invalid optional state. */ } }
+    const valid = saved && saved.revision === revision && Number.isSafeInteger(saved.count) && saved.count >= 1 && saved.count <= 3 &&
+      Number.isFinite(saved.firstSeenAt) && saved.firstSeenAt >= 0 && at >= saved.firstSeenAt && at - saved.firstSeenAt < OLD_COPY_TTL_MS;
+    const record = {revision, count:valid ? Math.min(saved.count + 1, 3) : 1, firstSeenAt:valid ? saved.firstSeenAt : at};
+    storage.setItem(key, JSON.stringify(record));
+    oldCopyBoots.set(document, record);
+    return record.count;
+  } catch { return 0; } // Optional local storage must never affect updates or compatibility.
+}
+
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
@@ -425,6 +449,48 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
   let compatibility = null, pendingManifest = null;
+  let oldCopyNotice = null, oldCopyDismissed = false, oldCopyCount = 0, oldCopyConfirmed = false;
+  const clearOldCopyNotice = () => {
+    const node = oldCopyNotice; oldCopyNotice = null;
+    if (!node) return;
+    const restore = node.contains?.(document.activeElement);
+    node.remove();
+    try { if (restore && node.__previousFocus?.isConnected) node.__previousFocus.focus(); } catch { /* Best-effort focus restoration. */ }
+  };
+  const refreshOldCopyNotice = () => {
+    try {
+      const blocked = [...(document.querySelectorAll?.('dialog[open], [role="dialog"][aria-modal="true"]') || [])]
+        .some(node => node.isConnected && (node.open || node.getClientRects?.().length));
+      if (disposed || !oldCopyConfirmed || oldCopyCount < 2 || oldCopyDismissed || dialog || blocked ||
+          !document.body || !isVisible(document) || !isIdle(document) || !button?.isConnected) { clearOldCopyNotice(); return; }
+      if (oldCopyNotice?.isConnected) return;
+      const node = document.createElement('aside');
+      node.__previousFocus = document.activeElement;
+      node.dataset.siteOldCopy = 'notice'; node.setAttribute('role', 'status');
+      Object.assign(node.style, {position:'fixed', right:'16px', bottom:'80px', zIndex:'10000',
+        maxWidth:'min(420px, calc(100vw - 32px))', maxHeight:'calc(100dvh - 112px)', overflow:'auto',
+        boxSizing:'border-box', padding:'12px', background:'var(--surface-secondary-color, #212b58)',
+        color:'var(--text-color, #fff)', font:'20px/1.3 ForcedSquare, sans-serif'});
+      const text = document.createElement('p');
+      text.textContent = 'This copy is still on an older version. Refreshing may not update it.';
+      text.style.margin = '0 0 10px';
+      const open = document.createElement('a');
+      open.href = UPDATED_GAME_URL; open.target = '_blank'; open.rel = 'noopener noreferrer';
+      open.textContent = 'Open updated game'; open.setAttribute('aria-label', 'Open updated game (opens in a new tab)'); themeControl(open);
+      open.addEventListener('click', event => {
+        try { if (!isVisible(document) || !isIdle(document) || !canReload()) event.preventDefault(); }
+        catch { event.preventDefault(); }
+      });
+      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = 'Dismiss'; themeControl(dismiss);
+      dismiss.addEventListener('click', () => {
+        oldCopyDismissed = true;
+        const restore = node.contains?.(document.activeElement) || document.activeElement === dismiss || document.activeElement === open;
+        clearOldCopyNotice();
+        if (restore && !document.activeElement?.isConnected && button?.isConnected) button.focus();
+      });
+      node.append(text, open, dismiss); document.body.append(node); oldCopyNotice = node;
+    } catch { clearOldCopyNotice(); }
+  };
   const clearDialog = () => {
     if (!dialog) return;
     const { node, previousFocus } = dialog;
@@ -443,6 +509,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   const failOpen = (reason = 'check-failed', recover = true) => {
     clearDialog();
+    oldCopyConfirmed = false; clearOldCopyNotice();
     offlineMinimum = null;
     publish({ onlineAllowed: true, revision, latestRevision: null, minimumSupportedRevision: null, reason }, recover);
   };
@@ -511,6 +578,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     publish(state);
   };
   const resume = () => {
+    refreshOldCopyNotice();
     if (disposed || !pendingManifest) return;
     try {
       if (!document.body || !isVisible(document) || !isIdle(document)) return;
@@ -518,10 +586,15 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       pendingManifest = null;
       // Invalid policy must not suppress an otherwise valid optional update offer.
       try { applyCompatibility(data); } catch { failOpen(); }
-      if (data.revision <= revision) { button?.remove(); button = null; return; }
-      if (button?.isConnected) return;
+      oldCopyConfirmed = false;
+      if (data.revision <= revision) { clearOldCopyNotice(); button?.remove(); button = null; return; }
       const launcherCommit = automaticLauncherCommit(document);
       const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
+      const minimum = data.minimumSupportedRevision;
+      if (!reloadHere && (minimum === undefined || validRevision(minimum) && minimum <= data.revision)) {
+        oldCopyCount = confirmedOldCopyBoot(document, revision, now); oldCopyConfirmed = true;
+      }
+      if (button?.isConnected) { refreshOldCopyNotice(); return; }
       button = document.createElement(reloadHere ? 'button' : 'a');
       if (reloadHere) button.type = 'button';
       else { button.href = UPDATED_GAME_URL; button.target = '_blank'; button.rel = 'noopener noreferrer'; }
@@ -543,6 +616,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
+      refreshOldCopyNotice();
     } catch { /* Keep gameplay independent of notification UI. */ }
   };
   const check = async () => {
@@ -629,6 +703,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   const handle = Object.freeze({ check, resume, getCompatibility: () => ({ ...compatibility }), dispose() {
     if (disposed) return;
     disposed = true;
+    clearOldCopyNotice();
     document.removeEventListener('visibilitychange', onVisibilityChange);
     document.defaultView?.removeEventListener('focus', resume);
     document.defaultView?.removeEventListener('pageshow', resume);

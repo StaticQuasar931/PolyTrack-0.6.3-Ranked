@@ -2,15 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 268,
+    "number": 269,
     "version": "0.6.3",
-    "revision": 229,
+    "revision": 230,
     "notes": [
-      "Reliable delivery of recent menu, discovery and changelog improvements.",
-      "Builder contact links and Top Tracks filters are included in the updated menu package."
+      "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
+      "Cleaner event artwork, search controls and compact racer profiles.",
+      "Four Extra Tracks discovery picks and a clearer Builder program entry.",
+      "Simpler Help and update history, plus a clear link from outdated copies."
     ]
   },
   "entries": [
+    {
+      "number": 268,
+      "title": "Complete Cached Menu Dependencies",
+      "commit": "95d990d71f065f1346bcd341f3f7cc6e4f609a96",
+      "committedAt": "2026-11-02T07:05:52.000Z",
+      "notes": [
+        "Reliable delivery of recent menu, discovery and changelog improvements.",
+        "Builder contact links and Top Tracks filters are included in the updated menu package."
+      ]
+    },
     {
       "number": 267,
       "title": "Builder Contacts and Track Discovery",
@@ -206,18 +218,6 @@ const historyData = {
         "Sort Extra Tracks by snapshot popularity.",
         "More accurate route targets and clearer Event RP summaries."
       ]
-    },
-    {
-      "number": 240,
-      "title": "Play Shortcut",
-      "commit": "4c3547860028cfa2a500978a9fa6565c8b2a4261",
-      "committedAt": "2026-10-30T05:19:52.000Z",
-      "notes": [
-        "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
-        "Holding Space cannot launch twice or activate a racer when the key is released.",
-        "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
-        "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
-      ]
     }
   ],
   "coverage": {
@@ -283,12 +283,12 @@ export function releaseHistoryTime(committedAt, now = Date.now()) {
 function archiveModel(options) {
   const selected = selectReleaseHistory(options.release, options.history);
   if (!selected.matches || !selected.entries.length) return null;
-  return {...selected, coverage:`${selected.entries.length} recorded earlier update${selected.entries.length === 1 ? '' : 's'}. ${selected.olderOmitted ? 'Older updates are not included.' : 'All earlier manual commits in this Git history are included.'}`,
+  return {...selected,
     entries:selected.entries.map(entry => ({...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, time:releaseHistoryTime(entry.committedAt, options.now)}))};
 }
 export function renderReleaseHistory(options = {}) {
   const model = archiveModel(options); if (!model) return '';
-  return `<details class="release-history" data-release-history><summary>Earlier updates <small>${model.entries.length} recorded</small></summary><div class="release-history-body"><p class="release-history-coverage">${escape(model.coverage)}</p><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>Committed ${escape(entry.time.age)}</small></summary><p class="release-history-date">Committed <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>Release notes were not recorded for this older update.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
+  return `<details class="release-history" data-release-history><summary>Earlier updates <small>${model.entries.length}</small></summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>Committed ${escape(entry.time.age)}</small></summary><p class="release-history-date">Committed <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
 }
 
 /** Native DOM version for the installed notice; no history fetch or HTML execution. */
@@ -296,10 +296,9 @@ export function createReleaseHistory(document, options = {}) {
   const model = archiveModel(options); if (!model) return null;
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const root = make('details', undefined, 'release-history'); root.setAttribute('data-release-history','');
-  const summary = make('summary', `Earlier updates (${model.entries.length} recorded)`), body = make('div',undefined,'release-history-body');
+  const summary = make('summary', `Earlier updates (${model.entries.length})`), body = make('div',undefined,'release-history-body');
   Object.assign(root.style,{margin:'12px 0', borderTop:'1px solid #6389bf', fontSize:'clamp(18px, 4dvh, 20px)'});
   Object.assign(summary.style,{cursor:'pointer', padding:'10px 0', color:'#a7d5ff'});
-  const coverage = make('p',model.coverage,'release-history-coverage');
   const list = make('ol'); Object.assign(list.style,{listStyle:'none',padding:'0',margin:'8px 0',maxHeight:'min(42dvh, 360px)',overflow:'auto'});
   for (const entry of model.entries) {
     const item = make('li'), detail = make('details'); detail.setAttribute('data-release-history-entry','');
@@ -308,12 +307,12 @@ export function createReleaseHistory(document, options = {}) {
     Object.assign(when.style,{display:'block',fontSize:'18px',color:'#a7d5ff',overflowWrap:'anywhere'});
     detail.append(heading,when);
     if (entry.notes.length) { const notes = make('ul'); for (const note of entry.notes) notes.append(make('li',note)); detail.append(notes); }
-    else detail.append(make('p','Release notes were not recorded for this older update.'));
+    else detail.append(make('p','No recorded notes.'));
     item.append(detail); list.append(item);
   }
   const close = make('button','Close archive','button'); close.type = 'button'; close.setAttribute('data-release-history-close','');
   Object.assign(close.style,{minHeight:'44px',borderRadius:'0',clipPath:'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',border:'1px solid #6389bf',padding:'8px 12px',background:'var(--button-color, #112052)',color:'inherit',font:'inherit',cursor:'pointer'});
-  body.append(coverage,list,close); root.append(summary,body); return root;
+  body.append(list,close); root.append(summary,body); return root;
 }
 export function bindReleaseHistory(root) {
   if (!root) return {collapse:()=>false, dispose:()=>{}};

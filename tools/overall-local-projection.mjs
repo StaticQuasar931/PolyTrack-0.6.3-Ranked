@@ -427,7 +427,8 @@ export function projectScopedSnapshot({accountId,generation,overall,tracks}={}) 
 }
 
 
-export function projectLocalOverall({accountId, generation, overall, results, tracks, acceptedPbs = [], localPbs = []} = {}) {
+export function projectLocalOverall({accountId, generation, overall, results, tracks, acceptedPbs = [], localPbs = [], includeCasual = true} = {}) {
+  if(typeof includeCasual!=='boolean')return fail('invalid_projection_options');
   if (!validId(accountId)) return fail('invalid_account');
   if (!(typeof generation === 'string' && generation.length || positive(generation))) return fail('invalid_generation');
   if (overall?.generation !== generation || results?.generation !== generation) return fail('generation_mismatch');
@@ -476,14 +477,14 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
 
   const casualOptions={eligibleTrackIds:[...OFFICIAL_IDS,...COMMUNITY_IDS,...LEGACY_COMMUNITY_IDS],
     officialTrackIds:[...OFFICIAL_IDS,SPECIAL_ROLLING_HILLS_TRACK_ID],extraTrackIds:[...EXTRA_TRACK_IDS],sourceComplete:true};
-  const casualBaseline=new Map(baseline.map(row=>{
+  const casualBaseline=includeCasual?new Map(baseline.map(row=>{
     const prior=publicById.get(row.userId);
     const state=projectCasualRp({...casualOptions,accountId:row.userId,boards,priorEntry:prior});
     const published=readPublishedCasual(prior);
     const matches=!published.known||state.known&&state.casualRp===published.value&&state.casualCompletionCount===published.count;
     return [row.userId,{state,matches}];
-  }));
-  const casualFor=row=>casualBaseline.get(row.userId)?.matches===false
+  })):null;
+  const casualFor=row=>!includeCasual?null:casualBaseline.get(row.userId)?.matches===false
     ?{known:false,casualRp:null,officialCasualRp:null,casualCompletionCount:null,officialCasualCompletionCount:null,reason:'baseline_casual_mismatch'}
     :projectCasualRp({...casualOptions,accountId:row.userId,
       boards:boards.map(board=>({...board,totalEntries:board.entries.length})),priorEntry:publicById.get(row.userId)});
@@ -523,14 +524,14 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
   }
   if (!changedTracks.length) return {status: 'unchanged', generation, calculationExact: true,
     localPending: false, publicRank: null, projection: null, racers: [], changedTracks: [],
-    casualRacers:baseline.map(row=>({userId:row.userId,raceCount:row.raceCount,
+    casualIncluded:includeCasual,casualRacers:includeCasual?baseline.map(row=>({userId:row.userId,raceCount:row.raceCount,
       trackResults:row.resultSamples.map(({rank,...sample})=>({...sample,projectedRank:rank})),
-      casualProjection:casualFor(row)}))};
+      casualProjection:casualFor(row)})):[]};
   const calculated = computeOverall(boards, overall.entries, new Set(), {includePlannerResults: true});
   const racers = calculated.map(row=>present(row,casualFor(row)));
   return {status: 'projected', generation, sourceRevision: overall.sourceRevision,
     label: 'Snapshot + local recalculation', assumption: localPbsApplied?'Local PBs are provisional estimates until submitted and verified; public standings are unchanged.':'Accepted PBs eventually pass verification; other snapshot rows stay unchanged.',
-    localPbsApplied,
+    localPbsApplied,casualIncluded:includeCasual,
     calculationExact: true, localPending: true, publicRank: null, changedTracks: changedTracks.sort(),
     projection: racers.find(row => row.userId === accountId) || null, racers};
 }

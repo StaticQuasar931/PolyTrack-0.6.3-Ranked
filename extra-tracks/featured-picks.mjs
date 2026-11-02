@@ -11,6 +11,25 @@ function editorial(entry) {
     entry.dateProvenance === 'events/kodub/selections.json' && Number.isFinite(Date.parse(entry.weeklyEndsAt));
 }
 
+// Lexicographic evidence, not a weighted score: quality, editorial care, then reach.
+export function recommendationOrder(a, b, counts = new Map(), review = reviewedSummary) {
+  const quality = entry => {
+    const value = review(entry)?.quality;
+    return Number.isFinite(value) && value >= 1 && value <= 10 ? value : null;
+  };
+  const aq = quality(a), bq = quality(b);
+  if (aq !== bq) return aq === null ? 1 : bq === null ? -1 : bq - aq;
+  const care = Number(editorial(b)) - Number(editorial(a));
+  if (care) return care;
+  const count = entry => {
+    const value = counts.get(entry.trackId);
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  };
+  const ac = count(a), bc = count(b);
+  if (ac !== bc) return ac === null ? 1 : bc === null ? -1 : bc - ac;
+  return 0;
+}
+
 // Published reviews and explicit editorial decisions are the only eligibility evidence.
 export function featuredPicks(entries, counts = new Map(), now = Date.now(), review = reviewedSummary) {
   if (!Number.isFinite(now)) return [];
@@ -39,7 +58,13 @@ export function featuredPicks(entries, counts = new Map(), now = Date.now(), rev
   const available = unused.length ? unused : candidates;
   const creatorPool = available.filter(goodGrade).length ? available.filter(goodGrade) : available;
   const daily = creatorPool[hash('daily:' + day) % creatorPool.length];
-  return [['daily', daily, day, day + 1], ['weekly', weekly, week, week + 7]].map(([kind, entry, start, end]) => ({
+  const choices = [['daily', daily, day, day + 1], ['weekly', weekly, week, week + 7]];
+  const remaining = () => candidates.filter(entry => !choices.some(choice => choice[1].trackId === entry.trackId));
+  const critics = remaining().filter(goodGrade).sort((a, b) => grades.get(b.trackId) - grades.get(a.trackId) || a.trackId.localeCompare(b.trackId))[0] || remaining()[0];
+  if (critics) choices.push(['critics', critics, week, week + 7]);
+  const routes = remaining();
+  if (routes.length) choices.push(['roulette', routes[hash('route:' + day) % routes.length], day, day + 1]);
+  return choices.map(([kind, entry, start, end]) => ({
     kind, entry, startsAt: start * DAY, endsAt: end * DAY, players: countOf(entry), quality: grades.get(entry.trackId),
     pool: curated.length ? 'curated' : 'reviewed', underplayed: kind === 'weekly' && exact.length > 0,
     fallback: !curated.length || kind === 'weekly' && !exact.length,
