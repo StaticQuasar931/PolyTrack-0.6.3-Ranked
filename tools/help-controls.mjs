@@ -1,3 +1,4 @@
+const {renderReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 // Keep this dependency on the same client cache revision as the loaded Help module.
 const {parseReleasePreparedAt}=await import(new URL('./release-info.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {releaseUpdateAge,formatReleaseUpdateAge}=await import(new URL('./site-updates.mjs'+new URL(import.meta.url).search,import.meta.url).href);
@@ -203,7 +204,7 @@ export function renderHelpControls(options={}) {
       <p class="hc-default-note">${options.bindings||options.getBindings?'Your saved game keys are shown. Unchanged actions use defaults.':'Default game keys shown. Custom bindings take priority.'}</p></div></div>
       <details class="hc-essentials"><summary><strong>Ranked essentials</strong><span>Scores, profiles &amp; filters</span><span class="hc-chevron" aria-hidden="true"></span></summary><div class="hc-briefing"><section><h3>Know your score</h3><p>Lower Overall RP is better. Higher Event and Casual RP is better. A checkmark marks a verified replay.</p></section><section><h3>Find your next improvement</h3><p>Your profile combines saved results and local practice.</p><button type="button" data-help-action="profile">Your profile <span aria-hidden="true">&gt;</span></button></section><section><h3>Choose your field</h3><p>Normal filters choose which racers appear. Smart scoring recalculates supported group rankings, not lifetime Event RP.</p><button type="button" data-help-action="filters">Open Filters <span aria-hidden="true">&gt;</span></button></section></div></details>
     </div>
-    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">${release.number===undefined?'Current Release':'PolyTrack Ranked - Update '+escape(release.number)}</h3><section class="hc-release-age" aria-label="Release age"><p class="hc-eyebrow">${escape((age.label||'Publication time').toUpperCase())}</p><p class="hc-age-value" data-hc-release-age data-release-at="${escape(age.dateTime)}" data-release-source="${escape(age.source)}" data-release-commit="${ageCommit}" data-release-fixed="${options.verifiedReleaseCommitAt!==undefined}" title="${escape(age.title)}">${escape(age.label&&age.text.startsWith(age.label+' ')?age.text.slice(age.label.length+1):age.text)}</p></section>${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Hover over the age for your local date and time.</p>${metadata.length?`<details class="hc-release-technical"><summary>Developer details</summary><dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><p>Prepared ${escape(preparedLabel)}. This is not a deployment timestamp.</p></details>`:''}</section>`:''}
+    ${hasRelease?`<section class="hc-release" id="${prefix}-release" data-hc-panel="release" aria-labelledby="${prefix}-release-title" hidden><h3 id="${prefix}-release-title">${release.number===undefined?'Current Release':'PolyTrack Ranked - Update '+escape(release.number)}</h3><section class="hc-release-age" aria-label="Release age"><p class="hc-eyebrow">${escape((age.label||'Publication time').toUpperCase())}</p><p class="hc-age-value" data-hc-release-age data-release-at="${escape(age.dateTime)}" data-release-source="${escape(age.source)}" data-release-commit="${ageCommit}" data-release-fixed="${options.verifiedReleaseCommitAt!==undefined}" title="${escape(age.title)}">${escape(age.label&&age.text.startsWith(age.label+' ')?age.text.slice(age.label.length+1):age.text)}</p></section>${notes.length?`<h4>What changed</h4><ul>${notes.map(note=>`<li>${escape(note)}</li>`).join('')}</ul>`:''}<p class="hc-release-note">Hover over the age for your local date and time.</p>${renderReleaseHistory({release,history:options.releaseHistory,now:options.now})}${metadata.length?`<details class="hc-release-technical"><summary>Developer details</summary><dl class="hc-release-meta">${metadata.map(([label,value])=>`<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl><p>Prepared ${escape(preparedLabel)}. This is not a deployment timestamp.</p></details>`:''}</section>`:''}
     <footer class="hc-credits"><p>Track ratings &amp; difficulty gradings: <strong>Window Cleaner</strong>.</p></footer>
   </section>`;
 }
@@ -257,6 +258,7 @@ export function bindHelpControls(root) {
   let topic='all',snapshot=null,active=true;
   const keyScope=host.closest('[role="dialog"]')||host,doc=host.ownerDocument,view=doc.defaultView;
   const ageNode=host.querySelector('[data-hc-release-age]');
+  const historyBinding=bindReleaseHistory(host.querySelector('[data-release-history]'));
   let ageTimer=null,ageSuspended=false;
   function updateAge(){
     if(ageTimer!==null)view.clearTimeout(ageTimer);ageTimer=null;
@@ -327,6 +329,7 @@ export function bindHelpControls(root) {
       showView('controls');input.focus();input.select();event.preventDefault();event.stopPropagation();return;
     }
     if(event.key==='Escape') {
+      if(historyBinding.collapse(event))return;
       if(event.target===input&&input.value){input.value='';filter();event.preventDefault();event.stopPropagation();}
       return;
     }
@@ -360,7 +363,7 @@ export function bindHelpControls(root) {
   viewSwitch?.addEventListener('click',detachedViewClick);
   filter();updateAge();
   const cleanup=()=>{
-    if(!active)return;active=false;releaseKeys();
+    if(!active)return;active=false;releaseKeys();historyBinding.dispose();
     stopKeyboard();keyScope.removeEventListener('focusout',leaveScope);view?.removeEventListener('blur',releaseKeys);
     doc.removeEventListener('visibilitychange',visibilityChanged);view?.removeEventListener('focus',updateAge);
     doc.removeEventListener('polytrack-release-publication',updateAge);

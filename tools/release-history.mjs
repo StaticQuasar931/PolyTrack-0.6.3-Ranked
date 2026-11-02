@@ -1,0 +1,392 @@
+// BEGIN GENERATED RELEASE HISTORY
+const historyData = {
+  "schemaVersion": 1,
+  "current": {
+    "number": 268,
+    "version": "0.6.3",
+    "revision": 229,
+    "notes": [
+      "Reliable delivery of recent menu, discovery and changelog improvements.",
+      "Builder contact links and Top Tracks filters are included in the updated menu package."
+    ]
+  },
+  "entries": [
+    {
+      "number": 267,
+      "title": "Builder Contacts and Track Discovery",
+      "commit": "5837d1a48ef4426dc3b8e938e9eea78673de2dd1",
+      "committedAt": "2026-11-02T06:53:01.000Z",
+      "notes": [
+        "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
+        "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
+        "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
+        "Complete weekly artwork, readable creator credits and better small-screen menus."
+      ]
+    },
+    {
+      "number": 266,
+      "title": "Native Finish Regression Coverage",
+      "commit": "d3a1f44816ef01b5505bbaec466567b30a48e9d4",
+      "committedAt": "2026-11-02T05:01:54.000Z",
+      "notes": [
+        "Discover Extra Track picks and dated Kodub weekly selections.",
+        "Clearer profiles, player counts, route suggestions and responsive controls.",
+        "Less repeated loading, with native finish-screen compatibility checked across screen sizes."
+      ]
+    },
+    {
+      "number": 265,
+      "title": "Bounded Missing Snapshot Recovery",
+      "commit": "655e38a57b27c85834ea97d248d2184b1ae876a3",
+      "committedAt": "2026-11-02T04:54:13.000Z",
+      "notes": [
+        "Fewer repeated requests when published standings are temporarily unavailable.",
+        "Missing data recovers cleanly when a new snapshot arrives."
+      ]
+    },
+    {
+      "number": 264,
+      "title": "Track Discovery and Profile Polish",
+      "commit": "2fc76753478a38840f77a6881db7cccccab88ce8",
+      "committedAt": "2026-11-02T04:52:04.000Z",
+      "notes": [
+        "Extra Tracks now has daily and weekly discovery picks plus dated Kodub weekly selections.",
+        "Route recommendations use available snapshot fields before you open individual tracks.",
+        "Clearer profile participation, flush profile controls, and a roomier event archive."
+      ]
+    },
+    {
+      "number": 263,
+      "title": "Menu and Offline PB Polish",
+      "commit": "c0426519bdf230a095925debe5bbf9e429244638",
+      "committedAt": "2026-11-02T04:08:26.000Z",
+      "notes": [
+        "Search and Filters stay together across screen sizes.",
+        "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
+        "Offline PB activity survives retries, with clearer profile publishing status."
+      ]
+    },
+    {
+      "number": 254,
+      "title": "Cloud Recovery",
+      "commit": "aaa2fc34f489e7d58b51bc6363a7c1583ac7b64b",
+      "committedAt": "2026-11-02T03:22:01.000Z",
+      "notes": [
+        "More reliable profile updates and recovery from interrupted cloud publication.",
+        "Ranked controls stay reachable in short windows."
+      ]
+    },
+    {
+      "number": 253,
+      "title": "Cloud Quota Fixes",
+      "commit": "0981c4f4d9198c4454fb9f1bf899b79efa19140f",
+      "committedAt": "2026-11-02T01:54:30.000Z",
+      "notes": [
+        "More efficient cloud syncing while preserving saved runs and retry safety.",
+        "Restored scheduled leaderboard updates and reduced background work."
+      ]
+    },
+    {
+      "number": 252,
+      "title": "Viewport Fixes",
+      "commit": "94c454832e47db9243ebe8c71607f862ca8af0b9",
+      "committedAt": "2026-10-31T02:34:08.000Z",
+      "notes": [
+        "Menus stay aligned after phone rotation and Safari toolbar changes.",
+        "Clearer home credits and track lists that fit the visible screen."
+      ]
+    },
+    {
+      "number": 251,
+      "title": "Safari Fixes",
+      "commit": "aa35592cb5c8280f8a6f10c1263478d323011a9b",
+      "committedAt": "2026-10-31T02:02:18.000Z",
+      "notes": [
+        "Landscape controls stay visible when Safari's toolbars open.",
+        "Consistent event controls and reliable car-thumbnail fallbacks."
+      ]
+    },
+    {
+      "number": 250,
+      "title": "Phone UI",
+      "commit": "fbc5cbb0a58ed2b2b2f8074fee555880723cb8d9",
+      "committedAt": "2026-10-31T01:18:58.000Z",
+      "notes": [
+        "Clearer phone leaderboards with compact status badges and controls.",
+        "Better weekly artwork, landscape event cards and track tabs."
+      ]
+    },
+    {
+      "number": 249,
+      "title": "Responsive Polish",
+      "commit": "abee9f14ab7bdd35a2e911399896320f4c5ec560",
+      "committedAt": "2026-10-31T00:53:43.000Z",
+      "notes": [
+        "Better phone-landscape rankings and Settings spacing.",
+        "Settings controls stay clear of notches and home indicators."
+      ]
+    },
+    {
+      "number": 248,
+      "title": "UI Consistency",
+      "commit": "83ac2ba5514b4bfd497dbd2f4688e449757d3ded",
+      "committedAt": "2026-10-31T00:28:16.000Z",
+      "notes": [
+        "Cleaner settings and clearer unplayed-track counts.",
+        "Consistent event placements and a reliable weekly card."
+      ]
+    },
+    {
+      "number": 247,
+      "title": "Snapshot Stability",
+      "commit": "603265e84dd559de606b08e738efa799a29b0bba",
+      "committedAt": "2026-10-30T23:46:30.000Z",
+      "notes": [
+        "More reliable snapshot and weekly event updates."
+      ]
+    },
+    {
+      "number": 246,
+      "title": "Event Fixes",
+      "commit": "d11df70c0ca136de46802cd8bfd406f390534351",
+      "committedAt": "2026-10-30T23:16:13.000Z",
+      "notes": [
+        "Clearer event results and accurate verified PB placements.",
+        "Optional player counts on unplayed tracks.",
+        "Expanded event capacity with paged standings."
+      ]
+    },
+    {
+      "number": 245,
+      "title": "Weekly Alignment",
+      "commit": "f81022c8f1166a9ec8d8a10e32a763d8fd71bc30",
+      "committedAt": "2026-10-30T22:30:15.000Z",
+      "notes": [
+        "Left-aligned weekly event times and placements."
+      ]
+    },
+    {
+      "number": 244,
+      "title": "Verified Snapshots",
+      "commit": "71eda762b9a4e2eee39db760ec025e875a8efbd3",
+      "committedAt": "2026-10-30T22:20:09.000Z",
+      "notes": [
+        "Verified saved runs and refreshed snapshot standings.",
+        "Cleaner weekly placement and more reliable cached replays."
+      ]
+    },
+    {
+      "number": 243,
+      "title": "Event Polish",
+      "commit": "ad1073dcc8a1e752406af43e4d537588e96e0c03",
+      "committedAt": "2026-10-30T11:33:52.000Z",
+      "notes": [
+        "Clearer event pages, placements and update notices.",
+        "More reliable local PB saving and replay selection."
+      ]
+    },
+    {
+      "number": 242,
+      "title": "Snapshot Repair",
+      "commit": "bbed4aab8c1d0b780aae4b29977b19d720c72bba",
+      "committedAt": "2026-10-30T08:55:46.000Z",
+      "notes": [
+        "More reliable replay availability, including pending runs.",
+        "Updated standings and clearer snapshot coverage."
+      ]
+    },
+    {
+      "number": 241,
+      "title": "Update Polish",
+      "commit": "46381cb483a2fc193fc1210998d7c773068f3cf2",
+      "committedAt": "2026-10-30T06:52:55.000Z",
+      "notes": [
+        "Cleaner update notices, local dates and a larger racer search.",
+        "Verified-only event standings keep matching ranks, counts and dates.",
+        "Sort Extra Tracks by snapshot popularity.",
+        "More accurate route targets and clearer Event RP summaries."
+      ]
+    },
+    {
+      "number": 240,
+      "title": "Play Shortcut",
+      "commit": "4c3547860028cfa2a500978a9fa6565c8b2a4261",
+      "committedAt": "2026-10-30T05:19:52.000Z",
+      "notes": [
+        "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
+        "Holding Space cannot launch twice or activate a racer when the key is released.",
+        "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
+        "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
+      ]
+    }
+  ],
+  "coverage": {
+    "limit": 20,
+    "olderOmitted": true
+  }
+};
+// END GENERATED RELEASE HISTORY
+
+const positiveInteger = value => Number.isSafeInteger(value) && value > 0;
+const hash = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const finishedNotes = notes => Array.isArray(notes) && notes.length > 0 && notes.length <= 20 &&
+  notes.every(note => typeof note === 'string' && note.trim() && note.length <= 2000 && !/\b(?:TODO|TBD|placeholder)\b/i.test(note));
+function freezeHistory(value) {
+  for (const child of Object.values(value)) if (child && typeof child === 'object' && !Object.isFrozen(child)) freezeHistory(child);
+  return Object.freeze(value);
+}
+export const RELEASE_HISTORY = freezeHistory(historyData);
+
+function canonicalTime(value) {
+  const time = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(time) && time > 0 && new Date(time).toISOString() === value ? time : null;
+}
+function currentReference(info) {
+  if (!positiveInteger(info?.number) || !positiveInteger(info?.revision) || typeof info.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(info.version) || !finishedNotes(info.notes)) throw Error('Current release needs real central identities and finished notes.');
+  return {number:info.number, version:info.version, revision:info.revision, notes:[...info.notes]};
+}
+export function selectReleaseHistory(release, history = RELEASE_HISTORY) {
+  let current;
+  try { current = currentReference(release); } catch { return {matches:false, entries:[], olderOmitted:false}; }
+  const valid = history?.schemaVersion === 1 && JSON.stringify(history.current) === JSON.stringify(current) &&
+    Array.isArray(history.entries) && history.entries.length <= 20 && history.coverage &&
+    Number.isSafeInteger(history.coverage.limit) && history.coverage.limit >= 1 && history.coverage.limit <= 20 &&
+    typeof history.coverage.olderOmitted === 'boolean' && history.entries.length <= history.coverage.limit && history.entries.every(entry => hash(entry?.commit) &&
+      canonicalTime(entry.committedAt) !== null && (entry.number === null || positiveInteger(entry.number)) &&
+      typeof entry.title === 'string' && entry.title.length <= 500 && Array.isArray(entry.notes) &&
+      (entry.notes.length === 0 || finishedNotes(entry.notes))) && new Set(history.entries.map(entry => entry.commit)).size === history.entries.length;
+  return valid ? {matches:true, entries:history.entries, olderOmitted:history.coverage.olderOmitted} : {matches:false, entries:[], olderOmitted:false};
+}
+
+/** Count recorded manual commits, never differences between release numbers. */
+export function countKnownUpdates(release, isAcknowledged, history = RELEASE_HISTORY) {
+  const selected = selectReleaseHistory(release, history);
+  if (!selected.matches || typeof isAcknowledged !== 'function') return null;
+  const numbers = [release.number, ...selected.entries.map(entry => entry.number)].filter(positiveInteger);
+  if (new Set(numbers).size !== numbers.length) return null; // Old acknowledgement keys cannot disambiguate repeated titles.
+  for (const [index, entry] of [{number:release.number}, ...selected.entries].entries()) {
+    if (!positiveInteger(entry.number)) continue;
+    try { if (isAcknowledged(entry.number) === true) return index; } catch { /* Missing/blocked storage is not a first-play measurement. */ }
+  }
+  return null;
+}
+export function releaseHistoryTime(committedAt, now = Date.now()) {
+  const at = canonicalTime(committedAt);
+  if (at === null) return {age:'Commit time unavailable', local:'', dateTime:''};
+  const local = new Date(at).toLocaleString();
+  if (!Number.isFinite(now) || now < at) return {age:'Device clock is before commit time', local, dateTime:committedAt};
+  const elapsed = now - at, [unit, size] = elapsed >= 86400000 ? ['day',86400000] : elapsed >= 3600000 ? ['hour',3600000] : ['minute',60000];
+  const count = Math.floor(elapsed / size);
+  return {age:count ? `${count} ${unit}${count === 1 ? '' : 's'} ago` : 'Less than a minute ago', local, dateTime:committedAt};
+}
+function archiveModel(options) {
+  const selected = selectReleaseHistory(options.release, options.history);
+  if (!selected.matches || !selected.entries.length) return null;
+  return {...selected, coverage:`${selected.entries.length} recorded earlier update${selected.entries.length === 1 ? '' : 's'}. ${selected.olderOmitted ? 'Older updates are not included.' : 'All earlier manual commits in this Git history are included.'}`,
+    entries:selected.entries.map(entry => ({...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, time:releaseHistoryTime(entry.committedAt, options.now)}))};
+}
+export function renderReleaseHistory(options = {}) {
+  const model = archiveModel(options); if (!model) return '';
+  return `<details class="release-history" data-release-history><summary>Earlier updates <small>${model.entries.length} recorded</small></summary><div class="release-history-body"><p class="release-history-coverage">${escape(model.coverage)}</p><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>Committed ${escape(entry.time.age)}</small></summary><p class="release-history-date">Committed <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>Release notes were not recorded for this older update.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
+}
+
+/** Native DOM version for the installed notice; no history fetch or HTML execution. */
+export function createReleaseHistory(document, options = {}) {
+  const model = archiveModel(options); if (!model) return null;
+  const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  const root = make('details', undefined, 'release-history'); root.setAttribute('data-release-history','');
+  const summary = make('summary', `Earlier updates (${model.entries.length} recorded)`), body = make('div',undefined,'release-history-body');
+  Object.assign(root.style,{margin:'12px 0', borderTop:'1px solid #6389bf', fontSize:'clamp(18px, 4dvh, 20px)'});
+  Object.assign(summary.style,{cursor:'pointer', padding:'10px 0', color:'#a7d5ff'});
+  const coverage = make('p',model.coverage,'release-history-coverage');
+  const list = make('ol'); Object.assign(list.style,{listStyle:'none',padding:'0',margin:'8px 0',maxHeight:'min(42dvh, 360px)',overflow:'auto'});
+  for (const entry of model.entries) {
+    const item = make('li'), detail = make('details'); detail.setAttribute('data-release-history-entry','');
+    const heading = make('summary',`${entry.label}: ${entry.title}`); Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
+    const when = make('time',`Committed ${entry.time.age} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
+    Object.assign(when.style,{display:'block',fontSize:'18px',color:'#a7d5ff',overflowWrap:'anywhere'});
+    detail.append(heading,when);
+    if (entry.notes.length) { const notes = make('ul'); for (const note of entry.notes) notes.append(make('li',note)); detail.append(notes); }
+    else detail.append(make('p','Release notes were not recorded for this older update.'));
+    item.append(detail); list.append(item);
+  }
+  const close = make('button','Close archive','button'); close.type = 'button'; close.setAttribute('data-release-history-close','');
+  Object.assign(close.style,{minHeight:'44px',borderRadius:'0',clipPath:'polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)',border:'1px solid #6389bf',padding:'8px 12px',background:'var(--button-color, #112052)',color:'inherit',font:'inherit',cursor:'pointer'});
+  body.append(coverage,list,close); root.append(summary,body); return root;
+}
+export function bindReleaseHistory(root) {
+  if (!root) return {collapse:()=>false, dispose:()=>{}};
+  const close = detail => { detail.open = false; detail.querySelector?.('summary')?.focus({preventScroll:true}); };
+  const collapse = event => {
+    if (event?.key !== 'Escape' || !root.open || !root.contains(event.target)) return false;
+    const entry = event.target.closest?.('[data-release-history-entry]');
+    close(entry?.open && root.contains(entry) ? entry : root);
+    event.preventDefault(); event.stopPropagation(); return true;
+  };
+  const click = event => { if (event.target.closest?.('[data-release-history-close]') && root.contains(event.target)) { close(root); event.preventDefault(); } };
+  root.addEventListener('click',click); root.addEventListener('keydown',collapse);
+  return {collapse, dispose() { root.removeEventListener('click',click); root.removeEventListener('keydown',collapse); }};
+}
+
+/** Offline builder. Prior entries always come from committed Git objects; the
+ * current central release is a separate reference, so pre/postcommit output agrees.
+ */
+export async function buildReleaseHistory({root, limit = 20, precommit = false, runGit, read} = {}) {
+  const [{readFileSync}, {spawnSync}, {resolve}, {fileURLToPath}] = await Promise.all([import('node:fs'),import('node:child_process'),import('node:path'),import('node:url')]);
+  root ||= fileURLToPath(new URL('../',import.meta.url));
+  const git = runGit || ((...args) => { const result = spawnSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024}); if (result.status !== 0) throw Error('Local history Git read failed: '+args.join(' ')); return result.stdout; });
+  read ||= file => readFileSync(resolve(root,file),'utf8');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw Error('History limit must be between 1 and 20.');
+  const parseInfo = text => { const match = /const releaseInfo = (\{[\s\S]*?\});/.exec(text); if (!match) throw Error('Missing central release info.'); return JSON.parse(match[1]); };
+  const current = currentReference(parseInfo(read('tools/release-info.mjs')));
+  const manual = git('log','--format=%H%x00%an%x00%ae%x00%s%x00%cI').trim().split('\n').filter(Boolean).map(line => {
+    const [commit,name,email,title,date] = line.split('\0');
+    const numberMatch = /^(\d+)\s*[-:]\s*\S/.exec(title || '');
+    const number = numberMatch && positiveInteger(Number(numberMatch[1])) ? Number(numberMatch[1]) : null;
+    return {commit,name,email,title,number,date};
+  }).filter(row => !(row.name === 'github-actions[bot]' && row.email === '41898282+github-actions[bot]@users.noreply.github.com' && ['Sync public ranked snapshots','Sync Kodub weekly fallback'].includes(row.title)));
+  if (!manual.length) throw Error('No real manual history found.');
+  if (precommit) {
+    const count = git('rev-list','--count','HEAD').trim();
+    if (!/^[1-9]\d*$/.test(count) || !Number.isSafeInteger(Number(count)+1) || current.number !== Number(count)+1 || current.number === manual[0].number) throw Error('Precommit history requires the actual next Git commit number.');
+  } else if (manual[0].number !== current.number) throw Error('Current central release does not match Git HEAD; finalize with --precommit before committing.');
+  const earlier = precommit ? manual : manual.slice(1);
+  const entries = earlier.slice(0,limit).map(row => {
+    if (!hash(row.commit) || !Number.isFinite(Date.parse(row.date))) throw Error('Invalid committed Git history metadata.');
+    let notes = [];
+    if (git('ls-tree','--name-only',row.commit,'--','tools/release-info.mjs').trim()) {
+      const info = parseInfo(git('show',row.commit+':tools/release-info.mjs'));
+      if (info.number === row.number && finishedNotes(info.notes)) notes = [...info.notes];
+    }
+    return {number:row.number, title:row.number === null ? row.title : row.title.replace(/^\d+\s*[-:]\s*/,''), commit:row.commit, committedAt:new Date(row.date).toISOString(), notes};
+  });
+  return {schemaVersion:1,current,entries,coverage:{limit,olderOmitted:earlier.length>limit}};
+}
+
+export async function writeOrCheckReleaseHistory({write = false, ...options} = {}) {
+  const [{readFileSync,writeFileSync}, {resolve}, {fileURLToPath}] = await Promise.all([import('node:fs'),import('node:path'),import('node:url')]);
+  const root = options.root || fileURLToPath(new URL('../',import.meta.url));
+  const value = await buildReleaseHistory({...options,root});
+  const json = JSON.stringify(value,null,2)+'\n';
+  const modulePath = resolve(root,'tools/release-history.mjs'), jsonPath = resolve(root,'tools/release-history.json');
+  const source = readFileSync(modulePath,'utf8').replace(/\r\n?/g,'\n');
+  const block = '// BEGIN GENERATED RELEASE HISTORY\nconst historyData = '+JSON.stringify(value,null,2)+';\n// END GENERATED RELEASE HISTORY';
+  const next = source.replace(/\/\/ BEGIN GENERATED RELEASE HISTORY[\s\S]*?\/\/ END GENERATED RELEASE HISTORY/,()=>block);
+  if (next === source && !source.includes(block)) throw Error('Missing generated history marker.');
+  let existing; try { existing = readFileSync(jsonPath,'utf8').replace(/\r\n?/g,'\n'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (write) { if (source !== next) writeFileSync(modulePath,next); if (existing !== json) writeFileSync(jsonPath,json); }
+  else if (source !== next || existing !== json) throw Error('Release history is stale. Run node tools/release-history.mjs --write'+(options.precommit?' --precommit':'')+' after finalizing central notes.');
+  return value;
+}
+if (typeof process === 'object' && process.versions?.node && process.argv[1]) {
+  const {pathToFileURL} = await import('node:url');
+  if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+    try {
+      const args = process.argv.slice(2);
+      if (new Set(args).size !== args.length || args.some(arg => !['--write','--check','--precommit'].includes(arg)) || args.includes('--write') && args.includes('--check')) throw Error('Usage: node tools/release-history.mjs [--write|--check] [--precommit]');
+      const history = await writeOrCheckReleaseHistory({write:args.includes('--write'),precommit:args.includes('--precommit')});
+      console.log('Release history ready: '+history.entries.length+' earlier manual updates; current '+history.current.number+'.');
+    } catch (error) { console.error(error.message); process.exitCode = 1; }
+  }
+}

@@ -276,6 +276,20 @@ html body #overallLeaderboardPanel #overallFilterPanel > :not(.overall-racer-sea
   order: 2;
   flex-basis: 100%;
 }
+#overallTopTrackScope[hidden]{display:none!important}
+#overallTopTrackScope{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;width:100%;min-width:0}
+#overallTopTrackScope>button{min-width:0;min-height:44px;padding:5px 7px;white-space:normal;line-height:1.2}
+@media(min-width:701px){
+ html body #overallLeaderboardPanel #overallFilterPanel>.overall-racer-search,
+ html body #overallLeaderboardPanel #overallFilterPanel>[data-personal-filter-button]{height:48px!important;min-height:48px!important;box-sizing:border-box}
+}
+@media(min-width:1101px){
+ html body #overallLeaderboardPanel .overall-top{display:grid!important;grid-template-columns:minmax(0,.8fr) minmax(320px,1.7fr) auto!important;align-items:center!important;gap:16px!important}
+ html body #overallLeaderboardPanel .overall-top .overall-title-group{grid-column:1!important;grid-row:1!important;min-width:0}
+ html body #overallLeaderboardPanel .overall-top .overall-title-group h2{font-size:clamp(26px,2.2vw,38px)!important;white-space:normal!important;line-height:1.1}
+ html body #overallLeaderboardPanel .overall-top #overallFilterPanel{grid-column:2!important;grid-row:1!important;width:100%!important;max-width:none!important}
+ html body #overallLeaderboardPanel .overall-top .overall-actions{grid-column:3!important;grid-row:1!important;justify-self:end;margin:0!important}
+}
 html body #overallLeaderboardList .overall-loading::before {
   content: '';
   display: block;
