@@ -1,15 +1,13 @@
 const releaseInfo = {
-  "number": 269,
+  "number": 270,
   "version": "0.6.3",
-  "revision": 230,
+  "revision": 231,
   "notes": [
-    "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
-    "Cleaner event artwork, search controls and compact racer profiles.",
-    "Four Extra Tracks discovery picks and a clearer Builder program entry.",
-    "Simpler Help and update history, plus a clear link from outdated copies."
+    "More efficient background syncing without changing run submission or scoring.",
+    "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
   ],
-  "preparedAt": "2026-11-02T23:32:59.420Z",
-  "committedAt": "2026-11-02T23:39:32.000Z"
+  "preparedAt": "2026-11-02T23:45:55.732Z",
+  "committedAt": "2026-11-02T23:49:24.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
