@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {queueState,reconciledSlot,completedSlot,NEVER} from './queue.mjs';
 import {encode,decode,createFirestoreCaller} from './firestore.mjs';
 import {pendingSlot,VERIFIER_ENGINE_DIGEST,VERIFICATION_COLLECTION,EXTRA_VERIFICATION_COLLECTION,verificationCollectionForTrack} from '../../workers/ranked/src/verification.js';
@@ -421,15 +422,53 @@ test('Extra-only work wakes preflight while legacy core remains independently vi
   assert.equal(verificationCollectionForTrack('legacy-core-id'),VERIFICATION_COLLECTION);
 });
 
-test('all ranked catalog IDs use the Extra lane',()=>{
+test('all ranked Extra board catalog IDs use the Extra lane; validated archive aliases do not register boards',async()=>{
+  const {checkRepositoryExtraVerification}=await import('../extra-verification-check.mjs');
   const ids=[...EXTRA_TRACK_IDS].sort();
   const catalog=JSON.parse(fs.readFileSync(new URL('../../extra-tracks/catalog.json',import.meta.url),'utf8'));
-  const expected=catalog.filter(entry=>entry.ranked!==false).map(entry=>entry.trackId).sort();
+  // An archive flag is not sufficient: validate its trusted descriptor, asset hash
+  // and absence from the Extra registry before excluding aliases from board IDs.
+  assert.deepEqual(checkRepositoryExtraVerification(),[]);
+  const expected=catalog.filter(entry=>entry.ranked!==false&&entry.archiveImport!==true).map(entry=>entry.trackId).sort();
+  for(const alias of catalog.filter(entry=>entry.archiveImport===true))assert.equal(EXTRA_TRACK_IDS.has(alias.trackId),false);
   assert.deepEqual(ids,expected);
   assert.ok(ids.every(id=>/^[a-f0-9]{64}$/.test(id)));
   assert.ok(ids.every(id=>verificationCollectionForTrack(id)===EXTRA_VERIFICATION_COLLECTION));
 });
 
+test('Extra lane contract rejects missing ranked boards, unknown registry IDs and archive aliases in the registry',async()=>{
+  const {checkExtraVerification}=await import('../extra-verification-check.mjs');
+  const code='PolyTrack-offline-contract-fixture',hash=createHash('sha256').update(code).digest('hex');
+  const board={id:'ranked-board',trackId:'a'.repeat(64),trackPath:'extra-tracks/track-data/test/ranked.track'};
+  const alias={id:'archive-alias',trackId:'b'.repeat(64),archiveImport:true,source:'Kodub weekly',
+    codeHash:hash,trackPath:'events/kodub/assets/'+hash+'.track'};
+  const pins={[board.trackPath]:hash},trusted=[{trackId:alias.trackId,codeHash:hash,assetPath:'assets/'+hash+'.track'}];
+  const check=registry=>checkExtraVerification([board,alias],registry,pins,()=>code,trusted);
+  assert.deepEqual(check(new Set([board.trackId])),[]);
+  assert.ok(check(new Set()).some(error=>error.includes('Missing Worker Extra registry ID: ranked-board')));
+  assert.ok(check(new Set([board.trackId,'c'.repeat(64)])).some(error=>error.includes('Worker Extra ID absent from ranked catalog')));
+  assert.ok(check(new Set([board.trackId,alias.trackId])).some(error=>error.includes('Archive alias must not register an Extra board')));
+  const forged={...board,archiveImport:true};
+  assert.ok(checkExtraVerification([forged,alias],new Set([board.trackId]),pins,()=>code,trusted)
+    .some(error=>error.includes('Invalid trusted Kodub archive alias: ranked-board')));
+});
+
+test('archive exclusion requires exact trusted metadata, ranked eligibility and matching asset bytes',async()=>{
+  const {checkExtraVerification}=await import('../extra-verification-check.mjs');
+  const code='PolyTrack-offline-archive-fixture',hash=createHash('sha256').update(code).digest('hex');
+  const alias={id:'archive-alias',trackId:'b'.repeat(64),archiveImport:true,source:'Kodub weekly',
+    codeHash:hash,trackPath:'events/kodub/assets/'+hash+'.track'};
+  const trusted=[{trackId:alias.trackId,codeHash:hash,assetPath:'assets/'+hash+'.track'}];
+  const check=(entry=alias,descriptors=trusted,read=()=>code)=>
+    checkExtraVerification([entry],new Set(),{},read,descriptors);
+  assert.deepEqual(check(),[]);
+  for(const edit of [{codeHash:'c'.repeat(64)},{trackPath:'events/kodub/assets/wrong.track'},
+    {source:'untrusted'},{ranked:false},{unranked:true},{importOnly:true}])
+    assert.ok(check({...alias,...edit}).some(error=>error.includes('Invalid trusted Kodub archive alias')));
+  assert.ok(check(alias,[]).some(error=>error.includes('Invalid trusted Kodub archive alias')));
+  assert.ok(check(alias,trusted,()=>code+'changed').some(error=>error.includes('Trusted Kodub alias hash mismatch')));
+  assert.ok(check(alias,trusted,()=>{throw Error('missing fixture');}).some(error=>error.includes('Missing trusted Kodub alias asset')));
+});
 test('round-local priority cache shares the overall read and is caller-invalidated between rounds', async () => {
   const docs = [queueDoc('track-a', [row]), queueDoc('track-b', [row])];
   let calls = 0;

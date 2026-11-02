@@ -434,9 +434,9 @@ test('invalid event counts and incomplete native result sets cannot trigger norm
 
 test('workflow bounds drain wall time while preserving gates, permissions and native limits',()=>{
   const workflow=fs.readFileSync(new URL('../../.github/workflows/verify-runs.yml',import.meta.url),'utf8');
-  const step=workflow.split('- name: Verify queued runs')[1];
+  const step=workflow.split('- name: Verify queued runs')[1]?.split(/\r?\n {6}- name:/)[0]||'';
   assert.match(step,/inputs.catch_up && 15 \|\| 10/);assert.match(step,/run.mjs --drain/);
-  assert.match(step,/if: steps.queue.outputs.has_work == 'true'/);
+  assert.match(step,/^\s*if: steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'\s*$/m);
   assert.match(workflow,/actions\/cache@[0-9a-f]{40}/);
   assert.match(workflow,/playwright-\$\{\{ hashFiles\('tools\/verifier\/package-lock\.json'\) \}\}/);
   assert.match(workflow,/npx playwright install --with-deps chromium/);

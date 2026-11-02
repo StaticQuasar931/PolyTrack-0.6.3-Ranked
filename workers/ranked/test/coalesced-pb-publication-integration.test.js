@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
+import {readFileSync} from 'node:fs';
+import {preparePublicationPages, PUBLIC_PAGE_COLLECTION, PUBLIC_MANIFEST_COLLECTION} from '../src/paged-publication.js';
+import {verificationShardId} from '../src/verification-shards.js';
+import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
+import {PERMANENT_ROLLING_HILLS} from '../src/permanent-rolling-hills.js';
 import worker, {computeTrackEntries, handleRequest, reconcileCanonicalChanges} from '../src/index.js';
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION,
@@ -25,16 +30,20 @@ const row = (accountId, timeMs, uploadId = 1) => ({accountId, ownerUid: 'owner',
   name: 'Racer ' + accountId[0], timeMs, frames: timeMs, raceTimeFrames: timeMs, uploadId, pbAt: 1000,
   replay, replayHash: createHash('sha256').update(replay).digest('hex'), integrityVerified: true});
 
-function fixture({missingJob = false} = {}) {
-  const rows = [row('b'.repeat(64), 20000), row('c'.repeat(64), 18000), row('d'.repeat(64), 17000)];
+function fixture({missingJob = false, trackId = track, population = 3} = {}) {
+  const boardKey = '0.6.2_s1_leaderboards_track/' + trackId;
+  const queueKey = VERIFICATION_COLLECTION + '/' + trackId;
+  const rows = population === 3
+    ? [row('b'.repeat(64), 20000), row('c'.repeat(64), 18000), row('d'.repeat(64), 17000)].map(r => ({...r,trackId}))
+    : Array.from({length:population}, (_, i) => ({...row((i + 1).toString(16).padStart(64, '0'), 20000 + i),trackId}));
   const slots = Object.fromEntries(rows.map(r => [r.accountId, proof(r)]));
-  const entries = computeTrackEntries(rows, track, {}, slots);
+  const entries = computeTrackEntries(rows, trackId, {}, slots);
   const data = new Map(), versions = new Map(), commits = [], canonicalReads = [], tasks = [], documentReads = new Map();
   const noteRead = key => documentReads.set(key, (documentReads.get(key) || 0) + 1);
-  data.set(boardKey, {trackId: track, entries, complete: true, sourceComplete: true,
+  data.set(boardKey, {trackId, entries, complete: true, sourceComplete: true,
     totalEntries: rows.length, totalEntriesExact: true, revision: 1, sourceRevision: 1,
     schemaVersion: 6, algorithmVersion: 'participation-v8-s1', signature: 'fixture-current'});
-  data.set(queueKey, {trackId: track, slots, ...verificationSchedule(slots), marker: 'keep-queue'});
+  data.set(queueKey, {trackId, slots, ...verificationSchedule(slots), marker: 'keep-queue'});
   data.set(metaKey, {revision: 1, builtRevision: 1, dirty: false});
   if (!missingJob) data.set(jobKey, {backfillComplete: true, schemaVersion: 2,
     cursorIngestedAt: '2026-10-28T00:00:00.000000000Z', cursorDocumentId: 'saved-cursor',
@@ -66,6 +75,11 @@ function fixture({missingJob = false} = {}) {
         for (const write of writes) {
           const key = write.update.name.slice(base.length), expected = data.has(key)
             ? {updateTime: 'v' + (versions.get(key) || 0)} : {exists: false};
+          if (!write.currentDocument) {
+            assert.ok(key.startsWith(PUBLIC_PAGE_COLLECTION + '/') || key.startsWith(PUBLIC_MANIFEST_COLLECTION + '/'),
+              'only immutable staged publication artifacts may omit CAS');
+            continue;
+          }
           if (JSON.stringify(write.currentDocument) !== JSON.stringify(expected)) throw Error('FIRESTORE_412');
         }
         for (const write of writes) {
@@ -484,4 +498,175 @@ test('scoped coalescing rejects malformed JSON, non-64-hex arrays and over-32 sc
     assert.deepEqual(f.counts, {reads: 0, writes: 0, queries: 0, commitAttempts: 0});
     assert.equal(f.documentReads.size, 0); assert.deepEqual([...f.data], before);
   }
+});
+
+const summer3 = '148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a';
+const rolling = PERMANENT_ROLLING_HILLS.trackId;
+// Investigation only: these targets are not enabled by the release configuration.
+const optInBusy = [track, rolling, summer3];
+const configuredBusy = () => JSON.parse(JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url))).vars.PB_COALESCED_TRACK_IDS_JSON);
+
+test('checked-in release scope remains exactly Summer1; Rolling Hills and Summer3 are opt-in scenarios only', () => {
+  assert.deepEqual(configuredBusy(), [track]);
+});
+
+for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingHills', rolling, 160]]) {
+  for (const submissions of [1, 10]) test('opt-in scenario: ' + name + ' whole notify/drain cost at saved population, ' + submissions + ' newer PBs', async () => {
+    const costs = {};
+    for (const mode of ['immediate', 'coalesced']) {
+      const f = fixture({trackId, population});
+      f.env.PB_PUBLICATION_MODE = mode;
+      f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(optInBusy);
+      const boardPath = '0.6.2_s1_leaderboards_track/' + trackId;
+      const queuePath = VERIFICATION_COLLECTION + '/' + trackId;
+      const originalProofs = structuredClone(f.data.get(queuePath));
+      const originalBoard = structuredClone(f.data.get(boardPath));
+      let latest;
+      for (let i = 0; i < submissions; i++) {
+        latest = {...f.rows[0], timeMs:14000 - i * 100, frames:14000 - i * 100,
+          raceTimeFrames:14000 - i * 100, uploadId:i + 2, pbAt:10000 + i};
+        f.data.set(canonicalKey(latest), latest);
+        const response = await f.notify(latest);
+        assert.equal(response.status, 200);
+        const body = await response.json();
+        assert.equal(body.accepted, true);
+        assert.equal(body.publicationPending, mode === 'coalesced' ? true : undefined);
+        if (mode === 'coalesced') {
+          assert.deepEqual(f.data.get(queuePath), originalProofs);
+          assert.deepEqual(f.data.get(boardPath), originalBoard);
+        }
+      }
+      if (mode === 'coalesced') {
+        const result = await reconcileCanonicalChanges(f.env, {scanResults:false});
+        assert.equal(result.targeted, 1, 'latest exact canonical binding, not every obsolete improvement');
+        assert.equal(result.pending, 0);
+      }
+      const board = f.data.get(boardPath), pending = f.data.get(queuePath).slots[latest.accountId];
+      assert.equal(board.entries.find(r => r.accountId === latest.accountId).timeMs, latest.timeMs);
+      assert.equal(board.totalEntries, population);
+      assert.equal(pending.status, 'waiting');
+      assert.equal(pending.key, verificationKey(latest));
+      if (trackId === rolling) assert.equal(f.data.get('0.6.2_event_public/totals').publicationPending, true);
+      assert.equal(f.counts.queries, 0); assert.equal(f.tasks.length, 0);
+      const extra = trackId === rolling ? 1 : 0;
+      const expected = mode === 'immediate'
+        ? {reads:(4 + extra) * submissions, writes:(3 + extra) * submissions}
+        : {reads:2 * submissions + 5 + extra, writes:submissions + 4 + extra};
+      costs[mode] = {reads:f.counts.reads, writes:f.counts.writes};
+      assert.deepEqual(costs[mode], expected);
+      assert.equal(f.commits.flat().filter(w => w.update.name.endsWith('/' + boardPath)).length,
+        mode === 'immediate' ? submissions : 1);
+    }
+    console.log('BUSY_SCOPE_COST ' + JSON.stringify({scenario:'explicit-opt-in-not-release-scope',name, population, submissions, costs,
+      canonicalClientBase:{reads:submissions * 2, writes:submissions * 2},
+      excludes:'native verification, subsequent proof publication, Overall, event totals assembly, capture, optional client work'}));
+  });
+}
+
+test('release scope leaves Rolling Hills, Summer3, other native and sparse Extra immediate without publication-job costs', async () => {
+  const sparseExtra = '7a8afe73c01cf77bf16c9c87f8e0f8732023bdf4b9b6bb4a0120e97553dd447d';
+  const unselectedNative = '7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0';
+  for (const trackId of [rolling, summer3, unselectedNative, sparseExtra]) {
+    const f = fixture({trackId});
+    f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(configuredBusy());
+    if (trackId === sparseExtra) {
+      const old = VERIFICATION_COLLECTION + '/' + trackId;
+      f.data.set('0.6.2_s1_extra_verification/' + trackId, f.data.get(old)); f.data.delete(old);
+      f.data.set('0.6.2_s1_worker_jobs/extra_verification_queue_migration_v1',
+        {complete:true,registry:[...EXTRA_TRACK_IDS].sort().join(',')});
+    }
+    const latest = {...f.rows[0], timeMs:14000, frames:14000, raceTimeFrames:14000, uploadId:2};
+    f.data.set(canonicalKey(latest), latest);
+    const response = await f.notify(latest);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).publicationPending, undefined);
+    assert.equal(f.documentReads.get(jobKey) || 0, 0);
+    assert.equal(f.commits.flat().some(w => w.update.name.endsWith('/' + jobKey)), false);
+    assert.deepEqual({reads:f.counts.reads,writes:f.counts.writes}, {reads:trackId === sparseExtra || trackId === rolling ? 5 : 4,writes:trackId === rolling ? 4 : 3});
+  }
+});
+
+for (const trackId of [rolling, summer3]) test('opt-in scenario keeps ownership, quota and active-build admission fences: ' + trackId.slice(0, 8), async () => {
+  for (const failure of ['ownership', 'quota', 'active-build']) {
+    const f = fixture({trackId});
+    f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(optInBusy);
+    if (failure === 'ownership') f.data.get(canonicalKey(f.rows[0])).ownerUid = 'different-owner';
+    if (failure === 'quota') f.setReadHook(key => {if (key === jobKey) throw Error('FIRESTORE_429');});
+    if (failure === 'active-build') f.data.get(jobKey).activeFullRebuildTrackId = trackId;
+    const response = await f.notify();
+    assert.equal(response.status, failure === 'ownership' ? 403 : 503);
+    assert.equal(f.counts.writes, 0);
+    assert.equal(f.counts.reads, failure === 'ownership' ? 1 : 2);
+    assert.equal((await response.json()).accepted, undefined);
+  }
+});
+
+for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingHills', rolling, 160]]) {
+  test('opt-in scenario: ' + name + ' ten distinct racers batch one generation without skipping canonical proofs', async () => {
+    const costs = {};
+    for (const mode of ['immediate', 'coalesced']) {
+      const f = fixture({trackId, population});
+      f.env.PB_PUBLICATION_MODE = mode;
+      f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(optInBusy);
+      const updates = f.rows.slice(0, 10).map((r, i) => ({...r, timeMs:14000 + i,
+        frames:14000 + i, raceTimeFrames:14000 + i, uploadId:2}));
+      for (const r of updates) {
+        f.data.set(canonicalKey(r), r);
+        assert.equal((await f.notify(r)).status, 200);
+      }
+      if (mode === 'coalesced') {
+        const result = await reconcileCanonicalChanges(f.env, {scanResults:false});
+        assert.equal(result.targeted, 10); assert.equal(result.pending, 0);
+        for (const r of updates) assert.equal(f.documentReads.get(canonicalKey(r)), 2,
+          'one notify read and one fresh drain read per exact binding');
+      }
+      for (const r of updates) assert.equal(f.data.get(VERIFICATION_COLLECTION + '/' + trackId).slots[r.accountId].key, verificationKey(r));
+      const extra = trackId === rolling ? 1 : 0;
+      costs[mode] = {reads:f.counts.reads, writes:f.counts.writes};
+      assert.deepEqual(costs[mode], mode === 'immediate'
+        ? {reads:40 + 10 * extra, writes:30 + 10 * extra}
+        : {reads:34 + extra, writes:14 + extra});
+    }
+    console.log('BUSY_DISTINCT_COST ' + JSON.stringify({scenario:'explicit-opt-in-not-release-scope',name, population, racers:10, costs,
+      canonicalClientBase:{reads:20, writes:20}, excludes:'native verification, subsequent proof publication, Overall, event totals assembly, capture, optional client work'}));
+  });
+}
+
+test('Summer1 saved 1136-racer paged population makes repeated unseen generations expensive', async () => {
+  const costs = {};
+  for (const mode of ['immediate', 'coalesced']) {
+    const f = fixture({population:1136});
+    f.env.PB_PUBLICATION_MODE = mode;
+    f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(configuredBusy());
+    const board = f.data.get(boardKey);
+    const publication = await preparePublicationPages('track', track, board.entries,
+      {sourceRevision:1, sourceComplete:true});
+    for (const document of publication.documents) f.data.set(document.collection + '/' + document.id, document.data);
+    f.data.set(boardKey, {...board, entries:board.entries.slice(0, 500), complete:false,
+      sourceComplete:true, pagination:publication.pagination});
+    const slots = f.data.get(queueKey).slots;
+    f.data.set(queueKey, {trackId:track, storageVersion:2, slots:{}, migrationComplete:true});
+    for (const r of f.rows) {
+      const queueId = verificationShardId(track, r.accountId);
+      f.data.set(VERIFICATION_COLLECTION + '/' + queueId,
+        {trackId:track, queueId, storageVersion:2, slots:{[r.accountId]:slots[r.accountId]}});
+    }
+    let latest;
+    for (let i = 0; i < 10; i++) {
+      latest = {...f.rows[0], timeMs:14000 - i * 100, frames:14000 - i * 100,
+        raceTimeFrames:14000 - i * 100, uploadId:i + 2};
+      f.data.set(canonicalKey(latest), latest);
+      assert.equal((await f.notify(latest)).status, 200);
+    }
+    if (mode === 'coalesced') assert.equal((await reconcileCanonicalChanges(f.env, {scanResults:false})).pending, 0);
+    assert.equal(f.data.get(boardKey).totalEntries, 1136);
+    assert.equal(f.data.get(boardKey).entries.find(r => r.accountId === latest.accountId).timeMs, latest.timeMs);
+    assert.equal(f.data.get(VERIFICATION_COLLECTION + '/' + verificationShardId(track, latest.accountId))
+      .slots[latest.accountId].key, verificationKey(latest));
+    costs[mode] = {reads:f.counts.reads, writes:f.counts.writes};
+    assert.deepEqual(costs[mode], mode === 'immediate' ? {reads:170,writes:160} : {reads:38,writes:27});
+  }
+  console.log('BUSY_PAGED_COST ' + JSON.stringify({name:'Summer1', population:1136, improvements:10,
+    sourcePages:12, costs, canonicalClientBase:{reads:20,writes:20},
+    excludes:'native verification, subsequent proof publication, Overall, capture, optional client work'}));
 });

@@ -22,7 +22,13 @@ metadata, notes and preparation timestamp unchanged.
 
 ```sh
 node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls.test.mjs tools/help-release-fixtures.browser.test.mjs tools/site-release.test.mjs tools/prepare-site-update.test.mjs tools/help-search.test.mjs tools/site-updates.test.mjs tools/release-client-identity.test.mjs tools/compatibility-cloud.test.mjs tools/workflow-release-contract.test.mjs
+node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs workers/ranked/test/event-preflight-cost.test.js
 ```
+
+The second command is the actual credential-free verification workflow gate. Run
+it before each manual push, not only when editing verifier code: catalog aliases
+and discovery changes can also affect its routing assertions. Never rerun a live
+capture to diagnose a failing offline test.
 
 3. Review the existing project release checks and exact staged diff. Stage only the authorized files; never revert or stage unrelated agents' changes. The checked working files and staged files must match.
 4. When committing is separately authorized, use a title in the form `RELEASE_NUMBER-Short descriptive title`. Commit the central metadata and stamped entry files together. Preparation and offline testing do not authorize a commit, push, capture or deployment.

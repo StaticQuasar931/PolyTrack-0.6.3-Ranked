@@ -121,7 +121,7 @@ export function describeFirestoreOperation({path, init = {}, method = init?.meth
   audit.writeCollections = Object.create(null);
   const verb = typeof method === 'string' ? method.toUpperCase() : '';
   const cleanPath = typeof path === 'string' ? path.split(/[?#]/)[0] : '';
-  const action = cleanPath.match(/:(runQuery|batchGet|commit)$/)?.[1];
+  const action = cleanPath.match(/:(runQuery|batchGet|commit|beginTransaction|rollback)$/)?.[1];
   const operationKind = action || ({GET:'get', PATCH:'patch', DELETE:'delete'}[verb]) || 'unknown';
   let requestedDocumentCount = null, returnedDocumentCount = null, minimumEmptyQuery = null;
   let valid = operationKind !== 'unknown', safePath = '', body, safeBody;
@@ -149,6 +149,11 @@ export function describeFirestoreOperation({path, init = {}, method = init?.meth
           if (payload.length !== requestedDocumentCount) throw Error();
           returnedDocumentCount = payload.filter(row => row.found).length;
         }
+      } else if (action === 'beginTransaction' || action === 'rollback') {
+        // Control transfers no documents; transaction GETs and commit are
+        // recorded separately, including every conflict retry.
+        if (verb !== 'POST') throw Error();
+        body = {};
       } else {
         if (!Array.isArray(body.writes)) throw Error();
         body = {writes:body.writes.map(write => {
@@ -174,9 +179,10 @@ export function describeFirestoreOperation({path, init = {}, method = init?.meth
   if (!valid) {
     // Unparseable operations cannot safely be called free. Keep unrelated costs
     // at zero when the operation type still tells us which dimension is unknown.
-    const reads = ['get','runQuery','batchGet','unknown'].includes(operationKind);
-    const writes = ['patch','commit','unknown'].includes(operationKind);
-    const deletes = ['delete','commit','unknown'].includes(operationKind);
+    const control = ['beginTransaction','rollback'].includes(operationKind);
+    const reads = control || ['get','runQuery','batchGet','unknown'].includes(operationKind);
+    const writes = control || ['patch','commit','unknown'].includes(operationKind);
+    const deletes = control || ['delete','commit','unknown'].includes(operationKind);
     audit.documentReadEstimate = reads ? null : 0;
     audit.writeEstimate = writes ? null : 0;
     audit.deleteEstimate = deletes ? null : 0;

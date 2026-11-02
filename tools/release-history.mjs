@@ -2,17 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 269,
+    "number": 270,
     "version": "0.6.3",
-    "revision": 230,
+    "revision": 231,
     "notes": [
-      "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
-      "Cleaner event artwork, search controls and compact racer profiles.",
-      "Four Extra Tracks discovery picks and a clearer Builder program entry.",
-      "Simpler Help and update history, plus a clear link from outdated copies."
+      "More efficient background syncing without changing run submission or scoring.",
+      "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
     ]
   },
   "entries": [
+    {
+      "number": 269,
+      "title": "Faster Rankings and Cleaner Track Discovery",
+      "commit": "510831c380d3b673c2ed1b44387858c08a8a4be4",
+      "committedAt": "2026-11-02T23:39:32.000Z",
+      "notes": [
+        "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
+        "Cleaner event artwork, search controls and compact racer profiles.",
+        "Four Extra Tracks discovery picks and a clearer Builder program entry.",
+        "Simpler Help and update history, plus a clear link from outdated copies."
+      ]
+    },
     {
       "number": 268,
       "title": "Complete Cached Menu Dependencies",
@@ -205,18 +215,6 @@ const historyData = {
       "notes": [
         "More reliable replay availability, including pending runs.",
         "Updated standings and clearer snapshot coverage."
-      ]
-    },
-    {
-      "number": 241,
-      "title": "Update Polish",
-      "commit": "46381cb483a2fc193fc1210998d7c773068f3cf2",
-      "committedAt": "2026-10-30T06:52:55.000Z",
-      "notes": [
-        "Cleaner update notices, local dates and a larger racer search.",
-        "Verified-only event standings keep matching ranks, counts and dates.",
-        "Sort Extra Tracks by snapshot popularity.",
-        "More accurate route targets and clearer Event RP summaries."
       ]
     }
   ],

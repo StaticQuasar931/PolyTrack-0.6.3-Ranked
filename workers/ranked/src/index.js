@@ -2250,6 +2250,13 @@ async function processProfileJob(env, jobId, job, updateTime='') {
   // Rotate unfinished checks behind untouched work without discarding them.
   const remaining = [...pending.slice(batch.length), ...batch.filter(trackId => !completed.has(trackId))];
   const active=remaining.length>0||discovery?.complete===false;
+  // Keep retrying blocked work, but do not write a heartbeat for an unchanged
+  // checkpoint. Rotation, discovery progress and completions still persist.
+  if (job.active === true && active && completed.size === 0 && changed === 0 &&
+      discovery === job.trackDiscovery &&
+      JSON.stringify(remaining) === JSON.stringify(job.pendingTrackIds)) {
+    return { checked: batch.length, changed, remaining: remaining.length };
+  }
   await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, ...(discovery?{trackDiscovery:discovery}:{}),active, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + completed.size, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: active ? 0 : Date.now() },updateTime);
   // Track persistence marks Overall dirty; its isolated cron owns aggregation.
   return { checked: batch.length, changed, remaining: remaining.length };

@@ -216,3 +216,70 @@ test('failed read-only commits have known zero writes; failed mixed commits mark
   assert.equal(audit.deleteEstimate,null);
   assert.deepEqual(audit.writeCollections,{profiles:{writes:null,deletes:0},old:{writes:0,deletes:null}});
 });
+
+for (const action of ['beginTransaction', 'rollback']) {
+  for (const failed of [false, true]) test(action + ' control has zero document operations even on failure: ' + failed, () => {
+    const result = describeFirestoreOperation({path:':' + action, init:{method:'POST',
+      body:JSON.stringify({transaction:'PRIVATE_TOKEN', options:{readWrite:{}}})},
+      payload:{transaction:'PRIVATE_RESPONSE'}, failed});
+    assert.equal(result.operationKind, action);
+    assert.equal(result.outcome, failed ? 'unknown' : 'success');
+    assert.equal(result.failed, failed);
+    assert.equal(result.documentReadEstimate, 0);
+    assert.equal(result.writeEstimate, 0);
+    assert.equal(result.deleteEstimate, 0);
+    assert.equal(result.unknownReadRequests, 0);
+    assert.equal(result.unknownWriteRequests, 0);
+    assert.equal(JSON.stringify(result).includes('PRIVATE'), false);
+  });
+}
+
+test('transaction control cannot conceal an unsupported operation or malformed transport', () => {
+  for (const input of [
+    {path:':beginTransaction', init:{method:'GET'}},
+    {path:':rollback', init:{method:'POST', body:'not json'}},
+    {path:':otherControl', init:{method:'POST', body:'{}'}}
+  ]) {
+    const record = describeFirestoreOperation(input);
+    assert.equal(record.outcome, 'unknown');
+    assert.ok([record.documentReadEstimate, record.writeEstimate, record.deleteEstimate].includes(null));
+  }
+});
+
+test('transaction descriptors retain seven required idle reads and every conflicted retry read', async () => {
+  const {createEventFirestoreStore, eventEncode} = await import('../src/events-store.js');
+  for (const conflict of [false, true]) {
+    const records = [];
+    let commits = 0;
+    const store = createEventFirestoreStore({projectId:'test-project', pause:async () => {},
+      request:async (path, init = {}) => {
+        let payload, failed = false;
+        try {
+          if (path === ':beginTransaction') payload = {transaction:'PRIVATE_TRANSACTION'};
+          else if (path === ':rollback') payload = {};
+          else if (path === ':commit') {
+            if (++commits === 1) throw Error('FIRESTORE_412');
+            payload = {writeResults:[{}]};
+          } else payload = {fields:eventEncode({value:1}).mapValue.fields, updateTime:'PRIVATE_VERSION'};
+          return payload;
+        } catch (error) { failed = true; throw error; }
+        finally { records.push(describeFirestoreOperation({path, init, payload, failed})); }
+      }});
+    await store.transaction(async tx => {
+      for (let i = 0; i < (conflict ? 1 : 7); i++) await tx.get('items/item' + i);
+      await tx.get('items/item0'); // Same snapshot cache, not another document read.
+      if (conflict) tx.set('items/item0', {value:2});
+    });
+    const counts = {operations:records.length,
+      reads:records.reduce((sum, row) => sum + row.documentReadEstimate, 0),
+      unknownReads:records.reduce((sum, row) => sum + row.unknownReadRequests, 0),
+      unknownWrites:records.reduce((sum, row) => sum + row.unknownWriteRequests, 0)};
+    assert.deepEqual(counts, conflict ? {operations:7, reads:2, unknownReads:0, unknownWrites:1}
+      : {operations:9, reads:7, unknownReads:0, unknownWrites:0});
+    if (conflict) {
+      assert.equal(records.find(row => row.failed).writeEstimate, null);
+      assert.equal(records.at(-1).writeEstimate, 1);
+    } else assert.equal(records.reduce((sum, row) => sum + row.writeEstimate, 0), 0);
+    assert.equal(JSON.stringify(records).includes('PRIVATE'), false);
+  }
+});
