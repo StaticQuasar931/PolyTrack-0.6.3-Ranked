@@ -5,6 +5,13 @@ import {stampClientRelease, stampEventClientRelease} from './site-release.mjs';
 const index = '<script src="polytrack_062_patch.js?v=44"></script>';
 const patch = "const eventsModuleUrl=new URL('./events/client.mjs',base).href;const extraCatalogRevision='40';import('filter-menu.mjs?v=44');import('site-updates.mjs?v=44');installSiteUpdates({revision:44});";
 
+test('compact profile presentation receives the installed client cache revision',()=>{
+  const input=patch+"import('./tools/profile-compact-presentation.mjs?v=229');";
+  const result=stampClientRelease(input,index,230);
+  assert.match(result.patch,/profile-compact-presentation\.mjs\?v=230/);
+  assert.deepEqual(stampClientRelease(result.patch,result.index,230),result);
+});
+
 test('manual snapshot update and partial replay selection helpers follow the client cache stamp',()=>{
   const input=patch+"import('./tools/snapshot-update-check.mjs?v=193');import('./tools/partial-replay-selection.mjs');";
   const result=stampClientRelease(input,index,194);

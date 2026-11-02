@@ -169,6 +169,7 @@ test('one public update number; technical identities stay in a closed disclosure
   assert.match(html,/<dt>Client revision<\/dt><dd>193/);
   assert.doesNotMatch(html,/<dt>Commit/);
   assert.match(html,/Local controls\./);
+  assert.doesNotMatch(html,/Hover over the age|hc-release-note/);
   assert.match(renderHelpControls({release:{commit:'abcdef123',commitConfirmed:true}}),/<dt>Commit<\/dt><dd>abcdef123/);
   assert.doesNotMatch(renderHelpControls({release:{commit:'abcdef123'}}),/<dt>Commit/);
 });

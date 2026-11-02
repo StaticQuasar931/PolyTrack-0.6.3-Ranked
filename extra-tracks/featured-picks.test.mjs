@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {featuredPicks} from './featured-picks.mjs';
+import {featuredPicks, recommendationOrder} from './featured-picks.mjs';
 import {snapshotPopularity} from './snapshot-popularity.mjs';
 const entries = Array.from({length: 20}, (_, n) => ({id: 'track-' + n, trackId: n.toString(16).padStart(64, '0'), trackPath: 'extra-tracks/track-data/test/' + n + '.track', tier: 'Curated'}));
 const now = Date.parse('2026-11-02T12:34:56Z');
@@ -9,9 +9,30 @@ test('UTC creator/discovery choices are deterministic, reorder-safe, unique and 
   const before = JSON.stringify(entries), picks = featuredPicks(entries, new Map(), now);
   assert.deepEqual(picks, featuredPicks([...entries].reverse(), new Map(), now));
   assert.notEqual(picks[0].entry.trackId, picks[1].entry.trackId);
-  assert.deepEqual(picks.map(p => new Date(p.endsAt).toISOString()), ['2026-11-03T00:00:00.000Z', '2026-11-09T00:00:00.000Z']);
+  assert.deepEqual(picks.map(p => new Date(p.endsAt).toISOString()), ['2026-11-03T00:00:00.000Z', '2026-11-09T00:00:00.000Z', '2026-11-09T00:00:00.000Z', '2026-11-03T00:00:00.000Z']);
   assert.deepEqual(picks, featuredPicks(entries, new Map(), now + 1000));
   assert.equal(JSON.stringify(entries), before);
+});
+
+test('four lanes use distinct identities and never fabricate missing grades', () => {
+  const picks = featuredPicks(entries, new Map(), now);
+  assert.deepEqual(picks.map(p => p.kind), ['daily', 'weekly', 'critics', 'roulette']);
+  assert.equal(new Set(picks.map(p => p.entry.trackId)).size, 4);
+  assert.ok(picks.every(p => p.quality === null && p.players === null));
+  const graded = featuredPicks(entries, new Map(), now, e => ({quality: e === entries[5] ? 10 : 7}));
+  const remaining = entries.filter(e => !graded.slice(0, 2).some(p => p.entry === e));
+  assert.equal(graded[2].quality, Math.max(...remaining.map(e => e === entries[5] ? 10 : 7)));
+});
+
+test('recommendation order uses published quality, editorial care, and exact coverage, never self claims', () => {
+  const a = {...entries[0], tier: 'Community', rating: 10, sourcePlays: 1000000};
+  const b = {...entries[1], tier: 'Community'};
+  const quality = e => ({quality: e === b ? 8 : null});
+  assert.ok(recommendationOrder(a, b, new Map([[a.trackId, 99999]]), quality) > 0);
+  const unknown = () => ({quality: null});
+  assert.ok(recommendationOrder(a, b, new Map([[b.trackId, 0]]), unknown) > 0);
+  assert.equal(recommendationOrder(a, b, new Map([[a.trackId, '9'], [b.trackId, -1]]), unknown), 0);
+  assert.ok(recommendationOrder(a, entries[2], new Map([[a.trackId, 99999]]), unknown) > 0);
 });
 
 test('weekly discovery holds within a UTC week and rolls on Monday', () => {

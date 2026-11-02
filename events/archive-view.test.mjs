@@ -292,6 +292,17 @@ test('archive summary reports event types and only loaded verified finishes', ()
   });
 });
 
+test('archive labels keep Kodub separate and never show an unloaded final-finish total as zero',()=>{
+ const {root}=archiveFixture();
+ mountArchiveView(root,{periods:[{id:'w',kind:'weekly',endsAt:200},{id:'k',kind:'kodub',endsAt:100}]});
+ const stats=descendants(root,node=>node.className==='sq-archive-stats')[0];
+ assert.match(stats.textContent,/Kodub weekly/);
+ assert.doesNotMatch(stats.textContent,/Final finishes|Final verified|Verified finishes loaded/);
+ const values=descendants(stats,node=>node.className==='sq-archive-stat');
+ assert.equal(values.find(node=>node.textContent.startsWith('Weekly')).textContent,'Weekly1');
+ assert.equal(values.find(node=>node.textContent.startsWith('Kodub weekly')).textContent,'Kodub weekly1');
+});
+
 test('period counts prefer safe racer totals and exclude pending rows', () => {
   const period = { id: 'd1', racerCount: 9, entrantCount: 8 };
   const snapshot = { racerCount: Number.MAX_SAFE_INTEGER + 1, entrantCount: 7, entries: [

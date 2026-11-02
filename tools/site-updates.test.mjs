@@ -23,6 +23,7 @@ class FakeElement {
   remove() { this.removed = true; this.isConnected = false; }
   showModal() { if (this.document.dialogFailure) throw Error('dialog unavailable'); this.open = true; }
   close() { this.open = false; }
+  contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   focus() { this.document.activeElement = this; }
 }
 class FakeDocument extends EventTarget {
@@ -833,6 +834,134 @@ test('foreign copies cannot gain launcher reload privileges from a base tag or m
     const h = harness({document, endpoint: CANONICAL_SITE_VERSION_URL, fetch: async () => jsonResponse({revision: 44})});
     await h.handle.check(); assert.equal(document.button.tag, 'a', href); assert.equal(document.button.href, UPDATED_GAME_URL); h.handle.dispose();
   }
+});
+
+const oldCopyKey = 'polytrack-old-copy-v1:%2Fpath%2F';
+const oldCopyNotice = document => document.body.children.find(node => node.dataset.siteOldCopy && !node.removed);
+function oldCopyHarness(storage, options = {}) {
+  const document = options.document || new FakeDocument();
+  document.defaultView ||= new EventTarget();
+  document.defaultView.localStorage = storage;
+  let requests=0;const fetch=options.fetch || (async()=>jsonResponse({revision:44}));
+  const h=harness({document, endpoint:CANONICAL_SITE_VERSION_URL, canReload:()=>true, ...options,
+    fetch:async(...args)=>{requests++;return fetch(...args);}});
+  return {...h,get requestCount(){return requests;}};
+}
+
+test('old copy notice requires two distinct documents with fresh newer results, not polling or reinstalling',async()=>{
+  const storage=memoryStorage(),first=oldCopyHarness(storage);
+  await first.handle.check();assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);
+  for(let i=1;i<=4;i++){first.setTime(1000+i*INTERVAL);await first.handle.check();first.handle.resume();}
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);assert.equal(oldCopyNotice(first.document),undefined);
+  first.handle.dispose();
+  const same=oldCopyHarness(storage,{document:first.document});await same.handle.check();
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);same.handle.dispose();
+  const second=oldCopyHarness(storage);await second.handle.check();
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,2);
+  const notice=oldCopyNotice(second.document);assert.ok(notice);
+  assert.equal(notice.tag,'aside');assert.equal(notice.role,'status');assert.equal(second.document.dialog,undefined);
+  assert.equal(notice.children[0].textContent,'This copy is still on an older version. Refreshing may not update it.');
+  const link=notice.children[1];assert.equal(link.href,UPDATED_GAME_URL);assert.equal(link.target,'_blank');assert.equal(link.rel,'noopener noreferrer');
+  assert.equal(second.document.button.tag,'a');assert.equal(second.document.button.href,UPDATED_GAME_URL);
+  assert.equal(second.requestCount,1,'no extra discovery requests');second.handle.dispose();
+});
+
+test('failed, invalid and non-newer checks never count an initialization',async()=>{
+  for(const response of [null,{revision:'44'},{revision:43},{revision:42},{revision:44,minimumSupportedRevision:45}]){
+    const storage=memoryStorage(),h=oldCopyHarness(storage,{fetch:async()=>{if(response===null)throw Error('offline');return jsonResponse(response);}});
+    await h.handle.check();assert.equal(storage.getItem(oldCopyKey),null);assert.equal(oldCopyNotice(h.document),undefined);h.handle.dispose();
+  }
+  const storage=memoryStorage();let fail=true;
+  const first=oldCopyHarness(storage,{fetch:async()=>{if(fail)throw Error('offline');return jsonResponse({revision:44});}});
+  await first.handle.check();fail=false;first.setTime(1000+INTERVAL);await first.handle.check();
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);first.handle.dispose();
+  let resolve;const late=oldCopyHarness(storage,{fetch:()=>new Promise(done=>{resolve=done;})});
+  const pending=late.handle.check();await Promise.resolve();late.handle.dispose();resolve(jsonResponse({revision:44}));await pending;
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);
+});
+
+test('old-copy notice clears on failed or no-longer-newer confirmation and recovers without recounting',async()=>{
+  const storage=memoryStorage(),first=oldCopyHarness(storage);await first.handle.check();first.handle.dispose();
+  let response={revision:44},fail=false;
+  const h=oldCopyHarness(storage,{fetch:async()=>{if(fail)throw Error('offline');return jsonResponse(response);}});
+  await h.handle.check();assert.ok(oldCopyNotice(h.document));
+  fail=true;h.setTime(1000+INTERVAL);await h.handle.check();h.handle.resume();assert.equal(oldCopyNotice(h.document),undefined);
+  fail=false;h.setTime(1000+2*INTERVAL);await h.handle.check();assert.ok(oldCopyNotice(h.document));
+  response={revision:43};h.setTime(1000+3*INTERVAL);await h.handle.check();h.handle.resume();assert.equal(oldCopyNotice(h.document),undefined);
+  response={revision:45};h.setTime(1000+4*INTERVAL);await h.handle.check();assert.ok(oldCopyNotice(h.document));
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,2);h.handle.dispose();
+});
+
+test('old copy state caps at three, expires after seven days and resets with installed revision',async()=>{
+  const storage=memoryStorage();
+  for(let i=0;i<5;i++){const h=oldCopyHarness(storage);await h.handle.check();h.handle.dispose();}
+  assert.deepEqual(JSON.parse(storage.getItem(oldCopyKey)),{revision:43,count:3,firstSeenAt:1000});
+  const expired=oldCopyHarness(storage,{now:()=>1000+7*86400000});await expired.handle.check();
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,1);assert.equal(oldCopyNotice(expired.document),undefined);expired.handle.dispose();
+  const changed=oldCopyHarness(storage,{revision:42});await changed.handle.check();
+  assert.deepEqual(JSON.parse(storage.getItem(oldCopyKey)),{revision:42,count:1,firstSeenAt:1000});changed.handle.dispose();
+});
+
+test('old copy storage is optional, bounded and limited to pathname without query identifiers',async()=>{
+  for(const storage of [undefined,{getItem(){throw Error('denied');}},{getItem:()=>null,setItem(){throw Error('quota');}}]){
+    const h=oldCopyHarness(storage);await h.handle.check();assert.equal(oldCopyNotice(h.document),undefined);
+    assert.equal(h.document.button.href,UPDATED_GAME_URL);assert.equal(h.handle.getCompatibility().onlineAllowed,true);h.handle.dispose();
+  }
+  const document=new FakeDocument();document.location={href:'https://copy.example/path/?private=secret#player'};
+  const operations=[],storage={getItem(key){operations.push(['get',key]);return null;},setItem(key,value){operations.push(['set',key]);assert.ok(value.length<256);assert.deepEqual(Object.keys(JSON.parse(value)),['revision','count','firstSeenAt']);}};
+  const h=oldCopyHarness(storage,{document});await h.handle.check();assert.deepEqual(operations,[['get',oldCopyKey],['set',oldCopyKey]]);h.handle.dispose();
+  document.location={href:'https://copy.example/'+ 'x'.repeat(257)};
+  const long=oldCopyHarness(storage,{document,revision:42});await long.handle.check();assert.equal(operations.length,2);long.handle.dispose();
+  for(const raw of ['bad','x'.repeat(257),JSON.stringify({revision:43,count:500,firstSeenAt:1000}),JSON.stringify({revision:43,count:2,firstSeenAt:2000})]){
+    const bad=memoryStorage();bad.setItem(oldCopyKey,raw);const h=oldCopyHarness(bad);await h.handle.check();assert.equal(JSON.parse(bad.getItem(oldCopyKey)).count,1);h.handle.dispose();
+  }
+});
+
+test('official pages, local endpoints and CDN launchers never accrue old-copy state',async()=>{
+  for(const href of [UPDATED_GAME_URL,UPDATED_GAME_URL+'index.html',
+    'https://cdn.jsdelivr.net/gh/StaticQuasar931/PolyTrack-0.6.3-Ranked@main/index.html']){
+    const document=new FakeDocument();document.location={href};document.baseURI=href;
+    const storage={getItem(){assert.fail('not foreign copy');},setItem(){assert.fail('not foreign copy');}};
+    const h=oldCopyHarness(storage,{document});await h.handle.check();assert.equal(oldCopyNotice(document),undefined);h.handle.dispose();
+  }
+  const storage=memoryStorage(),local=oldCopyHarness(storage,{endpoint:'site-version.json'});await local.handle.check();
+  assert.equal(storage.getItem(oldCopyKey),null);local.handle.dispose();
+  const document=new FakeDocument();document.location={href:'https://script.google.com/macros/s/test/exec'};
+  document.baseURI='https://cdn.jsdelivr.net/gh/'+cdnPointer.repository+'@'+cdnPointer.commit+'/';
+  document.defaultView=new EventTarget();document.defaultView.__polytrackAutomaticLoad=Promise.resolve();
+  const launcher=oldCopyHarness(storage,{document});await launcher.handle.check();assert.equal(storage.getItem(oldCopyKey),null);launcher.handle.dispose();
+});
+
+test('old-copy notice defers around native dialogs and unsafe visibility without changing compatibility',async()=>{
+  const storage=memoryStorage(),first=oldCopyHarness(storage);await first.handle.check();first.handle.dispose();
+  const document=new FakeDocument(),native=document.createElement('dialog');native.open=true;document.body.append(native);
+  document.querySelectorAll=()=>native.open?[native]:[];
+  let idle=true;const h=oldCopyHarness(storage,{document,isIdle:()=>idle});await h.handle.check();
+  assert.equal(JSON.parse(storage.getItem(oldCopyKey)).count,2);assert.equal(oldCopyNotice(document),undefined);
+  native.open=false;h.handle.resume();assert.ok(oldCopyNotice(document));
+  idle=false;h.handle.resume();assert.equal(oldCopyNotice(document),undefined);
+  idle=true;document.visibilityState='hidden';h.handle.resume();assert.equal(oldCopyNotice(document),undefined);
+  document.visibilityState='visible';h.handle.resume();assert.ok(oldCopyNotice(document));
+  assert.equal(h.handle.getCompatibility().onlineAllowed,true);h.handle.dispose();
+  const unsupported=oldCopyHarness(storage,{fetch:async()=>jsonResponse({revision:44,minimumSupportedRevision:44})});await unsupported.handle.check();
+  assert.ok(unsupported.document.dialog);assert.equal(oldCopyNotice(unsupported.document),undefined);
+  assert.equal(unsupported.handle.getCompatibility().onlineAllowed,false);unsupported.handle.dispose();
+});
+
+test('old-copy dismissal and disposal preserve focus, keep the existing link and never navigate automatically',async()=>{
+  const storage=memoryStorage(),first=oldCopyHarness(storage);await first.handle.check();first.handle.dispose();
+  const document=new FakeDocument(),before=document.createElement('button');document.body.append(before);before.focus();
+  let safe=false,reloads=0;document.defaultView=new EventTarget();document.defaultView.location={reload(){reloads++;}};
+  const h=oldCopyHarness(storage,{document,canReload:()=>safe});await h.handle.check();
+  assert.equal(document.activeElement,before);const node=oldCopyNotice(document),link=node.children[1],dismiss=node.children[2];
+  let prevented=false;link.listeners.click({preventDefault(){prevented=true;}});assert.equal(prevented,true);
+  safe=true;prevented=false;link.listeners.click({preventDefault(){prevented=true;}});assert.equal(prevented,false);
+  dismiss.focus();dismiss.listeners.click();assert.equal(document.activeElement,before);assert.equal(oldCopyNotice(document),undefined);
+  h.setTime(1000+INTERVAL);await h.handle.check();h.handle.resume();assert.equal(oldCopyNotice(document),undefined);
+  assert.equal(document.button.href,UPDATED_GAME_URL);assert.equal(reloads,0);h.handle.dispose();assert.equal(document.activeElement,before);
+  const next=oldCopyHarness(storage);const anchor=next.document.createElement('button');next.document.body.append(anchor);anchor.focus();
+  await next.handle.check();oldCopyNotice(next.document).children[2].focus();next.handle.dispose();
+  assert.equal(next.document.activeElement,anchor);assert.equal(oldCopyNotice(next.document),undefined);assert.equal(next.timers.size,0);
 });
 
 // Optional local browser verification. No install/download and no external requests.

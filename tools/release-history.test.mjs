@@ -36,6 +36,29 @@ test('bounded checked-in history matches real central release and never manufact
   assert.deepEqual(Object.keys(RELEASE_HISTORY.current),['number','version','revision','notes']);
 });
 
+test('compact archive preserves every recorded entry and note in both rendering paths',()=>{
+  const html=renderReleaseHistory({release:RELEASE_INFO,now:base});
+  assert.equal((html.match(/data-release-history-entry/g)||[]).length,20);
+  assert.match(html,/<summary>Earlier updates <small>20<\/small><\/summary>/);
+  assert.doesNotMatch(html,/release-history-coverage|Recent history only|Full recorded history/);
+  assert.doesNotMatch(html,/recorded earlier updates|Older updates are not included|20 recorded/);
+  const document=new Document(),dom=createReleaseHistory(document,{release:RELEASE_INFO,now:base});
+  assert.equal(dom.querySelector('summary').textContent,'Earlier updates (20)');
+  assert.deepEqual(dom.children[1].children.map(node=>node.tag),['ol','button']);
+  assert.equal(dom.querySelectorAll('[data-release-history-entry]').length,20);
+  for(const [index,entry] of RELEASE_HISTORY.entries.entries()) {
+    assert.ok(html.includes(entry.title));
+    const detail=dom.querySelectorAll('[data-release-history-entry]')[index];
+    assert.equal(detail.querySelector('summary').textContent,'Update '+entry.number+': '+entry.title);
+    assert.deepEqual(detail.querySelectorAll('li').map(node=>node.textContent),entry.notes);
+  }
+  const full=history();full.coverage.olderOmitted=false;
+  assert.doesNotMatch(renderReleaseHistory({release:release(),history:full}),/release-history-coverage|Full recorded history/);
+  full.entries[0].notes=[];
+  assert.match(renderReleaseHistory({release:release(),history:full}),/>No recorded notes\.</);
+  assert.equal(createReleaseHistory(document,{release:release(),history:full}).querySelector('[data-release-history-entry]').querySelector('p').textContent,'No recorded notes.');
+});
+
 test('missed updates count actual recorded manual updates, not numeric gaps, visits or playtime',()=>{
   const info=release(),data=history(info);
   assert.equal(countKnownUpdates(info,number=>number===254,data),4);
@@ -79,7 +102,7 @@ test('precommit generation is byte-stable after the actual commit and requires e
 
 test('missing historical notes stay explicit and unfinished central notes block generation',async()=>{
   const f=gitFixture({missing:[sha(265)]}),data=await buildReleaseHistory(f.options);assert.deepEqual(data.entries[0].notes,[]);
-  const html=renderReleaseHistory({release:release(),history:data,now:base});assert.match(html,/notes were not recorded/);
+  const html=renderReleaseHistory({release:release(),history:data,now:base});assert.match(html,/No recorded notes/);
   for(const notes of [[],['TODO finish'],['TBD'],['placeholder'],[null]])await assert.rejects(buildReleaseHistory({...f.options,read:()=> 'const releaseInfo = '+JSON.stringify({...release(),notes})+';'}),/finished notes/);
 });
 
@@ -100,7 +123,7 @@ test('automated freshness check catches a stale JSON/module or changed finalizat
 test('archive uses local commit ages/dates, escaped finished notes and honest bounded coverage',()=>{
   const data=history(),entry=data.entries[0];entry.title='<img src=x onerror=evil()>';entry.notes=['<script>bad()</script>'];
   const html=renderReleaseHistory({release:release(),history:data,now:base+3600000});
-  assert.match(html,/Earlier updates/);assert.match(html,/Older updates are not included/);assert.match(html,/Committed 1 hour ago/);
+  assert.match(html,/Earlier updates/);assert.doesNotMatch(html,/release-history-coverage|Recent history only/);assert.match(html,/Committed 1 hour ago/);
   assert.ok(html.includes(new Date(iso).toLocaleString()));assert.match(html,/datetime="2026-10-01T12:00:00.000Z"/);
   assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script|<img|since you last played|since your last visit/);
   assert.doesNotMatch(html,/<details[^>]*\sopen(?:\s|>)/);
@@ -183,5 +206,10 @@ test('browser fixture bundles parse offline and the static history UI has no net
   const names='RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
   const bundled='const {'+names+'}=(()=>{'+runtime.replace(/\bexport /g,'')+';return {'+names+'};})();\n';
   const strip=source=>source.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'').replace(/\bexport /g,'');
-  assert.doesNotThrow(()=>new vm.Script(bundled+strip(releaseSource)+strip(updatesSource)+strip(helpSource)));
+  const fixture=bundled+strip(releaseSource)+strip(updatesSource)+strip(helpSource);
+  assert.doesNotThrow(()=>new vm.Script(fixture));
+  const rendered=vm.runInNewContext(fixture+';renderHelpControls({release:RELEASE_INFO,now:'+base+'})',{URL});
+  assert.match(rendered,/data-release-history/);
+  assert.equal((rendered.match(/data-release-history-entry/g)||[]).length,20);
+  assert.doesNotMatch(rendered,/Hover over the age|recorded earlier updates|Older updates are not included/);
 });

@@ -1,13 +1,15 @@
 const releaseInfo = {
-  "number": 268,
+  "number": 269,
   "version": "0.6.3",
-  "revision": 229,
+  "revision": 230,
   "notes": [
-    "Reliable delivery of recent menu, discovery and changelog improvements.",
-    "Builder contact links and Top Tracks filters are included in the updated menu package."
+    "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
+    "Cleaner event artwork, search controls and compact racer profiles.",
+    "Four Extra Tracks discovery picks and a clearer Builder program entry.",
+    "Simpler Help and update history, plus a clear link from outdated copies."
   ],
-  "preparedAt": "2026-11-02T07:04:49.627Z",
-  "committedAt": "2026-11-02T07:05:52.000Z"
+  "preparedAt": "2026-11-02T23:32:59.420Z",
+  "committedAt": "2026-11-02T23:39:32.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -117,6 +117,41 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+test('four discovery lanes expose unknown ratings, wrap keyboard tabs and preserve archive distinctions', async () => {
+  const items = Array.from({length: 6}, (_, n) => entry(n + 1, {tier: 'Curated', trackId: String(n).padStart(64, 'a')}));
+  items[0].tags = ['track-of-the-week'];
+  items[1].source = 'Kodub weekly';
+  const {root, document, api} = fixture(items); api.open();
+  assert.equal(cls(root, 'sq-extra-pick').length, 4);
+  const tabs = cls(root, 'sq-extra-featured-tab');
+  assert.deepEqual(tabs.map(tab => tab.textContent), ['Creator', 'Discover', 'Critics', 'Roulette']);
+  await tabs[0].dispatch('keydown', {key: 'ArrowLeft'});
+  assert.equal(document.activeElement, tabs[3]);
+  await tabs[3].dispatch('keydown', {key: 'ArrowRight'});
+  assert.equal(document.activeElement, tabs[0]);
+  assert.match(cls(root, 'sq-extra-pick-critics')[0].textContent, /EDITORIAL LINE/);
+  assert.ok(cls(root, 'sq-extra-pick-note').every(node => /Rating unknown/.test(node.textContent)));
+  assert.doesNotMatch(root.textContent, /Rating 0\/10|Published 0/);
+  assert.match(root.textContent, /official Kodub selection not established/);
+  assert.match(root.textContent, /Selection date unknown/);
+  assert.match(tag(field(root, 'Sort'), 'select')[0].title, /Published quality first/);
+  api.destroy();
+});
+
+test('recommended reranks from published exact snapshot counts without fetching track bytes', () => {
+  const items = [entry(1, {trackId: 'a'.repeat(64)}), entry(2, {trackId: 'b'.repeat(64)})];
+  const {root, api} = fixture(items); api.open();
+  api.setSnapshotStatistics({generation: 1, statistics: {schemaVersion: 1, tracks: {
+    [items[1].trackId]: {complete: true, count: 0, players: 0, totalEntries: 0}
+  }}});
+  assert.equal(tag(cls(root, 'sq-extra-card')[0], 'h3')[0].textContent, items[1].name);
+  api.setSnapshotStatistics({generation: 2, statistics: {schemaVersion: 1, tracks: {
+    [items[1].trackId]: {complete: false, count: 0, players: 0, totalEntries: 0}
+  }}});
+  assert.equal(tag(cls(root, 'sq-extra-card')[0], 'h3')[0].textContent, items[0].name);
+  api.destroy();
+});
+
 function fillSubmission(root) {
   const fields = cls(root, 'sq-extra-submission-field');
   fields[0].children[0].value = 'Test track';
@@ -1037,14 +1072,14 @@ test('card feedback dropdown is portaled out of card flow and closes on Escape o
   api.destroy();
 });
 
-test('recommended player submissions put TMNF tracks last and show no collection launcher',()=>{
+test('recommended editorial submissions use names only for evidence ties and show no collection launcher',()=>{
  const {root,api}=fixture([
   entry(1,{name:'A01',featuredSubmission:true,packId:'tmnf-ab',packName:'TMNF',submissionOrder:1}),
   entry(2,{name:'Zebra',featuredSubmission:true}),
   entry(3,{name:'Normal',featuredSubmission:false})
  ],{onOpenPack:()=>{throw Error('Removed collection button must not call this');}});
  api.open();
- assert.deepEqual(cls(root,'sq-extra-card').map(card=>tag(card,'h3')[0].textContent),['Zebra','A01','Normal']);
+ assert.deepEqual(cls(root,'sq-extra-card').map(card=>tag(card,'h3')[0].textContent),['A01','Zebra','Normal']);
  assert.equal(cls(root,'sq-extra-pack-open').length,0);assert.equal(cls(root,'sq-extra-pack-links').length,0);
  api.destroy();
 });
@@ -1141,7 +1176,8 @@ test('review sort labels stay short while the selected control exposes the full 
     assert.equal(sort.title, description);assert.equal(sort.getAttribute('aria-description'), description);
   }
   sort.value = 'recommended'; await sort.dispatch('change');
-  assert.equal(sort.getAttribute('aria-description'), undefined);api.destroy();
+  assert.equal(sort.getAttribute('aria-description'), sort.title);
+  assert.match(sort.title, /Published quality first, then editorial selection, then known exact racer counts/);api.destroy();
 });
 
 

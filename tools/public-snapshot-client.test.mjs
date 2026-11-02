@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
 import {encodeSnapshot} from './snapshot-package.mjs';
 import {createHash} from 'node:crypto';
+import {buildOverallSnapshotPaging} from './track-snapshot-paging.mjs';
+
+test('Overall first-page slices do not wait for the capture catalog; full boards still confirm it',async()=>{
+  const board={algorithmVersion:'participation-v8-s1',schemaVersion:6,updatedAt:100,revision:1,sourceRevision:1,
+    complete:true,totalEntries:1,entries:[{userId:'a'.repeat(64),rank:1,score:10}]};
+  const paging=buildOverallSnapshotPaging(board),catalog=deferred();let catalogReads=0;
+  const read=createPublicSnapshotReader({baseUrl:'https://example.test/',fetchImpl:async url=>{
+    const path=new URL(url).pathname;
+    if(path==='/manifest.json'){catalogReads++;return catalog.promise;}
+    return Response.json(path==='/overall-preview.json'?paging.preview:board);
+  }});
+  const preview=await read('overall-preview');
+  assert.equal(preview.entries.length,1);assert.equal(catalogReads,0);
+  assert.equal(preview._snapshotCapturedAt,undefined,'unknown confirmation is not a guessed capture date');
+  const full=read('overall');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(catalogReads,1);
+  catalog.resolve(Response.json({schemaVersion:1,tracks:{},overall:{path:'overall.json',updatedAt:100,revision:1,checkedAt:200}}));
+  assert.equal((await full)._snapshotCapturedAt,200);
+});
 test('packed public racer directory is cached and rejects private fields',async()=>{
   const id='a'.repeat(64);
   const fixture=await packedFixture({updatedAt:10,entries:{[id]:{updatedAt:10,name:'Racer',carColors:'fff'}}},'racer-directory.json');

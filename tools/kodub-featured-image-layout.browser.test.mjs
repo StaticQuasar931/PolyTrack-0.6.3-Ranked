@@ -217,6 +217,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
    await title.waitFor();
    await page.locator('.sq-kodub-weekly>.button>img.cover').evaluate(image=>image.decode());
    await page.evaluate(()=>document.fonts.ready);
+   await page.screenshot({path:path.join(directory,'native-published-ui'+scale+'.png')});
    assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--sq-ui-scale').trim()),String(scale/100));
    const sample=()=>title.evaluate(node=>{
     const range=document.createRange(),text=node.firstChild,chars=[];

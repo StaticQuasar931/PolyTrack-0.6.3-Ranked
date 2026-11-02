@@ -1,15 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 268,
+    "number": 269,
     "version": "0.6.3",
-    "revision": 229,
+    "revision": 230,
     "notes": [
-      "Reliable delivery of recent menu, discovery and changelog improvements.",
-      "Builder contact links and Top Tracks filters are included in the updated menu package."
+      "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
+      "Cleaner event artwork, search controls and compact racer profiles.",
+      "Four Extra Tracks discovery picks and a clearer Builder program entry.",
+      "Simpler Help and update history, plus a clear link from outdated copies."
     ]
   },
   "entries": [
+    {
+      "number": 268,
+      "title": "Complete Cached Menu Dependencies",
+      "commit": "95d990d71f065f1346bcd341f3f7cc6e4f609a96",
+      "committedAt": "2026-11-02T07:05:52.000Z",
+      "notes": [
+        "Reliable delivery of recent menu, discovery and changelog improvements.",
+        "Builder contact links and Top Tracks filters are included in the updated menu package."
+      ]
+    },
     {
       "number": 267,
       "title": "Builder Contacts and Track Discovery",
@@ -204,18 +216,6 @@
         "Verified-only event standings keep matching ranks, counts and dates.",
         "Sort Extra Tracks by snapshot popularity.",
         "More accurate route targets and clearer Event RP summaries."
-      ]
-    },
-    {
-      "number": 240,
-      "title": "Play Shortcut",
-      "commit": "4c3547860028cfa2a500978a9fa6565c8b2a4261",
-      "committedAt": "2026-10-30T05:19:52.000Z",
-      "notes": [
-        "Space plays from a focused racer on normal and event leaderboards without changing ghost selections.",
-        "Holding Space cannot launch twice or activate a racer when the key is released.",
-        "Typing, dialogs, Enter selection and other focused buttons keep their normal keyboard behavior.",
-        "Play shortcuts use the visible track's Play button and respect loading or disabled controls."
       ]
     }
   ],

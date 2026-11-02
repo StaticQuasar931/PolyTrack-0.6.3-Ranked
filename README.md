@@ -13,7 +13,7 @@ A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events,
 - **Practice History:** review tracked attempts, finishes, active practice time and improvements. Tracking is local and partial, not a complete lifetime history.
 - **Ghosts and player groups:** choose opponents, save ghost-selection presets, or build friends-only leaderboards with Advanced Filters.
 - **Events:** race Kodub's featured track, daily and weekly events, and Rolling Hills Racer. Each card shows its scoring and timing.
-- **Extra Tracks:** discover daily and weekly picks, revisit dated Kodub weekly selections, or search by tags, progress and difficulty. Sort by player counts from published standings. Unknown counts stay unknown.
+- **Extra Tracks:** explore creator spotlights, daily and weekly picks, and tracks looking for more racers. Revisit dated Kodub weekly selections or search by tags, progress and difficulty. Recommended uses published quality and player counts; unknown ratings stay unknown.
 - **Racer Studio:** customize your car, nameplate and profile with supported cosmetics and earned designs.
 
 ## For Track Builders
@@ -49,6 +49,8 @@ Only eligible finishes submitted during the exact active event can earn its Even
 Use **Filters** to include or exclude racers, select countries, badges or public group tags, and save or share loadouts. Normal filtering retains published RP; Smart mode calculates a separate group score from available loaded results. Missing results are marked rather than invented. Filters do not change public verification or rankings.
 
 Six-digit group tags are public labels, not passwords or private multiplayer rooms. Multiplayer depends on network conditions; a wired connection alone does not guarantee a direct peer connection.
+
+In Overall Rankings, **Top Tracks** can show All, Official, Community or Extra tracks. These filters use the same published standings and do not add database reads.
 
 ## Diagnostics and Feedback
 

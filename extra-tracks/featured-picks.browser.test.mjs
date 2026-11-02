@@ -8,7 +8,7 @@ const sources = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'review
 sources.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const font=fs.readFileSync(new URL('../forced_square.woff2',import.meta.url)).toString('base64');
 const css = fs.readFileSync(new URL('catalog.css', import.meta.url), 'utf8')+`\n@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{font-family:ForcedSquare,sans-serif}`;
-const entries = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8')).slice(0, 4);
+const entries = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8')).slice(0, 8);
 const thumbnails = new Map(entries.filter(entry => entry.thumbnailUrl).map(entry => [entry.thumbnailUrl, fs.readFileSync(new URL('../' + entry.thumbnailUrl, import.meta.url))]));
 
 test('featured discovery fits desktop and phone, uses existing callback and never downloads track bytes', {skip: !chromium}, async () => {
@@ -39,11 +39,12 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
     assert.equal(await page.evaluate(() => document.fonts.check('14px ForcedSquare')), true);
     for (const [width, height] of [[1366, 900], [390, 844], [320, 740], [280, 653], [320, 568], [844, 390]]) {
       await page.setViewportSize({width, height});
-      assert.equal(await page.locator('.sq-extra-featured>.sq-extra-pick').count(), 2);
+      assert.equal(await page.locator('.sq-extra-featured>.sq-extra-pick').count(), 4);
       assert.equal(await page.locator('.sq-extra-featured').isVisible(), true);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       const visible = page.locator('.sq-extra-featured>.sq-extra-pick:visible');
-      assert.equal(await visible.count(), height <= 700 ? 0 : width <= 600 ? 1 : 2);
+      assert.equal(await visible.count(), height <= 700 ? 0 : width <= 600 ? 1 : 4);
+      await page.locator('.sq-extra-featured img:visible').evaluateAll(nodes => Promise.all(nodes.map(image => image.decode().catch(() => {}))));
       if (height > 700) {
         const images = await visible.locator('img').evaluateAll(nodes => nodes.map(node => ({fit: getComputedStyle(node).objectFit, opacity: getComputedStyle(node).opacity, filter: getComputedStyle(node).filter, font: getComputedStyle(node.closest('.sq-extra-overlay')).fontFamily})));
         assert.ok(images.length > 0);
@@ -57,6 +58,14 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
       await search.fill('Everlasting'); assert.equal(await page.locator('.sq-extra-featured').isHidden(), true);
       await search.fill('');
       if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-' + width + 'x' + height + '.png'});
+      if (height <= 700) {
+        await page.getByRole('button', {name: 'Show spotlights', exact: true}).click();
+        assert.equal(await page.locator('.sq-extra-featured>.sq-extra-pick:visible').count(), width <= 600 ? 1 : 4);
+        await page.locator('.sq-extra-featured img:visible').evaluateAll(nodes => Promise.all(nodes.map(image => image.decode().catch(() => {}))));
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-expanded-' + width + 'x' + height + '.png'});
+        await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
+      }
     }
     await page.setViewportSize({width:390,height:844});
     assert.match(await page.locator('.sq-extra-featured').innerText(), /CREATOR SPOTLIGHT/);
@@ -76,7 +85,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
     assert.equal(await page.locator('.sq-extra-pick-weekly').isVisible(), true);
     assert.match(await page.locator('.sq-extra-pick-weekly').innerText(), /EDITORIAL DISCOVERY/);
     await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
-    assert.equal(await page.locator('.sq-extra-count').textContent(), '4 of 4 tracks');
+    assert.equal(await page.locator('.sq-extra-count').textContent(), `${entries.length} of ${entries.length} tracks`);
     if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-short-320x568.png'});
     await page.setViewportSize({width: 280, height: 844});
     await page.getByRole('tab', {name: 'Creator', exact: true}).click();

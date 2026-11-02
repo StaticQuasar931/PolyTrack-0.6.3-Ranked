@@ -1124,3 +1124,16 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 .sq-snapshot-update-dialog>div{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .sq-snapshot-update-dialog button{min-height:44px;padding:8px 16px;font:inherit;border:2px solid #89b5dc;background:#29477c;color:#fff;cursor:pointer}
 .sq-snapshot-update-dialog button:focus-visible{outline:3px solid #8be5ff;outline-offset:3px}
+
+/* Compact profile summaries, retaining the native blue palette and inherited font. */
+#overallProfilePopup .profile-participation{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:4px 0!important;padding:6px 8px!important;background:#162858;color:#bcd0ed;font:inherit;min-width:0}
+#overallProfilePopup .profile-participation>span{font-size:14px;line-height:1.3}
+#overallProfilePopup .profile-participation .profile-participation-counts{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;padding:0;min-width:0}
+#overallProfilePopup .profile-participation .profile-participation-counts>div{display:flex;align-items:baseline;gap:5px;min-width:0}
+#overallProfilePopup .profile-participation dt{font-size:13px;line-height:1.3;color:#bcd0ed}
+#overallProfilePopup .profile-participation dd{margin:0;color:#eef8ff;font-size:16px;line-height:1.3;font-variant-numeric:tabular-nums}
+#overallProfilePopup .profile-no-medals{grid-column:1/-1;margin:0!important;padding:2px 0!important;min-height:0!important;background:transparent!important;text-align:left!important;color:#b9cce8;font-size:14px;line-height:1.35}
+#overallProfilePopup .profile-achievements.profile-medal-card{display:inline-flex!important;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px!important;min-width:0!important;min-height:0!important;padding:4px 6px!important;background:#10214b;font:inherit}
+#overallProfilePopup .profile-achievements img{width:20px!important;height:20px!important;flex:none}
+#overallProfilePopup .profile-achievements b{font-size:17px;line-height:1.2;font-variant-numeric:tabular-nums}
+#overallProfilePopup .profile-achievements small{font-size:12px;line-height:1.2;letter-spacing:0}

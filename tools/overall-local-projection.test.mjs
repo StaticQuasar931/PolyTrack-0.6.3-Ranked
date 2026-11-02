@@ -185,3 +185,19 @@ test('deterministic varied multi-track populations agree with the authoritative 
     assertOracle(input);
   }
 });
+
+test('Rolling Hills local PBs match the Worker whether they pass a racer or keep the same place',()=>{
+  const rolling='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
+  for(const timeMs of [11000,9000]){
+    const input=fixture([board(rolling,[['a',10000],['b',12000],['c',14000]]),
+      ...official.slice(0,2).map(id=>board(id,[['a',10000],['b',12000],['c',14000]]))]);
+    input.acceptedPbs=[receipt(rolling,timeMs)];
+    const oracle=assertOracle(input);
+    const local=projectLocalOverall({...input,acceptedPbs:[],localPbs:[{accountId:'b',generation,trackId:rolling,timeMs,observedAt:200}],includeCasual:false});
+    assert.equal(local.status,'projected');assert.equal(local.projection.score,oracle.projection.score);
+    assert.equal(local.projection.trackResults.find(row=>row.trackId===rolling).projectedRank,timeMs<10000?1:2);
+    assert.equal(local.localPbsApplied,true);assert.equal(local.publicRank,null);
+    assert.equal(local.casualIncluded,false);assert.ok(local.racers.every(row=>row.casualProjection===null));
+    assert.deepEqual(local.racers.map(({casualProjection,...row})=>row),oracle.racers.map(({casualProjection,...row})=>row));
+  }
+});

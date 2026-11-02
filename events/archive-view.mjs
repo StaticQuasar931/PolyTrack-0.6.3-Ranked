@@ -211,8 +211,9 @@ function renderStats(document, target, periods, snapshots) {
   const values = [
     ['Events', summary.events],
     ['Daily', summary.kindCounts.daily],
-    ['Weekly', summary.kindCounts.weekly + summary.kindCounts.kodub],
-    [summary.loadedEvents === summary.events ? 'Final verified finishes' : 'Final finishes loaded', summary.verifiedFinishes]
+    ['Weekly', summary.kindCounts.weekly],
+    ['Kodub weekly', summary.kindCounts.kodub],
+    ...(summary.loadedEvents ? [[summary.loadedEvents === summary.events ? 'Final verified finishes' : 'Verified finishes loaded', summary.verifiedFinishes]] : [])
   ];
   target.replaceChildren();
   for (const [label, value] of values) {
@@ -323,7 +324,7 @@ export function mountArchiveView(root, options = {}) {
   const filters = document.createElement('fieldset');
   filters.className = 'sq-archive-kind-filters';
   appendText(document, filters, 'legend', '', 'Show archived events');
-  for (const [kind, label] of [['daily', 'Daily'], ['weekly', 'Weekly'], ['kodub', 'Kodub']]) {
+  for (const [kind, label] of [['daily', 'Daily'], ['weekly', 'Weekly'], ['kodub', 'Kodub weekly']]) {
     const wrapper = document.createElement('label');
     const input = document.createElement('input');
     input.type = 'checkbox';

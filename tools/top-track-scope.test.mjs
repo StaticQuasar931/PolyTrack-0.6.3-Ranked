@@ -17,6 +17,7 @@ test('Top Tracks scopes use canonical membership, retain order and rank the sele
  const h=harness(),rows=['official','extra','community','archive','dynamic','custom'].map((trackId,i)=>({trackId,type:'extra',weight:10-i,categoryRank:i+1}));
  const original=JSON.stringify(rows);
  assert.equal(h.topTrackRowsForScope(rows),rows);
+ assert.deepEqual(Array.from(h.topTrackRowsForScope(rows,'official'),row=>[row.trackId,row.categoryRank]),[['official',1]]);
  assert.deepEqual(Array.from(h.topTrackRowsForScope(rows,'community'),row=>[row.trackId,row.categoryRank]),[['community',1]]);
  assert.deepEqual(Array.from(h.topTrackRowsForScope(rows,'extra'),row=>[row.trackId,row.categoryRank]),[['extra',1],['dynamic',2]]);
  assert.equal(h.topTrackRowsForScope(rows,'invalid'),rows);

@@ -181,7 +181,7 @@ export function createLocalOverallController({storage, read, packageInfo, getAcc
         ? projectScopedSnapshot({accountId:ctx.accountId,generation:ctx.generation,overall:baseline.overall,tracks:baseline.tracks})
         : projectLocalOverall({accountId: ctx.accountId, generation: ctx.generation,
         overall: baseline.overall, results: baseline.results, tracks: baseline.tracks,
-        acceptedPbs: latest.map(row => ({...row, accepted: true})),localPbs:latestLocal});
+        acceptedPbs: latest.map(row => ({...row, accepted: true})),localPbs:latestLocal,includeCasual:false});
       if (!current(ctx, token)) return;
       if (result.status === 'unavailable') {
         // Validated static bytes cannot repair a model/version mismatch in place.

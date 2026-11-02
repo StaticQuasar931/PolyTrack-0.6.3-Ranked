@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import {createRequire} from 'node:module';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'../tools/verifier/node_modules/playwright');
 
 test('archive controls and month jumps work offline at desktop and mobile widths',async()=>{
+ const output=process.env.POLYTRACK_ARCHIVE_OUTPUT||await fs.mkdtemp(join(tmpdir(),'polytrack-archive-'));
+ await fs.mkdir(output,{recursive:true});
  const server=http.createServer(async(req,res)=>{
   const name=req.url.split('?')[0];
   if(name==='/'){res.setHeader('content-type','text/html');res.end('<!doctype html><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/events/events.css"><style>body{margin:0;padding:16px;background:#101d40;color:white;font-family:Verdana}button{min-height:44px}main{max-width:1050px;margin:auto}</style><main></main>');return;}
@@ -43,7 +47,7 @@ test('archive controls and month jumps work offline at desktop and mobile widths
     height:document.querySelector('input[type=search]').getBoundingClientRect().height,
     color:getComputedStyle(document.querySelector('input[type=search]')).backgroundColor}));
    assert.equal(metrics.overflow,false);assert.ok(metrics.height>=44);assert.equal(metrics.color,'rgb(20, 36, 81)');
-   await page.screenshot({path:new URL(`../tools/archive-${width}.png`,import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1'),fullPage:true});
+   await page.screenshot({path:join(output,`archive-${width}.png`),fullPage:true});
    assert.deepEqual(errors,[]);await page.close();
   }
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
