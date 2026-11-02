@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 265,
+  "number": 266,
   "version": "0.6.3",
-  "revision": 226,
+  "revision": 227,
   "notes": [
-    "Fewer repeated requests when published standings are temporarily unavailable.",
-    "Missing data recovers cleanly when a new snapshot arrives."
+    "Discover Extra Track picks and dated Kodub weekly selections.",
+    "Clearer profiles, player counts, route suggestions and responsive controls.",
+    "Less repeated loading, with native finish-screen compatibility checked across screen sizes."
   ],
-  "preparedAt": "2026-11-02T04:53:07.346Z",
-  "committedAt": "2026-11-02T04:54:13.000Z"
+  "preparedAt": "2026-11-02T05:01:15.533Z",
+  "committedAt": "2026-11-02T05:01:54.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
