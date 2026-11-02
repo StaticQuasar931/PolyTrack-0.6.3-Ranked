@@ -194,11 +194,11 @@ export function preparePolyTrackOverallPlacements(snapshot, accountId, options =
 export function readRecordPlacementSettings(storage = globalThis.localStorage) {
   let enabled = true;
   let policy = 'all';
-  let showPlayerCounts = false;
+  let showPlayerCounts = true;
   try {
     enabled = storage?.getItem(RECORD_PLACEMENT_SETTINGS.enabled) !== '0';
     policy = storage?.getItem(RECORD_PLACEMENT_SETTINGS.policy) === '1' ? 'verified' : 'all';
-    showPlayerCounts = storage?.getItem(RECORD_PLACEMENT_SETTINGS.showPlayerCounts) === '1';
+    showPlayerCounts = storage?.getItem(RECORD_PLACEMENT_SETTINGS.showPlayerCounts) !== '0';
   } catch {}
   return { enabled, policy, showPlayerCounts };
 }
@@ -420,7 +420,7 @@ function ensureStyle(document) {
 [${BADGE_ATTRIBUTE}].silver{background:#66748a;color:#f1f6ff;border-color:#dce8ff}
 [${BADGE_ATTRIBUTE}].bronze{background:#7b4d31;color:#ffd0aa;border-color:#ffb77e}
 [${BADGE_ATTRIBUTE}].estimated{background:#243756;color:#b7d5e8;border-color:#7893a8}
-[${BADGE_ATTRIBUTE}].player-count{min-width:2.25em;min-height:1.65em;padding:.14em .15em;font-size:.74em;background:#494137;color:#f8ddb0;border-color:#c39d63;box-shadow:none}
+[${BADGE_ATTRIBUTE}].player-count{min-width:2.65em;min-height:1.8em;padding:.16em .3em;font-size:.82em;font-variant-numeric:tabular-nums;background:#284b59;color:#d5f3f0;border-color:#81b5bd;box-shadow:none}
 `;
   document.head.appendChild(style);
   return true;
