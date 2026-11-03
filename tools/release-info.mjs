@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 272,
+  "number": 273,
   "version": "0.6.3",
-  "revision": 233,
+  "revision": 234,
   "notes": [
-    "Kodub's weekly artwork scales more cleanly on large screens.",
-    "Placement badges recover correctly when cached standings reload.",
-    "Bigger Extra Tracks spotlights and cleaner native-style settings.",
-    "More efficient background event checks with unchanged scoring."
+    "More reliable daily goals, including slower follow-up runs.",
+    "Daily progress stays separate when switching racers.",
+    "Safer progress retries when the cloud is unavailable."
   ],
-  "preparedAt": "2026-11-03T02:13:54.822Z",
-  "committedAt": "2026-11-03T02:14:57.000Z"
+  "preparedAt": "2026-11-03T02:46:10.888Z",
+  "committedAt": "2026-11-03T02:48:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

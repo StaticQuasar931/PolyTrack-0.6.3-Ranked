@@ -263,7 +263,11 @@ test('actual moderator name-policy callback does not allow a blocked previous na
 });
 test('actual profile POST, PB transaction, repair and moderator paths claim names; cosmetic-only writes do not rename',()=>{
   const post=section("if (urlObj.pathname === '/user' || urlObj.pathname === '/v6/user') {","    if (urlObj.pathname === '/leaderboardUserEntry'");
-  assert.match(post,/safeName=await claimCloudProfileName\(d,tx,accountId,ownerUid,data,safeName\)/);
+  assert.match(post,/safeName=await syncAcknowledgedPublicIdentity\(d,accountId,safeName,countryCode,carStyle\)/);
+  const identity=section('  function syncAcknowledgedPublicIdentity(','  let profileNameModulePromise=');
+  assert.match(identity,/acceptedName=await claimCloudProfileName\(d,tx,accountId,ownerUid,data,name\)/);
+  assert.ok(identity.indexOf('const previous=await tx.get(profileRef)')<identity.indexOf('await claimCloudProfileName('));
+  assert.ok(identity.indexOf('await claimCloudProfileName(')<identity.indexOf('tx.set(profileRef,'));
   const pb=section('      const currentSnap = await tx.get(ref);','      // A receipt is written only after Firebase has committed');
   assert.ok(pb.indexOf('await tx.get(profileRef)')<pb.indexOf('await claimCloudProfileName('));
   assert.ok(pb.indexOf('await claimCloudProfileName(')<pb.indexOf('tx.set(ref,'));

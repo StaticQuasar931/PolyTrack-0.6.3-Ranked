@@ -1,17 +1,28 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 272,
+    "number": 273,
     "version": "0.6.3",
-    "revision": 233,
+    "revision": 234,
     "notes": [
-      "Kodub's weekly artwork scales more cleanly on large screens.",
-      "Placement badges recover correctly when cached standings reload.",
-      "Bigger Extra Tracks spotlights and cleaner native-style settings.",
-      "More efficient background event checks with unchanged scoring."
+      "More reliable daily goals, including slower follow-up runs.",
+      "Daily progress stays separate when switching racers.",
+      "Safer progress retries when the cloud is unavailable."
     ]
   },
   "entries": [
+    {
+      "number": 272,
+      "title": "Complete Weekly Artwork and Reliable Placement Loading",
+      "commit": "9ef689ea1a9ecec23927ff1e7cbad3459912671c",
+      "committedAt": "2026-11-03T02:14:57.000Z",
+      "notes": [
+        "Kodub's weekly artwork scales more cleanly on large screens.",
+        "Placement badges recover correctly when cached standings reload.",
+        "Bigger Extra Tracks spotlights and cleaner native-style settings.",
+        "More efficient background event checks with unchanged scoring."
+      ]
+    },
     {
       "number": 270,
       "title": "Efficient Sync Checkpoints and Verification Gates",
@@ -206,16 +217,6 @@
       "notes": [
         "Verified saved runs and refreshed snapshot standings.",
         "Cleaner weekly placement and more reliable cached replays."
-      ]
-    },
-    {
-      "number": 243,
-      "title": "Event Polish",
-      "commit": "ad1073dcc8a1e752406af43e4d537588e96e0c03",
-      "committedAt": "2026-10-30T11:33:52.000Z",
-      "notes": [
-        "Clearer event pages, placements and update notices.",
-        "More reliable local PB saving and replay selection."
       ]
     }
   ],

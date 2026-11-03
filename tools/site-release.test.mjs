@@ -5,6 +5,14 @@ import {stampClientRelease, stampEventClientRelease} from './site-release.mjs';
 const index = '<script src="polytrack_062_patch.js?v=44"></script>';
 const patch = "const eventsModuleUrl=new URL('./events/client.mjs',base).href;const extraCatalogRevision='40';import('filter-menu.mjs?v=44');import('site-updates.mjs?v=44');installSiteUpdates({revision:44});";
 
+test('daily activity helper imports advance with the client release stamp',()=>{
+  const input=patch+"import('./tools/daily-activity-sync.mjs?v=233');";
+  const result=stampClientRelease(input,index,234);
+  assert.match(result.patch,/daily-activity-sync\.mjs\?v=234/);
+  assert.deepEqual(stampClientRelease(result.patch,result.index,234),result);
+  assert.match(stampClientRelease(result.patch,result.index,235).patch,/daily-activity-sync\.mjs\?v=235/);
+});
+
 test('compact profile presentation receives the installed client cache revision',()=>{
   const input=patch+"import('./tools/profile-compact-presentation.mjs?v=229');";
   const result=stampClientRelease(input,index,230);
