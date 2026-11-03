@@ -1297,7 +1297,7 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
 /* Wide cards give spare detail-column space back to the complete cover. */
 @media(min-width:1600px) and (min-height:501px){
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
-  --kodub-image-width:min(600px,calc(100% - max(calc(220px * var(--sq-ui-scale,1)),30%)));
+  --kodub-image-width:min(700px,calc(100% - max(calc(220px * var(--sq-ui-scale,1)),30%)));
   grid-template-columns:minmax(0,var(--kodub-image-width)) minmax(0,1fr)!important;
  }
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){width:var(--kodub-image-width)!important}

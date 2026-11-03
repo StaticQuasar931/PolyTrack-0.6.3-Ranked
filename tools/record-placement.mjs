@@ -387,7 +387,9 @@ export function createRecordPlacementModel(options = {}) {
       if (!trackId) continue;
       const raw = snapshotAt(snapshots, trackId);
       if (raw == null) {
-        if (accepted.has(trackId)) invalidate(trackId);
+        // Eviction is not a revocation. Keep the revision floor, but allow an
+        // unchanged authoritative file to restore the badge when loaded again.
+        accepted.delete(trackId);
       } else {
         const revision = revisionOf(raw);
         const highest = Number(highestRevision.get(trackId) || 0);
@@ -518,7 +520,7 @@ function resolveValue(input, key, fallback) {
 }
 
 // Public file reads only. Limit concurrency, coalesce duplicates, and pause off-menu.
-export function createPlacementSnapshotWarmer({ read, accept, active = () => true, now = Date.now }) {
+export function createPlacementSnapshotWarmer({ read, accept, retained = () => true, active = () => true, now = Date.now }) {
   const requests = new Map(), queue = [];
   let running = 0;
   function pump() {
@@ -527,9 +529,9 @@ export function createPlacementSnapshotWarmer({ read, accept, active = () => tru
       if (!active()) { requests.delete(job.id); job.resolve(null); continue; }
       running++;
       Promise.resolve().then(() => read(job.id)).then(value => {
-        if (value) accept(job.id, value);
-        job.retryAt = value ? Infinity : now() + 30000;
-        job.resolve(Boolean(value));
+        const accepted = Boolean(value) && accept(job.id, value) !== false;
+        job.retryAt = accepted ? Infinity : now() + 30000;
+        job.resolve(accepted);
       }).catch(() => { job.retryAt = now() + 30000; job.resolve(null); }).finally(() => {
         running--;
         job.done = true;
@@ -544,7 +546,7 @@ export function createPlacementSnapshotWarmer({ read, accept, active = () => tru
   }
   return function request(id) {
     const prior = requests.get(id);
-    if (prior && (!prior.done || now() < prior.retryAt)) return prior.promise;
+    if (prior && (!prior.done || (now() < prior.retryAt && (prior.retryAt !== Infinity || retained(id))))) return prior.promise;
     if (!active() || queue.length >= 32) return Promise.resolve(null);
     let resolve;
     const promise = new Promise(done => { resolve = done; });

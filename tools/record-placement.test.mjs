@@ -167,6 +167,17 @@ test('explicit invalidation removes the badge until a later revision arrives', (
   assert.equal(api.update({ accountId: 'me', snapshots: { [TRACK]: snapshot([row('me', 900)], 8) } }).size, 1);
 });
 
+test('cache eviction clears a badge without revoking the same authoritative revision on reload',()=>{
+  const api=installRecordPlacement({autoUpdate:false,tracks:[{id:TRACK}],expectedAlgorithmVersion:'rank-v1',render(){}});
+  const current={[TRACK]:snapshot([row('fast',900),row('me',1000)],7)};
+  assert.equal(api.update({accountId:'me',snapshots:current}).get(TRACK).label,'2/2');
+  assert.equal(api.update({accountId:'me',snapshots:{}}).size,0);
+  assert.equal(api.update({accountId:'me',snapshots:{[TRACK]:snapshot([row('me',1000)],6)}}).size,0,'eviction must not permit older rollback');
+  assert.equal(api.update({accountId:'me',snapshots:current}).get(TRACK)?.label,'2/2','an unchanged authoritative file can restore the badge');
+  api.invalidate(TRACK,7);
+  assert.equal(api.update({accountId:'me',snapshots:current}).size,0,'explicit invalidation still requires a later revision');
+});
+
 test('account switches recompute identity against the same accepted snapshot', () => {
   const api = installRecordPlacement({
     autoUpdate: false,
@@ -579,5 +590,25 @@ test('menu snapshot failure has bounded retries and successful jobs retain no pa
   assert.equal(await warm('a'),null);await flush();
   await warm('a');assert.equal(reads,1);
   now=30001;assert.equal(await warm('a'),true);await flush();
+  assert.equal(await warm('a'),true);assert.equal(reads,2);
+});
+
+test('warmup can restore evicted files but never repeats reads while they remain retained',async()=>{
+  let reads=0;const retained=new Set();
+  const warm=createPlacementSnapshotWarmer({read:async()=>{reads++;return {};},accept:id=>{retained.add(id);return true;},retained:id=>retained.has(id)});
+  assert.equal(await warm('a'),true);await flush();
+  await warm('a');assert.equal(reads,1);
+  retained.delete('a');
+  assert.equal(await warm('a'),true);await flush();
+  assert.equal(reads,2);await warm('a');assert.equal(reads,2);
+});
+
+test('rejected snapshot payloads retry after cooldown rather than becoming permanent successes',async()=>{
+  let now=0,reads=0,usable=false;
+  const warm=createPlacementSnapshotWarmer({now:()=>now,read:async()=>{reads++;return {complete:usable};},accept:(_,value)=>value.complete});
+  assert.equal(await warm('a'),false);await flush();
+  assert.equal(await warm('a'),false);assert.equal(reads,1);
+  now=30001;usable=true;
+  assert.equal(await warm('a'),true);await flush();
   assert.equal(await warm('a'),true);assert.equal(reads,2);
 });

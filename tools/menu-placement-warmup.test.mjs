@@ -141,7 +141,7 @@ test('count toggle and newly loaded statistics repaint immediately without addit
   f.ctx.snapshotTrackStatistics={[id]:{complete:true,players:7,count:7,totalEntries:7,revision:4}};
   f.ctx.applyUiPreferences();assert.equal(updates,3);
   assert.deepEqual(f.reads,[]);assert.deepEqual(f.metadataReads,['track-statistics']);
-  assert.match(source,/settingsToggle\('Player counts on unplayed tracks','polytrack-0\.6\.3-unplayed-player-counts',false\)/);
+  assert.match(source,/settingsToggle\('Unplayed track counts','polytrack-0\.6\.3-unplayed-player-counts',true\)/);
   const keys=source.slice(source.indexOf('  const settingsPreferenceKeys='),source.indexOf('  function beginSettingsPreferenceTransaction('));
   assert.ok(keys.includes(placement.RECORD_PLACEMENT_SETTINGS.showPlayerCounts),'Apply/Cancel transaction owns the toggle');
 });

@@ -1605,3 +1605,47 @@ test('short landscape toolbar uses one bounded row and short portrait retains op
   assert.match(landscape, /sort-controls\{grid-column:3;grid-row:1;max-width:240px/);
   assert.match(css, /@media\(max-height:700px\)/);
 });
+
+test('discovery cards use full-width uncropped art, native square styling and responsive lanes without compact overrides', () => {
+  const css = fs.readFileSync(new URL('catalog.css', import.meta.url), 'utf8');
+  const discovery = css.split('/* Image-led discovery stays separate')[1];
+  assert.match(discovery, /\.sq-extra-featured\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(discovery, /\.sq-extra-featured>\.sq-extra-pick\{[^}]*grid-template-columns:minmax\(0,1fr\);grid-template-rows:auto 1fr/);
+  assert.match(discovery, /border-radius:0/);
+  assert.match(discovery, /border-top:4px solid var\(--spotlight-accent\)/);
+  assert.match(discovery, /\.sq-extra-pick-art\{[^}]*min-height:148px/);
+  assert.match(discovery, /\.sq-extra-pick-art img\{[^}]*height:128px;object-fit:contain/);
+  assert.match(discovery, /@media\(min-width:601px\) and \(max-width:1100px\)\{\.sq-extra-featured\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(discovery, /@media\(max-width:600px\)\{\s*\.sq-extra-featured\{grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(discovery, /\.sq-extra-featured-tab\{[^}]*min-height:44px/);
+  assert.match(discovery, /\.sq-extra-pick-art\{min-height:120px/);
+  assert.match(discovery, /data-mobile-active="false"\]\{display:none/);
+  assert.doesNotMatch(discovery, /grid-template-columns:(?:64|80|88|100)px/);
+  assert.doesNotMatch(discovery, /\.sq-extra-pick-period\{display:none/);
+});
+
+test('all four discovery previews fail honestly and each lane plays only its canonical selected entry', async () => {
+  const items = Array.from({length: 6}, (_, n) => entry(n + 1, {
+    tier: 'Curated', trackId: String(n).padStart(64, 'a'), thumbnailUrl: `previews/${n}.png`
+  }));
+  const selected = [];
+  const {root, api} = fixture(items, {onPlay: item => selected.push(item)});
+  api.open();
+  const tiles = cls(root, 'sq-extra-featured')[0].children.filter(node => node.getAttribute('data-pick-kind'));
+  assert.equal(tiles.length, 4);
+  assert.equal(selected.length, 0, 'rendering discovery must not trigger play or load track data');
+  for (const tile of tiles) {
+    const preview = tag(tile, 'img')[0];
+    assert.equal(preview.loading, 'lazy');
+    assert.equal(cls(tile, 'sq-extra-preview-unavailable')[0].hidden, true);
+    await preview.dispatch('error');
+    assert.equal(tag(tile, 'img').length, 0);
+    assert.equal(cls(tile, 'sq-extra-preview-unavailable')[0].hidden, false);
+    assert.match(tile.textContent, /Player count unknown/);
+    assert.doesNotMatch(tile.textContent, /0 players|Rating 0/);
+    await click(cls(tile, 'sq-extra-play')[0]);
+    assert.equal(selected.at(-1), items.find(item => item.name === tag(tile, 'h3')[0].textContent));
+  }
+  assert.equal(new Set(selected.map(item => item.trackId)).size, 4);
+  api.destroy();
+});

@@ -6,7 +6,8 @@ import {tmpdir} from 'node:os';
 import {createRequire} from 'node:module';
 
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const engines=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const chromium=process.env.POLYTRACK_LAYOUT_BROWSER==='firefox'?engines.firefox:engines.chromium;
 const root=new URL('../',import.meta.url);
 const styles=await Promise.all(['events/events.css','home-ui.css','responsive-ui.css','practice-responsive.css'].map(file=>fs.readFile(new URL(file,root),'utf8')));
 const weekly=JSON.parse(await fs.readFile(new URL('events/kodub/current.json',root),'utf8')).current;
@@ -245,8 +246,16 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      offset+=word.length+1;
     }
    };
-   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[320,568],[1920,1080],[375,667],[956,440]]:[[320,568],[1920,1080],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
+   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[320,568],[1920,1080],[2560,1440],[375,667],[956,440]]:[[320,568],[1920,1080],[2560,1440],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
     await page.setViewportSize({width,height});await page.mouse.move(0,0);await settle(page);
+    if(width===2560&&height===1440){
+     await title.evaluate((node,name)=>node.textContent=name,weekly.name);await settle(page);
+     const original=await measure(page),image=original.image.rect;
+     const paintedHeight=Math.min(image.width/original.natural.width,image.height/original.natural.height)*original.natural.height;
+     assert.ok(Math.abs(image.bottom-paintedHeight-original.card.y)<=1,'complete native cover reaches the card top at 2560x1440 UI'+scale);
+     assert.equal(await page.locator('.sq-kodub-weekly>.button').evaluate(node=>getComputedStyle(node).clipPath),'none');
+     await page.screenshot({path:path.join(directory,'native-full-cover-2560x1440-ui'+scale+'.png')});
+    }
     await title.evaluate(node=>node.textContent='Hydropower');await settle(page);
     const ordinary=await sample(),geometry=await measure(page);
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);

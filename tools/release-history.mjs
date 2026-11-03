@@ -2,15 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 270,
+    "number": 272,
     "version": "0.6.3",
-    "revision": 231,
+    "revision": 233,
     "notes": [
-      "More efficient background syncing without changing run submission or scoring.",
-      "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
+      "Kodub's weekly artwork scales more cleanly on large screens.",
+      "Placement badges recover correctly when cached standings reload.",
+      "Bigger Extra Tracks spotlights and cleaner native-style settings.",
+      "More efficient background event checks with unchanged scoring."
     ]
   },
   "entries": [
+    {
+      "number": 270,
+      "title": "Efficient Sync Checkpoints and Verification Gates",
+      "commit": "f5b3376c4c50e6cd66f1afc092932b960bf9d5bb",
+      "committedAt": "2026-11-02T23:49:24.000Z",
+      "notes": [
+        "More efficient background syncing without changing run submission or scoring.",
+        "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
+      ]
+    },
     {
       "number": 269,
       "title": "Faster Rankings and Cleaner Track Discovery",
@@ -205,16 +217,6 @@ const historyData = {
       "notes": [
         "Clearer event pages, placements and update notices.",
         "More reliable local PB saving and replay selection."
-      ]
-    },
-    {
-      "number": 242,
-      "title": "Snapshot Repair",
-      "commit": "bbed4aab8c1d0b780aae4b29977b19d720c72bba",
-      "committedAt": "2026-10-30T08:55:46.000Z",
-      "notes": [
-        "More reliable replay availability, including pending runs.",
-        "Updated standings and clearer snapshot coverage."
       ]
     }
   ],

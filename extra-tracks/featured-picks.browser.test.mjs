@@ -37,8 +37,12 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
     }, entries);
     await page.evaluate(() => document.fonts.ready);
     assert.equal(await page.evaluate(() => document.fonts.check('14px ForcedSquare')), true);
-    for (const [width, height] of [[1366, 900], [390, 844], [320, 740], [280, 653], [320, 568], [844, 390]]) {
+    for (const [width, height] of [[1366, 900], [1024, 900], [390, 844], [320, 740], [280, 653], [320, 568], [844, 390]]) {
       await page.setViewportSize({width, height});
+      await page.locator('.sq-extra-menu').evaluate(node => node.scrollTop = 0);
+      if (height <= 700 && await page.locator('.sq-extra-featured-toggle').getAttribute('aria-expanded') === 'true') {
+        await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
+      }
       assert.equal(await page.locator('.sq-extra-featured>.sq-extra-pick').count(), 4);
       assert.equal(await page.locator('.sq-extra-featured').isVisible(), true);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -51,9 +55,11 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
         for (const image of images) {assert.equal(image.fit, 'contain');assert.equal(image.opacity, '1');assert.equal(image.filter, 'none');assert.match(image.font, /ForcedSquare/);}
         assert.match(await visible.first().innerText(), /Created by/);
       }
-      const listBox = await page.locator('.sq-extra-grid').boundingBox();
-      if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR && listBox.y >= height - 100) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-overflow-' + width + 'x' + height + '.png'});
-      assert.ok(listBox.y < height - 100, 'catalog remains visible at ' + width + 'x' + height + ' (top=' + listBox.y + ')');
+      const grid = page.locator('.sq-extra-grid');
+      await grid.scrollIntoViewIfNeeded();
+      const listBox = await grid.boundingBox();
+      assert.ok(listBox.y < height && listBox.y + listBox.height > 0, 'catalog is scroll-accessible at ' + width + 'x' + height);
+      await page.locator('.sq-extra-menu').evaluate(node => node.scrollTop = 0);
       const search = page.getByRole('searchbox', {name: 'Search tracks'});
       await search.fill('Everlasting'); assert.equal(await page.locator('.sq-extra-featured').isHidden(), true);
       await search.fill('');
@@ -66,6 +72,41 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
         if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-expanded-' + width + 'x' + height + '.png'});
         await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
       }
+      if (width <= 600) {
+        if (height <= 700) await page.getByRole('button', {name: 'Show spotlights', exact: true}).click();
+        for (const [kind, label] of [['daily', 'Creator'], ['weekly', 'Discover'], ['critics', 'Critics'], ['roulette', 'Roulette']]) {
+          await page.getByRole('tab', {name: label, exact: true}).click();
+          const tile = page.locator('.sq-extra-pick-' + kind);
+          await tile.scrollIntoViewIfNeeded();
+          assert.equal(await visible.count(), 1, 'exactly the selected phone lane is visible');
+          const bounds = await tile.evaluate(node => {
+            const rect = node.getBoundingClientRect(), art = node.querySelector('figure').getBoundingClientRect();
+            return {left: rect.left, right: rect.right, height: rect.height, imageHeight: art.height,
+              overflow: [...node.querySelectorAll('h3,p,button,time')].some(child => child.scrollWidth > child.clientWidth + 1)};
+          });
+          assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.height <= height, kind + ' selected card fits ' + width + 'x' + height);
+          assert.ok(bounds.imageHeight >= 120, kind + ' has a large phone image');
+          assert.equal(bounds.overflow, false, kind + ' details do not overflow horizontally');
+          assert.match(await tile.innerText(), /Created by/);
+          await tile.locator('img').evaluateAll(nodes => Promise.all(nodes.map(image => image.decode().catch(() => {}))));
+          if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/selected-' + kind + '-' + width + 'x' + height + '.png'});
+        }
+        await page.getByRole('tab', {name: 'Creator', exact: true}).click();
+        if (height <= 700) await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
+      } else {
+        if (height <= 700) await page.getByRole('button', {name: 'Show spotlights', exact: true}).click();
+        assert.equal(await visible.count(), 4);
+        const cards = await visible.evaluateAll(nodes => nodes.map(node => {
+          const rect = node.getBoundingClientRect(), art = node.querySelector('figure').getBoundingClientRect();
+          return {left: rect.left, right: rect.right, width: rect.width, artWidth: art.width, artHeight: art.height};
+        }));
+        for (const card of cards) {
+          assert.ok(card.left >= 0 && card.right <= width, 'all four desktop/tablet cards fit horizontally');
+          assert.ok(card.artWidth >= card.width - 4 && card.artHeight >= 148, 'desktop/tablet art is full-width and image-led');
+        }
+        if (height <= 700) await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
+      }
+      await page.locator('.sq-extra-menu').evaluate(node => node.scrollTop = 0);
     }
     await page.setViewportSize({width:390,height:844});
     assert.match(await page.locator('.sq-extra-featured').innerText(), /CREATOR SPOTLIGHT/);

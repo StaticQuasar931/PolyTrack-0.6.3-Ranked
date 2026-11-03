@@ -655,8 +655,7 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         const playbackPath = path(C.replays, `${periodId}_run_${run.runId}`), retainedPlayback = await tx.get(playbackPath);
         const livePath = path(C.live, periodId), board = await tx.get(livePath);
         const normalPath = path(C.canonical, `${run.accountId}_${run.trackId}`), canonical = await tx.get(normalPath);
-        const totalPath = path(C.totals, run.accountId), priorTotal = await tx.get(totalPath);
-        const overallPath = path(C.public, 'totals'), overall = await tx.get(overallPath);
+        const totalPath = path(C.totals, run.accountId), overallPath = path(C.public, 'totals');
         const receiptPath = path(C.receipts, `${periodId}_${run.accountId}`), receipt = await tx.get(receiptPath);
         if (canonical) demand(canonical.ownerUid === run.ownerUid && canonical.accountId === run.accountId && canonical.trackId === run.trackId, 'canonical_owner_mismatch', 409);
         if (eventPb) demand(eventPb.ownerUid === run.ownerUid && eventPb.accountId === run.accountId && eventPb.periodId === periodId && int(eventPb.timeMs, 1), 'event_pb_corrupt', 503);
@@ -674,6 +673,10 @@ export function createEventService({ store, now = Date.now, hash = sha256, rando
         }
         const verified = result.status === 'verified';
         const eventImproved = verified && eventOpen && (!eventPb || run.timeMs < eventPb.timeMs);
+        // Totals are derived publication inputs, not verdict authority. Read them
+        // only for an awarded improvement, still inside this transaction before writes.
+        const priorTotal = eventImproved ? await tx.get(totalPath) : null;
+        const overall = eventImproved ? await tx.get(overallPath) : null;
         const oldTime = canonicalTime(canonical), canonicalDeferred = verified && oldTime === undefined;
         const canonicalImproved = verified && !canonicalDeferred && (oldTime === null || run.timeMs < oldTime);
         const retry = result.status === 'unavailable' && !reviewHold && at < p.endsAt + p.graceMs + 7 * 86400000 && slot.attempts < L.verificationAttempts;

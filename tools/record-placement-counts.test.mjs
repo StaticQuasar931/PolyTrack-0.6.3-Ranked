@@ -28,13 +28,15 @@ function fixture({names=['Track A'],text='No record',...options}={}){
   return {api,cards,requests,reads,get badge(){return cards[0].record.child;}};
 }
 
-test('unplayed player counts default off, require explicit opt-in and tolerate blocked storage',()=>{
-  assert.equal(readRecordPlacementSettings().showPlayerCounts,false);
-  assert.equal(readRecordPlacementSettings({getItem(){throw Error('blocked');}}).showPlayerCounts,false);
-  for(const value of [null,'0','true','garbage'])assert.equal(readRecordPlacementSettings({getItem:()=>value}).showPlayerCounts,false);
-  assert.equal(readRecordPlacementSettings({getItem:key=>key===RECORD_PLACEMENT_SETTINGS.showPlayerCounts?'1':null}).showPlayerCounts,true);
-  const f=fixture();f.api.update({snapshots:{[trackId]:board()}});
-  assert.equal(f.badge,null);assert.deepEqual(f.reads,[]);assert.deepEqual(f.requests,[]);
+test('unplayed player counts default on, retain explicit opt-out and tolerate blocked storage',()=>{
+  assert.equal(readRecordPlacementSettings().showPlayerCounts,true);
+  assert.equal(readRecordPlacementSettings({getItem(){throw Error('blocked');}}).showPlayerCounts,true);
+  for(const value of [null,'1','true','garbage'])assert.equal(readRecordPlacementSettings({getItem:()=>value}).showPlayerCounts,true);
+  assert.equal(readRecordPlacementSettings({getItem:key=>key===RECORD_PLACEMENT_SETTINGS.showPlayerCounts?'0':null}).showPlayerCounts,false);
+  const f=fixture();f.api.update({});
+  assert.equal(f.badge.textContent,'3');assert.deepEqual(f.requests,[]);
+  const disabled=fixture();disabled.api.update({showPlayerCounts:false});
+  assert.equal(disabled.badge,null);assert.deepEqual(disabled.reads,[]);assert.deepEqual(disabled.requests,[]);
 });
 
 test('only complete coherent public statistics count; unknown does not become zero',()=>{

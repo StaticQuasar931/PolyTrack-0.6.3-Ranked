@@ -2,38 +2,48 @@ import test, {before, after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {createRequire} from 'node:module';
+import {installedSettingsSources} from './settings-transaction.mjs';
 
 const require = createRequire(new URL('./verifier/package.json', import.meta.url));
-const {chromium} = require('playwright');
+const engines = require('playwright');
+const engineName = process.env.POLYTRACK_SETTINGS_BROWSER || 'chromium';
+if (!['chromium', 'firefox'].includes(engineName)) throw new Error('Unsupported settings browser: ' + engineName);
+const captureDir = process.env.POLYTRACK_UI_CAPTURE_DIR;
+async function saveEvidence(name, data) {
+  if (!captureDir) return;
+  await fs.mkdir(captureDir, {recursive: true});
+  await fs.writeFile(captureDir + '/' + name, JSON.stringify(data, null, 2));
+}
 const patch = await fs.readFile(new URL('../polytrack_062_patch.js', import.meta.url), 'utf8');
 const main = await fs.readFile(new URL('../main.bundle.js', import.meta.url), 'utf8');
-function block(source, start, end) {
-  const a = source.indexOf(start), b = source.indexOf(end, a);
-  assert.ok(a >= 0 && b > a, start);
-  return source.slice(a, b);
-}
-const helpers = block(patch, '  let settingsPreferenceTransaction=', '  async function currentUserIsModerator(');
-const enhance = block(patch, '  function ensureSettingsEnhancements(', '  function lobbyShortcutButtons(');
-const preferences = block(patch, '  let lastPlacementUpdateAt=', '  let settingsPreferenceTransaction=');
-const native = block(main, 'var qs,Qs,Js,', ';var wo=');
+const {helpers, enhance, preferences, native, nativeCss, installedCss} = installedSettingsSources(main, patch);
+const responsiveCss = await fs.readFile(new URL('../responsive-ui.css', import.meta.url), 'utf8');
+const font = await fs.readFile(new URL('../forced_square.woff2', import.meta.url));
+const fixtureCss = nativeCss.replaceAll('__FONT__', 'data:font/woff2;base64,' + font.toString('base64')) + responsiveCss + installedCss;
 let browser;
-before(async () => { browser = await chromium.launch({headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {})}); });
+before(async () => {
+  const executablePath = engineName === 'firefox' ? process.env.POLYTRACK_FIREFOX_EXECUTABLE : process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  browser = await engines[engineName].launch({headless: true, timeout: 20000, ...(executablePath ? {executablePath} : {})});
+  await saveEvidence('browser.json', {engine: engineName, version: browser.version(), executablePath: executablePath || engines[engineName].executablePath(), serial: true});
+});
 after(async () => { await browser?.close(); });
 
 const keys = ['reduced-effects', 'pb-podiums', 'pb-podiums-verified-only', 'compact-ranked', 'show-racer-codes', 'plain-racer-themes', 'ui-font-scale', 'rp-decimals'].map(key => 'polytrack-0.6.2-' + key).concat('polytrack-0.6.3-compact-track-data','polytrack-0.6.3-unplayed-player-counts');
 const credential = 'polytrack-0.6.2-turn-backup-code';
 async function fixture(t, seeded = false) {
   const page = await browser.newPage();
+  page.setDefaultTimeout(8000);
   const errors = [], external = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/*', route => {
-    if (route.request().url() === 'http://localhost/') return route.fulfill({contentType: 'text/html', body: '<!doctype html><body><div id="ui"></div><p id="rp"></p>'});
+    if (route.request().url() === 'http://localhost/') return route.fulfill({contentType: 'text/html', body: '<!doctype html><body><div id="ui"><div class="menu-ui"></div></div><p id="rp"></p>'});
     if (/^http:\/\/localhost\/images\/(cancel|reset_settings|apply)\.svg$/.test(route.request().url())) return route.fulfill({contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"></svg>'});
     external.push(route.request().url());
     return route.abort();
   });
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); assert.deepEqual(external, [], 'no network or Firebase'); });
   await page.goto('http://localhost/');
+  await page.addStyleTag({content: fixtureCss});
   await page.evaluate(({helpers, enhance, preferences, native, keys, credential, seeded}) => {
     const initial = Object.fromEntries(keys.map(key => [key, seeded ? key.endsWith('ui-font-scale') ? '95' : key.endsWith('rp-decimals') ? '4' : '0' : null]));
     for (const [key, value] of Object.entries(initial)) if (value !== null) localStorage.setItem(key, value);
@@ -80,7 +90,7 @@ async function fixture(t, seeded = false) {
         updateSettings:rows=>{for(const [key,value] of rows)values.set(key,value);},saveSettings(){},setKeyBindings(){},
         defaultSettings:()=>new Map([['Language','en-US']]),defaultKeyBindings:()=>new Map()};
       let menu;
-      const open=()=>{menu=new NativeSettings(document.querySelector('#ui'),{}, {playUIClick(){}},{isShadowQualitySupported:()=>true},store,{refreshMeshes(){}},
+      const open=()=>{menu=new NativeSettings(document.querySelector('#ui > .menu-ui'),{}, {playUIClick(){}},{isShadowQualitySupported:()=>true},store,{refreshMeshes(){}},
         {showConfirm(){},hide(){}},()=>menu.dispose());ensureSettingsEnhancements();applyUiPreferences();renderEntries();};
       return {open,enhance:ensureSettingsEnhancements,dispose:()=>menu.dispose(),write:(key,value)=>settingsPreferenceTransaction.write(key,value)};
     `)(native);
@@ -106,7 +116,7 @@ for (const seeded of [false, true]) for (const close of ['cancel', 'escape', 'di
     assert.notDeepEqual(await read(page), initial, 'live preview writes');
     if (close === 'escape') await page.keyboard.press('Escape');
     else if (close === 'dispose') await page.evaluate(() => api.dispose());
-    else await page.locator('.settings-menu-ui > .button-wrapper > .cancel img').click();
+    else await page.locator('.settings-menu-ui > .button-wrapper > .cancel').click();
     await page.waitForFunction(() => !document.querySelector('.settings-menu-ui'));
     assert.equal(await page.evaluate(() => liveSettingsObservers), 0, 'observer disposed on close');
     assert.deepEqual(await read(page), initial);
@@ -122,7 +132,7 @@ test('native Apply commits preview; later Cancel restores the applied baseline',
   const page = await fixture(t);
   await change(page);
   const applied = await read(page);
-  await page.locator('.settings-menu-ui > .button-wrapper > .apply img').click();
+  await page.locator('.settings-menu-ui > .button-wrapper > .apply').click();
   assert.equal(await page.evaluate(() => liveSettingsObservers), 0, 'observer disposed on Apply');
   assert.deepEqual(await read(page), applied);
   await page.evaluate(() => api.open());
@@ -149,7 +159,7 @@ test('temporary native hiding does not cancel; same-task disposal/reopen rolls b
   const preview = await read(page);
   await page.evaluate(() => { const menu = document.querySelector('.settings-menu-ui'); menu.className = 'hidden'; });
   assert.deepEqual(await read(page), preview);
-  await page.evaluate(() => { document.querySelector('#ui > .hidden').className = 'settings-menu-ui'; api.enhance(); api.dispose(); api.open(); });
+  await page.evaluate(() => { document.querySelector('#ui > .menu-ui > .hidden').className = 'settings-menu-ui'; api.enhance(); api.dispose(); api.open(); });
   assert.deepEqual(await read(page), initial);
   assert.equal(await page.locator('#sqRpDecimals').inputValue(), '3');
 });
@@ -167,9 +177,6 @@ test('Cancel leaves untouched preferences and unsaved credential text alone', as
 
 test('common settings fill every grid row and keep technical controls collapsed',async t=>{
   const page=await fixture(t);
-  const css=await fs.readFile(new URL('../responsive-ui.css',import.meta.url),'utf8');
-  const font=await fs.readFile(new URL('../forced_square.woff2',import.meta.url));
-  await page.addStyleTag({content:`@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font.toString('base64')})}body{margin:0;font-family:ForcedSquare}.settings-menu-ui{position:fixed;inset:0;margin:auto;width:min(800px,100vw);height:100dvh;display:flex;flex-direction:column;background:#263874;color:white}.settings-menu-ui>.container{flex:1;min-height:0;overflow:auto}.settings-menu-ui>.button-wrapper{flex:none}`+css});
   await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('.sq-settings-advanced').evaluate(node=>node.open),false);
   assert.equal(await page.locator('#sqRankedSettings>.sq-settings-grid>.sq-setting-row').count(),8);
@@ -190,9 +197,8 @@ test('common settings fill every grid row and keep technical controls collapsed'
   }
 });
 test('settings footer reserves phone safe areas',async t=>{
+  if(engineName!=='chromium'){t.skip('Safe-area inset emulation requires Chromium CDP; covered by the serial Chromium run.');return;}
   const page=await fixture(t);
-  const css=await fs.readFile(new URL('../responsive-ui.css',import.meta.url),'utf8');
-  await page.addStyleTag({content:'.settings-menu-ui{position:fixed;inset:0;display:flex;flex-direction:column}.settings-menu-ui>.container{flex:1;min-height:0;overflow:auto}.settings-menu-ui>.button-wrapper{flex:none}'+css});
   const cdp=await page.context().newCDPSession(page);
   for(const [width,height,insets]of [[390,844,{top:44,bottom:34,left:0,right:0}],[844,390,{top:0,bottom:21,left:44,right:44}]]){
     await page.setViewportSize({width,height});
@@ -208,4 +214,55 @@ test('transaction rejects credential and arbitrary keys before storage access', 
     await assert.rejects(page.evaluate(key => api.write(key, 'forbidden'), key), /Unsupported settings preference/);
   }
   assert.equal(await page.evaluate(key => localStorage.getItem(key), credential), 'old-code');
+});
+
+test('installed style cascade preserves native colors, full rows and touch targets at every text size',async t=>{
+  const cases=[];
+  const page=await fixture(t);
+  await page.evaluate(()=>document.fonts.ready);
+  for(const viewport of [{width:1280,height:800},{width:390,height:844},{width:844,height:390},{width:320,height:568}]){
+    await page.setViewportSize(viewport);
+    for(const scale of [0.85,1,1.25]){
+      await page.locator('html').evaluate((node,scale)=>node.style.setProperty('--sq-ui-scale',scale),scale);
+      await page.locator('.sq-settings-advanced').evaluate(node=>{node.open=true;});
+      const metrics=await page.locator('#sqRankedSettings').evaluate(section=>{
+        const style=getComputedStyle(section),text=style.getPropertyValue('--text-color').trim();
+        const reference=document.createElement('span');reference.style.color=text;section.append(reference);
+        const nativeText=getComputedStyle(reference).color;reference.remove();
+        const color=variable=>{reference.style.color=style.getPropertyValue(variable).trim();section.append(reference);const value=getComputedStyle(reference).color;reference.remove();return value;};
+        const palette={surface:color('--surface-color'),secondary:color('--surface-secondary-color'),tertiary:color('--surface-tertiary-color'),button:color('--button-color'),selected:color('--button-hover-color'),text:nativeText};
+        const actual={surface:getComputedStyle(section.closest('.settings-menu-ui')).backgroundColor,secondary:getComputedStyle(section.parentElement).backgroundColor,rangeOutput:getComputedStyle(section.querySelector('output')).color,rangeAccent:getComputedStyle(section.querySelector('input[type=range]')).accentColor,select:getComputedStyle(section.querySelector('select')).backgroundColor,secret:getComputedStyle(section.querySelector('input[type=password]')).backgroundColor,verifiedButton:getComputedStyle(section.querySelector('.sq-setting-secret button')).backgroundColor,selected:[...section.querySelectorAll('button.selected')].map(node=>getComputedStyle(node).backgroundColor)};
+        return {palette,actual,nativeText,rows:[...section.querySelectorAll('.sq-setting-row')].map(row=>{
+          const s=getComputedStyle(row),box=row.getBoundingClientRect();
+          return {background:s.backgroundColor,shadow:s.boxShadow,width:box.width,overflow:row.scrollWidth>row.clientWidth};
+        }),controls:[...section.querySelectorAll('button,select,input,summary')].map(control=>{
+          const box=control.getBoundingClientRect();return {height:box.height,right:box.right,left:box.left};
+        }),labels:[...section.querySelectorAll('.sq-setting-row>p,.sq-setting-row>label')].map(node=>getComputedStyle(node).color)};
+      });
+      cases.push({viewport,scale,metrics});
+      await saveEvidence('computed-settings.json',cases);
+      assert.equal(metrics.actual.surface,metrics.palette.surface);
+      assert.equal(metrics.actual.secondary,metrics.palette.secondary);
+      assert.equal(metrics.actual.rangeOutput,metrics.palette.text);
+      assert.equal(metrics.actual.rangeAccent,metrics.palette.text);
+      assert.equal(metrics.actual.select,metrics.palette.tertiary);
+      assert.equal(metrics.actual.secret,metrics.palette.tertiary);
+      assert.equal(metrics.actual.verifiedButton,metrics.palette.button);
+      assert.ok(metrics.actual.selected.every(color=>color===metrics.palette.selected));
+      if(captureDir)await page.screenshot({path:captureDir+'/settings-'+viewport.width+'-scale-'+scale+'-advanced.png'});
+      for(const row of metrics.rows){assert.equal(row.background,'rgba(0, 0, 0, 0)');assert.equal(row.shadow,'none');assert.equal(row.overflow,false,JSON.stringify({viewport,scale,row}));assert.ok(row.width>0);}
+      for(const control of metrics.controls){assert.ok(control.height>=44,JSON.stringify({viewport,scale,control}));assert.ok(control.left>=0&&control.right<=viewport.width,JSON.stringify({viewport,scale,control}));}
+      assert.ok(metrics.labels.every(color=>color===metrics.nativeText));
+      for(const control of await page.locator('#sqRankedSettings button,#sqRankedSettings select,#sqRankedSettings input,#sqRankedSettings summary,.settings-menu-ui>.button-wrapper>button').all()){
+        await control.scrollIntoViewIfNeeded();
+        const target=await control.evaluate(node=>{const box=node.getBoundingClientRect(),hit=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);return {label:node.getAttribute('aria-label')||node.textContent.trim(),height:box.height,reachable:hit===node||node.contains(hit)};});
+        assert.ok(target.height>=44&&target.reachable,JSON.stringify({viewport,scale,target}));
+      }
+      await page.locator('.sq-settings-advanced').evaluate(node=>{node.open=false;});
+      const rows=await page.locator('#sqRankedSettings>.sq-settings-grid').evaluate(grid=>{
+        const counts=new Map();for(const child of grid.children){const y=Math.round(child.getBoundingClientRect().y);counts.set(y,(counts.get(y)||0)+1);}return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,counts:[...counts.values()]};
+      });
+      assert.ok(rows.counts.every(count=>count===rows.columns),JSON.stringify({viewport,scale,rows}));
+    }
+  }
 });
