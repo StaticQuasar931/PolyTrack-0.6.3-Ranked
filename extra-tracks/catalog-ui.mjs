@@ -1027,6 +1027,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       }
       for (const tile of tiles) tile.setAttribute('data-mobile-active', String(tile.getAttribute('data-pick-kind') === kind));
     };
+    const progressById = new Map((cachedRecords || []).map(record => [record.entry.trackId, record]));
     for (const pick of picks) {
       const panelId = 'sq-extra-spotlight-' + mountNumber + '-' + pick.kind;
       const tab = button(({daily: 'Creator', weekly: 'Discover', critics: 'Critics', roulette: 'Roulette'})[pick.kind], 'sq-extra-featured-tab', () => activate(pick.kind, true));
@@ -1059,13 +1060,22 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
       author.title = author.textContent; content.append(author);
+      const reason = pick.kind === 'daily' ? 'Meet a new route each day.'
+        : pick.kind === 'weekly' ? (pick.underplayed ? 'Give a less-raced route a try.' : 'Explore an editorial pick this week.')
+        : pick.kind === 'critics' ? (pick.quality === null ? 'Try another editorial selection.' : 'Try a highly rated route.')
+        : 'Take a different route today.';
+      content.append(make('p', 'sq-extra-pick-reason', reason));
+      const progress = progressById.get(pick.entry.trackId);
+      const best = progress?.best ?? null;
+      content.append(make('p', 'sq-extra-pick-progress', best !== null ? `Your best ${timeLabel(best)}`
+        : progress?.loaded ? 'Imported - aim for your first finish.' : 'Aim for your first finish.'));
       const metrics = make('p', 'sq-extra-pick-note');
       metrics.textContent = pick.players === null ? 'Player count unknown' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
       metrics.textContent += Number.isFinite(pick.quality) ? ' · Published ' + pick.quality.toFixed(1) + '/10' : ' · Rating unknown';
       metrics.title = pick.underplayed ? 'Lowest exact racer-count quarter of eligible editorial tracks; unknown counts are excluded.' : pick.fallbackReason === 'coverage-unavailable' ? 'Editorial fallback: exact racer coverage is unavailable. Not an underplayed claim.' : 'Published review and snapshot information, not a local rating or live play count.';
       content.append(metrics);
       const footer = make('div', 'sq-extra-pick-footer');
-      const play = button(pick.kind === 'daily' ? 'Play spotlight' : 'Explore track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
+      const play = button(best !== null ? 'Race your best' : pick.kind === 'daily' ? 'Play spotlight' : 'Play track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
       play.setAttribute('aria-label', (pick.kind === 'daily' ? 'Play creator spotlight: ' : 'Explore discovery: ') + text(pick.entry.name, 'Untitled track'));
       const period = make('time', 'sq-extra-pick-period', ['daily', 'roulette'].includes(pick.kind) ? 'Daily · UTC' : 'Weekly · UTC');
       period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
@@ -1112,7 +1122,6 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (destroyed || buildersView) return;
     const all = currentEntries();
     syncSortChoices(all);
-    renderFeatured(all);
     const reviewKey = state.sort + (state.direction === 'asc' ? '-low' : '-high');
     const description = state.sort === 'recommended' ? 'Published quality first, then editorial selection, then known exact racer counts. Unknown values stay last at each step; names break ties. Local ratings are not used.' : state.sort === 'popular'
       ? `Players, ${state.direction === 'asc' ? 'fewest' : 'most'} first. Published counts; unavailable counts stay last.`
@@ -1199,6 +1208,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         searchValues, searchName, searchNameWords: searchWords(searchName), searchable, searchableWords: searchWords(searchable)
       };
     });
+    renderFeatured(all);
     const compare = (a, b) => nameCollator.compare(text(a), text(b));
     if (!sortedRecordsCache || sortedRecordsCache.records !== cachedRecords || sortedRecordsCache.sort !== state.sort || sortedRecordsCache.direction !== state.direction) {
       const ordered = [...cachedRecords];
@@ -1506,7 +1516,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       event.preventDefault();
       return;
     }
-    if (!editing && !expandedCardMenu) {
+    if (!editing && !expandedCardMenu && !document.activeElement?.getAttribute?.('data-pick-tab')) {
       const digit = /^Digit([0-9])$/.exec(event.code || '');
       if (!expandedCardMenu && event.shiftKey && digit) {
         const requested = digit[1] === '0' ? 10 : Number(digit[1]);
