@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 276,
+  "number": 277,
   "version": "0.6.3",
-  "revision": 236,
+  "revision": 237,
   "notes": [
-    "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
+    "Smoother PB displays in large Custom Tracks collections."
   ],
-  "preparedAt": "2026-11-04T03:02:10.771Z",
-  "committedAt": "2026-11-04T03:09:33.000Z"
+  "preparedAt": "2026-11-04T03:25:14.275Z",
+  "committedAt": "2026-11-04T03:27:48.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

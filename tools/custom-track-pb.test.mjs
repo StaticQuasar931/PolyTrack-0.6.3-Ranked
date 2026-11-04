@@ -110,10 +110,37 @@ test('identity cache stays bounded and refuses wrong-name or oversized native da
   const c=vm.createContext({Map,String,JSON,customTrackIdentityCache:cache,localStorage:{getItem:()=>raw},
     __pt062WebpackRequire:()=>()=>({A:{fromExportString:()=>({trackMetadata:{name},trackData:{getId:()=>A}})}})});
   vm.runInContext(extract('customTrackIdentityForTitle'),c);
-  for(let i=0;i<50;i++){name='Track '+i;raw=JSON.stringify({data:'code'+i});assert.equal(c.customTrackIdentityForTitle({textContent:name,closest:()=>({})}),A);}
-  assert.ok(cache.size<=32);
+  for(let i=0;i<300;i++){name='Track '+i;raw=JSON.stringify({data:'code'+i});assert.equal(c.customTrackIdentityForTitle({textContent:name,closest:()=>({})}),A);}
+  assert.ok(cache.size<=256);
+  for(let i=0;i<20;i++){name='Large '+i;raw=JSON.stringify({data:'x'.repeat(100000)});assert.equal(c.customTrackIdentityForTitle({textContent:name,closest:()=>({})}),A);}
+  assert.ok(Array.from(cache.values()).reduce((sum,row)=>sum+row.raw.length*2,0)<=1048576);
   raw=JSON.stringify({data:'code'});assert.equal(c.customTrackIdentityForTitle({textContent:'Other name',closest:()=>({})}),'');
   raw='x'.repeat(600001);assert.equal(c.customTrackIdentityForTitle({textContent:name,closest:()=>({})}),'');
+});
+
+test('large unchanged visible collections decode once and offscreen cards do not decode',()=>{
+  let current='',decodes=0,reads=0;
+  const c=vm.createContext({Map,String,JSON,customTrackIdentityCache:new Map(),window:{innerWidth:1000,innerHeight:800},
+    localStorage:{getItem:key=>{reads++;return JSON.stringify({data:key});}},
+    __pt062WebpackRequire:()=>()=>({A:{fromExportString:()=>{decodes++;return{trackMetadata:{name:current},trackData:{getId:()=>A}};}}})});
+  vm.runInContext(extract('customTrackIdentityForTitle'),c);
+  const title=(top=0)=>({textContent:current,closest:selector=>selector==='button'?{getBoundingClientRect:()=>({top,bottom:top+100,left:0,right:200})}:{}});
+  for(let pass=0;pass<2;pass++)for(let i=0;i<100;i++){current='Track '+i;assert.equal(c.customTrackIdentityForTitle(title()),A);}
+  assert.equal(decodes,100,'second render reuses all decoded identities');
+  const priorReads=reads;
+  for(let i=0;i<100;i++){current='Offscreen '+i;assert.equal(c.customTrackIdentityForTitle(title(1200)),'');}
+  assert.equal(decodes,100);assert.equal(reads,priorReads,'offscreen cards do not read raw track codes');
+});
+
+test('offscreen custom cards are left untouched rather than clearing their saved PB fallback',()=>{
+  const start=source.indexOf('          findRecordElement:title=>'),end=source.indexOf('          readSnapshots:',start);
+  assert.ok(start>=0&&end>start);
+  const expression=source.slice(start,end).trim().replace(/^findRecordElement:/,'').replace(/,$/,'');
+  const find=vm.runInNewContext('('+expression+')',{window:{innerWidth:1000,innerHeight:800}});
+  const value={textContent:'00:12.000'};let top=1000;
+  const title={closest:selector=>selector==='button'?{getBoundingClientRect:()=>({top,bottom:top+100,left:0,right:200}),querySelector:()=>value}:selector==='.tracks-container.no-group-containers'?{}:null};
+  assert.equal(find(title),null);assert.equal(value.textContent,'00:12.000');
+  top=100;assert.equal(find(title),value);
 });
 
 test('PB display callbacks are independent of placement settings and do not request a board',()=>{

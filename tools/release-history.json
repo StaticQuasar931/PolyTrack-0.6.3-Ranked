@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 276,
+    "number": 277,
     "version": "0.6.3",
-    "revision": 236,
+    "revision": 237,
     "notes": [
-      "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
+      "Smoother PB displays in large Custom Tracks collections."
     ]
   },
   "entries": [
+    {
+      "number": 276,
+      "title": "Reliable Custom and Extra Track PB Displays",
+      "commit": "7db868d8509c1d9cf9e8b2998a4053ec7140108a",
+      "committedAt": "2026-11-04T03:09:33.000Z",
+      "notes": [
+        "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
+      ]
+    },
     {
       "number": 275,
       "title": "Weekly Card and Leaderboard Recovery",
@@ -207,17 +216,6 @@
       "committedAt": "2026-10-30T23:46:30.000Z",
       "notes": [
         "More reliable snapshot and weekly event updates."
-      ]
-    },
-    {
-      "number": 246,
-      "title": "Event Fixes",
-      "commit": "d11df70c0ca136de46802cd8bfd406f390534351",
-      "committedAt": "2026-10-30T23:16:13.000Z",
-      "notes": [
-        "Clearer event results and accurate verified PB placements.",
-        "Optional player counts on unplayed tracks.",
-        "Expanded event capacity with paged standings."
       ]
     }
   ],
