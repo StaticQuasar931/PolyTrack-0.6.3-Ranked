@@ -466,7 +466,7 @@ test('one four-window pipeline follows rotations, manual fallback has no cron an
   const catalog = await readWorkflow('sync-event-catalog.yml');
   assert.doesNotMatch(catalog, /^  schedule:|cron:/m);
   assert.match(catalog, /^  workflow_dispatch:$/m);
-  assert.match(await readWorkflow('verify-runs.yml'), /cron: '50 0,8,12,20 \* \* \*'/);
+  assert.match(await readWorkflow('verify-runs.yml'), /cron: '50 0,12,20 \* \* \*'/);
   assert.match(await readWorkflow('sync-kodub-weekly.yml'), /cron: "3 20 \* \* \*"/);
   const cdn = await readWorkflow('publish-cdn-release.yml');
   assert.match(cdn, /cron: '13,28,43,58 \* \* \* \*'/);

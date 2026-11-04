@@ -8,7 +8,7 @@ test('production configuration activates coordinated maintenance before capture,
   assert.equal(config.vars.BACKGROUND_MAINTENANCE_MODE,'coordinated');
   assert.equal(config.vars.PUBLIC_FIRESTORE_READ_MODE,'capture-only');
   const workflow=readFileSync(new URL('../../../.github/workflows/verify-runs.yml',import.meta.url),'utf8');
-  assert.match(workflow,/cron: '50 0,8,12,20 \* \* \*'/);
+  assert.match(workflow,/cron: '50 0,12,20 \* \* \*'/);
   // Discovery is bounded, but draining keeps its original cadence after :40.
   for(const hour of [0,8,12,20]){
     const slots=Array.from({length:60},(_,minute)=>minute).filter(minute=>

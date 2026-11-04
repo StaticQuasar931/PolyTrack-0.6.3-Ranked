@@ -10,6 +10,8 @@ const JOBS='0.6.2_event_publication_jobs',PARTS='0.6.2_event_publication_parts';
 // At phase-2/4 cadence, 800 rows/pass completes 10,000 rows in 30 minutes,
 // inside the 50-minute snapshot window without increasing per-pass transactions.
 const PAGE=200,PAGES_PER_PASS=4;
+export const EVENT_PERIOD_COALESCE_MS=15*60000;
+export const EVENT_PERIOD_COALESCE_MIN_ROWS=200;
 const decode=doc=>doc?eventDecode({mapValue:{fields:doc.fields||{}}}):null;
 const post=(r,route,body)=>r.request(route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 const base=r=>`projects/${r.projectId}/databases/(default)/documents/`;
@@ -22,7 +24,7 @@ function rollingRevision(source) {
 }
 // One fixed-snapshot source query per page, no per-racer verification or menu scan.
 // Authoritative per-account PB/total documents already exist; only display storage was capped.
-export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined,{coalesceFiniteTotals=false,beforeSourceRead}={}) {
+export async function advanceEventPublication(runtime,periodId=null,knownRoot=undefined,{coalesceFiniteTotals=false,coalescePeriods=false,beforeSourceRead}={}) {
  const kind=periodId?'event':'event_totals',id=periodId||'main',jobId=kind+'_'+id;
  const rootPath=C.public+'/'+(periodId||'totals'),targetPath=C.public+'/'+(periodId||'totals_full');
  const root=knownRoot===undefined?decode(await runtime.request('/'+rootPath)):knownRoot;
@@ -43,6 +45,16 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
  if(coalesceFiniteTotals&&!periodId&&priorJob?.complete===true&&priorJob.sourceRevision!==(root.revision||0)&&
    Number.isSafeInteger(builtAt)&&builtAt>=0&&runtime.now()>=builtAt&&runtime.now()-builtAt<15*60000)
    return {pending:true,deferred:true,reason:'finite_totals_coalescing',retryAt:builtAt+15*60000,kind,id};
+ // Accepted PBs are already durable. Only defer a new display generation;
+ // never extend the deadline on new awards or interrupt an active fixed snapshot.
+ const periodBuiltAt=root.builtAt;
+ if(coalescePeriods&&periodId&&p.archived!==true&&root.archived!==true&&
+   Number.isSafeInteger(root.totalEntries)&&root.totalEntries>=EVENT_PERIOD_COALESCE_MIN_ROWS&&
+   Number.isSafeInteger(p.endsAt)&&runtime.now()+EVENT_PERIOD_COALESCE_MS<p.endsAt&&
+   priorJob?.complete===true&&priorJob.scanComplete===true&&priorJob.sourceRevision!==(root.revision||0)&&
+   Number.isSafeInteger(periodBuiltAt)&&periodBuiltAt>=0&&runtime.now()>=periodBuiltAt&&
+   runtime.now()-periodBuiltAt<EVENT_PERIOD_COALESCE_MS)
+   return {pending:true,deferred:true,reason:'event_period_coalescing',retryAt:periodBuiltAt+EVENT_PERIOD_COALESCE_MS,kind,id};
  let state=priorJob;
  // Defer abandoned checkpoints before reading another source page. The durable
  // coordinator gate coalesces changes; the next due attempt may restart.
@@ -168,7 +180,7 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
  return {published:true,kind,id,totalEntries:entries.length};
 }
 
-export async function publishEventCapacity(runtime) {
+export async function publishEventCapacity(runtime,{coalescePeriods=false}={}) {
  // Event PBs and Rolling Hills publication set this signal in their existing
  // guarded commits. A quiet invocation costs ONE document read and no writes.
  const work=decode(await runtime.request('/'+C.public+'/totals'));
@@ -203,11 +215,11 @@ export async function publishEventCapacity(runtime) {
    });
    expectedCursor=reservation;reserved=true;
  };
- let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work,{coalesceFiniteTotals:true,beforeSourceRead});
+ let result=await advanceEventPublication(runtime,periodId,periodId?undefined:work,{coalesceFiniteTotals:true,coalescePeriods,beforeSourceRead});
  if(result.idle)result={pending:true,deferred:true,kind:periodId?'event':'event_totals',id:periodId||'main',reason:'event_source_not_ready'};
  if(result.published)delete retries[key];
  else if(result.deferred){
-   const retry=result.reason==='finite_totals_coalescing'&&Number.isSafeInteger(result.retryAt)&&result.retryAt>now&&result.retryAt<=now+15*60000
+   const retry=['finite_totals_coalescing','event_period_coalescing'].includes(result.reason)&&Number.isSafeInteger(result.retryAt)&&result.retryAt>now&&result.retryAt<=now+15*60000
      ?{reason:result.reason,attempts:1,retryAt:result.retryAt}:publicationRetry(retries[key],result.reason,now);
    if(retry)retries[key]=retry;
  }

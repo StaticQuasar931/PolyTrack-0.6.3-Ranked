@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {reconcileCanonicalChanges} from '../src/index.js';
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
+import {verificationKey} from '../src/verification.js';
 
 const base = 'projects/polytrack-052/databases/(default)/documents/';
 const jobPath = '0.6.2_s1_worker_jobs/canonical_reconcile_v2';
@@ -29,7 +30,8 @@ function fixture({tracks, discover = false, failing = new Set()}) {
   data.set(jobPath, {backfillComplete: !discover, schemaVersion: 2,
     cursorIngestedAt: '2026-10-13T00:00:00Z', pendingTrackIds: discover ? [] : tracks,
     pendingResultIds: discover ? {} : Object.fromEntries(tracks.map(t => [t, [resultId(row(t))]])),
-    pendingFullRebuildTrackIds: [], failedFullRebuilds: {}});
+    pendingFullRebuildTrackIds: [], failedFullRebuilds: {},
+    pendingResultBindings:discover ? {} : Object.fromEntries(tracks.map(t=>[resultId(row(t)),verificationKey(row(t))]))});
   let discovered = false, backfilled = false;
   const env = {__TEST_FIRESTORE: async (path, init = {}) => {
     calls.push(path);
@@ -86,18 +88,37 @@ function fixture({tracks, discover = false, failing = new Set()}) {
   return {env, data, calls, queries, commits, failing, job: () => data.get(jobPath)};
 }
 
+const sourceScans = f => f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length;
+async function drainRetainedTargets(f, failed = []) {
+  for (let pass=0;pass<20;pass++) {
+    if (f.job().pendingTrackIds.every(id=>failed.includes(id))) return;
+    const before=sourceScans(f);
+    await reconcileCanonicalChanges(f.env,{scanResults:false,now:now+100+pass});
+    assert.ok(sourceScans(f)-before<=1,'every invocation retains the one-full-build allowance');
+  }
+  assert.fail('non-cooling retained targets must make bounded progress');
+}
+
 test('legacy backfill keeps full-publication work across one-full-build passes', async () => {
   const tracks = Array.from({length: 5}, (_, i) => `backfill-track-${i}`);
   const f = fixture({tracks, discover: true});
   await reconcileCanonicalChanges(f.env, {now});
   assert.equal(f.job().backfillComplete, true);
-  assert.deepEqual(f.job().pendingTrackIds, tracks.slice(1));
-  for(let pass=1;pass<tracks.length;pass++) await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
+  assert.deepEqual([...f.job().pendingTrackIds].sort(), [...tracks].sort());
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds,tracks.slice(1));
+  assert.deepEqual(f.job().pendingResultIds[tracks[0]],[resultId(row(tracks[0]))]);
+  for(let pass=1;pass<tracks.length;pass++) {
+    const before=sourceScans(f);
+    await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
+    assert.equal(sourceScans(f)-before,1);
+  }
   const published = f.data.get(`${boards}/${tracks[4]}`);
   assert.deepEqual(published.entries.map(r => r.accountId).sort(), ['current-racer', 'legacy-racer'],
     'the deferred track must include historical racers, not only the changed-result row');
-  assert.deepEqual(f.job().pendingTrackIds, []);
   assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
+  assert.equal(f.job().pendingTrackIds.length,5,'completed snapshots retain every changed target for a fresh keyed pass');
+  await drainRetainedTargets(f);
+  assert.deepEqual(f.job().pendingTrackIds, []);
   assert.deepEqual(f.job().pendingResultIds, {});
   assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 5);
 });
@@ -120,9 +141,16 @@ test('failed targeted fallback performs only the job read during cooldown and re
   f.failing.delete(track);
   await reconcileCanonicalChanges(f.env, {scanResults: false, now: retryAt});
   assert.equal(f.data.get(`${boards}/${track}`).entries.length, 2);
-  assert.deepEqual(f.job().pendingTrackIds, []);
+  assert.deepEqual(f.job().pendingTrackIds, [track]);
+  assert.deepEqual(f.job().pendingResultIds[track],[resultId(row(track))]);
+  assert.equal(f.job().pendingResultBindings[resultId(row(track))],verificationKey(row(track)));
   assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
   assert.deepEqual(f.job().failedFullRebuilds, {});
+  const scans=sourceScans(f);
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:retryAt+1});
+  assert.equal(sourceScans(f),scans,'follow-up is keyed, not a second full rebuild');
+  assert.deepEqual(f.job().pendingTrackIds, []);
+  assert.deepEqual(f.job().pendingResultBindings, {});
 });
 
 test('cooling targeted fallbacks yield all four selection slots to healthy publications', async () => {
@@ -148,10 +176,11 @@ for (const fails of [false, true]) test(`targeted fallbacks share one full-build
   await reconcileCanonicalChanges(f.env, {scanResults:false, now});
   const scans = () => f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId');
   assert.equal(scans().length, 1, 'failed attempts also consume the shared allowance');
-  assert.deepEqual(f.job().pendingFullRebuildTrackIds, fails ? tracks : tracks.slice(1));
-  assert.deepEqual(f.job().pendingTrackIds, fails ? tracks : tracks.slice(1));
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds, fails ? tracks : []);
+  assert.deepEqual([...f.job().pendingTrackIds].sort(), [...tracks].sort());
   for (const track of tracks.slice(1)) {
     assert.deepEqual(f.job().pendingResultIds[track], [resultId(row(track))]);
+    assert.equal(f.job().pendingResultBindings[resultId(row(track))],verificationKey(row(track)));
     assert.equal(f.job().failedFullRebuilds[track], undefined, 'budget deferral is not a failure');
     assert.equal(f.data.get(`${boards}/${track}`).schemaVersion, 5, 'deferred publication is untouched');
   }
@@ -159,6 +188,8 @@ for (const fails of [false, true]) test(`targeted fallbacks share one full-build
     await reconcileCanonicalChanges(f.env, {scanResults:false, now:now+pass});
     assert.equal(scans().length, pass+1, 'each later invocation advances one queued full rebuild');
   }
+  await drainRetainedTargets(f,fails ? [tracks[0]] : []);
+  assert.equal(scans().length,tracks.length,'retained keyed work never restarts completed full scans');
   assert.deepEqual(f.job().pendingTrackIds, fails ? [tracks[0]] : []);
 });
 
@@ -169,7 +200,13 @@ test('known full build and newly discovered fallback share the same allowance', 
   f.data.get(`${boards}/${tracks[1]}`).schemaVersion = 5;
   await reconcileCanonicalChanges(f.env, {scanResults:false, now});
   assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 1);
-  assert.deepEqual(f.job().pendingTrackIds, [tracks[1]]);
-  assert.deepEqual(f.job().pendingFullRebuildTrackIds, [tracks[1]]);
-  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length, 1, 'healthy targeted work still progresses');
+  assert.deepEqual([...f.job().pendingTrackIds].sort(), [...tracks].sort());
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
+  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length, 0, 'healthy sibling is deferred without losing its binding');
+  assert.equal(f.job().pendingResultBindings[resultId(row(tracks[2]))],verificationKey(row(tracks[2])));
+  await drainRetainedTargets(f);
+  assert.equal(sourceScans(f),2,'only known-full and new-fallback need full scans');
+  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length,1,'healthy sibling eventually progresses');
+  assert.deepEqual(f.job().pendingTrackIds,[]);
+  assert.deepEqual(f.job().pendingResultBindings,{});
 });

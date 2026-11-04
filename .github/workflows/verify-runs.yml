@@ -1,9 +1,10 @@
 name: Verify PolyTrack runs and refresh public snapshots
 on:
-  # Daily UTC and Sunday Kodub rotations are provisioned before the :50 windows.
+  # Three :50 windows remain; 08:45 follows the :41 Overall publication, without forcing rebuilds.
   # Verification is due-gated; each successful scheduled check requests bounded capture.
   schedule:
-    - cron: '50 0,8,12,20 * * *'
+    - cron: '50 0,12,20 * * *'
+    - cron: '45 8 * * *'
   workflow_dispatch:
     inputs:
       catch_up:
@@ -24,6 +25,7 @@ jobs:
       queue_has_work: ${{ steps.queue.outputs.has_work }}
       capture_requested_at: ${{ steps.capture_request.outputs.requested_at }}
       verification_authority: ${{ steps.authority.outputs.mode }}
+      overnight_native: ${{ steps.authority.outputs.overnight }}
     if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 25 || 15 }}
@@ -41,18 +43,24 @@ jobs:
         id: authority
         env:
           POLYTRACK_VERIFICATION_AUTHORITY: ${{ vars.POLYTRACK_VERIFICATION_AUTHORITY }}
+          CAPTURE_SCHEDULE: ${{ github.event.schedule }}
         run: |
           node --input-type=module <<'AUTHORITY'
           import fs from 'node:fs';
           import {readRepositoryVerificationAuthority} from './tools/verifier/local-snapshot-verification.mjs';
-          const mode=await readRepositoryVerificationAuthority(process.cwd(),process.env.POLYTRACK_VERIFICATION_AUTHORITY);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+mode+'\n');
+          import {overnightSnapshotPlan} from './tools/overnight-snapshot-plan.mjs';
+          const configuredMode=await readRepositoryVerificationAuthority(process.cwd(),process.env.POLYTRACK_VERIFICATION_AUTHORITY);
+          let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
+          const plan=overnightSnapshotPlan({eventName:process.env.GITHUB_EVENT_NAME,schedule:process.env.CAPTURE_SCHEDULE,
+            now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),configuredMode,previousCaptureStartedAt:prior?.startedAt});
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+plan.mode+'\novernight='+plan.overnight+'\nskip='+plan.skip+'\n');
+          console.log(JSON.stringify({overnightPlan:plan}));
           AUTHORITY
       - name: Check Extra catalog and trusted track pins
         run: node tools/extra-verification-check.mjs
       - name: Test bounded workflow release contracts
         # Offline checks only; no service-account credential is exposed to tests.
-        run: node --test tools/workflow-release-contract.test.mjs
+        run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs
       - name: Check trusted engine before Firebase reads
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access
@@ -60,7 +68,7 @@ jobs:
         run: node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs workers/ranked/test/event-preflight-cost.test.js
       - name: Check for due verification work
         id: queue
-        if: steps.authority.outputs.mode == 'firestore'
+        if: steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore'
         timeout-minutes: 2
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
@@ -69,7 +77,7 @@ jobs:
           VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'
         run: node tools/verifier/run.mjs --check
       - name: Install pinned verifier dependencies
-        if: steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'
+        if: steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'
         run: npm ci --prefix tools/verifier --ignore-scripts
       - name: Test verifier safeguards
         if: steps.queue.outputs.has_work == 'true'
@@ -99,7 +107,7 @@ jobs:
       - name: Verify queued runs
         id: verification
         timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 15 || 10 }}
-        if: steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'
+        if: steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
           VERIFIER_FIRESTORE_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
@@ -115,13 +123,13 @@ jobs:
           fi
       - name: Timestamp the scheduled or changed capture request
         id: capture_request
-        if: steps.authority.outputs.mode == 'snapshot-native' || (github.event_name == 'schedule' && (steps.queue.outputs.has_work == 'false' || (steps.queue.outputs.has_work == 'true' && steps.verification.outputs.capture_ready == 'true'))) || steps.verification.outputs.snapshot_needed == 'true'
+        if: steps.authority.outputs.skip != 'true' && (steps.authority.outputs.mode == 'snapshot-native' || (github.event_name == 'schedule' && (steps.queue.outputs.has_work == 'false' || (steps.queue.outputs.has_work == 'true' && steps.verification.outputs.capture_ready == 'true'))) || steps.verification.outputs.snapshot_needed == 'true')
         run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'requested_at=' + Date.now() + '\n')"
 
   publish_snapshots:
     needs: verify
     # Empty queues still refresh pending/public data; a throttled preflight is not an empty queue.
-    if: needs.verify.result == 'success' && (needs.verify.outputs.verification_authority == 'snapshot-native' || (github.event_name == 'schedule' && (needs.verify.outputs.queue_has_work == 'false' || (needs.verify.outputs.queue_has_work == 'true' && needs.verify.outputs.capture_ready == 'true'))) || needs.verify.outputs.snapshot_needed == 'true') && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false'
+    if: needs.verify.result == 'success' && needs.verify.outputs.capture_requested_at != '' && (needs.verify.outputs.verification_authority == 'snapshot-native' || (github.event_name == 'schedule' && (needs.verify.outputs.queue_has_work == 'false' || (needs.verify.outputs.queue_has_work == 'true' && needs.verify.outputs.capture_ready == 'true'))) || needs.verify.outputs.snapshot_needed == 'true') && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false'
     permissions:
       contents: write
     uses: ./.github/workflows/publish-verified-snapshots.yml
@@ -129,6 +137,7 @@ jobs:
       publication_changed: true
       capture_requested_at: ${{ needs.verify.outputs.capture_requested_at }}
       verification_authority: ${{ needs.verify.outputs.verification_authority }}
+      overnight_native: ${{ needs.verify.outputs.overnight_native == 'true' }}
     # Forward only the existing privileged credential to bounded capture; no blanket inheritance.
     secrets:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

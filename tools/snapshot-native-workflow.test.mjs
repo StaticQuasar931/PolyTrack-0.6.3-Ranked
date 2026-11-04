@@ -43,19 +43,19 @@ test('external mode cannot run due-queue reads or legacy verdict publication eve
 });
 
 test('all four existing windows request combined capture in external mode without treating the queue as empty',()=>{
-  assert.match(verify,/cron: '50 0,8,12,20 \* \* \*'/);
+  assert.match(verify,/cron: '50 0,12,20 \* \* \*'/);
   const request=condition(step(verify,'Timestamp the scheduled or changed capture request'));
   for(const event_name of ['schedule','workflow_dispatch']) {
     const context={github:{event_name},steps:{authority:{outputs:{mode:'snapshot-native'}},queue:{outputs:{}},verification:{outputs:{}}}};
     assert.equal(evaluate(request,context),true);
   }
-  assert.match(verify,/needs.verify.result == 'success' && \(needs.verify.outputs.verification_authority == 'snapshot-native' \|\|/);
+  assert.match(verify,/needs.verify.result == 'success' && needs.verify.outputs.capture_requested_at != '' && \(needs.verify.outputs.verification_authority == 'snapshot-native' \|\|/);
   assert.match(step(capture,'Reuse a later published bounded capture'),/steps.authority.outputs.mode == 'firestore' && inputs.capture_requested_at \|\| ''/);
 });
 
 test('explicit authority flag reaches the parent capture hook; default command remains byte-identical',()=>{
   const command=step(capture,'Capture bounded public snapshots');
-  assert.match(command,/if \[ "\$VERIFICATION_AUTHORITY" = "snapshot-native" \]; then\n            node tools\/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native\n          else\n            node tools\/update-public-snapshot.mjs --refresh-replays\n          fi/);
+  assert.match(command,/(?:if|elif) \[ "\$VERIFICATION_AUTHORITY" = "snapshot-native" \]; then\n            node tools\/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native\n          else\n            node tools\/update-public-snapshot.mjs --refresh-replays\n          fi/);
   assert.ok(capture.indexOf(step(capture,'Validate verification authority'))<capture.indexOf(command));
   assert.match(command,/credential-scrubbed offline capability before final rebuild\/package/);
 });

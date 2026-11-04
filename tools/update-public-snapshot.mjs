@@ -405,7 +405,7 @@ export async function reportCaptureOutcome(result, {env = process.env, log = con
   return result;
 }
 
-export async function updatePublicSnapshot({ root = moduleRoot, offline = false, fullPublic = false, refreshReplays = false,
+export async function updatePublicSnapshot({ root = moduleRoot, offline = false, fullPublic = false, refreshReplays = false, replayDocumentLimit = null,
   capture = runPublicSnapshotBackup, captureTotals = capture === runPublicSnapshotBackup ? capturePublicEventTotals : null,
   captureOverall = capture === runPublicSnapshotBackup ? captureOverallProjection : null, overallCaptureOptions = {},
   calculateOverall = capture === runPublicSnapshotBackup ? rebuildSnapshotOverall : null,
@@ -416,6 +416,10 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     {cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),
   prepareNativeCapture = async options => (await import('./native-snapshot-phase.mjs')).prepareNativeSnapshotCapture(options),
   nativePhase = async options => (await import('./native-snapshot-phase.mjs')).runNativeSnapshotPhase(options) } = {}) {
+  if (replayDocumentLimit !== null && (!Number.isInteger(replayDocumentLimit) || replayDocumentLimit < 1 || replayDocumentLimit > 2000 ||
+      refreshReplays !== true || fullPublic !== false || offline !== false)) {
+    throw new RangeError('replayDocumentLimit requires an integer from 1 to 2000 and an online replay-only refresh');
+  }
   const absoluteRoot = path.resolve(root);
   const authority = await readRepositoryVerificationAuthority(absoluteRoot, authorityOverride ?? env.VERIFICATION_AUTHORITY);
   const stagingDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-staging');
@@ -513,7 +517,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const previousSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
     const startFullSnapshot = fullPublic && previousProgress?.fullSnapshotPending !== true;
     try {
-      exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: fullPublic ? 2000 : 100,
+      exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: fullPublic ? 2000 : (replayDocumentLimit ?? 100),
         fullSnapshot: startFullSnapshot, includeProfiles: fullPublic, includePendingReplays:true, retryInvalidAfterMs:3600000,
         fetchImpl: replayCaptureFetch(createSnapshotExportFetch({ ...exportAuth, fetchImpl: exportFetch })), log });
     } catch (error) {

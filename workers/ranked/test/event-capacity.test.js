@@ -8,7 +8,8 @@ import {eventEncode,eventDecode} from '../src/events-store.js';
 import {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION,pendingSlot,VERIFICATION_COLLECTION} from '../src/verification.js';
 import {mergeCanonicalResultIntoTrack,maintenanceWindowAllows} from '../src/index.js';
 import {PERMANENT_ROLLING_HILLS as R} from '../src/permanent-rolling-hills.js';
-import {advanceEventPublication,publishEventCapacity} from '../src/event-publication.js';
+import {advanceEventPublication,publishEventCapacity,EVENT_PERIOD_COALESCE_MS} from '../src/event-publication.js';
+import {eventWorkerMaintenance} from '../src/events-worker.js';
 import {EVENT_RETENTION_COLLECTION} from '../src/event-capacity.js';
 import fs from 'node:fs';
 import {loadPublicationEntries,decodePublicationPage,preparePublicationPages,PUBLIC_PAGE_COLLECTION} from '../src/paged-publication.js';
@@ -796,4 +797,130 @@ test('finite totals coalesce new revisions without rereading participants; dirty
  f.time(902000);assert.equal((await publishEventCapacity(f.runtime)).published,true);
  assert.equal(f.data.get(C.public+'/totals_full').entries.find(row=>row.accountId===f.c).rp,960);
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
+});
+
+
+async function coalescingFixture(){
+ const f=await finishedEventFixture();
+ for(let i=0;i<199;i++)f.data.set(C.pbs+'/'+period.id+'_gate_'+i,
+  {periodId:period.id,accountId:hash('gate-'+i),name:'Racer '+i,timeMs:10000+i,submittedAt:2000});
+ const board=f.data.get(C.public+'/'+period.id);board.totalEntries=200;board.racerCount=200;board.revision++;board.publicationPending=true;
+ assert.equal((await advanceEventPublication(f.runtime,period.id)).published,true);
+ return f;
+}
+const coalescedPeriod=f=>publishEventCapacity(f.runtime,{coalescePeriods:true});
+test('period display coalescing preserves accepted PB/replay and dirty work without scanning rows',async()=>{
+ const f=await coalescingFixture(),builtAt=f.data.get(C.public+'/'+period.id).builtAt;
+ await improveEvent(f);const board=structuredClone(f.data.get(C.public+'/'+period.id));
+ const replay=structuredClone(f.data.get(C.replays+'/'+period.id+'_'+f.accountId)),meter=readMeter(f);
+ const held=await coalescedPeriod(f);
+ assert.equal(held.reason,'event_period_coalescing');assert.equal(held.retryAt,builtAt+EVENT_PERIOD_COALESCE_MS);
+ assert.equal(meter.audit.collections[C.pbs]||0,0);assert.equal(f.calls.slice(-4).includes(':runQuery'),false);
+ assert.deepEqual(f.data.get(C.public+'/'+period.id),board);assert.equal(board.sourceComplete,false);
+ assert.equal(f.data.get(C.pbs+'/'+period.id+'_'+f.accountId).timeMs,20999);
+ assert.deepEqual(f.data.get(C.replays+'/'+period.id+'_'+f.accountId),replay);
+ assert.deepEqual(f.data.get(C.public+'/totals').pendingPeriodIds,[period.id]);
+ f.time(held.retryAt);assert.equal((await coalescedPeriod(f)).published,true);
+ assert.equal(f.data.get(C.public+'/'+period.id).entries.find(row=>row.accountId===f.accountId).timeMs,20999);
+ assert.equal(f.data.get(C.public+'/'+period.id).sourceComplete,true);
+ assert.deepEqual(f.data.get(C.public+'/totals').pendingPeriodIds,[]);
+});
+
+test('new accepted PBs never extend a coalesced period deadline',async()=>{
+ const f=await coalescingFixture();await improveEvent(f);
+ const held=await coalescedPeriod(f),cursor=structuredClone(f.data.get(C.cursors+'/public_capacity'));
+ f.time(10000);const pb=f.data.get(C.pbs+'/'+period.id+'_'+f.accountId);pb.timeMs=20990;
+ f.data.get(C.public+'/'+period.id).revision++;
+ const start=f.calls.length,result=await coalescedPeriod(f);
+ assert.equal(result.reason,'publication_backoff');assert.equal(result.retryAt,held.retryAt);
+ assert.equal(f.calls.slice(start).includes(':runQuery'),false);
+ assert.deepEqual(f.data.get(C.cursors+'/public_capacity'),cursor);
+ f.time(held.retryAt);assert.equal((await coalescedPeriod(f)).published,true);
+ assert.equal(f.data.get(C.public+'/'+period.id).entries.find(row=>row.accountId===f.accountId).timeMs,20990);
+});
+
+for(const shape of ['first-build','missing-clock','future-clock','archived','ending-soon'])test('period coalescing does not defer '+shape,async()=>{
+ const f=await coalescingFixture();await improveEvent(f);
+ const board=f.data.get(C.public+'/'+period.id),jobPath='0.6.2_event_publication_jobs/event_'+period.id;
+ if(shape==='first-build')f.data.delete(jobPath);
+ if(shape==='missing-clock')delete board.builtAt;
+ if(shape==='future-clock')board.builtAt=f.runtime.now()+1;
+ if(shape==='archived'){board.archived=true;f.data.get(C.periods+'/'+period.id).archived=true;}
+ if(shape==='ending-soon')f.data.get(C.periods+'/'+period.id).endsAt=f.runtime.now()+EVENT_PERIOD_COALESCE_MS;
+ assert.equal((await coalescedPeriod(f)).published,true);
+});
+
+test('coordinated production maintenance applies period coalescing, not inbox fallback',async()=>{
+ const f=await coalescingFixture();await improveEvent(f);const meter=readMeter(f);
+ const underlying=f.runtime.request,reads=new Set(),cursorPath=C.cursors+'/public_capacity';let active=false;
+ // Exercise the production REST transaction adapter, not the fixture's injected store.
+ const request=async(route,init={})=>{
+  const body=init.body?JSON.parse(init.body):null;
+  if(route===':beginTransaction'){assert.equal(active,false);active=true;return {transaction:'coalescing-fixture'};}
+  if(route===':commit'){
+   assert.equal(active,true);assert.equal(body.transaction,'coalescing-fixture');assert.equal(body.writes.length,1);
+   const row=body.writes[0],key=row.update.name.split('/documents/')[1];
+   assert.equal(key,cursorPath);assert.ok(reads.has(key));
+   assert.deepEqual(row.currentDocument,f.data.has(key)?{updateTime:'v1'}:{exists:false});
+   f.data.set(key,eventDecode({mapValue:{fields:row.update.fields}}));active=false;return {};
+  }
+  if(route===':rollback'){active=false;return {};}
+  if(route.includes('?transaction=')){assert.equal(active,true);reads.add(route.slice(1).split('?')[0]);return underlying(route.split('?')[0],init);}
+  return underlying(route,init);
+ };
+ const result=await eventWorkerMaintenance({EVENTS_ENABLED:'true',BACKGROUND_MAINTENANCE_MODE:'coordinated'},
+  {request,officialIds:[],allIds:[],targetForTrack:async()=>null,at:120000,now:f.runtime.now});
+ assert.equal(active,false);assert.equal(f.data.get(cursorPath).retries['event_'+period.id].reason,'event_period_coalescing');
+ assert.equal(result.reason,'event_period_coalescing');
+ assert.equal(meter.audit.collections[C.pbs]||0,0);assert.equal(meter.audit.collections[C.inbox]||0,0);
+});
+
+async function publicationBurstFixture(n){
+ const f=fixture();await f.service.createPeriod({...period,capacity:{...capacity,entrants:2000}});f.time(2000);
+ for(let i=0;i<n;i++)f.data.set(C.pbs+'/'+period.id+'_'+String(i).padStart(5,'0'),
+  {periodId:period.id,accountId:hash('burst-'+i),name:'Racer '+i,timeMs:10000+i,submittedAt:2000});
+ f.data.set(C.public+'/'+period.id,{periodId:period.id,revision:1,publicationPending:true,totalEntries:n,racerCount:n,sourceComplete:false});
+ f.data.set(C.public+'/totals',{publicationPending:false,pendingPeriodIds:[period.id]});
+ let out;for(let i=0;i<6;i++){out=await publishEventCapacity(f.runtime);if(out.published)break;}
+ assert.equal(out.published,true);return f;
+}
+
+for(const n of [29,200,1136])test('ten-acceptance period burst scans once after coalescing: '+n,async()=>{
+ const before=await publicationBurstFixture(n),after=await publicationBurstFixture(n);
+ const baseline=readMeter(before),optimized=readMeter(after);
+ const run=async(f,coalesce)=>{
+  for(let i=0;i<10;i++){
+   f.time(4000+i*2000);const board=f.data.get(C.public+'/'+period.id);board.revision++;board.publicationPending=true;board.sourceComplete=false;
+   const id=period.id+'_00000';f.data.get(C.pbs+'/'+id).timeMs=9990-i;
+   f.data.get(C.public+'/totals').pendingPeriodIds=[period.id];
+   let result;for(let j=0;j<6;j++){result=await publishEventCapacity(f.runtime,{coalescePeriods:coalesce});if(result.published||result.deferred)break;}
+   assert.equal(coalesce&&n>=200?result.deferred:result.published,true);
+  }
+  if(coalesce&&n>=200){f.time(2000+EVENT_PERIOD_COALESCE_MS);let result;for(let j=0;j<6;j++){result=await coalescedPeriod(f);if(result.published)break;}assert.equal(result.published,true);}
+ };
+ await run(before,false);await run(after,true);
+ if(n<200){assert.equal(optimized.total(),baseline.total());assert.equal(optimized.writes(),baseline.writes());}
+ else{assert.ok(optimized.audit.collections[C.pbs]<baseline.audit.collections[C.pbs]);assert.equal(optimized.audit.collections[C.pbs],n+(n%200===0?1:0));}
+ const a=before.data.get(C.public+'/'+period.id),b=after.data.get(C.public+'/'+period.id);
+ assert.deepEqual(a.entries,b.entries);assert.equal(b.totalEntries,n);assert.equal(b.sourceComplete,true);
+ assert.equal(a.revision,b.revision);assert.deepEqual(after.data.get(C.public+'/totals').pendingPeriodIds,[]);
+ console.log('PERIOD_BURST_COST '+JSON.stringify({racers:n,before:{reads:baseline.total(),writes:baseline.writes()},after:{reads:optimized.total(),writes:optimized.writes()},sourceReadsBefore:baseline.audit.collections[C.pbs],sourceReadsAfter:optimized.audit.collections[C.pbs]}));
+});
+
+test('small isolated period improvement has no coalescing delay or extra gate cost',async()=>{
+ const a=await finishedEventFixture(),b=await finishedEventFixture();await improveEvent(a);await improveEvent(b);
+ const am=readMeter(a),bm=readMeter(b);assert.equal((await publishEventCapacity(a.runtime)).published,true);
+ assert.equal((await coalescedPeriod(b)).published,true);assert.equal(bm.total(),am.total());assert.equal(bm.writes(),am.writes());
+});
+
+test('isolated large-field coalescing control cost is bounded and explicitly measured',async()=>{
+ const a=await coalescingFixture(),b=await coalescingFixture();await improveEvent(a);await improveEvent(b);
+ const am=readMeter(a),bm=readMeter(b);
+ assert.equal((await publishEventCapacity(a.runtime)).published,true);
+ const held=await coalescedPeriod(b);assert.equal(held.reason,'event_period_coalescing');
+ for(let i=1;i<=7;i++){b.time(4000+i*120000);assert.equal((await coalescedPeriod(b)).reason,'publication_backoff');}
+ b.time(held.retryAt);assert.equal((await coalescedPeriod(b)).published,true);
+ assert.equal(bm.audit.collections[C.pbs],am.audit.collections[C.pbs]);
+ assert.ok(bm.total()-am.total()<=24);assert.equal(bm.writes()-am.writes(),1);
+ console.log('PERIOD_ISOLATED_LARGE_COST '+JSON.stringify({before:{reads:am.total(),writes:am.writes()},after:{reads:bm.total(),writes:bm.writes()}}));
 });

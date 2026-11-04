@@ -856,34 +856,64 @@ test('track wins count every eligible recognized first place', () => {
   assert.equal(racer.medals.gold, 2);
 });
 
+function atomicReconcileFixture(canonical,{queued=false}={}) {
+  const base='projects/polytrack-052/databases/(default)/documents/';
+  const trackKey='0.6.2_s1_leaderboards_track/'+canonical.trackId;
+  const metaKey='0.6.2_s1_release_meta/current',jobKey='0.6.2_s1_worker_jobs/canonical_reconcile_v2';
+  const resultId=canonical.accountId+'_'+canonical.trackId,resultKey='0.6.2_race_results/'+resultId;
+  const data=new Map([[metaKey,{revision:6,builtRevision:6,authorityMarker:'preserve'}],[resultKey,canonical]]);
+  if(queued) {
+    data.set(trackKey,{revision:4,entries:[]});
+    data.set(jobKey,{schemaVersion:2,backfillComplete:true,pendingTrackIds:[canonical.trackId],
+      pendingFullRebuildTrackIds:[canonical.trackId],pendingResultIds:{[canonical.trackId]:[resultId]},
+      pendingResultBindings:{[resultId]:'queued-binding'}});
+  }
+  const versions=new Map(),commits=[];let beforeCommit=null;
+  const document=key=>({name:base+key,fields:wire(data.get(key)).mapValue.fields,updateTime:'v'+(versions.get(key)||0)});
+  const replace=(key,value)=>{data.set(key,structuredClone(value));versions.set(key,(versions.get(key)||0)+1);};
+  const env={__TEST_FIRESTORE:async(path,init={})=>{
+    if(path===':runQuery')return [{document:document(resultKey)}];
+    if(path===':batchGet')return JSON.parse(init.body).documents.map(name=>{
+      const key=name.split('/documents/')[1];return data.has(key)?{found:document(key)}:{missing:name};
+    });
+    if(path===':commit') {
+      const writes=JSON.parse(init.body).writes;
+      if(beforeCommit)beforeCommit(writes);
+      // Validate every precondition before applying any part of the batch.
+      for(const w of writes) {
+        const key=w.update.name.split('/documents/')[1];
+        const expected=data.has(key)?{updateTime:'v'+(versions.get(key)||0)}:{exists:false};
+        if(JSON.stringify(w.currentDocument)!==JSON.stringify(expected))throw Error('FIRESTORE_409');
+      }
+      const writeResults=writes.map(w=>{
+        const key=w.update.name.split('/documents/')[1];replace(key,unwire({mapValue:{fields:w.update.fields}}));
+        return {updateTime:'v'+versions.get(key)};
+      });
+      commits.push(writes);return {writeResults};
+    }
+    assert.equal(init.method||'GET','GET');
+    const key=decodeURIComponent(new URL('https://fixture.invalid'+path).pathname.slice(1));
+    return data.has(key)?document(key):null;
+  }};
+  return {env,data,commits,replace,trackKey,metaKey,jobKey,resultId,setBeforeCommit:fn=>{beforeCommit=fn;}};
+}
+
 test('scheduled reconciliation discovers canonical PBs without a client Worker notification', async () => {
   const canonical={
     ownerUid:'owner',accountId:'blocked-client',trackId:TRACK,timeMs:20500,raceTimeFrames:1230,
     replay:'recording',replayHash:'0'.repeat(64),uploadId:321,createdAt:200,updatedAt:200
   };
-  let wroteTrack=false;
-  const env={
-    ALGORITHM_VERSION:'participation-v8-s1',
-    __TEST_FIRESTORE:async(path,init={})=>{
-      if(path===':commit'){const writes=JSON.parse(init.body).writes;if(writes[0]?.update?.name.includes('/0.6.2_s1_worker_jobs/')){assert.equal(writes[0].currentDocument.exists,false);return {};}if(writes[0]?.update?.name.includes('/0.6.2_s1_verification/')){assert.equal(writes.length,1);assert.equal(writes[0].currentDocument.exists,false);return {};}assert.equal(writes.length,2);assert.ok(writes.every(w=>w.currentDocument));wroteTrack=writes.some(w=>w.update.name.includes('s1_leaderboards_track'));return {};}
-      if(init.method==='PATCH'){
-        if(path.includes('s1_leaderboards_track'))wroteTrack=true;
-        return {};
-      }
-      if(path===':runQuery'){
-        const query=JSON.parse(init.body).structuredQuery;
-        const collection=query.from?.[0]?.collectionId;
-        if(collection!=='0.6.2_race_results')return [];
-        return [{document:{name:`projects/test/databases/(default)/documents/0.6.2_race_results/blocked-client_${TRACK}`,fields:Object.fromEntries(Object.entries(canonical).map(([key,value])=>[key,typeof value==='number'?{integerValue:String(value)}:{stringValue:value}])),updateTime:'2026-09-01T12:00:00Z'}}];
-      }
-      if(path.includes('s1_release_meta'))return {fields:{lastPbAt:{integerValue:'100'},revision:{integerValue:'1'},builtRevision:{integerValue:'1'}}};
-      return null;
-    }
-  };
-  const result=await reconcileCanonicalChanges(env);
+  const f=atomicReconcileFixture(canonical);
+  const result=await reconcileCanonicalChanges(f.env);
   assert.equal(result.scanned,2);
   assert.equal(result.rebuilt,1);
-  assert.equal(wroteTrack,true);
+  const publication=f.commits.find(writes=>writes.some(w=>w.update.name.endsWith('/'+f.trackKey)));
+  assert.equal(publication.length,3);
+  assert.deepEqual(publication.map(w=>w.update.name.split('/documents/')[1]).sort(),[f.trackKey,f.metaKey,f.jobKey].sort());
+  assert.ok(publication.every(w=>w.currentDocument));
+  assert.equal(f.data.get(f.metaKey).authorityMarker,'preserve');
+  assert.deepEqual(f.data.get(f.jobKey).pendingResultIds[TRACK],[f.resultId]);
+  assert.equal(result.pending,1,'the full snapshot does not discharge the retained target request');
 });
 
 test('idle canonical reconciliation performs no recurring Firestore write', async () => {
@@ -959,21 +989,26 @@ test('canonical cursor resumes after timestamp AND document ID',async()=>{
 
 test('snapshot and dirty metadata are one guarded commit; conflict keeps track queued',async()=>{
  const canonical=validRun({ownerUid:'owner',accountId:'racer',trackId:TRACK,timeMs:20500,updatedAt:200});
- let commit,job;
- const result=await reconcileCanonicalChanges({__TEST_FIRESTORE:async(path,init={})=>{
- if(path===':runQuery')return [{document:{name:'projects/test/databases/(default)/documents/results/racer',fields:Object.fromEntries(Object.entries(canonical).map(([k,v])=>[k,typeof v==='number'?{integerValue:String(v)}:typeof v==='boolean'?{booleanValue:v}:{stringValue:v}]))}}];
- if(path===':commit'){const next=JSON.parse(init.body);if(next.writes[0]?.update?.name.includes('/0.6.2_s1_worker_jobs/')){job=next.writes[0].update;assert.equal(next.writes[0].currentDocument.exists,false);return {};}if(next.writes[0]?.update?.name.includes('/0.6.2_s1_verification/'))return {};commit=next;throw Error('FIRESTORE_409');}
- if(init.method==='PATCH'){job=JSON.parse(init.body);return {};}
- if(path.includes('s1_leaderboards_track'))return {fields:{revision:{integerValue:'4'}},updateTime:'2026-09-01T00:00:00Z'};
- if(path.includes('s1_release_meta'))return {fields:{revision:{integerValue:'6'}},updateTime:'2026-09-01T00:00:01Z'};
- return null;
- }});
- assert.equal(result.rebuilt,0);assert.equal(result.pending,1);
- assert.equal(commit.writes.length,2);
- assert.equal(commit.writes[0].currentDocument.updateTime,'2026-09-01T00:00:00Z');
- assert.equal(commit.writes[1].currentDocument.updateTime,'2026-09-01T00:00:01Z');
- assert.match(commit.writes[0].update.name,/^projects\/polytrack-052\/databases\/\(default\)\/documents\//);
- assert.equal(job.fields.pendingTrackIds.arrayValue.values[0].stringValue,TRACK);
+ const f=atomicReconcileFixture(canonical,{queued:true}),oldBoard=structuredClone(f.data.get(f.trackKey));
+ let publication;
+ f.setBeforeCommit(writes=>{
+   if(writes.some(w=>w.update.name.endsWith('/'+f.trackKey))) {
+     publication=writes;
+     f.replace(f.jobKey,{...f.data.get(f.jobKey),pendingResultBindings:{[f.resultId]:'newest-binding'}});
+     f.replace(f.metaKey,{...f.data.get(f.metaKey),revision:7,newerAuthority:true});
+   }
+ });
+ await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),/FIRESTORE_409/);
+ assert.equal(publication.length,3);
+ assert.ok(publication.every(w=>w.currentDocument.updateTime==='v0'));
+ assert.ok(publication.some(w=>w.update.name.endsWith('/'+f.jobKey)));
+ assert.deepEqual(f.data.get(f.trackKey),oldBoard,'no part of a rejected final publication becomes visible');
+ assert.deepEqual(f.data.get(f.jobKey).pendingTrackIds,[TRACK]);
+ assert.deepEqual(f.data.get(f.jobKey).pendingResultIds[TRACK],[f.resultId]);
+ assert.equal(f.data.get(f.jobKey).pendingResultBindings[f.resultId],'newest-binding');
+ assert.equal(f.data.get(f.metaKey).revision,7);
+ assert.equal(f.data.get(f.metaKey).newerAuthority,true);
+ assert.ok(!f.commits.some(writes=>writes.some(w=>w.update.name.endsWith('/'+f.trackKey))));
 });
 
 
@@ -2158,6 +2193,10 @@ test('cold recovery cron fits the fifty-subrequest budget without sharing it wit
       return results.map(document => ({document}));
     }
     if (p === ':commit') {
+      for (const w of JSON.parse(init.body).writes) {
+        const prior=documents.get('/'+w.update.name.split('/documents/')[1]);
+        assert.deepEqual(w.currentDocument,prior?{updateTime:prior.updateTime}:{exists:false});
+      }
       for (const w of JSON.parse(init.body).writes) documents.set('/'+w.update.name.split('/documents/')[1], {...w.update,updateTime:'v'+(++sequence)});
       return {};
     }
@@ -2167,7 +2206,7 @@ test('cold recovery cron fits the fifty-subrequest budget without sharing it wit
   rankedWorker.scheduled({cron:'*/5 * * * *'}, env, {waitUntil: promise => {completion=promise;}});
   await completion;
   // One extra token request is needed with a cold service-token cache.
-  assert.equal(calls+1,19);
+  assert.equal(calls+1,18);
   assert.ok(calls+1 < 50);
 });
 

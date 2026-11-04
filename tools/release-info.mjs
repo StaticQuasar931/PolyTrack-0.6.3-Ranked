@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 273,
+  "number": 275,
   "version": "0.6.3",
-  "revision": 234,
+  "revision": 235,
   "notes": [
-    "More reliable daily goals, including slower follow-up runs.",
-    "Daily progress stays separate when switching racers.",
-    "Safer progress retries when the cloud is unavailable."
+    "Kodub's weekly card has a seamless, uncropped image layout.",
+    "Leaderboard recovery avoids repeating completed work.",
+    "An overnight standings refresh reuses existing replay proofs."
   ],
-  "preparedAt": "2026-11-03T02:46:10.888Z",
-  "committedAt": "2026-11-03T02:48:09.000Z"
+  "preparedAt": "2026-11-04T01:59:09.473Z",
+  "committedAt": "2026-11-04T02:09:25.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

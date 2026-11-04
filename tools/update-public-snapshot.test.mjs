@@ -27,6 +27,41 @@ test('replay-only refresh has a 100-document cap and does not restart profile sc
  assert.equal(options.maxDocuments,100);assert.equal(options.includeProfiles,false);assert.equal(options.fullSnapshot,false);
 });
 
+test('trusted replay-only override permits 2000 documents without starting a profile scan',async t=>{
+ const root=await fixture(t),staging=path.join(root,'local-reports','snapshot-staging');let options,captures=0;
+ const progress={schemaVersion:2,fullSnapshotPending:true,profiles:{cursor:'retained-profile-cursor',complete:false}};
+ await writeFile(path.join(staging,'export-progress.json'),JSON.stringify(progress));
+ await updatePublicSnapshot({root,refreshReplays:true,replayDocumentLimit:2000,capture:async()=>{captures++;return {};},
+  exportPublic:async value=>{options=value;return {complete:false,budgetReached:true,coverage:{complete:false},counts:{recordings:2000,profiles:0}};},log:()=>{}});
+ assert.equal(captures,1);assert.equal(options.maxDocuments,2000);assert.equal(options.includeProfiles,false);
+ assert.equal(options.fullSnapshot,false);assert.equal(options.includePendingReplays,true);
+ assert.deepEqual(JSON.parse(await readFile(path.join(staging,'export-progress.json'),'utf8')),progress);
+});
+
+test('trusted replay-only override accepts the lower document-limit boundary',async t=>{
+ const root=await fixture(t);let options;
+ await updatePublicSnapshot({root,refreshReplays:true,replayDocumentLimit:1,capture:async()=>({}),
+  exportPublic:async value=>{options=value;return {complete:false,counts:{recordings:0}};},log:()=>{}});
+ assert.equal(options.maxDocuments,1);assert.equal(options.includeProfiles,false);assert.equal(options.fullSnapshot,false);
+});
+
+test('invalid replay limit or incompatible mode fails before authority, staging, capture or export',async t=>{
+ const root=await fixture(t),called=[];
+ await mkdir(path.join(root,'tools'));await writeFile(path.join(root,'tools','verification-authority.json'),'invalid authority JSON');
+ await writeFile(path.join(root,'snapshot-current.json'),'invalid snapshot pointer JSON');
+ const before=(await readdir(root)).sort();
+ const forbidden=name=>()=>{called.push(name);assert.fail('Invalid limit reached '+name);};
+ const invalid=[0,-1,2001,1.5,'2000',true,NaN,Infinity,{},[]].map(replayDocumentLimit=>({refreshReplays:true,replayDocumentLimit}));
+ invalid.push({replayDocumentLimit:2000},{refreshReplays:false,replayDocumentLimit:2000},
+  {refreshReplays:true,fullPublic:true,replayDocumentLimit:2000},{refreshReplays:true,offline:true,replayDocumentLimit:2000});
+ for(const options of invalid)await assert.rejects(updatePublicSnapshot({root,...options,captureOverall:forbidden('overall capture'),
+  capture:forbidden('board capture'),captureTotals:forbidden('totals capture'),exportPublic:forbidden('replay export'),
+  prepareNativeCapture:forbidden('native preparation'),nativePhase:forbidden('native phase'),resolveSourceCommit:forbidden('source pin'),log:()=>{}}),
+  {name:'RangeError',message:/replayDocumentLimit/});
+ assert.deepEqual(called,[]);assert.deepEqual((await readdir(root)).sort(),before);
+ assert.equal(await readFile(path.join(root,'snapshot-current.json'),'utf8'),'invalid snapshot pointer JSON');
+});
+
 test('offline mode packages staging, excludes progress, writes honest coverage and updates meta', async t => {
   const root = await fixture(t);
   const staging = path.join(root, 'local-reports', 'snapshot-staging');

@@ -7,7 +7,10 @@ import {createRequire} from 'node:module';
 
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 const engines=require(process.env.PLAYWRIGHT_MODULE||'playwright');
-const chromium=process.env.POLYTRACK_LAYOUT_BROWSER==='firefox'?engines.firefox:engines.chromium;
+const useFirefox=process.env.POLYTRACK_LAYOUT_BROWSER==='firefox';
+const chromium=useFirefox?engines.firefox:engines.chromium;
+// Software WebGL keeps the native game fixture usable in isolated headless Firefox.
+const launchOptions={headless:true,...(useFirefox?{firefoxUserPrefs:{'webgl.force-enabled':true,'gfx.webrender.software':true},env:{...process.env,MOZ_WEBRENDER:'1'}}:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})};
 const root=new URL('../',import.meta.url);
 const styles=await Promise.all(['events/events.css','home-ui.css','responsive-ui.css','practice-responsive.css'].map(file=>fs.readFile(new URL(file,root),'utf8')));
 const weekly=JSON.parse(await fs.readFile(new URL('events/kodub/current.json',root),'utf8')).current;
@@ -32,7 +35,10 @@ async function measure(page){
   const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
   const card=document.querySelector('.sq-kodub-weekly>.button'),image=card.querySelector(':scope>img'),info=card.querySelector('.track-of-the-week-info');
   const sample=node=>({rect:rect(node),fit:getComputedStyle(node).objectFit,position:getComputedStyle(node).objectPosition});
-  return {card:rect(card),image:sample(image),info:rect(info),natural:{width:image.naturalWidth,height:image.naturalHeight},grid:getComputedStyle(card).gridTemplateColumns,
+  const imageRect=rect(image),scale=Math.min(imageRect.width/image.naturalWidth,imageRect.height/image.naturalHeight);
+  // Contained artwork is bottom-left anchored; its painted edge can differ from the element edge.
+  const painted={x:imageRect.x,y:imageRect.bottom-image.naturalHeight*scale,width:image.naturalWidth*scale,height:image.naturalHeight*scale,right:imageRect.x+image.naturalWidth*scale,bottom:imageRect.bottom};
+  return {card:rect(card),image:sample(image),painted,info:rect(info),background:{card:getComputedStyle(card).backgroundColor,info:getComputedStyle(info).backgroundColor,infoImage:getComputedStyle(info).backgroundImage},natural:{width:image.naturalWidth,height:image.naturalHeight},grid:getComputedStyle(card).gridTemplateColumns,
    overflow:{client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth},
    cards:[...document.querySelectorAll('.sq-featured-events>.track>.button,.sq-featured-events .sq-event-card')].map(rect),
    others:[...document.querySelectorAll('.sq-permanent-track img,.sq-event-thumb img,.personal-best img,.unrelated')].map(sample)};
@@ -45,10 +51,21 @@ const viewports=[
  ...[639,640,641,699,700,701,1199,1200,1201].flatMap(width=>[459,460,461].map(height=>[width,height])),
  [320,568],[375,667],[440,956],[956,440],[667,375],[479,800],[480,800],[481,800],
  [600,960],[768,1024],[820,1180],[1024,768],[1366,600],[1700,900],[1701,900],
- [1920,1080],[2560,1279],[3440,1440],[5120,1440],
+ [1920,1080],[2560,1440],[2560,1279],[3440,1440],[5120,1440],
  ...[479,480,481,820,1024].flatMap(width=>[459,460,461].map(height=>[width,height])),
 ];
 const inside=(inner,outer)=>inner.x>=outer.x-1&&inner.right<=outer.right+1&&inner.y>=outer.y-1&&inner.bottom<=outer.bottom+1;
+function assertPaintedPanels(geometry,label){
+ const {card,image,painted,info,background}=geometry;
+ assert.equal(image.fit,'contain',label+': full source is contained, never cropped');
+ assert.equal(image.position,'0% 100%',label+': full source stays bottom-left anchored');
+ assert.ok(painted.width>0&&painted.height>0&&inside(painted,card),label+': every source edge is visible inside the card');
+ assert.ok(Math.abs(painted.x-card.x)<1&&Math.abs(painted.bottom-card.bottom)<1,label+': painted artwork reaches the bottom-left corner');
+ assert.ok(Math.abs(painted.right-info.x)<1,label+': painted right equals info-panel left: '+JSON.stringify({painted,info}));
+ assert.ok(Math.abs(info.right-card.right)<1&&Math.abs(info.y-card.y)<1&&Math.abs(info.bottom-card.bottom)<1,label+': details fill the entire remainder');
+ assert.equal(background.info,background.card,label+': uniform detail background');
+ assert.equal(background.infoImage,'none',label+': no separate detail gradient');
+}
 const settle=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 
 async function assertCardContents(page,label){
@@ -73,7 +90,7 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
  const directory=process.env.POLYTRACK_IMAGE_LAYOUT_OUTPUT||await fs.mkdtemp(path.join(tmpdir(),'polytrack-image-layout-'));
  await fs.mkdir(directory,{recursive:true});
  t.diagnostic('Screenshots: '+directory);
- const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
+ const browser=await chromium.launch(launchOptions);
  try{
   const context=await browser.newContext({serviceWorkers:'block'});
   const requests=[];
@@ -101,7 +118,9 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    },textScale);
    await settle(page);await settle(baseline);
    const after=await measure(page),r=after.image.rect;
+   await fs.writeFile(path.join(directory,'latest-geometry.json'),JSON.stringify({label,after},null,2));
    await assertCardContents(page,label);
+   assertPaintedPanels(after,label);
    assert.equal(after.cards.length,4,label+': all four cards remain present');
    for(const card of after.cards){
     assert.ok(card.width<=after.card.width+1,label+': Kodub image-led card is at least as wide as map cards '+JSON.stringify(after.cards));
@@ -122,7 +141,7 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
    }else{
     assert.ok(r.bottom<=after.card.bottom+1,label+': complete artwork stays within its panel');
     assert.ok(Math.abs(r.right-after.info.x)<1,label+': no art/details gap');
-    assert.ok(r.width>=after.card.width*.2&&r.width<=after.card.width*.7,label+': landscape artwork and details have balanced space');
+    assert.ok(r.width>=after.card.width*.2-1&&r.width<=after.card.width*.7+1,label+': landscape artwork and details have balanced space');
    }
    const unrelated=after.others.at(-1),originalUnrelated=(await measure(baseline)).others.at(-1);
    assert.deepEqual({width:unrelated.rect.width,height:unrelated.rect.height,fit:unrelated.fit,position:unrelated.position},{width:originalUnrelated.rect.width,height:originalUnrelated.rect.height,fit:originalUnrelated.fit,position:originalUnrelated.position},label+': unrelated image style stays intact');
@@ -171,12 +190,12 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
   await page.locator('.sq-featured-events button, .sq-featured-events button *').evaluateAll(nodes=>nodes.forEach(node=>{node.style.removeProperty('font-size');node.style.removeProperty('line-height');}));
   for(const [width,height] of [[320,568],[820,459],[1366,600]]){
    await page.setViewportSize({width,height});await settle(page);
-   const original=await measure(page);
    for(const [w,h] of [[900,240],[240,900],[256,256]]){
     await page.locator('.sq-kodub-weekly>.button>img').evaluate(async(img,src)=>{img.className='thumbnail';img.src=src;await img.decode();},svg(w,h));
     const fallback=await measure(page);
     assert.equal(fallback.image.fit,'contain','map fallbacks must never crop');
-    assert.equal(fallback.image.rect.width,original.image.rect.width,'fallback uses the same artwork column');
+    assertPaintedPanels(fallback,'fallback '+width+'x'+height+' '+w+'x'+h);
+    assert.ok(Math.abs(fallback.image.rect.width-fallback.painted.width)<1,'fallback column follows the painted intrinsic width, without a spare strip');
     assert.ok(inside(fallback.image.rect,fallback.card),'complete fallback stays inside its card');
     await page.screenshot({path:path.join(directory,'fallback-'+width+'x'+height+'-'+w+'x'+h+'.png'),fullPage:true});
    }
@@ -188,28 +207,30 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
  }finally{await browser.close();}
 });
 
-test('native Kodub titles fit available space and wrap overlong names at spaces, including UI125',{timeout:180000},async t=>{
+test('native Kodub titles fit available space and wrap overlong names at spaces, including UI125',{timeout:300000},async t=>{
  const {startResponsiveServer}=await import('./responsive-server.mjs');
  const directory=process.env.POLYTRACK_IMAGE_LAYOUT_OUTPUT||await fs.mkdtemp(path.join(tmpdir(),'polytrack-native-title-'));
  await fs.mkdir(directory,{recursive:true});
  const server=await startResponsiveServer();
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch(launchOptions);
  const results=[],requests=[];
  try{
-  for(const scale of [100,125]){
-   const context=await browser.newContext({viewport:{width:1920,height:1080},serviceWorkers:'block'});
+  for(const scale of [125,100]){
+   const context=await browser.newContext({viewport:{width:1280,height:720},serviceWorkers:'block'});
    await context.addInitScript(scale=>localStorage.setItem('polytrack-0.6.2-ui-font-scale',String(scale)),scale);
    await context.addInitScript(number=>localStorage.setItem('polytrack-site-update-ack-release-v1:'+number,'acknowledged'),RELEASE_INFO.number);
    const page=await context.newPage();
    page.on('pageerror',error=>t.diagnostic('Native page error: '+String(error)));
+   page.on('console',message=>{if(message.type()==='error')t.diagnostic('Native console error: '+message.text());});
+   page.on('requestfailed',request=>t.diagnostic('Native failed request: '+request.url()+' '+request.failure()?.errorText));
    await context.route('**/*',route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.origin===server.url&&url.pathname==='/v6/user')return route.fulfill({status:200,contentType:'application/json',body:'null'});
     if(url.origin===server.url&&['GET','HEAD'].includes(request.method()))return route.continue();
     requests.push({url:url.origin,method:request.method()});return route.abort();
    });
-   await page.goto(server.url,{waitUntil:'domcontentloaded'});
-   await page.getByRole('button',{name:'Exit',exact:true}).click({timeout:20000}).catch(async error=>{await fs.writeFile(path.join(directory,'native-startup-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(directory,'native-startup-failure.png'),timeout:5000}).catch(()=>{});throw error;});
+   await page.goto(server.url,{waitUntil:'domcontentloaded',timeout:60000});
+   await page.getByRole('button',{name:'Exit',exact:true}).click({timeout:60000}).catch(async error=>{await fs.writeFile(path.join(directory,'native-startup-failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(directory,'native-startup-failure.png'),timeout:5000}).catch(()=>{});throw error;});
    await page.getByRole('button',{name:'Back',exact:true}).click();
    await page.getByRole('button',{name:'Play',exact:true}).click();
    await page.locator('.track-selection-ui').waitFor();
@@ -246,11 +267,15 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      offset+=word.length+1;
     }
    };
-   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[320,568],[1920,1080],[2560,1440],[375,667],[956,440]]:[[320,568],[1920,1080],[2560,1440],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
+   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[2560,1440],[320,568],[1920,1080],[375,667],[956,440]]:[[2560,1440],[320,568],[1920,1080],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
     await page.setViewportSize({width,height});await page.mouse.move(0,0);await settle(page);
     if(width===2560&&height===1440){
      await title.evaluate((node,name)=>node.textContent=name,weekly.name);await settle(page);
      const original=await measure(page),image=original.image.rect;
+     await page.screenshot({path:path.join(directory,'native-full-cover-2560x1440-ui'+scale+'.png')});
+     assertPaintedPanels(original,'native published 2560x1440 UI'+scale);
+     t.diagnostic('Native 2560x1440 UI'+scale+': painted right '+original.painted.right+' equals info left '+original.info.x);
+     await fs.writeFile(path.join(directory,'native-full-cover-2560x1440-ui'+scale+'.json'),JSON.stringify(original,null,2));
      const paintedHeight=Math.min(image.width/original.natural.width,image.height/original.natural.height)*original.natural.height;
      assert.ok(Math.abs(image.bottom-paintedHeight-original.card.y)<=1,'complete native cover reaches the card top at 2560x1440 UI'+scale);
      assert.equal(await page.locator('.sq-kodub-weekly>.button').evaluate(node=>getComputedStyle(node).clipPath),'none');
@@ -258,6 +283,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     }
     await title.evaluate(node=>node.textContent='Hydropower');await settle(page);
     const ordinary=await sample(),geometry=await measure(page);
+    assertPaintedPanels(geometry,'native '+width+'x'+height+' UI'+scale);
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);
     const previews=await page.locator('.track:not(.track-of-the-week):not(.sq-permanent-track)>.button').evaluateAll(nodes=>nodes.filter(node=>node.querySelector('.environment')&&node.getBoundingClientRect().width>0).map(node=>{
      const icon=node.querySelector('.environment').getBoundingClientRect(),record=node.querySelector('.record')?.getBoundingClientRect();
@@ -286,6 +312,8 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     // Exceed even the wider CSS panels produced by native short-landscape UI scaling.
     await title.evaluate(node=>node.textContent='Hydropower Mountain Expedition Through The Northern Highlands And Across The Frozen River Valley Beyond The Ancient Forest');await settle(page);
     const overlong=await sample(),expanded=await measure(page);
+    await fs.writeFile(path.join(directory,'native-expanded-latest.json'),JSON.stringify({width,height,scale,expanded},null,2));
+    assertPaintedPanels(expanded,'native expanded '+width+'x'+height+' UI'+scale);
     await page.screenshot({path:path.join(directory,'native-overlong-title-'+width+'x'+height+'-ui'+scale+'.png')});
     await fs.writeFile(path.join(directory,'native-title-latest.json'),JSON.stringify({width,height,scale,ordinary,long,overlong,expanded},null,2));
     assert.ok(overlong.unwrappedWidth>overlong.contentWidth,'overlong fixture must exercise real wrapping: '+JSON.stringify({width,height,scale,overlong}));

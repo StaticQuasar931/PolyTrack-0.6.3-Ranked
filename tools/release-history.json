@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 273,
+    "number": 275,
     "version": "0.6.3",
-    "revision": 234,
+    "revision": 235,
     "notes": [
-      "More reliable daily goals, including slower follow-up runs.",
-      "Daily progress stays separate when switching racers.",
-      "Safer progress retries when the cloud is unavailable."
+      "Kodub's weekly card has a seamless, uncropped image layout.",
+      "Leaderboard recovery avoids repeating completed work.",
+      "An overnight standings refresh reuses existing replay proofs."
     ]
   },
   "entries": [
+    {
+      "number": 273,
+      "title": "Reliable Daily Goals and Safe Progress Recovery",
+      "commit": "31ea1200b5e7cbba2da335bc4ecf87fccbeedf7e",
+      "committedAt": "2026-11-03T02:48:09.000Z",
+      "notes": [
+        "More reliable daily goals, including slower follow-up runs.",
+        "Daily progress stays separate when switching racers.",
+        "Safer progress retries when the cloud is unavailable."
+      ]
+    },
     {
       "number": 272,
       "title": "Complete Weekly Artwork and Reliable Placement Loading",
@@ -207,16 +218,6 @@
       "committedAt": "2026-10-30T22:30:15.000Z",
       "notes": [
         "Left-aligned weekly event times and placements."
-      ]
-    },
-    {
-      "number": 244,
-      "title": "Verified Snapshots",
-      "commit": "71eda762b9a4e2eee39db760ec025e875a8efbd3",
-      "committedAt": "2026-10-30T22:20:09.000Z",
-      "notes": [
-        "Verified saved runs and refreshed snapshot standings.",
-        "Cleaner weekly placement and more reliable cached replays."
       ]
     }
   ],

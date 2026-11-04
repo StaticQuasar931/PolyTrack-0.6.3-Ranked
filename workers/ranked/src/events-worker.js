@@ -211,7 +211,7 @@ export async function eventWorkerMaintenance(env, { request, officialIds, allIds
     if (!cleanup.idle) return cleanup;
   }
   if([2,4].includes(phase)){
-    const publication=await publishEventCapacity(runtime);if(!publication.idle)return publication;
+    const publication=await publishEventCapacity(runtime,{coalescePeriods:env.BACKGROUND_MAINTENANCE_MODE==='coordinated'});if(!publication.idle)return publication;
   }
   return consumeEventInbox(runtime, { preferRetry: minute % 2 === 0, recentActivityOnly: phase !== 3 });
 }

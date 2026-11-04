@@ -84,6 +84,8 @@ const MIGRATION_VERSION = 4;
 const RECONCILE_RESULT_BATCH = 50;
 const RECONCILE_TRACK_BATCH = 4;
 const RECONCILE_PENDING_ID_LIMIT = 200;
+const RECONCILE_FULL_TRACK_LIMIT = 512;
+const RECONCILE_JOB_DOCUMENT_BUDGET = 800000;
 const RECONCILE_TARGET_ID_BATCH = 16;
 const RECONCILE_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const RECONCILE_REBUILD_BACKOFF_BASE_MS = 15 * 60 * 1000;
@@ -1037,16 +1039,15 @@ export async function persistTrackSnapshot(env, trackId, entries, prior = null, 
   const metaDoc = await readDocument(env, COLLECTIONS.meta, 'current');
   const meta = metaDoc?.data || {};
   const sourceCatalog = sourceCatalogAfterTrackWrite(meta.sourceCatalog, trackId, {id:trackId,data:trackWrite.data});
-  if (!overallChanged) {
-    await commitDocuments(env, [...completion,trackWrite,
-      {collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data:{...meta,sourceCatalog}}]);
-    return {changed:true,overallChanged:false,entries,revision};
-  }
-  await commitDocuments(env, [
-    ...completion,trackWrite,
-    {collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data:{...meta,sourceCatalog,algorithmVersion:ALGORITHM_VERSION,schemaVersion:TRACK_SCHEMA_VERSION,dirty:true,revision:Math.max(Number(meta.revision||0)+1,revision),builtRevision:Number(meta.builtRevision||0),lastPbAt:now,updatedAt:now,rankedWritesEnabled:String(env.RANKED_WRITES_ENABLED)!=='false',multiplayerEnabled:String(env.MULTIPLAYER_ENABLED)!=='false'}}
-  ]);
-  return { changed: true, overallChanged:true, entries, revision };
+  const documents = [...completion,trackWrite,
+    {collection:COLLECTIONS.meta,id:'current',prior:metaDoc,data:overallChanged
+      ? {...meta,sourceCatalog,algorithmVersion:ALGORITHM_VERSION,schemaVersion:TRACK_SCHEMA_VERSION,dirty:true,revision:Math.max(Number(meta.revision||0)+1,revision),builtRevision:Number(meta.builtRevision||0),lastPbAt:now,updatedAt:now,rankedWritesEnabled:String(env.RANKED_WRITES_ENABLED)!=='false',multiplayerEnabled:String(env.MULTIPLAYER_ENABLED)!=='false'}
+      : {...meta,sourceCatalog}}];
+  const result = {changed:true,overallChanged,entries,revision};
+  // Reconciliation must publish and discharge its queue in the same CAS commit.
+  if (build.deferPublication === true) return {...result,publicationDocuments:documents};
+  await commitDocuments(env, documents);
+  return result;
 }
 
 export function overallTrackInput(trackId, entries) {
@@ -1249,7 +1250,7 @@ async function persistVerificationRows(env, trackId, rows, prior, complete = fal
   return slots;
 }
 
-export async function rebuildTrack(env, trackId, identityOverride = null) {
+export async function rebuildTrack(env, trackId, identityOverride = null, {deferPublication = false} = {}) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const job = await readDocument(env,TRACK_BUILD_JOBS,trackBuildId(trackId));
   let initial = null;
@@ -1261,6 +1262,7 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
       read:(c,id)=>readDocument(env,c,id),
       readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
     if(build.pending){
+      if (deferPublication) return build;
       const queue=await readDocument(env,COLLECTIONS.jobs,'canonical_reconcile_v2'),state=queue?.data||{};
       if(!(state.pendingFullRebuildTrackIds||[]).includes(trackId)||!state.activeFullRebuildTrackId)await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:'canonical_reconcile_v2',prior:queue,data:{...state,activeFullRebuildTrackId:state.activeFullRebuildTrackId||trackId,pendingTrackIds:[...new Set([...(state.pendingTrackIds||[]),trackId])],pendingFullRebuildTrackIds:[...new Set([...(state.pendingFullRebuildTrackIds||[]),trackId])]}}]);
       return build;
@@ -1282,7 +1284,7 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
     }) : prior?.data?.entries||[];
     const byId = new Map(previous.map(row=>[row.accountId||row.userId,row]));
     const entries = rankTrustedTrackEntries(build.entries.map(row=>preservePublishedIdentity(row,byId.get(row.accountId))),trackId);
-    return persistTrackSnapshot(env,trackId,entries,prior,build);
+    return persistTrackSnapshot(env,trackId,entries,prior,{...build,deferPublication});
   }
   const candidates = initial.documents.map(document=>document.data);
   const integrity = await Promise.all(candidates.map((row) => replayIntegrityValid(row)));
@@ -1312,7 +1314,7 @@ export async function rebuildTrack(env, trackId, identityOverride = null) {
       entries[index] = preservePublishedIdentity(entry,previousByAccount.get(entry.accountId));
     }
   }
-  return persistTrackSnapshot(env, trackId, entries, prior);
+  return persistTrackSnapshot(env, trackId, entries, prior, {deferPublication});
 }
 
 export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResult, integrityVerified = false) {
@@ -1470,9 +1472,15 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     for(const trackId of Object.keys(pendingResultIds)){queued.add(trackId);pendingFullRebuildTrackIds.add(trackId);}
     pendingResultIds={};
   }
-  if(pendingFullRebuildTrackIds.size>RECONCILE_PENDING_ID_LIMIT){forceFullRebuildAll=true;pendingFullRebuildTrackIds.clear();}
+  if(pendingFullRebuildTrackIds.size>RECONCILE_FULL_TRACK_LIMIT)throw Error('RECONCILE_FULL_REBUILD_QUEUE_CAPACITY');
   for(const trackId of Object.keys(pendingResultIds))queued.add(trackId);
   for(const trackId of pendingFullRebuildTrackIds)queued.add(trackId);
+  if (forceFullRebuildAll) {
+    if (queued.size > RECONCILE_FULL_TRACK_LIMIT) throw Error('RECONCILE_FULL_REBUILD_QUEUE_CAPACITY');
+    // Consume the legacy global request once, before discovery can add work.
+    for (const trackId of queued) pendingFullRebuildTrackIds.add(trackId);
+    forceFullRebuildAll=false;
+  }
   for (const trackId of Object.keys(failedFullRebuilds)) if (!queued.has(trackId)) delete failedFullRebuilds[trackId];
   const rebuildCoolingDown = trackId => (failedFullRebuilds[trackId]?.retryAt || 0) > reconcileNow;
   const capacity=Math.max(0,200-queued.size);
@@ -1481,15 +1489,18 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     ?await runChangedResultsQuery(env,timestamp,budget,safeText(job.cursorDocumentId,256)):[];
   const legacy=budget&&!job.backfillComplete?await runChangedResultsQuery(env,timestamp,budget,safeText(job.backfillDocumentId,256),true):[];
   const fullRebuildTracks=new Set(pendingFullRebuildTrackIds);
+  let changedCursorDeferred = false;
   let pendingResultCount=Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0);
   for(const row of changed){
     const trackId=safeText(row.data?.trackId,80);
     if(!trackId||!structurallyValidResult(row.data,trackId))continue;
     queued.add(trackId);
-    if(fullRebuildTracks.has(trackId))continue;
     const ids=pendingResultIds[trackId]||[];
     if(ids.includes(row.id))continue;
     if(pendingResultCount>=RECONCILE_PENDING_ID_LIMIT){
+      // A running fixed snapshot cannot cover later discoveries. Replay this
+      // discovery page after bounded keyed work frees capacity instead of dropping it.
+      if (fullRebuildTracks.has(trackId)) {changedCursorDeferred=true;continue;}
       pendingResultCount-=ids.length;
       delete pendingResultIds[trackId];
       pendingFullRebuildTrackIds.add(trackId);
@@ -1508,8 +1519,8 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
       pendingFullRebuildTrackIds.add(trackId);
     }
   }
-  if(forceFullRebuildAll)for(const trackId of queued)fullRebuildTracks.add(trackId);
   let rebuilt=0,targeted=0,fullRebuildAttempts=0;
+  let publicationDocuments = [];
   let activeFullRebuildTrackId = queued.has(job.activeFullRebuildTrackId) ? job.activeFullRebuildTrackId : '';
   const fallbackOnly = trackId => fullRebuildTracks.has(trackId) || !pendingResultIds[trackId]?.length;
   // Firestore map key order is not a durable cursor; rotate using the persisted array.
@@ -1564,22 +1575,26 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
         if (fullRebuildAttempts >= 1) continue;
         fullRebuildAttempts++;
         attemptedFullRebuild = true;
-        const full = await rebuildTrack(env,trackId);
+        const full = await rebuildTrack(env,trackId,null,{deferPublication:true});
         if(full.blocked)throw Error('TRACK_BUILD_BLOCKED: '+full.reason);
         if(full.pending){activeFullRebuildTrackId=trackId;break;}
+        publicationDocuments = full.publicationDocuments || [];
       }
       if(activeFullRebuildTrackId===trackId)activeFullRebuildTrackId='';
       rebuilt++;
       delete failedFullRebuilds[trackId];
       if(targetedIds.length)targeted+=targetedIds.length;
-      if(result.fallback||fullRebuildTracks.has(trackId))delete pendingResultIds[trackId];
-      else{
+      // Queue bindings may postdate the full build's fixed readTime. Keep them
+      // for a fresh targeted merge after discharging only the full-build request.
+      if(!attemptedFullRebuild) {
         const remaining=ids.slice(targetedIds.length);
         if(remaining.length)pendingResultIds[trackId]=remaining;
         else delete pendingResultIds[trackId];
       }
       if(result.fallback||fullRebuildTracks.has(trackId))pendingFullRebuildTrackIds.delete(trackId);
       if(!pendingResultIds[trackId]?.length)queued.delete(trackId);
+      // Leave siblings queued; no later publication may escape this atomic handoff.
+      if (attemptedFullRebuild) break;
     }catch(error){
       if(activeFullRebuildTrackId===trackId)activeFullRebuildTrackId='';
       console.error('Canonical track reconciliation failed',trackId,String(error?.message||error));
@@ -1603,19 +1618,30 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     &&String(job.activeFullRebuildTrackId||'')===activeFullRebuildTrackId
     &&Number(job.schemaVersion||0)===2
     &&JSON.stringify(failedFullRebuilds)===JSON.stringify(job.failedFullRebuilds||{});
-  if(document&&!changed.length&&!legacy.length&&!rebuilt&&job.backfillComplete
+  if(document&&!changed.length&&!legacy.length&&!rebuilt&&job.backfillComplete&&job.forceFullRebuildAll!==true
     &&(!queued.size||selected.length===0&&normalizedJobState))
     return {scanned:0,rebuilt:0,targeted:0,pending:queued.size,unchanged:true};
   env.__OVERALL_REQUEST_BUDGET.limit = 45; // Reserve three calls for durable reconciliation state.
-  await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:jobId,prior:document,data:{
-    cursorIngestedAt:changed.length?changed.at(-1).ingestedAt:timestamp,
-    cursorDocumentId:changed.length?changed.at(-1).id:safeText(job.cursorDocumentId,256),
+  // At most build completion, manifest, track, meta, Rolling invalidation and queue.
+  if (publicationDocuments.length > 5) throw Error('RECONCILE_PUBLICATION_WRITE_BUDGET');
+  const pendingResultBindings = Object.fromEntries(Object.values(pendingResultIds).flat()
+    .filter(id => Object.hasOwn(job.pendingResultBindings || {},id))
+    .map(id => [id,job.pendingResultBindings[id]]));
+  const checkpoint = {collection:COLLECTIONS.jobs,id:jobId,prior:document,data:{
+    ...job,
+    cursorIngestedAt:changed.length&&!changedCursorDeferred?changed.at(-1).ingestedAt:timestamp,
+    cursorDocumentId:changed.length&&!changedCursorDeferred?changed.at(-1).id:safeText(job.cursorDocumentId,256),
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
     backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
-    pendingTrackIds:[...queued],pendingResultIds,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
+    pendingTrackIds:[...queued],pendingResultIds,pendingResultBindings,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
     failedFullRebuilds,activeFullRebuildTrackId,
     forceFullRebuildAll:Boolean(forceFullRebuildAll&&queued.size),lastScanAt:Date.now(),schemaVersion:2
-  }}]);
+  }};
+  const checkpointDocument = {name:documentBase(env).replace('https://firestore.googleapis.com/v1/','')+'/'+COLLECTIONS.jobs+'/'+jobId,
+    fields:encodeFields(checkpoint.data)};
+  if (new TextEncoder().encode(JSON.stringify(checkpointDocument)).length > RECONCILE_JOB_DOCUMENT_BUDGET)
+    throw Error('RECONCILE_JOB_DOCUMENT_BUDGET');
+  await commitDocuments(env,[...publicationDocuments,checkpoint]);
   return {scanned:changed.length+legacy.length,rebuilt,targeted,pending:queued.size};
 }
 

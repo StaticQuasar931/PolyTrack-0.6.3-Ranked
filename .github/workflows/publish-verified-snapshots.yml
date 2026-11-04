@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: ''
+      overnight_native:
+        description: 'Bounded Nov4 one-time native processing of the single capture'
+        required: false
+        type: boolean
+        default: false
       publication_changed:
         required: true
         type: boolean
@@ -34,7 +39,7 @@ jobs:
     if: inputs.publication_changed && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     # Input may inherit checked-in native mode; step outputs are unavailable here.
-    timeout-minutes: 35
+    timeout-minutes: ${{ inputs.overnight_native && 50 || 35 }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -171,6 +176,17 @@ jobs:
       - name: Pin offline verification source commit
         if: steps.authority.outputs.mode == 'snapshot-native' || hashFiles('verification-ledger-current.json') != ''
         run: echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
+      - name: Guard the one-time overnight capture
+        if: inputs.overnight_native
+        env:
+          VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
+        run: |
+          node --input-type=module <<'OVERNIGHT'
+          import fs from 'node:fs';
+          import {assertOvernightCapture} from './tools/overnight-snapshot-plan.mjs';
+          let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
+          assertOvernightCapture({mode:process.env.VERIFICATION_AUTHORITY,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),previousCaptureStartedAt:prior?.startedAt});
+          OVERNIGHT
       - name: Capture public event assignments
         id: catalog
         if: steps.coordination.outputs.reuse != 'true'
@@ -189,15 +205,25 @@ jobs:
       - name: Capture bounded public snapshots
         id: snapshot
         if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
-        # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
+        # Changed/missing exact-bound normal replays only: normally 100, Nov4 one-off 2000; no profile scan.
         # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
+          ONE_OFF_NATIVE: ${{ inputs.overnight_native }}
         # The updater's parent-owned hook exports replays first, then invokes the
         # credential-scrubbed offline capability before final rebuild/package.
         run: |
-          if [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then
+          if [ "$ONE_OFF_NATIVE" = "true" ]; then
+            node --input-type=module <<'ONEOFF'
+          import {updatePublicSnapshot,reportCaptureOutcome} from './tools/update-public-snapshot.mjs';
+          import {OVERNIGHT_SNAPSHOT} from './tools/overnight-snapshot-plan.mjs';
+          const nativePhaseOptions={maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs};
+          const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions});
+          if(!result.deferred && (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');
+          await reportCaptureOutcome(result);
+          ONEOFF
+          elif [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then
             node tools/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native
           else
             node tools/update-public-snapshot.mjs --refresh-replays
