@@ -1303,3 +1303,32 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment){width:var(--kodub-image-width)!important}
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly .track-of-the-week-info>.title{font-size:calc(clamp(26px,1.8vw,36px) * var(--sq-ui-scale,1))!important}
 }
+
+/* Size the art column from the contained image, not an empty percentage-wide box. */
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
+ container-type:inline-size;--kodub-image-width:min(60cqw,600px);
+ /* A definite rail height prevents wrapped metadata from recursively resizing the art. */
+ --kodub-art-height:var(--event-card-height,300px);
+ grid-template-columns:auto minmax(0,1fr)!important;
+}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment),
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){
+ position:static!important;grid-column:1!important;grid-row:1!important;
+ width:auto!important;height:var(--kodub-art-height)!important;max-width:var(--kodub-image-width)!important;
+ min-height:0!important;align-self:end!important;transform:none!important;object-position:left bottom!important;background:inherit!important;
+}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
+ align-self:stretch!important;background:inherit!important;
+}
+@media(max-width:700px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{--kodub-image-width:44cqw}
+}
+@media(max-width:480px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{--kodub-image-width:36cqw}
+}
+@media(max-width:700px) and (orientation:portrait), (min-width:600px) and (max-width:1200px) and (max-height:500px) and (orientation:landscape){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{--kodub-image-width:50cqw}
+}
+@media(min-width:1600px) and (min-height:501px){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{--kodub-art-height:max(var(--event-card-height,300px),324px);--kodub-image-width:min(700px,calc(100cqw - max(calc(220px * var(--sq-ui-scale,1)),30cqw)))}
+}
