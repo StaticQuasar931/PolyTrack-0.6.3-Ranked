@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 278,
+    "number": 279,
     "version": "0.6.3",
-    "revision": 238,
+    "revision": 239,
     "notes": [
-      "More reliable replay uploads and faster publication of queued personal bests.",
-      "Extra Tracks picks show your best time and clearer play buttons."
+      "Clearer update buttons and release history with local dates.",
+      "Smoother main-menu entrance and more compact Extra Tracks picks."
     ]
   },
   "entries": [
+    {
+      "number": 278,
+      "title": "Reduce redundant cloud work and guard overnight snapshot capture",
+      "commit": "f605e6b430d6b0f1fc91f69467d0e00a19ca78d1",
+      "committedAt": "2026-11-04T22:50:20.000Z",
+      "notes": [
+        "More reliable replay uploads and faster publication of queued personal bests.",
+        "Extra Tracks picks show your best time and clearer play buttons."
+      ]
+    },
     {
       "number": 277,
       "title": "Bounded Visible Custom Track PB Loading",
@@ -209,16 +219,6 @@ const historyData = {
         "Better phone-landscape rankings and Settings spacing.",
         "Settings controls stay clear of notches and home indicators."
       ]
-    },
-    {
-      "number": 248,
-      "title": "UI Consistency",
-      "commit": "83ac2ba5514b4bfd497dbd2f4688e449757d3ded",
-      "committedAt": "2026-10-31T00:28:16.000Z",
-      "notes": [
-        "Cleaner settings and clearer unplayed-track counts.",
-        "Consistent event placements and a reliable weekly card."
-      ]
     }
   ],
   "coverage": {
@@ -254,7 +254,7 @@ export function selectReleaseHistory(release, history = RELEASE_HISTORY) {
     Array.isArray(history.entries) && history.entries.length <= 20 && history.coverage &&
     Number.isSafeInteger(history.coverage.limit) && history.coverage.limit >= 1 && history.coverage.limit <= 20 &&
     typeof history.coverage.olderOmitted === 'boolean' && history.entries.length <= history.coverage.limit && history.entries.every(entry => hash(entry?.commit) &&
-      canonicalTime(entry.committedAt) !== null && (entry.number === null || positiveInteger(entry.number)) &&
+      canonicalTime(entry.committedAt ?? entry.preparedAt) !== null && (entry.number === null || positiveInteger(entry.number)) &&
       typeof entry.title === 'string' && entry.title.length <= 500 && Array.isArray(entry.notes) &&
       (entry.notes.length === 0 || finishedNotes(entry.notes))) && new Set(history.entries.map(entry => entry.commit)).size === history.entries.length;
   return valid ? {matches:true, entries:history.entries, olderOmitted:history.coverage.olderOmitted} : {matches:false, entries:[], olderOmitted:false};
@@ -285,11 +285,11 @@ function archiveModel(options) {
   const selected = selectReleaseHistory(options.release, options.history);
   if (!selected.matches || !selected.entries.length) return null;
   return {...selected,
-    entries:selected.entries.map(entry => ({...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, time:releaseHistoryTime(entry.committedAt, options.now)}))};
+    entries:selected.entries.map(entry => ({...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, timeLabel:entry.committedAt ? 'Committed' : 'Prepared', time:releaseHistoryTime(entry.committedAt ?? entry.preparedAt, options.now)}))};
 }
 export function renderReleaseHistory(options = {}) {
   const model = archiveModel(options); if (!model) return '';
-  return `<details class="release-history" data-release-history><summary>Earlier updates <small>${model.entries.length}</small></summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>Committed ${escape(entry.time.age)}</small></summary><p class="release-history-date">Committed <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
+  return `<details class="release-history" data-release-history><summary>Earlier updates</summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary title="${escape(entry.timeLabel+': '+entry.time.local)}"><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>${entry.timeLabel} ${escape(entry.time.age)}</small></summary><p class="release-history-date">${entry.timeLabel} <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
 }
 
 /** Native DOM version for the installed notice; no history fetch or HTML execution. */
@@ -297,14 +297,14 @@ export function createReleaseHistory(document, options = {}) {
   const model = archiveModel(options); if (!model) return null;
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const root = make('details', undefined, 'release-history'); root.setAttribute('data-release-history','');
-  const summary = make('summary', `Earlier updates (${model.entries.length})`), body = make('div',undefined,'release-history-body');
+  const summary = make('summary', 'Earlier updates'), body = make('div',undefined,'release-history-body');
   Object.assign(root.style,{margin:'12px 0', borderTop:'1px solid #6389bf', fontSize:'clamp(18px, 4dvh, 20px)'});
   Object.assign(summary.style,{cursor:'pointer', padding:'10px 0', color:'#a7d5ff'});
   const list = make('ol'); Object.assign(list.style,{listStyle:'none',padding:'0',margin:'8px 0',maxHeight:'min(42dvh, 360px)',overflow:'auto'});
   for (const entry of model.entries) {
     const item = make('li'), detail = make('details'); detail.setAttribute('data-release-history-entry','');
-    const heading = make('summary',`${entry.label}: ${entry.title}`); Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
-    const when = make('time',`Committed ${entry.time.age} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
+    const heading = make('summary',`${entry.label}: ${entry.title}`); heading.title = entry.timeLabel+': '+entry.time.local; Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
+    const when = make('time',`${entry.timeLabel} ${entry.time.age} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
     Object.assign(when.style,{display:'block',fontSize:'18px',color:'#a7d5ff',overflowWrap:'anywhere'});
     detail.append(heading,when);
     if (entry.notes.length) { const notes = make('ul'); for (const note of entry.notes) notes.append(make('li',note)); detail.append(notes); }

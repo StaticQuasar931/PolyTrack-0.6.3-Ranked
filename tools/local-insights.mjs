@@ -81,5 +81,5 @@ export function createLocalInsights({storage,now=Date.now,revision=0}={}){
   if(durationMs!==undefined){row.durationSamples=count(row.durationSamples+1);row.durationMs=count(row.durationMs+durationMs);}
   dirty=true;flush();return true;
  }
- return {action,control,navigate,play,measure,predict,report,flush,observeUsage,observeVisible(ms){const row=data.revisions.find(r=>r.revision===revision);if(row){row.visibleMs=count(row.visibleMs)+Math.min(120000,count(ms));row.lastAt=now();dirty=true;flush();}},leave(){away=true;intent=null;}};
+ return {action,control,navigate,play,measure,predict,report,flush,observeUsage,usageSnapshot:()=>normalizeClientUsage(data.clientUsage,now()),observeVisible(ms){const row=data.revisions.find(r=>r.revision===revision);if(row){row.visibleMs=count(row.visibleMs)+Math.min(120000,count(ms));row.lastAt=now();dirty=true;flush();}},leave(){away=true;intent=null;}};
 }
