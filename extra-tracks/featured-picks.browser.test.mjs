@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
-let chromium; try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || '../tools/verifier/node_modules/playwright')); } catch {}
+let chromium; try {
+  const engines = require(process.env.PLAYWRIGHT_MODULE || '../tools/verifier/node_modules/playwright');
+  chromium = process.env.POLYTRACK_LAYOUT_BROWSER === 'firefox' ? engines.firefox : engines.chromium;
+} catch {}
 const sources = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'builder-contact.mjs'].map(name => [name, fs.readFileSync(new URL(name, import.meta.url), 'utf8')]));
 sources.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const font=fs.readFileSync(new URL('../forced_square.woff2',import.meta.url)).toString('base64');
@@ -246,6 +249,66 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     await page.keyboard.press('Escape');assert.equal(await contact.isHidden(),true);assert.equal(await search.inputValue(),'Everlasting');
     assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true);
     assert.deepEqual(unexpected,[],'no contact, Firebase or other external fetch is made');assert.deepEqual(errors,[]);
+    await page.evaluate(()=>window.catalog.destroy());
+  } finally {await browser.close();}
+});
+
+
+test('actual four UTC picks preserve cached PBs, canonical play links and keyboard tabs offline', {skip: !chromium}, async () => {
+  const {featuredPicks} = await import('./featured-picks.mjs');
+  const all = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8'));
+  const selected = featuredPicks(all, new Map(), Date.parse('2026-11-04T12:00:00Z')).map(pick => pick.entry);
+  assert.equal(selected.length, 4);
+  for (const entry of selected) {
+    assert.ok(fs.existsSync(new URL('../' + entry.trackPath, import.meta.url)));
+    assert.equal(new URL(entry.sourceUrl).protocol, 'https:');
+  }
+  const browser = await chromium.launch({headless: true});
+  try {
+    const page = await browser.newPage(); const unexpected = [], errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url()), name = url.pathname.slice(1);
+      if (url.origin !== 'http://featured.test') {unexpected.push(url.href);return route.abort();}
+      if (sources.has(name)) return route.fulfill({contentType:'text/javascript',body:sources.get(name)});
+      if (!name) return route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}</style><main id="root"></main>'});
+      if (all.some(entry => entry.thumbnailUrl === name)) return route.fulfill({contentType:name.endsWith('.webp')?'image/webp':'image/png',body:fs.readFileSync(new URL('../'+name,import.meta.url))});
+      unexpected.push(url.href);return route.abort();
+    });
+    await page.goto('http://featured.test/');await page.addStyleTag({content:css});
+    await page.evaluate(async ({entries, selected}) => {
+      const {mountExtraTracks}=await import('/catalog-ui.mjs'); window.pbReads=0;window.played=[];
+      window.catalog=mountExtraTracks({document,root:document.querySelector('#root'),entries,
+        now:()=>Date.parse('2026-11-04T12:00:00Z'),
+        getPersonalBest:entry=>{window.pbReads++;const index=selected.findIndex(item=>item.trackId===entry.trackId);return index===0?65432:index===1?{timeMs:54321}:null;},
+        isLoaded:entry=>entry.trackId===selected[2].trackId,onPlay:entry=>window.played.push(entry.trackId)});window.catalog.open();
+    },{entries:all,selected});
+    await page.evaluate(()=>document.fonts.ready);
+    const reads=await page.evaluate(()=>window.pbReads);
+    assert.equal(reads,all.length*2);
+    for(const [width,height] of [[1366,900],[768,1024],[390,844],[280,653],[844,390]]) {
+      await page.setViewportSize({width,height});
+      if(height<=700&&await page.locator('.sq-extra-featured-toggle').getAttribute('aria-expanded')==='false') await page.getByRole('button',{name:'Show spotlights',exact:true}).click();
+      if(width<=600) {
+        const first=page.getByRole('tab',{name:'Creator',exact:true});await first.focus();await page.keyboard.press('ArrowRight');
+        assert.equal(await page.getByRole('tab',{name:'Discover',exact:true}).getAttribute('aria-selected'),'true');
+        assert.equal(await page.locator('.sq-extra-count').innerText(),all.length+' of '+all.length+' tracks','arrow keys select lanes, not catalog pages');
+      }
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      assert.equal(await page.locator('.sq-extra-pick-reason').count(),4);
+      assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Your best'}).count(),2);
+      assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Imported - aim for your first finish.'}).count(),1);
+      if(process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path:process.env.EXTRA_TRACKS_SCREENSHOT_DIR+'/actual-four-'+width+'x'+height+'.png'});
+    }
+    assert.equal(await page.evaluate(()=>window.pbReads),reads,'tabs and resize do not reread PBs');
+    await page.setViewportSize({width:1366,height:900});
+    for(let index=0;index<4;index++) {
+      await page.evaluate(()=>window.catalog.open());
+      await page.locator('.sq-extra-featured>.sq-extra-pick').nth(index).locator('button').click();
+      await page.locator('.sq-extra-overlay').waitFor({state:'hidden'});
+    }
+    assert.deepEqual((await page.evaluate(()=>window.played)).sort(),selected.map(entry=>entry.trackId).sort());
+    assert.deepEqual(unexpected,[],'no external services or track downloads');assert.deepEqual(errors,[]);
     await page.evaluate(()=>window.catalog.destroy());
   } finally {await browser.close();}
 });

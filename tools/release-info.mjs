@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 277,
+  "number": 278,
   "version": "0.6.3",
-  "revision": 237,
+  "revision": 238,
   "notes": [
-    "Smoother PB displays in large Custom Tracks collections."
+    "More reliable replay uploads and faster publication of queued personal bests.",
+    "Extra Tracks picks show your best time and clearer play buttons."
   ],
-  "preparedAt": "2026-11-04T03:25:14.275Z",
-  "committedAt": "2026-11-04T03:27:48.000Z"
+  "preparedAt": "2026-11-04T22:37:39.937Z",
+  "committedAt": "2026-11-04T22:50:20.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

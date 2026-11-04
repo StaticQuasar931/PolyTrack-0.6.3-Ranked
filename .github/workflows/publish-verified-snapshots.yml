@@ -17,10 +17,15 @@ on:
         type: string
         default: ''
       overnight_native:
-        description: 'Bounded Nov4 one-time native processing of the single capture'
+        description: 'Bounded Nov5 one-time native processing of the single capture'
         required: false
         type: boolean
         default: false
+      expected_source_commit:
+        description: 'Tested verify-job source for the one-time overnight capture'
+        required: false
+        type: string
+        default: ''
       publication_changed:
         required: true
         type: boolean
@@ -177,19 +182,27 @@ jobs:
         if: steps.authority.outputs.mode == 'snapshot-native' || hashFiles('verification-ledger-current.json') != ''
         run: echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
       - name: Guard the one-time overnight capture
+        id: overnight_guard
         if: inputs.overnight_native
         env:
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
         run: |
           node --input-type=module <<'OVERNIGHT'
           import fs from 'node:fs';
           import {assertOvernightCapture} from './tools/overnight-snapshot-plan.mjs';
+          import {acquireOvernightCaptureClaim} from './tools/overnight-capture-claim.mjs';
           let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
+          if(!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_SOURCE_COMMIT||'')||process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT!==process.env.EXPECTED_SOURCE_COMMIT)throw Error('One-time capture checkout differs from tested source');
           assertOvernightCapture({mode:process.env.VERIFICATION_AUTHORITY,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),previousCaptureStartedAt:prior?.startedAt});
+          const claim=await acquireOvernightCaptureClaim({repository:process.env.GITHUB_REPOSITORY,sourceCommit:process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT,token:process.env.GITHUB_TOKEN});
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'admitted='+claim.acquired+'\n');
+          console.log(JSON.stringify({overnightClaim:claim}));
           OVERNIGHT
       - name: Capture public event assignments
         id: catalog
-        if: steps.coordination.outputs.reuse != 'true'
+        if: steps.coordination.outputs.reuse != 'true' && (!inputs.overnight_native || steps.overnight_guard.outputs.admitted == 'true')
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
         run: |
@@ -205,7 +218,7 @@ jobs:
       - name: Capture bounded public snapshots
         id: snapshot
         if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
-        # Changed/missing exact-bound normal replays only: normally 100, Nov4 one-off 2000; no profile scan.
+        # Changed/missing exact-bound normal replays only: normally 100, Nov5 one-off 2000; no profile scan.
         # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

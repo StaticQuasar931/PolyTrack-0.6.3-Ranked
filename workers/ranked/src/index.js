@@ -87,6 +87,9 @@ const RECONCILE_PENDING_ID_LIMIT = 200;
 const RECONCILE_FULL_TRACK_LIMIT = 512;
 const RECONCILE_JOB_DOCUMENT_BUDGET = 800000;
 const RECONCILE_TARGET_ID_BATCH = 16;
+// Mixed turns reserve 28 of the 42 work requests for the full build, including
+// two pages of fresh proof-queue writes. Final queue CAS uses the existing reserve.
+const RECONCILE_TARGETED_REQUEST_LIMIT = 14;
 const RECONCILE_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const RECONCILE_REBUILD_BACKOFF_BASE_MS = 15 * 60 * 1000;
 const RECONCILE_REBUILD_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
@@ -1197,6 +1200,23 @@ export function computeOverall(trackDocuments, priorEntries = [], betaTesterIds 
 async function stagePublication(env, documents) {
   for(let offset=0;offset<documents.length;offset+=32) await commitDocuments(env,documents.slice(offset,offset+32));
 }
+async function loadTrackPublicationEntries(env, snapshot, trackId) {
+  let pages;
+  return loadPublicationEntries(snapshot,'track',trackId,async(collection,id)=>{
+    // The loader validates the manifest before invoking this callback and still
+    // validates every immutable page. Batching changes requests, not proof reads.
+    if (!pages) {
+      const p=snapshot.pagination;
+      const ids=Array.from({length:p.pageCount},(_,page)=>publicationPageId('track',trackId,p.generation,page));
+      const base=documentBase(env).replace('https://firestore.googleapis.com/v1/','');
+      const payload=await firestoreRequest(env,':batchGet',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({documents:ids.map(pageId=>`${base}/${collection}/${pageId}`)})});
+      pages=new Map((Array.isArray(payload)?payload:[]).filter(item=>item.found).map(({found})=>
+        [found.name.split('/').at(-1),{data:decodeFields(found.fields||{})}]));
+    }
+    return pages.get(id);
+  });
+}
 async function canonicalTrackPage(env,trackId,afterName='',readTime='',limit=100) {
   const structuredQuery={from:[{collectionId:COLLECTIONS.raceResults}],limit,
     where:{fieldFilter:{field:{fieldPath:'trackId'},op:'EQUAL',value:{stringValue:trackId}}},
@@ -1268,20 +1288,7 @@ export async function rebuildTrack(env, trackId, identityOverride = null, {defer
       return build;
     }
     if (build.restart) throw Error('TRACK_BUILD_RESTART_REQUIRED');
-    let previousPages;
-    const previous = prior?.data?.pagination ? await loadPublicationEntries(prior.data,'track',trackId,async(c,id)=>{
-      // Immutable generation pages can share one request without weakening validation.
-      if(!previousPages){
-        const p=prior.data.pagination;
-        const ids=Array.from({length:p.pageCount},(_,page)=>publicationPageId('track',trackId,p.generation,page));
-        const base=documentBase(env).replace('https://firestore.googleapis.com/v1/','');
-        const payload=await firestoreRequest(env,':batchGet',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({documents:ids.map(id=>`${base}/${c}/${id}`)})});
-        previousPages=new Map((Array.isArray(payload)?payload:[]).filter(item=>item.found).map(({found})=>
-          [found.name.split('/').at(-1),{data:decodeFields(found.fields||{})}]));
-      }
-      return previousPages.get(id);
-    }) : prior?.data?.entries||[];
+    const previous = await loadTrackPublicationEntries(env,prior?.data,trackId);
     const byId = new Map(previous.map(row=>[row.accountId||row.userId,row]));
     const entries = rankTrustedTrackEntries(build.entries.map(row=>preservePublishedIdentity(row,byId.get(row.accountId))),trackId);
     return persistTrackSnapshot(env,trackId,entries,prior,{...build,deferPublication});
@@ -1350,7 +1357,7 @@ export async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, ca
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const snapshot = prior?.data;
   if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || (snapshot.complete !== true && snapshot.sourceComplete !== true)) return {fallback: true};
-  if (snapshot.pagination) snapshot.entries = await loadPublicationEntries(snapshot,'track',trackId,(c,id)=>readDocument(env,c,id));
+  if (snapshot.pagination) snapshot.entries = await loadTrackPublicationEntries(env,snapshot,trackId);
   const rows = resultIds.map(id => canonicalById.get(id)?.data);
   if (rows.some(row => !row || !structurallyValidResult(row, trackId))) return {fallback: true};
   for (let index = 0; index < rows.length; index++) {
@@ -1533,7 +1540,10 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   if(activeIndex>0)fullCandidates.unshift(...fullCandidates.splice(activeIndex,1));
   // One full build per invocation leaves room for checkpointing and targeted work.
   // Never run several capacity assemblies in the same fifty-subrequest budget.
-  const selected=[...fullCandidates.slice(0,1),...eligible.filter(id=>!fallbackOnly(id))].slice(0,RECONCILE_TRACK_BATCH);
+  const reservedFull=fullCandidates.slice(0,1);
+  // Targeted publications must precede the deferred full publication: its final
+  // root/meta/queue CAS ends this invocation, so siblings after it never ran.
+  const selected=[...eligible.filter(id=>!fallbackOnly(id)).slice(0,RECONCILE_TRACK_BATCH-reservedFull.length),...reservedFull];
   const targetGroups=[];let targetBudget=RECONCILE_TARGET_ID_BATCH;
   for(const trackId of selected){
     if(fullRebuildTracks.has(trackId)||!pendingResultIds[trackId]?.length)continue;
@@ -1563,11 +1573,17 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
           const accountId=resultId.slice(0,-trackId.length-1);
           if(!/^[A-Za-z0-9_.:-]{1,128}$/.test(accountId))throw new Error('INVALID_CANONICAL_PENDING_ID');
         }
-        result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments);
+        const requestBudget=env.__OVERALL_REQUEST_BUDGET,limit=requestBudget.limit;
+        if (reservedFull.length) requestBudget.limit=Math.min(limit,RECONCILE_TARGETED_REQUEST_LIMIT);
+        try { result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments); }
+        finally { requestBudget.limit=limit; }
       }else result={fallback:true};
       if(result.fallback) {
         // Persist the fallback so its cooldown skips targeted reads and selection too.
         pendingFullRebuildTrackIds.add(trackId);
+        // A newly discovered fallback must not take the active fixed-snapshot
+        // build's reserved turn. Its full intent remains durable for a later turn.
+        if (reservedFull.length && trackId!==reservedFull[0]) continue;
         if (rebuildCoolingDown(trackId)
           || !failedFullRebuilds[trackId] && Object.keys(failedFullRebuilds).length >= RECONCILE_REBUILD_FAILURE_LIMIT) continue;
         // Targeted merges can discover stale/missing boards after selection.
@@ -1596,6 +1612,9 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
       // Leave siblings queued; no later publication may escape this atomic handoff.
       if (attemptedFullRebuild) break;
     }catch(error){
+      // Capacity deferral is not a source failure. Keep its PBs/bindings queued
+      // without backoff, then spend the reserved budget on the full continuation.
+      if (!attemptedFullRebuild && reservedFull.length && error?.message==='OVERALL_REQUEST_BUDGET_EXHAUSTED') continue;
       if(activeFullRebuildTrackId===trackId)activeFullRebuildTrackId='';
       console.error('Canonical track reconciliation failed',trackId,String(error?.message||error));
       if (!/^FIRESTORE_(409|412)$/.test(String(error?.message || '')) &&

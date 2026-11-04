@@ -1511,7 +1511,7 @@ test('archive-alias PB lookup retains the existing normal snapshot board', async
   const catalog = JSON.parse(fs.readFileSync(new URL('catalog.json', import.meta.url), 'utf8'));
   const archive = catalog.find(row => row.archiveImport === true);
   assert.ok(archive);
-  const context = {entry: archive, extraTrackKnownIds: {}, activeRankedAccountId: () => 'offline-racer',
+  const context = {entry: archive, extraTrackKnownIds: {}, profileSnapshotResults: new Map(), localRaceRowsForTrack: () => [], activeRankedAccountId: () => 'offline-racer',
     readJsonStorage: () => ({}), unrankedExtraBestKey: 'unranked', extraTrackRaceRows: [],
     readTrackSnapshotCache: () => ({entries: [{accountId: 'offline-racer', timeMs: 12345, rank: 3}]}),
     canonicalRaceTimeMs: row => row.timeMs, cleanUserId: value => value};
@@ -1647,5 +1647,31 @@ test('all four discovery previews fail honestly and each lane plays only its can
     assert.equal(selected.at(-1), items.find(item => item.name === tag(tile, 'h3')[0].textContent));
   }
   assert.equal(new Set(selected.map(item => item.trackId)).size, 4);
+  api.destroy();
+});
+
+
+test('spotlight motivation reuses normalized cached PBs and imports, refreshing only with the catalog', async () => {
+  const items = Array.from({length: 6}, (_, n) => entry(n + 1, {tier: 'Curated', trackId: String(n).padStart(64, 'a')}));
+  let reads = 0, ms = 65432;
+  const {root, api} = fixture(items, {getPersonalBest: item => {reads++;return item === items[0] ? ms : item === items[1] ? {timeMs: ms} : item === items[2] ? NaN : item === items[3] ? {timeMs: -1} : null;}, isLoaded: () => true});
+  api.open();
+  assert.equal(reads, items.length * 2, 'mount and open each hydrate once, not once per spotlight');
+  function check() {
+    const cards = cls(root, 'sq-extra-card');
+    for (const tile of cls(root, 'sq-extra-featured')[0].children.filter(node => node.getAttribute('data-pick-kind'))) {
+      const card = cards.find(card => tag(card, 'h3')[0].textContent === tag(tile, 'h3')[0].textContent);
+      const best = cls(card, 'sq-extra-best')[0];
+      assert.equal(cls(tile, 'sq-extra-pick-progress')[0].textContent, best ? 'Your best ' + best.textContent.slice(5) : 'Imported - aim for your first finish.');
+      assert.equal(cls(tile, 'sq-extra-play')[0].textContent, best ? 'Race your best' : tile.getAttribute('data-pick-kind') === 'daily' ? 'Play spotlight' : 'Play track');
+      assert.ok(cls(tile, 'sq-extra-pick-reason')[0].textContent.length < 50);
+    }
+  }
+  check();
+  api.setSnapshotStatistics({generation: 1, statistics: {schemaVersion: 1, tracks: {}}});
+  assert.equal(reads, items.length * 2, 'snapshot updates reuse the PB cache');
+  ms = 54321; api.refresh(); check();
+  assert.equal(reads, items.length * 3);
+  assert.doesNotMatch(cls(root, 'sq-extra-featured')[0].textContent, /NaN|undefined|rewards|sponsored/);
   api.destroy();
 });

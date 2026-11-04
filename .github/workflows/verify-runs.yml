@@ -11,6 +11,14 @@ on:
         description: 'Catch up backlog (larger bounded Firebase budget; manual only)'
         type: boolean
         default: false
+      overnight_capture:
+        description: 'One-time November 5 capture-first run; no live verifier drain'
+        type: boolean
+        default: false
+      expected_source_commit:
+        description: 'Exact tested main commit required by an explicit overnight kickoff'
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -26,6 +34,7 @@ jobs:
       capture_requested_at: ${{ steps.capture_request.outputs.requested_at }}
       verification_authority: ${{ steps.authority.outputs.mode }}
       overnight_native: ${{ steps.authority.outputs.overnight }}
+      overnight_source_commit: ${{ steps.authority.outputs.source_commit }}
     if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 25 || 15 }}
@@ -44,23 +53,31 @@ jobs:
         env:
           POLYTRACK_VERIFICATION_AUTHORITY: ${{ vars.POLYTRACK_VERIFICATION_AUTHORITY }}
           CAPTURE_SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_OVERNIGHT: ${{ github.event_name == 'workflow_dispatch' && inputs.overnight_capture == true }}
+          MANUAL_CATCH_UP: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up == true }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
         run: |
           node --input-type=module <<'AUTHORITY'
           import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
           import {readRepositoryVerificationAuthority} from './tools/verifier/local-snapshot-verification.mjs';
           import {overnightSnapshotPlan} from './tools/overnight-snapshot-plan.mjs';
           const configuredMode=await readRepositoryVerificationAuthority(process.cwd(),process.env.POLYTRACK_VERIFICATION_AUTHORITY);
+          const manualOvernight=process.env.MANUAL_OVERNIGHT==='true';
+          if(manualOvernight&&(process.env.MANUAL_CATCH_UP==='true'||!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_SOURCE_COMMIT||'')||
+            execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.EXPECTED_SOURCE_COMMIT))throw Error('Explicit overnight kickoff requires its tested commit and cannot catch up live queues');
           let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
           const plan=overnightSnapshotPlan({eventName:process.env.GITHUB_EVENT_NAME,schedule:process.env.CAPTURE_SCHEDULE,
-            now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),configuredMode,previousCaptureStartedAt:prior?.startedAt});
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+plan.mode+'\novernight='+plan.overnight+'\nskip='+plan.skip+'\n');
+            now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),configuredMode,previousCaptureStartedAt:prior?.startedAt,manualOvernight});
+          const sourceCommit=plan.overnight?execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim():'';
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+plan.mode+'\novernight='+plan.overnight+'\nskip='+plan.skip+'\nsource_commit='+sourceCommit+'\n');
           console.log(JSON.stringify({overnightPlan:plan}));
           AUTHORITY
       - name: Check Extra catalog and trusted track pins
         run: node tools/extra-verification-check.mjs
       - name: Test bounded workflow release contracts
         # Offline checks only; no service-account credential is exposed to tests.
-        run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs
+        run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/overnight-kickoff.test.mjs
       - name: Check trusted engine before Firebase reads
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access
@@ -138,6 +155,7 @@ jobs:
       capture_requested_at: ${{ needs.verify.outputs.capture_requested_at }}
       verification_authority: ${{ needs.verify.outputs.verification_authority }}
       overnight_native: ${{ needs.verify.outputs.overnight_native == 'true' }}
+      expected_source_commit: ${{ needs.verify.outputs.overnight_source_commit }}
     # Forward only the existing privileged credential to bounded capture; no blanket inheritance.
     secrets:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

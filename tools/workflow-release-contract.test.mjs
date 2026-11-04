@@ -115,7 +115,8 @@ test('quarter-hour CDN recovery has typed opt-in dispatch/call modes, twenty-min
   assert.match(cdn,/schedule:\n(?:    #[^\n]*\n)*    - cron: '13,28,43,58 \* \* \* \*'/);
   assert.equal((cdn.match(/refresh_only:\n        description:[^\n]*\n        type: boolean\n        required: false\n        default: false/g)||[]).length,2);
   assert.match(job(cdn,'publish'),/timeout-minutes: 20/);
-  assert.doesNotMatch(cdn.replace(/^\s*#.*$/gm,''),/FIREBASE|secrets\.|secrets:|firestore\.googleapis|tools\/verifier\/|post-verification|update-public-snapshot\.mjs|sync-event-catalog\.mjs/i);
+  const offlineOnly=cdn.replace(/^\s*#.*$/gm,'').replace(/tools\/verifier\/(?:queue|publication-queue|scheduled-drain|proof-cache-file)\.test\.mjs/g,'OFFLINE_TEST');
+  assert.doesNotMatch(offlineOnly,/FIREBASE|secrets\.|secrets:|firestore\.googleapis|tools\/verifier\/|post-verification|update-public-snapshot\.mjs|sync-event-catalog\.mjs/i);
   const publish=step(cdn,'Validate immutable assets, publish pointer, and confirm CDN refresh');
   assert.match(publish,/id: publication/);
   assert.match(job(cdn,'publish'),/outputs:\n      cdn_status: \$\{\{ steps.publication.outputs.cdn_status \}\}/);
@@ -220,6 +221,14 @@ test('queue and publication regression gates run offline before verifier preflig
  assert.match(guard,/tools\/verifier\/scheduled-drain.test.mjs tools\/verifier\/proof-cache-file.test.mjs/);
  assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
  assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
+});
+
+test('source pushes check the real queue gate before CDN publication, without adding quota work to recovery',()=>{
+ const gate=step(cdn,'Test verification queue contracts on source updates');
+ assert.match(gate,/if: github.event_name == 'push'/);
+ for(const file of ['tools/verifier/queue.test.mjs','tools/verifier/publication-queue.test.mjs','tools/verifier/scheduled-drain.test.mjs','tools/verifier/proof-cache-file.test.mjs','workers/ranked/test/event-preflight-cost.test.js'])assert.ok(gate.includes(file));
+ assert.doesNotMatch(gate,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|secrets\./);
+ assert.ok(cdn.indexOf('name: Test verification queue contracts')<cdn.indexOf('name: Validate immutable assets'));
 });
 
 

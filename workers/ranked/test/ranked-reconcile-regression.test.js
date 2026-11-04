@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {reconcileCanonicalChanges} from '../src/index.js';
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
-import {verificationKey} from '../src/verification.js';
+import {verificationKey, VERIFICATION_COLLECTION} from '../src/verification.js';
 
 const base = 'projects/polytrack-052/databases/(default)/documents/';
 const jobPath = '0.6.2_s1_worker_jobs/canonical_reconcile_v2';
@@ -89,6 +89,19 @@ function fixture({tracks, discover = false, failing = new Set()}) {
 }
 
 const sourceScans = f => f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length;
+function assertWaitingProofs(f, track, accounts) {
+  const entries=f.data.get(`${boards}/${track}`).entries;
+  assert.deepEqual(entries.map(entry=>entry.accountId).sort(),[...accounts].sort());
+  for(const account of accounts){
+    const entry=entries.find(entry=>entry.accountId===account);
+    const slot=f.data.get(`${VERIFICATION_COLLECTION}/${track}`).slots[account];
+    assert.equal(entry.timeMs,row(track,account).timeMs);
+    assert.equal(entry.runVerified,false,'queue progress cannot fabricate verified credit');
+    assert.equal(entry.integrityVerified,false,'this fixture has no valid replay hash');
+    assert.equal(slot.key,verificationKey(row(track,account)));
+    assert.equal(slot.status,'waiting','missing proof remains queued for verification');
+  }
+}
 async function drainRetainedTargets(f, failed = []) {
   for (let pass=0;pass<20;pass++) {
     if (f.job().pendingTrackIds.every(id=>failed.includes(id))) return;
@@ -107,19 +120,35 @@ test('legacy backfill keeps full-publication work across one-full-build passes',
   assert.deepEqual([...f.job().pendingTrackIds].sort(), [...tracks].sort());
   assert.deepEqual(f.job().pendingFullRebuildTrackIds,tracks.slice(1));
   assert.deepEqual(f.job().pendingResultIds[tracks[0]],[resultId(row(tracks[0]))]);
+  const cursors={cursorIngestedAt:f.job().cursorIngestedAt,cursorDocumentId:f.job().cursorDocumentId,
+    backfillDocumentId:f.job().backfillDocumentId};
   for(let pass=1;pass<tracks.length;pass++) {
-    const before=sourceScans(f);
-    await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
+    const before=sourceScans(f),callStart=f.calls.length;
+    const result=await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
     assert.equal(sourceScans(f)-before,1);
+    assert.equal(result.targeted,1,'the previous completed track gets its fresh keyed pass while the next full build progresses');
+    assert.equal(f.job().pendingResultIds[tracks[pass-1]],undefined);
+    assert.deepEqual(Object.keys(f.job().pendingResultIds).sort(),tracks.slice(pass).sort());
+    for(const track of tracks.slice(pass))assert.deepEqual(f.job().pendingResultIds[track],[resultId(row(track))]);
+    assert.deepEqual([...f.job().pendingTrackIds].sort(),tracks.slice(pass).sort());
+    assert.deepEqual(f.job().pendingFullRebuildTrackIds,tracks.slice(pass+1));
+    assert.ok(f.calls.slice(callStart).includes(`/${VERIFICATION_COLLECTION}/${tracks[pass-1]}`),'keyed discharge reads the current proof queue');
+    assertWaitingProofs(f,tracks[pass-1],['current-racer','legacy-racer']);
+    for(const [key,value] of Object.entries(cursors))assert.equal(f.job()[key],value);
   }
   const published = f.data.get(`${boards}/${tracks[4]}`);
   assert.deepEqual(published.entries.map(r => r.accountId).sort(), ['current-racer', 'legacy-racer'],
     'the deferred track must include historical racers, not only the changed-result row');
   assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
-  assert.equal(f.job().pendingTrackIds.length,5,'completed snapshots retain every changed target for a fresh keyed pass');
+  assert.deepEqual(f.job().pendingTrackIds,[tracks.at(-1)],'only the last completed full snapshot still awaits its fresh keyed pass');
+  assert.deepEqual(f.job().pendingResultIds,{[tracks.at(-1)]:[resultId(row(tracks.at(-1))) ]});
+  const scans=sourceScans(f);
   await drainRetainedTargets(f);
+  assert.equal(sourceScans(f),scans,'draining the last retained target must not repeat a full scan');
   assert.deepEqual(f.job().pendingTrackIds, []);
   assert.deepEqual(f.job().pendingResultIds, {});
+  assert.deepEqual(f.job().pendingResultBindings,{});
+  for(const track of tracks)assertWaitingProofs(f,track,['current-racer','legacy-racer']);
   assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 5);
 });
 
@@ -198,15 +227,31 @@ test('known full build and newly discovered fallback share the same allowance', 
   const f = fixture({tracks});
   f.job().pendingFullRebuildTrackIds = [tracks[0]];
   f.data.get(`${boards}/${tracks[1]}`).schemaVersion = 5;
-  await reconcileCanonicalChanges(f.env, {scanResults:false, now});
+  const first=await reconcileCanonicalChanges(f.env, {scanResults:false, now});
   assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 1);
-  assert.deepEqual([...f.job().pendingTrackIds].sort(), [...tracks].sort());
-  assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
-  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length, 0, 'healthy sibling is deferred without losing its binding');
-  assert.equal(f.job().pendingResultBindings[resultId(row(tracks[2]))],verificationKey(row(tracks[2])));
-  await drainRetainedTargets(f);
+  assert.equal(first.targeted,1);
+  assert.equal(first.rebuilt,2,'healthy target and reserved full build both progress');
+  assert.deepEqual([...f.job().pendingTrackIds].sort(),tracks.slice(0,2).sort());
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds,[tracks[1]],'new fallback retains full intent without taking the reserved turn');
+  assert.deepEqual(f.job().pendingResultIds,Object.fromEntries(tracks.slice(0,2).map(track=>[track,[resultId(row(track))]])));
+  assert.deepEqual(f.job().pendingResultBindings,Object.fromEntries(tracks.slice(0,2).map(track=>[resultId(row(track)),verificationKey(row(track))])));
+  assertWaitingProofs(f,tracks[2],['current-racer']);
+  assertWaitingProofs(f,tracks[0],['current-racer','legacy-racer']);
+  assert.equal(f.data.get(`${boards}/${tracks[1]}`).schemaVersion,5,'deferred fallback remains untouched');
+  assert.equal(f.data.has(`${VERIFICATION_COLLECTION}/${tracks[1]}`),false);
+  assert.deepEqual(f.job().failedFullRebuilds,{},'capacity deferral must not create failure backoff');
+  const second=await reconcileCanonicalChanges(f.env,{scanResults:false,now:now+1});
+  assert.equal(second.targeted,1,'known full build gets its keyed follow-up while the fallback completes');
+  assert.deepEqual(f.job().pendingFullRebuildTrackIds,[]);
+  assert.deepEqual(f.job().pendingTrackIds,[tracks[1]]);
+  assert.deepEqual(f.job().pendingResultBindings,{[resultId(row(tracks[1]))]:verificationKey(row(tracks[1]))});
+  assertWaitingProofs(f,tracks[1],['current-racer','legacy-racer']);
+  const third=await reconcileCanonicalChanges(f.env,{scanResults:false,now:now+2});
+  assert.equal(third.targeted,1);
   assert.equal(sourceScans(f),2,'only known-full and new-fallback need full scans');
-  assert.equal(f.data.get(`${boards}/${tracks[2]}`).entries.length,1,'healthy sibling eventually progresses');
+  assert.deepEqual(f.queries.map(q=>q.where.fieldFilter.value.stringValue),tracks.slice(0,2));
+  assertWaitingProofs(f,tracks[2],['current-racer']);
   assert.deepEqual(f.job().pendingTrackIds,[]);
+  assert.deepEqual(f.job().pendingResultIds,{});
   assert.deepEqual(f.job().pendingResultBindings,{});
 });

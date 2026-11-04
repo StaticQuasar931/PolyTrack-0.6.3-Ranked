@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 277,
+    "number": 278,
     "version": "0.6.3",
-    "revision": 237,
+    "revision": 238,
     "notes": [
-      "Smoother PB displays in large Custom Tracks collections."
+      "More reliable replay uploads and faster publication of queued personal bests.",
+      "Extra Tracks picks show your best time and clearer play buttons."
     ]
   },
   "entries": [
+    {
+      "number": 277,
+      "title": "Bounded Visible Custom Track PB Loading",
+      "commit": "52c3fb786c160f2103402c3bf72df74236c4a611",
+      "committedAt": "2026-11-04T03:27:48.000Z",
+      "notes": [
+        "Smoother PB displays in large Custom Tracks collections."
+      ]
+    },
     {
       "number": 276,
       "title": "Reliable Custom and Extra Track PB Displays",
@@ -207,15 +217,6 @@
       "notes": [
         "Cleaner settings and clearer unplayed-track counts.",
         "Consistent event placements and a reliable weekly card."
-      ]
-    },
-    {
-      "number": 247,
-      "title": "Snapshot Stability",
-      "commit": "603265e84dd559de606b08e738efa799a29b0bba",
-      "committedAt": "2026-10-30T23:46:30.000Z",
-      "notes": [
-        "More reliable snapshot and weekly event updates."
       ]
     }
   ],

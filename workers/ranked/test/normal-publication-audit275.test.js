@@ -492,27 +492,51 @@ test('audit275: repeated metadata bumps never overwrite a newer preimage or rest
   assert.equal(f.queries.filter(q => !q.readTime).length,1);
 });
 
-test('audit275: targeted sibling is retained with its binding then progresses next invocation', async t => {
+test('audit275: targeted sibling publishes with fresh proof before full continuation and is discharged once', async t => {
   const f = await fixture(t), sibling = 'sibling-track';
   const row = {...f.rows[0], accountId:'sibling-racer', trackId:sibling};
   const id = row.accountId + '_' + sibling, binding = verificationKey(row);
   f.set(results + '/' + id,row);
+  const proof={...pendingSlot(row),status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION};
+  f.set(VERIFICATION_COLLECTION+'/'+sibling,{trackId:sibling,slots:{[row.accountId]:proof}});
   f.set(boards + '/' + sibling,{trackId:sibling,entries:[],complete:true,sourceComplete:true,
     totalEntries:0,revision:1,signature:'empty-sibling',schemaVersion:6,algorithmVersion:'participation-v8-s1'});
   f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[track,sibling],pendingResultIds:{[sibling]:[id]},
     pendingResultBindings:{[id]:binding},opaqueCursorMarker:'preserve'});
-  await f.finishFull();
-  assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[sibling]);
-  assert.deepEqual(f.data.get(reconcileKey).pendingResultIds[sibling],[id]);
-  assert.equal(f.data.get(reconcileKey).pendingResultBindings[id],binding);
-  assert.equal(f.data.get(boards + '/' + sibling).entries.length,0);
   const result=await reconcileCanonicalChanges(f.env,{scanResults:false});
   assert.equal(result.targeted,1);
-  assert.equal(f.data.get(boards + '/' + sibling).entries[0].accountId,row.accountId);
+  const entry=f.data.get(boards+'/'+sibling).entries[0];
+  assert.equal(entry.accountId,row.accountId);
+  assert.equal(entry.timeMs,row.timeMs);
+  assert.equal(entry.integrityVerified,true);
+  assert.equal(entry.runVerified,true,'early publication still requires its exact private proof');
+  assert.equal(proof.key,binding);
+  assert.ok(f.reads.some(read=>read.key===results+'/'+id&&!read.readTime),'target reads fresh canonical data');
+  assert.ok(f.reads.some(read=>read.key===VERIFICATION_COLLECTION+'/'+sibling&&!read.readTime),'target reads current private proof');
+  assert.equal(f.data.get(buildKey).sourceCount,100);
+  assert.equal(f.data.get(buildKey).complete,false,'target progresses before the full build finishes');
+  assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[track]);
+  assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[track]);
+  assert.deepEqual(f.data.get(reconcileKey).pendingResultIds,{});
+  assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
+  const siblingRevision=f.data.get(boards+'/'+sibling).revision;
+  await f.finishFull();
   assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[]);
+  assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
+  assert.equal(f.data.get(boards+'/'+sibling).revision,siblingRevision,'full continuation does not republish the discharged sibling');
+  assert.equal(f.stats.canonicalRows,population);
+  assert.equal(f.stats.fixedProof,population);
+  assert.equal(f.stats.currentProof,population);
+  assert.equal(f.queries.filter(q=>!q.readTime).length,1);
+  assert.ok(f.queries.every(q=>q.trackId===track),'the targeted sibling never receives a full scan');
+  const before={...f.stats};
+  assert.equal((await reconcileCanonicalChanges(f.env,{scanResults:false})).targeted,0);
+  assert.equal(f.stats.reads-before.reads,1);
+  assert.equal(f.stats.writes-before.writes,0);
   assert.equal(f.data.get(reconcileKey).opaqueCursorMarker,'preserve');
   assert.equal(f.data.get(reconcileKey).cursorDocumentId,'preserve-cursor');
   assert.equal(f.data.get(reconcileKey).backfillDocumentId,'preserve-backfill');
+  assert.deepEqual(f.errors,[]);
 });
 
 test('audit275: unchanged single-page canonical rebuild checkpoints its no-op without republishing', async t => {
@@ -567,8 +591,8 @@ for(const count of [201,300,512])test('audit275: '+count+' legacy global full re
     pendingResultIds:{[track]:[id]},pendingResultBindings:{[id]:binding}});
   let maxRequests=0,maxReads=0,maxWrites=0;
   for(let pass=0;pass<count;pass++) {
-    const before={...f.stats},queries=f.queries.length;
-    await reconcileCanonicalChanges(f.env,{scanResults:false});
+    const before={...f.stats},queries=f.queries.length,readStart=f.reads.length;
+    const result=await reconcileCanonicalChanges(f.env,{scanResults:false});
     maxRequests=Math.max(maxRequests,f.stats.requests-before.requests);
     maxReads=Math.max(maxReads,f.stats.reads-before.reads);
     maxWrites=Math.max(maxWrites,f.stats.writes-before.writes);
@@ -577,20 +601,41 @@ for(const count of [201,300,512])test('audit275: '+count+' legacy global full re
     assert.equal(f.queries.length-queries,1,'each turn performs exactly one full source query');
     assert.equal(f.data.get(reconcileKey).forceFullRebuildAll,false,'explicit flags are not folded back into global force at 200');
     assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,ids.slice(pass+1));
-    assert.deepEqual(f.data.get(reconcileKey).pendingResultIds[track],[id]);
-    assert.equal(f.data.get(reconcileKey).pendingResultBindings[id],binding);
+    assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[...ids.slice(pass+1),...(pass===0?[track]:[])]);
+    if(pass===0){
+      assert.equal(result.targeted,0);
+      assert.deepEqual(f.data.get(reconcileKey).pendingResultIds[track],[id]);
+      assert.equal(f.data.get(reconcileKey).pendingResultBindings[id],binding);
+    }else{
+      assert.equal(result.targeted,pass===1?1:0,'retained keyed work progresses on the next turn, not after the entire full queue');
+      assert.deepEqual(f.data.get(reconcileKey).pendingResultIds,{});
+      assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
+      assert.equal(f.data.get(boardKey).entries[0].runVerified,true);
+      const proofKey=VERIFICATION_COLLECTION+'/'+verificationShardId(track,f.rows[0].accountId);
+      assert.equal(f.data.get(proofKey).slots[f.rows[0].accountId].key,binding);
+      if(pass===1){
+        const freshReads=f.reads.slice(readStart).filter(read=>!read.readTime);
+        assert.ok(freshReads.some(read=>read.key===results+'/'+id));
+        assert.ok(freshReads.some(read=>read.key===proofKey),'keyed discharge uses the current proof, not the completed full snapshot');
+      }
+    }
   }
-  assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[track]);
-  const queries=f.queries.length;
+  assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[]);
+  const queries=f.queries.length,before={...f.stats};
   const last=await reconcileCanonicalChanges(f.env,{scanResults:false});
-  assert.equal(last.targeted,1);
-  assert.equal(f.queries.length,queries,'the completed primary gets a keyed merge, never another full scan');
+  assert.equal(last.targeted,0);
+  assert.equal(last.unchanged,true);
+  assert.equal(f.stats.reads-before.reads,1);
+  assert.equal(f.stats.writes-before.writes,0);
+  assert.equal(f.queries.length,queries,'completed work never starts another full scan');
+  assert.equal(f.queries.length,count);
   assert.equal(new Set(f.queries.map(q=>q.trackId)).size,count);
   assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[]);
   assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
   assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
   assert.equal(f.data.get(reconcileKey).cursorDocumentId,'preserve-cursor');
   assert.equal(f.data.get(reconcileKey).backfillDocumentId,'preserve-backfill');
+  assert.deepEqual(f.errors,[]);
   process.stdout.write('AUDIT275_LEGACY_CAPACITY '+JSON.stringify({count,maxRequests,maxReads,maxWrites,maxCheckpointBytes:f.maxCheckpointBytes()})+'\n');
 });
 
