@@ -6,6 +6,8 @@ import {join} from 'node:path';
 const require = createRequire(new URL('./verifier/package.json', import.meta.url));
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = await readFile(new URL('./site-updates.mjs', import.meta.url), 'utf8');
+const historySource = await readFile(new URL('./release-history.mjs', import.meta.url), 'utf8');
+const inlineSource = historySource.slice(0,historySource.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+'\n'+source.slice(source.indexOf('\n')+1).replace(/\bexport /g,'');
 const nativeBundle = await readFile(new URL('../main.bundle.js', import.meta.url), 'utf8');
 const controlStart = nativeBundle.lastIndexOf('.button {');
 const controlEnd = nativeBundle.indexOf('.button > img.button-icon', controlStart);
@@ -23,6 +25,7 @@ test('release UI keeps native hover, keyboard acknowledgement, live local age an
   await page.route('**/*', route => {
     const url = new URL(route.request().url());
     if (url.href === 'https://update-ui.test/') return route.fulfill({contentType: 'text/html', body: '<button id="play">Play</button><time id="help-age"></time>'});
+    if (url.href === 'https://update-ui.test/tools/release-history.mjs') return route.fulfill({contentType: 'text/javascript', body: historySource});
     if (url.href === 'https://update-ui.test/tools/site-updates.mjs') return route.fulfill({contentType: 'text/javascript', body: source});
     external.push(url.href); return route.abort();
   });
@@ -116,7 +119,7 @@ test('Google automatic launcher update reloads locally, bypasses its pointer cac
     external.push(url.href); return route.abort();
   });
   await page.goto('https://script.googleusercontent.com/userCodeAppPanel');
-  await page.addScriptTag({content: source.replace(/\bexport /g, '') + '\nwindow.updateAPI={installSiteUpdates};'});
+  await page.addScriptTag({content: inlineSource + '\nwindow.updateAPI={installSiteUpdates};'});
   await page.evaluate(async ({commit, indexSha256}) => {
     window.__polytrackAutomaticLoad = Promise.resolve(); window.safeToUpdate = false; window.fetchCount = 0;
     localStorage.setItem('saved-run', 'unchanged');
@@ -125,7 +128,7 @@ test('Google automatic launcher update reloads locally, bypasses its pointer cac
       fetch: async () => { fetchCount++; return {ok: true, json: async () => ({revision: 210})}; }});
     await updater.check();
   }, {commit, indexSha256});
-  const offer = page.getByRole('button', {name: 'Update available. Reload to update.', exact: true});
+  const offer = page.locator('button[data-site-update]');
   assert.equal(await offer.count(), 1); assert.equal(await page.locator('a[data-site-update]').count(), 0);
   await offer.click(); assert.equal(visits, 1);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('polytrack-automatic-release-v2')).checkedAt), 12345);

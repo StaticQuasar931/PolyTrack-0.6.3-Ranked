@@ -8,6 +8,8 @@ export function stampClientRelease(patch, index, revision) {
     .replace(/(events\/client\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(tools\/(?:firebase-usage|snapshot-update-check|partial-replay-selection|release-info|finish-presentation|help-controls|public-snapshot-client|record-placement|snapshot-metadata-recovery|ranked-live-snapshot|practice-history|practice-native|developer-diagnostics|practice-profile|profile-compact-presentation|local-diagnostics|local-insights|local-pb-lifecycle|leaderboard-latency-hook|opponent-presets|control-usage|kodub-practice-track|overall-local-controller|overall-local-projection|native-track-search|search-text|unique-profile-name|daily-activity-sync)\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(kodub-weekly\.mjs|tools\/firebase-auth-app\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
+    .replace(/(tools\/usage-analytics\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
+    .replace(/(installUsageAnalytics\(\{\s*document,\s*window,\s*revision:\s*)\d+/g, '$1'+revision)
     .replace(/(const extraCatalogRevision=)['"]\d+['"]/, `$1'${revision}'`);
   patch = patch.replace(/headers\.set\('X-PolyTrack-Revision', String\(\d+\)\)/g, `headers.set('X-PolyTrack-Revision', String(${revision}))`);
   patch = patch.replace(/createLocalInsights\(\{storage,revision:\d+\}\)/g, `createLocalInsights({storage,revision:${revision}})`);

@@ -5,6 +5,17 @@ import {stampClientRelease, stampEventClientRelease} from './site-release.mjs';
 const index = '<script src="polytrack_062_patch.js?v=44"></script>';
 const patch = "const eventsModuleUrl=new URL('./events/client.mjs',base).href;const extraCatalogRevision='40';import('filter-menu.mjs?v=44');import('site-updates.mjs?v=44');installSiteUpdates({revision:44});";
 
+test('usage analytics cache and reported revision follow every client release stamp',()=>{
+  const input=patch+"import('./tools/usage-analytics.mjs?v=238').then(module=>module.installUsageAnalytics({document,window,revision:238}));";
+  const result=stampClientRelease(input,index,239);
+  assert.match(result.patch,/usage-analytics\.mjs\?v=239/);
+  assert.match(result.patch,/installUsageAnalytics\(\{document,window,revision:239/);
+  assert.deepEqual(stampClientRelease(result.patch,result.index,239),result);
+  const next=stampClientRelease(result.patch,result.index,240);
+  assert.match(next.patch,/usage-analytics\.mjs\?v=240/);
+  assert.match(next.patch,/installUsageAnalytics\(\{document,window,revision:240/);
+});
+
 test('daily activity helper imports advance with the client release stamp',()=>{
   const input=patch+"import('./tools/daily-activity-sync.mjs?v=233');";
   const result=stampClientRelease(input,index,234);

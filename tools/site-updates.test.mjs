@@ -395,8 +395,8 @@ test('minimum policy is dormant when absent and boundary revisions remain suppor
 });
 
 test('unsupported client shows labelled native blue square dialog with fixed safe new-tab URL', async () => {
-  const h = harness({revision: 158, response: {...unsupported, url: 'javascript:evil()',
-    updateUrl: 'https://attacker.invalid', message: '<script>bad</script>'}});
+  const h = harness({revision: 158, endpoint: CANONICAL_SITE_VERSION_URL, fetch: async () => jsonResponse({...unsupported, url: 'javascript:evil()',
+    updateUrl: 'https://attacker.invalid', message: '<script>bad</script>'})});
   await h.handle.check();
   const dialog = h.document.dialog;
   assert.equal(dialog.open, true);
@@ -1105,3 +1105,38 @@ test('native dialog keyboard focus, mobile fit and new-tab navigation preserve t
       assert.deepEqual(await session(), before, 'disposal does not clear local data');
     } finally { await browser.close(); }
   });
+
+test('a visible badge rechecks idle at click even when canReload alone would allow it',async()=>{
+  const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();
+  let idle=true,reloads=0;document.defaultView.location={reload(){reloads++;}};
+  const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,isIdle:()=>idle,canReload:()=>true,fetch:async()=>jsonResponse({revision:44})});
+  await h.handle.check();idle=false;document.button.listeners.click();assert.equal(reloads,0);
+  idle=true;document.button.listeners.click();assert.equal(reloads,1);h.handle.dispose();
+});
+test('local compatibility reload failures restore the modal without changing unsupported policy',async()=>{
+  for(const failure of ['guard','reload']){
+    const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();
+    let reloads=0;document.defaultView.location={reload(){reloads++;throw Error('blocked reload');}};
+    const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,revision:158,response:unsupported,
+      canReload:()=>{if(failure==='guard')throw Error('blocked guard');return true;},fetch:async()=>jsonResponse(unsupported)});
+    await h.handle.check();const dialog=document.dialog,button=dialog.children[2].children[0];
+    assert.equal(button.textContent,'Reload to update');button.listeners.click({preventDefault(){}});
+    assert.equal(dialog.open,true);assert.equal(h.handle.getCompatibility().onlineAllowed,false);
+    assert.equal(reloads,failure==='guard'?0:1);h.handle.dispose();
+  }
+});
+
+test('blocked floating feedback watches only menu mutations, coalesces callbacks and disconnects after restoration',async()=>{
+ const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();
+ let idle=true,reloads=0,observer,disconnects=0;document.defaultView.location={reload(){reloads++;}};
+ document.defaultView.MutationObserver=class{constructor(callback){this.callback=callback;observer=this;}observe(target,options){assert.equal(target,document.body);assert.deepEqual(options.attributeFilter,['class','style','hidden','open']);}disconnect(){disconnects++;}};
+ const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,isIdle:()=>idle,canReload:()=>true,fetch:async()=>jsonResponse({revision:44})});
+ await h.handle.check();assert.equal(observer,undefined,'no observer or extra polling before a blocked click');
+ idle=false;document.button.listeners.click();assert.equal(document.button.textContent,'To update, return to main menu');
+ observer.callback([{type:'childList',target:{matches:()=>false},addedNodes:[{nodeType:3}],removedNodes:[]}]);
+ assert.equal([...h.timers.values()].filter(timer=>timer.delay===100).length,0,'HUD text changes do not schedule safety work');
+ observer.callback();observer.callback();assert.equal([...h.timers.values()].filter(timer=>timer.delay===100).length,1);
+ idle=true;const [id,timer]=[...h.timers].find(([,timer])=>timer.delay===100);h.timers.delete(id);timer.fn();
+ assert.equal(document.button.textContent,'Update available');assert.equal(disconnects,1);assert.equal(reloads,0);
+ idle=false;document.button.listeners.click();observer.callback();h.handle.dispose();assert.equal(h.timers.size,0);assert.equal(disconnects,2);
+});

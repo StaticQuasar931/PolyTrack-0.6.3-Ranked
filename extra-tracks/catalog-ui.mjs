@@ -1007,6 +1007,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const picks = featured.hidden ? [] : featuredPicks(all, popularityCounts, now());
     featured.hidden = featured.hidden || !picks.length;
     if (featured.hidden) return;
+    const note = make('p', 'sq-extra-featured-note', 'Featured picks');
+    note.title = 'Picks rotate daily or weekly. Player counts and ratings appear when available.';
+    note.title = 'Unavailable player counts and published ratings are omitted, never treated as zero. These are local editorial picks, not official events.';
     const tabs = make('div', 'sq-extra-featured-tabs');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Discover a track');
     const toggle = button('Show spotlights', 'sq-extra-featured-toggle', () => {
@@ -1055,8 +1058,10 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         image.src = imageUrl; artwork.append(image);
       }
       const content = make('div', 'sq-extra-pick-content');
-      const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.kind === 'critics' ? (pick.quality === null ? 'EDITORIAL LINE' : 'CRITICS LINE') : pick.kind === 'roulette' ? 'ROUTE ROULETTE' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
-      content.append(make('span', 'sq-extra-pick-label', label));
+      const label = pick.kind === 'daily' ? 'CREATOR SPOTLIGHT' : pick.kind === 'critics' ? (pick.quality === null ? 'EDITORIAL LINE' : 'HIGHLY RATED') : pick.kind === 'roulette' ? 'ROUTE ROULETTE' : pick.underplayed ? 'UNDERPLAYED DISCOVERY' : 'EDITORIAL DISCOVERY';
+      const heading = make('div', 'sq-extra-pick-heading');
+      heading.append(make('span', 'sq-extra-pick-label', label));
+      content.append(heading);
       const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
       author.title = author.textContent; content.append(author);
@@ -1064,27 +1069,31 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         : pick.kind === 'weekly' ? (pick.underplayed ? 'Give a less-raced route a try.' : 'Explore an editorial pick this week.')
         : pick.kind === 'critics' ? (pick.quality === null ? 'Try another editorial selection.' : 'Try a highly rated route.')
         : 'Take a different route today.';
-      content.append(make('p', 'sq-extra-pick-reason', reason));
+      tile.setAttribute('aria-description', reason);
       const progress = progressById.get(pick.entry.trackId);
       const best = progress?.best ?? null;
-      content.append(make('p', 'sq-extra-pick-progress', best !== null ? `Your best ${timeLabel(best)}`
-        : progress?.loaded ? 'Imported - aim for your first finish.' : 'Aim for your first finish.'));
+      const progressLabel = make('p', 'sq-extra-pick-progress', best !== null ? `Your best ${timeLabel(best)}`
+        : progress?.loaded ? 'Imported, no finish' : 'No finish yet');
       const metrics = make('p', 'sq-extra-pick-note');
-      metrics.textContent = pick.players === null ? 'Player count unknown' : pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players');
-      metrics.textContent += Number.isFinite(pick.quality) ? ' · Published ' + pick.quality.toFixed(1) + '/10' : ' · Rating unknown';
+      const knownStats = [];
+      if (pick.players !== null) knownStats.push(pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players'));
+      if (Number.isFinite(pick.quality)) knownStats.push('Published ' + pick.quality.toFixed(1) + '/10');
+      metrics.textContent = knownStats.join(' · ');
+      metrics.hidden = knownStats.length === 0;
       metrics.title = pick.underplayed ? 'Lowest exact racer-count quarter of eligible editorial tracks; unknown counts are excluded.' : pick.fallbackReason === 'coverage-unavailable' ? 'Editorial fallback: exact racer coverage is unavailable. Not an underplayed claim.' : 'Published review and snapshot information, not a local rating or live play count.';
-      content.append(metrics);
       const footer = make('div', 'sq-extra-pick-footer');
-      const play = button(best !== null ? 'Race your best' : pick.kind === 'daily' ? 'Play spotlight' : 'Play track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
-      play.setAttribute('aria-label', (pick.kind === 'daily' ? 'Play creator spotlight: ' : 'Explore discovery: ') + text(pick.entry.name, 'Untitled track'));
-      const period = make('time', 'sq-extra-pick-period', ['daily', 'roulette'].includes(pick.kind) ? 'Daily · UTC' : 'Weekly · UTC');
+      const play = button(best !== null ? 'Race again' : 'Play track', 'sq-extra-play', () => runAction('play', onPlay, pick.entry));
+      play.setAttribute('aria-label', play.textContent + ': ' + text(pick.entry.name, 'Untitled track') + ' (' + label.toLowerCase() + ')');
+      const period = make('time', 'sq-extra-pick-period', ['daily', 'roulette'].includes(pick.kind) ? 'Daily' : 'Weekly');
+      period.title = 'Next pick: ' + new Date(pick.endsAt).toLocaleString();
       period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
       period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
-      footer.append(play, period); content.append(footer);
+      heading.append(period);
+      footer.append(play, progressLabel); content.append(footer, metrics);
       if (focusedKind === pick.kind) focusTarget = play;
       tile.append(artwork, content); tiles.push(tile);
     }
-    featured.append(toggle, tabs, ...tiles); activate(picks.some(pick => pick.kind === activeSpotlight) ? activeSpotlight : picks[0].kind);
+    featured.append(note, toggle, tabs, ...tiles); activate(picks.some(pick => pick.kind === activeSpotlight) ? activeSpotlight : picks[0].kind);
     focusTarget?.focus({preventScroll: true});
   }
 

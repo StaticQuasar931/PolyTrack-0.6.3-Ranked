@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 278,
+    "number": 279,
     "version": "0.6.3",
-    "revision": 238,
+    "revision": 239,
     "notes": [
-      "More reliable replay uploads and faster publication of queued personal bests.",
-      "Extra Tracks picks show your best time and clearer play buttons."
+      "Clearer update buttons and release history with local dates.",
+      "Smoother main-menu entrance and more compact Extra Tracks picks."
     ]
   },
   "entries": [
+    {
+      "number": 278,
+      "title": "Reduce redundant cloud work and guard overnight snapshot capture",
+      "commit": "f605e6b430d6b0f1fc91f69467d0e00a19ca78d1",
+      "committedAt": "2026-11-04T22:50:20.000Z",
+      "notes": [
+        "More reliable replay uploads and faster publication of queued personal bests.",
+        "Extra Tracks picks show your best time and clearer play buttons."
+      ]
+    },
     {
       "number": 277,
       "title": "Bounded Visible Custom Track PB Loading",
@@ -207,16 +217,6 @@
       "notes": [
         "Better phone-landscape rankings and Settings spacing.",
         "Settings controls stay clear of notches and home indicators."
-      ]
-    },
-    {
-      "number": 248,
-      "title": "UI Consistency",
-      "commit": "83ac2ba5514b4bfd497dbd2f4688e449757d3ded",
-      "committedAt": "2026-10-31T00:28:16.000Z",
-      "notes": [
-        "Cleaner settings and clearer unplayed-track counts.",
-        "Consistent event placements and a reliable weekly card."
       ]
     }
   ],

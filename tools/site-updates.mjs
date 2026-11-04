@@ -346,9 +346,9 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       for (const store of stores()) { try { if (store.getItem(previousKey) === 'acknowledged') return true; } catch {} }
       return false;
     }, releaseHistory);
-    if (updates > 0) {
+    if (updates > 1) {
       const count = document.createElement('small'); count.dataset.siteUpdatesSinceAck = '';
-      count.textContent = updates+' update'+(updates === 1 ? '' : 's')+' since your last acknowledged release';
+      count.textContent = updates+' newer updates';
       Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'}); description.append(count);
     }
     themeDialog(node, title, description);
@@ -450,6 +450,39 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
   let compatibility = null, pendingManifest = null;
   let oldCopyNotice = null, oldCopyDismissed = false, oldCopyCount = 0, oldCopyConfirmed = false;
+  let blockedUpdate = false, blockedObserver = null, blockedTimer = null;
+  const stopBlockedWatch = () => {
+    blockedObserver?.disconnect(); blockedObserver = null;
+    if (blockedTimer !== null) { unschedule(blockedTimer); blockedTimer = null; }
+  };
+  const blockedFeedback = () => {
+    blockedUpdate = true;
+    button.textContent = 'To update, return to main menu';
+    button.title = 'Your current game stays open. Return to the main menu, then click Update available.';
+    button.setAttribute('aria-label', button.textContent);
+    // Observe menu transitions only after an explicit blocked click; never poll or auto-reload.
+    const Observer = document.defaultView?.MutationObserver;
+    if (!blockedObserver && Observer) {
+      blockedObserver = new Observer((records = []) => {
+        // HUD clocks and leaderboard row churn are not menu transitions.
+        const surfaces='#ui,.menu-ui,.menu,.main-buttons-container,#overallLeaderboardPanel,.track-selection-ui,.track-info-ui,.settings-menu-ui,.editor-ui,.pause-screen-ui,.sq-extra-overlay,.sq-events-dialog,dialog';
+        if(records.length&&!records.some(record=>record.target===document.body||record.target?.matches?.(surfaces)||
+          record.type==='childList'&&[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches?.(surfaces)||node.querySelector?.(surfaces)))))return;
+        if (blockedTimer === null) blockedTimer = schedule(() => { blockedTimer = null; resume(); }, 100);
+      });
+      blockedObserver.observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['class','style','hidden','open']});
+    }
+  };
+  const refreshBlockedFeedback = () => {
+    if (!blockedUpdate || !button?.isConnected) return;
+    try {
+      if (!isVisible(document) || !isIdle(document) || !canReload()) return;
+      blockedUpdate = false; stopBlockedWatch();
+      button.textContent = 'Update available';
+      button.title = button.__updateTitle;
+      button.setAttribute('aria-label', 'Update available. Reload to update.');
+    } catch { /* Keep the explicit safe-menu instruction. */ }
+  };
   const clearOldCopyNotice = () => {
     const node = oldCopyNotice; oldCopyNotice = null;
     if (!node) return;
@@ -513,6 +546,19 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     offlineMinimum = null;
     publish({ onlineAllowed: true, revision, latestRevision: null, minimumSupportedRevision: null, reason }, recover);
   };
+  const reloadInPlace = (event, launcherCommit, ownDialog = null) => {
+    const restore = () => {
+      try { if (ownDialog?.isConnected) { ownDialog.showModal(); ownDialog.querySelector?.('button')?.focus(); } } catch { /* Keep the current session. */ }
+    };
+    try {
+      // The updater's own modal is not an unsaved game. All other parent guards remain authoritative.
+      ownDialog?.close();
+      if (!isVisible(document) || !isIdle(document) || !canReload()) { event?.preventDefault(); restore(); return false; }
+      if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
+      document.defaultView?.location?.reload();
+      return true;
+    } catch { event?.preventDefault(); restore(); return false; }
+  };
   const applyCompatibility = (data) => {
     // The optional manifest field is dormant when absent. No remote navigation URL is accepted.
     const minimum = data.minimumSupportedRevision;
@@ -542,16 +588,23 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       title.textContent = 'Update needed for online play';
       const description = document.createElement('p');
       description.id = 'pt-site-compatibility-description';
-      description.textContent = 'This version is no longer supported for online play. Open the updated game in a new tab, or stay here offline. Your current session will not reload.';
+      const launcherCommit = automaticLauncherCommit(document);
+      const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
+      description.textContent = reloadHere
+        ? 'This version is no longer supported for online play. Reload to update when you are at the main menu, or stay here offline. Your saved runs stay on this device.'
+        : 'This version is no longer supported for online play. Open the updated game in a new tab, or stay here offline. Your current session will not reload.';
       themeDialog(node, title, description);
       const actions = document.createElement('div');
       Object.assign(actions.style, { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '10px' });
-      const open = document.createElement('a');
-      open.href = UPDATED_GAME_URL;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
-      open.textContent = 'Open updated game';
-      open.setAttribute('aria-label', 'Open updated game (opens in a new tab)');
+      const open = document.createElement(reloadHere ? 'button' : 'a');
+      if (reloadHere) {
+        open.type = 'button'; open.textContent = 'Reload to update';
+        open.addEventListener('click', event => reloadInPlace(event, launcherCommit, node));
+      } else {
+        open.href = UPDATED_GAME_URL; open.target = '_blank'; open.rel = 'noopener noreferrer';
+        open.textContent = 'Open updated game';
+        open.setAttribute('aria-label', 'Open updated game (opens in a new tab)');
+      }
       themeControl(open);
       const offline = document.createElement('button');
       offline.type = 'button';
@@ -578,6 +631,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     publish(state);
   };
   const resume = () => {
+    refreshBlockedFeedback();
     refreshOldCopyNotice();
     if (disposed || !pendingManifest) return;
     try {
@@ -587,7 +641,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       // Invalid policy must not suppress an otherwise valid optional update offer.
       try { applyCompatibility(data); } catch { failOpen(); }
       oldCopyConfirmed = false;
-      if (data.revision <= revision) { clearOldCopyNotice(); button?.remove(); button = null; return; }
+      if (data.revision <= revision) { clearOldCopyNotice(); stopBlockedWatch(); blockedUpdate = false; button?.remove(); button = null; return; }
       const launcherCommit = automaticLauncherCommit(document);
       const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
       const minimum = data.minimumSupportedRevision;
@@ -602,17 +656,15 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       button.setAttribute('aria-label', reloadHere ? 'Update available. Reload to update.' : 'Update available. Open updated game (opens in a new tab).');
       button.title = launcherCommit ? 'Reload this launcher to check the latest CDN release. Your saved runs stay here.' :
         reloadHere ? 'Reload this page when you are ready.' : 'Open the official updated game. This copy and your current session will stay open.';
+      button.__updateTitle = button.title;
       button.dataset.siteUpdate = 'available';
       themeControl(button);
       Object.assign(button.style, { position: 'fixed', right: '16px', bottom: '16px', maxWidth: 'calc(100vw - 32px)',
         zIndex: '2147483647', fontFamily: 'ForcedSquare, sans-serif' });
       button.addEventListener('click', event => {
         try {
-          if (!isVisible(document) || !canReload()) { event?.preventDefault(); return; }
-          if (reloadHere) {
-            if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
-            document.defaultView?.location?.reload();
-          }
+          if (reloadHere) { if (!reloadInPlace(event, launcherCommit)) blockedFeedback(); return; }
+          if (!isVisible(document) || !isIdle(document) || !canReload()) { event?.preventDefault(); return; }
         } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
@@ -703,6 +755,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   const handle = Object.freeze({ check, resume, getCompatibility: () => ({ ...compatibility }), dispose() {
     if (disposed) return;
     disposed = true;
+    stopBlockedWatch();
     clearOldCopyNotice();
     document.removeEventListener('visibilitychange', onVisibilityChange);
     document.defaultView?.removeEventListener('focus', resume);

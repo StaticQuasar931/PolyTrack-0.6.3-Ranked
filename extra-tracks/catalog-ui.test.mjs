@@ -130,7 +130,8 @@ test('four discovery lanes expose unknown ratings, wrap keyboard tabs and preser
   await tabs[3].dispatch('keydown', {key: 'ArrowRight'});
   assert.equal(document.activeElement, tabs[0]);
   assert.match(cls(root, 'sq-extra-pick-critics')[0].textContent, /EDITORIAL LINE/);
-  assert.ok(cls(root, 'sq-extra-pick-note').every(node => /Rating unknown/.test(node.textContent)));
+  assert.ok(cls(root, 'sq-extra-pick-note').every(node => node.hidden && !node.textContent));
+  assert.equal(cls(root, 'sq-extra-featured-note')[0].textContent, 'Featured picks');
   assert.doesNotMatch(root.textContent, /Rating 0\/10|Published 0/);
   assert.match(root.textContent, /official Kodub selection not established/);
   assert.match(root.textContent, /Selection date unknown/);
@@ -1450,7 +1451,7 @@ test('one local UTC timer refreshes open spotlights without disturbing cards and
   assert.equal(nextPick('daily'),'2026-11-02T00:00:00.000Z');
   assert.equal(nextPick('weekly'),'2026-11-02T00:00:00.000Z');
   assert.ok(tag(cls(root, 'sq-extra-pick-daily')[0], 'time')[0].title.includes(nextPick('daily')));
-  assert.match(cls(root, 'sq-extra-featured')[0].textContent, /Player count unknown/);
+  assert.equal(cls(root, 'sq-extra-featured-note')[0].textContent, 'Featured picks');
   const card = cls(root, 'sq-extra-card')[0];
   timestamp = Date.parse('2026-11-02T00:00:00.025Z');
   timers.clear(); timer.callback();
@@ -1613,12 +1614,12 @@ test('discovery cards use full-width uncropped art, native square styling and re
   assert.match(discovery, /\.sq-extra-featured>\.sq-extra-pick\{[^}]*grid-template-columns:minmax\(0,1fr\);grid-template-rows:auto 1fr/);
   assert.match(discovery, /border-radius:0/);
   assert.match(discovery, /border-top:4px solid var\(--spotlight-accent\)/);
-  assert.match(discovery, /\.sq-extra-pick-art\{[^}]*min-height:148px/);
-  assert.match(discovery, /\.sq-extra-pick-art img\{[^}]*height:128px;object-fit:contain/);
+  assert.match(discovery, /\.sq-extra-pick-art\{[^}]*min-height:112px/);
+  assert.match(discovery, /\.sq-extra-pick-art img\{[^}]*height:94px;object-fit:contain/);
   assert.match(discovery, /@media\(min-width:601px\) and \(max-width:1100px\)\{\.sq-extra-featured\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(discovery, /@media\(max-width:600px\)\{\s*\.sq-extra-featured\{grid-template-columns:minmax\(0,1fr\)/);
   assert.match(discovery, /\.sq-extra-featured-tab\{[^}]*min-height:44px/);
-  assert.match(discovery, /\.sq-extra-pick-art\{min-height:120px/);
+  assert.match(discovery, /\.sq-extra-pick-art\{min-height:96px/);
   assert.match(discovery, /data-mobile-active="false"\]\{display:none/);
   assert.doesNotMatch(discovery, /grid-template-columns:(?:64|80|88|100)px/);
   assert.doesNotMatch(discovery, /\.sq-extra-pick-period\{display:none/);
@@ -1641,7 +1642,8 @@ test('all four discovery previews fail honestly and each lane plays only its can
     await preview.dispatch('error');
     assert.equal(tag(tile, 'img').length, 0);
     assert.equal(cls(tile, 'sq-extra-preview-unavailable')[0].hidden, false);
-    assert.match(tile.textContent, /Player count unknown/);
+    assert.ok(cls(tile, 'sq-extra-pick-note')[0].hidden);
+    assert.doesNotMatch(tile.textContent, /Player count unknown|Rating unknown/);
     assert.doesNotMatch(tile.textContent, /0 players|Rating 0/);
     await click(cls(tile, 'sq-extra-play')[0]);
     assert.equal(selected.at(-1), items.find(item => item.name === tag(tile, 'h3')[0].textContent));
@@ -1662,9 +1664,12 @@ test('spotlight motivation reuses normalized cached PBs and imports, refreshing 
     for (const tile of cls(root, 'sq-extra-featured')[0].children.filter(node => node.getAttribute('data-pick-kind'))) {
       const card = cards.find(card => tag(card, 'h3')[0].textContent === tag(tile, 'h3')[0].textContent);
       const best = cls(card, 'sq-extra-best')[0];
-      assert.equal(cls(tile, 'sq-extra-pick-progress')[0].textContent, best ? 'Your best ' + best.textContent.slice(5) : 'Imported - aim for your first finish.');
-      assert.equal(cls(tile, 'sq-extra-play')[0].textContent, best ? 'Race your best' : tile.getAttribute('data-pick-kind') === 'daily' ? 'Play spotlight' : 'Play track');
-      assert.ok(cls(tile, 'sq-extra-pick-reason')[0].textContent.length < 50);
+      assert.equal(cls(tile, 'sq-extra-pick-progress')[0].textContent, best ? 'Your best ' + best.textContent.slice(5) : 'Imported, no finish');
+      assert.equal(cls(tile, 'sq-extra-play')[0].textContent, best ? 'Race again' : 'Play track');
+      assert.ok(cls(tile, 'sq-extra-play')[0].getAttribute('aria-label').startsWith(cls(tile, 'sq-extra-play')[0].textContent + ': '));
+      assert.ok(tile.getAttribute('aria-description').length < 50);
+      assert.equal(cls(tile, 'sq-extra-pick-reason').length, 0);
+      assert.ok(cls(tile, 'sq-extra-pick-footer')[0].contains(cls(tile, 'sq-extra-pick-progress')[0]));
     }
   }
   check();

@@ -85,6 +85,12 @@ export function checkReleaseInfo({root = fileURLToPath(new URL('../', import.met
   const metadataImports = [...patch.matchAll(/release-info\.mjs\?v=(\d+)/g)];
   if (!metadataImports.length || metadataImports.some(match => Number(match[1]) !== info.revision)) errors.push('Central release-info import cache key must match the client revision.');
   if (Number(/installSiteUpdates\(\{\s*revision:\s*(\d+)/.exec(patch)?.[1]) !== info.revision) errors.push('Loaded client revision is not stamped to the central revision.');
+  if(patch.includes('installUsageAnalytics(')){
+    const imports=[...patch.matchAll(/usage-analytics\.mjs\?v=(\d+)/g)];
+    if(!imports.length||imports.some(match=>Number(match[1])!==info.revision)||
+      Number(/installUsageAnalytics\(\{\s*document,\s*window,\s*revision:\s*(\d+)/.exec(patch)?.[1])!==info.revision)
+      errors.push('Usage analytics module and reported client revision must match the central revision.');
+  }
   const index = read('index.html');
   if (!index.includes('polytrack_062_patch.js?v=' + info.revision + '"') && !index.includes("polytrack_062_patch.js?v=" + info.revision + "'")) errors.push('Entry point cache revision does not match central client revision.');
   if (expectedNext === undefined && (!git('ls-tree', '--name-only', 'HEAD', '--', 'tools/release-info.mjs').trim() || git('diff', '--name-only', 'HEAD', '--', 'tools/release-info.mjs', 'polytrack_062_patch.js', 'index.html', 'site-version.json').trim())) errors.push('Commit the checked release metadata and stamped entry files before the pre-push check.');

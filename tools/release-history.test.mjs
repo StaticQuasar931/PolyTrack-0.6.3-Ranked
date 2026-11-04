@@ -39,11 +39,11 @@ test('bounded checked-in history matches real central release and never manufact
 test('compact archive preserves every recorded entry and note in both rendering paths',()=>{
   const html=renderReleaseHistory({release:RELEASE_INFO,now:base});
   assert.equal((html.match(/data-release-history-entry/g)||[]).length,20);
-  assert.match(html,/<summary>Earlier updates <small>20<\/small><\/summary>/);
+  assert.match(html,/<summary>Earlier updates<\/summary>/);
   assert.doesNotMatch(html,/release-history-coverage|Recent history only|Full recorded history/);
   assert.doesNotMatch(html,/recorded earlier updates|Older updates are not included|20 recorded/);
   const document=new Document(),dom=createReleaseHistory(document,{release:RELEASE_INFO,now:base});
-  assert.equal(dom.querySelector('summary').textContent,'Earlier updates (20)');
+  assert.equal(dom.querySelector('summary').textContent,'Earlier updates');
   assert.deepEqual(dom.children[1].children.map(node=>node.tag),['ol','button']);
   assert.equal(dom.querySelectorAll('[data-release-history-entry]').length,20);
   for(const [index,entry] of RELEASE_HISTORY.entries.entries()) {
@@ -168,7 +168,7 @@ test('installed notice shows a compact known acknowledgment count, never a first
   for(const [baseline,expected] of [[254,4],[263,3],[265,1],[200,null],[null,null]]){
     const store=storage();if(baseline)store.setItem('polytrack-site-update-ack-release-v1:'+baseline,'acknowledged');
     const h=notice({store});const count=h.dialog.querySelectorAll('small').find(node=>Object.hasOwn(node.dataset,'siteUpdatesSinceAck'));
-    assert.equal(count?.textContent,expected?expected+' update'+(expected===1?'':'s')+' since your last acknowledged release':undefined);
+    assert.equal(count?.textContent,expected>1?expected+' newer updates':undefined);
     h.handle.dispose();assert.equal(store.getItem('polytrack-site-update-ack-release-v1:266'),null);
   }
 });
@@ -212,4 +212,19 @@ test('browser fixture bundles parse offline and the static history UI has no net
   assert.match(rendered,/data-release-history/);
   assert.equal((rendered.match(/data-release-history-entry/g)||[]).length,20);
   assert.doesNotMatch(rendered,/Hover over the age|recorded earlier updates|Older updates are not included/);
+});
+
+test('entry hover dates use recorded local commit or preparation time, never a fabricated date',()=>{
+  for(const prepared of [false,true]){
+    const data=history(),entry=data.entries[0];
+    if(prepared){entry.preparedAt=entry.committedAt;delete entry.committedAt;}
+    const value=entry.committedAt??entry.preparedAt,label=prepared?'Prepared':'Committed',local=new Date(value).toLocaleString();
+    const html=renderReleaseHistory({release:release(),history:data,now:base});
+    assert.ok(html.includes('title="'+label+': '+local+'"'));
+    const document=new Document(),dom=createReleaseHistory(document,{release:release(),history:data,now:base});
+    assert.equal(dom.querySelector('[data-release-history-entry]').querySelector('summary').title,label+': '+local);
+    assert.equal(dom.querySelector('summary').textContent,'Earlier updates');
+    delete entry.committedAt;delete entry.preparedAt;
+    assert.equal(renderReleaseHistory({release:release(),history:data,now:base}),'','undated historical input is not assigned the current release date');
+  }
 });

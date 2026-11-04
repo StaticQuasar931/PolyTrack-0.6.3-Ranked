@@ -88,7 +88,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
               overflow: [...node.querySelectorAll('h3,p,button,time')].some(child => child.scrollWidth > child.clientWidth + 1)};
           });
           assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.height <= height, kind + ' selected card fits ' + width + 'x' + height);
-          assert.ok(bounds.imageHeight >= 120, kind + ' has a large phone image');
+          assert.ok(bounds.imageHeight >= 96 && bounds.imageHeight <= 100, kind + ' has a compact contained phone preview');
           assert.equal(bounds.overflow, false, kind + ' details do not overflow horizontally');
           assert.match(await tile.innerText(), /Created by/);
           await tile.locator('img').evaluateAll(nodes => Promise.all(nodes.map(image => image.decode().catch(() => {}))));
@@ -105,7 +105,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
         }));
         for (const card of cards) {
           assert.ok(card.left >= 0 && card.right <= width, 'all four desktop/tablet cards fit horizontally');
-          assert.ok(card.artWidth >= card.width - 4 && card.artHeight >= 148, 'desktop/tablet art is full-width and image-led');
+          assert.ok(card.artWidth >= card.width - 4 && card.artHeight >= 112 && card.artHeight <= 116, 'desktop/tablet art is full-width, contained and compact');
         }
         if (height <= 700) await page.getByRole('button', {name: 'Hide spotlights', exact: true}).click();
       }
@@ -118,7 +118,8 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
       tracks: Object.fromEntries(window.fixtureEntries.map(entry => [entry.trackId, {complete: true, players: 0, count: 0, totalEntries: 0}]))}}));
     assert.match(await page.locator('.sq-extra-featured').innerText(), /0 players/);
     await page.evaluate(() => window.catalog.setSnapshotStatistics({generation: 2, statistics: {schemaVersion: 1, tracks: {}}}));
-    assert.match(await page.locator('.sq-extra-featured').innerText(), /Player count unknown/);
+    assert.equal(await page.locator('.sq-extra-featured-note').innerText(), 'Featured picks');
+    assert.doesNotMatch(await page.locator('.sq-extra-featured').innerText(), /Player count unknown|Rating unknown/);
     assert.doesNotMatch(await page.locator('.sq-extra-featured').innerText(), /0 players|undefined|NaN/);
     if (process.env.EXTRA_TRACKS_SCREENSHOT) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT});
     await page.setViewportSize({width: 320, height: 568});
@@ -133,7 +134,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
     if (process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path: process.env.EXTRA_TRACKS_SCREENSHOT_DIR + '/featured-short-320x568.png'});
     await page.setViewportSize({width: 280, height: 844});
     await page.getByRole('tab', {name: 'Creator', exact: true}).click();
-    await page.getByRole('button', {name: /^Play creator spotlight:/}).click();
+    await page.getByRole('button', {name: /^Play track:.*\(creator spotlight\)$/}).click();
     assert.equal(await page.evaluate(() => window.played.length), 1);
     assert.ok(entries.some(entry => entry.trackId === undefined) === false);
     assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);
@@ -286,6 +287,7 @@ test('actual four UTC picks preserve cached PBs, canonical play links and keyboa
     await page.evaluate(()=>document.fonts.ready);
     const reads=await page.evaluate(()=>window.pbReads);
     assert.equal(reads,all.length*2);
+    const layouts = [];
     for(const [width,height] of [[1366,900],[768,1024],[390,844],[280,653],[844,390]]) {
       await page.setViewportSize({width,height});
       if(height<=700&&await page.locator('.sq-extra-featured-toggle').getAttribute('aria-expanded')==='false') await page.getByRole('button',{name:'Show spotlights',exact:true}).click();
@@ -295,12 +297,36 @@ test('actual four UTC picks preserve cached PBs, canonical play links and keyboa
         assert.equal(await page.locator('.sq-extra-count').innerText(),all.length+' of '+all.length+' tracks','arrow keys select lanes, not catalog pages');
       }
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-      assert.equal(await page.locator('.sq-extra-pick-reason').count(),4);
+      const cards = await page.locator('.sq-extra-featured>.sq-extra-pick:visible').evaluateAll(nodes => nodes.map(node => {
+        const box = node.getBoundingClientRect(), image = node.querySelector('figure').getBoundingClientRect();
+        const footer = node.querySelector('.sq-extra-pick-footer'), metrics = node.querySelector('.sq-extra-pick-note');
+        return {height:box.height,top:box.top,imageHeight:image.height,actionFirst:Boolean(footer.compareDocumentPosition(metrics)&Node.DOCUMENT_POSITION_FOLLOWING)};
+      }));
+      assert.equal(cards.length,width<=600?1:4);
+      assert.ok(cards.every(card=>card.actionFirst),'actions precede optional stats');
+      if(width===1366) {
+        assert.ok(cards.every(card=>card.height<=310),'four desktop picks stay compact');
+        assert.ok(cards.every(card=>Math.abs(card.top-cards[0].top)<1),'all four desktop picks share one row');
+      }
+      layouts.push({width,height,cards});
+      assert.equal(await page.locator('.sq-extra-pick-reason').count(),0);
+      assert.equal(await page.locator('.sq-extra-featured-note').count(),1);
       assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Your best'}).count(),2);
-      assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Imported - aim for your first finish.'}).count(),1);
+      assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Imported, no finish'}).count(),1);
       if(process.env.EXTRA_TRACKS_SCREENSHOT_DIR) await page.screenshot({path:process.env.EXTRA_TRACKS_SCREENSHOT_DIR+'/actual-four-'+width+'x'+height+'.png'});
     }
-    assert.equal(await page.evaluate(()=>window.pbReads),reads,'tabs and resize do not reread PBs');
+    if(process.env.EXTRA_TRACKS_SCREENSHOT_DIR) fs.writeFileSync(process.env.EXTRA_TRACKS_SCREENSHOT_DIR+'/compact-layout.json',JSON.stringify(layouts,null,2)+'\n');
+    await page.setViewportSize({width:390,height:844});
+    const firstTab=page.getByRole('tab',{name:'Creator',exact:true});
+    await firstTab.focus();await page.keyboard.press('End');
+    assert.equal(await page.getByRole('tab',{name:'Roulette',exact:true}).getAttribute('aria-selected'),'true');
+    await page.keyboard.press('Home');
+    assert.equal(await firstTab.getAttribute('aria-selected'),'true');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.locator('.sq-extra-pick-daily .sq-extra-play').evaluate(node=>node===document.activeElement),true);
+    await page.evaluate(()=>window.catalog.setSnapshotStatistics({generation:1,statistics:{schemaVersion:1,tracks:{}}}));
+    assert.equal(await page.locator('.sq-extra-pick-daily .sq-extra-play').evaluate(node=>node===document.activeElement),true,'stats refresh preserves focused play action');
+    assert.equal(await page.evaluate(()=>window.pbReads),reads,'tabs, resize and stats updates do not reread PBs');
     await page.setViewportSize({width:1366,height:900});
     for(let index=0;index<4;index++) {
       await page.evaluate(()=>window.catalog.open());

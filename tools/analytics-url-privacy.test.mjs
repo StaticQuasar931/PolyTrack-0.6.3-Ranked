@@ -58,3 +58,16 @@ for (const href of ['https://poly-track-0-6-3-rankeddd.vercel.app/', 'https://st
     assert.equal(queue.length,0);assert.equal(scripts.length,0);
   });
 }
+
+test('only the four explicitly owned Google script origins enable sanitized analytics',()=>{
+  const prefix='n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-';
+  for(let i=0;i<4;i++){
+    const {config}=runAnalytics('https://'+prefix+i+'lu-script.googleusercontent.com/userCodeAppPanel?userToken=private#secret','');
+    assert.equal(config.page_location,'https://'+prefix+i+'lu-script.googleusercontent.com/userCodeAppPanel');
+    assert.ok(!JSON.stringify(config).includes('private'));
+  }
+  for(const host of [prefix+'4lu-script.googleusercontent.com',prefix+'0lu-script.googleusercontent.com.evil.test','other-script.googleusercontent.com']){
+    const queue=[];const context={window:{dataLayer:queue},dataLayer:queue,location:new URL('https://'+host+'/'),document:{referrer:'',createElement:()=>({}),head:{appendChild(){assert.fail('unowned script');}}},URL,Date};
+    vm.runInNewContext(analyticsBlock,context);assert.equal(queue.length,0);assert.equal(context.window.__polytrackAnalyticsAllowed,false);
+  }
+});
