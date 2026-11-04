@@ -49,16 +49,17 @@ test('published verified PB is retained until a genuinely faster local PB exists
 });
 
 test('a submitted PB missing from the snapshot is not mislabeled device-only',()=>{
-  const local=[{accountId:'me',trackId:'summer1',timeMs:45,frames:45,replayHash:'exact-pb',uploadId:99}];
+  const replayHash='a'.repeat(64);
+  const local=[{accountId:'me',trackId:'summer1',timeMs:45,frames:45,replayHash,uploadId:99}];
   const context=finishContext([{accountId:'me',timeMs:55,frames:55,runVerified:true}],local);
   context.LOCAL_PB_RECONCILE_STATE_KEY='confirmations';
-  context.readJsonStorage=()=>({me:{confirmed:{summer1:JSON.stringify(['summer1',45,'exact-pb'])}}});
+  context.readJsonStorage=()=>({me:{confirmed:{summer1:JSON.stringify(['summer1',45,replayHash])}}});
   vm.runInContext(section('  function localPbSyncSignature(', '  function localPbHasAvailableReplay(')+
     section('  function runStatus(', '  function matchNativeResult('),context);
   const row=context.localTrackDisplayEntries('summer1',[{accountId:'me',timeMs:55,runVerified:true}],'me')[0];
   assert.equal(row.cloudConfirmed,true);assert.equal(row.runVerified,false);
   assert.equal(context.runStatus(row),'submitted');
-  local[0].replayHash='new-pb';
+  local[0].replayHash='b'.repeat(64);
   const changed=context.localTrackDisplayEntries('summer1',[{accountId:'me',timeMs:55}],'me')[0];
   assert.equal(changed.cloudConfirmed,false);assert.equal(context.runStatus(changed),'local');
 });

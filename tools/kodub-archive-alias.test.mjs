@@ -101,7 +101,9 @@ test('canonical archive PB display reads existing snapshot/local rows, never the
   const c=vm.createContext({extraTrackKnownIds:{},activeRankedAccountId:()=> 'racer',readJsonStorage:()=>assert.fail('Unranked bucket read'),
     unrankedExtraBestKey:'unranked',extraTrackRaceRows:[],cleanUserId:x=>x,canonicalRaceTimeMs:row=>row.timeMs,
     readTrackSnapshotCache:()=>({entries:[{accountId:'racer',timeMs:12345,rank:3},{accountId:'other',timeMs:1000,rank:1}]})});
-  vm.runInContext(extract('extraTrackPersonalBest'),c);
+  c.profileSnapshotResults=new Map();
+  c.localRaceRowsForTrack=id=>c.extraTrackRaceRows.filter(row=>row.trackId===id);
+  vm.runInContext(extract('savedTrackPersonalBest')+'\n'+extract('extraTrackPersonalBest'),c);
   for(const alias of aliases){const best=c.extraTrackPersonalBest(alias);assert.equal(best.timeMs,12345);assert.equal(best.place,3);}
   c.extraTrackRaceRows=[{accountId:'racer',trackId:aliases[0].trackId,timeMs:12000}];
   assert.equal(c.extraTrackPersonalBest(aliases[0]).timeMs,12000);

@@ -4,6 +4,7 @@ const STYLE_ID = 'sqRecordPlacementStyle';
 const NORMALIZED_TRACKS = new WeakMap();
 const PREPARED_AUTHORITATIVE_PLACEMENTS = new WeakSet();
 const OVERALL_PLACEMENT_CACHE = new WeakMap();
+const PERSONAL_BEST_DISPLAY = new WeakMap();
 
 export const RECORD_PLACEMENT_SETTINGS = Object.freeze({
   enabled: 'polytrack-0.6.2-pb-podiums',
@@ -324,6 +325,48 @@ function displayedRecordText(record) {
   return String(record?.textContent || '');
 }
 
+// A display fallback never writes a native replay, public result or placement.
+export function syncPersonalBestRecord(record, {accountId, trackId, best, formatTime} = {}) {
+  const texts = () => Array.from(record?.childNodes || []).filter(node => node.nodeType === 3);
+  let prior = PERSONAL_BEST_DISPLAY.get(record);
+  let nodes = texts();
+  if (prior && (!nodes.includes(prior.node) || prior.node.textContent !== prior.text)) {
+    if (record.title === prior.title) record.title = prior.originalTitle;
+    PERSONAL_BEST_DISPLAY.delete(record);
+    prior = null;
+  }
+  const timeMs = Number(best?.timeMs);
+  const valid = Number.isSafeInteger(timeMs) && timeMs > 0;
+  if (prior && (prior.accountId !== accountId || prior.trackId !== trackId || !valid)) {
+    const changedContext = prior.accountId !== accountId || prior.trackId !== trackId;
+    prior.node.textContent = changedContext && parseDisplayedRecordTime(prior.original) !== null ? '---' : prior.original;
+    if (record.title === prior.title) record.title = changedContext ? '' : prior.originalTitle;
+    PERSONAL_BEST_DISPLAY.delete(record);
+    prior = null;
+  }
+  if (!accountId || !trackId || !valid || typeof formatTime !== 'function') return;
+  const current = parseDisplayedRecordTime(displayedRecordText(record));
+  const original = prior ? parseDisplayedRecordTime(prior.original) : null;
+  if (original !== null && original <= timeMs) {
+    prior.node.textContent = prior.original;
+    if (record.title === prior.title) record.title = prior.originalTitle;
+    PERSONAL_BEST_DISPLAY.delete(record);
+    return;
+  }
+  if (current !== null && current <= timeMs && !prior) return;
+  nodes = texts();
+  // Native track cards have one direct text node. Leave unfamiliar markup alone.
+  if (nodes.length !== 1) return;
+  const text = formatTime(timeMs);
+  if (parseDisplayedRecordTime(text) !== timeMs) return;
+  const node = nodes[0];
+  const title = best.local ? 'Local PB on this device' : 'Personal best from saved standings';
+  PERSONAL_BEST_DISPLAY.set(record, {accountId, trackId, node, text, title,
+    original: prior?.original ?? node.textContent, originalTitle: prior?.originalTitle ?? record.title ?? ''});
+  if (node.textContent !== text) node.textContent = text;
+  if (record.title !== title) record.title = title;
+}
+
 export function computeRecordPlacement({ snapshot, trackId, accountId, policy = 'all', ...options }) {
   const normalized = normalizeAuthoritativeSnapshot(snapshot, trackId, options);
   return placementFromNormalized(normalized, accountId, policy);
@@ -462,6 +505,10 @@ function renderDom(document, tracks, placements, options, state) {
       ? options.findRecordElement(title, trackId)
       : title.closest?.('button')?.querySelector?.('.record,.personal-best');
     if (!record) continue;
+    if (options.readPersonalBest) syncPersonalBestRecord(record, {
+      accountId: state.accountId, trackId,
+      best: options.readPersonalBest(trackId, state.accountId), formatTime: options.formatPersonalBest
+    });
     let placement = placements.get(trackId);
     let badge = record.querySelector?.(`[${BADGE_ATTRIBUTE}]`) || null;
     const displayedTime = options.readDisplayedTime
@@ -635,6 +682,7 @@ export function installRecordPlacement(options = {}) {
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    if (options.readPersonalBest) for (const record of document?.querySelectorAll?.('.record,.personal-best') || []) syncPersonalBestRecord(record);
     clearDom(document);
     if (addedStyle) document.getElementById(STYLE_ID)?.remove();
   }
