@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 275,
+    "number": 276,
     "version": "0.6.3",
-    "revision": 235,
+    "revision": 236,
     "notes": [
-      "Kodub's weekly card has a seamless, uncropped image layout.",
-      "Leaderboard recovery avoids repeating completed work.",
-      "An overnight standings refresh reuses existing replay proofs."
+      "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
     ]
   },
   "entries": [
+    {
+      "number": 275,
+      "title": "Weekly Card and Leaderboard Recovery",
+      "commit": "f48fb9362fec70d6ebe48b38a6e4980bb7ffb7ae",
+      "committedAt": "2026-11-04T02:09:25.000Z",
+      "notes": [
+        "Kodub's weekly card has a seamless, uncropped image layout.",
+        "Leaderboard recovery avoids repeating completed work.",
+        "An overnight standings refresh reuses existing replay proofs."
+      ]
+    },
     {
       "number": 273,
       "title": "Reliable Daily Goals and Safe Progress Recovery",
@@ -210,15 +219,6 @@ const historyData = {
         "Clearer event results and accurate verified PB placements.",
         "Optional player counts on unplayed tracks.",
         "Expanded event capacity with paged standings."
-      ]
-    },
-    {
-      "number": 245,
-      "title": "Weekly Alignment",
-      "commit": "f81022c8f1166a9ec8d8a10e32a763d8fd71bc30",
-      "committedAt": "2026-10-30T22:30:15.000Z",
-      "notes": [
-        "Left-aligned weekly event times and placements."
       ]
     }
   ],

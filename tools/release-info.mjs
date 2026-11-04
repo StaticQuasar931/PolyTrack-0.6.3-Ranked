@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 275,
+  "number": 276,
   "version": "0.6.3",
-  "revision": 235,
+  "revision": 236,
   "notes": [
-    "Kodub's weekly card has a seamless, uncropped image layout.",
-    "Leaderboard recovery avoids repeating completed work.",
-    "An overnight standings refresh reuses existing replay proofs."
+    "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
   ],
-  "preparedAt": "2026-11-04T01:59:09.473Z",
-  "committedAt": "2026-11-04T02:09:25.000Z"
+  "preparedAt": "2026-11-04T03:02:10.771Z",
+  "committedAt": "2026-11-04T03:09:33.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
