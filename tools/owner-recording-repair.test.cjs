@@ -4,8 +4,9 @@ const start=source.indexOf('  async function repairOwnNativeRecording('),end=sou
 assert.ok(start>0&&end>start);
 const account='a'.repeat(64),other='c'.repeat(64),track='b'.repeat(64);
 function harness({rows=[{accountId:account,trackId:track,uploadId:8}],cloud={},switchIdentity=false}={}){
- const reads=[],writes=[];let current=account;
- const context={Set,Promise,activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:{uid:'owner'}}),firestore:{FieldValue:{serverTimestamp:()=> 'server-time'}}}},
+ const reads=[],writes=[],user={uid:'owner'};let current=account;
+ const context={Set,Promise,activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server-time'}}}},
+  runFirebaseTransaction:async(_database,callback)=>callback({get:ref=>ref.get(),set:(ref,patch)=>ref.set(patch)}),
   readLocalRaceRows:()=>rows,safeRecordingId:value=>Number(value)||null,COLLECTIONS:{raceResults:'race-results'},
   recordingRepairPatch:()=>({replay:'repaired'})};
  vm.createContext(context);vm.runInContext(source.slice(start,end),context);

@@ -319,8 +319,11 @@ test('due retry progresses even with an unending fresh inbox page', async () => 
   assert.deepEqual(consumed, ['c'.repeat(64), account]);
   assert.equal(store.data.has(`${C.retries}/${retryId}`), false);
 });
-test('deferred Firestore throttle is not recorded as a rejected event receipt', async () => {
-  const failure = Object.assign(Error('Firestore throttled'), { status: 429, code: 'FIRESTORE_COMMIT_THROTTLED', deferred: true });
+for (const [status, code, deferred] of [[429, 'FIRESTORE_COMMIT_THROTTLED', true],
+  [409, 'ABORTED'], [400, 'FAILED_PRECONDITION'], [403, 'PERMISSION_DENIED'],
+  [404, 'NOT_FOUND'], [429, 'RESOURCE_EXHAUSTED']])
+test('infrastructure ' + code + ' is not recorded as a rejected event receipt', async () => {
+  const failure = Object.assign(Error('Firestore failure'), { status, code, ...(deferred ? {deferred} : {}) });
   const inboxId = 'day1_' + account;
   const inbox = { periodId: 'day1', accountId: account, attemptId: 'throttle',
     receivedAt: { __firestoreTimestamp: '2026-09-12T00:00:00Z' } };
@@ -341,6 +344,31 @@ test('deferred Firestore throttle is not recorded as a rejected event receipt', 
   await assert.rejects(consumeEventInbox(runtime), error => error === failure);
   assert.equal(transactions, 0, 'deferred infrastructure failure must not publish a rejected receipt');
 });
+for (const race of ['none', 'inbox-recreated', 'retry-replaced', 'retry-restamped'])
+test('missing retry inbox cleanup preserves concurrent work: ' + race, async () => {
+  const store = memoryStore(), inboxId = 'day1_' + account;
+  const retryPath = C.retries + '/' + inboxId, inboxPath = C.inbox + '/' + inboxId;
+  const retry = {inboxId, attemptId:'old', receivedAt:{__firestoreTimestamp:'2026-09-12T00:00:00Z'}, notBefore:0};
+  const replacement = {...retry, notBefore:10000, ...(race === 'retry-restamped' ?
+    {receivedAt:{__firestoreTimestamp:'2026-09-12T00:00:01Z'}} : {attemptId:'new'})};
+  store.data.set(retryPath, retry);
+  const runtime = {now:()=>1000, service:{consumeInbox:()=>assert.fail('no inbox to admit')},
+    store:{transaction:fn=>{
+      if (race === 'inbox-recreated') store.data.set(inboxPath, {attemptId:'new'});
+      if (race.startsWith('retry-')) store.data.set(retryPath, replacement);
+      return store.transaction(fn);
+    }}, request:async (route, init)=>{
+      if (route === '/' + C.cursors + '/scan' || route === '/' + inboxPath) return null;
+      assert.equal(route, ':runQuery');
+      assert.equal(JSON.parse(init.body).structuredQuery.from[0].collectionId, C.retries);
+      return [{document:{name:'projects/test/databases/(default)/documents/' + retryPath,
+        fields:eventEncode(retry).mapValue.fields}}];
+    }};
+  assert.equal((await consumeEventInbox(runtime, {preferRetry:true})).consumed, 1);
+  console.log('EVENT_ORPHAN_RETRY_COST ' + JSON.stringify({race,...store.counts.at(-1)}));
+  assert.deepEqual(store.data.get(retryPath), race === 'none' ? undefined : race.startsWith('retry-') ? replacement : retry);
+});
+
 test('waiting runs can drain after archive without changing event RP or archive', async () => {
   const f = fixture(); await f.start(); await f.submit(20402);
   f.time(p.endsAt + p.graceMs); await f.service.archivePeriod('day1');

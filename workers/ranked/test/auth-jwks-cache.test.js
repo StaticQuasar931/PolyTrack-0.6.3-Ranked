@@ -7,14 +7,14 @@ const project = 'polytrack-052';
 const origin = 'https://audit.invalid';
 const pair = generateKeyPairSync('rsa', {modulusLength: 2048});
 const jwk = kid => ({...pair.publicKey.export({format: 'jwk'}), kid, alg: 'RS256', use: 'sig'});
-const token = kid => {
+const token = (kid, overrides = {}) => {
   const b64 = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   const body = b64({alg: 'RS256', kid}) + '.' + b64({sub: 'test-user', aud: project,
-    iss: 'https://securetoken.google.com/' + project, iat: at / 1000, exp: at / 1000 + 7200});
+    iss: 'https://securetoken.google.com/' + project, iat: at / 1000, exp: at / 1000 + 7200, ...overrides});
   return body + '.' + sign('RSA-SHA256', Buffer.from(body), pair.privateKey).toString('base64url');
 };
-const request = kid => new Request(origin + '/v1/pb/notify', {
-  method: 'POST', headers: {Origin: origin, Authorization: 'Bearer ' + token(kid)}, body: '{}'
+const request = (kid, overrides) => new Request(origin + '/v1/pb/notify', {
+  method: 'POST', headers: {Origin: origin, Authorization: 'Bearer ' + token(kid, overrides)}, body: '{}'
 });
 let sequence = 0;
 async function fixture(t) {
@@ -96,4 +96,24 @@ test('failed refreshes are bounded and keep valid warm keys; expired keys fail c
   f.advance(30_000); f.fail(false); f.keys(['known', 'rotated']);
   assert.equal(await f.verifyFirebaseUser(request('rotated'), {}), 'test-user');
   assert.equal(f.calls(), 4);
+});
+
+for (const overrides of [{exp:undefined}, {exp:'forever'}, {exp:null}, {exp:1.5},
+  {iat:undefined}, {iat:'0'}, {iat:-1}, {iat:at / 1000 + 31},
+  {sub:['test-user']}, {sub:{id:'test-user'}}, {sub:123}, {aud:'other-project'}, {iss:'https://other.invalid'}]) {
+  test('malformed signed claims reject before key transport: '+JSON.stringify(overrides), async t => {
+    const f = await fixture(t);
+    await assert.rejects(f.verifyFirebaseUser(request('known', overrides), {}), /AUTH_INVALID/);
+    assert.equal(f.calls(), 0);
+    assert.equal(await f.verifyFirebaseUser(request('known'), {}), 'test-user');
+    assert.equal(f.calls(), 1, 'valid signed tokens still use the original key verification');
+  });
+}
+test('claim preflight does not extend expiration across a delayed key refresh', async t => {
+  const f = await fixture(t), release = f.hold();
+  const pending = f.verifyFirebaseUser(request('known', {exp:at / 1000 + 1}), {});
+  await new Promise(resolve=>setImmediate(resolve));
+  f.advance(32000); release();
+  await assert.rejects(pending, /AUTH_INVALID/);
+  assert.equal(f.calls(), 1);
 });

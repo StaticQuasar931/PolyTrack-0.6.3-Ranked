@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
-import {computeTrackEntries, mergeCanonicalResultIntoTrack, handleRequest} from '../src/index.js';
+import {computeTrackEntries, mergeCanonicalResultIntoTrack, updateTrackIdentity, handleRequest} from '../src/index.js';
 import {preparePublicationPages, loadPublicationEntries} from '../src/paged-publication.js';
 import {migrateVerificationChunk, prepareShardedVerification, verificationShardId} from '../src/verification-shards.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION,
@@ -342,4 +342,31 @@ test('invalid selector values reject before any I/O', async () => {
     await assert.rejects(migrateVerificationChunk({...f.args, accountIds}), /INVALID_VERIFICATION/);
     assert.equal(f.reads.length, 0); assert.equal(f.batches.length, 0);
   }
+});
+
+for(const count of [99,1001])test('old-engine exact-submission manual review survives notification on '+count+' racers',async()=>{
+ const f=await fixture(count),hold={...pendingSlot(f.target),status:'unavailable',reason:COMPETITIVE_REVIEW_REASON,retryAt:Number.MAX_SAFE_INTEGER};
+ const key=JSON.parse(hold.key);key[1]='a'.repeat(64);hold.key=JSON.stringify(key);f.setSlot(hold);
+ await f.merge(f.target);assert.deepEqual(f.slot(),hold);assert.equal(f.counts.writes,0);
+ assert.equal(f.counts.reads,count>500?15:3);assert.equal(f.calls.length,count>500?5:3);
+});
+
+test('1001-row PB repair uses nine requests for unchanged sixteen reads and fifteen writes',async()=>{
+ const f=await fixture(1001);await f.merge(changedReplay(f.target));
+ assert.equal(f.calls.length,9);assert.equal(f.counts.reads,16);assert.equal(f.counts.writes,15);
+ assert.equal(f.calls.filter(path=>path.startsWith('/0.6.2_s1_public_pages/')).length,0);
+});
+
+test('1001-row identity repair uses five requests for unchanged thirteen reads and fourteen writes',async()=>{
+ const f=await fixture(1001);await updateTrackIdentity(f.env,track,{accountId:f.target.accountId,name:'Updated Racer',identityUpdatedAt:2000});
+ assert.equal(f.calls.length,5);assert.equal(f.counts.reads,13);assert.equal(f.counts.writes,14);
+ assert.equal((await f.readPublished()).find(row=>row.accountId===f.target.accountId).name,'Updated Racer');
+});
+
+test('missing first page fails closed after one batch, with no proof or publication writes',async()=>{
+ const f=await fixture(1001),prior=structuredClone(f.data.get(boardKey));
+ const first=[...f.data.keys()].find(key=>key.startsWith('0.6.2_s1_public_pages/')&&key.endsWith('_0'));f.data.delete(first);
+ await assert.rejects(f.merge(changedReplay(f.target)),/PUBLIC_PAGE_INCOMPLETE/);
+ assert.equal(f.calls.length,3);assert.equal(f.counts.reads,13,'batch fetch pays all eleven page reads, even when the first is missing');
+ assert.equal(f.counts.writes,0);assert.deepEqual(f.data.get(boardKey),prior);
 });

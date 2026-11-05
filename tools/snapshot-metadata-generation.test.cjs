@@ -5,8 +5,10 @@ test('generation recovery rewarms metadata and ignores retired warm replies',asy
  const recoveryLibrary=await import('./snapshot-metadata-recovery.mjs');
  const requests=[],deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};let notify;
  const reader=kind=>{const item={kind,...deferred()};requests.push(item);return item.promise;};
+ reader.packageInfo=()=>({generation:24,epoch:0,baseUrl:'https://example.test/public-snapshots24/'});
  let replayInvalidations=0,eventInvalidations=0;
- const context={recoveryLibrary,metadataRecovery:null,currentTrackLoadState:null,extraTracksUi:null,
+ const context={recoveryLibrary,metadataRecovery:null,currentTrackLoadState:null,extraTracksUi:null,overallTrackSummariesCache:[],publicSnapshotPublishedAt:0,
+ hydratePlannerTrackSummaries:rows=>rows,refreshOpenProfilePlanner:async()=>{},
  nativeRecordingEpoch:0,nativeRecordingMemory:new Map([['old',1]]),nativeRecordingRequests:new Map([['old',1]]),nativeRecordingRetryAt:new Map([['old',1]]),
  invalidateNativePartialReplay:clear=>{assert.equal(clear,true);replayInvalidations++;},invalidateEventSnapshotCaches:()=>{eventInvalidations++;},
  ptPrepareGatedRecording:()=>{throw Error('Metadata warming must not prepare a recording');},allowSnapshotGenerationChange:()=>true,

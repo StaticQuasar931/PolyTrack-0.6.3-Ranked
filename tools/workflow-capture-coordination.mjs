@@ -9,7 +9,7 @@ import {buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex, buildTrackSnapshotPaging,
   buildOverallSnapshotPaging, buildBoardPageManifest} from './track-snapshot-paging.mjs';
 import {publicCatalogBackup} from './sync-event-catalog.mjs';
-import {publicOverallBackup, publicTrackBackup} from './public-snapshot-backup.mjs';
+import {publicOverallBackup, publicTrackBackup, authenticatedOverallTrackBackup} from './public-snapshot-backup.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {EVENT_HIGHLIGHT_LIMITS} from './event-rp-highlights.mjs';
@@ -94,6 +94,24 @@ function validateOverallArtifact(value) {
   }
 }
 
+function validateTrackArtifact(value, id) {
+  if (!Array.isArray(value?.entries) || value.entries.length <= 500 ||
+      value.pagination !== undefined || value.paginatedSource !== undefined) {
+    publicTrackBackup(value, id);
+    return;
+  }
+  // Frozen/local complete boards have no backend page envelope. Canonical package
+  // pages are independently checked below; do not invent backend pagination.
+  const projected = authenticatedOverallTrackBackup(value, id), seen = new Set();
+  for (const row of projected.entries) {
+    const account = row.accountId || row.userId;
+    if (!/^[a-f0-9]{64}$/.test(account || '') || seen.has(account) ||
+        row.accountId && row.userId && row.accountId !== row.userId)
+      throw Error('Invalid materialized track identity');
+    seen.add(account);
+  }
+}
+
 async function validateConsumerPackage(root, directory, index) {
   const equal = async (relative, expected) => {
     if (!isDeepStrictEqual(await json(root, directory + '/' + relative), expected)) throw Error('Invalid consumer artifact: ' + relative);
@@ -137,7 +155,7 @@ async function validateConsumerPackage(root, directory, index) {
     const tracks = new Map();
     for (const logical of Object.keys(index.files).filter(value => /^tracks\/[a-f0-9]{64}\.json$/.test(value))) {
       const id = logical.slice(7, -5), board = await read(logical);
-      publicTrackBackup(board, id);tracks.set(id, board);
+      validateTrackArtifact(board, id);tracks.set(id, board);
     }
     for (const id of Object.keys(paging.tracks)) if (!tracks.has(id)) tracks.set(id, await read('tracks/' + id + '.json'));
     const validateBoard = async (id, board) => {
@@ -186,7 +204,7 @@ async function validateConsumerPackage(root, directory, index) {
     };
     await validateBoard(null, overall);
     for (const [id, board] of tracks) {
-      publicTrackBackup(board, id);
+      validateTrackArtifact(board, id);
       if (Object.hasOwn(paging.tracks, id)) await validateBoard(id, board);
     }
     for (const logical of Object.keys(index.files))

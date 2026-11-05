@@ -4,6 +4,8 @@
 
 [Play PolyTrack Ranked](https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/)
 
+[Features and credits](https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/about.html) | [Snapshot-only hosting](docs/snapshot-only-hosting.md) | [Firebase cost boundaries](docs/firebase-costs.md)
+
 A browser-based Ranked mod for Kodub's PolyTrack, with Overall rankings, events, ghosts, a route planner and local practice history. No installation is needed to play.
 
 ## For PB Hunters
@@ -65,6 +67,18 @@ node tools/decode-developer-report.mjs input.json readable-report.json
 Please include the loaded release/client revision, browser, available game area and reproduction steps when reporting a bug. Do not post passwords, credentials, service-account files or private track codes.
 
 ## Development and Releases
+
+Use Node.js 24, matching the GitHub workflows. The default test command runs
+offline contracts without Firebase credentials:
+
+```sh
+npm test
+npm run test:ranked
+npm run test:verification-snapshot
+```
+
+Browser suites require the Playwright runtime described in the release checklist.
+Offline test success is not a production quota measurement.
 
 Before every manual commit or push, follow the [release checklist](docs/manual-release-checklist.md). Release notes, client cache revisions, workflow compatibility and privacy checks belong to the same release. See [CDN publication](docs/cdn-release.md) for publishing and deferred-propagation behavior.
 

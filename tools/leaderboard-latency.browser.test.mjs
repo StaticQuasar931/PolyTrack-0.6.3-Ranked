@@ -10,7 +10,7 @@ import {installNativeRankedAuditFixture} from './native-ranked-audit-fixture.mjs
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const noHook=process.env.POLYTRACK_LATENCY_NO_HOOK==='1';
-const output=process.env.POLYTRACK_LATENCY_OUTPUT||path.resolve(fileURLToPath(new URL(`../../../Codexstorage/PolyTrack/Release-169/leaderboard-latency-${noHook?'baseline':'integrated'}.json`,import.meta.url)));
+const output=process.env.POLYTRACK_LATENCY_OUTPUT||path.resolve(fileURLToPath(new URL(`../../../Codexstorage/PolyTrack/Projects/Ranked-0.6.3/Diagnostics/LeaderboardLatency/leaderboard-latency-${noHook?'baseline':'integrated'}.json`,import.meta.url)));
 
 test('offline native leaderboard click-to-visible timeline',async()=>{
   const server=await startResponsiveServer();

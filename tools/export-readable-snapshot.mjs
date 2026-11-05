@@ -5,8 +5,25 @@ import { fileURLToPath } from 'node:url';
 import { decodeSnapshot, MAX_DECODED_BYTES, MAX_FILE_BYTES } from './snapshot-package.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_SOURCE = path.join(ROOT, 'public-snapshots1');
-const DEFAULT_OUTPUT = 'C:/Users/Static/Documents/Codexstorage/PolyTrack-private-snapshots';
+export const DEFAULT_OUTPUT = 'C:/Users/Static/Documents/Codexstorage/PolyTrack/Projects/Ranked-0.6.3/Exports/ReadableSnapshots';
+
+export async function currentSnapshotSource(root = ROOT) {
+  const repository = await fs.realpath(path.resolve(root));
+  const pointerPath = path.join(repository, 'snapshot-current.json');
+  const stat = await fs.lstat(pointerPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2048) throw new Error('Invalid snapshot pointer file');
+  let pointer;
+  try { pointer = JSON.parse(await fs.readFile(pointerPath, 'utf8')); }
+  catch (error) { throw new Error('Invalid snapshot pointer JSON', {cause:error}); }
+  const name = pointer?.currentdir;
+  const match = typeof name === 'string' && /^public-snapshots([1-9]\d*)$/.exec(name);
+  if (!match || !Number.isSafeInteger(Number(match[1]))) throw new Error('Invalid snapshot pointer generation');
+  const source = path.join(repository, name);
+  const sourceStat = await fs.lstat(source);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink() || await fs.realpath(source) !== source)
+    throw new Error('Invalid snapshot pointer directory');
+  return {sourceDirectory:source, generation:Number(match[1])};
+}
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -69,8 +86,9 @@ $('choose').addEventListener('click',()=>$('folder').click());$('folder').addEve
 </script></html>`;
 }
 
-export async function exportReadableSnapshot({ sourceDirectory = DEFAULT_SOURCE, outputDirectory = DEFAULT_OUTPUT } = {}) {
-  const source = path.resolve(sourceDirectory);
+export async function exportReadableSnapshot({ root = ROOT, sourceDirectory, outputDirectory = DEFAULT_OUTPUT } = {}) {
+  const current = sourceDirectory === undefined ? await currentSnapshotSource(root) : null;
+  const source = path.resolve(current ? current.sourceDirectory : sourceDirectory);
   const output = path.resolve(outputDirectory);
   if (source === output || output.startsWith(`${source}${path.sep}`)) throw new Error('Output directory must be outside the encoded snapshot source');
   const indexPath = path.join(source, 'index.json');
@@ -80,6 +98,8 @@ export async function exportReadableSnapshot({ sourceDirectory = DEFAULT_SOURCE,
   if (index.schemaVersion !== 1 || index.encoding !== 'gzip-xor-a7-v1' || !index.files || typeof index.files !== 'object' || Array.isArray(index.files)) {
     throw new Error('Unsupported or invalid snapshot index');
   }
+  if (!Number.isSafeInteger(index.generation) || index.generation < 1 || current && index.generation !== current.generation)
+    throw new Error('Snapshot index generation does not match its source');
   try { await fs.access(output); throw new Error(`Output already exists: ${output}. Choose another path; the exporter will not overwrite it.`); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 

@@ -1,6 +1,6 @@
 import {utcEventCandidates} from '../../../events/schedule.mjs';
 export {utcEventCandidates} from '../../../events/schedule.mjs';
-import { createEventService, EVENT_COLLECTIONS as C, EVENT_LIMITS as L, eventPeriod, exhaustedEventLease } from './events.js';
+import { createEventService, EVENT_COLLECTIONS as C, EVENT_LIMITS as L, EventError, eventPeriod, exhaustedEventLease } from './events.js';
 import { createEventFirestoreStore, eventDecode } from './events-store.js';
 import {eventCapacityUpgradeRequired} from './event-capacity.js';
 
@@ -117,7 +117,13 @@ export async function consumeEventInbox(runtime, { preferRetry = false, recentAc
     const retry = decode(retryDoc);
     const current = await runtime.request('/' + C.inbox + '/' + retry.inboxId);
     if (!current) {
-      await runtime.store.transaction(async tx => { const p = C.retries + '/' + retry.inboxId; if (await tx.get(p)) await tx.delete(p); });
+      await runtime.store.transaction(async tx => {
+        const p = C.retries + '/' + retry.inboxId, latest = await tx.get(p);
+        if (!latest || latest.attemptId !== retry.attemptId ||
+            latest.receivedAt?.__firestoreTimestamp !== retry.receivedAt?.__firestoreTimestamp) return;
+        // The earlier absence is not authority to delete newly queued work.
+        if (!await tx.get(C.inbox + '/' + retry.inboxId)) await tx.delete(p);
+      });
       return { consumed: 1, rejected: true };
     }
     documents.splice(0, documents.length, current);
@@ -126,7 +132,7 @@ export async function consumeEventInbox(runtime, { preferRetry = false, recentAc
   let result, retryUntil;
   try { result = await runtime.service.consumeInbox(data); }
   catch (error) {
-    if (error?.deferred === true) throw error;
+    if (error?.deferred === true || !(error instanceof EventError)) throw error;
     // Infrastructure errors leave the scan cursor untouched for retry. Terminal
     // receipt rejection is recorded privately, never by modifying the client PB.
     const retry = eventReceiptRetry(error.code);

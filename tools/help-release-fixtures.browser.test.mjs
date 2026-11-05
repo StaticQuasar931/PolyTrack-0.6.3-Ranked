@@ -171,11 +171,12 @@ test('Help fixtures render at phone, landscape and desktop sizes with no network
     await page.locator('[data-hc-view="release"]').tap();
     const release=page.locator('[data-hc-panel="release"]');
     assert.equal(await release.isVisible(),true);
+    assert.equal(await release.locator(':scope > ul > li').first().textContent(),RELEASE_FIXTURE.notes[0],'measure the real rendered release note');
     const releaseLayout=await release.evaluate(node=>({
       technicalOpen:node.querySelector('.hc-release-technical').open,
       ageTop:node.querySelector('.hc-release-age').getBoundingClientRect().top,
       notesFont:parseFloat(getComputedStyle(node.querySelector('ul')).fontSize),
-      detailFont:parseFloat(getComputedStyle(node.querySelector('.hc-release-note')).fontSize)
+      detailFont:parseFloat(getComputedStyle(node.querySelector(':scope > ul > li')).fontSize)
     }));
     assert.equal(releaseLayout.technicalOpen,false,'technical version numbers are not expanded by default');
     assert.ok(releaseLayout.notesFont>=22&&releaseLayout.detailFont>=19,'Release details use readable text');

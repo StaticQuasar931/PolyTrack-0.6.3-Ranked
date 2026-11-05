@@ -88,3 +88,34 @@ test('budget exhaustion prevents transport; prior operation attempts still seed 
     __TEST_FIRESTORE:async()=>{calls++;assert.fail('prior attempts exhausted this budget');}},true),/BUDGET_EXHAUSTED/);
   assert.equal(calls,0);assert.equal(audit.httpRequests,0);
 });
+
+test('document GET 404 remains a cacheable absence, not a transport failure',async t=>{
+ const worker=await freshWorker(),logs=capture(t);let calls=0;
+ t.mock.method(globalThis,'fetch',async url=>{assert.ok(String(url).startsWith('https://firestore.googleapis.com/'));calls++;return new Response(null,{status:404});});
+ const response=await worker.default.fetch(request(),{ALLOWED_ORIGINS:origin,PUBLIC_READ_RATE_LIMITER:allow,__TEST_ACCESS_TOKEN:'synthetic-test-token'},{});
+ assert.equal(response.status,404);assert.equal(calls,1);assert.equal(logs.record().documentReadEstimate,1);assert.equal(logs.record().failedRequests,0);
+});
+
+for(const kind of ['commit','patch'])test('Firestore '+kind+' 404 cannot acknowledge a successful user write',async t=>{
+ const worker=await freshWorker(),logs=capture(t);let calls=0;
+ t.mock.method(globalThis,'fetch',async(url,init={})=>{
+  assert.ok(String(url).startsWith('https://firestore.googleapis.com/'));calls++;
+  if(kind==='patch'&&String(url).endsWith('/0.6.2_profiles_public/racer'))return Response.json({fields:{accountId:{stringValue:'racer'},ownerUid:{stringValue:'owner'},nickname:{stringValue:'Racer'}}});
+  if(String(url).endsWith(':runQuery'))return Response.json([]);
+  return new Response(null,{status:404});
+ });
+ const path=kind==='commit'?'/v1/extra-tracks/submissions':'/v1/profile/notify';
+ const body=kind==='commit'?{name:'Test',author:'Tester',code:'PolyTrack'+'A'.repeat(24),difficulty:1,permissionGranted:true}:{accountId:'racer'};
+ const response=await worker.default.fetch(new Request(origin+path,{method:'POST',headers:{Origin:origin},body:JSON.stringify(body)}),
+  {ALLOWED_ORIGINS:origin,OPEN_BETA_ENABLED:'false',__TEST_UID:'owner',__TEST_ACCESS_TOKEN:'synthetic-test-token',PB_NOTIFY_RATE_LIMITER:allow},{});
+ const audit=logs.record();process.stdout.write('BACKEND_TRANSPORT_404 '+JSON.stringify({kind,status:response.status,calls,reads:audit.documentReadEstimate,writes:audit.writeEstimate,unknownWrites:audit.unknownWriteRequests})+'\n');
+ assert.equal(response.status,503);assert.equal(calls,kind==='commit'?2:6);
+ assert.equal(audit.writeEstimate,null);assert.equal(audit.unknownWriteRequests,1);assert.equal(audit.failedRequests,1);
+});
+
+test('Firestore query 404 cannot masquerade as an empty maintenance queue',async t=>{
+ const worker=await freshWorker();capture(t);let calls=0;
+ t.mock.method(globalThis,'fetch',async(url,init)=>{assert.ok(String(url).endsWith(':runQuery'));assert.equal(init.method,'POST');calls++;return new Response(null,{status:404});});
+ await assert.rejects(worker.migrateCapacityVerificationQueues({__TEST_ACCESS_TOKEN:'synthetic-test-token'}),/FIRESTORE_404/);
+ assert.equal(calls,1,'do not continue querying a missing/unavailable database');
+});

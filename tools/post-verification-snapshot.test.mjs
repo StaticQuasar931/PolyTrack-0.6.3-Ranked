@@ -144,23 +144,23 @@ test('caller captures every successful scheduled check, retains manual change ga
 test('scheduled and changed capture requests are timestamped without waking native work for empty queues', () => {
   const timestamp=step(verifier,'Timestamp the scheduled or changed capture request');
   const gate=/^        if: (.+)$/m.exec(timestamp)[1];
-  for(const mode of ['firestore','snapshot-native',undefined]) for(const event_name of ['schedule','workflow_dispatch']) for(const has_work of ['true','false','deferred','',undefined])
+  for(const skip of ['true','false',undefined]) for(const mode of ['firestore','snapshot-native',undefined]) for(const event_name of ['schedule','workflow_dispatch']) for(const has_work of ['true','false','deferred','',undefined])
   for(const snapshot_needed of ['true','false','',undefined]) for(const capture_ready of ['true','false','',undefined]) {
-    const actual=evaluate(gate,{github:{event_name},steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}},verification:{outputs:{snapshot_needed,capture_ready}}}});
-    assert.equal(actual,mode==='snapshot-native'||snapshot_needed==='true'||event_name==='schedule'&&(has_work==='false'||has_work==='true'&&capture_ready==='true'));
+    const actual=evaluate(gate,{github:{event_name},steps:{authority:{outputs:{mode,skip}},queue:{outputs:{has_work}},verification:{outputs:{snapshot_needed,capture_ready}}}});
+    assert.equal(actual,skip!=='true'&&(mode==='snapshot-native'||snapshot_needed==='true'||event_name==='schedule'&&(has_work==='false'||has_work==='true'&&capture_ready==='true')));
   }
   assert.match(timestamp,/requested_at=.*Date.now\(\)/);
   for(const name of ['Install pinned verifier dependencies','Test verifier safeguards','Cache the pinned Playwright browser',
     'Install Chromium and system dependencies','Allow the pinned browser sandbox on Ubuntu','Verify queued runs']) {
     const authorityGated=['Install pinned verifier dependencies','Verify queued runs'].includes(name);
-    const expected=authorityGated?"steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'":"steps.queue.outputs.has_work == 'true'";
+    const expected=authorityGated?"steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'":"steps.queue.outputs.has_work == 'true'";
     const actual=/^        if: (.+)$/m.exec(step(verifier,name))?.[1];
     assert.equal(actual,expected,name);
-    for(const mode of ['firestore','snapshot-native'])for(const has_work of ['true','false','',undefined])
-      assert.equal(evaluate(actual,{steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}}}}),
-        has_work==='true'&&(!authorityGated||mode==='firestore'),name);
+    for(const skip of ['true','false',undefined])for(const mode of ['firestore','snapshot-native'])for(const has_work of ['true','false','',undefined])
+      assert.equal(evaluate(actual,{steps:{authority:{outputs:{mode,skip}},queue:{outputs:{has_work}}}}),
+        has_work==='true'&&(!authorityGated||skip!=='true'&&mode==='firestore'),name);
   }
-  assert.equal(/^        if: (.+)$/m.exec(step(verifier,'Check for due verification work'))?.[1],"steps.authority.outputs.mode == 'firestore'");
+  assert.equal(/^        if: (.+)$/m.exec(step(verifier,'Check for due verification work'))?.[1],"steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore'");
   assert.equal((verifier.match(/id: verification$/gm)||[]).length,1);
   assert.equal((verifier.match(/uses: \.\/\.github\/workflows\/publish-verified-snapshots.yml/g)||[]).length,1);
   assert.doesNotMatch(verifier,/node tools\/update-public-snapshot.mjs/);
@@ -263,18 +263,26 @@ test('post-verification capture is single-shot, projected read-only, and never r
   const capture=step(publisher,'Capture bounded public snapshots');
   const marker='        run: |\n';assert.ok(capture.includes(marker));
   const script=capture.slice(capture.indexOf(marker)+marker.length).trimEnd().replace(/^          /gm,'');
-  assert.equal(script,['if [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then',
+  assert.equal(script,['if [ "$ONE_OFF_NATIVE" = "true" ]; then',
+    "  node --input-type=module <<'ONEOFF'",
+    "import {updatePublicSnapshot,reportCaptureOutcome} from './tools/update-public-snapshot.mjs';",
+    "import {OVERNIGHT_SNAPSHOT} from './tools/overnight-snapshot-plan.mjs';",
+    'const nativePhaseOptions={maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs};',
+    "const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions});",
+    "if(!result.deferred && (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');",
+    'await reportCaptureOutcome(result);','ONEOFF',
+    'elif [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then',
     '  node tools/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native',
     'else','  node tools/update-public-snapshot.mjs --refresh-replays','fi'].join('\n'));
   const bash=process.platform==='win32'&&existsSync('C:/Program Files/Git/bin/bash.exe')?'C:/Program Files/Git/bin/bash.exe':'bash';
-  for(const mode of ['firestore','snapshot-native'])for(const exit of [0,29]){
+  for(const oneoff of ['true','false'])for(const mode of ['firestore','snapshot-native'])for(const exit of [0,29]){
     // Execute only the exact validated branch body, with node replaced by a
     // shell mock. A failed capture must stop immediately, not retry the other lane.
     const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',
       'node(){ printf \'%s\\n\' "$*"; return "$MOCK_EXIT"; }\n'+script],{encoding:'utf8',
-      env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,VERIFICATION_AUTHORITY:mode,MOCK_EXIT:String(exit)}});
+      env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,VERIFICATION_AUTHORITY:mode,ONE_OFF_NATIVE:oneoff,MOCK_EXIT:String(exit)}});
     assert.equal(result.status,exit,result.stderr);
-    assert.deepEqual(result.stdout.trim().split('\n'),['tools/update-public-snapshot.mjs --refresh-replays'+
+    assert.deepEqual(result.stdout.trim().split('\n'),[oneoff==='true'?'--input-type=module':'tools/update-public-snapshot.mjs --refresh-replays'+
       (mode==='snapshot-native'?' --verification-authority snapshot-native':'')]);
   }
   assert.doesNotMatch(capture,/continue-on-error|while |until |--full-public|--archive|--admin|curl |sleep /);
@@ -305,9 +313,9 @@ test('actual daily cadence is four UTC pipeline windows, with unchanged pure Kod
     const matches=(field,value)=>field==='*'||field.split(',').map(Number).includes(value);
     return Array.from({length:1440},(_,i)=>i).filter(i=>matches(minute,i%60)&&matches(hour,Math.floor(i/60)));
   });
-  const windows=minutes(verifier);
-  assert.deepEqual(windows,[50,530,770,1250]);
-  assert.equal((verifier.match(/cron:/g)||[]).length,1);
+  const windows=minutes(verifier).sort((a,b)=>a-b);
+  assert.deepEqual(windows,[50,525,770,1250]);
+  assert.equal((verifier.match(/cron:/g)||[]).length,2);
   assert.deepEqual(minutes(catalog),[]);
   assert.deepEqual(minutes(publisher),[]);
   const kodub=await readWorkflow('sync-kodub-weekly.yml'),cdn=await readWorkflow('publish-cdn-release.yml');

@@ -764,3 +764,30 @@ test('manual refresh joining automatic recovery retains the shared failure outco
   release(new Response('',{status:404}));
   assert.equal(await automatic,null);await rejected;assert.equal(pointers,1);
 });
+
+test('unpacked refresh uses the adopted directory, including reads started before adoption', async () => {
+  const id = 'a'.repeat(64), calls = [], old = deferred();
+  let held = false;
+  const read = createPublicSnapshotReader({baseUrl:'https://example.test/public-snapshots1/',
+    fetchImpl:async (input, options) => {
+      const url = new URL(input); calls.push(url.pathname);
+      assert.equal(options.credentials,'omit');
+      if(url.pathname === '/snapshot-current.json') return Response.json({currentdir:'public-snapshots2'});
+      if(url.pathname.startsWith('/public-snapshots1/')) {
+        if(!held) {held = true; await old.promise;}
+        return Response.json({accountId:id,updatedAt:1,name:'old'});
+      }
+      return Response.json({accountId:id,updatedAt:2,name:'current'});
+    }});
+  const pending = read('profile',id);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(await read.refresh(),true);
+  old.resolve();
+  assert.equal((await pending).name,'current');
+  assert.equal((await read('profile',id)).updatedAt,2);
+  assert.equal(read.packageInfo().generation,2);
+  assert.deepEqual(calls,[
+    '/public-snapshots1/profiles/'+id+'.json', '/snapshot-current.json',
+    '/public-snapshots2/profiles/'+id+'.json'
+  ]);
+});

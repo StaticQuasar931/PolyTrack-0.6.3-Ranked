@@ -553,3 +553,42 @@ html:not(.sq-game-expanded) body #ui:has(>.menu-ui>:is(.main-buttons-container,.
  html:not(.sq-game-expanded) body #ui:has(>.menu-ui>.settings-menu-ui:not(.hidden)){--sq-menu-scale:1}
  html body #ui>.menu-ui>.settings-menu-ui:not(.hidden){height:100%!important;width:100%!important}
 }
+
+/* Phone reflow uses physical pixels, so native scaled safe-area spacers no longer apply. */
+@media (max-width: 600px) and (orientation: portrait) {
+  html body #ui > .menu-ui > :is(.track-selection-ui,.track-info-ui):not(.hidden):not([hidden]) {
+    padding: max(8px, env(safe-area-inset-top,0px)) max(8px, env(safe-area-inset-right,0px)) max(8px, env(safe-area-inset-bottom,0px)) max(8px, env(safe-area-inset-left,0px)) !important;
+  }
+}
+/* Size the shell from the padded overlay, not a second independent viewport calculation. */
+html body #overallLeaderboardPanel {
+  --sq-overlay-gap: 8px;
+  padding: max(var(--sq-overlay-gap), env(safe-area-inset-top,0px)) max(var(--sq-overlay-gap), env(safe-area-inset-right,0px)) max(var(--sq-overlay-gap), env(safe-area-inset-bottom,0px)) max(var(--sq-overlay-gap), env(safe-area-inset-left,0px)) !important;
+}
+html body #overallLeaderboardPanel .overall-shell {
+  width: min(1540px, 100%) !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+}
+@media (max-width: 700px) {
+  html body #overallLeaderboardPanel { --sq-overlay-gap: 4px; }
+}
+/* Keep identity readable in the actual list column, including split-screen and safe areas. */
+html body #overallLeaderboardList { container-type: inline-size; }
+@container (max-width: 600px) {
+  html body #overallLeaderboardPanel .overall-entry {
+    grid-template-columns: clamp(42px, 12cqw, 62px) minmax(0,1fr) minmax(76px,.6fr) !important;
+    grid-template-areas: 'rank name name' 'rank mid stats' !important;
+    column-gap: clamp(4px, 1.5cqw, 9px) !important;
+    row-gap: 3px !important;
+  }
+  html body #overallLeaderboardPanel .overall-entry .overall-name-label { flex: 1; min-width: 0; }
+  html body #overallLeaderboardPanel .overall-entry .overall-name-main {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+}

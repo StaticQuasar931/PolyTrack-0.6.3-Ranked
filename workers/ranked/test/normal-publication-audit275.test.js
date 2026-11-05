@@ -192,6 +192,11 @@ test('audit275: stationary 1136-row rebuild reads each historical and current pr
   assert.equal(entries.length, population);
   assert.ok(entries.every(row => row.runVerified));
   assert.deepEqual(f.errors, []);
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
+    {reads:3472,writes:41,requests:93},'page batching and historical-root reuse do not skip any per-racer proof');
+  const rootReads=f.reads.filter(read=>read.key===VERIFICATION_COLLECTION+'/'+track);
+  assert.equal(rootReads.filter(read=>read.readTime).length,7,'one historical root per rebuild invocation');
+  assert.equal(rootReads.filter(read=>!read.readTime).length,12,'current root stays fresh on every page');
   f.report('stationary-full-rebuild');
 });
 
@@ -211,6 +216,8 @@ test('audit275: cosmetic fanout after 900 scanned rows invalidates the full-buil
   assert.equal(f.stats.currentProof, population + 900);
   assert.equal(f.data.get(boardKey).entries[0].name, f.identity.name);
   assert.deepEqual(f.errors, []);
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
+    {reads:6215,writes:74,requests:163},'base-version restart remains mandatory; only repeated requests are coalesced');
   f.report('cosmetic-invalidates-900-row-prefix');
 });
 

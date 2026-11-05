@@ -53,10 +53,16 @@ export async function migrateVerificationChunk({trackId, collection, root, read,
 
 export async function prepareShardedVerification({trackId, collection, rows, root, read, readMany, commit}) {
   const verdicts = Object.assign(Object.create(null), root?.data?.slots || {});
+  // A normal build page fits one read; retain the separate 48-write CAS batches.
+  // Never retain these current preimages beyond this call or across migration.
+  const batchPage = readMany && rows.length > VERIFICATION_MIGRATION_BATCH && rows.length <= 100;
+  const pageDocuments = batchPage
+    ? await readMany(collection, rows.map(row=>verificationShardId(trackId,row.accountId||row.userId))) : null;
+  if (batchPage && !(pageDocuments instanceof Map)) throw Error('VERIFICATION_PAGE_BATCH_INVALID');
   for (let start = 0; start < rows.length; start += VERIFICATION_MIGRATION_BATCH) {
     const writes = [];
     const batch = rows.slice(start,start+VERIFICATION_MIGRATION_BATCH);
-    const documents = readMany ? await readMany(collection,batch.map(row=>verificationShardId(trackId,row.accountId||row.userId))) : null;
+    const documents = pageDocuments || (readMany ? await readMany(collection,batch.map(row=>verificationShardId(trackId,row.accountId||row.userId))) : null);
     for (const row of batch) {
       const accountId = row.accountId || row.userId, id = verificationShardId(trackId, accountId);
       const prior = documents ? documents.get(id) : await read(collection, id);

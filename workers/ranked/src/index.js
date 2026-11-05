@@ -1,4 +1,5 @@
 import {createPublicMissGuard} from './public-miss-guard.js';
+import {hasMatchingCompetitiveReviewHold} from './competitive-review.js';
 import {verifyCaptureRead} from './capture-read-auth.js';
 import {enqueueCanonicalPublication} from './coalesced-pb-publication.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
@@ -353,13 +354,20 @@ export async function verifyFirebaseUser(request, env) {
   const header = base64UrlJson(parts[0]);
   const payload = base64UrlJson(parts[1]);
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid || header.kid.length > 256) throw new Error('AUTH_INVALID');
+  const projectId = String(env.FIREBASE_PROJECT_ID || PROJECT_ID);
+  const now = Math.floor(Date.now() / 1000);
+  // Reject malformed claims before key lookup; signature verification still follows.
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+      payload.aud !== projectId || payload.iss !== `https://securetoken.google.com/${projectId}` ||
+      typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128 ||
+      !Number.isSafeInteger(payload.exp) || !Number.isSafeInteger(payload.iat) ||
+      payload.exp <= now - 30 || payload.iat < 0 || payload.iat > now + 30) throw new Error('AUTH_INVALID');
   const jwk = await getFirebaseJwk(header.kid);
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, base64UrlBytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
-  const projectId = String(env.FIREBASE_PROJECT_ID || PROJECT_ID);
-  const now = Math.floor(Date.now() / 1000);
-  if (!valid || payload.aud !== projectId || payload.iss !== `https://securetoken.google.com/${projectId}` || !payload.sub || payload.sub.length > 128 || payload.exp <= now - 30 || payload.iat > now + 30) throw new Error('AUTH_INVALID');
-  return String(payload.sub);
+  const verifiedAt = Math.floor(Date.now() / 1000);
+  if (!valid || payload.exp <= verifiedAt - 30 || payload.iat > verifiedAt + 30) throw new Error('AUTH_INVALID');
+  return payload.sub;
 }
 
 function pemToBytes(value) {
@@ -488,7 +496,9 @@ async function loadFirestoreRequest(env, path, init = {}, onTransport = () => {}
   };
   onTransport();
   const response = await fetch(url, fetchInit);
-  if (response.status === 404) return null;
+  // Only a document GET can represent absence. A missing database/commit/query
+  // endpoint must fail, never acknowledge a write or advance an empty cursor.
+  if (response.status === 404 && path.startsWith('/') && (init.method || 'GET') === 'GET') return null;
   if (!response.ok) throw new Error(`FIRESTORE_${response.status}`);
   if (response.status === 204) return null;
   return response.json();
@@ -1228,10 +1238,13 @@ async function canonicalTrackPage(env,trackId,afterName='',readTime='',limit=100
   if(documents.length>limit)throw Error('TRACK_QUERY_OVERFLOW');
   return {readTime:readTime||payload.at(-1)?.readTime||'',documents,ended:documents.length<limit};
 }
-async function normalizeBuildRows(env,trackId,rows,readTime) {
+async function normalizeBuildRows(env,trackId,rows,readTime,historicalRoots) {
   rows=rows.filter(row=>structurallyValidResult(row,trackId));
   const collection=verificationCollectionForTrack(trackId);
-  const root=await readDocument(env,collection,trackId,readTime), verdicts={...root?.data?.slots};
+  // Only the immutable historical root is shared by this invocation's pages.
+  // Current queues/proofs remain fresh and independent of this readTime cache.
+  if (!historicalRoots.has(readTime)) historicalRoots.set(readTime,await readDocument(env,collection,trackId,readTime));
+  const root=historicalRoots.get(readTime), verdicts={...root?.data?.slots};
   const missing=rows.filter(row=>!verdicts[row.accountId||row.userId]);
   for(let offset=0;offset<missing.length;offset+=100){
     const batch=missing.slice(offset,offset+100);
@@ -1257,6 +1270,7 @@ async function persistVerificationRows(env, trackId, rows, prior, complete = fal
   for(const row of rows){
     if(!structurallyValidResult(row,trackId))continue;
     const id=safeText(row.accountId||row.userId,128);
+    if(hasMatchingCompetitiveReviewHold(row,slots[id]))continue;
     if(slots[id]?.reason==='canonical_missing'||slots[id]?.key!==verificationKey(row)&&!hasAcceptedVerifiedProof(row,slots[id])){slots[id]=pendingSlot(row);changed=true;}
   }
   if (prior?.data?.storageVersion === 2 || Object.keys(slots).length > TRACK_LIMIT) {
@@ -1276,9 +1290,10 @@ export async function rebuildTrack(env, trackId, identityOverride = null, {defer
   let initial = null;
   if (trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_BUILD_PAGE_SIZE);
   if (!initial || !initial.ended) {
+    const historicalRoots = new Map();
     const build = await advanceTrackBuild({trackId,prior,job,initial,
       readPage:(cursor,readTime,limit)=>canonicalTrackPage(env,trackId,cursor,readTime,limit),
-      normalize:(rows,readTime)=>normalizeBuildRows(env,trackId,rows,readTime),
+      normalize:(rows,readTime)=>normalizeBuildRows(env,trackId,rows,readTime,historicalRoots),
       read:(c,id)=>readDocument(env,c,id),
       readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
     if(build.pending){
@@ -1329,7 +1344,7 @@ export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResul
   if (!prior || prior.data?.algorithmVersion !== ALGORITHM_VERSION || !Array.isArray(prior.data?.entries)) return rebuildTrack(env, trackId);
   let normalized = computeTrackEntries([{ ...canonicalResult, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' }], trackId, env)[0];
   if (!normalized) throw new Error('Canonical PB failed structural validation');
-  if (prior.data.pagination) prior.data.entries = await loadPublicationEntries(prior.data,'track',trackId,(c,id)=>readDocument(env,c,id));
+  if (prior.data.pagination) prior.data.entries = await loadTrackPublicationEntries(env,prior.data,trackId);
   const existing=prior.data.entries.find(row=>safeText(row.accountId||row.userId,128)===normalized.accountId);
   // Equal PB repair must use current canonical data, not a delayed notification payload.
   const bindingRepair=existing && Number(existing.timeMs)===normalized.timeMs && Number(existing.uploadId||0)===Number(normalized.uploadId||0) &&
@@ -2319,7 +2334,7 @@ export async function updateTrackIdentity(env, trackId, identity, budget = {full
     // board next pass rather than double-publishing inside a read-heavy build pass.
     return {...result,pending:true,identityPending:true};
   }
-  if(snapshot.pagination)snapshot.entries=await loadPublicationEntries(snapshot,'track',trackId,(c,id)=>readDocument(env,c,id));
+  if(snapshot.pagination)snapshot.entries=await loadTrackPublicationEntries(env,snapshot,trackId);
   const accountId = safeText(identity?.accountId, 128);
   if (!accountId) return { changed: false, entries: snapshot.entries, revision: Number(snapshot.revision || 0) };
   const index = snapshot.entries.findIndex((entry) => safeText(entry.accountId || entry.userId, 128) === accountId);
@@ -2517,11 +2532,12 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
   if (remembered) return remembered;
   if (!await allowPublicRead(request, env)) return rateLimited(origin, env);
   const missGuard=publicMissGuard(env),missClient=(request.headers.get('CF-Connecting-IP')||'unknown').slice(0,128);
-  if(!missGuard.permits(missClient))return rateLimited(origin,env);
   const key = cacheKey.url;
   const scope = publicResponseCacheScope(env), loads = scope.pending;
   let load = loads.get(key);
   if (!load) {
+    const finishProbe = missGuard.reserve(missClient);
+    if (!finishProbe) return rateLimited(origin, env);
     load = (async () => {
       const release = () => {
         if (loads.get(key) === load) loads.delete(key);
@@ -2535,7 +2551,7 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
         }
         const snapshot = pageReady ? await readDocument(env, collection, id) : null;
         if (!snapshot) {
-          missGuard.missing(missClient);
+          finishProbe(true);
           const response = json(origin, env, 404, { error: 'snapshot_not_ready' }, 'public, max-age=10');
           await rememberPublicResponse(env, key, response, Date.now(), scope);
           if (cache) {
@@ -2578,7 +2594,7 @@ async function publicSnapshot(request, env, context, origin, collection, id) {
       } catch (error) {
         release();
         throw error;
-      }
+      } finally { finishProbe(); }
     })();
     loads.set(key, load);
   }

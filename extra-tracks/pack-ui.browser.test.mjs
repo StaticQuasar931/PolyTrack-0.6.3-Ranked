@@ -1,7 +1,8 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import {createRequire} from 'node:module';
-const require=createRequire(import.meta.url);let chromium;try{({chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'));}catch{}
+const require=createRequire(new URL('../tools/verifier/package.json',import.meta.url));
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const source=fs.readFileSync(new URL('./pack-ui.mjs',import.meta.url),'utf8'),css=fs.readFileSync(new URL('./pack.css',import.meta.url),'utf8');
-test('pack chooser fits phone and desktop screens and imports only checked tracks',{skip:!chromium},async()=>{
+test('pack chooser fits phone and desktop screens and imports only checked tracks',async()=>{
  const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();await page.route('**/*',r=>r.request().url().endsWith('/pack-ui.mjs')?r.fulfill({contentType:'text/javascript',body:source}):r.fulfill({contentType:'text/html',body:'<!doctype html><html><head></head><body style="margin:0"></body></html>'}));await page.goto('http://pack.test/');await page.addStyleTag({content:css});
  const entries=JSON.parse(fs.readFileSync(new URL('./catalog.json',import.meta.url),'utf8')).filter(e=>e.packId==='tmnf-ab'),pack=JSON.parse(fs.readFileSync(new URL('./packs.json',import.meta.url),'utf8'))[0];
  await page.evaluate(async({entries,pack})=>{const m=await import('/pack-ui.mjs');window.packImports=[];window.pack=m.mountTrackPack({document,root:document.body,entries,pack,onImport:async e=>window.packImports.push(e.id)});},{entries,pack});

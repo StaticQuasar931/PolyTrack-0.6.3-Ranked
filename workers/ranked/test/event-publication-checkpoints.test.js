@@ -96,6 +96,17 @@ function fixture({completed=0,legacy=0,kind='event_totals'}={}) {
 const isProfiles=call=>call.path===':batchGet'&&call.body.documents.some(name=>name.includes('/'+C.profiles+'/'));
 const isStaging=call=>call.path===':commit'&&!call.body.transaction&&call.body.writes.some(w=>w.update.name.includes('/'+P+'/'));
 
+for(const kind of ['event','event_totals'])test('empty '+kind+' source never sends an empty document batch',async()=>{
+  const f=fixture({kind});
+  assert.equal((await publishEventCapacity(f.runtime)).published,true);
+  assert.equal(f.data.get(f.target).totalEntries,kind==='event'?0:1);
+  assert.equal(f.data.get(f.jobPath).complete,true);
+  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
+  console.log('EVENT_EMPTY_PUBLICATION_COST '+JSON.stringify({kind,...f.metrics()}));
+  assert.equal(f.calls.some(call=>call.path===':batchGet'&&!call.body.documents.length),false,'empty batch has no documents to read');
+  f.closed();
+});
+
 test('completed parts survive three final failures without restaging a committed generation',async()=>{
   const f=fixture({completed:10000});
   f.hook(call=>{if(call.path===':beginTransaction'&&call.begin===2)throw Error('MOCK_FINAL_PRETRANSPORT');});

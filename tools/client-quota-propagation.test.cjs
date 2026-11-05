@@ -55,7 +55,7 @@ function harness(){
     window:{firebase:{auth:()=>({currentUser:user})}},
     FIREBASE_QUOTA_PAUSE_KEY:'quota',firestorePromise:Promise.resolve(database),firebaseRetryAt:0,
     assertOnlineCompatibility:()=>{},observeFirestore:value=>value,
-    ensureFirebaseAuthApp:()=>assert.fail('Unexpected SDK bootstrap'),loadScript:()=>assert.fail('Unexpected SDK load'),
+    ensureFirebaseAuthApp:async()=>{},loadScript:()=>assert.fail('Unexpected SDK load'),
     readJsonStorage:(key,fallback)=>storage.has(key)?JSON.parse(storage.get(key)):fallback,
     writeJsonStorage:(key,value)=>{storage.set(key,JSON.stringify(value));return true;},
     COLLECTIONS:{profilesPublic:'profiles',moderationNames:'moderation',multiplayerMessages:'messages',multiplayerSessions:'sessions'},

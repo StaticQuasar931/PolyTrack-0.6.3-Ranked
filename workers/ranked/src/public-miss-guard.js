@@ -1,18 +1,42 @@
 // A bounded isolate-local circuit breaker, not a global quota ledger.
-// Only confirmed absent documents spend this allowance; legitimate new tracks
-// do not need a static registry or a new persistent database counter.
+// Successful probes release their reservations; only confirmed absent documents
+// spend the window allowance. Pending probes cannot oversubscribe that allowance.
 export function createPublicMissGuard({now=Date.now,windowMs=60000,perClient=10,total=50,maxClients=256}={}) {
-  let epoch=now(),misses=0;
-  const clients=new Map();
+  const fresh=at=>({epoch:at,misses:0,pending:0,clients:new Map(),pendingClients:new Map()});
+  let state=fresh(now());
   const reset=()=>{
     const at=now();
-    if(at<epoch||at-epoch>=windowMs){epoch=at;misses=0;clients.clear();}
+    if(at<state.epoch||at-state.epoch>=windowMs)state=fresh(at);
+  };
+  const permits=client=>{
+    reset();
+    return state.misses+state.pending<total&&
+      (state.clients.get(client)||0)+(state.pendingClients.get(client)||0)<perClient&&
+      (state.clients.has(client)||state.pendingClients.has(client)||
+        new Set([...state.clients.keys(),...state.pendingClients.keys()]).size<maxClients);
+  };
+  const missing=client=>{
+    reset();state.misses++;
+    if(state.clients.has(client)||state.clients.size<maxClients)
+      state.clients.set(client,(state.clients.get(client)||0)+1);
   };
   return Object.freeze({
-    permits(client){reset();return misses<total&&(clients.get(client)||0)<perClient&&
-      (clients.has(client)||clients.size<maxClients);},
-    missing(client){reset();misses++;if(clients.has(client)||clients.size<maxClients)
-      clients.set(client,(clients.get(client)||0)+1);},
-    size(){reset();return clients.size;}
+    permits,
+    missing,
+    reserve(client){
+      if(!permits(client))return null;
+      const held=state;let finished=false;
+      held.pending++;held.pendingClients.set(client,(held.pendingClients.get(client)||0)+1);
+      return absent=>{
+        if(finished)return;finished=true;
+        held.pending--;
+        const remaining=held.pendingClients.get(client)-1;
+        if(remaining)held.pendingClients.set(client,remaining);else held.pendingClients.delete(client);
+        reset();
+        // A late response from an expired window must not charge a newer window.
+        if(absent===true&&state===held)missing(client);
+      };
+    },
+    size(){reset();return state.clients.size;}
   });
 }

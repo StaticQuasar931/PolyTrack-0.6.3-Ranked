@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 281,
+  "number": 282,
   "version": "0.6.3",
-  "revision": 240,
+  "revision": 241,
   "notes": [
-    "More reliable replay selection and local PB recovery.",
-    "Fixed PB counting after offline play and update-menu controls.",
-    "Leaderboard publishing resumes safely after interruptions."
+    "Clearer phone layouts and complete weekly track artwork.",
+    "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
+    "Safer run publishing and snapshot updates after interruptions."
   ],
-  "preparedAt": "2026-11-05T01:53:47.738Z",
-  "committedAt": "2026-11-05T02:24:17.000Z"
+  "preparedAt": "2026-11-05T03:45:21.127Z",
+  "committedAt": "2026-11-05T03:57:19.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

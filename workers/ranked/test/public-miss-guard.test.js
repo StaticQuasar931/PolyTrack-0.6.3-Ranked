@@ -44,3 +44,38 @@ test('rotating track and page misses stop before storage while warm custom board
  assert.equal(reads,11,'already-cached legitimate custom board bypasses the miss circuit');
  assert.doesNotMatch(JSON.stringify(logs),/192\.0\.2|missing_track/);
 });
+
+test('cold reservations release on success/failure, charge absence once and survive clock rollover',()=>{
+ let now=0;const guard=createPublicMissGuard({now:()=>now,perClient:2,total:3,maxClients:2});
+ const first=guard.reserve('a'),second=guard.reserve('a'),third=guard.reserve('b');
+ assert.equal(guard.reserve('a'),null);assert.equal(guard.reserve('c'),null);
+ first();first(true);assert.equal(guard.permits('a'),true,'double completion cannot charge a success');
+ second(true);second(true);assert.equal(guard.reserve('a') instanceof Function,true);
+ assert.equal(guard.reserve('c'),null,'missed and pending clients share the key bound');
+ third();const newcomer=guard.reserve('c');assert.equal(typeof newcomer,'function');newcomer();
+ now=60000;const fresh=guard.reserve('a');first(true);fresh();assert.equal(guard.size(),0);
+ const late=guard.reserve('b');now=120000;assert.equal(guard.permits('a'),true);late(true);
+ assert.equal(guard.size(),0,'expired requests do not spend the new window');
+});
+
+for(const missing of [false,true])test('concurrent public loads '+(missing?'reserve miss budgets':'share successes and release reservations'),async t=>{
+ t.mock.method(globalThis,'fetch',async()=>assert.fail('network forbidden'));t.mock.method(console,'log',()=>{});
+ const previous=globalThis.caches;delete globalThis.caches;t.after(()=>{if(previous===undefined)delete globalThis.caches;else globalThis.caches=previous;});
+ const origin='https://miss-concurrency.invalid';let reads=0,release;
+ const gate=new Promise(r=>release=r),env={ALLOWED_ORIGINS:origin,PUBLIC_READ_RATE_LIMITER:{limit:async()=>({success:true})},
+  __TEST_FIRESTORE:async()=>{reads++;await gate;return missing?null:{fields:eventEncode({entries:[]}).mapValue.fields};}};
+ const get=id=>handleRequest(new Request(origin+'/v1/snapshot/track?trackId='+id,{headers:{Origin:origin,'CF-Connecting-IP':'192.0.2.1'}}),env);
+ const pending=Array.from({length:60},(_,i)=>get(missing?'missing_'+String(i).padStart(3,'0'):'same_custom_track'));
+ await new Promise(r=>setImmediate(r));const started=reads;release();const responses=await Promise.all(pending);
+ assert.equal(started,missing?10:1);assert.equal(responses.filter(r=>r.status===429).length,missing?50:0);
+ if(!missing){for(let i=0;i<25;i++)assert.equal((await get('another_custom_'+i)).status,200);assert.equal(reads,26);}
+});
+
+test('failed cold transport releases its reservation rather than consuming the miss budget',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>assert.fail('network forbidden'));t.mock.method(console,'log',()=>{});
+ const previous=globalThis.caches;delete globalThis.caches;t.after(()=>{if(previous!==undefined)globalThis.caches=previous;});
+ const origin='https://miss-failure.invalid';let reads=0;
+ const env={ALLOWED_ORIGINS:origin,__TEST_FIRESTORE:async()=>{reads++;throw Error('FIRESTORE_503');}};
+ for(let i=0;i<20;i++)await assert.rejects(handleRequest(new Request(origin+'/v1/snapshot/track?trackId=valid_custom_track',{headers:{Origin:origin}}),env),/FIRESTORE_503/);
+ assert.equal(reads,20,'transport errors are not confirmed absence; upstream limiter remains responsible');
+});

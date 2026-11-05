@@ -175,7 +175,7 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
  // Completed checkpoints and rolling-only refreshes skip the source-query loop.
  // Reserve their retry budget before rereading parts or restaging public pages.
  if(beforeSourceRead)await beforeSourceRead();
- const parts=await post(runtime,':batchGet',{documents:Array.from({length:state.parts},(_,i)=>base(runtime)+PARTS+'/'+state.generation+'_'+i)});
+ const parts=state.parts?await post(runtime,':batchGet',{documents:Array.from({length:state.parts},(_,i)=>base(runtime)+PARTS+'/'+state.generation+'_'+i)}):[];
  const byId=new Map((parts||[]).filter(row=>row.found).map(row=>[row.found.name.split('/').pop(),decode(row.found)]));
  if(Array.from({length:state.parts},(_,i)=>byId.get(state.generation+'_'+i)).some(part=>!Array.isArray(part?.entries))){
    // A lost part must not strand durable work in a permanent reuse/failure loop.

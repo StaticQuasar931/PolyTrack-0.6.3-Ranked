@@ -17,3 +17,16 @@ test('large materialized frozen boards are retained on the next capture without 
  assert.equal(next.tracksFetched,0);assert.equal((await f.read('manifest.json')).tracks[id].path,'tracks/'+id+'.json');
  assert.equal(f.requests(),4);
 });
+
+
+test('same-timestamp changed frozen bytes repair the saved source without redundant Worker reads',async t=>{
+ const f=await fixture(t);await runPublicSnapshotBackup(f.options);
+ const wrong={...board(),entries:board().entries.map(row=>({...row,timeMs:row.timeMs+10}))};
+ await fs.writeFile(path.join(f.directory,'tracks',id+'.json'),JSON.stringify(wrong));
+ f.options.confirmedTracks=new Map([[id,{sha256:publicTrackConfirmationDigest(board(),id),updatedAt:250,checkedAt:1000}]]);
+ const result=await runPublicSnapshotBackup(f.options);
+ assert.equal(result.tracks[id].path,'tracks/'+id+'.json');
+ assert.equal(result.tracks[id].checkedAt,1000);
+ assert.deepEqual(await f.read('tracks/'+id+'.json'),board());
+ assert.equal(result.tracksFetched,0);
+});

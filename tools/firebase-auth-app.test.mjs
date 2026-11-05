@@ -164,3 +164,29 @@ test('Firestore SDK and quota state are not required by Auth-only callers', asyn
   assert(h.calls.loads.every(url => !url.includes('firestore')));
   assert.equal(h.calls.signIn, 0);
 });
+
+test('cached initialization revalidates a lost session and coalesces recovery', async () => {
+  const h = harness();
+  const ensure = createFirebaseAuthApp(h.options);
+  await ensure();
+  h.auth.currentUser = null;
+  const recovered = await Promise.all(Array.from({length: 20}, () => ensure()));
+  assert.ok(recovered.every(app => app === h.app));
+  assert.ok(h.auth.currentUser, 'cached app must not claim auth readiness with no user');
+  assert.equal(h.calls.signIn, 2, 'one initial sign-in and one shared recovery');
+  assert.equal(h.calls.initialize, 1);
+});
+
+test('failed lost-session recovery can retry without a second app', async () => {
+  const h = harness();
+  const ensure = createFirebaseAuthApp(h.options);
+  await ensure();
+  h.auth.currentUser = null;
+  const signIn = h.auth.signInAnonymously;
+  h.auth.signInAnonymously = async () => {throw Error('offline recovery');};
+  await assert.rejects(ensure(), /offline recovery/);
+  h.auth.signInAnonymously = signIn;
+  await ensure();
+  assert.ok(h.auth.currentUser);
+  assert.equal(h.calls.initialize, 1);
+});

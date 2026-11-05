@@ -47,3 +47,43 @@ test('refuses to overwrite an existing destination', async (t) => {
   await mkdir(paths.output, { recursive: true });
   await assert.rejects(exportReadableSnapshot({ sourceDirectory: paths.source, outputDirectory: paths.output }), /Output already exists/);
 });
+
+
+test('default source follows the validated current pointer, not generation one', async t => {
+  const f = await fixture(t);
+  const {rename} = await import('node:fs/promises');
+  await rename(f.source, path.join(f.root, 'public-snapshots7'));
+  await writeFile(path.join(f.root, 'snapshot-current.json'), JSON.stringify({currentdir:'public-snapshots7'}));
+  const result = await exportReadableSnapshot({root:f.root, outputDirectory:f.output});
+  assert.equal(result.generation, 7);
+});
+
+test('default source rejects malformed or escaping generation pointers before output', async t => {
+  const f = await fixture(t);
+  for (const currentdir of ['../encoded','public-snapshots0','public-snapshots07','public-snapshots7/../encoded','public-snapshots9007199254740992',null]) {
+    await writeFile(path.join(f.root,'snapshot-current.json'),JSON.stringify({currentdir}));
+    await assert.rejects(exportReadableSnapshot({root:f.root,outputDirectory:f.output}), /snapshot pointer/i);
+  }
+});
+
+test('default source rejects an index from another generation', async t => {
+  const f = await fixture(t);
+  const {rename} = await import('node:fs/promises');
+  await rename(f.source,path.join(f.root,'public-snapshots8'));
+  await writeFile(path.join(f.root,'snapshot-current.json'),JSON.stringify({currentdir:'public-snapshots8'}));
+  await assert.rejects(exportReadableSnapshot({root:f.root,outputDirectory:f.output}),/generation/i);
+});
+
+test('default export location stays within the organized PolyTrack project', async () => {
+  const source=await readFile(new URL('./export-readable-snapshot.mjs',import.meta.url),'utf8');
+  assert.match(source,/Codexstorage\/PolyTrack\/Projects\/Ranked-0\.6\.3\/Exports\/ReadableSnapshots/);
+  assert.doesNotMatch(source,/PolyTrack-private-snapshots|path\.join\(ROOT, 'public-snapshots1'\)/);
+});
+
+
+test('default source refuses directory junctions escaping the repository',async t=>{
+  const f=await fixture(t),{symlink}=await import('node:fs/promises');
+  await symlink(f.source,path.join(f.root,'public-snapshots7'),process.platform==='win32'?'junction':'dir');
+  await writeFile(path.join(f.root,'snapshot-current.json'),JSON.stringify({currentdir:'public-snapshots7'}));
+  await assert.rejects(exportReadableSnapshot({root:f.root,outputDirectory:f.output}),/pointer directory/);
+});

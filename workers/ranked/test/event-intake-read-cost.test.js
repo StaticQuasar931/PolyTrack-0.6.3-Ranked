@@ -17,7 +17,7 @@ function fixture(t) {
   t.mock.method(globalThis, 'fetch', async () => assert.fail('network forbidden'));
   t.mock.method(console, 'log', () => {});
   const at = Date.now(), data = new Map(), versions = new Map(), transactions = new Map();
-  let nonce = 0, audit = createFirestoreAudit(), calls = [];
+  let nonce = 0, audit = createFirestoreAudit(), calls = [], commitFailure = null;
   const period = eventPeriod({id:periodId, enabled:true, trackId, startsAt:at-10000,
     endsAt:at+86400000, graceMs:3600000, targetMs:10000, maxRp:100,
     eligibility:'best-submitted-during-period', capacity:{policyVersion:'intake-cost',
@@ -41,6 +41,7 @@ function fixture(t) {
     } else if (route === ':rollback') {
       assert.ok(transactions.delete(input.transaction)); result = {};
     } else if (route === ':commit') {
+      if (commitFailure) { const error = commitFailure; commitFailure = null; throw error; }
       const tx = transactions.get(input.transaction); assert.ok(tx);
       assert.ok(input.writes.length <= 16);
       for (const w of input.writes) {
@@ -98,7 +99,7 @@ function fixture(t) {
   return {data, put, runtime, send, inbox:(value=body) => {
     const row = {...value, periodId, ownerUid:'owner', receivedAt:{__firestoreTimestamp:new Date(at).toISOString()}};
     put(C.inbox+'/'+subject, row); return row;
-  }, reset:()=>{audit=createFirestoreAudit(); calls=[];},
+  }, failCommit:error=>{commitFailure=error;}, reset:()=>{audit=createFirestoreAudit(); calls=[];},
   cost:()=>({reads:audit.documentReadEstimate, writes:audit.writeEstimate, deletes:audit.deleteEstimate}),
   paths:()=>calls.filter(route=>route.startsWith('/')).map(route=>decodeURIComponent(route.slice(1).split('?')[0])),
   idle:()=>assert.equal(transactions.size,0)};
@@ -112,6 +113,23 @@ function noImprovement(f) {
   f.put(C.pbs+'/'+subject, {accountId, ownerUid:'owner', periodId, timeMs:15000});
   f.put(C.canonical+'/'+accountId+'_'+trackId, {accountId, ownerUid:'owner', trackId, timeMs:15000, frames:15000});
 }
+
+for (const [status,code] of [[409,'ABORTED'],[403,'PERMISSION_DENIED']])
+test('failed inbox admission commit stays retryable without rejection writes: '+code,async t=>{
+  const f=fixture(t); f.inbox();
+  const before=structuredClone(f.data), failure=Object.assign(Error('backend failure'),{status,code});
+  f.failCommit(failure);
+  let caught;
+  try { await consumeEventInbox(f.runtime); } catch(error) { caught=error; }
+  process.stdout.write('EVENT_INFRASTRUCTURE_COST '+JSON.stringify({code,...f.cost()})+'\n');
+  assert.equal(caught,failure);
+  assert.deepEqual(f.data,before,'no terminal cursor, rejection, or partial admission');
+  expectCost(f,15,0,'failed-admission-'+code);
+  f.reset();
+  assert.equal((await consumeEventInbox(f.runtime)).status,'waiting');
+  expectCost(f,17,8,'recovered-admission-'+code);
+  assert.equal(f.data.get(C.queues+'/'+periodId).admitted,1);
+});
 
 test('real Worker submission: admission, duplicate, and fresh ownership failure costs', async t => {
   const f = fixture(t);

@@ -20,3 +20,27 @@ test('extreme latency outliers are counted but capped in the average and maximum
  assert.equal(metric.maxMs,30000);assert.equal(metric.over5s,1);assert.equal(metric.over30s,1);
  assert.equal(metric.over5sPercent,50);assert.equal(metric.over30sPercent,50);
 });
+
+
+test('one malformed stored row cannot erase unrelated valid local history on recovery',()=>{
+  const saved={version:1,startedAt:1,revisions:[null,{revision:239,firstAt:1,lastAt:2,visits:4,visibleMs:10}],
+    tracks:{[a]:null,[b]:{plays:7,lastAt:2,sources:{profile:3}}},
+    metrics:{BROKEN:null,BOARD:{count:2,totalMs:40,maxMs:30}},actions:{'open-profile':5}};
+  let raw=JSON.stringify(saved);
+  const storage={getItem:()=>raw,setItem:(_key,value)=>{raw=value;}};
+  const h=createLocalInsights({storage,revision:240,now:()=>100});
+  assert.equal(h.report().tracks[b]?.plays,7);
+  assert.equal(h.report().metrics.BOARD?.count,2);
+  assert.equal(h.report().actions['open-profile'],5);
+  assert.equal(h.report().revisions.find(row=>row.revision===239)?.visits,4);
+  assert.equal(h.report().tracks[a],undefined);
+  h.flush(true);
+  assert.equal(createLocalInsights({storage,revision:240,now:()=>101}).report().tracks[b]?.plays,7);
+});
+
+test('malformed revision container does not discard valid track and action history',()=>{
+  const saved={version:1,revisions:{},tracks:{[a]:{plays:3,lastAt:2}},actions:{'open-profile':2}};
+  const h=createLocalInsights({storage:{getItem:()=>JSON.stringify(saved)},revision:240,now:()=>100});
+  assert.equal(h.report().tracks[a]?.plays,3);
+  assert.equal(h.report().actions['open-profile'],2);
+});

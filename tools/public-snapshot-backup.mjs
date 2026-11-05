@@ -838,7 +838,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   // eventually gets complete coverage without increasing the request budget.
   eventFetchIds.sort((a, b) => Number(liveIds.has(b) || b === 'permanent-rolling-hills') - Number(liveIds.has(a) || a === 'permanent-rolling-hills') ||
     Number(previous.events?.[a]?.checkedAt || 0) - Number(previous.events?.[b]?.checkedAt || 0));
-  eventFetchIds.splice(PUBLIC_SNAPSHOT_LIMITS.eventFetches);
+  const eventsDeferred = eventFetchIds.splice(PUBLIC_SNAPSHOT_LIMITS.eventFetches).length;
   let registry = trackIds;
   if (!registry) {
     const [indexSource, extraSource] = await Promise.all([
@@ -867,9 +867,13 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       // Frozen inputs can fill gaps, never roll a newer track board backward.
       const overlaySource = cached && nativeTrackSourceDigest(prior, cached, cachedBytes, previous.nativeVerificationLedger, nativeVerification);
       if(cached&&Number(cached.updatedAt)>Number(board.updatedAt))continue;
+      let cachedSource = overlaySource;
+      if(cached&&!prior.nativeLedgerOverlay&&!cached.entries.some(row=>row.nativeLedgerKey)) {
+        try { cachedSource=publicTrackConfirmationDigest(cached,id); } catch {}
+      }
+      // A timestamp is not a content binding. Reuse only the exact frozen bytes.
       if(cached&&Number(cached.updatedAt)===Number(board.updatedAt)&&
-          (!prior.nativeLedgerOverlay&&!cached.entries.some(row=>row.nativeLedgerKey)||
-           overlaySource===publicTrackConfirmationDigest(board,id)))continue;
+          cachedSource===publicTrackConfirmationDigest(board,id))continue;
       sourceRepairs.set(relative,board);
       cachedTracks[id]={path:relative,revision:Number(board.revision||board.sourceRevision||0),sourceUpdatedAt:board.updatedAt,updatedAt:board.updatedAt};
     }
@@ -1141,8 +1145,9 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     trackIdsKnown: allTrackIds.length, tracksFetched: trackRows.length, tracksMissing: missingTracks,
     trackBackupsPresent: Object.values(nextTracks).filter(row => row.path).length,
     trackBackupsMissing: Math.max(0, allTrackIds.length - Object.values(nextTracks).filter(row => row.path).length),
+    selectedEventIds: selectedEvents, eventsDeferred,
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
-    eventsMissing: missingEvents + archivedEventsUnavailable, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
+    eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
     pendingPlaybackCoverage, replayCoverage,
     trackSummaryMismatches,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null,
@@ -1154,7 +1159,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: (capturedOverall ? 1 : 2) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
-    eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents,
+    eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,
     plannerAvailable: planner.available, plannerReason: planner.reason}}));

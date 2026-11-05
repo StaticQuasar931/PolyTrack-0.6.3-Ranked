@@ -36,6 +36,12 @@ function harness(text=source,{tracks=[track],warm=false}={}){
     set:async patch=>{if(writeFailure)throw writeFailure instanceof Error?writeFailure:Error('write unavailable');cost(id).writes++;docs.set(id,{...docs.get(id),...patch});}
   })};}};
   const context={activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
+    runFirebaseTransaction:async(_database,callback)=>{
+      const writes=[];
+      const result=await callback({get:ref=>ref.get(),set:(ref,patch)=>writes.push([ref,patch])});
+      for(const [ref,patch] of writes)await ref.set(patch);
+      return result;
+    },
     readLocalRaceRows:()=>rows,safeRecordingId:value=>Number(value)||null,COLLECTIONS:{raceResults:'0.6.2_race_results'},
     fetch:globalThis.fetch};
   vm.createContext(context);
@@ -131,7 +137,7 @@ test('cold and warm profile GETs stay on published snapshots with zero direct SD
 function routeHarness(text){
   const h=harness(text),c=h.context,disk=new Map();let at=1000000,localSaves=0;
   Object.assign(c,{Date:{now:()=>at},FIREBASE_QUOTA_PAUSE_KEY:'quota',readJsonStorage:(key,fallback)=>disk.get(key)??fallback,
-    writeJsonStorage:(key,value)=>disk.set(key,value),assertOnlineCompatibility(){},firestorePromise:Promise.resolve(h.database),observeFirestore:async value=>value,
+    writeJsonStorage:(key,value)=>disk.set(key,value),assertOnlineCompatibility(){},ensureFirebaseAuthApp:async()=>{},firestorePromise:Promise.resolve(h.database),observeFirestore:async value=>value,
     log(){},parsePayload:value=>value,normalizeReplayPayloadString:value=>value,safePositiveInt:(value,fallback)=>Number(value)||fallback,
     LAST_ACTIVE_COLORS_KEY:'colors',LAST_ACTIVE_CAR_ID_KEY:'car',localStorage:{getItem:()=>null},cleanCarId:value=>value,
     recordingUploadAlreadyConfirmed:async()=>false,writeRecordingStore:()=>{localSaves++;},unrankedExtraRecordings:new Set()});

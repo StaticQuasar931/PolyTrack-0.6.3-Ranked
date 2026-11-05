@@ -13,7 +13,7 @@ export function createFirebaseAuthApp({
   waitForInitialAuth,
   assertOnlineCompatibility
 }) {
-  let pending = null;
+  let pending = null, readyApp = null;
 
   function assertCompatible() {
     return assertOnlineCompatibility();
@@ -22,6 +22,11 @@ export function createFirebaseAuthApp({
   return function ensureFirebaseAuthApp() {
     try {
       assertCompatible();
+      // A fulfilled initialization promise is not proof of a current auth session.
+      if (readyApp && !readyApp.auth().currentUser) {
+        pending = null;
+        readyApp = null;
+      }
     } catch (error) {
       return Promise.reject(error);
     }
@@ -46,9 +51,11 @@ export function createFirebaseAuthApp({
       }
       assertCompatible();
       if (!auth.currentUser) throw new Error('Firebase authentication is not ready');
+      readyApp = app;
       return app;
     }).catch(error => {
       pending = null;
+      readyApp = null;
       throw error;
     });
     return pending;

@@ -2,16 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 281,
+    "number": 282,
     "version": "0.6.3",
-    "revision": 240,
+    "revision": 241,
     "notes": [
-      "More reliable replay selection and local PB recovery.",
-      "Fixed PB counting after offline play and update-menu controls.",
-      "Leaderboard publishing resumes safely after interruptions."
+      "Clearer phone layouts and complete weekly track artwork.",
+      "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
+      "Safer run publishing and snapshot updates after interruptions."
     ]
   },
   "entries": [
+    {
+      "number": 281,
+      "title": "Fix replay binding, offline PB counts and resumable event publication",
+      "commit": "615259578b408f2e3d362831d36431eb1c9218c8",
+      "committedAt": "2026-11-05T02:24:17.000Z",
+      "notes": [
+        "More reliable replay selection and local PB recovery.",
+        "Fixed PB counting after offline play and update-menu controls.",
+        "Leaderboard publishing resumes safely after interruptions."
+      ]
+    },
     {
       "number": 279,
       "title": "Polish updates and featured tracks with safer usage diagnostics",
@@ -209,16 +220,6 @@ const historyData = {
       "notes": [
         "Landscape controls stay visible when Safari's toolbars open.",
         "Consistent event controls and reliable car-thumbnail fallbacks."
-      ]
-    },
-    {
-      "number": 250,
-      "title": "Phone UI",
-      "commit": "fbc5cbb0a58ed2b2b2f8074fee555880723cb8d9",
-      "committedAt": "2026-10-31T01:18:58.000Z",
-      "notes": [
-        "Clearer phone leaderboards with compact status badges and controls.",
-        "Better weekly artwork, landscape event cards and track tabs."
       ]
     }
   ],

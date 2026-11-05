@@ -438,7 +438,14 @@ test('reuse precedes production reads; receipt is recorded only after both captu
     const source = await readWorkflow(name);
     const check=source.indexOf('workflow-capture-coordination.mjs check'),catalog=source.indexOf('name: Capture public event assignments');
     assert.ok(check>=0&&catalog>check,'coordination must exist before the first production capture');
-    assert.match(source, /id: catalog\n        if: steps.coordination.outputs.reuse != 'true'\n/);
+    const catalogCondition=/id: catalog\n        if: (.+)\n/.exec(source)?.[1];
+    const baseCondition="steps.coordination.outputs.reuse != 'true'";
+    assert.equal(catalogCondition,baseCondition+(name==='publish-verified-snapshots.yml'
+      ?" && (!inputs.overnight_native || steps.overnight_guard.outputs.admitted == 'true')":''));
+    for(const reuse of ['true','false'])for(const overnight_native of [false,true])for(const admitted of ['true','false','']) {
+      const enabled=vm.runInNewContext(catalogCondition,{steps:{coordination:{outputs:{reuse}},overnight_guard:{outputs:{admitted}}},inputs:{overnight_native}});
+      assert.equal(enabled,reuse!=='true'&&(name!=='publish-verified-snapshots.yml'||!overnight_native||admitted==='true'));
+    }
     assert.match(source, /id: snapshot\n        if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'\n/);
     if(name==='publish-verified-snapshots.yml'){
       const expression=/CAPTURE_REQUESTED_AT: \$\{\{ (.+) \}\}\n/.exec(source)?.[1];
@@ -472,4 +479,37 @@ test('one four-window pipeline follows rotations, manual fallback has no cron an
   assert.match(cdn, /cron: '13,28,43,58 \* \* \* \*'/);
   assert.doesNotMatch(cdn, /update-public-snapshot|post-verification|FIREBASE/);
   assert.match(cdn, /--refresh-only/);
+});
+
+
+for (const omitted of [false,true]) test('materialized large track source records and reuses '+(omitted?'paged':'monolith')+' package without backend paging claims',async t=>{
+  forbidNetwork(t);
+  let f=await fixture(t);
+  const file=path.join(f.stage,'tracks',f.track+'.json');
+  const board=JSON.parse(await fs.readFile(file,'utf8')),row=board.entries[0];
+  board.entries=Array.from({length:501},(_,i)=>({...row,accountId:(i+1).toString(16).padStart(64,'0'),
+    userId:(i+1).toString(16).padStart(64,'0'),timeMs:100+i,rank:i+1,...(omitted?{name:'x'.repeat(4500)}:{})}));
+  board.totalEntries=501;board.complete=true;board.sourceComplete=true;
+  await fs.writeFile(file,JSON.stringify(board));
+  f=await publishOfflineFixture(f);
+  assert.equal(Object.hasOwn(f.index.files,'tracks/'+f.track+'.json'),!omitted);
+  const state=await recordCapture({root:f.root,startedAt:String(now-1000),now});
+  assert.equal(state.reusable,true);
+  assert.equal((await checkCapture({root:f.root,requestedAt:String(now-2000),now})).reuse,true);
+});
+
+
+test('materialized large track admission rejects incomplete, duplicate and malformed sources',async t=>{
+  forbidNetwork(t);
+  const f=await fixture(t),file=path.join(f.stage,'tracks',f.track+'.json');
+  const original=JSON.parse(await fs.readFile(file,'utf8')),row=original.entries[0];
+  const board={...original,complete:true,sourceComplete:true,totalEntries:501,entries:Array.from({length:501},(_,i)=>({...row,
+    accountId:(i+1).toString(16).padStart(64,'0'),userId:(i+1).toString(16).padStart(64,'0'),timeMs:100+i,rank:i+1}))};
+  for(const change of [b=>{b.complete=false;b.sourceComplete=false;},b=>{b.totalEntries=502;},
+    b=>{b.entries[1]={...b.entries[0]};},b=>{b.entries[0].accountId='bad';},
+    b=>{b.ranksExact=false;},b=>{b.pagination={version:1};}]) {
+    const invalid=structuredClone(board);change(invalid);await fs.writeFile(file,JSON.stringify(invalid));
+    await publishOfflineFixture(f);
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
+  }
 });

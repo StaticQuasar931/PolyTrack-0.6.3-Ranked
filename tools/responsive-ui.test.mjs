@@ -93,3 +93,22 @@ test('late root resizing is observed even without another window resize',()=>{
  assert.equal(events.at(-1).type,'sq-viewport-changed');assert.deepEqual(events.at(-1).detail,{width:956,height:360,top:0,left:0});
  const before=events.length;callbacks[0]();frame();assert.equal(events.length,before);dispose();assert.deepEqual(watched,[]);
 });
+
+test('menu fit uses the visible container and keyboard height continuously',()=>{
+ const embedded=fixture({width:1920,height:1080,containerWidth:600});
+ assert.equal(Number(embedded.properties['--sq-menu-fit-scale']),600/1150);embedded.dispose();
+ const keyboard=fixture({width:1366,height:800,visualHeight:320,useContainer:false});
+ assert.equal(Number(keyboard.properties['--sq-menu-fit-scale']),320/800);
+ for(let height=321;height<=800;height++){
+  keyboard.window.visualViewport.height=height;keyboard.visualEvents.get('resize')();keyboard.flush();
+  assert.ok(Math.abs(Number(keyboard.properties['--sq-menu-fit-scale'])-height/800)<1e-12);
+ }
+ keyboard.dispose();
+});
+
+test('menu fit does not cancel intentional visual pinch magnification',()=>{
+ const f=fixture({width:1366,height:800,useContainer:false});
+ f.window.visualViewport.scale=2;f.window.visualViewport.width=683;f.window.visualViewport.height=400;
+ f.visualEvents.get('resize')();f.flush();
+ assert.equal(Number(f.properties['--sq-menu-fit-scale']),1);f.dispose();
+});

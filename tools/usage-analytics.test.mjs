@@ -142,3 +142,19 @@ test('disposing and reinstalling cannot bypass the per-page report cap or minimu
  g.insights.observeUsage({source:'worker'});g.advance(1);g.end();assert.equal(g.events.length,1);
  g.advance(60000);g.flush();assert.equal(g.events.length,2);stop();
 });
+
+test('observed opt-out discards the disabled interval instead of replaying it on opt-in', () => {
+  const f = fixture(); installUsageAnalytics(f.options);
+  f.window.__polytrackAnalyticsAllowed = false;
+  f.insights.observeUsage({source:'firestore',reads:19,writes:7});
+  f.advance(60000); f.flush();
+  f.insights.observeUsage({source:'firestore',reads:3,writes:1});
+  f.window.__polytrackAnalyticsAllowed = true;
+  f.advance(60000); f.flush();
+  assert.equal(f.events.length,0,'the first resumed observation must establish a fresh consent baseline');
+  f.insights.observeUsage({source:'firestore',reads:1,writes:0});
+  f.advance(60000); f.flush();
+  assert.equal(f.events.length,1);
+  assert.equal(f.events[0][2].fs_reads_est,1);
+  assert.equal(f.events[0][2].fs_writes_est,0);
+});
