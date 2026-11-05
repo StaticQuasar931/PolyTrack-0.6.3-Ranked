@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 284,
+  "number": 285,
   "version": "0.6.3",
-  "revision": 243,
+  "revision": 244,
   "notes": [
-    "Safer recovery when a leaderboard snapshot update is interrupted.",
-    "Improved private access checks before loading snapshot data."
+    "Snapshot updates handle changed PB replay data more safely.",
+    "Unavailable replays stay unverified instead of blocking valid saved results."
   ],
-  "preparedAt": "2026-11-05T13:25:01.800Z",
-  "committedAt": "2026-11-05T13:29:18.000Z"
+  "preparedAt": "2026-11-05T14:09:48.280Z",
+  "committedAt": "2026-11-05T14:13:38.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

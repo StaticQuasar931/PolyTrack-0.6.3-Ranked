@@ -242,6 +242,38 @@ function validBoundRace(row, binding) {
     crypto.createHash('sha256').update(row.replay, 'utf8').digest('hex') === binding.replayHash;
 }
 
+async function retireStaleCanonical(directory,binding) {
+  const relative=`canonical/${binding.trackId}/${binding.accountId}.json`,file=path.join(directory,relative);
+  let bytes,value;
+  try{
+    const info=await fs.lstat(file);
+    if(!info.isFile()||info.isSymbolicLink()||info.size>MAX_FILE_BYTES)return false;
+    bytes=await fs.readFile(file);value=JSON.parse(bytes);
+  }catch(error){if(error.code==='ENOENT'||error instanceof SyntaxError)return false;throw error;}
+  // Only retire an older binding owned by this exact account/track. Malformed
+  // or foreign inputs remain fatal to the independent native input validator.
+  const frames=value.frames??value.raceTimeFrames;
+  if(value.accountId!==binding.accountId||value.trackId!==binding.trackId||
+    !Number.isSafeInteger(value.uploadId)||value.uploadId<1||!Number.isSafeInteger(value.timeMs)||value.timeMs<1||
+    !Number.isSafeInteger(frames)||frames<1||!HASH.test(value.replayHash||'')||
+    !Number.isSafeInteger(binding.metadata.timeMs)||binding.metadata.timeMs<1)return false;
+  if(value.uploadId===binding.uploadId&&value.timeMs===binding.metadata.timeMs&&frames===binding.frames&&value.replayHash===binding.replayHash)return false;
+  const quarantine=path.join(directory,'.retired-canonical');
+  await fs.mkdir(quarantine,{recursive:true});
+  const stat=await fs.lstat(quarantine);
+  if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Unsafe canonical quarantine');
+  // Non-JSON quarantine bytes are not eligible for snapshot publication.
+  const target=path.join(quarantine,crypto.createHash('sha256').update(bytes).digest('hex')+'.bin');
+  try{await fs.writeFile(target,bytes,{flag:'wx',mode:0o600});}catch(error){
+    if(error.code!=='EEXIST')throw error;
+    const prior=await fs.lstat(target);
+    if(!prior.isFile()||prior.isSymbolicLink()||prior.size!==bytes.length||!bytes.equals(await fs.readFile(target)))throw Error('Unsafe canonical quarantine target');
+  }
+  if(!bytes.equals(await fs.readFile(file)))throw Error('Canonical changed while retiring stale input');
+  await fs.unlink(file);
+  return true;
+}
+
 async function savedMatchExists(directory, binding) {
   let replay, canonical;
   try {
@@ -616,6 +648,8 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
     }
     progress.fullSnapshotPending = false;
   }
+  let retiredCanonical=0;
+  for(const binding of staged.bindings)if(!race.records[binding.signature]?.available&&await retireStaleCanonical(directory,binding))retiredCanonical++;
   progress.raceExport = race;
   await atomicWrite(directory, 'export-progress.json', progress);
   const records = Object.values(race.records);
@@ -628,7 +662,7 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
   const coverageComplete = scanComplete && missing === 0 && invalid === 0 && available === race.known && progress.profileSkipped === 0;
   const result = {counts: {profiles: progress.profileCount, canonical: available, recordings: available, missing,
       skipped: progress.profileSkipped + invalid}, scanned: progress.profiles.scanned + records.length,
-    fetchedDocumentsThisRun: usedThisRun, knownVerifiedBindings: race.known,
+    fetchedDocumentsThisRun: usedThisRun, knownVerifiedBindings: race.known, retiredCanonical,
     deferredBindingRetries: deferredBindings.size,
     totalCoverage: {available, missing, invalid, complete: coverageComplete,
       scope: 'current-staged-track-snapshots'}, scanComplete, complete: coverageComplete, budgetReached, incompletePage};

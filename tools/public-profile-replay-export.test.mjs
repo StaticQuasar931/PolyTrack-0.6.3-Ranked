@@ -8,6 +8,7 @@ import {deflateSync} from 'node:zlib';
 import {exportPublicProfilesAndReplays} from './public-profile-replay-export.mjs';
 import {publicEventBackup,publicEventReplayBackup} from './public-snapshot-backup.mjs';
 import {publicEventPlaybackForPublication} from './public-event-playback.mjs';
+import {loadCapturedNativeJobs} from './verifier/local-snapshot-capture.mjs';
 const accountId='a'.repeat(64), trackId='b'.repeat(64), otherAccount='c'.repeat(64);
 const replay='fixture-replay-payload', replayHash=createHash('sha256').update(replay).digest('hex');
 const str=stringValue=>({stringValue}), int=integerValue=>({integerValue:String(integerValue)});
@@ -38,7 +39,44 @@ function fixtureFetch(handler,requests=[]){return async(url,options)=>{
   assert.equal(options.signal instanceof AbortSignal,true);assert.equal(options.signal.aborted,false);
   return{ok:true,status:200,text:async()=>JSON.stringify(await handler(request))};};}
 const emptyProfiles=[{readTime:'2026-10-06T00:00:00Z'}];
+test('a superseded retained canonical is quarantined, not fed to native verification when the new replay is missing',async()=>{
+ await withDirectory(async directory=>{
+  const row=binding();await stage(directory,[row]);
+  await fs.mkdir(path.join(directory,'tracks'),{recursive:true});
+  await fs.writeFile(path.join(directory,'tracks',trackId+'.json'),JSON.stringify({trackId,entries:[row]}));
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify({tracks:{[trackId]:{path:`tracks/${trackId}.json`}},events:{}}));
+  const canonicalDirectory=path.join(directory,'canonical',trackId);await fs.mkdir(canonicalDirectory,{recursive:true});
+  await fs.mkdir(path.join(directory,'recordings'),{recursive:true});
+  const prior=JSON.stringify({...row,timeMs:16000,frames:960,raceTimeFrames:960});
+  await fs.writeFile(path.join(canonicalDirectory,accountId+'.json'),prior);
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify({...row,timeMs:16000,frames:960,recording:replay}));
+  const requests=[];const result=await exportPublicProfilesAndReplays({directory,snapshotDirectory:directory,includeProfiles:false,
+   fetchImpl:fixtureFetch(request=>request.options.documents.map(missing=>({missing})),requests),log:()=>{}});
+  assert.equal(result.retiredCanonical,1);assert.equal(result.counts.missing,1);assert.equal(requests.length,1);
+  await assert.rejects(fs.stat(path.join(canonicalDirectory,accountId+'.json')),e=>e.code==='ENOENT');
+  const names=await fs.readdir(path.join(directory,'.retired-canonical'));assert.equal(names.length,1);assert.match(names[0],/^[a-f0-9]{64}\.bin$/);
+  assert.equal(await fs.readFile(path.join(directory,'.retired-canonical',names[0]),'utf8'),prior);
+  const input=await loadCapturedNativeJobs({directory});assert.equal(input.jobs.length,0);
+  assert.equal(input.coverage.gaps.filter(gap=>gap.kind==='normal-replay-unavailable').length,1);
+ });
+});
 const batchResponse=(request,fields=raceFields())=>request.options.documents.map(name=>({found:{name,fields}}));
+test('foreign canonical ownership is not hidden by stale-cache retirement',async()=>{
+ await withDirectory(async directory=>{
+  const row=binding();await stage(directory,[row]);
+  await fs.mkdir(path.join(directory,'tracks'),{recursive:true});
+  await fs.writeFile(path.join(directory,'tracks',trackId+'.json'),JSON.stringify({trackId,entries:[row]}));
+  await fs.writeFile(path.join(directory,'manifest.json'),JSON.stringify({tracks:{[trackId]:{path:`tracks/${trackId}.json`}},events:{}}));
+  await fs.mkdir(path.join(directory,'canonical',trackId),{recursive:true});await fs.mkdir(path.join(directory,'recordings'));
+  const canonicalPath=path.join(directory,'canonical',trackId,accountId+'.json');
+  const foreign=JSON.stringify({...row,accountId:otherAccount});await fs.writeFile(canonicalPath,foreign);
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify({...row,recording:replay}));
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,
+   fetchImpl:fixtureFetch(request=>request.options.documents.map(missing=>({missing}))),log:()=>{}});
+  assert.equal(result.retiredCanonical,0);assert.equal(await fs.readFile(canonicalPath,'utf8'),foreign);
+  await assert.rejects(loadCapturedNativeJobs({directory}),/normal current\/canonical\/recording binding mismatch/);
+ });
+});
 
 async function seedEventBytes(directory,{count=1,verified=false,malformed=false}={}){
  const id='kodub_1793563200000',period={id,kind:'kodub',trackId,startsAt:100,endsAt:100000,maxRp:700};
@@ -593,7 +631,7 @@ test('untrusted future retry timestamps cannot pin a binding indefinitely',async
  });
 });
 
-test('canonical time mismatch cannot overwrite a previously valid replay/canonical pair',async()=>{
+test('canonical time mismatch preserves the old bytes privately without exposing them as the current pair',async()=>{
  await withDirectory(async directory=>{
   await prepareRetry(directory);await exportPublicProfilesAndReplays({directory,includeProfiles:false,now:1000,fetchImpl:fixtureFetch(req=>batchResponse(req))});
   const canonicalPath=path.join(directory,'canonical',trackId,accountId+'.json');
@@ -601,7 +639,10 @@ test('canonical time mismatch cannot overwrite a previously valid replay/canonic
   await stage(directory,[binding({timeMs:14000})]);
   const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,now:1001,fetchImpl:fixtureFetch(req=>batchResponse(req))});
   assert.equal(result.complete,false);assert.equal(result.totalCoverage.available,0);assert.equal(result.totalCoverage.invalid,1);
-  assert.equal(await fs.readFile(canonicalPath,'utf8'),oldCanonical);
+  await assert.rejects(fs.stat(canonicalPath),error=>error.code==='ENOENT');
+  const retired=await fs.readdir(path.join(directory,'.retired-canonical'));
+  assert.equal(retired.length,1);
+  assert.equal(await fs.readFile(path.join(directory,'.retired-canonical',retired[0]),'utf8'),oldCanonical);
   const repaired=await exportPublicProfilesAndReplays({directory,includeProfiles:false,now:3601001,fetchImpl:fixtureFetch(req=>batchResponse(req,raceFields({timeMs:int(14000)})))});
   assert.equal(repaired.complete,true);assert.equal(JSON.parse(await fs.readFile(canonicalPath,'utf8')).timeMs,14000);
  });

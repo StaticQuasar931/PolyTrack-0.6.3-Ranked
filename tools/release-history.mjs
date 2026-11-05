@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 284,
+    "number": 285,
     "version": "0.6.3",
-    "revision": 243,
+    "revision": 244,
     "notes": [
-      "Safer recovery when a leaderboard snapshot update is interrupted.",
-      "Improved private access checks before loading snapshot data."
+      "Snapshot updates handle changed PB replay data more safely.",
+      "Unavailable replays stay unverified instead of blocking valid saved results."
     ]
   },
   "entries": [
+    {
+      "number": 284,
+      "title": "Repair private snapshot identity and guard one authorized replacement",
+      "commit": "7bd4471b15da3fe04d74b56f535d688bc7211d73",
+      "committedAt": "2026-11-05T13:29:18.000Z",
+      "notes": [
+        "Safer recovery when a leaderboard snapshot update is interrupted.",
+        "Improved private access checks before loading snapshot data."
+      ]
+    },
     {
       "number": 283,
       "title": "Diagnose hosted snapshot authentication without database access",
@@ -210,16 +220,6 @@ const historyData = {
       "notes": [
         "More reliable profile updates and recovery from interrupted cloud publication.",
         "Ranked controls stay reachable in short windows."
-      ]
-    },
-    {
-      "number": 253,
-      "title": "Cloud Quota Fixes",
-      "commit": "0981c4f4d9198c4454fb9f1bf899b79efa19140f",
-      "committedAt": "2026-11-02T01:54:30.000Z",
-      "notes": [
-        "More efficient cloud syncing while preserving saved runs and retry safety.",
-        "Restored scheduled leaderboard updates and reduced background work."
       ]
     }
   ],

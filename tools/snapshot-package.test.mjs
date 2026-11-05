@@ -45,6 +45,16 @@ test('codec round-trips JSON bytes and explicitly exposes non-security metadata'
   assert.equal(Buffer.from(await decodeSnapshot(encoded)).toString('utf8'), '{"label":"public"}');
   assert.match((await import('./snapshot-package.mjs')).SNAPSHOT_CODEC.security, /not|non-security/i);
 });
+test('retired canonical diagnostic bytes never enter a public snapshot package',async t=>{
+ const paths=await fixture(t);
+ await writeFile(path.join(paths.staging,'tracks.json'),JSON.stringify({tracks:['public']}));
+ await mkdir(path.join(paths.staging,'.retired-canonical'));
+ await writeFile(path.join(paths.staging,'.retired-canonical','a'.repeat(64)+'.bin'),'{"privateRetiredFixture":true}');
+ const result=await publishSnapshot(paths);
+ const index=JSON.parse(await readFile(path.join(paths.root,result.directory,'index.json'),'utf8'));
+ assert(!Object.keys(index.files).some(name=>name.includes('retired')));
+ for(const item of Object.values(index.files))assert(!Buffer.from(await decodeSnapshot(await readFile(path.join(paths.root,result.directory,item.path)))).toString().includes('privateRetiredFixture'));
+});
 
 test('rejects staging files larger than the decoded limit', async (t) => {
   const paths = await fixture(t);
