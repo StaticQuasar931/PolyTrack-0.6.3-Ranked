@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 287,
+  "number": 288,
   "version": "0.6.3",
-  "revision": 246,
+  "revision": 247,
   "notes": [
-    "Snapshot update checks now cover the encrypted recovery path.",
-    "Existing saved results remain in place if an update cannot finish."
+    "Missing replay files no longer block checks of available saved runs.",
+    "Runs without replay evidence stay unverified."
   ],
-  "preparedAt": "2026-11-05T15:10:39.807Z",
-  "committedAt": "2026-11-05T15:14:09.000Z"
+  "preparedAt": "2026-11-05T15:30:36.656Z",
+  "committedAt": "2026-11-05T15:37:45.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
