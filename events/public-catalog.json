@@ -1,6 +1,67 @@
 {
   "periods": [
     {
+      "id": "kodub_1794168000000",
+      "trackId": "1d496526b5ae956596d1988e4f205ba00708718cbb376c3ed39e11a33ba4a679",
+      "startsAt": 1793563200000,
+      "endsAt": 1794168000000,
+      "graceMs": 86400000,
+      "maxRp": 700,
+      "targetMs": 48174,
+      "kind": "kodub",
+      "racerCount": 21,
+      "entrantLimit": 2000,
+      "label": "Event 2026-11-01",
+      "trackName": "Zonda",
+      "author": "Xander (route) + Vanyayu",
+      "targetPolicy": "official-fastest-verified-at-import",
+      "scoringVersion": "time-gap-v2"
+    },
+    {
+      "id": "w_20261102",
+      "trackId": "88647ea04145fbbbb19b55f1590e038fb0378acb2571110f02cb545cc46b0d57",
+      "startsAt": 1793577600000,
+      "endsAt": 1794182400000,
+      "graceMs": 86400000,
+      "maxRp": 500,
+      "targetMs": 29193,
+      "kind": "weekly",
+      "racerCount": 45,
+      "entrantLimit": 2000,
+      "label": "Weekly 2026-11-02",
+      "scoringVersion": "time-gap-v2"
+    },
+    {
+      "id": "d_20261105",
+      "trackId": "76e1920a3ca015033a0b21156848def2c248c95d97ccf4aab2312a0302beefe0",
+      "startsAt": 1793836800000,
+      "endsAt": 1793923200000,
+      "graceMs": 86400000,
+      "maxRp": 100,
+      "targetMs": 41991,
+      "kind": "daily",
+      "racerCount": 8,
+      "entrantLimit": 2000,
+      "label": "Daily 2026-11-05",
+      "scoringVersion": "time-gap-v2"
+    }
+  ],
+  "archives": [
+    {
+      "id": "w_20261026",
+      "trackId": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
+      "startsAt": 1792972800000,
+      "endsAt": 1793577600000,
+      "graceMs": 86400000,
+      "maxRp": 500,
+      "scoringVersion": "time-gap-v2",
+      "targetMs": 20540,
+      "kind": "weekly",
+      "entrantLimit": 200,
+      "label": "Weekly 2026-10-26",
+      "archived": true
+    },
+    {
       "trackName": "Hydropower",
       "author": "Bobson Dugnutt",
       "targetPolicy": "official-fastest-verified-at-import",
@@ -14,20 +75,8 @@
       "targetMs": 35439,
       "kind": "kodub",
       "entrantLimit": 200,
-      "label": "Event 2026-10-25"
-    },
-    {
-      "id": "w_20261026",
-      "trackId": "148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",
-      "startsAt": 1792972800000,
-      "endsAt": 1793577600000,
-      "graceMs": 86400000,
-      "maxRp": 500,
-      "scoringVersion": "time-gap-v2",
-      "targetMs": 20540,
-      "kind": "weekly",
-      "entrantLimit": 200,
-      "label": "Weekly 2026-10-26"
+      "label": "Event 2026-10-25",
+      "archived": true
     },
     {
       "id": "d_20261028",
@@ -40,10 +89,10 @@
       "targetMs": 44304,
       "kind": "daily",
       "entrantLimit": 200,
-      "label": "Daily 2026-10-28"
-    }
-  ],
-  "archives": [
+      "label": "Daily 2026-10-28",
+      "archived": true,
+      "racerCount": 12
+    },
     {
       "id": "d_20261026",
       "trackId": "fcbba504800751b0fb404a7cd1c9591befdf688ad5451ab2bc1f3651590cc5fc",

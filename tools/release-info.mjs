@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 290,
+  "number": 291,
   "version": "0.6.3",
-  "revision": 249,
+  "revision": 250,
   "notes": [
-    "Verified event runs can appear before an event's first server publication.",
-    "Partial standings and runs without replay proof stay protected."
+    "Updated saved rankings with 103 more replay checks.",
+    "Current Kodub event standings now include 20 verified racers."
   ],
-  "preparedAt": "2026-11-05T16:35:54.314Z",
-  "committedAt": "2026-11-05T16:41:49.000Z"
+  "preparedAt": "2026-11-05T17:07:50.331Z",
+  "committedAt": "2026-11-05T17:22:10.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
