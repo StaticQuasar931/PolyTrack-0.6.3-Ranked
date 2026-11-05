@@ -188,3 +188,39 @@ REST mock with an optional `EVENT_PUBLICATION_PREFLIGHT_BASELINE` source file;
 `test/events-scheduled-cost.test.js` and `test/scheduled-baseline-cost.test.js`
 pin the current quiet cron counts. Request counts include transaction control
 calls; read estimates do not include index-entry or security-rule charges.
+
+## Release 295: Client Retry Loops And Capture Reuse
+
+- A confirmed cosmetic commit now keeps a bounded account/session/draft receipt
+  when its local acknowledgement cannot be stored. Later attempts retry only
+  that acknowledgement with backoff. In the two-drain failed-storage fixture,
+  profile reads fall from 8 to 1, profile writes from 8 to 1, job writes from 8
+  to 1, and Worker posts from 8 to 1. Backend effects of those posts are separate.
+  A reload or a different auth session still requires fresh cloud authority.
+- Two simultaneous exact PB submissions share only their cloud operation. The
+  already-current PB fixture falls from two transactions/four reads to one/two,
+  with zero writes in either case. Local finish accounting remains per call.
+  Changed replay hashes, timing, identity or account/session do not share work;
+  failures release the slot and cannot create a successful acknowledgement.
+- A fresh pending board can reuse the exact saved recording/canonical pair after
+  local byte-hash, structure and binding validation. Its projection is pending,
+  not verified; trusted ingestion dates survive but old verdict fields do not.
+  A status-only transition now needs zero payload reads rather than a refetch.
+- Only explicit projection-size failures retain independently validated frozen
+  source boards. They do not retain the failed projection or invent current
+  source confirmation. Corruption and binding/baseline errors still fail closed.
+
+The complete first-five synthetic player fixture remains 75 reads/52 writes
+(14/14 direct SDK, 61/38 Worker), excluding verdicts, scheduled aggregation and
+rules/index/SDK retry charges. Static browsing within it remains 0/0. This healthy
+sequential workload does not trigger the two client bugs above, so no reduction
+is claimed for it. The current quiet fixture floor is 1,020 reads/day (360 event
+plus 660 non-event), excluding active work and actual source/entitlement audits.
+Neither figure attributes the reported daily usage to a particular cause.
+
+Evidence: `tools/client-cosmetic-publish-cost.test.cjs`,
+`tools/client-pb-inflight-cost.test.cjs`,
+`tools/public-profile-replay-export.test.mjs`,
+`tools/capture-overall-projection.test.mjs` and
+`tools/new-account-five-track-cost.test.mjs`. No routine capture cap, schedule,
+verification authority, security rule or admission policy changes are included.

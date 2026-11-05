@@ -48,6 +48,18 @@ Never use a live dispatch as the first execution of a changed offline gate.
 6. Test unchanged/no-op and failure paths explicitly. Use `workers/ranked/CLOUD_PATHS.md` to check the complete action, including deferred work. Local log summaries must not double count operation and request summaries or label unknown failed costs as zero.
 7. Preflight and legacy queue processing share one verification document allowance. Pass only its conservative remaining budget to the second process; missing or exhausted accounting blocks that process. Capture has separate component caps and must not be described as covered by this allowance. A private catalog handoff must match the exact capture source and attempt, remain outside public staging, and fall back to a fresh request if stale or invalid.
 
+## Client Retry And Capture Reuse
+
+- A successful cloud commit followed by failed local acknowledgement must retry
+  local storage only, with bounded delay. Replacement drafts and account/session
+  changes must not inherit another draft's receipt.
+- Concurrent identical PB calls may share cloud work, never local finish
+  accounting. Changed replay bytes, account/session, timing or profile data must
+  remain distinct; failed work must release its slot.
+- Test exact saved replay reuse when the fresh board returns pending, preserving
+  dates but never its old verdict. Size-only projection failures may retain
+  independently validated boards, not the failed projection or false freshness.
+
 ## Before Push Or Publication
 
 1. Immediately before committing, record a whole-second UTC `committedAt` using `stampReleaseCommitTime` from `tools/prepare-release-info.mjs`, and use that exact instant as `GIT_COMMITTER_DATE`. After the authorized commit, run `node tools/check-release-info.mjs` without `--precommit`. It checks the actual manual Git commit date as well as the title, notes and stamped entry files. Never inherit the previous release's commit date or call a preparation date a release date.

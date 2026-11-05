@@ -240,6 +240,72 @@ test('status-only promotion retains exact encoded bytes and makes zero payload r
  });
 });
 
+test('a fresh pending board reuses exact verified bytes without carrying their old verdict',async()=>{
+ await withDirectory(async directory=>{
+  const f=await pendingPair(directory),canonicalPath=path.join(directory,`canonical/${trackId}/${accountId}.json`);
+  await writeProgress(directory,{profiles:{complete:true,ids:[]}});
+  const options={directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('An exact status-only transition must not fetch');}};
+  await stage(directory,[{...f.row,verified:true,runVerified:true,verifiedState:1}]);
+  await exportPublicProfilesAndReplays(options);
+  const old=JSON.parse(await fs.readFile(canonicalPath));
+  Object.assign(old,{ingestedAt:500,ingestedAtSource:'firestore-server-timestamp',verifiedAt:999,proof:'old-proof'});
+  await fs.writeFile(canonicalPath,JSON.stringify(old));
+  await stage(directory,[f.row]);
+  const result=await exportPublicProfilesAndReplays(options);
+  assert.equal(result.complete,true);assert.equal(result.fetchedDocumentsThisRun,0);
+  const recording=JSON.parse(await fs.readFile(path.join(directory,'recordings/42.json')));
+  const canonical=JSON.parse(await fs.readFile(canonicalPath));
+  assert.equal(recording.recording,f.recording.recording);assert.equal(recording.updatedAt,600);
+  for(const row of [recording,canonical]){
+   assert.equal(row.verifiedState,0);assert.equal(row.playbackPending,true);
+   assert.equal(row.verificationStatus,'pending');assert.equal(row.eventRpEligible,false);
+   assert.equal(row.verifiedAt,undefined);assert.equal(row.proof,undefined);
+  }
+  assert.equal(canonical.runVerified,false);assert.equal(canonical.verified,false);assert.equal(canonical.integrityVerified,true);
+  assert.equal(canonical.ingestedAt,500);assert.equal(canonical.ingestedAtSource,'firestore-server-timestamp');
+  assert.equal((await exportPublicProfilesAndReplays(options)).fetchedDocumentsThisRun,0);
+ });
+});
+
+test('verified-to-pending reuse rejects changed bindings, styles, rejected statuses and malformed bytes',async()=>{
+ const mutations=[f=>{f.canonical.accountId=otherAccount;},f=>{f.canonical.timeMs++;},
+  f=>{f.canonical.uploadId++;},f=>{f.canonical.frames++;},f=>{f.recording.replayHash='d'.repeat(64);},
+  f=>{f.canonical.carStyle='changed';},f=>{f.recording.carStyle='changed';},
+  f=>{f.canonical.verificationStatus='rejected';},f=>{f.recording.recording+='A';},
+  f=>{const bytes=deflateSync(Buffer.alloc(14)).toString('base64url'),hash=createHash('sha256').update(bytes).digest('hex');
+   f.recording.recording=bytes;f.recording.replayHash=hash;f.canonical.replayHash=hash;f.row.replayHash=hash;}];
+ for(const mutate of mutations)await withDirectory(async directory=>{
+  const f=await pendingPair(directory);
+  f.recording={...f.recording,verifiedState:1,playbackPending:false,verificationStatus:'verified'};
+  f.canonical={...f.canonical,verified:true,runVerified:true,verifiedState:1,playbackPending:false,verificationStatus:'verified'};
+  mutate(f);await stage(directory,[f.row]);
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(f.recording));
+  await fs.writeFile(path.join(directory,`canonical/${trackId}/${accountId}.json`),JSON.stringify(f.canonical));
+  const requests=[];
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),requests),log:()=>{}});
+  assert.equal(result.complete,false);assert.equal(result.fetchedDocumentsThisRun,1);assert.equal(requests.length,1);
+ });
+});
+
+test('interrupted verified-to-pending pair rewrite completes locally in either file order',async()=>{
+ for(const pendingFile of ['recording','canonical'])await withDirectory(async directory=>{
+  const f=await pendingPair(directory);
+  for(const key of ['recording','canonical'])if(key!==pendingFile){
+   Object.assign(f[key],{verifiedState:1,playbackPending:false,verificationStatus:'verified'});
+   if(key==='canonical')Object.assign(f[key],{verified:true,runVerified:true});
+  }
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(f.recording));
+  await fs.writeFile(path.join(directory,`canonical/${trackId}/${accountId}.json`),JSON.stringify(f.canonical));
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('Interrupted local projection must not refetch');}});
+  assert.equal(result.fetchedDocumentsThisRun,0);assert.equal(result.totalCoverage.available,1);
+  const saved=JSON.parse(await fs.readFile(path.join(directory,`canonical/${trackId}/${accountId}.json`)));
+  assert.equal(saved.verifiedState,0);assert.equal(saved.runVerified,false);assert.equal(saved.playbackPending,true);
+ });
+});
+
 test('promotion rejects every changed immutable binding including time and optional recording upload',async()=>{
  const mutations=[f=>{f.canonical.accountId=otherAccount;},f=>{f.canonical.trackId='d'.repeat(64);},
   f=>{f.canonical.uploadId++;},f=>{f.canonical.frames++;},f=>{f.canonical.raceTimeFrames++;},

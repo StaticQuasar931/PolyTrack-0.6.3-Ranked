@@ -97,7 +97,7 @@ for (const file of ['tools/local-insights.mjs', 'tools/practice-profile.mjs', 't
 
 const patchSource = readFileSync(join(root, 'polytrack_062_patch.js'), 'utf8');
 const enrichStart = patchSource.indexOf('function enrichLegacyLeaderboardEntries');
-const enrichEnd = patchSource.indexOf('let lastMirrorSig', enrichStart);
+const enrichEnd = patchSource.indexOf('const confirmedRecordingUploads', enrichStart);
 const enrichContract = enrichStart >= 0 && enrichEnd > enrichStart ? patchSource.slice(enrichStart, enrichEnd) : '';
 if (!/integrityVerified:\s*entry\?\.integrityVerified\s*===\s*true/.test(enrichContract)) failures.push('Leaderboard normalization drops integrity verification state.');
 if (!/uploadId:\s*safeRecordingId/.test(enrichContract)) failures.push('Leaderboard normalization drops canonical replay upload IDs.');

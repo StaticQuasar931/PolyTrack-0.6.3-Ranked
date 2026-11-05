@@ -346,7 +346,7 @@ test('PB quota failures stop the batch and use shared quota cooldown, not the de
 });
 
 test('actual mirror catch propagates only permission-denied while retaining local-save behavior',async()=>{
-  const start=source.indexOf("      if(error?.code==='local-pb-account-changed')"),end=source.indexOf('\n    }\n  }',start);
+  const start=source.indexOf("      if(error?.code==='local-pb-account-changed')"),end=source.indexOf('\n    }\n    })();',start);
   assert.ok(start>=0&&end>start);
   for(const code of ['permission-denied','unavailable','resource-exhausted']){
     const c={error:failure(code),accountId:'acct',trackId:'track',timeMs:10000,frames:10000,name:'Racer',carStyle:'style',

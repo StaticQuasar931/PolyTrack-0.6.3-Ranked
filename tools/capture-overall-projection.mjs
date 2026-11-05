@@ -240,9 +240,10 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
   const files = new Map([['overall.json', projected.snapshot], ['overall-results.json', projected.planner.document]]);
   let projectionReady = false, projectionReason = null, projectionFailureStage = null, projectionFailureCode = null;
   const confirmedTracks = new Map(), capturedTracks = new Map();
+  let validatedTracks = null;
   try {
     projectionFailureStage = 'frozen-source';
-    const tracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now(),
+    const tracks = validatedTracks = await frozenOverallSource({meta, overall, results, documents: parts, now: now(),
       confirmationAt: Date.parse(readTime), confirmedTracks});
     projectionFailureStage = 'baseline';
     const bundle = await buildBundle({overall: projected.snapshot, results: projected.planner.document, tracks});
@@ -255,6 +256,11 @@ export async function captureOverallProjection({fetchImpl, auth = {}, minimumCom
     const baselineCodes = ['invalid_account', 'invalid_generation', 'generation_mismatch', 'unsupported_model', 'result_binding_mismatch', 'incomplete_overall', 'incomplete_track_catalog', 'incomplete_track_bindings', 'invalid_track_bindings', 'invalid_results', 'invalid_track_catalog', 'track_binding_mismatch', 'unsupported_track', 'incomplete_track', 'invalid_track_rows', 'track_weight_mismatch', 'baseline_mismatch'];
     const baselineCode = message.startsWith('Overall projection baseline mismatch: ') ? message.slice('Overall projection baseline mismatch: '.length) : '';
     projectionFailureCode = sourceCodes.includes(message) ? message : bundleCodes.get(message) || (baselineCodes.includes(baselineCode) ? baselineCode : 'unclassified');
+    // Size-only packaging failures do not invalidate independently authenticated boards.
+    if (projectionFailureStage === 'baseline' && validatedTracks &&
+        ['PROJECTION_SOURCE_TOO_LARGE', 'PROJECTION_RESULTS_TOO_LARGE'].includes(projectionFailureCode)) {
+      for (const board of validatedTracks) capturedTracks.set(board.trackId, board);
+    }
     // Published scores remain accurate even when a coherent local projection is unavailable.
     projectionReason = 'bound-source-or-baseline-unavailable';
   }

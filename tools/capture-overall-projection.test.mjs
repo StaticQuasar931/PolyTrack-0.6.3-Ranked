@@ -83,6 +83,7 @@ test('source corruption or baseline mismatch withholds projection without disgui
     const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
     assert.equal(result.report.projectionReady,false);assert.equal(result.files.has('projection-source.json'),false);
     assert.equal(result.confirmedTracks.size,0);
+    assert.equal(result.capturedTracks.size,0);
     assert.ok(result.files.has('overall.json'));assert.ok(result.report.projectionReason);
   }
 });
@@ -443,18 +444,21 @@ test('missing frozen marker is identified without source scans, retries or fabri
   assert.equal(result.report.projectionReady,false);assert.equal(result.report.projectionFailureStage,'frozen-source');
   assert.equal(result.report.projectionFailureCode,'FROZEN_OVERALL_SOURCE_UNAVAILABLE_OR_STALE');
   assert.equal(result.report.estimatedReads,3);assert.equal(result.files.has('projection-source.json'),false);
+  assert.equal(result.capturedTracks.size,0);
 });
 test('exact-baseline failure is distinguished from frozen-marker failure',async()=>{
   const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,
     buildBundle:async()=>{throw Error('Overall projection baseline mismatch: baseline_mismatch');}});
   assert.equal(result.report.projectionFailureStage,'baseline');assert.equal(result.report.projectionFailureCode,'baseline_mismatch');
   assert.equal(result.report.projectionReason,'bound-source-or-baseline-unavailable');assert.equal(result.report.estimatedReads,4);
+  assert.equal(result.capturedTracks.size,0);assert.equal(result.files.has('projection-source.json'),false);
 });
 test('unknown exception text is not copied to public diagnostics',async()=>{
   for(const message of ['PRIVATE_HEADERS_AND_CREDENTIAL_CANARY','FROZEN_PRIVATE_ACCOUNT_CANARY','Overall projection baseline mismatch: private_account_canary']){
     const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,
       buildBundle:async()=>{throw Error(message);}});
     assert.equal(result.report.projectionFailureCode,'unclassified');assert.doesNotMatch(JSON.stringify(result.report),/CANARY|private_account_canary/);
+    assert.equal(result.capturedTracks.size,0);assert.equal(result.files.has('projection-source.json'),false);
   }
 });
 test('mixed publication digest is classified at the frozen-source stage',async()=>{
@@ -462,10 +466,80 @@ test('mixed publication digest is classified at the frozen-source stage',async()
   const result=await captureOverallProjection({fetchImpl:f.fetchImpl});
   assert.equal(result.report.projectionFailureStage,'frozen-source');assert.equal(result.report.projectionFailureCode,'OVERALL_SOURCE_PUBLICATION_INVALID');
   assert.equal(result.report.estimatedReads,4);assert.equal(result.files.has('projection-source.json'),false);
+  assert.equal(result.capturedTracks.size,0);
 });
 test('invalid board and oversized result errors map to fixed public codes',async()=>{
   for(const [message,code] of [['Invalid Overall projection board','PROJECTION_BOARD_INVALID'],['Projection results too large','PROJECTION_RESULTS_TOO_LARGE']]){
     const f=await fixture();const result=await captureOverallProjection({fetchImpl:f.fetchImpl,buildBundle:async()=>{throw Error(message);}});
     assert.equal(result.report.projectionFailureStage,'baseline');assert.equal(result.report.projectionFailureCode,code);
+  }
+});
+
+const sizeOnlyErrors = [
+  ['Overall projection source exceeds snapshot file limit', 'PROJECTION_SOURCE_TOO_LARGE'],
+  ['Projection results too large', 'PROJECTION_RESULTS_TOO_LARGE'],
+];
+
+test('only explicit size failures retain independently validated frozen boards',async()=>{
+  const failures = [...sizeOnlyErrors,
+    ['Invalid Overall projection board', 'PROJECTION_BOARD_INVALID'],
+    ['Invalid projection result bundle', 'PROJECTION_RESULTS_INVALID'],
+    ['Overall projection baseline mismatch: baseline_mismatch', 'baseline_mismatch'],
+    ['Projection results too large: unknown suffix', 'unclassified']];
+  for (const [message, code] of failures) {
+    const f = await fixture();
+    const result = await captureOverallProjection({fetchImpl:f.fetchImpl,
+      buildBundle:async()=>{throw Error(message);}});
+    const sizeOnly = sizeOnlyErrors.some(([allowed])=>allowed===message);
+    assert.equal(result.capturedTracks.size,sizeOnly?1:0,message);
+    if (sizeOnly) assert.deepEqual(result.capturedTracks.get(track),authenticatedOverallTrackBackup(f.board,track));
+    assert.equal(result.report.projectionFailureCode,code);
+    assert.equal(result.report.projectionReady,false);
+    assert.equal(result.files.has('projection-source.json'),false);
+    assert.equal(result.confirmedTracks.size,0,'size failure cannot invent current-source confirmation');
+    assert.equal(f.requests.length,4);
+  }
+});
+
+test('size-only fallback never confirms changed or future current-source evidence',async()=>{
+  for (const [message] of sizeOnlyErrors) {
+    for (const mutate of [meta=>{meta.sourceCatalog.tracks[track].signature='changed';},
+      meta=>{meta.sourceCatalog.scannedAt=Date.parse(point)+1;}]) {
+      const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+      meta.sourceCatalog=structuredClone(f.catalog);mutate(meta);
+      const capture=await captureOverallProjection({fetchImpl:f.fetchImpl,
+        buildBundle:async()=>{throw Error(message);}});
+      assert.equal(capture.capturedTracks.size,1);
+      assert.equal(capture.confirmedTracks.size,0);
+      assert.equal(capture.files.has('projection-source.json'),false);
+    }
+  }
+});
+
+test('size-only fallback fills missing boards without duplicate Worker track reads',async t=>{
+  for (const [message] of sizeOnlyErrors) {
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'overall-size-reuse-'));
+    t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+    const f=await fixture(),meta=f.documents.get('0.6.2_s1_release_meta/current');
+    meta.sourceCatalog=structuredClone(f.catalog);
+    const capture=await captureOverallProjection({fetchImpl:f.fetchImpl,
+      buildBundle:async()=>{throw Error(message);}});
+    const calls=[];
+    const result=await runPublicSnapshotBackup({directory,now:Date.parse(point)+100,trackIds:[track],
+      capturedOverall:overallCaptureForBackup(capture),capturedTracks:capture.capturedTracks,
+      confirmedTracks:capture.confirmedTracks,log:()=>{},fetchImpl:async input=>{
+        const pathname=new URL(input).pathname;calls.push(pathname);
+        if(pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+        assert.equal(pathname,'/v1/events/permanent-rolling-hills/snapshot','no duplicate track or Overall reads');
+        return new Response('',{status:404});
+      }});
+    assert.notEqual(result.deferred,true);assert.equal(result.tracksFetched,0);
+    assert.equal(f.requests.length,4);assert.equal(calls.length,2);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(directory,'tracks',track+'.json'),'utf8')),
+      authenticatedOverallTrackBackup(f.board,track));
+    assert.equal(result.tracks[track].checkedAt,Date.parse(point));
+    await applyCapturedOverallProjection({directory,capture});
+    assert.equal(JSON.parse(await fs.readFile(path.join(directory,'manifest.json'),'utf8')).overallProjection.available,false);
+    await assert.rejects(fs.stat(path.join(directory,'projection-source.json')),{code:'ENOENT'});
   }
 });

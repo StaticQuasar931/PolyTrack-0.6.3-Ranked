@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 294,
+  "number": 295,
   "version": "0.6.3",
-  "revision": 253,
+  "revision": 254,
   "notes": [
-    "Busy leaderboards update in batches without unnecessary restarts.",
-    "Ranking updates reuse unchanged track data.",
-    "Safer replay checks and automatic ranking updates."
+    "Fixed repeated cosmetic uploads when device storage is full.",
+    "Duplicate PB submissions now share their upload work.",
+    "Snapshot updates reuse more existing replay and leaderboard data."
   ],
-  "preparedAt": "2026-11-05T21:44:51.929Z",
-  "committedAt": "2026-11-05T22:27:17.000Z"
+  "preparedAt": "2026-11-05T22:58:56.380Z",
+  "committedAt": "2026-11-05T23:03:35.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

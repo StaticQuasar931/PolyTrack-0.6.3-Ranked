@@ -7,14 +7,17 @@ const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'u
 const start=source.indexOf('  async function flushPendingCosmeticPublishes(');
 const end=source.indexOf('  async function saveRankedProfileCosmetics(',start);
 assert.ok(start>0&&end>start);
-function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount=false,retry=false}={}){
+function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount=false,retry=false,ackWritable=true}={}){
   const draft=id=>({accountId:'account',ownerUid:'uid',draftId:id,cosmetics:{theme:id},nextAttemptAt:0});
   let pending=draft('old'),active='account',replaced=false;
   const cost={reads:0,writes:0,jobs:0,worker:0,ownership:0},committed=[],acks=[];
   const replace=()=>{if(!replaced){pending=draft('new');replaced=true;}};
-  const user={uid:'uid',getIdToken:async()=> 'offline-token'};
+  let user={uid:'uid',getIdToken:async()=> 'offline-token'},clock=1000000;
+  const timers=new Map();let timerId=0;
   const context=vm.createContext({
-    navigator:{onLine:true},Date,Promise,
+    navigator:{onLine:true},Date:{now:()=>clock},Promise,
+    clearTimeout:id=>timers.delete(id),setTimeout:(fn,delay)=>{const id=++timerId;timers.set(id,{fn,delay});return id;},
+    firebaseQuotaPaused:()=>false,
     activeRankedAccountId:()=>active,
     readCosmeticPublishQueue:()=>({entries:pending?{account:pending}:{}}),
     cosmeticPublishIdentityMatches:(item,account,uid)=>!!item&&item.accountId===account&&item.ownerUid===uid,
@@ -37,17 +40,22 @@ function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount
       return attemptResult.result;
     },
     assertCloudOwner:(_account,uid,data)=>{cost.ownership++;if(data.ownerUid!==uid)throw Error('foreign owner');},
-    transitionCosmeticPublishQueue:action=>{if(action.type==='ack'){acks.push(action.draftId);if(pending?.draftId===action.draftId)pending=null;}},
+    transitionCosmeticPublishQueue:action=>{if(action.type==='ack'){acks.push(action.draftId);if(!ackWritable)return null;if(pending?.draftId===action.draftId)pending=null;}return {entries:pending?{account:pending}:{}};},
     readCosmeticDirectory:()=>({entries:{}}),writeCosmeticDirectory:()=>{},
     rankedBrokerUrl:()=> 'https://offline.invalid',rankedEdgeAvailable:()=>true,
     rankedFetch:async()=>{cost.worker++;return {status:200,ok:true,json:async()=>({accepted:true})};},
     withTimeout:promise=>promise,clearRankedEdgeFailure:()=>{},markRankedEdgeUnavailable:()=>{},
-    noteFirebaseQuota:()=>{},cosmeticPublishBackoff:()=>15000,log:()=>{},
-    showCloudOwnerConflict:()=>{},scheduleCosmeticPublishRetry:()=>{},
+    noteFirebaseQuota:()=>{},log:()=>{},showCloudOwnerConflict:()=>{},
     fetch:()=>{throw Error('NO_NETWORK_ALLOWED');}
   });
-  vm.runInContext('let cosmeticPublishPromise=null;\n'+source.slice(start,end)+'\nthis.flush=flushPendingCosmeticPublishes;',context);
-  return {run:()=>context.flush(),cost,committed,acks,pending:()=>pending};
+  const extract=name=>{const at=source.indexOf('  function '+name+'(');assert.ok(at>0);return source.slice(at,source.indexOf('\n  }',at)+4);};
+  vm.runInContext('let cosmeticPublishPromise=null,cosmeticPublishTimer=0;\n'+
+    ['cosmeticPublishBackoff','matchingCosmeticCommitReceipt','scheduleCosmeticPublishRetry'].map(extract).join('\n')+'\n'+
+    source.slice(start,end)+'\nthis.flush=flushPendingCosmeticPublishes;',context);
+  return {run:options=>context.flush(options),cost,committed,acks,pending:()=>pending,context,timers,
+    advance:ms=>{clock+=ms;},setAckWritable:value=>{ackWritable=value;},
+    setDraft:id=>{pending=draft(id);},setAccount:value=>{active=value;},
+    setUser:value=>{user=value;},receipts:()=>context.flush.receipts};
 }
 for(const replaceAt of ['before-read','during-read'])test('superseded cosmetic draft avoids obsolete writes: '+replaceAt,async()=>{
   const h=harness({replaceAt}),result=await h.run();
@@ -70,4 +78,47 @@ for(const option of ['failCommit','foreignOwner','switchAccount'])test(option+' 
   const h=harness({[option]:true}),result=await h.run();assert.equal(result.published,false);
   assert.equal(h.cost.writes,0);assert.equal(h.cost.jobs,0);assert.equal(h.cost.worker,0);
   assert.deepEqual(h.acks,[]);assert.ok(h.pending());
+});
+
+test('failed local acknowledgement retries local storage only, even when forced',async()=>{
+  const h=harness({ackWritable:false});
+  const first=await h.run();
+  assert.equal(first.published,true);assert.equal(first.queued,true);assert.equal(first.ackPending,true);
+  const cost={...h.cost};
+  assert.deepEqual(cost,{reads:1,writes:1,jobs:1,worker:1,ownership:1});
+  assert.equal([...h.timers.values()][0].delay,15000);
+  await h.run({force:true});assert.equal(h.acks.length,1);
+  for(const delay of [15000,60000,300000,900000,3600000,3600000]){
+    h.advance(delay);await h.run();assert.deepEqual(h.cost,cost);
+    assert.ok([...h.timers.values()][0].delay>0);
+    assert.ok([...h.timers.values()][0].delay<=3600000);
+  }
+  h.setAckWritable(true);h.advance(3600000);
+  const result=await h.run();assert.equal(result.published,true);assert.equal(result.queued,false);
+  assert.equal(h.pending(),null);assert.equal(h.receipts().size,0);assert.equal(h.timers.size,0);
+  assert.deepEqual(h.cost,cost);
+});
+
+test('replacement draft cannot inherit a committed draft receipt',async()=>{
+  const h=harness({ackWritable:false});await h.run();h.setDraft('replacement');h.setAckWritable(true);
+  await h.run();assert.equal(h.cost.reads,2);assert.equal(h.cost.writes,2);
+  assert.equal(h.committed.at(-1).profileCosmetics.theme,'replacement');assert.equal(h.pending(),null);
+});
+
+test('account and auth-session changes cannot acknowledge using an old receipt',async()=>{
+  const h=harness({ackWritable:false});await h.run();h.advance(15000);h.setAccount('other');
+  const result=await h.run();assert.equal(result.published,false);assert.equal(h.acks.length,1);
+  h.setAccount('account');h.setUser({uid:'uid',getIdToken:async()=> 'new-session'});h.setAckWritable(true);
+  await h.run();assert.equal(h.cost.reads,2);assert.equal(h.cost.writes,2);
+});
+
+test('commit failure never creates a receipt or claims publication',async()=>{
+  const h=harness({failCommit:true,ackWritable:false});const result=await h.run();
+  assert.equal(result.published,false);assert.equal(h.receipts()?.size||0,0);
+});
+
+test('cosmetic receipts remain bounded across accounts',async()=>{
+  const h=harness({ackWritable:false});await h.run();
+  for(let i=0;i<20;i++)h.receipts().set('stale-'+i,{});
+  h.setDraft('replacement');await h.run();assert.ok(h.receipts().size<=8);
 });

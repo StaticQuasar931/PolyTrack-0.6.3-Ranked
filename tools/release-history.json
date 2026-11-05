@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 294,
+    "number": 295,
     "version": "0.6.3",
-    "revision": 253,
+    "revision": 254,
     "notes": [
-      "Busy leaderboards update in batches without unnecessary restarts.",
-      "Ranking updates reuse unchanged track data.",
-      "Safer replay checks and automatic ranking updates."
+      "Fixed repeated cosmetic uploads when device storage is full.",
+      "Duplicate PB submissions now share their upload work.",
+      "Snapshot updates reuse more existing replay and leaderboard data."
     ]
   },
   "entries": [
+    {
+      "number": 294,
+      "title": "Reduce cloud rebuild reads and prepare guarded local snapshots",
+      "commit": "375e2b0309dc2283dcd1ed94e63196ca26b3fc25",
+      "committedAt": "2026-11-05T22:27:17.000Z",
+      "notes": [
+        "Busy leaderboards update in batches without unnecessary restarts.",
+        "Ranking updates reuse unchanged track data.",
+        "Safer replay checks and automatic ranking updates."
+      ]
+    },
     {
       "number": 293,
       "title": "Avoid repeated leaderboard rebuilds and share cloud work budgets",
@@ -202,18 +213,6 @@
         "More reliable daily goals, including slower follow-up runs.",
         "Daily progress stays separate when switching racers.",
         "Safer progress retries when the cloud is unavailable."
-      ]
-    },
-    {
-      "number": 272,
-      "title": "Complete Weekly Artwork and Reliable Placement Loading",
-      "commit": "9ef689ea1a9ecec23927ff1e7cbad3459912671c",
-      "committedAt": "2026-11-03T02:14:57.000Z",
-      "notes": [
-        "Kodub's weekly artwork scales more cleanly on large screens.",
-        "Placement badges recover correctly when cached standings reload.",
-        "Bigger Extra Tracks spotlights and cleaner native-style settings.",
-        "More efficient background event checks with unchanged scoring."
       ]
     }
   ],
