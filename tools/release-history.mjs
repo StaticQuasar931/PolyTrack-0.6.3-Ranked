@@ -2,16 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 282,
+    "number": 283,
     "version": "0.6.3",
-    "revision": 241,
+    "revision": 242,
     "notes": [
-      "Clearer phone layouts and complete weekly track artwork.",
-      "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
-      "Safer run publishing and snapshot updates after interruptions."
+      "Improved maintenance checks for reliable leaderboard updates.",
+      "Clearer reporting when a snapshot update cannot start."
     ]
   },
   "entries": [
+    {
+      "number": 282,
+      "title": "Harden cloud publication and snapshot recovery; improve phone layouts",
+      "commit": "6ec415591aaa104981f22ee11845ff2decaf2876",
+      "committedAt": "2026-11-05T03:57:19.000Z",
+      "notes": [
+        "Clearer phone layouts and complete weekly track artwork.",
+        "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
+        "Safer run publishing and snapshot updates after interruptions."
+      ]
+    },
     {
       "number": 281,
       "title": "Fix replay binding, offline PB counts and resumable event publication",
@@ -210,16 +220,6 @@ const historyData = {
       "notes": [
         "Menus stay aligned after phone rotation and Safari toolbar changes.",
         "Clearer home credits and track lists that fit the visible screen."
-      ]
-    },
-    {
-      "number": 251,
-      "title": "Safari Fixes",
-      "commit": "aa35592cb5c8280f8a6f10c1263478d323011a9b",
-      "committedAt": "2026-10-31T02:02:18.000Z",
-      "notes": [
-        "Landscape controls stay visible when Safari's toolbars open.",
-        "Consistent event controls and reliable car-thumbnail fallbacks."
       ]
     }
   ],
