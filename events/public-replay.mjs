@@ -1,7 +1,11 @@
 import {prepareOwnEventGhost} from './native-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
+import {hasPlayablePublicReplayStatus} from '../tools/public-replay-playback.mjs';
 // Published event PB payloads are bound to the selected snapshot before native parsing.
 export async function preparePublishedEventGhost({require,row,period,entry,viewer,playbackEngine}){
+  row=row&&Object.freeze({...row});period=period&&Object.freeze({...period});entry=entry&&Object.freeze({...entry});
+  if(!hasPlayablePublicReplayStatus(row)||!hasPlayablePublicReplayStatus(entry))throw Error('Event recording status not eligible');
+  if(!period||!(typeof entry.runId==='string'&&entry.runId.length>0&&entry.runId.length<=128||/^[a-f0-9]{64}$/.test(entry.replayHash||'')))throw Error('Event replay binding missing. Refresh standings.');
   if(entry.replayHash&&row?.replayHash!==entry.replayHash)throw Error('Recording changed. Refresh standings.');
   if(entry.runId&&row?.runId!==entry.runId)throw Error('Recording changed. Refresh standings.');
   if(typeof row?.runId!=='string'||!row.runId.length||row.runId.length>128||row.frames!==row.timeMs||row?.periodId!==period.id||row.trackId!==period.trackId||row.accountId!==entry.accountId||row.timeMs!==entry.timeMs||typeof row.replay!=='string'||row.replay.length>65536||!/^[a-f0-9]{64}$/.test(row.replayHash||''))throw Error('Event replay changed. Refresh standings.');

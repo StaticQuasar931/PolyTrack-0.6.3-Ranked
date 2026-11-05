@@ -215,7 +215,10 @@ export function createPartialReplaySelection({readRecordings, validateRecording,
         if (!item.error) try {
           // Required on cache hits too: cached bytes do not establish a live engine capability.
           if (await validateRecording(item.payload, rows[index], context) !== true) throw Error('Saved replay failed playback validation.');
-        } catch (error) { failure(item, error); }
+        } catch (error) {
+          // A superseded validator may share these bytes with the current job.
+          if (available(current)) failure(item, error);
+        }
         return item.error ? {row: rows[index], error: item.error} : {row: rows[index], payload: item.payload};
       }));
       if (!available(current)) return 'cancelled';

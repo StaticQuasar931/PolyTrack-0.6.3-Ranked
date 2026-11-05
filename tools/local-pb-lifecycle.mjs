@@ -8,6 +8,16 @@ const validId = value => typeof value === 'string' && value.length > 0 && value.
   value.trim() === value && !['__proto__', 'constructor', 'prototype'].includes(value);
 const validRow = row => validId(account(row)) && validId(row?.trackId) && Number.isSafeInteger(row.timeMs) && row.timeMs > 0;
 const sameKey = (a, b) => account(a) === account(b) && a.trackId === b.trackId;
+const playbackBinding = row => JSON.stringify([row.frames ?? row.raceTimeFrames, row.raceTimeFrames ?? row.frames,
+  row.uploadId ?? row.id, row.carStyle]);
+function sameStoredValue(a, b, depth = 0, budget = {remaining: 10000}) {
+  if (depth > 64 || --budget.remaining < 0) return false;
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length <= budget.remaining && keys.length === Object.keys(b).length &&
+    keys.every(key => own(b, key) && sameStoredValue(a[key], b[key], depth + 1, budget));
+}
 
 // Matches the existing reconcile receipt format; missing hashes are not exact proof.
 export function localPbSignature(row) {
@@ -42,6 +52,8 @@ export function pendingLocalPbs(rows, accountId, state = {}) {
 // writeRows must return true only for persistent storage, never a memory fallback.
 export function persistLocalPb(row, {readRows, writeRows, maxRows = 5000} = {}) {
   try {
+    // Storage callbacks must not change the PB whose persistence is acknowledged.
+    row = row && JSON.parse(JSON.stringify(row));
     if (!validRow(row) || !localPbSignature(row) || typeof replay(row) !== 'string' || !replay(row) ||
       typeof readRows !== 'function' || typeof writeRows !== 'function' || !Number.isSafeInteger(maxRows) || maxRows < 1) {
       return {localSaved: false, reason: 'invalid-pb'};
@@ -50,7 +62,8 @@ export function persistLocalPb(row, {readRows, writeRows, maxRows = 5000} = {}) 
     if (!Array.isArray(rows)) return {localSaved: false, reason: 'invalid-store'};
     const matches = rows.filter(other => validRow(other) && sameKey(row, other));
     const best = matches.reduce((a, b) => !a || b.timeMs < a.timeMs || b.timeMs === a.timeMs && !replay(a) && replay(b) ? b : a, null);
-    const exact = other => localPbSignature(other) === localPbSignature(row) && replay(other) === replay(row);
+    const exact = other => localPbSignature(other) === localPbSignature(row) && replay(other) === replay(row) &&
+      playbackBinding(other) === playbackBinding(row);
     if (best && exact(best)) return {localSaved: true, row: best, changed: false};
     if (best && (best.timeMs < row.timeMs || best.timeMs === row.timeMs && replay(best))) {
       return {localSaved: false, reason: 'superseded', row: best};
@@ -60,10 +73,10 @@ export function persistLocalPb(row, {readRows, writeRows, maxRows = 5000} = {}) 
     if (next.length > maxRows) return {localSaved: false, reason: 'capacity'};
     if (writeRows(next) !== true) return {localSaved: false, reason: 'storage-write-failed'};
     const stored = readRows();
-    if (!Array.isArray(stored) || !stored.some(other => validRow(other) && sameKey(row, other) && exact(other))) {
+    if (!Array.isArray(stored) || !stored.some(other => sameStoredValue(other, row))) {
       return {localSaved: false, reason: 'storage-readback-failed'};
     }
-    return {localSaved: true, row: next[0], changed: true};
+    return {localSaved: true, row, changed: true};
   } catch {
     return {localSaved: false, reason: 'storage-unavailable'};
   }
@@ -74,10 +87,14 @@ export function persistLocalPb(row, {readRows, writeRows, maxRows = 5000} = {}) 
 export async function prepareOwnLocalPbPlayback(row, payload, {
   accountId, trackId, recordingId, isSelf = false, explicitSelection = false, playbackEngine
 } = {}) {
+  row = row && Object.freeze({...row});
+  payload = payload && Object.freeze({...payload});
   if (!isSelf || !explicitSelection || !validRow(row) || account(row) !== accountId || row.trackId !== trackId ||
     !Number.isSafeInteger(recordingId) || recordingId < 1 || Number(row.uploadId || row.id) !== recordingId ||
     !localPbSignature(row) || !payload || typeof payload.recording !== 'string' || payload.recording.length > 262144 || payload.recording !== replay(row) ||
-    payload.frames !== Number(row.frames || row.raceTimeFrames) ||
+    payload.frames !== Number(row.frames ?? row.raceTimeFrames) ||
+    row.raceTimeFrames !== undefined && payload.frames !== Number(row.raceTimeFrames) ||
+    payload.raceTimeFrames !== undefined && payload.raceTimeFrames !== payload.frames ||
     typeof payload.carStyle !== 'string' || payload.carStyle.length > 256 ||
     row.carStyle !== undefined && payload.carStyle !== row.carStyle) throw Error('Own local PB binding mismatch');
   const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload.recording)))].map(b => b.toString(16).padStart(2, '0')).join('');

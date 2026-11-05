@@ -48,6 +48,8 @@ export async function validatePublicReplayForPublication(recording,frames){
 }
 // Public display data authorizes viewing only, never a physics verdict or RP.
 async function preparePublicRecording(row,entry,{allowPending=false,playbackEngine,dispatchPreparation=false}={}){
+  // Hashing and inflate yield; keep the exact checked binding across both awaits.
+  row=row&&Object.freeze({...row});entry=entry&&Object.freeze({...entry});
   if(!hasPlayablePublicReplayStatus(row)||!hasPlayablePublicReplayStatus(entry))throw Error('Public recording status not eligible');
   if(!row||!entry||!HASH.test(entry.accountId||'')||!HASH.test(entry.trackId||'')||
     !HASH.test(entry.replayHash||'')||!Number.isSafeInteger(entry.uploadId)||entry.uploadId<1||
@@ -55,6 +57,8 @@ async function preparePublicRecording(row,entry,{allowPending=false,playbackEngi
     !Number.isSafeInteger(entry.frames)||entry.frames<1||entry.frames>MAX_FRAMES||
     entry.raceTimeFrames!==undefined&&entry.raceTimeFrames!==entry.frames||
     row.accountId!==entry.accountId||row.trackId!==entry.trackId||row.frames!==entry.frames||
+    row.raceTimeFrames!==undefined&&row.raceTimeFrames!==entry.frames||
+    row.timeMs!==undefined&&row.timeMs!==entry.timeMs||
     row.uploadId!==undefined&&row.uploadId!==entry.uploadId||row.replayHash!==entry.replayHash||
     typeof row.recording!=='string'||!row.recording.length||
     new TextEncoder().encode(row.recording).length>MAX_BYTES)throw Error('Public recording binding mismatch');

@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 279,
+    "number": 281,
     "version": "0.6.3",
-    "revision": 239,
+    "revision": 240,
     "notes": [
-      "Clearer update buttons and release history with local dates.",
-      "Smoother main-menu entrance and more compact Extra Tracks picks."
+      "More reliable replay selection and local PB recovery.",
+      "Fixed PB counting after offline play and update-menu controls.",
+      "Leaderboard publishing resumes safely after interruptions."
     ]
   },
   "entries": [
+    {
+      "number": 279,
+      "title": "Polish updates and featured tracks with safer usage diagnostics",
+      "commit": "7ee3873a6e79fe896e710949ec105a079bdc58ca",
+      "committedAt": "2026-11-04T23:44:31.000Z",
+      "notes": [
+        "Clearer update buttons and release history with local dates.",
+        "Smoother main-menu entrance and more compact Extra Tracks picks."
+      ]
+    },
     {
       "number": 278,
       "title": "Reduce redundant cloud work and guard overnight snapshot capture",
@@ -209,16 +220,6 @@ const historyData = {
         "Clearer phone leaderboards with compact status badges and controls.",
         "Better weekly artwork, landscape event cards and track tabs."
       ]
-    },
-    {
-      "number": 249,
-      "title": "Responsive Polish",
-      "commit": "abee9f14ab7bdd35a2e911399896320f4c5ec560",
-      "committedAt": "2026-10-31T00:53:43.000Z",
-      "notes": [
-        "Better phone-landscape rankings and Settings spacing.",
-        "Settings controls stay clear of notches and home indicators."
-      ]
     }
   ],
   "coverage": {
@@ -272,11 +273,12 @@ export function countKnownUpdates(release, isAcknowledged, history = RELEASE_HIS
   }
   return null;
 }
-export function releaseHistoryTime(committedAt, now = Date.now()) {
+export function releaseHistoryTime(committedAt, now = Date.now(), source = 'committed') {
   const at = canonicalTime(committedAt);
   if (at === null) return {age:'Commit time unavailable', local:'', dateTime:''};
   const local = new Date(at).toLocaleString();
-  if (!Number.isFinite(now) || now < at) return {age:'Device clock is before commit time', local, dateTime:committedAt};
+  if (!Number.isFinite(now)) return {age:source === 'prepared' ? 'Preparation time unavailable' : 'Commit time unavailable', local, dateTime:committedAt};
+  if (now < at) return {age:`Device clock is before ${source === 'prepared' ? 'preparation' : 'commit'} time`, local, dateTime:committedAt};
   const elapsed = now - at, [unit, size] = elapsed >= 86400000 ? ['day',86400000] : elapsed >= 3600000 ? ['hour',3600000] : ['minute',60000];
   const count = Math.floor(elapsed / size);
   return {age:count ? `${count} ${unit}${count === 1 ? '' : 's'} ago` : 'Less than a minute ago', local, dateTime:committedAt};
@@ -284,12 +286,17 @@ export function releaseHistoryTime(committedAt, now = Date.now()) {
 function archiveModel(options) {
   const selected = selectReleaseHistory(options.release, options.history);
   if (!selected.matches || !selected.entries.length) return null;
-  return {...selected,
-    entries:selected.entries.map(entry => ({...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, timeLabel:entry.committedAt ? 'Committed' : 'Prepared', time:releaseHistoryTime(entry.committedAt ?? entry.preparedAt, options.now)}))};
+  return {...selected, entries:selected.entries.map(entry => {
+    const source = entry.committedAt ? 'committed' : 'prepared', timeLabel = source === 'committed' ? 'Committed' : 'Prepared';
+    const now = options.now === undefined ? Date.now() : options.now;
+    const time = releaseHistoryTime(entry.committedAt ?? entry.preparedAt, now, source);
+    const ageLabel = Number.isFinite(now) && now >= Date.parse(time.dateTime) ? `${timeLabel} ${time.age}` : time.age;
+    return {...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, timeLabel, time, ageLabel};
+  })};
 }
 export function renderReleaseHistory(options = {}) {
   const model = archiveModel(options); if (!model) return '';
-  return `<details class="release-history" data-release-history><summary>Earlier updates</summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary title="${escape(entry.timeLabel+': '+entry.time.local)}"><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>${entry.timeLabel} ${escape(entry.time.age)}</small></summary><p class="release-history-date">${entry.timeLabel} <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
+  return `<details class="release-history" data-release-history><summary>Earlier updates</summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary title="${escape(entry.timeLabel+': '+entry.time.local)}"><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>${escape(entry.ageLabel)}</small></summary><p class="release-history-date">${entry.timeLabel} <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
 }
 
 /** Native DOM version for the installed notice; no history fetch or HTML execution. */
@@ -304,7 +311,7 @@ export function createReleaseHistory(document, options = {}) {
   for (const entry of model.entries) {
     const item = make('li'), detail = make('details'); detail.setAttribute('data-release-history-entry','');
     const heading = make('summary',`${entry.label}: ${entry.title}`); heading.title = entry.timeLabel+': '+entry.time.local; Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
-    const when = make('time',`${entry.timeLabel} ${entry.time.age} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
+    const when = make('time',`${entry.ageLabel} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
     Object.assign(when.style,{display:'block',fontSize:'18px',color:'#a7d5ff',overflowWrap:'anywhere'});
     detail.append(heading,when);
     if (entry.notes.length) { const notes = make('ul'); for (const note of entry.notes) notes.append(make('li',note)); detail.append(notes); }
