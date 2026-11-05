@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
+import {EVENT_CATALOG_ENDPOINT, readEventCatalogHandoff} from './capture-event-catalog.mjs';
 import {fetchPublicBackupJson as fetchJson, PublicBackupDeferredError} from './public-backup-fetch.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {assemblePublishedSnapshotPages} from './published-snapshot-pages.mjs';
@@ -784,9 +785,11 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
   return report;
 }
 
-async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now = Date.now(),
+async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, nativeVerification = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, nativeVerification = null, catalogHandoff = null} = {}) {
+  const handoffNow = now === undefined ? Date.now : () => now;
+  now ??= Date.now();
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
     throw Error('Invalid trackFetchLimit');
   const adminFetchImpl=fetchImpl || fetch;
@@ -811,7 +814,9 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }});
   const overallRaw = capturedOverall ?? await assemble(await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/overall`), '/v1/snapshot/overall/page');
   const {snapshot: overall, planner} = publicOverallBackup(overallRaw);
-  const catalog = await fetchJson(fetchImpl, `${WORKER}/v1/events/catalog`);
+  // Check freshness when consumed, not before a potentially slow Overall/page capture.
+  const handedOffCatalog = await readEventCatalogHandoff(catalogHandoff, {now: handoffNow(), stagingDirectory: directory});
+  const catalog = handedOffCatalog ?? await fetchJson(fetchImpl, EVENT_CATALOG_ENDPOINT);
   const selectedEvents = selectEventIds(catalog);
   if (!catalog.periods.length && !catalog.archives.length && Object.keys(previous.events || {}).length) {
     throw new PublicBackupDeferredError('Empty event catalog; retaining saved event backups');
@@ -1161,7 +1166,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     await applyNativeLedgerToCapturedTracks({directory, ...nativeVerification, rebuildDerived:false, now});
     Object.assign(manifest, JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8')));
   }
-  log(JSON.stringify({publicSnapshotBackup: {workerRequests: (capturedOverall ? 1 : 2) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
+  log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
+    catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
     trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),

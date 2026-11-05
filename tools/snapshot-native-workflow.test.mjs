@@ -32,10 +32,10 @@ test('authority selection is explicit, default legacy, and invalid input never f
 });
 
 test('external mode cannot run due-queue reads or legacy verdict publication even with stale work output',()=>{
-  for(const mode of ['firestore','snapshot-native']) for(const has_work of ['true','false','']) {
-    const context={steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}}}};
+  for(const mode of ['firestore','snapshot-native']) for(const has_work of ['true','false','']) for(const has_budget of ['true','false']) {
+    const context={steps:{authority:{outputs:{mode}},queue:{outputs:{has_work}},budget:{outputs:{has_budget}}}};
     assert.equal(evaluate(condition(step(verify,'Check for due verification work')),context),mode==='firestore');
-    assert.equal(evaluate(condition(step(verify,'Verify queued runs')),context),mode==='firestore'&&has_work==='true');
+    assert.equal(evaluate(condition(step(verify,'Verify queued runs')),context),mode==='firestore'&&has_work==='true'&&has_budget==='true');
   }
   assert.match(step(verify,'Verify queued runs'),/node tools\/post-verification-run.mjs --drain/);
   assert.match(verify,/verification_authority: \$\{\{ steps.authority.outputs.mode \}\}/);

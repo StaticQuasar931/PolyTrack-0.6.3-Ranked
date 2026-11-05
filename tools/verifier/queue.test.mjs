@@ -651,7 +651,7 @@ test('workflow keeps all expensive steps due-gated and credentials restricted to
     const expected=['Install pinned verifier dependencies','Verify queued runs'].includes(name)
       ? "steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'"
       : "steps.queue.outputs.has_work == 'true'";
-    assert.equal(condition,expected,name);
+    assert.equal(condition,expected+" && steps.budget.outputs.has_budget == 'true'",name);
   }
   const publisherAt=workflow.indexOf('  publish_snapshots:');
   assert.ok(publisherAt>0);

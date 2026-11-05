@@ -72,7 +72,7 @@ jobs:
       - name: Test verification queue contracts on source updates
         if: github.event_name == 'push'
         # Catch the same offline gate before an overnight job; no quota access.
-        run: node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs workers/ranked/test/event-preflight-cost.test.js tools/new-account-five-track-cost.test.mjs tools/usage-analytics.test.mjs tools/analytics-url-privacy.test.mjs tools/cached-recording-verification.test.mjs tools/client-pb-profile-followup.test.cjs tools/offline-pb-analytics.test.cjs workers/ranked/test/event-publication-checkpoints.test.js
+        run: node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs tools/verifier/workflow-budget.test.mjs workers/ranked/test/event-preflight-cost.test.js tools/new-account-five-track-cost.test.mjs tools/usage-analytics.test.mjs tools/analytics-url-privacy.test.mjs tools/cached-recording-verification.test.mjs tools/client-pb-profile-followup.test.cjs tools/client-cosmetic-publish-cost.test.cjs tools/offline-pb-analytics.test.cjs workers/ranked/test/event-publication-checkpoints.test.js
       - name: Test CDN publication safeguards
         run: node --test tools/publish-cdn-release.test.mjs tools/workflow-release-contract.test.mjs
       - name: Validate immutable assets, publish pointer, and confirm CDN refresh

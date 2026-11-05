@@ -6,21 +6,20 @@ import {fetchPublicBackupJson, PublicBackupDeferredError} from './public-backup-
 
 import {mergeFrozenEventCatalog} from './merge-frozen-event-catalog.mjs';
 import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
+import {EVENT_CATALOG_ENDPOINT as endpoint, publicCatalogBackup, clearEventCatalogHandoff, writeEventCatalogHandoff} from './capture-event-catalog.mjs';
+export {publicCatalogBackup} from './capture-event-catalog.mjs';
 
-const endpoint = 'https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/catalog';
 const output = new URL('../events/public-catalog.json', import.meta.url);
+const staging = fileURLToPath(new URL('../local-reports/snapshot-staging/', import.meta.url));
 
-export function publicCatalogBackup(value) {
-  if (!value || !Array.isArray(value.periods) || !Array.isArray(value.archives) || value.periods.length > 160 || value.archives.length > 160) throw Error('Invalid public event catalog');
-  for (const period of [...value.periods, ...value.archives]) {
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(period?.id || '') || !/^[a-f0-9]{64}$/.test(period?.trackId || '') || !Number.isSafeInteger(period?.startsAt) || !Number.isSafeInteger(period?.endsAt) || period.endsAt <= period.startsAt) throw Error('Invalid public event period');
-  }
-  return { periods: value.periods, archives: value.archives };
-}
-
-export async function syncPublicEventCatalog({fetchImpl = createWorkerCaptureFetch(), outputFile = output, log = console.log} = {}) {
+export async function syncPublicEventCatalog({fetchImpl = createWorkerCaptureFetch(), outputFile = output, log = console.log,
+  catalogHandoff = null, stagingDirectory = staging, now = Date.now} = {}) {
+  // A deferred or failed retry must never leave an earlier success eligible for reuse.
+  await clearEventCatalogHandoff(catalogHandoff, {stagingDirectory});
   try {
-    const backup = publicCatalogBackup(await fetchPublicBackupJson(fetchImpl, endpoint));
+    const fetchedAt = now();
+    const rawCatalog = await fetchPublicBackupJson(fetchImpl, endpoint);
+    const backup = publicCatalogBackup(rawCatalog);
     if (!backup.periods.length && !backup.archives.length) {
       throw new PublicBackupDeferredError('Empty event catalog; retaining saved assignments');
     }
@@ -36,6 +35,7 @@ export async function syncPublicEventCatalog({fetchImpl = createWorkerCaptureFet
     } finally {
       await fs.unlink(temporary).catch(error => {if (error.code !== 'ENOENT') throw error;});
     }
+    if (catalogHandoff) await writeEventCatalogHandoff(catalogHandoff, rawCatalog, {now: fetchedAt, stagingDirectory});
     log('Saved', merged.periods.length, 'live and', merged.archives.length, 'archived event periods');
     return {deferred: false};
   } catch (error) {

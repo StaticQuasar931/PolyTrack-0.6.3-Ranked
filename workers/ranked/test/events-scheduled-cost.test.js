@@ -17,7 +17,7 @@ const env = {EVENTS_ENABLED:'true', EVENT_CAPACITY_JSON:JSON.stringify(capacity)
 const wire = (key, data) => ({name:'projects/polytrack-052/databases/(default)/documents/' + key,
   updateTime:'2026-10-20T00:00:00Z', fields:eventEncode(data).mapValue.fields});
 
-function quietFixture() {
+function quietFixture(mode) {
   const calls = [], audit = {documentReadEstimate:0, collections:{}};
   let now = start, upstream = 0, cursor = null, activeTransaction = false;
   const request = async (path, init = {}) => {
@@ -57,7 +57,8 @@ function quietFixture() {
         thumbnailUrl:'https://vps.kodub.com/v6/trackOfTheWeek/image/' + hash, coverUrl:null}});
     }};
   return {calls, audit, options, upstream:() => upstream, activeTransaction:() => activeTransaction, setCursor:value => {cursor = value;},
-    run:async minute => {now = start + minute * 60000; return eventWorkerMaintenance(env, {...options, at:now});}};
+    run:async minute => {now = start + minute * 60000; return eventWorkerMaintenance({...env,
+      BACKGROUND_MAINTENANCE_MODE:mode,PUBLIC_FIRESTORE_READ_MODE:'capture-only'}, {...options, at:now});}};
 }
 
 test('24h quiet event cron: 2880 estimated reads, zero writes, bounded discovery', async () => {
@@ -93,6 +94,19 @@ test('four coordinated event windows bound quiet daily reads without heartbeat w
     f.calls.filter(path => path === ':beginTransaction').length);
   assert.equal(f.calls.filter(path => path === ':commit').length,0);
   assert.equal(f.activeTransaction(),false);
+});
+
+test('current coordinated capture-only event schedule has a measured quiet floor of 360 reads and 384 requests',async()=>{
+  const f=quietFixture('coordinated');let allowed=0;
+  for(let minute=0;minute<1440;minute++){
+    if(!maintenanceWindowAllows('* * * * *',start+minute*60000,'coordinated'))continue;
+    allowed++;await f.run(minute);
+  }
+  assert.equal(allowed,180);assert.equal(f.audit.documentReadEstimate,360);assert.equal(f.calls.length,384);
+  assert.equal(f.audit.writeEstimate||0,0);assert.equal(f.calls.filter(p=>p===':runQuery').length,72);
+  assert.equal(f.upstream(),12);assert.equal(f.activeTransaction(),false);
+  console.log('COORDINATED_EVENT_BASELINE '+JSON.stringify({reads:f.audit.documentReadEstimate,requests:f.calls.length,
+    writes:f.audit.writeEstimate||0,allowedMinutes:allowed,collections:f.audit.collections}));
 });
 
 test('off-cadence provisioning and invalid cron timestamps perform no I/O', async () => {

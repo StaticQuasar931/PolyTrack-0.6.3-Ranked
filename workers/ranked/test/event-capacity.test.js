@@ -652,12 +652,12 @@ test('24h unchanged blocked dependency: durable gates survive fresh runtimes and
    f.time(start+minute*60000);await publishEventCapacity({...f.runtime});
  }
  const reads=meter.total();
- assert.equal(reads,1299);
+ assert.equal(reads,1348,'49 due attempts each add one early job read; cooling polls stay unchanged');
  assert.equal(meter.writes(),49);
  assert.equal(meter.audit.collections[C.totals]||0,0);
  assert.deepEqual(f.data.get(C.public+'/totals_full'),previous);
  assert.equal(f.data.get(C.public+'/totals').publicationPending,true);
- console.log('EVENT_COST blocked dependency 24h: before=2304 after='+reads+' (49 retry cursor writes; priming excluded)');
+ console.log('EVENT_COST blocked dependency 24h: release292=1299 candidate='+reads+' (49 retry cursor writes; priming excluded)');
  f.data.get(R.collection+'/'+R.trackId).complete=true;advanceRetryClock(f);
  assert.equal((await publishEventCapacity({...f.runtime})).published,true);
  assert.equal(f.data.get(C.cursors+'/public_capacity').retries,undefined);

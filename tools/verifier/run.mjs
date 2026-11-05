@@ -141,6 +141,14 @@ function reportAccounting(db, phase, outcome, env, log) {
       '\n## Firestore accounting\n' + JSON.stringify(usage) +
       '\nReservations are admission charges, not HTTP attempts. Read estimates are not billed usage, exclude index-entry charges, and omit unknown outcomes. Document-budget usage includes in-flight and retained unknown reservations; null limits mean unlimited or unavailable. Commit/write attempts are not confirmed writes. Failed requests include HTTP, transport and read-decoding failures. Unknown outcomes count attempts, not documents. OAuth is excluded.\n');
   } catch {}
+  if(phase==='preflight'&&env.GITHUB_OUTPUT&&
+    (env.VERIFIER_DOCUMENT_READ_LIMIT!==undefined||env.VERIFIER_DOCUMENT_WRITE_LIMIT!==undefined)){
+    // Carry conservative reservations across processes; never reset a workflow's
+    // budget after dependency/browser setup. Unknown accounting fails closed.
+    const budget={readLimit:usage.firestoreDocumentReadLimit,writeLimit:usage.firestoreDocumentWriteLimit,
+      usedReads:usage.firestoreDocumentReadsUsed,usedWrites:usage.firestoreDocumentWritesUsed};
+    try{fs.appendFileSync(env.GITHUB_OUTPUT,'preflight_document_budget='+JSON.stringify(budget)+'\n');}catch{}
+  }
 }
 
 export async function runVerifier({check = false, drain = false, catchUp = false, scheduledDrain = false, borrowUnusedEvents = false, clock = () => performance.now(), env = process.env, connectDatabase = connect,

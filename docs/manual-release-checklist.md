@@ -22,7 +22,7 @@ metadata, notes and preparation timestamp unchanged.
 
 ```sh
 node --test --test-concurrency=1 tools/release-info.test.mjs tools/help-controls.test.mjs tools/help-release-fixtures.browser.test.mjs tools/site-release.test.mjs tools/prepare-site-update.test.mjs tools/help-search.test.mjs tools/site-updates.test.mjs tools/release-client-identity.test.mjs tools/compatibility-cloud.test.mjs tools/workflow-release-contract.test.mjs
-node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs workers/ranked/test/event-preflight-cost.test.js
+node --test --test-concurrency=2 tools/verifier/queue.test.mjs tools/verifier/publication-queue.test.mjs tools/verifier/scheduled-drain.test.mjs tools/verifier/proof-cache-file.test.mjs tools/verifier/workflow-budget.test.mjs workers/ranked/test/event-preflight-cost.test.js tools/new-account-five-track-cost.test.mjs tools/usage-analytics.test.mjs tools/analytics-url-privacy.test.mjs tools/cached-recording-verification.test.mjs tools/client-pb-profile-followup.test.cjs tools/client-cosmetic-publish-cost.test.cjs tools/offline-pb-analytics.test.cjs workers/ranked/test/event-publication-checkpoints.test.js
 ```
 
 The second command is the actual credential-free verification workflow gate. Run
@@ -46,6 +46,7 @@ Never use a live dispatch as the first execution of a changed offline gate.
 4. Confirm document/request budgets, conflict handling, quota backoff, queue durability and preservation of the previous valid snapshot. No capture or verification retries are allowed merely to repair CDN propagation.
 5. Review the one public update number, concise player-facing Help notes and timestamp meaning. Developer identities belong in the closed technical disclosure, not beside the public number.
 6. Test unchanged/no-op and failure paths explicitly. Use `workers/ranked/CLOUD_PATHS.md` to check the complete action, including deferred work. Local log summaries must not double count operation and request summaries or label unknown failed costs as zero.
+7. Preflight and legacy queue processing share one verification document allowance. Pass only its conservative remaining budget to the second process; missing or exhausted accounting blocks that process. Capture has separate component caps and must not be described as covered by this allowance. A private catalog handoff must match the exact capture source and attempt, remain outside public staging, and fall back to a fresh request if stale or invalid.
 
 ## Before Push Or Publication
 

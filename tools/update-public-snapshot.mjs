@@ -16,6 +16,7 @@ import {captureOverallProjection, applyCapturedOverallProjection, overallCapture
 import {readRepositoryVerificationAuthority, verificationAuthority as validateVerificationAuthority} from './verifier/local-snapshot-verification.mjs';
 import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
 import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
+import {eventCatalogHandoffFromEnvironment} from './capture-event-catalog.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -488,7 +489,10 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
         return defer('overall-source',error);
       }
     }
+    const catalogHandoff = env.EVENT_CATALOG_HANDOFF_FILE ? eventCatalogHandoffFromEnvironment({env,
+      sourceCommit:await resolveSourceCommit(absoluteRoot)}) : null;
     backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
+      ...(catalogHandoff?{catalogHandoff}:{}),
       ...(nativeCapture?{nativeVerification:nativeCapture}:{}),
       ...(latest?{capturedOverall:overallCaptureForBackup(latest),confirmedTracks:latest.confirmedTracks,capturedTracks:latest.capturedTracks}:{})});
     if(backupResult?.deferred===true)return defer('snapshots',backupResult);

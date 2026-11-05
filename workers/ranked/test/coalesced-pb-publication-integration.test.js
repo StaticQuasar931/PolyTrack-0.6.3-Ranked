@@ -510,7 +510,7 @@ test('checked-in release scope remains exactly Summer1; Rolling Hills and Summer
   assert.deepEqual(configuredBusy(), [track]);
 });
 
-for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingHills', rolling, 160]]) {
+for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingHills', rolling, 155]]) {
   for (const submissions of [1, 10]) test('opt-in scenario: ' + name + ' whole notify/drain cost at saved population, ' + submissions + ' newer PBs', async () => {
     const costs = {};
     for (const mode of ['immediate', 'coalesced']) {

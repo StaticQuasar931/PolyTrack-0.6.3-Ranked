@@ -43,12 +43,6 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
  const root=knownRoot===undefined?decode(await runtime.request('/'+rootPath)):knownRoot;
  if(!root||!root.publicationPending)return {idle:true};
  const priorCombined=periodId?null:decode(await runtime.request('/'+targetPath));
- let rolling=null;
- if(!periodId){
-   // Do not rescan finite totals while the required live component is unavailable.
-   try{rolling=await readPermanentRollingHills(runtime.request);}
-   catch{if(priorCombined)return {pending:true,deferred:true,reason:'permanent_source_unavailable',kind,id};}
- }
  const p=periodId?decode(await runtime.request('/'+C.periods+'/'+periodId)):null;
  if(periodId&&!p)return {idle:true};
  const priorJob=decode(await runtime.request('/'+JOBS+'/'+jobId));
@@ -79,6 +73,13 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
      await tx.set(JOBS+'/'+jobId,{...state,restartRequired:true});
    });
    return {pending:true,deferred:true,reason:state.sourceRevision!==(root.revision||0)?'finite_source_changed':'snapshot_expired',kind,id};
+ }
+ let rolling=null;
+ if(!periodId){
+   // Cheap deferrals need no full-field read. Still require the live component
+   // before finite source work, and fence its revision again at publication.
+   try{rolling=await readPermanentRollingHills(runtime.request);}
+   catch{if(priorCombined)return {pending:true,deferred:true,reason:'permanent_source_unavailable',kind,id};}
  }
  // Rolling-only changes leave the finite revision unchanged. Persisted immutable
  // parts remain usable; the final transaction still fences both live sources.

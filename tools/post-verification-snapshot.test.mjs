@@ -153,12 +153,12 @@ test('scheduled and changed capture requests are timestamped without waking nati
   for(const name of ['Install pinned verifier dependencies','Test verifier safeguards','Cache the pinned Playwright browser',
     'Install Chromium and system dependencies','Allow the pinned browser sandbox on Ubuntu','Verify queued runs']) {
     const authorityGated=['Install pinned verifier dependencies','Verify queued runs'].includes(name);
-    const expected=authorityGated?"steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'":"steps.queue.outputs.has_work == 'true'";
+    const expected=(authorityGated?"steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore' && steps.queue.outputs.has_work == 'true'":"steps.queue.outputs.has_work == 'true'")+" && steps.budget.outputs.has_budget == 'true'";
     const actual=/^        if: (.+)$/m.exec(step(verifier,name))?.[1];
     assert.equal(actual,expected,name);
-    for(const skip of ['true','false',undefined])for(const mode of ['firestore','snapshot-native'])for(const has_work of ['true','false','',undefined])
-      assert.equal(evaluate(actual,{steps:{authority:{outputs:{mode,skip}},queue:{outputs:{has_work}}}}),
-        has_work==='true'&&(!authorityGated||skip!=='true'&&mode==='firestore'),name);
+    for(const skip of ['true','false',undefined])for(const mode of ['firestore','snapshot-native'])for(const has_work of ['true','false','',undefined])for(const has_budget of ['true','false',undefined])
+      assert.equal(evaluate(actual,{steps:{authority:{outputs:{mode,skip}},queue:{outputs:{has_work}},budget:{outputs:{has_budget}}}}),
+        has_budget==='true'&&has_work==='true'&&(!authorityGated||skip!=='true'&&mode==='firestore'),name);
   }
   assert.equal(/^        if: (.+)$/m.exec(step(verifier,'Check for due verification work'))?.[1],"steps.authority.outputs.skip != 'true' && steps.authority.outputs.mode == 'firestore'");
   assert.equal((verifier.match(/id: verification$/gm)||[]).length,1);

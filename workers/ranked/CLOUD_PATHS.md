@@ -54,7 +54,7 @@ Client caching is not an abuse boundary: modified clients can bypass their own l
 
 Firestore verification authority and per-board identity fanout remain material costs. Moving all authority to an offline snapshot requires tested queue admission, accepted-best, fresh hold/version fences, entitlement grants, capture entry-point compatibility, and consistent full-field publication. Do not flip the authority setting merely because a public proof ledger exists. No such cutover or weakening of verification/rules is part of this follow-up.
 
-## Release 275: Bounded Event Generations And Atomic Reconcile Handoff
+## Release 275 (Historical): Bounded Event Generations And Atomic Reconcile Handoff
 
 Coordinated Worker maintenance coalesces NEW active-period display generations only for fields with at least 200 accepted racers for at most fifteen minutes after the preceding successful build. The deadline is anchored to that build and cannot be extended by later PBs. Small fields, first builds, active fixed-snapshot continuations, archived periods, and periods within fifteen minutes of ending are not held by this gate. Authoritative accepted PB/replay writes remain immediate; dirty and incomplete indicators are retained. This is not a verification shortcut or permission to call the inline top 200 a complete field. Existing retry reservations, source-revision CAS and fifty-minute expiry fences remain.
 
@@ -62,4 +62,129 @@ In the stationary 1,136-racer ten-update publication fixture, immediate generati
 
 A full normal rebuild initiated by canonical reconciliation now publishes its mutable track/manifest/build/meta state and discharges the corresponding reconciliation checkpoint in one guarded commit. A failed final commit retains the fixed-snapshot build for retry; a lost successful response cannot leave a separately stale full-rebuild request that rescans the field. Concurrent queue/root/meta changes are conflicts, not authority to overwrite a newer preimage. Queued result IDs and bindings are retained for a fresh keyed merge because they may postdate the fixed snapshot. Unprocessed sibling work stays queued. Historical proof reads are not reused as fresh queue CAS preimages.
 
-The unrelated cosmetic-change invalidation case can still restart a build and remains a known cost. Project-wide read attribution still needs accessible monitoring/logs. Do not present these fixes as a guaranteed daily quota reduction.
+At release 275, cosmetic-change invalidation could still restart a build. That historical limitation is addressed for live, owned paged builds in coordinated mode by the release 293 primary fix below; other modes and nonqualifying builds retain the original fences and behavior. Project-wide read attribution still needs accessible monitoring/logs. Do not present these fixes as a guaranteed daily quota reduction.
+
+## Release 293 Audit: Cheap Event Publication Gates Before Full Source Reads
+
+### Primary Fix: Preserve Paid Normal Builds During Cosmetic Fanout
+
+In coordinated mode only, a paged identity update checks for a live build on
+the exact published base, with an unexpired fixed snapshot and the matching
+active canonical continuation. If found, it returns pending without changing
+the board or build. The existing durable profile job retains that track and
+applies its identity after the build finishes. Expired, blocked, completed,
+unowned and base-changed builds do not qualify. This preserves every final
+root/meta/queue fence rather than accepting a stale build after a cosmetic write.
+
+The 1,136-racer Summer1-sized mock with identity fanout after 900 scanned rows
+measures **6,215 reads / 163 requests / 74 writes before**, versus **3,490 reads /
+102 requests / 56 writes after**, including the eventual identity application.
+Canonical, historical-proof and current-proof reads each fall from 2,036 to
+1,136 because the discarded prefix is not scanned again. These are fixture
+counts, not production attribution. Two repeated scheduled deferrals cost
+eight reads and zero writes, preserving the original durable identity job.
+
+Tradeoff: paged identity checks add one build-job read when no live build
+qualifies, plus a coordinator read when checking a live build. Display identity
+may lag until completion or expiry is observed by a later normal profile turn.
+The existing fifty-minute eligibility deadline is never renewed. Nonpaged
+boards, including the retained 155-racer Rolling Hills field, do not use this
+gate. Coordinated profile work shares a 42-request work budget with the final
+job checkpoint reserved separately; budget failure leaves unfinished tracks
+queued. Ownership, review holds, current proof checks and PB intake are unchanged.
+
+### Secondary Fix And Measured Idle Costs
+
+Under the checked-in `capture-only` / `coordinated` modes, the every-minute
+event cron is allowed only at minutes 00 through 44 in UTC hours 00, 08, 12
+and 20 (180 allowed invocations per day, not 1,440). Phase 0 provisions only
+every fifteen minutes; phase 1 cleans up, phases 2/4 attempt publication,
+and phase 3 guarantees inbox polling. Other intake phases use the existing
+five-minute activity hint. Canonical and identity continuations still run
+every five minutes throughout the day so fixed-snapshot builds can finish.
+No cron, mode, window, rate limit or capacity was changed by this fix.
+
+Combined event-total publication previously loaded the entire paged Rolling
+Hills field before discovering a finite-total coalescing gate, changed source
+revision, or expired unfinished checkpoint. Those cheap gates now run first.
+An eligible build still reads and validates the complete live source before
+any finite source scan or saved-part assembly. Its final transaction still
+checks the live source revision/signature, job, roots and manifest. Nothing
+is cached across invocations, and accepted PBs/replays are not changed here.
+
+Mock REST measurements with 1,136 Rolling Hills racers (root plus twelve pages):
+
+| Path | Before reads / requests | After reads / requests | Writes before / after |
+| --- | --- | --- | --- |
+| First finite-total coalescing deferral | 18 / 20 | 5 / 7 | 1 / 1 |
+| Changed or expired unfinished checkpoint | 19 / 23 | 6 / 10 | 2 / 2 |
+| Eight additional polls during durable backoff | 16 / 16 | 16 / 16 | 0 / 0 |
+| Idle publication signal | 1 / 1 | 1 / 1 | 0 / 0 |
+| Healthy saved-part publication | 25 / 31 | 25 / 31 | 18 / 18 |
+| Missing live source, no cheap deferral | 5 / 7 | 6 / 8 | 1 / 1 |
+| Job read failure, including 429 | unknown / 17 | unknown / 4 | 0 / 0 |
+
+Tradeoff: an unavailable-source attempt without a cheap deferral reads the job
+once earlier, adding one read/request; existing durable backoff still applies.
+Failed read billing is unknown, not zero. At the coalescing deadline a missing
+page still prevents publication and keeps the previous complete generation.
+Recovery performs a fresh full-source load and final transaction fence.
+The existing continuous blocked-source day fixture increases from 1,299 to
+1,348 reads (49 due attempts, each adding that one job read), with the same
+49 retry writes. That fixture runs outside the coordinated production windows.
+
+The completed, quiet 24-hour fixtures measure 360 event reads / 384 requests
+and, separately, 660 non-event reads / 660 requests, both with zero writes.
+They exclude active builds, legacy hydration, fresh six-hour source audits,
+intake/verification traffic, capture tools, direct clients and other services.
+These counts do not establish the production cause of a 49,000-read day.
+Large full-field generation/hydration remains material: the existing synthetic
+10,000-row legacy totals fixture alone costs 20,372 estimated reads across
+fourteen turns. That is a stress fixture, not evidence of production field size.
+
+The normal full-build query selects at most 100 canonical documents per page
+for one `trackId`, ordered by document name at a fixed `readTime`. Each row
+can also need one historical proof plus one fresh current proof. The latter
+is still necessary to preserve newer competitive-review holds and current
+queue CAS preimages. The 1,136-row stationary mock measures 3,472 reads in
+93 requests; one resumed turn with two pages measures 606 reads in just
+15 requests. A cosmetic write after 900 scanned rows invalidates the mutable
+base: that fixture totals 6,215 reads / 163 requests rather than 3,472 / 93.
+These are pre-fix restart measurements, not a remaining defect in the
+qualifying coordinated path. The primary release 293 fix above prevents that
+identity-triggered interruption; the separate cheap event gate does not.
+Other modes and nonqualifying builds retain the base fence. A query `select` projection
+alone reduces payload bytes, not documents returned. Fresh proof
+checks must not be replaced with historical or cached authority to save quota.
+
+### Retained Rolling Hills Size And PB Scope
+
+The paged 1,136-racer Rolling Hills fixture above is deliberately a stress
+case, not the retained production field size. For an inline 155-racer source,
+the same first coalescing check changes from 6 reads / 8 requests to 5 / 7;
+changed/expired checkpoint handling changes from 7 / 11 to 6 / 10. Healthy
+single-part publication stays 13 / 19 with eight writes. Missing-source
+handling stays bounded but increases from 5 / 7 to 6 / 8, as disclosed above.
+
+PB coalescing remains scoped to Summer1. An immediate PB on a current inline
+155-racer Rolling Hills board costs five Worker reads/four writes in the
+newer-PB mock, with zero canonical field queries. Ten improvements cost 50
+reads/40 writes; explicitly opting into coalescing plus drain costs 26/15.
+A single improvement would instead increase from 5/4 to 8/6, so this audit
+does not widen the allowlist. Canonical client writes and later verification,
+Overall, event-total generation and capture are additional separate work.
+
+Ten rolling-only ERP generations with 155 inline Rolling Hills racers plus
+1,000 named finite-total racers cost 170 reads / 190 requests / 180 writes.
+They read fifty saved finite parts and twenty Rolling Hills roots (including
+final fences), but **zero public profiles and zero finite source queries**.
+The finite revision stays unchanged; each changed Rolling revision is still
+published. Legacy unfinished hydration is a separate, existing checkpointed
+path, not a per-update full-profile join. Identical normal snapshot signatures
+return before dirtying ERP; changed Rolling time/proof/identity remains meaningful.
+
+Evidence: `test/event-publication-preflight-cost.test.js` compares the same
+REST mock with an optional `EVENT_PUBLICATION_PREFLIGHT_BASELINE` source file;
+`test/events-scheduled-cost.test.js` and `test/scheduled-baseline-cost.test.js`
+pin the current quiet cron counts. Request counts include transaction control
+calls; read estimates do not include index-entry or security-rule charges.

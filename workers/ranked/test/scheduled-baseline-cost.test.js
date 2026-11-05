@@ -58,7 +58,8 @@ async function checkDailyBaseline(jitterMs, mode) {
   }
   if(mode==='coordinated'){
     assert.equal(audit.writeEstimate||0,0);
-    assert(audit.documentReadEstimate<800,'continuation-safe quiet non-event work stays below 800 reads/day');
+    assert.equal(audit.documentReadEstimate,660,'measure completed quiet work, not active source builds or retries');
+    console.log('COORDINATED_NON_EVENT_COLLECTIONS',JSON.stringify(audit.collections));
     return {reads:audit.documentReadEstimate,calls:calls.length};
   }
   assert.equal(audit.documentReadEstimate, 1440);

@@ -129,7 +129,7 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
-        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/update-public-snapshot-overlay.test.mjs tools/snapshot-replay-completeness.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
+        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/update-public-snapshot-overlay.test.mjs tools/snapshot-replay-completeness.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
       - name: Reuse a later published bounded capture
         id: coordination
         env:
@@ -238,13 +238,18 @@ jobs:
         if: steps.coordination.outputs.reuse != 'true' && (!inputs.overnight_native || steps.overnight_guard.outputs.admitted == 'true')
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          EVENT_CATALOG_HANDOFF_FILE: ${{ runner.temp }}/polytrack-event-catalog.private
+          EVENT_CATALOG_CAPTURE_STARTED_AT: ${{ steps.coordination.outputs.started_at }}
         run: |
           node --input-type=module <<'CATALOG'
           import {checkWorkerCaptureAccess} from './tools/check-worker-capture-access.mjs';
           import {syncPublicEventCatalog} from './tools/sync-event-catalog.mjs';
           import {reportCaptureOutcome} from './tools/update-public-snapshot.mjs';
+          import {execFileSync} from 'node:child_process';
+          import {eventCatalogHandoffFromEnvironment} from './tools/capture-event-catalog.mjs';
           await checkWorkerCaptureAccess();
-          await reportCaptureOutcome(await syncPublicEventCatalog());
+          const sourceCommit=execFileSync('git',['rev-parse','--verify','HEAD'],{encoding:'utf8'}).trim();
+          await reportCaptureOutcome(await syncPublicEventCatalog({catalogHandoff:eventCatalogHandoffFromEnvironment({sourceCommit})}));
           CATALOG
       # Best-effort capture of published data, not a verifier-revision barrier.
       # Do not force rebuilds or poll stale cached boards here.
@@ -255,6 +260,8 @@ jobs:
         # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          EVENT_CATALOG_HANDOFF_FILE: ${{ runner.temp }}/polytrack-event-catalog.private
+          EVENT_CATALOG_CAPTURE_STARTED_AT: ${{ steps.coordination.outputs.started_at }}
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
           ONE_OFF_NATIVE: ${{ inputs.overnight_native }}
           REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}

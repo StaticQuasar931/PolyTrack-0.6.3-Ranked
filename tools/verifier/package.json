@@ -7,6 +7,7 @@
     "diagnose": "node diagnose.mjs",
     "verify": "node run.mjs",
     "private-pending": "node private-pending.mjs",
+    "test:workflow-budget": "node --test workflow-budget.test.mjs",
     "snapshot-audit": "node snapshot-audit.mjs",
     "test:snapshot-audit": "node --test snapshot-audit.test.mjs",
     "snapshot-audit-summary": "node snapshot-audit-summary.mjs",

@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
-import {rebuildTrack, reconcileCanonicalChanges, updateTrackIdentity, computeTrackEntries, persistTrackSnapshot} from '../src/index.js';
+import {readFileSync} from 'node:fs';
+const identityBaseline=process.env.IDENTITY_BUILD_BASELINE;
+const {default:rankedWorker,rebuildTrack, reconcileCanonicalChanges, updateTrackIdentity, computeTrackEntries, persistTrackSnapshot}=identityBaseline
+  ?await import('data:text/javascript,'+encodeURIComponent(readFileSync(identityBaseline,'utf8')
+    .replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${new URL('../src/'+path.slice(2),import.meta.url).href}'`)))
+  :await import('../src/index.js');
 import {eventEncode, eventDecode} from '../src/events-store.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION} from '../src/verification.js';
 import {COMPETITIVE_REVIEW_REASON} from '../src/competitive-review.js';
@@ -80,6 +85,11 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     const body = init.body ? JSON.parse(init.body) : null;
     if (route === ':runQuery') {
       const q = body.structuredQuery;
+      if(q.from[0].collectionId===TRACK_BUILD_JOBS){
+        assert.equal(q.limit,1);assert.equal(q.where.fieldFilter.field.fieldPath,'active');
+        const keys=[...data.keys()].filter(key=>key.startsWith(TRACK_BUILD_JOBS+'/')&&data.get(key).active===true);
+        stats.reads+=Math.max(1,keys.length?1:0);return keys.slice(0,1).map(key=>({document:wire(key)}));
+      }
       assert.equal(q.from[0].collectionId, results);
       if (q.where?.fieldFilter?.field?.fieldPath !== 'trackId') {
         const found = control.discovery.splice(0, q.limit);
@@ -149,6 +159,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     }
     assert.equal(init.method || 'GET', 'GET');
     const url = new URL('https://offline.invalid' + route), key = decodeURIComponent(url.pathname.slice(1));
+    if(control.beforeRead)control.beforeRead(key);
     const readTime = url.searchParams.get('readTime') || '';
     const source = readTime ? snapshots.get(readTime) : {data, versions};
     assert.ok(source);
@@ -219,6 +230,84 @@ test('audit275: cosmetic fanout after 900 scanned rows invalidates the full-buil
   assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
     {reads:6215,writes:74,requests:163},'base-version restart remains mandatory; only repeated requests are coalesced');
   f.report('cosmetic-invalidates-900-row-prefix');
+});
+
+test('coordinated identity fanout preserves a live full build and applies after completion',async t=>{
+  const f=await fixture(t);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';
+  for(let pass=0;pass<5;pass++)await rebuildTrack(f.env,track);
+  const checkpoint=structuredClone(f.data.get(buildKey)),board=structuredClone(f.data.get(boardKey));
+  const before={...f.stats},result=await updateTrackIdentity(f.env,track,f.identity);
+  if(!identityBaseline){
+    assert.equal(result.reason,'active_track_build_identity');assert.equal(result.pending,true);
+    assert.deepEqual(f.data.get(buildKey),checkpoint);assert.deepEqual(f.data.get(boardKey),board);
+    assert.equal(f.stats.reads-before.reads,3);assert.equal(f.stats.writes,before.writes);
+  }
+  await f.finish();
+  if(!identityBaseline)assert.equal(f.data.get(buildKey).generation,checkpoint.generation);
+  if(!identityBaseline)assert.equal((await updateTrackIdentity(f.env,track,f.identity)).changed,true);
+  assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);
+  assert.equal(f.stats.canonicalRows,identityBaseline?2036:1136);
+  assert.equal(f.stats.fixedProof,f.stats.canonicalRows);assert.equal(f.stats.currentProof,f.stats.canonicalRows);
+  f.report(identityBaseline?'identity-gate-before':'identity-gate-after');
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},identityBaseline
+    ?{reads:6215,writes:74,requests:163}:{reads:3490,writes:56,requests:102});
+  assert.deepEqual(f.errors,[]);
+});
+
+for(const shape of ['expired','unowned','base-changed','blocked','complete'])test('identity gate never strands '+shape+' build',async t=>{
+  const f=await fixture(t);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';
+  await rebuildTrack(f.env,track);
+  if(shape==='expired')f.set(buildKey,{...f.data.get(buildKey),readTime:new Date(Date.now()-51*60000).toISOString()});
+  if(shape==='unowned')f.set(reconcileKey,{...f.data.get(reconcileKey),activeFullRebuildTrackId:'other'});
+  if(shape==='base-changed')f.set(buildKey,{...f.data.get(buildKey),baseVersion:'old-version'});
+  if(shape==='blocked')f.set(buildKey,{...f.data.get(buildKey),blocked:true});
+  if(shape==='complete')f.set(buildKey,{...f.data.get(buildKey),complete:true});
+  assert.equal((await updateTrackIdentity(f.env,track,f.identity)).changed,true);
+  assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);
+});
+
+test('scheduled identity deferral retains its durable job without heartbeat writes, including read failure recovery',{skip:!!identityBaseline},async t=>{
+  const f=await fixture(t);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';
+  for(let pass=0;pass<5;pass++)await rebuildTrack(f.env,track);
+  const key=TRACK_BUILD_JOBS+'/profile_'+f.identity.accountId;
+  const profile={kind:'profile',active:true,identity:f.identity,pendingTrackIds:[track],
+    trackDiscovery:{version:1,complete:true,cursor:''},processed:0,changed:0};f.set(key,profile);
+  const checkpoint=structuredClone(f.data.get(buildKey));
+  const turn=async()=>{let done;rankedWorker.scheduled({cron:'2-59/5 * * * *',scheduledTime:420000},f.env,
+    {waitUntil:p=>{done=p;}});await done;};
+  let before={...f.stats};await turn();await turn();
+  assert.equal(f.stats.reads-before.reads,8);assert.equal(f.stats.writes,before.writes);
+  assert.deepEqual(f.data.get(key),profile);assert.deepEqual(f.data.get(buildKey),checkpoint);
+  f.control.beforeRead=key=>{if(key===buildKey)throw Error('FIRESTORE_429');};before={...f.stats};
+  await turn();assert.equal(f.stats.writes,before.writes);assert.deepEqual(f.data.get(key),profile);
+  assert.equal(f.errors.length,1);f.control.beforeRead=null;await turn();
+  await f.finish();assert.equal(f.data.get(buildKey).generation,checkpoint.generation);await turn();
+  assert.equal(f.data.get(key).active,false);assert.deepEqual(f.data.get(key).pendingTrackIds,[]);
+  assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);assert.equal(f.stats.canonicalRows,1136);
+});
+
+test('three paged identity updates retain unfinished work within the shared request cap',{skip:!!identityBaseline},async t=>{
+  const f=await fixture(t);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';
+  const ids=[track,'identity-second','identity-third'],source=f.data.get(boardKey);
+  const all=await loadPublicationEntries(source,'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+  for(const id of ids.slice(1)){
+    const entries=all.map(row=>({...row,trackId:id}));
+    const paged=await preparePublicationPages('track',id,entries,{sourceRevision:1,sourceComplete:true});
+    for(const doc of paged.documents)f.set(doc.collection+'/'+doc.id,doc.data);
+    f.set(boards+'/'+id,{...source,trackId:id,entries:entries.slice(0,500),pagination:paged.pagination});
+  }
+  const key=TRACK_BUILD_JOBS+'/profile_'+f.identity.accountId;
+  f.set(key,{kind:'profile',active:true,identity:f.identity,pendingTrackIds:ids,
+    trackDiscovery:{version:1,complete:true,cursor:''},processed:0,changed:0});
+  const turn=async()=>{const before=f.stats.requests;let done;
+    rankedWorker.scheduled({cron:'2-59/5 * * * *',scheduledTime:420000},f.env,{waitUntil:p=>{done=p;}});await done;
+    assert.ok(f.stats.requests-before<=43,'42 work requests plus the reserved job checkpoint');};
+  f.control.beforeRead=key=>{if(key===boards+'/identity-third')throw Error('OVERALL_REQUEST_BUDGET_EXHAUSTED');};
+  await turn();assert.equal(f.data.get(key).active,true);assert.deepEqual(f.data.get(key).pendingTrackIds,['identity-third']);
+  f.control.beforeRead=null;
+  await turn();assert.equal(f.data.get(key).active,false);assert.deepEqual(f.data.get(key).pendingTrackIds,[]);
+  for(const id of ids)assert.equal(f.data.get(boards+'/'+id).entries[0].name,f.identity.name);
+  assert.deepEqual(f.errors,[]);
 });
 
 const contains = (writes, key) => writes.some(w => w.update?.name.endsWith('/' + key));

@@ -115,7 +115,7 @@ test('quarter-hour CDN recovery has typed opt-in dispatch/call modes, twenty-min
   assert.match(cdn,/schedule:\n(?:    #[^\n]*\n)*    - cron: '13,28,43,58 \* \* \* \*'/);
   assert.equal((cdn.match(/refresh_only:\n        description:[^\n]*\n        type: boolean\n        required: false\n        default: false/g)||[]).length,2);
   assert.match(job(cdn,'publish'),/timeout-minutes: 20/);
-  const offlineOnly=cdn.replace(/^\s*#.*$/gm,'').replace(/tools\/verifier\/(?:queue|publication-queue|scheduled-drain|proof-cache-file)\.test\.mjs/g,'OFFLINE_TEST');
+  const offlineOnly=cdn.replace(/^\s*#.*$/gm,'').replace(/tools\/verifier\/(?:queue|publication-queue|scheduled-drain|proof-cache-file|workflow-budget)\.test\.mjs/g,'OFFLINE_TEST');
   assert.doesNotMatch(offlineOnly,/FIREBASE|secrets\.|secrets:|firestore\.googleapis|tools\/verifier\/|post-verification|update-public-snapshot\.mjs|sync-event-catalog\.mjs/i);
   const publish=step(cdn,'Validate immutable assets, publish pointer, and confirm CDN refresh');
   assert.match(publish,/id: publication/);
@@ -211,8 +211,10 @@ test('scheduled throughput expands rounds, never the configured document caps or
   assert.equal(SCHEDULED_DRAIN_LIMITS.rounds,12);
   assert.equal(SCHEDULED_DRAIN_LIMITS.admissionMs,DRAIN_LIMITS.admissionMs);
   const verify=step(verifier,'Verify queued runs');
-  assert.match(verify,/VERIFIER_DOCUMENT_READ_LIMIT: '1500'/);
-  assert.match(verify,/VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'/);
+  assert.match(step(workflows['verify-runs.yml'],'Check for due verification work'),/VERIFIER_DOCUMENT_READ_LIMIT: '1500'/);
+  assert.match(step(workflows['verify-runs.yml'],'Check for due verification work'),/VERIFIER_DOCUMENT_WRITE_LIMIT: '1000'/);
+  assert.match(verify,/VERIFIER_DOCUMENT_READ_LIMIT: \$\{\{ steps.budget.outputs.read_limit \}\}/);
+  assert.match(verify,/VERIFIER_DOCUMENT_WRITE_LIMIT: \$\{\{ steps.budget.outputs.write_limit \}\}/);
   assert.match(verify,/VERIFIER_SCHEDULED_DRAIN: \$\{\{ github.event_name == 'schedule' && 'true' \|\| 'false' \}\}/);
   assert.doesNotMatch(step(verifier,'Check for due verification work'),/VERIFIER_SCHEDULED_DRAIN/);
 });

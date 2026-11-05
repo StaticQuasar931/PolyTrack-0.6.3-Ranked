@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 292,
+  "number": 293,
   "version": "0.6.3",
-  "revision": 251,
+  "revision": 252,
   "notes": [
-    "Ranking updates now check that every listed run has its replay.",
-    "Safer automatic ranking updates and recovery."
+    "Smoother leaderboard updates while racers change their look.",
+    "Racer Studio skips outdated drafts when you make another change.",
+    "More efficient automatic ranking updates."
   ],
-  "preparedAt": "2026-11-05T18:40:52.610Z",
-  "committedAt": "2026-11-05T19:01:17.000Z"
+  "preparedAt": "2026-11-05T20:30:56.144Z",
+  "committedAt": "2026-11-05T20:41:30.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

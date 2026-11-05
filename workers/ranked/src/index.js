@@ -2295,15 +2295,20 @@ async function processProfileJob(env, jobId, job, updateTime='') {
   }
   const batch = pending.slice(0, 3), completed = new Set();
   const budget = {fullRebuildAttempted:false};
+  // Leave request headroom for the durable job checkpoint and cold auth. The
+  // new build checks must not push three paged identity updates past the cap.
+  const trackEnv = env.BACKGROUND_MAINTENANCE_MODE === 'coordinated' && !env.__OVERALL_REQUEST_BUDGET
+    ? {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.operationAttempts||0),limit:42}} : env;
   let changed = 0;
   for (const trackId of batch) {
     try {
-      const result = await updateTrackIdentity(env, trackId, job.identity, budget);
+      const result = await updateTrackIdentity(trackEnv, trackId, job.identity, budget);
       if (result.pending || result.blocked) continue;
       completed.add(trackId);
       if (result.changed) changed += 1;
     } catch (error) {
       if (error?.status === 429 || error?.message === 'FIRESTORE_429') throw error;
+      if (error?.message === 'OVERALL_REQUEST_BUDGET_EXHAUSTED') break;
       console.error('Profile track update deferred', trackId, String(error?.message || error));
     }
   }
@@ -2333,6 +2338,18 @@ export async function updateTrackIdentity(env, trackId, identity, budget = {full
     // Paged builds do not apply identityOverride. Confirm/apply against the published
     // board next pass rather than double-publishing inside a read-heavy build pass.
     return {...result,pending:true,identityPending:true};
+  }
+  if (snapshot.pagination?.version === 1 && snapshot.pagination.complete === true &&
+      env.BACKGROUND_MAINTENANCE_MODE === 'coordinated') {
+    const build = await readDocument(env, TRACK_BUILD_JOBS, trackBuildId(trackId));
+    if (trackBuildDisposition({prior,job:build}).action === 'resume') {
+      const queue = await readDocument(env, COLLECTIONS.jobs, 'canonical_reconcile_v2');
+      // Keep the durable identity job pending instead of invalidating paid scan
+      // pages. Only a live, owned continuation qualifies; expiry is not renewed.
+      if (queue?.data?.activeFullRebuildTrackId === trackId &&
+          queue.data.pendingFullRebuildTrackIds?.includes(trackId))
+        return {changed:false,pending:true,reason:'active_track_build_identity',revision:Number(snapshot.revision||0)};
+    }
   }
   if(snapshot.pagination)snapshot.entries=await loadTrackPublicationEntries(env,snapshot,trackId);
   const accountId = safeText(identity?.accountId, 128);
