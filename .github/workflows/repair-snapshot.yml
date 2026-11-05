@@ -1,0 +1,57 @@
+name: Authorized one-time snapshot repair
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact tested main commit for the authorized replacement
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  preflight:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      requested_at: ${{ steps.request.outputs.requested_at }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Check source and replacement window
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_COMMIT"
+          node --input-type=module <<'PLAN'
+          import {assertCaptureRepair} from './tools/capture-repair-plan.mjs';
+          assertCaptureRepair({eventName:process.env.GITHUB_EVENT_NAME,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT)});
+          PLAN
+      - name: Test replacement safeguards
+        run: node --test tools/capture-repair-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/check-worker-capture-access.test.mjs
+      - name: Confirm private access without database requests
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+        run: node --input-type=module -e "import {checkWorkerCaptureAccess} from './tools/check-worker-capture-access.mjs'; await checkWorkerCaptureAccess();"
+      - name: Timestamp the authorized request
+        id: request
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT,'requested_at='+Date.now()+'\n')"
+  publish:
+    needs: preflight
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-verified-snapshots.yml
+    with:
+      publication_changed: true
+      capture_requested_at: ${{ needs.preflight.outputs.requested_at }}
+      verification_authority: snapshot-native
+      overnight_native: true
+      replacement_capture: true
+      expected_source_commit: ${{ inputs.expected_source_commit }}
+    secrets:
+      FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

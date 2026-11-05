@@ -6,6 +6,10 @@ on:
         description: Exact tested main commit
         type: string
         required: true
+      recipient_public_key:
+        description: Optional public RSA key for an encrypted issuer identity
+        type: string
+        required: false
 permissions:
   contents: read
 jobs:
@@ -31,4 +35,5 @@ jobs:
       - name: Check private access without database requests
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          CAPTURE_DIAGNOSTIC_RECIPIENT_KEY: ${{ inputs.recipient_public_key }}
         run: node tools/capture-access-diagnostics.mjs

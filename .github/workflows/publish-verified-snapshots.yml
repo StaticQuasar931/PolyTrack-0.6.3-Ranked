@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      replacement_capture:
+        description: Explicitly authorized November 5 replacement attempt
+        required: false
+        type: boolean
+        default: false
       expected_source_commit:
         description: 'Tested verify-job source for the one-time overnight capture'
         required: false
@@ -58,6 +63,8 @@ jobs:
         env:
           VERIFICATION_AUTHORITY: ${{ inputs.verification_authority }}
           POLYTRACK_VERIFICATION_AUTHORITY: ${{ vars.POLYTRACK_VERIFICATION_AUTHORITY }}
+          REPLACEMENT_CAPTURE: ${{ inputs.replacement_capture }}
+          OVERNIGHT_NATIVE: ${{ inputs.overnight_native }}
         run: |
           node --input-type=module <<'AUTHORITY'
           import fs from 'node:fs';
@@ -66,6 +73,7 @@ jobs:
           const override=process.env.POLYTRACK_VERIFICATION_AUTHORITY;
           if(value)verificationAuthority(value);
           if(override)verificationAuthority(override);
+          if(process.env.REPLACEMENT_CAPTURE==='true'&&(process.env.OVERNIGHT_NATIVE!=='true'||process.env.GITHUB_EVENT_NAME!=='workflow_dispatch'||value!=='snapshot-native'))throw Error('Invalid replacement capture authority');
           const mode=await readRepositoryVerificationAuthority(process.cwd(),value || override);
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+mode+'\n');
           AUTHORITY
@@ -185,6 +193,7 @@ jobs:
         id: overnight_guard
         if: inputs.overnight_native
         env:
+          REPLACEMENT_CAPTURE: ${{ inputs.replacement_capture }}
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
@@ -192,11 +201,14 @@ jobs:
           node --input-type=module <<'OVERNIGHT'
           import fs from 'node:fs';
           import {assertOvernightCapture} from './tools/overnight-snapshot-plan.mjs';
+          import {assertCaptureRepair} from './tools/capture-repair-plan.mjs';
           import {acquireOvernightCaptureClaim} from './tools/overnight-capture-claim.mjs';
           let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
           if(!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_SOURCE_COMMIT||'')||process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT!==process.env.EXPECTED_SOURCE_COMMIT)throw Error('One-time capture checkout differs from tested source');
-          assertOvernightCapture({mode:process.env.VERIFICATION_AUTHORITY,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),previousCaptureStartedAt:prior?.startedAt});
-          const claim=await acquireOvernightCaptureClaim({repository:process.env.GITHUB_REPOSITORY,sourceCommit:process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT,token:process.env.GITHUB_TOKEN});
+          const replacement=process.env.REPLACEMENT_CAPTURE==='true';
+          if(replacement)assertCaptureRepair({eventName:process.env.GITHUB_EVENT_NAME,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),previousCaptureStartedAt:prior?.startedAt});
+          else assertOvernightCapture({mode:process.env.VERIFICATION_AUTHORITY,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),previousCaptureStartedAt:prior?.startedAt});
+          const claim=await acquireOvernightCaptureClaim({repository:process.env.GITHUB_REPOSITORY,sourceCommit:process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT,token:process.env.GITHUB_TOKEN,replacement});
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'admitted='+claim.acquired+'\n');
           console.log(JSON.stringify({overnightClaim:claim}));
           OVERNIGHT

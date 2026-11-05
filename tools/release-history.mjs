@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 283,
+    "number": 284,
     "version": "0.6.3",
-    "revision": 242,
+    "revision": 243,
     "notes": [
-      "Improved maintenance checks for reliable leaderboard updates.",
-      "Clearer reporting when a snapshot update cannot start."
+      "Safer recovery when a leaderboard snapshot update is interrupted.",
+      "Improved private access checks before loading snapshot data."
     ]
   },
   "entries": [
+    {
+      "number": 283,
+      "title": "Diagnose hosted snapshot authentication without database access",
+      "commit": "b9cc87b08d0b491ee74b6b4086eb7fae8474072f",
+      "committedAt": "2026-11-05T13:09:16.000Z",
+      "notes": [
+        "Improved maintenance checks for reliable leaderboard updates.",
+        "Clearer reporting when a snapshot update cannot start."
+      ]
+    },
     {
       "number": 282,
       "title": "Harden cloud publication and snapshot recovery; improve phone layouts",
@@ -210,16 +220,6 @@ const historyData = {
       "notes": [
         "More efficient cloud syncing while preserving saved runs and retry safety.",
         "Restored scheduled leaderboard updates and reduced background work."
-      ]
-    },
-    {
-      "number": 252,
-      "title": "Viewport Fixes",
-      "commit": "94c454832e47db9243ebe8c71607f862ca8af0b9",
-      "committedAt": "2026-10-31T02:34:08.000Z",
-      "notes": [
-        "Menus stay aligned after phone rotation and Safari toolbar changes.",
-        "Clearer home credits and track lists that fit the visible screen."
       ]
     }
   ],

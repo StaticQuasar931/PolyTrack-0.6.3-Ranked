@@ -7,7 +7,8 @@
     "required": [
       "FIREBASE_CLIENT_EMAIL",
       "FIREBASE_PRIVATE_KEY",
-      "ADMIN_REBUILD_TOKEN"
+      "ADMIN_REBUILD_TOKEN",
+      "CAPTURE_SERVICE_ACCOUNT_EMAIL"
     ]
   },
   "vars": {

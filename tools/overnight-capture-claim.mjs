@@ -1,14 +1,15 @@
 import {OVERNIGHT_SNAPSHOT} from './overnight-snapshot-plan.mjs';
+import {CAPTURE_REPAIR} from './capture-repair-plan.mjs';
 
 const REPOSITORY='StaticQuasar931/PolyTrack-0.6.3-Ranked';
-export const overnightClaimRef=()=>`refs/tags/polytrack-oneoff-${OVERNIGHT_SNAPSHOT.date}`;
+export const overnightClaimRef=({replacement=false}={})=>replacement?CAPTURE_REPAIR.claimRef:`refs/tags/polytrack-oneoff-${OVERNIGHT_SNAPSHOT.date}`;
 
 // A GitHub ref is the shared one-shot marker, including failed admitted runs.
 // It adds no database request or branch and is never deleted to retry silently.
-export async function acquireOvernightCaptureClaim({repository,sourceCommit,token,fetchImpl=fetch}={}){
-  if(repository!==REPOSITORY||!/^[a-f0-9]{40}$/.test(sourceCommit||'')||typeof token!=='string'||!token.trim())
+export async function acquireOvernightCaptureClaim({repository,sourceCommit,token,replacement=false,fetchImpl=fetch}={}){
+  if(repository!==REPOSITORY||typeof replacement!=='boolean'||!/^[a-f0-9]{40}$/.test(sourceCommit||'')||typeof token!=='string'||!token.trim())
     throw Error('Invalid one-time claim identity');
-  const ref=overnightClaimRef(),base=`https://api.github.com/repos/${REPOSITORY}/git/`;
+  const ref=overnightClaimRef({replacement}),base=`https://api.github.com/repos/${REPOSITORY}/git/`;
   const headers={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Content-Type':'application/json'};
   const response=await fetchImpl(base+'refs',{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers,body:JSON.stringify({ref,sha:sourceCommit})});
   if(response.status===201){

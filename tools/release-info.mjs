@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 283,
+  "number": 284,
   "version": "0.6.3",
-  "revision": 242,
+  "revision": 243,
   "notes": [
-    "Improved maintenance checks for reliable leaderboard updates.",
-    "Clearer reporting when a snapshot update cannot start."
+    "Safer recovery when a leaderboard snapshot update is interrupted.",
+    "Improved private access checks before loading snapshot data."
   ],
-  "preparedAt": "2026-11-05T13:07:47.034Z",
-  "committedAt": "2026-11-05T13:09:16.000Z"
+  "preparedAt": "2026-11-05T13:25:01.800Z",
+  "committedAt": "2026-11-05T13:29:18.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

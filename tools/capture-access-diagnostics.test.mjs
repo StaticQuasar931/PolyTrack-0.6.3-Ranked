@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync,createHash} from 'node:crypto';
+import {generateKeyPairSync,createHash,privateDecrypt,constants} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {diagnoseCaptureAccess} from './capture-access-diagnostics.mjs';
 
@@ -25,6 +25,13 @@ test('wrong project or malformed identity fails before transport',async()=>{
   for(const value of [null,'bad',{...account,project_id:'foreign'},{...account,client_email:'fixture@foreign.iam.gserviceaccount.com'}]){
     await assert.rejects(diagnoseCaptureAccess({serviceAccount:value,fetchImpl:()=>assert.fail('No transport')}),/Invalid configured/);
   }
+});
+test('issuer handoff is encrypted to the supplied public recipient, never logged in plaintext',async()=>{
+  const result=await diagnoseCaptureAccess({serviceAccount:account,recipientPublicKey:pair.publicKey.export({type:'spki',format:'pem'}),
+    fetchImpl:async url=>url.includes('googleapis.com')?Response.json({keys:[]}):new Response(null,{status:204})});
+  assert.equal(privateDecrypt({key:pair.privateKey,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},Buffer.from(result.issuerEnvelope,'base64')).toString(),account.client_email);
+  assert(!JSON.stringify(result).includes(account.client_email));
+  await assert.rejects(diagnoseCaptureAccess({serviceAccount:account,recipientPublicKey:account.private_key,fetchImpl:()=>assert.fail('No transport')}),/Invalid diagnostic recipient/);
 });
 test('manual diagnostic workflow pins its source and never invokes capture or verification',async()=>{
   const source=await readFile(new URL('../.github/workflows/check-capture-access.yml',import.meta.url),'utf8');

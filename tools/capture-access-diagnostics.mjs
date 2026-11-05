@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+import {createHash,createPublicKey,publicEncrypt,constants} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createWorkerCaptureFetch} from './worker-capture-fetch.mjs';
@@ -8,6 +8,7 @@ const fingerprint=value=>createHash('sha256').update(value).digest('hex');
 
 // This capability can request only public signing keys and the zero-database probe.
 export async function diagnoseCaptureAccess({serviceAccount=process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,
+  recipientPublicKey=process.env.CAPTURE_DIAGNOSTIC_RECIPIENT_KEY,
   fetchImpl=globalThis.fetch,now=Date.now}={}){
   let account;
   try{account=typeof serviceAccount==='string'?JSON.parse(serviceAccount):serviceAccount;
@@ -17,6 +18,13 @@ export async function diagnoseCaptureAccess({serviceAccount=process.env.FIREBASE
   }catch{throw Error('Invalid configured capture identity');}
   const result={issuerFingerprint:fingerprint(account.client_email),keyFingerprint:fingerprint(account.private_key_id),
     publishedKey:null,probes:[],firestoreReads:0,firestoreWrites:0};
+  if(recipientPublicKey){
+    if(typeof recipientPublicKey!=='string'||recipientPublicKey.length>6144||recipientPublicKey.includes('PRIVATE'))throw Error('Invalid diagnostic recipient');
+    const recipient=createPublicKey(recipientPublicKey);
+    if(recipient.asymmetricKeyType!=='rsa'||recipient.asymmetricKeyDetails.modulusLength<2048||recipient.asymmetricKeyDetails.modulusLength>4096)throw Error('Invalid diagnostic recipient');
+    result.recipientFingerprint=createHash('sha256').update(recipient.export({format:'der',type:'spki'})).digest('hex');
+    result.issuerEnvelope=publicEncrypt({key:recipient,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},Buffer.from(account.client_email)).toString('base64');
+  }
   const keys=await fetchImpl('https://www.googleapis.com/service_accounts/v1/jwk/'+encodeURIComponent(account.client_email),
     {method:'GET',redirect:'error',signal:AbortSignal.timeout(10000),credentials:'omit'});
   if(keys.status===200){

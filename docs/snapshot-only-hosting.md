@@ -5,6 +5,13 @@ submission service. Copying the files does not create that service.
 
 ## Compatibility Checklist
 
+Private capture uses the exact signer configured by `CAPTURE_SERVICE_ACCOUNT_EMAIL`
+on the Worker. This may differ from its database service account. Never publish a
+private key or use a wildcard issuer. Run the manual **Check private snapshot
+access** workflow on the tested source before a privileged capture; its
+`/v1/capture-auth` probe reads no Firestore documents. Database credentials and
+Firebase permissions do not need to change when correcting the capture identity.
+
 1. Update the complete client, not only `index.html` or one bundle. Keep the
    release manifest, versioned imports, styles and event modules together.
 2. Include the current snapshot pointer and the package it names. Preserve
