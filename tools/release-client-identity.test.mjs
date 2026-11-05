@@ -32,7 +32,7 @@ const row = (id, timeMs = 20000) => ({userId: id, name: id, timeMs, timingVersio
 const cached = (id, fetchedAt = 1000000) => ({entries: [row(id)], fetchedAt, serverUpdatedAt: 100, revision: 1, algorithmVersion: 'model'});
 const board = (id, revision = 2) => ({entries: [row(id)], updatedAt: 200, revision, algorithmVersion: 'model', schemaVersion: 6, complete: true, totalEntries: 1});
 
-function trackHarness(initial = {}, unranked = []) {
+function trackHarness(initial = {}, unranked = [], {snapshotOnly=false} = {}) {
   const cache = new Map(Object.entries(initial)), metadata = [], loads = [], extraLoads = [], timers = [], repaints = [], classes = new Set(), visibility = [];
   const replayInvalidations = [];
   let account='one', host={visible:true};
@@ -56,7 +56,7 @@ function trackHarness(initial = {}, unranked = []) {
     applyCanonicalTrackWeight: (_id, rows) => rows, canonicalRaceTimeMs: entry => entry.timeMs,
     computeTrackTopEntries: rows => rows, enrichLegacyLeaderboardEntries: rows => rows,
     canonicalDisplayName: (_id, name) => name, rowIdentityFreshness: () => 0,
-    snapshotOnlyForNewAccount: () => true, db: () => { throw Error('Unexpected database access'); },
+    snapshotOnlyForNewAccount: () => snapshotOnly, db: () => { throw Error('Unexpected database access'); },
     noteFirebaseQuota: () => {}, localRaceRowsForTrack: () => [], ageLabel: () => 'old', log: () => {}
   });
   runClientSource(extract('hydratePlannerTrackSummaries'), context);
@@ -76,6 +76,12 @@ function trackHarness(initial = {}, unranked = []) {
   };
 }
 const resolveExtra = (pending, id) => pending.resolve({ok: true, json: async () => ({entries: [row(id)], updatedAt: 300})});
+
+test('snapshot-only unranked tracks never request the live Extra leaderboard',async()=>{
+ const h=trackHarness({},['B'],{snapshotOnly:true}),pending=h.get('B');
+ assert.equal(h.extraLoads.length,0);assert.equal(h.loads.length,1);
+ h.loads[0].resolve(board('B'));await pending;assert.equal(h.extraLoads.length,0);
+});
 
 test('cached A metadata cannot reclaim selection after cached B', async () => {
   const h = trackHarness({A: cached('A'), B: cached('B')}), gate = deferred();

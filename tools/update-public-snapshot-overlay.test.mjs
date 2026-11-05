@@ -78,6 +78,16 @@ test('Firestore stored-proof context precedes capture; reuse-only overlay follow
   assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString()),{reuseOnly:true});
 });
 
+test('checkpoint precedes native verification and a failed checkpoint cannot publish',async t=>{
+ const f=await fixture(t,{pointer:false,mode:'snapshot-native'});
+ await assert.rejects(updatePublicSnapshot({...f.options,captureCheckpoint:async value=>{
+  f.calls.push('checkpoint');assert.deepEqual(value,{directory:f.directory,sourceCommit:commit});throw Error('checkpoint fixture failure');
+ }}),/checkpoint fixture failure/);
+ assert.deepEqual(f.calls,['pin','prepare','checkpoint']);
+ await assert.rejects(fs.stat(path.join(f.root,'snapshot-current.json')),e=>e.code==='ENOENT');
+ await assert.rejects(updatePublicSnapshot({...f.options,captureCheckpoint:{}}),/Invalid capture checkpoint/);
+});
+
 test('Firestore without a ledger pointer keeps legacy packaging and never resolves or invokes proof capabilities',async t=>{
   const f=await fixture(t,{pointer:false});
   const result=await updatePublicSnapshot(f.options);

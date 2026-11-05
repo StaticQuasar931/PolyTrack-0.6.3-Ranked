@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {CAPTURE_REPAIR as R,assertCaptureRepair} from './capture-repair-plan.mjs';
+import {CAPTURE_REPAIR as R,CAPTURE_REPAIR_SECOND as R2,captureRepairPolicy,assertCaptureRepair} from './capture-repair-plan.mjs';
 import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {overnightClaimRef,acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
 test('replacement is manual, first-attempt, time-bounded and cannot repeat a recorded capture',()=>{
@@ -35,4 +35,22 @@ test('replacement workflow cannot drain server verification and uses the existin
  assert.match(pipeline,/nativeVerification\?\.backendReads!==0/);
  const configuration=JSON.parse(await fs.readFile(new URL('../workers/ranked/wrangler.jsonc',import.meta.url),'utf8'));
  assert.ok(configuration.secrets.required.includes('CAPTURE_SERVICE_ACCOUNT_EMAIL'));
+});
+
+test('second replacement has its own marker and a smaller hard replay budget',()=>{
+ const plan=assertCaptureRepair({eventName:'workflow_dispatch',now:R2.start,runAttempt:1,attempt:'repair-2'});
+ assert.equal(plan.replayDocumentLimit,1000);assert.equal(plan.maxJobs,N.maxJobs);
+ assert.equal(overnightClaimRef({replacement:true,attempt:'repair-2'}),R2.claimRef);
+ assert.equal(R2.priorClaimRef,R.claimRef);assert.equal(R2.priorFailureRunId,42038203308);
+ assert.throws(()=>captureRepairPolicy('repair-3'));
+ assert.throws(()=>assertCaptureRepair({eventName:'workflow_dispatch',now:R2.latestStart,runAttempt:1,attempt:'repair-2'}));
+});
+
+test('recovery artifact is ciphertext-only, short lived and uses the smaller replay cap',async()=>{
+ const pipeline=await fs.readFile(new URL('../.github/workflows/publish-verified-snapshots.yml',import.meta.url),'utf8');
+ assert.match(pipeline,/replayDocumentLimit:recovery\?CAPTURE_REPAIR_SECOND.replayDocumentLimit/);
+ assert.match(pipeline,/retention-days: 3/);assert.match(pipeline,/path: \$\{\{ runner.temp \}\}\/polytrack-recovery.ptenc/);
+ const upload=pipeline.slice(pipeline.indexOf('- name: Retain encrypted recovery checkpoint'),pipeline.indexOf('- name: Index all saved'));
+ assert.doesNotMatch(upload,/SERVICE_ACCOUNT|PRIVATE_KEY|snapshot-staging/);
+ assert.match(upload,/if-no-files-found: error/);
 });

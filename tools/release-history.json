@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 285,
+    "number": 286,
     "version": "0.6.3",
-    "revision": 244,
+    "revision": 245,
     "notes": [
-      "Snapshot updates handle changed PB replay data more safely.",
-      "Unavailable replays stay unverified instead of blocking valid saved results."
+      "Snapshot updates can recover saved replay data if processing is interrupted.",
+      "The replacement update uses a smaller replay-fetch budget."
     ]
   },
   "entries": [
+    {
+      "number": 285,
+      "title": "Retire stale canonical replay inputs without weakening native checks",
+      "commit": "a711fba99e0d4cd44455f0c21bf37369f02755a0",
+      "committedAt": "2026-11-05T14:13:38.000Z",
+      "notes": [
+        "Snapshot updates handle changed PB replay data more safely.",
+        "Unavailable replays stay unverified instead of blocking valid saved results."
+      ]
+    },
     {
       "number": 284,
       "title": "Repair private snapshot identity and guard one authorized replacement",
@@ -209,16 +219,6 @@
         "Search and Filters stay together across screen sizes.",
         "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
         "Offline PB activity survives retries, with clearer profile publishing status."
-      ]
-    },
-    {
-      "number": 254,
-      "title": "Cloud Recovery",
-      "commit": "aaa2fc34f489e7d58b51bc6363a7c1583ac7b64b",
-      "committedAt": "2026-11-02T03:22:01.000Z",
-      "notes": [
-        "More reliable profile updates and recovery from interrupted cloud publication.",
-        "Ranked controls stay reachable in short windows."
       ]
     }
   ],

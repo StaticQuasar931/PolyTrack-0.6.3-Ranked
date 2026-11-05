@@ -6,6 +6,15 @@ on:
         description: Exact tested main commit for the authorized replacement
         type: string
         required: true
+      repair_attempt:
+        description: Separately authorized attempt
+        type: choice
+        options: [repair-1, repair-2]
+        default: repair-1
+      recovery_public_key:
+        description: Public encryption recipient, required for repair-2
+        type: string
+        required: false
 permissions:
   contents: read
 jobs:
@@ -26,14 +35,18 @@ jobs:
       - name: Check source and replacement window
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}
+          RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_COMMIT"
           node --input-type=module <<'PLAN'
           import {assertCaptureRepair} from './tools/capture-repair-plan.mjs';
-          assertCaptureRepair({eventName:process.env.GITHUB_EVENT_NAME,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT)});
+          import {validateRecoveryRecipient} from './tools/capture-recovery.mjs';
+          assertCaptureRepair({eventName:process.env.GITHUB_EVENT_NAME,now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),attempt:process.env.REPAIR_ATTEMPT});
+          if(process.env.REPAIR_ATTEMPT==='repair-2')validateRecoveryRecipient(process.env.RECOVERY_PUBLIC_KEY);
           PLAN
       - name: Test replacement safeguards
-        run: node --test tools/capture-repair-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/check-worker-capture-access.test.mjs
+        run: node --test tools/capture-repair-plan.test.mjs tools/capture-recovery.test.mjs tools/overnight-capture-claim.test.mjs tools/check-worker-capture-access.test.mjs
       - name: Confirm private access without database requests
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
@@ -52,6 +65,8 @@ jobs:
       verification_authority: snapshot-native
       overnight_native: true
       replacement_capture: true
+      repair_attempt: ${{ inputs.repair_attempt }}
+      recovery_public_key: ${{ inputs.recovery_public_key }}
       expected_source_commit: ${{ inputs.expected_source_commit }}
     secrets:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}

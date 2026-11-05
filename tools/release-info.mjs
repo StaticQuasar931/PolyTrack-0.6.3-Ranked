@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 285,
+  "number": 286,
   "version": "0.6.3",
-  "revision": 244,
+  "revision": 245,
   "notes": [
-    "Snapshot updates handle changed PB replay data more safely.",
-    "Unavailable replays stay unverified instead of blocking valid saved results."
+    "Snapshot updates can recover saved replay data if processing is interrupted.",
+    "The replacement update uses a smaller replay-fetch budget."
   ],
-  "preparedAt": "2026-11-05T14:09:48.280Z",
-  "committedAt": "2026-11-05T14:13:38.000Z"
+  "preparedAt": "2026-11-05T14:51:00.157Z",
+  "committedAt": "2026-11-05T14:59:00.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

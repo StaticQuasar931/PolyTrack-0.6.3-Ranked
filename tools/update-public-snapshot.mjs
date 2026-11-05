@@ -410,12 +410,13 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   captureOverall = capture === runPublicSnapshotBackup ? captureOverallProjection : null, overallCaptureOptions = {},
   calculateOverall = capture === runPublicSnapshotBackup ? rebuildSnapshotOverall : null,
   captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log,
-  verificationAuthority: authorityOverride, nativePhaseOptions = {},
+  verificationAuthority: authorityOverride, nativePhaseOptions = {}, captureCheckpoint = null,
   env = process.env,
   resolveSourceCommit = root => execFileSync('git',['rev-parse','--verify','HEAD'],
     {cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),
   prepareNativeCapture = async options => (await import('./native-snapshot-phase.mjs')).prepareNativeSnapshotCapture(options),
   nativePhase = async options => (await import('./native-snapshot-phase.mjs')).runNativeSnapshotPhase(options) } = {}) {
+  if(captureCheckpoint!==null && typeof captureCheckpoint!=='function')throw Error('Invalid capture checkpoint capability');
   if (replayDocumentLimit !== null && (!Number.isInteger(replayDocumentLimit) || replayDocumentLimit < 1 || replayDocumentLimit > 2000 ||
       refreshReplays !== true || fullPublic !== false || offline !== false)) {
     throw new RangeError('replayDocumentLimit requires an integer from 1 to 2000 and an online replay-only refresh');
@@ -539,6 +540,9 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       ledgerManifestHash:nativeCapture.ledger.manifestHash,backendReads:0,backendWrites:0};
     log(JSON.stringify({nativeVerification}));
   } else if (proofPhase) {
+    if(captureCheckpoint){
+      await captureCheckpoint({directory:stagingDirectory,sourceCommit});
+    }
     const result = await nativePhase({...nativePhaseOptions, root:absoluteRoot, directory:stagingDirectory,
       sourceCommit,reuseOnly:authority === 'firestore',
       captureContext:nativeCapture});
