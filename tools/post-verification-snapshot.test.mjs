@@ -190,7 +190,9 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   const embedded=source=>source.match(/<<'NODE'\n([\s\S]*?)^          NODE$/m)?.[1];
   assert.ok(embedded(publisher));assert.equal(embedded(publisher),embedded(catalog));
   const paths=[...publisher.matchAll(/^          path: (.+)$/gm)].map(match=>match[1]);
-  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json']);
+  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-recovery.ptenc','${{ runner.temp }}/polytrack-replay-retries/history.json']);
+  const recovery=step(publisher,'Retain encrypted recovery checkpoint');
+  assert.match(recovery,/retention-days: 3/);assert.doesNotMatch(recovery,/SERVICE_ACCOUNT|PRIVATE_KEY|snapshot-staging/);
   const browser=step(publisher,'Cache the pinned offline browser');
   assert.match(browser,/^        if: steps.authority.outputs.mode == 'snapshot-native'$/m);
   assert.match(browser,/^          path: ~\/\.cache\/ms-playwright$/m);
@@ -267,8 +269,14 @@ test('post-verification capture is single-shot, projected read-only, and never r
     "  node --input-type=module <<'ONEOFF'",
     "import {updatePublicSnapshot,reportCaptureOutcome} from './tools/update-public-snapshot.mjs';",
     "import {OVERNIGHT_SNAPSHOT} from './tools/overnight-snapshot-plan.mjs';",
+    "import path from 'node:path';",
+    "import {CAPTURE_REPAIR_SECOND} from './tools/capture-repair-plan.mjs';",
+    "import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';",
     'const nativePhaseOptions={maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs};',
-    "const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions});",
+    "const recovery=process.env.REPAIR_ATTEMPT==='repair-2';",
+    'const captureCheckpoint=recovery?async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCaptureRecovery({directory,sourceCommit,',
+    "  outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc'),recipientPublicKey:process.env.RECOVERY_PUBLIC_KEY})})):null;",
+    "const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions,captureCheckpoint});",
     "if(!result.deferred && (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');",
     'await reportCaptureOutcome(result);','ONEOFF',
     'elif [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then',

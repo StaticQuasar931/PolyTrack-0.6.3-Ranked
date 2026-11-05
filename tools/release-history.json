@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 286,
+    "number": 287,
     "version": "0.6.3",
-    "revision": 245,
+    "revision": 246,
     "notes": [
-      "Snapshot updates can recover saved replay data if processing is interrupted.",
-      "The replacement update uses a smaller replay-fetch budget."
+      "Snapshot update checks now cover the encrypted recovery path.",
+      "Existing saved results remain in place if an update cannot finish."
     ]
   },
   "entries": [
+    {
+      "number": 286,
+      "title": "Preserve encrypted capture recovery with a smaller retry budget",
+      "commit": "9aadac9dfaa66c09502c04cb30b4623aad11b890",
+      "committedAt": "2026-11-05T14:59:00.000Z",
+      "notes": [
+        "Snapshot updates can recover saved replay data if processing is interrupted.",
+        "The replacement update uses a smaller replay-fetch budget."
+      ]
+    },
     {
       "number": 285,
       "title": "Retire stale canonical replay inputs without weakening native checks",
@@ -208,17 +218,6 @@
         "Extra Tracks now has daily and weekly discovery picks plus dated Kodub weekly selections.",
         "Route recommendations use available snapshot fields before you open individual tracks.",
         "Clearer profile participation, flush profile controls, and a roomier event archive."
-      ]
-    },
-    {
-      "number": 263,
-      "title": "Menu and Offline PB Polish",
-      "commit": "c0426519bdf230a095925debe5bbf9e429244638",
-      "committedAt": "2026-11-02T04:08:26.000Z",
-      "notes": [
-        "Search and Filters stay together across screen sizes.",
-        "Weekly artwork stays complete, and unplayed track counts are clearer and on by default.",
-        "Offline PB activity survives retries, with clearer profile publishing status."
       ]
     }
   ],

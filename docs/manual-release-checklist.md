@@ -35,6 +35,11 @@ capture to diagnose a failing offline test.
 
 ## Firebase Impact Review
 
+Before dispatching a changed capture workflow, run every offline test command in
+its wrapper and reusable publisher locally, including `post-verification-snapshot.test.mjs`.
+Release/CDN checks alone do not cover exact capture-script and artifact-path contracts.
+Never use a live dispatch as the first execution of a changed offline gate.
+
 1. Identify every changed path that can cause document reads, writes, rule-dependent reads, retries or derived publication. A static UI change must not silently add a live fallback or per-row query.
 2. Record measured fixture costs before and after backend changes, including deferred batch work. Distinguish HTTP requests, estimated document operations and actual billed usage; do not omit reconciliation, rule or index costs from a savings claim.
 3. Keep browsing, searches, popularity and local recalculation on the loaded snapshot. Reuse exact replay bindings and frozen archives; never trust stale cached ownership or a physics proof for a changed replay.
