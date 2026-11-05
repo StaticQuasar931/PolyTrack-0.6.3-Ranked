@@ -794,3 +794,88 @@ test('deterministic Overall budget failures suppress unchanged-source scans and 
   assert.equal((await rebuildOverall(f.env)).rebuilt,true,'changed source bypasses deterministic old-source block');
   assert.equal(f.data.get(META).overallRebuildBlockedSource,undefined);
 });
+
+// Release294: audit unchanged immutable generations without relaxing root audits.
+for (const change of ['none', 'binding', 'inline', 'metadata', 'generation', 'forced']) {
+  test('release294: paged audit reuses only exact roots: ' + change, async () => {
+    const rows = [{accountId:'first'}, {accountId:'second'}];
+    const document = doc(A, 1, {entries:rows.slice(0,1), complete:false, sourceComplete:true,
+      totalEntries:2, pagination:{complete:true, totalEntries:2, generation:'d'.repeat(64)}});
+    const f = fixture([document]);
+    f.options.loadEntries = async (root,id,read) => {
+      await read('pages','0'); await read('pages','1'); return clone(rows);
+    };
+    const options = await prime(f);
+    if (change === 'binding') f.state.documents[0].data.revision++;
+    if (change === 'inline') f.state.documents[0].data.entries[0].accountId = 'edited';
+    if (change === 'metadata') f.state.documents[0].data.reviewMarker = 'changed';
+    if (change === 'generation') f.state.documents[0].data.pagination.generation = 'e'.repeat(64);
+    const result = await loadOverallSources({...options, now:options.now + SOURCE_CATALOG_RESCAN_MS,
+      forceScan:change === 'forced'});
+    assert.equal(f.state.scans,2,'fresh collection discovery is never bypassed');
+    assert.equal(result.requests.pageReads,change === 'none' ? 0 : 2);
+    assert.equal(result.unchanged,change === 'none');
+  });
+}
+
+test('release294: real Worker cold six-hour audits save immutable pages, including follow-up costs', async t => {
+  const {preparePublicationPages, PUBLIC_PAGE_COLLECTION} = await import('../src/paged-publication.js');
+  let now=Date.parse('2026-11-05T00:00:00Z'); t.mock.method(Date,'now',()=>now);
+  const f=workerFixture(3,{pending:true});
+  for (const [key,board] of [...f.data]) {
+    const entries=Array.from({length:1001},(_,i)=>({accountId:'racer-'+i, timeMs:10000+i,
+      integrityVerified:true,runVerified:false,rank:i+1,name:'Racer '+i}));
+    const publication=await preparePublicationPages('track',board.trackId,entries,
+      {sourceRevision:1,sourceComplete:true});
+    for (const part of publication.documents) f.mutate(part.collection+'/'+part.id,part.data);
+    f.mutate(key,{...board,entries:entries.slice(0,500),complete:false,sourceComplete:true,
+      totalEntries:entries.length,pagination:publication.pagination});
+  }
+  const tally=calls=>calls.reduce((sum,call)=>sum+(call.path===':commit'?0:
+    call.path===':runQuery'?3:call.path===':batchGet'?call.body.documents.length:1),0);
+  await rebuildOverall(f.env,true);
+  const bootstrapReads=tally(f.calls), bootstrapWrites=f.commits.reduce((n,b)=>n+b.length,0);
+  let totalReads=0,totalWrites=0,totalPages=0;
+  for(let audit=0;audit<4;audit++) {
+    now+=SOURCE_CATALOG_RESCAN_MS; f.cache.values.clear();
+    const start=f.calls.length, commits=f.commits.length;
+    await rebuildOverall({...f.env});
+    const calls=f.calls.slice(start);
+    const pageReads=calls.filter(c=>c.path.includes('/'+PUBLIC_PAGE_COLLECTION+'/')).length+
+      calls.filter(c=>c.path===':batchGet').flatMap(c=>c.body.documents)
+        .filter(name=>name.includes('/'+PUBLIC_PAGE_COLLECTION+'/')).length;
+    assert.equal(pageReads,0);
+    assert.equal(calls.filter(c=>c.path===':runQuery').length,1);
+    assert.ok(calls.some(c=>c.path===':batchGet' && c.body.documents.some(name=>
+      name.includes('/'+SOURCE_PUBLICATION_COLLECTION+'/'))),'cold committed companion is billed');
+    totalReads+=tally(calls); totalPages+=pageReads;
+    totalWrites+=f.commits.slice(commits).reduce((n,batch)=>n+batch.length,0);
+    const follow=f.calls.length;
+    assert.equal((await rebuildOverall({...f.env})).rebuilt,false);
+    assert.equal(f.calls.length-follow,1,'next clean invocation pays metadata only');
+    totalReads++;
+  }
+  console.log('release294 four cold audits plus clean follow-ups',JSON.stringify({
+    reads:totalReads,writes:totalWrites,pageReads:totalPages,immutablePageReadsAvoided:132-totalPages,
+    oldEquivalentReads:totalReads+132-totalPages,deferredPageReads:0,bootstrapReads,bootstrapWrites,
+    completeReads:totalReads+bootstrapReads,completeWrites:totalWrites+bootstrapWrites}));
+  assert.equal(f.data.get(OVERALL).entries.length,0,'pending proof never becomes a verified claim');
+});
+
+
+test('release294: rejected paged companion revalidates every page; failed recovery never stages a bundle', async () => {
+  const document=doc(A,1,{entries:[],complete:false,sourceComplete:true,totalEntries:2,
+    pagination:{complete:true,totalEntries:2,generation:'d'.repeat(64)}});
+  const f=fixture([document]);
+  f.options.loadEntries=async(root,id,read)=>[
+    ...(await read('pages','0')).data.entries,...(await read('pages','1')).data.entries];
+  const options=await prime(f);
+  for(const key of f.state.cache.values.keys())f.state.cache.values.set(key,'corrupt');
+  const result=await loadOverallSources({...options,now:options.now+SOURCE_CATALOG_RESCAN_MS});
+  assert.equal(result.recoveredCorruptBundle,true);
+  assert.equal(result.requests.pageReads,2);
+  const puts=f.state.cache.calls.put;
+  await assert.rejects(loadOverallSources({...options,now:options.now+SOURCE_CATALOG_RESCAN_MS,
+    readPage:async()=>{throw Error('MISSING_IMMUTABLE_PAGE');}}),/MISSING_IMMUTABLE_PAGE/);
+  assert.equal(f.state.cache.calls.put,puts);
+});

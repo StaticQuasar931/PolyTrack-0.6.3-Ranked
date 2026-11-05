@@ -72,7 +72,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
   set(reconcileKey, {backfillComplete:true, schemaVersion:2, cursorIngestedAt:'2026-11-03T00:00:00Z',
     cursorDocumentId:'preserve-cursor', backfillDocumentId:'preserve-backfill',
     pendingTrackIds:[track], pendingFullRebuildTrackIds:[track], pendingResultIds:{}});
-  const control = {beforeCommit:null, afterCommit:null, discovery:[]};
+  const control = {beforeCommit:null, afterCommit:null, discovery:[], discoveryQueries:[]};
   const noteRead = (key, readTime = '') => {
     stats.reads++;
     reads.push({key, readTime});
@@ -92,7 +92,15 @@ async function fixture(t, {trackId = track, count = population} = {}) {
       }
       assert.equal(q.from[0].collectionId, results);
       if (q.where?.fieldFilter?.field?.fieldPath !== 'trackId') {
-        const found = control.discovery.splice(0, q.limit);
+        control.discoveryQueries.push(structuredClone(q));
+        const since=q.where?.fieldFilter?.value?.timestampValue || '';
+        const after=(q.startAt?.values?.[1]?.referenceValue || '').split('/documents/').at(-1);
+        const found = control.cursorDiscovery
+          ? control.discovery.filter(row=>(row.ingestedAt || new Date(now).toISOString())>=since &&
+              (!after || (row.ingestedAt || new Date(now).toISOString())>since || row.key>after))
+            .sort((a,b)=>(a.ingestedAt || '').localeCompare(b.ingestedAt || '') || a.key.localeCompare(b.key))
+            .slice(0,control.discoveryLimitOverride || q.limit)
+          : control.discovery.splice(0, q.limit);
         stats.reads += Math.max(1, found.length);
         return found.map(row => {const document=wire(row.key);return {document:{...document,
           fields:{...document.fields,ingestedAt:{timestampValue:row.ingestedAt || new Date(now).toISOString()}}},
@@ -129,7 +137,8 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     }
     if (route === ':commit') {
       const writes = body.writes;
-      assert.ok(writes.length <= 32, 'every commit stays within the existing staging batch bound');
+      const proofBatch=writes.every(w=>w.update?.name.includes('/'+VERIFICATION_COLLECTION+'/'));
+      assert.ok(writes.length <= (proofBatch ? 49 : 32), 'proof migration and publication staging retain their existing bounds');
       if (writes.some(w => w.update?.name.endsWith('/' + reconcileKey)))
         assert.ok(writes.length <= 6, 'combined final commit includes at most six writes, including Rolling');
       for (const w of writes.filter(w=>w.update?.name.endsWith('/'+reconcileKey))) {
@@ -767,4 +776,262 @@ test('audit275: full-track bound above the supported legacy catalog fails withou
   assert.deepEqual(f.data.get(reconcileKey),before);
   assert.equal(f.queries.length,0);
   assert.equal(f.stats.writes,0);
+});
+
+
+// Discovery-capacity regressions use a cursor-aware query double, not a destructive inbox.
+async function burstFixture(t, {pending=190, incoming=220, adaptive=false, count=population} = {}) {
+  const f=await fixture(t,{count});
+  if(!adaptive)f.set(VERIFICATION_COLLECTION+'/'+track,{...f.data.get(VERIFICATION_COLLECTION+'/'+track),migrationComplete:false});
+  f.control.cursorDiscovery=true;
+  f.env.CANONICAL_DISCOVERY_BACKPRESSURE='enabled';
+  const changes=f.rows.slice(0,pending+incoming).map((row,i)=>({...row,
+    timeMs:7000+i,frames:7000+i,raceTimeFrames:7000+i,uploadId:2}));
+  for(const row of changes)f.set(results+'/'+row.accountId+'_'+track,row);
+  const ids=changes.slice(0,pending).map(row=>row.accountId+'_'+track);
+  const bindings=Object.fromEntries(changes.slice(0,pending).map(row=>[row.accountId+'_'+track,verificationKey(row)]));
+  f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[track],pendingFullRebuildTrackIds:[],
+    pendingResultIds:{[track]:ids},pendingResultBindings:bindings});
+  for(const row of changes.slice(pending))f.control.discovery.push({key:results+'/'+row.accountId+'_'+track,
+    ingestedAt:'2026-11-03T08:00:00.000Z'});
+  const held=changes[pending], shard=verificationShardId(track,held.accountId);
+  const hold={...pendingSlot(held),status:'unavailable',reason:COMPETITIVE_REVIEW_REASON,retryAt:Number.MAX_SAFE_INTEGER};
+  f.set(VERIFICATION_COLLECTION+'/'+shard,{...f.data.get(VERIFICATION_COLLECTION+'/'+shard),slots:{[held.accountId]:hold}});
+  return {...f,changes,ids,bindings,held,hold,shard};
+}
+
+for(const backpressure of [undefined,'enabled'])test('backpressure complete burst '+String(backpressure)+': 410 PB updates including final publication and clean follow-ups',async t=>{
+  const f=await burstFixture(t,{adaptive:true});
+  if(backpressure===undefined)delete f.env.CANONICAL_DISCOVERY_BACKPRESSURE;
+  const keyed=!identityBaseline&&backpressure==='enabled';
+  let passes=0,maxRequests=0,maxKeys=0;
+  const last=f.control.discovery.at(-1).key.slice(results.length+1);
+  for(;passes<80;passes++) {
+    const before=f.stats.requests;
+    await reconcileCanonicalChanges(f.env);
+    maxRequests=Math.max(maxRequests,f.stats.requests-before);
+    assert.ok(f.stats.requests-before<=45,'existing 42 work / 45 checkpoint reserve is unchanged');
+    const job=f.data.get(reconcileKey),count=Object.values(job.pendingResultIds||{}).reduce((n,ids)=>n+ids.length,0);
+    maxKeys=Math.max(maxKeys,count);assert.ok(count<=200);
+    if(keyed)assert.deepEqual(job.pendingFullRebuildTrackIds,[],'ordinary burst cannot request a full rebuild');
+    if(job.pendingTrackIds.length===0&&job.cursorDocumentId===last){passes++;break;}
+  }
+  assert.ok(passes<80,'every discovered and previously accepted PB finishes');
+  for(let follow=0;follow<3;follow++) {
+    const before=f.stats.writes;
+    assert.equal((await reconcileCanonicalChanges(f.env)).unchanged,true);
+    assert.equal(f.stats.writes,before,'clean follow-ups add no heartbeat writes');
+  }
+  const published=await loadPublicationEntries(f.data.get(boardKey),'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+  assert.equal(published.length,population);
+  for(const row of f.changes) {
+    const actual=published.find(entry=>entry.accountId===row.accountId);
+    assert.equal(actual.timeMs,row.timeMs);assert.equal(actual.uploadId,row.uploadId);
+    assert.equal(actual.replayHash,row.replayHash);assert.equal(actual.runVerified,false,'old binding cannot approve new PB');
+  }
+  assert.deepEqual(f.data.get(VERIFICATION_COLLECTION+'/'+f.shard).slots[f.held.accountId],f.hold);
+  assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
+  assert.deepEqual(f.errors,[]);
+  if(keyed)assert.equal(f.stats.canonicalRows,0);
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes},keyed?{reads:1176,writes:537}:{reads:7270,writes:504});
+  for(const row of f.rows.slice(f.changes.length)){
+    const actual=published.find(entry=>entry.accountId===row.accountId);
+    assert.equal(actual.timeMs,row.timeMs);assert.equal(actual.runVerified,true);
+  }
+  process.stdout.write('KEYED_BURST_COMPLETE_COST '+JSON.stringify({baseline:!!identityBaseline,backpressure:backpressure??'unset',
+    updates:f.changes.length,previouslyQueued:f.ids.length,discovered:f.control.discovery.length,
+    passes,followUps:3,maxRequests,maxKeys,...f.stats,fullQueries:f.queries.length,
+    discoveryQueries:f.control.discoveryQueries.length})+'\n');
+});
+
+test('backpressure: full keyed capacity skips discovery while draining and preserves bindings', {skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t,{pending:200,incoming:1}),before=structuredClone(f.data.get(reconcileKey));
+  const result=await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries.length,0);assert.equal(result.targeted,16);
+  const job=f.data.get(reconcileKey);
+  assert.equal(job.pendingResultIds[track].length,184);
+  assert.equal(job.cursorDocumentId,before.cursorDocumentId);assert.equal(job.cursorIngestedAt,before.cursorIngestedAt);
+  assert.deepEqual(job.pendingFullRebuildTrackIds,[]);
+  for(const id of f.ids.slice(16))assert.equal(job.pendingResultBindings[id],f.bindings[id]);
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries[0].limit,16);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.held.accountId+'_'+track);
+  assert.equal(f.stats.canonicalRows,0);
+});
+
+test('backpressure: discovery reads only ten free IDs and advances their durable prefix', {skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t);await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries[0].limit,10);
+  const job=f.data.get(reconcileKey);
+  assert.equal(job.cursorDocumentId,f.changes[199].accountId+'_'+track);
+  assert.equal(job.pendingResultIds[track].length,184);
+  assert.deepEqual(job.pendingFullRebuildTrackIds,[]);
+});
+
+test('backpressure: oversized adapter response never acknowledges an unaccepted suffix', {skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t);f.control.discoveryLimitOverride=50;
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.changes[199].accountId+'_'+track);
+  assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
+  f.control.discoveryLimitOverride=null;await reconcileCanonicalChanges(f.env);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.changes[215].accountId+'_'+track);
+  assert.equal(f.stats.canonicalRows,0);
+});
+
+test('backpressure: job CAS loss cannot advance discovery or erase a concurrent binding', {skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t);const before=structuredClone(f.data.get(reconcileKey));let injected=false;
+  f.control.beforeCommit=async writes=>{
+    if(!injected&&writes.some(w=>w.update.name.endsWith('/'+reconcileKey))) {
+      injected=true;f.set(reconcileKey,{...before,pendingResultBindings:{...before.pendingResultBindings,[f.ids[0]]:'new-concurrent-binding'}});
+    }
+  };
+  await assert.rejects(reconcileCanonicalChanges(f.env),/FIRESTORE_412/);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,before.cursorDocumentId);
+  assert.equal(f.data.get(reconcileKey).pendingResultBindings[f.ids[0]],'new-concurrent-binding');
+  assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
+  f.control.beforeCommit=null;await reconcileCanonicalChanges(f.env);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.changes[199].accountId+'_'+track);
+});
+
+
+test('backpressure: duplicate already-accepted IDs advance the cursor without consuming capacity twice', {skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t);
+  f.control.discovery.unshift(...f.changes.slice(0,10).map(row=>({key:results+'/'+row.accountId+'_'+track,
+    ingestedAt:'2026-11-03T08:00:00.000Z'})));
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.ids[9]);
+  assert.equal(f.data.get(reconcileKey).pendingResultIds[track].length,174);
+  assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries[1].limit,26);
+  assert.equal(f.data.get(reconcileKey).cursorDocumentId,f.changes[215].accountId+'_'+track);
+});
+
+test('backpressure: keyed saturation does not suppress independent legacy backfill requests', {skip:!!identityBaseline},async t=>{
+  const f=await fixture(t,{count:1}),ids=Array.from({length:200},(_,i)=>'queued'+i+'_'+track);
+  f.env.CANONICAL_DISCOVERY_BACKPRESSURE='enabled';
+  f.set(reconcileKey,{...f.data.get(reconcileKey),backfillComplete:false,pendingFullRebuildTrackIds:[],
+    pendingResultIds:{[track]:ids},pendingResultBindings:{[ids[0]]:'preserve-binding'}});
+  const before=structuredClone(f.data.get(reconcileKey));
+  f.control.discovery.push({key:results+'/'+f.rows[0].accountId+'_'+track});
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries.length,1);
+  assert.equal(f.control.discoveryQueries[0].where,undefined,'only the legacy name-ordered scan runs');
+  assert.equal(f.stats.canonicalRows,1,'legacy backfill still requests full authority reconstruction');
+  const job=f.data.get(reconcileKey);
+  assert.equal(job.cursorDocumentId,before.cursorDocumentId);
+  assert.deepEqual(job.pendingResultIds[track],ids);
+  assert.equal(job.pendingResultBindings[ids[0]],'preserve-binding');
+  assert.equal(job.backfillComplete,true);
+});
+
+
+for(const flag of [undefined,false,true,'true','Enabled','enabled '])test('backpressure review flag is dormant unless exact enabled: '+String(flag),{skip:!!identityBaseline},async t=>{
+  const f=await burstFixture(t,{pending:200,incoming:1});
+  if(flag===undefined)delete f.env.CANONICAL_DISCOVERY_BACKPRESSURE;
+  else f.env.CANONICAL_DISCOVERY_BACKPRESSURE=flag;
+  await reconcileCanonicalChanges(f.env);
+  assert.equal(f.control.discoveryQueries.length,1,'default discovery behavior is unchanged');
+  assert.ok(f.data.get(reconcileKey).pendingFullRebuildTrackIds.includes(track));
+  assert.equal(f.stats.canonicalRows,100,'legacy fallback, not adaptive publication, remains default');
+});
+
+
+for(const risk of ['small','migration','mixed','reserved','budget','source-size','discovery-size'])test('retained64: uncertain or shared resources fall back to 16 and progress: '+risk,async t=>{
+ const f=await burstFixture(t,risk==='small'?{pending:64,incoming:10,count:99,adaptive:true}:{adaptive:true});
+ if(risk==='discovery-size'){
+  for(const row of f.changes.slice(190,195))f.set(results+'/'+row.accountId+'_'+track,{...row,unusedMetadata:'x'.repeat(500000)});
+ }
+ if(risk==='source-size'){
+  const entries=await loadPublicationEntries(f.data.get(boardKey),'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+  const padded=entries.map((row,i)=>i>=1000?{...row,resourceFixture:'x'.repeat(16000)}:row);
+  const pages=await preparePublicationPages('track',track,padded,{sourceRevision:1,sourceComplete:true});
+  for(const doc of pages.documents)f.set(doc.collection+'/'+doc.id,doc.data);
+  f.set(boardKey,{...f.data.get(boardKey),pagination:pages.pagination});
+ }
+ if(risk==='migration'){
+  const rootKey=VERIFICATION_COLLECTION+'/'+track;
+  f.set(rootKey,{...f.data.get(rootKey),migrationComplete:false,slots:{unrelated:{key:'preserve',status:'waiting'}}});
+ }
+ if(risk==='mixed'||risk==='reserved'){
+  const job=f.data.get(reconcileKey),sibling='reserved-full';
+  f.set(reconcileKey,{...job,pendingTrackIds:[track,sibling],
+   pendingResultIds:{...job.pendingResultIds,...(risk==='mixed'?{[sibling]:['other_'+sibling]}:{})},
+   pendingFullRebuildTrackIds:risk==='reserved'?[sibling]:[]});
+ }
+ if(risk==='budget'){
+  const {createFirestoreAudit}=await import('../src/firestore-read-cost.js');
+  f.env.__FIRESTORE_READ_AUDIT=createFirestoreAudit();f.env.__FIRESTORE_READ_AUDIT.operationAttempts=29;
+ }
+ const result=await reconcileCanonicalChanges(f.env);
+ assert.equal(result.targeted,16);assert.deepEqual(f.errors,[]);assert.ok(f.stats.requests<=45);
+ if(risk==='migration')assert.deepEqual(f.data.get(VERIFICATION_COLLECTION+'/'+track).slots,{unrelated:{key:'preserve',status:'waiting'}});
+ if(risk==='budget')assert.ok(f.env.__FIRESTORE_READ_AUDIT.operationAttempts<=42);
+ assert.equal(f.data.get(reconcileKey).pendingResultIds[track].length,(risk==='small'?74:risk==='mixed'?199:200)-16);
+});
+
+test('retained64: hard work-budget exhaustion preserves cursor and recovers next invocation',async t=>{
+ const f=await burstFixture(t,{adaptive:true}),before=structuredClone(f.data.get(reconcileKey));
+ const {createFirestoreAudit}=await import('../src/firestore-read-cost.js');
+ f.env.__FIRESTORE_READ_AUDIT=createFirestoreAudit();f.env.__FIRESTORE_READ_AUDIT.operationAttempts=41;
+ await assert.rejects(reconcileCanonicalChanges(f.env),/OVERALL_REQUEST_BUDGET_EXHAUSTED/);
+ assert.deepEqual(f.data.get(reconcileKey),before);assert.equal(f.stats.writes,0);
+ f.env.__FIRESTORE_READ_AUDIT=createFirestoreAudit();
+ assert.equal((await reconcileCanonicalChanges(f.env)).targeted,64);
+ assert.deepEqual(f.errors,[]);
+});
+
+test('retained64: oversized canonical metadata downgrades to 16 without losing accepted work or livelock',async t=>{
+ const f=await burstFixture(t,{adaptive:true,pending:64,incoming:1});
+ const large=f.changes[20];
+ for(const row of f.changes.slice(20,25))f.set(results+'/'+row.accountId+'_'+track,{...row,unusedMetadata:'x'.repeat(500000)});
+ const first=await reconcileCanonicalChanges(f.env);
+ assert.equal(first.targeted,16);assert.equal(f.data.get(reconcileKey).pendingResultIds[track].length,49);
+ assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
+ let passes=0;while(f.data.get(reconcileKey).pendingTrackIds.length&&passes++<10)await reconcileCanonicalChanges(f.env);
+ assert.ok(passes<10);assert.deepEqual(f.errors,[]);assert.equal(f.stats.canonicalRows,0);
+ const entries=await loadPublicationEntries(f.data.get(boardKey),'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+ assert.equal(entries.find(row=>row.accountId===large.accountId).timeMs,large.timeMs);
+});
+
+test('retained64: near-limit UTF-8 replay burst validates full replays with bounded fetch/hash retention',async t=>{
+ const f=await burstFixture(t,{adaptive:true});
+ for(let i=0;i<f.changes.length;i++){
+  const row=f.changes[i];row.replay='\u20ac'.repeat(9990)+String(i).padStart(9,'0');
+  row.replayHash=createHash('sha256').update(row.replay).digest('hex');f.set(results+'/'+row.accountId+'_'+track,row);
+ }
+ const corrupt=f.changes[40];f.set(results+'/'+corrupt.accountId+'_'+track,{...corrupt,replay:corrupt.replay.slice(0,-1)+'X'});
+ f.hold={...pendingSlot(f.held),status:'unavailable',reason:COMPETITIVE_REVIEW_REASON,retryAt:Number.MAX_SAFE_INTEGER};
+ f.set(VERIFICATION_COLLECTION+'/'+f.shard,{...f.data.get(VERIFICATION_COLLECTION+'/'+f.shard),slots:{[f.held.accountId]:f.hold}});
+ let canonicalBatchMax=0,wireCharsMax=0,hashBytes=0,hashBytesPeak=0;
+ const transport=f.env.__TEST_FIRESTORE;
+ f.env.__TEST_FIRESTORE=async(route,init={})=>{
+  if(route===':batchGet'){
+   const ids=JSON.parse(init.body).documents.filter(name=>name.includes('/'+results+'/'));
+   canonicalBatchMax=Math.max(canonicalBatchMax,ids.length);
+  }
+  const value=await transport(route,init);
+  if(route===':batchGet'||route===':runQuery')wireCharsMax=Math.max(wireCharsMax,JSON.stringify(value).length);
+  return value;
+ };
+ const digest=crypto.subtle.digest.bind(crypto.subtle);
+ t.mock.method(crypto.subtle,'digest',async(algorithm,value)=>{
+  hashBytes+=value.byteLength;hashBytesPeak=Math.max(hashBytesPeak,hashBytes);
+  try{return await digest(algorithm,value);}finally{hashBytes-=value.byteLength;}
+ });
+ let passes=0,maxRequests=0;
+ while(passes++<20){
+  const before=f.stats.requests;await reconcileCanonicalChanges(f.env);maxRequests=Math.max(maxRequests,f.stats.requests-before);
+  if(!f.data.get(reconcileKey).pendingTrackIds.length&&f.data.get(reconcileKey).cursorDocumentId===f.changes.at(-1).accountId+'_'+track)break;
+ }
+ assert.ok(passes<20);
+ for(let i=0;i<3;i++)assert.equal((await reconcileCanonicalChanges(f.env)).unchanged,true);
+ assert.equal(canonicalBatchMax,16);assert.ok(maxRequests<=42);
+ assert.ok(hashBytesPeak<8*1024*1024);assert.ok(wireCharsMax<3*1024*1024);
+ const entries=await loadPublicationEntries(f.data.get(boardKey),'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+ for(const row of f.changes){const actual=entries.find(entry=>entry.accountId===row.accountId);
+  assert.equal(actual.replayHash,row.replayHash);assert.equal(actual.integrityVerified,row.accountId!==corrupt.accountId);assert.equal(actual.runVerified,false);}
+ assert.deepEqual(f.data.get(VERIFICATION_COLLECTION+'/'+f.shard).slots[f.held.accountId],f.hold);
+ assert.deepEqual(f.errors,[]);assert.equal(f.stats.canonicalRows,0);
+ process.stdout.write('RETAINED64_LARGE_REPLAY '+JSON.stringify({passes,maxRequests,canonicalBatchMax,wireCharsMax,hashBytesPeak,...f.stats})+'\n');
 });

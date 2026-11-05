@@ -1201,15 +1201,39 @@ test('stale snapshots retain the full-rebuild fallback for changed canonical row
  assert.equal(f.getBatchGets(),0);
 });
 
-test('targeted-ID overflow promotes the track to a bounded full-rebuild marker before cursor advance',async()=>{
+test('full keyed-ID queue skips discovery and drains accepted IDs without full promotion or cursor advance',async()=>{
  const pendingIds=Array.from({length:200},(_,index)=>`racer${index}_${TRACK}`);
  const f=targetedReconcileFixture({discoverResult:true,pendingIdsOverride:pendingIds,failTrackRebuild:true});
- await reconcileCanonicalChanges(f.env);
- const fields=f.getJobWrite().update.fields;
- assert.deepEqual(Object.keys(fields.pendingResultIds.mapValue.fields),[]);
- assert.deepEqual(fields.pendingFullRebuildTrackIds.arrayValue.values.map(value=>value.stringValue),[TRACK]);
- assert.deepEqual(fields.pendingTrackIds.arrayValue.values.map(value=>value.stringValue),[TRACK]);
- assert.equal(fields.cursorDocumentId.stringValue,`target-racer_${TRACK}`);
+ f.env.CANONICAL_DISCOVERY_BACKPRESSURE='enabled';
+ const bindings=Object.fromEntries(pendingIds.map((id,index)=>[id,'retained-binding-'+index]));
+ f.work.pendingResultBindings=bindings;
+ const transport=f.env.__TEST_FIRESTORE;let discoveryQueries=0,canonicalBatches=0;
+ f.env.__TEST_FIRESTORE=async(path,init={})=>{
+  if(path===':runQuery'&&JSON.parse(init.body).structuredQuery.where?.fieldFilter?.field?.fieldPath==='ingestedAt')discoveryQueries++;
+  if(path===':batchGet'){
+   canonicalBatches++;
+   return JSON.parse(init.body).documents.map(name=>{
+    const id=name.split('/').at(-1),accountId=id.slice(0,-TRACK.length-1);
+    return {found:{name,fields:wire({...f.canonical,accountId}).mapValue.fields,updateTime:'canonical-v1'}};
+   });
+  }
+  return transport(path,init);
+ };
+ const result=await reconcileCanonicalChanges(f.env);
+ const job=unwire({mapValue:{fields:f.getJobWrite().update.fields}});
+ assert.equal(result.scanned,0);assert.equal(result.targeted,16);
+ assert.equal(discoveryQueries,0);assert.equal(canonicalBatches,1);
+ assert.equal(f.getCanonicalTrackScans(),0,'valid current base needs no full reconstruction');
+ assert.deepEqual(job.pendingResultIds,{[TRACK]:pendingIds.slice(16)});
+ assert.deepEqual(job.pendingResultBindings,Object.fromEntries(pendingIds.slice(16).map(id=>[id,bindings[id]])));
+ assert.deepEqual(job.pendingFullRebuildTrackIds,[]);
+ assert.deepEqual(job.pendingTrackIds,[TRACK]);
+ assert.equal(job.cursorDocumentId,'');assert.equal(job.cursorIngestedAt,f.work.cursorIngestedAt);
+ assert.equal(f.getBoard().entries.length,17);
+ for(const id of pendingIds.slice(0,16)){
+  const accountId=id.slice(0,-TRACK.length-1),entry=f.getBoard().entries.find(row=>row.accountId===accountId);
+  assert.equal(entry.timeMs,f.canonical.timeMs);assert.equal(entry.runVerified,false,'new accounts have no server proof');
+ }
 });
 
 test('targeted reconciliation refreshes equal/current PB from server proof without a track canonical scan',async()=>{

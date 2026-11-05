@@ -24,13 +24,18 @@ test('real router rejects unsigned public reads even with a forged official Orig
 test('real signed capture probe validates without Firestore; browser preflight stays available',async()=>{
   const email='capture-test@polytrack-052.iam.gserviceaccount.com';
   const keys=generateKeyPairSync('rsa',{modulusLength:2048});
+  const localEmail='local-capture-test@polytrack-052.iam.gserviceaccount.com';
+  const localKeys=generateKeyPairSync('rsa',{modulusLength:2048});
   const previous=globalThis.fetch;let db=0,lookups=0;
   globalThis.fetch=async url=>{
     lookups++;
-    assert.equal(url,'https://www.googleapis.com/service_accounts/v1/jwk/'+encodeURIComponent(email));
-    return Response.json({keys:[{...keys.publicKey.export({format:'jwk'}),kid:'capture-test'}]});
+    const issuer=decodeURIComponent(url.split('/').at(-1));
+    assert.ok([email,localEmail].includes(issuer));
+    assert.equal(url,'https://www.googleapis.com/service_accounts/v1/jwk/'+encodeURIComponent(issuer));
+    const pair=issuer===email?keys:localKeys;
+    return Response.json({keys:[{...pair.publicKey.export({format:'jwk'}),kid:'capture-test'}]});
   };
-  const env={ALLOWED_ORIGINS:origin,PUBLIC_FIRESTORE_READ_MODE:'capture-only',CAPTURE_SERVICE_ACCOUNT_EMAIL:email,
+  const env={ALLOWED_ORIGINS:origin,PUBLIC_FIRESTORE_READ_MODE:'capture-only',CAPTURE_SERVICE_ACCOUNT_EMAIL:email,LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL:localEmail,
     __TEST_FIRESTORE:async()=>{db++;throw Error('Unexpected database request');}};
   try {
     const transport=createWorkerCaptureFetch({serviceAccount:{type:'service_account',client_email:email,
@@ -38,6 +43,13 @@ test('real signed capture probe validates without Firestore; browser preflight s
       fetchImpl:(url,init)=>handleRequest(new Request(url,init),env)});
     assert.equal((await transport(base+'/v1/capture-auth',{headers:{Origin:origin}})).status,204);
     assert.equal(lookups,1);assert.equal(db,0);
+    const localTransport=createWorkerCaptureFetch({serviceAccount:{type:'service_account',client_email:localEmail,
+      private_key_id:'capture-test',private_key:localKeys.privateKey.export({format:'pem',type:'pkcs8'})},
+      fetchImpl:(url,init)=>handleRequest(new Request(url,init),env)});
+    assert.equal((await localTransport(base+'/v1/capture-auth',{headers:{Origin:origin}})).status,204);
+    assert.equal(lookups,2);assert.equal(db,0);
+    assert.equal((await transport(base+'/v1/capture-auth',{headers:{Origin:origin}})).status,204);
+    assert.equal(lookups,2);assert.equal(db,0);
     assert.equal((await handleRequest(new Request(base+'/v1/events/catalog',{method:'OPTIONS',headers:{Origin:origin}}),env)).status,204);
     assert.equal(db,0);
   }finally{globalThis.fetch=previous;}

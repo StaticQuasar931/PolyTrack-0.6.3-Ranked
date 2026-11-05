@@ -73,6 +73,17 @@ Never use a live dispatch as the first execution of a changed offline gate.
 
 ## Snapshot-Native Verification
 
+Local overnight captures use `tools/local-overnight-capture.mjs` from their exact
+tested isolated worktree, with an accepted local signer and validated readiness.
+The runner owns its exclusive local guard and shared claim; never create those
+guards ahead of time. Stage only package-index artifacts and validated ledger
+files, never an entire directory of neighboring recovery files. A handled timeout
+requests cancellation, waits for owned process-tree shutdown, and retains a private
+encrypted recovery checkpoint. The retired hosted kickoff must not dispatch a
+second run. Reserve the corresponding hosted window before local production work.
+Changing the regular cadence, replay caps or verification authority requires an
+explicitly reviewed quota/compatibility decision, not an assumed saving.
+
 1. Validate the checked-in authority configuration before source credentials are exposed. Capture sources and missing replay bytes once, then remove capture credentials before offline physics/review. Snapshot-native mode must not run the legacy Firestore verdict publisher.
 2. Bind every reusable proof to the racer, track, time, frames, upload/run/period identity, replay SHA, pinned engine and track bytes. Recheck the current review policy and preserve holds. A matching finish alone is not proof of fair play.
 3. Test a second capture of an unchanged source: keep approved flags, dates and playable replay metadata without refetching the same boards. Changed source bindings and holds must invalidate the relevant approval.

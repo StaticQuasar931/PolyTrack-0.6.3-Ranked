@@ -2,16 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 293,
+    "number": 294,
     "version": "0.6.3",
-    "revision": 252,
+    "revision": 253,
     "notes": [
-      "Smoother leaderboard updates while racers change their look.",
-      "Racer Studio skips outdated drafts when you make another change.",
-      "More efficient automatic ranking updates."
+      "Busy leaderboards update in batches without unnecessary restarts.",
+      "Ranking updates reuse unchanged track data.",
+      "Safer replay checks and automatic ranking updates."
     ]
   },
   "entries": [
+    {
+      "number": 293,
+      "title": "Avoid repeated leaderboard rebuilds and share cloud work budgets",
+      "commit": "5fd47ac0f63176e4cfcc513bb47ac16904642897",
+      "committedAt": "2026-11-05T20:41:30.000Z",
+      "notes": [
+        "Smoother leaderboard updates while racers change their look.",
+        "Racer Studio skips outdated drafts when you make another change.",
+        "More efficient automatic ranking updates."
+      ]
+    },
     {
       "number": 292,
       "title": "Require complete replay files and preserve bounded capture recovery",
@@ -204,16 +215,6 @@ const historyData = {
         "Placement badges recover correctly when cached standings reload.",
         "Bigger Extra Tracks spotlights and cleaner native-style settings.",
         "More efficient background event checks with unchanged scoring."
-      ]
-    },
-    {
-      "number": 270,
-      "title": "Efficient Sync Checkpoints and Verification Gates",
-      "commit": "f5b3376c4c50e6cd66f1afc092932b960bf9d5bb",
-      "committedAt": "2026-11-02T23:49:24.000Z",
-      "notes": [
-        "More efficient background syncing without changing run submission or scoring.",
-        "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
       ]
     }
   ],

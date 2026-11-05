@@ -88,6 +88,9 @@ const RECONCILE_PENDING_ID_LIMIT = 200;
 const RECONCILE_FULL_TRACK_LIMIT = 512;
 const RECONCILE_JOB_DOCUMENT_BUDGET = 800000;
 const RECONCILE_TARGET_ID_BATCH = 16;
+const RECONCILE_PRESSURE_ID_BATCH = 64;
+// Eligibility thresholds only; larger existing payloads retain the 16-ID path.
+const RECONCILE_PRESSURE_RETAINED_BYTES = 4 * 1024 * 1024;
 // Mixed turns reserve 28 of the 42 work requests for the full build, including
 // two pages of fresh proof-queue writes. Final queue CAS uses the existing reserve.
 const RECONCILE_TARGETED_REQUEST_LIMIT = 14;
@@ -1368,11 +1371,11 @@ export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResul
   return persistTrackSnapshot(env, trackId, entries, prior);
 }
 
-export async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, canonicalById) {
-  const prior = await readDocument(env, COLLECTIONS.track, trackId);
+export async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, canonicalById, prepared = null) {
+  const prior = prepared ? prepared.prior : await readDocument(env, COLLECTIONS.track, trackId);
   const snapshot = prior?.data;
   if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || (snapshot.complete !== true && snapshot.sourceComplete !== true)) return {fallback: true};
-  if (snapshot.pagination) snapshot.entries = await loadTrackPublicationEntries(env,snapshot,trackId);
+  if (snapshot.pagination && !prepared?.entriesLoaded) snapshot.entries = await loadTrackPublicationEntries(env,snapshot,trackId);
   const rows = resultIds.map(id => canonicalById.get(id)?.data);
   if (rows.some(row => !row || !structurallyValidResult(row, trackId))) return {fallback: true};
   for (let index = 0; index < rows.length; index++) {
@@ -1380,7 +1383,7 @@ export async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, ca
     if (!accountId || resultIds[index] !== `${accountId}_${trackId}`) return {fallback: true};
   }
   const queueCollection = verificationCollectionForTrack(trackId);
-  const queue = await readDocument(env, queueCollection, trackId);
+  const queue = prepared && Object.hasOwn(prepared,'queue') ? prepared.queue : await readDocument(env, queueCollection, trackId);
   if (!queue && queueCollection === EXTRA_VERIFICATION_COLLECTION && await readDocument(env, VERIFICATION_COLLECTION, trackId)) {
     throw new Error('EXTRA_QUEUE_BACKFILL_REQUIRED');
   }
@@ -1505,33 +1508,42 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   }
   for (const trackId of Object.keys(failedFullRebuilds)) if (!queued.has(trackId)) delete failedFullRebuilds[trackId];
   const rebuildCoolingDown = trackId => (failedFullRebuilds[trackId]?.retryAt || 0) > reconcileNow;
+  const keyedBackpressure=env.CANONICAL_DISCOVERY_BACKPRESSURE==='enabled';
   const capacity=Math.max(0,200-queued.size);
   const budget=Math.min(RECONCILE_RESULT_BATCH,Math.floor(capacity/2));
-  const changed=budget&&(scanResults||!job.backfillComplete)
-    ?await runChangedResultsQuery(env,timestamp,budget,safeText(job.cursorDocumentId,256)):[];
+  let pendingResultCount=Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0);
+  // Opt-in only: reserve keyed capacity before reading. More incremental page
+  // publications save reads but increase writes, so legacy remains the default.
+  const changedBudget=keyedBackpressure
+    ?Math.min(budget,Math.max(0,RECONCILE_PENDING_ID_LIMIT-pendingResultCount)):budget;
+  const changed=changedBudget&&(scanResults||!job.backfillComplete)
+    ?await runChangedResultsQuery(env,timestamp,changedBudget,safeText(job.cursorDocumentId,256)):[];
   const legacy=budget&&!job.backfillComplete?await runChangedResultsQuery(env,timestamp,budget,safeText(job.backfillDocumentId,256),true):[];
   const fullRebuildTracks=new Set(pendingFullRebuildTrackIds);
-  let changedCursorDeferred = false;
-  let pendingResultCount=Object.values(pendingResultIds).reduce((total,ids)=>total+ids.length,0);
+  let changedCursor, changedCursorDeferred=false;
   for(const row of changed){
     const trackId=safeText(row.data?.trackId,80);
-    if(!trackId||!structurallyValidResult(row.data,trackId))continue;
-    queued.add(trackId);
+    if(!trackId||!structurallyValidResult(row.data,trackId)){changedCursor=row;continue;}
     const ids=pendingResultIds[trackId]||[];
-    if(ids.includes(row.id))continue;
-    if(pendingResultCount>=RECONCILE_PENDING_ID_LIMIT){
-      // A running fixed snapshot cannot cover later discoveries. Replay this
-      // discovery page after bounded keyed work frees capacity instead of dropping it.
-      if (fullRebuildTracks.has(trackId)) {changedCursorDeferred=true;continue;}
-      pendingResultCount-=ids.length;
-      delete pendingResultIds[trackId];
-      pendingFullRebuildTrackIds.add(trackId);
-      fullRebuildTracks.add(trackId);
-    }else{
-      ids.push(row.id);
-      pendingResultIds[trackId]=ids;
-      pendingResultCount++;
+    if(!ids.includes(row.id)){
+      // Defensive prefix fence: never acknowledge any suffix after an unaccepted
+      // result, even if a malformed adapter returns more than the requested limit.
+      if(pendingResultCount>=RECONCILE_PENDING_ID_LIMIT){
+        if(keyedBackpressure)break;
+        // Default legacy behavior is retained until the write tradeoff is approved.
+        if(fullRebuildTracks.has(trackId)){changedCursorDeferred=true;continue;}
+        pendingResultCount-=ids.length;
+        delete pendingResultIds[trackId];
+        pendingFullRebuildTrackIds.add(trackId);
+        fullRebuildTracks.add(trackId);
+      }else{
+        ids.push(row.id);
+        pendingResultIds[trackId]=ids;
+        pendingResultCount++;
+      }
     }
+    queued.add(trackId);
+    changedCursor=row;
   }
   for(const row of legacy){
     const trackId=safeText(row.data?.trackId,80);
@@ -1559,7 +1571,35 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   // Targeted publications must precede the deferred full publication: its final
   // root/meta/queue CAS ends this invocation, so siblings after it never ran.
   const selected=[...eligible.filter(id=>!fallbackOnly(id)).slice(0,RECONCILE_TRACK_BATCH-reservedFull.length),...reservedFull];
-  const targetGroups=[];let targetBudget=RECONCILE_TARGET_ID_BATCH;
+  const preparedTracks=new Map();
+  let adaptive=false;
+  const resourceBytes=value=>(JSON.stringify(value)||'').length*2;
+  const busyTrack=selected.length===1?selected[0]:'';
+  const remainingRequests=env.__OVERALL_REQUEST_BUDGET.limit-env.__OVERALL_REQUEST_BUDGET.used;
+  // Reuse current preimages only within this invocation; no extra authority cache.
+  // Unknown/migrating/small/mixed sources keep 16, including every reserved-full turn.
+  if(keyedBackpressure && !reservedFull.length && busyTrack && pendingResultCount>=64 &&
+    pendingResultIds[busyTrack]?.length>=64 && verificationCollectionForTrack(busyTrack)===VERIFICATION_COLLECTION &&
+    MAX_REPLAY_LENGTH<=10000 && Number.isSafeInteger(remainingRequests) && remainingRequests>=21 &&
+    changed.reduce((size,row)=>size+resourceBytes(row.data),0)<=RECONCILE_PRESSURE_RETAINED_BYTES){
+    const prior=await readDocument(env,COLLECTIONS.track,busyTrack),snapshot=prior?.data;
+    const prepared={prior};preparedTracks.set(busyTrack,prepared);
+    const pages=snapshot?.pagination;
+    if(prior?.updateTime && snapshot?.trackId===busyTrack && Number(snapshot.schemaVersion)===TRACK_SCHEMA_VERSION && trackSnapshotIsCurrent(snapshot,snapshot.signature) &&
+      pages?.version===1 && pages.pageSize===100 && Number.isSafeInteger(pages.pageCount) &&
+      pages.pageCount>5 && pages.pageCount<=32 && pages.pageCount===Math.ceil(snapshot.totalEntries/100)){
+      prepared.queue=await readDocument(env,VERIFICATION_COLLECTION,busyTrack);
+      const root=prepared.queue?.data;
+      if(prepared.queue?.updateTime && root.trackId===busyTrack && root.storageVersion===2 &&
+        root.migrationComplete===true && root.slots && typeof root.slots==='object' && !Array.isArray(root.slots) &&
+        Object.keys(root.slots).length===0){
+        snapshot.entries=await loadTrackPublicationEntries(env,snapshot,busyTrack);
+        prepared.entriesLoaded=true;
+        adaptive=resourceBytes(snapshot.entries)<=RECONCILE_PRESSURE_RETAINED_BYTES;
+      }
+    }
+  }
+  const targetGroups=[];let targetBudget=adaptive?RECONCILE_PRESSURE_ID_BATCH:RECONCILE_TARGET_ID_BATCH;
   for(const trackId of selected){
     if(fullRebuildTracks.has(trackId)||!pendingResultIds[trackId]?.length)continue;
     const ids=pendingResultIds[trackId].slice(0,targetBudget);
@@ -1570,8 +1610,20 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   const canonicalDocuments=new Map(changed.map(row=>[row.id,row]));
   const missingTargetIds=targetIds.filter(id=>!canonicalDocuments.has(id));
   if(missingTargetIds.length){
-    const fetched=(await readDocumentsForCollections(env,[[COLLECTIONS.raceResults,missingTargetIds]])).get(COLLECTIONS.raceResults);
-    for(const [id,document] of fetched)canonicalDocuments.set(id,document);
+    // Fetch adaptive candidates in existing 16-ID units. Stop at the memory
+    // threshold, retain the first 16 IDs, and leave the rest durably queued.
+    const chunkSize=adaptive?RECONCILE_TARGET_ID_BATCH:missingTargetIds.length;
+    let retainedBytes=0;
+    for(let offset=0;offset<missingTargetIds.length;offset+=chunkSize){
+      const fetched=(await readDocumentsForCollections(env,[[COLLECTIONS.raceResults,missingTargetIds.slice(offset,offset+chunkSize)]])).get(COLLECTIONS.raceResults);
+      for(const [id,document] of fetched){canonicalDocuments.set(id,document);if(adaptive)retainedBytes+=resourceBytes(document?.data);}
+      if(adaptive && retainedBytes>RECONCILE_PRESSURE_RETAINED_BYTES){
+        targetGroups[0][1].splice(RECONCILE_TARGET_ID_BATCH);
+        const keep=new Set([...changed.map(row=>row.id),...targetGroups[0][1]]);
+        for(const id of canonicalDocuments.keys())if(!keep.has(id))canonicalDocuments.delete(id);
+        adaptive=false;break;
+      }
+    }
   }
   for(const trackId of selected){
     const ids=pendingResultIds[trackId]||[];
@@ -1590,7 +1642,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
         }
         const requestBudget=env.__OVERALL_REQUEST_BUDGET,limit=requestBudget.limit;
         if (reservedFull.length) requestBudget.limit=Math.min(limit,RECONCILE_TARGETED_REQUEST_LIMIT);
-        try { result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments); }
+        try { result=await mergeCanonicalResultsIntoTrack(env,trackId,targetedIds,canonicalDocuments,preparedTracks.get(trackId)); }
         finally { requestBudget.limit=limit; }
       }else result={fallback:true};
       if(result.fallback) {
@@ -1663,8 +1715,8 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     .map(id => [id,job.pendingResultBindings[id]]));
   const checkpoint = {collection:COLLECTIONS.jobs,id:jobId,prior:document,data:{
     ...job,
-    cursorIngestedAt:changed.length&&!changedCursorDeferred?changed.at(-1).ingestedAt:timestamp,
-    cursorDocumentId:changed.length&&!changedCursorDeferred?changed.at(-1).id:safeText(job.cursorDocumentId,256),
+    cursorIngestedAt:changedCursor&&!changedCursorDeferred?changedCursor.ingestedAt:timestamp,
+    cursorDocumentId:changedCursor&&!changedCursorDeferred?changedCursor.id:safeText(job.cursorDocumentId,256),
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
     backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
     pendingTrackIds:[...queued],pendingResultIds,pendingResultBindings,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
@@ -2989,7 +3041,9 @@ export default {
       // Overall budgets prior Firestore work plus its own Firestore/Cache calls.
       // Optional maintenance stays in a separate cron invocation.
       const maintenance=_event.cron==='2-59/5 * * * *';
-      const bootstrapDue=env.BACKGROUND_MAINTENANCE_MODE!=='coordinated'||maintenanceWindowAllows('*/5 * * * *',_event.scheduledTime,'four-window');
+      // Snapshot-native authority disables only automatic legacy queue seeding.
+      const bootstrapDue=env.VERIFICATION_AUTHORITY!=='snapshot-native' &&
+        (env.BACKGROUND_MAINTENANCE_MODE!=='coordinated'||maintenanceWindowAllows('*/5 * * * *',_event.scheduledTime,'four-window'));
       const tasks=maintenance?[[processCosmeticJobs,processProfileJobs,resumeOrCreateMigration][Math.floor(Number(_event.scheduledTime||Date.now())/300000)%3]]:
         [...(bootstrapDue?[bootstrapSnapshotVerification]:[]),reconcileCanonicalChanges];
       for (const task of tasks) {

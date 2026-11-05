@@ -258,3 +258,87 @@ test('an admission gate calls no database operation for spoofed Origin or invali
   assert.equal(await gated(request()), 200);
   assert.equal(reads, 1);
 });
+
+
+const localEmail = 'local-capture@fixture-project.iam.gserviceaccount.com';
+const dualEnv = {...env, LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL:localEmail};
+const localToken = (extra = {}) => token({key:other.privateKey, claims:{iss:localEmail}, ...extra});
+function dualFixture() {
+  const calls=[]; let time=at, holdLocal=null;
+  const verify=createCaptureReadVerifier({cryptoImpl:webcrypto,now:()=>time,fetchImpl:async url=>{
+    calls.push(url);
+    const issuer=decodeURIComponent(url.split('/').at(-1));
+    assert.ok([email,localEmail].includes(issuer));
+    if(issuer===localEmail && holdLocal)await holdLocal;
+    const key=issuer===email ? pair : other;
+    return Response.json({keys:[{...key.publicKey.export({format:'jwk'}),kid:'known',alg:'RS256',use:'sig'}]},
+      {headers:{'cache-control':'max-age=45'}});
+  }});
+  return {verify,calls,advance:ms=>{time+=ms;},hold:promise=>{holdLocal=promise;}};
+}
+
+test('optional local signer is dormant without configuration; explicit hosted signer retains precedence',async()=>{
+  const f=dualFixture();
+  assert.equal(await f.verify(request(localToken()),env),false);
+  assert.equal(f.calls.length,0);
+  assert.equal(await f.verify(request(),{...env,FIREBASE_CLIENT_EMAIL:localEmail}),true);
+  assert.equal(await f.verify(request(localToken()),{...env,FIREBASE_CLIENT_EMAIL:localEmail}),false);
+  assert.equal(f.calls.length,1);
+  const fallback=dualFixture();
+  assert.equal(await fallback.verify(request(),{FIREBASE_CLIENT_EMAIL:email}),true);
+});
+
+test('two exact issuers use separate keys even for identical kids and reject cross-issuer signatures',async()=>{
+  const f=dualFixture();
+  assert.equal(await f.verify(request(),dualEnv),true);
+  assert.equal(await f.verify(request(localToken()),dualEnv),true);
+  assert.equal(f.calls.length,2);
+  assert.equal(await f.verify(request(token({claims:{iss:localEmail}})),dualEnv),false);
+  assert.equal(await f.verify(request(token({key:other.privateKey})),dualEnv),false);
+  assert.equal(await f.verify(request(token({claims:{iss:'unknown@fixture-project.iam.gserviceaccount.com'}})),dualEnv),false);
+  assert.equal(await f.verify(request(),dualEnv),true);
+  assert.equal(await f.verify(request(localToken()),dualEnv),true);
+  assert.equal(f.calls.length,2,'no cross-issuer cache reuse or extra lookup');
+});
+
+test('each issuer has a separate single-flight and unknown-kid cooldown; local stalls do not block hosted',async()=>{
+  const f=dualFixture();let release;
+  f.hold(new Promise(resolve=>{release=resolve;}));
+  const pending=Array.from({length:20},()=>f.verify(request(localToken()),dualEnv));
+  assert.equal(await f.verify(request(),dualEnv),true);
+  assert.equal(f.calls.length,2);
+  release();assert.deepEqual(await Promise.all(pending),Array(20).fill(true));
+  for(let i=0;i<20;i++)assert.equal(await f.verify(request(localToken({header:{kid:'unknown_'+i}})),dualEnv),false);
+  assert.equal(f.calls.length,2);
+  f.advance(30000);
+  for(const claims of [{iss:localEmail},{iss:email}])
+    assert.equal(await f.verify(request(token({claims,header:{kid:'missing'}})),dualEnv),false);
+  assert.equal(f.calls.length,4,'one refresh per issuer, not one global throttle');
+  assert.equal(await f.verify(request(),dualEnv),true);
+  assert.equal(await f.verify(request(localToken()),dualEnv),true);
+});
+
+test('two-issuer configuration cannot churn a third cache; removed local permission cannot use cached keys',async()=>{
+  const f=dualFixture();
+  assert.equal(await f.verify(request(),dualEnv),true);
+  assert.equal(await f.verify(request(localToken()),dualEnv),true);
+  for(let i=0;i<20;i++) {
+    const issuer='third'+i+'@fixture-project.iam.gserviceaccount.com';
+    assert.equal(await f.verify(request(token({claims:{iss:issuer}})),
+      {...dualEnv,LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL:issuer}),false);
+  }
+  assert.equal(await f.verify(request(localToken()),env),false);
+  assert.equal(f.calls.length,2);
+  assert.equal(await f.verify(request(),dualEnv),true);
+});
+
+test('local configuration is one bounded exact email, not a list, wildcard, suffix, or arbitrary value',async()=>{
+  for(const local of ['*',email+','+localEmail,[localEmail],{},localEmail+'\n',null,'x'.repeat(500)]) {
+    const f=dualFixture();
+    assert.equal(await f.verify(request(localToken()),{...env,LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL:local}),false);
+    assert.equal(f.calls.length,0);
+  }
+  const f=dualFixture();
+  assert.equal(await f.verify(request(),{...env,LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL:email}),true);
+  assert.equal(f.calls.length,1,'duplicate exact issuers share only their own one cache');
+});

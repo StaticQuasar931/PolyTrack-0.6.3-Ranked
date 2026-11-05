@@ -242,7 +242,15 @@ export async function loadOverallSources({meta, scope, readDocuments, scanSource
     limitReached = scan.limitReached || scan.fullScan !== true;
     for (const document of scan.documents) {
       const id = identity(document), binding = sourceBinding(document);
-      boards[id] = await expand(document, id, binding);
+      const cached = previous?.boards[id], root = document.data;
+      // Audit fresh roots, but do not reread immutable pages already validated in
+      // the digest-bound publication. Compare ALL root fields, not just revisions.
+      const reusable = !forceScan && root.pagination && cached &&
+        equalBinding(binding, previous.catalog.tracks[id]) && Array.isArray(root.entries) &&
+        root.entries.length <= cached.entries.length &&
+        JSON.stringify(canonical(root)) === JSON.stringify(canonical({...cached,
+          entries: cached.entries.slice(0, root.entries.length)}));
+      boards[id] = reusable ? copy(cached) : await expand(document, id, binding);
     }
   } else {
     catalog = current;

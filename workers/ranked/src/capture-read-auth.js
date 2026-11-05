@@ -60,11 +60,12 @@ async function boundedJson(response) {
   return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(joined));
 }
 
-// One verifier owns one issuer, four keys, one in-flight refresh, and no per-kid map.
+// Pin at most two exact configured issuers. Each owns four keys and one refresh.
 export function createCaptureReadVerifier({fetchImpl = (...args) => globalThis.fetch(...args),
   now = Date.now, cryptoImpl = globalThis.crypto} = {}) {
-  let state;
-  async function refresh(issuer, at) {
+  let configuration;
+  const states = new Map();
+  async function refresh(state, issuer, at) {
     const controller = new AbortController();
     let timer;
     try {
@@ -111,24 +112,33 @@ export function createCaptureReadVerifier({fetchImpl = (...args) => globalThis.f
       const parts = token.split('.');
       if (parts.length !== 3 || parts[0].length > 512 || parts[1].length > 4096) return false;
       const header = decode(parts[0]), claims = decode(parts[1]);
-      const issuer = env.CAPTURE_SERVICE_ACCOUNT_EMAIL || env.FIREBASE_CLIENT_EMAIL;
+      const primary = env.CAPTURE_SERVICE_ACCOUNT_EMAIL || env.FIREBASE_CLIENT_EMAIL;
+      const local = env.LOCAL_CAPTURE_SERVICE_ACCOUNT_EMAIL;
+      const issuers = [...new Set(local === undefined || local === '' ? [primary] : [primary, local])];
+      const issuer = claims?.iss;
       const at = now(), seconds = Math.floor(at / 1000);
-      if (typeof issuer !== 'string' || !emailPattern.test(issuer) || !Number.isSafeInteger(at) ||
+      if (issuers.some(value => typeof value !== 'string' || emailPattern.exec(value)?.[0] !== value) || !Number.isSafeInteger(at) ||
           !object(header) || Object.keys(header).length !== 3 || header.alg !== 'RS256' || header.typ !== 'JWT' ||
           typeof header.kid !== 'string' || !kidPattern.test(header.kid) ||
-          !object(claims) || Object.keys(claims).length !== 6 || claims.iss !== issuer || claims.aud !== CAPTURE_AUDIENCE ||
+          !object(claims) || Object.keys(claims).length !== 6 || !issuers.includes(issuer) || claims.aud !== CAPTURE_AUDIENCE ||
           claims.method !== 'GET' || claims.path !== url.pathname + url.search ||
           !Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp) ||
           claims.iat < 0 || claims.iat > seconds || claims.exp <= seconds || claims.exp <= claims.iat || claims.exp - claims.iat > 60) return false;
       const signature = bytes(parts[2]);
       if (signature.length < 256 || signature.length > 512) return false;
-      if (state && state.issuer !== issuer) return false;
-      state ||= {issuer, keys: new Map(), expiresAt: 0, nextRefreshAt: 0, pending: null};
+      const nextConfiguration = JSON.stringify(issuers);
+      if (configuration !== undefined && configuration !== nextConfiguration) return false;
+      configuration = nextConfiguration;
+      let state = states.get(issuer);
+      if (!state) {
+        state = {keys: new Map(), expiresAt: 0, nextRefreshAt: 0, pending: null};
+        states.set(issuer, state);
+      }
       let key = at < state.expiresAt ? state.keys.get(header.kid) : null;
       if (!key) {
         if (!state.pending && at >= state.nextRefreshAt) {
           state.nextRefreshAt = at + REFRESH_COOLDOWN;
-          state.pending = refresh(issuer, at).finally(() => { state.pending = null; });
+          state.pending = refresh(state, issuer, at).finally(() => { state.pending = null; });
         }
         if (state.pending) await state.pending;
         key = now() < state.expiresAt ? state.keys.get(header.kid) : null;
