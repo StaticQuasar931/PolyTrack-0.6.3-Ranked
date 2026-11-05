@@ -28,7 +28,11 @@ export function installResponsiveViewport({document=globalThis.document,window=g
       window.scrollTo?.({left:0,top:window.scrollY||0,behavior:'instant'});
     }
     const {width,height,top,left}=availableViewport({document,window,container});
-    const menuScale=Math.max(.01,Math.min(1,Math.min(html.clientWidth||window.innerWidth,1.4375*(html.clientHeight||window.innerHeight))/1150));
+    // Fit native 1150x800 coordinates to visible space without cancelling user pinch zoom.
+    const pinching=(viewport?.scale||1)>1.01;
+    const fitWidth=pinching?(html.clientWidth||window.innerWidth):width;
+    const fitHeight=pinching?(html.clientHeight||window.innerHeight):height;
+    const menuScale=Math.max(.01,Math.min(1,fitWidth/1150,fitHeight/800));
     const signature=[width,height,top,left,menuScale].join(':');if(signature===last)return;last=signature;
     html.style.setProperty('--sq-available-width',width+'px');
     html.style.setProperty('--sq-available-height',height+'px');

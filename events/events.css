@@ -1332,3 +1332,21 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
 @media(min-width:1600px) and (min-height:501px){
  #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{--kodub-art-height:max(var(--event-card-height,300px),324px);--kodub-image-width:min(700px,calc(100cqw - max(calc(220px * var(--sq-ui-scale,1)),30cqw)))}
 }
+
+/* Narrow screens show the complete artwork without an empty image rail. */
+@media(max-width:700px) and (orientation:portrait){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{
+  display:flex!important;flex-direction:column!important;height:auto!important;min-height:0!important;max-height:none!important;
+ }
+ #ui .track-selection-ui .sq-featured-events>.sq-kodub-weekly{height:auto!important;max-height:none!important}
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){
+  display:block!important;width:100%!important;height:auto!important;max-width:100%!important;max-height:none!important;flex:0 0 auto!important;align-self:stretch!important;object-fit:contain!important;
+ }
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
+  width:100%!important;box-sizing:border-box!important;padding:12px 14px!important;gap:8px!important;
+ }
+}
+#ui .track-selection-ui .sq-featured-events>.sq-permanent-track .track-title,
+#ui .track-selection-ui .sq-featured-events>.sq-permanent-track .track-title p{
+ min-width:0!important;max-width:100%!important;width:auto!important;overflow-wrap:anywhere!important;
+}

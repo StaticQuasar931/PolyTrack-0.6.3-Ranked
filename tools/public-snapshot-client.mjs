@@ -268,7 +268,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
           if(body===null&&!materialized){retryAt.set(path,now()+LONG_RETRY_MS);if(retryAt.size>512)retryAt.delete(retryAt.keys().next().value);return null;}
         }
         else{
-          const response=await fetchSnapshot(new URL(path,baseUrl),{credentials:'omit',cache:'default',signal:AbortSignal.timeout(5000)});
+          const response=await fetchSnapshot(new URL(path,packageBase),{credentials:'omit',cache:'default',signal:AbortSignal.timeout(5000)});
           if(!response.ok){const error=Error('Public backup unavailable');error.status=response.status;throw error;}
           if(!String(response.headers.get('content-type')||'').includes('application/json'))throw Error('Public backup unavailable');
           body=await responseBody(response,'text');

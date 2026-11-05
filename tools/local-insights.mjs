@@ -42,10 +42,10 @@ export function createLocalInsights({storage,now=Date.now,revision=0}={}){
   data.startedAt=timestamp(saved.startedAt)||now();
   data.controls=normalizeControlUsage(saved.controls);
   const usage=normalizeClientUsage(saved.clientUsage,now());if(usage)data.clientUsage=usage;
-  data.revisions=(saved.revisions||[]).slice(-32).filter(r=>Number.isSafeInteger(r.revision)&&r.revision>=0).map(r=>({revision:r.revision,firstAt:timestamp(r.firstAt),lastAt:timestamp(r.lastAt),visits:count(r.visits),visibleMs:count(r.visibleMs)}));
-  for(const [id,row] of Object.entries(saved.tracks||{}).filter(([id])=>hash(id)).slice(-256))data.tracks[id]={plays:count(row.plays),lastAt:timestamp(row.lastAt),sources:Object.fromEntries([...sources].map(s=>[s,count(row.sources?.[s])]))};
+  data.revisions=(Array.isArray(saved.revisions)?saved.revisions:[]).slice(-32).filter(r=>Number.isSafeInteger(r?.revision)&&r.revision>=0).map(r=>({revision:r.revision,firstAt:timestamp(r.firstAt),lastAt:timestamp(r.lastAt),visits:count(r.visits),visibleMs:count(r.visibleMs)}));
+  for(const [id,row] of Object.entries(saved.tracks||{}).filter(([id,row])=>hash(id)&&row&&typeof row==='object'&&!Array.isArray(row)).slice(-256))data.tracks[id]={plays:count(row.plays),lastAt:timestamp(row.lastAt),sources:Object.fromEntries([...sources].map(s=>[s,count(row.sources?.[s])]))};
   for(const [key,value] of Object.entries(saved.transitions||{}).filter(([key])=>/^[a-f0-9]{64}:[a-f0-9]{64}$/.test(key)).slice(-512))data.transitions[key]=count(value);
-  for(const [key,row] of Object.entries(saved.metrics||{}).filter(([key])=>/^[A-Z0-9_-]{1,32}$/.test(key)).slice(0,32))data.metrics[key]={count:count(row.count),totalMs:count(row.totalMs),maxMs:Math.min(LATENCY_CAP_MS,count(row.maxMs)),over5s:count(row.over5s),over30s:count(row.over30s)};
+  for(const [key,row] of Object.entries(saved.metrics||{}).filter(([key,row])=>/^[A-Z0-9_-]{1,32}$/.test(key)&&row&&typeof row==='object'&&!Array.isArray(row)).slice(0,32))data.metrics[key]={count:count(row.count),totalMs:count(row.totalMs),maxMs:Math.min(LATENCY_CAP_MS,count(row.maxMs)),over5s:count(row.over5s),over30s:count(row.over30s)};
   for(const [key,value] of Object.entries(saved.actions||{}).filter(([key])=>/^[a-z-]{1,32}$/.test(key)).slice(0,32))data.actions[key]=count(value);
  }}catch{}
  const rev=data.revisions.find(r=>r.revision===revision);if(rev){rev.lastAt=now();rev.visits++;}else data.revisions.push({revision,firstAt:now(),lastAt:now(),visits:1,visibleMs:0});data.revisions=data.revisions.slice(-32);dirty=true;

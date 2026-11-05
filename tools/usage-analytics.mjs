@@ -34,11 +34,15 @@ export function installUsageAnalytics({document=globalThis.document,window=globa
   // Keep only an in-memory page budget across cleanup/reinstallation, not an ID.
   let budget=reportBudgets.get(document);
   if(!budget){budget={sent:0,lastSent:-Infinity};reportBudgets.set(document,budget);}
-  let baseline=sample(readUsage,installedAt),lastAt=installedAt,disposed=false,timer=null;
+  let baseline=sample(readUsage,installedAt),lastAt=installedAt,disposed=false,timer=null,consentPaused=false;
   const flush=()=>{
     try {
-      if(disposed||budget.sent>=128||window.__polytrackAnalyticsAllowed!==true||typeof window.gtag!=='function')return false;
-      const at=clock();if(at===null||at<lastAt||at-budget.lastSent<60000)return false;
+      if(disposed||budget.sent>=128)return false;
+      if(window.__polytrackAnalyticsAllowed!==true){consentPaused=true;baseline=null;return false;}
+      const at=clock();if(at===null||at<lastAt)return false;
+      // The resume boundary is unknown. Discard the entire unobserved interval.
+      if(consentPaused){baseline=sample(readUsage,at);lastAt=at;consentPaused=false;return false;}
+      if(typeof window.gtag!=='function'||at-budget.lastSent<60000)return false;
       const current=sample(readUsage,at);if(!current)return false;
       if(!baseline||baseline.startedAt!==current.startedAt){
         // Only a new observer since the last accepted sample can start at zero.
