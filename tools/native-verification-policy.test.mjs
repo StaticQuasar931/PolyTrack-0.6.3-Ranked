@@ -14,6 +14,11 @@ const witness = () => ({status:'verified', trackId:track.id, engineDigest:VERIFI
   trackContentHash:track.hash, geometryPolicy:'default',
   trackGeometry:{parts:track.parts, spanX:track.spanX, spanZ:track.spanZ}, binding:{verifierFingerprint}});
 
+test('fresh Windows checkouts preserve hash-pinned track text bytes',()=>{
+ const attributes=fs.readFileSync(new URL('../.gitattributes',import.meta.url),'utf8');
+ assert.match(attributes,/^\*\.track text eol=lf$/m);
+});
+
 test('policy derives exact code pins locally and never dispatches physics or network work', t => {
   t.mock.method(globalThis, 'fetch', () => assert.fail('No network allowed'));
   const policy = buildNativeVerificationPolicy({root, results:[witness()]});

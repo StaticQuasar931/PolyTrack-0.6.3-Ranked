@@ -140,7 +140,8 @@ function nativeGroups(jobs) {
 export async function verifyLocalNativeBatch(root,jobs,tracks,{deadline=Infinity,verifyBatch}={}) {
   const verify=verifyBatch || require('./verify.cjs').verifyBatch,output=new Map();
   for (const group of nativeGroups(jobs)) {
-    const results=await verify(root,group.jobs,tracks,{profile:group.profile,deadline});
+    const ids=new Set(group.jobs.map(job=>job.trackId));
+    const results=await verify(root,group.jobs,tracks.filter(track=>ids.has(track.trackId)),{profile:group.profile,deadline});
     demand(Array.isArray(results) && results.length === group.jobs.length,'incomplete native adapter result set');
     const mapped=new Map(results.map(value=>[value?.resultId,value]));
     for (const [index,job] of group.jobs.entries()) {
@@ -237,7 +238,9 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         const allowance=resourceLimits(group.profile).wallMs+10000+packReserveMs;
         if (maxRuntimeMs-(now()-startedAt) < allowance) continue;
         let results;
-        try {results=await verify(root,structuredClone(group.jobs),structuredClone(trustedTracks),
+        const groupTracks=new Set(group.jobs.map(job=>job.trackId));
+        const selectedTrustedTracks=trustedTracks.filter(track=>groupTracks.has(track.trackId));
+        try {results=await verify(root,structuredClone(group.jobs),structuredClone(selectedTrustedTracks),
           {profile:group.profile,deadline:performance.now()+maxRuntimeMs-(now()-startedAt)-packReserveMs});}
         catch {
           results=group.jobs.map(job=>({resultId:job.resultId,trackId:job.trackId,timeMs:job.timeMs,

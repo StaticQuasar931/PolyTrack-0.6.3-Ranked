@@ -9,6 +9,7 @@
 *.mjs text eol=lf
 *.cjs text eol=lf
 *.yml text eol=lf
+*.track text eol=lf
 
 # These JSON bytes are content-addressed and must hash identically after checkout.
 /verification-ledger/**/*.json text eol=lf

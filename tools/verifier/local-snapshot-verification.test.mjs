@@ -48,6 +48,18 @@ async function fixture(t) {
   return {root,options};
 }
 
+test('each native batch receives only its own independently trusted track data',async t=>{
+ const {root,options}=await fixture(t),other='f'.repeat(64),seen=[];
+ const second={...job(2),trackId:other};second.resultId=second.accountId+'_'+other;
+ const jobs=[job(1),second];
+ const currentPolicy={...policy,trackContentHashes:{...policy.trackContentHashes,[other]:content},trackGeometries:{...policy.trackGeometries,[other]:policy.trackGeometries[track]}};
+ const trustedTracks=[{trackId:track,code:'fixture-a'},{trackId:other,code:'fixture-b'},{trackId:'0'.repeat(64),code:'unrelated'}];
+ const result=await verifyLocalSnapshot({...options,jobs,batchSize:1,policy:currentPolicy,trustedTracks,
+  verify:async(_root,batch,trusted)=>{const ids=new Set(batch.map(row=>row.trackId));assert(trusted.every(row=>ids.has(row.trackId)));seen.push(trusted.map(row=>row.trackId));return batch.map(row=>native(row,currentPolicy));}});
+ assert.equal(result.counts.verified,2);assert.deepEqual(seen,[[track],[other]]);
+ assert.equal(trustedTracks.length,3,'caller inventory remains intact for later batches');
+});
+
 test('authority defaults only when absent and rejects every unknown explicit mode',()=>{
   for(const value of [undefined,'','firestore']) assert.equal(verificationAuthority(value),'firestore');
   assert.equal(verificationAuthority('snapshot-native'),'snapshot-native');
@@ -202,6 +214,15 @@ test('explicit extended policy works within unchanged limits and full-call plus 
   assert.equal(calls,0);assert.equal(deferred.counts.unprocessed,1);
   const passed=await verifyLocalSnapshot({...options,expectedManifestHash:deferred.ledgerManifestHash,maxRuntimeMs:200000,packReserveMs:60000});
   assert.equal(calls,1);assert.equal(passed.counts.verified,1);
+});
+
+test('direct native adapter excludes trusted assets belonging to a later split batch',async()=>{
+ const other='f'.repeat(64),jobs=Array.from({length:18},(_,i)=>({...job(i+1),trackId:i<16?track:other})),seen=[];
+ const trusted=[{trackId:track},{trackId:other},{trackId:'0'.repeat(64)}];
+ await verifyLocalNativeBatch('fixture',jobs,trusted,{verifyBatch:async(_root,batch,tracks)=>{
+  seen.push(tracks.map(row=>row.trackId));return batch.map(row=>({...row,status:'unavailable',reason:'fixture'}));
+ }});
+ assert.deepEqual(seen,[[track],[other]]);assert.equal(trusted.length,3);
 });
 
 test('independent unknown track metadata avoids repeated native boot without conferring proof',async t=>{

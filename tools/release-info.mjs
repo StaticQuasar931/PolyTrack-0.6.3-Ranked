@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 288,
+  "number": 289,
   "version": "0.6.3",
-  "revision": 247,
+  "revision": 248,
   "notes": [
-    "Missing replay files no longer block checks of available saved runs.",
-    "Runs without replay evidence stay unverified."
+    "Fixed replay checks failing when a batch included different tracks.",
+    "Track files stay consistent across Windows and hosted updates."
   ],
-  "preparedAt": "2026-11-05T15:30:36.656Z",
-  "committedAt": "2026-11-05T15:37:45.000Z"
+  "preparedAt": "2026-11-05T15:59:11.256Z",
+  "committedAt": "2026-11-05T16:03:19.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
