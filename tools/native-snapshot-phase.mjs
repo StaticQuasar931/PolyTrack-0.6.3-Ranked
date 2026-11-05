@@ -98,6 +98,23 @@ async function copyLedger(ledgerRoot,destination,manifestHash){
   await fs.writeFile(path.join(destination,'manifest.json'),bytes);
 }
 
+// Recovery evidence is private data, never a publication pointer or proof admission.
+async function retainCompletedProofs({root,ledgerRoot,sourceBinding,manifestHash,previousManifestHash}){
+  let parent=root;
+  for(const name of ['local-reports','native-proof-checkpoints']){
+    parent=path.join(parent,name);await fs.mkdir(parent,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});
+    const stat=await fs.lstat(parent);demand(stat.isDirectory()&&!stat.isSymbolicLink(),'unsafe private proof checkpoint parent');
+  }
+  const directory=await fs.mkdtemp(path.join(parent,'completed-'));
+  try{
+    await copyLedger(ledgerRoot,path.join(directory,'ledger'),manifestHash);
+    const receipt={schemaVersion:1,kind:'private-native-proof-checkpoint',authority:false,
+      sourceBinding,ledgerManifestHash:manifestHash,previousLedgerManifestHash:previousManifestHash};
+    await fs.writeFile(path.join(directory,'receipt.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600});
+    return {directory,...receipt};
+  }catch(error){await fs.rm(directory,{recursive:true,force:true});throw error;}
+}
+
 /** Before capture: local authority/context only, never credentials or transport. */
 export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=buildNativeVerificationPolicy}={}){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||''),'explicit absolute context paths required');
@@ -225,10 +242,11 @@ export async function runNativeSnapshotPhase(options={}){
 async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,reuseOnly=false,
   verify,now=Date.now,captureContext,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
-  rebuild=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,
+  rebuild=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,
   publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={}){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
+  demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
   const context=captureContext||await prepareNativeSnapshotCapture({root,directory,buildPolicy});
   const temporary=await privateRoot(),candidate=path.join(temporary,'candidate'),ledgerRoot=path.join(temporary,'ledger');
   try{
@@ -264,6 +282,12 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       :await verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
       expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
       trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now});
+    let privateProofCheckpoint=null;
+    if(verification.ledgerManifestHash!==context.ledger.manifestHash){
+      privateProofCheckpoint=await retainCompletedProofs({root,ledgerRoot,sourceBinding:binding,
+        manifestHash:verification.ledgerManifestHash,previousManifestHash:context.rootManifestHash});
+      if(proofCheckpoint)await proofCheckpoint(privateProofCheckpoint);
+    }
     const policy=await buildPolicy({root,jobs:inputs.jobs,entries:verification.ledger.entries});
     // Existing approvals not covered by current review cannot sneak back in via
     // a generic ledger applier. Restrict those tracks, retaining server baselines.
@@ -285,7 +309,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     return {schemaVersion:1,authority:reuseOnly?'stored-proof-overlay':'snapshot-native',backendReads:0,backendWrites:0,
       complete:verification.complete&&inputs.coverage.complete,ledgerManifestHash:verification.ledgerManifestHash,
       sourceBinding:binding,counts:{...verification.counts,sourceJobs:inputs.jobs.length,targets:targets.length,serverAccepted:accepted.size},
-      sourceCoverage:inputs.coverage,normal,events,overall};
+      sourceCoverage:inputs.coverage,normal,events,overall,privateProofCheckpoint};
   }finally{
     await removePrivate(temporary);
     if(context.bootstrapRoot)await removePrivate(context.bootstrapRoot);

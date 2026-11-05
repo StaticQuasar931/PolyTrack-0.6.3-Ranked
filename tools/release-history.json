@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 291,
+    "number": 292,
     "version": "0.6.3",
-    "revision": 250,
+    "revision": 251,
     "notes": [
-      "Updated saved rankings with 103 more replay checks.",
-      "Current Kodub event standings now include 20 verified racers."
+      "Ranking updates now check that every listed run has its replay.",
+      "Safer automatic ranking updates and recovery."
     ]
   },
   "entries": [
+    {
+      "number": 291,
+      "title": "Publish verified Snapshot 72 and restore reader browser checks",
+      "commit": "7972090350b6fc211bbef006a9ccd8a27b6ff22e",
+      "committedAt": "2026-11-05T17:22:10.000Z",
+      "notes": [
+        "Updated saved rankings with 103 more replay checks.",
+        "Current Kodub event standings now include 20 verified racers."
+      ]
+    },
     {
       "number": 290,
       "title": "Admit proven event runs from captured empty live standings",
@@ -204,16 +214,6 @@
         "Cleaner event artwork, search controls and compact racer profiles.",
         "Four Extra Tracks discovery picks and a clearer Builder program entry.",
         "Simpler Help and update history, plus a clear link from outdated copies."
-      ]
-    },
-    {
-      "number": 268,
-      "title": "Complete Cached Menu Dependencies",
-      "commit": "95d990d71f065f1346bcd341f3f7cc6e4f609a96",
-      "committedAt": "2026-11-02T07:05:52.000Z",
-      "notes": [
-        "Reliable delivery of recent menu, discovery and changelog improvements.",
-        "Builder contact links and Top Tracks filters are included in the updated menu package."
       ]
     }
   ],

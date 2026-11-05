@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
-import {deflateSync} from 'node:zlib';
+import {createHash,generateKeyPairSync,privateDecrypt,createDecipheriv,constants} from 'node:crypto';
+import {deflateSync,gunzipSync} from 'node:zlib';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 import {prepareNativeSnapshotCapture,runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
-import {ledgerBinding,ledgerKey,writeLedger} from './native-verification-ledger.mjs';
+import {ledgerBinding,ledgerKey,writeLedger,readLedger} from './native-verification-ledger.mjs';
+import {encryptCaptureRecovery} from './capture-recovery.mjs';
+const encryptNativeSnapshotRecovery=options=>encryptCaptureRecovery({attempt:'routine-capture',...options});
 import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verification.mjs';
 import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
 import {applyNativeLedgerToCapturedTracks} from './public-snapshot-backup.mjs';
@@ -31,6 +33,8 @@ async function inventory(directory){
   async function visit(relative=''){
     for(const item of await fs.readdir(path.join(directory,relative),{withFileTypes:true})){
       const file=relative?relative+'/'+item.name:item.name;
+      // Rollback assertions cover authority/candidate bytes, not independent private recovery evidence.
+      if(file==='local-reports/native-proof-checkpoints')continue;
       if(item.isDirectory())await visit(file);else values[file]=(await fs.readFile(path.join(directory,file))).toString('base64');
     }
   }
@@ -113,6 +117,8 @@ test('unavailable canonical replay defers its row through native processing and 
   await fs.unlink(path.join(f.directory,`canonical/${track}/${account}.json`));
   const result=await runNativeSnapshotPhase({...f.options,captureContext});
   assert.equal(result.complete,false);assert.equal(result.counts.nativeDispatched,0);assert.equal(f.calls.length,0);
+  assert.equal(result.privateProofCheckpoint,null);
+  await assert.rejects(fs.stat(path.join(f.root,'local-reports/native-proof-checkpoints')),error=>error.code==='ENOENT');
   assert.equal(result.sourceCoverage.gaps.filter(g=>g.kind==='normal-replay-unavailable').length,1);
   const row=(await read(f.directory,`tracks/${track}.json`)).entries[0];
   assert.equal(row.timeMs,f.row.timeMs);assert.equal(row.runVerified,false);assert.equal(row.nativeLedgerKey,undefined);
@@ -125,6 +131,7 @@ test('stored proofs overlay without new native work or changing server verificat
   const before=await fs.readFile(path.join(f.root,'verification-ledger/manifest.json'));
   let attempted=false;
   const result=await runNativeSnapshotPhase({...f.options,reuseOnly:true,
+    proofCheckpoint:async()=>assert.fail('unchanged stored ledger must not copy or encrypt another checkpoint'),
     verify:async()=>{attempted=true;throw Error('Stored overlays cannot run physics');},
     reviewFactory:async()=>{throw Error('Stored overlays cannot mint new review attestations');}});
   assert.equal(attempted,false);assert.equal(result.authority,'stored-proof-overlay');
@@ -133,6 +140,8 @@ test('stored proofs overlay without new native work or changing server verificat
   assert.equal((await read(f.directory,`tracks/${track}.json`)).entries[0].runVerified,true);
   assert.deepEqual(await read(f.root,'verification-ledger-current.json'),pointer);
   assert.deepEqual(await fs.readFile(path.join(f.root,'verification-ledger/manifest.json')),before);
+  assert.equal(result.privateProofCheckpoint,null);
+  assert.equal((await fs.readdir(path.join(f.root,'local-reports/native-proof-checkpoints'))).length,1);
 });
 
 test('foreign root writer lock fails before changing any candidate, ledger, pointer or companions',async t=>{
@@ -264,4 +273,81 @@ test('a hash-valid companion cannot smuggle private fields through cold hydratio
   await fs.writeFile(path.join(f.directory,'native-event-source',pin+'.json'),bytes);
   manifest.nativeEventSources.day1=pin;await write(f.directory,'manifest.json',manifest);
   await assert.rejects(prepareNativeSnapshotCapture(f.options),/companion identity\/schema/);
+});
+
+const recoveryKeys=generateKeyPairSync('rsa',{modulusLength:2048});
+const recoveryPublicKey=recoveryKeys.publicKey.export({type:'spki',format:'pem'});
+function decryptRoutineRecovery(bytes){
+  const magic=Buffer.from('PTREC01\n');assert(bytes.subarray(0,magic.length).equals(magic));
+  const start=magic.length+4,end=start+bytes.readUInt32BE(magic.length),encoded=bytes.subarray(start,end),header=JSON.parse(encoded);
+  const secret=privateDecrypt({key:recoveryKeys.privateKey,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},Buffer.from(header.wrappedKey,'base64'));
+  const decipher=createDecipheriv('aes-256-gcm',secret,Buffer.from(header.iv,'base64'));
+  decipher.setAAD(encoded);decipher.setAuthTag(bytes.subarray(-16));
+  let decoded;try{decoded=gunzipSync(Buffer.concat([decipher.update(bytes.subarray(end,-16)),decipher.final()]));}finally{secret.fill(0);}
+  const [inventory,...records]=decoded.toString('utf8').trimEnd().split('\n').map(line=>JSON.parse(line));
+  assert.equal(inventory.entries.length,records.length);
+  for(const [index,record]of records.entries()){
+    const data=Buffer.from(record.data,'base64'),entry=inventory.entries[index];
+    assert.equal(record.path,entry.path);assert.equal(data.length,entry.bytes);assert.equal(sha(data),entry.sha256);
+  }
+  return {header,inventory,records};
+}
+
+for(const stage of ['eventCompiler','rebuild','buildProfiles','publishPointer'])test('completed private proofs survive '+stage+' failure without advancing authority',async t=>{
+  const f=await fixture(t),before=await inventory(f.root),outputFile=path.join(f.root,'proofs.ptenc');
+  let checkpoint;
+  await assert.rejects(runNativeSnapshotPhase({...f.options,[stage]:async()=>{throw Error('injected '+stage);},
+    proofCheckpoint:async value=>{
+      checkpoint=value;
+      assert.equal(value.authority,false);assert.equal(value.sourceBinding.sourceCommit,f.options.sourceCommit);
+      assert.equal((await read(f.root,'verification-ledger-current.json')).manifestHash,value.previousLedgerManifestHash);
+      assert.equal(readLedger({root:path.join(value.directory,'ledger'),expectedManifestHash:value.ledgerManifestHash}).entries.length,1);
+      await encryptNativeSnapshotRecovery({directory:value.directory,outputFile,recipientPublicKey:recoveryPublicKey,
+        sourceCommit:value.sourceBinding.sourceCommit,sourceBinding:value.sourceBinding,ledgerManifestHash:value.ledgerManifestHash,phase:'native-proofs'});
+    }}),new RegExp('injected '+stage));
+  assert.equal(f.calls.length,1);assert(checkpoint);
+  const after=await inventory(f.root);delete after['proofs.ptenc'];assert.deepEqual(after,before);
+  const retained=await read(checkpoint.directory,'receipt.json');assert.equal(retained.authority,false);
+  assert.equal(retained.ledgerManifestHash,checkpoint.ledgerManifestHash);
+  const decoded=decryptRoutineRecovery(await fs.readFile(outputFile));
+  assert.equal(decoded.header.attempt,'routine-capture');assert.deepEqual(decoded.header.sourceBinding,checkpoint.sourceBinding);
+  assert(decoded.records.some(row=>row.path==='ledger/manifest.json'));assert(decoded.records.some(row=>row.path==='receipt.json'));
+  const files=await nativeLedgerPublicationFiles(f.root);assert(files.every(file=>!file.includes('local-reports')));
+});
+
+test('private checkpoint failure stops compilation and leaves existing authority unchanged',async t=>{
+  const f=await fixture(t),before=await inventory(f.root);let compiled=false;
+  await assert.rejects(runNativeSnapshotPhase({...f.options,proofCheckpoint:async()=>{throw Error('checkpoint encryption failed');},
+    eventCompiler:async()=>{compiled=true;}}),/checkpoint encryption failed/);
+  assert.equal(compiled,false);assert.deepEqual(await inventory(f.root),before);
+  const parent=path.join(f.root,'local-reports/native-proof-checkpoints'),names=await fs.readdir(parent);
+  assert.equal(names.length,1);assert.equal((await read(path.join(parent,names[0]),'receipt.json')).authority,false);
+});
+
+test('private completed proofs are not silently reused as authority by a later stored overlay',async t=>{
+  const f=await fixture(t);
+  await assert.rejects(runNativeSnapshotPhase({...f.options,rebuild:async()=>{throw Error('compile failed');}}),/compile failed/);
+  const result=await runNativeSnapshotPhase({...f.options,reuseOnly:true,verify:async()=>assert.fail('stored overlay cannot simulate')});
+  assert.equal(result.counts.storedProofs,0);assert.equal((await read(f.directory,`tracks/${track}.json`)).entries[0].runVerified,false);
+  assert.equal(f.calls.length,1);
+});
+
+test('routine capture envelope decrypts exactly, authenticates its binding, and never overwrites ciphertext',async t=>{
+  const f=await fixture(t),outputFile=path.join(f.root,'capture.ptenc');
+  const options={directory:f.directory,outputFile,recipientPublicKey:recoveryPublicKey,sourceCommit:f.options.sourceCommit};
+  const result=await encryptNativeSnapshotRecovery(options),bytes=await fs.readFile(outputFile),decoded=decryptRoutineRecovery(bytes);
+  assert.equal(result.ciphertextSha256,sha(bytes));assert.equal(decoded.header.sourceCommit,f.options.sourceCommit);
+  assert.equal(bytes.includes(Buffer.from('"recording"')),false);assert.equal(decoded.header.phase,'pre-native');
+  assert.equal(decoded.header.attempt,'routine-capture','routine capture must not impersonate repair-2');
+  for(const record of decoded.records)assert((await fs.readFile(path.join(f.directory,record.path))).equals(Buffer.from(record.data,'base64')));
+  await assert.rejects(encryptNativeSnapshotRecovery(options),/EEXIST/);assert((await fs.readFile(outputFile)).equals(bytes));
+  const changed=Buffer.from(bytes);changed[changed.length-17]^=1;assert.throws(()=>decryptRoutineRecovery(changed));
+  const headerChanged=Buffer.from(bytes),offset=headerChanged.indexOf(Buffer.from(f.options.sourceCommit));headerChanged[offset]=0x62;
+  assert.throws(()=>decryptRoutineRecovery(headerChanged));
+  for(const patch of [{sourceCommit:'main'},{recipientPublicKey:recoveryKeys.privateKey.export({type:'pkcs8',format:'pem'})},
+    {phase:'native-proofs',sourceBinding:{sourceCommit:'b'.repeat(40),captureSha256:'c'.repeat(64)},ledgerManifestHash:'d'.repeat(64)}])
+    await assert.rejects(encryptNativeSnapshotRecovery({...options,outputFile:path.join(f.root,'invalid.ptenc'),...patch}));
+  await fs.writeFile(path.join(f.directory,'private-key.pem'),'must never leave runner');
+  await assert.rejects(encryptNativeSnapshotRecovery({...options,outputFile:path.join(f.root,'unsafe.ptenc')}),/safe boundary/);
+  assert.equal(await fs.stat(path.join(f.root,'unsafe.ptenc')).then(()=>true,()=>false),false);
 });

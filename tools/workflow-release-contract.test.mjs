@@ -173,7 +173,7 @@ test('real updater and exporter stop incremental replay reads at 100 documents u
   await fs.writeFile(path.join(directory,track+'.json'),JSON.stringify({trackId:track,entries}));
   const privateKey=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'});
   let documents=0,requests=0,exchanges=0;
-  const result=await updatePublicSnapshot({root,refreshReplays:true,capture:async()=>({}),log:()=>{},
+  await assert.rejects(updatePublicSnapshot({root,refreshReplays:true,capture:async()=>({}),log:()=>{},
     exportAuth:{serviceAccount:{type:'service_account',project_id:'polytrack-052',
       client_email:'fixture@polytrack-052.iam.gserviceaccount.com',private_key:privateKey},
       oauthFetch:async()=>{exchanges++;return Response.json({access_token:'fixture-token',token_type:'Bearer',expires_in:3600});}},
@@ -182,10 +182,13 @@ test('real updater and exporter stop incremental replay reads at 100 documents u
       assert.equal(options.method,'POST');assert.equal(options.redirect,'error');assert.equal(options.headers.get('authorization'),'Bearer fixture-token');
       const body=JSON.parse(options.body);assert.ok(body.documents.length<=20);documents+=body.documents.length;requests++;
       return Response.json(body.documents.map(missing=>({missing})));
-    }});
+    }}),error=>error.code==='SNAPSHOT_REPLAYS_INCOMPLETE'&&error.coverage.normal.missing===101);
   assert.equal(documents,100);assert.equal(requests,5);assert.equal(exchanges,1);
-  assert.equal(result.profileReplay.fetchedDocumentsThisRun,100);assert.equal(result.profileReplay.budgetReached,true);
-  assert.equal(result.profileReplay.knownVerifiedBindings,101);assert.equal(result.coverage.complete,false);
+  const progress=JSON.parse(await fs.readFile(path.join(root,'local-reports/snapshot-staging/export-progress.json'),'utf8'));
+  const summary=JSON.parse(await fs.readFile(path.join(root,'local-reports/snapshot-staging/public-export-summary.json'),'utf8'));
+  assert.equal(progress.raceExport.known,101);assert.equal(progress.raceExport.pending.length,1);
+  assert.equal(summary.budgetReached,true);assert.equal(summary.complete,false);
+  await assert.rejects(fs.stat(path.join(root,'snapshot-current.json')),error=>error.code==='ENOENT');
 });
 
 test('normal verifier budget enforces 400 requests and expanded catch-up remains manual-only',async()=>{

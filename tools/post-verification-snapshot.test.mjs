@@ -190,7 +190,7 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   const embedded=source=>source.match(/<<'NODE'\n([\s\S]*?)^          NODE$/m)?.[1];
   assert.ok(embedded(publisher));assert.equal(embedded(publisher),embedded(catalog));
   const paths=[...publisher.matchAll(/^          path: (.+)$/gm)].map(match=>match[1]);
-  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-recovery.ptenc','${{ runner.temp }}/polytrack-replay-retries/history.json']);
+  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-recovery.ptenc','${{ runner.temp }}/polytrack-native-proofs.ptenc']);
   const recovery=step(publisher,'Retain encrypted recovery checkpoint');
   assert.match(recovery,/retention-days: 3/);assert.doesNotMatch(recovery,/SERVICE_ACCOUNT|PRIVATE_KEY|snapshot-staging/);
   const browser=step(publisher,'Cache the pinned offline browser');
@@ -265,32 +265,20 @@ test('post-verification capture is single-shot, projected read-only, and never r
   const capture=step(publisher,'Capture bounded public snapshots');
   const marker='        run: |\n';assert.ok(capture.includes(marker));
   const script=capture.slice(capture.indexOf(marker)+marker.length).trimEnd().replace(/^          /gm,'');
-  assert.equal(script,['if [ "$ONE_OFF_NATIVE" = "true" ]; then',
-    "  node --input-type=module <<'ONEOFF'",
-    "import {updatePublicSnapshot,reportCaptureOutcome} from './tools/update-public-snapshot.mjs';",
-    "import {OVERNIGHT_SNAPSHOT} from './tools/overnight-snapshot-plan.mjs';",
-    "import path from 'node:path';",
-    "import {CAPTURE_REPAIR_SECOND} from './tools/capture-repair-plan.mjs';",
-    "import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';",
-    'const nativePhaseOptions={maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs};',
-    "const recovery=process.env.REPAIR_ATTEMPT==='repair-2';",
-    'const captureCheckpoint=recovery?async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCaptureRecovery({directory,sourceCommit,',
-    "  outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc'),recipientPublicKey:process.env.RECOVERY_PUBLIC_KEY})})):null;",
-    "const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions,captureCheckpoint});",
-    "if(!result.deferred && (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');",
-    'await reportCaptureOutcome(result);','ONEOFF',
-    'elif [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then',
-    '  node tools/update-public-snapshot.mjs --refresh-replays --verification-authority snapshot-native',
-    'else','  node tools/update-public-snapshot.mjs --refresh-replays','fi'].join('\n'));
+  assert.match(script,/if \[ "\$ONE_OFF_NATIVE" = "true" \] \|\| \[ -n "\$RECOVERY_PUBLIC_KEY" \]; then/);
+  assert.equal((script.match(/await updatePublicSnapshot\(/g)||[]).length,1,'one updater invocation, no retry');
+  assert.match(script,/replayDocumentLimit:recovery\?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit/);
+  assert.match(script,/verificationAuthority:process.env.VERIFICATION_AUTHORITY,nativePhaseOptions,captureCheckpoint/);
+  assert.match(script,/await reportCaptureOutcome\(result\)/);
   const bash=process.platform==='win32'&&existsSync('C:/Program Files/Git/bin/bash.exe')?'C:/Program Files/Git/bin/bash.exe':'bash';
-  for(const oneoff of ['true','false'])for(const mode of ['firestore','snapshot-native'])for(const exit of [0,29]){
+  for(const key of ['','fixture-public-key'])for(const oneoff of ['true','false'])for(const mode of ['firestore','snapshot-native'])for(const exit of [0,29]){
     // Execute only the exact validated branch body, with node replaced by a
     // shell mock. A failed capture must stop immediately, not retry the other lane.
     const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',
       'node(){ printf \'%s\\n\' "$*"; return "$MOCK_EXIT"; }\n'+script],{encoding:'utf8',
-      env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,VERIFICATION_AUTHORITY:mode,ONE_OFF_NATIVE:oneoff,MOCK_EXIT:String(exit)}});
+      env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,VERIFICATION_AUTHORITY:mode,ONE_OFF_NATIVE:oneoff,RECOVERY_PUBLIC_KEY:key,MOCK_EXIT:String(exit)}});
     assert.equal(result.status,exit,result.stderr);
-    assert.deepEqual(result.stdout.trim().split('\n'),[oneoff==='true'?'--input-type=module':'tools/update-public-snapshot.mjs --refresh-replays'+
+    assert.deepEqual(result.stdout.trim().split('\n'),[oneoff==='true'||key?'--input-type=module':'tools/update-public-snapshot.mjs --refresh-replays'+
       (mode==='snapshot-native'?' --verification-authority snapshot-native':'')]);
   }
   assert.doesNotMatch(capture,/continue-on-error|while |until |--full-public|--archive|--admin|curl |sleep /);

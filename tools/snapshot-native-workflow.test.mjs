@@ -91,7 +91,7 @@ test('inherited reusable callers branch only on resolved authority before any cr
   assert.doesNotMatch(capture,/if: inputs.verification_authority/);
   assert.match(step(capture,'Capture bounded public snapshots'),/VERIFICATION_AUTHORITY: \$\{\{ steps.authority.outputs.mode \}\}/);
   assert.equal(condition(step(capture,'Pin offline verification source commit')),
-    "steps.authority.outputs.mode == 'snapshot-native' || hashFiles('verification-ledger-current.json') != ''");
+    "steps.authority.outputs.mode == 'snapshot-native' || steps.authority.outputs.recovery_enabled == 'true' || hashFiles('verification-ledger-current.json') != ''");
 });
 
 test('stored root proof pins/stages the ledger in Firestore mode without enabling native setup or changing server authority',async t=>{

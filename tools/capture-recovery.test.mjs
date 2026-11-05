@@ -26,3 +26,47 @@ test('private keys, credentials, links and existing outputs fail before publishi
  await assert.rejects(fs.stat(f.outputFile),e=>e.code==='ENOENT');await fs.unlink(path.join(f.directory,'credentials.json'));
  await encryptCaptureRecovery(f);await assert.rejects(encryptCaptureRecovery(f),e=>e.code==='EEXIST');
 });
+
+for(const attempt of ['routine-capture','overnight-capture'])test(attempt+' has an explicit authenticated tag and source/phase-bound offline roundtrip',async t=>{
+ const f=await fixture(t),report=await encryptCaptureRecovery({...f,attempt,phase:'failure-state'});
+ const destination=path.join(f.root,'restored'),options={inputFile:f.outputFile,destination,privateKey,expectedSha256:report.ciphertextSha256,sourceCommit,attempt,expectedPhase:'failure-state'};
+ assert.equal((await restoreCaptureRecovery(options)).attempt,attempt);
+ assert.equal(await fs.readFile(path.join(destination,'manifest.json'),'utf8'),await fs.readFile(path.join(f.directory,'manifest.json'),'utf8'));
+ await assert.rejects(restoreCaptureRecovery({...options,destination:path.join(f.root,'wrong-attempt'),attempt:'repair-2'}),/source mismatch/);
+ await assert.rejects(restoreCaptureRecovery({...options,destination:path.join(f.root,'wrong-phase'),expectedPhase:'pre-native'}),/phase mismatch/);
+ for(const attempt of ['repair-1','routine','../routine-capture','overnight-capture-extra'])
+  await assert.rejects(encryptCaptureRecovery({...f,outputFile:path.join(f.root,'invalid.ptenc'),attempt}),/source binding/);
+});
+
+test('completed proof recovery requires exact independent source and manifest expectations, never grants authority',async t=>{
+ const f=await fixture(t),sourceBinding={sourceCommit,captureSha256:'b'.repeat(64)},ledgerManifestHash='c'.repeat(64),attempt='overnight-capture';
+ const report=await encryptCaptureRecovery({...f,attempt,phase:'native-proofs',sourceBinding,ledgerManifestHash});
+ assert.deepEqual(report.sourceBinding,sourceBinding);assert.equal(report.ledgerManifestHash,ledgerManifestHash);assert.equal(report.authority,false);
+ const options={inputFile:f.outputFile,privateKey,expectedSha256:report.ciphertextSha256,sourceCommit,attempt,expectedPhase:'native-proofs',
+  expectedSourceBinding:sourceBinding,expectedLedgerManifestHash:ledgerManifestHash};
+ const destination=path.join(f.root,'proof-restored'),restored=await restoreCaptureRecovery({...options,destination});
+ assert.equal(restored.authority,false);assert.deepEqual(restored.sourceBinding,sourceBinding);assert.equal(restored.ledgerManifestHash,ledgerManifestHash);
+ for(const patch of [{expectedSourceBinding:null},{expectedLedgerManifestHash:null},{expectedSourceBinding:{...sourceBinding,captureSha256:'d'.repeat(64)}},
+  {expectedLedgerManifestHash:'e'.repeat(64)}])
+  await assert.rejects(restoreCaptureRecovery({...options,destination:path.join(f.root,'wrong-proof'),...patch}),/proof.*binding/i);
+ for(const patch of [{sourceBinding:{...sourceBinding,sourceCommit:'f'.repeat(40)}},{sourceBinding:{...sourceBinding,authority:true}},
+  {ledgerManifestHash:'bad'},{phase:'pre-native'}])
+  await assert.rejects(encryptCaptureRecovery({...f,outputFile:path.join(f.root,'invalid-proof.ptenc'),attempt,phase:'native-proofs',sourceBinding,ledgerManifestHash,...patch}),/proof.*binding/i);
+});
+
+test('default repair-2 header remains compatible and raw private files stay forbidden for all attempt tags',async t=>{
+ const f=await fixture(t),report=await encryptCaptureRecovery(f),bytes=await fs.readFile(f.outputFile);
+ const start=12,header=JSON.parse(bytes.subarray(start,start+bytes.readUInt32BE(8)));
+ assert.equal(header.attempt,'repair-2');assert.equal(header.phase,'pre-native');
+ assert.deepEqual(Object.keys(header).sort(),['schemaVersion','sourceCommit','attempt','phase','recipientFingerprint','wrappedKey','iv'].sort());
+ assert.equal((await restoreCaptureRecovery({inputFile:f.outputFile,destination:path.join(f.root,'old-default'),privateKey,expectedSha256:report.ciphertextSha256,sourceCommit})).attempt,'repair-2');
+ for(const filename of ['private-key.pem','service-account.json','.env.json']){
+  await fs.writeFile(path.join(f.directory,filename),'must remain local');
+  for(const attempt of ['repair-2','routine-capture','overnight-capture'])
+   await assert.rejects(encryptCaptureRecovery({...f,outputFile:path.join(f.root,'unsafe.ptenc'),attempt}),/boundary/);
+  await fs.unlink(path.join(f.directory,filename));
+ }
+ const existing=await fs.readFile(f.outputFile);await assert.rejects(encryptCaptureRecovery(f),error=>error.code==='EEXIST');
+ assert((await fs.readFile(f.outputFile)).equals(existing));
+ await assert.rejects(encryptCaptureRecovery({...f,outputFile:path.join(f.directory,'nested.ptenc')}),/outside/);
+});

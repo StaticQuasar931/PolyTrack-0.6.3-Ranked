@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {overnightSnapshotPlan,assertOvernightCapture,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 const base={eventName:'schedule',schedule:N.cron,now:N.start,runAttempt:1,configuredMode:'firestore'};
-test('only Nov5 exact scheduled occurrence gets one-off native bounds',()=>{
+test('only Nov6 exact scheduled occurrence gets one-off native bounds',()=>{
   const p=overnightSnapshotPlan(base);assert.equal(p.mode,'snapshot-native');assert.equal(p.overnight,true);
   assert.equal(p.maxJobs,10000);assert.equal(p.maxRuntimeMs,1500000);assert.equal(p.packReserveMs,60000);
-  assert.equal(p.replayDocumentLimit,2000);assert.equal(N.replayDocumentLimit,2000);
-  assert.equal(N.start,Date.parse('2026-11-05T08:45:00Z'));assert.equal(N.deadline,Date.parse('2026-11-05T13:00:00Z'));
+  assert.equal(p.replayDocumentLimit,1000);assert.equal(N.replayDocumentLimit,1000);
+  assert.equal(N.start,Date.parse('2026-11-06T08:45:00Z'));assert.equal(N.deadline,Date.parse('2026-11-06T13:00:00Z'));
 });
 test('manual dispatch, other windows and other days never force native',()=>{
   for(const patch of [{eventName:'workflow_dispatch'},{schedule:'5 8 * * *'},{schedule:'50 0,12,20 * * *'},{schedule:'50 0,8,12,20 * * *'},
-    {now:Date.parse('2026-11-04T08:45:00Z')},{now:Date.parse('2026-11-06T08:45:00Z')}]){
+    {now:Date.parse('2026-11-05T08:45:00Z')},{now:Date.parse('2026-11-07T08:45:00Z')}]){
     const p=overnightSnapshotPlan({...base,...patch});assert.equal(p.mode,'firestore');assert.equal(p.overnight,false);assert.equal(p.skip,false);
     assert.equal(Object.hasOwn(p,'replayDocumentLimit'),false);
   }

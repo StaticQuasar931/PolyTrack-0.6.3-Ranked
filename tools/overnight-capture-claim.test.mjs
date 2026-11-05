@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {acquireOvernightCaptureClaim,overnightClaimRef} from './overnight-capture-claim.mjs';
+import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 
 const repository='StaticQuasar931/PolyTrack-0.6.3-Ranked',sourceCommit='a'.repeat(40),token='test-only-token';
 const response=(status,value)=>({status,json:async()=>value});
@@ -19,7 +20,7 @@ test('only the first scheduled/manual claimant acquires the shared source-bound 
       if(claimed)return response(422,{});
       claimed={ref,object:{sha:sourceCommit}};return response(201,claimed);
     }
-    assert.equal(options.method,'GET');assert.ok(url.endsWith('/git/ref/tags/polytrack-oneoff-2026-11-05'));
+    assert.equal(options.method,'GET');assert.ok(url.endsWith('/git/ref/tags/polytrack-oneoff-'+N.date));
     return response(200,claimed);
   };
   const both=await Promise.all([1,2].map(()=>acquireOvernightCaptureClaim({repository,sourceCommit,token,fetchImpl})));

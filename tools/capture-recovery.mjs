@@ -5,6 +5,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {createGzip,gunzipSync} from 'node:zlib';
 import {createHash,createPublicKey,createPrivateKey,publicEncrypt,privateDecrypt,randomBytes,createCipheriv,createDecipheriv,constants} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 
 const MAGIC=Buffer.from('PTREC01\n'),MAX_BYTES=256*1024*1024,MAX_FILES=30000,MAX_FILE=16*1024*1024;
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -17,7 +18,15 @@ export function validateRecoveryRecipient(value){
  if(key.asymmetricKeyType!=='rsa'||key.asymmetricKeyDetails.modulusLength<2048||key.asymmetricKeyDetails.modulusLength>4096)throw Error('Invalid recovery recipient');
  return key;
 }
-function identity(sourceCommit,attempt){if(!/^[a-f0-9]{40}$/.test(sourceCommit||'')||attempt!=='repair-2')throw Error('Invalid recovery source binding');}
+const ATTEMPTS=new Set(['repair-2','routine-capture','overnight-capture']);
+function identity(sourceCommit,attempt){if(!/^[a-f0-9]{40}$/.test(sourceCommit||'')||!ATTEMPTS.has(attempt))throw Error('Invalid recovery source binding');}
+function proofBinding(phase,sourceCommit,sourceBinding,ledgerManifestHash){
+ if(!['pre-native','failure-state','native-proofs'].includes(phase))throw Error('Invalid recovery phase');
+ if(phase==='native-proofs'){
+  if(!sourceBinding||Object.keys(sourceBinding).sort().join('|')!=='captureSha256|sourceCommit'||sourceBinding.sourceCommit!==sourceCommit||
+   !/^[a-f0-9]{64}$/.test(sourceBinding.captureSha256||'')||!/^[a-f0-9]{64}$/.test(ledgerManifestHash||''))throw Error('Invalid proof recovery binding');
+ }else if(sourceBinding!=null||ledgerManifestHash!=null)throw Error('Unexpected proof recovery binding');
+}
 async function inventory(directory){
  const root=await fs.realpath(directory),stat=await fs.lstat(directory);if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Unsafe recovery directory');
  const entries=[];let bytes=0;
@@ -35,15 +44,17 @@ async function inventory(directory){
  }
  await visit(root);return {root,entries,bytes};
 }
-export async function encryptCaptureRecovery({directory,outputFile,recipientPublicKey,sourceCommit,attempt='repair-2',phase='pre-native'}={}){
- identity(sourceCommit,attempt);if(!['pre-native','failure-state'].includes(phase)||!path.isAbsolute(outputFile||''))throw Error('Invalid recovery output');
+export async function encryptCaptureRecovery({directory,outputFile,recipientPublicKey,sourceCommit,attempt='repair-2',phase='pre-native',sourceBinding=null,ledgerManifestHash=null}={}){
+ identity(sourceCommit,attempt);proofBinding(phase,sourceCommit,sourceBinding,ledgerManifestHash);
+ if(!path.isAbsolute(outputFile||''))throw Error('Invalid recovery output');
  const recipient=validateRecoveryRecipient(recipientPublicKey),source=await inventory(directory);
- if(outputFile.startsWith(source.root+path.sep))throw Error('Recovery output must be outside captured source');
+ const target=path.join(await fs.realpath(path.dirname(outputFile)),path.basename(outputFile));
+ if(target===source.root||target.startsWith(source.root+path.sep))throw Error('Recovery output must be outside captured source');
  const secret=randomBytes(32),iv=randomBytes(12);
  const header=Buffer.from(JSON.stringify({schemaVersion:1,sourceCommit,attempt,phase,recipientFingerprint:hash(recipient.export({type:'spki',format:'der'})),
-  wrappedKey:publicEncrypt({key:recipient,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},secret).toString('base64'),iv:iv.toString('base64')}));
+  wrappedKey:publicEncrypt({key:recipient,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},secret).toString('base64'),iv:iv.toString('base64'),
+  ...(phase==='native-proofs'?{sourceBinding,ledgerManifestHash}:{})}));
  const length=Buffer.alloc(4);length.writeUInt32BE(header.length);const cipher=createCipheriv('aes-256-gcm',secret,iv);cipher.setAAD(header);
- const output=await fs.open(outputFile,'wx',0o600);await output.write(Buffer.concat([MAGIC,length,header]));await output.close();
  async function* records(){
   yield JSON.stringify({entries:source.entries,bytes:source.bytes})+'\n';
   for(const entry of source.entries){const data=await fs.readFile(path.join(source.root,...entry.path.split('/')));
@@ -51,19 +62,29 @@ export async function encryptCaptureRecovery({directory,outputFile,recipientPubl
    yield JSON.stringify({path:entry.path,data:data.toString('base64')})+'\n';
   }
  }
+ let created=false;
  try{
-  await pipeline(Readable.from(records()),createGzip({level:6}),cipher,createWriteStream(outputFile,{flags:'a'}));
-  await fs.appendFile(outputFile,cipher.getAuthTag());
- }catch(error){await fs.rm(outputFile,{force:true});throw error;}finally{secret.fill(0);}
- const digest=createHash('sha256');for await(const chunk of createReadStream(outputFile))digest.update(chunk);
- return {sourceCommit,attempt,phase,files:source.entries.length,sourceBytes:source.bytes,ciphertextSha256:digest.digest('hex'),bytes:(await fs.stat(outputFile)).size};
+  const output=await fs.open(target,'wx',0o600);created=true;
+  try{await output.write(Buffer.concat([MAGIC,length,header]));}finally{await output.close();}
+  await pipeline(Readable.from(records()),createGzip({level:6}),cipher,createWriteStream(target,{flags:'a'}));
+  await fs.appendFile(target,cipher.getAuthTag());
+ }catch(error){if(created)await fs.rm(target,{force:true});throw error;}finally{secret.fill(0);}
+ const digest=createHash('sha256');for await(const chunk of createReadStream(target))digest.update(chunk);
+ return {sourceCommit,attempt,phase,files:source.entries.length,sourceBytes:source.bytes,ciphertextSha256:digest.digest('hex'),bytes:(await fs.stat(target)).size,
+  ...(phase==='native-proofs'?{sourceBinding,ledgerManifestHash,authority:false}:{})};
 }
-export async function restoreCaptureRecovery({inputFile,destination,privateKey,expectedSha256,sourceCommit,attempt='repair-2'}={}){
+export async function restoreCaptureRecovery({inputFile,destination,privateKey,expectedSha256,sourceCommit,attempt='repair-2',expectedPhase=null,expectedSourceBinding=null,expectedLedgerManifestHash=null}={}){
  identity(sourceCommit,attempt);if(!/^[a-f0-9]{64}$/.test(expectedSha256||'')||!path.isAbsolute(destination||''))throw Error('Expected recovery digest and new destination required');
  const info=await fs.lstat(inputFile);if(!info.isFile()||info.isSymbolicLink()||info.size>MAX_BYTES)throw Error('Unsafe recovery archive');
  const bytes=await fs.readFile(inputFile);if(hash(bytes)!==expectedSha256||!bytes.subarray(0,MAGIC.length).equals(MAGIC))throw Error('Recovery ciphertext digest mismatch');
  const start=MAGIC.length+4,length=bytes.readUInt32BE(MAGIC.length);if(length>8192||length<1||bytes.length<start+length+17)throw Error('Invalid recovery header');
  const encoded=bytes.subarray(start,start+length),header=JSON.parse(encoded);if(header.schemaVersion!==1||header.sourceCommit!==sourceCommit||header.attempt!==attempt)throw Error('Recovery source mismatch');
+ proofBinding(header.phase,sourceCommit,header.sourceBinding,header.ledgerManifestHash);
+ if(expectedPhase!==null&&header.phase!==expectedPhase)throw Error('Recovery phase mismatch');
+ if(header.phase==='native-proofs'){
+  proofBinding(header.phase,sourceCommit,expectedSourceBinding,expectedLedgerManifestHash);
+  if(!isDeepStrictEqual(header.sourceBinding,expectedSourceBinding)||header.ledgerManifestHash!==expectedLedgerManifestHash)throw Error('Recovery proof binding mismatch');
+ }else if(expectedSourceBinding!==null||expectedLedgerManifestHash!==null)throw Error('Unexpected proof recovery expectation');
  const key=createPrivateKey(privateKey);if(hash(createPublicKey(key).export({type:'spki',format:'der'}))!==header.recipientFingerprint)throw Error('Recovery recipient mismatch');
  const secret=privateDecrypt({key,oaepHash:'sha256',padding:constants.RSA_PKCS1_OAEP_PADDING},Buffer.from(header.wrappedKey,'base64'));
  const decipher=createDecipheriv('aes-256-gcm',secret,Buffer.from(header.iv,'base64'));decipher.setAAD(encoded);decipher.setAuthTag(bytes.subarray(-16));
@@ -81,5 +102,6 @@ export async function restoreCaptureRecovery({inputFile,destination,privateKey,e
  if(total!==manifest.bytes)throw Error('Recovery byte count mismatch');
  await fs.mkdir(destination); // Never overwrite an existing workspace.
  for(const record of records){const target=path.join(destination,...record.path.split('/'));await fs.mkdir(path.dirname(target),{recursive:true});await fs.writeFile(target,record.data,{flag:'wx',mode:0o600});}
- return {sourceCommit,attempt,files:records.length,bytes:total,phase:header.phase};
+ return {sourceCommit,attempt,files:records.length,bytes:total,phase:header.phase,
+  ...(header.phase==='native-proofs'?{sourceBinding:header.sourceBinding,ledgerManifestHash:header.ledgerManifestHash,authority:false}:{})};
 }

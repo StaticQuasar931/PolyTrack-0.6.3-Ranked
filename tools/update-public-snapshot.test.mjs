@@ -3,13 +3,28 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {generateKeyPairSync} from 'node:crypto';
+import {createHash, generateKeyPairSync} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 const fixtureKey = generateKeyPairSync('rsa', {modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'});
 const exportAuth = {serviceAccount:{type:'service_account',project_id:'polytrack-052',client_email:'fixture@polytrack-052.iam.gserviceaccount.com',private_key:fixtureKey},
   oauthFetch:async()=>Response.json({access_token:'fixture-token',token_type:'Bearer',expires_in:3600})};
 
 import { decodeSnapshot } from './snapshot-package.mjs';
 import { updatePublicSnapshot, reportCaptureOutcome } from './update-public-snapshot.mjs';
+
+const fixtureReplay = deflateSync(Buffer.alloc(15)).toString('base64url');
+const fixtureReplayHash = createHash('sha256').update(fixtureReplay).digest('hex');
+function replayEntry(overrides = {}) {
+  return {accountId: 'a'.repeat(64), trackId: 'b'.repeat(64), uploadId: 42,
+    frames: 900, raceTimeFrames: 900, timeMs: 15000, replayHash: fixtureReplayHash,
+    runVerified: true, integrityVerified: true, verified: true, verifiedState: 1, carStyle: '', ...overrides};
+}
+async function writeReplayEvidence(directory, row) {
+  await mkdir(path.join(directory, 'recordings'), {recursive: true});
+  await mkdir(path.join(directory, 'canonical', row.trackId), {recursive: true});
+  await writeFile(path.join(directory, 'recordings', row.uploadId + '.json'), JSON.stringify({...row, recording: fixtureReplay}));
+  await writeFile(path.join(directory, 'canonical', row.trackId, row.accountId + '.json'), JSON.stringify(row));
+}
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'update-public-snapshot-'));
@@ -297,15 +312,17 @@ test('fresh hydration reconstructs omitted track and overall monoliths from veri
   const trackId = 'a'.repeat(64);
   const accountId = number => number.toString(16).padStart(64, '0');
   const track = { trackId, schemaVersion: 6, revision: 14, sourceRevision: 14, algorithmVersion: 'rank-v2',
-    complete: true, totalEntries: 260, entries: Array.from({ length: 260 }, (_, index) => ({ accountId: accountId(index + 1),
-      timeMs: 1000 + index, rank: index + 1, position: index + 1, name: 't'.repeat(9000) })) };
+    complete: true, totalEntries: 260, entries: Array.from({ length: 260 }, (_, index) => ({
+      ...replayEntry({accountId: accountId(index + 1), trackId, uploadId: index + 1, timeMs: 1000 + index}),
+      rank: index + 1, position: index + 1, name: 't'.repeat(9000) })) };
   const overall = { schemaVersion: 6, revision: 24, sourceRevision: 24, updatedAt: 500, complete: true,
     totalEntries: 260, trackSummaries: [{ trackId, fieldSize: 260 }], entries: Array.from({ length: 260 }, (_, index) =>
       ({ userId: accountId(index + 1), rank: index + 1, score: 5000 - index, name: 'o'.repeat(9000) })) };
   await mkdir(path.join(staging, 'tracks'), { recursive: true });
   await writeFile(path.join(staging, 'tracks', `${trackId}.json`), JSON.stringify(track));
+  for (const row of track.entries) await writeReplayEvidence(staging, row);
   await writeFile(path.join(staging, 'overall.json'), JSON.stringify(overall));
-  await writeFile(path.join(staging, 'manifest.json'), JSON.stringify({ schemaVersion: 1, tracks: { [trackId]: { checkedAt: '2026-10-12T00:00:00.000Z' } } }));
+  await writeFile(path.join(staging, 'manifest.json'), JSON.stringify({ schemaVersion: 1, tracks: { [trackId]: { path: `tracks/${trackId}.json`, checkedAt: '2026-10-12T00:00:00.000Z' } } }));
   await writeFile(path.join(staging, 'public-export-summary.json'), JSON.stringify({ capturedAt: '2026-10-13T00:00:00.000Z' }));
   const { publishSnapshot } = await import('./snapshot-package.mjs');
   const initial = await publishSnapshot({ root, stagingDirectory: staging });
@@ -353,16 +370,20 @@ test('corrupt page payload safely aborts fresh hydration without creating a part
   assert.deepEqual(JSON.parse(await readFile(path.join(root, 'snapshot-current.json'), 'utf8')), { currentdir: published.directory });
 });
 
-async function replayCaptureFixture(t) {
+async function replayCaptureFixture(t, {missingEvidence = true} = {}) {
   const root = await fixture(t), staging = path.join(root, 'local-reports', 'snapshot-staging');
-  const accountId = 'a'.repeat(64), trackId = 'b'.repeat(64), replayHash = 'c'.repeat(64);
+  const row = replayEntry(), {trackId} = row;
   await mkdir(path.join(staging, 'tracks'));
   await writeFile(path.join(staging, 'tracks', trackId + '.json'), JSON.stringify({trackId, complete: true, entries: [
-    {accountId, trackId, uploadId: 42, frames: 900, raceTimeFrames: 900, timeMs: 15000,
-      replayHash, runVerified: true, integrityVerified: true},
+    row,
   ]}));
   await writeFile(path.join(staging, 'overall.json'), JSON.stringify({complete: true, entries: [], trackSummaries: []}));
+  await writeReplayEvidence(staging, row);
   const published = await updatePublicSnapshot({root, offline: true, log: () => {}});
+  if (missingEvidence) {
+    await rm(path.join(staging, 'recordings', row.uploadId + '.json'));
+    await rm(path.join(staging, 'canonical', row.trackId, row.accountId + '.json'));
+  }
   const files = ['snapshot-current.json', 'index.html', ...
     (await readdir(path.join(root, published.directory), {recursive: true, withFileTypes: true}))
       .filter(entry => entry.isFile()).map(entry => path.relative(root, path.join(entry.parentPath, entry.name)))];
@@ -453,7 +474,7 @@ test('workflow reporting explicitly distinguishes complete from deferred and rej
 });
 
 async function totalsUpdateFixture(t){
-  const f=await replayCaptureFixture(t);
+  const f=await replayCaptureFixture(t, {missingEvidence:false});
   const progress=path.join(f.staging,'export-progress.json');
   const ledger=JSON.stringify({schemaVersion:2,projectId:'polytrack-052',raceExport:{records:{prior:{available:false,reason:'missing',checkedAt:7}}}})+'\n';
   await writeFile(progress,ledger);
@@ -497,7 +518,7 @@ test('successful totals capture is included before publishing one complete packa
   assert.deepEqual(order,['snapshot','totals','replays']);assert.equal(result.deferred,false);assert.equal(result.published,true);assert.equal(result.generation,2);
   const index=JSON.parse(await readFile(path.join(f.root,result.directory,'index.json'),'utf8'));
   const packed=await readFile(path.join(f.root,result.directory,index.files['event-totals.json'].path));
-  assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString('utf8')),{...totals,capturedAt:new Date(2000).toISOString(),entries:totals.entries.map(row=>({...row,identityUpdatedAt:0}))});
+  assert.deepEqual(JSON.parse(Buffer.from(await decodeSnapshot(packed)).toString('utf8')),{...totals,capturedAt:new Date(2000).toISOString(),entries:totals.entries.map(row=>({...row,carStyle:'',identityUpdatedAt:0}))});
   await f.ledgerUnchanged();
 });
 
@@ -525,4 +546,73 @@ test('failed saved-board scoring cannot publish a mismatched cohort',async t=>{
   capture:async({directory})=>{await writeFile(path.join(directory,'manifest.json'),JSON.stringify({tracks:{}}));return {};},
   calculateOverall:async()=>{throw Error('incomplete cohort');},log:()=>{}}),/incomplete cohort/);
  await assert.rejects(readFile(path.join(root,'snapshot-current.json')),/ENOENT/);
+});
+
+test('missing replay evidence blocks every updater publication route before profile derivation', async t => {
+  for (const mode of [{offline: true}, {}, {refreshReplays: true}, {fullPublic: true}]) {
+    const root = await fixture(t), staging = path.join(root, 'local-reports', 'snapshot-staging');
+    const row = replayEntry();
+    await mkdir(path.join(staging, 'tracks'));
+    await writeFile(path.join(staging, 'tracks', row.trackId + '.json'), JSON.stringify({trackId: row.trackId, entries: [row]}));
+    await assert.rejects(updatePublicSnapshot({root, ...mode, capture: async () => ({}),
+      exportPublic: async () => ({complete: true, totalCoverage: {complete: true}, counts: {recordings: 1}}),
+      exportFetch: () => assert.fail('mocked update must not issue transport'), log: () => {}}),
+    {code: 'SNAPSHOT_REPLAYS_INCOMPLETE'});
+    await assert.rejects(readFile(path.join(root, 'snapshot-current.json')), {code: 'ENOENT'});
+    await assert.rejects(readFile(path.join(staging, 'racer-directory.json')), {code: 'ENOENT'});
+    assert.equal(await readFile(path.join(root, 'index.html'), 'utf8'), '<!doctype html><html><head></head><body></body></html>\n');
+    assert.equal((await readdir(root)).some(name => /^public-snapshots\d+$/.test(name)), false);
+  }
+});
+
+test('replay guard preserves the old published generation when a retained recording disappears', async t => {
+  const f = await replayCaptureFixture(t, {missingEvidence: false});
+  await rm(path.join(f.staging, 'recordings', '42.json'));
+  await assert.rejects(updatePublicSnapshot({root: f.root, offline: true, log: () => {}}), {code: 'SNAPSHOT_REPLAYS_INCOMPLETE'});
+  await f.unchanged();
+});
+
+test('checkpoint persists before native work and replay guard checks the transformed evidence', async t => {
+  for (const repaired of [false, true]) {
+    const root = await fixture(t), staging = path.join(root, 'local-reports', 'snapshot-staging');
+    const row = replayEntry(), order = [], checkpoint = path.join(root, 'capture-checkpoint');
+    await mkdir(path.join(staging, 'tracks'));
+    await writeFile(path.join(staging, 'tracks', row.trackId + '.json'), JSON.stringify({trackId: row.trackId, entries: [row]}));
+    const update = updatePublicSnapshot({root, offline: true, verificationAuthority: 'snapshot-native', env: {},
+      resolveSourceCommit: () => 'a'.repeat(40), prepareNativeCapture: async () => ({}), log: () => {},
+      captureCheckpoint: async ({directory}) => {
+        assert.equal(directory, staging); order.push('checkpoint'); await writeFile(checkpoint, 'retained');
+      },
+      nativePhase: async () => {
+        assert.equal(await readFile(checkpoint, 'utf8'), 'retained'); order.push('native');
+        if (repaired) await writeReplayEvidence(staging, row);
+        return {backendReads: 0, backendWrites: 0, complete: repaired, counts: {nativeDispatched: 0, newProofs: 0}};
+      }});
+    if (repaired) assert.equal((await update).published, true);
+    else {
+      await assert.rejects(update, {code: 'SNAPSHOT_REPLAYS_INCOMPLETE'});
+      await assert.rejects(readFile(path.join(root, 'snapshot-current.json')), {code: 'ENOENT'});
+      await assert.rejects(readFile(path.join(staging, 'racer-directory.json')), {code: 'ENOENT'});
+    }
+    assert.deepEqual(order, ['checkpoint', 'native']);
+    assert.equal(await readFile(checkpoint, 'utf8'), 'retained');
+  }
+});
+
+test('updater reuses exact saved pairs ahead of stale unavailable export records without transport', async t => {
+  const f = await replayCaptureFixture(t, {missingEvidence: false}), row = replayEntry();
+  const signature = JSON.stringify([row.accountId, row.trackId, row.uploadId, row.frames, row.replayHash]);
+  await writeFile(path.join(f.staging, 'export-progress.json'), JSON.stringify({schemaVersion: 2,
+    raceExport: {records: {[signature]: {signature, available: false, reason: 'missing',
+      checkedAt: Date.now(), attempts: 32, bindingTimeMs: row.timeMs}}}}));
+  const deny = () => assert.fail('saved replay reuse must not authenticate or fetch');
+  const result = await updatePublicSnapshot({root: f.root, refreshReplays: true, capture: async () => ({}),
+    exportAuth: {oauthFetch: deny}, exportFetch: deny, log: () => {}});
+  assert.equal(result.published, true);
+  assert.equal(result.profileReplay.fetchedDocumentsThisRun, 0);
+  assert.equal(result.profileReplay.deferredBindingRetries, 0);
+  assert.equal(result.profileReplay.counts.recordings, 1);
+  const progress = JSON.parse(await readFile(path.join(f.staging, 'export-progress.json'), 'utf8'));
+  assert.equal(progress.raceExport.records[signature].available, true);
+  assert.equal(Object.hasOwn(progress.raceExport.records[signature], 'reason'), false);
 });

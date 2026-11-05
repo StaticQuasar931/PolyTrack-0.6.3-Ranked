@@ -27,6 +27,8 @@ const MAX_RETRY_DELAY_MS = 86400000;
 const MAX_FAILURE_ATTEMPTS = 32;
 const DETERMINISTIC_FAILURES = new Set(['missing', 'binding-mismatch', 'upload-conflict', 'output-too-large']);
 const FAILURE_REASONS = new Set([...DETERMINISTIC_FAILURES, 'batch-response-mismatch']);
+const BINDING_MISMATCH_REASONS = new Set(['source-status', 'source-not-pending', 'account-track-upload', 'time',
+  'frames', 'replay-hash', 'replay-size', 'car-style', 'replay-digest', 'replay-structure']);
 const failureAttempts = record => Number.isSafeInteger(record?.attempts) && record.attempts > 0
   ? Math.min(MAX_FAILURE_ATTEMPTS, record.attempts) : 1;
 const retryDelay = (record, baseMs) => Math.min(MAX_RETRY_DELAY_MS, baseMs * 2 ** (failureAttempts(record) - 1));
@@ -226,20 +228,21 @@ function raceDocumentName(projectId, accountId, trackId) {
   return `projects/${projectId}/databases/(default)/documents/${RACE_COLLECTION}/${accountId}_${trackId}`;
 }
 
-function validBoundRace(row, binding) {
-  if (!hasPlayablePublicReplayStatus(row)) return false;
+function boundRaceMismatch(row, binding) {
+  if (!hasPlayablePublicReplayStatus(row)) return 'source-status';
+  if (binding.playbackPending && !(row.verified === false && row.verifiedState === 0)) return 'source-not-pending';
+  if (row.accountId !== binding.accountId || row.trackId !== binding.trackId || row.uploadId !== binding.uploadId) return 'account-track-upload';
+  if (!Number.isSafeInteger(row.timeMs) || row.timeMs <= 0 ||
+      binding.metadata.timeMs !== undefined && row.timeMs !== binding.metadata.timeMs) return 'time';
   const frames = row.frames ?? row.raceTimeFrames;
-  return (!binding.playbackPending || row.verified === false && row.verifiedState === 0) &&
-    row.accountId === binding.accountId && row.trackId === binding.trackId && row.uploadId === binding.uploadId &&
-    Number.isSafeInteger(row.timeMs) && row.timeMs > 0 &&
-    (binding.metadata.timeMs === undefined || row.timeMs === binding.metadata.timeMs) &&
-    Number.isSafeInteger(frames) && frames === binding.frames &&
-    (row.frames === undefined || row.frames === binding.frames) &&
-    (row.raceTimeFrames === undefined || row.raceTimeFrames === binding.frames) &&
-    row.replayHash === binding.replayHash && HASH.test(row.replayHash || '') && typeof row.replay === 'string' &&
-    row.replay.length > 0 && Buffer.byteLength(row.replay, 'utf8') <= 850000 &&
-    (row.carStyle === undefined || typeof row.carStyle === 'string' && row.carStyle.length <= 256) &&
-    crypto.createHash('sha256').update(row.replay, 'utf8').digest('hex') === binding.replayHash;
+  if (!Number.isSafeInteger(frames) || frames !== binding.frames ||
+      row.frames !== undefined && row.frames !== binding.frames ||
+      row.raceTimeFrames !== undefined && row.raceTimeFrames !== binding.frames) return 'frames';
+  if (row.replayHash !== binding.replayHash || !HASH.test(row.replayHash || '')) return 'replay-hash';
+  if (typeof row.replay !== 'string' || !row.replay.length || Buffer.byteLength(row.replay, 'utf8') > 850000) return 'replay-size';
+  if (row.carStyle !== undefined && !(typeof row.carStyle === 'string' && row.carStyle.length <= 256)) return 'car-style';
+  if (crypto.createHash('sha256').update(row.replay, 'utf8').digest('hex') !== binding.replayHash) return 'replay-digest';
+  return null;
 }
 
 async function retireStaleCanonical(directory,binding) {
@@ -250,6 +253,7 @@ async function retireStaleCanonical(directory,binding) {
     if(!info.isFile()||info.isSymbolicLink()||info.size>MAX_FILE_BYTES)return false;
     bytes=await fs.readFile(file);value=JSON.parse(bytes);
   }catch(error){if(error.code==='ENOENT'||error instanceof SyntaxError)return false;throw error;}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   // Only retire an older binding owned by this exact account/track. Malformed
   // or foreign inputs remain fatal to the independent native input validator.
   const frames=value.frames??value.raceTimeFrames;
@@ -274,20 +278,53 @@ async function retireStaleCanonical(directory,binding) {
   return true;
 }
 
+function savedRecordingMatches(replay, binding) {
+  return hasPlayablePublicReplayStatus(replay) && replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
+    (replay.uploadId === undefined || replay.uploadId === binding.uploadId) &&
+    (replay.timeMs === undefined || replay.timeMs === binding.metadata.timeMs) &&
+    (replay.raceTimeFrames === undefined || replay.raceTimeFrames === binding.frames) &&
+    replay.frames === binding.frames && replay.replayHash === binding.replayHash &&
+    typeof replay.recording === 'string' && replay.recording.length > 0 && Buffer.byteLength(replay.recording, 'utf8') <= 850000 &&
+    crypto.createHash('sha256').update(replay.recording, 'utf8').digest('hex') === binding.replayHash;
+}
+
+async function restorePendingCanonical(directory, binding, replay) {
+  if (!binding.playbackPending || !Number.isSafeInteger(binding.metadata.timeMs) || binding.metadata.timeMs < 1 ||
+      typeof binding.metadata.carStyle !== 'string' || binding.metadata.carStyle.length > 256 || replay.carStyle !== binding.metadata.carStyle ||
+      replay.verifiedState !== 0 || replay.verified === true || replay.runVerified === true || replay.integrityVerified === false) return false;
+  try {
+    const root = await fs.realpath(directory), file = path.join(directory, 'recordings', binding.uploadId + '.json');
+    const stat = await fs.lstat(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES || !(await fs.realpath(file)).startsWith(root + path.sep)) return false;
+    for (const relative of ['canonical', 'canonical/' + binding.trackId]) {
+      const folder = path.join(directory, relative);
+      let info; try { info = await fs.lstat(folder); } catch (error) { if (error.code === 'ENOENT') break; throw error; }
+      if (!info.isDirectory() || info.isSymbolicLink() || !(await fs.realpath(folder)).startsWith(root + path.sep)) return false;
+    }
+    await validatePublicReplayStructure(replay.recording, binding.frames);
+  } catch { return false; }
+  // The current pending board binds existing bytes, not a verdict or an ingestion date.
+  const canonical = {...binding.metadata, accountId: binding.accountId, trackId: binding.trackId,
+    uploadId: binding.uploadId, timeMs: binding.metadata.timeMs, frames: binding.frames, raceTimeFrames: binding.frames,
+    replayHash: binding.replayHash, carStyle: replay.carStyle,
+    updatedAt: Number.isSafeInteger(replay.updatedAt) && replay.updatedAt >= 0 ? replay.updatedAt : 0,
+    runVerified: false, integrityVerified: true, verified: false, verifiedState: 0,
+    playbackPending: true, verificationStatus: 'pending', eventRpEligible: false};
+  return atomicWrite(directory, `canonical/${binding.trackId}/${binding.accountId}.json`, canonical);
+}
+
 async function savedMatchExists(directory, binding) {
-  let replay, canonical;
+  let replay, canonical, canonicalMissing = false;
   try {
     replay = JSON.parse(await fs.readFile(path.join(directory, `recordings/${binding.uploadId}.json`), 'utf8'));
-    canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8'));
-    if (!hasPlayablePublicReplayStatus(replay) || !hasPlayablePublicReplayStatus(canonical)) return false;
-    const exact = replay.accountId === binding.accountId && replay.trackId === binding.trackId &&
-      (replay.uploadId === undefined || replay.uploadId === binding.uploadId) &&
-      (replay.timeMs === undefined || replay.timeMs === binding.metadata.timeMs) &&
-      (replay.raceTimeFrames === undefined || replay.raceTimeFrames === binding.frames) &&
-      replay.frames === binding.frames && replay.replayHash === binding.replayHash &&
-      typeof replay.recording === 'string' && replay.recording.length > 0 && Buffer.byteLength(replay.recording, 'utf8') <= 850000 &&
-      crypto.createHash('sha256').update(replay.recording, 'utf8').digest('hex') === binding.replayHash &&
-      canonical.accountId === binding.accountId && canonical.trackId === binding.trackId &&
+    if (!savedRecordingMatches(replay, binding)) return false;
+    try { canonical = JSON.parse(await fs.readFile(path.join(directory, `canonical/${binding.trackId}/${binding.accountId}.json`), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') canonicalMissing = true; else throw error; }
+  } catch { return false; }
+  if (canonicalMissing) return restorePendingCanonical(directory, binding, replay);
+  try {
+    if (!hasPlayablePublicReplayStatus(canonical)) return false;
+    const exact = canonical.accountId === binding.accountId && canonical.trackId === binding.trackId &&
       canonical.uploadId === binding.uploadId && canonical.frames === binding.frames &&
       (canonical.raceTimeFrames === undefined || canonical.raceTimeFrames === binding.frames) &&
       canonical.timeMs > 0 && Number.isSafeInteger(canonical.timeMs) &&
@@ -331,7 +368,9 @@ function currentRaceState(bindings, fingerprint, invalid, previous) {
         (!Object.hasOwn(prior, 'bindingTimeMs') || prior.bindingTimeMs === (binding.metadata.timeMs ?? null))) {
       records[binding.signature] = {signature: binding.signature, available: false, reason: prior.reason,
         checkedAt: Number.isSafeInteger(prior.checkedAt) && prior.checkedAt >= 0 ? prior.checkedAt : null,
-        attempts: failureAttempts(prior), bindingTimeMs: binding.metadata.timeMs ?? null};
+        attempts: failureAttempts(prior), bindingTimeMs: binding.metadata.timeMs ?? null,
+        ...(prior.reason === 'binding-mismatch' && BINDING_MISMATCH_REASONS.has(prior.mismatchReason)
+          ? {mismatchReason: prior.mismatchReason} : {})};
     }
   }
   return {fingerprint, pending: [], covered: {}, records, invalid, responseInvalid: 0, known: bindings.length};
@@ -528,12 +567,18 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
 
   const bindingBySignature = new Map(staged.bindings.map(binding => [binding.signature, binding]));
   const deferredBindings = new Set();
+  const savedBindings = new Set(), unresolvedBindings = [];
+  for (const binding of staged.bindings) {
+    if (await savedMatchExists(directory, binding)) savedBindings.add(binding.signature);
+    else unresolvedBindings.push(binding);
+  }
+  // Do not spend the bounded event-cache reads on already reusable normal pairs.
   let eventReuseIndex;
   for (const binding of staged.bindings) {
     const signature = binding.signature;
-    let available=await savedMatchExists(directory,binding);
+    let available=savedBindings.has(signature);
     if(!available&&binding.playbackPending){
-      eventReuseIndex??=eventReplayReuseIndex(directory,staged.bindings);
+      eventReuseIndex??=eventReplayReuseIndex(directory,unresolvedBindings);
       available=await reuseEventReplay(directory,binding,await eventReuseIndex);
     }
     if (available) {
@@ -581,12 +626,14 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
       } else {
         let row;
         try { row = decodeDocument(result.found).fields; } catch { row = null; }
+        const mismatchReason = row ? boundRaceMismatch(row, binding) : null;
         let structureValid = true;
-        if (row && binding.playbackPending) {
+        if (row && !mismatchReason && binding.playbackPending) {
           try { await validatePublicReplayStructure(row.replay, binding.frames); } catch { structureValid = false; }
         }
-        if (!row || !validBoundRace(row, binding) || !structureValid) {
-          race.records[signature] = {signature, available: false, reason: row ? 'binding-mismatch' : 'batch-response-mismatch'};
+        if (!row || mismatchReason || !structureValid) {
+          race.records[signature] = {signature, available: false, reason: row ? 'binding-mismatch' : 'batch-response-mismatch',
+            ...(row ? {mismatchReason: mismatchReason || 'replay-structure'} : {})};
         } else {
           const updatedAt = [row.updatedAt, row.pbAt, row.createdAt, binding.metadata.pbAt, binding.metadata.createdAt]
             .find(value => Number.isSafeInteger(value) && value >= 0) ?? 0;
@@ -655,6 +702,11 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
   const records = Object.values(race.records);
   const available = records.filter(record => record.available).length;
   const missing = records.filter(record => record.reason === 'missing').length;
+  const bindingMismatchReasons = {};
+  for (const record of records) if (record.reason === 'binding-mismatch') {
+    const reason = BINDING_MISMATCH_REASONS.has(record.mismatchReason) ? record.mismatchReason : 'legacy-unspecified';
+    bindingMismatchReasons[reason] = (bindingMismatchReasons[reason] || 0) + 1;
+  }
   const recordInvalid = records.filter(record =>
     ['binding-mismatch', 'batch-response-mismatch', 'upload-conflict', 'output-too-large'].includes(record.reason)).length;
   const invalid = staged.invalid + Math.max(race.responseInvalid, recordInvalid);
@@ -663,7 +715,7 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
   const result = {counts: {profiles: progress.profileCount, canonical: available, recordings: available, missing,
       skipped: progress.profileSkipped + invalid}, scanned: progress.profiles.scanned + records.length,
     fetchedDocumentsThisRun: usedThisRun, knownVerifiedBindings: race.known, retiredCanonical,
-    deferredBindingRetries: deferredBindings.size,
+    deferredBindingRetries: deferredBindings.size, bindingMismatchReasons,
     totalCoverage: {available, missing, invalid, complete: coverageComplete,
       scope: 'current-staged-track-snapshots'}, scanComplete, complete: coverageComplete, budgetReached, incompletePage};
   log(JSON.stringify({publicProfileReplayExport: result}));

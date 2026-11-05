@@ -15,6 +15,7 @@ import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {captureOverallProjection, applyCapturedOverallProjection, overallCaptureForBackup} from './capture-overall-projection.mjs';
 import {readRepositoryVerificationAuthority, verificationAuthority as validateVerificationAuthority} from './verifier/local-snapshot-verification.mjs';
 import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
+import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -561,6 +562,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const savedExportSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
   const coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);
   await fs.writeFile(path.join(stagingDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`);
+  await assertSnapshotReplayCompleteness(stagingDirectory);
   await buildProfileSnapshotResults(stagingDirectory);
 
   let oldCurrent = null;

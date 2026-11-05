@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {runPublicSnapshotBackup,PUBLIC_SNAPSHOT_LIMITS} from './public-snapshot-backup.mjs';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
+import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
 
 for (const count of [119,122]) test(`event coverage reports every budget-deferred board for ${count} live periods`,async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'capture-event-coverage-'));
@@ -22,7 +23,8 @@ for (const count of [119,122]) test(`event coverage reports every budget-deferre
       const id=/^\/v1\/events\/([^/]+)\/snapshot$/.exec(url.pathname)?.[1];
       assert.ok(id,'only catalog and bounded event reads are allowed');boardRequests++;
       return Response.json({id,updatedAt:300,entries:[],complete:true,totalEntries:0,
-        ...(periods.find(p=>p.id===id)?{period:periods.find(p=>p.id===id)}:{})});
+        period:periods.find(p=>p.id===id)??{id:PERMANENT_ROLLING_HILLS.id,kind:'permanent',
+          trackId:PERMANENT_ROLLING_HILLS.trackId,startsAt:0,endsAt:8640000000000000}});
     }})});
   assert.equal(result.deferred,false);
   const directory=path.join(root,'local-reports','snapshot-staging');

@@ -706,3 +706,136 @@ test('full snapshot refresh resets its cursor and prunes obsolete profiles only 
    return[{found:{name:req.options.documents[0]+'_wrong',fields:raceFields()}}];}),log:()=>{}});
   assert.equal(result.totalCoverage.invalid,1);assert.equal(result.counts.recordings,0);
  });});
+
+
+test('pending orphan recording restores only its exact canonical projection ahead of unavailable cooldown',async()=>{
+ await withDirectory(async directory=>{
+  const f=await pendingPair(directory),canonicalPath=path.join(directory,`canonical/${trackId}/${accountId}.json`);
+  await fs.unlink(canonicalPath);
+  const bytes=await fs.readFile(path.join(directory,'recordings/42.json'));
+  const key=signature(f.row);
+  await writeProgress(directory,{profiles:{complete:true,ids:[]},raceExport:{records:{[key]:{signature:key,available:false,reason:'binding-mismatch',
+   checkedAt:1000,attempts:32,bindingTimeMs:f.row.timeMs}}}});
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,now:1001,
+   fetchImpl:()=>{throw Error('Exact retained pending bytes must not be fetched');}});
+  assert.equal(result.complete,true);assert.equal(result.fetchedDocumentsThisRun,0);assert.equal(result.deferredBindingRetries,0);
+  assert.deepEqual(await fs.readFile(path.join(directory,'recordings/42.json')),bytes);
+  const saved=JSON.parse(await fs.readFile(canonicalPath));
+  for(const field of ['accountId','trackId','uploadId','frames','raceTimeFrames','timeMs','replayHash','carStyle'])assert.equal(saved[field],f.row[field]);
+  assert.equal(saved.runVerified,false);assert.equal(saved.verified,false);assert.equal(saved.verifiedState,0);
+  assert.equal(saved.integrityVerified,true);assert.equal(saved.playbackPending,true);assert.equal(saved.eventRpEligible,false);
+  assert.equal(saved.verificationStatus,'pending');assert.equal(saved.updatedAt,600);
+  for(const field of ['proof','nativeLedger','ingestedAt','ingestedAtSource','verifiedAt','runId'])assert.equal(saved[field],undefined);
+  const record=(await readProgress(directory)).raceExport.records[key];assert.equal(record.available,true);assert.equal(record.reason,undefined);
+ });
+});
+
+test('orphan restoration rejects changed identity, status, bytes, style and missing binding metadata',async()=>{
+ const changes=[
+  f=>{f.recording.accountId=otherAccount;},f=>{f.recording.trackId='d'.repeat(64);},
+  f=>{f.recording.uploadId=43;},f=>{f.recording.timeMs=15001;},f=>{f.recording.frames=901;},
+  f=>{f.recording.raceTimeFrames=901;},f=>{f.recording.replayHash='d'.repeat(64);},
+  f=>{f.recording.recording+='A';},f=>{f.recording.carStyle='different';},
+  f=>{f.recording.verifiedState=1;},f=>{f.recording.verified=true;},f=>{f.recording.runVerified=true;},
+  f=>{f.recording.integrityVerified=false;},f=>{f.recording.verificationStatus='rejected';},
+  f=>{delete f.row.timeMs;},f=>{delete f.row.carStyle;},
+  f=>{Object.assign(f.row,{runVerified:true,verified:true,verifiedState:1});},
+  f=>{const invalid=deflateSync(Buffer.alloc(14)).toString('base64url');f.recording.recording=invalid;
+   f.recording.replayHash=f.row.replayHash=createHash('sha256').update(invalid).digest('hex');},
+ ];
+ for(const change of changes)await withDirectory(async directory=>{
+  const f=await pendingPair(directory);change(f);await stage(directory,[f.row]);
+  const target=path.join(directory,`canonical/${trackId}/${accountId}.json`);await fs.unlink(target);
+  await fs.writeFile(path.join(directory,'recordings/42.json'),JSON.stringify(f.recording));
+  const calls=[];const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(result.complete,false);assert.equal(calls.length,1);
+  await assert.rejects(fs.stat(target),{code:'ENOENT'});
+ });
+});
+
+test('event reuse index does not read bytes already covered by valid normal pairs',async()=>{
+ await withDirectory(async directory=>{
+  const f=await seedEventBytes(directory,{count:3});
+  const options={directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('All payloads are retained locally');}};
+  await exportPublicProfilesAndReplays(options);
+  const target=f.rows[2];
+  await fs.unlink(path.join(directory,`recordings/${target.uploadId}.json`));
+  await fs.unlink(path.join(directory,`canonical/${trackId}/${target.accountId}.json`));
+  const read=fs.readFile,reads=[];
+  fs.readFile=async(file,...args)=>{const absolute=path.resolve(String(file));
+   for(const payload of f.payloads)if(absolute===path.resolve(directory,payload.relative))reads.push(payload.relative);
+   return read(file,...args);};
+  try{
+   const result=await exportPublicProfilesAndReplays(options);
+   assert.equal(result.fetchedDocumentsThisRun,0);assert.equal(result.counts.recordings,3);
+   assert.deepEqual(reads,[f.payloads[2].relative]);
+  }finally{fs.readFile=read;}
+ });
+});
+
+
+test('binding mismatch diagnostics are fixed categories and retain the existing retry cooldown',async()=>{
+ const payload=deflateSync(Buffer.alloc(15)).toString('base64url'),hash=createHash('sha256').update(payload).digest('hex');
+ const invalid=deflateSync(Buffer.alloc(14)).toString('base64url'),invalidHash=createHash('sha256').update(invalid).digest('hex');
+ const cases=[
+  ['source-status',{verificationStatus:str('fixture-secret')}],
+  ['source-not-pending',{verified:bool(true),verifiedState:int(1)}],
+  ['account-track-upload',{uploadId:int(43)}],['time',{timeMs:int(15001)}],
+  ['frames',{raceTimeFrames:int(901)}],['replay-hash',{replayHash:str('d'.repeat(64))}],
+  ['replay-size',{replay:str('')}],['car-style',{carStyle:map({privateToken:str('fixture-secret')})}],
+  ['replay-digest',{replay:str('different')}],['replay-structure',{replay:str(invalid),replayHash:str(invalidHash)}],
+ ];
+ for(const [reason,fields]of cases)await withDirectory(async directory=>{
+  const row=binding({runVerified:false,verified:false,verifiedState:0,replayHash:reason==='replay-structure'?invalidHash:hash});
+  await prepareRetry(directory,[row]);const logs=[],calls=[];
+  const options={directory,includeProfiles:false,includePendingReplays:true,now:1000,log:value=>logs.push(value),
+   fetchImpl:fixtureFetch(req=>batchResponse(req,raceFields({replay:str(payload),replayHash:str(hash),...fields})),calls)};
+  const result=await exportPublicProfilesAndReplays(options);
+  assert.equal(calls.length,1);assert.equal(result.fetchedDocumentsThisRun,1);assert.equal(result.complete,false);
+  assert.deepEqual(result.bindingMismatchReasons,{[reason]:1});
+  const record=(await readProgress(directory)).raceExport.records[signature(row)];
+  assert.equal(record.reason,'binding-mismatch');assert.equal(record.mismatchReason,reason);assert.equal(record.attempts,1);
+  const retry=await exportPublicProfilesAndReplays({...options,now:1001,fetchImpl:()=>{throw Error('Cooldown must not retry');}});
+  assert.equal(retry.deferredBindingRetries,1);assert.equal(retry.fetchedDocumentsThisRun,0);
+  assert.deepEqual(retry.bindingMismatchReasons,{[reason]:1});
+  assert.doesNotMatch(JSON.stringify({result,retry,logs,progress:await readProgress(directory)}),/fixture-secret/);
+ });
+});
+
+test('historical mismatch reasons remain unspecified and arbitrary checkpoint detail is discarded',async()=>{
+ await withDirectory(async directory=>{
+  const row=binding();await prepareRetry(directory,[row]);
+  await writeProgress(directory,{profiles:{complete:true},raceExport:{records:{[signature(row)]:{
+   available:false,reason:'binding-mismatch',checkedAt:1000,attempts:2,bindingTimeMs:row.timeMs,mismatchReason:'fixture-secret'}}}});
+  const result=await exportPublicProfilesAndReplays({directory,includeProfiles:false,now:1001,
+   fetchImpl:()=>{throw Error('Historical cooldown must not issue reads');}});
+  assert.equal(result.deferredBindingRetries,1);assert.deepEqual(result.bindingMismatchReasons,{'legacy-unspecified':1});
+  assert.doesNotMatch(JSON.stringify({result,progress:await readProgress(directory)}),/fixture-secret/);
+ });
+});
+
+test('orphan repair write failures are fatal without fallback reads or loss of retained bytes',async()=>{
+ await withDirectory(async directory=>{
+  await pendingPair(directory);const target=path.join(directory,`canonical/${trackId}/${accountId}.json`);
+  await fs.unlink(target);const bytes=await fs.readFile(path.join(directory,'recordings/42.json'));
+  const rename=fs.rename,failure=Error('injected canonical write failure');
+  fs.rename=async(from,to)=>{if(to===target)throw failure;return rename(from,to);};
+  try{await assert.rejects(exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:()=>{throw Error('A failed local write must not trigger network fallback');}}),error=>error===failure);}
+  finally{fs.rename=rename;}
+  assert.deepEqual(await fs.readFile(path.join(directory,'recordings/42.json')),bytes);
+  await assert.rejects(fs.stat(target),{code:'ENOENT'});
+ });
+});
+
+test('orphan repair never overwrites a present malformed or terminal canonical',async()=>{
+ for(const contents of ['not json','null',JSON.stringify({verificationStatus:'rejected'})])await withDirectory(async directory=>{
+  await pendingPair(directory);const target=path.join(directory,`canonical/${trackId}/${accountId}.json`);
+  await fs.writeFile(target,contents);const calls=[];
+  await exportPublicProfilesAndReplays({directory,includeProfiles:false,includePendingReplays:true,
+   fetchImpl:fixtureFetch(req=>req.options.documents.map(missing=>({missing})),calls)});
+  assert.equal(calls.length,1);assert.equal(await fs.readFile(target,'utf8'),contents);
+ });
+});

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync, verify, createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -147,7 +148,7 @@ test('no pending replay work requires neither credentials nor an OAuth exchange'
 test('real exporter reads projected profiles and bound replay batches; no auth serialized into results, logs, files or package',async t=>{
   const root=await fixture(t),directory=path.join(root,'local-reports/snapshot-staging');
   await fs.mkdir(path.join(directory,'tracks'),{recursive:true});await fs.writeFile(path.join(root,'index.html'),'<html><head></head></html>');
-  const replay='fixture recording',hash=createHash('sha256').update(replay).digest('hex');
+  const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),hash=createHash('sha256').update(replay).digest('hex');
   await fs.writeFile(path.join(directory,'tracks',track+'.json'),JSON.stringify({trackId:track,entries:[{
     accountId:account,trackId:track,uploadId:42,frames:900,timeMs:15000,replayHash:hash,runVerified:true,integrityVerified:true}]}));
   const string=stringValue=>({stringValue}),integer=n=>({integerValue:String(n)});

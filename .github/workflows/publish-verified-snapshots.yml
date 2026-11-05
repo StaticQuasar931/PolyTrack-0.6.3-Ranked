@@ -17,12 +17,12 @@ on:
         type: string
         default: ''
       overnight_native:
-        description: 'Bounded Nov5 one-time native processing of the single capture'
+        description: 'Bounded plan-day one-time native processing of the single capture'
         required: false
         type: boolean
         default: false
       replacement_capture:
-        description: Explicitly authorized November 5 replacement attempt
+        description: Explicitly authorized historical replacement attempt
         required: false
         type: boolean
         default: false
@@ -75,6 +75,7 @@ jobs:
           OVERNIGHT_NATIVE: ${{ inputs.overnight_native }}
           REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}
           RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key }}
+          RECOVERY_PUBLIC_KEY_FALLBACK: ${{ vars.POLYTRACK_CAPTURE_RECOVERY_PUBLIC_KEY }}
         run: |
           node --input-type=module <<'AUTHORITY'
           import fs from 'node:fs';
@@ -90,18 +91,21 @@ jobs:
             validateRecoveryRecipient(process.env.RECOVERY_PUBLIC_KEY);
           }
           const mode=await readRepositoryVerificationAuthority(process.cwd(),value || override);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+mode+'\n');
+          const key=process.env.RECOVERY_PUBLIC_KEY || process.env.RECOVERY_PUBLIC_KEY_FALLBACK || '';
+          if((process.env.OVERNIGHT_NATIVE==='true'||mode==='snapshot-native')&&!key)throw Error('Native capture requires a recovery public key before admission');
+          if(key)validateRecoveryRecipient(key);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+mode+'\nrecovery_enabled='+Boolean(key)+'\n');
           AUTHORITY
       # Resolve the current default branch only after acquiring the shared capture lock.
       # Never check out verifier artifacts or a workflow_run head ref.
       - name: Test conflict-safe publishing
-        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs
+        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/snapshot-recovery-workflow.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs
       - name: Check Extra catalog, registry, and pins
         # Local consistency check; fail before fetching or writing public captures.
         run: node tools/extra-verification-check.mjs
       - name: Test offline native authority contracts
         if: steps.authority.outputs.mode == 'snapshot-native'
-        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/snapshot-native-workflow.test.mjs
+        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs
       - name: Install offline native dependencies
         if: steps.authority.outputs.mode == 'snapshot-native'
         run: npm ci --prefix tools/verifier --ignore-scripts
@@ -125,7 +129,7 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Test snapshot integrity and resumable capture
         # Offline safeguards run before any production reads.
-        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/update-public-snapshot-overlay.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
+        run: node --test --test-concurrency=2 tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/public-event-totals-backup.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs tools/update-public-snapshot-overlay.test.mjs tools/snapshot-replay-completeness.test.mjs tools/snapshot-export-auth.test.mjs tools/snapshot-export-auth-workflow.test.mjs tools/public-profile-replay-export.test.mjs tools/snapshot-retry-workflow.test.mjs tools/merge-frozen-event-catalog-workflow.test.mjs tools/sync-event-catalog.test.mjs tools/capture-overall-projection.test.mjs tools/overall-projection-bundle.test.mjs tools/offline-overall.test.mjs tools/rebuild-snapshot-overall.test.mjs tools/captured-source-reuse.test.mjs
       - name: Reuse a later published bounded capture
         id: coordination
         env:
@@ -202,7 +206,7 @@ jobs:
           NODE
           node "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" restore "$RUNNER_TEMP/polytrack-replay-retries/history.json" local-reports/snapshot-staging/export-progress.json
       - name: Pin offline verification source commit
-        if: steps.authority.outputs.mode == 'snapshot-native' || hashFiles('verification-ledger-current.json') != ''
+        if: steps.authority.outputs.mode == 'snapshot-native' || steps.authority.outputs.recovery_enabled == 'true' || hashFiles('verification-ledger-current.json') != ''
         run: echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
       - name: Guard the one-time overnight capture
         id: overnight_guard
@@ -247,30 +251,52 @@ jobs:
       - name: Capture bounded public snapshots
         id: snapshot
         if: steps.coordination.outputs.reuse != 'true' && steps.catalog.outputs.capture_status == 'complete'
-        # Changed/missing exact-bound normal replays only: normally 100, Nov5 one-off 2000; no profile scan.
+        # Changed/missing exact-bound normal replays only: normally 100, one-off uses its plan cap; no profile scan.
         # The same private signer is scoped only to capture steps, never cache, tests or publishing.
         env:
           FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
           ONE_OFF_NATIVE: ${{ inputs.overnight_native }}
           REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}
-          RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key }}
+          RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key || vars.POLYTRACK_CAPTURE_RECOVERY_PUBLIC_KEY }}
         # The updater's parent-owned hook exports replays first, then invokes the
         # credential-scrubbed offline capability before final rebuild/package.
         run: |
-          if [ "$ONE_OFF_NATIVE" = "true" ]; then
+          if [ "$ONE_OFF_NATIVE" = "true" ] || [ -n "$RECOVERY_PUBLIC_KEY" ]; then
             node --input-type=module <<'ONEOFF'
           import {updatePublicSnapshot,reportCaptureOutcome} from './tools/update-public-snapshot.mjs';
           import {OVERNIGHT_SNAPSHOT} from './tools/overnight-snapshot-plan.mjs';
           import path from 'node:path';
+          import fs from 'node:fs/promises';
           import {CAPTURE_REPAIR_SECOND} from './tools/capture-repair-plan.mjs';
           import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';
-          const nativePhaseOptions={maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs};
-          const recovery=process.env.REPAIR_ATTEMPT==='repair-2';
-          const captureCheckpoint=recovery?async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCaptureRecovery({directory,sourceCommit,
-            outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc'),recipientPublicKey:process.env.RECOVERY_PUBLIC_KEY})})):null;
-          const result=await updatePublicSnapshot({refreshReplays:true,replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit,verificationAuthority:'snapshot-native',nativePhaseOptions,captureCheckpoint});
-          if(!result.deferred && (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');
+          const oneOff=process.env.ONE_OFF_NATIVE==='true',recovery=oneOff&&process.env.REPAIR_ATTEMPT==='repair-2';
+          const sourceCommit=process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT;
+          const recipientPublicKey=process.env.RECOVERY_PUBLIC_KEY,outputFile=path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc');
+          const attempt=recovery?'repair-2':oneOff?'overnight-capture':'routine-capture';
+          const encryptCapture=options=>encryptCaptureRecovery({...options,attempt});
+          const captureCheckpoint=async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCapture({directory,sourceCommit,outputFile,recipientPublicKey})}));
+          const nativePhaseOptions={...(oneOff?{maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs}:{}),
+            proofCheckpoint:async({directory,sourceBinding,ledgerManifestHash})=>console.log(JSON.stringify({proofRecovery:await encryptCaptureRecovery({directory,attempt,
+              sourceCommit:sourceBinding.sourceCommit,sourceBinding,ledgerManifestHash,phase:'native-proofs',recipientPublicKey,
+              outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-native-proofs.ptenc')})}))};
+          // Pin the checkpoint to the tested checkout, not a caller-supplied alternate source.
+          if(!/^[a-f0-9]{40}$/.test(sourceCommit||''))throw Error('Missing recovery source commit');
+          let result;
+          try{
+            result=await updatePublicSnapshot({refreshReplays:true,
+              ...(oneOff?{replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit}:{}),
+              verificationAuthority:process.env.VERIFICATION_AUTHORITY,nativePhaseOptions,captureCheckpoint});
+          }finally{
+            // Includes early strict-gate failures and legacy Firestore paths without a native hook.
+            if(!await fs.stat(outputFile).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;})){
+              const directory=path.resolve('local-reports/snapshot-staging');
+              if(await fs.stat(directory).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;}))
+                console.log(JSON.stringify({captureRecovery:await encryptCapture({directory,sourceCommit,outputFile,recipientPublicKey,phase:'failure-state'})}));
+            }
+          }
+          if(!result.deferred && (oneOff || process.env.VERIFICATION_AUTHORITY==='snapshot-native' || result.nativeVerification) &&
+            (result.nativeVerification?.backendReads!==0 || result.nativeVerification?.backendWrites!==0))throw Error('Offline proof usage assertion failed');
           await reportCaptureOutcome(result);
           ONEOFF
           elif [ "$VERIFICATION_AUTHORITY" = "snapshot-native" ]; then
@@ -278,30 +304,6 @@ jobs:
           else
             node tools/update-public-snapshot.mjs --refresh-replays
           fi
-      - name: Preserve encrypted failure checkpoint when needed
-        id: recovery
-        if: always() && inputs.replacement_capture && inputs.repair_attempt == 'repair-2' && (steps.snapshot.outcome == 'success' || steps.snapshot.outcome == 'failure')
-        env:
-          RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key }}
-        run: |
-          node --input-type=module <<'RECOVERY'
-          import fs from 'node:fs';
-          import path from 'node:path';
-          import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';
-          const outputFile=path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc');
-          if(!fs.existsSync(outputFile))console.log(JSON.stringify({captureRecovery:await encryptCaptureRecovery({directory:path.resolve('local-reports/snapshot-staging'),outputFile,
-            recipientPublicKey:process.env.RECOVERY_PUBLIC_KEY,sourceCommit:process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT,phase:'failure-state'})}));
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'ready=true\n');
-          RECOVERY
-      - name: Retain encrypted recovery checkpoint
-        if: always() && steps.recovery.outputs.ready == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: polytrack-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/polytrack-recovery.ptenc
-          retention-days: 3
-          compression-level: 0
-          if-no-files-found: error
       - name: Index all saved frozen event periods
         if: always() && !cancelled() && steps.catalog.outcome == 'success' && steps.catalog.outputs.capture_status == 'complete'
         # Local files only, including catalog-only and failed-capture runs; staging is optional.
@@ -360,6 +362,48 @@ jobs:
           git commit -m "Sync public ranked snapshots"
           node tools/push-public-capture.mjs
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Preserve encrypted failure checkpoint when needed
+        id: recovery
+        if: always() && steps.authority.outputs.recovery_enabled == 'true' && (steps.snapshot.outcome == 'success' || steps.snapshot.outcome == 'failure' || steps.snapshot.outcome == 'cancelled') && ((inputs.replacement_capture && inputs.repair_attempt == 'repair-2') || steps.snapshot.outputs.capture_status != 'complete' || steps.publication.outcome != 'success')
+        env:
+          RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key || vars.POLYTRACK_CAPTURE_RECOVERY_PUBLIC_KEY }}
+          ONE_OFF_NATIVE: ${{ inputs.overnight_native }}
+          REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}
+        run: |
+          node --input-type=module <<'RECOVERY'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';
+          const outputFile=path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc');
+          const attempt=process.env.ONE_OFF_NATIVE==='true'?(process.env.REPAIR_ATTEMPT==='repair-2'?'repair-2':'overnight-capture'):'routine-capture';
+          const encryptCapture=options=>encryptCaptureRecovery({...options,attempt});
+          if(!fs.existsSync(outputFile))console.log(JSON.stringify({captureRecovery:await encryptCapture({directory:path.resolve('local-reports/snapshot-staging'),outputFile,
+            recipientPublicKey:process.env.RECOVERY_PUBLIC_KEY,sourceCommit:process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT,phase:'failure-state'})}));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'ready=true\n');
+          RECOVERY
+      - name: Retain encrypted recovery checkpoint
+        if: always() && steps.recovery.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: polytrack-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/polytrack-recovery.ptenc
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+      - name: Locate encrypted private proof checkpoint
+        id: proof_recovery
+        if: always() && steps.authority.outputs.recovery_enabled == 'true' && (steps.snapshot.outcome == 'success' || steps.snapshot.outcome == 'failure' || steps.snapshot.outcome == 'cancelled') && ((inputs.replacement_capture && inputs.repair_attempt == 'repair-2') || steps.snapshot.outputs.capture_status != 'complete' || steps.publication.outcome != 'success')
+        run: node -e "const fs=require('node:fs'),path=require('node:path'); fs.appendFileSync(process.env.GITHUB_OUTPUT,'ready='+fs.existsSync(path.join(process.env.RUNNER_TEMP,'polytrack-native-proofs.ptenc'))+'\n')"
+      - name: Retain encrypted private proof checkpoint
+        if: always() && steps.proof_recovery.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: polytrack-native-proofs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/polytrack-native-proofs.ptenc
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
 
   publish_cdn_release:
     needs: sync

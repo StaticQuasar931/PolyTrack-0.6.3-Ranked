@@ -91,9 +91,11 @@ test('cache save never exports full checkpoint or retains resolved failure recor
  await run('save',cacheFile,progressFile,now);assert.deepEqual(await read(cacheFile),cache({}));
 });
 
-test('retry ledger survives fresh-run staging rebase without appearing in published snapshots',async t=>{
- const firstRoot=await fixture(t),firstStage=await stage(firstRoot),cacheFile=path.join(firstRoot,'runner','history.json');
- const initial=await updatePublicSnapshot({root:firstRoot,capture:async()=>({}),refreshReplays:true,log:()=>{},exportPublic:options=>exportPublicProfilesAndReplays({...options,now:now-1000,fetchImpl:missing})});
+test('retry ledger survives blocked publication and fresh-run staging rebase without appearing in published snapshots',async t=>{
+ const firstRoot=await fixture(t),firstStage=await stage(firstRoot,[]),cacheFile=path.join(firstRoot,'runner','history.json');
+ const initial=await updatePublicSnapshot({root:firstRoot,offline:true,log:()=>{}});
+ await write(path.join(firstStage,'tracks',track+'.json'),{trackId:track,complete:true,entries:[entry()]});
+ await assert.rejects(updatePublicSnapshot({root:firstRoot,capture:async()=>({}),refreshReplays:true,log:()=>{},exportPublic:options=>exportPublicProfilesAndReplays({...options,now:now-1000,fetchImpl:missing})}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
  await run('save',cacheFile,path.join(firstStage,'export-progress.json'),now);
  assert.equal(Object.keys((await read(cacheFile)).records).length,1);
  const secondRoot=await fixture(t);await fs.cp(path.join(firstRoot,initial.directory),path.join(secondRoot,initial.directory),{recursive:true});
@@ -101,9 +103,13 @@ test('retry ledger survives fresh-run staging rebase without appearing in publis
  await fs.copyFile(path.join(firstRoot,'index.html'),path.join(secondRoot,'index.html'));
  const progressFile=path.join(secondRoot,'local-reports','snapshot-staging','export-progress.json');await run('restore',cacheFile,progressFile,now);
  let requests=0;
- const second=await updatePublicSnapshot({root:secondRoot,capture:async()=>({}),refreshReplays:true,log:()=>{},exportPublic:options=>exportPublicProfilesAndReplays({...options,now,fetchImpl:async()=>{requests++;throw Error('cooldown must survive hydration/rebase');}})});
- assert.equal(requests,0);assert.equal(second.profileReplay.deferredBindingRetries,1);assert.equal(second.profileReplay.complete,false);assert.equal(second.coverage.complete,false);
- const index=await read(path.join(secondRoot,second.directory,'index.json'));
+ await assert.rejects(updatePublicSnapshot({root:secondRoot,capture:async({directory})=>{
+  await write(path.join(directory,'tracks',track+'.json'),{trackId:track,complete:true,entries:[entry()]});return {};
+ },refreshReplays:true,log:()=>{},exportPublic:options=>exportPublicProfilesAndReplays({...options,now,fetchImpl:async()=>{requests++;throw Error('cooldown must survive hydration/rebase');}})}),{code:'SNAPSHOT_REPLAYS_INCOMPLETE'});
+ assert.equal(requests,0);
+ assert.equal((await read(path.join(secondRoot,'local-reports','snapshot-staging','public-export-summary.json'))).coverage.complete,false);
+ assert.equal((await read(path.join(secondRoot,'snapshot-current.json'))).currentdir,initial.directory);
+ const index=await read(path.join(secondRoot,initial.directory,'index.json'));
  assert.ok(!Object.keys(index.files).some(name=>/export-progress|history\.json|retry/i.test(name)));
  assert.equal((await read(progressFile)).raceExport.records[key].attempts,1);
 });
@@ -124,8 +130,9 @@ test('restored history does not defer changed bindings or turn a cache miss into
 });
 
 test('mid-export quota deferral retains checkpointed retry ledger and never advances public package',async t=>{
- const root=await fixture(t),directory=await stage(root,[entry(),entry('c'.repeat(64),43)]);
+ const root=await fixture(t),directory=await stage(root,[]);
  const published=await updatePublicSnapshot({root,offline:true,log:()=>{}});
+ await write(path.join(directory,'tracks',track+'.json'),{trackId:track,complete:true,entries:[entry(),entry('c'.repeat(64),43)]});
  const pointer=await fs.readFile(path.join(root,'snapshot-current.json'));
  const index=await fs.readFile(path.join(root,published.directory,'index.json'));
  const html=await fs.readFile(path.join(root,'index.html'));
