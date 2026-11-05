@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 292,
+    "number": 293,
     "version": "0.6.3",
-    "revision": 251,
+    "revision": 252,
     "notes": [
-      "Ranking updates now check that every listed run has its replay.",
-      "Safer automatic ranking updates and recovery."
+      "Smoother leaderboard updates while racers change their look.",
+      "Racer Studio skips outdated drafts when you make another change.",
+      "More efficient automatic ranking updates."
     ]
   },
   "entries": [
+    {
+      "number": 292,
+      "title": "Require complete replay files and preserve bounded capture recovery",
+      "commit": "f1e88968f013b2adfa411cafce762f21ff5eee80",
+      "committedAt": "2026-11-05T19:01:17.000Z",
+      "notes": [
+        "Ranking updates now check that every listed run has its replay.",
+        "Safer automatic ranking updates and recovery."
+      ]
+    },
     {
       "number": 291,
       "title": "Publish verified Snapshot 72 and restore reader browser checks",
@@ -203,18 +214,6 @@ const historyData = {
       "notes": [
         "More efficient background syncing without changing run submission or scoring.",
         "Fixed a maintenance check that stopped verification when archived Kodub tracks were listed."
-      ]
-    },
-    {
-      "number": 269,
-      "title": "Faster Rankings and Cleaner Track Discovery",
-      "commit": "510831c380d3b673c2ed1b44387858c08a8a4be4",
-      "committedAt": "2026-11-02T23:39:32.000Z",
-      "notes": [
-        "Faster rankings and local PB estimates, with an Official Top Tracks filter.",
-        "Cleaner event artwork, search controls and compact racer profiles.",
-        "Four Extra Tracks discovery picks and a clearer Builder program entry.",
-        "Simpler Help and update history, plus a clear link from outdated copies."
       ]
     }
   ],
