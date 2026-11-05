@@ -14,7 +14,7 @@ test('real published snapshot loads complete Summer 1 and profiles without a ful
  const requests=[];const server=createServer(async(req,res)=>{
   const file=new URL(req.url,'http://localhost').pathname;
   if(file==='/'){res.setHeader('content-type','text/html');res.end('<!doctype html><title>Snapshot reader integration</title>');return;}
-  if(!/^\/(?:tools\/public-snapshot-client\.mjs|public-snapshots[0-9]+\/(?:[a-f0-9]{64}\.bin|(?:bootstrap-fast|bootstrap-index|index)\.json|lookup-shards\/[a-f0-9]{2}\.json))$/.test(file)){res.writeHead(404).end();return;}
+  if(!/^\/(?:tools\/[a-z0-9-]+\.mjs|public-snapshots[0-9]+\/(?:[a-f0-9]{64}\.bin|(?:bootstrap-fast|bootstrap-index|index)\.json|lookup-shards\/[a-f0-9]{2}\.json))$/.test(file)){res.writeHead(404).end();return;}
   requests.push(file);try{let bytes=await fs.readFile(path.join(root,file.replace('/'+alias+'/', '/'+pointer.currentdir+'/')));if(file.startsWith('/'+alias+'/')&&file.endsWith('.json')){const value=JSON.parse(bytes);value.generation=Number(alias.replace('public-snapshots',''));bytes=Buffer.from(JSON.stringify(value));}res.setHeader('content-type',file.endsWith('.mjs')?'text/javascript':file.endsWith('.json')?'application/json':'application/octet-stream');res.end(bytes);}catch{res.writeHead(404).end();}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;

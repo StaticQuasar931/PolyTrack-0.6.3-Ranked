@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 290,
+    "number": 291,
     "version": "0.6.3",
-    "revision": 249,
+    "revision": 250,
     "notes": [
-      "Verified event runs can appear before an event's first server publication.",
-      "Partial standings and runs without replay proof stay protected."
+      "Updated saved rankings with 103 more replay checks.",
+      "Current Kodub event standings now include 20 verified racers."
     ]
   },
   "entries": [
+    {
+      "number": 290,
+      "title": "Admit proven event runs from captured empty live standings",
+      "commit": "a9e2607cc1fcc0b686350b973e503608a4d10239",
+      "committedAt": "2026-11-05T16:41:49.000Z",
+      "notes": [
+        "Verified event runs can appear before an event's first server publication.",
+        "Partial standings and runs without replay proof stay protected."
+      ]
+    },
     {
       "number": 289,
       "title": "Scope trusted replay assets to each native verification batch",
@@ -204,18 +214,6 @@
       "notes": [
         "Reliable delivery of recent menu, discovery and changelog improvements.",
         "Builder contact links and Top Tracks filters are included in the updated menu package."
-      ]
-    },
-    {
-      "number": 267,
-      "title": "Builder Contacts and Track Discovery",
-      "commit": "5837d1a48ef4426dc3b8e938e9eea78673de2dd1",
-      "committedAt": "2026-11-02T06:53:01.000Z",
-      "notes": [
-        "Extra Tracks has image-led discovery picks, dated Kodub selections and a builder contact program.",
-        "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
-        "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
-        "Complete weekly artwork, readable creator credits and better small-screen menus."
       ]
     }
   ],
