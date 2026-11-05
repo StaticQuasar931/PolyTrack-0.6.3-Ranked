@@ -2,15 +2,35 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 288,
+    "number": 290,
     "version": "0.6.3",
-    "revision": 247,
+    "revision": 249,
     "notes": [
-      "Missing replay files no longer block checks of available saved runs.",
-      "Runs without replay evidence stay unverified."
+      "Verified event runs can appear before an event's first server publication.",
+      "Partial standings and runs without replay proof stay protected."
     ]
   },
   "entries": [
+    {
+      "number": 289,
+      "title": "Scope trusted replay assets to each native verification batch",
+      "commit": "28abdd5d4f13dba87594356d2bd0b249ba9faf42",
+      "committedAt": "2026-11-05T16:03:19.000Z",
+      "notes": [
+        "Fixed replay checks failing when a batch included different tracks.",
+        "Track files stay consistent across Windows and hosted updates."
+      ]
+    },
+    {
+      "number": 288,
+      "title": "Defer missing canonical replays without blocking valid snapshot checks",
+      "commit": "9e4a378891e1e39f9606f5add515b12b2e67eeb9",
+      "committedAt": "2026-11-05T15:37:45.000Z",
+      "notes": [
+        "Missing replay files no longer block checks of available saved runs.",
+        "Runs without replay evidence stay unverified."
+      ]
+    },
     {
       "number": 287,
       "title": "Align capture preflight contracts with encrypted recovery",
@@ -197,27 +217,6 @@ const historyData = {
         "Filter Top Tracks by All, Community or Extra, with clearer search controls and smaller player-count badges.",
         "Browse earlier updates from Help or the update notice, with real commit dates and a known missed-update count.",
         "Complete weekly artwork, readable creator credits and better small-screen menus."
-      ]
-    },
-    {
-      "number": 266,
-      "title": "Native Finish Regression Coverage",
-      "commit": "d3a1f44816ef01b5505bbaec466567b30a48e9d4",
-      "committedAt": "2026-11-02T05:01:54.000Z",
-      "notes": [
-        "Discover Extra Track picks and dated Kodub weekly selections.",
-        "Clearer profiles, player counts, route suggestions and responsive controls.",
-        "Less repeated loading, with native finish-screen compatibility checked across screen sizes."
-      ]
-    },
-    {
-      "number": 265,
-      "title": "Bounded Missing Snapshot Recovery",
-      "commit": "655e38a57b27c85834ea97d248d2184b1ae876a3",
-      "committedAt": "2026-11-02T04:54:13.000Z",
-      "notes": [
-        "Fewer repeated requests when published standings are temporarily unavailable.",
-        "Missing data recovers cleanly when a new snapshot arrives."
       ]
     }
   ],
