@@ -474,12 +474,12 @@ test('same-minimum checks reuse the dialog and offline choice reports the latest
   h.handle.dispose();
 });
 
-test('dialog keyboard wraps between the explicit choices without affecting other keys', async () => {
+test('dialog keyboard wraps between explicit choices without cancelling other key defaults', async () => {
   const h = harness({revision: 158, response: unsupported}); await h.handle.check();
   const [open, offline] = choices(h.document);
   let prevented = 0;
   const key = (key, shiftKey = false) => h.document.dialog.listeners.keydown({key, shiftKey,
-    preventDefault() { prevented++; }});
+    preventDefault() { prevented++; }, stopPropagation() {}});
   key('Tab'); assert.equal(h.document.activeElement, open);
   key('Tab', true); assert.equal(h.document.activeElement, offline);
   key('ArrowDown'); assert.equal(prevented, 2);
@@ -1139,4 +1139,32 @@ test('blocked floating feedback watches only menu mutations, coalesces callbacks
  idle=true;const [id,timer]=[...h.timers].find(([,timer])=>timer.delay===100);h.timers.delete(id);timer.fn();
  assert.equal(document.button.textContent,'Update available');assert.equal(disconnects,1);assert.equal(reloads,0);
  idle=false;document.button.listeners.click();observer.callback();h.handle.dispose();assert.equal(h.timers.size,0);assert.equal(disconnects,2);
+});
+
+test('reload exceptions and missing reload APIs never masquerade as an unsafe main menu',async()=>{
+ for(const failure of ['guard','reload','missing']){
+  const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();
+  let observers=0,reloads=0,fail=true;
+  document.defaultView.location={reload(){reloads++;if(fail)throw Error('blocked reload');}};
+  if(failure==='missing')delete document.defaultView.location.reload;
+  document.defaultView.MutationObserver=class{constructor(){observers++;}observe(){}disconnect(){}};
+  const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,canReload:()=>{if(failure==='guard'&&fail)throw Error('guard failed');return true;},fetch:async()=>jsonResponse({revision:44})});
+  await h.handle.check();document.button.listeners.click({preventDefault(){}});
+  assert.equal(document.button.textContent,'Update could not reload. Try again.');
+  assert.equal(document.button['aria-label'],document.button.textContent);
+  assert.equal(observers,0,'technical failures do not start menu watchers');
+  fail=false;document.defaultView.location.reload=()=>reloads++;
+  const before=reloads;document.button.listeners.click();assert.equal(reloads,before+1);h.handle.dispose();
+ }
+});
+
+test('queued blocked-menu work skips subsequent mutation scans and late callbacks after disposal',async()=>{
+ const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();let observer;
+ document.defaultView.MutationObserver=class{constructor(callback){this.callback=callback;observer=this;}observe(){}disconnect(){}};
+ const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,fetch:async()=>jsonResponse({revision:44})});
+ await h.handle.check();document.button.listeners.click();observer.callback();
+ let inspected=0;const noisy={type:'attributes',target:{matches(){inspected++;return true;}}};
+ for(let i=0;i<100;i++)observer.callback([noisy]);
+ assert.equal(inspected,0,'one scheduled safety check bounds work across mutation batches');
+ h.handle.dispose();observer.callback([noisy]);assert.equal(inspected,0);assert.equal(h.timers.size,0);
 });

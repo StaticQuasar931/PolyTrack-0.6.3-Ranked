@@ -9,7 +9,7 @@ const source=fs.readFileSync(path.join(repo,'polytrack_062_patch.js'),'utf8');
 const hash=s=>createHash('sha256').update(s).digest('hex');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a);return source.slice(a,b);}
 function harness(disk=new Map()){
-  const cloud=new Map();let serial=0;
+  const cloud=new Map();let serial=0,user={uid:'uid'};
   const h={disk,cloud,paused:true,account:'acct',uid:'uid',failStorage:false,dbGate:null,retry:false,
     lastMirrorSig:'',lastMirrorAt:0,guestAccountId:'acct',LAST_ACTIVE_NAME_KEY:'name',
     LOCAL_PB_RECONCILE_STATE_KEY:'receipts',OVERALL_PB_DIRTY_KEY:'dirty',FIREBASE_QUOTA_PAUSE_KEY:'quota',
@@ -36,18 +36,20 @@ function harness(disk=new Map()){
     noteFirebaseQuota:()=>{},scheduleLocalPbCloudReconcile:()=>{},firebaseQuotaPaused:()=>h.paused,
     opponentShortcutStatus:()=>{},opponentShortcutBoard:()=>null,showCloudOwnerConflict:()=>{},
     isCurrentLocalPbReconcileIdentity:(a,u)=>a===h.account&&(!u||u===h.uid),
-    utcDayKey:()=> '2026-11-01',dailySpotlight:()=>({track:{id:'one'}}),
-    window:{firebase:{auth:()=>({currentUser:{uid:h.uid}}),firestore:{FieldValue:{serverTimestamp:()=>123}}}},
+    utcDayKey:()=> '2026-11-01',activeRankedAccountId:()=>h.account,
+    TRACK_CATALOG:new Map([['one',{id:'one',type:'official'}]]),
+    window:{firebase:{auth:()=>{if(user.uid!==h.uid)user={uid:h.uid};return {currentUser:user};},firestore:{FieldValue:{serverTimestamp:()=>123}}}},
     db:async()=>{if(h.dbGate)await h.dbGate;if(h.paused)throw Object.assign(Error('quota'),{code:'resource-exhausted'});return {collection:c=>({doc:id=>c+'/'+id})};},
     runFirebaseTransaction:async(d,cb)=>{const run=async commit=>{const writes=[];await cb({get:async ref=>({exists:cloud.has(ref),data:()=>cloud.get(ref)}),set:(ref,row,opt)=>writes.push([ref,structuredClone(row),opt])});if(commit)for(const [ref,row,opt] of writes)cloud.set(ref,opt?.merge?{...cloud.get(ref),...row}:row);};if(h.retry)await run(false);await run(true);},
   };
   vm.createContext(h);
-  vm.runInContext(section('  function recordDailyActivity(','  async function syncDailyActivity(')+
+  vm.runInContext(section("  const DAILY_ACTIVITY_LOCAL_KEY=",'  function dailySpotlight(')+
+    section('  function recordDailyActivity(','  async function syncDailyActivity(')+
     section('  function localPersonalBestMs(','  function deploymentSourceOrigin(')+
     section('  async function mirrorRaceResult(','  function localPbHasAvailableReplay(')+
     section('  function rememberConfirmedLocalPb(','  function scheduleLocalPbCloudReconcile('),h);
   h.submit=(track,time,guard=null)=>h.mirrorRaceResult('test',{accountId:'acct',trackId:track,timeMs:time,frames:time,recording:'replay'+time,nickname:'Racer'},guard);
-  h.activity=()=>JSON.parse(disk.get('polytrack-0.6.2-daily-streak-v1')||'{}');
+  h.activity=(account=h.account)=>JSON.parse(disk.get('polytrack-0.6.3-daily-activity-local-v2')||'{"buckets":[]}').buckets.find(row=>row.accountId===account)||{};
   return h;
 }
 for(const tracks of [['one','one','one'],['one','two','one'],['one','two','three']]){
@@ -70,7 +72,8 @@ for(const tracks of [['one','one','one'],['one','two','one'],['one','two','three
 }
 test('tab close during cloud await leaves all local PB analytics durable',async()=>{
   const h=harness();let release;h.dbGate=new Promise(r=>release=r);
-  const pending=h.submit('one',3000);while(!h.activity().pbs)await new Promise(r=>setImmediate(r));
+  const pending=h.submit('one',3000);for(let i=0;i<100&&!h.activity().pbs;i++)await new Promise(r=>setImmediate(r));
+  assert.equal(h.activity().pbs,1,'the original finish must be durable before cloud work');
   const reopened=harness(h.disk);assert.equal(reopened.activity().pbs,1);assert.equal(reopened.localBestRowsForAccount('acct').length,1);
   release();await pending;assert.equal(h.activity().pbs,1);
 });
@@ -78,7 +81,7 @@ test('account switch before guarded transaction does not write or count another 
   const h=harness();await h.submit('one',3000);h.paused=false;
   let release;h.dbGate=new Promise(r=>release=r);const pending=h.submit('one',3000,{accountId:'acct',ownerUid:'uid'});
   await new Promise(r=>setImmediate(r));h.account='other';h.uid='other';release();
-  assert.equal((await pending).cancelled,true);assert.equal(h.cloud.size,0);assert.equal(h.activity().pbs,1);
+  assert.equal((await pending).cancelled,true);assert.equal(h.cloud.size,0);assert.equal(h.activity('acct').pbs,1);
 });
 test('receipts require matching account, time and exact nonempty hash',()=>{
   const h=harness(),r={accountId:'acct',trackId:'one',timeMs:1000,replayHash:hash('one')};

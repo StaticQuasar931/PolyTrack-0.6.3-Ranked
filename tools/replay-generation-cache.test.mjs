@@ -57,7 +57,7 @@ function harness({read = async () => null, playback = async () => row(false), lo
     readPublicSnapshotBackup:async (kind, id) => { calls.push({kind, id}); return read(kind, id); },
     publicSnapshotReaderPromise:Promise.resolve({recordingPlayback:playback}),
     metadataRecovery:{reset() {}, warm() {}},
-    snapshotTrackStatistics:{}, snapshotCosmeticEntries:{}, snapshotRacerDirectoryEntries:{}, publicSnapshotCapturedAt:0,
+    snapshotTrackStatistics:{}, overallTrackSummariesCache:[], snapshotCosmeticEntries:{}, snapshotRacerDirectoryEntries:{}, publicSnapshotCapturedAt:0,
     profileSnapshotEpoch:0, profileSnapshotResults:new Map(), profileSnapshotRequests:new Map(),
     profileSnapshotRetryAt:new Map(), profilePlacementRequests:new Map(), profileGuideCache:new Map(),
     cosmeticEpoch:0, overallCacheGeneration:0,

@@ -117,3 +117,29 @@ test('reader, validation and chooser are mandatory, and consent must be exactly 
   assert.throws(() => createPartialReplaySelection({readRecordings() {}, confirm() {}}));
   const f = fixture({confirm: () => 'yes'}); assert.equal(await f.run(), 'declined'); assert.equal(f.launches, 0);
 });
+
+test('release280: stale validation cannot poison the newer request shared cache', async () => {
+  const gate = deferred(); let calls = 0;
+  const f = fixture({rows: [rows()[0]], read: ids => ids.map(id => ({recording: String(id)})),
+    validate: () => ++calls === 1 ? gate.promise : true});
+  const old = f.run();
+  while (!calls) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(await f.run(), 'launched');
+  gate.resolve(false);
+  assert.equal(await old, 'cancelled');
+  assert.equal(await f.run(), 'launched');
+  assert.equal(f.calls, 1); assert.equal(f.launches, 2);
+});
+
+test('release280: expired offline failures recover and settled caches remain bounded', async () => {
+  let offline = true;
+  const f = fixture({read: ids => { if (offline) throw Error('offline'); return ids.map(id => ({recording: String(id)})); }});
+  assert.equal(await f.run(), 'all-failed');
+  offline = false;
+  assert.equal(await f.run(), 'all-failed'); assert.equal(f.calls, 1);
+  f.clock(60001);
+  assert.equal(await f.run('watch'), 'launched');
+  for (let i = 0; i < 70; i++) { f.change('revision'); assert.equal(await f.run(), 'launched'); }
+  assert.ok(f.api.cacheSize() <= 64);
+  f.api.clearCache(); assert.equal(f.api.cacheSize(), 0);
+});

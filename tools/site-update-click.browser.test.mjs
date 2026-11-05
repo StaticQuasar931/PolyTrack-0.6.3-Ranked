@@ -97,3 +97,33 @@ test('canonical floating button explains blocked clicks and restores on real saf
   assert.equal(await page.evaluate(()=>sessionStorage.getItem('unsaved-session')),'keep');
  }finally{await browser.close();}
 });
+
+test('compatibility dialog contains game keys and exposes truthful retry feedback',{timeout:45000},async()=>{
+ const browser=await chromium.launch({headless:true});try{
+  const page=await browser.newPage({serviceWorkers:'block'}),unexpected=[];
+  await page.route('**/*',route=>{
+   if(route.request().url()===canonical)return route.fulfill({contentType:'text/html',body:'<!doctype html><button id="play">Play</button>'});
+   unexpected.push(route.request().url());return route.abort();
+  });
+  await page.goto(canonical);await page.addScriptTag({content:bundle});
+  await page.evaluate(async()=>{
+   window.keys=[];for(const type of ['keydown','keyup'])document.addEventListener(type,event=>keys.push(type+':'+event.key),true);
+   document.getElementById('play').focus();
+   window.updater=updateAPI.installSiteUpdates({revision:238,isIdle:()=>true,canReload:()=>{throw Error('unavailable');},
+    fetch:async()=>({ok:true,json:async()=>({revision:239,minimumSupportedRevision:239})})});await updater.check();
+  });
+  const dialog=page.getByRole('dialog',{name:'Update needed for online play'});
+  await page.keyboard.press('r');
+  assert.deepEqual(await page.evaluate(()=>keys),[],'open compatibility modal must block native game shortcuts');
+  await dialog.getByRole('button',{name:'Reload to update'}).click();
+  assert.equal(await dialog.getByRole('status').textContent(),'Update could not reload. Try again.');
+  await page.keyboard.press('r');await page.keyboard.press('Space');await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
+  assert.equal(await page.evaluate(()=>document.querySelector('dialog').contains(document.activeElement)),true);
+  await page.keyboard.press('Escape');assert.equal(await dialog.count(),0);
+  assert.deepEqual(await page.evaluate(()=>keys),[],'modal keys and dismissal keyup cannot reach game shortcuts');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'play');
+  assert.equal(await page.evaluate(()=>updater.getCompatibility().reason),'offline-selected');
+  await page.keyboard.press('r');assert.deepEqual(await page.evaluate(()=>keys),['keydown:r','keyup:r']);
+  await page.evaluate(()=>updater.dispose());assert.deepEqual(unexpected,[]);
+ }finally{await browser.close();}
+});

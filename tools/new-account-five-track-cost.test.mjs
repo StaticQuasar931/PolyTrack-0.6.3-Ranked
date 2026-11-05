@@ -351,7 +351,7 @@ test('unknown quota state: first failure counted unknown, local five-track PBs s
   const before=f.totals();await f.phase('bounded-warm-retries-during-cooldown',async()=>{for(let i=0;i<10;i++){await f.profileGet();await f.reconcile();await f.c.flush();}});
   assert.deepEqual(f.totals(),before);
   f.advance(16*60000);await f.phase('quota-recovery-local-PB-reconcile',f.reconcile);
-  assert.equal(f.data.get(E.profiles+'/'+account).pbCount,9,'characterize local five-track floor plus four later recovered PB increments');assert.equal(f.localRows.length,5);
+    assert.equal(f.data.get(E.profiles+'/'+account).pbCount,5,'each recovered first PB counts once, not again in the bootstrap floor');assert.equal(f.localRows.length,5);
   await f.phase('quota-recovery-event-outbox',()=>f.c.flush());assert.equal(f.queue().length,0);
   await f.phase('quota-recovery-event-intake',f.drainInbox);
   for(const p of f.periods)assert.equal(f.data.get(E.queues+'/'+p.id).admitted,1);

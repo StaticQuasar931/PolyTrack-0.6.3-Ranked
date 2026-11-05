@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {installUsageAnalytics} from './usage-analytics.mjs';
-import {createLocalInsights} from './local-insights.mjs';
+import {createLocalInsights,INSIGHTS_KEY} from './local-insights.mjs';
 
 function fixture({allowed=true,deployment='github',initial=true}={}){
   let at=1000000,interval,delay,cleared=0;
@@ -73,4 +73,72 @@ test('observer snapshot is detached and does not expose track history',()=>{
   const f=fixture();f.insights.play('a'.repeat(64));const before=f.insights.usageSnapshot();
   assert.deepEqual(Object.keys(before).sort(),['buckets','startedAt','version']);before.buckets.firestore.knownReadEstimate=900;
   assert.equal(f.insights.usageSnapshot().buckets.firestore.knownReadEstimate,20);
+});
+
+test('large historical counters retain small new deltas while individual reports stay bounded',()=>{
+ const f=fixture();let usage=f.insights.usageSnapshot();usage.buckets.firestore.knownReadEstimate=1e9+50;
+ installUsageAnalytics({...f.options,readUsage:()=>usage});
+ usage.buckets.firestore.knownReadEstimate+=3;f.advance(60000);f.flush();
+ assert.equal(f.events.length,1);assert.equal(f.events[0][2].fs_reads_est,3);
+ usage.buckets.firestore.knownReadEstimate+=2e9;f.advance(60000);f.flush();
+ assert.equal(f.events[1][2].fs_reads_est,1e9);
+ usage.buckets.firestore.knownReadEstimate++;f.advance(60000);f.flush();
+ assert.equal(f.events[2][2].fs_reads_est,1,'capped intervals are not replayed as a backlog');
+});
+
+test('deployment labels cannot inject data after opt-in and opt-out stops further events',()=>{
+ const f=fixture();installUsageAnalytics(f.options);
+ f.window.__polytrackAnalyticsDeployment='private-name/path?token=secret';
+ f.insights.observeUsage({source:'cache'});f.advance(60000);f.flush();
+ assert.equal(f.events[0]?.[2].deployment_group,'github');
+ assert.ok(!JSON.stringify(f.events).includes('secret'));
+ f.window.__polytrackAnalyticsAllowed=false;f.insights.observeUsage({source:'cache'});f.advance(60000);f.end();
+ assert.equal(f.events.length,1);
+});
+
+test('empty, fresh, restored session storage and reset counters are not conflated',()=>{
+ const f=fixture({initial:false});const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+ let insights=createLocalInsights({storage,now:f.options.now});
+ installUsageAnalytics({...f.options,readUsage:()=>insights.usageSnapshot()});
+ f.advance(60000);f.flush();assert.equal(f.events.length,0);
+ insights.observeUsage({source:'cache'});insights.flush(true);f.flush();assert.equal(f.events[0][2].cache_ops,1);
+ f.advance(60000);insights=createLocalInsights({storage,now:f.options.now});f.flush();assert.equal(f.events.length,1,'restored history is not resent');
+ insights.observeUsage({source:'cache'});insights.flush(true);f.flush();assert.equal(f.events[1][2].cache_ops,1);
+ values.delete(INSIGHTS_KEY);f.advance(60000);insights=createLocalInsights({storage,now:f.options.now});insights.observeUsage({source:'worker'});f.end();
+ assert.equal(f.events.length,3);assert.equal(f.events[2][2].worker_ops,1,'a genuinely fresh observer includes its first operation');
+});
+
+test('historical late snapshots and backwards counters are baselined without resending them',()=>{
+ const f=fixture();let usage=null;installUsageAnalytics({...f.options,readUsage:()=>usage});
+ usage=f.insights.usageSnapshot();usage.startedAt-=1000;f.advance(60000);f.flush();assert.equal(f.events.length,0);
+ usage.buckets.firestore.knownReadEstimate++;f.advance(60000);f.flush();assert.equal(f.events[0][2].fs_reads_est,1);
+ usage.buckets.firestore.knownReadEstimate=2;f.advance(60000);f.flush();assert.equal(f.events.length,1);
+ usage.buckets.firestore.knownReadEstimate++;f.advance(60000);f.flush();assert.equal(f.events[1][2].fs_reads_est,1);
+});
+
+test('clock failures and unavailable timers remain optional without leaked listeners',()=>{
+ const f=fixture();assert.doesNotThrow(()=>installUsageAnalytics({...f.options,now:()=>{throw Error('clock unavailable');}}));
+ assert.equal(f.listeners,0);
+ const g=fixture();assert.doesNotThrow(()=>installUsageAnalytics({...g.options,setInterval:()=>{throw Error('timer unavailable');}}));assert.equal(g.listeners,0);
+ let broken=false;const h=fixture();installUsageAnalytics({...h.options,now:()=>{if(broken)throw Error('clock failed');return h.options.now();}});
+ broken=true;assert.doesNotThrow(h.end);assert.equal(h.events.length,0);
+});
+
+test('future and malformed snapshots never emit counters, empty intervals stay silent',()=>{
+ const f=fixture({initial:false});let usage=null;installUsageAnalytics({...f.options,readUsage:()=>usage});
+ for(const value of [null,{}, {version:2}, {version:1,startedAt:0,buckets:{}}]){usage=value;f.advance(60000);f.flush();}
+ f.insights.observeUsage({source:'cache'});usage=f.insights.usageSnapshot();usage.startedAt=f.options.now()+1e6;
+ f.advance(60000);f.flush();f.advance(60000);usage.buckets.cache.operations++;f.flush();
+ assert.equal(f.events.length,0);
+});
+
+test('disposing and reinstalling cannot bypass the per-page report cap or minimum interval',()=>{
+ const f=fixture();let dispose=installUsageAnalytics(f.options);
+ for(let i=0;i<128;i++){f.insights.observeUsage({source:'cache'});f.advance(60000);f.flush();}
+ dispose();dispose=installUsageAnalytics(f.options);
+ f.insights.observeUsage({source:'cache'});f.advance(60000);f.flush();assert.equal(f.events.length,128);dispose();
+ const g=fixture();let stop=installUsageAnalytics(g.options);
+ g.insights.observeUsage({source:'worker'});g.advance(60000);g.flush();stop();stop=installUsageAnalytics(g.options);
+ g.insights.observeUsage({source:'worker'});g.advance(1);g.end();assert.equal(g.events.length,1);
+ g.advance(60000);g.flush();assert.equal(g.events.length,2);stop();
 });

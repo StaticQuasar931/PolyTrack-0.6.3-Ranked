@@ -228,3 +228,16 @@ test('entry hover dates use recorded local commit or preparation time, never a f
     assert.equal(renderReleaseHistory({release:release(),history:data,now:base}),'','undated historical input is not assigned the current release date');
   }
 });
+
+test('archive clock warnings distinguish prepared dates and do not look like relative ages',()=>{
+ for(const prepared of [false,true]){
+  const data=history(),entry=data.entries[0];
+  if(prepared){entry.preparedAt=entry.committedAt;delete entry.committedAt;}
+  const expected='Device clock is before '+(prepared?'preparation':'commit')+' time';
+  const html=renderReleaseHistory({release:release(),history:data,now:base-1});
+  const document=new Document(),dom=createReleaseHistory(document,{release:release(),history:data,now:base-1});
+  assert.ok(html.includes(expected));assert.ok(dom.querySelector('time').textContent.startsWith(expected));
+  assert.doesNotMatch(html,/(?:Prepared|Committed) Device clock/);
+ }
+ assert.equal(releaseHistoryTime(iso,NaN).age,'Commit time unavailable');
+});

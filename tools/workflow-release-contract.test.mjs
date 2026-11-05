@@ -219,6 +219,7 @@ test('queue and publication regression gates run offline before verifier preflig
  const guard=step(verifier,'Test queue and publication contracts before quota access');
  assert.match(guard,/node --test --test-concurrency=2 tools\/verifier\/queue.test.mjs tools\/verifier\/publication-queue.test.mjs/);
  assert.match(guard,/tools\/verifier\/scheduled-drain.test.mjs tools\/verifier\/proof-cache-file.test.mjs/);
+ for(const file of ['tools/cached-recording-verification.test.mjs','tools/client-pb-profile-followup.test.cjs','tools/offline-pb-analytics.test.cjs','workers/ranked/test/event-publication-checkpoints.test.js'])assert.ok(guard.includes(file));
  assert.doesNotMatch(guard,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|if:|secrets\./);
  assert.ok(verifier.indexOf(guard)<verifier.indexOf(step(verifier,'Check for due verification work')));
 });
@@ -226,7 +227,7 @@ test('queue and publication regression gates run offline before verifier preflig
 test('source pushes check the real queue gate before CDN publication, without adding quota work to recovery',()=>{
  const gate=step(cdn,'Test verification queue contracts on source updates');
  assert.match(gate,/if: github.event_name == 'push'/);
- for(const file of ['tools/verifier/queue.test.mjs','tools/verifier/publication-queue.test.mjs','tools/verifier/scheduled-drain.test.mjs','tools/verifier/proof-cache-file.test.mjs','workers/ranked/test/event-preflight-cost.test.js'])assert.ok(gate.includes(file));
+ for(const file of ['tools/verifier/queue.test.mjs','tools/verifier/publication-queue.test.mjs','tools/verifier/scheduled-drain.test.mjs','tools/verifier/proof-cache-file.test.mjs','workers/ranked/test/event-preflight-cost.test.js','tools/cached-recording-verification.test.mjs','tools/client-pb-profile-followup.test.cjs','tools/offline-pb-analytics.test.cjs','workers/ranked/test/event-publication-checkpoints.test.js'])assert.ok(gate.includes(file));
  assert.doesNotMatch(gate,/FIREBASE_VERIFIER_SERVICE_ACCOUNT|secrets\./);
  assert.ok(cdn.indexOf('name: Test verification queue contracts')<cdn.indexOf('name: Validate immutable assets'));
 });

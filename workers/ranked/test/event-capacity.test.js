@@ -190,7 +190,7 @@ test('PB racing immutable page staging cannot publish obsolete combined ranks or
    }
    return result;
  };
- const result=await publishEventCapacity(f.runtime);assert.equal(raced,true);assert.equal(result.reason,'permanent_source_changed');
+ const result=await publishEventCapacity(f.runtime,{inlinePages:false});assert.equal(raced,true);assert.equal(result.reason,'permanent_source_changed');
  assert.deepEqual(f.data.get(C.public+'/totals_full'),prior);assert.equal(f.data.get(C.public+'/totals').publicationPending,true);
  const stagedGeneration=eventDecode({mapValue:{fields:staged[0].update.fields}}).generation;
  await assert.rejects(()=>f.service.publicPage('event_totals','main',stagedGeneration,0));
@@ -429,7 +429,7 @@ function readMeter(f) {
    writes:()=>(audit.writeEstimate||0)+(audit.deleteEstimate||0)+f.counts.slice(start).reduce((sum,value)=>sum+value.writes,0)};
 }
 
-test('24h thrown profile lookup failure backs off before repeating a successful source scan',async()=>{
+test('24h profile failure reuses saved rows until snapshot expiry, then restarts under backoff',async()=>{
  const f=fixture(),start=Date.UTC(2026,9,20);
  await f.service.createPeriod(period);
  const old={entries:[{accountId:'previous',name:'Published racer'}],revision:1,publicationPending:true};
@@ -444,15 +444,15 @@ test('24h thrown profile lookup failure backs off before repeating a successful 
  const meter=readMeter(f);
  for(let minute=0;minute<1440;minute++)if([2,4].includes(minute%5)){
    f.time(start+minute*60000);
-   try{assert.equal((await publishEventCapacity({...f.runtime})).reason,'publication_backoff');}
+   try{assert.ok(['publication_backoff','snapshot_expired'].includes((await publishEventCapacity({...f.runtime})).reason));}
    catch(caught){assert.equal(caught,error,'failed attempts retain the original error');}
  }
- assert.equal(attempts,50,'durable exponential backoff bounds failed attempts across fresh runtimes');
- assert.equal(meter.audit.collections[C.pbs],attempts*200);
- assert.equal(meter.total(),11352,'includes job/root/coordinator and transaction reads, excludes failed requests');
+ assert.equal(attempts,34,'retry and snapshot-expiry deferrals are independently bounded');
+ assert.equal(meter.audit.collections[C.pbs],3216,'16 snapshots of 200 rows plus their empty terminal queries');
+ assert.equal(meter.total(),4666,'successful fixture reads only; failed profile requests have unknown billing');
  assert.deepEqual(f.data.get(C.public+'/'+period.id),old,'failure never replaces the last published board');
  assert.deepEqual(f.data.get(C.public+'/totals').pendingPeriodIds,[period.id]);
- console.log('EVENT_THROW_COST 24h: attempts='+attempts+' sourceReads='+meter.audit.collections[C.pbs]+' totalReads='+meter.total());
+ console.log('EVENT_THROW_COST 24h: attempts='+attempts+' sourceReads='+meter.audit.collections[C.pbs]+' totalReads='+meter.total()+' writes='+meter.writes());
  f.runtime.request=request;advanceRetryClock(f);
  assert.equal((await publishEventCapacity({...f.runtime})).published,true,'due retry recovers without discarding pending work');
  assert.equal(f.data.get(C.cursors+'/public_capacity').retries,undefined);
@@ -613,8 +613,8 @@ test('100 unchanged-RP PB cycles meter submission, verification and event public
    assert.equal((await publishEventCapacity(f.runtime)).published,true);
  }
  assert.equal(meter.audit.collections[C.totals]||0,0);
- assert.equal(meter.total(),4700,'reservation plus clearing costs 199 extra reads across 100 cycles');
- assert.equal(meter.writes(),2800,'reservation plus clearing costs 199 extra writes across 100 cycles');
+ assert.equal(meter.total(),4700,'small atomic publication preserves the 4700-read baseline');
+ assert.equal(meter.writes(),2800,'small atomic publication preserves the 2800-write baseline');
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
  console.log('EVENT_COST 100 unchanged-RP active cycles: reads='+meter.total()+' writes='+meter.writes()+' finite total scans=0');
 });
@@ -808,7 +808,7 @@ async function coalescingFixture(){
  assert.equal((await advanceEventPublication(f.runtime,period.id)).published,true);
  return f;
 }
-const coalescedPeriod=f=>publishEventCapacity(f.runtime,{coalescePeriods:true});
+const coalescedPeriod=f=>publishEventCapacity(f.runtime,{coalescePeriods:true,inlinePages:true});
 test('period display coalescing preserves accepted PB/replay and dirty work without scanning rows',async()=>{
  const f=await coalescingFixture(),builtAt=f.data.get(C.public+'/'+period.id).builtAt;
  await improveEvent(f);const board=structuredClone(f.data.get(C.public+'/'+period.id));
@@ -893,7 +893,7 @@ for(const n of [29,200,1136])test('ten-acceptance period burst scans once after 
    f.time(4000+i*2000);const board=f.data.get(C.public+'/'+period.id);board.revision++;board.publicationPending=true;board.sourceComplete=false;
    const id=period.id+'_00000';f.data.get(C.pbs+'/'+id).timeMs=9990-i;
    f.data.get(C.public+'/totals').pendingPeriodIds=[period.id];
-   let result;for(let j=0;j<6;j++){result=await publishEventCapacity(f.runtime,{coalescePeriods:coalesce});if(result.published||result.deferred)break;}
+   let result;for(let j=0;j<6;j++){result=await publishEventCapacity(f.runtime,{coalescePeriods:coalesce,inlinePages:true});if(result.published||result.deferred)break;}
    assert.equal(coalesce&&n>=200?result.deferred:result.published,true);
   }
   if(coalesce&&n>=200){f.time(2000+EVENT_PERIOD_COALESCE_MS);let result;for(let j=0;j<6;j++){result=await coalescedPeriod(f);if(result.published)break;}assert.equal(result.published,true);}

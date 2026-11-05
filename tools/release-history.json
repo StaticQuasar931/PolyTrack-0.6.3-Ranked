@@ -1,15 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 279,
+    "number": 281,
     "version": "0.6.3",
-    "revision": 239,
+    "revision": 240,
     "notes": [
-      "Clearer update buttons and release history with local dates.",
-      "Smoother main-menu entrance and more compact Extra Tracks picks."
+      "More reliable replay selection and local PB recovery.",
+      "Fixed PB counting after offline play and update-menu controls.",
+      "Leaderboard publishing resumes safely after interruptions."
     ]
   },
   "entries": [
+    {
+      "number": 279,
+      "title": "Polish updates and featured tracks with safer usage diagnostics",
+      "commit": "7ee3873a6e79fe896e710949ec105a079bdc58ca",
+      "committedAt": "2026-11-04T23:44:31.000Z",
+      "notes": [
+        "Clearer update buttons and release history with local dates.",
+        "Smoother main-menu entrance and more compact Extra Tracks picks."
+      ]
+    },
     {
       "number": 278,
       "title": "Reduce redundant cloud work and guard overnight snapshot capture",
@@ -207,16 +218,6 @@
       "notes": [
         "Clearer phone leaderboards with compact status badges and controls.",
         "Better weekly artwork, landscape event cards and track tabs."
-      ]
-    },
-    {
-      "number": 249,
-      "title": "Responsive Polish",
-      "commit": "abee9f14ab7bdd35a2e911399896320f4c5ec560",
-      "committedAt": "2026-10-31T00:53:43.000Z",
-      "notes": [
-        "Better phone-landscape rankings and Settings spacing.",
-        "Settings controls stay clear of notches and home indicators."
       ]
     }
   ],

@@ -25,3 +25,22 @@ test('finish time controls admission, including exact start and exclusive end',(
  assert.equal(matchingEventRuns(run,[period],'c'.repeat(64),10).length,0);
  assert.equal(matchingEventRuns({...run,raceId:null},[period],accountId,10).length,0);
 });
+
+test('release280: malformed or disabled periods cannot open a session',()=>{
+ for(const change of [{startsAt:undefined},{endsAt:undefined},{startsAt:NaN},{endsAt:Infinity},{enabled:false},{archived:true},{kind:'permanent'}]){
+  const s=createEventSession({now:()=>10});assert.throws(()=>s.enter({...period,...change},accountId),/not open/);
+ }
+});
+
+test('release280: missing or mutable race identifiers cannot bind a car',()=>{
+ const s=createEventSession({now:()=>10});s.enter(period,accountId);
+ for(const raceId of [undefined,null,'',{},[]])assert.equal(s.bind({...context,raceId}),false);
+ assert.equal(s.finish({accountId,trackId,timeMs:10}),null);
+});
+
+test('release280: rebinding an existing car at capacity does not evict another car',()=>{
+ const s=createEventSession({now:()=>10});s.enter(period,accountId);
+ for(let i=0;i<128;i++)assert.equal(s.bind({...context,raceId:'car'+i}),true);
+ assert.equal(s.bind({...context,raceId:'car127'}),true);
+ assert.ok(s.finish({...context,raceId:'car0',timeMs:10}));
+});

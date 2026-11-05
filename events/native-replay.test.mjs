@@ -41,3 +41,33 @@ test('published waiting replay binds run, period, account, exact time and conten
  for(const change of [{runId:'d'.repeat(64)},{replayHash:'0'.repeat(64)},{accountId:'d'.repeat(64)},{periodId:'another'}])
   await assert.rejects(preparePublishedEventGhost({...options,row:{...row,...change}}));
 });
+
+async function publishedFixture(){
+ const {preparePublishedEventGhost}=await import('./public-replay.mjs');
+ const {createHash}=await import('node:crypto');const f=fixture();
+ const row={...f.row,runId:'a'.repeat(64),replayHash:createHash('sha256').update(f.row.replay).digest('hex')};
+ return {prepare:preparePublishedEventGhost,options:{require:f.require,row,
+  period:{id:f.session.periodId,trackId:f.session.trackId},
+  entry:{accountId:row.accountId,timeMs:row.timeMs,runId:row.runId,replayHash:row.replayHash,name:'Original'},viewer:'c'.repeat(64)}};
+}
+
+test('release280: event playback rejects time-only snapshot binding',async()=>{
+ const {prepare,options}=await publishedFixture();
+ delete options.entry.runId;delete options.entry.replayHash;
+ await assert.rejects(prepare(options),/binding|changed/i);
+});
+
+test('release280: event playback snapshots replay and metadata before hashing',async()=>{
+ const {prepare,options}=await publishedFixture();
+ const work=prepare(options);
+ options.row.frames=options.row.timeMs=options.entry.timeMs=21000;
+ options.entry.name='Changed';
+ const ghost=await work;
+ assert.equal(ghost.time.numberOfFrames,20000);assert.equal(ghost.nickname,'Original');
+});
+
+test('release280: rejected event replay status cannot authorize playback',async()=>{
+ const {prepare,options}=await publishedFixture();
+ for(const key of ['row','entry'])for(const verificationStatus of ['rejected','mismatch','deleted','unknown'])
+  await assert.rejects(prepare({...options,[key]:{...options[key],verificationStatus}}),/eligible/);
+});

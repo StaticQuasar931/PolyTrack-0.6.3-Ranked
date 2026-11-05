@@ -18,7 +18,7 @@ const old={entries:[{accountId:'old',name:'Old',rp:1,events:1}],builtAt:start-86
 // page generator and final transaction. No credentials or network are involved.
 function fixture() {
   const data=new Map(),audit=createFirestoreAudit(),calls=[];
-  let now=start,nonce=0,transaction=null,staged=false,fail=true,attempts=0,transactionsAfterFailure=0;
+  let now=start,nonce=0,transaction=null,begins=0,fail=true,attempts=0,transactionsAfterFailure=0;
   let stopped=false,beforeBegin=null;
   data.set(C.public+'/totals',{revision:1,publicationPending:true});
   data.set(C.public+'/totals_full',structuredClone(old));
@@ -39,7 +39,7 @@ function fixture() {
     let result;
     if(path===':beginTransaction') {
       if(beforeBegin){const hook=beforeBegin;beforeBegin=null;hook(data);}
-      if(staged&&fail){attempts++;staged=false;stopped=true;throw Error('MOCK_PRETRANSPORT_BUDGET_EXHAUSTED');}
+      if(++begins===2&&fail){attempts++;stopped=true;throw Error('MOCK_PRETRANSPORT_BUDGET_EXHAUSTED');}
       assert.equal(transaction,null);transaction='tx-'+(++nonce);result={transaction};
     } else if(path===':rollback') {assert.equal(body.transaction,transaction);transaction=null;result={};}
     else if(path===':batchGet') result=body.documents.map(name=>{
@@ -53,7 +53,6 @@ function fixture() {
         else {
           const value=eventDecode({mapValue:{fields:w.update.fields}});
           data.set(key,w.updateMask?{...data.get(key),...value}:value);
-          if(key.startsWith(PUBLIC_PAGE_COLLECTION+'/'))staged=true;
         }
       }
       if(body.transaction)transaction=null;
@@ -68,7 +67,7 @@ function fixture() {
   };
   const runtime=eventRuntime(request,{projectId:'test-project',now:()=>now});
   return {data,audit,calls,runtime,attempts:()=>attempts,transactionsAfterFailure:()=>transactionsAfterFailure,
-    fail:value=>{fail=value;},time:value=>{now=value;stopped=false;staged=false;},
+    fail:value=>{fail=value;},time:value=>{now=value;stopped=false;begins=0;},
     beforeBegin:hook=>{beforeBegin=hook;}};
 }
 
@@ -88,10 +87,10 @@ for(const mode of ['continuous','coordinated'])test('completed-part staging fail
     deletes:f.audit.deleteEstimate,requests:f.calls.length};
   console.log('EVENT_REUSE_COST '+mode+' '+JSON.stringify(measured));
   assert.deepEqual(measured,mode==='continuous'
-    ? {attempts:50,reads:3852,writes:5100,deletes:0,requests:1752}
-    : {attempts:10,reads:684,writes:1020,deletes:0,requests:264});
+    ? {attempts:50,reads:3856,writes:155,deletes:0,requests:1560}
+    : {attempts:10,reads:688,writes:115,deletes:0,requests:232});
   assert.equal(f.audit.collections[parts],failed*50);
-  assert.equal(f.audit.writeCollections[PUBLIC_PAGE_COLLECTION].writes,failed*101);
+  assert.equal(f.audit.writeCollections[PUBLIC_PAGE_COLLECTION].writes,101);
   f.fail(false);f.time(start+86400000+1800000);
   const result=await publishEventCapacity(f.runtime);
   assert.equal(result.published,true);assert.equal(result.totalEntries,10001);
@@ -117,7 +116,7 @@ test('healthy completed-part reuse has bounded coordinator overhead and no finit
   assert.equal((await publishEventCapacity(f.runtime)).published,true);
   assert.deepEqual({reads:f.audit.documentReadEstimate,writes:f.audit.writeEstimate,
     deletes:f.audit.deleteEstimate,requests:f.calls.length},
-    {reads:62,writes:107,deletes:0,requests:23});
+    {reads:66,writes:111,deletes:0,requests:27});
   assert.equal(f.audit.collections[C.totals]||0,0);
   assert.equal(f.data.get(cursor).retries,undefined);
 });

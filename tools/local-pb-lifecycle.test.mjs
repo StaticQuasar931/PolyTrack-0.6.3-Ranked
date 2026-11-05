@@ -164,3 +164,66 @@ test('explicit unconfirmed evidence never inherits an uploaded label from cloud 
   assert.match(render({localPending: true, cloudConfirmed: false}), /Local PB/);
   assert.match(render({localPending: true, cloudConfirmed: true}), /Submitted PB/);
 });
+
+test('release280: own playback snapshots binding before asynchronous hashing', async () => {
+  const pb = row(), input = payload(pb), original = {...input};
+  const pending = prepareOwnLocalPbPlayback(pb, input, options(pb));
+  pb.frames = input.frames = 999;
+  pb.carStyle = input.carStyle = 'changed';
+  const prepared = await pending;
+  assert.equal(prepared.frames, original.frames);
+  assert.equal(prepared.carStyle, original.carStyle);
+  assert.equal(prepared.replayHash, digest(prepared.recording));
+});
+
+test('release280: conflicting frame aliases cannot authorize own playback', async () => {
+  const pb = row({raceTimeFrames: 101});
+  await assert.rejects(prepareOwnLocalPbPlayback(pb, payload(pb), options(pb)), /binding/);
+});
+
+test('release280: durable readback must retain frames, style, recording ID and PB dates', () => {
+  for (const change of [{frames: 101}, {carStyle: 'changed'}, {uploadId: 8}, {pbAt: 99}]) {
+    const pb = row({pbAt: 10}); let disk = [];
+    const result = persistLocalPb(pb, {readRows: () => disk,
+      writeRows: rows => { disk = [{...rows[0], ...change}]; return true; }});
+    assert.equal(result.localSaved, false, JSON.stringify(change));
+    assert.equal(result.reason, 'storage-readback-failed');
+  }
+});
+
+test('release280: same hash and time with different playback metadata is not an idempotent save', () => {
+  const pb = row(), s = store([pb]);
+  for (const change of [{frames: 101}, {carStyle: 'changed'}, {uploadId: 8}]) {
+    assert.equal(persistLocalPb({...pb, ...change}, s).localSaved, false);
+  }
+  assert.equal(s.writes(), 0);
+});
+
+test('release280: synchronous storage callbacks cannot change the acknowledged PB', () => {
+  const pb = row(); let disk = [];
+  const result = persistLocalPb(pb, {readRows: () => disk, writeRows: rows => {
+    disk = JSON.parse(JSON.stringify(rows)); pb.frames = 999; return true;
+  }});
+  assert.equal(result.localSaved, true);
+  assert.equal(result.row.frames, 100);
+});
+
+test('release280: cyclic, overdeep and excessive JSON metadata cannot acknowledge a save', () => {
+  const cyclic = {}; cyclic.next = cyclic;
+  const deep = {}; let cursor = deep;
+  for (let i = 0; i < 70; i++) cursor = cursor.next = {};
+  for (const metadata of [cyclic, deep, Array.from({length: 10001}, () => 1)]) {
+    assert.equal(persistLocalPb(row({metadata}), store()).localSaved, false);
+  }
+  const pb = row({metadata: {next: {value: 1}}}); let disk = [];
+  assert.equal(persistLocalPb(pb, {readRows: () => disk, writeRows: rows => {
+    disk = [{...rows[0], metadata: cyclic}]; return true;
+  }}).localSaved, false);
+});
+
+test('release280: reordered JSON object keys retain valid metadata', () => {
+  let disk = [];
+  assert.equal(persistLocalPb(row({metadata: {a: 1, b: [2]}}), {readRows: () => disk, writeRows: rows => {
+    disk = [{...rows[0], metadata: {b: [2], a: 1}}]; return true;
+  }}).localSaved, true);
+});

@@ -71,3 +71,26 @@ test('snapshot reader exposes pending viewing only through opt-in exact public b
  assert.equal(value.verifiedState,0);assert.equal(value.playbackPending,true);assert.equal(value.eventRpEligible,false);
  assert.equal(await read.recordingPlayback({...entry,replayHash:'f'.repeat(64)},{allowPending:true}),null);
 });
+
+test('release280: public playback retains the exact pre-hash payload and selected binding',async()=>{
+ const selected={...entry},input={...row,carStyle:'original'};
+ const work=preparePublicRecordingPlayback(input,selected,{allowPending:true});
+ input.frames=selected.frames=999;
+ input.carStyle='changed';selected.accountId='c'.repeat(64);selected.uploadId=77;
+ const value=await work;
+ assert.equal(value.frames,row.frames);assert.equal(value.accountId,entry.accountId);
+ assert.equal(value.uploadId,entry.uploadId);assert.equal(value.carStyle,'original');
+});
+
+test('release280: payload frame and time aliases must not contradict the selected row',async()=>{
+ for(const change of [{raceTimeFrames:5001},{timeMs:5001}])
+  await assert.rejects(preparePublicRecordingPlayback({...row,...change},entry,{allowPending:true}),/binding/);
+});
+
+test('release280: time equality binds time fields, not a frame-to-millisecond conversion',async()=>{
+ const selected={...entry,timeMs:1234,frames:100,raceTimeFrames:100};
+ for(const timeMs of [undefined,1234]){
+  const input={...row,frames:100,raceTimeFrames:100,timeMs};
+  assert.equal((await preparePublicRecordingPlayback(input,selected,{allowPending:true})).frames,100);
+ }
+});

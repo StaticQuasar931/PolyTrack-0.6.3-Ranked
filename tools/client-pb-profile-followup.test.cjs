@@ -105,3 +105,30 @@ test('genuine PB improvement retains both reads, both writes and profile counter
   const profile=h.writes.find(row=>row.ref.kind==='profiles').value;
   assert.equal(profile.pbCount,10);assert.equal(profile.accountCreatedAt,100);assert.equal(profile.totalPlaytimeMs,5000);
 });
+
+for(const scenario of [
+  {name:'pending local rows are not historical uploads',pending:5,expected:1},
+  {name:'confirmed history survives a missing legacy counter',confirmed:3,expected:4},
+  {name:'foreign account receipts do not seed this profile',foreign:3,expected:1},
+  {name:'malformed receipts do not seed this profile',malformed:true,expected:1},
+  {name:'snapshot history is retained before counting the new PB',snapshot:12,expected:13},
+  {name:'canonical history survives a missing profile counter',canonical:18,expected:19},
+  {name:'legacy bootstrap respects the deployed 79 ceiling',snapshot:100,expected:79},
+  {name:'new profiles retain the deployed create value',missing:true,confirmed:3,expected:1},
+  {name:'existing counters do not reset',counter:42,expected:43},
+  {name:'counter ceiling is preserved',counter:1000000,expected:1000000}
+])test('PB bootstrap: '+scenario.name,async()=>{
+  const profile=exact();delete profile.pbCount;
+  if(scenario.counter!==undefined)profile.pbCount=scenario.counter;
+  const h=harness({profiles:[scenario.missing?null:profile],races:[scenario.canonical?fixture.makePb({timeMs:2000,pbCount:scenario.canonical}):null]});
+  const c=h.context,confirmed={};
+  for(let i=0;i<(scenario.confirmed||scenario.foreign||0);i++)confirmed['track'+i]=JSON.stringify(['track'+i,1000,'a'.repeat(64)]);
+  if(scenario.malformed)Object.assign(confirmed,{one:'not-json',two:JSON.stringify(['two',0,'a'.repeat(64)]),three:JSON.stringify(['other',1000,'a'.repeat(64)]),four:JSON.stringify(['four',1000,'bad'])});
+  h.storage.set('state',{[scenario.foreign?'foreign':account]:{confirmed}});
+  c.readLocalRaceRows=()=>Array.from({length:scenario.pending||0},(_,i)=>({accountId:account,trackId:'pending'+i,timeMs:1000}));
+  c.readOverallSnapshotCache=()=>({entries:[{userId:account,raceCount:scenario.snapshot||0}]});
+  const result=await h.run();assert.equal(result.saved,true);
+  const written=h.writes.find(row=>row.ref.kind==='profiles').value;
+  assert.equal(written.pbCount,scenario.expected);
+  assert.equal(h.cost.raceReads,1);assert.equal(h.cost.profileReads,1);assert.equal(h.cost.writes,2);
+});

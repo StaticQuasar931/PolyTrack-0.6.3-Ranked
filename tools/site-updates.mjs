@@ -464,14 +464,22 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     const Observer = document.defaultView?.MutationObserver;
     if (!blockedObserver && Observer) {
       blockedObserver = new Observer((records = []) => {
+        if (disposed || !blockedUpdate || blockedTimer !== null) return;
         // HUD clocks and leaderboard row churn are not menu transitions.
         const surfaces='#ui,.menu-ui,.menu,.main-buttons-container,#overallLeaderboardPanel,.track-selection-ui,.track-info-ui,.settings-menu-ui,.editor-ui,.pause-screen-ui,.sq-extra-overlay,.sq-events-dialog,dialog';
         if(records.length&&!records.some(record=>record.target===document.body||record.target?.matches?.(surfaces)||
           record.type==='childList'&&[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches?.(surfaces)||node.querySelector?.(surfaces)))))return;
-        if (blockedTimer === null) blockedTimer = schedule(() => { blockedTimer = null; resume(); }, 100);
+        blockedTimer = schedule(() => { blockedTimer = null; resume(); }, 100);
       });
       blockedObserver.observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['class','style','hidden','open']});
     }
+  };
+  const reloadMessage = result => result === 'blocked' ? 'To update, return to main menu' : 'Update could not reload. Try again.';
+  const failedReloadFeedback = () => {
+    blockedUpdate = false; stopBlockedWatch();
+    button.textContent = reloadMessage('failed');
+    button.title = 'Your current session stays open. Try updating again when you are ready.';
+    button.setAttribute('aria-label', button.textContent);
   };
   const refreshBlockedFeedback = () => {
     if (!blockedUpdate || !button?.isConnected) return;
@@ -553,11 +561,13 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     try {
       // The updater's own modal is not an unsaved game. All other parent guards remain authoritative.
       ownDialog?.close();
-      if (!isVisible(document) || !isIdle(document) || !canReload()) { event?.preventDefault(); restore(); return false; }
+      if (!isVisible(document) || !isIdle(document) || !canReload()) { event?.preventDefault(); restore(); return 'blocked'; }
+      const location = document.defaultView?.location;
+      if (typeof location?.reload !== 'function') throw Error('Reload unavailable');
       if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
-      document.defaultView?.location?.reload();
-      return true;
-    } catch { event?.preventDefault(); restore(); return false; }
+      location.reload();
+      return 'reloading';
+    } catch { event?.preventDefault(); restore(); return 'failed'; }
   };
   const applyCompatibility = (data) => {
     // The optional manifest field is dormant when absent. No remote navigation URL is accepted.
@@ -593,13 +603,20 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       description.textContent = reloadHere
         ? 'This version is no longer supported for online play. Reload to update when you are at the main menu, or stay here offline. Your saved runs stay on this device.'
         : 'This version is no longer supported for online play. Open the updated game in a new tab, or stay here offline. Your current session will not reload.';
+      const feedback = document.createElement('span');
+      feedback.setAttribute('role', 'status'); feedback.hidden = true;
+      Object.assign(feedback.style, {display: 'none', marginTop: '10px'});
+      description.append(feedback);
       themeDialog(node, title, description);
       const actions = document.createElement('div');
       Object.assign(actions.style, { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '10px' });
       const open = document.createElement(reloadHere ? 'button' : 'a');
       if (reloadHere) {
         open.type = 'button'; open.textContent = 'Reload to update';
-        open.addEventListener('click', event => reloadInPlace(event, launcherCommit, node));
+        open.addEventListener('click', event => {
+          const result = reloadInPlace(event, launcherCommit, node);
+          if (result !== 'reloading') { feedback.hidden = false; feedback.style.display = 'block'; feedback.textContent = reloadMessage(result); }
+        });
       } else {
         open.href = UPDATED_GAME_URL; open.target = '_blank'; open.rel = 'noopener noreferrer';
         open.textContent = 'Open updated game';
@@ -612,13 +629,17 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       themeControl(offline);
       offline.addEventListener('click', stayOffline);
       node.addEventListener('cancel', event => { event.preventDefault(); stayOffline(); });
-      node.addEventListener('keydown', event => {
+      const trapTab = event => {
         if (event.key !== 'Tab') return;
-        if (!event.shiftKey && document.activeElement === offline) {
+        if (!node.contains(document.activeElement) || !event.shiftKey && document.activeElement === offline) {
           event.preventDefault(); open.focus();
         } else if (event.shiftKey && document.activeElement === open) {
           event.preventDefault(); offline.focus();
         }
+      };
+      node.__trapCompatibilityTab = trapTab;
+      node.addEventListener('keydown', event => {
+        event.stopPropagation(); trapTab(event);
       });
       actions.append(open, offline);
       node.append(title, description, actions);
@@ -663,7 +684,12 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         zIndex: '2147483647', fontFamily: 'ForcedSquare, sans-serif' });
       button.addEventListener('click', event => {
         try {
-          if (reloadHere) { if (!reloadInPlace(event, launcherCommit)) blockedFeedback(); return; }
+          if (reloadHere) {
+            const result = reloadInPlace(event, launcherCommit);
+            if (result === 'blocked') blockedFeedback();
+            else if (result === 'failed') failedReloadFeedback();
+            return;
+          }
           if (!isVisible(document) || !isIdle(document) || !canReload()) { event?.preventDefault(); return; }
         } catch { event?.preventDefault(); failOpen(); }
       });
@@ -749,15 +775,29 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     catch { failOpen(); }
   };
   const onVisibilityChange = () => { if (isVisible(document)) void check(); };
+  // Match the installed notice: modal keys and their dismissal keyup must not
+  // reach the game's document-level shortcuts. Native button defaults remain.
+  const held = new Set();
+  const guardDialogKey = event => {
+    const code = event.code || event.key;
+    if (dialog?.node.open || event.type === 'keyup' && held.has(code)) event.stopImmediatePropagation();
+    if (dialog?.node.open && event.type === 'keydown') {
+      held.add(code); dialog.node.__trapCompatibilityTab?.(event);
+    }
+    if (event.type === 'keyup') held.delete(code);
+  };
   document.addEventListener('visibilitychange', onVisibilityChange);
+  for (const type of ['keydown', 'keyup']) document.defaultView?.addEventListener(type, guardDialogKey, true);
   document.defaultView?.addEventListener('focus', resume);
   document.defaultView?.addEventListener('pageshow', resume);
   const handle = Object.freeze({ check, resume, getCompatibility: () => ({ ...compatibility }), dispose() {
     if (disposed) return;
     disposed = true;
+    held.clear();
     stopBlockedWatch();
     clearOldCopyNotice();
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    for (const type of ['keydown', 'keyup']) document.defaultView?.removeEventListener(type, guardDialogKey, true);
     document.defaultView?.removeEventListener('focus', resume);
     document.defaultView?.removeEventListener('pageshow', resume);
     pendingManifest = null;

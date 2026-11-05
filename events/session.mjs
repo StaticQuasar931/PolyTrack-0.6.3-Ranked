@@ -4,14 +4,19 @@ export function createEventSession({now=Date.now}={}) {
   const races=new Map();
   return {
     enter(period,accountId){
-      if(!period?.id||!/^[a-f0-9]{64}$/.test(period.trackId)||!/^[a-f0-9]{64}$/.test(accountId)||now()<period.startsAt||now()>=period.endsAt)throw Error('Event is not open for this racer.');
+      const at=now();
+      if(!period?.id||period.enabled===false||period.archived||period.kind==='permanent'||
+        !/^[a-f0-9]{64}$/.test(period.trackId)||!/^[a-f0-9]{64}$/.test(accountId)||
+        !Number.isSafeInteger(at)||!Number.isSafeInteger(period.startsAt)||!Number.isSafeInteger(period.endsAt)||
+        at<period.startsAt||at>=period.endsAt)throw Error('Event is not open for this racer.');
       active=Object.freeze({periodId:period.id,trackId:period.trackId,accountId,endsAt:period.endsAt});races.clear();return active;
     },
     leave(){active=null;races.clear();},
     current(){return active&&now()<active.endsAt?active:null;},
     bind(context){
-      if(!active||now()>=active.endsAt||context?.trackId!==active.trackId||context?.accountId!==active.accountId)return false;
-      if(races.size>=128)races.delete(races.keys().next().value);
+      if(!active||now()>=active.endsAt||context?.trackId!==active.trackId||context?.accountId!==active.accountId||
+        typeof context.raceId!=='string'||!context.raceId.length||context.raceId.length>128)return false;
+      if(!races.has(context.raceId)&&races.size>=128)races.delete(races.keys().next().value);
       races.set(context.raceId,active);return true;
     },
     finish(run){
