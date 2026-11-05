@@ -563,10 +563,12 @@ function nativeTrackSourceDigest(record, board, bytes, authority, context, check
 /** Read-only exact normal-source adapter. Public board verdicts and raw canonical
  * client flags are separate channels: a canonical verified:false does not revoke
  * an accepted public baseline. Its original flags remain in sourceCanonicalStatus.
- * Missing/mismatched canonical bindings fail; unavailable manifest boards retain their
+ * Missing canonical files can be explicitly deferred by the native phase. Present
+ * mismatched bindings still fail; unavailable manifest boards retain their
  * existing coverage status and are not invented as empty boards.
  */
-export async function readCapturedNormalLedgerRows({directory} = {}) {
+export async function readCapturedNormalLedgerRows({directory,allowMissingCanonical=false} = {}) {
+  if(typeof allowMissingCanonical!=='boolean')throw Error('Explicit missing canonical policy required');
   const read = async relative => JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
   const manifest = await readManifest(directory), rows = [], seen = new Set();
   if (Object.keys(manifest.tracks).length > 512) throw Error('Normal ledger source board limit');
@@ -578,7 +580,9 @@ export async function readCapturedNormalLedgerRows({directory} = {}) {
     for (const entry of board.entries) {
       const accountId = entry.accountId || entry.userId;
       if (!PUBLIC_ACCOUNT_ID.test(accountId || '')) throw Error('Invalid normal ledger source account');
-      const canonical = await read(`canonical/${trackId}/${accountId}.json`);
+      let canonical;
+      try {canonical = await read(`canonical/${trackId}/${accountId}.json`);}
+      catch(error){if(allowMissingCanonical&&error.code==='ENOENT')continue;throw error;}
       const binding = ledgerBinding(canonical, 'normal'), key = ledgerKey(binding);
       const selected = ledgerBinding({...entry, accountId, trackId,
         ...(entry.frames === undefined && entry.raceTimeFrames === undefined ? {frames:binding.frames} : {})}, 'normal');

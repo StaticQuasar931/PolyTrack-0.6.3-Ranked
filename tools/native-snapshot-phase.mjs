@@ -112,7 +112,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
     bootstrapRoot=await privateRoot();ledgerRoot=path.join(bootstrapRoot,'ledger');
     ledger=writeLedger({root:ledgerRoot,entries:[],expectedManifestHash:null});
   }
-  const canonicalRows=await readCapturedNormalLedgerRows({directory});
+  const canonicalRows=await readCapturedNormalLedgerRows({directory,allowMissingCanonical:true});
   const policy=await buildPolicy({root,jobs:canonicalRows,entries:ledger.entries});
   const eventSources=new Map(),eventSourcePins=manifest.nativeEventSources||{},retainedNativeEntries={},retainedJobs=[],overlaidSourceHashes={};
   // Public-safe, Node-consumed source projections travel inside the immutable
@@ -240,7 +240,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     }
     const retainedPins=Object.entries(context.retainedNativeEntries||{}).map(([periodId,value])=>({periodId,sha256:value.expectedSourceHash}));
     if(retainedPins.length)inputs.captureSha256=sha(JSON.stringify({captured:inputs.captureSha256,retained:retainedPins.sort((a,b)=>a.periodId<b.periodId?-1:1)}));
-    const canonicalRows=await readCapturedNormalLedgerRows({directory:candidate});
+    const canonicalRows=await readCapturedNormalLedgerRows({directory:candidate,allowMissingCanonical:true});
     const original=new Map(canonicalRows.map(value=>[ledgerKey(ledgerBinding(value,'normal')),value]));
     const entries=new Map(context.ledger.entries.map(value=>[value.key,value])),accepted=new Set();
     for(const job of inputs.jobs){

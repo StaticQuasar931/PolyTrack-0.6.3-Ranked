@@ -108,6 +108,17 @@ test('inactive phase hydrates, verifies, overlays normal flags, rebuilds and pro
   assert(files.some(file=>/^verification-ledger\/shards\/[a-f0-9]{64}\.json$/.test(file)));
 });
 
+test('unavailable canonical replay defers its row through native processing and cold hydration',async t=>{
+  const f=await fixture(t),captureContext=await prepareNativeSnapshotCapture(f.options);
+  await fs.unlink(path.join(f.directory,`canonical/${track}/${account}.json`));
+  const result=await runNativeSnapshotPhase({...f.options,captureContext});
+  assert.equal(result.complete,false);assert.equal(result.counts.nativeDispatched,0);assert.equal(f.calls.length,0);
+  assert.equal(result.sourceCoverage.gaps.filter(g=>g.kind==='normal-replay-unavailable').length,1);
+  const row=(await read(f.directory,`tracks/${track}.json`)).entries[0];
+  assert.equal(row.timeMs,f.row.timeMs);assert.equal(row.runVerified,false);assert.equal(row.nativeLedgerKey,undefined);
+  const cold=await prepareNativeSnapshotCapture(f.options);assert.equal(cold.canonicalRows.length,0);
+});
+
 test('stored proofs overlay without new native work or changing server verification authority',async t=>{
   const f=await fixture(t);await runNativeSnapshotPhase(f.options);
   const pointer=await read(f.root,'verification-ledger-current.json');

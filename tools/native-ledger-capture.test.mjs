@@ -357,5 +357,16 @@ test('normal source adapter rejects changed canonical binding or conflicting exp
     canonical[changed]=changed==='replayHash'?'f'.repeat(64):canonical[changed]+1;
     await write(f.directory,file,canonical);
     await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory}),/binding|frames/);
+    await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true}),/binding|frames/);
   }
+});
+
+test('normal source adapter requires explicit missing-file deferral and never invents proof rows',async t=>{
+ const f=await fixture(t),file=`canonical/${trackId}/${f.sources[0].accountId}.json`;
+ await fs.unlink(path.join(f.directory,file));
+ await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory}),e=>e.code==='ENOENT');
+ const rows=await readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true});
+ assert.equal(rows.length,2);assert(!rows.some(row=>row.accountId===f.sources[0].accountId));
+ await fs.writeFile(path.join(f.directory,file),'{broken');
+ await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true}),SyntaxError);
 });

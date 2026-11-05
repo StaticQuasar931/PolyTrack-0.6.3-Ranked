@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 287,
+    "number": 288,
     "version": "0.6.3",
-    "revision": 246,
+    "revision": 247,
     "notes": [
-      "Snapshot update checks now cover the encrypted recovery path.",
-      "Existing saved results remain in place if an update cannot finish."
+      "Missing replay files no longer block checks of available saved runs.",
+      "Runs without replay evidence stay unverified."
     ]
   },
   "entries": [
+    {
+      "number": 287,
+      "title": "Align capture preflight contracts with encrypted recovery",
+      "commit": "92e16c1c9ea818b4e0c58f0319c40558a6167a4d",
+      "committedAt": "2026-11-05T15:14:09.000Z",
+      "notes": [
+        "Snapshot update checks now cover the encrypted recovery path.",
+        "Existing saved results remain in place if an update cannot finish."
+      ]
+    },
     {
       "number": 286,
       "title": "Preserve encrypted capture recovery with a smaller retry budget",
@@ -207,17 +217,6 @@
       "notes": [
         "Fewer repeated requests when published standings are temporarily unavailable.",
         "Missing data recovers cleanly when a new snapshot arrives."
-      ]
-    },
-    {
-      "number": 264,
-      "title": "Track Discovery and Profile Polish",
-      "commit": "2fc76753478a38840f77a6881db7cccccab88ce8",
-      "committedAt": "2026-11-02T04:52:04.000Z",
-      "notes": [
-        "Extra Tracks now has daily and weekly discovery picks plus dated Kodub weekly selections.",
-        "Route recommendations use available snapshot fields before you open individual tracks.",
-        "Clearer profile participation, flush profile controls, and a roomier event archive."
       ]
     }
   ],
