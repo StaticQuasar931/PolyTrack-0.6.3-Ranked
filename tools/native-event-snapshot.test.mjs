@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {createNativeEventBaseline, projectNativeEventSnapshot, projectNativeEventTotals, nativeEventSourceHash,
+import {createNativeEventBaseline, completeCapturedEmptyEventBoard, projectNativeEventSnapshot, projectNativeEventTotals, nativeEventSourceHash,
   projectRetainedEventVerifications, projectAssembledEventTotals, deriveCapturedNativeRollingHills} from './native-event-snapshot.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {createLedgerEntry, writeLedger, ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
@@ -41,6 +41,19 @@ function board({rows = oldRows(), waiting = [pending()], ...extra} = {}) {
   return {id: period.id, period, entries: rows, pendingPlaybacks: waiting, complete: true, totalEntries: rows.length,
     sourceComplete: true, updatedAt: 2500, racerCount: 1, ...extra};
 }
+test('captured live empty inline lane is locally complete without inventing server proof or zero entrants',()=>{
+ const source={...board({rows:[],archived:false,state:'open'}),period:{...publicEventPeriod(period),kind:'weekly'}};
+ for(const key of ['complete','sourceComplete','totalEntries'])delete source[key];
+ const result=completeCapturedEmptyEventBoard({serverBoard:source,checkedAt:3000});
+ assert.equal(result.complete,true);assert.equal(result.totalEntries,0);assert.equal(result.racerCount,1);
+ assert.equal(result.sourceCompleteness,'captured-live-empty-inline');assert.equal(source.complete,undefined);
+ for(const patch of [{archived:true},{entries:oldRows()},{sourceComplete:false},{complete:false},{publicationPending:true},
+   {pagination:{complete:true,totalEntries:0}},{totalEntries:1},{sourceTotalEntries:1},{state:'unknown'}])
+   assert.equal(completeCapturedEmptyEventBoard({serverBoard:{...source,...patch},checkedAt:3000}),null);
+ assert.equal(completeCapturedEmptyEventBoard({serverBoard:source,checkedAt:period.endsAt+period.graceMs}),null);
+ assert.equal(completeCapturedEmptyEventBoard({serverBoard:source,checkedAt:500}),null);
+});
+
 function totals({entries, ...extra} = {}) {
   return {entries: entries || [{accountId, name: 'Profile Name', rp: eventRp(period, 1200) + 77 + 100,
     finiteEventRp: eventRp(period, 1200) + 77, permanentRollingHillsRp: 100,

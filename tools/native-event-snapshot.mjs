@@ -32,6 +32,24 @@ function complete(value) {
   demand(!value.nativeEventOverlay, 'Overlaid data is not a pristine server baseline');
 }
 
+/** Local normalization of the Worker's live inline-empty published lane.
+ * Its endpoint returns every inline entry but may omit first-publication metadata.
+ * Never infer completeness for nonempty, paged, partial or archived boards.
+ * Intake racer counts include waiting runs, not just published verified entries.
+ */
+export function completeCapturedEmptyEventBoard({serverBoard,checkedAt}={}) {
+  const b=serverBoard,p=b?.period;
+  if(!b||b.archived!==false||!Array.isArray(b.entries)||b.entries.length!==0||b.nativeEventOverlay||
+    !p||!['daily','weekly','kodub'].includes(p.kind)||!integer(checkedAt)||!integer(b.updatedAt)||b.updatedAt>checkedAt||
+    !integer(p.startsAt)||!integer(p.endsAt)||p.endsAt<=p.startsAt||checkedAt<p.startsAt||
+    !integer(p.graceMs??0)||checkedAt>=p.endsAt+(p.graceMs??0)||
+    !(b.state==='open'&&checkedAt<p.endsAt||b.state==='settling'&&checkedAt>=p.endsAt)||
+    !integer(b.racerCount)||!integer(p.entrantLimit)||p.entrantLimit<1||p.entrantLimit>2000||b.racerCount>p.entrantLimit||
+    b.complete===false||b.sourceComplete===false||b.publicationPending===true||b.pagination||b.paginatedSource===true||
+    b.totalEntries!==undefined&&b.totalEntries!==0||b.sourceTotalEntries!==undefined&&b.sourceTotalEntries!==0)return null;
+  return {...clone(b),complete:true,sourceComplete:true,totalEntries:0,sourceCompleteness:'captured-live-empty-inline'};
+}
+
 function totalsDigest(serverTotals) {
   complete(serverTotals);
   projectAssembledEventTotals(serverTotals); // No fabricated source pagination.

@@ -6,7 +6,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {readLedger,writeLedger,ledgerBinding,ledgerKey,ledgerDisposition,applyLedgerToBoard} from './native-verification-ledger.mjs';
 import {buildNativeVerificationPolicy} from './native-verification-policy.mjs';
 import {readCapturedNormalLedgerRows,applyNativeLedgerToCapturedTracks,publicEventBackup} from './public-snapshot-backup.mjs';
-import {createNativeEventBaseline,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
+import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
 import {loadCapturedNativeJobs,defaultCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
@@ -177,7 +177,8 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
     demand(source&&!source.nativeEventOverlay,'pristine event source companion unavailable: '+captured.id);
     // Public projection is the only companion payload; full Worker periods and
     // raw exports/credentials never enter the companion cache or public package.
-    const board=publicEventBackup(source,source.id);
+    const projectedSource=publicEventBackup(source,source.id);
+    const board=completeCapturedEmptyEventBoard({serverBoard:projectedSource,checkedAt:manifest.events[source.id]?.checkedAt})||projectedSource;
     const dependencies={ledger,policy,canonicalRows:inputs.canonicalRows.filter(value=>value.lane==='event'),recordings:inputs.recordings.filter(value=>value.lane==='event')};
     const exact=board.complete===true&&board.totalEntries===board.entries.length&&board.sourceComplete!==false;
     const projection=exact?await projectNativeEventSnapshot({...dependencies,

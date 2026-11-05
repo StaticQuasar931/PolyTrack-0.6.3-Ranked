@@ -182,6 +182,16 @@ test('publication stages only the pinned manifest and referenced shards, rejecti
   await assert.rejects(nativeLedgerPublicationFiles(f.root),/writer|lock/);
 });
 
+test('first live event publication admits exact verified pending runs from an inline empty lane',async t=>{
+ const f=await fixture(t,{events:true}),board=await read(f.directory,'events/day1.json');
+ for(const key of ['complete','totalEntries','sourceComplete'])delete board[key];
+ Object.assign(board,{archived:false,state:'open',racerCount:1});board.period.kind='weekly';
+ await write(f.directory,'events/day1.json',board);
+ const manifest=await read(f.directory,'manifest.json');manifest.events.day1.checkedAt=3000;await write(f.directory,'manifest.json',manifest);
+ await runNativeSnapshotPhase(f.options);
+ const published=await read(f.directory,'events/day1.json');assert.equal(published.entries.length,1);assert.equal(published.entries[0].verified,true);
+});
+
 test('full event admission persists public-safe pristine companions through cold checkout hydration',async t=>{
   const f=await fixture(t,{events:true}),result=await runNativeSnapshotPhase(f.options);
   assert.equal(result.counts.verified,1);assert.equal(result.events.periods,1);
