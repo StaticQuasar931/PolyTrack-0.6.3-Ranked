@@ -27,7 +27,7 @@ export function enhanceNativeTrackSearch({document,metadata=[]}={}){
       paneObserver.observe(pane,{attributes:true,attributeFilter:['class']});watchedPanes.add(pane);
     }
     for(const input of document.querySelectorAll(selector)){
-      input.setAttribute('aria-label','Search tracks or authors, including plain-text names');
+      input.setAttribute('aria-label','Search tracks or authors');
       input.title='Plain letters also match decorative fonts and accented names.';
     }
   };

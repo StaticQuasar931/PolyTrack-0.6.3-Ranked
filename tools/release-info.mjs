@@ -1,15 +1,15 @@
 const releaseInfo = {
-  "number": 298,
+  "number": 299,
   "version": "0.6.3",
-  "revision": 256,
+  "revision": 257,
   "notes": [
-    "Improved cloud compatibility across supported Google Sites embeds.",
-    "Reduced repeat profile-update work.",
-    "Added privacy-safe connection counters to help diagnose upload problems.",
-    "Unofficial copies using this update keep saves local."
+    "Update alerts appear sooner when you return to a menu.",
+    "Clearer snapshot status and navigation labels.",
+    "Improved weekly-track thumbnail layout.",
+    "Fixed profile updates getting stuck behind other updates."
   ],
-  "preparedAt": "2026-11-06T03:48:03.575Z",
-  "committedAt": "2026-11-06T03:56:37.000Z"
+  "preparedAt": "2026-11-06T04:43:37.533Z",
+  "committedAt": "2026-11-06T05:07:06.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

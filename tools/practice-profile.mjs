@@ -333,7 +333,7 @@ export function renderPracticeProfile({ rows = [], coverage = null, trackName, t
   const cards = observed.map(row => card(row, trackName, trackPreview, results, observed, trackType)).join('');
 
   const body = observed.length
-    ? '<div class="pp-summary" aria-label="Practice summary. Recorded on this browser and profile; earlier driving may not have been tracked.">' +
+    ? '<div class="pp-summary" aria-label="Practice history for this browser profile. Earlier runs may be missing.">' +
       '<span><small>' + (observed.some(row => num(row.legacyActiveMs)) ? 'PRACTICE TIME' : 'ACTIVE RACE TIME') + '</small><strong>' + formatActiveTime(total) + '</strong></span>' +
       '<span><small>TRACKS DRIVEN</small><strong>' + observed.length + '</strong></span>' +
       summaryStats + firstStat + '</div>' + coverageMarkup(coverage) +

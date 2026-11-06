@@ -345,7 +345,7 @@ export function mountArchiveView(root, options = {}) {
   const search=document.createElement('input');search.type='search';search.placeholder='Track, event or date';search.setAttribute('aria-label','Search saved events');
   search.addEventListener('input',()=>{searchQuery=search.value.trim().toLocaleLowerCase();currentPage=1;renderPage();});searchLabel.append(search);
   const orderLabel=appendText(document,toolbar,'label','sq-archive-order','Order');
-  const order=document.createElement('select');order.setAttribute('aria-label','Archive date order');
+  const order=document.createElement('select');order.setAttribute('aria-label','Sort events by date');
   for(const [value,label] of [['newest','Newest first'],['oldest','Oldest first']]){const option=document.createElement('option');option.value=value;option.textContent=label;order.append(option);}
   order.addEventListener('change',()=>{oldestFirst=order.value==='oldest';currentPage=1;renderPage();});orderLabel.append(order);
   view.append(toolbar);
@@ -360,7 +360,7 @@ export function mountArchiveView(root, options = {}) {
 
   const pagination = document.createElement('nav');
   pagination.className = 'sq-archive-pagination';
-  pagination.setAttribute('aria-label', 'Archive pages');
+  pagination.setAttribute('aria-label', 'Archived event pages');
   view.append(pagination);
 
   function renderPeriod(period) {
