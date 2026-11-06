@@ -46,7 +46,7 @@ test('publishing unchanged data reuses its generation; archive restore regenerat
  const index=await restoreSnapshotArchive(next.archivePath,restored);
  const bucket=digest('profiles/'+f.ids[0]+'.json').slice(0,2);
  const shard=JSON.parse(await readFile(path.join(restored,'lookup-shards',bucket+'.json'),'utf8'));
- assert.equal(shard.generation,index.generation);assert.deepEqual(shard.files['profiles/'+f.ids[0]+'.json'],index.files['profiles/'+f.ids[0]+'.json']);
+ assert.equal(shard.generation,index.generation);assert.equal(shard.compactIndexVersion,2);const record=index.files['profiles/'+f.ids[0]+'.json'];assert.deepEqual(shard.files['profiles/'+f.ids[0]+'.json'],[Buffer.from(record.sha256,'hex').toString('base64url'),record.decodedBytes]);
 });
 
 test('optimized bootstrap expands compact index tuples before normal payload validation',async t=>{
@@ -91,4 +91,28 @@ test('blocked browser cache never blocks snapshot loading',async t=>{
   const file=new URL(url).pathname.slice(1);try{return new Response(await readFile(path.join(f.directory,file)));}catch{return new Response('',{status:404});}
  }});
  assert.equal((await read('profile',f.ids[0])).accountId,f.ids[0]);
+});
+
+
+test('compact lookup metadata retains full hashes and saves space without changing the full index',async t=>{
+ const f=await fixture(t),bucket=digest('profiles/'+f.ids[0]+'.json').slice(0,2);
+ const shard=JSON.parse(await readFile(path.join(f.directory,'lookup-shards',bucket+'.json'),'utf8'));
+ const full=JSON.parse(await readFile(path.join(f.directory,'index.json'),'utf8'));
+ assert.equal(shard.compactIndexVersion,2);
+ for(const [logical,row] of Object.entries(shard.files))assert.deepEqual(row,[Buffer.from(full.files[logical].sha256,'hex').toString('base64url'),full.files[logical].decodedBytes]);
+ const expanded={...shard,files:Object.fromEntries(Object.keys(shard.files).map(logical=>[logical,full.files[logical]]))};
+ assert.ok(JSON.stringify(shard).length<JSON.stringify(expanded).length);
+});
+
+test('legacy lookup records remain readable without a full index download',async t=>{
+ const f=await fixture(t),bucket=digest('profiles/'+f.ids[0]+'.json').slice(0,2),file=path.join(f.directory,'lookup-shards',bucket+'.json');
+ const shard=JSON.parse(await readFile(file,'utf8'));delete shard.compactIndexVersion;
+ shard.files=Object.fromEntries(Object.entries(shard.files).map(([key,[hash,size]])=>{hash=Buffer.from(hash,'base64url').toString('hex');return [key,{path:hash+'.bin',sha256:hash,decodedBytes:size}];}));
+ await writeFile(file,JSON.stringify(shard));assert.equal((await f.read('profile',f.ids[0])).accountId,f.ids[0]);assert.ok(!f.requests.includes('index.json'));
+});
+
+test('invalid compact lookup bindings recover through the unchanged full index',async t=>{
+ const f=await fixture(t),bucket=digest('profiles/'+f.ids[0]+'.json').slice(0,2),file=path.join(f.directory,'lookup-shards',bucket+'.json');
+ const shard=JSON.parse(await readFile(file,'utf8'));shard.files['profiles/'+f.ids[0]+'.json']=['not-a-hash',12];
+ await writeFile(file,JSON.stringify(shard));assert.equal((await f.read('profile',f.ids[0])).accountId,f.ids[0]);assert.ok(f.requests.includes('index.json'));
 });

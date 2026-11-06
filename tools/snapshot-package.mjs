@@ -190,8 +190,8 @@ export function buildSnapshotLookupShards(index) {
     if (isBootstrapSnapshotPath(logical)) continue;
     const bucket = sha256(Buffer.from(logical)).slice(0, 2);
     if (!shards.has(bucket)) shards.set(bucket, { schemaVersion: 1, generation: index.generation,
-      encoding: index.encoding, lookupShardsVersion: 1, bucket, files: {} });
-    shards.get(bucket).files[logical] = record;
+      encoding: index.encoding, lookupShardsVersion: 1, compactIndexVersion: 2, bucket, files: {} });
+    shards.get(bucket).files[logical] = [Buffer.from(record.sha256, 'hex').toString('base64url'), record.decodedBytes];
   }
   return shards;
 }

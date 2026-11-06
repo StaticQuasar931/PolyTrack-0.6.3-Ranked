@@ -1,17 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 304,
+    "number": 305,
     "version": "0.6.3",
-    "revision": 262,
+    "revision": 263,
     "notes": [
-      "Fresh rankings, profiles and event standings.",
-      "New personal bests and saved replays are synchronized.",
-      "Old archived finishes show when a replay is unavailable.",
-      "Fixed safe playback of compact long recordings."
+      "Fresh snapshot downloads are smaller, with all saved replays retained.",
+      "Improved profile and replay lookup loading."
     ]
   },
   "entries": [
+    {
+      "number": 304,
+      "title": "Publish refreshed Snapshot 74 with verified replay coverage",
+      "commit": "5aba11535cc5040ecbfb7b84557f6d4969c555e8",
+      "committedAt": "2026-11-06T14:21:14.000Z",
+      "notes": [
+        "Fresh rankings, profiles and event standings.",
+        "New personal bests and saved replays are synchronized.",
+        "Old archived finishes show when a replay is unavailable.",
+        "Fixed safe playback of compact long recordings."
+      ]
+    },
     {
       "number": 303,
       "title": "Reconcile newer PBs and preserve coherent Event RP baselines",
@@ -209,16 +219,6 @@
       "notes": [
         "Safer recovery when a leaderboard snapshot update is interrupted.",
         "Improved private access checks before loading snapshot data."
-      ]
-    },
-    {
-      "number": 283,
-      "title": "Diagnose hosted snapshot authentication without database access",
-      "commit": "b9cc87b08d0b491ee74b6b4086eb7fae8474072f",
-      "committedAt": "2026-11-05T13:09:16.000Z",
-      "notes": [
-        "Improved maintenance checks for reliable leaderboard updates.",
-        "Clearer reporting when a snapshot update cannot start."
       ]
     }
   ],
