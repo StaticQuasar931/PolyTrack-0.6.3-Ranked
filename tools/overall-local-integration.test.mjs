@@ -74,7 +74,7 @@ test('real controller hooks expose inline estimates without cards, preserve cano
   await f.ctx.acknowledgeLocalOverallPb('b',{trackId,timeMs:9000},Date.now());await f.ctx.syncLocalOverallProjection();
   assert.equal(f.nodes.has('localOverallEstimate'),false);assert.ok(f.ctx.currentLocalOverallResult()?.projection);
   assert.equal(f.ctx.currentLocalOverallResult().projection.localPending,true);
-  assert.match(f.nodes.get('overallFreshness').textContent,/Snapshot package \+ local recalculation/);
+  assert.match(f.nodes.get('overallFreshness').textContent,/Snapshot \+ local estimates/);
   assert.equal(JSON.stringify(f.overall),before);const count=f.reads();
   f.ctx.closeOverallPanel(f.panel);await f.ctx.syncLocalOverallProjection();assert.equal(f.nodes.has('localOverallEstimate'),false);
   f.panel.style.display='flex';await f.ctx.syncLocalOverallProjection();assert.ok(f.ctx.currentLocalOverallResult());assert.equal(f.nodes.has('localOverallEstimate'),false);assert.equal(f.reads(),count);
@@ -83,7 +83,7 @@ test('account and package changes immediately discard inline estimates and the l
   const f=hooksFixture();await f.ctx.acknowledgeLocalOverallPb('b',{trackId,timeMs:9000},Date.now());await f.ctx.syncLocalOverallProjection();
   f.storage.set('polytrack-0.6.2-active-account-id','a');f.ctx.activeRankedAccountId();await new Promise(resolve=>setTimeout(resolve,5));
   await f.ctx.syncLocalOverallProjection();assert.equal(f.nodes.has('localOverallEstimate'),false);
-  assert.doesNotMatch(f.nodes.get('overallFreshness').textContent,/local recalculation/);
+  assert.doesNotMatch(f.nodes.get('overallFreshness').textContent,/local estimates/);
   f.storage.set('polytrack-0.6.2-active-account-id','b');await f.ctx.syncLocalOverallProjection();assert.ok(f.ctx.currentLocalOverallResult());assert.equal(f.nodes.has('localOverallEstimate'),false);
   const count=f.reads();f.setInfo({generation:44,epoch:1,baseUrl:'https://example.test/public-snapshots44/'});
   await f.ctx.syncLocalOverallProjection();assert.equal(f.nodes.has('localOverallEstimate'),false);assert.equal(f.reads(),count);

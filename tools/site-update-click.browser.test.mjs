@@ -53,7 +53,7 @@ test('fork with a copied official base and marker cannot receive an in-place com
   await page.goto('https://fork.invalid/');await page.addScriptTag({content:bundle});
   await page.evaluate(async()=>{window.__polytrackAutomaticLoad=Promise.resolve();window.updater=updateAPI.installSiteUpdates({revision:238,isIdle:()=>true,canReload:()=>true,fetch:async()=>({ok:true,json:async()=>({revision:239,minimumSupportedRevision:239})})});await updater.check();});
   const dialog=page.locator('dialog[data-site-compatibility][open]');assert.equal(await dialog.getByRole('button',{name:'Reload to update'}).count(),0);
-  const link=dialog.getByRole('link',{name:'Open updated game (opens in a new tab)'});assert.equal(await link.getAttribute('href'),canonical);assert.equal(await link.getAttribute('target'),'_blank');assert.equal(page.url(),'https://fork.invalid/');
+  const link=dialog.getByRole('link',{name:'Open updated game in a new tab'});assert.equal(await link.getAttribute('href'),canonical);assert.equal(await link.getAttribute('target'),'_blank');assert.equal(page.url(),'https://fork.invalid/');
  }finally{await browser.close();}
 });
 

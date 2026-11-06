@@ -13,8 +13,8 @@ test('profile maintenance fetches only the one job it can process', async () => 
     }
   }, {waitUntil:promise => {completion = promise;}});
   await completion;
-  assert.deepEqual(calls, [':runQuery']);
+  assert.deepEqual(calls, [':runQuery', ':runQuery']);
   assert.equal(queries[0].from[0].collectionId, '0.6.2_s1_worker_jobs');
-  assert.equal(queries[0].where.fieldFilter.field.fieldPath, 'active');
-  assert.equal(queries[0].limit, 1, 'the other four jobs would be read and discarded');
+  assert.deepEqual(queries.map(q=>q.where.fieldFilter.field.fieldPath).sort(), ['active','profileRetryAt']);
+  assert(queries.every(q=>q.limit===1), 'each lane fetches only the job it can process');
 });

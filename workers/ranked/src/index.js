@@ -1,3 +1,4 @@
+import {profileMaintenanceClock, profileRetryEntries, deferProfileTrack, deferredProfileJob, PROFILE_RETRY_BASE_MS} from './profile-maintenance.js';
 import {createPublicMissGuard} from './public-miss-guard.js';
 import {hasMatchingCompetitiveReviewHold} from './competitive-review.js';
 import {verifyCaptureRead} from './capture-read-auth.js';
@@ -2158,7 +2159,7 @@ async function notifyProfile(request, env, context, uid, body) {
   const signatureWithTimestamp = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(identity))).then((bytes) => base64Url(new Uint8Array(bytes)));
   if (!identityChanged && priorIdentityUpdatedAt > 0) {
     const queued = Array.isArray(existing.pendingTrackIds) ? existing.pendingTrackIds.length : 0;
-    if ((!queued&&existing.trackDiscovery?.complete!==false) || existing.active === true) {
+    if ((!queued&&existing.trackDiscovery?.complete!==false) || existing.active === true || deferredProfileJob(existing, Date.now())) {
       // Scheduled processing continues existing work without re-reading completed tracks.
       return json(request.headers.get('Origin') || '', env, queued ? 202 : 200, { accepted: true, accountId, queued, unchanged: true, betaEntitlement });
     }
@@ -2170,7 +2171,12 @@ async function notifyProfile(request, env, context, uid, body) {
     : trackIds;
   const trackDiscovery={version:1,cursor:page.cursor,complete:page.complete};
   const active=pendingTrackIds.length>0||!page.complete;
-  const written=await writeDocument(env, COLLECTIONS.jobs, jobId, { kind: 'profile', active, accountId, identity, signature:signatureWithTimestamp, pendingTrackIds,trackDiscovery, createdAt: Number(existing.createdAt || Date.now()), updatedAt: Date.now(),...(!active?{completedAt:Date.now(),processed:0,changed:0}:{}) },existingDoc?.updateTime||'');
+  if (existingDoc && !existingDoc.updateTime) throw Error('PROFILE_JOB_PREIMAGE_REQUIRED');
+  const committed=await commitDocuments(env,[{collection:COLLECTIONS.jobs,id:jobId,prior:existingDoc,
+    data:{kind:'profile',active,accountId,identity,signature:signatureWithTimestamp,pendingTrackIds,trackDiscovery,
+      createdAt:Number(existing.createdAt||Date.now()),updatedAt:Date.now(),
+      ...(!active?{completedAt:Date.now(),processed:0,changed:0}:{})}}]);
+  const written={updateTime:committed?.writeResults?.[0]?.updateTime||''};
   if(!active)return json(request.headers.get('Origin')||'',env,202,{accepted:true,accountId,queued:0,betaEntitlement});
   const backgroundAudit = createFirestoreAudit();
   const backgroundEnv = {...env, __FIRESTORE_READ_AUDIT:backgroundAudit,
@@ -2337,6 +2343,8 @@ async function propagateProfileCosmetics(env, accountId, profile, cosmetics, iss
 }
 
 async function processProfileJob(env, jobId, job, updateTime='') {
+  const now = profileMaintenanceClock(Date.now());
+  if (!updateTime) throw Error('PROFILE_JOB_PREIMAGE_REQUIRED');
   const pending = Array.isArray(job.pendingTrackIds) ? [...new Set(job.pendingTrackIds.map((value) => safeText(value, 80)).filter(Boolean))] : [];
   let discovery=job.trackDiscovery;
   if(!pending.length&&discovery?.complete===false){
@@ -2345,45 +2353,72 @@ async function processProfileJob(env, jobId, job, updateTime='') {
     pending.push(...page.tracks);
     discovery={version:1,cursor:page.cursor,complete:page.complete};
   }
-  const batch = pending.slice(0, 3), completed = new Set();
-  const budget = {fullRebuildAttempted:false};
-  // Leave request headroom for the durable job checkpoint and cold auth. The
-  // new build checks must not push three paged identity updates past the cap.
+  const retry = profileRetryEntries(job, pending, now);
+  const batch = pending.filter(id => !retry.entries[id] || retry.entries[id].retryAt <= now).slice(0, 3);
+  const completed = new Set(), attempted = new Set(), budget = {fullRebuildAttempted:false};
   const trackEnv = env.BACKGROUND_MAINTENANCE_MODE === 'coordinated' && !env.__OVERALL_REQUEST_BUDGET
     ? {...env,__OVERALL_REQUEST_BUDGET:{used:Number(env.__FIRESTORE_READ_AUDIT?.operationAttempts||0),limit:42}} : env;
-  let changed = 0;
+  let changed = 0, checked = 0;
   for (const trackId of batch) {
     try {
       const result = await updateTrackIdentity(trackEnv, trackId, job.identity, budget);
-      if (result.pending || result.blocked) continue;
+      checked++; attempted.add(trackId);
+      if (result.pending || result.blocked) {
+        // The shared rebuild allowance did not check this track; leave it runnable.
+        if (result.reason !== 'maintenance_rebuild_budget')
+          deferProfileTrack(retry.entries, trackId, now, !result.blocked);
+        continue;
+      }
+      delete retry.entries[trackId];
       completed.add(trackId);
       if (result.changed) changed += 1;
     } catch (error) {
       if (error?.status === 429 || error?.message === 'FIRESTORE_429') throw error;
       if (error?.message === 'OVERALL_REQUEST_BUDGET_EXHAUSTED') break;
+      checked++; attempted.add(trackId);
+      deferProfileTrack(retry.entries, trackId, now);
       console.error('Profile track update deferred', trackId, String(error?.message || error));
     }
   }
-  // Rotate unfinished checks behind untouched work without discarding them.
-  const remaining = [...pending.slice(batch.length), ...batch.filter(trackId => !completed.has(trackId))];
-  const active=remaining.length>0||discovery?.complete===false;
-  // Keep retrying blocked work, but do not write a heartbeat for an unchanged
-  // checkpoint. Rotation, discovery progress and completions still persist.
-  if (job.active === true && active && completed.size === 0 && changed === 0 &&
-      discovery === job.trackDiscovery &&
-      JSON.stringify(remaining) === JSON.stringify(job.pendingTrackIds)) {
-    return { checked: batch.length, changed, remaining: remaining.length };
-  }
-  await writeDocument(env, COLLECTIONS.jobs, jobId, { ...job, ...(discovery?{trackDiscovery:discovery}:{}),active, pendingTrackIds: remaining, processed: Math.max(0, Number(job.processed || 0)) + completed.size, changed: Math.max(0, Number(job.changed || 0)) + changed, updatedAt: Date.now(), completedAt: active ? 0 : Date.now() },updateTime);
-  // Track persistence marks Overall dirty; its isolated cron owns aggregation.
-  return { checked: batch.length, changed, remaining: remaining.length };
+  const selected = attempted;
+  const remaining = [...pending.filter(id => !selected.has(id)), ...batch.filter(id => selected.has(id) && !completed.has(id))];
+  const hasWork = remaining.length > 0 || discovery?.complete === false;
+  const runnable = remaining.some(id => !retry.entries[id] || retry.entries[id].retryAt <= now)
+    || !remaining.length && discovery?.complete === false;
+  const {profileMaintenance:oldMaintenance, profileRetryAt:oldRetryAt, ...previous} = job;
+  // A large blocked job must yield even while untouched tracks remain runnable.
+  // Otherwise its active=true document could permanently hide healthy siblings.
+  const yieldBlocked = hasWork && runnable && completed.size === 0 && Object.keys(retry.entries).length > 0;
+  const maintenance = Object.keys(retry.entries).length
+    ? {version:1, identityKey:retry.identityKey, entries:retry.entries, ...(yieldBlocked ? {yieldedAt:now} : {})} : undefined;
+  const active = hasWork && runnable && !yieldBlocked;
+  const retryAt = hasWork && !active ? (yieldBlocked ? now + PROFILE_RETRY_BASE_MS
+    : Math.min(...remaining.map(id => retry.entries[id].retryAt))) : undefined;
+  if (job.active === active && hasWork && completed.size === 0 && changed === 0 &&
+      discovery === job.trackDiscovery && JSON.stringify(remaining) === JSON.stringify(job.pendingTrackIds) &&
+      JSON.stringify(maintenance) === JSON.stringify(oldMaintenance) && retryAt === oldRetryAt)
+    return {checked, changed, remaining:remaining.length};
+  await writeDocument(env, COLLECTIONS.jobs, jobId, {...previous,
+    ...(discovery ? {trackDiscovery:discovery} : {}), ...(maintenance ? {profileMaintenance:maintenance} : {}),
+    ...(retryAt !== undefined ? {profileRetryAt:retryAt} : {}), active, pendingTrackIds:remaining,
+    processed:Math.max(0, Number(job.processed || 0)) + completed.size,
+    changed:Math.max(0, Number(job.changed || 0)) + changed, updatedAt:now, completedAt:hasWork ? 0 : now}, updateTime);
+  return {checked, changed, remaining:remaining.length};
 }
 
 export async function updateTrackIdentity(env, trackId, identity, budget = {fullRebuildAttempted:false}) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   const snapshot = prior?.data;
   if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || (snapshot.complete !== true&&snapshot.sourceComplete!==true)) {
-    if (budget.fullRebuildAttempted) return {changed:false,pending:true,reason:'maintenance_rebuild_budget'};
+    if (budget.fullRebuildAttempted) {
+      // A confirmed blocked continuation needs no canonical scan. Fence it to
+      // this fresh base so the other tracks can also acquire bounded backoff.
+      const build = await readDocument(env, TRACK_BUILD_JOBS, trackBuildId(trackId));
+      const disposition = trackBuildDisposition({prior,job:build});
+      if (disposition.action === 'blocked')
+        return {changed:false,pending:true,blocked:true,reason:disposition.reason};
+      return {changed:false,pending:true,reason:'maintenance_rebuild_budget'};
+    }
     // Reserve before awaiting: failures consume the same one-fallback allowance.
     budget.fullRebuildAttempted = true;
     const result = await rebuildTrack(env, trackId, identity);
@@ -2445,13 +2480,18 @@ export async function updateTrackIdentity(env, trackId, identity, budget = {full
   return persistTrackSnapshot(env, trackId, entries, prior);
 }
 
-async function processProfileJobs(env) {
-  const jobs = await runQuery(env, COLLECTIONS.jobs, { field: 'active', value: true }, 1);
-  for (const job of jobs.slice(0,1)) {
-    if (job.data.kind !== 'profile') continue;
-    if ((!Array.isArray(job.data.pendingTrackIds) || !job.data.pendingTrackIds.length)&&job.data.trackDiscovery?.complete!==false) continue;
-    await processProfileJob(env, job.id, job.data,job.updateTime);
-  }
+async function processProfileJobs(env, {preferRetry = false} = {}) {
+  const now = profileMaintenanceClock(Date.now());
+  // Single-field queries include legacy active jobs without requiring a migration
+  // or composite index. Alternating lanes cannot starve either queue under load.
+  const active = () => runQuery(env, COLLECTIONS.jobs, {field:'active', value:true}, 1);
+  const retries = () => runQuery(env, COLLECTIONS.jobs, {field:'profileRetryAt', op:'LESS_THAN_OR_EQUAL', value:now}, 1);
+  let jobs = await (preferRetry ? retries() : active());
+  if (!jobs.length) jobs = await (preferRetry ? active() : retries());
+  const job = jobs[0];
+  if (!job || job.data.kind !== 'profile') return;
+  if ((!Array.isArray(job.data.pendingTrackIds) || !job.data.pendingTrackIds.length) && job.data.trackDiscovery?.complete !== false) return;
+  await processProfileJob(env, job.id, job.data, job.updateTime);
 }
 
 async function processCosmeticJobs(env) {
@@ -3066,7 +3106,7 @@ export default {
             const scheduledAt = Number(_event.scheduledTime);
             const scanResults = canonicalDiscoveryDue(scheduledAt,env.BACKGROUND_MAINTENANCE_MODE);
             await task(env, {scanResults});
-          }else{const result=await task(env);if(result?.paged)return;}
+          }else{const result=await task(env, task === processProfileJobs ? {preferRetry:Math.floor(Number(_event.scheduledTime)/900000)%2===0} : undefined);if(result?.paged)return;}
         }
         catch (error) { console.error('Scheduled task failed', task.name, String(error?.message || error)); }
       }

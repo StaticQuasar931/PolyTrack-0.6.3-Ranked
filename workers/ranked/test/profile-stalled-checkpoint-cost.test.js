@@ -9,6 +9,8 @@ const start = Date.UTC(2026, 10, 2, 0, 7);
 function fixture(t, ids = ['blocked']) {
   t.mock.method(globalThis, 'fetch', async () => assert.fail('network forbidden'));
   t.mock.method(console, 'log', () => {});
+  let clock = start;
+  t.mock.method(Date, 'now', () => clock);
   const errors = [];
   t.mock.method(console, 'error', (...args) => errors.push(args));
   const data = new Map([[key, {kind:'profile', accountId:'racer', active:true,
@@ -40,6 +42,7 @@ function fixture(t, ids = ['blocked']) {
       const query = JSON.parse(init.body).structuredQuery;
       assert.equal(query.from[0].collectionId, jobs);
       assert.equal(query.limit, 1);
+      if(query.where.fieldFilter.field.fieldPath==='profileRetryAt')return Number.isSafeInteger(data.get(key).profileRetryAt)&&data.get(key).profileRetryAt<=clock?[{document:wire(key)}]:[];
       return data.get(key).active ? [{document:wire(key)}] : [];
     }
     assert.equal(init.method || 'GET', 'GET');
@@ -47,6 +50,7 @@ function fixture(t, ids = ['blocked']) {
     return data.has(id) ? wire(id) : null;
   }};
   return {data, errors, counts:() => ({reads, writes}), async turn(n = 0) {
+    clock = start + n * 900000;
     let done;
     worker.scheduled({cron:'2-59/5 * * * *', scheduledTime:start + n * 900000}, env,
       {waitUntil:p => {done = p;}});
@@ -54,17 +58,18 @@ function fixture(t, ids = ['blocked']) {
   }};
 }
 
-test('96 unchanged blocked profile turns keep 480 reads but remove 96 checkpoint writes, then recover', async t => {
+test('96 blocked profile turns back off durably and complete after bounded recovery', async t => {
   const f = fixture(t), before = structuredClone(f.data.get(key));
   for (let i = 0; i < 96; i++) await f.turn(i);
   process.stdout.write('PROFILE_STALL_COST ' + JSON.stringify(f.counts()) + '\n');
-  assert.deepEqual(f.counts(), {reads:480, writes:0});
-  assert.deepEqual(f.data.get(key), before, 'pending work and its original checkpoint remain durable');
+  assert.deepEqual(f.counts(), {reads:296, writes:26});
+  assert.deepEqual(f.data.get(key).identity, before.identity);
+  assert.deepEqual(f.data.get(key).pendingTrackIds, before.pendingTrackIds);
   assert.deepEqual(f.errors, []);
   f.data.set(boards + '/blocked', {entries:[], complete:true, totalEntries:0, signature:'ready',
     schemaVersion:6, algorithmVersion:'participation-v8-s1'});
-  await f.turn(96);
-  assert.deepEqual(f.counts(), {reads:482, writes:1});
+  for(let n=96;n<104&&f.data.get(key).pendingTrackIds.length;n++)await f.turn(n);
+  assert.equal(f.counts().writes,27);
   assert.equal(f.data.get(key).active, false);
   assert.equal(f.data.get(key).processed, 1);
   assert.deepEqual(f.data.get(key).pendingTrackIds, []);
@@ -80,19 +85,20 @@ test('four blocked tracks still rotate so the untouched fourth track is checked 
   assert.deepEqual(f.data.get(key).pendingTrackIds, ['three', 'four', 'one', 'two']);
 });
 
-test('transient failed checks preserve work without a heartbeat and recover on the next turn', async t => {
+test('transient failed checks preserve work with bounded retry and recover on the next due turn', async t => {
   const f = fixture(t);
   f.data.set(boards + '/blocked', {entries:[], complete:true, signature:'ready', schemaVersion:6,
     algorithmVersion:'participation-v8-s1', sourceComplete:true, totalEntries:1,
     pagination:{version:0, complete:true, totalEntries:1}});
   await f.turn();
   assert.equal(f.errors.length, 1);
-  assert.deepEqual(f.counts(), {reads:2, writes:0});
-  assert.equal(f.data.get(key).active, true);
+  assert.deepEqual(f.counts(), {reads:3, writes:1});
+  assert.equal(f.data.get(key).active, false);
+  assert.ok(Number.isSafeInteger(f.data.get(key).profileRetryAt));
   f.data.set(boards + '/blocked', {entries:[], complete:true, totalEntries:0, signature:'ready',
     schemaVersion:6, algorithmVersion:'participation-v8-s1'});
   await f.turn(1);
-  assert.deepEqual(f.counts(), {reads:4, writes:1});
+  assert.deepEqual(f.counts(), {reads:6, writes:2});
   assert.equal(f.data.get(key).active, false);
 });
 

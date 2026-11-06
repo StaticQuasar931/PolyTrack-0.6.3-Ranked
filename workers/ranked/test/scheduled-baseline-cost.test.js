@@ -58,14 +58,17 @@ async function checkDailyBaseline(jitterMs, mode) {
   }
   if(mode==='coordinated'){
     assert.equal(audit.writeEstimate||0,0);
-    assert.equal(audit.documentReadEstimate,660,'measure completed quiet work, not active source builds or retries');
+    assert.equal(audit.documentReadEstimate,756,'measure completed quiet work, not active source builds or retries');
+    const emptyQueryMinimums=calls.filter(path=>path===':runQuery').length;
+    assert.equal(emptyQueryMinimums,328,'all quiet query results are empty and each retains its one-read minimum');
+    console.log('COORDINATED_EMPTY_QUERY_MINIMUMS',JSON.stringify({before:232,after:emptyQueryMinimums,added:96}));
     console.log('COORDINATED_NON_EVENT_COLLECTIONS',JSON.stringify(audit.collections));
     return {reads:audit.documentReadEstimate,calls:calls.length};
   }
-  assert.equal(audit.documentReadEstimate, 1440);
+  assert.equal(audit.documentReadEstimate, 1536);
   assert.equal(audit.writeEstimate || 0, 0);
-  assert.equal(calls.length, 1440);
-  assert.equal(calls.filter(path => path === ':runQuery').length, 384);
+  assert.equal(calls.length, 1536);
+  assert.equal(calls.filter(path => path === ':runQuery').length, 480);
   const scheduled = logs.filter(([message]) => message === 'Ranked scheduled Firestore reads')
     .map(([, payload]) => JSON.parse(payload));
   assert.equal(scheduled.length, 912);
@@ -74,14 +77,14 @@ async function checkDailyBaseline(jitterMs, mode) {
   assert(aggregates.every(row=>row.documentReadEstimate===1&&Object.keys(row.collections).length===1&&row.collections['0.6.2_s1_release_meta']===1));
   assert(scheduled.filter(row=>row.cron==='*/5 * * * *').every(row=>!row.collections['0.6.2_s1_release_meta']),'quiet reconciliation must not start aggregation');
   assert.ok(scheduled.every(row => row.quotaPolicy === 'rev171-event-activity' && Number.isSafeInteger(row.scheduledTime)));
-  assert.equal(scheduled.reduce((total, row) => total + row.documentReadEstimate, 0), 1440);
+  assert.equal(scheduled.reduce((total, row) => total + row.documentReadEstimate, 0), 1536);
 }
 
 for (const jitter of [0,39338,59999]) {
-  test('24h non-event baseline stays at 1440 reads and zero writes with cron jitter '+jitter+'ms',()=>checkDailyBaseline(jitter));
+  test('24h non-event baseline stays at 1536 reads and zero writes with cron jitter '+jitter+'ms',()=>checkDailyBaseline(jitter));
   test('four-window non-event baseline is bounded with cron jitter '+jitter+'ms',async()=>{
     const result=await checkDailyBaseline(jitter,'four-window');
-    assert.deepEqual(result,{reads:104,calls:104});
+    assert.deepEqual(result,{reads:108,calls:108});
   });
   test('coordinated non-event baseline bounds discovery without pausing builds '+jitter+'ms',async()=>{
     const result=await checkDailyBaseline(jitter,'coordinated');

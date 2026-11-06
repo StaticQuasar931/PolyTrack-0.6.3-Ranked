@@ -364,7 +364,7 @@ test('rejects notification for a result owned by another Firebase user', async (
 });
 
 test('cosmetic saves update the public overall snapshot before background propagation', async () => {
-  let overallWrite='',overallFields=null,entitlementFields=null;const guardedPaths=[];
+  let overallWrite='',overallFields=null,entitlementFields=null,profileJobCreation=null;const guardedPaths=[];
   const accountId='cosmetic-racer';
   const compacted=await compactOverallEntries([{userId:accountId,raceCount:8,extraCount:1,rank:4,
     cosmeticUnlocks:['emblem:target']}]);
@@ -377,7 +377,7 @@ test('cosmetic saves update the public overall snapshot before background propag
     BETA_CUTOFF_MS:String(Date.now()+60000),
     PB_NOTIFY_RATE_LIMITER: {limit: async () => ({success:true})}, __TEST_UID:'signed-in-user',
     __TEST_FIRESTORE:async(path,init={})=>{
-      if(path===':commit'){for(const write of JSON.parse(init.body).writes){guardedPaths.push(write.currentDocument.updateTime);if(write.update.name.includes('cosmetic_entitlements'))entitlementFields=write.update.fields;if(write.update.name.includes('s1_leaderboards_overall')){overallWrite=JSON.stringify(write.update);overallFields=write.update.fields;}}return {writeResults:[{updateTime:'2026-09-09T00:00:00Z'}]};}
+      if(path===':commit'){for(const write of JSON.parse(init.body).writes){guardedPaths.push(write.currentDocument.updateTime);if(write.update.name.includes('worker_jobs/profile_'))profileJobCreation=write.currentDocument;if(write.update.name.includes('cosmetic_entitlements'))entitlementFields=write.update.fields;if(write.update.name.includes('s1_leaderboards_overall')){overallWrite=JSON.stringify(write.update);overallFields=write.update.fields;}}return {writeResults:[{updateTime:'2026-09-09T00:00:00Z'}]};}
       if(init.method==='PATCH'){
         if(path.includes('profiles_public')||path.includes('s1_leaderboards_overall'))guardedPaths.push(path);
         if(path.includes('s1_leaderboards_overall'))overallWrite=String(init.body||'');
@@ -401,7 +401,8 @@ test('cosmetic saves update the public overall snapshot before background propag
   const restored=await restoredOverall(overallFields);
   assert.deepEqual(restored.entries[0].cosmeticUnlocks,['emblem:target']);
   assert.equal(restored.entries[0].profileCosmetics.emblem,'target');
-  assert.deepEqual(guardedPaths,[undefined,undefined,'2026-09-05T00:00:00Z','2026-09-05T00:00:00Z']);
+  assert.deepEqual(guardedPaths,[undefined,undefined,'2026-09-05T00:00:00Z','2026-09-05T00:00:00Z',undefined]);
+  assert.deepEqual(profileJobCreation,{exists:false},'new profile job is created with an existence precondition');
 });
 
 test('accepts an owned hash mismatch as pending without granting integrity verification', async () => {

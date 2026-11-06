@@ -21,14 +21,14 @@ test('protected refresh control visibly locks and unlocks without changing loadi
   const button={disabled:false,dataset:{},style:{removeProperty:()=>{}},setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k)};
   const context=vm.createContext({String,snapshotOnlyForNewAccount:()=>locked,snapshotUnlockLabel:()=> 'Live refresh unlocks in 10:00',snapshotCaptureLabel:()=> 'Snapshot captured 2 hours ago'});
   runClientSource(section('  function syncSnapshotRefreshControl(', '  async function readPublicSnapshotBackup('),context);
-  context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);assert.match(button.title,/Saved standings.*Reload/);assert.equal(attrs.get('aria-disabled'),'true');
+  context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);assert.match(button.title,/Saved rankings.*Snapshot/);assert.equal(attrs.get('aria-disabled'),'true');
   context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,false);
   button.disabled=true;locked=true;context.syncSnapshotRefreshControl(button);locked=false;context.syncSnapshotRefreshControl(button);assert.equal(button.disabled,true);
 });
 test('snapshot age labels do not pretend each track was updated when the snapshot was captured',()=>{
   const context=vm.createContext({publicSnapshotPublishedAt:123,ageLabel:at=>{assert.equal(at,123);return '2 hours ago';}});
   runClientSource(section('  function snapshotCaptureLabel(', '  function syncSnapshotRefreshControl('),context);
-  assert.equal(context.snapshotCaptureLabel(),'Snapshot package published 2 hours ago');
+  assert.equal(context.snapshotCaptureLabel(),'Snapshot updated 2 hours ago');
   context.publicSnapshotPublishedAt=0;assert.match(context.snapshotCaptureLabel(),/unavailable/);
 });
 
@@ -41,17 +41,17 @@ test('retained legacy new-account protection needs fifteen minutes and a saved f
   };
   let context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
   assert.equal(context.snapshotRefreshState().remainingMs,900000);
-  assert.equal(context.snapshotUnlockLabel(),'Snapshot standings');
+  assert.equal(context.snapshotUnlockLabel(),'Snapshot');
   assert.equal(context.snapshotRefreshState().needsFinish,true);
   local=[{accountId,timeMs:12345}];
   now+=899999;context=create();assert.equal(context.snapshotOnlyForNewAccount(),true);
   assert.equal(context.snapshotRefreshState().remainingMs,1);
   assert.doesNotMatch(context.snapshotUnlockLabel(),/finish required/);
   assert.equal(context.snapshotRefreshState().needsFinish,false);
-  assert.match(context.snapshotAccessNotice(),/You can race and submit runs normally/);
+  assert.match(context.snapshotAccessNotice(),/keep racing while uploads are unavailable/);
   assert.doesNotMatch(context.snapshotAccessNotice(),/first saved finish/);
   now++;assert.equal(context.snapshotOnlyForNewAccount(),false);
-  assert.equal(context.snapshotUnlockLabel(),'Snapshot standings');
+  assert.equal(context.snapshotUnlockLabel(),'Snapshot');
   accountId='b'.repeat(64);assert.equal(context.snapshotOnlyForNewAccount(),true);
   cached={entries:[{accountId,accountCreatedAt:now-86400000}]};assert.equal(context.snapshotOnlyForNewAccount(),false);
 });

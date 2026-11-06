@@ -60,7 +60,7 @@ test('release UI keeps native hover, keyboard acknowledgement, live local age an
   assert.doesNotMatch(await dialog.innerText(), /209|client revision|saved runs/i);
   assert.equal(await age.getAttribute('datetime'), '2026-10-02T12:00:00.000Z');
   assert.equal(await age.getAttribute('title'), await page.evaluate(() => `Updated: ${new Date(publicationDate).toLocaleString()}`));
-  for (const [elapsed, text] of [[60000, '1 minute'], [3600000, '1 hour'], [86400000, '1 day'], [604800000, '7 days']]) {
+  for (const [elapsed, text] of [[60000, '1 minute'], [3600000, '1 hour'], [86400000, '1 day'], [604800000, '1 week']]) {
     await page.evaluate(elapsed => advance(elapsed), elapsed);
     assert.equal(await age.textContent(), `Updated ${text} ago`);
     assert.equal(await page.locator('#help-age').textContent(), await age.textContent());

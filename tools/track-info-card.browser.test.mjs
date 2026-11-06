@@ -27,7 +27,12 @@ const nativeCss = nativeFragments.map(match => {
 const helper = patch.match(/  function positionTrackFreshnessBanner\(banner,leaderboard\)\{[\s\S]*?\r?\n  \}(?=\r?\n  function updateTrackFreshnessBanner)/)?.[0];
 // Capture the entire statement, including the nested template used for the weight.
 const bannerExpression = patch.match(/const bannerHtml=([\s\S]*?);\r?\n/)?.[1];
-const nativeScale = bundle.match(/df=function\(\)\{return (Math\.max\(\.01,Math\.min\(1,Math\.min\(window\.innerWidth,1\.4375\*window\.innerHeight\)\/1150\)\))\}/)?.[1];
+const viewportSource = read('./responsive-ui.mjs');
+// Execute the actual production viewport installer, including its resize lifecycle.
+const viewportRuntime = viewportSource.slice(viewportSource.indexOf('export function availableViewport('),
+  viewportSource.indexOf('// Reserve native footer slots')).replaceAll('export function ', 'function ');
+const settleViewport = page => bounded(page.evaluate(() => new Promise(resolve =>
+  requestAnimationFrame(() => requestAnimationFrame(resolve)))), 'production viewport update');
 
 const legacyViewports = [
   { width: 1366, height: 768, label: 'chromebook' },
@@ -79,7 +84,7 @@ test('responsive card harness uses production CSS, font, markup and placement', 
   assert.match(injectedCss, /pointer-events:none/);
   assert.match(nativeCss, /\.leaderboard-ui > \.button-wrapper > \.back/);
   assert.match(nativeCss, /#ui \{/);
-  assert.ok(helper && nativeScale, 'extract production placement helper and native resize formula');
+  assert.ok(helper && viewportRuntime.includes('function installResponsiveViewport('), 'load production placement helper and viewport installer');
   assert.match(bannerHtml(states[1]), /<strong><b class="track-data-weight">9\.99x Weight<\/b><b class="track-data-players">12345 Players/);
   assert.match(bannerHtml(states[1]), /track-data-pb-status/);
   assert.match(homeCss, /font-size:\s*1\.2em\s*!important/);
@@ -102,26 +107,27 @@ test('snapshot UI adapts around the native menu without changing its geometry', 
     await page.route('**/*', route => route.abort('blockedbyclient'));
     await bounded(page.setContent(fixture, { waitUntil: 'domcontentloaded' }), 'offline fixture');
     console.log('Production CSS and native markup loaded.');
-    await bounded(page.evaluate(async ({ helper, nativeScale }) => {
+    await bounded(page.evaluate(async ({ helper, viewportRuntime }) => {
       window.positionTrackFreshnessBanner = new Function(`${helper}; return positionTrackFreshnessBanner;`)();
-      window.nativeTrackUiScale = new Function(`return ${nativeScale};`);
+      window.disposeResponsiveViewport = new Function(`${viewportRuntime}; return installResponsiveViewport;`)()({document, window});
       await document.fonts.load('20px ForcedSquare');
       await document.fonts.ready;
       if (![...document.fonts].some(font => font.family === 'ForcedSquare' && font.status === 'loaded')) throw Error('ForcedSquare font did not load');
-    }, { helper, nativeScale }), 'production font and helpers');
+    }, { helper, viewportRuntime }), 'production font and helpers');
     console.log('ForcedSquare and production helpers ready.');
     for (const scale of [1, 0.85, 1.25]) {
       for (const viewport of viewports) {
         await bounded(page.setViewportSize({ width: viewport.width, height: viewport.height }), 'viewport resize');
+        await settleViewport(page);
         for (const state of states) {
           const result = await bounded(page.evaluate(({ scale, html, state }) => {
             document.documentElement.style.setProperty('--sq-ui-scale', String(scale));
-            const root = document.getElementById('ui');
-            const nativeScale = window.nativeTrackUiScale();
-            root.style.width = `calc(100% / ${nativeScale})`;
-            root.style.height = `calc(100% / ${nativeScale})`;
-            root.style.transform = nativeScale < 1 ? `scale(${nativeScale})` : '';
-            document.documentElement.style.setProperty('--ui-scale-factor', String(nativeScale));
+            const viewportStyle = getComputedStyle(document.documentElement);
+            if (viewportStyle.getPropertyValue('--sq-available-width').trim() !== window.innerWidth+'px' ||
+                viewportStyle.getPropertyValue('--sq-available-height').trim() !== window.innerHeight+'px' ||
+                !viewportStyle.getPropertyValue('--sq-menu-fit-scale').trim()) throw Error('Production viewport metrics did not update');
+            const rootStyle = getComputedStyle(document.getElementById('ui'));
+            const nativeScale = rootStyle.transform === 'none' ? 1 : new DOMMatrixReadOnly(rootStyle.transform).a;
             const board = document.querySelector('.leaderboard-ui');
             const card = document.getElementById('polytrackTrackFreshness');
             card.dataset.source = state === 'error-empty' ? 'error' : 'snapshot';
@@ -206,12 +212,11 @@ test('snapshot UI adapts around the native menu without changing its geometry', 
       if(base.targetWidth>=2800&&base.targetHeight>=1400)assert.ok(large.card.width>base.card.width*1.15,base.label+': roomy cards grow with text');
     }
     await page.setViewportSize({width:390,height:844});
+    await settleViewport(page);
     await page.evaluate(()=>{
-      const scale=window.nativeTrackUiScale(),root=document.getElementById('ui');
-      root.style.width=`calc(100% / ${scale})`;root.style.height=`calc(100% / ${scale})`;root.style.transform=`scale(${scale})`;
       window.positionTrackFreshnessBanner(document.getElementById('polytrackTrackFreshness'),document.querySelector('.leaderboard-ui'));
     });
-    const info=page.getByRole('button',{name:'Track data information',exact:true});
+    const info=page.getByRole('button',{name:'Show track statistics',exact:true});
     assert.equal(await info.getAttribute('aria-expanded'),'false');
     const nativeBefore=await page.locator('.track-info-ui').boundingBox();
     await info.click();

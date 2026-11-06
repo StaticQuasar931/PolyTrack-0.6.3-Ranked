@@ -34,7 +34,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
   t.mock.method(console, 'log', () => {});
   const errors = [];
   t.mock.method(console, 'error', (...args) => errors.push(args));
-  const now = Date.UTC(2026, 10, 3, 8);
+  let now = Date.UTC(2026, 10, 3, 8);
   t.mock.method(Date, 'now', () => now);
   const data = new Map(), versions = new Map(), snapshots = new Map();
   const reads = [], queries = [], commits = [];
@@ -86,7 +86,12 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     if (route === ':runQuery') {
       const q = body.structuredQuery;
       if(q.from[0].collectionId===TRACK_BUILD_JOBS){
-        assert.equal(q.limit,1);assert.equal(q.where.fieldFilter.field.fieldPath,'active');
+        assert.equal(q.limit,1);
+        if(q.where.fieldFilter.field.fieldPath==='profileRetryAt'){
+          const keys=[...data.keys()].filter(key=>key.startsWith(TRACK_BUILD_JOBS+'/')&&Number.isSafeInteger(data.get(key).profileRetryAt)&&data.get(key).profileRetryAt<=now).sort((a,b)=>data.get(a).profileRetryAt-data.get(b).profileRetryAt||a.localeCompare(b));
+          stats.reads+=Math.max(1,Math.min(keys.length,1));return keys.slice(0,1).map(key=>({document:wire(key)}));
+        }
+        assert.equal(q.where.fieldFilter.field.fieldPath,'active');
         const keys=[...data.keys()].filter(key=>key.startsWith(TRACK_BUILD_JOBS+'/')&&data.get(key).active===true);
         stats.reads+=Math.max(1,keys.length?1:0);return keys.slice(0,1).map(key=>({document:wire(key)}));
       }
@@ -195,7 +200,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     }
     assert.fail('full build did not finish');
   };
-  return {data, env, rows, reads, queries, stats, commits, control, errors, finish, finishFull, identity, report, set,
+  return {data, env, rows, reads, queries, stats, commits, control, errors, finish, finishFull, identity, report, set, advance:ms=>{now+=ms;},
     keys:{boardKey, buildKey}, maxCheckpointBytes:()=>maxCheckpointBytes,
     prior:key => ({data:structuredClone(data.get(key)), updateTime:version(key)})};
 }
@@ -275,7 +280,7 @@ for(const shape of ['expired','unowned','base-changed','blocked','complete'])tes
   assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);
 });
 
-test('scheduled identity deferral retains its durable job without heartbeat writes, including read failure recovery',{skip:!!identityBaseline},async t=>{
+test('scheduled identity deferral checkpoints bounded retry once, then keeps paid build and recovers',{skip:!!identityBaseline},async t=>{
   const f=await fixture(t);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';
   for(let pass=0;pass<5;pass++)await rebuildTrack(f.env,track);
   const key=TRACK_BUILD_JOBS+'/profile_'+f.identity.accountId;
@@ -285,12 +290,13 @@ test('scheduled identity deferral retains its durable job without heartbeat writ
   const turn=async()=>{let done;rankedWorker.scheduled({cron:'2-59/5 * * * *',scheduledTime:420000},f.env,
     {waitUntil:p=>{done=p;}});await done;};
   let before={...f.stats};await turn();await turn();
-  assert.equal(f.stats.reads-before.reads,8);assert.equal(f.stats.writes,before.writes);
-  assert.deepEqual(f.data.get(key),profile);assert.deepEqual(f.data.get(buildKey),checkpoint);
+  assert.equal(f.stats.reads-before.reads,7);assert.equal(f.stats.writes-before.writes,1);
+  assert.deepEqual(f.data.get(key).identity,profile.identity);assert.deepEqual(f.data.get(key).pendingTrackIds,profile.pendingTrackIds);assert.deepEqual(f.data.get(buildKey),checkpoint);
+  f.advance(15*60000);
   f.control.beforeRead=key=>{if(key===buildKey)throw Error('FIRESTORE_429');};before={...f.stats};
-  await turn();assert.equal(f.stats.writes,before.writes);assert.deepEqual(f.data.get(key),profile);
+  await turn();assert.equal(f.stats.writes,before.writes);assert.deepEqual(f.data.get(key).identity,profile.identity);
   assert.equal(f.errors.length,1);f.control.beforeRead=null;await turn();
-  await f.finish();assert.equal(f.data.get(buildKey).generation,checkpoint.generation);await turn();
+  await f.finish();assert.equal(f.data.get(buildKey).generation,checkpoint.generation);f.advance(15*60000);await turn();
   assert.equal(f.data.get(key).active,false);assert.deepEqual(f.data.get(key).pendingTrackIds,[]);
   assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);assert.equal(f.stats.canonicalRows,1136);
 });

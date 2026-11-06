@@ -272,3 +272,91 @@ Aggregate client telemetry distinguishes request purposes and response classes
 without transmitting URLs or identities. Worker operation counts are not backend
 read counts. The local cost parser now recognizes all fixed production route
 categories instead of collapsing legitimate event/snapshot traffic to unknown.
+
+## Release 299: Durable Profile Retry Fairness
+
+Profile maintenance now separates runnable jobs from deferred jobs within the
+existing worker-jobs collection. The active and due-retry lanes use bounded
+single-field queries, at most one returned document each, and process only one
+job per invocation. Priority alternates using the existing scheduled timestamp;
+there is no cron change. Deferred jobs retain their complete pending track list,
+exact queued identity, signature and discovery cursor. Completion omits both
+`profileRetryAt` and `profileMaintenance` in the full replacement document.
+
+Blocked and failed checks use 15/30/60-minute eligible retry delays, capped at
+sixty minutes. Live continuations retain fifteen-minute eligibility. Expiry and
+ownership of fixed-read-time builds are still checked fresh; their fifty-minute
+deadline is never renewed. Retry hints are identity/signature-bound and cannot
+approve runs, replace current holds, or serve as publication/CAS authority.
+New identity notifications replace, rather than inherit, the old retry state.
+Missing job updateTime fails before mutable work. New job creation and updates
+use existence/updateTime CAS, so a racing newer draft cannot be replaced.
+
+A large blocked job yields after one bounded work unit even when it still has
+untouched tracks. Otherwise the first active document could continue to hide
+healthy siblings. The existing three-track and shared request limits remain.
+Confirmed blocked sibling builds can be recognized from their fresh base/build
+metadata without spending another canonical full-rebuild allowance. Failure or
+budget exhaustion never acknowledges an unchecked track; 429 stops the turn.
+
+### Full Offline Pipeline Measurements
+
+The stationary fixtures include ninety-six maintenance turns, all due/active
+query minimums, eventual source repair and identity publication, durable queue
+completion, and two clean follow-ups. They start with a seeded private queue and
+boards. They exclude client SDK writes and unrelated verification/aggregation.
+
+| Fixture | Reads before / after | Writes before / after | Requests before / after |
+| --- | --- | --- | --- |
+| Four blocked tracks | 684 / 491 | 106 / 60 | 786 / 547 |
+| One blocked track | 485 / 310 | 3 / 29 | 487 / 338 |
+| Three blocked tracks plus an initially ready fourth | 682 / 442 | 11 / 60 | 689 / 498 |
+
+During the ninety-six-turn blocked phase alone, the four-track fixture changes
+from 672 reads/96 writes to 472/50. The ready-fourth fixture changes from 673/4
+to 425/52. Durable backoff therefore DOES add writes where the historical
+unchanged-array optimization already wrote nothing. This is a measured
+read/fairness versus write/latency tradeoff, not a universal reduction.
+
+All three recovery fixtures observe repairs within sixty minutes at the nominal
+fifteen-minute cadence. Eligibility is not a global latency guarantee: scheduler
+jitter, invocation failure and contention with other queued jobs remain extra.
+Healthy siblings and an initially ready fourth track progress; future retries
+do not overwrite a newer identity or canonical PB/review-hold binding.
+
+### Quiet-Day Cost Increase
+
+The completed non-event fixture increases from 660 to 756 reads/day and remains
+at zero writes. Empty-query minimums rise from 232 to 328, exactly ninety-six
+additional reads. The unchanged event fixture remains 360 reads/zero writes, so
+the combined quiet floor is now 1,116 rather than 1,020. These counts exclude
+actual source/entitlement audits and all active traffic. The earlier release
+sections retain their historical measurements; they are not current totals.
+
+The isolated release-298 obsolete-identity check stays at two reads/zero writes.
+Its scheduled lifecycle fixture changes from 19 reads/16 writes to 21/16 solely
+because of the new bounded lane queries. No fixture savings are claimed as
+actual production/day savings. Failed transport billing remains unknown.
+
+No Firebase calls, new indexes, permissions, collections, rules, cron changes,
+verification-authority changes, capture/staging changes or deployment are part
+of this implementation. The new retry field uses standard single-field query
+indexing, not a composite index; no index was provisioned. Existing deployments
+must retain ordinary single-field indexing for this server-owned field.
+
+Evidence: `test/profile-retry-fairness-cost.test.js` runs current source or, with
+`PROFILE_RETRY_BASELINE=1`, the pinned release-298 source from git, entirely
+offline. It reports active/due query counts, returned queue documents, empty
+minimums and point reads separately. Related maintenance, discovery, accounting,
+cosmetic idempotency, current-proof/CAS and paged-build tests preserve their
+safety checks while advancing the mock retry clock.
+
+### Separate TURN Proposal, Not Implemented
+
+Define and validate the broker's successful-response expiry contract before
+changing the client cache. A future change should refresh shortly before that
+expiry with one shared request per page, a bounded maximum cache lifetime and
+short failure backoff. It must not interrupt established peers, reuse credentials
+across account/config changes, log credential values, or refresh on every UI
+request. Test before/after expiry, concurrent refresh, account switch, provider
+fallback and outage recovery. No TURN client or broker change is included here.

@@ -13,7 +13,7 @@ export function installCompactRankedLayout({document=globalThis.document,window=
     const toggle=document.createElement('button');
     toggle.type='button';toggle.className='overall-mobile-tools';toggle.textContent='More';toggle.hidden=true;
     toggle.setAttribute('aria-controls',drawer.id);toggle.setAttribute('aria-expanded','false');
-    toggle.setAttribute('aria-label','More ranking tools, snapshot status, quick rankings and challenges');
+    toggle.setAttribute('aria-label','More ranking tools');
     const moved=[];
     function syncMoved(){
       for(const node of footer.querySelectorAll('.overall-challenge-stack,.overall-field-summary,.overall-freshness,.leaderboard-arcade,.overall-track-scope')){

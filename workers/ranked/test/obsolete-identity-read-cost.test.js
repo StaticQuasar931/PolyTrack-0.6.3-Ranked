@@ -46,6 +46,7 @@ async function fixture(t) {
       assert.equal(body.structuredQuery.from[0].collectionId, jobs);
       assert.equal(body.structuredQuery.limit, 1);
       stats.reads++;
+      if (body.structuredQuery.where.fieldFilter.field.fieldPath === 'profileRetryAt') return [];
       const key = [...data.keys()].find(key => key.startsWith(jobs + '/') && data.get(key).active === true);
       return key ? [{document:wire(key)}] : [];
     }
@@ -211,10 +212,10 @@ test('scheduled obsolete job completes durably and clean follow-up includes all 
   assert.deepEqual(job.pendingTrackIds, []);
   assert.deepEqual(f.data.get(boardKey), root); assert.deepEqual(f.data.get(metaKey), meta);
   assert.deepEqual(f.data.get(queueKey), queue);
-  assert.deepEqual(difference(counts(f), before), {reads:baseline ? 15 : 3, requests:baseline ? 5 : 4, writes:1});
+  assert.deepEqual(difference(counts(f), before), {reads:baseline ? 15 : 4, requests:5, writes:1});
   const after = counts(f); await turn();
-  assert.deepEqual(difference(counts(f), after), {reads:1, requests:1, writes:0});
-  assert.deepEqual(counts(f), {reads:baseline ? 31 : 19, requests:baseline ? 12 : 11, writes:16});
+  assert.deepEqual(difference(counts(f), after), {reads:baseline ? 1 : 2, requests:baseline ? 1 : 2, writes:0});
+  assert.deepEqual(counts(f), {reads:baseline ? 31 : 21, requests:baseline ? 12 : 13, writes:16});
   process.stdout.write('OBSOLETE_IDENTITY_SCHEDULED_COST ' + JSON.stringify({baseline, setup:before,
     completion:difference(after, before), cleanFollowup:difference(counts(f), after), fullFixture:counts(f)}) + '\n');
 });

@@ -286,9 +286,10 @@ test('failed background track propagation stays repairable in the accepted profi
   f.control.beforeRequest=(path,init)=>{if(path===':commit'&&commitsPath(init,trackPath))throw Error('FIRESTORE_503');};
   assert.equal((await f.save()).status,202);
   assert.equal(f.db.get(cosmeticJobPath).active,false);
-  assert.equal(f.db.get(jobPath).active,true);assert.deepEqual(f.db.get(jobPath).pendingTrackIds,[trackId]);
+  assert.equal(f.db.get(jobPath).active,false);assert.ok(Number.isSafeInteger(f.db.get(jobPath).profileRetryAt));assert.deepEqual(f.db.get(jobPath).pendingTrackIds,[trackId]);
   assert.equal(f.errors.length,1);assert.equal(f.writes.includes(trackPath),false);
   f.control.beforeRequest=()=>{};
+  t.mock.method(Date,'now',()=>f.db.get(jobPath).profileRetryAt || 1800000);
   let completion;
   worker.scheduled({cron:'2-59/5 * * * *',scheduledTime:1200000},f.env,{waitUntil:p=>{completion=p;}});
   await completion;

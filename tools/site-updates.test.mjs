@@ -89,10 +89,22 @@ test('deduplicates installations and throttles interval and visibility-resume ch
   h.setTime(1000 + 30 * 60 * 1000); await h.handle.check(); assert.equal(h.calls, 2); h.handle.dispose();
 });
 
-test('does not check while hidden or not idle', async () => {
+test('checks static update data during a race but defers prompts and skips hidden tabs', async () => {
   let idle = false; const h = harness({ isIdle: () => idle }); await h.handle.check();
-  h.document.visibilityState = 'hidden'; idle = true; await h.handle.check(); assert.equal(h.calls, 0);
-  h.document.visibilityState = 'visible'; await h.handle.check(); assert.equal(h.calls, 1); h.handle.dispose();
+  assert.equal(h.calls,1); assert.equal(h.document.button,undefined); assert.equal(h.reloadChecks,0);
+  h.document.visibilityState='hidden'; h.setTime(1000+60*60*1000); await h.handle.check(); assert.equal(h.calls,1);
+  h.document.visibilityState='visible'; await h.handle.check(); assert.equal(h.calls,2); assert.equal(h.document.button,undefined);
+  idle=true; h.handle.resume(); assert.ok(h.document.button); assert.equal(h.reloadChecks,0); h.handle.dispose();
+});
+
+test('focus after an hour catches up once and retains the network cooldown',async()=>{
+  const document=new FakeDocument(); document.defaultView=new EventTarget();
+  const h=harness({document,response:{revision:43}});await h.handle.check();assert.equal(h.calls,1);
+  h.setTime(1000+61*60*1000);h.setResponse({revision:44});
+  document.defaultView.dispatchEvent(new Event('focus'));await h.handle.check();
+  assert.equal(h.calls,2);assert.ok(document.button);assert.equal(h.reloadChecks,0);
+  document.defaultView.dispatchEvent(new Event('pageshow'));await h.handle.check();assert.equal(h.calls,2);
+  h.handle.dispose();h.setTime(1000+122*60*1000);document.defaultView.dispatchEvent(new Event('focus'));await h.handle.check();assert.equal(h.calls,2);
 });
 
 test('rejects invalid revisions and never requests an arbitrary cross-origin endpoint', async () => {
@@ -576,7 +588,7 @@ test('callback payloads cannot mutate state, and disposal releases compatibility
 test('no compatibility UI appears while busy, including when run starts during fetch', async () => {
   let idle = false;
   const h = harness({revision: 158, response: unsupported, isIdle: () => idle});
-  await h.handle.check(); assert.equal(h.calls, 0);
+  await h.handle.check(); assert.equal(h.calls, 1);
   assert.equal(h.document.dialog, undefined); h.handle.dispose();
   let resolve;
   idle = true;
@@ -631,9 +643,9 @@ const preparedAt = Date.parse(releaseFixture.preparedAt);
 const verifiedAge = {installedCommit:cdnPointer.commit,verifiedSiteCommitMetadata:{
   repository:cdnPointer.repository,commit:cdnPointer.commit,publishedAt:releaseFixture.preparedAt}};
 
-test('local age uses minutes, hours and days, records local date and never invents publication', () => {
+test('local age uses minutes, hours, days and weeks, records local date and never invents publication', () => {
   for (const [elapsed, text] of [[0, 'less than a minute'], [60000, '1 minute'], [120000, '2 minutes'],
-    [3600000, '1 hour'], [7200000, '2 hours'], [86400000, '1 day'], [1209600000, '14 days']]) {
+    [3600000, '1 hour'], [7200000, '2 hours'], [86400000, '1 day'], [1209600000, '2 weeks']]) {
     const age = releaseUpdateAge({...releaseFixture, publishedAt: '2026-10-02T00:00:00.000Z'}, {...verifiedAge,now: preparedAt + elapsed});
     assert.equal(age.text, `Updated ${text} ago`);
     assert.equal(age.dateTime, releaseFixture.preparedAt);
@@ -1088,7 +1100,7 @@ test('native dialog keyboard focus, mobile fit and new-tab navigation preserve t
         }
       }
       const [popup] = await Promise.all([page.waitForEvent('popup'),
-        page.getByRole('link', {name: 'Open updated game (opens in a new tab)', exact: true}).click()]);
+        page.getByRole('link', {name: 'Open updated game in a new tab', exact: true}).click()]);
       await popup.waitForLoadState();
       assert.equal(popup.url(), UPDATED_GAME_URL);
       assert.equal(page.url(), 'https://game.example/');
@@ -1167,4 +1179,13 @@ test('queued blocked-menu work skips subsequent mutation scans and late callback
  for(let i=0;i<100;i++)observer.callback([noisy]);
  assert.equal(inspected,0,'one scheduled safety check bounds work across mutation batches');
  h.handle.dispose();observer.callback([noisy]);assert.equal(inspected,0);assert.equal(h.timers.size,0);
+});
+
+test('release age uses readable weeks and local exact dates without a network check',()=>{
+ const time='2026-10-01T12:00:00.000Z';
+ for(const [elapsed,text]of [[604800000,'1 week'],[1209600000,'2 weeks']]){
+  const age=formatReleaseUpdateAge(time,'updated',Date.parse(time)+elapsed);
+  assert.equal(age.text,'Updated '+text+' ago');assert.equal(age.title,'Updated: '+new Date(time).toLocaleString());
+  assert.ok(age.nextUpdateMs>0&&age.nextUpdateMs<=60000);
+ }
 });

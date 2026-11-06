@@ -15,8 +15,10 @@ function fixture(t,{fail=false}={}) {
   const env={ALLOWED_ORIGINS:origin,OPEN_BETA_ENABLED:'false',__TEST_UID:'owner',
     PB_NOTIFY_RATE_LIMITER:{limit:async()=>({success:true})},__TEST_FIRESTORE:async(path,init={})=>{
       if(path===':commit') {
-        await gate;
-        if(fail)throw Error('FIRESTORE_503');
+        if (JSON.parse(init.body).writes.some(write=>write.update?.fields?.active?.booleanValue===false)) {
+          await gate;
+          if(fail)throw Error('FIRESTORE_503');
+        }
         successfulWrites+=JSON.parse(init.body).writes.length;
         return {writeResults:[{updateTime:'v2'}]};
       }

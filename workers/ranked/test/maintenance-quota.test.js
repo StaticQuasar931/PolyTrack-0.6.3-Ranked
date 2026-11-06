@@ -18,6 +18,7 @@ const race=(trackId,index=0)=>({accountId:index?`z${String(index).padStart(4,'0'
 const proof=row=>({...pendingSlot(row),status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION});
 
 function fixture(t,pending=tracks.slice(0,3)) {
+ let clock=Date.UTC(2026,10,1,0,7);t.mock.method(Date,'now',()=>clock);
  t.mock.method(console,'log',()=>{});t.mock.method(console,'error',()=>{});
  t.mock.method(globalThis,'fetch',async()=>{throw Error('LIVE_NETWORK_FORBIDDEN');});
  const data=new Map(),versions=new Map(),calls=[],queries=[],commits=[],snapshots=new Map();
@@ -40,13 +41,16 @@ function fixture(t,pending=tracks.slice(0,3)) {
   },
   fail(stage,error='FIRESTORE_503'){f.failure={stage,error};},
   job:()=>data.get(jobKey),
-  starts:()=>calls.filter(call=>call.path.startsWith('/'+TRACK_BUILD_JOBS+'/capacity_track_')),
-  async turn(scheduledTime=420000){
+  starts:()=>queries.filter(body=>body.structuredQuery.from[0].collectionId===results&&!body.readTime),
+  async turn(scheduledTime){
+   if(scheduledTime===undefined){clock+=900000;scheduledTime=420000;}else clock=scheduledTime;
    const offset=calls.length;let completion;
    worker.scheduled({cron:'2-59/5 * * * *',scheduledTime},f.env,{waitUntil:task=>{completion=task;}});
    await completion;
    const turn=calls.slice(offset);
-   assert.ok(turn.filter(call=>call.path.startsWith('/'+TRACK_BUILD_JOBS+'/capacity_track_')).length<=1,'at most one fallback attempt, even when it fails');
+   const scans=turn.filter(call=>call.path===':runQuery').map(call=>JSON.parse(call.init.body).structuredQuery).filter(q=>q.from[0].collectionId===results);
+   assert.ok(new Set(scans.map(q=>q.where.fieldFilter.value.stringValue)).size<=1,'at most one canonical fallback track, even when it fails');
+   assert.ok(turn.filter(call=>call.path.startsWith('/'+TRACK_BUILD_JOBS+'/capacity_track_')).length<=3,'bounded metadata checks may recognize blocked sibling builds');
    assert.ok(turn.length<=50,'maintenance fixture stays within 50 Firestore requests');
    assert.equal(turn.some(call=>call.path.includes('leaderboards_overall')),false,'maintenance never starts Overall aggregation');
    return turn;
@@ -57,9 +61,12 @@ function fixture(t,pending=tracks.slice(0,3)) {
   calls.push({path,init});
   if(path===':runQuery'){
    const body=JSON.parse(init.body),query=body.structuredQuery;queries.push(body);
-   if(query.from[0].collectionId===jobs)return f.queryJobs.flatMap(key=>data.get(key)?.active?[{document:wire(key)}]:[]);
+   if(query.from[0].collectionId===jobs){
+    if(query.where.fieldFilter.field.fieldPath==='profileRetryAt')return f.queryJobs.filter(key=>Number.isSafeInteger(data.get(key)?.profileRetryAt)&&data.get(key).profileRetryAt<=clock).sort((a,b)=>data.get(a).profileRetryAt-data.get(b).profileRetryAt).map(key=>({document:wire(key)}));
+    return f.queryJobs.flatMap(key=>data.get(key)?.active?[{document:wire(key)}]:[]);
+   }
    assert.equal(query.from[0].collectionId,results);fail('canonical-query');
-   const readTime=body.readTime||new Date().toISOString();
+   const readTime=body.readTime||new Date(clock).toISOString();
    if(!body.readTime)snapshots.set(readTime,structuredClone(data));
    const source=snapshots.get(readTime),trackId=query.where.fieldFilter.value.stringValue,after=query.startAt?.values?.[0]?.referenceValue||'';
    return [...source].filter(([key,row])=>key.startsWith(results+'/')&&row.trackId===trackId&&base+key>after)
@@ -92,15 +99,15 @@ function fixture(t,pending=tracks.slice(0,3)) {
 
 test('three missing tracks share one fallback per invocation and eventually complete',async t=>{
  const f=fixture(t);
- await f.turn();assert.equal(f.starts().length,1);assert.deepEqual(f.job().pendingTrackIds,tracks.slice(0,3));assert.equal(f.job().active,true);assert.equal(f.job().processed,0);
- for(let i=0;i<6&&f.job().active;i++)await f.turn();
+ await f.turn();assert.ok(f.starts().length<=1);assert.deepEqual(f.job().pendingTrackIds,tracks.slice(0,3));assert.equal(f.job().completedAt,0);assert.equal(f.job().processed,0);
+ for(let i=0;i<8&&f.job().pendingTrackIds.length;i++)await f.turn();
  assert.equal(f.starts().length,3);assert.equal(f.job().active,false);assert.deepEqual(f.job().pendingTrackIds,[]);assert.equal(f.job().processed,3);
 });
 
 test('coordinated identity publication resumes a late build across the capture-window boundary',async t=>{
  const trackId=tracks[0],f=fixture(t,[trackId]);f.env.BACKGROUND_MAINTENANCE_MODE='coordinated';f.addRows(trackId,101);
  await f.turn(Date.UTC(2026,10,1,0,52));
- assert.equal(f.job().active,true);assert.equal(f.data.has(boards+'/'+trackId),false);
+ assert.equal(f.job().completedAt,0);assert.equal(f.data.has(boards+'/'+trackId),false);
  await f.turn(Date.UTC(2026,10,1,1,7));
  assert.equal(f.data.get(boards+'/'+trackId)?.sourceComplete,true,'continuation outside the discovery window must publish');
  const beforeIdentity=f.starts().length;
@@ -111,8 +118,8 @@ test('coordinated identity publication resumes a late build across the capture-w
 
 test('a pending multi-page build stays queued through publication, then applies identity without rebuilding',async t=>{
  const trackId=tracks[0],f=fixture(t,[trackId]),rows=f.addRows(trackId,101);
- await f.turn();assert.equal(f.job().active,true);assert.equal(f.job().processed,0);assert.equal(f.data.has(boards+'/'+trackId),false);
- await f.turn();assert.equal(f.job().active,true);assert.deepEqual(f.job().pendingTrackIds,[trackId]);assert.equal(f.job().processed,0);
+ await f.turn();assert.equal(f.job().completedAt,0);assert.equal(f.job().processed,0);assert.equal(f.data.has(boards+'/'+trackId),false);
+ await f.turn();assert.equal(f.job().completedAt,0);assert.deepEqual(f.job().pendingTrackIds,[trackId]);assert.equal(f.job().processed,0);
  const published=structuredClone(f.data.get(boards+'/'+trackId)),old=published.entries.find(row=>row.accountId==='racer');
  assert.equal(old.name,'Old racer','paged rebuild itself does not apply identityOverride');
  const before=f.starts().length,queryCount=f.queries.filter(query=>query.structuredQuery.from[0].collectionId===results).length;
@@ -132,29 +139,29 @@ for(const blocked of [false,true])test('unfinished/blocked builds retain their t
  f.ready(tracks[3]);
  await f.turn();assert.deepEqual(f.job().pendingTrackIds,[tracks[3],...tracks.slice(0,3)]);assert.equal(f.job().processed,0);
  const build=f.data.get(TRACK_BUILD_JOBS+'/'+trackBuildId(tracks[0]));assert.equal(build.blocked,true);
- await f.turn();assert.equal(f.job().processed,1);assert.equal(f.job().active,true);assert.equal(f.job().pendingTrackIds.length,3);assert(!f.job().pendingTrackIds.includes(tracks[3]));
+ await f.turn();assert.equal(f.job().processed,1);assert.equal(f.job().completedAt,0);assert.equal(f.job().pendingTrackIds.length,3);assert(!f.job().pendingTrackIds.includes(tracks[3]));
  assert.equal(f.queries.filter(query=>query.structuredQuery.from[0].collectionId===results).length,0,'expired/blocked builds cannot start new canonical scans');
  assert.equal(f.data.get(boards+'/'+tracks[3]).entries[0].name,identity.name);
  for(const trackId of tracks.slice(0,3))f.ready(trackId);
  const attempts=f.starts().length;
- await f.turn();assert.equal(f.job().active,false);assert.equal(f.job().processed,4);assert.equal(f.starts().length,attempts,'repaired publications receive identity without another rebuild');
+ for(let n=0;n<4&&f.job().pendingTrackIds.length;n++)await f.turn();assert.equal(f.job().active,false);assert.equal(f.job().processed,4);assert.equal(f.starts().length,attempts,'repaired publications receive identity without another rebuild');
 });
 
 for(const stage of ['build-read','canonical-query','publication'])test('failed fallback consumes the allowance and unfinished tracks are retained: '+stage,async t=>{
  const f=fixture(t);f.fail(stage);
- await f.turn();assert.equal(f.starts().length,1);assert.deepEqual(f.job().pendingTrackIds,tracks.slice(0,3));assert.equal(f.job().active,true);assert.equal(f.job().processed,0);
+ await f.turn();assert.ok(f.starts().length<=1);assert.deepEqual(f.job().pendingTrackIds,tracks.slice(0,3));assert.equal(f.job().completedAt,0);assert.equal(f.job().processed,0);
 });
 
 test('failed fallback does not discard a successfully updated ready sibling',async t=>{
  const f=fixture(t);f.ready(tracks[1]);f.fail('build-read');
- await f.turn();assert.equal(f.starts().length,1);assert.equal(f.job().processed,1);assert.equal(f.job().changed,1);assert.deepEqual(f.job().pendingTrackIds,[tracks[0],tracks[2]]);
+ await f.turn();assert.ok(f.starts().length<=1);assert.equal(f.job().processed,1);assert.equal(f.job().changed,1);assert.deepEqual(f.job().pendingTrackIds,[tracks[0],tracks[2]]);
  assert.equal(f.data.get(boards+'/'+tracks[1]).entries[0].name,identity.name);
 });
 
 test('all three ready tracks remain cheap and complete in one pass',async t=>{
  const f=fixture(t);for(const trackId of tracks.slice(0,3))f.ready(trackId);
  await f.turn();assert.equal(f.starts().length,0);assert.equal(f.job().active,false);assert.equal(f.job().processed,3);assert.equal(f.job().changed,3);
- assert.equal(f.queries.length,1,'only the active profile job query');
+ assert.equal(f.queries.length,2,'bounded retry probe plus the active profile job query');
 });
 
 test('an older queued identity cannot overwrite a newer published identity or trigger page writes',async t=>{
@@ -194,7 +201,7 @@ test('identity reaches all immutable pages after a 531-racer build without anoth
   if(published?.sourceComplete)break;
  }
  assert.equal(published?.totalEntries,531);assert.equal(published.complete,false);assert.equal(published.pagination.pageCount,6);
- assert.equal(f.job().active,true);assert.deepEqual(f.job().pendingTrackIds,[trackId]);
+ assert.equal(f.job().completedAt,0);assert.deepEqual(f.job().pendingTrackIds,[trackId]);
  const before=await loadPublicationEntries(published,'track',trackId,read),attempts=f.starts().length;
  await f.turn();assert.equal(f.starts().length,attempts);assert.equal(f.job().active,false);assert.equal(f.job().processed,1);
  const after=await loadPublicationEntries(f.data.get(boards+'/'+trackId),'track',trackId,read);

@@ -35,10 +35,14 @@ async function measure(page){
   const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
   const card=document.querySelector('.sq-kodub-weekly>.button'),image=card.querySelector(':scope>img'),info=card.querySelector('.track-of-the-week-info');
   const sample=node=>({rect:rect(node),fit:getComputedStyle(node).objectFit,position:getComputedStyle(node).objectPosition});
+  const artAncestors=[];
+  for(let node=image;node&&!node.classList.contains('sq-featured-events');node=node.parentElement){
+   const style=getComputedStyle(node);artAncestors.push({className:node.className,rect:rect(node),clipPath:style.clipPath,overflow:style.overflow,transform:style.transform});
+  }
   const imageRect=rect(image),scale=Math.min(imageRect.width/image.naturalWidth,imageRect.height/image.naturalHeight);
   // Contained artwork is bottom-left anchored; its painted edge can differ from the element edge.
   const painted={x:imageRect.x,y:imageRect.bottom-image.naturalHeight*scale,width:image.naturalWidth*scale,height:image.naturalHeight*scale,right:imageRect.x+image.naturalWidth*scale,bottom:imageRect.bottom};
-  return {card:rect(card),image:sample(image),painted,info:rect(info),background:{card:getComputedStyle(card).backgroundColor,info:getComputedStyle(info).backgroundColor,infoImage:getComputedStyle(info).backgroundImage},natural:{width:image.naturalWidth,height:image.naturalHeight},grid:getComputedStyle(card).gridTemplateColumns,
+  return {artAncestors,card:rect(card),image:sample(image),painted,info:rect(info),background:{card:getComputedStyle(card).backgroundColor,info:getComputedStyle(info).backgroundColor,infoImage:getComputedStyle(info).backgroundImage},natural:{width:image.naturalWidth,height:image.naturalHeight},grid:getComputedStyle(card).gridTemplateColumns,
    overflow:{client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth},
    cards:[...document.querySelectorAll('.sq-featured-events>.track>.button,.sq-featured-events .sq-event-card')].map(rect),
    others:[...document.querySelectorAll('.sq-permanent-track img,.sq-event-thumb img,.personal-best img,.unrelated')].map(sample)};
@@ -60,9 +64,21 @@ function assertPaintedPanels(geometry,label){
  assert.equal(image.fit,'contain',label+': full source is contained, never cropped');
  assert.equal(image.position,'0% 100%',label+': full source stays bottom-left anchored');
  assert.ok(painted.width>0&&painted.height>0&&inside(painted,card),label+': every source edge is visible inside the card');
- assert.ok(Math.abs(painted.x-card.x)<1&&Math.abs(painted.bottom-card.bottom)<1,label+': painted artwork reaches the bottom-left corner');
- assert.ok(Math.abs(painted.right-info.x)<1,label+': painted right equals info-panel left: '+JSON.stringify({painted,info}));
- assert.ok(Math.abs(info.right-card.right)<1&&Math.abs(info.y-card.y)<1&&Math.abs(info.bottom-card.bottom)<1,label+': details fill the entire remainder');
+ const stacked=info.y>=image.rect.bottom-1;
+ assert.ok(Math.abs(painted.x-card.x)<1,label+': artwork reaches the left edge');
+ if(stacked){
+  assert.ok(Math.abs(painted.y-card.y)<1,label+': complete stacked artwork reaches the card top');
+  assert.ok(Math.abs(painted.bottom-info.y)<1,label+': no stacked artwork/details gap');
+ }else{
+  assert.ok(Math.abs(painted.bottom-card.bottom)<1,label+': artwork reaches the card bottom');
+  assert.ok(Math.abs(painted.right-info.x)<1,label+': no side-by-side artwork/details gap: '+JSON.stringify({painted,info}));
+  assert.ok(Math.abs(info.y-card.y)<1,label+': details reach the card top');
+ }
+ assert.ok(Math.abs(info.right-card.right)<1&&Math.abs(info.bottom-card.bottom)<1,label+': details fill the remainder');
+ for(const ancestor of geometry.artAncestors){
+  assert.equal(ancestor.clipPath,'none',label+': artwork must not inherit native polygon clipping: '+JSON.stringify(ancestor));
+  if(/hidden|clip/.test(ancestor.overflow))assert.ok(inside(painted,ancestor.rect),label+': artwork not clipped by '+JSON.stringify(ancestor));
+ }
  assert.equal(background.info,background.card,label+': uniform detail background');
  assert.equal(background.infoImage,'none',label+': no separate detail gradient');
 }
@@ -207,7 +223,7 @@ test('Kodub artwork fills a bottom-left panel with responsive details and reacha
  }finally{await browser.close();}
 });
 
-test('native Kodub titles fit available space and wrap overlong names at spaces, including UI125',{timeout:300000},async t=>{
+test('native Kodub titles fit available space and wrap overlong names at spaces, including UI100/125/150',{timeout:focused?180000:300000},async t=>{
  const {startResponsiveServer}=await import('./responsive-server.mjs');
  const directory=process.env.POLYTRACK_IMAGE_LAYOUT_OUTPUT||await fs.mkdtemp(path.join(tmpdir(),'polytrack-native-title-'));
  await fs.mkdir(directory,{recursive:true});
@@ -215,7 +231,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
  const browser=await chromium.launch(launchOptions);
  const results=[],requests=[];
  try{
-  for(const scale of [125,100]){
+  for(const scale of [125,100,150]){
    const context=await browser.newContext({viewport:{width:1280,height:720},serviceWorkers:'block'});
    await context.addInitScript(scale=>localStorage.setItem('polytrack-0.6.2-ui-font-scale',String(scale)),scale);
    await context.addInitScript(number=>localStorage.setItem('polytrack-site-update-ack-release-v1:'+number,'acknowledged'),RELEASE_INFO.number);
@@ -239,6 +255,8 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
    await title.waitFor();
    await page.locator('.sq-kodub-weekly>.button>img.cover').evaluate(image=>image.decode());
    await page.evaluate(()=>document.fonts.ready);
+   // The shipped text-size control stops at 125; exercise 150 through the same live CSS scale variable.
+   if(scale===150)await page.addStyleTag({content:':root{--sq-ui-scale:1.5!important}'});
    await page.screenshot({path:path.join(directory,'native-published-ui'+scale+'.png')});
    assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--sq-ui-scale').trim()),String(scale/100));
    const sample=()=>title.evaluate(node=>{
@@ -267,7 +285,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      offset+=word.length+1;
     }
    };
-   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[2560,1440],[320,568],[1920,1080],[375,667],[956,440]]:[[2560,1440],[320,568],[1920,1080],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
+   for(const [width,height] of (releaseAudit?requestedViewports:focused?[[440,956],[956,440],[1920,1080]]:[[2560,1440],[320,568],[1920,1080],[1366,768],[844,390],[390,844],[768,1024],[2560,1279],[440,956],[375,667],[956,440],[667,375],[640,460],[641,460],[1200,800],[1201,800]])){
     await page.setViewportSize({width,height});await page.mouse.move(0,0);await settle(page);
     if(width===2560&&height===1440){
      await title.evaluate((node,name)=>node.textContent=name,weekly.name);await settle(page);
@@ -283,6 +301,7 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
     }
     await title.evaluate(node=>node.textContent='Hydropower');await settle(page);
     const ordinary=await sample(),geometry=await measure(page);
+    await fs.writeFile(path.join(directory,'native-artwork-latest.json'),JSON.stringify({width,height,scale,geometry},null,2));
     assertPaintedPanels(geometry,'native '+width+'x'+height+' UI'+scale);
     await assertCardContents(page,'native '+width+'x'+height+' UI'+scale);
     const previews=await page.locator('.track:not(.track-of-the-week):not(.sq-permanent-track)>.button').evaluateAll(nodes=>nodes.filter(node=>node.querySelector('.environment')&&node.getBoundingClientRect().width>0).map(node=>{
@@ -299,7 +318,8 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      if(width>1000&&Math.abs(card.y-geometry.card.y)<1)assert.ok(Math.abs(card.height-geometry.card.height)<1,'native desktop cards have equal height: '+JSON.stringify(geometry.cards));
     }
     await page.screenshot({path:path.join(directory,'native-title-'+width+'x'+height+'-ui'+scale+'.png')});
-    assert.equal(ordinary.lines,1,JSON.stringify({width,height,scale,ordinary})+': Hydropower must be one line');
+    if(scale<=125)assert.equal(ordinary.lines,1,JSON.stringify({width,height,scale,ordinary})+': Hydropower must be one line');
+    assertWrapping(ordinary,'native ordinary '+width+'x'+height+' UI'+scale);
     assert.equal(ordinary.overflow,false,'ordinary title must not overflow');
     assert.equal(geometry.image.fit,'contain');assert.equal(geometry.image.position,'0% 100%');
     assert.ok(Math.abs(geometry.image.rect.x-geometry.card.x)<1,'art remains full bleed on left');
@@ -326,12 +346,23 @@ test('native Kodub titles fit available space and wrap overlong names at spaces,
      if(width>1000&&Math.abs(card.y-expanded.card.y)<1)assert.ok(Math.abs(card.height-expanded.card.height)<1,'wrapped native desktop cards have equal heights');
     }
     assert.ok(expanded.overflow.scroll<=expanded.overflow.client+1,'wrapped native cards do not overflow the page');
+    const artwork=page.locator('.sq-kodub-weekly>.button>img:not(.environment)');
+    for(const [w,h] of [[900,240],[240,900],[256,256]]){
+     await artwork.evaluate(async(image,src)=>{image.className='thumbnail';image.src=src;await image.decode();},svg(w,h));
+     await settle(page);
+     const fallback=await measure(page);
+     assertPaintedPanels(fallback,'native fallback '+width+'x'+height+' UI'+scale+' '+w+'x'+h);
+     assert.ok(Math.abs(fallback.image.rect.width-fallback.painted.width)<1,'native fallback has no empty rail between artwork and details');
+     await assertCardContents(page,'native fallback '+width+'x'+height+' UI'+scale);
+    }
+    await artwork.evaluate(async(image,src)=>{image.className='cover';image.src=src;await image.decode();},cover);
+    await settle(page);
     results.push({width,height,scale,ordinary,long,overlong,artwork:geometry.image,card:geometry.card,expanded});
    }
    await context.close();
   }
   await fs.writeFile(path.join(directory,'native-title-measurements.json'),JSON.stringify({results,blockedRequests:requests},null,2));
   assert.deepEqual(requests,[],'native fixture uses only read-only loopback resources, no external requests');
-  t.diagnostic(results.length+' native viewport/UI-scale checks, three title lengths each; zero external requests; screenshots: '+directory);
+  t.diagnostic(results.length+' native viewport/UI-scale checks, three title lengths and three fallback aspect ratios each; zero external requests; screenshots: '+directory);
  }finally{await browser.close();await server.close();}
 });

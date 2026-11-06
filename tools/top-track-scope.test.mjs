@@ -27,5 +27,5 @@ test('Top Tracks scope applies equally to rows and page counts without changing 
  assert.equal((source.match(/personalTrackRankingRows\(topTrackRowsForScope\(loadedTrackRankingRows\(\)\)\)/g)||[]).length,2);
  const handler=source.slice(source.indexOf("      if(topScope&&overallCategory==='topTracks')"),source.indexOf('      if(scope){',source.indexOf("      if(topScope&&overallCategory==='topTracks')")));
  assert.match(handler,/overallPage=0/);assert.doesNotMatch(handler,/overallCompletionScope=|overallCategory='tracks'|fetch|\.get\(/);
- assert.match(source,/aria-label','Top Tracks source'/);
+ assert.match(source,/aria-label','Track types for Top Tracks'/);
 });

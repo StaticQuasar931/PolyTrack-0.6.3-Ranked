@@ -2,17 +2,29 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 298,
+    "number": 299,
     "version": "0.6.3",
-    "revision": 256,
+    "revision": 257,
     "notes": [
-      "Improved cloud compatibility across supported Google Sites embeds.",
-      "Reduced repeat profile-update work.",
-      "Added privacy-safe connection counters to help diagnose upload problems.",
-      "Unofficial copies using this update keep saves local."
+      "Update alerts appear sooner when you return to a menu.",
+      "Clearer snapshot status and navigation labels.",
+      "Improved weekly-track thumbnail layout.",
+      "Fixed profile updates getting stuck behind other updates."
     ]
   },
   "entries": [
+    {
+      "number": 298,
+      "title": "Reduce obsolete profile reads and align owned cloud access",
+      "commit": "58ccdc1c357d0bd7a2ac9e9c188f1a25f8cb0c7e",
+      "committedAt": "2026-11-06T03:56:37.000Z",
+      "notes": [
+        "Improved cloud compatibility across supported Google Sites embeds.",
+        "Reduced repeat profile-update work.",
+        "Added privacy-safe connection counters to help diagnose upload problems.",
+        "Unofficial copies using this update keep saves local."
+      ]
+    },
     {
       "number": 297,
       "title": "Harden snapshot recovery and prepare exact replay repairs",
@@ -206,15 +218,6 @@ const historyData = {
       "committedAt": "2026-11-04T03:27:48.000Z",
       "notes": [
         "Smoother PB displays in large Custom Tracks collections."
-      ]
-    },
-    {
-      "number": 276,
-      "title": "Reliable Custom and Extra Track PB Displays",
-      "commit": "7db868d8509c1d9cf9e8b2998a4053ec7140108a",
-      "committedAt": "2026-11-04T03:09:33.000Z",
-      "notes": [
-        "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
       ]
     }
   ],

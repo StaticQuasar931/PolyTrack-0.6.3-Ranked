@@ -137,7 +137,7 @@ export function formatReleaseUpdateAge(dateTime, source = 'unknown', now = Date.
   if (time === null || !Number.isFinite(now)) return {...details, text: 'Publication time unavailable', nextUpdateMs: null};
   const elapsed = now - time;
   if (elapsed < 0) return {...details, text: `Device clock is before ${source === 'committed' ? 'commit' : source === 'pushed' ? 'push' : 'update'} time`, nextUpdateMs: Math.min(-elapsed, 60000)};
-  const [unit, size] = elapsed >= 86400000 ? ['day', 86400000] : elapsed >= 3600000 ? ['hour', 3600000] : ['minute', 60000];
+  const [unit, size] = elapsed >= 604800000 ? ['week', 604800000] : elapsed >= 86400000 ? ['day', 86400000] : elapsed >= 3600000 ? ['hour', 3600000] : ['minute', 60000];
   const count = Math.floor(elapsed / size);
   return {...details, text: `${label} ${count ? `${count} ${unit}${count === 1 ? '' : 's'} ago` : 'less than a minute ago'}`,
     nextUpdateMs: Math.min(size - elapsed % size, 60000)};
@@ -348,7 +348,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     }, releaseHistory);
     if (updates > 1) {
       const count = document.createElement('small'); count.dataset.siteUpdatesSinceAck = '';
-      count.textContent = updates+' newer updates';
+      count.textContent = updates+' updates since you last checked';
       Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'}); description.append(count);
     }
     themeDialog(node, title, description);
@@ -488,7 +488,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       blockedUpdate = false; stopBlockedWatch();
       button.textContent = 'Update available';
       button.title = button.__updateTitle;
-      button.setAttribute('aria-label', 'Update available. Reload to update.');
+      button.setAttribute('aria-label', 'Update available. Reload game.');
     } catch { /* Keep the explicit safe-menu instruction. */ }
   };
   const clearOldCopyNotice = () => {
@@ -517,7 +517,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       text.style.margin = '0 0 10px';
       const open = document.createElement('a');
       open.href = UPDATED_GAME_URL; open.target = '_blank'; open.rel = 'noopener noreferrer';
-      open.textContent = 'Open updated game'; open.setAttribute('aria-label', 'Open updated game (opens in a new tab)'); themeControl(open);
+      open.textContent = 'Open updated game'; open.setAttribute('aria-label', 'Open updated game in a new tab'); themeControl(open);
       open.addEventListener('click', event => {
         try { if (!isVisible(document) || !isIdle(document) || !canReload()) event.preventDefault(); }
         catch { event.preventDefault(); }
@@ -620,7 +620,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       } else {
         open.href = UPDATED_GAME_URL; open.target = '_blank'; open.rel = 'noopener noreferrer';
         open.textContent = 'Open updated game';
-        open.setAttribute('aria-label', 'Open updated game (opens in a new tab)');
+        open.setAttribute('aria-label', 'Open updated game in a new tab');
       }
       themeControl(open);
       const offline = document.createElement('button');
@@ -674,7 +674,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       if (reloadHere) button.type = 'button';
       else { button.href = UPDATED_GAME_URL; button.target = '_blank'; button.rel = 'noopener noreferrer'; }
       button.textContent = 'Update available';
-      button.setAttribute('aria-label', reloadHere ? 'Update available. Reload to update.' : 'Update available. Open updated game (opens in a new tab).');
+      button.setAttribute('aria-label', reloadHere ? 'Update available. Reload game.' : 'Update available. Open official game in a new tab.');
       button.title = launcherCommit ? 'Reload this launcher to check the latest CDN release. Your saved runs stay here.' :
         reloadHere ? 'Reload this page when you are ready.' : 'Open the official updated game. This copy and your current session will stay open.';
       button.__updateTitle = button.title;
@@ -700,7 +700,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   const check = async () => {
     if (disposed) return;
     resume();
-    try { if (!isVisible(document) || !isIdle(document)) return; }
+    // Discovery is safe during a race; displaying prompts and reloading remain idle-only.
+    try { if (!isVisible(document)) return; }
     catch { failOpen(); return; }
     if (inFlight) return inFlight;
     let startedAt;
@@ -775,6 +776,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     catch { failOpen(); }
   };
   const onVisibilityChange = () => { if (isVisible(document)) void check(); };
+  const onResume = () => { resume(); void check(); };
   // Match the installed notice: modal keys and their dismissal keyup must not
   // reach the game's document-level shortcuts. Native button defaults remain.
   const held = new Set();
@@ -788,8 +790,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   document.addEventListener('visibilitychange', onVisibilityChange);
   for (const type of ['keydown', 'keyup']) document.defaultView?.addEventListener(type, guardDialogKey, true);
-  document.defaultView?.addEventListener('focus', resume);
-  document.defaultView?.addEventListener('pageshow', resume);
+  document.defaultView?.addEventListener('focus', onResume);
+  document.defaultView?.addEventListener('pageshow', onResume);
   const handle = Object.freeze({ check, resume, getCompatibility: () => ({ ...compatibility }), dispose() {
     if (disposed) return;
     disposed = true;
@@ -798,8 +800,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     clearOldCopyNotice();
     document.removeEventListener('visibilitychange', onVisibilityChange);
     for (const type of ['keydown', 'keyup']) document.defaultView?.removeEventListener(type, guardDialogKey, true);
-    document.defaultView?.removeEventListener('focus', resume);
-    document.defaultView?.removeEventListener('pageshow', resume);
+    document.defaultView?.removeEventListener('focus', onResume);
+    document.defaultView?.removeEventListener('pageshow', onResume);
     pendingManifest = null;
     try { if (timer !== null) unschedule(timer); } catch { /* Disposal must still release compatibility. */ }
     controller?.abort();

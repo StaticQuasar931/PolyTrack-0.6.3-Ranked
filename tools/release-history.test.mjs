@@ -30,7 +30,8 @@ test('bounded checked-in history matches real central release and never manufact
   assert.equal(selectReleaseHistory(RELEASE_INFO).matches,true);assert.equal(RELEASE_HISTORY.entries.length,20);
   assert.equal(RELEASE_HISTORY.coverage.olderOmitted,true);assert.ok(Object.isFrozen(RELEASE_HISTORY.entries[0].notes));
   const numbers=RELEASE_HISTORY.entries.map(entry=>entry.number),migration=numbers.indexOf(263);
-  assert.ok(migration>=0);assert.equal(numbers[migration+1],254);
+  if(migration>=0&&migration+1<numbers.length)assert.equal(numbers[migration+1],254);
+  else assert.ok(numbers.at(-1)>=263,'older migration entries may leave the bounded archive');
   assert.ok(!RELEASE_HISTORY.entries.some(entry=>entry.number>=255&&entry.number<=262));
   assert.ok(RELEASE_HISTORY.entries.every(entry=>new Date(entry.committedAt).toISOString()===entry.committedAt));
   assert.deepEqual(Object.keys(RELEASE_HISTORY.current),['number','version','revision','notes']);
@@ -168,7 +169,7 @@ test('installed notice shows a compact known acknowledgment count, never a first
   for(const [baseline,expected] of [[254,4],[263,3],[265,1],[200,null],[null,null]]){
     const store=storage();if(baseline)store.setItem('polytrack-site-update-ack-release-v1:'+baseline,'acknowledged');
     const h=notice({store});const count=h.dialog.querySelectorAll('small').find(node=>Object.hasOwn(node.dataset,'siteUpdatesSinceAck'));
-    assert.equal(count?.textContent,expected>1?expected+' newer updates':undefined);
+    assert.equal(count?.textContent,expected>1?expected+' updates since you last checked':undefined);
     h.handle.dispose();assert.equal(store.getItem('polytrack-site-update-ack-release-v1:266'),null);
   }
 });
