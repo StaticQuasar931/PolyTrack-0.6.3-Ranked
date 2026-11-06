@@ -109,6 +109,14 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(!response.ok)throw Error('Snapshot lookup unavailable');
         const text=await responseBody(response,'text');if(text.length>256*1024)throw Error('Snapshot lookup too large');
         const index=JSON.parse(text);
+        if(index.compactIndexVersion===1||index.compactIndexVersion===2){
+          if(!index.files||typeof index.files!=='object'||Array.isArray(index.files)||Object.keys(index.files).length>1024||
+            Object.values(index.files).some(row=>!Array.isArray(row)||row.length!==2||typeof row[0]!=='string'||!(index.compactIndexVersion===2?/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/:/^[a-f0-9]{64}$/).test(row[0])||!Number.isSafeInteger(row[1])||row[1]<1||row[1]>2*1024*1024))throw Error('Invalid compact snapshot lookup');
+          index.files=Object.fromEntries(Object.entries(index.files).map(([logical,[hash,size]])=>{
+            if(index.compactIndexVersion===2)hash=Array.from(atob(hash.replace(/-/g,'+').replace(/_/g,'/')+'='),char=>char.charCodeAt(0).toString(16).padStart(2,'0')).join('');
+            return [logical,{path:hash+'.bin',sha256:hash,decodedBytes:size}];
+          }));
+        }
         if(index.schemaVersion!==1||index.lookupShardsVersion!==1||index.encoding!=='gzip-xor-a7-v1'||index.generation!==pack.index.generation||index.bucket!==bucket||
           !index.files||typeof index.files!=='object'||Array.isArray(index.files)||Object.keys(index.files).length>1024||
           Object.entries(index.files).some(([logical,record])=>bootstrapPath(logical)||!record||record.path!==record.sha256+'.bin'||!/^[a-f0-9]{64}$/.test(record.sha256)||!Number.isSafeInteger(record.decodedBytes)||record.decodedBytes<1||record.decodedBytes>2*1024*1024))throw Error('Invalid snapshot lookup');

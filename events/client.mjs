@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=259';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=259';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=263';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=263';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,8 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=259';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=259';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=263';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=263';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -51,6 +51,31 @@ function validEventTimestamp(value,at=Date.now()){
 }
 export function eventDisplayRunAt(row,at=Date.now()){
   return eventExactRunAt(row,at)||[row?.runAt,row?.submittedAt,row?.receivedAt].find(value=>validEventTimestamp(value,at))||null;
+}
+export function decorateArchivedReplayUnavailable(target,row){
+  if(row?.replayUnavailable!==true)return;
+  const label=target.ownerDocument.createElement('span');
+  label.textContent='Replay unavailable';
+  label.title='No replay is available for this saved archived finish. This does not indicate new verification.';
+  target.append(target.ownerDocument.createTextNode(' '),label);
+}
+export function observeArchiveReplayLabels(root,periods,snapshots){
+  const decorate=()=>{
+    for(const card of root.querySelectorAll('[data-archive-event-id]')){
+      const period=periods.find(period=>period.id===card.dataset.archiveEventId);
+      const entries=archivePeriodCounts(period,snapshots.get(period?.id)).verifiedEntries;
+      const items=card.querySelectorAll('.sq-archive-standings ol > li');
+      for(const [index,item] of [...items].entries()){
+        if(entries[index]?.replayUnavailable!==true||item.dataset.sqReplayUnavailable==='true')continue;
+        decorateArchivedReplayUnavailable(item.children[1],entries[index]);
+        item.dataset.sqReplayUnavailable='true';
+      }
+    }
+  };
+  // The archive renderer owns lazy loading and pagination; decorate its new rows only.
+  const observer=new MutationObserver(decorate);
+  observer.observe(root,{childList:true,subtree:true});decorate();
+  return observer;
 }
 export function decorateEventRowPresentation(button,row,at=Date.now()){
   const position=button.querySelector('.left .position'),ordinal=eventOrdinal(row.rank);
@@ -617,7 +642,7 @@ export function installEvents(bridge){
       knownPeriods.set(matches[0].id,matches[0]);return await race(matches[0],{direct:true});
     }catch{if(dialog&&token===requestId)body('<p>Event availability could not be checked. Try again from Events. No event race was opened.</p>');return false;}
   }
-  function close(){entryRequest++;if(!dialog)return;dialog.remove();dialog=null;selected=null;requestId++;returnFocus?.isConnected&&returnFocus.focus({preventScroll:true});}
+  function close(){dialog?.__sqArchiveReplayLabels?.disconnect();entryRequest++;if(!dialog)return;dialog.remove();dialog=null;selected=null;requestId++;returnFocus?.isConnected&&returnFocus.focus({preventScroll:true});}
   function shell(){
     if(dialog)return;
     returnFocus=document.activeElement;dialog=document.createElement('div');dialog.className='sq-events-overlay';dialog.innerHTML='<section class="sq-events-dialog" role="dialog" aria-modal="true" aria-labelledby="sqEventsTitle"><header><h2 id="sqEventsTitle">Events</h2><button type="button" class="button" data-event-close>Close</button></header><nav><button type="button" class="button" data-event-home>Live events</button><button type="button" class="button" data-event-totals>Event RP</button><button type="button" class="button" data-event-archives>Past events</button></nav><p class="sq-event-status" role="status" aria-live="polite"></p><main></main></section>';document.body.append(dialog);
@@ -663,7 +688,7 @@ export function installEvents(bridge){
     const count=counts.racers===null?'':`<small>${counts.racers} ${counts.racers===1?'racer':'racers'} · ${counts.verified} verified</small>`;
     return `<button type="button" class="sq-event-card sq-event-permanent" data-event-permanent><span class="sq-event-thumb">${bridge.thumbnail(ROLLING_TRACK_ID)}</span><div class="sq-event-record">${record}</div><span><small>PERMANENT EVENT</small><strong>Rolling Hills Racer</strong><span class="sq-event-reward">Normal RP + up to 1001 Event RP</span>${count}<small>No reset</small></span></button>`;
   }
-  function selectView(view){entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
+  function selectView(view){dialog?.__sqArchiveReplayLabels?.disconnect();entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
   async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<div class="sq-event-browser-heading"><h3>Live events</h3><p>Choose a track for standings, replays, or your next PB.</p></div><div class="sq-event-cards">'+cards(livePeriods().filter(p=>p.kind==='kodub'),{details:true})+permanentCard(true)+cards(livePeriods().filter(p=>p.kind!=='kodub').sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind)),{details:true})+'</div>');message(['Event RP is separate from Overall RP.',bridge.dataNotice?.()||''].filter(Boolean).join(' '));void loadPermanent().then(()=>{if(!dialog||token!==requestId||!dialog.querySelector('[data-event-permanent]'))return;const active=document.activeElement;if(active?.closest('[data-event-permanent]'))return;const holder=document.createElement('div');holder.innerHTML=permanentCard(false);dialog.querySelector('[data-event-permanent]')?.replaceWith(holder.firstElementChild);}).catch(()=>{});}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
   function receiptText(receipt,local,period,published){
     if(published&&eventPublishedPbCoversReceipt(receipt,local,period,published))return '';
@@ -737,6 +762,7 @@ export function installEvents(bridge){
       mountArchiveView(dialog.querySelector('main'),{periods,month,formatTime:time,accountId:bridge.accountId(),snapshots:cache,
         resolveName:periodName,loadSnapshot:period=>snapshot(period,false),
         onOpenPeriod:(period,snapshot)=>void openArchivedTrack(period,snapshot),onImportPeriod:period=>void importArchived(period),renderThumbnail:period=>{const node=document.createElement('span');node.innerHTML=bridge.thumbnail(period.trackId);return node;}});
+      dialog.__sqArchiveReplayLabels=observeArchiveReplayLabels(dialog.querySelector('main'),periods,cache);
     }catch{if(token===requestId)body('<p>Past events are unavailable. Please try again.</p>');}
   }
   let nativeView=null,eventIntent=null,archiveIntent=null,featuredSelection=null;
@@ -1240,7 +1266,7 @@ export function installEvents(bridge){
       ?'Frozen final event standings as saved. Practice uses the separate ordinary track leaderboard and does not change Event RP.'
       :state==='partial-final'?'Only part of the final event standings was saved. Missing ranks and Event RP are unknown.'
       :'Final standings are unavailable. These are saved event results, not final awards or the ordinary practice leaderboard.';
-    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),view.page,snapshot?.updatedAt,state,bound,counts.racers,source,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.name,row.rp,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
+    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),view.page,snapshot?.updatedAt,state,bound,counts.racers,source,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.name,row.rp,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId,row.replayUnavailable===true])]);
     for(const button of view.board.querySelectorAll(':scope > .container > button.main')){const selected=selectedGhosts.get(button.dataset.eventAccountId),pending=pendingGhosts.get(button.dataset.eventAccountId),matches=row=>row?.periodId===period.id&&row.accountId===view.accountId&&row.targetTimeMs===Number(button.dataset.eventTime);const active=matches(selected),busy=matches(pending);button.classList.toggle('selected',!!(active||busy));button.classList.toggle('pending-selection',!!busy);button.setAttribute('aria-pressed',String(!!(active||busy)));button.setAttribute('aria-busy',String(!!busy));}
     if(signature===view.signature)return;
     view.signature=signature;view.board.title=description;
@@ -1253,7 +1279,7 @@ export function installEvents(bridge){
     for(const row of rows.slice(view.page*20,view.page*20+20)){
       const renderer=view.board.__pt062EventRows;if(renderer?.version!==1)break;
       const runAt=eventDisplayRunAt(row,now());
-      const button=renderer.render(container,nativeEventRow({...row,rank:row.rank??''},view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=typeof bridge.readArchivedReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Saved archived replay is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
+      const button=renderer.render(container,nativeEventRow({...row,rank:row.rank??''},view.accountId,runAt||now()));button.type='button';button.dataset.eventAccountId=row.accountId;button.dataset.eventTime=String(row.timeMs);button.dataset.eventRunId=row.runId||'';button.dataset.eventPending='false';const playable=row.replayUnavailable!==true&&typeof bridge.readArchivedReplay==='function';button.tabIndex=playable?0:-1;button.setAttribute('aria-disabled',String(!playable));button.setAttribute('aria-pressed','false');button.setAttribute('aria-busy','false');button.title=playable?'Select this archived replay. It will not submit an event result.':'Saved archived replay is unavailable.';if(playable)button.onclick=()=>void selectReplay(period,row);
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
       if(row.rank===null){const position=button.querySelector('.left .position');position.textContent='Rank unavailable';position.title='No rank was saved for this event result.';}
@@ -1262,7 +1288,7 @@ export function installEvents(bridge){
       const hasRp=Number.isSafeInteger(row.rp)&&row.rp>=0,isFinal=snapshot.archived===true;
       points.textContent=hasRp?row.rp+' ERP'+(isFinal?'':' (saved)'):'ERP unavailable';
       points.title=!hasRp?'No Event RP was saved for this result.':isFinal?'Event RP from saved final standings.':'Event RP from a non-final capture, not a final award.';
-      state.prepend(points);bridge.decorateRacer?.(button,row);
+      state.prepend(points);if(row.replayUnavailable===true)decorateArchivedReplayUnavailable(state,row);bridge.decorateRacer?.(button,row);
     }
     if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent=!bound?description:state==='final'?'No verified results are present in the saved final standings.':'No verified results are present in this saved capture. Final results are not known.';container.append(empty);}
     renderEventPagination(view,rows.length,()=>syncNativeArchiveBoard(view));

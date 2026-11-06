@@ -2,15 +2,58 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 301,
+    "number": 305,
     "version": "0.6.3",
-    "revision": 259,
+    "revision": 263,
     "notes": [
-      "Restored Kodub's original bouncy button entrance.",
-      "Kept the synchronized Ranked button timing."
+      "Fresh snapshot downloads are smaller, with all saved replays retained.",
+      "Improved profile and replay lookup loading."
     ]
   },
   "entries": [
+    {
+      "number": 304,
+      "title": "Publish refreshed Snapshot 74 with verified replay coverage",
+      "commit": "5aba11535cc5040ecbfb7b84557f6d4969c555e8",
+      "committedAt": "2026-11-06T14:21:14.000Z",
+      "notes": [
+        "Fresh rankings, profiles and event standings.",
+        "New personal bests and saved replays are synchronized.",
+        "Old archived finishes show when a replay is unavailable.",
+        "Fixed safe playback of compact long recordings."
+      ]
+    },
+    {
+      "number": 303,
+      "title": "Reconcile newer PBs and preserve coherent Event RP baselines",
+      "commit": "efca578b6c331e544a79ab3f85b9f625d7e2c223",
+      "committedAt": "2026-11-06T13:34:38.000Z",
+      "notes": [
+        "Fixed newer personal bests being paired with old snapshot times.",
+        "Kept Event RP calculations consistent with published standings.",
+        "Old archived finishes clearly show when a replay is unavailable."
+      ]
+    },
+    {
+      "number": 302,
+      "title": "Prepare bounded snapshot catch-up with honest legacy replay labels",
+      "commit": "01e51ba5ba4b5f969fcf817158a0872b4c680fe8",
+      "committedAt": "2026-11-06T13:14:33.000Z",
+      "notes": [
+        "Refreshing saved rankings and event replays.",
+        "Old archived finishes clearly show when a replay is unavailable."
+      ]
+    },
+    {
+      "number": 301,
+      "title": "Restore Kodub native button bounce",
+      "commit": "5859d5c1a20ec130ec7b8d889e303007cf409ddf",
+      "committedAt": "2026-11-06T06:26:16.000Z",
+      "notes": [
+        "Restored Kodub's original bouncy button entrance.",
+        "Kept the synchronized Ranked button timing."
+      ]
+    },
     {
       "number": 300,
       "title": "Synchronize home button entrances and remove delayed Ranked reveal",
@@ -177,48 +220,6 @@ const historyData = {
       "notes": [
         "Safer recovery when a leaderboard snapshot update is interrupted.",
         "Improved private access checks before loading snapshot data."
-      ]
-    },
-    {
-      "number": 283,
-      "title": "Diagnose hosted snapshot authentication without database access",
-      "commit": "b9cc87b08d0b491ee74b6b4086eb7fae8474072f",
-      "committedAt": "2026-11-05T13:09:16.000Z",
-      "notes": [
-        "Improved maintenance checks for reliable leaderboard updates.",
-        "Clearer reporting when a snapshot update cannot start."
-      ]
-    },
-    {
-      "number": 282,
-      "title": "Harden cloud publication and snapshot recovery; improve phone layouts",
-      "commit": "6ec415591aaa104981f22ee11845ff2decaf2876",
-      "committedAt": "2026-11-05T03:57:19.000Z",
-      "notes": [
-        "Clearer phone layouts and complete weekly track artwork.",
-        "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
-        "Safer run publishing and snapshot updates after interruptions."
-      ]
-    },
-    {
-      "number": 281,
-      "title": "Fix replay binding, offline PB counts and resumable event publication",
-      "commit": "615259578b408f2e3d362831d36431eb1c9218c8",
-      "committedAt": "2026-11-05T02:24:17.000Z",
-      "notes": [
-        "More reliable replay selection and local PB recovery.",
-        "Fixed PB counting after offline play and update-menu controls.",
-        "Leaderboard publishing resumes safely after interruptions."
-      ]
-    },
-    {
-      "number": 279,
-      "title": "Polish updates and featured tracks with safer usage diagnostics",
-      "commit": "7ee3873a6e79fe896e710949ec105a079bdc58ca",
-      "committedAt": "2026-11-04T23:44:31.000Z",
-      "notes": [
-        "Clearer update buttons and release history with local dates.",
-        "Smoother main-menu entrance and more compact Extra Tracks picks."
       ]
     }
   ],
