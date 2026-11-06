@@ -500,6 +500,10 @@ html body [data-sq-snapshot-refresh-lock]::after { display: none !important; }
 
 /* Keep the native stagger, without the large scale bounce or overshoot. */
 html body #injectedRankingsBtn.ranked-waiting { opacity:0!important;visibility:hidden!important;pointer-events:none!important; }
+/* Menu visibility can change before the async UI reconciler runs. */
+html body .main-buttons-container:not(:has(>.button-image.button-spawn:not(#injectedRankingsBtn)))>#injectedRankingsBtn.ranked-waiting {
+  opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+}
 html body .menu-ui .button-image.button-spawn {
   animation-name:sq-home-enter!important;
   animation-duration:.36s!important;
