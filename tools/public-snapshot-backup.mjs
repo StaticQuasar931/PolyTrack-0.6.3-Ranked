@@ -57,7 +57,7 @@ const leaderFields = ['accountId', 'name', 'countryCode', 'carStyle', 'timeMs', 
 const periodFields = ['id', 'trackId', 'startsAt', 'endsAt', 'graceMs', 'maxRp', 'targetMs', 'kind', 'racerCount',
   'entrantLimit', 'label', 'trackName', 'author', 'targetPolicy', 'scoringVersion'];
 const eventEntryFields = ['accountId', 'name', 'carStyle', 'timeMs', 'rp', 'rank', 'countryCode', 'frames', 'runAt',
-  'runAgeMs', 'eventRpContribution', 'normalRpEligible', 'physicsVerified', 'replayIntegrityVerified'];
+  'runAgeMs', 'eventRpContribution', 'normalRpEligible', 'physicsVerified', 'replayIntegrityVerified', 'replayUnavailable'];
 const eventFields = ['id', 'kind', 'trackId', 'period', 'scoreVersion', 'targetPolicy', 'targetMs', 'maxRp', 'sourceRevision',
   'updatedAt', 'archived', 'state', 'racerCount', 'complete', 'totalEntries', 'sourceTotalEntries', 'sourceCompleteness',
   'contributions', 'eventRpComplete', 'entries', 'sourceComplete', 'paginatedSource', 'pagination', 'publicationPending'];
@@ -787,11 +787,13 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
 
 async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, nativeVerification = null, catalogHandoff = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null} = {}) {
   const handoffNow = now === undefined ? Date.now : () => now;
   now ??= Date.now();
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
     throw Error('Invalid trackFetchLimit');
+  if (!Number.isSafeInteger(eventReplayFetchLimit) || eventReplayFetchLimit < 0 || eventReplayFetchLimit > 512)
+    throw Error('Invalid eventReplayFetchLimit');
   const adminFetchImpl=fetchImpl || fetch;
   fetchImpl ||= createWorkerCaptureFetch();
   const adminCapture = archiveExport ? createAdminArchiveCaptureFetch({...archiveExport, fetchImpl, adminFetchImpl}) : null;
@@ -984,7 +986,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       }
       // Frozen history is never a paid fallback during routine publication.
       if(!liveIds.has(id)&&id!=='permanent-rolling-hills'&&!archiveRepairIds.has(id))continue;
-      if (replayCandidates.length >= PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) continue;
+      if (replayCandidates.length >= eventReplayFetchLimit) continue;
       replayCandidates.push({periodId: id, trackId: value.period.trackId, entry});
     }
   }
@@ -1006,13 +1008,13 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
           continue;
         } catch { /* Changed or invalid pending input is not reused. */ }
       }
-      if (playbackCandidates.length < PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) playbackCandidates.push(candidate);
+      if (playbackCandidates.length < eventReplayFetchLimit) playbackCandidates.push(candidate);
     }
   }
-  // Alternate lanes so verified PBs and pending viewing share the same 30 requests.
+  // Alternate lanes so verified PBs and pending viewing share one bounded allowance.
   const sharedCandidates = [];
-  for (let i=0; sharedCandidates.length<PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches && i<Math.max(replayCandidates.length,playbackCandidates.length); i++) {
-    for (const lane of [replayCandidates,playbackCandidates]) if (lane[i] && sharedCandidates.length<PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches) sharedCandidates.push(lane[i]);
+  for (let i=0; sharedCandidates.length<eventReplayFetchLimit && i<Math.max(replayCandidates.length,playbackCandidates.length); i++) {
+    for (const lane of [replayCandidates,playbackCandidates]) if (lane[i] && sharedCandidates.length<eventReplayFetchLimit) sharedCandidates.push(lane[i]);
   }
   replayCandidates.splice(0,replayCandidates.length,...sharedCandidates);
   let replayFetchDeferred = null;

@@ -134,7 +134,7 @@ async function pendingCaptureFixture(t,count=2){
   }
   return new Response('',{status:404});
  };
- const capture=()=>runPublicSnapshotBackup({directory,fetchImpl,trackIds:[],now:1000,log:()=>{}});
+ const capture=(options={})=>runPublicSnapshotBackup({directory,fetchImpl,trackIds:[],now:1000,log:()=>{},...options});
  const board=()=>fs.readFile(path.join(directory,`events/${period.id}.json`),'utf8').then(JSON.parse);
  const playbackCalls=()=>state.calls.filter(url=>url.includes('/playbacks/'));
  return {directory,pending,verified,state,capture,board,playbackCalls};
@@ -1236,3 +1236,13 @@ for (const mode of ['archive', 'fresh', 'unavailable']) {
     assert.deepEqual(saved.entries, []);
   });
 }
+
+test('explicit catch-up allowance fills more than thirty pending replays and never rereads valid bytes',async t=>{
+ const f=await pendingCaptureFixture(t,64);const first=await f.capture({eventReplayFetchLimit:64});
+ assert.equal(f.playbackCalls().length,64);assert.equal(first.pendingPlaybackCoverage.complete,true);
+ f.state.calls.length=0;await f.capture({eventReplayFetchLimit:64});assert.equal(f.playbackCalls().length,0);
+ assert.equal(PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches,30);
+});
+test('catch-up allowance rejects unsafe or unbounded values before network access',async()=>{
+ for(const eventReplayFetchLimit of [-1,513,Infinity,1.5,'64'])await assert.rejects(runPublicSnapshotBackup({eventReplayFetchLimit,fetchImpl:()=>assert.fail('no network')}),/Invalid eventReplayFetchLimit/);
+});

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {eventReplayCoverage} from './event-replay-coverage.mjs';
+import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS, legacyArchiveReplayAvailabilityView} from './legacy-archive-replay-exceptions.mjs';
 import {validatePublicReplayForPublication} from './public-replay-playback.mjs';
 
 const HASH=/^[a-f0-9]{64}$/;
@@ -99,7 +100,7 @@ export async function snapshotReplayCompleteness(directory){
       }catch{report.normal.invalid++;}
     }
   }
-  const boards=[];
+  const boards=[], sourceBoards=[];
   for(const file of [...eventFiles,...archiveFiles]){
     const board=await read(file,32*1024*1024),id=path.posix.basename(file,'.json');
     if(!object(board))throw Error('Invalid replay audit event board');
@@ -124,9 +125,12 @@ export async function snapshotReplayCompleteness(directory){
       board.pendingPlaybacks!==undefined&&!Array.isArray(board.pendingPlaybacks))throw Error('Invalid replay audit event board');
     const entries=[...board.entries,...(board.pendingPlaybacks||[])];checkRows(entries.length);
     if(entries.some(e=>!object(e)||!HASH.test(e.accountId||'')||!integer(e.timeMs)||e.runId!==undefined&&!HASH.test(e.runId)))throw Error('Invalid replay audit event entry');
-    boards.push(board);
+    boards.push(board);sourceBoards.push({sourcePath:file,board});
   }
-  report.events=await eventReplayCoverage(boards,relative=>read(relative));
+  const hasLegacy=sourceBoards.some(({board})=>board.entries.some(row=>row.replayUnavailable===true));
+  let availabilityBoards=boards;
+  if(hasLegacy){const view=legacyArchiveReplayAvailabilityView(sourceBoards);availabilityBoards=view.replayAvailabilityBoards;report.legacyReplayUnavailable=view.exempted;}
+  report.events=await eventReplayCoverage(availabilityBoards,relative=>read(relative));
   report.complete=report.referencedBoardsMissing===0&&report.normal.missing===0&&report.normal.invalid===0&&report.events.complete&&report.derived.missing===0&&report.derived.invalid===0&&report.pendingCapture?.complete!==false;
   return report;
 }

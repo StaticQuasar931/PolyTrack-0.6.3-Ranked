@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 301,
+  "number": 302,
   "version": "0.6.3",
-  "revision": 259,
+  "revision": 260,
   "notes": [
-    "Restored Kodub's original bouncy button entrance.",
-    "Kept the synchronized Ranked button timing."
+    "Refreshing saved rankings and event replays.",
+    "Old archived finishes clearly show when a replay is unavailable."
   ],
-  "preparedAt": "2026-11-06T06:26:11.361Z",
-  "committedAt": "2026-11-06T06:26:16.000Z"
+  "preparedAt": "2026-11-06T13:13:21.496Z",
+  "committedAt": "2026-11-06T13:14:33.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

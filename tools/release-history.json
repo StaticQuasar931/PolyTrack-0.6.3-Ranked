@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 301,
+    "number": 302,
     "version": "0.6.3",
-    "revision": 259,
+    "revision": 260,
     "notes": [
-      "Restored Kodub's original bouncy button entrance.",
-      "Kept the synchronized Ranked button timing."
+      "Refreshing saved rankings and event replays.",
+      "Old archived finishes clearly show when a replay is unavailable."
     ]
   },
   "entries": [
+    {
+      "number": 301,
+      "title": "Restore Kodub native button bounce",
+      "commit": "5859d5c1a20ec130ec7b8d889e303007cf409ddf",
+      "committedAt": "2026-11-06T06:26:16.000Z",
+      "notes": [
+        "Restored Kodub's original bouncy button entrance.",
+        "Kept the synchronized Ranked button timing."
+      ]
+    },
     {
       "number": 300,
       "title": "Synchronize home button entrances and remove delayed Ranked reveal",
@@ -208,16 +218,6 @@
         "More reliable replay selection and local PB recovery.",
         "Fixed PB counting after offline play and update-menu controls.",
         "Leaderboard publishing resumes safely after interruptions."
-      ]
-    },
-    {
-      "number": 279,
-      "title": "Polish updates and featured tracks with safer usage diagnostics",
-      "commit": "7ee3873a6e79fe896e710949ec105a079bdc58ca",
-      "committedAt": "2026-11-04T23:44:31.000Z",
-      "notes": [
-        "Clearer update buttons and release history with local dates.",
-        "Smoother main-menu entrance and more compact Extra Tracks picks."
       ]
     }
   ],

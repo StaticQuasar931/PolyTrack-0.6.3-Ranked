@@ -1,3 +1,4 @@
+import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS,annotateLegacyArchiveReplayBoard} from './legacy-archive-replay-exceptions.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -188,6 +189,12 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   demand(!serverTotals.nativeEventOverlay,'fresh pristine server totals required');
   const projections=[],pins={},cache=path.join(directory,'native-event-source');
   for(const captured of periods){
+    if(LEGACY_ARCHIVE_REPLAY_EXCEPTIONS.some(pin=>pin.periodId===captured.id)){
+      const board=annotateLegacyArchiveReplayBoard({sourcePath:'events/'+captured.id+'.json',board:captured});
+      demand(board.entries.some(row=>row.replayUnavailable===true),'legacy archive source changed');
+      projections.push({board,promotedReplays:[],totalsEligible:false});
+      continue;
+    }
     const projected=publicEventBackup(captured,captured.id);
     const cachedOverlay=captureContext.overlaidSourceHashes?.[captured.id]===nativeEventSourceHash(projected);
     const source=captured.nativeEventOverlay||cachedOverlay?captureContext.eventSources.get(captured.id):captured;
