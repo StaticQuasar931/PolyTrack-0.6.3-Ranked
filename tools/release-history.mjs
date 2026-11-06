@@ -2,16 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 303,
+    "number": 304,
     "version": "0.6.3",
-    "revision": 261,
+    "revision": 262,
     "notes": [
-      "Fixed newer personal bests being paired with old snapshot times.",
-      "Kept Event RP calculations consistent with published standings.",
-      "Old archived finishes clearly show when a replay is unavailable."
+      "Fresh rankings, profiles and event standings.",
+      "New personal bests and saved replays are synchronized.",
+      "Old archived finishes show when a replay is unavailable.",
+      "Fixed safe playback of compact long recordings."
     ]
   },
   "entries": [
+    {
+      "number": 303,
+      "title": "Reconcile newer PBs and preserve coherent Event RP baselines",
+      "commit": "efca578b6c331e544a79ab3f85b9f625d7e2c223",
+      "committedAt": "2026-11-06T13:34:38.000Z",
+      "notes": [
+        "Fixed newer personal bests being paired with old snapshot times.",
+        "Kept Event RP calculations consistent with published standings.",
+        "Old archived finishes clearly show when a replay is unavailable."
+      ]
+    },
     {
       "number": 302,
       "title": "Prepare bounded snapshot catch-up with honest legacy replay labels",
@@ -208,17 +220,6 @@ const historyData = {
       "notes": [
         "Improved maintenance checks for reliable leaderboard updates.",
         "Clearer reporting when a snapshot update cannot start."
-      ]
-    },
-    {
-      "number": 282,
-      "title": "Harden cloud publication and snapshot recovery; improve phone layouts",
-      "commit": "6ec415591aaa104981f22ee11845ff2decaf2876",
-      "committedAt": "2026-11-05T03:57:19.000Z",
-      "notes": [
-        "Clearer phone layouts and complete weekly track artwork.",
-        "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
-        "Safer run publishing and snapshot updates after interruptions."
       ]
     }
   ],

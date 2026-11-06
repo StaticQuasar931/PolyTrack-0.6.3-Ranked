@@ -30,8 +30,11 @@ async function parsePublicReplayStructure(recording,frames,{playbackEngine,publi
   }
   if(cursor!==size)throw Error('Trailing public replay data');
   const playbackWork=indexed?indexedForwardWork(lists,frames):work;
-  if(!publicationOnly&&playbackWork>30000000)throw Error('Public replay work limit');
-  if(publicationOnly)return Object.freeze({structureValid:true,runtimeCapability:false,indexedPlaybackWithinBudget:playbackWork<=30000000,
+  // Compact indexed controls cost bounded probes across the whole race, not one stall.
+  // Keep the legacy scan budget unchanged and bound long inputs to 4096 transitions.
+  const workLimit=indexed&&total<=4096?MAX_FRAMES*10+5000:30000000;
+  if(!publicationOnly&&playbackWork>workLimit)throw Error('Public replay work limit');
+  if(publicationOnly)return Object.freeze({structureValid:true,runtimeCapability:false,indexedPlaybackWithinBudget:playbackWork<=workLimit,
     inputSha256:Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join(''),
     playbackWork,legacyWork:work,transitions:total,maxChannelTransitions:Math.max(0,...lists.map(list=>list.length)),inflatedBytes:size,
     requiredPlaybackEngine:Object.freeze({lookupVersion:PLAYBACK_ENGINE_PIN.lookupVersion,engineDigest:PLAYBACK_ENGINE_PIN.engineDigest,

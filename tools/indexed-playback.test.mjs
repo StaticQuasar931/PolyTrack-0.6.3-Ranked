@@ -115,7 +115,7 @@ test('synthetic two-million-tick replay is retained offline without forging live
   await assert.rejects(validatePublicReplayStructure(recording,frames,{playbackEngine:stats}),/work limit/);
 });
 test('publication may retain valid data beyond runtime budget, but never grants live playback capability',async()=>{
-  const recording=encode(Array.from({length:5},()=>[0,3999999]));
+  const recording=encode(Array.from({length:5},()=>[...Array.from({length:819},(_,i)=>i),3999999]));
   const stats=await validatePublicReplayForPublication(recording,4000000);
   assert.equal(stats.structureValid,true);assert.equal(stats.indexedPlaybackWithinBudget,false);assert.equal(stats.runtimeCapability,false);
   await assert.rejects(validatePublicReplayStructure(recording,4000000),/work limit/);

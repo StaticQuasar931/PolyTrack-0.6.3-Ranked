@@ -17,6 +17,9 @@ import net from 'node:net';
 import tls from 'node:tls';
 import {buildOfflineOverall} from './offline-overall.mjs';
 import {computeOverall, rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
+import {writeLedger} from './native-verification-ledger.mjs';
+import {deriveCapturedNativeRollingHills, nativeEventSourceHash, projectNativeEventTotals} from './native-event-snapshot.mjs';
+import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
 
 const now = Date.UTC(2026, 9, 25, 0, 40);
 const statePath = 'tools/workflow-capture-state.json';
@@ -77,6 +80,102 @@ async function sidecars(f,index) {
   await fs.writeFile(path.join(directory,'bootstrap-fast.json'),JSON.stringify(buildSnapshotFastIndex(index)));
   for(const [bucket,shard] of buildSnapshotLookupShards(index))await fs.writeFile(path.join(directory,'lookup-shards',bucket+'.json'),JSON.stringify(shard));
 }
+
+async function nativeTotalsFixture(t, {highlights=false, builtAt=true}={}) {
+  const f = await fixture(t), trackId = PERMANENT_ROLLING_HILLS.trackId;
+  const board = {trackId, algorithmVersion:PERMANENT_ROLLING_HILLS.algorithmVersion, schemaVersion:6,
+    revision:1, sourceRevision:1, updatedAt:10, ...(builtAt ? {builtAt:10} : {}), complete:true, totalEntries:1,
+    entries:[{accountId:'b'.repeat(64), trackId, timeMs:1000, frames:1000, runVerified:true,
+      integrityVerified:true, replayHash:'c'.repeat(64)}]};
+  const capturedRollingBoard = deriveCapturedNativeRollingHills({board, expectedSourceHash:nativeEventSourceHash(board)});
+  const result = projectNativeEventTotals({serverTotals:{updatedAt:10,entries:[],complete:true,totalEntries:0}, capturedRollingBoard});
+  const totals = structuredClone(result.totals);
+  if (!highlights) for (const row of totals.entries) delete row.eventHighlights;
+  const ledger = writeLedger({root:path.join(f.root,'verification-ledger'),entries:[],expectedManifestHash:null});
+  const pointer = {schemaVersion:1,directory:'verification-ledger',manifestHash:ledger.manifestHash};
+  await fs.writeFile(path.join(f.root,'verification-ledger-current.json'),JSON.stringify(pointer));
+  const manifest = JSON.parse(await fs.readFile(path.join(f.stage,'manifest.json'),'utf8'));
+  manifest.nativeVerificationLedger = {sourceRepositoryPath:'verification-ledger/manifest.json',authority:'snapshot-native',
+    manifestHash:ledger.manifestHash,policyFingerprint:'f'.repeat(64)};
+  manifest.events = {'permanent-rolling-hills':{path:'events/permanent-rolling-hills.json'}};
+  await fs.mkdir(path.join(f.stage,'events'));
+  await fs.writeFile(path.join(f.stage,'events/permanent-rolling-hills.json'),JSON.stringify(result.rollingBoard));
+  await fs.writeFile(path.join(f.stage,'event-totals.json'),JSON.stringify(totals));
+  await fs.writeFile(path.join(f.stage,'manifest.json'),JSON.stringify(manifest));
+  return {...await publishOfflineFixture(f), totals, pointer};
+}
+
+test('producer native totals validate against the existing ledger cohort with or without highlights/build time',async t=>{
+  forbidNetwork(t);
+  for (const highlights of [false,true]) for (const builtAt of [false,true]) {
+    const f = await nativeTotalsFixture(t,{highlights,builtAt});
+    const before = await fs.readFile(path.join(f.root,f.directory,f.index.files['event-totals.json'].path));
+    assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+    assert.equal((await checkCapture({root:f.root,requestedAt:String(now-2000),now})).reuse,true);
+    assert.deepEqual(await fs.readFile(path.join(f.root,f.directory,f.index.files['event-totals.json'].path)),before);
+    await mutatePayload(f,'event-totals.json',value=>{
+      const next=structuredClone(value);delete next.nativeEventOverlay.rollingSource;return next;
+    });
+    assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true,'rolling source is optional');
+  }
+});
+
+test('native overlay admission retains strict metadata and public totals field validation',async t=>{
+  forbidNetwork(t);
+  const f = await nativeTotalsFixture(t), clean=f.totals, source=clean.nativeEventOverlay.rollingSource;
+  await recordCapture({root:f.root,startedAt:String(now-1000),now});
+  const before=await fs.readFile(path.join(f.root,statePath),'utf8');
+  const overlays=[null,[],{}, {...clean.nativeEventOverlay,version:'unknown'},
+    {...clean.nativeEventOverlay,totalsBaselineDigest:'bad'}, {...clean.nativeEventOverlay,totalsBaselineDigest:['a'.repeat(64)]},
+    {...clean.nativeEventOverlay,unexpected:true},
+    ...[null,[],{}, {...source,kind:'untrusted'}, {...source,sourceHash:'bad'},
+      {...source,sourceHashMode:'unknown'}, {...source,sourceUpdatedAt:0}, {...source,sourceBuiltAt:null},
+      {...source,sourceHash:'a'.repeat(64)}, {...source,sourceUpdatedAt:11}, {...source,sourceBuiltAt:11},
+      {...source,privateField:true}].map(rollingSource=>({...clean.nativeEventOverlay,rollingSource}))];
+  const invalid=[...overlays.map(nativeEventOverlay=>({...clean,nativeEventOverlay})),
+    {...clean,privateField:true}, {...clean,entries:clean.entries.map(row=>({...row,ownerUid:'private'}))}];
+  for (const value of invalid) {
+    await mutatePayload(f,'event-totals.json',()=>value);
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Invalid native|Invalid projected|Non-public/);
+    await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}),/Invalid native|Invalid projected|Non-public/);
+    assert.equal(await fs.readFile(path.join(f.root,statePath),'utf8'),before);
+  }
+});
+
+test('native overlay rejects unbound boards, invalid authority and mismatched or unsafe root cohorts',async t=>{
+  forbidNetwork(t);
+  const mutations=[
+    f=>mutatePayload(f,'manifest.json',value=>({...value,nativeVerificationLedger:undefined})),
+    ...[{manifestHash:'bad'}, {policyFingerprint:'bad'}, {policyFingerprint:['f'.repeat(64)]}, {policyFingerprint:undefined},
+      {manifestHash:'a'.repeat(64)}].map(extra=>f=>mutatePayload(f,'manifest.json',value=>({...value,
+        nativeVerificationLedger:{...value.nativeVerificationLedger,...extra}}))),
+    f=>mutatePayload(f,'manifest.json',value=>({...value,events:{}})),
+    f=>mutatePayload(f,'manifest.json',value=>({...value,events:{'permanent-rolling-hills':{path:'../private.json'}}})),
+    f=>mutatePayload(f,'events/permanent-rolling-hills.json',value=>({...value,capturedNativeSource:undefined})),
+    f=>mutatePayload(f,'events/permanent-rolling-hills.json',value=>({...value,id:'other'})),
+    async f=>fs.unlink(path.join(f.root,'verification-ledger-current.json')),
+    ...[{manifestHash:'a'.repeat(64)}, {directory:'../verification-ledger'}, {unexpected:true}].map(extra=>async f=>
+      fs.writeFile(path.join(f.root,'verification-ledger-current.json'),JSON.stringify({...f.pointer,...extra}))),
+    async f=>fs.writeFile(path.join(f.root,'verification-ledger/manifest.json'),'{}'),
+    async f=>fs.writeFile(path.join(f.root,'verification-ledger/.writer.lock'),''),
+    async f=>{
+      const data=JSON.stringify({schemaVersion:1,kind:'native-verification-ledger',entries:1,shards:[]});
+      const manifestHash=digest(data);
+      await fs.writeFile(path.join(f.root,'verification-ledger/manifest.json'),data);
+      await fs.writeFile(path.join(f.root,'verification-ledger-current.json'),JSON.stringify({...f.pointer,manifestHash}));
+      await mutatePayload(f,'manifest.json',value=>({...value,nativeVerificationLedger:{...value.nativeVerificationLedger,manifestHash}}));
+    }
+  ];
+  for (const mutate of mutations) {
+    const f=await nativeTotalsFixture(t);
+    await recordCapture({root:f.root,startedAt:String(now-1000),now});
+    const before=await fs.readFile(path.join(f.root,statePath),'utf8');
+    await mutate(f);
+    await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
+    await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}));
+    assert.equal(await fs.readFile(path.join(f.root,statePath),'utf8'),before);
+  }
+});
 
 test('manual, legacy callers and catalog-only wakes cannot infer freshness from age', () => {
   for (const eventName of ['workflow_dispatch', 'workflow_call', undefined])

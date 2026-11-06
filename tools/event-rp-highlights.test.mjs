@@ -201,3 +201,9 @@ test('public input limits are enforced rather than silently truncating the best 
  assert.throws(()=>highlights([tooMany]),RangeError);
  assert.throws(()=>highlights(Array.from({length:101},(_,i)=>({...finite('event-'+i),entries:Array(10000)}))),RangeError);
 });
+
+test('native highlight refresh includes frozen history and changes no score or proof metadata',async t=>{
+ const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const {refreshCapturedEventHighlights}=await import('./refresh-event-highlights.mjs');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'event-highlight-refresh-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));await fs.mkdir(path.join(dir,'events'));
+ const a=finite('weekly','weekly',[entry(1,80)]),b=finite('kodub','kodub',[entry(1,100)]),value={updatedAt:300,complete:true,totalEntries:1,entries:[{...totals(1)[0],events:2}],nativeEventOverlay:{version:'native-event-overlay-v1',totalsBaselineDigest:'a'.repeat(64)}};
+ await fs.writeFile(path.join(dir,'manifest.json'),JSON.stringify({events:{weekly:{path:'events/weekly.json'},kodub:{path:'events/kodub.json'}}}));for(const v of [a,b])await fs.writeFile(path.join(dir,'events',v.id+'.json'),JSON.stringify(v));await fs.writeFile(path.join(dir,'event-totals.json'),JSON.stringify(value));await refreshCapturedEventHighlights(dir);const after=JSON.parse(await fs.readFile(path.join(dir,'event-totals.json'),'utf8'));assert.equal(after.entries[0].eventHighlights[0].periodId,'kodub');delete after.entries[0].eventHighlights;assert.deepEqual(after,value);
+});

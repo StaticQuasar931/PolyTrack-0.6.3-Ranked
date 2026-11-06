@@ -716,12 +716,16 @@ export async function exportPublicProfilesAndReplays({fetchImpl = fetch, directo
   const invalid = staged.invalid + Math.max(race.responseInvalid, recordInvalid);
   const scanComplete = progress.profiles.complete && race.pending.length === 0;
   const coverageComplete = scanComplete && missing === 0 && invalid === 0 && available === race.known && progress.profileSkipped === 0;
+  const replayCoverageComplete = race.pending.length === 0 && missing === 0 && invalid === 0 && available === race.known;
   const result = {counts: {profiles: progress.profileCount, canonical: available, recordings: available, missing,
       skipped: progress.profileSkipped + invalid}, scanned: progress.profiles.scanned + records.length,
     fetchedDocumentsThisRun: usedThisRun, knownVerifiedBindings: race.known, retiredCanonical,
     deferredBindingRetries: deferredBindings.size, bindingMismatchReasons,
-    totalCoverage: {available, missing, invalid, complete: coverageComplete,
+    totalCoverage: {available, missing, invalid, complete: replayCoverageComplete,
       scope: 'current-staged-track-snapshots'}, scanComplete, complete: coverageComplete, budgetReached, incompletePage};
   log(JSON.stringify({publicProfileReplayExport: result}));
   return result;
 }
+
+// Shared public allowlist for bounded incremental profile captures.
+export {projectProfile as projectCapturedPublicProfile};

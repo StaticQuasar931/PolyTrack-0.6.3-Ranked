@@ -94,3 +94,8 @@ test('release280: time equality binds time fields, not a frame-to-millisecond co
   assert.equal((await preparePublicRecordingPlayback(input,selected,{allowPending:true})).frames,100);
  }
 });
+
+test('compact hour-long recording is publishable only through indexed playback, never the legacy scan',async()=>{
+ const frames=3803964;const raw=Buffer.alloc(30);for(let c=0;c<5;c++){raw.writeUIntLE(1,c*6,3);raw.writeUIntLE(frames-1,c*6+3,3);}const recording=deflateSync(raw).toString('base64url');
+ const {validatePublicReplayForPublication}=await import('./public-replay-playback.mjs');const stats=await validatePublicReplayForPublication(recording,frames);assert.equal(stats.structureValid,true);assert.ok(stats.playbackWork>30000000);assert.equal(stats.indexedPlaybackWithinBudget,true);assert.equal(stats.runtimeCapability,false);await assert.rejects(validatePublicReplayStructure(recording,frames),/work limit/);
+});

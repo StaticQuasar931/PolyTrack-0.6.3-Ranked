@@ -13,6 +13,7 @@ import {publicOverallBackup, publicTrackBackup, authenticatedOverallTrackBackup}
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {publicDisplayName} from './public-display-name.mjs';
 import {EVENT_HIGHLIGHT_LIMITS} from './event-rp-highlights.mjs';
+import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verification.mjs';
 
 const STATE = 'tools/workflow-capture-state.json';
 const FILE_LIMIT = 20 * 1024 * 1024;
@@ -36,7 +37,37 @@ function validateCatalog(catalog) {
   }
 }
 
-function validateTotalsArtifact(value, capturedBoards = []) {
+async function validateNativeTotalsOverlay(root, value, manifest, capturedBoards) {
+  if (!object(value) || !Object.hasOwn(value, 'nativeEventOverlay')) return false;
+  const overlay = value.nativeEventOverlay, isHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  if (!object(overlay) || overlay.version !== 'native-event-overlay-v1' ||
+      !isHash(overlay.totalsBaselineDigest) ||
+      Object.keys(overlay).some(key => !['version','totalsBaselineDigest','rollingSource'].includes(key)))
+    throw Error('Invalid native event totals overlay');
+  const authority = manifest.nativeVerificationLedger;
+  if (!object(authority) || !isHash(authority.manifestHash) ||
+      !isHash(authority.policyFingerprint)) throw Error('Invalid native totals ledger binding');
+  // Validate the existing cohort, including safe paths, pointer schema, writer lock,
+  // actual manifest bytes and every shard. Matching arbitrary hash strings is not authority.
+  await nativeLedgerPublicationFiles(root);
+  const pointer = await json(root, 'verification-ledger-current.json');
+  if (pointer.manifestHash !== authority.manifestHash ||
+      hash(await bytes(root, 'verification-ledger/manifest.json')) !== authority.manifestHash)
+    throw Error('Native totals root ledger mismatch');
+  if (Object.hasOwn(overlay, 'rollingSource')) {
+    const source = overlay.rollingSource, board = capturedBoards.get('permanent-rolling-hills');
+    if (!object(source) || source.kind !== 'captured-native-content-v1' || !isHash(source.sourceHash) ||
+        !['canonical-json','file-bytes'].includes(source.sourceHashMode) ||
+        !Number.isSafeInteger(source.sourceUpdatedAt) || source.sourceUpdatedAt <= 0 ||
+        Object.hasOwn(source, 'sourceBuiltAt') && (!Number.isSafeInteger(source.sourceBuiltAt) || source.sourceBuiltAt <= 0) ||
+        Object.keys(source).some(key => !['kind','sourceHash','sourceHashMode','sourceUpdatedAt','sourceBuiltAt'].includes(key)) ||
+        board?.id !== 'permanent-rolling-hills' || !isDeepStrictEqual(source, board.capturedNativeSource))
+      throw Error('Invalid native totals Rolling Hills source');
+  }
+  return true;
+}
+
+function validateTotalsArtifact(value, capturedBoards = [], nativeOverlayValidated = false) {
   const captured = object(value) && Object.hasOwn(value, 'capturedAt');
   if (captured) {
     const at = typeof value.capturedAt === 'string' && value.capturedAt.length <= 27 ? Date.parse(value.capturedAt) : NaN;
@@ -46,9 +77,11 @@ function validateTotalsArtifact(value, capturedBoards = []) {
   }
   if (!object(value) || !Array.isArray(value.entries) || value.entries.length > 10000 ||
       value.entries.length > 200 && (value.complete !== true || value.totalEntries !== value.entries.length) ||
-      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries','capturedAt'].includes(key))) throw Error('Invalid projected event totals artifact');
+      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries','capturedAt',
+        ...(nativeOverlayValidated ? ['nativeEventOverlay'] : [])].includes(key))) throw Error('Invalid projected event totals artifact');
+  const {nativeEventOverlay, ...publicValue} = value;
   // Reuse the producer projection for public metadata, including its highlight allowlist/budgets.
-  const metadata=publicEventTotals({...value,entries:[]});
+  const metadata=publicEventTotals({...publicValue,entries:[]});
   const rows=[], seen=new Set();
   for(let offset=0;offset<value.entries.length;offset+=200){
     const source=value.entries.slice(offset,offset+200);
@@ -63,7 +96,7 @@ function validateTotalsArtifact(value, capturedBoards = []) {
     rows.push(...projected);
   }
   for(const row of rows) {if(seen.has(row.accountId))throw Error('Duplicate projected event total identity');seen.add(row.accountId);}
-  if (!isDeepStrictEqual(value,{...metadata,entries:rows,
+  if (!isDeepStrictEqual(publicValue,{...metadata,entries:rows,
     ...(captured ? {capturedAt:value.capturedAt} : {})}))
     throw Error('Non-public projected event totals fields');
 }
@@ -149,7 +182,13 @@ async function validateConsumerPackage(root, directory, index) {
         capturedBoards.set(id, await read(record.path));
       }
     }
-    validateTotalsArtifact(totals, capturedBoards);
+    if (object(totals) && Object.hasOwn(totals, 'nativeEventOverlay')) {
+      const id = 'permanent-rolling-hills', record = manifest.events?.[id];
+      if (!capturedBoards.has(id) && record?.path === `events/${id}.json` && Object.hasOwn(index.files, record.path))
+        capturedBoards.set(id, await read(record.path));
+    }
+    const nativeOverlayValidated = await validateNativeTotalsOverlay(root, totals, manifest, capturedBoards);
+    validateTotalsArtifact(totals, capturedBoards, nativeOverlayValidated);
     const paging = await read('snapshot-paging.json');
     const expectedPaging = new Set(['snapshot-paging.json']);
     const tracks = new Map();

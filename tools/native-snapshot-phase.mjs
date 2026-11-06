@@ -1,3 +1,4 @@
+import {refreshCapturedEventHighlights} from './refresh-event-highlights.mjs';
 import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS,annotateLegacyArchiveReplayBoard} from './legacy-archive-replay-exceptions.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -230,6 +231,7 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   await json(directory,'event-totals.json',combined.totals);
   await json(directory,'events/permanent-rolling-hills.json',combined.rollingBoard);
   manifest.nativeEventSources=pins;await json(directory,'manifest.json',manifest);
+  await refreshCapturedEventHighlights(directory);
   for(const file of await fs.readdir(cache)){
     demand(/^[a-f0-9]{64}\.json$/.test(file),'unknown file in public event-source namespace');
     if(!Object.values(pins).includes(file.slice(0,-5)))await fs.unlink(path.join(cache,file));
