@@ -1,15 +1,13 @@
 const releaseInfo = {
-  "number": 299,
+  "number": 300,
   "version": "0.6.3",
-  "revision": 257,
+  "revision": 258,
   "notes": [
-    "Update alerts appear sooner when you return to a menu.",
-    "Clearer snapshot status and navigation labels.",
-    "Improved weekly-track thumbnail layout.",
-    "Fixed profile updates getting stuck behind other updates."
+    "Fixed the Ranked button appearing late when returning to the menu.",
+    "Home buttons now follow the same entrance timing."
   ],
-  "preparedAt": "2026-11-06T04:43:37.533Z",
-  "committedAt": "2026-11-06T05:07:06.000Z"
+  "preparedAt": "2026-11-06T05:34:28.779Z",
+  "committedAt": "2026-11-06T05:36:32.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -2,17 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 299,
+    "number": 300,
     "version": "0.6.3",
-    "revision": 257,
+    "revision": 258,
     "notes": [
-      "Update alerts appear sooner when you return to a menu.",
-      "Clearer snapshot status and navigation labels.",
-      "Improved weekly-track thumbnail layout.",
-      "Fixed profile updates getting stuck behind other updates."
+      "Fixed the Ranked button appearing late when returning to the menu.",
+      "Home buttons now follow the same entrance timing."
     ]
   },
   "entries": [
+    {
+      "number": 299,
+      "title": "Fix delayed update notices and bound blocked profile retries",
+      "commit": "66a547ac30f5a60bf3da5137c82bf289b31e2b4d",
+      "committedAt": "2026-11-06T05:07:06.000Z",
+      "notes": [
+        "Update alerts appear sooner when you return to a menu.",
+        "Clearer snapshot status and navigation labels.",
+        "Improved weekly-track thumbnail layout.",
+        "Fixed profile updates getting stuck behind other updates."
+      ]
+    },
     {
       "number": 298,
       "title": "Reduce obsolete profile reads and align owned cloud access",
@@ -209,15 +219,6 @@ const historyData = {
       "notes": [
         "More reliable replay uploads and faster publication of queued personal bests.",
         "Extra Tracks picks show your best time and clearer play buttons."
-      ]
-    },
-    {
-      "number": 277,
-      "title": "Bounded Visible Custom Track PB Loading",
-      "commit": "52c3fb786c160f2103402c3bf72df74236c4a611",
-      "committedAt": "2026-11-04T03:27:48.000Z",
-      "notes": [
-        "Smoother PB displays in large Custom Tracks collections."
       ]
     }
   ],
