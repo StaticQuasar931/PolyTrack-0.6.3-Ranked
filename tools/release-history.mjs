@@ -2,16 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 295,
+    "number": 297,
     "version": "0.6.3",
-    "revision": 254,
+    "revision": 255,
     "notes": [
-      "Fixed repeated cosmetic uploads when device storage is full.",
-      "Duplicate PB submissions now share their upload work.",
-      "Snapshot updates reuse more existing replay and leaderboard data."
+      "Snapshot updates keep recovered replay files instead of downloading them again.",
+      "Incomplete replay data can no longer slip through the publication checks.",
+      "Interrupted snapshot work now keeps safer recovery checkpoints."
     ]
   },
   "entries": [
+    {
+      "number": 295,
+      "title": "Stop duplicate cloud work and reuse captured replay data",
+      "commit": "73e745f0f9fe38664be35dad781f84d32f71fca5",
+      "committedAt": "2026-11-05T23:03:35.000Z",
+      "notes": [
+        "Fixed repeated cosmetic uploads when device storage is full.",
+        "Duplicate PB submissions now share their upload work.",
+        "Snapshot updates reuse more existing replay and leaderboard data."
+      ]
+    },
     {
       "number": 294,
       "title": "Reduce cloud rebuild reads and prepare guarded local snapshots",
@@ -203,17 +214,6 @@ const historyData = {
         "Kodub's weekly card has a seamless, uncropped image layout.",
         "Leaderboard recovery avoids repeating completed work.",
         "An overnight standings refresh reuses existing replay proofs."
-      ]
-    },
-    {
-      "number": 273,
-      "title": "Reliable Daily Goals and Safe Progress Recovery",
-      "commit": "31ea1200b5e7cbba2da335bc4ecf87fccbeedf7e",
-      "committedAt": "2026-11-03T02:48:09.000Z",
-      "notes": [
-        "More reliable daily goals, including slower follow-up runs.",
-        "Daily progress stays separate when switching racers.",
-        "Safer progress retries when the cloud is unavailable."
       ]
     }
   ],
