@@ -498,23 +498,19 @@ html body [data-sq-snapshot-refresh-lock]::after { display: none !important; }
 .profile-guide > summary .route-preview-empty strong { color: #edf3ff; font-size: clamp(16px, 1.2vw, 21px); }
 .profile-guide > summary .route-preview-empty small { color: #b9c8e3; line-height: 1.45; font-size: 13px; overflow-wrap: anywhere; }
 
-/* Keep the native stagger, without the large scale bounce or overshoot. */
+/* Preserve Kodub's native bounce and the shared entrance cadence. */
 html body #injectedRankingsBtn.ranked-waiting { opacity:0!important;visibility:hidden!important;pointer-events:none!important; }
 /* Menu visibility can change before the async UI reconciler runs. */
 html body .main-buttons-container:not(:has(>.button-image.button-spawn:not(#injectedRankingsBtn)))>#injectedRankingsBtn.ranked-waiting {
   opacity:1!important;visibility:visible!important;pointer-events:auto!important;
 }
 html body .menu-ui .button-image.button-spawn {
-  animation-name:sq-home-enter!important;
-  animation-duration:.36s!important;
-  animation-timing-function:cubic-bezier(.2,.7,.2,1)!important;
+  animation-name:button-spawn!important;
+  animation-duration:.5s!important;
+  animation-timing-function:ease-out!important;
   animation-fill-mode:both!important;
 }
-@keyframes sq-home-enter {
-  from {opacity:0;transform:translateY(12px)}
-  to {opacity:1;transform:translateY(0)}
-}
-html body #injectedRankingsBtn.button-spawn { visibility:visible!important;animation:sq-home-enter .36s cubic-bezier(.2,.7,.2,1) both!important; }
+html body #injectedRankingsBtn.button-spawn { visibility:visible!important;animation:button-spawn .5s ease-out both!important; }
 html body #injectedRankingsBtn.button-spawn img { animation:none!important; }
 html.sq-reduced-effects body .menu-ui .button-image.button-spawn,
 html.sq-reduced-effects body #injectedRankingsBtn.button-spawn { animation-duration:.01ms!important;animation-delay:0s!important; }

@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 300,
+  "number": 301,
   "version": "0.6.3",
-  "revision": 258,
+  "revision": 259,
   "notes": [
-    "Fixed the Ranked button appearing late when returning to the menu.",
-    "Home buttons now follow the same entrance timing."
+    "Restored Kodub's original bouncy button entrance.",
+    "Kept the synchronized Ranked button timing."
   ],
-  "preparedAt": "2026-11-06T05:34:28.779Z",
-  "committedAt": "2026-11-06T05:36:32.000Z"
+  "preparedAt": "2026-11-06T06:26:11.361Z",
+  "committedAt": "2026-11-06T06:26:16.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
