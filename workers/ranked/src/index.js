@@ -2403,8 +2403,22 @@ export async function updateTrackIdentity(env, trackId, identity, budget = {full
         return {changed:false,pending:true,reason:'active_track_build_identity',revision:Number(snapshot.revision||0)};
     }
   }
-  if(snapshot.pagination)snapshot.entries=await loadTrackPublicationEntries(env,snapshot,trackId);
   const accountId = safeText(identity?.accountId, 128);
+  const pagination = snapshot.pagination;
+  if (accountId && prior.updateTime && snapshot.trackId === trackId && pagination?.version === 1 &&
+      pagination.complete === true && pagination.pageSize === 100 &&
+      Number.isSafeInteger(pagination.totalEntries) && pagination.totalEntries > TRACK_LIMIT &&
+      pagination.pageCount === Math.ceil(pagination.totalEntries / 100) &&
+      /^[a-f0-9]{64}$/.test(pagination.generation) && snapshot.entries.length === TRACK_LIMIT) {
+    // The fresh root publishes this prefix atomically with its page generation.
+    // Reject only a strictly older identity; absence or uncertainty still loads pages.
+    const existing = snapshot.entries.find(entry => safeText(entry.accountId || entry.userId, 128) === accountId);
+    const publishedAt = Number(existing?.identityUpdatedAt), incomingAt = Number(identity?.identityUpdatedAt);
+    if (existing && Number.isSafeInteger(publishedAt) && Number.isSafeInteger(incomingAt) &&
+        incomingAt > 0 && publishedAt > incomingAt)
+      return {changed:false,superseded:true,revision:Number(snapshot.revision||0)};
+  }
+  if(snapshot.pagination)snapshot.entries=await loadTrackPublicationEntries(env,snapshot,trackId);
   if (!accountId) return { changed: false, entries: snapshot.entries, revision: Number(snapshot.revision || 0) };
   const index = snapshot.entries.findIndex((entry) => safeText(entry.accountId || entry.userId, 128) === accountId);
   if (index < 0) return { changed: false, entries: snapshot.entries, revision: Number(snapshot.revision || 0) };

@@ -1,3 +1,38 @@
+const WORKER_FIELDS=Object.freeze(['worker_pb_ops','worker_event_ops','worker_profile_ops','worker_receipt_ops','worker_public_ops','worker_other_ops','worker_rate_limited','worker_denied','worker_missing','worker_server_errors','worker_no_status']);
+const ownedAnalytics=window=>window?.__polytrackAnalyticsAllowed===true&&['github','google_embed'].includes(window.__polytrackAnalyticsDeployment);
+
+// Only fixed counters survive classification. URLs, query strings and identities do not.
+export function createWorkerUsageCounters({window=globalThis.window,now=Date.now}={}){
+  const clock=()=>{try{const at=now();return Number.isSafeInteger(at)&&at>=0?at:null;}catch{return null;}};
+  let startedAt=clock(),counts=Object.fromEntries(WORKER_FIELDS.map(key=>[key,0])),paused=!ownedAnalytics(window);
+  const increment=key=>{counts[key]=Math.min(1e9,counts[key]+1);};
+  const reset=at=>{startedAt=at;counts=Object.fromEntries(WORKER_FIELDS.map(key=>[key,0]));};
+  return Object.freeze({observe(input,status){
+    const at=clock();if(at===null||!Number.isSafeInteger(status)||status<0||status>599)return false;
+    if(!ownedAnalytics(window)){if(!paused)reset(at);paused=true;return false;}
+    if(paused||startedAt===null){reset(at);paused=false;}
+    try{
+      const url=new URL(String(input),'https://polytrack-ranked-worker.staticquasar931.workers.dev');
+      if(url.origin!=='https://polytrack-ranked-worker.staticquasar931.workers.dev'||url.username||url.password)return false;
+      const p=url.pathname;
+      const field=/\/(?:receipt|receipts)(?:\/|$)/.test(p)||/^\/v1\/events\/[^/]+\/runs\//.test(p)?'worker_receipt_ops':
+        p==='/v1/pb/notify'?'worker_pb_ops':p.startsWith('/v1/profile/')?'worker_profile_ops':
+        /^\/v1\/events\/[^/]+\/(?:runs|submit|session|start)(?:\/|$)/.test(p)?'worker_event_ops':
+        p.startsWith('/v1/snapshot/')||p.startsWith('/v1/events/')||p==='/v1/kodub-weekly'?'worker_public_ops':'worker_other_ops';
+      increment(field);
+      if(status===0)increment('worker_no_status');else if(status===429)increment('worker_rate_limited');
+      else if(status===401||status===403)increment('worker_denied');else if(status===404)increment('worker_missing');else if(status>=500)increment('worker_server_errors');
+      return true;
+    }catch{return false;}
+  },snapshot(){return ownedAnalytics(window)&&startedAt!==null?{version:1,startedAt,counts:{...counts}}:null;}});
+}
+function workerSample(readWorkerUsage,at){
+  if(typeof readWorkerUsage!=='function')return null;
+  try{const value=readWorkerUsage();if(value?.version!==1||!Number.isSafeInteger(value.startedAt)||value.startedAt<0||value.startedAt>at)return null;
+    const counts={};for(const key of WORKER_FIELDS){const n=counter(value.counts?.[key]);if(n===null)return null;counts[key]=n;}return {startedAt:value.startedAt,counts};
+  }catch{return null;}
+}
+
 const MEASUREMENT_ID='G-QXB7CHLEDT';
 const installations=new WeakMap();
 const reportBudgets=new WeakMap();
@@ -22,9 +57,9 @@ function sample(readUsage,at){
 }
 
 // Best-effort deltas from the existing local observer, never a billing meter.
-// No document identities, data, URLs or persistent identifiers are accepted.
+// The reporter accepts fixed counters, never document payloads or identities.
 export function installUsageAnalytics({document=globalThis.document,window=globalThis.window,revision,
-  readUsage,now=Date.now,setInterval:schedule=globalThis.setInterval,clearInterval:unschedule=globalThis.clearInterval}={}){
+  readUsage,readWorkerUsage,now=Date.now,setInterval:schedule=globalThis.setInterval,clearInterval:unschedule=globalThis.clearInterval}={}){
   if(!document||!window||typeof readUsage!=='function'||!Number.isSafeInteger(revision)||revision<0||
     window.__polytrackAnalyticsAllowed!==true||!['github','google_embed'].includes(window.__polytrackAnalyticsDeployment))return ()=>{};
   if(installations.has(document))return installations.get(document);
@@ -34,33 +69,38 @@ export function installUsageAnalytics({document=globalThis.document,window=globa
   // Keep only an in-memory page budget across cleanup/reinstallation, not an ID.
   let budget=reportBudgets.get(document);
   if(!budget){budget={sent:0,lastSent:-Infinity};reportBudgets.set(document,budget);}
+  let workerBaseline=workerSample(readWorkerUsage,installedAt);
   let baseline=sample(readUsage,installedAt),lastAt=installedAt,disposed=false,timer=null,consentPaused=false;
   const flush=()=>{
     try {
       if(disposed||budget.sent>=128)return false;
-      if(window.__polytrackAnalyticsAllowed!==true){consentPaused=true;baseline=null;return false;}
+      if(window.__polytrackAnalyticsAllowed!==true){consentPaused=true;baseline=null;workerBaseline=null;return false;}
       const at=clock();if(at===null||at<lastAt)return false;
       // The resume boundary is unknown. Discard the entire unobserved interval.
-      if(consentPaused){baseline=sample(readUsage,at);lastAt=at;consentPaused=false;return false;}
+      if(consentPaused){baseline=sample(readUsage,at);workerBaseline=workerSample(readWorkerUsage,at);lastAt=at;consentPaused=false;return false;}
       if(typeof window.gtag!=='function'||at-budget.lastSent<60000)return false;
       const current=sample(readUsage,at);if(!current)return false;
       if(!baseline||baseline.startedAt!==current.startedAt){
         // Only a new observer since the last accepted sample can start at zero.
         // Late/restored historical counters must be baselined, never resent.
-        if(current.startedAt<lastAt||baseline&&current.startedAt<=baseline.startedAt){baseline=current;lastAt=at;return false;}
+        if(current.startedAt<lastAt||baseline&&current.startedAt<=baseline.startedAt){baseline=current;workerBaseline=workerSample(readWorkerUsage,at);lastAt=at;return false;}
         baseline={startedAt:current.startedAt,counts:Object.fromEntries(Object.keys(fields).map(name=>[name,0]))};
       }
       const delta={};
       for(const name of Object.keys(fields)){
-        if(current.counts[name]<baseline.counts[name]){baseline=current;lastAt=at;return false;}
+        if(current.counts[name]<baseline.counts[name]){baseline=current;workerBaseline=workerSample(readWorkerUsage,at);lastAt=at;return false;}
         // Bound the interval, not cumulative counters: large histories still advance.
         delta[name]=Math.min(1e9,current.counts[name]-baseline.counts[name]);
       }
-      if(!Object.values(delta).some(value=>value>0))return false;
+      const workerCurrent=workerSample(readWorkerUsage,at),workerDelta={};
+      if(workerCurrent&&workerBaseline&&workerCurrent.startedAt===workerBaseline.startedAt&&WORKER_FIELDS.every(key=>workerCurrent.counts[key]>=workerBaseline.counts[key])){
+        for(const key of WORKER_FIELDS){const n=Math.min(1e9,workerCurrent.counts[key]-workerBaseline.counts[key]);if(n>0)workerDelta[key]=n;}
+      }else workerBaseline=workerCurrent;
+      if(!Object.values(delta).some(value=>value>0)&&!Object.keys(workerDelta).length)return false;
       window.gtag('event','polytrack_client_usage',{send_to:MEASUREMENT_ID,event_schema:1,usage_scope:'client_observed',
         client_revision:revision,deployment_group:deploymentGroup,
-        interval_seconds:Math.min(86400,Math.max(0,Math.round((at-lastAt)/1000))),...delta});
-      baseline=current;lastAt=at;budget.lastSent=at;budget.sent++;return true;
+        interval_seconds:Math.min(86400,Math.max(0,Math.round((at-lastAt)/1000))),...delta,...workerDelta});
+      baseline=current;workerBaseline=workerCurrent;lastAt=at;budget.lastSent=at;budget.sent++;return true;
     }catch{return false;}
   };
   const hidden=()=>{if(document.visibilityState==='hidden')flush();};

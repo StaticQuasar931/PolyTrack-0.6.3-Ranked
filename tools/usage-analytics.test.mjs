@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {installUsageAnalytics} from './usage-analytics.mjs';
+import {installUsageAnalytics,createWorkerUsageCounters} from './usage-analytics.mjs';
 import {createLocalInsights,INSIGHTS_KEY} from './local-insights.mjs';
 
 function fixture({allowed=true,deployment='github',initial=true}={}){
@@ -157,4 +157,39 @@ test('observed opt-out discards the disabled interval instead of replaying it on
   assert.equal(f.events.length,1);
   assert.equal(f.events[0][2].fs_reads_est,1);
   assert.equal(f.events[0][2].fs_writes_est,0);
+});
+
+
+test('fixed Worker route and outcome counters contain no URLs, IDs or tokens',()=>{
+ for(const deployment of ['github','google_embed']){
+  const f=fixture({deployment}),counts=createWorkerUsageCounters({window:f.window,now:f.options.now});
+  f.options.readWorkerUsage=()=>counts.snapshot();installUsageAnalytics(f.options);
+  const root='https://polytrack-ranked-worker.staticquasar931.workers.dev';
+  for(const [path,status] of [['/v1/pb/notify?userToken=PRIVATE',429],['/v1/profile/notify',403],['/v1/events/d_PRIVATE/runs',500],['/v1/events/d_PRIVATE/runs/PRIVATE',404],['/v1/snapshot/track?trackId=PRIVATE',0],['/v1/unknown',200]])assert.equal(counts.observe(root+path,status),true);
+  const detached=counts.snapshot();detached.counts.worker_pb_ops=999;assert.equal(counts.snapshot().counts.worker_pb_ops,1);
+  f.advance(60000);f.flush();assert.equal(f.events.length,1);const payload=f.events[0][2];
+  for(const key of ['worker_pb_ops','worker_profile_ops','worker_event_ops','worker_receipt_ops','worker_public_ops','worker_other_ops','worker_rate_limited','worker_denied','worker_missing','worker_server_errors','worker_no_status'])assert.equal(payload[key],1,key);
+  assert.equal(payload.deployment_group,deployment);assert.equal(payload.worker_ops,0,'endpoint counters do not invent SDK or backend operations');
+  assert.ok(Object.keys(payload).length<=25);assert.ok(!JSON.stringify(payload).includes('PRIVATE'));assert.ok(!JSON.stringify(counts.snapshot()).includes('https:'));
+  f.flush();f.hide();assert.equal(f.events.length,1);
+ }
+});
+test('unowned collectors, malformed statuses and wrong Worker origins are silent',()=>{
+ const f=fixture(),counts=createWorkerUsageCounters({window:f.window,now:f.options.now});
+ for(const url of ['https://evil.test/v1/pb/notify','https://polytrack-ranked-worker.staticquasar931.workers.dev.evil.test/v1/profile/notify','https://user:PRIVATE@polytrack-ranked-worker.staticquasar931.workers.dev/v1/pb/notify'])assert.equal(counts.observe(url,200),false);
+ for(const status of [-1,NaN,Infinity,1.5,'429',600])assert.equal(counts.observe('/v1/pb/notify',status),false);
+ assert.equal(Object.values(counts.snapshot().counts).some(n=>n!==0),false);
+ const g=fixture({allowed:false}),denied=createWorkerUsageCounters({window:g.window,now:g.options.now});assert.equal(denied.observe('/v1/pb/notify',200),false);assert.equal(denied.snapshot(),null);
+});
+test('Worker telemetry loses no failed-send deltas and remains capped',()=>{
+ const f=fixture(),counts=createWorkerUsageCounters({window:f.window,now:f.options.now});f.options.readWorkerUsage=()=>counts.snapshot();installUsageAnalytics(f.options);
+ f.window.gtag=()=>{throw Error('blocked');};counts.observe('/v1/pb/notify',200);f.advance(60000);assert.doesNotThrow(f.flush);assert.equal(f.events.length,0);
+ f.window.gtag=(...v)=>f.events.push(v);f.flush();assert.equal(f.events[0][2].worker_pb_ops,1);
+ for(let i=0;i<140;i++){counts.observe('/v1/pb/notify',200);f.advance(60000);f.flush();}assert.equal(f.events.length,128);
+});
+test('Worker counters respect opt-out and a resumed observer establishes a fresh baseline',()=>{
+ const f=fixture(),counts=createWorkerUsageCounters({window:f.window,now:f.options.now});f.options.readWorkerUsage=()=>counts.snapshot();installUsageAnalytics(f.options);
+ counts.observe('/v1/pb/notify',200);f.window.__polytrackAnalyticsAllowed=false;f.advance(60000);assert.equal(counts.observe('/v1/pb/notify',429),false);f.flush();
+ f.window.__polytrackAnalyticsAllowed=true;f.advance(60000);counts.observe('/v1/pb/notify',200);f.flush();assert.equal(f.events.length,0);
+ f.advance(60000);counts.observe('/v1/pb/notify',200);f.flush();assert.equal(f.events.length,1);assert.equal(f.events[0][2].worker_pb_ops,1);assert.equal(f.events[0][2].worker_rate_limited,undefined);
 });

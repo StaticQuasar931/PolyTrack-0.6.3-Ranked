@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 297,
+  "number": 298,
   "version": "0.6.3",
-  "revision": 255,
+  "revision": 256,
   "notes": [
-    "Snapshot updates keep recovered replay files instead of downloading them again.",
-    "Incomplete replay data can no longer slip through the publication checks.",
-    "Interrupted snapshot work now keeps safer recovery checkpoints."
+    "Improved cloud compatibility across supported Google Sites embeds.",
+    "Reduced repeat profile-update work.",
+    "Added privacy-safe connection counters to help diagnose upload problems.",
+    "Unofficial copies using this update keep saves local."
   ],
-  "preparedAt": "2026-11-06T02:34:23.010Z",
-  "committedAt": "2026-11-06T02:47:24.000Z"
+  "preparedAt": "2026-11-06T03:48:03.575Z",
+  "committedAt": "2026-11-06T03:56:37.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -2,16 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 297,
+    "number": 298,
     "version": "0.6.3",
-    "revision": 255,
+    "revision": 256,
     "notes": [
-      "Snapshot updates keep recovered replay files instead of downloading them again.",
-      "Incomplete replay data can no longer slip through the publication checks.",
-      "Interrupted snapshot work now keeps safer recovery checkpoints."
+      "Improved cloud compatibility across supported Google Sites embeds.",
+      "Reduced repeat profile-update work.",
+      "Added privacy-safe connection counters to help diagnose upload problems.",
+      "Unofficial copies using this update keep saves local."
     ]
   },
   "entries": [
+    {
+      "number": 297,
+      "title": "Harden snapshot recovery and prepare exact replay repairs",
+      "commit": "999777064f2b9ab1c24c1c307bef0ac810e2dc5c",
+      "committedAt": "2026-11-06T02:47:24.000Z",
+      "notes": [
+        "Snapshot updates keep recovered replay files instead of downloading them again.",
+        "Incomplete replay data can no longer slip through the publication checks.",
+        "Interrupted snapshot work now keeps safer recovery checkpoints."
+      ]
+    },
     {
       "number": 295,
       "title": "Stop duplicate cloud work and reuse captured replay data",
@@ -203,17 +215,6 @@ const historyData = {
       "committedAt": "2026-11-04T03:09:33.000Z",
       "notes": [
         "Saved PBs stay visible in Custom and Extra Tracks when standings are unavailable."
-      ]
-    },
-    {
-      "number": 275,
-      "title": "Weekly Card and Leaderboard Recovery",
-      "commit": "f48fb9362fec70d6ebe48b38a6e4980bb7ffb7ae",
-      "committedAt": "2026-11-04T02:09:25.000Z",
-      "notes": [
-        "Kodub's weekly card has a seamless, uncropped image layout.",
-        "Leaderboard recovery avoids repeating completed work.",
-        "An overnight standings refresh reuses existing replay proofs."
       ]
     }
   ],

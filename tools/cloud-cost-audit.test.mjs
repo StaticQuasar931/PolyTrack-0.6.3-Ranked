@@ -31,3 +31,8 @@ test('quotes, braces, prototype-like names and unknown scopes cannot leak or cor
  audit.push(JSON.stringify(event([op({scope:'private-account-id',collections})])));
  const r=audit.result();assert.equal(r.byScope.unknown.knownReads,2);assert.equal(r.byCollection.other.knownReads,6);assert.doesNotMatch(JSON.stringify(r),/private-account|user-private|__proto__/);
 });
+
+test('all fixed production route categories remain attributable without accepting arbitrary scopes',()=>{
+ for(const scope of ['snapshot_overall','snapshot_track','events','kodub_weekly','extra_tracks','other']){const audit=createCloudCostAudit();audit.push(JSON.stringify(event([op({scope})])));assert.equal(audit.result().byScope[scope].knownReads,2);assert.equal(audit.result().byScope.unknown,undefined);}
+ const audit=createCloudCostAudit();audit.push(JSON.stringify(event([op({scope:'PRIVATE_ACCOUNT_ID'})])));assert.equal(audit.result().byScope.unknown.knownReads,2);assert.ok(!JSON.stringify(audit.result()).includes('PRIVATE_ACCOUNT_ID'));
+});

@@ -13,7 +13,7 @@
   },
   "vars": {
     "FIREBASE_PROJECT_ID": "polytrack-052",
-    "ALLOWED_ORIGINS": "https://staticquasar931.github.io,http://localhost:8080,http://127.0.0.1:8080,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-0lu-script.googleusercontent.com",
+    "ALLOWED_ORIGINS": "https://staticquasar931.github.io,http://localhost:8080,http://127.0.0.1:8080,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-0lu-script.googleusercontent.com,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-1lu-script.googleusercontent.com,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-2lu-script.googleusercontent.com,https://n-ubvj6uzey5gp44qz2gmscy7oux2l5p53a4jiw2q-3lu-script.googleusercontent.com",
     "BETA_CUTOFF_MS": "1791759954000",
     "RANKED_WRITES_ENABLED": "true",
     "PB_PUBLICATION_MODE": "coalesced",

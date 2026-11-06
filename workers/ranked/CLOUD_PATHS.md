@@ -243,3 +243,32 @@ the private preparation fixture with zero backend reads/writes. This is payload
 reuse, not a claim that those runs passed physics. Missing or invalid replay
 files still block publication. Read counts for any explicitly prepared archive
 repair are accounted separately from the normal replay-document allowance.
+
+## Release 298: Obsolete Identity Work And Owned Embeds
+
+A superseded identity update can now reject from a fresh, validated inline board
+prefix before hydrating its pages. The live owned-build deferral runs first.
+Equal/newer/uncertain identities and accounts outside the prefix retain the
+existing full-page validation and CAS behavior. No authority is cached across
+invocations, and no scoring/replay/hold policy changes.
+
+Measured offline costs for the 1,136-racer fixture:
+- Obsolete check: 14 reads to 2, zero writes in both.
+- Publication plus obsolete check: 29 reads/15 writes to 17 reads/15 writes.
+- Publication, scheduled completion and clean follow-up: 31 reads/16 writes to
+  19 reads/16 writes.
+These are workload-specific, not an attribution or daily-percentage forecast.
+
+The Worker allowlist now includes all four exact owned Google Script host
+variants, not a googleusercontent wildcard. Authentication, capture-only public
+reads, client revision policy, rate limits and schedules remain unchanged.
+Current copied clients also gate direct SDK access on the executing page's exact
+owned origin, independently of Analytics or imported asset URLs. Local identity,
+recordings and PB queues remain local on other hosts. This client gate does not
+revoke old deployed code or stop a deliberately modified client. The Firebase
+owner/rules surface remains a separate security and quota boundary.
+
+Aggregate client telemetry distinguishes request purposes and response classes
+without transmitting URLs or identities. Worker operation counts are not backend
+read counts. The local cost parser now recognizes all fixed production route
+categories instead of collapsing legitimate event/snapshot traffic to unknown.

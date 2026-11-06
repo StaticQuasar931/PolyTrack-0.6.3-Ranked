@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const extract=name=>{const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert.ok(start>=0);return source.slice(start,source.indexOf('\n  }',start)+4);};
 test('offline version gate blocks Firebase before SDK initialization and preserves local storage',async()=>{
- let loads=0;const c=vm.createContext({compatibilityOnlineAllowed:false,Error,loadScript:()=>loads++,localStorage:{kept:'PB'}});
+ let loads=0;const c=vm.createContext({compatibilityOnlineAllowed:false,onlineServicePageAllowed:()=>true,Error,loadScript:()=>loads++,localStorage:{kept:'PB'}});
  vm.runInContext(extract('assertOnlineCompatibility')+'\n'+extract('db'),c);
  await assert.rejects(c.db(),e=>e.code==='client-version-offline');assert.equal(loads,0);assert.equal(c.localStorage.kept,'PB');
  c.compatibilityOnlineAllowed=true;assert.doesNotThrow(()=>c.assertOnlineCompatibility());
@@ -17,7 +17,7 @@ test('cloud URL gate matches configured services, not static snapshots or lookal
  for(const url of ['https://game.test/public-snapshots40/index.json','https://cloud.test/ranked-other','https://cloud.test.evil.test/ranked/v1','https://game.test/site-version.json'])assert.equal(c.compatibilityCloudTarget(new URL(url)),false);
 });
 test('installed version callback gates Worker fetches while keeping local legacy API interception',()=>{
- assert.match(source,/onCompatibilityChange:state=>\{compatibilityOnlineAllowed=state.onlineAllowed!==false;/);
+ assert.match(source,/onCompatibilityChange:state=>\{compatibilityOnlineAllowed=state.onlineAllowed!==false&&onlineServicePageAllowed\(\);/);
  assert.match(source,/if\(compatibilityCloudTarget\(urlObj\)\)assertOnlineCompatibility\(\);\s*if \(shouldMock\(urlObj\)\)/);
  assert.match(source,/function rankedEdgeAvailable\(\)\{return compatibilityOnlineAllowed&&/);
 });

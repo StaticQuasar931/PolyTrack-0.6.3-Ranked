@@ -3,7 +3,8 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
 const scopes=new Set(['event_maintenance','queue_repair','canonical_reconcile','overall_publication',
- 'identity_maintenance','pb_notify','profile','background_profile','admin','scheduled','unknown']);
+ 'identity_maintenance','pb_notify','profile','background_profile','admin','scheduled',
+ 'snapshot_overall','snapshot_track','events','kodub_weekly','extra_tracks','other','unknown']);
 const metric=()=>({operations:0,knownReads:0,knownWrites:0,knownDeletes:0,
  unknownReadOperations:0,unknownWriteOperations:0,unknownDeleteOperations:0});
 const add=(row,value)=>{

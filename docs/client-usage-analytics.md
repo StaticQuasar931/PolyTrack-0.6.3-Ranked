@@ -43,3 +43,35 @@ in GA4 if those breakdowns are needed in reports. The custom event alone does no
 create those definitions. Register custom metrics for estimate fields only if
 they are clearly labeled as observed estimates. Do not compare event totals
 directly with the Firebase billing chart or add hostname users as unique people.
+
+## Aggregate Worker Outcomes
+
+The existing event can now include these optional numeric counter deltas:
+
+| Metric | Meaning |
+| --- | --- |
+| `worker_pb_ops` | PB publication notification attempts |
+| `worker_event_ops` | Event submission/session attempts |
+| `worker_profile_ops` | Profile notification attempts |
+| `worker_receipt_ops` | Own-run status/receipt attempts |
+| `worker_public_ops` | Snapshot, event-public and weekly metadata attempts |
+| `worker_other_ops` | Other calls to the exact configured production Worker host |
+| `worker_rate_limited` | HTTP 429 outcomes |
+| `worker_denied` | HTTP 401/403 outcomes |
+| `worker_missing` | HTTP 404 outcomes |
+| `worker_server_errors` | HTTP 5xx outcomes |
+| `worker_no_status` | No HTTP result, including cancellation, local rejection or transport failure |
+
+Classification is local. Only these fixed counters leave the browser, never the
+URL, period, account, track, replay, name, token or search text. The same owned
+GitHub/Google embed scope, opt-out boundary, minimum interval and event cap apply.
+Optional zero counters are omitted. The complete payload has at most 24 fields.
+These are logical request outcomes, not backend document or billed counts.
+
+In GA4 Admin > Custom definitions, register the fields you want as event-scoped
+custom metrics, with units Standard and labels that say Observed, not Billed.
+Keep client_revision and deployment_group as event-scoped custom dimensions.
+Do not create a separate event for every track or player. The existing event
+name remains polytrack_client_usage. The code cannot register GA4 Admin fields
+without an authorized Analytics connection. Existing Google auto-collected
+session/device reporting can be used instead of adding private identifiers.
