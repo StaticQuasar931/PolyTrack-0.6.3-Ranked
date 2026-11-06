@@ -7,10 +7,11 @@ const engines=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const engine=process.env.POLYTRACK_LAYOUT_BROWSER==='firefox'?engines.firefox:engines.chromium;
 const source=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8');
 const native=JSON.parse(source.match(/"\.menu-ui \{(?:\\.|[^"\\])*"/)[0]);
-const home=fs.readFileSync(new URL('../home-ui.css',import.meta.url),'utf8');
+// Optional downloaded production CSS supports post-deployment visual verification.
+const home=fs.readFileSync(process.env.POLYTRACK_HOME_CSS_FIXTURE||new URL('../home-ui.css',import.meta.url),'utf8');
 const patch=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 
-test('native home cards keep their stagger without scale bounce, overshoot or forced layout',async()=>{
+test('home cards retain the original Kodub bounce, stagger and reduced-motion support',async()=>{
   const browser=await engine.launch({headless:true});
   try{
     const page=await browser.newPage();await page.route('**/*',route=>route.abort());
@@ -22,7 +23,7 @@ test('native home cards keep their stagger without scale bounce, overshoot or fo
       const metrics=await page.locator('.button-image').evaluateAll(buttons=>buttons.map((button,index)=>{
         const animation=button.getAnimations()[0];animation.pause();
         const timing=animation.effect.getTiming(),frames=[];
-        for(const fraction of [0,.2,.5,.7,1]){
+        for(const fraction of [0,.2,.5,.7,.85,1]){
           animation.currentTime=Number(timing.delay)+Number(timing.duration)*fraction;
           const css=getComputedStyle(button),matrix=new DOMMatrix(css.transform);
           frames.push({x:matrix.a,y:matrix.d,dy:matrix.f,opacity:Number(css.opacity)});
@@ -30,12 +31,15 @@ test('native home cards keep their stagger without scale bounce, overshoot or fo
         return {index,delay:timing.delay,duration:timing.duration,name:getComputedStyle(button).animationName,frames};
       }));
       for(const row of metrics){
-        assert.equal(row.name,'sq-home-enter');assert.equal(row.duration,360);
+        assert.equal(row.name,'button-spawn');assert.equal(row.duration,500);
         assert.ok(Math.abs(row.delay-(row.index===5?0:row.index*100))<.001);
+        assert.ok(Math.abs(row.frames[0].x-.8)<.001);assert.ok(Math.abs(row.frames[0].dy-50)<.01);
+        assert.ok(Math.abs(row.frames[3].x-1)<.001);assert.ok(Math.abs(row.frames[3].dy+10)<.01,'native upward overshoot is retained');
         for(let i=0;i<row.frames.length;i++){
-          const f=row.frames[i];assert.equal(f.x,1);assert.equal(f.y,1);assert.ok(f.dy>=-.01&&f.dy<=12.01);
-          if(i){assert.ok(f.dy<=row.frames[i-1].dy+.01);assert.ok(f.opacity>=row.frames[i-1].opacity-.01);}
+          const f=row.frames[i];assert.ok(f.x>=.799&&f.x<=1.001);assert.equal(f.x,f.y);assert.ok(f.dy>=-10.01&&f.dy<=50.01);
+          if(i)assert.ok(f.opacity>=row.frames[i-1].opacity-.01);
         }
+        assert.ok(Math.abs(row.frames.at(-1).dy)<.01);
         assert.equal(row.frames.at(-1).opacity,1);
       }
     }

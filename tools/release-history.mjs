@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 300,
+    "number": 301,
     "version": "0.6.3",
-    "revision": 258,
+    "revision": 259,
     "notes": [
-      "Fixed the Ranked button appearing late when returning to the menu.",
-      "Home buttons now follow the same entrance timing."
+      "Restored Kodub's original bouncy button entrance.",
+      "Kept the synchronized Ranked button timing."
     ]
   },
   "entries": [
+    {
+      "number": 300,
+      "title": "Synchronize home button entrances and remove delayed Ranked reveal",
+      "commit": "2e46b3df40199c5192a1eb8cdd1ccd832f0c12d3",
+      "committedAt": "2026-11-06T05:36:32.000Z",
+      "notes": [
+        "Fixed the Ranked button appearing late when returning to the menu.",
+        "Home buttons now follow the same entrance timing."
+      ]
+    },
     {
       "number": 299,
       "title": "Fix delayed update notices and bound blocked profile retries",
@@ -209,16 +219,6 @@ const historyData = {
       "notes": [
         "Clearer update buttons and release history with local dates.",
         "Smoother main-menu entrance and more compact Extra Tracks picks."
-      ]
-    },
-    {
-      "number": 278,
-      "title": "Reduce redundant cloud work and guard overnight snapshot capture",
-      "commit": "f605e6b430d6b0f1fc91f69467d0e00a19ca78d1",
-      "committedAt": "2026-11-04T22:50:20.000Z",
-      "notes": [
-        "More reliable replay uploads and faster publication of queued personal bests.",
-        "Extra Tracks picks show your best time and clearer play buttons."
       ]
     }
   ],
