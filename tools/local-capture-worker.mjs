@@ -6,7 +6,11 @@ import {localOvernightCapturePlan} from './overnight-snapshot-plan.mjs';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
 import {syncPublicEventCatalog} from './sync-event-catalog.mjs';
 import {recordCapture} from './workflow-capture-coordination.mjs';
-import {encryptCaptureRecovery,validateRecoveryRecipient} from './capture-recovery.mjs';
+import {preflightLocalCaptureCheckpoints,createLocalCaptureCheckpoint,retainLocalCaptureFailure,createLocalNativePhaseReceipt} from './local-capture-checkpoint.mjs';
+import {connect} from './verifier/firestore.mjs';
+import {runPublicSnapshotBackup} from './public-snapshot-backup.mjs';
+import {prepareLocalArchiveReplayRepair,repairLocalArchiveReplays,ARCHIVE_REPAIR_COLLECTION,ARCHIVE_REPAIR_NOT_BEFORE} from './local-archive-replay-repair.mjs';
+import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {assertLocalSource} from './local-capture-publication.mjs';
 import {validateLocalEvidence} from './local-overnight-capture.mjs';
 
@@ -21,15 +25,37 @@ export async function assertLocalCaptureOwner({receipt,receiptFile,owner}){
   await fs.writeFile(path.join(directory,'capture-admitted.json'),JSON.stringify({owner,testedCommit:receipt.testedCommit,startedAt:new Date().toISOString()})+'\n',{flag:'wx',mode:0o600});
 }
 
+
+export async function repairPreparedLocalArchives({receipt,directory,connectImpl=connect,repair=repairLocalArchiveReplays,now=Date.now}={}){
+  const options=receipt.archiveReplayRepair;
+  if(!options)return null;
+  const args={directory,planFile:options.file,planSha256:options.sha256,maxDocuments:options.maxDocuments};
+  const plan=await prepareLocalArchiveReplayRepair(args);
+  if(!plan.missing.length)return {planned:12,attempted:0,recovered:0,backendReads:0,backendWrites:0,staged:false};
+  if(now()<ARCHIVE_REPAIR_NOT_BEFORE)throw Error('Archive repair cannot authenticate before reset');
+  const db=await connectImpl(process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,{env:{},mode:'scheduled',documentReadLimit:12,documentWriteLimit:1,maxReadRetries:0});
+  const allowed=new Set(plan.missing.map(t=>t.periodId+'_'+t.accountId)),used=new Set();let stopped=false;
+  let result;
+  try{result=await repair({...args,now,getDocument:async(collection,id)=>{
+    if(stopped||collection!==ARCHIVE_REPAIR_COLLECTION||!allowed.has(id)||used.has(id)||used.size>=12)throw Error('Archive repair request outside exact prepared boundary');
+    used.add(id);
+    try{const doc=await db.get(collection,id);if(!doc)throw Error('Prepared archive replay unavailable');return doc.data;}
+    catch(error){stopped=true;throw error;}
+  }});}catch(error){console.error(JSON.stringify({archiveReplayRepair:{status:'failed',attempted:used.size,documentBudget:db.documentBudget(),backendWrites:db.writeAttempts()}}));throw error;}
+  if(db.documentBudget().usedReads>12||db.writeAttempts()!==0)throw Error('Archive repair accounting exceeded prepared boundary');
+  return {...result,documentBudget:db.documentBudget()};
+}
+
 export async function captureLocalSource({receipt,receiptFile,owner}={}){
   await validateLocalEvidence(receipt);
   await assertLocalSource({workspace:receipt.workspace,sourceCommit:receipt.testedCommit,
     runnerFile:path.join(receipt.workspace,'tools/local-overnight-capture.mjs')});
+  const {recipientPublicKey}=await preflightLocalCaptureCheckpoints({workspace:receipt.workspace,
+    directory:path.dirname(receiptFile),recoveryPublicKeyFile:receipt.recoveryPublicKeyFile});
   await assertLocalCaptureOwner({receipt,receiptFile,owner});
   const plan=localOvernightCapturePlan({receipt}),root=receipt.workspace,directory=path.dirname(receiptFile),startedAt=Date.now();
   const head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(head!==receipt.testedCommit)throw Error('Capture child source changed');
-  const recipientPublicKey=await fs.readFile(receipt.recoveryPublicKeyFile,'utf8');validateRecoveryRecipient(recipientPublicKey);
   const transport=globalThis.fetch,controllers=new Set();let aborted=false;
   const abort=()=>{aborted=true;for(const controller of controllers)controller.abort();};
   const onMessage=value=>{if(value?.type==='abort')abort();};
@@ -43,18 +69,19 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const staging=path.join(root,'local-reports/snapshot-staging');
   const catalogHandoff={file:path.join(directory,'catalog.private'),binding:{sourceCommit:receipt.testedCommit,
     repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',runId:String(startedAt),runAttempt:'1',startedAt}};
-  const checkpoint=({directory:source,sourceCommit,phase='pre-native'})=>encryptCaptureRecovery({directory:source,sourceCommit,
-    outputFile:path.join(directory,phase==='failure-state'?'failure.ptenc':'capture.ptenc'),recipientPublicKey,attempt:'overnight-capture',phase});
+  const checkpoint=createLocalCaptureCheckpoint({root,directory,recipientPublicKey,sourceCommit:receipt.testedCommit});
   try{
     process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT=await fs.readFile(receipt.credentialFile,'utf8');
     const catalog=await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
     const result=await updatePublicSnapshot({root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
       verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff},captureCheckpoint:checkpoint,
+      capture:async options=>{const backup=await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
+        const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));return backup;},
+      nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),
       nativePhaseOptions:{sourceCommit:receipt.testedCommit,maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
-        proofCheckpoint:({directory:source,sourceBinding,ledgerManifestHash})=>encryptCaptureRecovery({directory:source,
-          sourceCommit:receipt.testedCommit,outputFile:path.join(directory,'proofs.ptenc'),recipientPublicKey,attempt:'overnight-capture',
-          phase:'native-proofs',sourceBinding,ledgerManifestHash})}});
+        proofCheckpoint:({directory:source,sourceBinding,ledgerManifestHash})=>checkpoint({directory:source,
+          sourceCommit:receipt.testedCommit,phase:'native-proofs',sourceBinding,ledgerManifestHash})}});
     if(aborted)throw Error('Local capture cancelled; do not publish');
     if(result.deferred||result.published!==true)throw Error('Snapshot candidate deferred; retain prior package');
     const binding=await recordCapture({root,startedAt});if(binding.reusable!==true)throw Error('Captured package is not a consistent reusable cohort');
@@ -62,8 +89,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
       published:true,deferred:false,nativeVerification:result.nativeVerification})+'\n',{flag:'wx',mode:0o600});
     return result;
   }catch(error){
-    if(await fs.lstat(staging).then(()=>true,e=>{if(e.code==='ENOENT')return false;throw e;}))
-      await checkpoint({directory:staging,sourceCommit:receipt.testedCommit,phase:'failure-state'}).catch(()=>{});
+    await retainLocalCaptureFailure({staging,sourceCommit:receipt.testedCommit,checkpoint});
     throw error;
   }finally{
     delete process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;globalThis.fetch=transport;

@@ -282,8 +282,9 @@ export function createFirestoreCaller({base, access, fetchImpl = fetch,
     unknownCommitOutcomes: () => unknownCommitOutcomes};
 }
 
-export async function connect(raw, {env = process.env, mode = firestoreQuotaMode(env), documentReadLimit, documentWriteLimit} = {}){
+export async function connect(raw, {env = process.env, mode = firestoreQuotaMode(env), documentReadLimit, documentWriteLimit, maxReadRetries = MAX_READ_RETRIES} = {}){
  validateMode(mode);
+ if(!Number.isInteger(maxReadRetries)||maxReadRetries<0||maxReadRetries>MAX_READ_RETRIES)throw Error('Invalid Firestore read retry limit');
  const readLimit = documentReadLimit === undefined ? envDocumentLimit(env.VERIFIER_DOCUMENT_READ_LIMIT, 'read') : documentLimit(documentReadLimit, 'read');
  const writeLimit = documentWriteLimit === undefined ? envDocumentLimit(env.VERIFIER_DOCUMENT_WRITE_LIMIT, 'write') : documentLimit(documentWriteLimit, 'write');
  const credentials=JSON.parse(raw);if(credentials.project_id!=='polytrack-052')throw Error('Unexpected Firebase project');
@@ -292,7 +293,7 @@ export async function connect(raw, {env = process.env, mode = firestoreQuotaMode
  const sig=crypto.sign('RSA-SHA256',Buffer.from(unsigned),credentials.private_key).toString('base64url');
  const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:unsigned+'.'+sig}),signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Firebase authentication failed: '+r.status);
  const access=(await r.json()).access_token,base='https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents';
- const firestore = createFirestoreCaller({base, access, mode,
+ const firestore = createFirestoreCaller({base, access, mode, maxReadRetries,
    documentReadLimit:readLimit === Infinity ? undefined : readLimit,
    documentWriteLimit:writeLimit === Infinity ? undefined : writeLimit});
  return {...firestore,get:async(collection,id)=>{const d=await firestore.call('/'+collection+'/'+encodeURIComponent(id));return d?{...d,data:decode({mapValue:{fields:d.fields||{}}})}:null;},write:(collection,id,data,prior)=>({update:{name:base.replace('https://firestore.googleapis.com/v1/','')+'/'+collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}})};

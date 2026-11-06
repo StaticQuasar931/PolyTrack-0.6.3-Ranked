@@ -277,11 +277,27 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         previouslyAccepted:inputs.jobs.filter(job=>accepted.has(ledgerKey(ledgerBinding(job)))).map(job=>({binding:ledgerBinding(job),sourceBinding:binding,accepted:true}))});
       return reviewer(value);
     };
-    const verification=reuseOnly?{ledger:context.ledger,ledgerManifestHash:context.ledger.manifestHash,
-      complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
-      :await verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
-      expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
-      trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now});
+    let verification;
+    try{
+      verification=reuseOnly?{ledger:context.ledger,ledgerManifestHash:context.ledger.manifestHash,
+        complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
+        :await verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
+        expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
+        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now});
+    }catch(error){
+      // Only completed, validated batches reach this private ledger. Its hash
+      // identifies recovery evidence, never a new publication trust anchor.
+      try{
+        const bytes=await optionalBytes(path.join(ledgerRoot,'manifest.json'));
+        const manifestHash=bytes&&sha(bytes);
+        if(manifestHash&&manifestHash!==context.ledger.manifestHash){
+          const checkpoint=await retainCompletedProofs({root,ledgerRoot,sourceBinding:binding,
+            manifestHash,previousManifestHash:context.rootManifestHash});
+          if(proofCheckpoint)await proofCheckpoint(checkpoint);
+        }
+      }catch{/* Recovery must not replace the original verification failure. */}
+      throw error;
+    }
     let privateProofCheckpoint=null;
     if(verification.ledgerManifestHash!==context.ledger.manifestHash){
       privateProofCheckpoint=await retainCompletedProofs({root,ledgerRoot,sourceBinding:binding,

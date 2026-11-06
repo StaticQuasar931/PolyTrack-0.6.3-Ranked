@@ -42,6 +42,15 @@ export async function snapshotReplayCompleteness(directory){
   const archiveFiles=await files('archives',/^[A-Za-z0-9_-]{1,64}\.json$/);
   const present=new Set([...normalFiles,...eventFiles,...archiveFiles]);
   let manifest;try{manifest=await read('manifest.json');}catch(e){if(e.code!=='ENOENT')throw e;}
+  if(manifest?.pendingPlaybackCoverage!==undefined){
+    const pending=manifest.pendingPlaybackCoverage,keys=['known','published','missing','failed','deferred'];
+    if(!object(pending)||keys.some(key=>!Number.isSafeInteger(pending[key])||pending[key]<0||pending[key]>MAX_ROWS)||
+        pending.known!==pending.published+pending.missing||pending.missing!==pending.failed+pending.deferred||
+        pending.complete!==(pending.missing===0))throw Error('Invalid pending replay capture coverage');
+    // Capture may omit unplayable waiting previews from cached boards. That is
+    // not permission to turn missing source inputs into a complete publication.
+    report.pendingCapture={...Object.fromEntries(keys.map(key=>[key,pending[key]])),complete:pending.complete};
+  }
   for(const [lane,records] of [['tracks',manifest?.tracks],['events',manifest?.events]]){
     if(records===undefined)continue;
     if(!object(records))throw Error('Invalid replay audit manifest');
@@ -118,14 +127,14 @@ export async function snapshotReplayCompleteness(directory){
     boards.push(board);
   }
   report.events=await eventReplayCoverage(boards,relative=>read(relative));
-  report.complete=report.referencedBoardsMissing===0&&report.normal.missing===0&&report.normal.invalid===0&&report.events.complete&&report.derived.missing===0&&report.derived.invalid===0;
+  report.complete=report.referencedBoardsMissing===0&&report.normal.missing===0&&report.normal.invalid===0&&report.events.complete&&report.derived.missing===0&&report.derived.invalid===0&&report.pendingCapture?.complete!==false;
   return report;
 }
 
 export async function assertSnapshotReplayCompleteness(directory){
   const coverage=await snapshotReplayCompleteness(directory);
   if(!coverage.complete){
-    const error=Error(`Snapshot publication blocked: normal replays missing ${coverage.normal.missing}, invalid ${coverage.normal.invalid}; event replays missing ${coverage.events.missing}, invalid ${coverage.events.invalid}; derived replays missing ${coverage.derived.missing}, invalid ${coverage.derived.invalid}; referenced boards missing ${coverage.referencedBoardsMissing}. Retain the previous snapshot and resume from the captured checkpoint; do not recapture automatically.`);
+    const error=Error(`Snapshot publication blocked: normal replays missing ${coverage.normal.missing}, invalid ${coverage.normal.invalid}; event replays missing ${coverage.events.missing}, invalid ${coverage.events.invalid}; captured pending inputs missing ${coverage.pendingCapture?.missing||0}; derived replays missing ${coverage.derived.missing}, invalid ${coverage.derived.invalid}; referenced boards missing ${coverage.referencedBoardsMissing}. Retain the previous snapshot and resume from the captured checkpoint; do not recapture automatically.`);
     error.code='SNAPSHOT_REPLAYS_INCOMPLETE';error.coverage=coverage;throw error;
   }
   return coverage;

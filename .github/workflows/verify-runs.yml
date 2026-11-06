@@ -77,7 +77,7 @@ jobs:
         run: node tools/extra-verification-check.mjs
       - name: Test bounded workflow release contracts
         # Offline checks only; no service-account credential is exposed to tests.
-        run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/overnight-kickoff.test.mjs tools/local-overnight-capture.test.mjs tools/local-capture-publication.test.mjs tools/local-capture-process.test.mjs tools/snapshot-daily-cost-plan.test.mjs
+        run: node --test tools/workflow-release-contract.test.mjs tools/overnight-snapshot-plan.test.mjs tools/overnight-capture-claim.test.mjs tools/overnight-kickoff.test.mjs tools/local-overnight-capture.test.mjs tools/local-capture-publication.test.mjs tools/local-capture-process.test.mjs tools/snapshot-daily-cost-plan.test.mjs tools/local-capture-git.test.mjs tools/local-capture-checkpoint.test.mjs tools/local-playback-cache.test.mjs tools/local-archive-replay-repair.test.mjs tools/local-capture-worker.test.mjs
       - name: Check trusted engine before Firebase reads
         run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
       - name: Test queue and publication contracts before quota access

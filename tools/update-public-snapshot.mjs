@@ -446,6 +446,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       await hydrateStaging(absoluteRoot, stagingDirectory);
       await writeStagingBase(absoluteRoot, generation);
     } else if (marker?.schemaVersion !== 1 || marker.generation !== generation) {
+      if (offline) throw new Error('Offline staging base does not match the published generation; restore its exact capture base before packaging');
       await rebaseStaging(absoluteRoot, stagingDirectory, pointer.currentdir, generation);
     }
   } else if (!stageStat) {

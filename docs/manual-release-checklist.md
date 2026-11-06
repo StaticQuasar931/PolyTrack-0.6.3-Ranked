@@ -102,3 +102,13 @@ explicitly reviewed quota/compatibility decision, not an assumed saving.
 4. Compile track boards, profiles, Event RP and Overall from the same applied ledger. Preserve pristine event/totals baselines so repeated captures cannot double-count rewards. Missing geometry, bytes, policy or review coverage stays explicitly unavailable/pending.
 5. Publish the manifest-pinned ledger and audited package together. Keep Node-only proof files out of the browser CDN asset archive. On a concurrent source change, stop and revalidate rather than rebasing verification decisions blindly.
 6. Validate the public recovery recipient before admitting a native capture. Keep the private key local. Retain completed proof shards before compilation; they remain recovery evidence, not approval authority. Upload only encrypted checkpoints for failed, deferred or unpublished captures, retaining them for three days. Do not duplicate successful captures as artifacts when the audited package and ledger are already published. A replay-completeness failure or CDN delay never authorizes another database capture.
+
+## Local One-Time Capture Safety
+
+Before marking a dated local receipt ready, test the runner, owned Git tree,
+checkpoint preflight, exact offline staging-base requirement, retained partial
+proofs and both published and omitted-pending replay completeness. Confirm the
+isolated source is committed and matches the receipt. Missing replay recovery
+must have an explicit exact-bound plan and its own conservative read accounting.
+Never test a live capture early, repeat an ambiguous push, waive a missing replay,
+or import a private recovery checkpoint as verification authority.

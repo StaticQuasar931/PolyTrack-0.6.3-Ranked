@@ -293,19 +293,114 @@ function decryptRoutineRecovery(bytes){
   return {header,inventory,records};
 }
 
+async function multiBatchFixture(t){
+  const f=await fixture(t),board=await read(f.directory,`tracks/${track}.json`);
+  for(let index=1;index<18;index++){
+    const row={...f.row,accountId:index.toString(16).padStart(64,'0'),uploadId:index+1};
+    board.entries.push(row);
+    await write(f.directory,`canonical/${track}/${row.accountId}.json`,row);
+    await write(f.directory,`recordings/${row.uploadId}.json`,{...row,recording:replay});
+  }
+  board.totalEntries=board.entries.length;await write(f.directory,`tracks/${track}.json`,board);
+  return f;
+}
+
+for(const failure of ['review','attestation','native binding','engine'])test('completed batch survives later '+failure+' failure as private evidence only',async t=>{
+  const f=await multiBatchFixture(t),before=await inventory(f.root),outputFile=path.join(f.root,'proofs.ptenc');
+  const original=Error('later '+failure+' failure');let reviews=0,engines=0,callbacks=0,checkpoint,sourceBinding,completedKeys;
+  const options={...f.options,
+    verify:async(...args)=>{
+      const results=await f.options.verify(...args);
+      if(failure==='native binding'&&f.calls.length===2)results.at(-1).timeMs++;
+      return results;
+    },
+    validateEngine:async()=>{if(++engines===3&&failure==='engine')throw original;},
+    reviewFactory:async context=>{
+      sourceBinding=context.sourceBinding;
+      const review=await f.options.reviewFactory(context);
+      return async value=>{
+        if(++reviews===1)completedKeys=value.jobs.map(job=>ledgerKey(ledgerBinding(job))).sort();
+        else if(failure==='review')throw original;
+        const result=await review(value);
+        if(reviews===2&&failure==='attestation')result.reviews.at(-1).complete=false;
+        return result;
+      };
+    },
+    proofCheckpoint:async value=>{
+      callbacks++;checkpoint=value;
+      assert.equal(value.authority,false);assert.deepEqual(value.sourceBinding,sourceBinding);
+      const ledger=readLedger({root:path.join(value.directory,'ledger'),expectedManifestHash:value.ledgerManifestHash});
+      assert.deepEqual(ledger.entries.map(entry=>entry.key).sort(),completedKeys);
+      assert.equal(ledger.entries.length,16);
+      await encryptNativeSnapshotRecovery({directory:value.directory,outputFile,recipientPublicKey:recoveryPublicKey,
+        sourceCommit:value.sourceBinding.sourceCommit,sourceBinding:value.sourceBinding,ledgerManifestHash:value.ledgerManifestHash,phase:'native-proofs'});
+    },
+    eventCompiler:async()=>assert.fail('verification failure must not compile'),
+    publishPointer:async()=>assert.fail('verification failure must not publish')};
+  await assert.rejects(runNativeSnapshotPhase(options),error=>{
+    if(['review','engine'].includes(failure))assert.equal(error,original);
+    else assert.match(error.message,failure==='attestation'?/current review attestation/:/result binding/);
+    return true;
+  });
+  assert.equal(callbacks,1);assert.equal(f.calls.length,2);assert(checkpoint);
+  const after=await inventory(f.root);delete after['proofs.ptenc'];assert.deepEqual(after,before);
+  const receipt=await read(checkpoint.directory,'receipt.json');assert.equal(receipt.authority,false);
+  assert.deepEqual(receipt.sourceBinding,sourceBinding);
+  assert.equal(receipt.previousLedgerManifestHash,(await read(f.root,'verification-ledger-current.json')).manifestHash);
+  const decoded=decryptRoutineRecovery(await fs.readFile(outputFile));
+  assert.deepEqual(decoded.header.sourceBinding,sourceBinding);
+  assert(decoded.records.some(row=>row.path==='ledger/manifest.json'));
+  const overlay=await runNativeSnapshotPhase({...f.options,reuseOnly:true,
+    proofCheckpoint:async()=>assert.fail('private evidence must not become authority')});
+  assert.equal(overlay.counts.storedProofs,0);assert.equal(f.calls.length,2);
+  assert((await read(f.directory,`tracks/${track}.json`)).entries.every(row=>row.runVerified===false));
+});
+
+for(const failure of ['copy','callback'])test('later verification error survives checkpoint '+failure+' failure',async t=>{
+  const f=await multiBatchFixture(t),before=await inventory(f.root),original=Error('original later review failure');
+  let reviews=0,callbacks=0;
+  if(failure==='copy'){
+    const copy=fs.copyFile;
+    t.mock.method(fs,'copyFile',async(from,to)=>{
+      if(to.includes('native-proof-checkpoints'))throw Error('checkpoint copy failed');
+      return copy(from,to);
+    });
+  }
+  await assert.rejects(runNativeSnapshotPhase({...f.options,
+    reviewFactory:async context=>{
+      const review=await f.options.reviewFactory(context);
+      return async value=>{if(++reviews===2)throw original;return review(value);};
+    },
+    proofCheckpoint:async()=>{callbacks++;throw Error('checkpoint encryption failed');},
+    eventCompiler:async()=>assert.fail('verification failure must not compile')}),error=>error===original);
+  assert.equal(callbacks,failure==='copy'?0:1);assert.deepEqual(await inventory(f.root),before);
+  const parent=path.join(f.root,'local-reports/native-proof-checkpoints'),names=await fs.readdir(parent);
+  assert.equal(names.length,failure==='copy'?0:1);
+  if(names.length)assert.equal((await read(path.join(parent,names[0]),'receipt.json')).authority,false);
+});
+
+test('failure before a completed batch does not checkpoint the unchanged temporary ledger',async t=>{
+  const f=await fixture(t),before=await inventory(f.root),original=Error('first review failed');
+  await assert.rejects(runNativeSnapshotPhase({...f.options,
+    reviewFactory:async()=>{throw original;},
+    proofCheckpoint:async()=>assert.fail('no completed proof to checkpoint')}),error=>error===original);
+  assert.deepEqual(await inventory(f.root),before);
+  await assert.rejects(fs.stat(path.join(f.root,'local-reports/native-proof-checkpoints')),error=>error.code==='ENOENT');
+});
+
 for(const stage of ['eventCompiler','rebuild','buildProfiles','publishPointer'])test('completed private proofs survive '+stage+' failure without advancing authority',async t=>{
   const f=await fixture(t),before=await inventory(f.root),outputFile=path.join(f.root,'proofs.ptenc');
-  let checkpoint;
+  let checkpoint,callbacks=0;
   await assert.rejects(runNativeSnapshotPhase({...f.options,[stage]:async()=>{throw Error('injected '+stage);},
     proofCheckpoint:async value=>{
-      checkpoint=value;
+      callbacks++;checkpoint=value;
       assert.equal(value.authority,false);assert.equal(value.sourceBinding.sourceCommit,f.options.sourceCommit);
       assert.equal((await read(f.root,'verification-ledger-current.json')).manifestHash,value.previousLedgerManifestHash);
       assert.equal(readLedger({root:path.join(value.directory,'ledger'),expectedManifestHash:value.ledgerManifestHash}).entries.length,1);
       await encryptNativeSnapshotRecovery({directory:value.directory,outputFile,recipientPublicKey:recoveryPublicKey,
         sourceCommit:value.sourceBinding.sourceCommit,sourceBinding:value.sourceBinding,ledgerManifestHash:value.ledgerManifestHash,phase:'native-proofs'});
     }}),new RegExp('injected '+stage));
-  assert.equal(f.calls.length,1);assert(checkpoint);
+  assert.equal(f.calls.length,1);assert.equal(callbacks,1);assert(checkpoint);
   const after=await inventory(f.root);delete after['proofs.ptenc'];assert.deepEqual(after,before);
   const retained=await read(checkpoint.directory,'receipt.json');assert.equal(retained.authority,false);
   assert.equal(retained.ledgerManifestHash,checkpoint.ledgerManifestHash);

@@ -224,3 +224,22 @@ Evidence: `tools/client-cosmetic-publish-cost.test.cjs`,
 `tools/capture-overall-projection.test.mjs` and
 `tools/new-account-five-track-cost.test.mjs`. No routine capture cap, schedule,
 verification authority, security rule or admission policy changes are included.
+
+## Release 297: Local Capture Recovery Safety
+
+The dated local runner checks checkpoint writability and exact source before
+claiming its one-time attempt. Git commands have owned-process deadlines. It
+records the candidate commit before its single push and reconciles an uncertain
+acknowledgement with read-only remote metadata, never another capture.
+
+Offline staging requires its exact base-generation marker. Pending input counts
+remain part of the replay completeness gate even when a public preview omits an
+unavailable input. Completed, reviewed proof shards survive a later failure as
+private, non-authoritative recovery material. No normal browsing, submission,
+Worker schedule or routine capture budget changes are introduced by these fixes.
+
+Exact-bound local pending playback reuse recovered 100 files (82,995 bytes) in
+the private preparation fixture with zero backend reads/writes. This is payload
+reuse, not a claim that those runs passed physics. Missing or invalid replay
+files still block publication. Read counts for any explicitly prepared archive
+repair are accounted separately from the normal replay-document allowance.

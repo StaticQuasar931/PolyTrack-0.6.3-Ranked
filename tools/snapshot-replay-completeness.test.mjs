@@ -99,6 +99,30 @@ test('published waiting event playback is checked without changing its status',a
   await assert.rejects(assertSnapshotReplayCompleteness(f.root),e=>e.coverage.events.missing===1);
 });
 
+test('omitting unavailable pending previews never hides incomplete source evidence',async t=>{
+  for(const counts of [{known:2,published:1,missing:1,failed:1,deferred:0},
+    {known:32,published:30,missing:2,failed:0,deferred:2}]){
+    const f=await fixture(t);await f.event({pending:true});
+    await f.put('manifest.json',{pendingPlaybackCoverage:{...counts,complete:false}});
+    const report=await snapshotReplayCompleteness(f.root);
+    assert.equal(report.events.complete,true,'the retained preview itself has valid bytes');
+    assert.equal(report.complete,false);assert.equal(report.pendingCapture.missing,counts.missing);
+    await assert.rejects(assertSnapshotReplayCompleteness(f.root),e=>
+      e.code==='SNAPSHOT_REPLAYS_INCOMPLETE'&&e.coverage.pendingCapture.missing===counts.missing&&/pending inputs missing/.test(e.message));
+  }
+});
+
+test('resolved pending source coverage passes and malformed counters fail closed',async t=>{
+  const f=await fixture(t);await f.event({pending:true});
+  const valid={known:1,published:1,missing:0,failed:0,deferred:0,complete:true};
+  await f.put('manifest.json',{pendingPlaybackCoverage:valid});
+  assert.equal((await assertSnapshotReplayCompleteness(f.root)).pendingCapture.complete,true);
+  for(const change of [{known:2},{published:-1},{missing:1},{complete:false},{deferred:NaN},{known:100001}]){
+    await f.put('manifest.json',{pendingPlaybackCoverage:{...valid,...change}});
+    await assert.rejects(snapshotReplayCompleteness(f.root),/Invalid pending replay capture coverage/);
+  }
+});
+
 test('event replay mismatches cannot borrow another run or submission date',async t=>{
   for(const change of [{runId:'d'.repeat(64)},{accountId:'d'.repeat(64)},{trackId:'d'.repeat(64)},
     {frames:999},{replay:'bad'},{submittedAt:2},{verified:true}]){

@@ -211,6 +211,48 @@ async function publishFixture(root, staging, overall) {
   return publishSnapshot({ root, stagingDirectory: staging });
 }
 
+test('offline recovery never rebases fresh captured boards onto an older published baseline', async t => {
+  for (const marker of [null, {schemaVersion:1,generation:999}]) {
+    const root = await fixture(t), stage = path.join(root,'local-reports','snapshot-staging');
+    await publishFixture(root,stage,{generationData:'old-baseline',entries:[]});
+    const fresh = JSON.stringify({generationData:'fresh-captured',entries:[]});
+    await writeFile(path.join(stage,'overall.json'),fresh);
+    const markerFile = path.join(root,'local-reports','snapshot-staging-base.json');
+    if (marker) await writeFile(markerFile,JSON.stringify(marker));
+    const pointer = await readFile(path.join(root,'snapshot-current.json'),'utf8');
+    await assert.rejects(updatePublicSnapshot({root,offline:true,log:()=>{},
+      capture:()=>{throw Error('OFFLINE_NETWORK_FORBIDDEN');}}),/Offline staging base/);
+    assert.equal(await readFile(path.join(stage,'overall.json'),'utf8'),fresh);
+    assert.equal(await readFile(path.join(root,'snapshot-current.json'),'utf8'),pointer);
+    assert.deepEqual(await readdir(path.join(root,'local-reports','snapshot-history')).catch(e=>{if(e.code==='ENOENT')return [];throw e;}),[]);
+    assert.equal(await readFile(markerFile,'utf8').catch(e=>{if(e.code==='ENOENT')return null;throw e;}),marker?JSON.stringify(marker):null);
+  }
+});
+
+test('offline recovery preserves fresh boards with an exact published base marker', async t => {
+  const root=await fixture(t),stage=path.join(root,'local-reports','snapshot-staging');
+  const prior=await publishFixture(root,stage,{generationData:'old-baseline',entries:[]});
+  await writeFile(path.join(root,'local-reports','snapshot-staging-base.json'),JSON.stringify({schemaVersion:1,generation:prior.generation}));
+  await writeFile(path.join(stage,'overall.json'),JSON.stringify({generationData:'fresh-captured',entries:[]}));
+  const result=await updatePublicSnapshot({root,offline:true,log:()=>{},capture:()=>{throw Error('OFFLINE_NETWORK_FORBIDDEN');}});
+  assert.equal(result.published,true);assert.equal(result.generation,prior.generation+1);
+  assert.equal(JSON.parse(await readFile(path.join(stage,'overall.json'),'utf8')).generationData,'fresh-captured');
+});
+
+test('capture-filtered missing waiting previews cannot replace the previous published package', async t => {
+  const root=await fixture(t),stage=path.join(root,'local-reports','snapshot-staging');
+  const prior=await publishFixture(root,stage,{generationData:'keep-published',entries:[]});
+  await writeFile(path.join(root,'local-reports','snapshot-staging-base.json'),JSON.stringify({schemaVersion:1,generation:prior.generation}));
+  const pointer=await readFile(path.join(root,'snapshot-current.json'),'utf8');
+  await assert.rejects(updatePublicSnapshot({root,log:()=>{},capture:async()=>{
+    await writeFile(path.join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,tracks:{},events:{},
+      pendingPlaybackCoverage:{known:1,published:0,missing:1,failed:1,deferred:0,complete:false}}));
+    return {};
+  }}),error=>error.code==='SNAPSHOT_REPLAYS_INCOMPLETE'&&error.coverage.pendingCapture.missing===1);
+  assert.equal(await readFile(path.join(root,'snapshot-current.json'),'utf8'),pointer);
+  assert.ok((await readdir(root)).includes(prior.directory));
+});
+
 test('rebases a retained A stage onto externally published B before bounded capture', async t => {
   const root = await fixture(t);
   const stage = path.join(root, 'local-reports', 'snapshot-staging');

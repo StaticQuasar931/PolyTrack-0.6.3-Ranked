@@ -867,3 +867,12 @@ test('connect validates document env/options before OAuth and explicit caps over
     keys.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];});
   }
 });
+
+test('connect accepts explicit zero read retries and validates them before OAuth',async t=>{
+  let calls=0;const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+  const raw=JSON.stringify({project_id:'polytrack-052',client_email:'fixture@example.invalid',private_key:privateKey.export({type:'pkcs8',format:'pem'})});
+  t.mock.method(globalThis,'fetch',async(url)=>{calls++;return String(url).includes('oauth2')?response(200,{access_token:'fixture'}):response(503);});
+  await assert.rejects(connect(raw,{env:{},maxReadRetries:3}),/retry limit/);assert.equal(calls,0);
+  const db=await connect(raw,{env:{},maxReadRetries:0,documentReadLimit:12,documentWriteLimit:1});
+  await assert.rejects(db.get('fixture','id'),{status:503});assert.equal(calls,2);assert.equal(db.requests(),1);
+});

@@ -2,40 +2,109 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,randomUUID} from 'node:crypto';
-import {spawnSync,execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {localOvernightCapturePlan,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
-import {assertLocalSource,snapshotPublicationFiles} from './local-capture-publication.mjs';
+import {snapshotPublicationFiles} from './local-capture-publication.mjs';
 import {runBoundedCaptureProcess} from './local-capture-process.mjs';
+import {createLocalCaptureGit,assertBoundedLocalSource,publishLocalCaptureCommit,reconcileLocalPublication} from './local-capture-git.mjs';
+import {prepareLocalArchiveReplayRepair} from './local-archive-replay-repair.mjs';
+import {preflightLocalCaptureCheckpoints} from './local-capture-checkpoint.mjs';
 const REPO='StaticQuasar931/PolyTrack-0.6.3-Ranked',BASE='https://api.github.com/repos/'+REPO;
 const PASSIVE=new Set(['Publish CDN release','pages build and deployment']);
 
-export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,acquireGuard,claim,authenticate,capture,publish,record}={}){
+export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record,reconcilePublication}={}){
   localOvernightCapturePlan({now:now(),receipt});
-  for(const fn of [inspect,acquireGuard,claim,authenticate,capture,publish,record])if(typeof fn!=='function')throw Error('Local capture capability missing');
+  for(const fn of [inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record])if(typeof fn!=='function')throw Error('Local capture capability missing');
+  if(reconcilePublication!==undefined&&typeof reconcilePublication!=='function')throw Error('Invalid read-only reconciliation capability');
   const admission=await inspect();
   if(admission.head!==receipt.testedCommit)return {status:'blocked',reason:'tested-source-changed'};
   if(admission.claimed)return {status:'already-claimed'};
   if(admission.active||!admission.complete)return {status:'waiting',reason:'active-or-incomplete-job-inventory'};
+  try{await preflight();}catch(error){
+    if(error&&typeof error==='object')error.captureFailure=localCaptureFailure(error,{phase:'checkpoint-preflight'});
+    throw error;
+  }
   if(!await acquireGuard())return {status:'blocked',reason:'existing-local-guard'};
-  await record({status:'admission-started',sourceCommit:receipt.testedCommit});
+  let phase='admission-receipt',publication={},generation,snapshotDirectory;
   try{
+    await record({status:'admission-started',sourceCommit:receipt.testedCommit});
+    phase='claim';
     if(!await claim()){await record({status:'already-claimed'});return {status:'already-claimed'};}
+    phase='admission-revalidation';
     localOvernightCapturePlan({now:now(),receipt});
+    phase='authentication';
     await authenticate();
+    phase='capture-start-receipt';
     await record({status:'capturing',sourceCommit:receipt.testedCommit});
+    phase='capture';
     const result=await capture();
+    phase='capture-postvalidation';
     if(!result||result.deferred||result.published!==true||result.nativeVerification?.backendReads!==0||result.nativeVerification?.backendWrites!==0)
       throw Error('Capture deferred or offline proof assertion failed; retain recovery, do not publish');
     if(now()>=N.deadline)throw Error('Publication deadline reached; preserve candidate');
-    const publication=await publish(result);
+    generation=result.generation;snapshotDirectory=result.directory;phase='publication-validation';
+    const published=await publish(result,value=>{publication={...publication,...value};phase=value.phase||phase;});
+    publication={...publication,...published};
+    if(typeof publication.publicationCommit!=='string'||!/^[a-f0-9]{40}$/.test(publication.publicationCommit))throw Error('Publication did not return a real commit');
+    if(publication.candidateCommit!==undefined&&publication.candidateCommit!==publication.publicationCommit)throw Error('Publication commit does not match the candidate');
+    phase='completion-receipt';
     await record({status:'complete',sourceCommit:receipt.testedCommit,generation:result.generation,...publication});
     return {status:'complete',generation:result.generation,...publication};
   }catch(error){
-    await record({status:'failed',sourceCommit:receipt.testedCommit,reason:'local-capture-or-publication-failed',automaticRetry:false});
+    const details=localCaptureFailure(error,{...publication,phase,generation});
+    if(reconcilePublication&&typeof publication.candidateCommit==='string'&&/^[a-f0-9]{40}$/.test(publication.candidateCommit)&&
+      Number.isSafeInteger(generation)&&generation>0&&snapshotDirectory==='public-snapshots'+generation&&
+      ['unknown','push-acknowledged'].includes(publication.publicationState)&&now()<N.deadline){
+      const candidateCommit=publication.candidateCommit;
+      try{
+        const observed=await reconcilePublication({candidateCommit,sourceCommit:receipt.testedCommit,generation,snapshotDirectory});
+        if(observed?.candidateCommit===candidateCommit&&observed.publicationState==='remote-main-matches'&&now()<N.deadline){
+          details.publicationState='remote-main-matches';details.publicationCommit=candidateCommit;
+          const complete={status:'complete',sourceCommit:receipt.testedCommit,generation,snapshotDirectory,candidateCommit,
+            publicationCommit:candidateCommit,publicationState:'remote-main-matches',reconciled:true,automaticRetry:false,
+            reconciledFailure:{...details}};
+          try{await record(complete);return complete;}
+          catch(receiptError){details.reconciliationReceiptError=localCaptureFailure(receiptError).errorCode;}
+        }else{details.publicationState='unknown';details.reconciliationError='LOCAL_RECONCILIATION_UNCONFIRMED';}
+      }catch{details.publicationState='unknown';details.reconciliationError='LOCAL_RECONCILIATION_FAILED';}
+    }
+    try{await record({status:'failed',sourceCommit:receipt.testedCommit,reason:'local-capture-or-publication-failed',automaticRetry:false,...details});}
+    catch(recordError){details.failureReceiptError=localCaptureFailure(recordError).errorCode;}
+    if(error&&typeof error==='object')error.captureFailure=details;
     throw error;
   }
+}
+
+export function localCaptureFailure(error,context={}){
+  const state={...context,...error?.captureFailure};
+  const phases=new Set(['preflight','checkpoint-preflight','admission-receipt','claim','admission-revalidation','authentication','capture-start-receipt','capture',
+    'capture-postvalidation','publication-validation','publication-commit','publication-parent-validation','publication-candidate-receipt',
+    'publication-pre-push','publication-push','publication-acknowledgement-receipt','completion-receipt','source-validation','credential','git','reconciliation-receipt']);
+  const details={phase:phases.has(state.phase)?state.phase:'preflight',errorCode:'LOCAL_CAPTURE_FAILED'};
+  const code=error?.code;
+  if(/^(?:LOCAL_[A-Z_]{1,64}|EACCES|EPERM|ENOENT|ENOSPC|EIO|EEXIST|ETIMEDOUT|SNAPSHOT_REPLAYS_INCOMPLETE)$/.test(code||''))details.errorCode=code;
+  for(const key of ['candidateCommit','publicationCommit'])if(typeof state[key]==='string'&&/^[a-f0-9]{40}$/.test(state[key]))details[key]=state[key];
+  if(['not-attempted','unknown','push-acknowledged','remote-main-matches'].includes(state.publicationState))details.publicationState=state.publicationState;
+  if(Number.isSafeInteger(state.generation)&&state.generation>0)details.generation=state.generation;
+  if(/^(?:LOCAL_[A-Z_]{1,64}|EACCES|EPERM|ENOENT|ENOSPC|EIO|EEXIST|ETIMEDOUT)$/.test(state.failureReceiptError||''))details.failureReceiptError=state.failureReceiptError;
+  for(const key of ['reconciliationReceiptError','reconciliationError'])if(/^(?:LOCAL_[A-Z_]{1,64}|EACCES|EPERM|ENOENT|ENOSPC|EIO|EEXIST|ETIMEDOUT)$/.test(state[key]||''))details[key]=state[key];
+  return details;
+}
+
+export async function writeLocalCaptureReceipt({directory,owner,value}){
+  const current=JSON.parse(await fs.readFile(path.join(directory,'running.json'),'utf8'));
+  if(current.owner!==owner)throw Error('Local guard ownership changed');
+  const names={'complete':'complete.json','failed':'failed.json','publication-candidate':'publication-candidate.json',
+    'publication-attempt':'publication-attempt.json','publication-acknowledged':'publication-acknowledged.json','reconciled-complete':'reconciled-complete.json'};
+  const file=path.join(directory,names[value.status]||'state.json'),temporary=file+'.'+randomUUID()+'.tmp';
+  try{
+    const handle=await fs.open(temporary,'wx',0o600);
+    try{await handle.writeFile(JSON.stringify({...value,owner,at:new Date().toISOString()})+'\n');await handle.sync();}
+    finally{await handle.close();}
+    if(value.status==='reconciled-complete'){await fs.link(temporary,file);await fs.unlink(temporary);}
+    else await fs.rename(temporary,file);
+  }catch(error){await fs.rm(temporary,{force:true}).catch(()=>{});throw error;}
 }
 
 export async function validateLocalEvidence(receipt){
@@ -62,27 +131,27 @@ async function main(){
   const workspace=receipt.workspace;
   if(!path.isAbsolute(workspace||'')||!path.isAbsolute(receipt.credentialFile||'')||!path.isAbsolute(receipt.recoveryPublicKeyFile||'')||
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');
-  const git=(args,options={})=>execFileSync('git',args,{cwd:workspace,encoding:'utf8',env:{...process.env,GIT_TERMINAL_PROMPT:'0'},...options});
-  await assertLocalSource({workspace,sourceCommit:receipt.testedCommit,runnerFile:fileURLToPath(import.meta.url)});
+  const git=createLocalCaptureGit({workspace,deadline:N.deadline});
+  await assertBoundedLocalSource({workspace,sourceCommit:receipt.testedCommit,runnerFile:fileURLToPath(import.meta.url),deadline:N.deadline});
   const require=createRequire(import.meta.url),modulePath=path.join(receipt.verifierNodeModules,'playwright');
   const installed=JSON.parse(await fs.readFile(path.join(modulePath,'package.json'),'utf8'));
   const declared=JSON.parse(await fs.readFile(path.join(workspace,'tools/verifier/package.json'),'utf8'));
   if(installed.version!==declared.dependencies.playwright)throw Error('Pinned local verifier dependency changed');
   await fs.stat(require(modulePath).chromium.executablePath());
-  const c=spawnSync('git',['credential','fill'],{encoding:'utf8',input:'protocol=https\nhost=github.com\n\n',env:{...process.env,GIT_TERMINAL_PROMPT:'0',GCM_INTERACTIVE:'Never'}});
-  const token=c.status===0?c.stdout.split(/\r?\n/).find(v=>v.startsWith('password='))?.slice(9):null;
+  const credential=await git(['credential','fill'],{input:'protocol=https\nhost=github.com\n\n'});
+  const token=credential.split(/\r?\n/).find(v=>v.startsWith('password='))?.slice(9);
   if(!token)throw Error('Existing GitHub authorization unavailable');
   const read=async route=>{
-    const r=await fetch(BASE+route,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'},redirect:'error',signal:AbortSignal.timeout(20000)});
+    const remaining=N.deadline-Date.now();if(remaining<=0)throw Error('Publication metadata deadline reached');
+    const r=await fetch(BASE+route,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'},redirect:'error',signal:AbortSignal.timeout(Math.min(20000,remaining))});
     if(r.status===404)return null;if(!r.ok)throw Error('GitHub admission metadata unavailable');return r.json();
   };
-  const record=async value=>{
-    const current=JSON.parse(await fs.readFile(path.join(directory,'running.json'),'utf8'));
-    if(current.owner!==owner)throw Error('Local guard ownership changed');
-    const file=path.join(directory,value.status==='complete'?'complete.json':value.status==='failed'?'failed.json':'state.json');
-    await fs.writeFile(file,JSON.stringify({...value,owner,at:new Date().toISOString()})+'\n',{mode:0o600});
-  };
+  const record=value=>writeLocalCaptureReceipt({directory,owner,value});
   const result=await runLocalOvernightCapture({receipt,
+    preflight:async()=>{await preflightLocalCaptureCheckpoints({workspace,directory,recoveryPublicKeyFile:receipt.recoveryPublicKeyFile});
+      if(receipt.archiveReplayRepair)await prepareLocalArchiveReplayRepair({directory:path.join(workspace,'local-reports/snapshot-staging'),
+        planFile:receipt.archiveReplayRepair.file,planSha256:receipt.archiveReplayRepair.sha256,maxDocuments:receipt.archiveReplayRepair.maxDocuments});},
+    reconcilePublication:({candidateCommit})=>reconcileLocalPublication({candidateCommit,readMain:async()=>(await read('/git/ref/heads/main'))?.object?.sha}),
     inspect:async()=>{
       const head=await read('/git/ref/heads/main'),claimed=await read('/git/ref/tags/polytrack-oneoff-'+N.date);
       for(const status of ['in_progress','queued','waiting','pending','requested']){
@@ -121,28 +190,24 @@ async function main(){
       if(child.timedOut||child.status!==0)throw Error('Local bounded capture failed; inspect private capture.log, do not repeat');
       return JSON.parse(await fs.readFile(path.join(directory,'capture-result.json'),'utf8'));
     },
-    publish:async result=>{
+    publish:async(result,onState)=>{
       const {captureBinding}=await import('./workflow-capture-coordination.mjs');
       if((await captureBinding(workspace)).reusable!==true)throw Error('Candidate capture is not a consistent cohort');
       const {nativeLedgerPublicationFiles}=await import('./verifier/local-snapshot-verification.mjs');
       const files=['events/public-catalog.json','tools/workflow-capture-state.json','index.html','snapshot-current.json',
         ...await nativeLedgerPublicationFiles(workspace),...await snapshotPublicationFiles({root:workspace,directory:result.directory})];
       const allowed=new Set(files);
-      if(git(['diff','--name-only','HEAD','--diff-filter=ACMRTUXB']).trim().split('\n').filter(Boolean).some(file=>!allowed.has(file))||
-        git(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean).some(file=>!allowed.has(file)&&!file.startsWith('local-reports/')))
+      if((await git(['diff','--name-only','HEAD','--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean).some(file=>!allowed.has(file))||
+        (await git(['ls-files','--others','--exclude-standard','-z'])).split('\0').filter(Boolean).some(file=>!allowed.has(file)&&!file.startsWith('local-reports/')))
         throw Error('Unexpected source or untracked change during capture');
       // Bounded argv batches fit Windows; never stage arbitrary neighboring files.
-      for(let i=0;i<files.length;i+=100)git(['add','--',...files.slice(i,i+100)]);
-      git(['add','-u','--',':(glob)public-snapshots[0-9]*/**']);
-      const staged=git(['diff','--cached','--name-only','--diff-filter=ACMRTUXB']).trim().split('\n').filter(Boolean);
+      for(let i=0;i<files.length;i+=100)await git(['add','--',...files.slice(i,i+100)]);
+      await git(['add','-u','--',':(glob)public-snapshots[0-9]*/**']);
+      const staged=(await git(['diff','--cached','--name-only','--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean);
       if(staged.some(file=>!allowed.has(file)))throw Error('Unexpected capture publication file');
-      git(['-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Sync public ranked snapshots']);
-      if(git(['rev-parse','HEAD^']).trim()!==receipt.testedCommit)throw Error('Source parent changed; do not rebase proofs');
-      if(Date.now()>=N.deadline)throw Error('Publication deadline reached; preserve committed candidate');
-      git(['push','origin','HEAD:refs/heads/main']);
-      return {publicationCommit:git(['rev-parse','HEAD']).trim(),snapshotDirectory:result.directory};
+      return publishLocalCaptureCommit({git,sourceCommit:receipt.testedCommit,directory:result.directory,record,onState,deadline:N.deadline});
     },record});
   console.log(JSON.stringify(result));
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))
-  main().catch(error=>{console.error(error.message);process.exitCode=1;});
+  main().catch(error=>{console.error(JSON.stringify({...localCaptureFailure(error),automaticRetry:false}));process.exitCode=1;});
