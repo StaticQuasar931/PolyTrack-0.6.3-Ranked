@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 302,
+  "number": 303,
   "version": "0.6.3",
-  "revision": 260,
+  "revision": 261,
   "notes": [
-    "Refreshing saved rankings and event replays.",
+    "Fixed newer personal bests being paired with old snapshot times.",
+    "Kept Event RP calculations consistent with published standings.",
     "Old archived finishes clearly show when a replay is unavailable."
   ],
-  "preparedAt": "2026-11-06T13:13:21.496Z",
-  "committedAt": "2026-11-06T13:14:33.000Z"
+  "preparedAt": "2026-11-06T13:34:27.227Z",
+  "committedAt": "2026-11-06T13:34:38.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

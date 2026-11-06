@@ -1,15 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 302,
+    "number": 303,
     "version": "0.6.3",
-    "revision": 260,
+    "revision": 261,
     "notes": [
-      "Refreshing saved rankings and event replays.",
+      "Fixed newer personal bests being paired with old snapshot times.",
+      "Kept Event RP calculations consistent with published standings.",
       "Old archived finishes clearly show when a replay is unavailable."
     ]
   },
   "entries": [
+    {
+      "number": 302,
+      "title": "Prepare bounded snapshot catch-up with honest legacy replay labels",
+      "commit": "01e51ba5ba4b5f969fcf817158a0872b4c680fe8",
+      "committedAt": "2026-11-06T13:14:33.000Z",
+      "notes": [
+        "Refreshing saved rankings and event replays.",
+        "Old archived finishes clearly show when a replay is unavailable."
+      ]
+    },
     {
       "number": 301,
       "title": "Restore Kodub native button bounce",
@@ -207,17 +218,6 @@
         "Clearer phone layouts and complete weekly track artwork.",
         "More reliable saved leaderboards, local PB recovery and sign-in recovery.",
         "Safer run publishing and snapshot updates after interruptions."
-      ]
-    },
-    {
-      "number": 281,
-      "title": "Fix replay binding, offline PB counts and resumable event publication",
-      "commit": "615259578b408f2e3d362831d36431eb1c9218c8",
-      "committedAt": "2026-11-05T02:24:17.000Z",
-      "notes": [
-        "More reliable replay selection and local PB recovery.",
-        "Fixed PB counting after offline play and update-menu controls.",
-        "Leaderboard publishing resumes safely after interruptions."
       ]
     }
   ],
