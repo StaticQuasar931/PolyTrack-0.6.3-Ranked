@@ -1,3 +1,4 @@
+import {preparePublishedNativeBaseline} from './published-native-baseline.mjs';
 import {reuseCompletedWorkerBackup} from './reuse-worker-backup.mjs';
 import {captureBackendQueueDiagnostic} from './backend-queue-diagnostic.mjs';
 import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
@@ -114,6 +115,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
     const catalog=reused?{deferred:false}:await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
     const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
+      ...(reused?{prepareNativeCapture:()=>preparePublishedNativeBaseline({root,publishedBaseline:fullPolicy.publishedBaseline})}:{}),
       verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:checkpoint,
       capture:async options=>{const backup=reused?.manifest||await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
         if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));

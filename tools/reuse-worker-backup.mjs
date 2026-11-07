@@ -11,8 +11,14 @@ export async function backupInventory(directory){
  }}await walk();return {schemaVersion:1,files,totalBytes:total};
 }
 export async function reuseCompletedWorkerBackup({directory,receipt}){
- const binding=receipt.reuseWorkerBackup;if(!binding||binding.sourceCommit!==receipt.priorFailure?.sourceCommit)throw Error('Exact source backup reuse binding required');
+ const binding=receipt.reuseWorkerBackup;if(!binding||binding.sourceCommit!==(receipt.priorFailure?.completedBackupSourceCommit||receipt.priorFailure?.sourceCommit))throw Error('Exact source backup reuse binding required');
  const read=async(field)=>{const item=binding[field];if(!item||!path.isAbsolute(item.file||'')||!/^[a-f0-9]{64}$/.test(item.sha256||''))throw Error('Invalid source backup evidence');const bytes=await fs.readFile(item.file);if(sha(bytes)!==item.sha256)throw Error('Source backup evidence changed');return bytes;};
+ if(binding.sourceCommit!==receipt.priorFailure.sourceCommit){
+  if(binding.zeroIoFailure?.file!==receipt.priorFailure.file||binding.zeroIoFailure?.sha256!==receipt.priorFailure.sha256)throw Error('Unbound zero-I/O continuation failure');
+  const lastFailure=JSON.parse(await read('zeroIoFailure')),lastLog=(await read('zeroIoLog')).toString('utf8');
+  const operations=lastLog.split(/\r?\n/).filter(x=>x.startsWith('{')).map(x=>{try{return JSON.parse(x).fullSnapshotOperations;}catch{return null;}}).find(Boolean);
+  if(lastFailure.status!=='failed'||lastFailure.sourceCommit!==receipt.priorFailure.sourceCommit||!lastLog.includes('Current normal board/canonical binding mismatch')||!operations||operations.directDocumentReadReservations!==operations.priorDirectReservations||operations.workerRequests!==operations.priorWorkerRequests||operations.oauthRequests!==0||operations.documentWrites!==0)throw Error('Prior continuation made source requests');
+ }
  const failed=JSON.parse(await read('failure'));if(failed.status!=='failed'||failed.sourceCommit!==binding.sourceCommit)throw Error('Prior source capture not terminal');
  const log=(await read('log')).toString('utf8');const records=log.split(/\r?\n/).filter(x=>x.startsWith('{')).map(x=>{try{return JSON.parse(x);}catch{return{};}});
  const completed=records.find(x=>x.publicSnapshotBackup?.fullSourceChecks)?.publicSnapshotBackup;
