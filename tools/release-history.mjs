@@ -2,16 +2,90 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 309,
+    "number": 319,
     "version": "0.6.3",
-    "revision": 266,
+    "revision": 267,
     "notes": [
-      "Improved snapshot recovery when a newer PB arrives before its cached replay.",
-      "Kept earlier verification tied to the exact run it approved.",
-      "Improved overnight update reliability."
+      "Updated saved personal bests, rankings and profile data.",
+      "Kept earlier event results paired with their saved replays.",
+      "Some recent runs are still waiting for verification."
     ]
   },
   "entries": [
+    {
+      "number": 318,
+      "title": "Refresh public ranked snapshot with captured PBs and profiles",
+      "commit": "4f86fe80e81014534b467b6406f13d5cdcd81539",
+      "committedAt": "2026-11-07T18:27:00.000Z",
+      "notes": []
+    },
+    {
+      "number": 317,
+      "title": "Preserve exact pending replay files when retaining published event rows",
+      "commit": "b08c81b0c79505235230f23d3375f107d26b6e6f",
+      "committedAt": "2026-11-07T18:08:09.000Z",
+      "notes": []
+    },
+    {
+      "number": 316,
+      "title": "Repair canonical board metadata and publish saved data without new verification",
+      "commit": "e11d4db3592ecc1d5964948a98884cc7a158e3c2",
+      "committedAt": "2026-11-07T17:51:52.000Z",
+      "notes": []
+    },
+    {
+      "number": 315,
+      "title": "Resume saved full captures offline with exclusive verification guards",
+      "commit": "6875804d5f0d5bf8f8b89db6c6e7cc6c394c46dd",
+      "committedAt": "2026-11-07T17:08:44.000Z",
+      "notes": []
+    },
+    {
+      "number": 314,
+      "title": "Support full catch-up encrypted recovery checkpoints",
+      "commit": "f9011194f790d8b1789d8632a5d72c57ebdb72a8",
+      "committedAt": "2026-11-07T10:13:36.000Z",
+      "notes": []
+    },
+    {
+      "number": 313,
+      "title": "Recover complete captured PB pages without another database scan",
+      "commit": "4f13ff93a261a8a0dd348660440a8adf55cbe401",
+      "committedAt": "2026-11-07T09:51:38.000Z",
+      "notes": []
+    },
+    {
+      "number": 312,
+      "title": "Prepare retained proofs from the pinned published baseline",
+      "commit": "8b28442932979460aa7dc369501a7b4b3f88e745",
+      "committedAt": "2026-11-07T09:15:54.000Z",
+      "notes": []
+    },
+    {
+      "number": 311,
+      "title": "Reuse captured sources for approved full PB catch-up",
+      "commit": "edadececd50f85dc8595edee0a90541ed1c03458",
+      "committedAt": "2026-11-07T09:06:01.000Z",
+      "notes": []
+    },
+    {
+      "number": 310,
+      "title": "Pace full captures within existing Worker safeguards",
+      "commit": "d67fcc28564974a252265559b424cf467192e1ec",
+      "committedAt": "2026-11-07T08:17:14.000Z",
+      "notes": []
+    },
+    {
+      "number": 309,
+      "title": "Safely reconcile new PBs and recover brief package locks",
+      "commit": "91d46dcedeb92c8a5a7ea84bb0fc7915a4548c8d",
+      "committedAt": "2026-11-07T06:03:58.000Z",
+      "notes": [
+        "Improved snapshot recovery when a newer PB arrives before its cached replay.",
+        "Kept earlier verification tied to the exact run it approved.",
+        "Improved overnight update reliability."
+      ]
+    },
     {
       "number": 308,
       "title": "Reduce cloud rebuild costs and prepare complete snapshot capture",
@@ -117,110 +191,6 @@ const historyData = {
         "Reduced repeat profile-update work.",
         "Added privacy-safe connection counters to help diagnose upload problems.",
         "Unofficial copies using this update keep saves local."
-      ]
-    },
-    {
-      "number": 297,
-      "title": "Harden snapshot recovery and prepare exact replay repairs",
-      "commit": "999777064f2b9ab1c24c1c307bef0ac810e2dc5c",
-      "committedAt": "2026-11-06T02:47:24.000Z",
-      "notes": [
-        "Snapshot updates keep recovered replay files instead of downloading them again.",
-        "Incomplete replay data can no longer slip through the publication checks.",
-        "Interrupted snapshot work now keeps safer recovery checkpoints."
-      ]
-    },
-    {
-      "number": 295,
-      "title": "Stop duplicate cloud work and reuse captured replay data",
-      "commit": "73e745f0f9fe38664be35dad781f84d32f71fca5",
-      "committedAt": "2026-11-05T23:03:35.000Z",
-      "notes": [
-        "Fixed repeated cosmetic uploads when device storage is full.",
-        "Duplicate PB submissions now share their upload work.",
-        "Snapshot updates reuse more existing replay and leaderboard data."
-      ]
-    },
-    {
-      "number": 294,
-      "title": "Reduce cloud rebuild reads and prepare guarded local snapshots",
-      "commit": "375e2b0309dc2283dcd1ed94e63196ca26b3fc25",
-      "committedAt": "2026-11-05T22:27:17.000Z",
-      "notes": [
-        "Busy leaderboards update in batches without unnecessary restarts.",
-        "Ranking updates reuse unchanged track data.",
-        "Safer replay checks and automatic ranking updates."
-      ]
-    },
-    {
-      "number": 293,
-      "title": "Avoid repeated leaderboard rebuilds and share cloud work budgets",
-      "commit": "5fd47ac0f63176e4cfcc513bb47ac16904642897",
-      "committedAt": "2026-11-05T20:41:30.000Z",
-      "notes": [
-        "Smoother leaderboard updates while racers change their look.",
-        "Racer Studio skips outdated drafts when you make another change.",
-        "More efficient automatic ranking updates."
-      ]
-    },
-    {
-      "number": 292,
-      "title": "Require complete replay files and preserve bounded capture recovery",
-      "commit": "f1e88968f013b2adfa411cafce762f21ff5eee80",
-      "committedAt": "2026-11-05T19:01:17.000Z",
-      "notes": [
-        "Ranking updates now check that every listed run has its replay.",
-        "Safer automatic ranking updates and recovery."
-      ]
-    },
-    {
-      "number": 291,
-      "title": "Publish verified Snapshot 72 and restore reader browser checks",
-      "commit": "7972090350b6fc211bbef006a9ccd8a27b6ff22e",
-      "committedAt": "2026-11-05T17:22:10.000Z",
-      "notes": [
-        "Updated saved rankings with 103 more replay checks.",
-        "Current Kodub event standings now include 20 verified racers."
-      ]
-    },
-    {
-      "number": 290,
-      "title": "Admit proven event runs from captured empty live standings",
-      "commit": "a9e2607cc1fcc0b686350b973e503608a4d10239",
-      "committedAt": "2026-11-05T16:41:49.000Z",
-      "notes": [
-        "Verified event runs can appear before an event's first server publication.",
-        "Partial standings and runs without replay proof stay protected."
-      ]
-    },
-    {
-      "number": 289,
-      "title": "Scope trusted replay assets to each native verification batch",
-      "commit": "28abdd5d4f13dba87594356d2bd0b249ba9faf42",
-      "committedAt": "2026-11-05T16:03:19.000Z",
-      "notes": [
-        "Fixed replay checks failing when a batch included different tracks.",
-        "Track files stay consistent across Windows and hosted updates."
-      ]
-    },
-    {
-      "number": 288,
-      "title": "Defer missing canonical replays without blocking valid snapshot checks",
-      "commit": "9e4a378891e1e39f9606f5add515b12b2e67eeb9",
-      "committedAt": "2026-11-05T15:37:45.000Z",
-      "notes": [
-        "Missing replay files no longer block checks of available saved runs.",
-        "Runs without replay evidence stay unverified."
-      ]
-    },
-    {
-      "number": 287,
-      "title": "Align capture preflight contracts with encrypted recovery",
-      "commit": "92e16c1c9ea818b4e0c58f0319c40558a6167a4d",
-      "committedAt": "2026-11-05T15:14:09.000Z",
-      "notes": [
-        "Snapshot update checks now cover the encrypted recovery path.",
-        "Existing saved results remain in place if an update cannot finish."
       ]
     }
   ],
