@@ -40,7 +40,7 @@ export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false
     const file=path.join(directory,relative);
     let info;
     try{info=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'&&optional){missingFiles.add(relative);return null;}throw error;}
-    demand(info.isFile()&&!info.isSymbolicLink()&&info.size<=2*1024*1024&&within(directory,await fs.realpath(file)),'unsafe/oversized captured file');
+    demand(info.isFile()&&!info.isSymbolicLink()&&info.size<=(/^tracks\/[a-f0-9]{64}\.json$/.test(relative)?4:2)*1024*1024&&within(directory,await fs.realpath(file)),'unsafe/oversized captured file');
     const bytes=await fs.readFile(file);files.set(relative,digest(bytes));return JSON.parse(bytes);
   }
   const manifest=await read('manifest.json');

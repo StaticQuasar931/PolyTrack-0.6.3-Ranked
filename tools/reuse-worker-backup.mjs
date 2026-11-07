@@ -1,3 +1,4 @@
+import {isCapturedCanonicalInput} from './captured-canonical-input.mjs';
 import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 export async function backupInventory(directory){
@@ -10,10 +11,11 @@ export async function backupInventory(directory){
   }
  }}await walk();return {schemaVersion:1,files,totalBytes:total};
 }
-export async function reuseCompletedWorkerBackup({directory,receipt}){
+export async function reuseCompletedWorkerBackup({directory,receipt,capturedCanonical=null}){
  const binding=receipt.reuseWorkerBackup;if(!binding||binding.sourceCommit!==(receipt.priorFailure?.completedBackupSourceCommit||receipt.priorFailure?.sourceCommit))throw Error('Exact source backup reuse binding required');
  const read=async(field)=>{const item=binding[field];if(!item||!path.isAbsolute(item.file||'')||!/^[a-f0-9]{64}$/.test(item.sha256||''))throw Error('Invalid source backup evidence');const bytes=await fs.readFile(item.file);if(sha(bytes)!==item.sha256)throw Error('Source backup evidence changed');return bytes;};
- if(binding.sourceCommit!==receipt.priorFailure.sourceCommit){
+ const recoveredScan=isCapturedCanonicalInput(capturedCanonical)&&capturedCanonical.sourceCommit===receipt.priorFailure.sourceCommit&&capturedCanonical.failure.file===receipt.priorFailure.file&&capturedCanonical.failure.sha256===receipt.priorFailure.sha256;
+ if(binding.sourceCommit!==receipt.priorFailure.sourceCommit&&!recoveredScan){
   if(binding.zeroIoFailure?.file!==receipt.priorFailure.file||binding.zeroIoFailure?.sha256!==receipt.priorFailure.sha256)throw Error('Unbound zero-I/O continuation failure');
   const lastFailure=JSON.parse(await read('zeroIoFailure')),lastLog=(await read('zeroIoLog')).toString('utf8');
   const operations=lastLog.split(/\r?\n/).filter(x=>x.startsWith('{')).map(x=>{try{return JSON.parse(x).fullSnapshotOperations;}catch{return null;}}).find(Boolean);

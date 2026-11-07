@@ -1,3 +1,5 @@
+import {openCapturedProfileDelta} from './captured-profile-input.mjs';
+import {openCapturedCanonicalInput} from './captured-canonical-input.mjs';
 import {preparePublishedNativeBaseline} from './published-native-baseline.mjs';
 import {reuseCompletedWorkerBackup} from './reuse-worker-backup.mjs';
 import {captureBackendQueueDiagnostic} from './backend-queue-diagnostic.mjs';
@@ -31,7 +33,7 @@ export function localCaptureSourceStages({captureOverall=captureOverallProjectio
   return {captureOverall,captureTotals,calculateOverall};
 }
 
-export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
+export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,capturedCanonical=null,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
   fullSnapshotPolicy({fullSnapshotPolicy:policy});
   const summaryFile=path.join(directory,'public-export-summary.json'),stat=await fs.lstat(summaryFile);
   if(!stat.isFile()||stat.isSymbolicLink()||stat.size>2*1024*1024)throw Error('Safe saved profile watermark required before capture');
@@ -40,8 +42,9 @@ export async function captureLocalCompleteSources({policy,directory,checkpointDi
   const db=await connectImpl(serviceAccount,{env:{},mode:'scheduled',documentReadLimit:policy.canonicalDocumentLimit+policy.profileDocumentLimit+1,documentWriteLimit:1,maxReadRetries:0});
   const backendQueue=await captureJob(db);
   const query=readOnlySnapshotQueryDb(db);
-  const canonical=await captureCanonical({db:query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory});
+  const canonical=await captureCanonical({db:capturedCanonical?.db||query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory});
   if(!canonical.complete||!canonical.imported||canonical.scanInconsistency){console.error(JSON.stringify({canonicalCaptureFailure:canonical}));throw Error('Full canonical catch-up incomplete; retain previous public snapshot');}
+  if(capturedCanonical){canonical.sourceAcquisition='retained-frozen-query-pages';canonical.backendDocumentReadsThisRun=0;canonical.reusedDocumentReservations=capturedCanonical.originalReservations;await fs.writeFile(path.join(directory,'full-canonical-capture.json'),JSON.stringify(canonical)+'\n');}
   const profiles=await captureProfiles({db:query,directory,since,readTime:canonical.fullScanReadPoint,maxDocuments:policy.profileDocumentLimit});
   if(!profiles.complete)throw Error('Profile capture incomplete');
   if(db.writeAttempts()!==0)throw Error('Full snapshot attempted a database write');
@@ -110,17 +113,20 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root,expectedGeneration:fullPolicy.publishedBaseline.generation,expectedIndexSha256:fullPolicy.publishedBaseline.indexSha256});
   try{
     process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT=await fs.readFile(receipt.credentialFile,'utf8');
-    const reused=receipt.reuseWorkerBackup?await reuseCompletedWorkerBackup({directory:staging,receipt}):null;
+    const capturedCanonical=receipt.capturedCanonicalPages?await openCapturedCanonicalInput(receipt.capturedCanonicalPages):null;
+    const capturedProfiles=receipt.capturedProfiles?await openCapturedProfileDelta(receipt.capturedProfiles):null;
+    if(capturedCanonical&&capturedProfiles?.readTime!==capturedCanonical.readTime)throw Error('Frozen profile/canonical source mismatch');
+    const reused=receipt.reuseWorkerBackup?await reuseCompletedWorkerBackup({directory:staging,receipt,capturedCanonical}):null;
     if(reused)await fs.writeFile(path.join(root,'events/public-catalog.json'),reused.catalogBytes);
     const catalog=reused?{deferred:false}:await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
-    const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
+    const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:!capturedCanonical,replayDocumentLimit:capturedCanonical?null:plan.replayDocumentLimit,
       ...(reused?{prepareNativeCapture:()=>preparePublishedNativeBaseline({root,publishedBaseline:fullPolicy.publishedBaseline})}:{}),
       verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:checkpoint,
       capture:async options=>{const backup=reused?.manifest||await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
         if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));
         const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));
-        const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
+        const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
         console.log(JSON.stringify({fullSnapshotCapture:full}));
         return backup;},
       nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),

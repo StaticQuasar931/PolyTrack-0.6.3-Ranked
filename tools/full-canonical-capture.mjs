@@ -10,7 +10,7 @@ import {buildTrackStatistics} from './snapshot-package.mjs';
 import {ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 
 export const FULL_CANONICAL_LIMITS = Object.freeze({documents: 20000, page: 100, catchupMemoryBytes:128 * 1024 * 1024,
-  memoryBytes: 64 * 1024 * 1024, fileBytes: 2 * 1024 * 1024});
+  memoryBytes: 64 * 1024 * 1024, normalBoardBytes:4 * 1024 * 1024, fileBytes: 2 * 1024 * 1024});
 const COLLECTION = '0.6.2_race_results';
 const HASH = /^[a-f0-9]{64}$/;
 const DATE_FIELDS = ['createdAt', 'pbAt', 'updatedAt', 'ingestedAt'];
@@ -294,13 +294,14 @@ async function readOverallMetadata(root, memory, parse = true) {
   } finally { if (handle) await handle.close(); release(); }
 }
 
+const capturedFileBound=relative=>/^tracks\/[a-f0-9]{64}\.json$/.test(relative)?FULL_CANONICAL_LIMITS.normalBoardBytes:FULL_CANONICAL_LIMITS.fileBytes;
 async function transaction(root, checkpoint, memory) {
   const originals = new Map(), writes = new Map();
   let overallDependency;
   let serial = 0;
-  async function stash(bytes) {
+  async function stash(bytes,limit=FULL_CANONICAL_LIMITS.fileBytes) {
     const release = memory.claim(512 + (checkpoint ? 0 : bytes.length));
-    const ref = {hash: sha(bytes), length: bytes.length, release};
+    const ref = {hash: sha(bytes), length: bytes.length, release,limit};
     if (checkpoint) {
       ref.relative = `blob-${++serial}.json`;
       await fs.writeFile(await checked(checkpoint, ref.relative), bytes, {flag: 'wx', mode: 0o600});
@@ -310,7 +311,7 @@ async function transaction(root, checkpoint, memory) {
   async function materialize(ref) {
     if (ref.bytes) return ref.bytes;
     const file = await checked(checkpoint, ref.relative), stat = await fs.lstat(file);
-    demand(stat.size === ref.length && stat.size <= FULL_CANONICAL_LIMITS.fileBytes, 'checkpoint_changed');
+    demand(stat.size === ref.length && stat.size <= ref.limit, 'checkpoint_changed');
     const bytes = await fs.readFile(file);
     demand(sha(bytes) === ref.hash, 'checkpoint_changed'); return bytes;
   }
@@ -318,16 +319,16 @@ async function transaction(root, checkpoint, memory) {
     const file = await checked(root, relative);
     try {
       const stat = await fs.lstat(file);
-      if (stat.size > FULL_CANONICAL_LIMITS.fileBytes) fail('file_cap', true);
+      if (stat.size > capturedFileBound(relative)) fail('file_cap', true);
       const bytes = await fs.readFile(file);
       demand(bytes.length === stat.size, 'file_changed'); return bytes;
     } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
   async function read(relative) {
-    const scratch = memory.claim(FULL_CANONICAL_LIMITS.fileBytes * 2);
+    const scratch = memory.claim(capturedFileBound(relative) * 2);
     try {
       const bytes = await current(relative);
-      if (!originals.has(relative)) originals.set(relative, bytes === null ? null : await stash(bytes));
+      if (!originals.has(relative)) originals.set(relative, bytes === null ? null : await stash(bytes,capturedFileBound(relative)));
       else demand(bytes === null ? originals.get(relative) === null : originals.get(relative)?.hash === sha(bytes), 'stage_changed');
       if (bytes === null) return {value: null, release() {}};
       const release = memory.claim(bytes.length * 6 + 512);
@@ -339,12 +340,12 @@ async function transaction(root, checkpoint, memory) {
     const release = memory.claim(objectSize(value) * 2);
     try {
       const bytes = Buffer.from(JSON.stringify(value) + '\n');
-      if (bytes.length > FULL_CANONICAL_LIMITS.fileBytes) fail('output_cap', true);
+      if (bytes.length > capturedFileBound(relative)) fail('output_cap', true);
       const previous = originals.get(relative);
       const descriptor = {sha256: sha(bytes), bytes: bytes.length};
       if (previous?.hash === descriptor.sha256) return descriptor;
       demand(!writes.has(relative), 'duplicate_output');
-      writes.set(relative, await stash(bytes));
+      writes.set(relative, await stash(bytes,capturedFileBound(relative)));
       return descriptor;
     } finally { release(); }
   }
@@ -366,7 +367,7 @@ async function transaction(root, checkpoint, memory) {
     demand(ref === null ? bytes === null : bytes !== null && sha(bytes) === ref.hash, 'stage_changed');
   }
   async function commit() {
-    const scratch = memory.claim(FULL_CANONICAL_LIMITS.fileBytes * 3);
+    const scratch = memory.claim(FULL_CANONICAL_LIMITS.normalBoardBytes * 3);
     const temporary = [], committed = [], directories = [];
     try {
       if (overallDependency !== undefined) demand((await readOverallMetadata(root, memory, false)).hash === overallDependency, 'stage_changed');

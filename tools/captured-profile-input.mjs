@@ -1,0 +1,13 @@
+import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
+const sha=b=>createHash('sha256').update(b).digest('hex');
+export async function openCapturedProfileDelta(binding){
+ if(!binding||!path.isAbsolute(binding.directory||''))throw Error('Absolute captured profile directory required');
+ const read=async item=>{if(!item||!path.isAbsolute(item.file||'')||!/^[a-f0-9]{64}$/.test(item.sha256||''))throw Error('Bound profile source required');const b=await fs.readFile(item.file);if(sha(b)!==item.sha256)throw Error('Captured profile source changed');return b;};
+ const report=JSON.parse(await read(binding.report)),inventory=JSON.parse(await read(binding.inventory));if(report.complete!==true||report.backendWrites!==0||report.sourceOnly!==true||report.readTime!==report.originalCanonicalReadTime||!Number.isSafeInteger(report.profilesUpdated)||report.profilesUpdated>2000||Object.keys(inventory.files).length!==report.profilesUpdated)throw Error('Incomplete captured profile delta');
+ if(!Number.isSafeInteger(inventory.totalBytes)||inventory.totalBytes<0||inventory.totalBytes>16*1024*1024)throw Error('Captured profile source exceeds bound');
+ const files=[];for(const [relative,item]of Object.entries(inventory.files)){if(!/^profiles\/[a-f0-9]{64}\.json$/.test(relative)||item.bytes>2*1024*1024)throw Error('Unsafe captured profile path');const file=path.join(binding.directory,relative),st=await fs.lstat(file),b=await fs.readFile(file);if(!st.isFile()||st.isSymbolicLink()||b.length!==item.bytes||sha(b)!==item.sha256||JSON.parse(b).accountId!==path.basename(relative,'.json'))throw Error('Captured profile bytes changed');files.push([relative,b]);}
+ return {readTime:report.readTime,async apply({directory,since,readTime,maxDocuments}){
+  if(since!==report.since||readTime!==report.readTime||maxDocuments!==2000)throw Error('Profile source frozen point mismatch');const folder=path.join(directory,'profiles');await fs.mkdir(folder,{recursive:true});if((await fs.lstat(folder)).isSymbolicLink())throw Error('Unsafe profile destination');const old=new Map();try{for(const [relative,b]of files){const target=path.join(directory,relative);let bytes=null;try{const st=await fs.lstat(target);if(!st.isFile()||st.isSymbolicLink()||st.size>2*1024*1024)throw Error('Unsafe existing profile');bytes=await fs.readFile(target);}catch(e){if(e.code!=='ENOENT')throw e;}old.set(target,bytes);await fs.writeFile(target,b);}}catch(e){for(const [file,b]of old)if(b)await fs.writeFile(file,b);else await fs.unlink(file).catch(()=>{});throw e;}
+  return {...report,sourceAcquisition:'retained-frozen-profile-delta',backendDocumentReadsThisRun:0};
+ }};
+}

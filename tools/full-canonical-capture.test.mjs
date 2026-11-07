@@ -911,7 +911,7 @@ test('an 8000-row prior inventory fits the fixed accounting cap without retainin
   assert.equal(calls, 1); assert.equal((await fs.readdir(f.root)).length, 1);
 });
 
-test('reranking cannot emit a board above the fixed 2 MiB cap', async t => {
+test('reranking cannot emit a normal board above the bounded 4 MiB board cap', async t => {
   const f = await fixture(t), cosmetics = Object.fromEntries(['theme', 'accent', 'finish', 'plate', 'edge', 'stageTint',
     'stage', 'stageEffect', 'stripe', 'emblem', 'emblem2', 'emblem3', 'emblemBackdrop', 'nameFont', 'nameSize',
     'nameWeight', 'nameColor', 'baseSecondary', 'title', 'badge', 'favoriteTrackId', 'overridePodium'].map(key => [key, 'x'.repeat(256)]));
@@ -919,11 +919,11 @@ test('reranking cannot emit a board above the fixed 2 MiB cap', async t => {
   for (let i = 1; ; i++) {
     const row = saved(source(i), {profileCosmetics: cosmetics});
     const next = {trackId: track, updatedAt: 123, entries: [...entries, row]};
-    if (Buffer.byteLength(JSON.stringify(next) + '\n') > FULL_CANONICAL_LIMITS.fileBytes) break;
+    if (Buffer.byteLength(JSON.stringify(next) + '\n') > FULL_CANONICAL_LIMITS.normalBoardBytes) break;
     entries.push(row);
   }
   await f.put(`tracks/${track}.json`, {trackId: track, updatedAt: 123, entries});
-  const before = await tree(f.root), report = await f.run([]);
+  const before = await tree(f.root), report = await f.run([], {documentLimit:20000});
   assert.equal(report.capDeferred, true); assert.equal(report.reason, 'output_cap');
   assert.equal(report.complete, false); assert.deepEqual(await tree(f.root), before);
 });
@@ -951,7 +951,7 @@ test('caps cannot be raised and oversized stage files defer before querying', as
     await assert.rejects(f.run([], {db, ...options}), /invalid_limits/);
   }
   await fs.mkdir(path.join(f.root, 'tracks'));
-  await fs.writeFile(path.join(f.root, 'tracks', `${track}.json`), ' '.repeat(FULL_CANONICAL_LIMITS.fileBytes + 1));
+  await fs.writeFile(path.join(f.root, 'tracks', `${track}.json`), ' '.repeat(FULL_CANONICAL_LIMITS.normalBoardBytes + 1));
   const report = await f.run([], {db}); assert.equal(report.capDeferred, true); assert.equal(report.reason, 'file_cap');
   assert.equal(calls, 0);
 });
@@ -980,10 +980,17 @@ test('checkpoint cannot be staging, a child, an ancestor, or a symlink; stage fi
   assert.deepEqual(await fs.readdir(target), []); assert.equal(calls, 0);
 });
 
-test('approved 20000-row catch-up imports a full 15302-row field under its explicit accounting bound',async t=>{
+test('approved 20000-row catch-up imports a full 15302-row field under its explicit accounting bound',{skip:process.env.PT_SKIP_REPEATED_CAPACITY==='1'},async t=>{
  const f=await fixture(t),rows=Array.from({length:15302},(_,i)=>source(i+1,{trackId:id(10000+Math.floor(i/400)),name:'Synthetic Capacity Racer '+i}));
  await baseline(f,rows.map(row=>saved(row)));const db=transport(rows);
  const result=await captureFullCanonical({directory:f.root,checkpointDirectory:f.checkpoint,db,documentLimit:20000});
  assert.equal(result.complete,true);assert.equal(result.imported,true);assert.equal(result.rows,15302);assert.equal(result.priorRows,15302);assert.equal(result.scanInconsistency,false);assert.equal(result.documentWrites,0);
  assert.equal(db.calls.length,154);assert.ok(result.peakAccountedBytes<=FULL_CANONICAL_LIMITS.catchupMemoryBytes);
+});
+
+test('normal board above 2 MiB is retained under the 4 MiB board-only limit without granting verification',async t=>{
+ const f=await fixture(t),rows=Array.from({length:2100},(_,i)=>saved(source(i+1,{name:'n'.repeat(256),carStyle:'a'.repeat(256),countryCode:'x'.repeat(256)})));
+ await baseline(f,rows);const result=await f.run([],{checkpointDirectory:f.checkpoint});
+ assert.equal(result.complete,true);assert.equal(result.missingPriorCount,2100);const file=path.join(f.root,'tracks',track+'.json'),bytes=await fs.readFile(file);assert.ok(bytes.length>2*1024*1024&&bytes.length<=4*1024*1024);const value=JSON.parse(bytes);assert.equal(value.entries.length,2100);assert.ok(value.entries.every(row=>row.runVerified===false));
+ const loaded=await loadCapturedNativeJobs({directory:f.root});assert.equal(loaded.jobs.length,0);assert.ok(loaded.coverage.gaps.length>=2100);
 });

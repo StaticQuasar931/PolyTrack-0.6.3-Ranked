@@ -1,6 +1,6 @@
 export const OVERNIGHT_SNAPSHOT = Object.freeze({
-  priorDirectReservations:27,priorWorkerRequests:512,
-  claimTag:'polytrack-oneoff-2026-11-07-replacement-3',priorClaimTag:'polytrack-oneoff-2026-11-07-replacement-2',priorSource:'edadececd50f85dc8595edee0a90541ed1c03458',
+  priorDirectReservations:17241,priorWorkerRequests:512,
+  claimTag:'polytrack-oneoff-2026-11-07-replacement-4',priorClaimTag:'polytrack-oneoff-2026-11-07-replacement-3',priorSource:'8b28442932979460aa7dc369501a7b4b3f88e745',
   date:'2026-11-07', execution:'local', cron:'45 8 * * *', start:Date.parse('2026-11-07T08:05:00Z'),
   reset:Date.parse('2026-11-07T08:00:00Z'),
   localReservationEnd:Date.parse('2026-11-07T11:00:00Z'),
