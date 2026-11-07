@@ -1,3 +1,5 @@
+import { orderPlannerRoutes, minimumBenefitTarget } from './planner-route-model.mjs';
+import { compactPlannerTargetLabel, compactPlannerEvidenceLabel } from './profile-compact-presentation.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -8,14 +10,16 @@ const source=await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.u
 const candidate=source;
 const fragment=id=>{
   const name=id==='event-cache-boundary'?'cachedProfileGuideMarkup':id;
-  const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));
+  const start=source.search(new RegExp('^ *(?:async )?function '+name+'\\(','m'));
   assert.ok(start>=0,'missing '+name);
-  const rest=source.slice(start);
-  const end=rest.search(/\n(?:  (?:async )?function |const plannerPositive=)/);
-  assert.ok(end>0,'missing end of '+name);
-  return rest.slice(0,end);
+  const tail=source.slice(start);
+  for(const match of tail.matchAll(/^ *}[^\\n]*$/gm)){
+    const candidate=tail.slice(0,match.index+match[0].length);
+    try{new vm.Script(candidate);return candidate;}catch(error){if(!(error instanceof SyntaxError))throw error;}
+  }
+  assert.fail('missing end of '+name);
 };
-const order=new Function(fragment('orderedPlannerRoutes')+';return orderedPlannerRoutes;')();
+const order=new Function('orderPlannerRoutes',fragment('orderedPlannerRoutes')+';return orderedPlannerRoutes;')(orderPlannerRoutes);
 const route=(trackId,value,effortScore,extra={})=>({trackId,value,weight:1,currentRank:5,targetRank:1,kind:'improve',ease:{effortScore},...extra});
 const percentage=(value,max)=>!Number.isFinite(value)||!Number.isFinite(max)||value<=0||max<=0?0:Math.max(1,Math.min(100,Math.round(100*value/max)));
 
@@ -55,13 +59,13 @@ test('duplicate track targets are chosen before ordering, including rival contex
   }
 });
 test('recommendation target is independent of selected sort using actual patched function',()=>{
-  const get=new Function('plannerSort',`const projectedOverallScore=()=>100;
+  const get=new Function('plannerSort','minimumBenefitTarget',`const projectedOverallScore=()=>100;
     const recommendationSimulator=()=>rank=>rank===1?20:rank===2?40:90;
     const knownFinishWeight=()=>1,projectedFinish=x=>x,rankedTrackWeight=()=>1;
     ${fragment('recommendationAction')} return recommendationAction;`);
   for(const sort of ['practice','impact','ease','training','benefit-ease']){
-    const r=get(sort)({trackId:'Summer1',rank:4,fieldSize:5},'improve',{raceCount:1},[{trackId:'Summer1',rank:4,fieldSize:5}]);
-    assert.equal(r.targetRank,1);assert.equal(r.value,80);
+    const r=get(sort,minimumBenefitTarget)({trackId:'Summer1',rank:4,fieldSize:5},'improve',{raceCount:1},[{trackId:'Summer1',rank:4,fieldSize:5}]);
+    assert.equal(r.targetRank,3);assert.equal(r.value,10);
   }
 });
 test('all four event kinds from local assignment metadata are eligible, no eight-card truncation',()=>{
@@ -146,8 +150,8 @@ test('integration selects after normalization, preserves practice inputs and avo
   assert.match(fragment('event-cache-boundary'),/if\(plannerMetric==='events'\)return profileGuideMarkup/);
 });
 test('card percentage ignores shown maximum and explicitly distinguishes benefit from ease',()=>{
-  const render=new Function('deps',`const {trackInfo,routeBenefitPercent,helpfulThresholdText,ageLabel,rankedWeightTitle,escapeHtml,trackThumbnailMarkup}=deps;
-    ${fragment('guideTrackCard')};return guideTrackCard;`)({trackInfo:()=>({name:'Summer1'}),routeBenefitPercent:percentage,helpfulThresholdText:()=>'',
+  const render=new Function('deps',`const {trackInfo,routeBenefitPercent,helpfulThresholdText,compactPlannerTargetLabel,compactPlannerEvidenceLabel,ageLabel,rankedWeightTitle,escapeHtml,trackThumbnailMarkup}=deps;
+    ${fragment('guideTrackCard')};return guideTrackCard;`)({trackInfo:()=>({name:'Summer1'}),routeBenefitPercent:percentage,helpfulThresholdText:()=>'',compactPlannerTargetLabel,compactPlannerEvidenceLabel,
       ageLabel:()=>'',rankedWeightTitle:()=>'',escapeHtml:String,trackThumbnailMarkup:()=>''});
   const r={...route('Summer1',80,.1),benefitReference:100};
   assert.equal(render(r,80),render(r,1000));assert.match(render(r,80),/<b>80%<\/b>/);

@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {EventEmitter} from 'node:events';
-import path from 'node:path';
-import {runBoundedCaptureProcess} from './local-capture-process.mjs';
+import {runBoundedCaptureProcess,terminateOwnedCaptureTree} from './local-capture-process.mjs';
 import {createLocalCaptureGit,assertBoundedLocalSource,publishLocalCaptureCommit,reconcileLocalPublication,completeReconciledLocalPublication} from './local-capture-git.mjs';
 
 const source='a'.repeat(40),candidate='b'.repeat(40);
@@ -41,14 +40,14 @@ test('unconfirmed tree, timeout, malformed IPC and nonzero exit never expose sub
 });
 test('real hung wrapper and stdout-holding descendant are both terminated before timeout failure returns',async t=>{
   let descendant,wrapper;
-  t.after(()=>{
+  t.after(async()=>{
     if(!wrapper||wrapper.exitCode!==null||wrapper.signalCode!==null)return;
-    if(process.platform==='win32')execFileSync(path.join(process.env.SystemRoot||'C:\\Windows','System32','taskkill.exe'),['/PID',String(wrapper.pid),'/T','/F'],{windowsHide:true,timeout:5000,stdio:'ignore'});
-    else process.kill(-wrapper.pid,'SIGKILL');
+    await terminateOwnedCaptureTree(wrapper,{isRunning:()=>wrapper.exitCode===null&&wrapper.signalCode===null});
   });
   const code=`const {spawn}=require('node:child_process');process.once('message',()=>{const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:['ignore','pipe','pipe'],windowsHide:true});process.send({type:'fixture-pid',pid:child.pid});setInterval(()=>{},1000);});`;
   const git=createLocalCaptureGit({workspace:process.cwd(),deadline:Date.now()+60000,
-    runProcess:options=>runBoundedCaptureProcess({...options,timeoutMs:1000}),
+    runProcess:options=>runBoundedCaptureProcess({...options,timeoutMs:1000}).catch(error=>{
+      t.diagnostic(JSON.stringify({supervisorFailure:error.message,termination:error.termination}));throw error;}),
     spawnWorker:(_file,_argv,options)=>{const child=spawn(process.execPath,['-e',code],options);wrapper=child;
       child.on('message',value=>{if(value.type==='fixture-pid')descendant=value.pid;});return child;}});
   await assert.rejects(git(['status']),{code:'LOCAL_GIT_TIMEOUT'});assert(Number.isSafeInteger(descendant));
@@ -169,7 +168,128 @@ test('main changing during local audit is unknown, and completion-write failure 
     assert.equal(error.message.includes('private'),false);return true;});
 });
 
-test('failed source assertion retains its tree root until confirmed supervisor termination',async()=>{
+test('failed source assertion retains its tree root until confirmed supervisor termination',async t=>{
+  let wrapper;
+  t.after(async()=>{
+    if(wrapper&&wrapper.exitCode===null&&wrapper.signalCode===null)
+      await terminateOwnedCaptureTree(wrapper,{isRunning:()=>wrapper.exitCode===null&&wrapper.signalCode===null});
+  });
   await assert.rejects(assertBoundedLocalSource({workspace:process.cwd(),sourceCommit:source,runnerFile:'fixture-runner',deadline:Date.now()+60000,
-    runProcess:options=>runBoundedCaptureProcess({...options,timeoutMs:1000})}),{code:'LOCAL_GIT_TIMEOUT'});
+    runProcess:options=>runBoundedCaptureProcess({...options,timeoutMs:1000,
+      spawnImpl:(...args)=>{wrapper=spawn(...args);return wrapper;}})}),{code:'LOCAL_GIT_TIMEOUT'});
+});
+
+function commitTimeoutFixture({code='LOCAL_GIT_TIMEOUT',head=candidate,parent=source,dirty='',staged='',audit=true}={}){
+  const calls=[],records=[],states=[],audits=[],order=[];
+  const options={sourceCommit:source,directory:'public-snapshots73',deadline:100,now:()=>0,
+    git:async args=>{
+      calls.push(args);order.push(args.includes('commit')?'commit':args.join(' '));
+      if(args.includes('commit'))throw Object.assign(Error('private subprocess output'),{code});
+      if(args[0]==='rev-parse')return args[1]==='HEAD'?head:parent;
+      if(args[0]==='diff')return args.includes('--cached')?staged:dirty;
+      return '';
+    },
+    auditCandidate:async identity=>{audits.push(identity);order.push('audit');return audit;},
+    record:async value=>{records.push(value);order.push(value.status);},onState:value=>states.push(value)};
+  return {options,calls,records,states,audits,order};
+}
+
+test('confirmed commit timeout recovers an audited clean exact child with one commit and one push',async()=>{
+  const f=commitTimeoutFixture(),result=await publishLocalCaptureCommit(f.options);
+  assert.equal(result.publicationCommit,candidate);assert.equal(result.publicationState,'push-acknowledged');
+  assert.deepEqual(f.audits,[{candidateCommit:candidate,sourceCommit:source}]);
+  assert.equal(f.calls.filter(args=>args.includes('commit')).length,1);
+  assert.deepEqual(f.calls.filter(args=>args[0]==='push'),[['push','origin',candidate+':refs/heads/main']]);
+  assert.deepEqual(f.order,['commit','rev-parse HEAD','rev-parse HEAD^','diff --name-only HEAD',
+    'diff --cached --name-only','audit','rev-parse HEAD^','publication-candidate','publication-attempt',
+    'push origin '+candidate+':refs/heads/main','publication-acknowledged']);
+  assert(f.records.every(value=>value.recoveredLocalCommitTimeout===true&&value.automaticRetry===false));
+  assert.equal(f.records[1].publicationState,'unknown');
+  assert(f.states.some(value=>value.recoveredLocalCommitTimeout===true));
+});
+
+for(const [name,patch,auditCalls] of [
+  ['dirty worktree',{dirty:'public-snapshots73/index.json\n'},0],
+  ['dirty index',{staged:'index.html\n'},0],
+  ['wrong parent',{parent:'c'.repeat(40)},0],
+  ['unchanged HEAD',{head:source},0],
+  ['malformed HEAD',{head:'not-a-commit'},0],
+  ['missing audit',{},0],
+  ['audit rejects',{audit:false},1],
+  ['truthy audit is not confirmation',{audit:{reusable:true}},1],
+  ['audit throws',{},1],
+  ['unconfirmed process tree',{code:'LOCAL_GIT_TREE_UNCONFIRMED'},0],
+  ['other Git error',{code:'LOCAL_GIT_FAILED'},0],
+  ['generic timeout is not confirmed',{code:'ETIMEDOUT'},0],
+  ['deadline error',{code:'LOCAL_GIT_DEADLINE'},0]
+])test('commit timeout recovery never pushes with '+name,async()=>{
+  const f=commitTimeoutFixture(patch);
+  if(name==='missing audit')delete f.options.auditCandidate;
+  if(name==='audit throws')f.options.auditCandidate=async identity=>{f.audits.push(identity);throw Error('private audit output');};
+  await assert.rejects(publishLocalCaptureCommit(f.options),error=>{
+    assert.equal(error.captureFailure.publicationState,'not-attempted');
+    assert.equal(error.message.includes('private'),false);return true;
+  });
+  assert.equal(f.audits.length,auditCalls);assert.equal(f.calls.filter(args=>args.includes('commit')).length,1);
+  assert.equal(f.calls.some(args=>args[0]==='push'),false);assert.equal(f.records.length,0);
+});
+
+test('recovered timeout revalidates parent and publication deadline after candidate auditing',async()=>{
+  for(const mode of ['parent','deadline']){
+    const f=commitTimeoutFixture(),git=f.options.git,audit=f.options.auditCandidate;
+    let audited=false;
+    f.options.auditCandidate=async identity=>{const value=await audit(identity);audited=true;return value;};
+    f.options.git=args=>audited&&mode==='parent'&&args[0]==='rev-parse'&&args[1]==='HEAD^'?'c'.repeat(40):git(args);
+    f.options.now=()=>audited&&mode==='deadline'?100:0;
+    await assert.rejects(publishLocalCaptureCommit(f.options),{code:mode==='parent'?'LOCAL_PUBLICATION_PARENT_CHANGED':'LOCAL_GIT_DEADLINE'});
+    assert.equal(f.audits.length,1);assert.equal(f.calls.some(args=>args[0]==='push'),false);
+    assert.equal(f.records.some(value=>value.status==='publication-attempt'),false);
+  }
+});
+
+test('lost push acknowledgement after commit-timeout recovery stays unknown without another commit audit or push',async()=>{
+  const f=commitTimeoutFixture(),git=f.options.git;
+  f.options.git=async args=>{const result=await git(args);if(args[0]==='push')throw Object.assign(Error('private push output'),{code:'LOCAL_GIT_TIMEOUT'});return result;};
+  await assert.rejects(publishLocalCaptureCommit(f.options),error=>{
+    assert.equal(error.captureFailure.candidateCommit,candidate);assert.equal(error.captureFailure.publicationState,'unknown');
+    assert.equal(error.captureFailure.recoveredLocalCommitTimeout,true);return true;
+  });
+  assert.equal(f.audits.length,1);assert.equal(f.calls.filter(args=>args.includes('commit')).length,1);
+  assert.equal(f.calls.filter(args=>args[0]==='push').length,1);assert.equal(f.records.at(-1).status,'publication-attempt');
+});
+
+test('unconfirmed supervisor termination cannot be promoted into recoverable timeout publication',async()=>{
+  const f=commitTimeoutFixture();let runs=0;
+  f.options.git=createLocalCaptureGit({workspace:process.cwd(),deadline:60000,now:()=>0,
+    runProcess:async()=>{runs++;throw Error('tree still alive');}});
+  await assert.rejects(publishLocalCaptureCommit(f.options),{code:'LOCAL_GIT_TREE_UNCONFIRMED'});
+  assert.equal(runs,1);assert.equal(f.audits.length,0);assert.equal(f.records.length,0);
+});
+
+test('parallel owned tree termination leaves an unrelated supervised sibling alive',async t=>{
+  const roots=[],descendants=[];let sibling;
+  t.after(async()=>{
+    for(const child of roots)if(child.exitCode===null&&child.signalCode===null)
+      await terminateOwnedCaptureTree(child,{isRunning:()=>child.exitCode===null&&child.signalCode===null});
+  });
+  const spawnOwned=(file,args,options)=>{const child=spawn(file,args,options);roots.push(child);return child;};
+  const other=runBoundedCaptureProcess({file:process.execPath,
+    args:['-e',"const hold=setInterval(()=>{},1000);process.on('message',m=>{if(m.finish){clearInterval(hold);process.disconnect();}});"],
+    options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:20000,graceMs:0,
+    spawnImpl:(...args)=>{sibling=spawnOwned(...args);return sibling;}});
+  // Register the rejection handler now, before waiting for the other fixtures.
+  const siblingResult=other.then(result=>({result}),error=>({error}));
+  const code="const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true});process.send({pid:child.pid});setInterval(()=>{},1000);";
+  try {
+    const results=await Promise.all(Array.from({length:3},()=>runBoundedCaptureProcess({file:process.execPath,args:['-e',code],
+      options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:2000,graceMs:0,
+      spawnImpl:(...args)=>{const child=spawnOwned(...args);child.on('message',message=>{if(Number.isSafeInteger(message.pid))descendants.push(message.pid);});return child;}})));
+    assert(results.every(result=>result.timedOut===true));assert.equal(descendants.length,3);
+    for(const pid of descendants)assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+    assert.equal(sibling.exitCode,null);assert.equal(sibling.signalCode,null);assert.equal(sibling.connected,true);
+  } finally {
+    if(sibling?.connected)sibling.send({finish:true},()=>{});
+  }
+  const completed=await siblingResult;
+  assert.equal(completed.error,undefined);assert.deepEqual(completed.result,{status:0,signal:null,timedOut:false});
 });

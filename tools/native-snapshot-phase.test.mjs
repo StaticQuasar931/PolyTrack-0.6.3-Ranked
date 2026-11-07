@@ -9,7 +9,7 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
-import {prepareNativeSnapshotCapture,runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
+import {prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {ledgerBinding,ledgerKey,writeLedger,readLedger} from './native-verification-ledger.mjs';
 import {encryptCaptureRecovery} from './capture-recovery.mjs';
 const encryptNativeSnapshotRecovery=options=>encryptCaptureRecovery({attempt:'routine-capture',...options});
@@ -19,6 +19,7 @@ import {applyNativeLedgerToCapturedTracks} from './public-snapshot-backup.mjs';
 import {publishSnapshot} from './snapshot-package.mjs';
 import {hydrateStaging} from './update-public-snapshot.mjs';
 import {nativeEventSourceHash} from './native-event-snapshot.mjs';
+import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),account='b'.repeat(64),engine='c'.repeat(64),fingerprint='d'.repeat(64),content='e'.repeat(64);
@@ -82,6 +83,7 @@ async function fixture(t,{events=false,legacy=false}={}){
   await write(root,'verification-ledger-current.json',{schemaVersion:1,directory:'verification-ledger',manifestHash:ledger.manifestHash});
   const calls=[];
   const options={root,directory,sourceCommit:'a'.repeat(40),now:()=>Date.now()-1000,
+    preflight:async()=>({sourceTracks:1,sourceRows:1,sourceSha256:sha('fixture scoring inputs')}),
     buildPolicy:async()=>structuredClone(policy),validateEngine:async()=>{},
     verify:async(_root,jobs)=>{calls.push(jobs);return jobs.map(job=>{
       const binding={verifierVersion:policy.verifierVersion,verifierFingerprint:fingerprint,resourceProfile:job.resourceProfile||'standard',
@@ -110,6 +112,126 @@ test('inactive phase hydrates, verifies, overlays normal flags, rebuilds and pro
   const files=await nativeLedgerPublicationFiles(f.root);
   assert(files.includes('verification-ledger-current.json'));assert(files.includes('verification-ledger/manifest.json'));
   assert(files.some(file=>/^verification-ledger\/shards\/[a-f0-9]{64}\.json$/.test(file)));
+});
+
+test('read-only scoring preflight failure prevents native work and all authority mutation',async t=>{
+  const f=await fixture(t),before=await inventory(f.root),failure=Error('invalid scoring input');
+  await assert.rejects(runNativeSnapshotPhase({...f.options,preflight:async({directory,validateOnly})=>{
+    assert.equal(validateOnly,true);assert.notEqual(directory,f.directory);
+    assert.equal(f.calls.length,0);throw failure;
+  },proofCheckpoint:async()=>assert.fail('no proofs before preflight')}),error=>error===failure);
+  assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
+});
+
+test('production preflight catches missing canonical board scoring metadata before physics',async t=>{
+  const f=await fixture(t),manifest=await read(f.directory,'manifest.json');
+  manifest.tracks[track].updatedAt=100;await write(f.directory,'manifest.json',manifest);
+  await write(f.directory,'overall.json',{algorithmVersion:'participation-v8-s1',schemaVersion:6,
+    revision:1,sourceRevision:1,builtRevision:1,updatedAt:100,entries:[],trackSummaries:[],complete:true,totalEntries:0,trackCatalog:[{trackId:track,updatedAt:100}]});
+  const before=await inventory(f.root);
+  await assert.rejects(runNativeSnapshotPhase({...f.options,preflight:undefined}),/Unsupported scoring version/);
+  assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
+});
+
+test('controls preparation finishes before any native dispatch',async t=>{
+  const f=await fixture(t);let prepared=false;
+  await runNativeSnapshotPhase({...f.options,reviewFactory:async context=>{
+    const review=await f.options.reviewFactory(context);
+    review.inspect=async()=>{assert.equal(f.calls.length,0);prepared=true;return {complete:true};};return review;
+  },verify:async(...args)=>{assert(prepared);return f.options.verify(...args);}});
+  assert(prepared);
+});
+
+test('a globally stopped whole-inventory controls preflight spends no native budget',async t=>{
+  const f=await fixture(t);
+  await assert.rejects(runNativeSnapshotPhase({...f.options,reviewFactory:async input=>{
+    const review=await f.options.reviewFactory(input);review.inspect=async()=>({complete:false,stop:'captured_controls_pair_limit'});return review;
+  }}),/controls preflight stopped/);
+  assert.equal(f.calls.length,0);
+});
+
+test('one native job budget reaches a live waiting event before a normal backlog without filtering full review',async t=>{
+  const f=await fixture(t,{events:true}),manifest=await read(f.directory,'manifest.json'),rows=[];
+  for(let index=2;index<=22;index++){
+    const row={...f.row,accountId:sha('normal backlog '+index),uploadId:index,ingestedAt:Date.now()-index};rows.push(row);
+    await write(f.directory,`canonical/${track}/${row.accountId}.json`,row);
+    await write(f.directory,`recordings/${index}.json`,{...row,recording:replay});
+  }
+  manifest.tracks[track]={path:`tracks/${track}.json`};await write(f.directory,'manifest.json',manifest);
+  await write(f.directory,`tracks/${track}.json`,{trackId:track,entries:rows,updatedAt:100,complete:true,totalEntries:rows.length});
+  const event=await read(f.directory,'events/day1.json');event.state='open';await write(f.directory,'events/day1.json',event);
+  let fullInventory=0;
+  const result=await runNativeSnapshotPhase({...f.options,maxJobs:1,reviewFactory:async input=>{
+    fullInventory=input.jobs.length;return f.options.reviewFactory(input);
+  }});
+  assert.equal(f.calls.length,1);assert.equal(f.calls[0].length,1);assert.equal(f.calls[0][0].kind,'event-pending');
+  assert.equal(fullInventory,23);assert.equal(result.counts.nativeDispatched,1);assert.equal(result.counts.unprocessed,21);
+  assert.equal(result.priority.liveEventPending,1);assert.equal(result.sourceCoverage.knownBindings,23);
+});
+
+test('prepared capture and scoring pins fail before spending any native budget',async t=>{
+  const f=await fixture(t);
+  for(const option of ['expectedCaptureSha256','expectedScoringSha256']){
+    await assert.rejects(runNativeSnapshotPhase({...f.options,[option]:'0'.repeat(64)}),/changed since preparation/);
+    assert.equal(f.calls.length,0);
+  }
+});
+
+test('completed in-process attestations retry scoring without physics or receipt-based admission',async t=>{
+  const f=await fixture(t),before=await inventory(f.root);let attempts=0;
+  const verified=await verifyNativeSnapshotPhase({...f.options,rebuild:async options=>{
+    if(++attempts===1){await write(options.directory,'failed-compile.json',{partial:true});throw Error('scoring IO failure');}
+    await assert.rejects(fs.stat(path.join(options.directory,'failed-compile.json')),error=>error.code==='ENOENT');
+    return f.options.rebuild(options);
+  }});
+  assert.equal(verified.receipt.authority,false);assert.equal(verified.receipt.decisions.length,1);
+  assert.deepEqual(await inventory(f.root),before);assert.equal(f.calls.length,1);
+  const serialized=JSON.parse(JSON.stringify(verified));assert.equal(serialized.compile,undefined);
+  try{
+    await assert.rejects(verified.compile(),/scoring IO failure/);
+    assert.deepEqual(await inventory(f.root),before);assert.equal(f.calls.length,1);
+    assert.equal((await verified.compile()).counts.verified,1);assert.equal(f.calls.length,1);
+    await assert.rejects(verified.compile(),/consumed/);
+  }finally{await verified.dispose();}
+  await assert.rejects(verified.compile(),/disposed/);
+});
+
+test('disposing a completed verification never advances the public ledger',async t=>{
+  const f=await fixture(t),before=await inventory(f.root),verified=await verifyNativeSnapshotPhase(f.options);
+  await verified.dispose();await verified.dispose();
+  assert.deepEqual(await inventory(f.root),before);
+  await assert.rejects(verified.compile(),/disposed/);
+});
+
+test('exact branded published event totals support a public-only offline rebase, not a private overlay',async t=>{
+  const f=await fixture(t,{events:true});await runNativeSnapshotPhase(f.options);
+  const totals=await read(f.directory,'event-totals.json');
+  await publishSnapshot({root:f.root,stagingDirectory:f.directory});
+  const pointer=await read(f.root,'snapshot-current.json'),generation=Number(pointer.currentdir.replace('public-snapshots',''));
+  const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root:f.root,expectedGeneration:generation,
+    expectedIndexSha256:sha(await fs.readFile(path.join(f.root,pointer.currentdir,'index.json')))});
+  await runNativeSnapshotPhase({...f.options,publishedEventTotalsBaseline});
+  assert.deepEqual((await read(f.directory,'event-totals.json')).entries,totals.entries);
+  assert.equal(f.calls.length,1,'exact public witnesses reuse physics');
+  const changed=await read(f.directory,'event-totals.json');changed.updatedAt++;
+  await write(f.directory,'event-totals.json',changed);
+  const before=await inventory(f.root);
+  await assert.rejects(runNativeSnapshotPhase({...f.options,publishedEventTotalsBaseline}),/exact trusted published totals required before native/);
+  assert.equal(f.calls.length,1);assert.deepEqual(await inventory(f.root),before);
+});
+
+for(const crossVolume of [false,true])test('private candidate promotion avoids a second full copy when possible: '+crossVolume,async t=>{
+  const f=await fixture(t),rename=fs.rename,copy=fs.cp;let copies=0,moves=0;
+  t.mock.method(fs,'rename',async(from,to)=>{
+    if(path.basename(path.dirname(from)).startsWith('polytrack-native-phase-')&&path.basename(from)==='candidate'){
+      moves++;if(crossVolume)throw Object.assign(Error('cross volume'),{code:'EXDEV'});
+    }
+    return rename(from,to);
+  });
+  t.mock.method(fs,'cp',async(from,to,options)=>{if(to.includes('.native-next-'))copies++;return copy(from,to,options);});
+  await runNativeSnapshotPhase(f.options);
+  assert.equal(moves,1);assert.equal(copies,crossVolume?1:0);
+  assert.equal((await read(f.directory,`tracks/${track}.json`)).entries[0].runVerified,true);
 });
 
 test('unavailable canonical replay defers its row through native processing and cold hydration',async t=>{
@@ -404,6 +526,14 @@ for(const stage of ['eventCompiler','rebuild','buildProfiles','publishPointer'])
   const after=await inventory(f.root);delete after['proofs.ptenc'];assert.deepEqual(after,before);
   const retained=await read(checkpoint.directory,'receipt.json');assert.equal(retained.authority,false);
   assert.equal(retained.ledgerManifestHash,checkpoint.ledgerManifestHash);
+  const evidenceBytes=await fs.readFile(path.join(checkpoint.directory,retained.evidenceFile));
+  assert.equal(sha(evidenceBytes),retained.evidenceSha256);
+  const evidence=JSON.parse(evidenceBytes);
+  assert.equal(evidence.authority,false);assert.equal(evidence.ledger,undefined);
+  assert.deepEqual(evidence.sourceBinding,retained.sourceBinding);
+  assert.equal(evidence.decisions.length,evidence.counts.known);
+  assert.equal(evidence.scoringPreflight.sourceSha256,sha('fixture scoring inputs'));
+  assert(!evidenceBytes.includes(Buffer.from('"replay":')));
   const decoded=decryptRoutineRecovery(await fs.readFile(outputFile));
   assert.equal(decoded.header.attempt,'routine-capture');assert.deepEqual(decoded.header.sourceBinding,checkpoint.sourceBinding);
   assert(decoded.records.some(row=>row.path==='ledger/manifest.json'));assert(decoded.records.some(row=>row.path==='receipt.json'));

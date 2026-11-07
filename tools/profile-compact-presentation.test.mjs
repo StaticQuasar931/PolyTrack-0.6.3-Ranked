@@ -84,3 +84,14 @@ test('helpers are pure and never access runtime data or platform APIs', () => {
   const source = fs.readFileSync(new URL('./profile-compact-presentation.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /\b(?:document|window|fetch|localStorage|Firebase|Date)\b|^import\s/m);
 });
+
+test('route labels do not default an unknown new target to number one', async () => {
+  const {compactPlannerTargetLabel: target,compactPlannerEvidenceLabel:evidence}=await import('./profile-compact-presentation.mjs');
+  assert.equal(target({currentRank:0,targetRank:8}),'First finish: aim for #8');
+  assert.equal(target({currentRank:12,targetRank:9}),'#12 to #9');
+  assert.equal(target({currentRank:1}),'Keep #1');
+  assert.equal(target({}),'Target unavailable');
+  assert.equal(evidence({simulationComplete:false}),'More saved results needed');
+  assert.equal(evidence({simulationComplete:true,currentRank:0}),'Points improve at this target, not every finish');
+  assert.doesNotMatch(evidence({simulationComplete:true}),/loaded standings|easy/i);
+});

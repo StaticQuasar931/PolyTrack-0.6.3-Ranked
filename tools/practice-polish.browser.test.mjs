@@ -12,12 +12,13 @@ async function fixture(t){
  const page=await browser.newPage({viewport:{width:1366,height:768}});
  const module=await fs.readFile(new URL('./practice-profile.mjs',import.meta.url),'utf8');
  const active=await fs.readFile(new URL('tools/active-time.mjs',repositoryRoot),'utf8');
+ const suggestionsModule=await fs.readFile(new URL('./practice-suggestions.mjs',import.meta.url),'utf8');
  const history=await fs.readFile(new URL('tools/practice-history.mjs',repositoryRoot),'utf8');
  const patch=await fs.readFile(new URL('polytrack_062_patch.js',repositoryRoot),'utf8');
  const injected=[...patch.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)].map(m=>JSON.parse(m[1])).join('\n');
  const css=injected+'\n'+await fs.readFile(new URL('home-ui.css',repositoryRoot),'utf8')+'\n'+await fs.readFile(new URL('../practice-responsive.css',import.meta.url),'utf8');
  const font=(await fs.readFile(new URL('forced_square.woff2',repositoryRoot))).toString('base64');
- await page.route('**/*',r=>r.fulfill({contentType:r.request().url().endsWith('.mjs')?'text/javascript':'text/html',body:r.request().url().endsWith('/practice-history.mjs')?history:r.request().url().endsWith('/practice.mjs')?module:r.request().url().endsWith('/active-time.mjs')?active:'<!doctype html><main id="overallProfilePopup"><article class="overall-profile-card"><div id="overallProfileContent"></div></article></main>'}));
+ await page.route('**/*',r=>r.fulfill({contentType:r.request().url().endsWith('.mjs')?'text/javascript':'text/html',body:r.request().url().endsWith('/practice-suggestions.mjs')?suggestionsModule:r.request().url().endsWith('/practice-history.mjs')?history:r.request().url().endsWith('/practice.mjs')?module:r.request().url().endsWith('/active-time.mjs')?active:'<!doctype html><main id="overallProfilePopup"><article class="overall-profile-card"><div id="overallProfileContent"></div></article></main>'}));
  await page.goto('http://practice.test/');
  await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font+')}body{margin:0;background:#101b37;color:white;font-family:ForcedSquare}'+css+'\n#overallProfilePopup{display:block!important;position:static!important;padding:12px!important;box-sizing:border-box}#overallProfilePopup>.overall-profile-card{position:static!important;transform:none!important;width:100%!important;max-width:none!important;max-height:none!important;height:auto!important;box-sizing:border-box}'});
  await page.evaluate(async()=>{

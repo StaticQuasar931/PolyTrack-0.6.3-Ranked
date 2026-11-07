@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {plannerPracticeEvidence,plannerEaseEstimate,plannerBenefitEaseScore,orderPlannerRoutes} from './planner-route-model.mjs';
+import {plannerPracticeEvidence,plannerEaseEstimate,plannerBenefitEaseScore,orderPlannerRoutes,minimumBenefitTarget} from './planner-route-model.mjs';
 
 const action={trackId:'track',currentRank:3,targetRank:2,timeMs:12000,cachedAt:100,value:10,weight:2};
 const board={complete:true,totalEntries:3,serverUpdatedAt:100,entries:[
   {accountId:'first',timeMs:10000},{accountId:'second',timeMs:11000},{accountId:'me',timeMs:12000}]};
 const practice={activeTimeVersion:2,activeMs:240000,legacyActiveMs:0,movingMs:180000,motionObservedMs:220000,
-  attempts:12,finishes:10,recentFinishes:[{timeMs:12500},{timeMs:12400},{timeMs:12100},{timeMs:12000}]};
+  attempts:12,finishes:10,recentFinishes:[{at:1,timeMs:12500},{at:2,timeMs:12400},{at:3,timeMs:12100},{at:4,timeMs:12000}]};
 const route=(id,value,effortScore,weight=1)=>({trackId:id,value,weight,currentRank:5,ease:{effortScore}});
 
 test('duplicate targets and benefit reference stay fixed across sorts and truncation',()=>{
@@ -123,4 +123,31 @@ test('all seven planner metrics x five sorts x current/official filters x self/r
         assert.equal(result.length,rows.length,metric+'/'+sort);assert.equal(new Set(result.map(r=>r.trackId)).size,rows.length);combinations++;
       }
   assert.equal(combinations,280);
+});
+
+test('minimal benefit target includes new track threshold and computes gain at that target',()=>{
+  const scoreAt=rank=>80+rank*2;
+  const result=minimumBenefitTarget({currentRank:0,fieldSize:12,baselineScore:100,scoreAt});
+  assert.equal(result.targetRank,9);assert.equal(result.estimatedGain,2);
+  assert.equal(result.maximumGain,18);assert.equal(result.topGuaranteed,true);
+  assert.equal(minimumBenefitTarget({currentRank:8,fieldSize:12,baselineScore:96,scoreAt}).targetRank,7);
+  assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:80,scoreAt}),null);
+  assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:null,scoreAt}),null);
+  assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:100,scoreAt:()=>99.9999}),null);
+  assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:100,scoreAt:()=>99}).targetRank,12);
+});
+test('nonmonotonic metrics never label all faster ranks helpful without simulation support',()=>{
+  const result=minimumBenefitTarget({fieldSize:5,baselineScore:100,scoreAt:r=>r===4?99:101});
+  assert.equal(result.targetRank,4);assert.equal(result.topGuaranteed,false);
+});
+test('equal-value duplicate routes resolve deterministically even within the same kind',()=>{
+  const a={...route('a',10,2),kind:'improve',targetRank:2};
+  const b={...a,targetRank:3,ease:{effortScore:1}};
+  assert.deepEqual(orderPlannerRoutes([],[a,b]),orderPlannerRoutes([],[b,a]));
+});
+
+test('practice evidence orders dated runs and refuses to manufacture an undated trend',()=>{
+  const shuffled={...practice,recentFinishes:[...practice.recentFinishes].reverse()};
+  assert.deepEqual(plannerPracticeEvidence(shuffled),plannerPracticeEvidence(practice));
+  assert.equal(plannerPracticeEvidence({...practice,recentFinishes:practice.recentFinishes.map(({at,...run})=>run)}).improvementTrend,0);
 });

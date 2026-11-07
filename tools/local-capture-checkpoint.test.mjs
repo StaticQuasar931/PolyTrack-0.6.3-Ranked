@@ -185,7 +185,10 @@ test('worker uses preflight before admission/credentials and routes both callbac
   const start=worker.indexOf('export async function captureLocalSource'),body=worker.slice(start);
   assert(body.indexOf('await preflightLocalCaptureCheckpoints')<body.indexOf('await assertLocalCaptureOwner'));
   assert(body.indexOf('await preflightLocalCaptureCheckpoints')<body.indexOf('process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT='));
-  assert(body.includes('captureCheckpoint:checkpoint'));assert(body.includes('proofCheckpoint:'));
+  const wrapper=body.slice(body.indexOf('captureCheckpoint:async input=>{'),body.indexOf('await checkpoint(input);'));
+  assert(wrapper.includes('rebuildSnapshotOverall({directory:input.directory,validateOnly:true})'));
+  assert(wrapper.includes('preflight.additionalFirestoreReads!==0||preflight.additionalFirestoreWrites!==0'));
+  assert(body.includes('await checkpoint(input);'));assert(body.includes('proofCheckpoint:'));
   assert(body.includes('await retainLocalCaptureFailure'));assert(!body.includes('.catch(()=>{})'));
   assert(worker.includes("import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs'"));
   assert(body.includes('nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase})'));

@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=267';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=267';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=268';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=268';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,8 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=267';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=267';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=268';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=268';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -32,7 +32,7 @@ export function eventVerificationLabel(row,pending=!!row?.pending,locale){
   const at=runAt||verdictAt;
   const prefix=runAt?!eventExactRunAt(row)&&!validEventTimestamp(row?.runAt)?'Received ':'':verdictAt?'Verification date ':'';
   const date=at?prefix+new Date(at).toLocaleString(locale,{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'}):'Date unavailable';
-  return date+' - '+(pending?'Pending':'Verified');
+  return date+' - '+(pending?(row?.source==='local-event-recording'?'Saved on this device':'Pending'):'Verified');
 }
 export function eventExactRunAt(row,at=Date.now()){
   for(const field of ['runCreatedAt','pbAt','createdAt']){
@@ -93,7 +93,8 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
   const state=button.querySelector('.verified-state');
   if(!state)return;
   const verified=eventRowVerified(row);
-  state.dataset.sqRunStatus=verified?'verified':'unchecked';
+  state.dataset.sqRunStatus=verified?'verified':row.source==='local-event-recording'?'local':
+    ['submitted-event-recording','pending-event-playback'].includes(row.source)?'submitted':'unchecked';
   state.classList?.toggle('verified',verified);state.classList?.toggle('pending',!verified);
   const icon=state.querySelector?.('img');
   if(icon){icon.src=verified?'images/state_verified.svg':'images/state_pending.svg';icon.alt=verified?'Verified replay':'Unverified recording';}
@@ -166,7 +167,7 @@ export function eventRpPresentation(row){
   // Only normalize explicit integer scores. Missing, blank and invalid values are not zero.
   const score=typeof value==='number'?value:typeof value==='string'&&/^\d+$/.test(value)?Number(value):null;
   const available=Number.isSafeInteger(score)&&score>=0,label=group?'Group ERP':'ERP';
-  return {text:available?score+' '+label:label+' unavailable',
+  return {available,text:available?score+' '+label:label+' unavailable',
     title:available?(group?'Filtered group Event RP':'Published Event RP'):
       (group?'No valid filtered group Event RP is available for this result.':'No valid published Event RP is available for this result.')};
 }
@@ -363,7 +364,7 @@ export function eventOwnPlacementPresentation(place){
   if(!presentation)return null;
   const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
   const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:presentation.title;
-  return {...presentation,text:String(place.rank)+(known?'/'+size:'')+(place.provisional?'*':''),
+  return {...presentation,text:eventOrdinal(place.rank)+(known?' of '+size:'')+(place.provisional?' (provisional)':''),
     className:presentation.className+' sq-record-placement'+(place.provisional?' estimated':''),title,ariaLabel:title};
 }
 export function eventSidebarPlacementPresentation(place){
@@ -372,21 +373,21 @@ export function eventSidebarPlacementPresentation(place){
   const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
   const value=known?Math.max(.0001,place.rank/size*100):null;
   const percentile=value===null?null:String(Number(value.toFixed(value<10?4:value<100?3:2)));
-  const ordinal=eventOrdinal(place.rank)+(place.provisional?'*':'');
+  const ordinal=eventOrdinal(place.rank)+(place.provisional?' (provisional)':'');
   return {...presentation,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
 }
-export function renderEventPersonalBest(host,{timeText,placement,pending=false,unscored=false,hasRecord=true}){
+export function renderEventPersonalBest(host,{timeText,placement,pending=false,local=false,unscored=false,hasRecord=true}){
   const doc=host.ownerDocument;
   host.replaceChildren();
   const timer=doc.createElement('div'),clock=doc.createElement('img'),time=doc.createElement('span');
   clock.src='images/timer.svg';time.textContent=timeText;if(!hasRecord)time.className='faded';timer.append(clock,time);
   const result=doc.createElement('div'),trophy=doc.createElement('img');trophy.src='images/trophy.svg';result.append(trophy);
   if(placement){
-    result.title=placement.title;result.setAttribute('aria-label',placement.text+'. '+placement.title);
+    result.title=placement.title+(local?' Saved on this device; not submitted or verified.':'');result.setAttribute('aria-label',placement.text+'. '+result.title);
     result.append(doc.createTextNode(placement.ordinal));
     if(placement.percentile!==null){const percent=doc.createElement('span');percent.className='faded';percent.textContent=' ('+placement.percentile+'%)';result.append(percent);}
   }else{
-    const unknown=doc.createElement('span');unknown.className='faded';unknown.textContent=pending?(unscored?'Not scored':'Waiting'):'---';result.append(unknown);
+    const unknown=doc.createElement('span');unknown.className='faded';unknown.textContent=pending?(unscored?'Not scored':local?'Local PB':'Waiting'):'---';result.append(unknown);
   }
   host.append(timer,result);
 }
@@ -494,12 +495,15 @@ export function createNormalKodubErpDecorator(bridge){
       !EVENT_RECORD_HASH.test(accountId||'')||!Number.isSafeInteger(timeMs)||timeMs<=0||
       row.trackId!==undefined&&row.trackId!==trackId){remove();return;}
     const key=identity(period),viewer=bridge.accountId(),atEpoch=epoch;
-    const signature=JSON.stringify([key,atEpoch,viewer,accountId,timeMs,replayHash,eventRowVerified(row)]);
+    const previous=boards.get(key);
+    const retry=previous?.failed&&previous.attempts<3&&Date.now()>=previous.retryAt;
+    const attempt=retry?previous.attempts+1:previous?.attempts||1;
+    const signature=JSON.stringify([key,atEpoch,viewer,accountId,timeMs,replayHash,eventRowVerified(row),attempt]);
     if(old?.signature===signature&&old.label?.isConnected)return;
     remove();
     const state=button.querySelector('.verified-state');if(!state)return;
     const label=button.ownerDocument.createElement('span');label.className='sq-normal-kodub-erp';
-    label.textContent='Event ERP loading';state.after(label);labels.add(label);
+    label.textContent='';label.hidden=true;state.prepend(label);labels.add(label);
     for(const stale of labels)if(!stale.isConnected)labels.delete(stale);
     const visibleName=button.querySelector('.name')?.textContent?.trim();
     const binding={signature,label};bindings.set(button,binding);
@@ -510,8 +514,9 @@ export function createNormalKodubErpDecorator(bridge){
       button.dataset.sqRacerAccountId===accountId&&button.dataset.sqRacerReplayHash===replayHash&&
       button.querySelector('.name')?.textContent?.trim()===visibleName&&button.querySelector('.verified-state')===state&&
       button.querySelector('.left p:not(.position)')?.textContent?.trim()===bridge.formatTime(timeMs);
-    let request=boards.get(key);
-    if(!request){
+    let request=previous?.promise;
+    if(!request||retry){
+      const state={attempts:attempt,failed:false,retryAt:0,promise:null};
       // This bridge is static-only: never use the live event snapshot/cache fallback.
       request=Promise.resolve().then(()=>bridge.readStaticEventSnapshot?.(period.id)).then(board=>{
         if(board?.period?.id!==period.id||board.period.kind!=='kodub'||board.period.trackId!==trackId||
@@ -519,7 +524,10 @@ export function createNormalKodubErpDecorator(bridge){
           !Array.isArray(board.entries)||board.entries.length>EVENT_RECORD_LIMIT)return null;
         return board;
       }).catch(()=>null);
-      boards.set(key,request);if(boards.size>4)boards.delete(boards.keys().next().value);
+      state.promise=request.then(board=>{
+        state.failed=!board;state.retryAt=Date.now()+(attempt===1?30000:120000);return board;
+      });
+      request=state.promise;boards.set(key,state);if(boards.size>4)boards.delete(boards.keys().next().value);
     }
     void request.then(board=>{
       if(!current()){
@@ -531,11 +539,13 @@ export function createNormalKodubErpDecorator(bridge){
       const rp=saved&&eventRpPresentation(saved);
       if(!board||matches?.length>1||saved&&(!rp||saved.trackId!==undefined&&saved.trackId!==trackId||
         saved.periodId!==undefined&&saved.periodId!==period.id||!Number.isSafeInteger(saved.timeMs)||saved.timeMs<=0||saved.timeMs>EVENT_TIME_LIMIT)){
-        label.textContent='Event ERP unavailable';label.title='No valid published event result is available in this snapshot.';return;
+        label.textContent='';label.hidden=true;return;
       }
-      if(!saved){label.textContent='No published Event PB';label.title='This snapshot has no published Event PB for this racer; no zero score is inferred.';return;}
+      if(!saved||!rp.available){label.textContent='';label.hidden=true;return;}
       const exact=eventRowVerified(row)&&saved.timeMs===timeMs&&EVENT_RECORD_HASH.test(replayHash)&&saved.replayHash===replayHash;
+      label.dataset.separate=String(!exact);
       label.textContent=exact?rp.text:'Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text;
+      label.hidden=false;
       label.title=exact?'Published Kodub Event RP for this exact PB.':
         'Published Kodub Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text+'. Separate from the ordinary leaderboard run; Event RP is not attributed to the ordinary run.';
     });
@@ -1310,6 +1320,7 @@ export function installEvents(bridge){
     const bound=provisional&&(provisional.accountId===undefined||provisional.accountId===accountId)&&
       (provisional.trackId===undefined||provisional.trackId===period.trackId)&&(provisional.periodId===undefined||provisional.periodId===period.id);
     const localRow=bound?{...provisional,accountId,name:published?.name||'You',pending:true,rank:null,
+      source:remote&&remote.timeMs===provisional.timeMs&&remote.attemptId===provisional.attemptId?'submitted-event-recording':'local-event-recording',
       ...(validEventTimestamp(provisional.at,now())?{runAt:provisional.at}:{}),
       unscored:receipt?.attemptId===provisional.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt?.status)}:null;
     const fields=eventSnapshotFields(board,{local:localRow,filterRows:bridge.filterRows,
@@ -1464,8 +1475,11 @@ export function installEvents(bridge){
     const paging=eventPagination(rows.length,view.page);view.page=paging.page;
     if(filterResult?.active){const visible=new Set(rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===period.id&&!visible.has(id))selectedGhosts.delete(id);}
     let place=displayedRecordPlacement(period,mine,board);
-    if(mine?.pending&&place===null)place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
-    if(mine&&(view.onlyVerified||filterResult?.active)&&readEventPlacementSettings().enabled)place={rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),policy:view.onlyVerified?'verified':'all',visibleField:true,originalRank:mine.originalRank};
+    const placementSettings=readEventPlacementSettings();
+    if(mine?.pending&&place===null&&placementSettings.enabled&&placementSettings.policy!=='verified'&&!view.onlyVerified)
+      place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
+    if(mine&&!mine.pending&&view.onlyVerified&&placementSettings.enabled)
+      place={rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:false,policy:'verified',visibleField:true,originalRank:mine.originalRank};
     const placement=eventSidebarPlacementPresentation(place);
     const receipt=ownReceipts.get(period.id+'_'+accountId),localRecord=localBest(period);
     const statusDescription=receipt||localRecord?receiptText(receipt,localRecord,period,{board,accountId}):statusText;
@@ -1509,7 +1523,7 @@ export function installEvents(bridge){
       button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
-      const rp=eventRpPresentation(row);if(rp){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=rp.text;points.title=rp.title;state.prepend(points);}
+      const rp=eventRpPresentation(row);if(rp?.available){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=rp.text;points.title=rp.title;state.prepend(points);}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
       button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const stateIcon=state.querySelector('img');stateIcon.classList.add('sq-event-verification-icon');stateIcon.alt=row.pending?'Unverified recording':'Verified replay';
@@ -1524,6 +1538,7 @@ export function installEvents(bridge){
     bridge.filterNotice?.(view.board,filterResult);
     renderEventPagination(view,rows.length,()=>syncNativeBoard(session));
     renderEventPersonalBest(view.pb,{timeText:mine?time(mine.timeMs):'---',placement,pending:!!mine?.pending,
+      local:mine?.source==='local-event-recording',
       unscored:!!mine?.unscored,hasRecord:!!mine});
   }
 

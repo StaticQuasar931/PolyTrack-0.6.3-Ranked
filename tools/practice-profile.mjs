@@ -1,3 +1,4 @@
+import { localPracticeSuggestions } from './practice-suggestions.mjs';
 import { formatActiveTime } from './active-time.mjs';
 import { practiceAdvice } from './practice-history.mjs';
 
@@ -103,7 +104,9 @@ function resultEvidence(results, trackId) {
   for (const record of matching) {
     const source = evidenceSource(record);
     const current = bestBySource.get(source);
-    if (!current || num(record.timeMs) < num(current.timeMs)) bestBySource.set(source, record);
+    if (!current || num(record.timeMs) < num(current.timeMs) ||
+      num(record.timeMs) === num(current.timeMs) && num(record.pbAt) <= Date.now() &&
+      num(record.pbAt) > num(current.pbAt)) bestBySource.set(source, record);
   }
   const order = ['local', 'snapshot', 'cloud', 'saved', 'known'];
   return [...bestBySource.entries()]
@@ -204,7 +207,7 @@ function cardDetails(row, evidence) {
     '</details>';
 }
 
-function card(row, lookup, preview, results, rows, trackType) {
+function card(row, lookup, preview, results, rows, trackType, plannerRoutes) {
   const name = nameOf(row, lookup);
   const attempts = count(row.attempts);
   const finishes = count(row.finishes);
@@ -224,8 +227,8 @@ function card(row, lookup, preview, results, rows, trackType) {
   if (num(row.longestHuntMs)) metrics.push({ sort: 'longest-hunt', text: formatActiveTime(row.longestHuntMs) + ' longest hunt' });
   if (num(row.biggestObservedImprovementMs)) metrics.push({sort:'observed-gain',text:time(row.biggestObservedImprovementMs)+' largest observed gain'});
   if (num(row.biggestPbImprovementMs)) metrics.push({sort:'driven-gain',text:time(row.biggestPbImprovementMs)+' largest driven PB gain'});
-  const advice = practiceAdvice(row, Date.now(), { otherTracks: rows });
-  const guidance = advice.factor !== 1 && date(row.lastPlayedAt) ? advice.text : '';
+  const advice = practiceAdvice(row, Date.now(), { results, routes: plannerRoutes });
+  const guidance = advice.kind || advice.factor !== 1 && date(row.lastPlayedAt) ? advice.text : '';
   const includesEarlier = num(row.legacyActiveMs) > 0;
   const playedDate=date(row.lastPlayedAt);
   const lastPlayed=playedDate?playedDate+' '+new Date(row.lastPlayedAt).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):'';
@@ -300,9 +303,13 @@ function coverageMarkup(coverage) {
     ' Active race time is focused race-clock progress, including stationary attempts. Earlier estimates are retained separately in More history. Saved PBs do not imply a tracked finish.</p></details>';
 }
 
-export function renderPracticeProfile({ rows = [], coverage = null, trackName, trackPreview, trackType, results = [], accountId = '' } = {}) {
+export function renderPracticeProfile({ rows = [], coverage = null, trackName, trackPreview, trackType, results = [], accountId = '', plannerRoutes = [] } = {}) {
   const safe = Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
   const observed = safe.filter(row => num(row.activeMs) || count(row.attempts) || count(row.finishes));
+  const suggestions = localPracticeSuggestions(observed, { results, routes: plannerRoutes });
+  const suggestionMarkup = suggestions.length ? '<section class="pp-more" data-pp-suggestions aria-label="Local practice suggestions"><h3>Practice next</h3><ul>' + suggestions.map(suggestion =>
+    '<li><button type="button" class="pp-track-name-button" data-pp-suggestion-track-id="' + esc(suggestion.trackId) + '" data-track-id="' + esc(suggestion.trackId) + '">' + esc(nameOf(observed.find(row => row.trackId === suggestion.trackId), trackName)) + '</button><p class="pp-note">' + esc(suggestion.text) + '</p></li>'
+  ).join('') + '</ul></section>' : '';
   const total = observed.reduce((sum, row) => sum + num(row.activeMs), 0);
   const finishes = finishItems(observed, trackName);
   const details = sessionDetailsMarkup(observed, trackName);
@@ -330,13 +337,13 @@ export function renderPracticeProfile({ rows = [], coverage = null, trackName, t
       ' of ' + first.firstPlacement.total + '</strong><small>' + esc(nameOf(first, trackName)) +
       ' · first known during tracking, not first-ever</small></span>'
     : '';
-  const cards = observed.map(row => card(row, trackName, trackPreview, results, observed, trackType)).join('');
+  const cards = observed.map(row => card(row, trackName, trackPreview, results, observed, trackType, plannerRoutes)).join('');
 
   const body = observed.length
     ? '<div class="pp-summary" aria-label="Practice history for this browser profile. Earlier runs may be missing.">' +
       '<span><small>' + (observed.some(row => num(row.legacyActiveMs)) ? 'PRACTICE TIME' : 'ACTIVE RACE TIME') + '</small><strong>' + formatActiveTime(total) + '</strong></span>' +
       '<span><small>TRACKS DRIVEN</small><strong>' + observed.length + '</strong></span>' +
-      summaryStats + firstStat + '</div>' + coverageMarkup(coverage) +
+      summaryStats + firstStat + '</div>' + coverageMarkup(coverage) + suggestionMarkup +
       '<div class="pp-toolbar">' +
       '<label>Search tracks <input type="search" data-pp-search placeholder="Track name or ID" autocomplete="off"></label>' +
       '<div class="pp-sort-control"><label>Sort by <select data-pp-sort>' +
@@ -480,12 +487,13 @@ export function capturePracticeProfileView(root) {
   const active = root.ownerDocument?.activeElement;
   const controls = ['[data-pp-search]', '[data-pp-sort]', '[data-pp-direction]', '[data-pp-view="grid"]', '[data-pp-view="list"]', '[data-pp-official]', '[data-pp-finished]', '.pp-heading', '.pp-coverage-details > summary', '.pp-session-details > summary', '.pp-finishes > summary', '.pp-manage > summary'];
   const focus = controls.find(selector => root.querySelector(selector) === active) || null;
+  const suggestionFocus = active?.getAttribute?.('data-pp-suggestion-track-id') || null;
   const track = active?.closest?.('.pp-track');
   const trackFocus = track && root.contains(active) ? {id: track.dataset.ppTrackId, selector: active.matches('.pp-art') ? '.pp-art' : active.matches('.pp-track-name-button') ? '.pp-track-name-button' : active.matches('.pp-card-details > summary') ? '.pp-card-details > summary' : null} : null;
   const detailFocus=active?.closest?.('[data-pp-details-key]');
   const disclosures = ['.pp-coverage-details', '.pp-session-details', '.pp-finishes', '.pp-manage'];
   return {open: root.open, official:root.querySelector('[data-pp-official]')?.getAttribute('aria-pressed')==='true',finished:root.querySelector('[data-pp-finished]')?.getAttribute('aria-pressed')==='true', search: root.querySelector('[data-pp-search]')?.value || '',
-    accountId: root.getAttribute?.('data-pp-account') || '',
+    accountId: root.getAttribute?.('data-pp-account') || '', suggestionFocus,
     sort: root.querySelector('[data-pp-sort]')?.value || 'active',
     direction: root.querySelector('[data-pp-direction]')?.dataset.ppDirection || 'desc',
     list: root.querySelector('[data-pp-view="list"]')?.getAttribute('aria-pressed') === 'true', focus, trackFocus, detailFocus:detailFocus&&active===detailFocus.querySelector(':scope > summary')?detailFocus.dataset.ppDetailsKey:null,
@@ -513,6 +521,7 @@ export function restorePracticeProfileView(root, state) {
   }
   for (const node of root.querySelectorAll('[data-pp-details-key]')) node.open = (state.openTracks || []).includes(node.dataset.ppDetailsKey);
   if(state.detailFocus){const node=[...root.querySelectorAll('[data-pp-details-key]')].find(e=>e.dataset.ppDetailsKey===state.detailFocus);node?.querySelector(':scope > summary')?.focus({preventScroll:true});}
+  if(state.suggestionFocus){const button=[...root.querySelectorAll('[data-pp-suggestion-track-id]')].find(node=>node.getAttribute('data-pp-suggestion-track-id')===state.suggestionFocus);button?.focus({preventScroll:true});}
   if (state.focus || state.trackFocus?.selector) {
     const track = state.trackFocus ? [...root.querySelectorAll('.pp-track')].find(node => node.dataset.ppTrackId === state.trackFocus.id) : null;
     const field = state.focus ? root.querySelector(state.focus) : track?.querySelector(state.trackFocus.selector); field?.focus({preventScroll: true});

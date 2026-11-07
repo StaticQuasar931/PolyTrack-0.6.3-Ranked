@@ -242,3 +242,21 @@ test('bounded per-binding review incompleteness defers affected rows but preserv
   assert.equal(result.counts.verified,1);assert.equal(result.counts.unavailable,1);assert.equal(result.complete,false);
   assert.equal(result.ledger.entries.length,1);
 });
+
+test('empty budget batches keep every decision and still reach later exact public proof hits',async t=>{
+  const {options}=await fixture(t),stored=await verifyLocalSnapshot(options);let reviews=0,nativeCalls=0;
+  const result=await verifyLocalSnapshot({...options,expectedManifestHash:stored.ledgerManifestHash,
+    jobs:[job(2),job(3),job(1)],batchSize:1,maxJobs:1,
+    review:async input=>{assert(input.jobs.length>0);reviews++;return review()(input);},
+    verify:async(_root,jobs)=>{nativeCalls++;return jobs.map(value=>native(value));}});
+  assert.equal(nativeCalls,1);assert.equal(reviews,2);assert.equal(result.counts.reusedPhysics,1);
+  assert.equal(result.counts.unprocessed,1);assert.equal(result.decisions.length,3);
+  assert.deepEqual(result.decisions.map(value=>value.status),['verified','unprocessed','verified']);
+});
+
+test('review preparation failure cannot spend a native budget or create a positive proof',async t=>{
+  const {options}=await fixture(t),failure=Error('invalid complete review inventory');
+  options.review.prepare=async({allJobs})=>{assert(Object.isFrozen(allJobs));throw failure;};
+  options.verify=async()=>assert.fail('native started before review preparation');
+  await assert.rejects(verifyLocalSnapshot(options),error=>error===failure);
+});

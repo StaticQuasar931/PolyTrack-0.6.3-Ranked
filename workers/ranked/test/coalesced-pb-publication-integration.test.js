@@ -3,11 +3,17 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
 import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {preparePublicationPages, PUBLIC_PAGE_COLLECTION, PUBLIC_MANIFEST_COLLECTION} from '../src/paged-publication.js';
 import {verificationShardId} from '../src/verification-shards.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 import {PERMANENT_ROLLING_HILLS} from '../src/permanent-rolling-hills.js';
-import worker, {computeTrackEntries, handleRequest, reconcileCanonicalChanges} from '../src/index.js';
+const quotaBaseline = process.env.WORKER_QUOTA_BASELINE === '1';
+const workerApi = quotaBaseline ? await import('data:text/javascript,' + encodeURIComponent(execFileSync('git',
+  ['show','376b05cc1:workers/ranked/src/index.js'], {encoding:'utf8'})
+  .replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${new URL('../src/' + path.slice(2), import.meta.url).href}'`)))
+  : await import('../src/index.js');
+const {default:worker,computeTrackEntries,handleRequest,reconcileCanonicalChanges,persistTrackSnapshot} = workerApi;
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION,
   VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, PRE_REPLAY_UI_PROOF_ENGINE, hasAcceptedVerifiedProof} from '../src/verification.js';
@@ -108,6 +114,117 @@ function fixture({missingJob = false, trackId = track, population = 3} = {}) {
   return {data, versions, counts, commits, rows, env, tasks, canonicalReads, documentReads, notify, reset,
     setCommitHook: fn => {beforeCommit = fn;}, setReadHook: fn => {beforeRead = fn;}};
 }
+
+async function quotaPagedFixture(population = 1136, verified = true) {
+  const f = fixture({population}), slots = f.data.get(queueKey).slots;
+  if (!verified) slots[f.rows[0].accountId] = pendingSlot(f.rows[0]);
+  const entries = computeTrackEntries(f.rows,track,{},slots);
+  await persistTrackSnapshot(f.env,track,entries,
+    {data:f.data.get(boardKey),updateTime:'v0'});
+  f.data.set(queueKey,{trackId:track,storageVersion:2,migrationComplete:true,slots:{}});
+  for (const r of f.rows) {
+    const queueId = verificationShardId(track,r.accountId);
+    f.data.set(VERIFICATION_COLLECTION + '/' + queueId,
+      {trackId:track,queueId,storageVersion:2,slots:{[r.accountId]:slots[r.accountId]}});
+  }
+  f.reset();
+  return f;
+}
+
+for (const population of [501,1136]) for (const count of [1,16])
+test('quota exact coalesced duplicate drain retains proofs without page fanout: '+population+'/'+count,async () => {
+  const f = await quotaPagedFixture(population);
+  for (const r of f.rows.slice(0,count)) assert.equal((await f.notify(r)).status,200);
+  const before = structuredClone(f.data.get(boardKey)); f.reset();
+  const result = await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.equal(result.pending,0); assert.equal(result.targeted,count);
+  const pages = Math.ceil(population/100), expectedReads = 3 + 2*count + (quotaBaseline ? pages : 0);
+  assert.equal(f.counts.reads,expectedReads); assert.equal(f.counts.writes,1);
+  assert.equal(f.counts.queries,0); assert.deepEqual(f.data.get(boardKey),before);
+  for (const r of f.rows.slice(0,count)) {
+    assert.equal(f.documentReads.get(canonicalKey(r)),1);
+    assert.equal(f.documentReads.get(VERIFICATION_COLLECTION+'/'+verificationShardId(track,r.accountId)),1);
+  }
+  assert.equal([...f.documentReads.keys()].filter(k=>k.startsWith(PUBLIC_PAGE_COLLECTION+'/')).length,quotaBaseline ? pages : 0);
+  assert.deepEqual(f.data.get(jobKey).pendingResultBindings,{});
+  console.log('QUOTA_DUPLICATE_DRAIN_COST '+JSON.stringify({baseline:quotaBaseline,population,count,...f.counts}));
+  f.reset(); await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.equal(f.counts.reads,1); assert.equal(f.counts.writes,0);
+});
+
+for (const mode of ['promote','hold','stale-proof','binding','outside-prefix','identity','short-prefix'])
+test('quota uncertain duplicate still hydrates and publishes current authority: '+mode,async () => {
+  const f = await quotaPagedFixture(1136,mode!=='promote');
+  const r = f.rows[mode==='outside-prefix'?1000:0], key=VERIFICATION_COLLECTION+'/'+verificationShardId(track,r.accountId);
+  if(mode==='promote') f.data.get(key).slots[r.accountId]=proof(r);
+  if(mode==='hold') f.data.get(key).slots[r.accountId]={...pendingSlot(r),status:'unavailable',reason:COMPETITIVE_REVIEW_REASON,retryAt:Number.MAX_SAFE_INTEGER};
+  if(mode==='stale-proof') f.data.get(key).slots[r.accountId]={...proof(r),key:'stale'};
+  if(mode==='binding') f.data.get(canonicalKey(r)).uploadId++;
+  if(mode==='identity') f.data.get(canonicalKey(r)).name='Current Name';
+  if(mode==='short-prefix') f.data.get(boardKey).entries=f.data.get(boardKey).entries.slice(0,100);
+  await f.notify(r); f.reset();
+  const result=await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.equal(result.pending,0);
+  assert.equal([...f.documentReads.keys()].filter(k=>k.startsWith(PUBLIC_PAGE_COLLECTION+'/')).length,12);
+  const entry=f.data.get(boardKey).entries.find(e=>e.accountId===r.accountId);
+  if(mode==='promote') assert.equal(entry.runVerified,true);
+  if(['hold','stale-proof','binding'].includes(mode)) assert.equal(entry.runVerified,false);
+  if(mode==='identity') assert.equal(entry.name,'Current Name');
+});
+
+for (const mode of ['proof-read','proof-write','page-missing','queue-cas'])
+test('quota duplicate drain failures retain work and do not falsely publish: '+mode,async () => {
+  const f=await quotaPagedFixture(),r=f.rows[0],key=VERIFICATION_COLLECTION+'/'+verificationShardId(track,r.accountId);
+  await f.notify(r);
+  if(mode==='proof-write'||mode==='page-missing') f.data.get(key).slots[r.accountId]={...proof(r),key:'stale'};
+  if(mode==='page-missing') f.data.delete([...f.data.keys()].find(k=>k.startsWith(PUBLIC_PAGE_COLLECTION+'/')));
+  const oldBoard=structuredClone(f.data.get(boardKey)),oldQueue=structuredClone(f.data.get(key));
+  if(mode==='proof-read') {
+    const request=f.env.__TEST_FIRESTORE;
+    f.env.__TEST_FIRESTORE=async(path,init)=>{
+      if(path===':batchGet'&&JSON.parse(init.body).documents.some(name=>name===base+key))throw Error('FIRESTORE_429');
+      return request(path,init);
+    };
+  }
+  if(mode==='proof-write'||mode==='queue-cas') f.setCommitHook(writes=>{
+    if(writes.some(w=>w.update.name===base+(mode==='proof-write'?key:jobKey)))throw Error('FIRESTORE_412');
+  });
+  f.reset();
+  if(mode==='queue-cas')await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),/FIRESTORE_412/);
+  else await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.deepEqual(f.data.get(boardKey),oldBoard); assert.deepEqual(f.data.get(key),oldQueue);
+  assert.deepEqual(f.data.get(jobKey).pendingResultIds[track],[r.accountId+'_'+track]);
+});
+
+for(const [family,trackId] of [['native','7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0'],
+  ['rolling',PERMANENT_ROLLING_HILLS.trackId],['extra',[...EXTRA_TRACK_IDS][0]]])
+for(const submissions of [1,10])test('quota all-track mode entire pipeline: '+family+'/'+submissions,async()=>{
+  const costs={};
+  for(const mode of ['immediate','coalesced']){
+    const f=fixture({trackId,population:29}); f.env.PB_PUBLICATION_MODE=mode;
+    assert.equal(f.env.PB_COALESCED_TRACK_IDS_JSON,undefined,'unset scope means all tracks, not an empty scope');
+    const oldQueue=VERIFICATION_COLLECTION+'/'+trackId;
+    if(family==='extra'){
+      f.data.set('0.6.2_s1_extra_verification/'+trackId,f.data.get(oldQueue));f.data.delete(oldQueue);
+      f.data.set('0.6.2_s1_worker_jobs/extra_verification_queue_migration_v1',
+        {complete:true,registry:[...EXTRA_TRACK_IDS].sort().join(',')});
+    }
+    let latest;
+    for(let i=0;i<submissions;i++){
+      latest={...f.rows[0],timeMs:10000-i,frames:10000-i,raceTimeFrames:10000-i,uploadId:2+i};
+      f.data.set(canonicalKey(latest),latest);
+      assert.equal((await f.notify(latest)).status,200);
+    }
+    if(mode==='coalesced')assert.equal((await reconcileCanonicalChanges(f.env,{scanResults:false})).pending,0);
+    assert.equal(f.data.get('0.6.2_s1_leaderboards_track/'+trackId).entries[0].timeMs,latest.timeMs);
+    const rolling=Number(family==='rolling'),extra=Number(family==='extra');
+    costs[mode]={reads:f.counts.reads,writes:f.counts.writes};
+    assert.deepEqual(costs[mode],mode==='immediate'
+      ? {reads:(4+rolling+extra)*submissions,writes:(3+rolling)*submissions}
+      : {reads:2*submissions+5+rolling,writes:submissions+4+rolling});
+  }
+  console.log('QUOTA_ALL_TRACK_COST '+JSON.stringify({family,submissions,costs}));
+});
 
 test('actual PB route costs first 2R/1W and duplicate 2R/0W, without immediate publication or background work', async () => {
   for (const missingJob of [false, true]) {
@@ -507,8 +624,13 @@ const rolling = PERMANENT_ROLLING_HILLS.trackId;
 const optInBusy = [track, rolling, summer3];
 const configuredBusy = () => JSON.parse(JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url))).vars.PB_COALESCED_TRACK_IDS_JSON);
 
-test('checked-in release scope remains exactly Summer1; Rolling Hills and Summer3 are opt-in scenarios only', () => {
-  assert.deepEqual(configuredBusy(), [track]);
+test('checked-in release scope is Summer1 plus a bounded Summer2 trial; other tracks remain unchanged', () => {
+  const catalog=JSON.parse(readFileSync(new URL('../../../tracks/catalog.json',import.meta.url))).tracks;
+  const summer2=catalog.find(row=>row.name==='Summer 2').id;
+  assert.equal(summer2,'7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0');
+  assert.deepEqual(configuredBusy(), [track,summer2]);
+  assert.equal(configuredBusy().includes(rolling),false);
+  assert.equal(configuredBusy().includes(summer3),false);
 });
 
 for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingHills', rolling, 155]]) {
@@ -566,7 +688,7 @@ for (const [name, trackId, population] of [['Summer3', summer3, 496], ['RollingH
 
 test('release scope leaves Rolling Hills, Summer3, other native and sparse Extra immediate without publication-job costs', async () => {
   const sparseExtra = '7a8afe73c01cf77bf16c9c87f8e0f8732023bdf4b9b6bb4a0120e97553dd447d';
-  const unselectedNative = '7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0';
+  const unselectedNative = JSON.parse(readFileSync(new URL('../../../tracks/catalog.json',import.meta.url))).tracks.find(row=>row.name==='Summer 4').id;
   for (const trackId of [rolling, summer3, unselectedNative, sparseExtra]) {
     const f = fixture({trackId});
     f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(configuredBusy());
@@ -733,4 +855,15 @@ test('coordinated Summer1 queue publishes stale paged roots outside capture wind
   process.stdout.write('COALESCED_STALE_ROOT_COST ' + JSON.stringify({population:1136,
     enqueue:{reads:2,writes:1}, drain:{reads:18,writes:17}, cleanFollowup:{reads:1,writes:0},
     excludes:'Overall aggregation, native verification and capture'}) + '\n');
+});
+
+
+test('configured Summer2 enters the existing bounded lane without immediate board publication',async()=>{
+ const summer2='7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0';
+ const f=fixture({trackId:summer2});f.env.PB_COALESCED_TRACK_IDS_JSON=JSON.stringify(configuredBusy());
+ const key='0.6.2_s1_leaderboards_track/'+summer2,before=structuredClone(f.data.get(key));
+ const response=await f.notify();assert.equal(response.status,200);assert.equal((await response.json()).publicationPending,true);
+ assert.deepEqual(f.data.get(key),before);assert.equal(f.documentReads.get(key)||0,0);
+ assert.deepEqual(f.data.get(jobKey).pendingResultIds[summer2],[f.rows[0].accountId+'_'+summer2]);
+ assert.deepEqual(f.counts,{reads:2,writes:1,queries:0,commitAttempts:1});
 });

@@ -52,14 +52,20 @@ test('0.6.3 version navigation and event cards stay within desktop and portrait 
   const info=await page.locator('.sq-kodub-weekly .track-of-the-week-info').boundingBox();
   assert(artwork.width>0&&artwork.height>0,'Artwork has visible width and height');
   assert(Math.abs(artwork.left-card.x)<1,'Artwork is flush with the left edge');
-  const uncropped=width<=700&&height>=width||width>=600&&width<=1200&&height<=500&&width>height;
-  assert.equal(artwork.fit,uncropped?'contain':'cover');assert.equal(artwork.position,'0% 100%');
+  const naturalAspectBox=width<=700&&height>=width||width>=600&&width<=1200&&height<=500&&width>height;
+  assert.equal(artwork.fit,'contain','Complete artwork is never cropped at '+width+'x'+height);assert.equal(artwork.position,'0% 100%');
+  // Contain preserves the artwork ratio, not necessarily its letterboxed element box.
+  const fittedWidth=Math.min(artwork.width,artwork.height*artwork.nativeRatio);
+  const fittedHeight=fittedWidth/artwork.nativeRatio;
+  const fitted={left:artwork.left,right:artwork.left+fittedWidth,top:artwork.bottom-fittedHeight,bottom:artwork.bottom};
+  assert(Number.isFinite(artwork.nativeRatio)&&artwork.nativeRatio>0&&fittedWidth>0&&fittedHeight>0,'Decoded artwork has a valid natural aspect ratio');
+  assert(Math.abs(fittedWidth/fittedHeight-artwork.nativeRatio)<.01,'Contained artwork retains its natural aspect ratio');
+  assert(fitted.left>=artwork.left-1&&fitted.right<=artwork.right+1&&fitted.top>=artwork.top-1&&fitted.bottom<=artwork.bottom+1,'Complete fitted artwork stays within its image box');
   const stacked=info.y>=artwork.bottom-1;
   assert(artwork.top>=card.y-1&&artwork.bottom<=card.y+card.height+1,'Artwork stays inside card');
   if(stacked)assert(Math.abs(artwork.width-card.width)<1,'Stacked artwork uses full width');
   else {
-   if(uncropped)assert(Math.abs(artwork.width/artwork.height-artwork.nativeRatio)<.01,'Complete artwork retains its natural aspect ratio');
-   else assert(Math.abs(artwork.bottom-card.y-card.height)<1,'Artwork fills full left-panel height');
+   if(!naturalAspectBox)assert(Math.abs(artwork.bottom-card.y-card.height)<1,'Artwork fills full left-panel height');
    assert(Math.abs(artwork.right-info.x)<1,'Details sit flush beside artwork');
   }
   const tabs=await page.locator('.community-track-versions>.button').all();

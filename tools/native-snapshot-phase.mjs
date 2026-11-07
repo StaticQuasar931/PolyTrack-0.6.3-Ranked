@@ -1,5 +1,6 @@
 import {restoreRetainedPendingPlaybacks} from './restore-retained-pending-playbacks.mjs';
 import {assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
+import {publishedEventPairingTotals} from './published-event-pairing.mjs';
 import {refreshCapturedEventHighlights} from './refresh-event-highlights.mjs';
 import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS,annotateLegacyArchiveReplayBoard} from './legacy-archive-replay-exceptions.mjs';
 import fs from 'node:fs/promises';
@@ -14,6 +15,7 @@ import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeE
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
 import {loadCapturedNativeJobs,defaultCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
+import {prioritizeNativeTargets} from './verifier/native-verification-priority.mjs';
 import {verifyLocalSnapshot,nativeLedgerPublicationFiles,withOfflineVerification} from './verifier/local-snapshot-verification.mjs';
 import {loadWeeklyTrustedTrack} from './verifier/weekly-track.mjs';
 import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
@@ -47,7 +49,12 @@ async function publishCohort({root,directory,candidate,ledgerRoot,expectedManife
   let lock,moved=false,installed=false,committed=false,previousManifest,previousPointer,shardsExisted=false,mutated=false;
   const added=[];
   try{
-    await fs.cp(candidate,sibling,{recursive:true,dereference:false,errorOnExist:true,force:false});
+    // Move only the disposable private candidate, never the live directory.
+    // A cross-volume runner retains the existing copy-and-swap fallback.
+    demand(path.basename(path.dirname(candidate)).startsWith('polytrack-native-phase-')&&
+      path.dirname(path.dirname(candidate))===os.tmpdir(),'unsafe private candidate move');
+    try{await fs.rename(candidate,sibling);}
+    catch(error){if(error.code!=='EXDEV')throw error;await fs.cp(candidate,sibling,{recursive:true,dereference:false,errorOnExist:true,force:false});}
     await fs.mkdir(liveLedger,{recursive:true});
     lock=await fs.open(path.join(liveLedger,'.writer.lock'),'wx');
     previousManifest=await optionalBytes(path.join(liveLedger,'manifest.json'));
@@ -100,10 +107,11 @@ async function copyLedger(ledgerRoot,destination,manifestHash){
   const manifest=JSON.parse(bytes);await fs.mkdir(path.join(destination,'shards'),{recursive:true});
   for(const shard of manifest.shards)await fs.copyFile(path.join(ledgerRoot,'shards',shard.hash+'.json'),path.join(destination,'shards',shard.hash+'.json'));
   await fs.writeFile(path.join(destination,'manifest.json'),bytes);
+  readLedger({root:destination,expectedManifestHash:manifestHash});
 }
 
 // Recovery evidence is private data, never a publication pointer or proof admission.
-async function retainCompletedProofs({root,ledgerRoot,sourceBinding,manifestHash,previousManifestHash}){
+async function retainCompletedProofs({root,ledgerRoot,sourceBinding,manifestHash,previousManifestHash,evidence=null}){
   let parent=root;
   for(const name of ['local-reports','native-proof-checkpoints']){
     parent=path.join(parent,name);await fs.mkdir(parent,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});
@@ -112,9 +120,21 @@ async function retainCompletedProofs({root,ledgerRoot,sourceBinding,manifestHash
   const directory=await fs.mkdtemp(path.join(parent,'completed-'));
   try{
     await copyLedger(ledgerRoot,path.join(directory,'ledger'),manifestHash);
+    // Flush the copied immutable ledger before the receipt makes this boundary
+    // discoverable. This is recovery evidence, not an admission/resume API.
+    const copied=JSON.parse(await fs.readFile(path.join(directory,'ledger/manifest.json'),'utf8'));
+    for(const name of [...copied.shards.map(shard=>'shards/'+shard.hash+'.json'),'manifest.json']){
+      const handle=await fs.open(path.join(directory,'ledger',name),'r+');try{await handle.sync();}finally{await handle.close();}
+    }
+    let evidenceSha256=null;
+    if(evidence){
+      const bytes=Buffer.from(JSON.stringify(evidence)+'\n');evidenceSha256=sha(bytes);
+      await fs.writeFile(path.join(directory,'verification.json'),bytes,{flag:'wx',mode:0o600,flush:true});
+    }
     const receipt={schemaVersion:1,kind:'private-native-proof-checkpoint',authority:false,
-      sourceBinding,ledgerManifestHash:manifestHash,previousLedgerManifestHash:previousManifestHash};
-    await fs.writeFile(path.join(directory,'receipt.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600});
+      sourceBinding,ledgerManifestHash:manifestHash,previousLedgerManifestHash:previousManifestHash,
+      ...(evidenceSha256?{evidenceFile:'verification.json',evidenceSha256}:{})};
+    await fs.writeFile(path.join(directory,'receipt.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600,flush:true});
     return {directory,...receipt};
   }catch(error){await fs.rm(directory,{recursive:true,force:true});throw error;}
 }
@@ -189,7 +209,12 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   const manifest=await read(directory,'manifest.json'),serverTotals=await optional(directory,'event-totals.json');
   const periods=inputs.eventBoards.filter(board=>board.id!=='permanent-rolling-hills');
   if(!serverTotals){demand(periods.length===0,'event totals source unavailable');return {periods:0,ready:true};}
-  demand(!serverTotals.nativeEventOverlay,'fresh pristine server totals required');
+  const baseline=publishedEventTotalsBaseline===null?null:assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
+  // An offline public-package retry can pair projections with the exact branded
+  // published totals. Never strip an overlay or pretend it is a Worker capture.
+  const exactPublished=baseline!==null&&isDeepStrictEqual(serverTotals,baseline.totals);
+  demand(!serverTotals.nativeEventOverlay||exactPublished,'fresh pristine or exact trusted published totals required');
+  const pairingTotals=exactPublished?publishedEventPairingTotals(baseline,serverTotals):serverTotals;
   const projections=[],pins={},cache=path.join(directory,'native-event-source');
   for(const captured of periods){
     if(LEGACY_ARCHIVE_REPLAY_EXCEPTIONS.some(pin=>pin.periodId===captured.id)){
@@ -209,7 +234,7 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
     const dependencies={ledger,policy,canonicalRows:inputs.canonicalRows.filter(value=>value.lane==='event'),recordings:inputs.recordings.filter(value=>value.lane==='event')};
     const exact=board.complete===true&&board.totalEntries===board.entries.length&&board.sourceComplete!==false;
     const projection=exact?await projectNativeEventSnapshot({...dependencies,
-      baseline:createNativeEventBaseline({serverBoard:board,serverTotals,expectedSourceHash:nativeEventSourceHash(board)}),
+      baseline:createNativeEventBaseline({serverBoard:board,serverTotals:pairingTotals,expectedSourceHash:nativeEventSourceHash(board)}),
       retainedNativeEntries:captureContext.retainedNativeEntries?.[captured.id]}):await projectRetainedEventVerifications({...dependencies,
       serverBoard:board,expectedSourceHash:nativeEventSourceHash(board)});
     demand(projection.ready!==false,'approved event payload unavailable');projections.push(projection);
@@ -220,9 +245,8 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   const rolling=await optional(directory,`tracks/${rollingId}.json`);
   demand(rolling,'complete Rolling Hills normal board required for event totals');
   const capturedRollingBoard=deriveCapturedNativeRollingHills({board:rolling,expectedSourceHash:nativeEventSourceHash(rolling)});
-  const baseline=publishedEventTotalsBaseline===null?null:assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
-  const usePublished=baseline!==null&&serverTotals.updatedAt<baseline.totals.updatedAt;
-  const dependencies={serverTotals,projections:projections.filter(value=>value.totalsEligible!==false),capturedRollingBoard};
+  const usePublished=exactPublished||baseline!==null&&serverTotals.updatedAt<baseline.totals.updatedAt;
+  const dependencies={serverTotals:pairingTotals,projections:projections.filter(value=>value.totalsEligible!==false),capturedRollingBoard};
   const combined=usePublished?reconcileNativeEventTotalsFromPublished({...dependencies,projections,publishedBaseline:baseline}):projectNativeEventTotals(dependencies);
   for(const projection of combined.publicationProjections||projections){
     const board=projection.board,id=board.id;
@@ -261,26 +285,50 @@ export async function runNativeSnapshotPhase(options={}){
     :runNativeSnapshotPhaseImpl(options);
 }
 
-async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,reuseOnly=false,
+/** A live-process capability, not a serialized receipt/checkpoint admission API.
+ * The caller must dispose it. Failed compilation may retry the same attestations;
+ * successful compilation, concurrent calls and use after disposal are rejected.
+ */
+export async function verifyNativeSnapshotPhase(options={}){
+  demand(options.reuseOnly!==true,'fresh verification required for a retry capability');
+  return runNativeSnapshotPhaseImpl(options,true);
+}
+
+async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,reuseOnly=false,publicationRoot=root,
+  expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
-  rebuild=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,
-  publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={}){
+  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,
+  publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={},verificationOnly=false){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
+  demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
+  demand(typeof preflight==='function','read-only scoring preflight required');
+  demand((expectedCaptureSha256===null||HASH.test(expectedCaptureSha256))&&(expectedScoringSha256===null||HASH.test(expectedScoringSha256)),'invalid prepared source pins');
+  const timings={};
+  const timed=async(name,task)=>{const start=performance.now();try{return await task();}finally{timings[name]=Math.round(performance.now()-start);}};
   const context=captureContext||await prepareNativeSnapshotCapture({root,directory,buildPolicy});
   const temporary=await privateRoot(),candidate=path.join(temporary,'candidate'),ledgerRoot=path.join(temporary,'ledger');
+  let retained=false;
   try{
-    await fs.cp(directory,candidate,{recursive:true,dereference:false});
+    await timed('copyMs',()=>fs.cp(directory,candidate,{recursive:true,dereference:false}));
+    const scoringPreflight=await timed('scoringPreflightMs',()=>preflight({directory:candidate,now,validateOnly:true}));
+    demand(expectedScoringSha256===null||scoringPreflight.sourceSha256===expectedScoringSha256,'scoring inputs changed since preparation');
     await copyLedger(context.ledgerRoot,ledgerRoot,context.ledger.manifestHash);
-    const inputs=await loadCapturedNativeJobs({directory:candidate,allowExtendedLocal:true});
+    const inputs=await timed('hydrateMs',()=>loadCapturedNativeJobs({directory:candidate,allowExtendedLocal:true}));
+    const totalsInput=await optional(candidate,'event-totals.json');
+    if(totalsInput?.nativeEventOverlay){
+      const published=publishedEventTotalsBaseline&&assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
+      demand(published&&isDeepStrictEqual(totalsInput,published.totals),'exact trusted published totals required before native work');
+    }
     const freshJobs=inputs.jobs.slice(),knownKeys=new Set(freshJobs.map(job=>ledgerKey(ledgerBinding(job))));
     for(const job of context.retainedJobs||[])if(!knownKeys.has(ledgerKey(ledgerBinding(job)))){
       inputs.jobs.push(job);inputs.canonicalRows.push({...job});inputs.recordings.push({...job});knownKeys.add(ledgerKey(ledgerBinding(job)));
     }
     const retainedPins=Object.entries(context.retainedNativeEntries||{}).map(([periodId,value])=>({periodId,sha256:value.expectedSourceHash}));
     if(retainedPins.length)inputs.captureSha256=sha(JSON.stringify({captured:inputs.captureSha256,retained:retainedPins.sort((a,b)=>a.periodId<b.periodId?-1:1)}));
+    demand(expectedCaptureSha256===null||inputs.captureSha256===expectedCaptureSha256,'capture inputs changed since preparation');
     const canonicalRows=await readCapturedNormalLedgerRows({directory:candidate,allowMissingCanonical:true});
     const original=new Map(canonicalRows.map(value=>[ledgerKey(ledgerBinding(value,'normal')),value]));
     const entries=new Map(context.ledger.entries.map(value=>[value.key,value])),accepted=new Set();
@@ -292,20 +340,31 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       }else if(inputs.eventBoards.some(board=>board.id===job.periodId&&board.entries.some(row=>row.accountId===job.accountId&&row.timeMs===job.timeMs&&
         (row.runId===undefined||row.runId===job.runId)&&row.needsReview!==true&&row.reviewHold!==true)))accepted.add(key);
     }
-    const targets=inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));return !accepted.has(key)||entries.has(key);});
+    const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));return !accepted.has(key)||entries.has(key);}),
+      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now()});
+    const targets=priority.jobs;
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;
     const review=async value=>{
       reviewer||=await reviewFactory({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
         previouslyAccepted:inputs.jobs.filter(job=>accepted.has(ledgerKey(ledgerBinding(job)))).map(job=>({binding:ledgerBinding(job),sourceBinding:binding,accepted:true}))});
       return reviewer(value);
     };
+    review.prepare=async value=>{
+      reviewer=await reviewFactory({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
+        previouslyAccepted:inputs.jobs.filter(job=>accepted.has(ledgerKey(ledgerBinding(job)))).map(job=>({binding:ledgerBinding(job),sourceBinding:binding,accepted:true}))});
+      demand(typeof reviewer==='function','captured-controls review capability required');
+      if(reviewer.inspect){
+        const coverage=await timed('reviewPreparationMs',()=>reviewer.inspect());
+        demand(!coverage?.stop,'full-inventory controls preflight stopped: '+coverage?.stop);
+      }
+    };
     let verification;
     try{
       verification=reuseOnly?{ledger:context.ledger,ledgerManifestHash:context.ledger.manifestHash,
         complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
-        :await verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
+        :await timed('verificationMs',()=>verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
         expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
-        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now});
+        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now}));
     }catch(error){
       // Only completed, validated batches reach this private ledger. Its hash
       // identifies recovery evidence, never a new publication trust anchor.
@@ -313,8 +372,10 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         const bytes=await optionalBytes(path.join(ledgerRoot,'manifest.json'));
         const manifestHash=bytes&&sha(bytes);
         if(manifestHash&&manifestHash!==context.ledger.manifestHash){
-          const checkpoint=await retainCompletedProofs({root,ledgerRoot,sourceBinding:binding,
-            manifestHash,previousManifestHash:context.rootManifestHash});
+          const checkpoint=await retainCompletedProofs({root:publicationRoot,ledgerRoot,sourceBinding:binding,
+            manifestHash,previousManifestHash:context.rootManifestHash,
+            evidence:{schemaVersion:1,authority:false,kind:'private-native-phase-evidence',phase:'verification-interrupted',
+              complete:false,sourceBinding:binding,ledgerManifestHash:manifestHash,scoringPreflight,sourceCoverage:inputs.coverage,timings}});
           if(proofCheckpoint)await proofCheckpoint(checkpoint);
         }
       }catch{/* Recovery must not replace the original verification failure. */}
@@ -322,10 +383,27 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     }
     let privateProofCheckpoint=null;
     if(verification.ledgerManifestHash!==context.ledger.manifestHash){
-      privateProofCheckpoint=await retainCompletedProofs({root,ledgerRoot,sourceBinding:binding,
-        manifestHash:verification.ledgerManifestHash,previousManifestHash:context.rootManifestHash});
+      const {ledger,authority,...outcome}=verification;
+      privateProofCheckpoint=await retainCompletedProofs({root:publicationRoot,ledgerRoot,sourceBinding:binding,
+        manifestHash:verification.ledgerManifestHash,previousManifestHash:context.rootManifestHash,
+        evidence:{...outcome,authority:false,kind:'private-native-phase-evidence',scoringPreflight,
+          sourceCoverage:inputs.coverage,timings}});
       if(proofCheckpoint)await proofCheckpoint(privateProofCheckpoint);
     }
+    const receipt={schemaVersion:1,authority:false,kind:'completed-in-process-native-verification',
+      sourceBinding:binding,ledgerManifestHash:verification.ledgerManifestHash,
+      previousLedgerManifestHash:context.rootManifestHash,counts:verification.counts,
+      decisions:verification.decisions,engineDigest:verification.engineDigest,verifierFingerprint:verification.verifierFingerprint,
+      policySha256:verification.policySha256,
+      verificationComplete:verification.complete,priority:priority.counts,sourceCoverage:inputs.coverage,scoringPreflight,privateProofCheckpoint};
+    let compiling=false,compiled=false,disposed=false;
+    const source=path.join(temporary,'verified-source');
+    if(verificationOnly)await fs.rename(candidate,source);
+    const compile=async()=>{
+    demand(!compiling&&!compiled&&!disposed,'verification capability is busy, consumed or disposed');
+    compiling=true;
+    try{
+    if(verificationOnly)await fs.cp(source,candidate,{recursive:true,dereference:false,errorOnExist:true,force:false});
     const policy=await buildPolicy({root,jobs:inputs.jobs,entries:verification.ledger.entries});
     // Existing approvals not covered by current review cannot sneak back in via
     // a generic ledger applier. Restrict those tracks, retaining server baselines.
@@ -340,16 +418,37 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     const overall=await rebuild({directory:candidate,now});await buildProfiles(candidate);
     demand(events.ready!==false,'event compilation incomplete');
     // Confirm local root authority did not change while the private phase ran.
-    const current=await optional(root,'verification-ledger-current.json');
+    const current=await optional(publicationRoot,'verification-ledger-current.json');
     demand((current?.manifestHash??null)===context.rootManifestHash,'root ledger changed during native phase');
-    await publishCohort({root,directory,candidate,ledgerRoot,expectedManifestHash:context.rootManifestHash,
+    await publishCohort({root:publicationRoot,directory,candidate,ledgerRoot,expectedManifestHash:context.rootManifestHash,
       manifestHash:verification.ledgerManifestHash,publishPointer});
+    compiled=true;
     return {schemaVersion:1,authority:reuseOnly?'stored-proof-overlay':'snapshot-native',backendReads:0,backendWrites:0,
       complete:verification.complete&&inputs.coverage.complete,ledgerManifestHash:verification.ledgerManifestHash,
       sourceBinding:binding,counts:{...verification.counts,sourceJobs:inputs.jobs.length,targets:targets.length,serverAccepted:accepted.size},
-      sourceCoverage:inputs.coverage,normal,events,overall,privateProofCheckpoint};
+      sourceCoverage:inputs.coverage,priority:priority.counts,scoringPreflight,timings,normal,events,overall,privateProofCheckpoint};
+    }finally{
+      compiling=false;
+      if(verificationOnly){
+        demand(path.dirname(candidate)===temporary,'unsafe retry candidate cleanup');
+        await fs.rm(candidate,{recursive:true,force:true});
+      }
+    }
+    };
+    if(verificationOnly){
+      retained=true;
+      return Object.freeze({receipt:structuredClone(receipt),compile:()=>withOfflineVerification(compile),
+        dispose:async()=>{
+          demand(!compiling,'verification capability is busy');
+          if(disposed)return;disposed=true;
+          await removePrivate(temporary);if(context.bootstrapRoot)await removePrivate(context.bootstrapRoot);
+        }});
+    }
+    return await compile();
   }finally{
-    await removePrivate(temporary);
-    if(context.bootstrapRoot)await removePrivate(context.bootstrapRoot);
+    if(!retained){
+      await removePrivate(temporary);
+      if(context.bootstrapRoot)await removePrivate(context.bootstrapRoot);
+    }
   }
 }

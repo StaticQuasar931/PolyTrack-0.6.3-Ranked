@@ -58,13 +58,23 @@ export async function assertBoundedLocalSource({workspace,sourceCommit,runnerFil
   if(result.timedOut||result.status!==0||result.signal)throw failure(result.timedOut?'LOCAL_GIT_TIMEOUT':'LOCAL_SOURCE_CHECK_FAILED','source-validation');
 }
 
-export async function publishLocalCaptureCommit({git,sourceCommit,directory,record,onState=()=>{},deadline,now=Date.now}={}) {
+export async function publishLocalCaptureCommit({git,sourceCommit,directory,record,onState=()=>{},deadline,now=Date.now,auditCandidate}={}) {
   let state={phase:'publication-commit',publicationState:'not-attempted'};
   const update=value=>{state={...state,...value};onState({...state});};
   try {
     update({});
-    await git(['-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Sync public ranked snapshots']);
-    const candidateCommit=(await git(['rev-parse','HEAD'])).trim();
+    let candidateCommit;
+    try {
+      await git(['-c','gc.auto=0','-c','maintenance.auto=false','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','--quiet','-m','Sync public ranked snapshots']);
+      candidateCommit=(await git(['rev-parse','HEAD'])).trim();
+    }catch(error){
+      if(error?.code!=='LOCAL_GIT_TIMEOUT'||typeof auditCandidate!=='function')throw error;
+      candidateCommit=(await git(['rev-parse','HEAD'])).trim();
+      if(!SHA.test(candidateCommit)||candidateCommit===sourceCommit||(await git(['rev-parse','HEAD^'])).trim()!==sourceCommit||
+        (await git(['diff','--name-only','HEAD'])).trim()||(await git(['diff','--cached','--name-only'])).trim()||
+        await auditCandidate({candidateCommit,sourceCommit})!==true)throw error;
+      update({recoveredLocalCommitTimeout:true});
+    }
     if(!SHA.test(candidateCommit))throw failure('LOCAL_PUBLICATION_COMMIT_INVALID','publication-commit');
     update({candidateCommit,phase:'publication-parent-validation'});
     if((await git(['rev-parse','HEAD^'])).trim()!==sourceCommit)throw failure('LOCAL_PUBLICATION_PARENT_CHANGED',state.phase);

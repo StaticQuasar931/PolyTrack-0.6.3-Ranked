@@ -108,6 +108,17 @@ export async function writeLocalCaptureReceipt({directory,owner,value}){
   }catch(error){await fs.rm(temporary,{force:true}).catch(()=>{});throw error;}
 }
 
+export async function validatePriorLocalCapture(receipt,{plan=N}={}){
+  const completed=plan.priorOutcome==='complete',prior=completed?receipt.priorCompletion:receipt.priorFailure;
+  if(!prior||!path.isAbsolute(prior.file||'')||!/^[a-f0-9]{64}$/.test(prior.sha256||''))throw Error('Preserved prior attempt evidence required');
+  const stat=await fs.lstat(prior.file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1024*1024)throw Error('Unsafe prior attempt evidence');
+  const bytes=await fs.readFile(prior.file),value=JSON.parse(bytes);
+  if(createHash('sha256').update(bytes).digest('hex')!==prior.sha256)throw Error('Prior attempt evidence changed');
+  if(completed){if(!Number.isSafeInteger(value.generation)||value.generation<1||value.status!=='complete'||value.publicationCommit!==plan.priorPublicationCommit||value.binding?.reusable!==true||value.binding.directory!=='public-snapshots'+value.generation)throw Error('Prior completed publication is not exact-bound');}
+  else if(value.status!=='failed'||value.sourceCommit!==plan.priorSource)throw Error('Prior attempt is not terminal and exact-bound');
+  return {status:value.status,publicationCommit:value.publicationCommit||null};
+}
+
 export async function validateLocalEvidence(receipt){
   if(!Array.isArray(receipt.tests)||receipt.tests.length<3)throw Error('Test evidence required');
   const seen=new Set();
@@ -129,10 +140,7 @@ async function main(){
   if(args.length!==2||args[0]!=='--receipt'||!path.isAbsolute(args[1]))throw Error('Usage: node tools/local-overnight-capture.mjs --receipt ABSOLUTE_READY_JSON');
   const receipt=JSON.parse(await fs.readFile(args[1],'utf8')),directory=path.dirname(args[1]),owner=randomUUID();
   localOvernightCapturePlan({receipt});fullSnapshotPolicy(receipt);await validateLocalEvidence(receipt);
-  const prior=receipt.priorFailure;
-  if(!prior||!path.isAbsolute(prior.file||'')||!/^[a-f0-9]{64}$/.test(prior.sha256||''))throw Error('Preserved prior failure evidence required');
-  const priorBytes=await fs.readFile(prior.file),priorReceipt=JSON.parse(priorBytes);
-  if(createHash('sha256').update(priorBytes).digest('hex')!==prior.sha256||priorReceipt.status!=='failed'||priorReceipt.sourceCommit!==N.priorSource)throw Error('Prior attempt is not terminal and exact-bound');
+  await validatePriorLocalCapture(receipt);
   const workspace=receipt.workspace;
   if(!path.isAbsolute(workspace||'')||!path.isAbsolute(receipt.credentialFile||'')||!path.isAbsolute(receipt.recoveryPublicKeyFile||'')||
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');
@@ -212,7 +220,12 @@ async function main(){
       await git(['add','-u','--',':(glob)public-snapshots[0-9]*/**']);
       const staged=(await git(['diff','--cached','--name-only','--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean);
       if(staged.some(file=>!allowed.has(file)))throw Error('Unexpected capture publication file');
-      return publishLocalCaptureCommit({git,sourceCommit:receipt.testedCommit,directory:result.directory,record,onState,deadline:N.deadline});
+      return publishLocalCaptureCommit({git,sourceCommit:receipt.testedCommit,directory:result.directory,record,onState,deadline:N.deadline,
+        auditCandidate:async({candidateCommit,sourceCommit})=>{
+          const changed=(await git(['diff','--name-only',sourceCommit,candidateCommit,'--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean);
+          const deleted=(await git(['diff','--name-only',sourceCommit,candidateCommit,'--diff-filter=D'])).trim().split('\n').filter(Boolean);
+          return !changed.some(file=>!allowed.has(file))&&!deleted.some(file=>!/^public-snapshots[1-9]\d*\//.test(file))&&(await captureBinding(workspace)).reusable===true;
+        }});
     },record});
   console.log(JSON.stringify(result));
 }

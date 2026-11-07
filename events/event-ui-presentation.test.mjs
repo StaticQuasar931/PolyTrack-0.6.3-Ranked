@@ -65,6 +65,14 @@ test('unknown date correction preserves verification icons and pending state whi
   ui.decorateEventRowPresentation(f.button,{rank:1,pbAt:received},now);
   assert.equal(f.state.dataset.sqRunStatus,'verified');assert.equal(f.state.dataset.sqPbAt,String(received));
 });
+test('local-only and submitted pending badges remain distinct and never earn ERP',()=>{
+  for(const [source,status] of [['local-event-recording','local'],['submitted-event-recording','submitted'],['pending-event-playback','submitted']]){
+    const f=rowButton();ui.decorateEventRowPresentation(f.button,{rank:2,pending:true,source,rp:700},now);
+    assert.equal(f.state.dataset.sqRunStatus,status);assert.match(f.state.title,status==='local'?/Saved on this device$/:/Pending$/);
+    assert.equal(f.position.textContent,'2nd');assert.doesNotMatch(f.position.textContent,/[xX*]/);
+  }
+});
+
 test('event finish keeps the native plain-text ordinal and stable updates',()=>{
   const f=rowButton(),place={rank:1,fieldSize:4,provisional:false},classes=new Set();
   f.position.querySelector=()=>f.position.childNodes.find(node=>node.className==='sq-event-ordinal-suffix')||null;

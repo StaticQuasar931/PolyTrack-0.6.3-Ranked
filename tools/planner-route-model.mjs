@@ -1,3 +1,4 @@
+export { buildPlannerSnapshotInput } from './planner-snapshot-input.mjs';
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0?value:0;
 const count=value=>Number.isSafeInteger(value)&&value>=0?value:0;
 const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
@@ -15,7 +16,7 @@ export function plannerPracticeEvidence(row,coverage=null){
   if(activeMs<60000||attempts<3||motionObservedMs<30000||movingMs<10000||finishes<1)return base;
   const completionRatio=Math.min(1,finishes/attempts);
   const recent=(Array.isArray(row?.recentFinishes)?row.recentFinishes:[])
-    .filter(r=>positive(r?.timeMs)&&r.timingNote!==true).slice(-8);
+    .filter(r=>positive(r?.timeMs)&&positive(r.at)&&r.timingNote!==true).sort((a,b)=>(positive(a.at)-positive(b.at))||a.timeMs-b.timeMs).slice(-8);
   let improvementTrend=0;
   if(recent.length>=4){
     const half=Math.floor(recent.length/2),average=rs=>rs.reduce((n,r)=>n+r.timeMs,0)/rs.length;
@@ -69,6 +70,10 @@ export function plannerBenefitEaseScore(action,maximumBenefit){
   return Math.pow(Math.min(1,benefit/maximumBenefit),.4)/Math.pow(1+effort,.75);
 }
 
+const routeKey = value => JSON.stringify(value, function(key, item){
+  return item && typeof item==='object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])) : item;
+});
+
 export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
   // Select each track's benefit target before applying any ordering preference.
   const unique=new Map();
@@ -76,7 +81,9 @@ export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
     if(!action?.trackId)continue;
     const previous=unique.get(action.trackId);
     if(!previous||positive(action.value)>positive(previous.value)||positive(action.value)===positive(previous.value)&&
-      String(action.kind||'').localeCompare(String(previous.kind||''))<0)unique.set(action.trackId,action);
+      (String(action.kind||'').localeCompare(String(previous.kind||''))<0||
+      String(action.kind||'')===String(previous.kind||'')&&(positive(action.targetRank)>positive(previous.targetRank)||
+      action.targetRank===previous.targetRank&&routeKey(action)<routeKey(previous))))unique.set(action.trackId,action);
   }
   const actions=[...unique.values()];
   const maximum=Math.max(0,...actions.map(a=>positive(a.value)));
@@ -101,4 +108,29 @@ export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
     return value(b)-value(a)||(positive(b.weight)-positive(a.weight))||String(a.trackId).localeCompare(String(b.trackId));
   };
   return actions.map(action=>({...action,benefitReference:maximum})).sort(compare).slice(0,Number.isSafeInteger(limit)&&limit>=0?limit:8);
+}
+
+/** Enumerate the real scorer: do not assume every leaderboard metric is monotonic. */
+export function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,epsilon=.0005}={}){
+  if(!Number.isSafeInteger(currentRank)||currentRank<0||!Number.isSafeInteger(fieldSize)||
+    fieldSize<2||currentRank>fieldSize||!Number.isFinite(baselineScore)||typeof scoreAt!=='function'||
+    !Number.isFinite(epsilon)||epsilon<0)return null;
+  const choices=[];
+  for(let rank=1;rank<=(currentRank?currentRank-1:fieldSize);rank++){
+    const score=scoreAt(rank);
+    if(!Number.isFinite(score))continue;
+    choices.push({rank,score,gain:baselineScore-score});
+  }
+  const helpful=choices.filter(row=>row.gain>epsilon);
+  if(!helpful.length)return null;
+  const target=helpful.at(-1);
+  const helpfulRanks=new Set(helpful.map(row=>row.rank));
+  let prefix=0;
+  for(let rank=1;rank<=target.rank;rank++){
+    if(!helpfulRanks.has(rank))break;
+    prefix=rank;
+  }
+  return {targetRank:target.rank,minimumHelpfulRank:target.rank,targetScore:target.score,
+    estimatedGain:target.gain,value:target.gain,maximumGain:helpful.reduce((best,row)=>Math.max(best,row.gain),0),
+    topGuaranteed:prefix>=target.rank};
 }

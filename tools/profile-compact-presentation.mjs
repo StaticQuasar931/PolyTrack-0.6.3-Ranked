@@ -46,3 +46,16 @@ export function compactProfileAchievementMarkup(medals, { escapeHtml = escapeAtt
     return `<span class="profile-achievements profile-medal-card ${kind}" title="${escapeHtml(`${label}: top 3 on recognized tracks with 5+ racers.`)}" aria-label="${escapeHtml(`${label} podiums: ${count}`)}">${image}<b>${count}</b><small>${label}</small></span>`;
   }).join('');
 }
+
+/** Plain text for existing native route cards; no extra visual styling required. */
+export function compactPlannerTargetLabel(action) {
+  if (action?.currentRank === 1) return 'Keep #1';
+  if (!Number.isSafeInteger(action?.targetRank) || action.targetRank < 1) return 'Target unavailable';
+  return action.currentRank > 0 ? '#' + action.currentRank + ' to #' + action.targetRank
+    : 'First finish: aim for #' + action.targetRank;
+}
+
+export function compactPlannerEvidenceLabel(action) {
+  if (action?.simulationComplete !== true) return 'More saved results needed';
+  return action.currentRank > 0 ? 'Saved points target' : 'Points improve at this target, not every finish';
+}

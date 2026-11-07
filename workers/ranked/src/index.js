@@ -1010,8 +1010,8 @@ function preservePublishedIdentity(entry, previous) {
   };
 }
 
-export async function persistTrackSnapshot(env, trackId, entries, prior = null, build = {}) {
-  const signatureInput = entries.map((entry) => [
+function trackEntrySignature(entry) {
+  return [
     entry.accountId,
     entry.timeMs,
     entry.pbAt,
@@ -1027,9 +1027,29 @@ export async function persistTrackSnapshot(env, trackId, entries, prior = null, 
     JSON.stringify(entry.profileCosmetics || {}),
     Number(entry.identityUpdatedAt || 0),
     ...(Number(entry.groupCodeUpdatedAt) > 0 ? [entry.groupCode || '', entry.groupCodeUpdatedAt] : entry.groupCode ? [entry.groupCode] : [])
-  ].join(':')).join('|');
+  ].join(':');
+}
+
+export async function persistTrackSnapshot(env, trackId, entries, prior = null, build = {}) {
+  const signatureInput = entries.map(trackEntrySignature).join('|');
   const signature = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signatureInput)).then((bytes) => base64Url(new Uint8Array(bytes)));
   if (!build.completionWrite && trackSnapshotIsCurrent(prior?.data, signature)) return { changed: false, entries, revision: Number(prior.data.revision || 0) };
+  if (build.completionWrite && prior?.updateTime && prior.data.trackId === trackId &&
+      Number(prior.data.schemaVersion) === TRACK_SCHEMA_VERSION && trackSnapshotIsCurrent(prior.data, signature) &&
+      Number.isSafeInteger(prior.data.updatedAt) && prior.data.updatedAt > 0 &&
+      Number.isSafeInteger(prior.data.revision) && prior.data.revision > 0 &&
+      Number.isSafeInteger(prior.data.sourceRevision) && prior.data.sourceRevision > 0 &&
+      prior.data.entries.length === Math.min(entries.length, TRACK_LIMIT) &&
+      Array.isArray(build.previousEntries) && stableJson(entries) === stableJson(build.previousEntries) &&
+      stableJson(prior.data.entries) === stableJson(entries.slice(0, TRACK_LIMIT))) {
+    // The whole old generation was read and validated. Keep its logical source
+    // binding, but retain the root CAS write so completion cannot erase a newer PB.
+    const documents = [build.completionWrite, {collection:COLLECTIONS.track,id:trackId,prior,data:prior.data}];
+    const result = {changed:false,overallChanged:false,entries,revision:prior.data.revision};
+    if (build.deferPublication === true) return {...result,publicationDocuments:documents};
+    await commitDocuments(env, documents);
+    return result;
+  }
   const revision = Math.max(0, Number(prior?.data?.revision || 0)) + 1;
   const now = Date.now();
   // Overall scoring re-ranks only verified entrants. Pending-only changes must
@@ -1287,8 +1307,9 @@ async function prepareVerification(env, trackId, rows, complete = false, current
   return persistVerificationRows(env, trackId, rows, prior, complete);
 }
 
-async function persistVerificationRows(env, trackId, rows, prior, complete = false) {
+async function persistVerificationRows(env, trackId, rows, prior, complete = false, beforeWrite = async () => {}) {
   const queueCollection=verificationCollectionForTrack(trackId);
+  const commit = async writes => { await beforeWrite(); return commitDocuments(env,writes); };
   const slots=Object.assign(Object.create(null),prior?.data?.slots||{});let changed=false;
   if(complete){const present=new Set(rows.map(row=>safeText(row.accountId||row.userId,128)));for(const id of Object.keys(slots))if(!present.has(id)){delete slots[id];changed=true;}}
   for(const row of rows){
@@ -1300,11 +1321,11 @@ async function persistVerificationRows(env, trackId, rows, prior, complete = fal
   if (prior?.data?.storageVersion === 2 || Object.keys(slots).length > TRACK_LIMIT) {
     const root = await migrateVerificationChunk({trackId,collection:queueCollection,root:prior,
       ...(!complete&&rows.length<=VERIFICATION_MIGRATION_BATCH?{accountIds:rows.filter(row=>structurallyValidResult(row,trackId)).map(row=>safeText(row.accountId||row.userId,128))}:{}),
-      read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
+      read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit});
     return prepareShardedVerification({trackId,collection:queueCollection,rows:rows.filter(row=>structurallyValidResult(row,trackId)),root,
-      read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit:w=>commitDocuments(env,w)});
+      read:(c,id)=>readDocument(env,c,id),readMany:async(c,ids)=>(await readDocumentsForCollections(env,[[c,ids]])).get(c),commit});
   }
-  if(changed)await commitDocuments(env,[{collection:queueCollection,id:trackId,prior,data:{...prior?.data,trackId,slots,...verificationSchedule(slots),updatedAt:Date.now()}}]);
+  if(changed)await commit([{collection:queueCollection,id:trackId,prior,data:{...prior?.data,trackId,slots,...verificationSchedule(slots),updatedAt:Date.now()}}]);
   return slots;
 }
 
@@ -1330,7 +1351,7 @@ export async function rebuildTrack(env, trackId, identityOverride = null, {defer
     const previous = await loadTrackPublicationEntries(env,prior?.data,trackId);
     const byId = new Map(previous.map(row=>[row.accountId||row.userId,row]));
     const entries = rankTrustedTrackEntries(build.entries.map(row=>preservePublishedIdentity(row,byId.get(row.accountId))),trackId);
-    return persistTrackSnapshot(env,trackId,entries,prior,{...build,deferPublication});
+    return persistTrackSnapshot(env,trackId,entries,prior,{...build,previousEntries:previous,deferPublication});
   }
   const candidates = initial.documents.map(document=>document.data);
   const integrity = await Promise.all(candidates.map((row) => replayIntegrityValid(row)));
@@ -1363,19 +1384,24 @@ export async function rebuildTrack(env, trackId, identityOverride = null, {defer
   return persistTrackSnapshot(env, trackId, entries, prior, {deferPublication});
 }
 
+function currentInlineTrackPrefix(prior, trackId) {
+  const snapshot = prior?.data, pagination = snapshot?.pagination;
+  return Boolean(prior?.updateTime && snapshot.trackId === trackId &&
+    typeof snapshot.signature === 'string' && snapshot.signature.length > 0 &&
+    Number(snapshot.schemaVersion) === TRACK_SCHEMA_VERSION && trackSnapshotIsCurrent(snapshot, snapshot.signature) &&
+    pagination?.version === 1 && pagination.pageSize === 100 &&
+    Number.isSafeInteger(pagination.totalEntries) && pagination.totalEntries > TRACK_LIMIT &&
+    pagination.pageCount === Math.ceil(pagination.totalEntries / 100) &&
+    /^[a-f0-9]{64}$/.test(pagination.generation) && snapshot.entries.length === TRACK_LIMIT);
+}
+
 export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResult, integrityVerified = false) {
   const prior = await readDocument(env, COLLECTIONS.track, trackId);
   if (!prior || prior.data?.algorithmVersion !== ALGORITHM_VERSION || !Array.isArray(prior.data?.entries)) return rebuildTrack(env, trackId);
   let normalized = computeTrackEntries([{ ...canonicalResult, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' }], trackId, env)[0];
   if (!normalized) throw new Error('Canonical PB failed structural validation');
-  const snapshot = prior.data, pagination = snapshot.pagination;
-  if (prior.updateTime && snapshot.trackId === trackId &&
-      typeof snapshot.signature === 'string' && snapshot.signature.length > 0 &&
-      Number(snapshot.schemaVersion) === TRACK_SCHEMA_VERSION && trackSnapshotIsCurrent(snapshot, snapshot.signature) &&
-      pagination?.version === 1 && pagination.pageSize === 100 &&
-      Number.isSafeInteger(pagination.totalEntries) && pagination.totalEntries > TRACK_LIMIT &&
-      pagination.pageCount === Math.ceil(pagination.totalEntries / 100) &&
-      /^[a-f0-9]{64}$/.test(pagination.generation) && snapshot.entries.length === TRACK_LIMIT) {
+  const snapshot = prior.data;
+  if (currentInlineTrackPrefix(prior, trackId)) {
     const inline = snapshot.entries.find(row => safeText(row.accountId || row.userId, 128) === normalized.accountId);
     // The fresh root atomically binds this prefix to immutable pages. An exact
     // no-op needs current proof maintenance, not hydration of unrelated racers.
@@ -1415,21 +1441,45 @@ export async function mergeCanonicalResultsIntoTrack(env, trackId, resultIds, ca
   const prior = prepared ? prepared.prior : await readDocument(env, COLLECTIONS.track, trackId);
   const snapshot = prior?.data;
   if (!trackSnapshotIsCurrent(snapshot, snapshot?.signature) || (snapshot.complete !== true && snapshot.sourceComplete !== true)) return {fallback: true};
-  if (snapshot.pagination && !prepared?.entriesLoaded) snapshot.entries = await loadTrackPublicationEntries(env,snapshot,trackId);
   const rows = resultIds.map(id => canonicalById.get(id)?.data);
   if (rows.some(row => !row || !structurallyValidResult(row, trackId))) return {fallback: true};
   for (let index = 0; index < rows.length; index++) {
     const accountId = safeText(rows[index].accountId || rows[index].userId, 128);
     if (!accountId || resultIds[index] !== `${accountId}_${trackId}`) return {fallback: true};
   }
+  const integrity = await Promise.all(rows.map(row => replayIntegrityValid(row)));
+  const normalize = (row, index, slots) => preservePublishedIdentity(computeTrackEntries(
+    [{...row,integrityVerified:integrity[index]}],trackId,env,slots)[0],
+    snapshot.entries.find(entry => entry.accountId === (row.accountId || row.userId)));
+  // Restrict the shortcut to the complete root prefix and unchanged public input.
+  // Proof state is deliberately excluded only from this first candidate check.
+  const inlineCandidate = !prepared?.entriesLoaded && currentInlineTrackPrefix(prior,trackId) && rows.every((row,index) => {
+    const current = snapshot.entries.find(entry => entry.accountId === (row.accountId || row.userId));
+    const next = normalize(row,index,{});
+    return current && next && trackEntrySignature({...next,runVerified:current.runVerified}) === trackEntrySignature(current);
+  });
+  let entriesLoaded = !snapshot.pagination || prepared?.entriesLoaded === true;
+  const loadEntries = async () => {
+    if (!entriesLoaded) { snapshot.entries = await loadTrackPublicationEntries(env,snapshot,trackId); entriesLoaded = true; }
+  };
+  if (!inlineCandidate) await loadEntries();
   const queueCollection = verificationCollectionForTrack(trackId);
   const queue = prepared && Object.hasOwn(prepared,'queue') ? prepared.queue : await readDocument(env, queueCollection, trackId);
   if (!queue && queueCollection === EXTRA_VERIFICATION_COLLECTION && await readDocument(env, VERIFICATION_COLLECTION, trackId)) {
     throw new Error('EXTRA_QUEUE_BACKFILL_REQUIRED');
   }
   // Enqueue missed notifications before acknowledging discovery; reuse this queue's CAS version.
-  const slots = await persistVerificationRows(env, trackId, rows, queue);
-  const integrity = await Promise.all(rows.map(row => replayIntegrityValid(row)));
+  // Malformed/missing public pages must still fail before any proof mutation.
+  const slots = await persistVerificationRows(env, trackId, rows, queue, false, loadEntries);
+  if (inlineCandidate) {
+    // Fresh proof maintenance is not a publication. A newly accepted proof or
+    // review hold must still hydrate the complete field and change the board.
+    if (rows.every((row,index) => {
+      const current = snapshot.entries.find(entry => entry.accountId === (row.accountId || row.userId));
+      return trackEntrySignature(normalize(row,index,slots)) === trackEntrySignature(current);
+    })) return {fallback:false,changed:false,revision:Number(snapshot.revision || 0)};
+    await loadEntries();
+  }
   const entries = snapshot.entries.slice();
   const positions = new Map(entries.map((entry, index) => [safeText(entry.accountId || entry.userId, 128), index]));
   let changed = false;

@@ -2,16 +2,29 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 319,
+    "number": 320,
     "version": "0.6.3",
-    "revision": 267,
+    "revision": 268,
     "notes": [
-      "Updated saved personal bests, rankings and profile data.",
-      "Kept earlier event results paired with their saved replays.",
-      "Some recent runs are still waiting for verification."
+      "Leader names, records and personal bests load more reliably.",
+      "Event placements and Event RP badges now match across menus.",
+      "Clearer route targets and practice suggestions use your saved results.",
+      "Updates work from game menus without interrupting a run.",
+      "Reduced repeated cloud work and improved overnight replay checks."
     ]
   },
   "entries": [
+    {
+      "number": 319,
+      "title": "Refresh snapshot downloads and release notes",
+      "commit": "376b05cc1212f57cafc5e443b87582992a66ba02",
+      "committedAt": "2026-11-07T18:40:20.000Z",
+      "notes": [
+        "Updated saved personal bests, rankings and profile data.",
+        "Kept earlier event results paired with their saved replays.",
+        "Some recent runs are still waiting for verification."
+      ]
+    },
     {
       "number": 318,
       "title": "Refresh public ranked snapshot with captured PBs and profiles",
@@ -180,18 +193,6 @@ const historyData = {
         "Improved weekly-track thumbnail layout.",
         "Fixed profile updates getting stuck behind other updates."
       ]
-    },
-    {
-      "number": 298,
-      "title": "Reduce obsolete profile reads and align owned cloud access",
-      "commit": "58ccdc1c357d0bd7a2ac9e9c188f1a25f8cb0c7e",
-      "committedAt": "2026-11-06T03:56:37.000Z",
-      "notes": [
-        "Improved cloud compatibility across supported Google Sites embeds.",
-        "Reduced repeat profile-update work.",
-        "Added privacy-safe connection counters to help diagnose upload problems.",
-        "Unofficial copies using this update keep saves local."
-      ]
     }
   ],
   "coverage": {
@@ -233,14 +234,16 @@ export function selectReleaseHistory(release, history = RELEASE_HISTORY) {
   return valid ? {matches:true, entries:history.entries, olderOmitted:history.coverage.olderOmitted} : {matches:false, entries:[], olderOmitted:false};
 }
 
-/** Count recorded manual commits, never differences between release numbers. */
+/** Count recorded published releases, never commit or revision-number gaps. */
 export function countKnownUpdates(release, isAcknowledged, history = RELEASE_HISTORY) {
   const selected = selectReleaseHistory(release, history);
   if (!selected.matches || typeof isAcknowledged !== 'function') return null;
-  const numbers = [release.number, ...selected.entries.map(entry => entry.number)].filter(positiveInteger);
+  // A manual commit is not necessarily a published release. Count only entries
+  // with a release number and matching central release notes, never revision gaps.
+  const published = [{number:release.number}, ...selected.entries.filter(entry => positiveInteger(entry.number) && finishedNotes(entry.notes))];
+  const numbers = published.map(entry => entry.number);
   if (new Set(numbers).size !== numbers.length) return null; // Old acknowledgement keys cannot disambiguate repeated titles.
-  for (const [index, entry] of [{number:release.number}, ...selected.entries].entries()) {
-    if (!positiveInteger(entry.number)) continue;
+  for (const [index, entry] of published.entries()) {
     try { if (isAcknowledged(entry.number) === true) return index; } catch { /* Missing/blocked storage is not a first-play measurement. */ }
   }
   return null;

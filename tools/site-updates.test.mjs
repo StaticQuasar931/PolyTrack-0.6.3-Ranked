@@ -97,6 +97,31 @@ test('checks static update data during a race but defers prompts and skips hidde
   idle=true; h.handle.resume(); assert.ok(h.document.button); assert.equal(h.reloadChecks,0); h.handle.dispose();
 });
 
+test('existing update offers follow every menu but disappear during runs, replays and editing',async()=>{
+  let surface='settings',reloads=0;
+  const safe=()=>!['race','track','replay','editor'].includes(surface);
+  const h=harness({isIdle:safe,canReload:safe});
+  h.document.defaultView=Object.assign(new EventTarget(),{location:{reload(){reloads++;}}});
+  await h.handle.check();const button=h.document.button;
+  for(const menu of ['main','settings','profile','events','track-selection','leaderboard']){
+    surface=menu;h.handle.resume();assert.equal(button.hidden,false,menu);
+    button.listeners.click();assert.equal(reloads,1);reloads=0;
+  }
+  for(const active of ['race','track','replay','editor']){
+    surface=active;h.handle.resume();assert.equal(button.hidden,true,active);
+    button.listeners.click({preventDefault(){}});assert.equal(reloads,0);
+  }
+  surface='events';h.handle.resume();assert.equal(button.hidden,false);
+  assert.equal(h.calls,1,'transitions reuse static discovery, not network polling');h.handle.dispose();
+});
+
+test('unsupported modal defers across live run transitions without losing the manifest',async()=>{
+  let safe=true;const h=harness({response:{revision:44,minimumSupportedRevision:44},isIdle:()=>safe});
+  await h.handle.check();assert.ok(h.document.dialog);
+  safe=false;h.handle.resume();assert.equal(h.document.dialog,undefined);
+  safe=true;h.handle.resume();assert.ok(h.document.dialog);assert.equal(h.calls,1);h.handle.dispose();
+});
+
 test('focus after an hour catches up once and retains the network cooldown',async()=>{
   const document=new FakeDocument(); document.defaultView=new EventTarget();
   const h=harness({document,response:{revision:43}});await h.handle.check();assert.equal(h.calls,1);
@@ -1144,7 +1169,7 @@ test('blocked floating feedback watches only menu mutations, coalesces callbacks
  document.defaultView.MutationObserver=class{constructor(callback){this.callback=callback;observer=this;}observe(target,options){assert.equal(target,document.body);assert.deepEqual(options.attributeFilter,['class','style','hidden','open']);}disconnect(){disconnects++;}};
  const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,isIdle:()=>idle,canReload:()=>true,fetch:async()=>jsonResponse({revision:44})});
  await h.handle.check();assert.equal(observer,undefined,'no observer or extra polling before a blocked click');
- idle=false;document.button.listeners.click();assert.equal(document.button.textContent,'To update, return to main menu');
+ idle=false;document.button.listeners.click();assert.equal(document.button.textContent,'To update, leave the current run or editor');
  observer.callback([{type:'childList',target:{matches:()=>false},addedNodes:[{nodeType:3}],removedNodes:[]}]);
  assert.equal([...h.timers.values()].filter(timer=>timer.delay===100).length,0,'HUD text changes do not schedule safety work');
  observer.callback();observer.callback();assert.equal([...h.timers.values()].filter(timer=>timer.delay===100).length,1);

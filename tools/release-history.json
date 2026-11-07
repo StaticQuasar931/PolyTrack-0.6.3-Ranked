@@ -1,16 +1,29 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 319,
+    "number": 320,
     "version": "0.6.3",
-    "revision": 267,
+    "revision": 268,
     "notes": [
-      "Updated saved personal bests, rankings and profile data.",
-      "Kept earlier event results paired with their saved replays.",
-      "Some recent runs are still waiting for verification."
+      "Leader names, records and personal bests load more reliably.",
+      "Event placements and Event RP badges now match across menus.",
+      "Clearer route targets and practice suggestions use your saved results.",
+      "Updates work from game menus without interrupting a run.",
+      "Reduced repeated cloud work and improved overnight replay checks."
     ]
   },
   "entries": [
+    {
+      "number": 319,
+      "title": "Refresh snapshot downloads and release notes",
+      "commit": "376b05cc1212f57cafc5e443b87582992a66ba02",
+      "committedAt": "2026-11-07T18:40:20.000Z",
+      "notes": [
+        "Updated saved personal bests, rankings and profile data.",
+        "Kept earlier event results paired with their saved replays.",
+        "Some recent runs are still waiting for verification."
+      ]
+    },
     {
       "number": 318,
       "title": "Refresh public ranked snapshot with captured PBs and profiles",
@@ -178,18 +191,6 @@
         "Clearer snapshot status and navigation labels.",
         "Improved weekly-track thumbnail layout.",
         "Fixed profile updates getting stuck behind other updates."
-      ]
-    },
-    {
-      "number": 298,
-      "title": "Reduce obsolete profile reads and align owned cloud access",
-      "commit": "58ccdc1c357d0bd7a2ac9e9c188f1a25f8cb0c7e",
-      "committedAt": "2026-11-06T03:56:37.000Z",
-      "notes": [
-        "Improved cloud compatibility across supported Google Sites embeds.",
-        "Reduced repeat profile-update work.",
-        "Added privacy-safe connection counters to help diagnose upload problems.",
-        "Unofficial copies using this update keep saves local."
       ]
     }
   ],

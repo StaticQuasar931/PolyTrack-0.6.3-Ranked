@@ -22,6 +22,7 @@ before(async()=>{
   server=http.createServer((req,res)=>{
     const name=new URL(req.url,'http://localhost').pathname;
     if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Native Kodub ERP regression</title>');return;}
+    if(/^\/images\/state_(verified|pending)\.svg$/.test(name)){res.setHeader('Content-Type','image/svg+xml');res.end(fs.readFileSync(path.join(repo,name.slice(1))));return;}
     const target=path.resolve(repo,'.'+name);
     if(!target.startsWith(path.resolve(repo)+path.sep)||!/^\/(events|tools)\/[a-z0-9-]+\.mjs$/.test(name)){res.writeHead(404).end();return;}
     try{res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(target));}catch{res.writeHead(404).end();}
@@ -94,7 +95,7 @@ test('snapshot epoch replacement discards late old awards and clears already ren
   await p.evaluate(()=>{window.resolveOld=resolveBoard;snapshotEpoch++;eventUi.invalidateNormalLeaderboardERP();batch();});
   await p.waitForFunction(()=>staticReads===2);
   await p.evaluate(()=>{resolveOld(saved);});
-  assert.equal(await labelFor(p,eventBoard.entries[0].accountId).innerText(),'Event ERP loading');
+  assert.equal(await labelFor(p,eventBoard.entries[0].accountId).innerText(),'');
   await p.evaluate(()=>{const next=structuredClone(saved);next.entries[0].rp=0;resolveBoard(next);});
   await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='0 ERP');
   await p.evaluate(()=>eventUi.invalidateNormalLeaderboardERP());
@@ -123,11 +124,11 @@ test('unknown, zero and unavailable scores never become invented awards or trigg
   const board=structuredClone(eventBoard);board.entries[0].rp=0;delete board.entries[1].rp;board.entries.pop();
   const p=await fixture(t,{board});
   await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='0 ERP');
-  assert.equal(await labelFor(p,board.entries[1].accountId).innerText(),'ERP unavailable');
+  assert.equal(await labelFor(p,board.entries[1].accountId).textContent(),'');
   const outside=normalBoard.entries.find(row=>!board.entries.some(entry=>entry.accountId===row.accountId));
-  assert.equal(await labelFor(p,outside.accountId).innerText(),'No published Event PB');
+  assert.equal(await labelFor(p,outside.accountId).textContent(),'');
   await p.evaluate(()=>{snapshotEpoch++;saved=null;batch();});
-  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='Event ERP unavailable');
+  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
   assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[2,0]);
 });
 test('equal time with another replay stays a separate Event PB and never changes ordinary proof',async t=>{
@@ -158,14 +159,14 @@ test('account change and event expiry reject pending hydration without leaking o
 test('wrong period, track, kind or explicit negative event proof cannot supply a native award',async t=>{
   const bad=structuredClone(eventBoard);bad.period.trackId='f'.repeat(64);
   const p=await fixture(t,{board:bad});
-  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='Event ERP unavailable');
+  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
   for(const change of ['id','kind','proof']){
     await p.evaluate(({eventBoard,change})=>{
       saved=structuredClone(eventBoard);snapshotEpoch++;
       if(change==='proof')saved.entries[0].eventRpEligible=false;
       else saved.period[change]='wrong';batch();
     },{eventBoard,change});
-    await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='Event ERP unavailable');
+    await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
   }
   assert.equal(await p.evaluate(()=>liveReads),0);
 });
@@ -209,10 +210,33 @@ for(const [width,height] of [[430,932],[1366,768]])test('native Kodub ERP fits r
   const screenshot=path.join(os.tmpdir(),'polytrack-native-kodub-'+width+'.png');await p.screenshot({path:screenshot});
   const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.x,b.x)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y)>1;
   for(const [i,m] of measurements.entries()){
-    assert.ok(Math.abs(m.age.width-before[i].width)<=1&&Math.abs(m.age.height-before[i].height)<=1,JSON.stringify({width,before:before[i],m,screenshot}));
-    assert.ok(!overlaps(m.erp,m.age)&&!overlaps(m.erp,m.name)&&!overlaps(m.erp,m.time),JSON.stringify({width,m,screenshot}));
+    assert.ok(m.erp.x>=m.age.x-1&&m.erp.right<=m.age.right+1&&m.erp.y>=m.age.y-1&&m.erp.bottom<=m.age.bottom+1,JSON.stringify({width,m,screenshot}));
+    assert.ok(!overlaps(m.age,m.name)&&!overlaps(m.erp,m.name)&&!overlaps(m.erp,m.time),JSON.stringify({width,m,screenshot}));
     assert.ok(m.erp.x>=m.row.x&&m.erp.right<=m.row.right+1&&m.erp.y>=m.row.y&&m.erp.bottom<=m.row.bottom+1,JSON.stringify({width,m,screenshot}));
+    assert.ok(m.age.x>=m.row.x&&m.age.right<=m.row.right+1&&m.age.y>=m.row.y&&m.age.bottom<=m.row.bottom+1,JSON.stringify({width,m,screenshot}));
     assert.match(m.text,/Event PB .*ERP/);assert.equal(m.clipped,false,JSON.stringify({width,m}));
   }
   assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[1,0]);
+});
+
+test('temporary Kodub snapshot failure recovers all visible labels with one coalesced static retry',async t=>{
+ const p=await fixture(t,{board:null});
+ await p.waitForFunction(()=>[...document.querySelectorAll('.sq-normal-kodub-erp')].every(node=>node.textContent===''));
+ await p.evaluate(()=>{for(let i=0;i<20;i++)batch();});
+ assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[1,0]);
+ await p.evaluate(({eventBoard,at})=>{window.saved=eventBoard;Date.now=()=>at+30001;batch();},{eventBoard,at:publishedAt});
+ await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='489 ERP');
+ assert.equal(await p.locator('.sq-normal-kodub-erp').count(),22);
+ assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[2,0]);
+});
+
+test('persistent Kodub static failure stops after three attempts, without live fallback or tick polling',async t=>{
+ const p=await fixture(t,{board:null});
+ await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
+ for(const offset of [30001,150002]){
+  await p.evaluate(at=>{Date.now=()=>at;batch();},publishedAt+offset);
+  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
+ }
+ await p.evaluate(at=>{Date.now=()=>at;for(let i=0;i<20;i++)batch();},publishedAt+1000000);
+ assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[3,0]);
 });

@@ -243,6 +243,73 @@ test('audit275: stationary 1136-row rebuild reuses proven history but reads ever
   f.report('stationary-full-rebuild');
 });
 
+for (const rolling of [false,true]) test('quota identical full rebuild reuses publication and preserves final root fence: '+rolling,async t=>{
+  const f=await fixture(t,{trackId:rolling?PERMANENT_ROLLING_HILLS.trackId:track,count:1136});
+  await f.finish(true);
+  const key=f.keys.boardKey,oldBoard=structuredClone(f.data.get(key));
+  const oldMeta=structuredClone(f.data.get(metaKey));
+  const totalKey='0.6.2_event_public/totals',oldTotals=structuredClone(f.data.get(totalKey));
+  const id=rolling?PERMANENT_ROLLING_HILLS.trackId:track;
+  f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[id],pendingFullRebuildTrackIds:[id],activeFullRebuildTrackId:id});
+  const before={...f.stats},first=f.commits.length;
+  await f.finish(true);
+  const delta=Object.fromEntries(Object.keys(before).map(k=>[k,f.stats[k]-before[k]]));
+  assert.deepEqual({reads:delta.reads,writes:delta.writes},baseline
+    ? {reads:2330+Number(rolling),writes:47+Number(rolling)} : {reads:2329,writes:33});
+  assert.equal(delta.canonicalRows,1136); assert.equal(delta.currentProof,1136);
+  const final=f.commits.slice(first).find(w=>completed(w,f.keys.buildKey));
+  assert.ok(contains(final,key)); assert.ok(contains(final,reconcileKey));
+  if(!baseline){
+    assert.equal(final.length,3,'completion, unchanged root CAS, queue discharge');
+    assert.deepEqual(f.data.get(key),oldBoard);
+    assert.deepEqual(f.data.get(metaKey),oldMeta);
+    assert.deepEqual(f.data.get(totalKey),oldTotals);
+    assert.equal(f.commits.slice(first).flat().filter(w=>w.update.name.includes('/'+PUBLIC_PAGE_COLLECTION+'/')).length,0);
+  }
+  process.stdout.write('QUOTA_IDENTICAL_REBUILD_COST '+JSON.stringify({baseline,rolling,...delta})+'\n');
+});
+
+test('quota equal signature cannot hide changed full-field metadata',async t=>{
+  const f=await fixture(t); await f.finish(true);
+  const signature=f.data.get(boardKey).signature,revision=f.data.get(boardKey).revision;
+  const r=f.rows[0]; f.set(results+'/'+r.accountId+'_'+track,{...r,pbCount:9});
+  f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[track],pendingFullRebuildTrackIds:[track],activeFullRebuildTrackId:track});
+  await f.finish(true);
+  assert.equal(f.data.get(boardKey).signature,signature,'pbCount is not part of the legacy signature');
+  assert.equal(f.data.get(boardKey).revision,revision+1);
+  assert.equal(f.data.get(boardKey).entries[0].pbCount,9);
+});
+
+for(const conflict of ['root','queue','lost-response'])test('quota identical full rebuild retains atomic recovery: '+conflict,async t=>{
+  const f=await fixture(t); await f.finish(true);
+  const old=structuredClone(f.data.get(boardKey));
+  f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[track],pendingFullRebuildTrackIds:[track],activeFullRebuildTrackId:track});
+  let fired=false;
+  if(conflict==='lost-response')f.control.afterCommit=writes=>{
+    if(!fired&&completed(writes)){fired=true;throw Error('FIRESTORE_503');}
+  };
+  else f.control.beforeCommit=writes=>{
+    if(!fired&&completed(writes)){
+      fired=true;
+      if(conflict==='root')f.set(boardKey,{...f.data.get(boardKey),revision:old.revision+1,marker:'newer'});
+      else f.set(reconcileKey,{...f.data.get(reconcileKey),marker:'newer'});
+    }
+  };
+  await assert.rejects(f.finish(true),conflict==='lost-response'?/FIRESTORE_503/:/FIRESTORE_412/);
+  assert.equal(fired,true);
+  if(conflict==='lost-response'){
+    assert.equal(f.data.get(f.keys.buildKey).complete,true);
+    assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[]);
+    const before={...f.stats};await f.finish(true);
+    assert.equal(f.stats.reads-before.reads,1);assert.equal(f.stats.writes-before.writes,0);
+  }else{
+    assert.equal(f.data.get(f.keys.buildKey).complete,false);
+    assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds,[track]);
+    if(conflict==='root')assert.equal(f.data.get(boardKey).marker,'newer');
+    else assert.deepEqual(f.data.get(boardKey),old);
+  }
+});
+
 for (const mode of ['newer-review', 'nanosecond-newer-review', 'deleted', 'missing-version', 'invalid-version'])
 test('proof snapshot reuse falls back for a changed or uncertain shard: ' + mode, async t => {
   const f = await fixture(t, {count:501}), row = f.rows[0];
@@ -373,8 +440,8 @@ test('audit275: cosmetic fanout after 900 scanned rows invalidates the full-buil
   assert.equal(f.data.get(boardKey).entries[0].name, f.identity.name);
   assert.deepEqual(f.errors, []);
   assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
-    baseline ? {reads:6215,writes:74,requests:163} : {reads:4167,writes:74,requests:130},
-    'base-version restart remains mandatory; unchanged proofs can establish snapshot history');
+    baseline ? {reads:6215,writes:74,requests:163} : {reads:4166,writes:60,requests:128},
+    'base-version restart remains mandatory; its identical final generation reuses published pages');
   f.report('cosmetic-invalidates-900-row-prefix');
 });
 
@@ -971,7 +1038,8 @@ for(const backpressure of [undefined,'enabled'])test('backpressure complete burs
   assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
   assert.deepEqual(f.errors,[]);
   if(keyed)assert.equal(f.stats.canonicalRows,0);
-  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes},keyed?{reads:1176,writes:537}:{reads:baseline?7270:4984,writes:504});
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes},keyed?{reads:1176,writes:537}
+    :baseline?{reads:7270,writes:504}:{reads:4971,writes:490});
   for(const row of f.rows.slice(f.changes.length)){
     const actual=published.find(entry=>entry.accountId===row.accountId);
     assert.equal(actual.timeMs,row.timeMs);assert.equal(actual.runVerified,true);

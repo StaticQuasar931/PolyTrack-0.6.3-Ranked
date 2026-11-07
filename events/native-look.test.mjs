@@ -38,15 +38,25 @@ test('event row ordinal structure matches the actual shipped native renderer and
 
 test('preview cards retain compact placement boxes while sidebar uses ordinals and a truthful loaded-field percentile',()=>{
   const place={rank:4,knownFieldSize:200,provisional:false},before=structuredClone(place);
-  assert.equal(eventOwnPlacementPresentation(place).text,'4/200');
+  assert.equal(eventOwnPlacementPresentation(place).text,'4th of 200');
   assert.match(eventOwnPlacementPresentation(place).className,/sq-record-placement/);
   assert.equal(eventSidebarPlacementPresentation(place).text,'4th (2%)');
   assert.equal(eventSidebarPlacementPresentation({...place,rank:1}).text,'1st (0.5%)');
   assert.equal(eventSidebarPlacementPresentation({...place,rank:11}).text,'11th (5.5%)');
-  assert.equal(eventSidebarPlacementPresentation({...place,knownFieldSize:241,provisional:true}).text,'4th* (1.6598%)');
+  assert.equal(eventSidebarPlacementPresentation({...place,knownFieldSize:241,provisional:true}).text,'4th (provisional) (1.6598%)');
   assert.match(eventSidebarPlacementPresentation(place).title,/200 loaded racers/);
   assert.equal(eventSidebarPlacementPresentation({rank:4}).text,'4th');
   assert.equal(eventSidebarPlacementPresentation({rank:0}),null);assert.deepEqual(place,before);
+});
+
+test('weekly placement previews use ordinal and loaded field, not font-dependent symbols',()=>{
+  for(const [rank,ordinal] of [[1,'1st'],[2,'2nd'],[3,'3rd'],[11,'11th'],[12,'12th'],[13,'13th'],[22,'22nd']]){
+    const place={rank,knownFieldSize:200,provisional:true};
+    assert.equal(eventOwnPlacementPresentation(place).text,ordinal+' of 200 (provisional)');
+    assert.doesNotMatch(eventOwnPlacementPresentation(place).text,/[xX*\/]/);
+    assert.match(eventOwnPlacementPresentation(place).title,/provisional/);
+    assert.equal(eventSidebarPlacementPresentation(place).ordinal,ordinal+' (provisional)');
+  }
 });
 
 test('event personal-best DOM matches native timer/span and trophy/text/faded-percent rows without badge fonts',()=>{
@@ -64,6 +74,10 @@ test('event personal-best DOM matches native timer/span and trophy/text/faded-pe
   assert.equal(host.childNodes[0].childNodes[1].className,'faded');assert.equal(host.childNodes[1].textContent,'---');
   renderEventPersonalBest(host,{timeText:'00:20.000',placement:null,pending:true});
   assert.equal(host.childNodes[1].textContent,'Waiting');
+  renderEventPersonalBest(host,{timeText:'00:20.000',placement:null,pending:true,local:true});
+  assert.equal(host.childNodes[1].textContent,'Local PB');
+  renderEventPersonalBest(host,{timeText:'00:20.000',placement,pending:true,local:true});
+  assert.match(host.childNodes[1].title,/not submitted or verified/);
 });
 
 test('Rolling Hills featured label and event preview placement boxes remain scoped and native-looking',()=>{

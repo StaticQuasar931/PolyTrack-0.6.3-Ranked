@@ -1,3 +1,4 @@
+import {createSnapshotMetadataRecovery} from './snapshot-metadata-recovery.mjs';
 import createClientSourceRunner from './client-source-harness.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,9 +33,9 @@ const row = (id, timeMs = 20000) => ({userId: id, name: id, timeMs, timingVersio
 const cached = (id, fetchedAt = 1000000) => ({entries: [row(id)], fetchedAt, serverUpdatedAt: 100, revision: 1, algorithmVersion: 'model'});
 const board = (id, revision = 2) => ({entries: [row(id)], updatedAt: 200, revision, algorithmVersion: 'model', schemaVersion: 6, complete: true, totalEntries: 1});
 
-function trackHarness(initial = {}, unranked = [], {snapshotOnly=false} = {}) {
+function trackHarness(initial = {}, unranked = [], {snapshotOnly=false,coldMetadata=false} = {}) {
   const cache = new Map(Object.entries(initial)), metadata = [], loads = [], extraLoads = [], timers = [], repaints = [], classes = new Set(), visibility = [];
-  const replayInvalidations = [];
+  const replayInvalidations = [],identityMetadata=[],metadataReads=[];
   let account='one', host={visible:true};
   const context = vm.createContext({
     Date: {now: () => 1000000}, trackLoadGeneration: 0, currentTrackLoadState: {},
@@ -46,7 +47,11 @@ function trackHarness(initial = {}, unranked = [], {snapshotOnly=false} = {}) {
     writeTrackSnapshotCache: (id, entries, updatedAt, detail) => {
       cache.set(id, {...detail, entries, fetchedAt: 1000000, serverUpdatedAt: updatedAt}); return true;
     },
-    readPublicSnapshotBackup: () => metadata.length ? metadata.shift().promise : Promise.resolve({}),
+    readPublicSnapshotBackup: async () => {
+      const value=await (metadata.length?metadata.shift().promise:Promise.resolve({}));
+      if(!context.metadataRecovery)context.metadataRecovery=makeMetadataRecovery();
+      return value;
+    },
     fetchRankedSnapshot: (_kind, id, options) => { const pending = deferred(); loads.push({id, options, ...pending}); return pending.promise; },
     fetch: url => { const pending = deferred(); extraLoads.push({id: new URL(url).searchParams.get('trackId'), ...pending}); return pending.promise; },
     rankedBrokerUrl: () => 'https://example.test', AbortSignal: {timeout: () => undefined},
@@ -55,15 +60,25 @@ function trackHarness(initial = {}, unranked = [], {snapshotOnly=false} = {}) {
     setTimeout: (callback, delay) => { timers.push({callback, delay}); return timers.length; }, updateTrackFreshnessBanner: () => {},
     applyCanonicalTrackWeight: (_id, rows) => rows, canonicalRaceTimeMs: entry => entry.timeMs,
     computeTrackTopEntries: rows => rows, enrichLegacyLeaderboardEntries: rows => rows,
-    canonicalDisplayName: (_id, name) => name, rowIdentityFreshness: () => 0,
+    canonicalDisplayName: (_id, name) => name, cleanUserId: value => String(value||''),
+    snapshotRacerDirectoryEntries:{},PROFILE_COSMETICS_KEY:'test-profile-cosmetics',readJsonStorage:(_key,fallback)=>fallback,
     snapshotOnlyForNewAccount: () => snapshotOnly, db: () => { throw Error('Unexpected database access'); },
     noteFirebaseQuota: () => {}, localRaceRowsForTrack: () => [], ageLabel: () => 'old', log: () => {}
   });
+  function makeMetadataRecovery(){
+    return createSnapshotMetadataRecovery({now:()=>1000000,read:kind=>{
+      metadataReads.push(kind);
+      assert.equal(kind,'racer-directory','cached selection only ensures identity after its stats read');
+      return identityMetadata.length?identityMetadata.shift().promise:Promise.resolve({entries:{}});
+    },onValue:(kind,value)=>{if(kind==='racer-directory')context.snapshotRacerDirectoryEntries=value.entries;}});
+  }
+  context.metadataRecovery=coldMetadata?null:makeMetadataRecovery();
+  for(const name of ['rowIdentityFreshness','snapshotRacerDirectoryIdentity','overlaySnapshotRacerDirectory'])runClientSource(extract(name),context);
   runClientSource(extract('hydratePlannerTrackSummaries'), context);
   runClientSource(section('  const trackCloudRetryAt=new Map();', '  function computeOverallFromRaceRows('), context);
   context.scheduleNativeTrackSnapshotRefresh = id => repaints.push(id);
   return {
-    context, cache, metadata, loads, extraLoads, repaints, timers, visibility, replayInvalidations,
+    context, cache, metadata, identityMetadata, metadataReads, loads, extraLoads, repaints, timers, visibility, replayInvalidations,
     setAccount:value=>{account=value;},setHost:value=>{host=value;},
     get: (...args) => context.getTrackEntries(...args),
     state: () => plain(context.currentTrackLoadState),
@@ -211,7 +226,7 @@ test('unranked B -> C -> B also adopts the existing B load', async () => {
   assert.equal(h.state().status, 'cloud'); assert.equal(h.loading(), false);
 });
 
-function profileMerges(primary, incoming, selfPresent = true, normalize = false) {
+function profileMerges(primary, incoming, selfPresent = true, normalize = false, profileSort = 'place') {
   const profile = extract('openRankedProfile');
   const ownStart = profile.indexOf('    const cachedFinishes=');
   const ownEnd = profile.indexOf('    const rankedDetails=', ownStart);
@@ -219,7 +234,7 @@ function profileMerges(primary, incoming, selfPresent = true, normalize = false)
   const rivalEnd = profile.indexOf('    const comparisonFor=', rivalStart);
   assert.ok(ownStart >= 0 && ownEnd > ownStart && rivalStart > ownEnd && rivalEnd > rivalStart);
   const context = vm.createContext({
-    entry: {userId: 'self', resultSamples: primary}, self: selfPresent ? {userId: 'self', resultSamples: primary} : null,
+    profileSort, entry: {userId: 'self', resultSamples: primary}, self: selfPresent ? {userId: 'self', resultSamples: primary} : null,
     overallLoadState: {serverUpdatedAt: 999999}, normalizedFinishSamples: () => primary,
     cachedProfileFinishes: () => incoming,
     rankedTrackWeightParts: () => ({finalWeight: 1}), snapshotCaptureTimestamp: value => Number(value) || 0
@@ -389,7 +404,7 @@ test('normalization cannot erase the primary correction date', () => {
 });
 
 test('raw metadata cannot attach a rejection to a different PB or fresher normalized observation', () => {
-  const context = vm.createContext({});
+  const context = vm.createContext({profileSort:'place'});
   runClientSource(extract('mergePlannerFinishes'), context);
   const raw = finish({validationState: 'rejected', cachedAt: 300});
   for (const primary of [finish({timeMs: 19000, cachedAt: 300}), finish({cachedAt: 400})]) {
@@ -625,4 +640,46 @@ test('metadata wires the production planner hydration helper without taking nati
   assert.equal(refreshes[0].selection,selection);assert.equal(refreshes[0].generation,generation);
   assert.equal(h.context.getTrackEntries.selection,selection);assert.equal(h.context.trackLoadGeneration,generation);
   assert.equal(h.loads.length,0);assert.deepEqual(h.repaints,[]);assert.equal(h.loading(),false);
+});
+
+test('cached identity waits on one real coalesced directory ensure before publishing rows',async()=>{
+  const saved={...cached('old-name'),entries:[{...row('racer'),name:'old-name',identityUpdatedAt:100,pbAt:900000,profileCosmetics:{theme:'old'}}]};
+  const h=trackHarness({A:saved}),gate=deferred(),published=[];
+  h.identityMetadata.push(gate);
+  const first=h.context.metadataRecovery.ensure('racer-directory');
+  assert.equal(h.context.metadataRecovery.ensure('racer-directory'),first,'ensure must coalesce the in-flight read');
+  const request=h.get('A').then(rows=>{published.push(...rows.map(row=>row.name));return rows;});
+  await tick();
+  assert.deepEqual(published,[],'cached old names must not be released while identity is pending');
+  assert.deepEqual(h.metadataReads,['racer-directory']);
+  gate.resolve({entries:{racer:{name:'current-name',updatedAt:300,profileCosmetics:{theme:'current'}}}});
+  const rows=await request;
+  assert.deepEqual(published,['current-name']);
+  assert.equal(rows[0].profileCosmetics.theme,'current');
+  assert.equal(h.cache.get('A').entries[0].name,'old-name','overlay does not mutate saved source evidence');
+  assert.equal(h.loads.length,0);assert.ok(!h.visibility.includes('hide'));
+});
+
+test('cold null metadata initializes through the stats read then waits before cached-row release',async()=>{
+  const saved={...cached('old-name'),entries:[{...row('racer'),name:'old-name',identityUpdatedAt:100}]};
+  const h=trackHarness({A:saved},[],{coldMetadata:true}),stats=deferred(),directory=deferred(),published=[];
+  h.metadata.push(stats);h.identityMetadata.push(directory);
+  assert.equal(h.context.metadataRecovery,null);
+  const request=h.get('A').then(rows=>{published.push(...rows.map(row=>row.name));return rows;});
+  await tick();
+  assert.equal(h.context.metadataRecovery,null,'initialization is delayed until the package stats read completes');
+  assert.deepEqual(h.metadataReads,[]);assert.deepEqual(published,[]);
+  stats.resolve({tracks:{}});await tick();
+  assert.ok(h.context.metadataRecovery,'package read initializes the actual metadata manager');
+  assert.deepEqual(h.metadataReads,['racer-directory'],'ensure must be evaluated AFTER initialization');
+  assert.deepEqual(published,[],'no old-name flash between stats initialization and identity completion');
+  directory.resolve({entries:{racer:{name:'current-name',updatedAt:300}}});
+  const rows=await request;
+  assert.deepEqual(published,['current-name']);assert.equal(rows[0].name,'current-name');
+  assert.equal(h.loads.length,0);assert.equal(h.loading(),false);
+});
+
+test('planner PB merge is independent of the season display sort',()=>{
+  const primary=[finish()],incoming=[finish({timeMs:19000,rank:2,cachedAt:200})];
+  assert.deepEqual(profileMerges(primary,incoming,true,false,'season'),profileMerges(primary,incoming,true,false,'place'));
 });

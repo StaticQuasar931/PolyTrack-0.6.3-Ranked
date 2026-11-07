@@ -24,7 +24,14 @@ test('prepared archive recovery passes zero-retry bounded auth and only exact GE
 test('pre-reset and changed plan fail before authentication',async t=>{const f=await fixture(t);await assert.rejects(repairPreparedLocalArchives({...f.options,now:()=>ARCHIVE_REPAIR_NOT_BEFORE-1}),/before reset/);f.options.receipt.archiveReplayRepair.sha256='0'.repeat(64);await assert.rejects(repairPreparedLocalArchives(f.options),/fingerprint/);assert.equal(f.connects(),0);});
 test('wrong collection, duplicate and unplanned documents never reach storage',async t=>{for(const kind of ['collection','duplicate','unknown']){const f=await fixture(t),id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{if(kind==='duplicate')await getDocument('0.6.2_event_replays',id);return getDocument(kind==='collection'?'other':'0.6.2_event_replays',kind==='unknown'?'bad':id);}}),/boundary/);assert.equal(f.gets(),kind==='duplicate'?1:0);}});
 test('missing or failed document closes the storage capability',async t=>{const f=await fixture(t);f.db.get=async()=>{throw Error('quota');};await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{const id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(getDocument('0.6.2_event_replays',id),/quota/);return getDocument('0.6.2_event_replays',f.targets[1].periodId+'_'+f.targets[1].accountId);}}),/boundary/);});
-test('archive recovery runs between source backup and native verification',async()=>{const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');assert.match(source,/const backup=await runPublicSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;[\s\S]*?repairPreparedLocalArchives/);});
+test('archive recovery runs after fresh or reused backup and before canonical capture and native verification',async()=>{
+  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+  assert.match(source,/const backup=reused\?\.manifest\|\|await runPublicSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;/);
+  const start=source.indexOf('capture:async options=>'),end=source.indexOf('nativePhase:createLocalNativePhaseReceipt',start);
+  assert(start>=0&&end>start);
+  const callback=source.slice(start,end),backup=callback.indexOf('const backup='),repair=callback.indexOf('await repairPreparedLocalArchives('),canonical=callback.indexOf('await captureLocalCompleteSources(');
+  assert(backup>=0&&repair>backup&&canonical>repair&&callback.indexOf('return backup;',canonical)>canonical);
+});
 
 
 test('a wrapped local backup keeps authenticated Overall, Event RP totals and local calculation stages',async()=>{
@@ -46,3 +53,58 @@ test('full local source capture freezes profiles at the canonical point and adva
 test('invalid saved profile watermark fails before credentials or database access',async t=>{const f=await sourceFixture(t);await fs.writeFile(f.summaryFile,'{}');await assert.rejects(captureLocalCompleteSources(f.options),/watermark/);assert.deepEqual(f.calls,[]);});
 test('incomplete canonical scan never starts profiles or advances any watermark',async t=>{const f=await sourceFixture(t),before=await fs.readFile(f.summaryFile,'utf8');await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async()=>({complete:false,imported:false})}),/incomplete/);assert.deepEqual(f.calls,['connect']);assert.equal(await fs.readFile(f.summaryFile,'utf8'),before);});
 test('the connected full-source capability cannot write to Firebase',async t=>{const f=await sourceFixture(t);await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async({db})=>db.call(':commit',{writes:[]})}),/forbids/);assert.equal(f.transportCalls(),0);});
+
+test('local canonical capture disables the later duplicate replay-export branch',async()=>{
+  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('const result=await updatePublicSnapshot('),end=source.indexOf('if(aborted)throw',start);
+  assert(start>=0&&end>start);const caller=source.slice(start,end);
+  assert.match(caller,/root,refreshReplays:false,replayDocumentLimit:null/);
+  assert.doesNotMatch(caller,/fullPublic\s*:\s*true|refreshReplays\s*:\s*true/);
+  assert.equal((caller.match(/await captureLocalCompleteSources\(/g)||[]).length,1);
+  const updater=await fs.readFile(new URL('./update-public-snapshot.mjs',import.meta.url),'utf8');
+  assert.match(updater,/export async function updatePublicSnapshot\(\{[^\n]*fullPublic = false, refreshReplays = false/);
+  const capture=updater.indexOf('backupResult=await capture('),exports=updater.indexOf('if (!offline && (fullPublic || refreshReplays))'),checkpoint=updater.indexOf('await captureCheckpoint(');
+  assert(capture>=0&&exports>capture&&checkpoint>exports,'the disabled export branch follows complete canonical capture');
+});
+
+// Exercise the production callback bodies without entering credential admission.
+test('scoring preflight validates offline before checkpoint and preserves the exact input',async()=>{
+  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+  const match=/captureCheckpoint:async input=>\{([\s\S]*?)\n\s*\},\s*capture:/.exec(source);
+  assert(match,'production scoring checkpoint callback must remain explicit');
+  const events=[],input={directory:'synthetic-staging',sourceCommit:'a'.repeat(40)};
+  const callback=Function('rebuildSnapshotOverall','checkpoint','return async input=>{'+match[1]+'}')(async options=>{
+    events.push('validate');assert.deepEqual(options,{directory:input.directory,validateOnly:true});
+    return {additionalFirestoreReads:0,additionalFirestoreWrites:0};
+  },async actual=>{events.push('checkpoint');assert.equal(actual,input);});
+  await callback(input);assert.deepEqual(events,['validate','checkpoint']);
+});
+
+for(const mode of ['reads','writes','missing-counters','validation-failure'])
+test('scoring checkpoint fails closed before persistence: '+mode,async()=>{
+  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+  const match=/captureCheckpoint:async input=>\{([\s\S]*?)\n\s*\},\s*capture:/.exec(source);assert(match);
+  let validations=0,checkpoints=0;
+  const callback=Function('rebuildSnapshotOverall','checkpoint','return async input=>{'+match[1]+'}')(async()=>{
+    validations++;if(mode==='validation-failure')throw Error('fixture scoring rejection');
+    return mode==='missing-counters'?{}:{additionalFirestoreReads:Number(mode==='reads'),additionalFirestoreWrites:Number(mode==='writes')};
+  },async()=>{checkpoints++;});
+  await assert.rejects(callback({directory:'synthetic'}),mode==='validation-failure'?/scoring rejection/:/preflight used backend/);
+  assert.equal(validations,1);assert.equal(checkpoints,0);
+});
+
+for(const mode of ['fresh','reused','deferred'])test('backup callback executes source stages once in order: '+mode,async()=>{
+  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+  const match=/capture:async options=>\{([\s\S]*?return backup;)\},\s*nativePhase:/.exec(source);assert(match);
+  const events=[],manifest={deferred:mode==='deferred',marker:'fixture'},capturedCanonical={readTime:'frozen-point'};
+  const callback=Function('reused','runPublicSnapshotBackup','repairPreparedLocalArchives','captureLocalCompleteSources',
+    'console','receipt','staging','fullPolicy','directory','capturedCanonical','capturedProfiles','process',
+    'return async options=>{'+match[1]+'}')(
+    mode==='reused'?{manifest,summary:{}}:null,
+    async options=>{events.push('backup');assert.deepEqual(options,{marker:'options'});return manifest;},
+    async()=>{events.push('repair');return null;},
+    async options=>{events.push('canonical');assert.equal(options.capturedCanonical,capturedCanonical);return {complete:true};},
+    {log:()=>{}},{},'synthetic-staging',fullPolicy,'synthetic-private',capturedCanonical,null,{env:{}});
+  assert.equal(await callback({marker:'options'}),manifest);
+  assert.deepEqual(events,mode==='deferred'?['backup']:mode==='reused'?['repair','canonical']:['backup','repair','canonical']);
+});

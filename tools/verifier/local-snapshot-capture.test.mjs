@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {loadCapturedNativeJobs,verifyCapturedSnapshot} from './local-snapshot-capture.mjs';
-import {ledgerBinding,ledgerKey} from '../native-verification-ledger.mjs';
+import {loadCapturedNativeJobs,verifyCapturedSnapshot,defaultCapturedReviewFactory} from './local-snapshot-capture.mjs';
+import {ledgerBinding,ledgerKey,writeLedger} from '../native-verification-ledger.mjs';
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),account='b'.repeat(64),engine='c'.repeat(64),fingerprint='d'.repeat(64),content='e'.repeat(64);
 const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=sha(replay);
@@ -94,4 +94,46 @@ test('capture changes during review abort before final compilation rather than a
     await write(`tracks/${track}.json`,{trackId:track,entries:[row],updatedAt:999});return factory(input);
   };
   await assert.rejects(verifyCapturedSnapshot(options),/source changed/);
+});
+
+test('bounded hydration preserves every job, gap, hold and source hash from serial hydration',async t=>{
+  const {directory,row,write}=await fixture(t),rows=[];
+  for(let index=1;index<=12;index++){
+    const current={...row,accountId:sha('bounded'+index),uploadId:index,needsReview:index===3};rows.push(current);
+    await write(`canonical/${track}/${current.accountId}.json`,current);
+    if(index!==7)await write(`recordings/${index}.json`,{...current,recording:replay});
+  }
+  await write(`tracks/${track}.json`,{trackId:track,entries:rows});
+  const serial=await loadCapturedNativeJobs({directory,readConcurrency:1});
+  const bounded=await loadCapturedNativeJobs({directory,readConcurrency:4});
+  assert.deepEqual(bounded,serial);assert.equal(bounded.coverage.knownBindings,12);
+  assert.equal(bounded.coverage.missingBindings,1);assert.equal(bounded.jobs.length,11);
+  assert.equal(bounded.jobs[2].needsReview,true);
+  for(const readConcurrency of [0,9,Infinity])await assert.rejects(loadCapturedNativeJobs({directory,readConcurrency}),/concurrency/);
+});
+
+test('only the same deeply frozen inventory avoids repeated whole-field serialization',async t=>{
+  const f=await fixture(t),loaded=await loadCapturedNativeJobs({directory:f.directory});
+  const jobs=Object.freeze(loaded.jobs.map(job=>Object.freeze(job)));
+  const sourceBinding={sourceCommit:'a'.repeat(40),captureSha256:loaded.captureSha256};
+  const ledger=writeLedger({root:f.options.ledgerRoot,entries:[],expectedManifestHash:null});
+  const stringify=JSON.stringify;let serialized=0;
+  t.mock.method(JSON,'stringify',function(value,...args){if(value===jobs[0])serialized++;return stringify(value,...args);});
+  const review=await defaultCapturedReviewFactory({jobs,sourceBinding,policy});
+  const input={jobs,allJobs:jobs,sourceBinding,policy,ledger,nativeResults:await f.options.verify(f.root,jobs)};
+  assert.equal((await review(input)).complete,true);assert.equal((await review(input)).complete,true);
+  assert.equal(serialized,1,'factory pins the inventory once; repeated batches do not rehash it');
+  const changed=structuredClone(jobs);changed[0].needsReview=true;
+  assert.equal((await review({...input,allJobs:changed})).reason,'captured_controls_inventory_changed');
+  assert.equal((await review.inspect()).indexBuilds,1);
+});
+
+test('mutable inventory never receives the immutable-review shortcut',async t=>{
+  const f=await fixture(t),{jobs,captureSha256}=await loadCapturedNativeJobs({directory:f.directory});
+  const sourceBinding={sourceCommit:'a'.repeat(40),captureSha256};
+  const review=await defaultCapturedReviewFactory({jobs,sourceBinding,policy});
+  const ledger=writeLedger({root:f.options.ledgerRoot,entries:[],expectedManifestHash:null});
+  jobs[0].needsReview=true;
+  const result=await review({jobs,allJobs:jobs,sourceBinding,policy,ledger,nativeResults:await f.options.verify(f.root,jobs)});
+  assert.equal(result.reason,'captured_controls_inventory_changed');
 });

@@ -17,7 +17,7 @@
     "BETA_CUTOFF_MS": "1791759954000",
     "RANKED_WRITES_ENABLED": "true",
     "PB_PUBLICATION_MODE": "coalesced",
-    "PB_COALESCED_TRACK_IDS_JSON": "[\"5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038\"]",
+    "PB_COALESCED_TRACK_IDS_JSON": "[\"5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038\",\"7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0\"]",
     "MIN_CLIENT_REVISION": "172",
     "MISSING_CLIENT_REVISION_POLICY": "allow",
     "WRITE_IP_RATE_LIMIT_REQUIRED": "true",
@@ -31,22 +31,55 @@
     "EVENT_CAPACITY_JSON": "{\"policyVersion\":\"event-2000-v2\",\"storageVersion\":2,\"entrants\":2000,\"admissionsPerPeriod\":2048,\"replayBytesPerPeriod\":16777216,\"minIntervalMs\":5000,\"verificationsPerDay\":1536}"
   },
   "ratelimits": [
-    {"name":"WRITE_IP_RATE_LIMITER","namespace_id":"6215","simple":{"limit":600,"period":60}},
-    {"name":"PUBLIC_READ_RATE_LIMITER","namespace_id":"6214","simple":{"limit":300,"period":60}},
-    {"name":"EVENT_RATE_LIMITER","namespace_id":"6213","simple":{"limit":60,"period":60}},
+    {
+      "name": "WRITE_IP_RATE_LIMITER",
+      "namespace_id": "6215",
+      "simple": {
+        "limit": 600,
+        "period": 60
+      }
+    },
+    {
+      "name": "PUBLIC_READ_RATE_LIMITER",
+      "namespace_id": "6214",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
+    },
+    {
+      "name": "EVENT_RATE_LIMITER",
+      "namespace_id": "6213",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    },
     {
       "name": "PB_NOTIFY_RATE_LIMITER",
       "namespace_id": "6211",
-      "simple": { "limit": 12, "period": 60 }
+      "simple": {
+        "limit": 12,
+        "period": 60
+      }
     },
     {
       "name": "REFRESH_RATE_LIMITER",
       "namespace_id": "6212",
-      "simple": { "limit": 4, "period": 60 }
+      "simple": {
+        "limit": 4,
+        "period": 60
+      }
     }
   ],
   "triggers": {
-    "crons": ["* * * * *", "*/2 * * * *", "*/5 * * * *", "1-59/5 * * * *", "2-59/5 * * * *"]
+    "crons": [
+      "* * * * *",
+      "*/2 * * * *",
+      "*/5 * * * *",
+      "1-59/5 * * * *",
+      "2-59/5 * * * *"
+    ]
   },
   "observability": {
     "enabled": true,

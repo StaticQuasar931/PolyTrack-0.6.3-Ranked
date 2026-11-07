@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {runBoundedCaptureProcess} from './local-capture-process.mjs';
+import {runBoundedCaptureProcess,terminateOwnedCaptureTree} from './local-capture-process.mjs';
 
 function fixture(patch = {}) {
   const child = new EventEmitter(), calls = [];
@@ -139,4 +139,41 @@ test('invalid timeout or missing IPC is rejected before spawning', async () => {
     await assert.rejects(runBoundedCaptureProcess(f.config), TypeError);
     assert.deepEqual(f.calls, []);
   }
+});
+
+test('termination capability ignores unowned objects even when supplied a plausible PID',async()=>{
+  await terminateOwnedCaptureTree({pid:process.pid},{isRunning:()=>true});
+  await terminateOwnedCaptureTree({pid:1},{isRunning:()=>true});
+});
+
+test('an owned object cannot redirect termination to a replaced PID',async()=>{
+  const f=fixture(),pending=runBoundedCaptureProcess(f.config);
+  f.child.pid=process.pid;
+  await terminateOwnedCaptureTree(f.child,{isRunning:()=>true});
+  f.exit();f.close();
+  assert.deepEqual(await pending,{status:0,signal:null,timedOut:false});
+  assert.equal(f.calls.includes('kill'),false);
+});
+
+for(const earlyClose of [false,true])test('a stalled tree terminator is bounded and cannot recover, early close '+earlyClose,async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture({killTree:()=>new Promise(()=>{})});
+  const pending=runBoundedCaptureProcess(f.config);
+  const rejected=assert.rejects(pending,/termination deadline exceeded/);
+  t.mock.timers.tick(10);t.mock.timers.tick(10);
+  await new Promise(resolve=>setImmediate(resolve));
+  if(earlyClose){f.exit(null,'SIGKILL');f.close();}
+  t.mock.timers.tick(10000);await rejected;
+  if(!earlyClose){f.exit();f.close();}
+  assert.equal(f.calls.some(value=>Array.isArray(value)&&value[0]==='recover'),false);
+});
+
+test('late successful tree termination after its deadline cannot revive recovery',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let stopped;
+  const f=fixture({killTree:()=>new Promise(resolve=>{stopped=resolve;})});
+  const pending=runBoundedCaptureProcess(f.config),rejected=assert.rejects(pending,/termination deadline exceeded/);
+  t.mock.timers.tick(10);t.mock.timers.tick(10);await new Promise(resolve=>setImmediate(resolve));
+  t.mock.timers.tick(10000);await rejected;
+  f.exit(null,'SIGKILL');f.close();stopped();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.calls.some(value=>Array.isArray(value)&&value[0]==='recover'),false);
 });

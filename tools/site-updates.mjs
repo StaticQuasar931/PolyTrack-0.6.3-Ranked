@@ -448,7 +448,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
 
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
-  let compatibility = null, pendingManifest = null;
+  let compatibility = null, pendingManifest = null, latestManifest = null;
   let oldCopyNotice = null, oldCopyDismissed = false, oldCopyCount = 0, oldCopyConfirmed = false;
   let blockedUpdate = false, blockedObserver = null, blockedTimer = null;
   const stopBlockedWatch = () => {
@@ -457,8 +457,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   const blockedFeedback = () => {
     blockedUpdate = true;
-    button.textContent = 'To update, return to main menu';
-    button.title = 'Your current game stays open. Return to the main menu, then click Update available.';
+    button.textContent = 'To update, leave the current run or editor';
+    button.title = 'Your current game stays open. Return to any menu, then click Update available.';
     button.setAttribute('aria-label', button.textContent);
     // Observe menu transitions only after an explicit blocked click; never poll or auto-reload.
     const Observer = document.defaultView?.MutationObserver;
@@ -474,7 +474,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       blockedObserver.observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['class','style','hidden','open']});
     }
   };
-  const reloadMessage = result => result === 'blocked' ? 'To update, return to main menu' : 'Update could not reload. Try again.';
+  const reloadMessage = result => result === 'blocked' ? 'To update, leave the current run or editor' : 'Update could not reload. Try again.';
   const failedReloadFeedback = () => {
     blockedUpdate = false; stopBlockedWatch();
     button.textContent = reloadMessage('failed');
@@ -550,6 +550,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   const failOpen = (reason = 'check-failed', recover = true) => {
     clearDialog();
+    pendingManifest = latestManifest = null;
     oldCopyConfirmed = false; clearOldCopyNotice();
     offlineMinimum = null;
     publish({ onlineAllowed: true, revision, latestRevision: null, minimumSupportedRevision: null, reason }, recover);
@@ -601,7 +602,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       const launcherCommit = automaticLauncherCommit(document);
       const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
       description.textContent = reloadHere
-        ? 'This version is no longer supported for online play. Reload to update when you are at the main menu, or stay here offline. Your saved runs stay on this device.'
+        ? 'This version is no longer supported for online play. Reload to update from any menu, outside a run, replay or editor, or stay here offline. Your saved runs stay on this device.'
         : 'This version is no longer supported for online play. Open the updated game in a new tab, or stay here offline. Your current session will not reload.';
       const feedback = document.createElement('span');
       feedback.setAttribute('role', 'status'); feedback.hidden = true;
@@ -652,6 +653,17 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     publish(state);
   };
   const resume = () => {
+    // The parent owns run/editor state. Recheck it on every transition, not just
+    // when a new manifest arrives, so an existing offer cannot follow a live run.
+    try {
+      const safe = !!document.body && isVisible(document) && isIdle(document);
+      if (button) button.hidden = !safe;
+      if (!safe) {
+        clearOldCopyNotice();
+        if (dialog) { clearDialog(); pendingManifest = latestManifest; }
+        return;
+      }
+    } catch { if (button) button.hidden = true; failOpen(); return; }
     refreshBlockedFeedback();
     refreshOldCopyNotice();
     if (disposed || !pendingManifest) return;
@@ -758,7 +770,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         if (disposed) return;
         // A run/menu may start during fetch. Retain the result, independently of
         // the network cooldown, until the parent reports a safe UI transition.
-        pendingManifest = data;
+        pendingManifest = latestManifest = data;
         resume();
       } catch {
         // Update checks are best-effort and must not affect gameplay.

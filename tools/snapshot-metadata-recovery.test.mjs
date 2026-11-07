@@ -89,3 +89,17 @@ test('retired generation replies cannot populate metadata or block current reads
   await currentWarm;
   assert.deepEqual([...applied.keys()].sort(), [...kinds].sort());
 });
+
+
+test('ensure shares pending identity work, respects failure cooldown and resets by generation',async()=>{
+  let at=0,calls=0,resolve;
+  const r=createSnapshotMetadataRecovery({onValue:()=>{},now:()=>at,read:()=>{calls++;return new Promise(done=>resolve=done);}});
+  const a=r.ensure('racer-directory'),b=r.ensure('racer-directory');
+  await Promise.resolve();assert.equal(calls,1);resolve(null);
+  assert.equal(await a,false);assert.equal(await b,false);
+  assert.equal(await r.ensure('racer-directory'),false);assert.equal(calls,1);
+  at=30000;const c=r.ensure('racer-directory');await Promise.resolve();resolve({entries:{current:1}});
+  assert.equal(await c,true);assert.equal(await r.ensure('racer-directory'),true);assert.equal(calls,2);
+  r.reset();const d=r.ensure('racer-directory');await Promise.resolve();resolve({entries:{newer:1}});
+  assert.equal(await d,true);assert.equal(calls,3);assert.equal(await r.ensure('not-metadata'),false);
+});

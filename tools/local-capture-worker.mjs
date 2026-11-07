@@ -120,9 +120,13 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
     if(reused)await fs.writeFile(path.join(root,'events/public-catalog.json'),reused.catalogBytes);
     const catalog=reused?{deferred:false}:await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
-    const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:!capturedCanonical,replayDocumentLimit:capturedCanonical?null:plan.replayDocumentLimit,
+    const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:false,replayDocumentLimit:null,
       ...(reused?{prepareNativeCapture:()=>preparePublishedNativeBaseline({root,publishedBaseline:fullPolicy.publishedBaseline})}:{}),
-      verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:checkpoint,
+      verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:async input=>{
+        const preflight=await rebuildSnapshotOverall({directory:input.directory,validateOnly:true});
+        if(preflight.additionalFirestoreReads!==0||preflight.additionalFirestoreWrites!==0)throw Error('Offline scoring preflight used backend');
+        await checkpoint(input);
+      },
       capture:async options=>{const backup=reused?.manifest||await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
         if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));
         const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));

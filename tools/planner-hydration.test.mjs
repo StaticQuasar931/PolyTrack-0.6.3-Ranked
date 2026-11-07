@@ -99,6 +99,7 @@ test('incomplete-only fields and known unplaced PBs cannot become new authoritat
   assert.ok(!html.includes('data-route="'+A+'"'));
   c.overallTrackSummariesCache=c.hydratePlannerTrackSummaries([],{[A]:statistic()});
   const unplaced=[{trackId:A,timeMs:10000,rank:null}];
+  c.readLocalRaceRows=()=>unplaced.map(row=>({...row,accountId:'self'}));
   html=await c.profileGuideMarkup({userId:'self',name:'Me',raceCount:0},null,true,unplaced,unplaced,[]);
   assert.ok(!html.includes('data-route="'+A+'"'));
 });
@@ -230,4 +231,10 @@ test('empty podium markup provides a short eligibility explanation without fabri
     assert.match(unknown,/Podiums not loaded/);assert.doesNotMatch(unknown,/<img|profile-medal-card|No eligible podiums/);
   }
   assert.match(c.profileAchievementMarkup({gold:1}),/profile-medal-card gold/);
+});
+
+test('equal statistics preserve published leader details instead of replacing them with counts',()=>{
+ const c=context(),published={trackId:A,fieldSize:12,weight:4,updatedAt:100,leader:{name:'Leader',accountId:'saved'},recordMs:1234};
+ assert.deepEqual(plain(c.hydratePlannerTrackSummaries([published],{[A]:statistic()})),[published]);
+ assert.equal(c.hydratePlannerTrackSummaries([published],{[A]:statistic({updatedAt:101})})[0].leader,undefined,'newer statistics cannot inherit an older record');
 });

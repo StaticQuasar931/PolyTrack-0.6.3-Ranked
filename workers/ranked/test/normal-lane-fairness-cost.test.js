@@ -233,7 +233,7 @@ for (const size of [1,1136]) test('quota A: targeted siblings progress before ea
   for (let pass=0;pass<7;pass++) {
     const before = {...f.stats};
     const result = await reconcileCanonicalChanges(f.env, {scanResults:false});
-    assert.equal(result.targeted, size===1?3:2, 'large targets share the lane without stealing full headroom');
+    assert.equal(result.targeted, size===1||pass===0?3:2, 'initial no-ops avoid pages; changed large targets still reserve full headroom');
     maxRequests=Math.max(maxRequests,f.stats.requests-before.requests);
     assert.ok(f.stats.requests-before.requests <= 45, 'mixed lanes retain cold-auth headroom');
     assert.equal(f.data.get(buildKey).sourceCount, Math.min(population,100+pass*200));
@@ -363,6 +363,8 @@ test('quota A: final queue conflict keeps newer targeted PB binding after earlie
 test('quota A: missing target page fails closed without per-page retry or full-lane starvation',async t=>{
   const f=await fixture(t),targets=await seedTargets(f,{count:1,population:1136});
   const target=targets.tracks[0],board=f.data.get(boards+'/'+target);
+  const resultPath=results+'/'+targets.ids[0],row=f.data.get(resultPath);
+  f.set(resultPath,{...row,timeMs:11999,frames:11999,raceTimeFrames:11999,uploadId:2});
   const pageId=`track_${target}_${board.pagination.generation}_0`;
   f.data.delete(PUBLIC_PAGE_COLLECTION+'/'+pageId);
   const before=structuredClone(board);

@@ -184,8 +184,10 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     const current = freeze(structuredClone(jobs)), keys=new Set(), ids=new Set(),inputUnavailable=new Map();
     const field=allJobs===undefined?current:freeze(structuredClone(allJobs));
     demand(Array.isArray(field)&&field.length<=100000,'bounded complete review inventory required');
-    const fieldBindings=new Map();
+    const fieldBindings=new Map();let fieldBytes=0;
     for(const job of field) {
+      fieldBytes+=typeof job.replay==='string'?Buffer.byteLength(job.replay):0;
+      demand(fieldBytes<=64*1024*1024,'complete review inventory byte budget');
       const key=ledgerKey(ledgerBinding(job));
       demand(!fieldBindings.has(key)&&typeof job.replay==='string'&&digest(job.replay)===job.replayHash,'complete review inventory binding');
       fieldBindings.set(key,job);
@@ -210,6 +212,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     ledger ||= writeLedger({root:ledgerRoot,entries:[],expectedManifestHash:null});
     // Use the ledger's policy validator rather than inventing a second one.
     applyLedgerToBoard({board:{entries:[]},ledger,canonicalRows:[],recordings:[],policy});
+    if(review.prepare)await review.prepare({allJobs:field,sourceBinding:structuredClone(sourceBinding),policy,ledger});
     const originalLedgerHash=ledger.manifestHash;
     const decisions=[],counts={known:current.length,verified:0,held:0,excluded:0,mismatch:0,unavailable:0,
       unprocessed:0,reusedPhysics:0,nativeDispatched:0,nativeBatches:0};
@@ -255,6 +258,17 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         await validateEngine({root,policy});
       }
       let ready=selected.filter(job=>raw.has(job.resultId));
+      // Exhausted dispatch budgets still allow later exact public proof hits.
+      // Empty batches need decisions, not another full-field controls review.
+      if(!ready.length) {
+        for(const job of selected) {
+          counts.unprocessed++;
+          decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:'native_budget'});
+        }
+        cursor+=selected.length;
+        await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
+        continue;
+      }
       const nativeResults=ready.map(job=>structuredClone(raw.get(job.resultId)));
       let reviewed=await review({jobs:structuredClone(ready),allJobs:field,
         nativeResults:structuredClone(nativeResults),ledger,sourceBinding:structuredClone(sourceBinding),policy});
@@ -337,6 +351,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     }
     const result={schemaVersion:1,authority:'snapshot-native',offlineOnly:true,sourceBinding:structuredClone(sourceBinding),
       engineDigest:policy.engineDigest,verifierFingerprint:policy.verifierFingerprint,
+      policySha256:digest(JSON.stringify(policy)),
       previousLedgerManifestHash:originalLedgerHash,ledgerManifestHash:ledger.manifestHash,
       complete:counts.unprocessed === 0 && counts.unavailable === 0,counts,decisions,
       eligibleKeys:decisions.filter(value=>value.status === 'verified').map(value=>value.key),ledger};

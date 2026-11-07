@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {renderEventPersonalBest} from './client.mjs';
+import {renderEventPersonalBest,eventOwnPlacementPresentation,eventSidebarPlacementPresentation} from './client.mjs';
 const require=createRequire(new URL('../tools/verifier/package.json',import.meta.url));
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const bundle=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8');
@@ -32,7 +32,7 @@ test('event portrait footer keeps native one-row controls and PB slots fit inlin
   },{render:String(renderEventPersonalBest),filter,icons:[icon('timer'),icon('trophy')]});
   await page.evaluate(()=>document.fonts.ready);
   await page.evaluate(()=>document.body.classList.add('sq-event-active'));
-  for(const [width,height]of [[390,844],[440,956],[956,440],[390,600],[320,568],[390,844]]){
+  for(const [width,height]of [[1366,768],[390,844],[440,956],[956,440],[390,600],[320,568],[390,844]]){
    await page.setViewportSize({width,height});
    for(const withFilter of [false,true]){
     await page.evaluate(withFilter=>{document.querySelector('[data-personal-filter-button]')?.remove();if(withFilter)window.addFilter();},withFilter);
@@ -52,6 +52,26 @@ test('event portrait footer keeps native one-row controls and PB slots fit inlin
     assert.equal(result.text,'00:20.7594th (2%)');
    }
    if(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR){fs.mkdirSync(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR,`event-row-ui-${width}x${height}.png`),fullPage:true});}
+  }
+ }finally{await browser.close();}
+});
+
+test('desktop and mobile provisional previews keep time and place left aligned without x suffixes',async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage();await page.route('**/*',route=>route.abort());
+  await page.setContent(`<style>${fontRule}${nativeCss}${css}@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}.sq-event-personal{width:280px;font-size:24px}.sq-event-personal>div{display:flex}</style><div class="sq-event-personal"></div><div class="sq-event-record"></div>`);
+  const place={rank:2,knownFieldSize:200,provisional:true};
+  await page.evaluate(({render,placement,preview})=>{
+   Function('return ('+render+')')()(document.querySelector('.sq-event-personal'),{timeText:'00:20.759',placement,pending:true});
+   document.querySelector('.sq-event-record').textContent=preview;
+  },{render:String(renderEventPersonalBest),placement:eventSidebarPlacementPresentation(place),preview:eventOwnPlacementPresentation(place).text});
+  for(const width of [320,390,1366]){
+   await page.setViewportSize({width,height:844});
+   const state=await page.locator('.sq-event-personal').evaluate(node=>({text:node.textContent,rows:[...node.children].map(row=>({text:getComputedStyle(row).textAlign,justify:getComputedStyle(row).justifyContent,overflow:row.scrollWidth>row.clientWidth}))}));
+   assert.match(state.text,/2nd \(provisional\)/);assert.doesNotMatch(state.text,/[xX*]/);
+   assert.ok(state.rows.every(row=>row.text==='left'&&row.justify==='flex-start'&&!row.overflow),JSON.stringify({width,state}));
+   assert.equal(await page.locator('.sq-event-record').innerText(),'2nd of 200 (provisional)');
   }
  }finally{await browser.close();}
 });

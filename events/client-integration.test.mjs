@@ -1169,7 +1169,7 @@ for(const kind of ['kodub','weekly','daily'])test(kind+' native event RP disting
  const rows=p.locator('.sq-event-board .container > button.main');
  assert.equal(await rows.count(),5);
  assert.equal(await rows.nth(0).locator('.sq-event-earned-rp').innerText(),'0 ERP');
- for(const i of [1,2])assert.equal(await rows.nth(i).locator('.sq-event-earned-rp').innerText(),'ERP unavailable');
+ for(const i of [1,2])assert.equal(await rows.nth(i).locator('.sq-event-earned-rp').count(),0);
  assert.equal(await rows.nth(3).locator('.sq-event-earned-rp').innerText(),'84 ERP');
  assert.equal(await rows.nth(4).locator('.sq-event-earned-rp').count(),0);
  assert.equal(await rows.nth(4).getAttribute('data-event-pending'),'true');

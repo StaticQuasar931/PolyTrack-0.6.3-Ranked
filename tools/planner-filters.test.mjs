@@ -10,6 +10,19 @@ function harness(current,official){
  orderedPlannerRoutes:(_r,p)=>p,plannerEase:()=>1,plannerDefenseAllowed:()=>false,guideTrackCard:action=>'<button data-route="'+action.trackId+'">Route</button>',
  trackThumbnailMarkup:()=>'',safeDisplayName:x=>x,escapeHtml:x=>x,plannerCategoryAvailability:()=>({overall:true}),ageLabel:()=>'',
  });
+
+ context.profileSnapshotEpoch=0;context.localRaceGeneration=0;
+ context.cleanUserId=value=>String(value||'');context.activeRankedAccountId=()=> 'self';
+ context.readLocalRaceRows=()=>[];context.entryTimeMs=row=>row.timeMs;context.pbTimestamp=row=>row.pbAt||0;
+ context.knownFinishWeight=row=>Number(row.weight)||3;context.snapshotTrackStatistics={};
+ context.plannerPublishedProfiles=new Map();context.plannerBoardRequests=new Map();context.plannerPracticePlans=new Map();
+ context.loadProfileSnapshotResults=async id=>{
+   if(!context.plannerPublishedProfiles.has(id))context.plannerPublishedProfiles.set(id,{epoch:context.profileSnapshotEpoch,
+     profile:{accountId:id,results:context.__profileRows||['official','community',rhr].map(trackId=>({trackId,rank:5,fieldSize:20,timeMs:20000,weight:3})),expectedEligibleTracks:context.__profileRows?.length??3}});
+   return false;
+ };
+ context.readPublicSnapshotBackup=async()=>null;
+ vm.runInContext(source.slice(source.indexOf('// BEGIN PLANNER MODEL'),source.indexOf('// END PLANNER MODEL')),context);
  const helperStart=source.indexOf('  function plannerTrackAllowed('),helperEnd=source.indexOf('  function eventPlannerRoutes(',helperStart);
  vm.runInContext(source.slice(helperStart,helperEnd),context);
  const start=source.indexOf('  async function profileGuideMarkup('),end=source.indexOf('  function openRankedProfile(',start);
@@ -21,7 +34,7 @@ for(const [current,official,ids]of [[false,false,['official','new','community',r
  test('planner filters candidate routes but retain all scoring inputs: '+current+'/'+official,async()=>{
  const h=harness(current,official),html=await h.context.profileGuideMarkup({userId:'self',name:'Me',raceCount:3},null,true,finishes,finishes,[]);
  const actual=[...html.matchAll(/data-route="([^"]+)"/g)].map(m=>m[1]);assert.deepEqual(actual.sort(),ids.sort());assert.ok(h.baselineSizes.every(n=>n===3));
- assert.match(html,/aria-pressed="/);assert.match(html,/Current tracks only/);assert.match(html,/Official only/);
+ assert.match(html,/aria-pressed="/);assert.match(html,/Played tracks only/);assert.match(html,/Official only/);
  });
 }
 test('filters restore persisted choices and include Rolling Hills Racer in the official set',()=>{

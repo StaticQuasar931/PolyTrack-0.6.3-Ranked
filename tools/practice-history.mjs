@@ -1,3 +1,4 @@
+import { localPracticeSuggestions } from './practice-suggestions.mjs';
 export const PRACTICE_KEY='polytrack-practice-history-v1';
 const HASH=/^[a-f0-9]{64}$/;
 const MAX_TRACKS=1024,MAX_ACCOUNTS=4;
@@ -144,16 +145,13 @@ export function createPracticeHistory({storage,now=Date.now,onChange=()=>{}}={})
  function coverage(accountId){const row=data.coverage[accountId];return row?{...row,version:2,coverageFraction:row.knownPlaytimeMs>0?Math.min(1,row.observedVisibleMs/row.knownPlaytimeMs):0}:null;}
  return {begin,flush,list,coverage,observeCoverage,observePlacement,observeBest,subscribe(listener){if(typeof listener!=='function')return ()=>{};listeners.add(listener);return ()=>listeners.delete(listener);},get revision(){return revision;},get(accountId,trackId){const row=data.accounts?.[accountId]?.[trackId];return row?JSON.parse(JSON.stringify(row)):null;},clear(accountId){if(Object.hasOwn(data.accounts,accountId)||Object.hasOwn(data.coverage,accountId)){delete data.accounts[accountId];delete data.coverage[accountId];changed();flush(true);}}};
 }
-export function practiceAdvice(row,at=Date.now(),{otherTracks=[]}={}){
- if(!row||row.attempts<3||row.activeMs<60000)return {factor:1,text:''};
- const dated=Number.isFinite(row.lastPlayedAt)&&row.lastPlayedAt>0&&row.lastPlayedAt<=at;
- const age=dated?at-row.lastPlayedAt:0,days=Math.floor(age/86400000);
- const improvedElsewhere=otherTracks.filter(other=>other.trackId!==row.trackId&&other.improvedMs>0&&other.lastPbAt>row.lastPlayedAt).length;
- if(days>=3&&improvedElsewhere>=3)return {factor:1.1,text:`${improvedElsewhere} other tracks improved since your last visit; worth revisiting`};
- if(days>=7)return {factor:1.1,text:`Last practised ${days} days ago`};
- const recent=(row.recentFinishes||[]).filter(run=>run.timeMs>0&&run.at>0&&run.at<=at&&run.at>at-7*86400000).slice(-8);
+export function practiceAdvice(row,at=Date.now(),{results=[],routes=[]}={}){
+ if(!row||!Number.isSafeInteger(row.attempts)||row.attempts<3||!Number.isFinite(row.activeMs)||row.activeMs<60000)return {factor:1,text:''};
+ const suggestion=localPracticeSuggestions([{...row,trackId:row.trackId||'practice'}],{at,results,routes,limit:1})[0];
+ if(suggestion)return {factor:suggestion.factor,text:suggestion.text,kind:suggestion.kind};
+ const recent=(Array.isArray(row.recentFinishes)?row.recentFinishes:[]).filter(run=>run?.timeMs>0&&run.timingNote!==true&&run.at>0&&run.at<=at&&run.at>at-7*86400000).sort((a,b)=>a.at-b.at||a.timeMs-b.timeMs).slice(-8);
  if(recent.length===8){const average=rows=>rows.reduce((sum,run)=>sum+run.timeMs,0)/rows.length;const first=average(recent.slice(0,4)),last=average(recent.slice(4));if(last<first*.99)return {factor:1.08,text:'Recent finishes are improving (8 local finishes)'};}
  if(row.sincePbMs>=900000&&row.restartsSincePb>=10)return {factor:.9,text:'15+ minutes since a PB; consider a different route'};
  if(row.pbs>=2&&row.activeMs>=180000)return {factor:1.05,text:`${row.pbs} PBs in ${Math.round(row.activeMs/60000)} minutes of practice`};
- return {factor:1,text:`${Math.round(row.activeMs/60000)} min practice · ${row.finishes} finishes · ${row.restarts} restarts`};
+ return {factor:1,text:`${Math.round(row.activeMs/60000)} min practice · ${Number.isSafeInteger(row.finishes)&&row.finishes>0?row.finishes:0} finishes · ${Number.isSafeInteger(row.restarts)&&row.restarts>0?row.restarts:0} restarts`};
 }

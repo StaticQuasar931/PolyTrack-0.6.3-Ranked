@@ -1,14 +1,16 @@
 const releaseInfo = {
-  "number": 319,
+  "number": 320,
   "version": "0.6.3",
-  "revision": 267,
+  "revision": 268,
   "notes": [
-    "Updated saved personal bests, rankings and profile data.",
-    "Kept earlier event results paired with their saved replays.",
-    "Some recent runs are still waiting for verification."
+    "Leader names, records and personal bests load more reliably.",
+    "Event placements and Event RP badges now match across menus.",
+    "Clearer route targets and practice suggestions use your saved results.",
+    "Updates work from game menus without interrupting a run.",
+    "Reduced repeated cloud work and improved overnight replay checks."
   ],
-  "preparedAt": "2026-11-07T18:34:28.390Z",
-  "committedAt": "2026-11-07T18:40:20.000Z"
+  "preparedAt": "2026-11-07T20:17:39.646Z",
+  "committedAt": "2026-11-07T21:10:24.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -1,10 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {buildOfflineOverall} from './offline-overall.mjs';
 import {applyCapturedOverallProjection} from './capture-overall-projection.mjs';
 const ID=/^[a-f0-9]{64}$/;
 export async function rebuildSnapshotOverall({directory,now=Date.now,validateOnly=false}={}){
- const read=async name=>JSON.parse(await fs.readFile(path.join(directory,name),'utf8'));
+ const sources=new Map();
+ const read=async name=>{
+  try{const bytes=await fs.readFile(path.join(directory,name));sources.set(name,createHash('sha256').update(bytes).digest('hex'));return JSON.parse(bytes);}
+  catch(error){if(error.code==='ENOENT')sources.set(name,null);throw error;}
+ };
  const manifest=await read('manifest.json'),previousOverall=await read('overall.json');
  let previousCalculation=null;try{previousCalculation=await read('overall-calculation.json');}catch(error){if(error.code!=='ENOENT')throw error;}
  const previousFiles=new Map([['overall.json',previousOverall]]);
@@ -22,7 +27,9 @@ export async function rebuildSnapshotOverall({directory,now=Date.now,validateOnl
   tracks.push(board);required.add(id);
  }
  const result=await buildOfflineOverall({tracks,previousOverall,previousCalculation,previousFiles,expectedTrackIds:[...required].sort(),now});
- if(validateOnly)return {sourceTracks:tracks.length,sourceRows:tracks.reduce((n,b)=>n+b.entries.length,0),additionalFirestoreReads:0,additionalFirestoreWrites:0};
+ if(validateOnly)return {sourceTracks:tracks.length,sourceRows:tracks.reduce((n,b)=>n+b.entries.length,0),
+  sourceSha256:createHash('sha256').update(JSON.stringify([...sources].sort(([a],[b])=>a<b?-1:a>b?1:0))).digest('hex'),
+  additionalFirestoreReads:0,additionalFirestoreWrites:0};
  const backendCapture=Object.hasOwn(manifest.overallCapture||{},'backendCapture')?manifest.overallCapture.backendCapture:manifest.overallCapture||null;
  const report={...result.report,publishedRevision:result.report.revision,projectionReason:null,calculatedAt:result.report.updatedAt,readTime:backendCapture?.readTime||null,
   sourceReadsReused:true,additionalFirestoreReads:0,additionalFirestoreWrites:0,backendCapture};

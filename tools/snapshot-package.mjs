@@ -10,6 +10,36 @@ import { buildTrackSnapshotPaging, buildOverallSnapshotPaging, buildBoardPageMan
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
+function compactTrackLeader(snapshot, trackId, complete, record) {
+  if (!complete || snapshot.trackId !== trackId || snapshot.sourceComplete === false ||
+      snapshot.ranksExact === false || snapshot.totalEntriesExact === false ||
+      snapshot.authoritative === false || snapshot.sourceAuthoritative === false ||
+      record?.complete === false || record?.sourceComplete === false || record?.ranksExact === false ||
+      record?.totalEntriesExact === false || record?.missing === true ||
+      (record?.path != null && record.path !== `tracks/${trackId}.json`) || !snapshot.entries.length) return null;
+  const entries = snapshot.entries;
+  const account = row => row.accountId || row.userId;
+  if (entries.some(row => !Number.isSafeInteger(row?.timeMs) || row.timeMs <= 0 ||
+      row.accountId && row.userId && row.accountId !== row.userId ||
+      row.local === true || row.localPending === true || row.pending === true ||
+      [row.status, row.runStatus, row.validationState, row.verificationStatus].some(value =>
+        /^(rejected|mismatch)$/i.test(String(value || ''))))) return null;
+  // Match complete-board paging's ordinal time/account tie order; never trust array load order.
+  const first = entries.reduce((best, row) => !best || row.timeMs < best.timeMs ||
+    row.timeMs === best.timeMs && String(account(row)).localeCompare(String(account(best)), 'en') < 0 ? row : best, null);
+  const ranks = row => [row.rank, row.globalRank, row.position].filter(value => value != null);
+  if (ranks(first).some(rank => rank !== 1) ||
+      entries.some(row => row !== first && ranks(row).some(rank => rank === 1))) return null;
+  const rawName = typeof first.name === 'string' ? first.name : typeof first.nickname === 'string' ? first.nickname : '';
+  const name = rawName.normalize('NFKC')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, 24).replace(/[\uD800-\uDBFF]$/, '');
+  const pbAt = [first.pbAt, first.createdAt].find(value =>
+    Number.isSafeInteger(value) && value > 0 && value <= 8640000000000000) ?? null;
+  return {accountId: account(first), name, timeMs: first.timeMs, pbAt,
+    ...(typeof first.runVerified === 'boolean' ? {runVerified: first.runVerified} : {})};
+}
+
 export function buildTrackStatistics(files) {
   const byPath = new Map(files.map(({ logicalPath, value }) => [logicalPath, value]));
   const manifest = byPath.get('manifest.json');
@@ -43,6 +73,8 @@ export function buildTrackStatistics(files) {
       revision: Number.isSafeInteger(snapshot.revision) ? snapshot.revision : Number.isSafeInteger(record?.revision) ? record.revision : null,
       updatedAt: Number.isSafeInteger(snapshot.updatedAt) ? snapshot.updatedAt : null,
       capturedAt: Number.isSafeInteger(record?.checkedAt) && record.checkedAt > 0 ? new Date(record.checkedAt).toISOString() : null };
+    const leader = compactTrackLeader(snapshot, trackId, complete, record);
+    if (leader) tracks[trackId].leader = leader;
     if (!complete) allComplete = false;
   }
   const tracksKnown = Number.isSafeInteger(manifest?.trackIdsKnown) && manifest.trackIdsKnown >= 0 ? manifest.trackIdsKnown : null;

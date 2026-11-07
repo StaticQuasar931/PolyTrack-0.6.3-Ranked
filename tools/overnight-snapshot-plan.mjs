@@ -1,14 +1,12 @@
 export const OVERNIGHT_SNAPSHOT = Object.freeze({
-  priorDirectReservations:17241,priorWorkerRequests:512,
-  claimTag:'polytrack-oneoff-2026-11-07-replacement-4',priorClaimTag:'polytrack-oneoff-2026-11-07-replacement-3',priorSource:'8b28442932979460aa7dc369501a7b4b3f88e745',
-  date:'2026-11-07', execution:'local', cron:'45 8 * * *', start:Date.parse('2026-11-07T08:05:00Z'),
-  reset:Date.parse('2026-11-07T08:00:00Z'),
-  localReservationEnd:Date.parse('2026-11-07T11:00:00Z'),
-  latestFallback:Date.parse('2026-11-07T12:15:00Z'), deadline:Date.parse('2026-11-07T13:00:00Z'),
-  // Explicitly authorized replacement after the guarded first attempt failed.
-  // Later finishing/recovery is offline-only, never another fresh capture.
-  latestCaptureStart:Date.parse('2026-11-07T10:00:00Z'),
-  maxJobs:10000, maxRuntimeMs:1500000, packReserveMs:60000, jobTimeoutMinutes:50, replayDocumentLimit:1000
+  priorDirectReservations:0,priorWorkerRequests:0,
+  claimTag:'polytrack-oneoff-2026-11-08',priorClaimTag:'polytrack-oneoff-2026-11-07-stored-publication-1',priorSource:'e11d4db3592ecc1d5964948a98884cc7a158e3c2',
+  priorOutcome:'complete',priorPublicationCommit:'4f86fe80e81014534b467b6406f13d5cdcd81539',
+  date:'2026-11-08',execution:'local',cron:'45 8 * * *',start:Date.parse('2026-11-08T08:05:00Z'),
+  reset:Date.parse('2026-11-08T08:00:00Z'),localReservationEnd:Date.parse('2026-11-08T13:00:00Z'),
+  latestFallback:Date.parse('2026-11-08T12:15:00Z'),deadline:Date.parse('2026-11-08T13:00:00Z'),
+  latestCaptureStart:Date.parse('2026-11-08T08:15:00Z'),
+  maxJobs:10000,maxRuntimeMs:1500000,packReserveMs:60000,jobTimeoutMinutes:50,replayDocumentLimit:1000
 });
 
 export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,configuredMode='firestore',previousCaptureStartedAt=null,manualOvernight=false}={}){
@@ -30,7 +28,7 @@ export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,confi
   if(now>=OVERNIGHT_SNAPSHOT.latestCaptureStart)return skip('fresh-capture-deadline-offline-fallback-only');
   if(Number.isSafeInteger(previousCaptureStartedAt)&&previousCaptureStartedAt>=OVERNIGHT_SNAPSHOT.reset&&previousCaptureStartedAt<=now)
     return skip('a-post-midnight-capture-is-already-recorded');
-  return {mode:'snapshot-native',overnight:true,skip:false,reason:manualOvernight?'one-time-Nov7-explicit-kickoff':'one-time-Nov7-scheduled-capture',
+  return {mode:'snapshot-native',overnight:true,skip:false,reason:manualOvernight?'one-time-Nov8-explicit-kickoff':'one-time-Nov8-scheduled-capture',
     maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs,
     packReserveMs:OVERNIGHT_SNAPSHOT.packReserveMs,jobTimeoutMinutes:OVERNIGHT_SNAPSHOT.jobTimeoutMinutes,
     replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit};

@@ -59,7 +59,7 @@ test('renders compact summary and per-track useful data with trusted preview mar
   assert.match(html, /<img src="\/thumb\/track-a\.png" alt="">/);
   assert.match(html, /<li class="pp-track" data-pp-track-id="track-a"/);
   assert.doesNotMatch(html, /<li class="pp-track" data-track-id=/);
-  assert.equal((html.match(/<button[^>]*data-track-id="track-a"/g) || []).length, 2);
+  assert.equal((html.match(/<button[^>]*data-track-id="track-a"/g) || []).length, 3, 'two card links plus one history suggestion');
   assert.doesNotMatch(html, />PT</);
 });
 
@@ -213,6 +213,7 @@ try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); }
 test('practice identity and controls survive injected popup CSS in narrow grid and list layouts', { skip: !chromium }, async () => {
   const module = await fs.readFile(new URL('./practice-profile.mjs', import.meta.url), 'utf8');
   const activeTimeModule = await fs.readFile(new URL('tools/active-time.mjs', repositoryRoot), 'utf8');
+  const suggestionsModule = await fs.readFile(new URL('./practice-suggestions.mjs', import.meta.url), 'utf8');
   const historyModule = await fs.readFile(new URL('tools/practice-history.mjs', repositoryRoot), 'utf8');
   const patch = await fs.readFile(new URL('polytrack_062_patch.js', repositoryRoot), 'utf8');
   const injectedCss = [...patch.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?")/g)]
@@ -226,8 +227,9 @@ test('practice identity and controls survive injected popup CSS in narrow grid a
     const page = await browser.newPage();
     // Fulfil every request locally: this regression never contacts the game or Firebase.
     await page.route('**/*', route => route.fulfill({
-      contentType: /\/(practice|active-time|practice-history)\.mjs$/.test(route.request().url()) ? 'text/javascript' : 'text/html',
-      body: route.request().url().endsWith('practice-history.mjs') ? historyModule :
+      contentType: /\/(practice|active-time|practice-history|practice-suggestions)\.mjs$/.test(route.request().url()) ? 'text/javascript' : 'text/html',
+      body: route.request().url().endsWith('practice-suggestions.mjs') ? suggestionsModule :
+        route.request().url().endsWith('practice-history.mjs') ? historyModule :
         route.request().url().endsWith('active-time.mjs') ? activeTimeModule :
         route.request().url().endsWith('practice.mjs') ? module :
         '<!doctype html><html lang="en"><title>Practice regression</title>' +
@@ -357,7 +359,11 @@ test('practice identity and controls survive injected popup CSS in narrow grid a
         assert.equal(overlapping, false, 'controls never overlap at ' + width);
       }
     }
+
     assert.equal(await page.locator('.pp-coverage-note').isVisible(), false);
+
+
+
     assert.equal(await page.locator('.pp-coverage-details').count(), 1);
     assert.equal(await page.locator('.pp-coverage-low, .pp-no-finish, .pp-evidence-unavailable').count(), 0);
     await page.locator('.pp-coverage-details > summary').focus();
@@ -383,6 +389,36 @@ test('practice identity and controls survive injected popup CSS in narrow grid a
     await page.locator('[data-pp-search]').fill('no event listener');
     await direction.click();
     assert.deepEqual(await ids(), before, 'cleanup removes search and direction listeners');
+    await page.evaluate(async()=>{
+      const module=await import('/practice.mjs'),at=Date.now(),day=86400000;
+      const base={attempts:8,activeMs:120000,lastPlayedAt:at,finishes:4,bestMs:10000};
+      const rows=[{...base,trackId:'stale',trackName:'Revisit this track',lastPlayedAt:at-10*day},
+        {...base,trackId:'consistent',trackName:'Compare one section',recentFinishes:Array.from({length:4},(_,i)=>({at:at-10000+i*1000,timeMs:10100+i}))},
+        {...base,trackId:'unfinished',trackName:'Finish the known target',bestMs:0,finishes:0}];
+      const options={rows,accountId:'self',plannerRoutes:[{trackId:'unfinished',simulationComplete:true,value:2,targetRank:6}]};
+      window.suggestionOptions=options;
+      document.querySelector('#overallProfileContent').innerHTML=module.renderPracticeProfile(options);
+      const root=document.querySelector('.polytrack-practice-profile');root.open=true;
+      module.installPracticeProfileControls(root);
+    });
+    assert.equal(await page.locator('[data-pp-suggestions] li').count(),3);
+    await page.locator('[data-pp-suggestion-track-id="unfinished"]').click();
+    assert.equal((await page.evaluate(()=>window.practiceStarts)).at(-1),'unfinished');
+    assert.match(await page.locator('[data-pp-suggestions]').textContent(),/aim for #6/);
+    for(const width of [320,390,1366]){
+      await page.setViewportSize({width,height:844});
+      const fit=await page.locator('[data-pp-suggestions]').evaluate(el=>el.scrollWidth<=el.clientWidth+1);
+      assert.equal(fit,true,'three local suggestions fit '+width);
+    }
+    await page.locator('[data-pp-suggestion-track-id="consistent"]').focus();
+    await page.evaluate(async()=>{
+      const module=await import('/practice.mjs'),old=document.querySelector('.polytrack-practice-profile');
+      const state=module.capturePracticeProfileView(old);
+      old.outerHTML=module.renderPracticeProfile(window.suggestionOptions);
+      const next=document.querySelector('.polytrack-practice-profile');
+      module.installPracticeProfileControls(next);module.restorePracticeProfileView(next,state);
+    });
+    assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('data-pp-suggestion-track-id')),'consistent');
   } finally {
     await browser.close();
   }
@@ -439,4 +475,22 @@ test('official and completed metadata separates saved PBs from recorded finishes
  assert.match(html,/value="observed-gain"/);assert.match(html,/value="driven-gain"/);
  const confirmed=renderPracticeProfile({rows:[row()],results:[{trackId:'track-a',timeMs:45000,local:true,cloudConfirmed:true}]});
  assert.match(confirmed,/Submitted PB/);assert.doesNotMatch(confirmed,/Local PB/);
+});
+
+test('consistent and unfinished prompts render using existing native card classes',()=>{
+  const at=Date.now();
+  const consistent=row({lastPlayedAt:at,bestMs:10000,trackedBestMs:10000,
+    recentFinishes:Array.from({length:4},(_,i)=>({at:at-10000+i*1000,timeMs:10100+i}))});
+  assert.match(renderPracticeProfile({rows:[consistent]}),/compare one section with your best run/);
+  const unfinished=row({lastPlayedAt:at,bestMs:0,trackedBestMs:0,finishes:0,pbs:0});
+  const plannerRoutes=[{trackId:unfinished.trackId,simulationComplete:true,value:2,targetRank:6}];
+  assert.match(renderPracticeProfile({rows:[unfinished],plannerRoutes}),/No local finish yet; aim for #6/);
+  assert.doesNotMatch(renderPracticeProfile({rows:[unfinished]}),/No local finish yet/);
+  assert.doesNotMatch(renderPracticeProfile({rows:[unfinished],plannerRoutes,
+    results:[{trackId:unfinished.trackId,timeMs:10000}]}),/No local finish yet/);
+});
+test('a recent local PB suppresses stale practice regardless of cache refresh date',()=>{
+  const at=Date.now(),old=row({lastPlayedAt:at-10*86400000,lastPbAt:0});
+  const html=renderPracticeProfile({rows:[old],results:[{trackId:old.trackId,timeMs:9000,pbAt:at-86400000,source:'local'}]});
+  assert.doesNotMatch(html,/try a baseline run/);
 });

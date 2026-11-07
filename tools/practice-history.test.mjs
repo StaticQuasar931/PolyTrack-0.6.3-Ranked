@@ -101,7 +101,7 @@ test('opening and leaving a track without driving is not a practice attempt',()=
  const row=h.history.get(account,track);assert.equal(row.attempts,0);assert.equal(row.lastPlayedAt,0);
 });
 
-test('return hint uses observed improvements on other tracks without changing points',()=>{const at=1000000000,row={trackId:track,attempts:8,activeMs:600000,lastPlayedAt:at-4*86400000};const advice=practiceAdvice(row,at,{otherTracks:['c','d','e'].map(id=>({trackId:id.repeat(64),improvedMs:100,lastPbAt:at-1000}))});assert.equal(advice.factor,1.1);assert.match(advice.text,/3 other tracks improved/);});
+test('return hint is track-specific instead of repeating other-track counts',()=>{const at=1000000000,row={trackId:track,attempts:8,activeMs:600000,lastPlayedAt:at-8*86400000};const advice=practiceAdvice(row,at,{otherTracks:['c','d','e'].map(id=>({trackId:id.repeat(64),improvedMs:100,lastPbAt:at-1000}))});assert.equal(advice.factor,1.1);assert.match(advice.text,/baseline run/);assert.doesNotMatch(advice.text,/other tracks improved/);});
 
 test('native leave callback ignores repeated disposal and synchronous replacement',async()=>{let leaves=0;const f=nativeFixture(()=>leaves++);try{const first=f.car();first.dispose();f.car();await Promise.resolve();assert.equal(leaves,0);first.dispose();await Promise.resolve();assert.equal(leaves,0);const last=f.car();last.dispose();await Promise.resolve();assert.equal(leaves,1);last.dispose();await Promise.resolve();assert.equal(leaves,1);}finally{f.observer.stop();}});
 
@@ -280,4 +280,9 @@ test('local changes notify subscribers and retain real epoch dates across reload
  assert.equal(row.lastPlayedAt,at);assert.equal(row.activeMs,1000);
  assert.equal(row.finishes,1);assert.equal(row.biggestPbImprovementMs,1000);
  assert.equal(row.biggestObservedImprovementMs,1000);assert.equal(row.bestMs,18000);
+});
+
+test('empty or malformed practice advice has no fabricated counts or invalid time',()=>{
+ for(const row of [{},{attempts:NaN,activeMs:60000},{attempts:3,activeMs:NaN},{attempts:'3',activeMs:60000}])assert.deepEqual(practiceAdvice(row),{factor:1,text:''});
+ assert.doesNotMatch(practiceAdvice({attempts:3,activeMs:60000,recentFinishes:{}}).text,/undefined|NaN/);
 });

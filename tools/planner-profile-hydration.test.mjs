@@ -24,7 +24,7 @@ function harness() {
   let now = 1000;
   const requests = [], saved = new Map();
   const c = vm.createContext({
-    profileSnapshotEpoch: 0, profileSnapshotResults: saved, profileSnapshotRequests: new Map(),
+    profileSnapshotEpoch: 0, plannerPublishedProfiles:new Map(), profileSnapshotResults: saved, profileSnapshotRequests: new Map(),
     profileSnapshotRetryAt: new Map(), profilePlacementRequests: new Map(), Date: {now: () => now},
     cleanUserId: value => String(value || ''), activeRankedAccountId: () => SELF,
     readLocalRaceRows: () => [{accountId: SELF, trackId: TRACK, timeMs: 15000}],
@@ -107,6 +107,7 @@ test('warming another racer never imports the active account local results', asy
 test('rival routes recover after partial self results hydrate, retaining the coverage guard', async () => {
   const h = harness();
   Object.assign(h.c, {plannerMetric: 'overall', PINNED_EXTRA_TRACK_IDS: new Set(), trackInfo: () => ({type: 'official'}), safeDisplayName: () => 'Synthetic rival'});
+  vm.runInContext(source.slice(source.indexOf('// BEGIN PLANNER MODEL'),source.indexOf('// END PLANNER MODEL')),h.c);
   for (const name of ['rankedTrackWeightParts', 'rankedTrackWeight', 'rankedPlacementCost', 'medianNumber',
     'projectedOverallScore', 'projectedFinish', 'simulateRecommendation', 'recommendationSimulator', 'recommendationAction', 'rivalRecommendationAction']) vm.runInContext(extract(name), h.c);
   await h.c.warmProfileLocalPlacements(SELF);
@@ -134,6 +135,10 @@ test('full rival planner renders routes after local-only self hydration', async 
   await h.c.warmProfileLocalPlacements(SELF);
   const theirs = [{...finish(), rank: 1}], self = {userId: SELF, raceCount: 2};
   const render = () => c.profileGuideMarkup({userId: RIVAL, name: 'Synthetic rival', raceCount: 1}, self, false, theirs, theirs, h.saved.get(SELF).results);
+  c.plannerPublishedProfiles=h.c.plannerPublishedProfiles;
+  c.activeRankedAccountId=()=>SELF;c.readLocalRaceRows=()=>[];
+  c.loadProfileSnapshotResults=async()=>false;
+  h.c.plannerPublishedProfiles.set(RIVAL,{epoch:0,profile:{results:theirs}});
   assert.doesNotMatch(await render(), /data-route=/);
   await h.c.loadProfileSnapshotResults(SELF);
   const html = await render();

@@ -74,6 +74,15 @@ test('missed updates count actual recorded manual updates, not numeric gaps, vis
   assert.equal(countKnownUpdates(info,()=>true,{...data,entries:[record(265),record(265)]}),null);
 });
 
+test('missed counts skip manual non-release commits and revision/number gaps',()=>{
+  const info=release(),data=history(info);
+  data.entries=[record(265),{...record(264),number:null}, {...record(263),notes:[]},record(254)];
+  assert.equal(countKnownUpdates(info,number=>number===254,data),2);
+  assert.equal(countKnownUpdates({...info,revision:900},number=>number===254,
+    {...data,current:{...data.current,revision:900}}),2);
+  assert.equal(countKnownUpdates(info,number=>number===263,data),null,'an unpublished baseline is not a known release');
+});
+
 test('builder uses actual commit identities, timestamps and central notes and bounds older coverage',async()=>{
   const f=gitFixture({limit:2}),data=await buildReleaseHistory(f.options);
   assert.deepEqual(data.entries.map(entry=>entry.number),[265,264]);assert.equal(data.coverage.olderOmitted,true);

@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {verifyLocalSnapshot,writeLocalVerificationReceipt} from './local-snapshot-verification.mjs';
 import {ledgerBinding,ledgerKey} from '../native-verification-ledger.mjs';
 import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
+import {capturedReadAhead} from './captured-read-ahead.mjs';
 
 const require=createRequire(import.meta.url),{checkJob}=require('./replay.cjs');
 const HASH=/^[a-f0-9]{64}$/,SHA=/^[a-f0-9]{40}$/,PERIOD=/^[A-Za-z0-9_-]{1,64}$/;
@@ -28,25 +29,29 @@ function holdFields(...sources) {
  * explicit coverage gaps; a present but differently bound payload is fatal.
  * No directory-wide Git scan, timestamp guessing, network or authority mutation.
  */
-export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false}={}) {
+export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false,readConcurrency=4}={}) {
   demand(typeof directory==='string'&&path.isAbsolute(directory),'absolute capture directory required');
+  demand(Number.isSafeInteger(readConcurrency)&&readConcurrency>=1&&readConcurrency<=8,'invalid captured read concurrency');
   const stat=await fs.lstat(directory);
   demand(stat.isDirectory()&&!stat.isSymbolicLink(),'unsafe capture directory');
   directory=await fs.realpath(directory);
   const files=new Map(),missingFiles=new Set(),gaps=[],jobs=[],normalBoards=[],eventBoards=[],canonicalRows=[],recordings=[];
-  let knownBindings=0;
+  let knownBindings=0,replayBytes=0;
   async function read(relative,{optional=false}={}) {
     demand(/^[A-Za-z0-9_./-]+\.json$/.test(relative)&&!relative.split('/').includes('..'),'unsafe captured path');
     const file=path.join(directory,relative);
     let info;
     try{info=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'&&optional){missingFiles.add(relative);return null;}throw error;}
     demand(info.isFile()&&!info.isSymbolicLink()&&info.size<=(/^tracks\/[a-f0-9]{64}\.json$/.test(relative)?4:2)*1024*1024&&within(directory,await fs.realpath(file)),'unsafe/oversized captured file');
-    const bytes=await fs.readFile(file);files.set(relative,digest(bytes));return JSON.parse(bytes);
+    const bytes=await fs.readFile(file);demand(bytes.length===info.size,'captured file changed while reading');
+    files.set(relative,digest(bytes));return JSON.parse(bytes);
   }
   const manifest=await read('manifest.json');
   demand(manifest&&typeof manifest.tracks==='object'&&!Array.isArray(manifest.tracks),'source manifest tracks required');
   function add(value,raw,source) {
     demand(typeof value.replay==='string'&&digest(value.replay)===value.replayHash,'source replay hash mismatch: '+source);
+    replayBytes+=Buffer.byteLength(value.replay);
+    demand(jobs.length<100000&&replayBytes<=64*1024*1024,'captured inventory byte/count budget');
     ledgerBinding(value);
     if(allowExtendedLocal) {
       try{checkJob(value);}catch{
@@ -66,12 +71,14 @@ export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false
     const board=await read(record.path);
     demand(board?.trackId===trackId&&Array.isArray(board.entries)&&board.entries.length<=10000,'invalid captured track board');
     normalBoards.push(board);
-    for(const row of board.entries) {
-      knownBindings++;
+    for await(const {row,accountId,uploadId,canonical,raw,recordingPath} of capturedReadAhead(board.entries,async row=>{
       const accountId=row.accountId||row.userId,uploadId=row.uploadId??row.id;
       demand(HASH.test(accountId||'')&&positive(uploadId)&&positive(row.timeMs),'normal source identity');
       const canonicalPath=`canonical/${trackId}/${accountId}.json`,recordingPath=`recordings/${uploadId}.json`;
       const canonical=await read(canonicalPath,{optional:true}),raw=await read(recordingPath,{optional:true});
+      return {row,accountId,uploadId,canonical,raw,recordingPath};
+    },readConcurrency)) {
+      knownBindings++;
       if(!canonical||!raw){gaps.push({kind:'normal-replay-unavailable',trackId,accountId,uploadId});continue;}
       const frames=canonical.frames??canonical.raceTimeFrames??canonical.timeMs;
       demand(canonical.accountId===accountId&&canonical.trackId===trackId&&canonical.uploadId===uploadId&&canonical.timeMs===row.timeMs&&
@@ -121,7 +128,18 @@ export async function loadCapturedNativeJobs({directory,allowExtendedLocal=false
 
 export async function defaultCapturedReviewFactory({jobs,sourceBinding,policy,previouslyAccepted=[]}) {
   const {createCapturedControlReview}=await import('./captured-controls.mjs');
-  return createCapturedControlReview({allJobs:jobs,sourceBinding,policy,previouslyAccepted});
+  const reviewer=createCapturedControlReview({allJobs:jobs,sourceBinding,policy,previouslyAccepted});
+  const frozen=value=>{
+    if(value===null||typeof value!=='object')return value===null||['undefined','string','number','boolean'].includes(typeof value);
+    if(!Object.isFrozen(value)||!Array.isArray(value)&&Object.getPrototypeOf(value)!==Object.prototype)return false;
+    return Object.values(Object.getOwnPropertyDescriptors(value)).every(descriptor=>'value' in descriptor&&frozen(descriptor.value));
+  };
+  const pinned=frozen(jobs);
+  // The factory already hashes the entire field. Only the identical deeply
+  // frozen object may omit the optional repeat-inventory check on each batch.
+  const review=({allJobs,...context})=>reviewer(pinned&&allJobs===jobs?context:{...context,allJobs});
+  review.inspect=reviewer.inspect;review.artifact=reviewer.artifact;
+  return review;
 }
 
 /** The updater calls this only after source capture/replay export. Default review
@@ -138,6 +156,11 @@ export async function verifyCapturedSnapshot({root,directory,ledgerRoot,expected
     demand(typeof reviewer==='function','captured-controls review capability required');
     return reviewer(context);
   });
+  if(!review)currentReview.prepare=async context=>{
+    reviewer=await reviewFactory({jobs:context.allJobs,sourceBinding:Object.freeze({...sourceBinding}),policy:context.policy});
+    demand(typeof reviewer==='function','captured-controls review capability required');
+    if(reviewer.inspect){const coverage=await reviewer.inspect();demand(!coverage?.stop,'full-inventory controls preflight stopped: '+coverage?.stop);}
+  };
   const verification=await verifyLocalSnapshot({...options,root,jobs:inputs.jobs,sourceBinding,ledgerRoot,expectedManifestHash,
     trustedTracks:options.trustedTracks || loadWeeklyTrustedTrack(root,inputs.jobs),review:currentReview});
   for(const binding of inputs.fileBindings) {

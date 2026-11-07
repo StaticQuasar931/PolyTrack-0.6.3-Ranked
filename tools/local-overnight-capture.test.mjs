@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {runLocalOvernightCapture,validateLocalEvidence,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
+import {runLocalOvernightCapture,validateLocalEvidence,validatePriorLocalCapture,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
 import {publishLocalCaptureCommit,reconcileLocalPublication} from './local-capture-git.mjs';
 import {assertLocalCaptureOwner} from './local-capture-worker.mjs';
 import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
@@ -202,4 +202,88 @@ test('receipts are separately preserved, atomically replaced, and require the ex
   await assert.rejects(writeLocalCaptureReceipt({directory,owner,value:{status:'reconciled-complete'}}),{code:'EEXIST'});
   assert.equal(JSON.parse(await fs.readFile(path.join(directory,'reconciled-complete.json'),'utf8')).candidateCommit,'b'.repeat(40));
   assert.equal((await fs.readdir(directory)).some(name=>name.endsWith('.tmp')),false);
+});
+
+async function priorReceiptFixture(t,{completed=true,patch={}}={}){
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'local-prior-receipt-'));
+  t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const file=path.join(directory,'prior.json'),publicationCommit='b'.repeat(40);
+  const plan={priorOutcome:completed?'complete':'failed',priorSource:source,priorPublicationCommit:publicationCommit};
+  const value={status:completed?'complete':'failed',sourceCommit:source,...(completed?
+    {publicationCommit,generation:73,binding:{reusable:true,directory:'public-snapshots73'}}:{}),...patch};
+  const bytes=JSON.stringify(value);await fs.writeFile(file,bytes);
+  const evidence={file,sha256:createHash('sha256').update(bytes).digest('hex')};
+  return {directory,file,value,plan,evidence,receipt:{[completed?'priorCompletion':'priorFailure']:evidence}};
+}
+
+test('prior complete evidence requires the exact planned publication and reusable generation binding',async t=>{
+  const f=await priorReceiptFixture(t);
+  assert.deepEqual(await validatePriorLocalCapture(f.receipt,{plan:f.plan}),
+    {status:'complete',publicationCommit:f.plan.priorPublicationCommit});
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:{...f.plan,priorPublicationCommit:source}}),/exact-bound/);
+});
+
+for(const [name,patch] of [
+  ['failed status',{status:'failed'}],['nonterminal status',{status:'capturing'}],
+  ['wrong publication',{publicationCommit:'c'.repeat(40)}],['absent publication',{publicationCommit:null}],
+  ['missing binding',{binding:null}],['nonreusable binding',{binding:{reusable:false,directory:'public-snapshots73'}}],
+  ['truthy reusable flag',{binding:{reusable:'true',directory:'public-snapshots73'}}],
+  ['wrong directory',{binding:{reusable:true,directory:'public-snapshots74'}}],
+  ['path traversal',{binding:{reusable:true,directory:'../public-snapshots73'}}],
+  ['generation changed',{generation:74}]
+])test('prior complete evidence rejects independently hashed '+name,async t=>{
+  const f=await priorReceiptFixture(t,{patch});
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),/exact-bound/);
+});
+
+for(const generation of [undefined,'73',0,-1,1.5])
+test('prior completed generation must be a positive integer: '+String(generation),async t=>{
+  const f=await priorReceiptFixture(t,{patch:{generation,binding:{reusable:true,directory:'public-snapshots'+generation}}});
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),/exact-bound/);
+});
+
+test('prior evidence chooses only the planned outcome and preserves failed-source validation',async t=>{
+  const good=await priorReceiptFixture(t),failed=await priorReceiptFixture(t,{completed:false});
+  assert.deepEqual(await validatePriorLocalCapture(failed.receipt,{plan:failed.plan}),{status:'failed',publicationCommit:null});
+  await assert.rejects(validatePriorLocalCapture(failed.receipt,{plan:good.plan}),/evidence required/);
+  await assert.rejects(validatePriorLocalCapture(good.receipt,{plan:failed.plan}),/evidence required/);
+  await assert.rejects(validatePriorLocalCapture(failed.receipt,{plan:{...failed.plan,priorSource:'c'.repeat(40)}}),/exact-bound/);
+  const mixed={...good.receipt,...failed.receipt};
+  assert.equal((await validatePriorLocalCapture(mixed,{plan:good.plan})).status,'complete');
+  assert.equal((await validatePriorLocalCapture(mixed,{plan:failed.plan})).status,'failed');
+});
+
+test('changed prior bytes fail their fingerprint even when receipt fields remain valid',async t=>{
+  for(const completed of [false,true]){
+    const f=await priorReceiptFixture(t,{completed});await fs.appendFile(f.file,'\n');
+    await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),/evidence changed/);
+  }
+});
+
+test('prior evidence rejects missing absolute file and invalid SHA bindings before reading',async t=>{
+  const f=await priorReceiptFixture(t);
+  for(const evidence of [undefined,{}, {...f.evidence,file:'prior.json'}, {...f.evidence,sha256:''},
+    {...f.evidence,sha256:'z'.repeat(64)}, {...f.evidence,sha256:'a'.repeat(63)}])
+    await assert.rejects(validatePriorLocalCapture({priorCompletion:evidence},{plan:f.plan}),/evidence required/);
+});
+
+test('unsafe or missing prior evidence is rejected without accepting receipt contents',async t=>{
+  const f=await priorReceiptFixture(t);
+  await assert.rejects(validatePriorLocalCapture({priorCompletion:{...f.evidence,file:f.directory}},{plan:f.plan}),/Unsafe/);
+  await assert.rejects(validatePriorLocalCapture({priorCompletion:{...f.evidence,file:path.join(f.directory,'missing.json')}},{plan:f.plan}),{code:'ENOENT'});
+  await fs.writeFile(f.file,Buffer.alloc(1024*1024+1));
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),/Unsafe/);
+});
+
+test('symlink prior evidence is rejected before following or reading the target',async t=>{
+  const f=await priorReceiptFixture(t);
+  t.mock.method(fs,'lstat',async()=>({isFile:()=>true,isSymbolicLink:()=>true,size:100}));
+  t.mock.method(fs,'readFile',()=>assert.fail('must not follow evidence symlink'));
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),/Unsafe/);
+});
+
+test('malformed prior JSON never becomes valid completion evidence',async t=>{
+  const f=await priorReceiptFixture(t),bytes='{incomplete';await fs.writeFile(f.file,bytes);
+  f.evidence.sha256=createHash('sha256').update(bytes).digest('hex');
+  await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),SyntaxError);
 });

@@ -227,6 +227,8 @@ test('read-only scoring preflight validates the full source without writing any 
  const f=await fixture(t),before=await bytesIn(f.directory);
  const r=await rebuildSnapshotOverall({directory:f.directory,now:()=>2000,validateOnly:true});
  assert.equal(r.sourceTracks,3);assert.equal(r.sourceRows,15);assert.deepEqual(await bytesIn(f.directory),before);
+ assert.match(r.sourceSha256,/^[a-f0-9]{64}$/);
+ assert.equal((await rebuildSnapshotOverall({directory:f.directory,now:()=>3000,validateOnly:true})).sourceSha256,r.sourceSha256);
  const b=await read(f.directory,'tracks/'+ids[0]+'.json');delete b.algorithmVersion;
  await write(f.directory,'tracks/'+ids[0]+'.json',b);
  await assert.rejects(rebuildSnapshotOverall({directory:f.directory,validateOnly:true}),/Unsupported scoring version/);
