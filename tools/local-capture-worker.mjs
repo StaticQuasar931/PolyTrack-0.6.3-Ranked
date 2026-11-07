@@ -1,3 +1,4 @@
+import {reuseCompletedWorkerBackup} from './reuse-worker-backup.mjs';
 import {captureBackendQueueDiagnostic} from './backend-queue-diagnostic.mjs';
 import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
 import {fullSnapshotPolicy,readOnlySnapshotQueryDb} from './full-snapshot-policy.mjs';
@@ -8,7 +9,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {localOvernightCapturePlan} from './overnight-snapshot-plan.mjs';
+import {localOvernightCapturePlan,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
 import {captureOverallProjection} from './capture-overall-projection.mjs';
 import {capturePublicEventTotals} from './public-event-totals-backup.mjs';
@@ -39,7 +40,7 @@ export async function captureLocalCompleteSources({policy,directory,checkpointDi
   const backendQueue=await captureJob(db);
   const query=readOnlySnapshotQueryDb(db);
   const canonical=await captureCanonical({db:query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory});
-  if(!canonical.complete||!canonical.imported||canonical.scanInconsistency)throw Error('Full canonical catch-up incomplete; retain previous public snapshot');
+  if(!canonical.complete||!canonical.imported||canonical.scanInconsistency){console.error(JSON.stringify({canonicalCaptureFailure:canonical}));throw Error('Full canonical catch-up incomplete; retain previous public snapshot');}
   const profiles=await captureProfiles({db:query,directory,since,readTime:canonical.fullScanReadPoint,maxDocuments:policy.profileDocumentLimit});
   if(!profiles.complete)throw Error('Profile capture incomplete');
   if(db.writeAttempts()!==0)throw Error('Full snapshot attempted a database write');
@@ -91,7 +92,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(head!==receipt.testedCommit)throw Error('Capture child source changed');
   const transport=globalThis.fetch,controllers=new Set();let aborted=false;
-  const sourceFence=createFullSnapshotReadFence({fetchImpl:transport});
+  const sourceFence=createFullSnapshotReadFence({fetchImpl:transport,initialDirectReservations:N.priorDirectReservations,initialWorkerRequests:N.priorWorkerRequests});
   const abort=()=>{aborted=true;for(const controller of controllers)controller.abort();};
   const onMessage=value=>{if(value?.type==='abort')abort();};
   process.on('message',onMessage);process.on('disconnect',abort);
@@ -108,11 +109,14 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root,expectedGeneration:fullPolicy.publishedBaseline.generation,expectedIndexSha256:fullPolicy.publishedBaseline.indexSha256});
   try{
     process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT=await fs.readFile(receipt.credentialFile,'utf8');
-    const catalog=await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
+    const reused=receipt.reuseWorkerBackup?await reuseCompletedWorkerBackup({directory:staging,receipt}):null;
+    if(reused)await fs.writeFile(path.join(root,'events/public-catalog.json'),reused.catalogBytes);
+    const catalog=reused?{deferred:false}:await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
     const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
       verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:checkpoint,
-      capture:async options=>{const backup=await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
+      capture:async options=>{const backup=reused?.manifest||await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
+        if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));
         const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));
         const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
         console.log(JSON.stringify({fullSnapshotCapture:full}));

@@ -9,7 +9,7 @@ import {rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
 import {buildTrackStatistics} from './snapshot-package.mjs';
 import {ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 
-export const FULL_CANONICAL_LIMITS = Object.freeze({documents: 10000, page: 100,
+export const FULL_CANONICAL_LIMITS = Object.freeze({documents: 20000, page: 100, catchupMemoryBytes:128 * 1024 * 1024,
   memoryBytes: 64 * 1024 * 1024, fileBytes: 2 * 1024 * 1024});
 const COLLECTION = '0.6.2_race_results';
 const HASH = /^[a-f0-9]{64}$/;
@@ -148,10 +148,10 @@ function decode(value) {
 
 // Conservative owned-data accounting, not a process RSS limit. The injected
 // transport must itself bound response decoding; it returns an already-built array.
-function memoryBudget() {
+function memoryBudget(limit=FULL_CANONICAL_LIMITS.memoryBytes) {
   let used = 4 * 1024 * 1024, peak = used;
   return {claim(bytes) {
-    if (used + bytes > FULL_CANONICAL_LIMITS.memoryBytes) fail('memory_cap', true);
+    if (used + bytes > limit) fail('memory_cap', true);
     used += bytes; peak = Math.max(peak, used); let released = false;
     return () => { if (!released) { used -= bytes; released = true; } };
   }, peak: () => peak};
@@ -452,11 +452,11 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
     documentLimit, documentWrites: 0, verificationAttempts: 0, capDeferred: false, deferred: false,
     ingestedAt: {present: 0, missing: 0, serverTimestamp: 0, allPopulated: false, allServerTimestamps: false},
     incrementalEligible: false, imported: false};
-  const memory = memoryBudget();
+  const memory = memoryBudget(documentLimit>10000?FULL_CANONICAL_LIMITS.catchupMemoryBytes:FULL_CANONICAL_LIMITS.memoryBytes);
   let root, locked = false;
   try {
     demand(db && typeof db.call === 'function', 'transport_required');
-    demand(positive(documentLimit) && documentLimit <= 10000 && positive(pageSize) && pageSize <= 100, 'invalid_limits');
+    demand(positive(documentLimit) && documentLimit <= FULL_CANONICAL_LIMITS.documents && positive(pageSize) && pageSize <= 100, 'invalid_limits');
     if (readTime !== undefined) timestamp(readTime);
     root = await checkedRoot(directory);
     demand(!active.has(root), 'capture_already_active'); active.add(root); locked = true;
@@ -496,7 +496,7 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
           demand(!prior.has(id) && !uploads.has(row.uploadId), 'duplicate_prior_binding');
           memory.claim(768);
           prior.add(id); uploads.set(row.uploadId, id); knownAccounts.add(row.accountId); ids.push(id);
-          if (prior.size > 10000) fail('baseline_exceeds_10000', true);
+          if (prior.size > documentLimit) fail('baseline_exceeds_'+documentLimit, true);
           const projected = project(row);
           if (typeof row.reason === 'string' && /review|hold|excluded|rejected/.test(row.reason)) {
             projected.reviewHold = true; projected.needsReview = true;

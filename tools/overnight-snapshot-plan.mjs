@@ -1,12 +1,13 @@
 export const OVERNIGHT_SNAPSHOT = Object.freeze({
-  claimTag:'polytrack-oneoff-2026-11-07-replacement-1',priorClaimTag:'polytrack-oneoff-2026-11-07',priorSource:'91d46dcedeb92c8a5a7ea84bb0fc7915a4548c8d',
+  priorDirectReservations:27,priorWorkerRequests:512,
+  claimTag:'polytrack-oneoff-2026-11-07-replacement-2',priorClaimTag:'polytrack-oneoff-2026-11-07-replacement-1',priorSource:'d67fcc28564974a252265559b424cf467192e1ec',
   date:'2026-11-07', execution:'local', cron:'45 8 * * *', start:Date.parse('2026-11-07T08:05:00Z'),
   reset:Date.parse('2026-11-07T08:00:00Z'),
-  localReservationEnd:Date.parse('2026-11-07T09:05:00Z'),
+  localReservationEnd:Date.parse('2026-11-07T11:00:00Z'),
   latestFallback:Date.parse('2026-11-07T12:15:00Z'), deadline:Date.parse('2026-11-07T13:00:00Z'),
   // Explicitly authorized replacement after the guarded first attempt failed.
   // Later finishing/recovery is offline-only, never another fresh capture.
-  latestCaptureStart:Date.parse('2026-11-07T09:00:00Z'),
+  latestCaptureStart:Date.parse('2026-11-07T10:00:00Z'),
   maxJobs:10000, maxRuntimeMs:1500000, packReserveMs:60000, jobTimeoutMinutes:50, replayDocumentLimit:1000
 });
 

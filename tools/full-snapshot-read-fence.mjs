@@ -8,10 +8,11 @@ export async function boundedFirestoreResponse(response,{maxBytes=16*1024*1024}=
  return new Response(bytes,{status:response.status,statusText:response.statusText,headers:response.headers});
 }
 
-export function createFullSnapshotReadFence({fetchImpl=fetch,maxDirectReservations=15000,maxWorkerRequests=1024}={}){
- if(maxDirectReservations!==15000||maxWorkerRequests!==1024)throw Error('Fixed full snapshot transport bounds required');
- let directReservations=0,workerRequests=0,oauthRequests=0,stopped=false;
- const report=()=>({directDocumentReadReservations:directReservations,workerRequests,oauthRequests,maxDirectReservations,maxWorkerRequests,stopped,documentWrites:0,scope:'Transport attempts and conservative direct reservations; Worker requests are not billed document counts.'});
+export function createFullSnapshotReadFence({fetchImpl=fetch,maxDirectReservations=25000,maxWorkerRequests=1024,initialDirectReservations=0,initialWorkerRequests=0}={}){
+ if(maxDirectReservations!==25000||maxWorkerRequests!==1024)throw Error('Fixed full snapshot transport bounds required');
+ if(!Number.isSafeInteger(initialDirectReservations)||initialDirectReservations<0||initialDirectReservations>maxDirectReservations||!Number.isSafeInteger(initialWorkerRequests)||initialWorkerRequests<0||initialWorkerRequests>maxWorkerRequests)throw Error('Invalid prior capture accounting');
+ let directReservations=initialDirectReservations,workerRequests=initialWorkerRequests,oauthRequests=0,stopped=false;
+ const report=()=>({directDocumentReadReservations:directReservations,workerRequests,priorDirectReservations:initialDirectReservations,priorWorkerRequests:initialWorkerRequests,oauthRequests,maxDirectReservations,maxWorkerRequests,stopped,documentWrites:0,scope:'Transport attempts and conservative direct reservations; Worker requests are not billed document counts.'});
  const fail=message=>{stopped=true;throw Error(message);};
  return {report,fetch:async(input,options={})=>{
   if(stopped)throw Error('Full snapshot transport stopped');const url=new URL(String(input));
