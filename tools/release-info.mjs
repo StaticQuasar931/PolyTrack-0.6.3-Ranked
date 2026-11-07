@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 307,
+  "number": 309,
   "version": "0.6.3",
-  "revision": 264,
+  "revision": 266,
   "notes": [
-    "Fixed route planning for profiles that were only partly loaded.",
-    "Kodub weekly leaderboards now show published Event RP alongside the right run."
+    "Improved snapshot recovery when a newer PB arrives before its cached replay.",
+    "Kept earlier verification tied to the exact run it approved.",
+    "Improved overnight update reliability."
   ],
-  "preparedAt": "2026-11-07T04:41:57.417Z",
-  "committedAt": "2026-11-07T05:00:56.000Z"
+  "preparedAt": "2026-11-07T05:36:45.793Z",
+  "committedAt": "2026-11-07T06:03:58.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
