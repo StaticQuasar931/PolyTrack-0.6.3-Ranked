@@ -77,5 +77,12 @@ export function createSnapshotMetadataRecovery({
     retryAt = new Map();
   }
 
-  return { warm, retryMissing, reset };
+  function ensure(kind) {
+    if (!METADATA_KEYS.includes(kind)) return Promise.resolve(false);
+    if (received.has(kind)) return Promise.resolve(true);
+    if (pending.has(kind)) return pending.get(kind);
+    if (now() < (retryAt.get(kind) || 0)) return Promise.resolve(false);
+    return request(kind, false);
+  }
+  return { warm, retryMissing, reset, ensure };
 }
