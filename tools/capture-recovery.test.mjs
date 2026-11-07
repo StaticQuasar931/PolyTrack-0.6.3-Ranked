@@ -70,3 +70,16 @@ test('default repair-2 header remains compatible and raw private files stay forb
  assert((await fs.readFile(f.outputFile)).equals(existing));
  await assert.rejects(encryptCaptureRecovery({...f,outputFile:path.join(f.directory,'nested.ptenc')}),/outside/);
 });
+
+test('full canonical catch-up checkpoints support more than thirty thousand files',async t=>{
+ const f=await fixture(t);
+ for(let batch=0;batch<301;batch++)await Promise.all(Array.from({length:100},(_,i)=>
+  fs.writeFile(path.join(f.directory,`row-${batch*100+i}.json`),'{}')));
+ const report=await encryptCaptureRecovery(f);
+ assert.equal(report.files,30101);
+ const destination=path.join(f.root,'large-restored');
+ const restored=await restoreCaptureRecovery({inputFile:f.outputFile,destination,privateKey,
+  expectedSha256:report.ciphertextSha256,sourceCommit});
+ assert.equal(restored.files,30101);
+ assert.equal(await fs.readFile(path.join(destination,'row-30099.json'),'utf8'),'{}');
+});

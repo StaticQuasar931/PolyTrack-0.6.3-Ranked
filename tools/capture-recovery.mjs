@@ -7,7 +7,7 @@ import {createGzip,gunzipSync} from 'node:zlib';
 import {createHash,createPublicKey,createPrivateKey,publicEncrypt,privateDecrypt,randomBytes,createCipheriv,createDecipheriv,constants} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 
-const MAGIC=Buffer.from('PTREC01\n'),MAX_BYTES=256*1024*1024,MAX_FILES=30000,MAX_FILE=16*1024*1024;
+const MAGIC=Buffer.from('PTREC01\n'),MAX_BYTES=256*1024*1024,MAX_FILES=50000,MAX_FILE=16*1024*1024;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const safe=relative=>typeof relative==='string'&&relative.length<512&&/^[A-Za-z0-9_./-]+$/.test(relative)&&
  !relative.startsWith('/')&&!relative.split('/').some(part=>!part||part==='.'||part==='..')&&
