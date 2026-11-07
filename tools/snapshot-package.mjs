@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { gzip, gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { buildTrackSnapshotPaging, buildOverallSnapshotPaging, buildBoardPageManifest, buildSnapshotBootstrapIndex, buildSnapshotFastIndex, isBootstrapSnapshotPath } from './track-snapshot-paging.mjs';
 
 const gzipAsync = promisify(gzip);
@@ -270,6 +271,78 @@ export async function restoreSnapshotArchive(archivePath, destinationDirectory) 
   return contents.index;
 }
 
+function sameCandidate(stat, identity) {
+  return stat.isDirectory() && !stat.isSymbolicLink() && stat.dev === identity.dev && stat.ino === identity.ino &&
+    stat.birthtimeMs === identity.birthtimeMs && stat.mode === identity.mode;
+}
+
+async function assertAbsent(destination) {
+  try { await fs.lstat(destination); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  throw Object.assign(new Error('Snapshot generation destination already exists'), {code: 'EEXIST'});
+}
+
+async function assertCandidate(directory, identity, expected) {
+  const invalid = () => { throw new Error('Snapshot publication candidate changed'); };
+  if (!sameCandidate(await fs.lstat(directory), identity)) invalid();
+  const seen = new Set(), buffer = Buffer.alloc(64 * 1024);
+  async function walk(current, prefix = '') {
+    for (const entry of await fs.readdir(current, {withFileTypes: true})) {
+      const relative = prefix + entry.name, file = path.join(current, entry.name);
+      const stat = await fs.lstat(file);
+      if (stat.isSymbolicLink()) invalid();
+      if (stat.isDirectory()) {
+        if (relative !== 'lookup-shards' || ![...expected.keys()].some(name => name.startsWith('lookup-shards/'))) invalid();
+        await walk(file, relative + '/'); continue;
+      }
+      const wanted = expected.get(relative);
+      if (!stat.isFile() || stat.nlink !== 1 || !wanted || stat.size !== wanted.bytes || stat.size > MAX_FILE_BYTES) invalid();
+      const handle = await fs.open(file, 'r');
+      try {
+        const opened = await handle.stat(), hash = createHash('sha256');
+        if (opened.dev !== stat.dev || opened.ino !== stat.ino) invalid();
+        let total = 0;
+        for (;;) {
+          const {bytesRead} = await handle.read(buffer, 0, buffer.length, null);
+          if (!bytesRead) break;
+          total += bytesRead;
+          if (total > wanted.bytes) invalid();
+          hash.update(buffer.subarray(0, bytesRead));
+        }
+        const after = await fs.lstat(file);
+        if (total !== wanted.bytes || hash.digest('hex') !== wanted.sha256 || after.isSymbolicLink() ||
+            after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size ||
+            after.mtimeMs !== stat.mtimeMs || after.mode !== stat.mode) invalid();
+      } finally { await handle.close(); }
+      seen.add(relative);
+    }
+  }
+  await walk(directory);
+  if (seen.size !== expected.size || !sameCandidate(await fs.lstat(directory), identity)) invalid();
+}
+
+// Local directory commit only: never rerun capture, encoding, or native work.
+// The caller must exclusively own the publication root, as for pointer commit.
+async function renameGeneration(source, destination, identity, expected) {
+  const waits = [100, 500, 1000];
+  const parent = path.dirname(source), parentIdentity = await fs.lstat(parent);
+  if (parent !== path.dirname(destination) || !sameCandidate(parentIdentity, parentIdentity)) {
+    throw new Error('Unsafe snapshot publication parent');
+  }
+  for (let attempt = 0;; attempt++) {
+    if (attempt) {
+      await delay(waits[attempt - 1]);
+      await assertCandidate(source, identity, expected);
+    }
+    if (!sameCandidate(await fs.lstat(parent), parentIdentity)) throw new Error('Snapshot publication parent changed');
+    await assertAbsent(destination);
+    try { await fs.rename(source, destination); return; }
+    catch (error) {
+      if (process.platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error.code) || attempt === waits.length) throw error;
+    }
+  }
+}
+
 export async function publishSnapshot({ root, stagingDirectory, historyDirectory = path.join(root, 'local-reports', 'snapshot-history'), now = Date.now }) {
   if (!root || !stagingDirectory) throw new TypeError('root and stagingDirectory are required');
   const absoluteRoot = path.resolve(root);
@@ -296,8 +369,12 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
   const finalDirectory = path.join(absoluteRoot, directoryName);
   const stagingPublish = path.join(absoluteRoot, `.${directoryName}.${process.pid}.tmp`);
   const files = {};
+  const expected = new Map();
+  const remember = (name, bytes) => expected.set(name, {bytes: bytes.byteLength, sha256: sha256(bytes)});
+  let candidateIdentity = null;
   try {
     await fs.mkdir(stagingPublish, { recursive: false });
+    candidateIdentity = await fs.lstat(stagingPublish);
     for (let i = 0; i < entries.length; i += 1) {
       const { logicalPath, bytes } = entries[i];
       const payload = `snapshot-${String(i + 1).padStart(4, '0')}.bin`;
@@ -307,19 +384,27 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
       const payloadHash = sha256(encoded);
       const payloadName = `${payloadHash}.bin`;
       await fs.rename(path.join(stagingPublish, payload), path.join(stagingPublish, payloadName));
+      expected.set(payloadName, {bytes: encoded.byteLength, sha256: payloadHash});
       files[logicalPath] = { path: payloadName, sha256: payloadHash, decodedBytes: bytes.byteLength };
     }
     const publishedAt=now();if(!Number.isSafeInteger(publishedAt)||publishedAt<=0||publishedAt>8640000000000000)throw Error('Invalid snapshot package publication time');
     const index = { schemaVersion: 1, generation, publishedAt, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1, files };
     await writeSnapshotLookupShards(index, stagingPublish);
+    for (const [bucket, shard] of buildSnapshotLookupShards(index)) {
+      remember(`lookup-shards/${bucket}.json`, Buffer.from(JSON.stringify(shard) + '\n'));
+    }
     const indexBytes = Buffer.from(`${JSON.stringify(index)}\n`, 'utf8');
     if (indexBytes.byteLength > MAX_FILE_BYTES) throw new RangeError(`index.json exceeds ${MAX_FILE_BYTES} bytes`);
     await fs.writeFile(path.join(stagingPublish, 'index.json'), indexBytes, { flag: 'wx' });
+    remember('index.json', indexBytes);
     if (entries.some(entry => entry.logicalPath === 'snapshot-paging.json')) {
       const bootstrapBytes = Buffer.from(`${JSON.stringify(buildSnapshotBootstrapIndex(index))}\n`, 'utf8');
       if (bootstrapBytes.byteLength > MAX_DECODED_BYTES) throw new RangeError('bootstrap-index.json exceeds compact index limit');
       await fs.writeFile(path.join(stagingPublish, 'bootstrap-index.json'), bootstrapBytes, { flag: 'wx' });
-      await fs.writeFile(path.join(stagingPublish, 'bootstrap-fast.json'), JSON.stringify(buildSnapshotFastIndex(index)) + '\n', { flag: 'wx' });
+      remember('bootstrap-index.json', bootstrapBytes);
+      const fastBytes = Buffer.from(JSON.stringify(buildSnapshotFastIndex(index)) + '\n');
+      await fs.writeFile(path.join(stagingPublish, 'bootstrap-fast.json'), fastBytes, { flag: 'wx' });
+      remember('bootstrap-fast.json', fastBytes);
     }
 
     let archivePath = null;
@@ -327,14 +412,20 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
       const previousPath = path.join(absoluteRoot, currentDirectory);
       archivePath = await archiveGeneration(previousPath, path.resolve(historyDirectory), currentIndex.generation);
     }
-    await fs.rename(stagingPublish, finalDirectory);
+    await renameGeneration(stagingPublish, finalDirectory, candidateIdentity, expected);
     const pointer = Buffer.from(`${JSON.stringify({ currentdir: directoryName }, null, 2)}\n`, 'utf8');
     const pointerTemp = `${pointerPath}.${process.pid}.tmp`;
     await fs.writeFile(pointerTemp, pointer, { flag: 'wx' });
     await fs.rename(pointerTemp, pointerPath);
     return { changed: true, generation, directory: directoryName, contentDigest, archivePath };
   } catch (error) {
-    await fs.rm(stagingPublish, { recursive: true, force: true }).catch(() => {});
+    // Do not remove a pre-existing or replaced candidate owned by another run.
+    if (candidateIdentity && path.dirname(stagingPublish) === absoluteRoot) {
+      const currentCandidate = await fs.lstat(stagingPublish).catch(() => null);
+      if (currentCandidate && sameCandidate(currentCandidate, candidateIdentity)) {
+        await fs.rm(stagingPublish, { recursive: true, force: true }).catch(() => {});
+      }
+    }
     throw error;
   }
 }

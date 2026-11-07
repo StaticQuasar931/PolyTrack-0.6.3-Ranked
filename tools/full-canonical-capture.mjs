@@ -570,9 +570,14 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
           try {
             const old = previous.value, saved = canonical.value, bytes = recording.value;
             if (saved) { binding(saved); demand(saved.accountId === source.accountId && saved.trackId === source.trackId, 'saved_identity'); }
-            if (old && saved) demand(binding(old) === binding(saved), 'saved_board_mismatch');
-            const baseline = old || saved, same = baseline && binding(baseline) === binding(source);
-            if (baseline && !same) demand(source.timeMs < baseline.timeMs, 'non_faster_replacement');
+            // Backup refreshes boards before the canonical/replay cache. Either
+            // retained view can lag, but neither may be regressed by this scan.
+            const sourceBinding = binding(source), sameBoard = old && binding(old) === sourceBinding;
+            const sameCanonical = saved && binding(saved) === sourceBinding;
+            for (const retained of [old, saved]) if (retained && binding(retained) !== sourceBinding) {
+              demand(source.timeMs < retained.timeMs, 'non_faster_replacement');
+              demand(source.uploadId !== retained.uploadId, 'upload_binding_collision');
+            }
             demand(!uploads.has(source.uploadId) || uploads.get(source.uploadId) === id, 'upload_collision');
             if (bytes) {
               const normalized = {uploadId: source.uploadId, timeMs: source.timeMs,
@@ -583,22 +588,42 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
             }
             const restrictions = holds(old, saved, bytes, source);
             let next, canonicalOut, recordingOut;
-            if (same && saved && bytes) {
+            if (sameCanonical && bytes) {
               demand(saved.integrityVerified === true && saved.runVerified === saved.verified &&
                 bytes.verifiedState === saved.verifiedState && (bytes.verified === undefined || bytes.verified === saved.verified) &&
                 (bytes.runVerified === undefined || bytes.runVerified === saved.runVerified) &&
                 (bytes.integrityVerified === undefined || bytes.integrityVerified === true) &&
-                (saved.carStyle ?? '') === (source.carStyle ?? '') &&
-                (!old || old.runVerified === saved.runVerified && old.verifiedState === saved.verifiedState), 'invalid_saved_proof');
+                (saved.carStyle ?? '') === (source.carStyle ?? ''), 'invalid_saved_proof');
               const dates = project(source, [...DATE_FIELDS, 'ingestedAtSource']);
-              next = {...project(old || saved), ...dates, ...restrictions};
               const canonicalProof = pristineCompanions(saved, source), recordingProof = pristineCompanions(bytes, source);
+              const boardProofMatches = sameBoard && old.runVerified === saved.runVerified && old.verifiedState === saved.verifiedState;
+              if (sameBoard && !boardProofMatches) {
+                // A raw Worker refresh can remove an unchanged row's native
+                // overlay. Only the exact cached native authority can restore it.
+                demand(canonicalProof.nativeLedger &&
+                  (canonicalProof.nativeLedgerBoardSource || canonicalProof.nativeLedgerSource), 'invalid_saved_proof');
+              }
+              if (sameBoard && old.nativeLedgerKey !== undefined) {
+                demand(old.nativeLedgerKey === ledgerKey(ledgerBinding(source, 'normal')), 'saved_ledger_binding');
+              }
+              next = {...project(sameBoard ? old : saved), ...dates, ...restrictions};
               if (next.nativeLedgerKey !== undefined) {
                 demand(next.nativeLedgerKey === ledgerKey(ledgerBinding(source, 'normal')) &&
                   (canonicalProof.nativeLedgerBoardSource || canonicalProof.nativeLedgerSource), 'saved_ledger_baseline_missing');
               }
               canonicalOut = {...project(saved), ...canonicalProof, ...dates, ...restrictions};
               recordingOut = {...project(bytes), ...recordingProof, ...restrictions, recording: bytes.recording};
+              if (!boardProofMatches) {
+                // Keep cached bytes/provenance, not their positive authority on
+                // a refreshed or different board. Only the later pinned-root
+                // native applier may promote this pending materialization.
+                for (const row of [next, canonicalOut, recordingOut]) {
+                  delete row.validationState; delete row.status;
+                  Object.assign(row, {verified: false, runVerified: false, verifiedState: 0,
+                    verificationStatus: 'pending', playbackPending: true, eventRpEligible: false, verifiedAt: null}, restrictions);
+                }
+                delete next.nativeLedgerKey; delete next.nativeLedgerManifestHash;
+              }
               report.reused++;
             } else {
               const frames = source.frames ?? source.raceTimeFrames;
@@ -609,9 +634,9 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
               Object.assign(next, restrictions);
               canonicalOut = {...next}; recordingOut = {...next, recording: source.replay};
               if (old) { next.originalTimeMs = old.originalTimeMs ?? old.timeMs; next.originalRank = old.originalRank ?? old.rank ?? 1; }
-              if (same) report.repaired++;
-              else if (old) report.changed++;
+              if (sameBoard || sameCanonical) report.repaired++;
             }
+            if (old && !sameBoard || saved && !sameCanonical) report.changed++;
             if (!old) report.newRows++;
             if (!boards.has(source.trackId)) {
               memory.claim(1024); report.newTracks++;

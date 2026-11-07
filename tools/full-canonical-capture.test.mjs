@@ -12,8 +12,8 @@ import {loadCapturedNativeJobs} from './verifier/local-snapshot-capture.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
 import {buildTrackStatistics} from './snapshot-package.mjs';
 import {snapshotConfirmationTime} from './snapshot-confirmation-time.mjs';
-import {readCapturedNormalLedgerRows} from './public-snapshot-backup.mjs';
-import {ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
+import {applyNativeLedgerToCapturedTracks, readCapturedNormalLedgerRows} from './public-snapshot-backup.mjs';
+import {createLedgerEntry, writeLedger, ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 
 const id = n => n.toString(16).padStart(64, '0');
 const track = id(900), secondTrack = id(901);
@@ -342,6 +342,214 @@ test('same binding reuses public compact recording and local proof byte for byte
   const after = await tree(f.root);
   for (const relative of [`canonical/${track}/${id(1)}.json`, 'recordings/1.json']) assert.equal(after[relative], before[relative]);
   assert.equal((await f.read(`tracks/${track}.json`)).entries[0].verified, false);
+});
+
+function nativeSaved(row) {
+  const key = ledgerKey(ledgerBinding(row, 'normal'));
+  return saved(row, {verified: true, runVerified: true, verifiedState: 1, verificationStatus: 'verified',
+    nativeLedgerKey: key, nativeLedgerManifestHash: id(60), verifiedAt: 99,
+    nativeLedger: {authority: 'native-verification-ledger', bindingKey: key, manifestHash: id(60), disposition: 'verified'},
+    nativeLedgerSource: {bindingKey: key, status: {verified: false, runVerified: false, verifiedState: 0}},
+    nativeLedgerBoardSource: {bindingKey: key, status: {verified: false, runVerified: false, verifiedState: 0}}});
+}
+
+for (const hasNewRecording of [false, true]) for (const held of [false, true]) {
+  test(`refreshed board precedes stale canonical cache: new recording=${hasNewRecording}, hold=${held}`, async t => {
+    const f = await fixture(t), old = nativeSaved(source(1));
+    if (held) old.reviewHold = true;
+    const payload = Buffer.alloc(18); payload.writeUIntLE(1, 0, 3); payload.writeUIntLE(500, 3, 3);
+    const freshReplay = deflateSync(payload).toString('base64url');
+    const fresh = source(1, {uploadId: 3, timeMs: 1500, replay: freshReplay, replayHash: sha(freshReplay),
+      verified: true, verifiedState: 1});
+    // Exactly the wrapper order: backup has refreshed the board, while replay
+    // export has not yet replaced the previous canonical cache and recording.
+    await baseline(f, [saved(fresh, {runVerified: true})]);
+    await f.put(`canonical/${track}/${id(1)}.json`, old);
+    await f.put('recordings/1.json', {...old, recording: replay});
+    if (hasNewRecording) await f.put('recordings/3.json', {...saved({...fresh, verified: false, verifiedState: 0}), recording: freshReplay});
+    const oldRecording = await fs.readFile(path.join(f.root, 'recordings/1.json'), 'utf8');
+    const report = await f.run([fresh]);
+    assert.equal(report.complete, true); assert.equal(report.imported, true);
+    assert.equal(report.scanInconsistency, false); assert.equal(report.reused, 0); assert.equal(report.changed, 1);
+    const board = await f.read(`tracks/${track}.json`), canonical = await f.read(`canonical/${track}/${id(1)}.json`);
+    const recording = await f.read('recordings/3.json');
+    for (const row of [board.entries[0], canonical, recording]) {
+      assert.equal(row.timeMs, 1500); assert.equal(row.uploadId, 3); assert.equal(row.replayHash, sha(freshReplay));
+      assert.equal(row.runVerified, false); assert.equal(row.verified, false); assert.equal(row.verifiedState, 0);
+      assert.equal(row.verificationStatus, held ? 'held' : 'pending');
+      assert.equal(row.reviewHold === true, held);
+      for (const field of ['nativeLedgerKey', 'nativeLedger', 'nativeLedgerSource', 'nativeLedgerBoardSource', 'verifiedAt']) {
+        assert.equal(row[field], undefined);
+      }
+    }
+    assert.equal(recording.recording, freshReplay);
+    assert.equal(await fs.readFile(path.join(f.root, 'recordings/1.json'), 'utf8'), oldRecording);
+    assert.deepEqual(board.entries, rankTrustedTrackEntries(board.entries, track));
+    assert.equal((await loadCapturedNativeJobs({directory: f.root})).jobs.length, 1);
+    const ledgerRows = await readCapturedNormalLedgerRows({directory: f.root});
+    assert.equal(ledgerRows[0].timeMs, 1500); assert.equal(ledgerRows[0].runVerified, false);
+    await buildProfileSnapshotResults(f.root);
+    const profile = await f.read(`profile-results/${id(1)}.json`);
+    assert.equal(profile.results[0].timeMs, 1500);
+  });
+}
+
+for (const held of [false, true]) {
+  test(`new canonical pair precedes stale board: exact proof reused, old-board hold=${held}`, async t => {
+    const f = await fixture(t), old = nativeSaved(source(1)), fresh = source(1, {uploadId: 3, timeMs: 1500});
+    old.name = 'Stale board identity';
+    if (held) old.reviewHold = true;
+    const current = nativeSaved(fresh);
+    await baseline(f, [old]); await f.put(`canonical/${track}/${id(1)}.json`, current);
+    await f.put('recordings/3.json', {...current, recording: fresh.replay});
+    const report = await f.run([fresh]);
+    assert.equal(report.reused, 1); assert.equal(report.changed, 1); assert.equal(report.repaired, 0);
+    const board = await f.read(`tracks/${track}.json`), canonical = await f.read(`canonical/${track}/${id(1)}.json`);
+    for (const row of [board.entries[0], canonical, await f.read('recordings/3.json')]) {
+      assert.equal(row.timeMs, 1500); assert.equal(row.uploadId, 3); assert.equal(row.name, current.name);
+      assert.equal(row.nativeLedgerKey, row === board.entries[0] ? undefined : current.nativeLedgerKey);
+      assert.notEqual(row.nativeLedgerKey, old.nativeLedgerKey);
+      assert.equal(row.runVerified, false); assert.equal(row.reviewHold === true, held);
+    }
+    for (const field of ['nativeLedger', 'nativeLedgerSource', 'nativeLedgerBoardSource']) assert.deepEqual(canonical[field], current[field]);
+    assert.deepEqual(board.entries, rankTrustedTrackEntries(board.entries, track));
+    assert.equal((await loadCapturedNativeJobs({directory: f.root})).jobs.length, 1);
+    const rows = await readCapturedNormalLedgerRows({directory: f.root});
+    assert.equal(rows[0].timeMs, 1500); assert.equal(rows[0].sourceCanonicalStatus.verified, false);
+    assert.equal(rows[0].sourceBoardStatus.verified, false); assert.equal(rows[0].reviewHold === true, held);
+    await buildProfileSnapshotResults(f.root);
+    assert.equal((await f.read(`profile-results/${id(1)}.json`)).results[0].timeMs, 1500);
+  });
+}
+
+test('new canonical without its recording cannot reuse proof over a stale board', async t => {
+  const f = await fixture(t), fresh = source(1, {uploadId: 3, timeMs: 1500});
+  await baseline(f, [nativeSaved(source(1))]);
+  await f.put(`canonical/${track}/${id(1)}.json`, nativeSaved(fresh));
+  const report = await f.run([fresh]);
+  assert.equal(report.reused, 0); assert.equal(report.changed, 1);
+  const canonical = await f.read(`canonical/${track}/${id(1)}.json`);
+  assert.equal(canonical.verified, false); assert.equal(canonical.nativeLedgerKey, undefined);
+  assert.equal((await f.read('recordings/3.json')).recording, fresh.replay);
+  assert.equal((await readCapturedNormalLedgerRows({directory: f.root}))[0].runVerified, false);
+});
+
+for (const held of [false, true]) {
+  test(`raw refreshed board cannot revoke exact cached native authority or clear holds: hold=${held}`, async t => {
+    const f = await fixture(t), fresh = source(1, {uploadId: 3, timeMs: 1500});
+    const raw = saved(fresh), current = nativeSaved(fresh);
+    if (held) raw.reviewHold = true;
+    await baseline(f, [raw]); await f.put(`canonical/${track}/${id(1)}.json`, current);
+    await f.put('recordings/3.json', {...current, recording: fresh.replay});
+    const report = await f.run([fresh]);
+    assert.equal(report.reused, 1); assert.equal(report.changed, 0);
+    const board = await f.read(`tracks/${track}.json`), canonical = await f.read(`canonical/${track}/${id(1)}.json`);
+    for (const row of [board.entries[0], canonical, await f.read('recordings/3.json')]) {
+      assert.equal(row.nativeLedgerKey, row === board.entries[0] ? undefined : current.nativeLedgerKey);
+      assert.equal(row.runVerified, false);
+      assert.equal(row.verified, false); assert.equal(row.reviewHold === true, held);
+      assert.equal(row.verificationStatus, held ? 'held' : 'pending');
+    }
+    for (const field of ['nativeLedger', 'nativeLedgerSource', 'nativeLedgerBoardSource']) assert.deepEqual(canonical[field], current[field]);
+    assert.equal((await loadCapturedNativeJobs({directory: f.root})).jobs.length, 1);
+    const rows = await readCapturedNormalLedgerRows({directory: f.root});
+    assert.equal(rows[0].sourceBoardStatus.verified, false);
+    assert.equal(rows[0].sourceCanonicalStatus.verified, false);
+    assert.equal(rows[0].reviewHold === true, held);
+  });
+}
+
+for (const missing of ['nativeLedger', 'companions']) {
+  test(`raw refreshed board mismatch cannot reuse incomplete native authority: missing ${missing}`, async t => {
+    const f = await fixture(t), fresh = source(1), current = nativeSaved(fresh);
+    if (missing === 'nativeLedger') delete current.nativeLedger;
+    else { delete current.nativeLedgerSource; delete current.nativeLedgerBoardSource; }
+    await baseline(f, [saved(fresh)]); await f.put(`canonical/${track}/${id(1)}.json`, current);
+    await f.put('recordings/1.json', {...current, recording: fresh.replay});
+    const before = await tree(f.root);
+    await assert.rejects(f.run([fresh]), /invalid_saved_proof/);
+    assert.deepEqual(await tree(f.root), before);
+  });
+}
+
+for (const authority of ['unknown', 'incompatible-policy', 'revoked-by-hold', 'approved']) {
+  test(`raw board/cache reconciliation defers promotion to real pinned native applier: ${authority}`, async t => {
+    const f = await fixture(t), fresh = source(1), current = nativeSaved(fresh);
+    await baseline(f, [saved(fresh)]);
+    await f.put(`canonical/${track}/${id(1)}.json`, current);
+    await f.put('recordings/1.json', {...current, recording: fresh.replay});
+    assert.equal((await f.run([fresh])).reused, 1);
+    for (const row of [(await f.read(`tracks/${track}.json`)).entries[0],
+      await f.read(`canonical/${track}/${id(1)}.json`), await f.read('recordings/1.json')]) {
+      assert.equal(row.verified, false); assert.equal(row.runVerified, false);
+    }
+    const geometry = {parts: 20, spanX: 100, spanZ: 120};
+    const policy = {engineDigest: id(70), compatibleEngines: [], verifierVersion: 'test-native-v1',
+      verifierFingerprint: id(71), resourceProfiles: ['standard'], reviewPolicyVersions: ['review-v1'],
+      trackContentHashes: {[track]: id(72)}, trackGeometries: {[track]: {geometryPolicy: 'default', trackGeometry: geometry}}};
+    const job = {...fresh, lane: 'normal', resultId: `${id(1)}_${track}`};
+    const binding = {resultId: job.resultId, trackId: track, timeMs: fresh.timeMs, replayHash: fresh.replayHash,
+      actualReplayHash: fresh.replayHash, nativeTrackId: track, trackContentHash: id(72), engineDigest: id(70),
+      verifierVersion: policy.verifierVersion, verifierFingerprint: id(71), resourceProfile: 'standard'};
+    const nativeResult = {resultId: job.resultId, trackId: track, timeMs: fresh.timeMs, replayHash: fresh.replayHash,
+      status: 'verified', reason: 'native_exact_finish', deterministic: true, engineDigest: id(70),
+      trackContentHash: id(72), trackGeometry: geometry, geometryPolicy: 'default', binding,
+      boundInputFingerprint: sha(JSON.stringify(binding))};
+    const revoked = authority === 'revoked-by-hold';
+    const result = revoked ? {...nativeResult, status: 'unavailable', reason: 'review_hold'} : nativeResult;
+    const entry = createLedgerEntry({job, result, nativeResult, lane: 'normal', policy, verifiedAt: Date.now() - 60000,
+      review: {complete: true, disposition: revoked ? 'held' : 'approved', bindingKey: ledgerKey(ledgerBinding(job, 'normal')),
+        policyVersion: 'review-v1', attestationHash: id(73)}});
+    const ledgerRoot = path.join(f.root, 'verification-ledger'); await fs.mkdir(ledgerRoot);
+    const ledger = writeLedger({root: ledgerRoot, entries: authority === 'unknown' ? [] : [entry], expectedManifestHash: null});
+    const inputs = await loadCapturedNativeJobs({directory: f.root}); assert.equal(inputs.jobs.length, 1);
+    const canonicalRows = await readCapturedNormalLedgerRows({directory: f.root});
+    assert.equal(canonicalRows[0].sourceBoardStatus.verified, false);
+    assert.equal(canonicalRows[0].sourceCanonicalStatus.verified, false);
+    const applied = await applyNativeLedgerToCapturedTracks({directory: f.root, ledgerRoot, ledger, canonicalRows,
+      policy: authority === 'incompatible-policy' ? {...policy, verifierFingerprint: id(74)} : policy, rebuildDerived: false});
+    const approved = authority === 'approved';
+    assert.equal(applied.verified, approved ? 1 : 0);
+    for (const row of [(await f.read(`tracks/${track}.json`)).entries[0],
+      await f.read(`canonical/${track}/${id(1)}.json`), await f.read('recordings/1.json')]) {
+      assert.equal(row.runVerified, approved); assert.equal(row.verified, approved);
+      if (revoked) assert.equal(row.needsReview, true);
+    }
+    await buildProfileSnapshotResults(f.root);
+    assert.equal((await f.read(`profile-results/${id(1)}.json`)).results[0].runVerified, approved);
+  });
+}
+
+for (const currentView of ['board', 'canonical']) for (const equalTime of [false, true]) {
+  test(`source cannot regress or rebind ${currentView} even when other view matches: equalTime=${equalTime}`, async t => {
+    const f = await fixture(t), incoming = source(1, {uploadId: 3, timeMs: 1500});
+    const newer = saved(source(1, {uploadId: 4, timeMs: equalTime ? 1500 : 1000})), matching = saved(incoming);
+    await baseline(f, [currentView === 'board' ? newer : matching]);
+    await f.put(`canonical/${track}/${id(1)}.json`, currentView === 'canonical' ? newer : matching);
+    await f.put('recordings/3.json', {...matching, recording: incoming.replay});
+    const before = await tree(f.root);
+    await assert.rejects(f.run([incoming]), /non_faster_replacement/);
+    assert.deepEqual(await tree(f.root), before);
+  });
+}
+
+test('split board/cache never masks a reused upload binding collision', async t => {
+  const f = await fixture(t), fresh = source(1, {uploadId: 3, timeMs: 1500});
+  await baseline(f, [saved(fresh)]);
+  await f.put(`canonical/${track}/${id(1)}.json`, saved(source(1, {uploadId: 3, timeMs: 2000})));
+  const before = await tree(f.root);
+  await assert.rejects(f.run([fresh]), /upload_binding_collision/);
+  assert.deepEqual(await tree(f.root), before);
+});
+
+test('split board/cache never masks a mismatched current recording', async t => {
+  const f = await fixture(t), fresh = source(1, {uploadId: 3, timeMs: 1500});
+  await baseline(f, [saved(fresh)]);
+  await f.put(`canonical/${track}/${id(1)}.json`, saved(source(1)));
+  await f.put('recordings/3.json', {...saved(fresh), timeMs: 2000, recording: fresh.replay});
+  const before = await tree(f.root);
+  await assert.rejects(f.run([fresh]), /recording_collision/);
+  assert.deepEqual(await tree(f.root), before);
 });
 
 test('generation-75 nullable country metadata passes prior inventory and exact-binding reuse', async t => {

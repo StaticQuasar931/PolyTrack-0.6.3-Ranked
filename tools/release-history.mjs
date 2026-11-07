@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 308,
+    "number": 309,
     "version": "0.6.3",
-    "revision": 265,
+    "revision": 266,
     "notes": [
-      "Improved cloud sync and reduced repeated work for saved runs.",
-      "Improved snapshot update checks and kept event scores consistent."
+      "Improved snapshot recovery when a newer PB arrives before its cached replay.",
+      "Kept earlier verification tied to the exact run it approved.",
+      "Improved overnight update reliability."
     ]
   },
   "entries": [
+    {
+      "number": 308,
+      "title": "Reduce cloud rebuild costs and prepare complete snapshot capture",
+      "commit": "ad6a5e63f12e1bb8fb81fa96a5c7472d93382b77",
+      "committedAt": "2026-11-07T05:22:20.000Z",
+      "notes": [
+        "Improved cloud sync and reduced repeated work for saved runs.",
+        "Improved snapshot update checks and kept event scores consistent."
+      ]
+    },
     {
       "number": 307,
       "title": "Fix profile route planning and Kodub Event RP display",
@@ -210,16 +221,6 @@ const historyData = {
       "notes": [
         "Snapshot update checks now cover the encrypted recovery path.",
         "Existing saved results remain in place if an update cannot finish."
-      ]
-    },
-    {
-      "number": 286,
-      "title": "Preserve encrypted capture recovery with a smaller retry budget",
-      "commit": "9aadac9dfaa66c09502c04cb30b4623aad11b890",
-      "committedAt": "2026-11-05T14:59:00.000Z",
-      "notes": [
-        "Snapshot updates can recover saved replay data if processing is interrupted.",
-        "The replacement update uses a smaller replay-fetch budget."
       ]
     }
   ],
