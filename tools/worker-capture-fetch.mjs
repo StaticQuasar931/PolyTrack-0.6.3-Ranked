@@ -1,3 +1,4 @@
+import {CAPTURE_READ_PACER,createCaptureReadPacer} from './capture-read-pacing.mjs';
 import {createPrivateKey, sign} from 'node:crypto';
 
 export const CAPTURE_HEADER_NAME = 'X-PolyTrack-Capture';
@@ -64,7 +65,7 @@ export function createWorkerCaptureFetch({fetchImpl = globalThis.fetch,
       account = {client_email: account.client_email, private_key_id: account.private_key_id};
     } catch { key = undefined; throw Error('Invalid Worker capture service-account credential'); }
   }
-  return async (input, options = {}) => {
+  const capture=async (input, options = {}) => {
     // Validate the destination before touching credentials or constructing a token.
     const {url, headers, route, signal} = validate(input, options);
     if (route === 'capture') {
@@ -86,6 +87,8 @@ export function createWorkerCaptureFetch({fetchImpl = globalThis.fetch,
       return response;
     } catch (error) { throw safeTransportError(error); }
   };
+  Object.defineProperty(capture,CAPTURE_READ_PACER,{value:createCaptureReadPacer()});
+  return capture;
 }
 
 // Parent tools must leave their fetchImpl default undefined when using this resolver.

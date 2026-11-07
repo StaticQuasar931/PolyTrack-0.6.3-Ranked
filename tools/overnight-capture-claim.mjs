@@ -2,7 +2,7 @@ import {OVERNIGHT_SNAPSHOT} from './overnight-snapshot-plan.mjs';
 import {captureRepairPolicy} from './capture-repair-plan.mjs';
 
 const REPOSITORY='StaticQuasar931/PolyTrack-0.6.3-Ranked';
-export const overnightClaimRef=({replacement=false,attempt='repair-1'}={})=>replacement?captureRepairPolicy(attempt).claimRef:`refs/tags/polytrack-oneoff-${OVERNIGHT_SNAPSHOT.date}`;
+export const overnightClaimRef=({replacement=false,attempt='repair-1'}={})=>replacement?captureRepairPolicy(attempt).claimRef:'refs/tags/'+(OVERNIGHT_SNAPSHOT.claimTag||'polytrack-oneoff-'+OVERNIGHT_SNAPSHOT.date);
 
 // A GitHub ref is the shared one-shot marker, including failed admitted runs.
 // It adds no database request or branch and is never deleted to retry silently.

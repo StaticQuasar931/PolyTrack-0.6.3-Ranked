@@ -129,6 +129,10 @@ async function main(){
   if(args.length!==2||args[0]!=='--receipt'||!path.isAbsolute(args[1]))throw Error('Usage: node tools/local-overnight-capture.mjs --receipt ABSOLUTE_READY_JSON');
   const receipt=JSON.parse(await fs.readFile(args[1],'utf8')),directory=path.dirname(args[1]),owner=randomUUID();
   localOvernightCapturePlan({receipt});fullSnapshotPolicy(receipt);await validateLocalEvidence(receipt);
+  const prior=receipt.priorFailure;
+  if(!prior||!path.isAbsolute(prior.file||'')||!/^[a-f0-9]{64}$/.test(prior.sha256||''))throw Error('Preserved prior failure evidence required');
+  const priorBytes=await fs.readFile(prior.file),priorReceipt=JSON.parse(priorBytes);
+  if(createHash('sha256').update(priorBytes).digest('hex')!==prior.sha256||priorReceipt.status!=='failed'||priorReceipt.sourceCommit!==N.priorSource)throw Error('Prior attempt is not terminal and exact-bound');
   const workspace=receipt.workspace;
   if(!path.isAbsolute(workspace||'')||!path.isAbsolute(receipt.credentialFile||'')||!path.isAbsolute(receipt.recoveryPublicKeyFile||'')||
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');
@@ -154,7 +158,9 @@ async function main(){
         planFile:receipt.archiveReplayRepair.file,planSha256:receipt.archiveReplayRepair.sha256,maxDocuments:receipt.archiveReplayRepair.maxDocuments});},
     reconcilePublication:({candidateCommit})=>reconcileLocalPublication({candidateCommit,readMain:async()=>(await read('/git/ref/heads/main'))?.object?.sha}),
     inspect:async()=>{
-      const head=await read('/git/ref/heads/main'),claimed=await read('/git/ref/tags/polytrack-oneoff-'+N.date);
+      const head=await read('/git/ref/heads/main'),claimed=await read('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date));
+      const previous=await read('/git/ref/tags/'+N.priorClaimTag);
+      if(previous?.object?.sha!==N.priorSource)throw Error('Original claim changed; preserve and inspect');
       for(const status of ['in_progress','queued','waiting','pending','requested']){
         const rows=await read('/actions/runs?status='+status+'&per_page=100');
         if(!Array.isArray(rows?.workflow_runs)||rows.workflow_runs.length>=100)return {complete:false};

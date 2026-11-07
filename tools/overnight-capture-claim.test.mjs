@@ -20,7 +20,7 @@ test('only the first scheduled/manual claimant acquires the shared source-bound 
       if(claimed)return response(422,{});
       claimed={ref,object:{sha:sourceCommit}};return response(201,claimed);
     }
-    assert.equal(options.method,'GET');assert.ok(url.endsWith('/git/ref/tags/polytrack-oneoff-'+N.date));
+    assert.equal(options.method,'GET');assert.ok(url.endsWith('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date)));
     return response(200,claimed);
   };
   const both=await Promise.all([1,2].map(()=>acquireOvernightCaptureClaim({repository,sourceCommit,token,fetchImpl})));
