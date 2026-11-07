@@ -4,14 +4,17 @@ import {readFile, appendFile, mkdtemp, mkdir, writeFile} from 'node:fs/promises'
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {SNAPSHOT_CDN_REPOSITORY,PAYLOAD_SHARDS_META,parseSnapshotPayloadShards,snapshotPayloadShard,snapshotPayloadBase} from './snapshot-payload-shards.mjs';
 
-export const REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
+export const REPOSITORY = SNAPSHOT_CDN_REPOSITORY;
 export const POINTER_BRANCH = 'cdn-release';
 export const ASSET_BRANCH = 'cdn-assets';
 export const SNAPSHOT_BRANCH = 'cdn-snapshots';
+export const PAYLOAD_BRANCH = 'cdn-snapshot-payload-';
+export const PAYLOAD_SHARD_COUNT = 4;
 export const POINTER_URL = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${POINTER_BRANCH}/release.json`;
 export const POINTER_MIRRORS = ['fastly.jsdelivr.net','gcore.jsdelivr.net'].map(host => POINTER_URL.replace('cdn.jsdelivr.net',host));
-const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+const sha = value => typeof value === 'string' && value.length === 40 && /^[a-f0-9]{40}$/.test(value);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -23,7 +26,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
   if (!directory || !html.includes('main.bundle.js') || !html.includes('polytrack_062_patch.js')) throw Error('Unsupported game entry point');
   const current = JSON.parse(await read('snapshot-current.json'));
   if (current.currentdir !== directory) throw Error('Snapshot pointer and entry point disagree');
-  const probes = new Set(['index.html', 'site-version.json', 'simulation_worker.bundle.js', 'polytrack_physics.wasm', directory + '/bootstrap-fast.json']);
+  const probes = new Set(['index.html', 'site-version.json', 'simulation_worker.bundle.js', 'polytrack_physics.wasm', 'snapshot-current.json', directory + '/index.json', directory + '/bootstrap-fast.json']);
   for (const file of ['tools/public-snapshot-client.mjs','tools/snapshot-metadata-recovery.mjs','tools/unique-profile-name.mjs','tools/overall-local-controller.mjs','tools/overall-local-projection.mjs','tools/practice-profile.mjs','events/client.mjs']) probes.add(file);
   for (const match of html.matchAll(/\b(?:src|href)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
     if (!/^[a-zA-Z0-9_./-]+$/.test(match[1]) || match[1].split('/').includes('..')) throw Error('Unsafe entry asset path');
@@ -50,6 +53,13 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     const binding = fast.files?.[logical];
     if (!Array.isArray(binding) || binding[0] !== entry.sha256 || binding[1] !== entry.decodedBytes) throw Error('Fast index rankings binding mismatch: ' + logical);
     probes.add(directory + '/' + entry.path);
+  }
+  // A real indexed payload from every shard proves that each package is serveable.
+  const payloadProbes = new Set();
+  for (const entry of Object.values(pack.files)) {
+    if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256) || entry.path !== entry.sha256+'.bin') throw Error('Invalid snapshot payload binding');
+    const shard = snapshotPayloadShard(entry.path,PAYLOAD_SHARD_COUNT);
+    if (!payloadProbes.has(shard)) { probes.add(directory+'/'+entry.path); payloadProbes.add(shard); }
   }
   // The patch loads additional browser tools lazily. Include their literal paths
   // before trimming Node-only build/export/verification tools from the CDN tree.
@@ -108,7 +118,25 @@ async function fetchBytes(url, fetchImpl, {retryAfterCapMs=120000}={}) {
 }
 
 export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now=Date.now, log=console.warn}={}) {
-  const baseFor = file => `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${file.commit || plan.pointer.commit}/`;
+  const mapping = plan.pointer.payloadShards === undefined ? null : parseSnapshotPayloadShards(plan.pointer.payloadShards);
+  if ((plan.pointer.payloadShards !== undefined || plan.pointer.metadataSnapshotCommit !== undefined) && (!mapping || !validReleasePointer(plan.pointer))) throw Error('Invalid CDN package binding');
+  if (mapping && plan.files.find(file=>file.path==='index.html')?.sha256 !== plan.pointer.indexSha256) throw Error('Unbound CDN entry digest');
+  const checkedBases = new Set();
+  const urlFor = file => {
+    if (!/^[a-zA-Z0-9_./-]+$/.test(file.path) || file.path.split('/').some(part=>!part || part==='.' || part==='..')) throw Error('Invalid CDN probe path');
+    let commit = file.commit || plan.pointer.commit;
+    if (mapping) {
+      const prefix = plan.pointer.snapshotDirectory+'/';
+      const base = file.path.startsWith(prefix) ? snapshotPayloadBase(mapping,mapping.metadataBase,file.path.slice(prefix.length)) : null;
+      const expected = base ? new URL(base).pathname.split('@')[1].split('/')[0] : plan.pointer.commit;
+      if (commit !== expected) throw Error('CDN probe does not match its owning package');
+      if (base) checkedBases.add(base);
+    }
+    if (!sha(commit)) throw Error('Invalid CDN probe commit');
+    return `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${commit}/`+file.path;
+  };
+  const urls = new Map(plan.files.map(file=>[file,urlFor(file)]));
+  if (mapping && [mapping.metadataBase,...mapping.payloadBases].some(base=>!checkedBases.has(base))) throw Error('Missing CDN package readiness probe');
   // Bounded concurrency warms the boot path, not every replay or historical file.
   const queue = [...plan.files];
   const deadline = now() + 5*60*1000;
@@ -124,7 +152,7 @@ export async function checkReleaseFiles(plan, {fetchImpl=fetch, sleep=pause, now
         if (now() >= deadline) { error=Error('CDN readiness budget exhausted'); break; }
         attempts++;
         try {
-          if (digest(await fetchBytes(baseFor(file) + file.path, fetchImpl)) !== file.sha256) throw Error('CDN bytes differ from committed file');
+          if (digest(await fetchBytes(urls.get(file), fetchImpl)) !== file.sha256) throw Error('CDN bytes differ from committed file');
           error = null; break;
         } catch (failure) {
           error = failure;
@@ -158,25 +186,43 @@ export function assertCdnAssetSizes(entries) {
   }
 }
 
-export function bindSnapshotPackage(plan, snapshotCommit) {
+export function bindSnapshotPackage(plan, snapshotCommit, payloadCommits) {
   if (!sha(snapshotCommit) || typeof plan.entryHtml !== 'string' || !/^public-snapshots[1-9]\d*$/.test(plan.pointer.snapshotDirectory)) throw Error('Invalid snapshot package binding');
   const original = '<meta name="polytrack-snapshot" content="./'+plan.pointer.snapshotDirectory+'/">';
   if (plan.entryHtml.split(original).length !== 2) throw Error('Snapshot entry binding must be unique');
   const absolute = 'https://cdn.jsdelivr.net/gh/'+REPOSITORY+'@'+snapshotCommit+'/'+plan.pointer.snapshotDirectory+'/';
-  const html = plan.entryHtml.replace(original, '<meta name="polytrack-snapshot" content="'+absolute+'">');
-  plan.pointer = {...plan.pointer, snapshotCommit, indexSha256:digest(html)};
+  let mapping = null, payloadMeta = '';
+  if (payloadCommits !== undefined) {
+    if (!Array.isArray(payloadCommits) || payloadCommits.some(commit=>!sha(commit))) throw Error('Invalid payload package commits');
+    mapping = parseSnapshotPayloadShards({schemaVersion:1,metadataBase:absolute,payloadBases:payloadCommits.map(commit=>
+      'https://cdn.jsdelivr.net/gh/'+REPOSITORY+'@'+commit+'/'+plan.pointer.snapshotDirectory+'/')});
+    if (!mapping || plan.entryHtml.includes(PAYLOAD_SHARDS_META)) throw Error('Invalid payload package binding');
+    const covered = new Set(plan.files.filter(file=>file.path.startsWith(plan.pointer.snapshotDirectory+'/'))
+      .map(file=>snapshotPayloadShard(file.path.slice(plan.pointer.snapshotDirectory.length+1),payloadCommits.length)));
+    if (payloadCommits.some((_,i)=>!covered.has(i))) throw Error('Missing payload package readiness probe');
+    payloadMeta = '\n<meta name="'+PAYLOAD_SHARDS_META+'" content="'+JSON.stringify(mapping).replaceAll('"','&quot;')+'">';
+  }
+  const html = plan.entryHtml.replace(original, '<meta name="polytrack-snapshot" content="'+absolute+'">'+payloadMeta);
+  const {payloadShards:oldMap,metadataSnapshotCommit:oldMetadata,...pointer} = plan.pointer;
+  plan.pointer = {...pointer, snapshotCommit, ...(mapping?{metadataSnapshotCommit:snapshotCommit,payloadShards:mapping}:{}), indexSha256:digest(html)};
   plan.files = plan.files.map(file=>file.path==='index.html'?{...file,sha256:digest(html)}:
-    file.path.startsWith(plan.pointer.snapshotDirectory+'/')?{...file,commit:snapshotCommit}:file);
+    file.path.startsWith(plan.pointer.snapshotDirectory+'/')?{...file,commit:mapping
+      ? new URL(snapshotPayloadBase(mapping,absolute,file.path.slice(plan.pointer.snapshotDirectory.length+1))).pathname.split('@')[1].split('/')[0]
+      : snapshotCommit}:file);
   return html;
 }
 
-export async function publishAssetTree(plan, git, {partition='all', entryHtml}={}) {
-  if (!['all','runtime','snapshot'].includes(partition)) throw Error('Invalid CDN partition');
+export async function publishAssetTree(plan, git, {partition='all', entryHtml, shardIndex, shardCount=PAYLOAD_SHARD_COUNT}={}) {
+  if (!['all','runtime','snapshot','metadata','payload'].includes(partition) ||
+      ['metadata','payload'].includes(partition) && ![2,4].includes(shardCount) ||
+      partition==='payload' && (![2,4].includes(shardCount) || !Number.isInteger(shardIndex) || shardIndex<0 || shardIndex>=shardCount)) throw Error('Invalid CDN partition');
   const source = plan.pointer.sourceCommit || plan.pointer.commit;
   const entries = git(['ls-tree','-r','-l','-z',source]).toString().split('\0').filter(Boolean);
   const requiredFiles = new Set(plan.files.map(file=>file.path));
   const snapshotPath = file => file.startsWith(plan.pointer.snapshotDirectory+'/');
-  const belongs = file => partition==='snapshot'
+  const payloadShard = file => snapshotPath(file) ? snapshotPayloadShard(file.slice(plan.pointer.snapshotDirectory.length+1),shardCount) : null;
+  const belongs = file => partition==='payload' ? payloadShard(file)===shardIndex : partition==='metadata'
+    ? snapshotPath(file) && payloadShard(file)===null || file==='snapshot-current.json' : partition==='snapshot'
     ? snapshotPath(file) || file==='snapshot-current.json'
     : partition==='runtime' ? !snapshotPath(file) : true;
   const selected = entries.map(line => {
@@ -184,6 +230,7 @@ export async function publishAssetTree(plan, git, {partition='all', entryHtml}={
     if (!match) throw Error('Unsupported release Git entry');
     return {mode:match[1],hash:match[2],bytes:Number(match[3]),path:match[4]};
   }).filter(entry => includeReleaseAsset(entry.path,plan.pointer.snapshotDirectory,requiredFiles) && belongs(entry.path));
+  if (partition==='payload' && !selected.length) throw Error('Empty CDN payload partition: '+shardIndex);
   if (partition==='runtime') {
     if (typeof entryHtml!=='string' || digest(entryHtml)!==plan.pointer.indexSha256) throw Error('Runtime entry does not match its bound pointer');
     const entry=selected.find(file=>file.path==='index.html');if(!entry)throw Error('Missing runtime entry');
@@ -200,7 +247,7 @@ export async function publishAssetTree(plan, git, {partition='all', entryHtml}={
   const tree = git(['write-tree'],{env}).trim();
   const archive = git(['archive','--format=tar','--prefix=PolyTrack-0.6.3-Ranked-'+source+'/',tree],{encoding:null,maxBuffer:64000000});
   if (archive.length >= 49000000) throw Error(partition+' CDN archive exceeds the safe 49 MB publishing budget: '+archive.length+' bytes');
-  const branch=partition==='snapshot'?SNAPSHOT_BRANCH:ASSET_BRANCH;
+  const branch=partition==='payload'?PAYLOAD_BRANCH+shardIndex:['snapshot','metadata'].includes(partition)?SNAPSHOT_BRANCH:ASSET_BRANCH;
   const listed = git(['ls-remote','--heads','origin','refs/heads/'+branch]).trim();
   let parent;
   if (listed) {git(['fetch','--no-tags','origin','refs/heads/'+branch]);parent=git(['rev-parse','FETCH_HEAD']).trim();if(!sha(parent))throw Error('Invalid asset parent');}
@@ -216,12 +263,18 @@ export const validReleasePointer = value => value?.schemaVersion === 1 && value.
     /^[a-f0-9]{64}$/.test(value.indexSha256 || '') && /^public-snapshots[1-9]\d*$/.test(value.snapshotDirectory || '') &&
     typeof value.publishedAt==='string' && Number.isFinite(Date.parse(value.publishedAt)) &&
     (value.sourceCommit === undefined || sha(value.sourceCommit)) &&
-    (value.snapshotCommit === undefined || sha(value.snapshotCommit));
+    (value.snapshotCommit === undefined || sha(value.snapshotCommit)) &&
+    (value.payloadShards === undefined && value.metadataSnapshotCommit === undefined ||
+      sha(value.metadataSnapshotCommit) && value.snapshotCommit === value.metadataSnapshotCommit &&
+      Boolean(parseSnapshotPayloadShards(value.payloadShards)) && value.payloadShards.metadataBase ===
+        `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${value.metadataSnapshotCommit}/${value.snapshotDirectory}/`);
 
 export function sameReleasePointer(actual, expected) {
   return validReleasePointer(actual) && actual.commit===expected.commit && actual.indexSha256===expected.indexSha256 &&
     actual.snapshotDirectory===expected.snapshotDirectory && (!expected.sourceCommit || actual.sourceCommit===expected.sourceCommit) &&
-    (!expected.snapshotCommit || actual.snapshotCommit===expected.snapshotCommit);
+    (!expected.snapshotCommit || actual.snapshotCommit===expected.snapshotCommit) &&
+    actual.metadataSnapshotCommit===expected.metadataSnapshotCommit &&
+    JSON.stringify(parseSnapshotPayloadShards(actual.payloadShards))===JSON.stringify(parseSnapshotPayloadShards(expected.payloadShards));
 }
 
 export function validPurgeState(state, now=Date.now()) {
@@ -349,14 +402,15 @@ export async function publishRelease({root=process.cwd(), branch=process.env.DEF
   }
   let assets;
   const sameSource=previous?.sourceCommit===commit && previous.snapshotDirectory===plan.pointer.snapshotDirectory && sha(previous.snapshotCommit);
-  if(sameSource)bindSnapshotPackage(plan,previous.snapshotCommit);
+  if(sameSource)bindSnapshotPackage(plan,previous.snapshotCommit,previous.payloadShards?.payloadBases.map(base=>new URL(base).pathname.split('@')[1].split('/')[0]));
   const alreadyPublished=sameSource && previous.indexSha256===plan.pointer.indexSha256;
   if (alreadyPublished) {
-    assets={commit:previous.commit,snapshot:{commit:previous.snapshotCommit}};
+    assets={commit:previous.commit,snapshot:{commit:previous.snapshotCommit},payloads:previous.payloadShards?.payloadBases.map(base=>({commit:new URL(base).pathname.split('@')[1].split('/')[0]}))};
   } else {
-    const snapshot=await publishAssetTree(plan,git,{partition:'snapshot'});
-    const entryHtml=bindSnapshotPackage(plan,snapshot.commit);
-    assets={...await publishAssetTree(plan,git,{partition:'runtime',entryHtml}),snapshot};
+    const snapshot=await publishAssetTree(plan,git,{partition:'metadata'}),payloads=[];
+    for(let shardIndex=0;shardIndex<PAYLOAD_SHARD_COUNT;shardIndex++)payloads.push(await publishAssetTree(plan,git,{partition:'payload',shardIndex}));
+    const entryHtml=bindSnapshotPackage(plan,snapshot.commit,payloads.map(payload=>payload.commit));
+    assets={...await publishAssetTree(plan,git,{partition:'runtime',entryHtml}),snapshot,payloads};
   }
   plan.pointer={...plan.pointer,sourceCommit:commit,commit:assets.commit};
   plan.assetPackage=assets;
@@ -410,11 +464,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const superseded=plan.propagation?.status==='superseded';
     if(!deferred&&!superseded&&plan.propagation?.confirmed!==true)throw Error('CDN refresh returned no explicit confirmation');
     const status=deferred?'deferred':superseded?'superseded':'confirmed';
+    const payloadSummary=plan.assetPackage.payloads?.map((payload,index)=>`Payload ${index} archive bytes: ${payload.archiveBytes ?? 'reused'}\n`).join('') || '';
     const summary = `${deferred?'CDN propagation deferred. The published files are intact, but CDN freshness is NOT confirmed.':superseded?'CDN publication superseded by a changed authoritative pointer. This job does NOT confirm that replacement.':'CDN release confirmed at this checking edge only, not globally.'}\nAssets: ${plan.pointer.commit}\nSource: ${plan.pointer.sourceCommit}\nSnapshot: ${plan.pointer.snapshotDirectory}\nRuntime archive bytes: ${plan.assetPackage.archiveBytes ?? 'reused'}\nSnapshot archive bytes: ${plan.assetPackage.snapshot?.archiveBytes ?? 'reused'}\nBoot asset gate: ${plan.assetChecks} (${plan.files.length} assets). Pointer purges: ${plan.propagation?.purges ?? 0}. No Firebase requests.\n${deferred?`Reason: ${plan.propagation.reason}. Cooldown: about ${Math.ceil(plan.propagation.retryAfterMs/60000)} minutes. The CDN-only schedule retries automatically; do not repeat snapshot capture or verification.\n`:''}${plan.propagation.mirrors?.length?'Mirror diagnostics (not loader confirmation): '+JSON.stringify(plan.propagation.mirrors)+'\n':''}`;
     if (deferred) console.warn('::warning::Mutable CDN pointer refresh is deferred, NOT confirmed. See reason/cooldown; retry CDN-only, never capture or verification.');
     if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,`cdn_status=${status}\n`);
-    console.log(summary);
-    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+    console.log(summary+payloadSummary);
+    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary+payloadSummary);
   } catch (error) {
     if(error.code==='CDN_SOURCE_SUPERSEDED'){
       const summary='CDN publication superseded: '+error.message+'. No pointer rollback or freshness confirmation. Wait for the newer CDN-only job; no capture/verification retry.\n';

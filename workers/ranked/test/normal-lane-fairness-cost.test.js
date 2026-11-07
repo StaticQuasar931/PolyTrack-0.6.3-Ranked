@@ -38,7 +38,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
   const version = key => versions.get(key) || '2026-11-03T07:00:00.000Z';
   const set = (key, value) => {
     data.set(key, structuredClone(value));
-    versions.set(key, new Date(Date.UTC(2026, 10, 3, 7) + ++serial).toISOString());
+    versions.set(key, new Date(snapshots.size ? ++now : Date.UTC(2026, 10, 3, 7) + ++serial).toISOString());
   };
   const wire = (key, source = data, sourceVersions = versions) => ({name:base + key,
     fields:eventEncode(source.get(key)).mapValue.fields,
@@ -90,7 +90,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
       assert.equal(q.where.fieldFilter.field.fieldPath, 'trackId');
       const requestedTrack = q.where.fieldFilter.value.stringValue;
       assert.equal(q.limit, 100);
-      const readTime = body.readTime || new Date(now - 1000 + snapshots.size).toISOString();
+      const readTime = body.readTime || new Date(now).toISOString();
       if (!body.readTime) {
         const inputs=new Map([...data].filter(([key])=>key.startsWith(results+'/')||key.startsWith(VERIFICATION_COLLECTION+'/')));
         snapshots.set(readTime, {data:structuredClone(inputs), versions:new Map([...versions].filter(([key])=>inputs.has(key)))});
@@ -218,7 +218,7 @@ test('quota A cost trace: full continuation with three waiting targets', async t
   }
   assert.deepEqual(f.data.get(reconcileKey).pendingTrackIds, []);
   assert.equal(f.stats.canonicalRows, population);
-  assert.equal(f.stats.fixedProof, population);
+  assert.equal(f.stats.fixedProof, 0);
   assert.equal(f.stats.currentProof, population);
   assert.deepEqual(f.errors, []);
   process.stdout.write('QUOTA_A_LANES ' + JSON.stringify({passes,targetReads:f.reads.filter(row =>

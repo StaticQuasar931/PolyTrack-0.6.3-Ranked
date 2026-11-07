@@ -40,10 +40,21 @@ function validateCatalog(catalog) {
 async function validateNativeTotalsOverlay(root, value, manifest, capturedBoards) {
   if (!object(value) || !Object.hasOwn(value, 'nativeEventOverlay')) return false;
   const overlay = value.nativeEventOverlay, isHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  const rebased=overlay?.source==='trusted-published-rebase';
+  const allowed=rebased?['version','totalsBaselineDigest','rollingSource','source','publishedBaseline','backendPairingDigest','finiteCoverage','retainedPeriodIds']:['version','totalsBaselineDigest','rollingSource'];
   if (!object(overlay) || overlay.version !== 'native-event-overlay-v1' ||
-      !isHash(overlay.totalsBaselineDigest) ||
-      Object.keys(overlay).some(key => !['version','totalsBaselineDigest','rollingSource'].includes(key)))
+      !isHash(overlay.totalsBaselineDigest) || Object.keys(overlay).some(key => !allowed.includes(key)))
     throw Error('Invalid native event totals overlay');
+  if(rebased){
+    const pin=overlay.publishedBaseline,periods=overlay.retainedPeriodIds;
+    const pointer=await json(root,'snapshot-current.json'),generation=Number(/^public-snapshots([1-9][0-9]*)$/.exec(pointer.currentdir||'')?.[1]);
+    const currentIndex=Number.isSafeInteger(generation)?await json(root,pointer.currentdir+'/index.json'):null;
+    if(overlay.backendPairingDigest!==overlay.totalsBaselineDigest||overlay.finiteCoverage!=='projected-periods-with-retained-history'||
+      !object(pin)||pin.kind!=='hash-pinned-published-current'||!Number.isSafeInteger(pin.generation)||pin.generation<1||pin.generation>=generation||pin.currentdir!=='public-snapshots'+pin.generation||
+      !Number.isSafeInteger(pin.publishedAt)||pin.publishedAt<=0||!Number.isSafeInteger(currentIndex?.publishedAt)||pin.publishedAt>currentIndex.publishedAt||
+      !['pointerSha256','indexSha256','totalsSha256'].every(key=>isHash(pin[key]))||Object.keys(pin).some(key=>!['kind','generation','currentdir','publishedAt','pointerSha256','indexSha256','totalsSha256'].includes(key))||
+      !Array.isArray(periods)||periods.length>1024||new Set(periods).size!==periods.length||periods.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(id)||!capturedBoards.has(id)))throw Error('Invalid native published totals baseline');
+  }
   const authority = manifest.nativeVerificationLedger;
   if (!object(authority) || !isHash(authority.manifestHash) ||
       !isHash(authority.policyFingerprint)) throw Error('Invalid native totals ledger binding');

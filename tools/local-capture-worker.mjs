@@ -1,9 +1,18 @@
+import {captureBackendQueueDiagnostic} from './backend-queue-diagnostic.mjs';
+import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
+import {fullSnapshotPolicy,readOnlySnapshotQueryDb} from './full-snapshot-policy.mjs';
+import {captureFullCanonical} from './full-canonical-capture.mjs';
+import {captureProfileDelta} from './capture-profile-delta.mjs';
+import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {localOvernightCapturePlan} from './overnight-snapshot-plan.mjs';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
+import {captureOverallProjection} from './capture-overall-projection.mjs';
+import {capturePublicEventTotals} from './public-event-totals-backup.mjs';
+import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {syncPublicEventCatalog} from './sync-event-catalog.mjs';
 import {recordCapture} from './workflow-capture-coordination.mjs';
 import {preflightLocalCaptureCheckpoints,createLocalCaptureCheckpoint,retainLocalCaptureFailure,createLocalNativePhaseReceipt} from './local-capture-checkpoint.mjs';
@@ -13,6 +22,30 @@ import {prepareLocalArchiveReplayRepair,repairLocalArchiveReplays,ARCHIVE_REPAIR
 import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {assertLocalSource} from './local-capture-publication.mjs';
 import {validateLocalEvidence} from './local-overnight-capture.mjs';
+
+// A wrapped backup must not disable the updater's default source stages.
+export function localCaptureSourceStages({captureOverall=captureOverallProjection,captureTotals=capturePublicEventTotals,calculateOverall=rebuildSnapshotOverall}={}){
+  for(const stage of [captureOverall,captureTotals,calculateOverall])if(typeof stage!=='function')throw Error('Complete local capture source stages required');
+  return {captureOverall,captureTotals,calculateOverall};
+}
+
+export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
+  fullSnapshotPolicy({fullSnapshotPolicy:policy});
+  const summaryFile=path.join(directory,'public-export-summary.json'),stat=await fs.lstat(summaryFile);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>2*1024*1024)throw Error('Safe saved profile watermark required before capture');
+  const summary=JSON.parse(await fs.readFile(summaryFile,'utf8')),since=Date.parse(summary.profilesCapturedAt||summary.capturedAt);
+  if(!Number.isSafeInteger(since)||since<1||since>Date.now())throw Error('Known profile watermark required before database access');
+  const db=await connectImpl(serviceAccount,{env:{},mode:'scheduled',documentReadLimit:policy.canonicalDocumentLimit+policy.profileDocumentLimit+1,documentWriteLimit:1,maxReadRetries:0});
+  const backendQueue=await captureJob(db);
+  const query=readOnlySnapshotQueryDb(db);
+  const canonical=await captureCanonical({db:query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory});
+  if(!canonical.complete||!canonical.imported||canonical.scanInconsistency)throw Error('Full canonical catch-up incomplete; retain previous public snapshot');
+  const profiles=await captureProfiles({db:query,directory,since,readTime:canonical.fullScanReadPoint,maxDocuments:policy.profileDocumentLimit});
+  if(!profiles.complete)throw Error('Profile capture incomplete');
+  if(db.writeAttempts()!==0)throw Error('Full snapshot attempted a database write');
+  await fs.writeFile(summaryFile,JSON.stringify({...summary,profilesCapturedAt:profiles.readTime,profileDelta:profiles})+'\n');
+  return {canonical,profiles,backendQueue,documentBudget:db.documentBudget(),backendWrites:0};
+}
 
 export async function assertLocalCaptureOwner({receipt,receiptFile,owner}){
   localOvernightCapturePlan({receipt});
@@ -47,6 +80,7 @@ export async function repairPreparedLocalArchives({receipt,directory,connectImpl
 }
 
 export async function captureLocalSource({receipt,receiptFile,owner}={}){
+  const fullPolicy=fullSnapshotPolicy(receipt);
   await validateLocalEvidence(receipt);
   await assertLocalSource({workspace:receipt.workspace,sourceCommit:receipt.testedCommit,
     runnerFile:path.join(receipt.workspace,'tools/local-overnight-capture.mjs')});
@@ -57,29 +91,34 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(head!==receipt.testedCommit)throw Error('Capture child source changed');
   const transport=globalThis.fetch,controllers=new Set();let aborted=false;
+  const sourceFence=createFullSnapshotReadFence({fetchImpl:transport});
   const abort=()=>{aborted=true;for(const controller of controllers)controller.abort();};
   const onMessage=value=>{if(value?.type==='abort')abort();};
   process.on('message',onMessage);process.on('disconnect',abort);
   globalThis.fetch=(input,options={})=>{
     if(aborted)throw Error('Local capture cancellation requested');
     const controller=new AbortController();controllers.add(controller);
-    return transport(input,{...options,signal:options.signal?AbortSignal.any([options.signal,controller.signal]):controller.signal});
+    return sourceFence.fetch(input,{...options,signal:options.signal?AbortSignal.any([options.signal,controller.signal]):controller.signal});
   };
   // Only this bounded child holds credentials. The offline native phase strips them.
   const staging=path.join(root,'local-reports/snapshot-staging');
   const catalogHandoff={file:path.join(directory,'catalog.private'),binding:{sourceCommit:receipt.testedCommit,
     repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',runId:String(startedAt),runAttempt:'1',startedAt}};
   const checkpoint=createLocalCaptureCheckpoint({root,directory,recipientPublicKey,sourceCommit:receipt.testedCommit});
+  const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root,expectedGeneration:fullPolicy.publishedBaseline.generation,expectedIndexSha256:fullPolicy.publishedBaseline.indexSha256});
   try{
     process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT=await fs.readFile(receipt.credentialFile,'utf8');
     const catalog=await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
-    const result=await updatePublicSnapshot({root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
-      verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff},captureCheckpoint:checkpoint,
+    const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:true,replayDocumentLimit:plan.replayDocumentLimit,
+      verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:checkpoint,
       capture:async options=>{const backup=await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
-        const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));return backup;},
+        const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));
+        const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
+        console.log(JSON.stringify({fullSnapshotCapture:full}));
+        return backup;},
       nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),
-      nativePhaseOptions:{sourceCommit:receipt.testedCommit,maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
+      nativePhaseOptions:{sourceCommit:receipt.testedCommit,publishedEventTotalsBaseline,maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
         proofCheckpoint:({directory:source,sourceBinding,ledgerManifestHash})=>checkpoint({directory:source,
           sourceCommit:receipt.testedCommit,phase:'native-proofs',sourceBinding,ledgerManifestHash})}});
     if(aborted)throw Error('Local capture cancelled; do not publish');
@@ -92,6 +131,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
     await retainLocalCaptureFailure({staging,sourceCommit:receipt.testedCommit,checkpoint});
     throw error;
   }finally{
+    console.log(JSON.stringify({fullSnapshotOperations:sourceFence.report()}));
     delete process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT;globalThis.fetch=transport;
     process.removeListener('message',onMessage);process.removeListener('disconnect',abort);controllers.clear();
   }

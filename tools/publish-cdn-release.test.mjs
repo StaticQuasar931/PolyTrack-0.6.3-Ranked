@@ -7,6 +7,7 @@ import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
+import {snapshotPayloadShard,parseSnapshotPayloadShards} from './snapshot-payload-shards.mjs';
 
 const sha='a'.repeat(40),hash=b=>createHash('sha256').update(b).digest('hex');
 function isolatedGitEnvironment(inherited,overrides={}){
@@ -30,6 +31,15 @@ function fixture(){
     'extra-tracks/catalog-ui.mjs':'/* catalog */','extra-tracks/pack-ui.mjs':'/* packs */',
     'site-version.json':'{}','main.bundle.js':'/* game */','polytrack_062_patch.js':'/* patch */','simulation_worker.bundle.js':'/* worker */','polytrack_physics.wasm':'wasm fixture'
   }).map(([k,v])=>[k,Buffer.from(v)]));
+  const full=JSON.parse(files.get('public-snapshots1/index.json'));
+  const covered=new Set();
+  for(let n=0;covered.size<4;n++){
+    const bytes=Buffer.from('payload shard fixture '+n),hashValue=hash(bytes),bucket=snapshotPayloadShard(hashValue+'.bin',4);
+    if(covered.has(bucket))continue;
+    covered.add(bucket);files.set('public-snapshots1/'+hashValue+'.bin',bytes);
+    full.files['recordings/'+(n+1)+'.json']={path:hashValue+'.bin',sha256:hashValue,decodedBytes:bytes.length};
+  }
+  files.set('public-snapshots1/index.json',Buffer.from(JSON.stringify(full)));
   return {files,read:async file=>{if(!files.has(file))throw Error('Missing '+file);return files.get(file);}};
 }
 const response=bytes=>({ok:true,async arrayBuffer(){return Buffer.from(bytes);}});
@@ -277,11 +287,23 @@ test('real local bare remote: no source changes, first publish, no-op repeat, ne
   assert.notEqual(first.pointer.commit,first.pointer.sourceCommit);
   assert.ok(first.assetPackage.archiveBytes<49000000);
   assert.ok(first.assetPackage.snapshot.archiveBytes<49000000);
+  assert.equal(first.assetPackage.payloads.length,4);
+  for(const payload of first.assetPackage.payloads)assert.ok(payload.archiveBytes<49000000);
   assert.ok(first.pointer.snapshotCommit);
   assert.notEqual(first.pointer.snapshotCommit,first.pointer.commit);
   const publishedHtml=git(['show',first.pointer.commit+':index.html']);
   assert.equal(hash(publishedHtml),first.pointer.indexSha256);
   assert.ok(publishedHtml.includes('@'+first.pointer.snapshotCommit+'/public-snapshots1/'));
+  assert.equal(first.pointer.metadataSnapshotCommit,first.pointer.snapshotCommit);
+  assert.ok(publishedHtml.includes('polytrack-snapshot-payload-shards'));
+  const sourcePaths=git(['ls-tree','-r','--name-only',first.pointer.sourceCommit,'--','public-snapshots1']).trim().split('\n');
+  const union=[];
+  for(const commit of [first.pointer.snapshotCommit,...first.assetPackage.payloads.map(p=>p.commit)]){
+    const paths=git(['ls-tree','-r','--name-only',commit,'--','public-snapshots1']).trim().split('\n').filter(Boolean);
+    for(const file of paths){assert.ok(!union.includes(file),'disjoint snapshot paths');union.push(file);
+      assert.equal(git(['rev-parse',commit+':'+file]).trim(),git(['rev-parse',first.pointer.sourceCommit+':'+file]).trim(),'original Git blob retained');}
+  }
+  assert.deepEqual(union.sort(),sourcePaths.sort());
   assert.ok(!git(['ls-tree','-r','--name-only',first.pointer.commit]).includes('public-snapshots1/'));
   assert.ok(git(['ls-tree','-r','--name-only',first.pointer.snapshotCommit]).includes('public-snapshots1/index.json'));
   assert.ok(!git(['ls-tree','-r','--name-only',first.pointer.snapshotCommit]).includes('main.bundle.js'));
@@ -291,9 +313,24 @@ test('real local bare remote: no source changes, first publish, no-op repeat, ne
   const tree=git(['ls-tree','--name-only',pointerHead]).trim();assert.equal(tree,'release.json');
   await publishRelease(options);
   assert.equal(git(['ls-remote','--heads','origin','cdn-release']).split(/\s/)[0],pointerHead,'repeat repairs purge without creating a commit');
-  await writeFile(path.join(root,'unrelated.txt'),'another change');git(['add','unrelated.txt']);git(['commit','-m','next']);git(['push','origin','main']);
+  await writeFile(path.join(root,'unrelated.txt'),'another change');
+  const extraPayload=Buffer.from('retained payload not selected as a boot probe'),extraPath='public-snapshots1/'+hash(extraPayload)+'.bin';
+  await writeFile(path.join(root,extraPath),extraPayload);
+  git(['add','unrelated.txt',extraPath]);git(['commit','-m','next']);git(['push','origin','main']);
+  await assert.rejects(publishRelease({...options,git:(args,options)=>{
+    if(args[0]==='push'&&args.some(arg=>arg.includes(':refs/heads/cdn-snapshot-payload-')))throw Error('payload push failed');
+    return git(args,options);
+  },check:async()=>assert.fail('readiness cannot begin before every package is bound')}),/payload push failed/);
+  assert.equal(git(['ls-remote','--heads','origin','cdn-release']).split(/\s/)[0],pointerHead,'partial package push cannot move public pointer');
+  await assert.rejects(publishRelease({...options,check:plan=>checkReleaseFiles(plan,{sleep:async()=>{},log:()=>{},fetchImpl:async url=>{
+    if(url.startsWith(plan.pointer.payloadShards.payloadBases[3]))return {ok:false,status:403,text:async()=> 'Package size exceeded'};
+    const suffix=url.split('/gh/'+REPOSITORY+'@')[1],slash=suffix.indexOf('/');
+    return response(git(['show',suffix.slice(0,slash)+':'+suffix.slice(slash+1)],{encoding:null}));
+  }})}),/Release not advertised/);
+  assert.equal(git(['ls-remote','--heads','origin','cdn-release']).split(/\s/)[0],pointerHead,'one unavailable shard blocks pointer advertisement');
   const next=await publishRelease(options);
-  assert.equal(first.pointer.indexSha256,next.pointer.indexSha256);
+  assert.notEqual(first.pointer.indexSha256,next.pointer.indexSha256,'a changed payload package changes the bound CDN entry digest');
+  assert.equal(first.pointer.metadataSnapshotCommit,next.pointer.metadataSnapshotCommit,'payload growth does not rewrite original metadata');
   assert.notEqual(first.pointer.commit,next.pointer.commit);
   assert.equal(purges.length,3);
   await mkdir(path.join(root,'docs'),{recursive:true});await writeFile(path.join(root,'docs/notes.md'),'documentation only');git(['add','docs/notes.md']);git(['commit','-m','docs']);git(['push','origin','main']);
@@ -399,30 +436,43 @@ test('cache-bound new URL module imports are packaged and checked recursively',a
   }
 });
 
-test('the current shipped snapshot fits the CDN tar budget without dropping any snapshot files',{timeout:120000},async t=>{
+test('the current shipped snapshot fits per-package CDN budgets without dropping any snapshot files',{timeout:240000},async t=>{
   const root=fileURLToPath(new URL('../',import.meta.url));
-  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options});
-  const commit=process.env.POLYTRACK_CDN_TEST_COMMIT||local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit});
+  const temporary=await mkdtemp(path.join(os.tmpdir(),'polytrack-cdn-capacity-')),objects=path.join(temporary,'objects');
+  await mkdir(objects);
+  const sourceObjects=execFileSync('git',['-C',root,'rev-parse','--path-format=absolute','--git-path','objects'],{encoding:'utf8'}).trim();
+  // Tree/blob assembly must not write to the shared checkout's object database.
+  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:20000000,...options,
+    env:{...isolatedGitEnvironment(process.env,options.env),GIT_OBJECT_DIRECTORY:objects,GIT_ALTERNATE_OBJECT_DIRECTORIES:sourceObjects}});
+  const commit=process.env.POLYTRACK_CDN_TEST_COMMIT||local(['rev-parse','HEAD']).trim(),plan=await releasePlan({root,commit,read:async file=>Buffer.from(local(['show',commit+':'+file],{encoding:null}))});
   let selected=[];
+  let fakeCommit=0;
   const git=(args,options={})=>{
     if(args[0]==='ls-remote'||args[0]==='push')return '';
-    if(args[0]==='commit-tree')return 'c'.repeat(40);
+    if(args[0]==='commit-tree')return (++fakeCommit).toString(16).padStart(40,'0');
     if(args[0]==='fetch')assert.fail('capacity regression must not access a remote');
     if(args[0]==='update-index')selected=options.input.split('\0').filter(Boolean).map(line=>line.split('\t')[1]);
     return local(args,options);
   };
-  const snapshot=await publishAssetTree(plan,git,{partition:'snapshot'});
+  const snapshot=await publishAssetTree(plan,git,{partition:'metadata'}),union=new Set(selected),payloads=[];
   const snapshotFiles=local(['ls-tree','-r','--name-only',commit,'--',plan.pointer.snapshotDirectory]).trim().split('\n');
-  assert.equal(snapshotFiles.filter(file=>!selected.includes(file)).length,0,'all replay payloads and lookup/index files are retained');
   assert.ok(selected.includes('snapshot-current.json'),'snapshot recovery pointer stays with its data');
   assert.ok(!selected.includes('main.bundle.js'));
-  const entryHtml=bindSnapshotPackage(plan,snapshot.commit);
+  assert.ok(!selected.some(file=>/\/[a-f0-9]{64}\.bin$/.test(file)));
+  for(let shardIndex=0;shardIndex<4;shardIndex++){
+    const payload=await publishAssetTree(plan,git,{partition:'payload',shardIndex});payloads.push(payload);
+    assert.ok(payload.archiveBytes<49000000);
+    for(const file of selected){assert.equal(snapshotPayloadShard(file.slice(plan.pointer.snapshotDirectory.length+1),4),shardIndex);
+      assert.ok(!union.has(file),'payload partitions must be disjoint');union.add(file);}
+  }
+  assert.deepEqual([...union].filter(file=>file.startsWith(plan.pointer.snapshotDirectory+'/')).sort(),snapshotFiles.sort(),'all original snapshot files retained exactly once');
+  const entryHtml=bindSnapshotPackage(plan,snapshot.commit,payloads.map(payload=>payload.commit));
   const runtime=await publishAssetTree(plan,git,{partition:'runtime',entryHtml});
   assert.ok(snapshot.archiveBytes<49000000);assert.ok(runtime.archiveBytes<49000000);
   assert.ok(!selected.some(file=>file.startsWith(plan.pointer.snapshotDirectory+'/')));
   assert.ok(!selected.includes('workers/ranked/src/index.js'));
   assert.ok(selected.includes('workers/ranked/src/extra-track-ids.js'),'shared browser scoring input stays available');
-  t.diagnostic('Immutable tars: runtime '+runtime.archiveBytes+', snapshot '+snapshot.archiveBytes+' bytes; '+plan.files.length+' readiness probes; no remote requests.');
+  t.diagnostic('Immutable tars: runtime '+runtime.archiveBytes+', metadata '+snapshot.archiveBytes+', payloads '+payloads.map(p=>p.archiveBytes).join(', ')+' bytes; '+plan.files.length+' readiness probes; no remote requests.');
 });
 
 test('split snapshot binding changes only the CDN entry and keeps source HTML reusable',async()=>{
@@ -451,4 +501,108 @@ test('readiness validates each snapshot probe at its own immutable commit',async
   }});
   assert.equal(urls.length,plan.files.length);
   assert.ok(urls.some(url=>url.includes('@'+snapshot+'/public-snapshots1/')));
+});
+
+test('payload mapping binds the entry digest, metadata commit and exact owning readiness packages',async()=>{
+  for(const count of [2,4]){
+    const f=fixture(),plan=await releasePlan({commit:sha,...f}),metadata='b'.repeat(40),payloads=['c','d','e','f'].slice(0,count).map(c=>c.repeat(40));
+    const original=plan.entryHtml,html=bindSnapshotPackage(plan,metadata,payloads);
+    plan.pointer.commit='9'.repeat(40);
+    assert.equal(plan.entryHtml,original);assert.equal(hash(html),plan.pointer.indexSha256);
+    const encoded=html.match(/name="polytrack-snapshot-payload-shards" content="([^"]+)"/)[1];
+    assert.deepEqual(parseSnapshotPayloadShards(encoded.replaceAll('&quot;','"')),plan.pointer.payloadShards);
+    assert.equal(plan.pointer.metadataSnapshotCommit,metadata);assert.equal(validReleasePointer(plan.pointer),true);
+    const owners=new Set();
+    await checkReleaseFiles(plan,{fetchImpl:async url=>{
+      const suffix=url.split('/gh/'+REPOSITORY+'@')[1],slash=suffix.indexOf('/'),commit=suffix.slice(0,slash),file=suffix.slice(slash+1);
+      owners.add(commit);
+      const part=file.startsWith('public-snapshots1/')?snapshotPayloadShard(file.slice('public-snapshots1/'.length),count):null;
+      assert.equal(commit,part!==null?payloads[part]:file.startsWith('public-snapshots1/')?metadata:plan.pointer.commit);
+      return response(file==='index.html'?html:await f.read(file));
+    }});
+    assert.deepEqual([...owners].sort(),[plan.pointer.commit,metadata,...payloads].sort());
+    const pointer=structuredClone(plan.pointer);
+    const replacement=[...payloads];replacement[0]='8'.repeat(40);
+    assert.notEqual(hash(bindSnapshotPackage(plan,metadata,replacement)),hash(html));
+    assert.equal(sameReleasePointer(plan.pointer,pointer),false);
+    assert.equal(validReleasePointer({...pointer,metadataSnapshotCommit:'8'.repeat(40)}),false);
+    assert.equal(validReleasePointer({...pointer,payloadShards:{...pointer.payloadShards,metadataBase:pointer.payloadShards.metadataBase.replace('public-snapshots1/','public-snapshots2/')}}),false);
+  }
+});
+
+test('readiness rejects missing or misowned shard probes before making requests',async()=>{
+  const plan=await releasePlan({commit:sha,...fixture()});
+  bindSnapshotPackage(plan,'b'.repeat(40),['c','d','e','f'].map(c=>c.repeat(40)));
+  const original=plan.files;
+  plan.files=original.filter(file=>file.path!=='index.html');
+  await assert.rejects(checkReleaseFiles(plan,{fetchImpl:()=>assert.fail('no network')}),/Unbound CDN entry digest/);
+  plan.files=original.filter(file=>file.commit!=='f'.repeat(40));
+  await assert.rejects(checkReleaseFiles(plan,{fetchImpl:()=>assert.fail('no network')}),/Missing CDN package readiness probe/);
+  plan.files=original.map(file=>file.commit==='f'.repeat(40)?{...file,commit:'e'.repeat(40)}:file);
+  await assert.rejects(checkReleaseFiles(plan,{fetchImpl:()=>assert.fail('no network')}),/owning package/);
+  plan.files=original;
+  plan.pointer.payloadShards={...plan.pointer.payloadShards,payloadBases:['https://evil.test/',...plan.pointer.payloadShards.payloadBases.slice(1)]};
+  await assert.rejects(checkReleaseFiles(plan,{fetchImpl:()=>assert.fail('no network')}),/Invalid CDN package binding/);
+});
+
+test('each new partition independently enforces archive and individual file limits before push',async()=>{
+  for(const partition of ['metadata','payload'])for(const oversizedFile of [false,true]){
+    const file=partition==='metadata'?'public-snapshots1/index.json':'public-snapshots1/'+'0'.repeat(64)+'.bin';
+    await assert.rejects(publishAssetTree({pointer:{commit:sha,snapshotDirectory:'public-snapshots1'},files:[]},args=>{
+      if(args[0]==='ls-tree')return '100644 blob '+'b'.repeat(40)+' '+(oversizedFile?20000000:1)+'\t'+file+'\0';
+      if(args[0]==='write-tree')return 'c'.repeat(40);
+      if(args[0]==='archive')return Buffer.alloc(49000000);
+      if(['read-tree','update-index'].includes(args[0]))return '';
+      assert.fail('size rejection must precede remote or push: '+args[0]);
+    },{partition,shardIndex:0}),oversizedFile?/under 20,000,000/:/49 MB/);
+  }
+});
+
+test('browser dependency graph includes the payload mapper without modifying patch JavaScript',async()=>{
+  const f=fixture();
+  f.files.set('tools/public-snapshot-client.mjs',Buffer.from("import {snapshotPayloadBase} from './snapshot-payload-shards.mjs';"));
+  f.files.set('tools/snapshot-payload-shards.mjs',await readFile(new URL('./snapshot-payload-shards.mjs',import.meta.url)));
+  const plan=await releasePlan({commit:sha,...f});
+  assert.ok(plan.files.some(file=>file.path==='tools/snapshot-payload-shards.mjs'));
+});
+
+test('a real snapshot tar over 49 MB fits four disjoint payload archives without dropping bytes',{timeout:180000},async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'polytrack-cdn-growth-'));
+  const config=path.join(root,'gitconfig');await writeFile(config,'');
+  const env=isolatedGitEnvironment(process.env,{GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:config,GIT_ALLOW_PROTOCOL:'file'});
+  const local=(args,options={})=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding:'utf8',maxBuffer:64000000,timeout:30000,...options,
+    env:isolatedGitEnvironment(process.env,{...env,...options.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:config,GIT_ALLOW_PROTOCOL:'file'})});
+  local(['init','--bare',root]);
+  const rows=[];
+  for(let shard=0;shard<4;shard++){
+    const bytes=Buffer.alloc(13000000,shard);let name;
+    for(let nonce=0;;nonce++){
+      bytes.writeUInt32LE(nonce);name=hash(bytes)+'.bin';if(snapshotPayloadShard(name,4)===shard)break;
+    }
+    const blob=local(['hash-object','-w','--stdin'],{input:bytes}).trim();
+    rows.push('100644 blob '+blob+'\tpublic-snapshots1/'+name+'\0');
+  }
+  const metadata=local(['hash-object','-w','--stdin'],{input:'{}'}).trim();
+  rows.push('100644 blob '+metadata+'\tpublic-snapshots1/index.json\0');
+  const buildEnv={...env,GIT_INDEX_FILE:path.join(root,'source.index')};
+  local(['read-tree','--empty'],{env:buildEnv});local(['update-index','-z','--index-info'],{env:buildEnv,input:rows.join('')});
+  const source=local(['write-tree'],{env:buildEnv}).trim();
+  let selected=[];
+  const git=(args,options={})=>{
+    if(['ls-remote','push'].includes(args[0]))return '';
+    if(args[0]==='fetch')assert.fail('growth test cannot contact remotes');
+    if(args[0]==='commit-tree')return 'f'.repeat(40);
+    if(args[0]==='update-index')selected=options.input.split('\0').filter(Boolean);
+    return local(args,options);
+  };
+  const plan={pointer:{commit:source,snapshotDirectory:'public-snapshots1'},files:[]};
+  await assert.rejects(publishAssetTree(plan,git,{partition:'snapshot'}),/49 MB/);
+  const union=[],sizes=[];
+  for(const options of [{partition:'metadata'},...[0,1,2,3].map(shardIndex=>({partition:'payload',shardIndex}))]){
+    const published=await publishAssetTree(plan,git,options);assert.ok(published.archiveBytes<49000000);
+    sizes.push(published.archiveBytes);union.push(...selected.map(row=>row+'\0'));
+  }
+  assert.deepEqual(union.sort(),rows.sort(),'same paths, modes and original Git blobs retained exactly once');
+  assert.ok(sizes.reduce((sum,n)=>sum+n,0)>49000000,'this is not an aggregate-budget shortcut');
+  t.diagnostic('Growth fixture package bytes: '+sizes.join(', '));
 });

@@ -612,3 +612,13 @@ test('materialized large track admission rejects incomplete, duplicate and malfo
     await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
   }
 });
+
+test('published rebase metadata remains strictly shaped and bound to an earlier generation and the current ledger',async t=>{
+ forbidNetwork(t);const f=await nativeTotalsFixture(t);
+ const pin={kind:'hash-pinned-published-current',generation:1,currentdir:'public-snapshots1',publishedAt:1,pointerSha256:'a'.repeat(64),indexSha256:'b'.repeat(64),totalsSha256:'c'.repeat(64)};
+ const overlay={...f.totals.nativeEventOverlay,source:'trusted-published-rebase',publishedBaseline:pin,backendPairingDigest:f.totals.nativeEventOverlay.totalsBaselineDigest,finiteCoverage:'projected-periods-with-retained-history',retainedPeriodIds:[]};
+ const valid={...f.totals,nativeEventOverlay:overlay};await mutatePayload(f,'event-totals.json',()=>valid);assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+ for(const patch of [{publishedBaseline:{...pin,generation:2,currentdir:'public-snapshots2'}},{publishedBaseline:{...pin,indexSha256:'bad'}},{publishedBaseline:{...pin,unexpected:'field'}},{publishedBaseline:{...pin,publishedAt:Number.MAX_SAFE_INTEGER}},{backendPairingDigest:'d'.repeat(64)},{retainedPeriodIds:['missing-period']},{finiteCoverage:'complete-live'},{source:'other'}]){
+  await mutatePayload(f,'event-totals.json',()=>({...valid,nativeEventOverlay:{...overlay,...patch}}));await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Invalid native/);
+ }
+});

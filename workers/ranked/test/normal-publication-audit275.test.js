@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
 import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 const identityBaseline=process.env.IDENTITY_BUILD_BASELINE;
-const {default:rankedWorker,rebuildTrack, reconcileCanonicalChanges, updateTrackIdentity, computeTrackEntries, persistTrackSnapshot}=identityBaseline
-  ?await import('data:text/javascript,'+encodeURIComponent(readFileSync(identityBaseline,'utf8')
+const proofBaseline=process.env.PROOF_REUSE_BASELINE==='1';
+const baseline=Boolean(identityBaseline||proofBaseline);
+const baselineSource=proofBaseline?execFileSync('git',['show','f1d9ff030:workers/ranked/src/index.js'],{encoding:'utf8'})
+  :identityBaseline?readFileSync(identityBaseline,'utf8'):null;
+const {default:rankedWorker,rebuildTrack, reconcileCanonicalChanges, updateTrackIdentity, computeTrackEntries, persistTrackSnapshot}=baseline
+  ?await import('data:text/javascript,'+encodeURIComponent(baselineSource
     .replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${new URL('../src/'+path.slice(2),import.meta.url).href}'`)))
   :await import('../src/index.js');
 import {eventEncode, eventDecode} from '../src/events-store.js';
@@ -44,7 +49,8 @@ async function fixture(t, {trackId = track, count = population} = {}) {
   const version = key => versions.get(key) || '2026-11-03T07:00:00.000Z';
   const set = (key, value) => {
     data.set(key, structuredClone(value));
-    versions.set(key, new Date(Date.UTC(2026, 10, 3, 7) + ++serial).toISOString());
+    // Writes after snapshot creation must have later versions than that snapshot.
+    versions.set(key, new Date(snapshots.size ? ++now : Date.UTC(2026, 10, 3, 7) + ++serial).toISOString());
   };
   const wire = (key, source = data, sourceVersions = versions) => ({name:base + key,
     fields:eventEncode(source.get(key)).mapValue.fields,
@@ -98,6 +104,12 @@ async function fixture(t, {trackId = track, count = population} = {}) {
       assert.equal(q.from[0].collectionId, results);
       if (q.where?.fieldFilter?.field?.fieldPath !== 'trackId') {
         control.discoveryQueries.push(structuredClone(q));
+        if(control.legacyDiscovery&&!q.where){
+          const after=(q.startAt?.values?.[0]?.referenceValue||'').split('/documents/').at(-1);
+          const found=control.legacyDiscovery.filter(key=>!after||key>after).sort().slice(0,q.limit);
+          stats.reads+=Math.max(1,found.length);
+          return found.map(key=>({document:wire(key)}));
+        }
         const since=q.where?.fieldFilter?.value?.timestampValue || '';
         const after=(q.startAt?.values?.[1]?.referenceValue || '').split('/documents/').at(-1);
         const found = control.cursorDiscovery
@@ -114,7 +126,7 @@ async function fixture(t, {trackId = track, count = population} = {}) {
       assert.equal(q.where.fieldFilter.field.fieldPath, 'trackId');
       const requestedTrack = q.where.fieldFilter.value.stringValue;
       assert.equal(q.limit, 100);
-      const readTime = body.readTime || new Date(now - 1000 + snapshots.size).toISOString();
+      const readTime = body.readTime || new Date(now).toISOString();
       if (!body.readTime) {
         const inputs=new Map([...data].filter(([key])=>key.startsWith(results+'/')||key.startsWith(VERIFICATION_COLLECTION+'/')));
         snapshots.set(readTime, {data:structuredClone(inputs), versions:new Map([...versions].filter(([key])=>inputs.has(key)))});
@@ -200,29 +212,148 @@ async function fixture(t, {trackId = track, count = population} = {}) {
     }
     assert.fail('full build did not finish');
   };
-  return {data, env, rows, reads, queries, stats, commits, control, errors, finish, finishFull, identity, report, set, advance:ms=>{now+=ms;},
+  return {data, versions, snapshots, env, rows, reads, queries, stats, commits, control, errors, finish, finishFull, identity, report, set, advance:ms=>{now+=ms;},
     keys:{boardKey, buildKey}, maxCheckpointBytes:()=>maxCheckpointBytes,
     prior:key => ({data:structuredClone(data.get(key)), updateTime:version(key)})};
 }
 
-test('audit275: stationary 1136-row rebuild reads each historical and current proof once', async t => {
+test('audit275: stationary 1136-row rebuild reuses proven history but reads every current proof', async t => {
   const f = await fixture(t);
+  const original = await loadPublicationEntries(f.data.get(boardKey), 'track', track,
+    async (c, id) => ({data:f.data.get(c + '/' + id)}));
   await f.finish();
   assert.equal(f.stats.canonicalRows, population);
-  assert.equal(f.stats.fixedProof, population);
+  assert.equal(f.stats.fixedProof, baseline ? population : 0);
   assert.equal(f.stats.currentProof, population);
   assert.equal(f.queries.filter(q => !q.readTime).length, 1);
   const entries = await loadPublicationEntries(f.data.get(boardKey), 'track', track,
     async (c, id) => ({data:f.data.get(c + '/' + id)}));
   assert.equal(entries.length, population);
   assert.ok(entries.every(row => row.runVerified));
+  assert.deepEqual(entries, original, 'reuse preserves the full published field, not only counts');
+  assert.equal(f.reads.some(read=>/profiles|entitlement/.test(read.key)), false,
+    'this full track rebuild never reads profiles or cosmetic entitlements');
   assert.deepEqual(f.errors, []);
   assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
-    {reads:3472,writes:41,requests:93},'page batching and historical-root reuse do not skip any per-racer proof');
+    baseline ? {reads:3472,writes:41,requests:93} : {reads:2329,writes:41,requests:74},
+    'unchanged versions eliminate redundant history reads, not current per-racer proofs');
   const rootReads=f.reads.filter(read=>read.key===VERIFICATION_COLLECTION+'/'+track);
-  assert.equal(rootReads.filter(read=>read.readTime).length,7,'one historical root per rebuild invocation');
+  assert.equal(rootReads.filter(read=>read.readTime).length,baseline ? 7 : 0);
   assert.equal(rootReads.filter(read=>!read.readTime).length,12,'current root stays fresh on every page');
   f.report('stationary-full-rebuild');
+});
+
+for (const mode of ['newer-review', 'nanosecond-newer-review', 'deleted', 'missing-version', 'invalid-version'])
+test('proof snapshot reuse falls back for a changed or uncertain shard: ' + mode, async t => {
+  const f = await fixture(t, {count:501}), row = f.rows[0];
+  const key = VERIFICATION_COLLECTION + '/' + verificationShardId(track, row.accountId);
+  let changed = false, hold;
+  f.control.beforeRead = path => {
+    if (changed || path !== VERIFICATION_COLLECTION + '/' + track) return;
+    changed = true;
+    if (mode.includes('review')) {
+      hold = {...pendingSlot(row), status:'unavailable', reason:COMPETITIVE_REVIEW_REASON,
+        retryAt:Number.MAX_SAFE_INTEGER};
+      f.set(key, {...f.data.get(key), slots:{[row.accountId]:hold}});
+      if (mode === 'nanosecond-newer-review') {
+        const snapshot = [...f.snapshots.keys()][0];
+        f.versions.set(key, snapshot.replace(/\.(\d{3})Z$/, (_, fraction) => '.' + fraction + '000001Z'));
+      }
+    } else if (mode === 'deleted') { f.data.delete(key); f.versions.delete(key); }
+  };
+  if (mode.endsWith('version')) {
+    const request = f.env.__TEST_FIRESTORE;
+    f.env.__TEST_FIRESTORE = async (path, init = {}) => {
+      const response = await request(path, init), body = init.body ? JSON.parse(init.body) : {};
+      if (path === ':batchGet' && !body.readTime) for (const item of response) {
+        if (item.found?.name !== base + key) continue;
+        if (mode === 'missing-version') delete item.found.updateTime;
+        else item.found.updateTime = 'unknown-version';
+      }
+      return response;
+    };
+  }
+  await f.finish();
+  assert.equal(f.stats.fixedProof, baseline ? 501 : 1);
+  assert.equal(f.stats.currentProof, 501);
+  assert.equal(f.reads.filter(read=>read.key===key&&read.readTime).length, 1);
+  assert.equal(f.data.get(boardKey).entries[0].runVerified, true,
+    'scoring remains bound to the historical proof, not the newer review or deletion');
+  if (hold) assert.deepEqual(f.data.get(key).slots[row.accountId], hold);
+  if (mode === 'deleted') assert.equal(f.data.get(key).slots[row.accountId].status, 'waiting');
+  assert.deepEqual(f.errors, []);
+});
+
+for (const mode of ['migration-incomplete', 'legacy-root', 'newer-root', 'missing-root-version'])
+test('proof snapshot reuse retains the full historical path for an uncertain root: ' + mode, async t => {
+  const f = await fixture(t, {count:501}), key = VERIFICATION_COLLECTION + '/' + track;
+  if (mode === 'migration-incomplete') f.data.get(key).migrationComplete = false;
+  if (mode === 'legacy-root') f.data.get(key).storageVersion = 1;
+  if (mode === 'newer-root') {
+    let changed = false;
+    f.control.beforeRead = path => {
+      if (changed || path !== key) return;
+      changed = true; f.set(key, {...f.data.get(key), marker:'newer-than-snapshot'});
+    };
+  }
+  if (mode === 'missing-root-version') {
+    const request = f.env.__TEST_FIRESTORE;
+    f.env.__TEST_FIRESTORE = async (path, init) => {
+      const response = await request(path, init);
+      if (path === '/' + key) delete response.updateTime;
+      return response;
+    };
+  }
+  await f.finish();
+  assert.equal(f.stats.fixedProof, 501);
+  assert.equal(f.data.get(boardKey).totalEntries, 501);
+  assert.ok(f.data.get(boardKey).entries.every(row=>row.runVerified));
+  assert.deepEqual(f.errors, []);
+});
+
+for (const mode of ['current-read', 'historical-read', 'proof-cas'])
+test('proof snapshot reuse propagates failures without checkpointing a partial page: ' + mode, async t => {
+  const f = await fixture(t, {count:501}), key = VERIFICATION_COLLECTION + '/' + verificationShardId(track, f.rows[0].accountId);
+  if (mode === 'proof-cas') {
+    f.data.get(key).slots[f.rows[0].accountId].key = 'stale-binding';
+    f.control.beforeCommit = writes => {
+      if (writes.some(write=>write.update.name.includes('/documents/' + VERIFICATION_COLLECTION + '/'))) throw Error('FIRESTORE_412');
+    };
+  }
+  const original = structuredClone(f.data), request = f.env.__TEST_FIRESTORE;
+  f.env.__TEST_FIRESTORE = async (path, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : {};
+    if (path === ':batchGet' && body.documents.some(name=>name.endsWith('/'+key))) {
+      if (mode === 'current-read' && !body.readTime || mode === 'historical-read' && body.readTime)
+        throw Error('FIRESTORE_429');
+      const response = await request(path, init);
+      if (mode === 'historical-read' && !body.readTime)
+        delete response.find(item=>item.found?.name===base+key).found.updateTime;
+      return response;
+    }
+    return request(path, init);
+  };
+  await assert.rejects(rebuildTrack(f.env, track), mode === 'proof-cas' ? /FIRESTORE_412/ : /FIRESTORE_429/);
+  assert.deepEqual(f.data, original);
+  assert.equal(f.stats.writes, 0);
+  assert.equal(f.data.has(buildKey), false);
+});
+
+test('proof snapshot reuse never overwrites a concurrent review hold with a queued proof', async t => {
+  const f = await fixture(t, {count:501}), row = f.rows[0];
+  const key = VERIFICATION_COLLECTION + '/' + verificationShardId(track, row.accountId);
+  f.data.get(key).slots[row.accountId].key = 'stale-binding';
+  const hold = {...pendingSlot(row), status:'unavailable', reason:COMPETITIVE_REVIEW_REASON,
+    retryAt:Number.MAX_SAFE_INTEGER};
+  let injected = false;
+  f.control.beforeCommit = writes => {
+    if (injected || !writes.some(write=>write.update.name.endsWith('/'+key))) return;
+    injected = true; f.set(key, {...f.data.get(key), slots:{[row.accountId]:hold}});
+  };
+  await assert.rejects(rebuildTrack(f.env, track), /FIRESTORE_412/);
+  assert.deepEqual(f.data.get(key).slots[row.accountId], hold);
+  assert.equal(f.data.has(buildKey), false);
+  assert.equal(f.stats.writes, 0);
 });
 
 test('audit275: cosmetic fanout after 900 scanned rows invalidates the full-build base', async t => {
@@ -237,12 +368,13 @@ test('audit275: cosmetic fanout after 900 scanned rows invalidates the full-buil
   assert.equal(f.data.get(buildKey).sourceCount, 100, '900 rows of paid work are abandoned');
   await f.finish();
   assert.equal(f.stats.canonicalRows, population + 900);
-  assert.equal(f.stats.fixedProof, population + 900);
+  assert.equal(f.stats.fixedProof, baseline ? population + 900 : 0);
   assert.equal(f.stats.currentProof, population + 900);
   assert.equal(f.data.get(boardKey).entries[0].name, f.identity.name);
   assert.deepEqual(f.errors, []);
   assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},
-    {reads:6215,writes:74,requests:163},'base-version restart remains mandatory; only repeated requests are coalesced');
+    baseline ? {reads:6215,writes:74,requests:163} : {reads:4167,writes:74,requests:130},
+    'base-version restart remains mandatory; unchanged proofs can establish snapshot history');
   f.report('cosmetic-invalidates-900-row-prefix');
 });
 
@@ -261,10 +393,10 @@ test('coordinated identity fanout preserves a live full build and applies after 
   if(!identityBaseline)assert.equal((await updateTrackIdentity(f.env,track,f.identity)).changed,true);
   assert.equal(f.data.get(boardKey).entries[0].name,f.identity.name);
   assert.equal(f.stats.canonicalRows,identityBaseline?2036:1136);
-  assert.equal(f.stats.fixedProof,f.stats.canonicalRows);assert.equal(f.stats.currentProof,f.stats.canonicalRows);
+  assert.equal(f.stats.fixedProof,baseline?f.stats.canonicalRows:0);assert.equal(f.stats.currentProof,f.stats.canonicalRows);
   f.report(identityBaseline?'identity-gate-before':'identity-gate-after');
   assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes,requests:f.stats.requests},identityBaseline
-    ?{reads:6215,writes:74,requests:163}:{reads:3490,writes:56,requests:102});
+    ?{reads:6215,writes:74,requests:163}:proofBaseline?{reads:3490,writes:56,requests:102}:{reads:2347,writes:56,requests:83});
   assert.deepEqual(f.errors,[]);
 });
 
@@ -389,7 +521,7 @@ test('audit275: lost page checkpoint retries only that 100-row page at the same 
   f.control.beforeCommit = null;
   await f.finish();
   assert.equal(f.stats.canonicalRows, population + 100);
-  assert.equal(f.stats.fixedProof, population + 100);
+  assert.equal(f.stats.fixedProof, baseline ? population + 100 : 0);
   assert.equal(f.stats.currentProof, population + 100);
   assert.equal(f.queries.filter(q => !q.readTime).length, 1);
   assert.deepEqual(f.errors, []);
@@ -504,7 +636,7 @@ test('audit275: current proof holds are not replaced by historical scoring proof
   f.set(key, {...f.data.get(key), slots:{[row.accountId]:hold}});
   await f.finish(true);
   assert.deepEqual(f.data.get(key).slots[row.accountId], hold);
-  assert.equal(f.stats.fixedProof, population);
+  assert.equal(f.stats.fixedProof, baseline ? population : 1);
   assert.equal(f.stats.currentProof, population);
   assert.equal(f.data.get(boardKey).entries.find(entry => entry.accountId === row.accountId).runVerified, true,
     'historical scoring uses the old proof while current queue preparation preserves the newer hold');
@@ -636,7 +768,7 @@ test('audit275: targeted sibling publishes with fresh proof before full continua
   assert.deepEqual(f.data.get(reconcileKey).pendingFullRebuildTrackIds,[]);
   assert.equal(f.data.get(boards+'/'+sibling).revision,siblingRevision,'full continuation does not republish the discharged sibling');
   assert.equal(f.stats.canonicalRows,population);
-  assert.equal(f.stats.fixedProof,population);
+  assert.equal(f.stats.fixedProof,baseline?population:0);
   assert.equal(f.stats.currentProof,population);
   assert.equal(f.queries.filter(q=>!q.readTime).length,1);
   assert.ok(f.queries.every(q=>q.trackId===track),'the targeted sibling never receives a full scan');
@@ -839,7 +971,7 @@ for(const backpressure of [undefined,'enabled'])test('backpressure complete burs
   assert.deepEqual(f.data.get(reconcileKey).pendingResultBindings,{});
   assert.deepEqual(f.errors,[]);
   if(keyed)assert.equal(f.stats.canonicalRows,0);
-  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes},keyed?{reads:1176,writes:537}:{reads:7270,writes:504});
+  assert.deepEqual({reads:f.stats.reads,writes:f.stats.writes},keyed?{reads:1176,writes:537}:{reads:baseline?7270:4984,writes:504});
   for(const row of f.rows.slice(f.changes.length)){
     const actual=published.find(entry=>entry.accountId===row.accountId);
     assert.equal(actual.timeMs,row.timeMs);assert.equal(actual.runVerified,true);
@@ -1040,4 +1172,152 @@ test('retained64: near-limit UTF-8 replay burst validates full replays with boun
  assert.deepEqual(f.data.get(VERIFICATION_COLLECTION+'/'+f.shard).slots[f.held.accountId],f.hold);
  assert.deepEqual(f.errors,[]);assert.equal(f.stats.canonicalRows,0);
  process.stdout.write('RETAINED64_LARGE_REPLAY '+JSON.stringify({passes,maxRequests,canonicalBatchMax,wireCharsMax,hashBytesPeak,...f.stats})+'\n');
+});
+
+async function legacyBackfillFixture(t, options) {
+  const f=await fixture(t,options);
+  f.env.CANONICAL_DISCOVERY_BACKPRESSURE='enabled';
+  f.set(reconcileKey,{...f.data.get(reconcileKey),backfillComplete:false,backfillDocumentId:'',
+    pendingTrackIds:[],pendingFullRebuildTrackIds:[],pendingResultIds:{}});
+  f.control.legacyDiscovery=f.rows.map(row=>results+'/'+row.accountId+'_'+track);
+  return f;
+}
+
+async function finishLegacyBackfill(f, reconcile=reconcileCanonicalChanges) {
+  let passes=0;
+  for(;passes<120;passes++){
+    const requests=f.stats.requests;
+    await reconcile(f.env,{scanResults:false});
+    assert.ok(f.stats.requests-requests<=45,'existing per-invocation request budget is unchanged');
+    const job=f.data.get(reconcileKey);
+    if(job.backfillComplete&&!job.pendingTrackIds.length&&!job.backfillCatchupTrackIds?.length)break;
+    f.advance(5*60000);
+  }
+  assert.ok(passes<120,'enumeration, initial publications and final catch-ups all finish');
+  assert.deepEqual(f.errors,[]);
+  return passes+1;
+}
+
+test('legacy backfill cost: repeated account-ordered pages rebuild a 1136-racer track only twice including final catch-up',
+  {skip:baseline},async t=>{
+  // The comparison restores precisely the former per-page full-intent admission
+  // and omits the new final catch-up; proof reuse and all budgets stay identical.
+  let source=readFileSync(new URL('../src/index.js',import.meta.url),'utf8');
+  for(const marker of ['if(backfillQueuedTrackIds.has(trackId))continue;', 'if(!job.backfillComplete&&backfillComplete){'])
+    assert.equal(source.split(marker).length,2);
+  source=source.replace('if(backfillQueuedTrackIds.has(trackId))continue;','if(false)continue;')
+    .replace('if(!job.backfillComplete&&backfillComplete){','if(false){')
+    .replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${new URL('../src/'+path.slice(2),import.meta.url).href}'`);
+  const old=(await import('data:text/javascript,'+encodeURIComponent(source))).reconcileCanonicalChanges;
+  const costs={};
+  for(const [name,reconcile] of [['before',old],['after',reconcileCanonicalChanges]]){
+    const f=await legacyBackfillFixture(t),passes=await finishLegacyBackfill(f,reconcile);
+    const job=f.data.get(reconcileKey);
+    assert.equal(job.backfillDocumentId,f.rows.at(-1).accountId+'_'+track);
+    assert.equal(job.backfillComplete,true);
+    assert.deepEqual(job.pendingFullRebuildTrackIds,[]);
+    const entries=await loadPublicationEntries(f.data.get(boardKey),'track',track,async(c,id)=>({data:f.data.get(c+'/'+id)}));
+    assert.equal(entries.length,population);assert.ok(entries.every(row=>row.runVerified));
+    const before={...f.stats};
+    assert.equal((await reconcile(f.env,{scanResults:false})).unchanged,true);
+    assert.equal(f.stats.reads-before.reads,1);assert.equal(f.stats.writes,before.writes);
+    costs[name]={passes,...f.stats,fullBuilds:f.queries.filter(q=>!q.readTime).length,
+      legacyPages:f.control.discoveryQueries.filter(q=>!q.where).length};
+  }
+  assert.equal(costs.after.fullBuilds,2);
+  assert.equal(costs.after.canonicalRows,2*population);
+  assert.ok(costs.before.fullBuilds>costs.after.fullBuilds);
+  assert.ok(costs.after.reads<costs.before.reads*0.7);
+  process.stdout.write('LEGACY_BACKFILL_COMPLETED_COST '+JSON.stringify({population,costs,
+    excludes:'SDK traffic, native verification, Overall, events, capture, quota/CAS retries'})+'\n');
+});
+
+test('legacy backfill final catch-up cannot be consumed by an active older snapshot', {skip:baseline},async t=>{
+  const f=await legacyBackfillFixture(t);
+  await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.equal(f.data.get(reconcileKey).activeFullRebuildTrackId,track);
+  const newer={...f.rows[0],timeMs:8000,frames:8000,raceTimeFrames:8000,uploadId:2};
+  f.set(results+'/'+newer.accountId+'_'+track,newer);
+  // Terminate enumeration while the first snapshot is still incomplete.
+  f.control.legacyDiscovery=f.control.legacyDiscovery.slice(0,50);
+  await reconcileCanonicalChanges(f.env,{scanResults:false});
+  let job=f.data.get(reconcileKey);
+  assert.equal(job.backfillComplete,true);
+  assert.deepEqual(job.backfillCatchupTrackIds,[track]);
+  assert.equal(f.queries.filter(q=>!q.readTime).length,1);
+  await finishLegacyBackfill(f);
+  job=f.data.get(reconcileKey);
+  assert.equal(f.queries.filter(q=>!q.readTime).length,2);
+  assert.deepEqual(job.backfillCatchupTrackIds,[]);
+  const entry=f.data.get(boardKey).entries.find(row=>row.accountId===newer.accountId);
+  assert.equal(entry.timeMs,8000);assert.equal(entry.runVerified,false,'changed legacy PB never inherits old verification');
+  const shard=f.data.get(VERIFICATION_COLLECTION+'/'+verificationShardId(track,newer.accountId));
+  assert.equal(shard.slots[newer.accountId].key,verificationKey(newer));
+});
+
+for(const loss of ['before-commit','lost-response'])test('legacy backfill cursor, seen set and full intent remain atomic: '+loss,
+  {skip:baseline},async t=>{
+  const f=await legacyBackfillFixture(t);let failed=false;
+  const hook=loss==='before-commit'?'beforeCommit':'afterCommit';
+  f.control[hook]=async writes=>{
+    if(!failed&&writes.some(w=>w.update.name.endsWith('/'+reconcileKey))){failed=true;throw Error(loss==='before-commit'?'FIRESTORE_412':'LOST_RESPONSE');}
+  };
+  await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),loss==='before-commit'?/FIRESTORE_412/:/LOST_RESPONSE/);
+  const job=f.data.get(reconcileKey);
+  assert.equal(job.backfillDocumentId,loss==='before-commit'?'':f.rows[49].accountId+'_'+track);
+  assert.deepEqual(job.backfillQueuedTrackIds||[],loss==='before-commit'?[]:[track]);
+  assert.deepEqual(job.pendingFullRebuildTrackIds,loss==='before-commit'?[]:[track]);
+  f.control[hook]=null;
+  await reconcileCanonicalChanges(f.env,{scanResults:false});
+  const queries=f.control.discoveryQueries.filter(q=>!q.where);
+  assert.equal(queries.length,2);
+  assert.equal((queries[1].startAt?.values[0].referenceValue||'').split('/documents/').at(-1),
+    loss==='before-commit'?'':results+'/'+f.rows[49].accountId+'_'+track);
+  await finishLegacyBackfill(f);
+  assert.equal(f.queries.filter(q=>!q.readTime).length,2);
+});
+
+test('legacy backfill refuses a 513th seen track before acknowledging its cursor', {skip:baseline},async t=>{
+  const f=await legacyBackfillFixture(t,{count:1});
+  f.set(reconcileKey,{...f.data.get(reconcileKey),backfillQueuedTrackIds:Array.from({length:512},(_,i)=>'seen-track-'+i)});
+  const before=structuredClone(f.data.get(reconcileKey));
+  await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),/RECONCILE_BACKFILL_TRACK_CAPACITY/);
+  assert.deepEqual(f.data.get(reconcileKey),before);
+  assert.equal(f.stats.writes,0);
+});
+
+test('legacy backfill CAS race preserves a concurrent notified binding before replaying discovery', {skip:baseline},async t=>{
+  const f=await legacyBackfillFixture(t),id=f.rows[0].accountId+'_'+track;let raced=false;
+  f.control.beforeCommit=async writes=>{
+    if(!raced&&writes.some(w=>w.update.name.endsWith('/'+reconcileKey))){
+      raced=true;
+      f.set(reconcileKey,{...f.data.get(reconcileKey),pendingTrackIds:[track],
+        pendingResultIds:{[track]:[id]},pendingResultBindings:{[id]:'concurrent-notification'}});
+    }
+  };
+  await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),/FIRESTORE_412/);
+  assert.equal(f.data.get(reconcileKey).backfillDocumentId,'');
+  assert.deepEqual(f.data.get(reconcileKey).backfillQueuedTrackIds||[],[]);
+  f.control.beforeCommit=null;
+  await reconcileCanonicalChanges(f.env,{scanResults:false});
+  const job=f.data.get(reconcileKey);
+  assert.deepEqual(job.backfillQueuedTrackIds,[track]);
+  assert.equal(job.pendingResultBindings[id],'concurrent-notification');
+  assert.ok(job.pendingResultIds[track].includes(id));
+  assert.ok(job.pendingFullRebuildTrackIds.includes(track));
+});
+
+test('legacy terminal-page commit failure cannot record completion without final catch-up intent', {skip:baseline},async t=>{
+  const f=await legacyBackfillFixture(t,{count:1});let failed=false;
+  f.control.beforeCommit=async writes=>{
+    if(!failed&&writes.some(w=>w.update.name.endsWith('/'+reconcileKey))){failed=true;throw Error('FIRESTORE_412');}
+  };
+  await assert.rejects(reconcileCanonicalChanges(f.env,{scanResults:false}),/FIRESTORE_412/);
+  assert.equal(f.data.get(reconcileKey).backfillComplete,false);
+  assert.deepEqual(f.data.get(reconcileKey).backfillCatchupTrackIds||[],[]);
+  f.control.beforeCommit=null;
+  await reconcileCanonicalChanges(f.env,{scanResults:false});
+  assert.equal(f.data.get(reconcileKey).backfillComplete,true);
+  assert.deepEqual(f.data.get(reconcileKey).backfillCatchupTrackIds,[track]);
+  await finishLegacyBackfill(f);
 });

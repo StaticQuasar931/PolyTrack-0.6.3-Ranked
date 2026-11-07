@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 307,
+    "number": 308,
     "version": "0.6.3",
-    "revision": 264,
+    "revision": 265,
     "notes": [
-      "Fixed route planning for profiles that were only partly loaded.",
-      "Kodub weekly leaderboards now show published Event RP alongside the right run."
+      "Improved cloud sync and reduced repeated work for saved runs.",
+      "Improved snapshot update checks and kept event scores consistent."
     ]
   },
   "entries": [
+    {
+      "number": 307,
+      "title": "Fix profile route planning and Kodub Event RP display",
+      "commit": "8c8d85fee1247c8e95dccf1d265a7d8d73de25d7",
+      "committedAt": "2026-11-07T05:00:56.000Z",
+      "notes": [
+        "Fixed route planning for profiles that were only partly loaded.",
+        "Kodub weekly leaderboards now show published Event RP alongside the right run."
+      ]
+    },
     {
       "number": 305,
       "title": "Compact snapshot lookup downloads without dropping replays",
@@ -210,16 +220,6 @@ const historyData = {
       "notes": [
         "Snapshot updates can recover saved replay data if processing is interrupted.",
         "The replacement update uses a smaller replay-fetch budget."
-      ]
-    },
-    {
-      "number": 285,
-      "title": "Retire stale canonical replay inputs without weakening native checks",
-      "commit": "a711fba99e0d4cd44455f0c21bf37369f02755a0",
-      "committedAt": "2026-11-05T14:13:38.000Z",
-      "notes": [
-        "Snapshot updates handle changed PB replay data more safely.",
-        "Unavailable replays stay unverified instead of blocking valid saved results."
       ]
     }
   ],

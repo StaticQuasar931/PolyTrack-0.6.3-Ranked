@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
-import {repairPreparedLocalArchives} from './local-capture-worker.mjs';
+import {repairPreparedLocalArchives,localCaptureSourceStages} from './local-capture-worker.mjs';
 import {ARCHIVE_REPAIR_NOT_BEFORE} from './local-archive-replay-repair.mjs';
 async function fixture(t){
   t.mock.method(globalThis,'fetch',()=>assert.fail('Offline fixtures only'));
@@ -25,3 +25,24 @@ test('pre-reset and changed plan fail before authentication',async t=>{const f=a
 test('wrong collection, duplicate and unplanned documents never reach storage',async t=>{for(const kind of ['collection','duplicate','unknown']){const f=await fixture(t),id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{if(kind==='duplicate')await getDocument('0.6.2_event_replays',id);return getDocument(kind==='collection'?'other':'0.6.2_event_replays',kind==='unknown'?'bad':id);}}),/boundary/);assert.equal(f.gets(),kind==='duplicate'?1:0);}});
 test('missing or failed document closes the storage capability',async t=>{const f=await fixture(t);f.db.get=async()=>{throw Error('quota');};await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{const id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(getDocument('0.6.2_event_replays',id),/quota/);return getDocument('0.6.2_event_replays',f.targets[1].periodId+'_'+f.targets[1].accountId);}}),/boundary/);});
 test('archive recovery runs between source backup and native verification',async()=>{const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');assert.match(source,/const backup=await runPublicSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;[\s\S]*?repairPreparedLocalArchives/);});
+
+
+test('a wrapped local backup keeps authenticated Overall, Event RP totals and local calculation stages',async()=>{
+ const {captureOverallProjection}=await import('./capture-overall-projection.mjs');
+ const {capturePublicEventTotals}=await import('./public-event-totals-backup.mjs');
+ const {rebuildSnapshotOverall}=await import('./rebuild-snapshot-overall.mjs');
+ assert.deepEqual(localCaptureSourceStages(),{captureOverall:captureOverallProjection,captureTotals:capturePublicEventTotals,calculateOverall:rebuildSnapshotOverall});
+ const calls=[],options=localCaptureSourceStages({captureOverall:async()=>calls.push('overall'),captureTotals:async()=>calls.push('event-totals'),calculateOverall:async()=>calls.push('calculation')});
+ for(const stage of Object.values(options))await stage();assert.deepEqual(calls,['overall','event-totals','calculation']);
+ for(const key of Object.keys(options))assert.throws(()=>localCaptureSourceStages({[key]:null}),/source stages/);
+ const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+ assert.ok(source.includes('updatePublicSnapshot({...localCaptureSourceStages()'));
+});
+
+import {captureLocalCompleteSources} from './local-capture-worker.mjs';
+const fullPolicy={version:1,authorized:true,canonicalMode:'full',canonicalDocumentLimit:10000,profileDocumentLimit:2000,trackCheckLimit:512,eventReplayLimit:256,publishedBaseline:{generation:75,indexSha256:'a'.repeat(64)}};
+async function sourceFixture(t){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'local-full-source-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));const summaryFile=path.join(directory,'public-export-summary.json');await fs.writeFile(summaryFile,JSON.stringify({profilesCapturedAt:'2026-11-06T13:46:56.523Z',keep:true}));const calls=[],point='2026-11-07T08:05:00.000Z';let transportCalls=0;return {directory,summaryFile,calls,transportCalls:()=>transportCalls,options:{policy:fullPolicy,directory,checkpointDirectory:directory,serviceAccount:'synthetic-only',captureJob:async()=>({status:'synthetic'}),connectImpl:async(_credential,options)=>{calls.push('connect');assert.deepEqual(options,{env:{},mode:'scheduled',documentReadLimit:12001,documentWriteLimit:1,maxReadRetries:0});return {call:async()=>transportCalls++,writeAttempts:()=>0,documentBudget:()=>({usedReads:1,usedWrites:0})};},captureCanonical:async({db,documentLimit})=>{calls.push('canonical');assert.equal(documentLimit,10000);await db.call(':runQuery',{structuredQuery:{from:[{collectionId:'0.6.2_race_results'}],limit:1}});return {complete:true,imported:true,scanInconsistency:false,fullScanReadPoint:point};},captureProfiles:async({since,readTime,maxDocuments})=>{calls.push('profiles');assert.equal(since,Date.parse('2026-11-06T13:46:56.523Z'));assert.equal(readTime,point);assert.equal(maxDocuments,2000);return {complete:true,readTime:point};}}};}
+test('full local source capture freezes profiles at the canonical point and advances watermark only after both complete',async t=>{const f=await sourceFixture(t);const report=await captureLocalCompleteSources(f.options);assert.deepEqual(f.calls,['connect','canonical','profiles']);assert.equal(report.backendWrites,0);const summary=JSON.parse(await fs.readFile(f.summaryFile,'utf8'));assert.equal(summary.keep,true);assert.equal(summary.profilesCapturedAt,'2026-11-07T08:05:00.000Z');});
+test('invalid saved profile watermark fails before credentials or database access',async t=>{const f=await sourceFixture(t);await fs.writeFile(f.summaryFile,'{}');await assert.rejects(captureLocalCompleteSources(f.options),/watermark/);assert.deepEqual(f.calls,[]);});
+test('incomplete canonical scan never starts profiles or advances any watermark',async t=>{const f=await sourceFixture(t),before=await fs.readFile(f.summaryFile,'utf8');await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async()=>({complete:false,imported:false})}),/incomplete/);assert.deepEqual(f.calls,['connect']);assert.equal(await fs.readFile(f.summaryFile,'utf8'),before);});
+test('the connected full-source capability cannot write to Firebase',async t=>{const f=await sourceFixture(t);await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async({db})=>db.call(':commit',{writes:[]})}),/forbids/);assert.equal(f.transportCalls(),0);});

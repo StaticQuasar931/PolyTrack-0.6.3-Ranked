@@ -122,26 +122,19 @@ test('legacy backfill keeps full-publication work across one-full-build passes',
   assert.deepEqual(f.job().pendingResultIds[tracks[0]],[resultId(row(tracks[0]))]);
   const cursors={cursorIngestedAt:f.job().cursorIngestedAt,cursorDocumentId:f.job().cursorDocumentId,
     backfillDocumentId:f.job().backfillDocumentId};
-  for(let pass=1;pass<tracks.length;pass++) {
-    const before=sourceScans(f),callStart=f.calls.length;
-    const result=await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
-    assert.equal(sourceScans(f)-before,1);
-    assert.equal(result.targeted,1,'the previous completed track gets its fresh keyed pass while the next full build progresses');
-    assert.equal(f.job().pendingResultIds[tracks[pass-1]],undefined);
-    assert.deepEqual(Object.keys(f.job().pendingResultIds).sort(),tracks.slice(pass).sort());
-    for(const track of tracks.slice(pass))assert.deepEqual(f.job().pendingResultIds[track],[resultId(row(track))]);
-    assert.deepEqual([...f.job().pendingTrackIds].sort(),tracks.slice(pass).sort());
-    assert.deepEqual(f.job().pendingFullRebuildTrackIds,tracks.slice(pass+1));
-    assert.ok(f.calls.slice(callStart).includes(`/${VERIFICATION_COLLECTION}/${tracks[pass-1]}`),'keyed discharge reads the current proof queue');
-    assertWaitingProofs(f,tracks[pass-1],['current-racer','legacy-racer']);
+  assert.deepEqual(f.job().backfillQueuedTrackIds,tracks);
+  assert.deepEqual(f.job().backfillCatchupTrackIds,tracks);
+  for(let pass=1;pass<20&&f.job().pendingTrackIds.length;pass++) {
+    const before=sourceScans(f);
+    await reconcileCanonicalChanges(f.env, {scanResults:false,now:now+pass});
+    assert.ok(sourceScans(f)-before<=1,'initial and final catch-up builds share the same allowance');
     for(const [key,value] of Object.entries(cursors))assert.equal(f.job()[key],value);
   }
   const published = f.data.get(`${boards}/${tracks[4]}`);
   assert.deepEqual(published.entries.map(r => r.accountId).sort(), ['current-racer', 'legacy-racer'],
     'the deferred track must include historical racers, not only the changed-result row');
   assert.deepEqual(f.job().pendingFullRebuildTrackIds, []);
-  assert.deepEqual(f.job().pendingTrackIds,[tracks.at(-1)],'only the last completed full snapshot still awaits its fresh keyed pass');
-  assert.deepEqual(f.job().pendingResultIds,{[tracks.at(-1)]:[resultId(row(tracks.at(-1))) ]});
+  assert.deepEqual(f.job().backfillCatchupTrackIds,[]);
   const scans=sourceScans(f);
   await drainRetainedTargets(f);
   assert.equal(sourceScans(f),scans,'draining the last retained target must not repeat a full scan');
@@ -149,7 +142,29 @@ test('legacy backfill keeps full-publication work across one-full-build passes',
   assert.deepEqual(f.job().pendingResultIds, {});
   assert.deepEqual(f.job().pendingResultBindings,{});
   for(const track of tracks)assertWaitingProofs(f,track,['current-racer','legacy-racer']);
-  assert.equal(f.queries.filter(q => q.where?.fieldFilter?.field.fieldPath === 'trackId').length, 5);
+  for(const track of tracks)assert.equal(f.queries.filter(q=>q.where?.fieldFilter?.field.fieldPath==='trackId'&&
+    q.where.fieldFilter.value.stringValue===track).length,2,'one initial and one post-enumeration reconstruction');
+});
+
+test('legacy catch-up does not drop a failed initial build or starve another track',async()=>{
+  const tracks=['failed-legacy-track','healthy-legacy-track'],[failed,healthy]=tracks;
+  const f=fixture({tracks,discover:true,failing:new Set([failed])});
+  await reconcileCanonicalChanges(f.env,{now});
+  const failure=structuredClone(f.job().failedFullRebuilds[failed]);
+  assert.deepEqual(f.job().backfillQueuedTrackIds,tracks);
+  for(let pass=1;pass<=5;pass++)await reconcileCanonicalChanges(f.env,{scanResults:false,now:now+pass});
+  assert.deepEqual(f.job().failedFullRebuilds[failed],failure);
+  assert.ok(f.job().pendingFullRebuildTrackIds.includes(failed));
+  assert.deepEqual(f.job().backfillCatchupTrackIds,[failed]);
+  assert.equal(f.job().pendingTrackIds.includes(healthy),false);
+  assert.equal(f.queries.filter(q=>q.where?.fieldFilter?.value?.stringValue===healthy).length,2);
+  f.failing.delete(failed);
+  await reconcileCanonicalChanges(f.env,{scanResults:false,now:failure.retryAt});
+  await drainRetainedTargets(f);
+  assert.deepEqual(f.job().pendingTrackIds,[]);
+  assert.deepEqual(f.job().backfillCatchupTrackIds,[]);
+  assert.deepEqual(f.job().failedFullRebuilds,{});
+  for(const track of tracks)assertWaitingProofs(f,track,['current-racer','legacy-racer']);
 });
 
 test('failed targeted fallback performs only the job read during cooldown and retries the full publication', async () => {

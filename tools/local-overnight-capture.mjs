@@ -1,3 +1,4 @@
+import {fullSnapshotPolicy} from './full-snapshot-policy.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -127,7 +128,7 @@ async function main(){
   const args=process.argv.slice(2);
   if(args.length!==2||args[0]!=='--receipt'||!path.isAbsolute(args[1]))throw Error('Usage: node tools/local-overnight-capture.mjs --receipt ABSOLUTE_READY_JSON');
   const receipt=JSON.parse(await fs.readFile(args[1],'utf8')),directory=path.dirname(args[1]),owner=randomUUID();
-  localOvernightCapturePlan({receipt});await validateLocalEvidence(receipt);
+  localOvernightCapturePlan({receipt});fullSnapshotPolicy(receipt);await validateLocalEvidence(receipt);
   const workspace=receipt.workspace;
   if(!path.isAbsolute(workspace||'')||!path.isAbsolute(receipt.credentialFile||'')||!path.isAbsolute(receipt.recoveryPublicKeyFile||'')||
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');

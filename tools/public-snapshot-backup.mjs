@@ -1,3 +1,4 @@
+import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import {readFileSync} from 'node:fs';
@@ -787,10 +788,10 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
 
 async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null} = {}) {
   const handoffNow = now === undefined ? Date.now : () => now;
   now ??= Date.now();
-  if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > PUBLIC_SNAPSHOT_LIMITS.trackFetches)
+  if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > (trackConfirmationNotBefore===null?PUBLIC_SNAPSHOT_LIMITS.trackFetches:FULL_TRACK_CHECK_LIMIT))
     throw Error('Invalid trackFetchLimit');
   if (!Number.isSafeInteger(eventReplayFetchLimit) || eventReplayFetchLimit < 0 || eventReplayFetchLimit > 512)
     throw Error('Invalid eventReplayFetchLimit');
@@ -919,13 +920,19 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       delete cachedTracks[id].checkedAt;
     }
   }
-  const selectedTracks = chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
+  const selectedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds,cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
     trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
     return {id, value: full ? publicTrackBackup(full, id) : null};
   });
+  const fullSourceChecks=trackConfirmationNotBefore===null?null:(()=>{
+    const records={...cachedTracks};
+    for(const {id,value} of trackRows)records[id]=value?{path:'tracks/'+id+'.json',checkedAt:now}:
+      records[id]?.path||previous.tracks[id]?.path?{...records[id],path:records[id]?.path||previous.tracks[id].path,missing:true}:{path:null,missing:true,checkedAt:now};
+    return assertFullTrackChecks(allTrackIds,records,trackConfirmationNotBefore);
+  })();
   const eventRows = await mapLimit(eventFetchIds, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const url = id === 'permanent-rolling-hills'
       ? `${WORKER}/v1/events/permanent-rolling-hills/snapshot`
@@ -1170,7 +1177,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
+    fullSourceChecks, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

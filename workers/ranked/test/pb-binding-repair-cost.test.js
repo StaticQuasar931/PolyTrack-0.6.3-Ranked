@@ -2,13 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
-import {computeTrackEntries, mergeCanonicalResultIntoTrack, updateTrackIdentity, handleRequest} from '../src/index.js';
+import {execFileSync} from 'node:child_process';
 import {preparePublicationPages, loadPublicationEntries} from '../src/paged-publication.js';
 import {migrateVerificationChunk, prepareShardedVerification, verificationShardId} from '../src/verification-shards.js';
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION,
   VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION} from '../src/verification.js';
 import {COMPETITIVE_REVIEW_REASON} from '../src/competitive-review.js';
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
+
+// Read-only baseline comparison; never replace the shared working source.
+const baseline = process.env.PB_INLINE_NOOP_BASELINE === '1';
+const api = baseline ? await import('data:text/javascript,' + encodeURIComponent(execFileSync('git',
+  ['show', 'f1d9ff030:workers/ranked/src/index.js'], {encoding:'utf8'})
+  .replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${new URL('../src/' + path.slice(2), import.meta.url).href}'`)))
+  : await import('../src/index.js');
+const {computeTrackEntries, mergeCanonicalResultIntoTrack, updateTrackIdentity, handleRequest} = api;
 
 globalThis.fetch = () => { throw Error('OFFLINE_PB_BINDING_TEST'); };
 Socket.prototype.connect = globalThis.fetch;
@@ -369,4 +377,127 @@ test('missing first page fails closed after one batch, with no proof or publicat
  await assert.rejects(f.merge(changedReplay(f.target)),/PUBLIC_PAGE_INCOMPLETE/);
  assert.equal(f.calls.length,3);assert.equal(f.counts.reads,13,'batch fetch pays all eleven page reads, even when the first is missing');
  assert.equal(f.counts.writes,0);assert.deepEqual(f.data.get(boardKey),prior);
+});
+
+for (const count of [99, 1001, 1136]) test('exact inline PB duplicates retain fresh proof checks: ' + count, async () => {
+  const f = await fixture(count, {targetIndex:0}), before = structuredClone(f.data);
+  const reads = count <= 500 ? 3 : baseline ? Math.ceil(count / 100) + 4 : 4;
+  for (let i = 0; i < 10; i++) {
+    const result = await f.merge(f.target);
+    assert.equal(result.changed, false);
+    assert.equal(result.revision, 1);
+    if (count > 500 && !baseline) assert.equal(Object.hasOwn(result, 'entries'), false,
+      'a prefix must never be returned as the complete field');
+  }
+  assert.equal(f.counts.reads, reads * 10);
+  assert.equal(f.counts.writes, 0); assert.equal(f.counts.queries, 0);
+  assert.deepEqual(f.data, before);
+  assert.equal(f.calls.filter(path => path === '/' + queueKey).length, 10);
+  console.log('PB_INLINE_NOOP_COST ' + JSON.stringify({baseline, population:count,
+    notifications:10, reads:f.counts.reads, writes:f.counts.writes}));
+});
+
+for (const mode of ['stale-proof', 'canonical-missing', 'review-hold', 'old-engine-review'])
+test('exact inline PB still maintains current proof state: ' + mode, async () => {
+  const f = await fixture(1001, {targetIndex:0});
+  let slot = mode.includes('review') ? {...pendingSlot(f.target), status:'unavailable',
+    reason:COMPETITIVE_REVIEW_REASON, retryAt:Number.MAX_SAFE_INTEGER} : proof(f.target);
+  if (mode === 'stale-proof') slot.key = 'obsolete';
+  if (mode === 'canonical-missing') slot.reason = 'canonical_missing';
+  if (mode === 'old-engine-review') {
+    const key = JSON.parse(slot.key); key[1] = 'a'.repeat(64); slot.key = JSON.stringify(key);
+  }
+  f.setSlot(slot);
+  const board = structuredClone(f.data.get(boardKey));
+  assert.equal((await f.merge(f.target)).changed, false);
+  assert.equal(f.counts.reads, baseline ? 15 : 4);
+  assert.equal(f.counts.writes, mode.includes('review') ? 0 : 1);
+  if (mode.includes('review')) assert.deepEqual(f.slot(), slot);
+  else { assert.equal(f.slot().status, 'waiting'); assert.equal(f.slot().key, verificationKey(f.target)); }
+  assert.deepEqual(f.data.get(boardKey), board, 'no proof or publication is promoted by this shortcut');
+});
+
+test('exact inline PB proof read and CAS failures propagate without publication changes', async () => {
+  for (const mode of ['read', 'cas']) {
+    const f = await fixture(1001, {targetIndex:0});
+    f.setSlot({...proof(f.target), key:'obsolete'});
+    const before = structuredClone(f.data);
+    if (mode === 'cas') f.conflict(VERIFICATION_COLLECTION);
+    else {
+      const request = f.env.__TEST_FIRESTORE;
+      f.env.__TEST_FIRESTORE = async (path, init) => {
+        if (path === '/' + queueKey) throw Error('FIRESTORE_429');
+        return request(path, init);
+      };
+    }
+    await assert.rejects(f.merge(f.target), mode === 'cas' ? /FIRESTORE_412/ : /FIRESTORE_429/);
+    assert.deepEqual(f.data, before); assert.equal(f.counts.writes, 0);
+  }
+});
+
+for (const mode of ['outside-prefix', 'short-prefix', 'wrong-track', 'incomplete', 'schema', 'future-schema',
+  'page-size', 'page-count', 'generation', 'total', 'signature', 'missing-update-time'])
+test('uncertain or absent inline PB still hydrates full pages: ' + mode, async () => {
+  const f = await fixture(1001, {targetIndex:mode === 'outside-prefix' ? 1000 : 0});
+  const board = f.data.get(boardKey);
+  if (mode === 'short-prefix') board.entries = board.entries.slice(0, 100);
+  if (mode === 'wrong-track') board.trackId = 'other-track';
+  if (mode === 'incomplete') board.sourceComplete = false;
+  if (mode === 'schema') board.schemaVersion = 0;
+  if (mode === 'future-schema') board.schemaVersion = 999;
+  if (mode === 'page-size') board.pagination.pageSize = 99;
+  if (mode === 'page-count') board.pagination.pageCount++;
+  if (mode === 'generation') board.pagination.generation = 'bad';
+  if (mode === 'total') board.totalEntries++;
+  if (mode === 'signature') delete board.signature;
+  if (mode === 'missing-update-time') {
+    const request = f.env.__TEST_FIRESTORE;
+    f.env.__TEST_FIRESTORE = async (path, init) => {
+      const result = await request(path, init);
+      if (path === '/' + boardKey) delete result.updateTime;
+      return result;
+    };
+  }
+  const first = [...f.data.keys()].find(key => key.startsWith('0.6.2_s1_public_pages/') && key.endsWith('_0'));
+  f.data.delete(first);
+  await assert.rejects(f.merge(f.target), /PUBLIC_PAGE_INCOMPLETE|PUBLIC_MANIFEST_INVALID|INVALID_PUBLIC_PAGE/);
+  assert.equal(f.counts.writes, 0);
+});
+
+for (const mode of ['hash', 'integrity', 'faster', 'upload'])
+test('changed inline PB binding still validates pages before changing anything: ' + mode, async () => {
+  const f = await fixture(1001, {targetIndex:0});
+  let row = {...f.target};
+  if (mode === 'hash') row = changedReplay(row);
+  if (mode === 'faster') Object.assign(row, {timeMs:9000, frames:9000, raceTimeFrames:9000});
+  if (mode === 'upload') row.uploadId++;
+  const first = [...f.data.keys()].find(key => key.startsWith('0.6.2_s1_public_pages/') && key.endsWith('_0'));
+  f.data.delete(first);
+  await assert.rejects(f.merge(row, mode !== 'integrity'), /PUBLIC_PAGE_INCOMPLETE/);
+  assert.equal(f.counts.writes, 0); assert.equal(f.counts.reads, 13);
+});
+
+test('exact inline PB rereads the root on every notification, not cached authority', async () => {
+  const f = await fixture(1001, {targetIndex:0});
+  await f.merge(f.target);
+  f.data.get(boardKey).entries[0].replayHash = 'b'.repeat(64);
+  const first = [...f.data.keys()].find(key => key.startsWith('0.6.2_s1_public_pages/') && key.endsWith('_0'));
+  f.data.delete(first);
+  await assert.rejects(f.merge(f.target), /PUBLIC_PAGE_INCOMPLETE/);
+  assert.equal(f.counts.writes, 0);
+});
+
+test('actual inline duplicate route retains owner, canonical-ID and limiter guards', async () => {
+  for (const mode of ['valid', 'owner', 'id', 'limited']) {
+    const f = await fixture(1001, {targetIndex:0}), id = f.target.accountId + '_' + track;
+    if (mode === 'owner') f.data.get('0.6.2_race_results/' + id).ownerUid = 'another-owner';
+    if (mode === 'id') f.data.get('0.6.2_race_results/' + id).accountId = 'another-account';
+    const response = await handleRequest(new Request('https://example.test/v1/pb/notify', {method:'POST',
+      headers:{Origin:'https://example.test', 'Content-Type':'application/json'}, body:JSON.stringify({resultId:id})}),
+    {...f.env, ALLOWED_ORIGINS:'https://example.test', __TEST_UID:'owner',
+      PB_NOTIFY_RATE_LIMITER:{limit:async () => ({success:mode !== 'limited'})}});
+    assert.equal(response.status, mode === 'valid' ? 200 : mode === 'limited' ? 429 : 403);
+    assert.equal(f.counts.reads, mode === 'valid' ? baseline ? 15 : 4 : mode === 'limited' ? 0 : 1);
+    assert.equal(f.counts.writes, 0); assert.equal(f.counts.queries, 0);
+  }
 });

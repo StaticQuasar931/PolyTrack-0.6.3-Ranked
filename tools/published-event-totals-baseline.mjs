@@ -11,6 +11,17 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const stable = value => JSON.stringify(canonical(value));
+const trustedPublishedBaselines = new WeakSet();
+const freeze = value => {
+  if (value && typeof value === 'object') {for (const child of Object.values(value)) freeze(child); Object.freeze(value);}
+  return value;
+};
+
+/** Only the local, independently pinned package loader can mint this capability. */
+export function assertTrustedPublishedEventTotalsBaseline(value) {
+  demand(trustedPublishedBaselines.has(value), 'Branded trusted published event totals baseline required');
+  return value;
+}
 
 function exact(value) {
   return value && Array.isArray(value.entries) && value.entries.length <= 10000 &&
@@ -44,6 +55,81 @@ function contributions(board, id) {
     seen.add(row.accountId);
     return [row.accountId, row.timeMs, row.rp];
   }).sort((a, b) => stable(a).localeCompare(stable(b)));
+}
+
+/** Read-only, offline predecessor loader. The caller must obtain generation and
+ * index SHA256 from its trusted publication receipt, NOT from an arbitrary input.
+ * root is the trusted publication root; snapshot-current must still name that
+ * generation. Hash integrity alone is not publisher authority. Keep this object
+ * in-process: serialized or copied objects deliberately lose the trust brand.
+ */
+export async function loadTrustedPublishedEventTotalsBaseline({root, expectedGeneration, expectedIndexSha256} = {}) {
+  demand(integer(expectedGeneration) && expectedGeneration > 0 && HEX.test(expectedIndexSha256 || ''),
+    'Independent published generation and index SHA256 pins required');
+  const pointerBytes = await read(root, 'snapshot-current.json');
+  const pointer = JSON.parse(pointerBytes), currentdir = 'public-snapshots' + expectedGeneration;
+  demand(pointer?.currentdir === currentdir, 'Pinned generation is not the immediately previous published current snapshot');
+  const indexBytes = await read(root, currentdir + '/index.json', 16 * 1024 * 1024);
+  demand(sha(indexBytes) === expectedIndexSha256, 'Published index SHA256 mismatch');
+  const index = JSON.parse(indexBytes);
+  demand(index?.schemaVersion === 1 && index.generation === expectedGeneration && index.encoding === 'gzip-xor-a7-v1' &&
+    index.files && typeof index.files === 'object' && !Array.isArray(index.files), 'Invalid trusted snapshot index');
+  async function payload(logical) {
+    const record = index.files[logical];
+    demand(record && HEX.test(record.sha256 || '') && record.path === record.sha256 + '.bin' &&
+      integer(record.decodedBytes) && record.decodedBytes <= MAX_DECODED_BYTES, 'Invalid snapshot metadata: ' + logical);
+    const encoded = await read(root, currentdir + '/' + record.path, MAX_FILE_BYTES);
+    demand(sha(encoded) === record.sha256, 'Snapshot SHA256 mismatch: ' + logical);
+    const decoded = Buffer.from(await decodeSnapshot(encoded));
+    demand(decoded.length === record.decodedBytes, 'Snapshot decodedBytes mismatch: ' + logical);
+    return JSON.parse(decoded.toString('utf8'));
+  }
+  const totals = await payload('event-totals.json');
+  demand(exact(totals) && integer(totals.updatedAt), 'Exact complete prior event totals required');
+  const residuals = new Map();
+  for (const row of totals.entries) {
+    const rolling = row.permanentRollingHillsRp ?? row.rollingHillsEventRpContribution;
+    demand(HEX.test(row.accountId || '') && !residuals.has(row.accountId), 'Duplicate or invalid prior totals account');
+    demand(integer(row.finiteEventRp) && integer(row.rp) && integer(row.events) && integer(rolling) &&
+      row.rp === row.finiteEventRp + rolling &&
+      (row.permanentRollingHillsRp === undefined || row.permanentRollingHillsRp === rolling) &&
+      (row.rollingHillsEventRpContribution === undefined || row.rollingHillsEventRpContribution === rolling),
+    'Inconsistent prior totals components');
+    residuals.set(row.accountId, {accountId: row.accountId, rp: row.finiteEventRp, events: row.events});
+  }
+  const logicalBoards = Object.keys(index.files).filter(key => key.startsWith('events/') && key !== 'events/permanent-rolling-hills.json').sort();
+  demand(logicalBoards.length <= 1024, 'Prior event board limit exceeded');
+  const boards = [];
+  let rowCount = 0;
+  for (const logical of logicalBoards) {
+    const match = /^events\/([A-Za-z0-9_-]{1,128})\.json$/.exec(logical);
+    demand(match, 'Invalid prior event logical path');
+    const board = await payload(logical), tuples = contributions(board, match[1]), p = board.period;
+    demand(integer(board.updatedAt) && integer(p.startsAt) && integer(p.endsAt) && p.endsAt > p.startsAt &&
+      ['daily', 'weekly', 'custom', 'kodub'].includes(p.kind), 'Invalid prior event period');
+    rowCount += tuples.length;
+    demand(rowCount <= 1000000, 'Prior event contribution limit exceeded');
+    // Legacy archives may lack completeness/scoring-version metadata. Their
+    // published awards remain known contributions, not freshly rescored awards.
+    for (const [accountId, , rp] of tuples) {
+      const residual = residuals.get(accountId);
+      demand(residual && residual.rp >= rp && residual.events >= 1, 'Prior known contributions exceed totals: ' + accountId);
+      residual.rp -= rp; residual.events--;
+    }
+    boards.push({board, replaceable: exact(board), sha256: index.files[logical].sha256});
+  }
+  for (const residual of residuals.values()) {
+    demand(residual.events > 0 || residual.rp === 0, 'Incoherent historical residual without event count');
+  }
+  demand(index.publishedAt === undefined || integer(index.publishedAt) && index.publishedAt >= totals.updatedAt &&
+    boards.every(({board}) => board.updatedAt <= index.publishedAt), 'Incoherent published snapshot timestamp');
+  demand((await read(root, 'snapshot-current.json')).equals(pointerBytes), 'Published current pointer changed during baseline load');
+  const result = freeze({kind: 'trusted-published-event-totals-baseline-v1', totals, boards,
+    residuals: [...residuals.values()], provenance: {kind: 'hash-pinned-published-current', generation: expectedGeneration,
+      currentdir, publishedAt: index.publishedAt ?? null, pointerSha256: sha(pointerBytes), indexSha256: expectedIndexSha256,
+      totalsSha256: index.files['event-totals.json'].sha256}});
+  trustedPublishedBaselines.add(result);
+  return result;
 }
 
 /**

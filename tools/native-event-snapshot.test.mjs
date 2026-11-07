@@ -6,7 +6,10 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 import {createNativeEventBaseline, completeCapturedEmptyEventBoard, projectNativeEventSnapshot, projectNativeEventTotals, nativeEventSourceHash,
-  projectRetainedEventVerifications, projectAssembledEventTotals, deriveCapturedNativeRollingHills} from './native-event-snapshot.mjs';
+  projectRetainedEventVerifications, projectAssembledEventTotals, deriveCapturedNativeRollingHills,
+  rebaseNativeEventTotalsFromPublished, reconcileNativeEventTotalsFromPublished} from './native-event-snapshot.mjs';
+import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
+import {encodeSnapshot} from './snapshot-package.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {createLedgerEntry, writeLedger, ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 import {eventPeriod, eventLeaderboard, eventRp, publicEventPeriod, capturedEventRp, capturedEventLeaderboard} from '../workers/ranked/src/events.js';
@@ -815,4 +818,371 @@ test('captured-native Rolling rejects missing/untrusted pins, incomplete coverag
   assert.throws(() => deriveCapturedNativeRollingHills({board: duplicate, expectedSourceHash: nativeEventSourceHash(duplicate)}), /Duplicate/);
   const slow = {...normal, entries: [{...normal.entries[0], timeMs: 1860000, frames: 1860000}]};
   assert.throws(() => deriveCapturedNativeRollingHills({board: slow, expectedSourceHash: nativeEventSourceHash(slow)}), /No captured-native/);
+});
+
+function rebaseSetup(t, {serverBoard = board({period: publicEventPeriod(period)}), serverTotals = totals(),
+  runs = [run()], entries, recordings = runs.map(media)} = {}) {
+  return {baseline: createNativeEventBaseline({serverBoard, serverTotals, expectedSourceHash: nativeEventSourceHash(serverBoard)}),
+    ledger: loaded(t, entries), canonicalRows: runs, recordings, policy};
+}
+
+async function publishedBaseline(t, {priorTotals, boards, generation = 75,
+  publishedAt = Math.max(priorTotals.updatedAt, ...boards.map(b => b.updatedAt))}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'trusted-published-event-'));
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const dir = path.join(root, 'public-snapshots' + generation);
+  fs.mkdirSync(dir);
+  const index = {schemaVersion: 1, generation, ...(publishedAt === null ? {} : {publishedAt}), encoding: 'gzip-xor-a7-v1', files: {}};
+  for (const [logical, value] of [['event-totals.json', priorTotals], ...boards.map(b => ['events/' + b.id + '.json', b])]) {
+    const bytes = Buffer.from(await encodeSnapshot(value)), hash = sha(bytes);
+    index.files[logical] = {path: hash + '.bin', sha256: hash, decodedBytes: Buffer.byteLength(JSON.stringify(value))};
+    fs.writeFileSync(path.join(dir, hash + '.bin'), bytes);
+  }
+  const indexBytes = JSON.stringify(index);
+  fs.writeFileSync(path.join(dir, 'index.json'), indexBytes);
+  fs.writeFileSync(path.join(root, 'snapshot-current.json'), JSON.stringify({currentdir: 'public-snapshots' + generation}));
+  return loadTrustedPublishedEventTotalsBaseline({root, expectedGeneration: generation, expectedIndexSha256: sha(indexBytes)});
+}
+
+function priorNative() {
+  const priorBoard = board({rows: eventLeaderboard(period, [run({runId: sha('prior-native'), timeMs: 1100,
+    frames: 1100, submittedAt: 2100, verifiedAt: 2800})]), waiting: [],
+    period: publicEventPeriod(period), updatedAt: 2800, nativeEventOverlay: {version: 'native-event-overlay-v1'}});
+  const priorTotals = totals({updatedAt: 2800, nativeEventOverlay: {version: 'native-event-overlay-v1'}});
+  const row = priorTotals.entries[0];
+  row.finiteEventRp = eventRp(period, 1100) + 77;
+  row.rp = row.finiteEventRp + 100;
+  row.accountCreatedAt = 500;
+  return {priorTotals, boards: [priorBoard]};
+}
+
+test('published rebase ignores stale backend deltas and preserves historical residuals and dates', async t => {
+  const prior = priorNative(), published = await publishedBaseline(t, prior);
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const original = JSON.stringify({prior, projection});
+  const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()});
+  const row = result.totals.entries[0];
+  assert.equal(row.finiteEventRp, 1077);
+  assert.equal(row.rp, 1077 + 1001);
+  assert.equal(row.events, 4);
+  assert.equal(row.accountCreatedAt, 500);
+  assert.equal(row.identityUpdatedAt, 1000);
+  assert.deepEqual(result.boards[0], projection.board);
+  assert.equal(result.boards[0].entries[0].submittedAt, 2000);
+  assert.equal(result.boards[0].entries[0].verifiedAt, 3000);
+  assert.equal(result.totals.nativeEventOverlay.source, 'trusted-published-rebase');
+  assert.equal(result.totals.nativeEventOverlay.totalsBaselineDigest, projection.baseline.totalsDigest);
+  assert.equal(result.totals.nativeEventOverlay.backendPairingDigest, projection.baseline.totalsDigest);
+  assert.equal(result.totals.nativeEventOverlay.publishedBaseline.generation, 75);
+  assert.deepEqual(result.report.retainedPeriodIds, []);
+  assert.equal(result.report.residualAccounts, 1);
+  assert.equal(JSON.stringify({prior, projection}), original);
+  assert.throws(() => projectAssembledEventTotals(result.totals), /not a pristine/);
+});
+
+test('repeated rebase and next published snapshot never double count finite or rolling awards', async t => {
+  const published = await publishedBaseline(t, priorNative());
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const args = {publishedBaseline: published, serverTotals: totals(), projections: [projection], rollingNormalBoard: rolling()};
+  const first = rebaseNativeEventTotalsFromPublished(args);
+  assert.deepEqual(rebaseNativeEventTotalsFromPublished(args), first);
+  const next = await publishedBaseline(t, {priorTotals: first.totals, boards: first.boards, generation: 76});
+  const second = rebaseNativeEventTotalsFromPublished({...args, publishedBaseline: next});
+  assert.deepEqual(second.totals.entries, first.totals.entries);
+  assert.deepEqual(next.residuals, published.residuals);
+});
+
+test('absent and partial current periods retain exact prior boards, holds and dates without freshness claims', async t => {
+  const prior = priorNative();
+  prior.boards[0].pendingPlaybacks = [{...pending(), needsReview: true, reviewHold: true}];
+  const published = await publishedBaseline(t, prior);
+  const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(), rollingNormalBoard: rolling()});
+  assert.deepEqual(result.boards, prior.boards);
+  assert.equal(result.totals.entries[0].finiteEventRp, prior.priorTotals.entries[0].finiteEventRp);
+  assert.deepEqual(result.report.retainedPeriodIds, ['day1']);
+  assert.deepEqual(result.totals.nativeEventOverlay.retainedPeriodIds, ['day1']);
+  const partial = {...board(), complete: false};
+  assert.throws(() => createNativeEventBaseline({serverBoard: partial, period, serverTotals: totals()}), /Exact complete/);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [{board: partial, ready: true}], rollingNormalBoard: rolling()}), /ledger-compiled/);
+});
+
+for (const [key, value] of [['targetMs', 999], ['maxRp', 999], ['startsAt', 999], ['endsAt', 1000001],
+  ['graceMs', 999], ['entrantLimit', 199], ['trackId', sha('another-track')], ['scoringVersion', 'time-gap-v2']]) {
+  test('published rebase refuses changed frozen ' + key, async t => {
+    const prior = priorNative(); prior.boards[0].period[key] = value;
+    const published = await publishedBaseline(t, prior);
+    const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+    assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+      projections: [projection], rollingNormalBoard: rolling()}), /frozen period policy mismatch/);
+  });
+}
+
+test('published rebase permits changed display metadata and intake count, not scoring changes', async t => {
+  const prior = priorNative(); prior.boards[0].period.racerCount = 99; prior.boards[0].period.label = 'Old label';
+  const published = await publishedBaseline(t, prior);
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()});
+  assert.equal(result.totals.entries[0].finiteEventRp, 1077);
+});
+
+test('unknown prior coverage is retained but cannot be replaced using a complete current board', async t => {
+  const prior = priorNative(); delete prior.boards[0].complete; delete prior.boards[0].totalEntries;
+  const published = await publishedBaseline(t, prior);
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const args = {publishedBaseline: published, serverTotals: totals(), rollingNormalBoard: rolling()};
+  assert.deepEqual(rebaseNativeEventTotalsFromPublished(args).boards, prior.boards);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, projections: [projection]}), /unknown contribution coverage/);
+});
+
+test('untrusted overlays, cloned projections, duplicate periods and mismatched pairing fail closed', async t => {
+  const published = await publishedBaseline(t, priorNative()), projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const args = {publishedBaseline: published, serverTotals: totals(), projections: [projection], rollingNormalBoard: rolling()};
+  for (const baseline of [undefined, priorNative().priorTotals, structuredClone(published), {...published}]) {
+    assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, publishedBaseline: baseline}), /Branded trusted/);
+  }
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, projections: [structuredClone(projection)]}), /ledger-compiled/);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, projections: [projection, projection]}), /duplicate period/);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, serverTotals: totals({updatedAt: 2501})}), /baseline mismatch/);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, serverTotals: published.totals}), /not a pristine/);
+});
+
+test('old missing prior period cannot be added on top of unknown historical residuals', async t => {
+  const prior = priorNative(); prior.boards = [];
+  const published = await publishedBaseline(t, prior), projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()}), /may overlap historical residual/);
+});
+
+test('an empty old missing period cannot launder unknown history into an exact zero baseline', async t => {
+  const prior = priorNative(); prior.boards = [];
+  const published = await publishedBaseline(t, prior);
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t, {
+    serverBoard: board({period: publicEventPeriod(period), rows: [], waiting: []}), runs: [], entries: []}));
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()}), /may overlap historical residual/);
+});
+
+for (const publishedAt of [period.startsAt, 5000, undefined]) {
+  test('new period absence requires a strictly earlier pinned publication, not stale totals: ' + publishedAt, async t => {
+    const priorTotals = totals({updatedAt: 500});
+    const published = await publishedBaseline(t, {priorTotals, boards: [], publishedAt: publishedAt ?? null});
+    const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+    assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+      projections: [projection], rollingNormalBoard: rolling()}), /may overlap historical residual/);
+  });
+}
+
+test('a genuinely new period after prior totals adds once without touching unknown account history', async t => {
+  const historical = sha('historical-only'), priorTotals = totals({updatedAt: 500, entries: [{accountId: historical,
+    name: 'Historical', rp: 23, finiteEventRp: 23, permanentRollingHillsRp: 0, events: 2}]});
+  const published = await publishedBaseline(t, {priorTotals, boards: []});
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const args = {publishedBaseline: published, serverTotals: totals(), projections: [projection], rollingNormalBoard: rolling()};
+  const first = rebaseNativeEventTotalsFromPublished(args);
+  assert.equal(first.totals.entries.find(row => row.accountId === historical).finiteEventRp, 23);
+  assert.equal(first.totals.entries.find(row => row.accountId === historical).events, 2);
+  assert.equal(first.totals.entries.find(row => row.accountId === accountId).finiteEventRp, 1000);
+  const next = await publishedBaseline(t, {priorTotals: first.totals, boards: first.boards, generation: 76});
+  assert.deepEqual(rebaseNativeEventTotalsFromPublished({...args, publishedBaseline: next}).totals.entries, first.totals.entries);
+});
+
+test('exact held prior contribution is removed once without changing remaining historical RP', async t => {
+  const old = run({runId: sha('old-run'), timeMs: 1200, frames: 1200, submittedAt: 1500});
+  const source = board({waiting: [], period: publicEventPeriod(period)}), prior = {...source, period: publicEventPeriod(period), nativeEventOverlay: {version: 'native-event-overlay-v1'}};
+  const published = await publishedBaseline(t, {priorTotals: totals(), boards: [prior]});
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t, {serverBoard: source, runs: [old], recordings: [], entries: [ledgerEntry(old, 'held')]}));
+  const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()});
+  assert.equal(result.totals.entries[0].finiteEventRp, 77);
+  assert.equal(result.totals.entries[0].events, 3);
+  assert.deepEqual(result.boards[0], projection.board);
+});
+
+test('published recovery accepts only a branded captured rolling source and applies it once', async t => {
+  const published = await publishedBaseline(t, priorNative()), normal = rolling();
+  const captured = deriveCapturedNativeRollingHills({board: normal, expectedSourceHash: nativeEventSourceHash(normal)});
+  const args = {publishedBaseline: published, serverTotals: totals(), capturedRollingBoard: captured};
+  const result = rebaseNativeEventTotalsFromPublished(args);
+  assert.equal(result.totals.entries[0].permanentRollingHillsRp, 1001);
+  assert.equal(result.totals.entries[0].rp, result.totals.entries[0].finiteEventRp + 1001);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, capturedRollingBoard: structuredClone(captured)}), /Pinned captured-native/);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, rollingNormalBoard: normal}), /Choose one/);
+});
+
+test('recovery cannot publish a private-policy projection with missing public frozen entrant limit', async t => {
+  const published = await publishedBaseline(t, priorNative()), projection = await projectNativeEventSnapshot(setup(t));
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()}), /explicit captured entrant limit/);
+});
+
+test('recovery rejects a branded but unready proof projection', async t => {
+  const published = await publishedBaseline(t, priorNative());
+  const projection = await projectNativeEventSnapshot(rebaseSetup(t, {recordings: []}));
+  assert.equal(projection.ready, false);
+  assert.throws(() => rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [projection], rollingNormalBoard: rolling()}), /Ready ledger-compiled/);
+});
+
+test('all known prior periods are subtracted before replacements and untouched archives are added once', async t => {
+  const prior = priorNative(), archive = structuredClone(prior.boards[0]);
+  archive.id = 'archive'; archive.period.id = 'archive';
+  archive.entries = [{accountId, timeMs: 2000, rp: 50, submittedAt: 1500, reviewHold: true}];
+  delete archive.complete; delete archive.totalEntries;
+  prior.boards.push(archive);
+  prior.priorTotals.entries[0].finiteEventRp += 50;
+  prior.priorTotals.entries[0].rp += 50;
+  prior.priorTotals.entries[0].events++;
+  const published = await publishedBaseline(t, prior), options = rebaseSetup(t);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {throw Error('Network forbidden');};
+  try {
+    const projection = await projectNativeEventSnapshot(options);
+    const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+      projections: [projection], rollingNormalBoard: rolling()});
+    assert.equal(result.totals.entries[0].finiteEventRp, 77 + 1000 + 50);
+    assert.equal(result.totals.entries[0].events, 5);
+    assert.deepEqual(result.boards.find(b => b.id === 'archive'), archive);
+    assert.deepEqual(result.report.retainedPeriodIds, ['archive']);
+    assert.deepEqual(published.residuals, [{accountId, rp: 77, events: 3}]);
+  } finally {globalThis.fetch = originalFetch;}
+});
+
+test('rebase rejects totals-ineligible partial/legacy projections rather than silently losing current pending or publishing unmatched verified RP', async t => {
+  const published = await publishedBaseline(t, priorNative());
+  const current = board({period: publicEventPeriod(period), rows: [], complete: false, sourceComplete: false});
+  const before = structuredClone(current);
+  const partial = await projectRetainedEventVerifications({serverBoard: current,
+    expectedSourceHash: nativeEventSourceHash(current), ledger: loaded(t, []), canonicalRows: [], recordings: [], policy});
+  assert.equal(partial.totalsEligible, false);
+  assert.deepEqual(partial.board.pendingPlaybacks, current.pendingPlaybacks);
+  const args = {publishedBaseline: published, serverTotals: totals(), rollingNormalBoard: rolling()};
+  for (const projection of [partial, {board: current, promotedReplays: [], totalsEligible: false}]) {
+    assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, projections: [projection]}), /Ready ledger-compiled/);
+  }
+  assert.deepEqual(current, before);
+  // Filtering loses the current lane before the compiler sees it. The caller
+  // must not publish this retained-only result over a known partial capture.
+  const retainedOnly = rebaseNativeEventTotalsFromPublished(args);
+  assert.deepEqual(retainedOnly.boards[0], published.boards[0].board);
+  assert.equal(retainedOnly.boards[0].pendingPlaybacks.length, 0);
+  assert.equal(partial.board.pendingPlaybacks.length, 1);
+  assert.deepEqual(retainedOnly.report.retainedPeriodIds, ['day1']);
+});
+
+test('recovery integration retains 56 stable partial archives including 12 unchanged replay-unavailable exceptions', async t => {
+  const prior = priorNative();
+  prior.boards = Array.from({length: 56}, (_, index) => ({...prior.boards[0], id: 'archive' + index,
+    period: {...prior.boards[0].period, id: 'archive' + index}, archived: true, complete: false,
+    entries: [{accountId, timeMs: 1100, rp: eventRp(period, 1100), rank: 1,
+      ...(index < 12 ? {replayUnavailable: true} : {})}]}));
+  prior.priorTotals.entries[0].finiteEventRp = 56 * eventRp(period, 1100) + 77;
+  prior.priorTotals.entries[0].rp = prior.priorTotals.entries[0].finiteEventRp + 100;
+  prior.priorTotals.entries[0].events = 59;
+  const published = await publishedBaseline(t, prior);
+  const projections = prior.boards.map(board => ({board: structuredClone(board), totalsEligible: false,
+    promotedReplays: [{untrusted: 'must not overwrite retained playback'}]}));
+  const before = JSON.stringify(projections);
+  const result = reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(), projections, rollingNormalBoard: rolling()});
+  assert.equal(result.totals.entries[0].finiteEventRp, prior.priorTotals.entries[0].finiteEventRp);
+  assert.equal(result.totals.entries[0].events, 59);
+  assert.equal(result.report.retainedCurrentPeriodIds.length, 56);
+  assert.deepEqual(result.report.projectedPeriodIds, []);
+  assert.equal(result.boards.filter(board => board.entries[0].replayUnavailable === true).length, 12);
+  for (const projection of result.publicationProjections) {
+    assert.deepEqual(projection.board, prior.boards.find(board => board.id === projection.board.id));
+    assert.deepEqual(projection.promotedReplays, []);
+    assert.equal(projection.totalsEligible, false);
+  }
+  assert.equal(JSON.stringify(projections), before);
+});
+
+test('mixed recovery publishes eligible proof/replays but keeps partial scoring, holds, pending dates and coverage exactly prior', async t => {
+  const prior = priorNative(), archive = structuredClone(prior.boards[0]);
+  archive.id = 'archive'; archive.period.id = 'archive';
+  archive.entries = [{accountId, timeMs: 2000, rp: 50, rank: 1, submittedAt: 1500}];
+  archive.pendingPlaybacks = [{...pending(run({periodId: 'archive'})), reviewHold: true}];
+  delete archive.complete; delete archive.totalEntries;
+  prior.boards.push(archive);
+  prior.priorTotals.entries[0].finiteEventRp += 50;
+  prior.priorTotals.entries[0].rp += 50;
+  prior.priorTotals.entries[0].events++;
+  const published = await publishedBaseline(t, prior), projection = await projectNativeEventSnapshot(rebaseSetup(t));
+  const current = structuredClone(archive);
+  current.entries[0].verified = true; current.entries[0].verifiedAt = 3000;
+  current.updatedAt = 3500;
+  const options = {publishedBaseline: published, serverTotals: totals(), rollingNormalBoard: rolling(),
+    projections: [projection, {board: current, totalsEligible: false, promotedReplays: [{accountId, runId: sha('different-replay')}]}]};
+  const result = reconcileNativeEventTotalsFromPublished(options);
+  const retained = result.publicationProjections.find(p => p.board.id === 'archive');
+  assert.deepEqual(retained.board, archive);
+  assert.equal(retained.board.entries[0].verified, undefined);
+  assert.equal(retained.board.updatedAt, archive.updatedAt);
+  assert.deepEqual(retained.promotedReplays, []);
+  assert.deepEqual(result.publicationProjections.find(p => p.board.id === 'day1').promotedReplays, projection.promotedReplays);
+  assert.equal(result.totals.entries[0].finiteEventRp, 77 + 1000 + 50);
+  assert.deepEqual(result.report.retainedCurrentPeriodIds, ['archive']);
+  const next = await publishedBaseline(t, {priorTotals: result.totals, boards: result.boards, generation: 76});
+  const repeated = reconcileNativeEventTotalsFromPublished({...options, publishedBaseline: next});
+  assert.deepEqual(repeated.totals.entries, result.totals.entries);
+  assert.deepEqual(repeated.boards, result.boards);
+});
+
+test('a branded proof-only partial projection with new pending blocks its period instead of losing the pending lane', async t => {
+  const published = await publishedBaseline(t, priorNative());
+  const current = board({period: publicEventPeriod(period), rows: [], complete: false, sourceComplete: false});
+  const partial = await projectRetainedEventVerifications({serverBoard: current,
+    expectedSourceHash: nativeEventSourceHash(current), ledger: loaded(t, []), canonicalRows: [], recordings: [], policy});
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [partial], rollingNormalBoard: rolling()}), /blocked \[day1\]: new or changed pending row/);
+  assert.deepEqual(partial.board.pendingPlaybacks, current.pendingPlaybacks);
+});
+
+for (const [name, change] of [
+  ['RP', row => {row.rp++;}], ['time', row => {row.timeMs++;}], ['rank', row => {row.rank++;}],
+  ['run', row => {row.runId = sha('different');}], ['hash', row => {row.replayHash = sha('different');}],
+  ['date', row => {row.submittedAt++;}], ['hold', row => {row.reviewHold = true;}],
+  ['excluded', row => {row.excluded = true;}], ['eligibility', row => {row.eventRpEligible = false;}],
+  ['verified state', row => {row.verifiedState = 0;}], ['status', row => {row.verificationStatus = 'waiting';}]
+]) test('partial retention blocks changed scoring ' + name + ' with the period ID', async t => {
+  const prior = priorNative(), published = await publishedBaseline(t, prior), current = structuredClone(prior.boards[0]);
+  change(current.entries[0]);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [{board: current, totalsEligible: false}], rollingNormalBoard: rolling()}), /blocked \[day1\]/);
+});
+
+for (const [name, change] of [
+  ['hold', row => {row.reviewHold = true;}], ['date', row => {row.submittedAt++;}],
+  ['time', row => {row.timeMs++;}], ['hash', row => {row.replayHash = sha('different');}]
+]) test('existing pending ' + name + ' changes cannot be silently discarded', async t => {
+  const prior = priorNative(); prior.boards[0].pendingPlaybacks = [pending()];
+  const published = await publishedBaseline(t, prior), current = structuredClone(prior.boards[0]);
+  change(current.pendingPlaybacks[0]);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [{board: current, totalsEligible: false}], rollingNormalBoard: rolling()}), /blocked \[day1\]: new or changed pending row/);
+});
+
+test('partial subsets without fresh pending retain missing old rows and pending rather than inventing removal', async t => {
+  const prior = priorNative(); prior.boards[0].pendingPlaybacks = [{...pending(), needsReview: true}];
+  const published = await publishedBaseline(t, prior), current = structuredClone(prior.boards[0]);
+  current.entries = []; current.pendingPlaybacks = []; current.complete = false;
+  const result = reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
+    projections: [{board: current, totalsEligible: false}], rollingNormalBoard: rolling()});
+  assert.deepEqual(result.boards[0], prior.boards[0]);
+  assert.deepEqual(result.report.retainedCurrentPeriodIds, ['day1']);
+});
+
+test('recovery integration rejects unknown partial periods, duplicates, frozen changes and forged full projections', async t => {
+  const prior = priorNative(), published = await publishedBaseline(t, prior), current = structuredClone(prior.boards[0]);
+  const args = {publishedBaseline: published, serverTotals: totals(), rollingNormalBoard: rolling()};
+  const observation = {board: current, totalsEligible: false};
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({...args, projections: [observation, observation]}), /duplicate current event/);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({...args,
+    projections: [{board: {...current, id: 'missing', period: {...current.period, id: 'missing'}}, totalsEligible: false}]}), /blocked \[missing\]: pinned prior/);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({...args,
+    projections: [{board: {...current, period: {...current.period, targetMs: 999}}, totalsEligible: false}]}), /frozen period policy/);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({...args, projections: [{board: current, ready: true}]}), /ledger-compiled/);
+  assert.throws(() => reconcileNativeEventTotalsFromPublished({...args, publishedBaseline: structuredClone(published)}), /Branded trusted/);
 });

@@ -7,6 +7,7 @@ import {validatePublicReplayForPublication} from './public-replay-playback.mjs';
 import {publicEventTotals} from './public-event-totals-backup.mjs';
 import {buildEventRpHighlights} from './event-rp-highlights.mjs';
 import {applyLedgerToBoard, ledgerBinding, ledgerKey, ledgerDisposition} from './native-verification-ledger.mjs';
+import {assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 
 const VERSION = 'native-event-overlay-v1';
 const compiled = new WeakSet();
@@ -17,6 +18,8 @@ const clone = value => structuredClone(value);
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+const frozenEventPolicy = period => Object.fromEntries(Object.entries(period)
+  .filter(([key]) => !['racerCount', 'label', 'trackName', 'author'].includes(key)));
 const demand = (condition, message) => {if (!condition) throw Error(message);};
 const held = value => value?.needsReview === true || value?.reviewHold === true;
 const freeze = value => {
@@ -607,4 +610,161 @@ export function projectNativeEventTotals({serverTotals, projections = [], rollin
   totals.nativeEventOverlay = {version: VERSION, totalsBaselineDigest: pairedDigest,
     ...(rollingBoard.capturedNativeSource ? {rollingSource: rollingBoard.capturedNativeSource} : {})};
   return freeze({totals, rollingBoard, serverTotalsBaseline: clone(serverTotals), totalsBaselineDigest: pairedDigest});
+}
+
+/** Explicit offline recovery, separate from the pristine-backend delta compiler.
+ * publishedBaseline MUST come from loadTrustedPublishedEventTotalsBaseline.
+ * serverTotals only pairs the current proof projections; its stale scores are
+ * never added or subtracted. Returned boards are the scoring companions, including
+ * retained periods, so the next pinned generation can subtract the same awards.
+ * Only complete branded projections are accepted. Missing periods retain prior
+ * contributions and are reported as stale. Do not filter known partial or
+ * totals-ineligible projections and then publish these retained boards over the
+ * current captures: current pending lanes and holds require explicit reconciliation.
+ */
+export function rebaseNativeEventTotalsFromPublished({publishedBaseline, serverTotals, projections = [],
+  rollingNormalBoard, capturedRollingBoard} = {}) {
+  const previous = assertTrustedPublishedEventTotalsBaseline(publishedBaseline);
+  const pairedDigest = totalsDigest(serverTotals);
+  demand(Array.isArray(projections) && projections.length <= 1024, 'Invalid event projection list');
+  const priorBoards = new Map(previous.boards.map(value => [value.board.id, value]));
+  const boards = new Map(previous.boards.map(value => [value.board.id, value.board]));
+  const rows = new Map(previous.totals.entries.map(row => [row.accountId, {...clone(row), rp: 0, events: 0}]));
+  for (const residual of previous.residuals) {
+    Object.assign(rows.get(residual.accountId), {rp: residual.rp, events: residual.events});
+  }
+  const periods = new Set(), newPeriodIds = [];
+  for (const projection of projections) {
+    demand(compiled.has(projection) && projection.ready, 'Ready ledger-compiled event projection required');
+    checkBaseline(projection.baseline);
+    const id = projection.baseline.period.id, prior = priorBoards.get(id);
+    demand(projection.baseline.totalsDigest === pairedDigest && digest(projection.board) === projection.boardDigest &&
+      !periods.has(id), 'Event totals baseline mismatch or duplicate period');
+    validLane(projection.board.entries, projection.baseline.period);
+    demand(integer(projection.board.period.entrantLimit) && projection.board.period.entrantLimit > 0,
+      'Published recovery requires explicit captured entrant limit');
+    if (prior) {
+      demand(digest(frozenEventPolicy(prior.board.period)) === digest(frozenEventPolicy(projection.baseline.board.period)),
+        'Published event frozen period policy mismatch: ' + id);
+      demand(prior.replaceable, 'Cannot replace a prior period with unknown contribution coverage: ' + id);
+    } else {
+      // An old missing period could already be inside the unknown residual. Even
+      // an empty replacement would falsely establish zero for the next rebase.
+      // Totals.updatedAt is not a coverage watermark; use pinned publication time.
+      demand(integer(previous.provenance.publishedAt) && projection.baseline.period.startsAt > previous.provenance.publishedAt ||
+        previous.residuals.every(row => row.events === 0), 'Missing prior period may overlap historical residual: ' + id);
+      newPeriodIds.push(id);
+    }
+    periods.add(id);
+    boards.set(id, projection.board);
+  }
+  demand(boards.size <= 1024, 'Rebased event board limit exceeded');
+  let updatedAt = previous.totals.updatedAt, rowCount = 0;
+  for (const [id, board] of boards) {
+    rowCount += board.entries.length;
+    demand(rowCount <= 1000000, 'Rebased event contribution limit exceeded');
+    if (periods.has(id)) updatedAt = Math.max(updatedAt, board.updatedAt);
+    for (const entry of board.entries) {
+      const row = rows.get(entry.accountId) || {...clone(entry), rp: 0, events: 0};
+      demand(integer(row.rp + entry.rp) && integer(row.events + 1), 'Rebased finite totals overflow');
+      row.rp += entry.rp; row.events++;
+      rows.set(entry.accountId, row);
+    }
+  }
+  demand(rows.size <= 10000, 'Rebased totals account limit exceeded');
+  const finite = {updatedAt, entries: [...rows.values()], complete: true, totalEntries: rows.size};
+  for (const row of finite.entries) for (const key of ['finiteEventRp', 'permanentRollingHillsRp', 'dynamicEventRp',
+    'rollingHillsTimeMs', 'rollingHillsRunAgeMs', 'rollingHillsEventRpContribution', 'eventHighlights']) delete row[key];
+  demand(capturedRollingBoard === undefined || rollingNormalBoard === undefined, 'Choose one explicit Rolling Hills source');
+  if (capturedRollingBoard !== undefined) demand(capturedRollingBoards.has(capturedRollingBoard), 'Pinned captured-native Rolling Hills result required');
+  const rollingBoard = capturedRollingBoard ?? derivePermanentRollingHills(rollingNormalBoard);
+  const merged = mergePermanentRollingIntoTotals(finite, rollingBoard);
+  for (const row of merged.entries) demand(integer(row.rp), 'Rebased total RP overflow');
+  const totals = projectAssembledEventTotals(merged, {capturedBoards: [...boards.values(), rollingBoard]});
+  const retainedPeriodIds = [...priorBoards.keys()].filter(id => !periods.has(id)).sort();
+  totals.nativeEventOverlay = {version: VERSION, source: 'trusted-published-rebase',
+    totalsBaselineDigest: pairedDigest, publishedBaseline: clone(previous.provenance), backendPairingDigest: pairedDigest,
+    finiteCoverage: 'projected-periods-with-retained-history', retainedPeriodIds,
+    ...(rollingBoard.capturedNativeSource ? {rollingSource: rollingBoard.capturedNativeSource} : {})};
+  return freeze({totals, rollingBoard, boards: [...boards.values()], publishedBaseline: previous,
+    report: {source: 'trusted-published-rebase', priorGeneration: previous.provenance.generation,
+      projectedPeriodIds: [...periods].sort(), retainedPeriodIds, newPeriodIds: newPeriodIds.sort(),
+      residualAccounts: previous.residuals.filter(row => row.rp || row.events).length}});
+}
+
+function retentionRestrictions(row) {
+  const result = restrictions(row);
+  for (const key of ['pending', 'playbackPending']) if (row[key] === true) result[key] = true;
+  for (const key of ['verified', 'physicsVerified', 'replayIntegrityVerified', 'runVerified', 'integrityVerified', 'eventRpEligible']) {
+    if (row[key] === false) result[key] = false;
+  }
+  if (row.verificationStatus !== undefined && row.verificationStatus !== 'verified') result.verificationStatus = row.verificationStatus;
+  if (row.verifiedState === 0 || row.verifiedState === false) result.verifiedState = row.verifiedState;
+  return result;
+}
+
+/** Compile integration entry point: pass ALL current period projections, never
+ * prefilter totalsEligible:false. These non-scoring observations grant no proof
+ * authority: only the pinned prior board is published for a retained period.
+ * Stable/subset legacy rows and already represented pending rows are safe to
+ * retain. A changed scoring binding, new restriction, or unrepresented pending
+ * row blocks the entire candidate with the offending period ID, not a silent
+ * per-period omission. No pending rows are promoted, merged, or newly scored.
+ * Publish publicationProjections (including their replay lists), not the input
+ * projections: proof-only current replay updates must not overwrite retained PBs.
+ */
+export function reconcileNativeEventTotalsFromPublished({publishedBaseline, projections = [], ...options} = {}) {
+  const previous = assertTrustedPublishedEventTotalsBaseline(publishedBaseline);
+  demand(Array.isArray(projections) && projections.length <= 1024, 'Invalid event projection list');
+  const priorBoards = new Map(previous.boards.map(value => [value.board.id, value.board]));
+  const eligible = [], seen = new Set(), retainedCurrentPeriodIds = [];
+  for (const projection of projections) {
+    const current = projection?.board, id = current?.id;
+    demand(typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id) && !seen.has(id),
+      'Invalid or duplicate current event period: ' + id);
+    seen.add(id);
+    if (projection.totalsEligible !== false) {eligible.push(projection); continue;}
+    const prior = priorBoards.get(id);
+    const check = (condition, reason) => demand(condition, 'Retained event publication blocked [' + id + ']: ' + reason);
+    check(projection.ready !== false, 'current proof projection is not ready');
+    check(prior && current.period && current.period.id === id, 'pinned prior period required');
+    check(digest(frozenEventPolicy(current.period)) === digest(frozenEventPolicy(prior.period)), 'frozen period policy changed');
+    check(Array.isArray(current.entries) && current.entries.length <= 10000, 'invalid current scoring lane');
+    const represented = new Map(prior.entries.map(row => [row.accountId, row])), accounts = new Set();
+    const unchangedRestrictions = (row, old) => Object.entries(retentionRestrictions(row)).every(([key, value]) => old[key] === value);
+    check(unchangedRestrictions(current, prior), 'new board restriction requires complete reconciliation');
+    for (const row of current.entries) {
+      check(row && HEX.test(row.accountId || '') && !accounts.has(row.accountId), 'invalid or duplicate current scoring account');
+      accounts.add(row.accountId);
+      const old = represented.get(row.accountId);
+      check((row.periodId === undefined || row.periodId === id) &&
+        (row.trackId === undefined || row.trackId === current.period.trackId) &&
+        ['frames', 'raceTimeFrames'].every(key => row[key] === undefined || row[key] === row.timeMs) &&
+        ['runId', 'replayHash'].every(key => row[key] === undefined || HEX.test(row[key])), 'invalid current scoring binding');
+      check(old && row.timeMs === old.timeMs && row.rp === old.rp &&
+        (row.rank === undefined || row.rank === old.rank), 'current scoring contribution differs from pinned prior');
+      for (const key of ['runId', 'replayHash', 'submittedAt', 'runCreatedAt', 'frames', 'raceTimeFrames', 'trackId', 'periodId']) {
+        check(row[key] === undefined || old[key] === undefined || row[key] === old[key], 'current scoring binding/date changed: ' + key);
+      }
+      check(unchangedRestrictions(row, old), 'new scoring restriction requires complete reconciliation');
+      check(row.replayUnavailable === undefined || row.replayUnavailable === old.replayUnavailable,
+        'current replay availability differs from pinned prior');
+    }
+    check(current.pendingPlaybacks === undefined || Array.isArray(current.pendingPlaybacks) && current.pendingPlaybacks.length <= 512,
+      'invalid current pending lane');
+    const pending = prior.pendingPlaybacks || [], runs = new Set();
+    for (const row of current.pendingPlaybacks || []) {
+      check(row && HEX.test(row.runId || '') && !runs.has(row.runId), 'invalid or duplicate current pending run');
+      runs.add(row.runId);
+      check(pending.some(old => old.runId === row.runId && digest(old) === digest(row)),
+        'new or changed pending row would be lost; retain it unscored before publication');
+    }
+    retainedCurrentPeriodIds.push(id);
+  }
+  const combined = rebaseNativeEventTotalsFromPublished({...options, publishedBaseline, projections: eligible});
+  const projected = new Map(eligible.map(value => [value.board.id, value]));
+  const publicationProjections = combined.boards.map(board => ({board,
+    promotedReplays: projected.get(board.id)?.promotedReplays ?? [], totalsEligible: projected.has(board.id)}));
+  return freeze({...combined, publicationProjections,
+    report: {...combined.report, retainedCurrentPeriodIds: retainedCurrentPeriodIds.sort()}});
 }

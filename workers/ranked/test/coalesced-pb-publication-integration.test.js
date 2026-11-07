@@ -12,6 +12,7 @@ import {eventEncode as encode, eventDecode as decode} from '../src/events-store.
 import {pendingSlot, verificationKey, verificationSchedule, VERIFICATION_COLLECTION,
   VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, PRE_REPLAY_UI_PROOF_ENGINE, hasAcceptedVerifiedProof} from '../src/verification.js';
 import {COMPETITIVE_REVIEW_REASON} from '../src/competitive-review.js';
+import {sourceCatalogFromScan} from '../src/overall-source-cache.js';
 
 globalThis.fetch = () => {throw Error('OFFLINE_COALESCED_PUBLICATION_TEST');};
 Socket.prototype.connect = globalThis.fetch;
@@ -669,4 +670,67 @@ test('Summer1 saved 1136-racer paged population makes repeated unseen generation
   console.log('BUSY_PAGED_COST ' + JSON.stringify({name:'Summer1', population:1136, improvements:10,
     sourcePages:12, costs, canonicalClientBase:{reads:20,writes:20},
     excludes:'native verification, subsequent proof publication, Overall, capture, optional client work'}));
+});
+
+test('coordinated Summer1 queue publishes stale paged roots outside capture windows and marks sources dirty', async t => {
+  const now = Date.UTC(2026, 10, 6, 3, 5), oldAt = Date.UTC(2026, 9, 29);
+  t.mock.method(Date, 'now', () => now);
+  const errors = [], audits = [];
+  t.mock.method(console, 'error', (...args) => errors.push(args));
+  t.mock.method(console, 'log', (message, payload) => {
+    if (message === 'Ranked scheduled Firestore reads') audits.push(JSON.parse(payload));
+  });
+  const f = fixture({population:1136});
+  f.env.BACKGROUND_MAINTENANCE_MODE = 'coordinated';
+  f.env.PB_COALESCED_TRACK_IDS_JSON = JSON.stringify(configuredBusy());
+  f.env.PUBLIC_FIRESTORE_READ_MODE = 'capture-only';
+  const old = f.data.get(boardKey), publication = await preparePublicationPages('track', track, old.entries,
+    {sourceRevision:1, sourceComplete:true});
+  for (const document of publication.documents) f.data.set(document.collection + '/' + document.id, document.data);
+  f.data.set(boardKey, {...old, updatedAt:oldAt, builtAt:oldAt, entries:old.entries.slice(0, 500),
+    complete:false, pagination:publication.pagination});
+  const slots = f.data.get(queueKey).slots;
+  f.data.set(queueKey, {trackId:track, storageVersion:2, slots:{}, migrationComplete:true});
+  for (const r of f.rows) {
+    const queueId = verificationShardId(track, r.accountId);
+    f.data.set(VERIFICATION_COLLECTION + '/' + queueId,
+      {trackId:track, queueId, storageVersion:2, slots:{[r.accountId]:slots[r.accountId]}});
+  }
+  const catalog = sourceCatalogFromScan([{id:track, data:f.data.get(boardKey), updateTime:'v0'}],
+    {fullScan:true, limitReached:false, scannedAt:oldAt});
+  assert.ok(catalog);
+  f.data.set(metaKey, {...f.data.get(metaKey), sourceCatalog:catalog});
+  const latest = {...f.rows[0], timeMs:14000, frames:14000, raceTimeFrames:14000,
+    uploadId:2, pbAt:Date.UTC(2026, 10, 5)};
+  f.data.set(canonicalKey(latest), latest);
+  assert.equal((await (await f.notify(latest)).json()).publicationPending, true);
+  assert.equal(f.data.get(metaKey).dirty, false, 'enqueue does not falsely claim published sources changed');
+  assert.equal(f.data.get(boardKey).updatedAt, oldAt);
+  assert.deepEqual(f.counts, {reads:2, writes:1, queries:0, commitAttempts:1});
+  f.reset();
+  const turn = async at => {
+    let completion;
+    worker.scheduled({cron:'*/5 * * * *', scheduledTime:at}, f.env, {waitUntil:p => {completion = p;}});
+    assert.ok(completion, 'coordinated queue draining is not gated to a capture window');
+    await completion;
+  };
+  await turn(now);
+  assert.deepEqual(errors, []);
+  assert.equal(f.data.get(boardKey).updatedAt, now);
+  assert.equal(f.data.get(boardKey).entries.find(r => r.accountId === latest.accountId).timeMs, latest.timeMs);
+  assert.equal(f.data.get(boardKey).totalEntries, 1136);
+  assert.equal(f.data.get(metaKey).dirty, true);
+  assert.notDeepEqual(f.data.get(metaKey).sourceCatalog.tracks[track], catalog.tracks[track]);
+  assert.deepEqual(f.data.get(jobKey).pendingTrackIds, []);
+  assert.deepEqual(f.data.get(jobKey).pendingResultBindings, {});
+  assert.deepEqual(f.counts, {reads:18, writes:17, queries:0, commitAttempts:4});
+  assert.equal(audits[0].documentReadEstimate, 18);
+  assert.equal(audits[0].writeEstimate, 17);
+  f.reset();
+  await turn(now + 5 * 60000);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(f.counts, {reads:1, writes:0, queries:0, commitAttempts:0});
+  process.stdout.write('COALESCED_STALE_ROOT_COST ' + JSON.stringify({population:1136,
+    enqueue:{reads:2,writes:1}, drain:{reads:18,writes:17}, cleanFollowup:{reads:1,writes:0},
+    excludes:'Overall aggregation, native verification and capture'}) + '\n');
 });

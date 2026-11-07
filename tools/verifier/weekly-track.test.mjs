@@ -8,6 +8,74 @@ import {fileURLToPath} from 'node:url';
 import {loadWeeklyTrustedTrack} from './weekly-track.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+function catalogFixture(t) {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'weekly-catalog-'));
+  t.after(() => {
+    assert.equal(path.dirname(path.resolve(temporary)), path.resolve(os.tmpdir()));
+    fs.rmSync(temporary, {recursive: true, force: true});
+  });
+  const entry = JSON.parse(fs.readFileSync(path.join(root, 'extra-tracks/catalog.json'), 'utf8')).find(row => row.archiveImport);
+  const directory = path.join(temporary, 'events/kodub');
+  fs.mkdirSync(path.join(directory, 'assets'), {recursive: true});
+  fs.mkdirSync(path.join(temporary, 'extra-tracks'));
+  const code = fs.readFileSync(path.join(root, entry.trackPath), 'utf8');
+  fs.writeFileSync(path.join(temporary, entry.trackPath), code);
+  const catalog = rows => fs.writeFileSync(path.join(temporary, 'extra-tracks/catalog.json'), JSON.stringify(rows));
+  catalog([entry]);
+  return {temporary, directory, entry, code, catalog};
+}
+
+test('a reviewed catalog alias recovers an omitted registry binding, not a proof', t => {
+  const {temporary, directory, entry, code} = catalogFixture(t);
+  const jobs = [{trackId: entry.trackId}];
+  for (const registry of ['[]', 'invalid JSON', JSON.stringify(Array(521).fill(null)), ' '.repeat(128 * 1024 + 1)]) {
+    fs.writeFileSync(path.join(directory, 'trusted-tracks.json'), registry);
+    const tracks = loadWeeklyTrustedTrack(temporary, jobs);
+    assert.deepEqual(tracks, [{trackId: entry.trackId, code, codeHash: entry.codeHash}]);
+    assert.equal(tracks[0].verified, undefined);
+  }
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, [{trackId: 'b'.repeat(64)}]), []);
+});
+
+test('catalog fallback requires exact local archive path, hash, and ranked alias flags', t => {
+  const {temporary, entry, catalog} = catalogFixture(t);
+  for (const change of [{archiveImport: false}, {ranked: false}, {unranked: true}, {importOnly: true},
+    {trackPath: '../outside.track'}, {trackPath: 'https://example.test/track'},
+    {trackPath: 'extra-tracks/challenges/poly-dip-2.track'}, {codeHash: 'f'.repeat(64)}, {trackId: 'invalid'}]) {
+    catalog([{...entry, ...change}]);
+    assert.deepEqual(loadWeeklyTrustedTrack(temporary, [{trackId: entry.trackId}]), [], JSON.stringify(change));
+  }
+  catalog([entry]);
+  fs.appendFileSync(path.join(temporary, entry.trackPath), 'tampered');
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, [{trackId: entry.trackId}]), []);
+});
+
+test('catalog and asset size limits fail closed without hiding a valid registry', t => {
+  const {temporary, directory, entry, code, catalog} = catalogFixture(t);
+  const jobs = [{trackId: entry.trackId}];
+  catalog(Array(1025).fill(entry));
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, jobs), []);
+  fs.writeFileSync(path.join(temporary, 'extra-tracks/catalog.json'), ' '.repeat(1024 * 1024 + 1));
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, jobs), []);
+  fs.writeFileSync(path.join(directory, 'trusted-tracks.json'), JSON.stringify([
+    {trackId: entry.trackId, codeHash: entry.codeHash, assetPath: `assets/${entry.codeHash}.track`},
+  ]));
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, jobs), [{trackId: entry.trackId, code, codeHash: entry.codeHash}]);
+  fs.writeFileSync(path.join(temporary, entry.trackPath), 'x'.repeat(262145));
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, jobs), []);
+});
+
+test('catalog fallback does not replace or duplicate a valid registry binding', t => {
+  const {temporary, directory, entry, code, catalog} = catalogFixture(t);
+  const otherCode = code + 'A', otherHash = crypto.createHash('sha256').update(otherCode).digest('hex');
+  fs.writeFileSync(path.join(directory, 'assets', otherHash + '.track'), otherCode);
+  catalog([{...entry, codeHash: otherHash, trackPath: `events/kodub/assets/${otherHash}.track`}, entry]);
+  fs.writeFileSync(path.join(directory, 'trusted-tracks.json'), JSON.stringify([
+    {trackId: entry.trackId, codeHash: entry.codeHash, assetPath: `assets/${entry.codeHash}.track`},
+  ]));
+  assert.deepEqual(loadWeeklyTrustedTrack(temporary, [{trackId: entry.trackId}]), [{trackId: entry.trackId, code, codeHash: entry.codeHash}]);
+});
 test('weekly Kodub asset is offered only for selected jobs with its exact current track ID', () => {
   const current = JSON.parse(fs.readFileSync(path.join(root, 'events/kodub/current.json'), 'utf8')).current;
   const [track] = loadWeeklyTrustedTrack(root, [{trackId: current.trackId}]);

@@ -8,6 +8,7 @@ import {recallPublicResponse, rememberPublicResponse, publicResponseCacheScope, 
 import {EVENT_COLLECTIONS} from './events.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
+import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
 import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS, TRACK_BUILD_PAGE_SIZE} from './track-build.js';
 import { safePublicName } from './public-name-policy.js';
 import {kodubWeekly} from './kodub-weekly.js';
@@ -1245,25 +1246,44 @@ async function canonicalTrackPage(env,trackId,afterName='',readTime='',limit=100
 async function normalizeBuildRows(env,trackId,rows,readTime,historicalRoots) {
   rows=rows.filter(row=>structurallyValidResult(row,trackId));
   const collection=verificationCollectionForTrack(trackId);
+  const currentRoot=collection===VERIFICATION_COLLECTION?await readDocument(env,collection,trackId):undefined;
+  const state=currentRoot?.data;
+  const reuse=state?.trackId===trackId && state.storageVersion===2 && state.migrationComplete===true &&
+    state.slots && typeof state.slots==='object' && !Array.isArray(state.slots) && Object.keys(state.slots).length===0 &&
+    proofVersionAtOrBefore(currentRoot,readTime);
   // Only the immutable historical root is shared by this invocation's pages.
   // Current queues/proofs remain fresh and independent of this readTime cache.
-  if (!historicalRoots.has(readTime)) historicalRoots.set(readTime,await readDocument(env,collection,trackId,readTime));
+  if (!historicalRoots.has(readTime)) historicalRoots.set(readTime,reuse?currentRoot:await readDocument(env,collection,trackId,readTime));
   const root=historicalRoots.get(readTime), verdicts={...root?.data?.slots};
-  const missing=rows.filter(row=>!verdicts[row.accountId||row.userId]);
+  const current=reuse?(await readDocumentsForCollections(env,[[collection,
+    rows.map(row=>verificationShardId(trackId,row.accountId||row.userId))]])).get(collection):null;
+  const missing=rows.filter(row=>{
+    const accountId=row.accountId||row.userId;
+    if(verdicts[accountId])return false;
+    const document=current?.get(verificationShardId(trackId,accountId));
+    if(!proofVersionAtOrBefore(document,readTime))return true;
+    verdicts[accountId]=document.data?.slots?.[accountId];
+    return false;
+  });
   for(let offset=0;offset<missing.length;offset+=100){
     const batch=missing.slice(offset,offset+100);
     const documents=(await readDocumentsForCollections(env,[[collection,batch.map(row=>verificationShardId(trackId,row.accountId||row.userId))]],readTime)).get(collection);
     for(const row of batch){const accountId=row.accountId||row.userId,shard=documents.get(verificationShardId(trackId,accountId));if(shard?.data?.slots?.[accountId])verdicts[accountId]=shard.data.slots[accountId];}
   }
   const integrity=await Promise.all(rows.map(row=>replayIntegrityValid(row)));
-  await prepareVerification(env,trackId,rows);
+  if(current){
+    // Reuse only these fresh page preimages for the existing CAS maintenance.
+    // Fully migrated roots need no migration; never retain shards across pages.
+    await prepareShardedVerification({trackId,collection,rows,root:currentRoot,
+      read:(c,id)=>readDocument(env,c,id),readMany:async()=>current,commit:w=>commitDocuments(env,w)});
+  }else await prepareVerification(env,trackId,rows,false,currentRoot);
   return computeTrackEntries(rows.map((row,i)=>({...row,integrityVerified:integrity[i]})),trackId,env,verdicts);
 }
-async function prepareVerification(env, trackId, rows, complete = false) {
+async function prepareVerification(env, trackId, rows, complete = false, currentRoot = undefined) {
   // One queue document per track avoids a verification read per racer on every PB.
   await requireExtraQueueMigration(env, trackId);
   const queueCollection=verificationCollectionForTrack(trackId);
-  const prior=await readDocument(env,queueCollection,trackId);
+  const prior=currentRoot===undefined?await readDocument(env,queueCollection,trackId):currentRoot;
   return persistVerificationRows(env, trackId, rows, prior, complete);
 }
 
@@ -1348,6 +1368,25 @@ export async function mergeCanonicalResultIntoTrack(env, trackId, canonicalResul
   if (!prior || prior.data?.algorithmVersion !== ALGORITHM_VERSION || !Array.isArray(prior.data?.entries)) return rebuildTrack(env, trackId);
   let normalized = computeTrackEntries([{ ...canonicalResult, integrityVerified, validationState: integrityVerified ? 'integrity' : 'pending' }], trackId, env)[0];
   if (!normalized) throw new Error('Canonical PB failed structural validation');
+  const snapshot = prior.data, pagination = snapshot.pagination;
+  if (prior.updateTime && snapshot.trackId === trackId &&
+      typeof snapshot.signature === 'string' && snapshot.signature.length > 0 &&
+      Number(snapshot.schemaVersion) === TRACK_SCHEMA_VERSION && trackSnapshotIsCurrent(snapshot, snapshot.signature) &&
+      pagination?.version === 1 && pagination.pageSize === 100 &&
+      Number.isSafeInteger(pagination.totalEntries) && pagination.totalEntries > TRACK_LIMIT &&
+      pagination.pageCount === Math.ceil(pagination.totalEntries / 100) &&
+      /^[a-f0-9]{64}$/.test(pagination.generation) && snapshot.entries.length === TRACK_LIMIT) {
+    const inline = snapshot.entries.find(row => safeText(row.accountId || row.userId, 128) === normalized.accountId);
+    // The fresh root atomically binds this prefix to immutable pages. An exact
+    // no-op needs current proof maintenance, not hydration of unrelated racers.
+    if (inline && Number(inline.timeMs) === normalized.timeMs &&
+        Number(inline.uploadId || 0) === Number(normalized.uploadId || 0) &&
+        inline.replayHash === normalized.replayHash &&
+        (inline.integrityVerified === true) === (normalized.integrityVerified === true)) {
+      await prepareVerification(env, trackId, [canonicalResult]);
+      return {changed:false,revision:Number(snapshot.revision || 0)};
+    }
+  }
   if (prior.data.pagination) prior.data.entries = await loadTrackPublicationEntries(env,prior.data,trackId);
   const existing=prior.data.entries.find(row=>safeText(row.accountId||row.userId,128)===normalized.accountId);
   // Equal PB repair must use current canonical data, not a delayed notification payload.
@@ -1485,6 +1524,22 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     .map(([trackId,ids])=>[trackId,[...new Set(ids.filter(id=>typeof id==='string'&&/^[A-Za-z0-9_.:-]{1,128}_[A-Za-z0-9_-]{1,80}$/.test(id)))]]));
   const pendingFullRebuildTrackIds=new Set((job.pendingFullRebuildTrackIds||[])
     .filter(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(id)));
+  const backfillTracks = field => {
+    const ids=job[field] ?? [];
+    if(!Array.isArray(ids)||ids.length>RECONCILE_FULL_TRACK_LIMIT||
+      ids.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(id)))throw Error('RECONCILE_BACKFILL_STATE_INVALID');
+    return new Set(ids);
+  };
+  const backfillQueuedTrackIds=backfillTracks('backfillQueuedTrackIds');
+  const backfillCatchupTrackIds=backfillTracks('backfillCatchupTrackIds');
+  // A final catch-up must start after enumeration, not borrow an older active build.
+  for(const trackId of backfillCatchupTrackIds){
+    queued.add(trackId);
+    if(job.backfillComplete&&!pendingFullRebuildTrackIds.has(trackId)&&job.activeFullRebuildTrackId!==trackId){
+      pendingFullRebuildTrackIds.add(trackId);
+      backfillCatchupTrackIds.delete(trackId);
+    }
+  }
   const failedFullRebuilds = Object.create(null);
   for (const [trackId, failure] of Object.entries(job.failedFullRebuilds || {})) {
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(trackId) || !failure || typeof failure !== 'object') continue;
@@ -1549,6 +1604,10 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
   for(const row of legacy){
     const trackId=safeText(row.data?.trackId,80);
     if(trackId&&structurallyValidResult(row.data,trackId)){
+      if(!/^[A-Za-z0-9_-]{1,80}$/.test(trackId))throw Error('RECONCILE_BACKFILL_STATE_INVALID');
+      if(backfillQueuedTrackIds.has(trackId))continue;
+      if(backfillQueuedTrackIds.size>=RECONCILE_FULL_TRACK_LIMIT)throw Error('RECONCILE_BACKFILL_TRACK_CAPACITY');
+      backfillQueuedTrackIds.add(trackId);
       queued.add(trackId);fullRebuildTracks.add(trackId);
       // Keep legacy publication requirements when this track waits for a later batch.
       pendingFullRebuildTrackIds.add(trackId);
@@ -1676,7 +1735,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
         else delete pendingResultIds[trackId];
       }
       if(result.fallback||fullRebuildTracks.has(trackId))pendingFullRebuildTrackIds.delete(trackId);
-      if(!pendingResultIds[trackId]?.length)queued.delete(trackId);
+      if(!pendingResultIds[trackId]?.length&&!backfillCatchupTrackIds.has(trackId))queued.delete(trackId);
       // Leave siblings queued; no later publication may escape this atomic handoff.
       if (attemptedFullRebuild) break;
     }catch(error){
@@ -1696,6 +1755,12 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
       queued.delete(trackId);queued.add(trackId);
     }
   }
+  const backfillComplete=Boolean(job.backfillComplete||(budget&&legacy.length<budget));
+  if(!job.backfillComplete&&backfillComplete){
+    // Legacy writers may update an already scanned row without advancing ingestedAt.
+    // Persist one final pass per seen track, independent of unfinished/failed work.
+    for(const trackId of backfillQueuedTrackIds){backfillCatchupTrackIds.add(trackId);queued.add(trackId);}
+  }
   const normalizedJobState = Array.isArray(job.pendingTrackIds)
     &&JSON.stringify([...queued])===JSON.stringify(job.pendingTrackIds)
     &&JSON.stringify(pendingResultIds)===JSON.stringify(job.pendingResultIds||{})
@@ -1703,6 +1768,8 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     &&JSON.stringify([...pendingFullRebuildTrackIds])===JSON.stringify(job.pendingFullRebuildTrackIds)
     &&Boolean(forceFullRebuildAll&&queued.size)===Boolean(job.forceFullRebuildAll)
     &&String(job.activeFullRebuildTrackId||'')===activeFullRebuildTrackId
+    &&JSON.stringify([...backfillQueuedTrackIds])===JSON.stringify(job.backfillQueuedTrackIds||[])
+    &&JSON.stringify([...backfillCatchupTrackIds])===JSON.stringify(job.backfillCatchupTrackIds||[])
     &&Number(job.schemaVersion||0)===2
     &&JSON.stringify(failedFullRebuilds)===JSON.stringify(job.failedFullRebuilds||{});
   if(document&&!changed.length&&!legacy.length&&!rebuilt&&job.backfillComplete&&job.forceFullRebuildAll!==true
@@ -1719,7 +1786,7 @@ export async function reconcileCanonicalChanges(env, {scanResults = true, now = 
     cursorIngestedAt:changedCursor&&!changedCursorDeferred?changedCursor.ingestedAt:timestamp,
     cursorDocumentId:changedCursor&&!changedCursorDeferred?changedCursor.id:safeText(job.cursorDocumentId,256),
     backfillDocumentId:legacy.length?legacy.at(-1).id:safeText(job.backfillDocumentId,256),
-    backfillComplete:Boolean(job.backfillComplete||(budget&&legacy.length<budget)),
+    backfillComplete,backfillQueuedTrackIds:[...backfillQueuedTrackIds],backfillCatchupTrackIds:[...backfillCatchupTrackIds],
     pendingTrackIds:[...queued],pendingResultIds,pendingResultBindings,pendingFullRebuildTrackIds:[...pendingFullRebuildTrackIds],
     failedFullRebuilds,activeFullRebuildTrackId,
     forceFullRebuildAll:Boolean(forceFullRebuildAll&&queued.size),lastScanAt:Date.now(),schemaVersion:2

@@ -1,3 +1,4 @@
+import {assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {refreshCapturedEventHighlights} from './refresh-event-highlights.mjs';
 import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS,annotateLegacyArchiveReplayBoard} from './legacy-archive-replay-exceptions.mjs';
 import fs from 'node:fs/promises';
@@ -8,7 +9,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {readLedger,writeLedger,ledgerBinding,ledgerKey,ledgerDisposition,applyLedgerToBoard} from './native-verification-ledger.mjs';
 import {buildNativeVerificationPolicy} from './native-verification-policy.mjs';
 import {readCapturedNormalLedgerRows,applyNativeLedgerToCapturedTracks,publicEventBackup} from './public-snapshot-backup.mjs';
-import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
+import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,reconcileNativeEventTotalsFromPublished,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
 import {loadCapturedNativeJobs,defaultCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
@@ -183,7 +184,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
     bootstrapRoot,eventSources,eventSourcePins,sourceManifest:manifest,retainedNativeEntries,retainedJobs,overlaidSourceHashes};
 }
 
-async function compileEvents({root,directory,inputs,ledger,policy,captureContext}){
+async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null}){
   const manifest=await read(directory,'manifest.json'),serverTotals=await optional(directory,'event-totals.json');
   const periods=inputs.eventBoards.filter(board=>board.id!=='permanent-rolling-hills');
   if(!serverTotals){demand(periods.length===0,'event totals source unavailable');return {periods:0,ready:true};}
@@ -218,10 +219,20 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   const rolling=await optional(directory,`tracks/${rollingId}.json`);
   demand(rolling,'complete Rolling Hills normal board required for event totals');
   const capturedRollingBoard=deriveCapturedNativeRollingHills({board:rolling,expectedSourceHash:nativeEventSourceHash(rolling)});
-  const combined=projectNativeEventTotals({serverTotals,projections:projections.filter(value=>value.totalsEligible!==false),capturedRollingBoard});
-  for(const projection of projections){
-    const board=projection.board,id=board.id;await json(directory,`events/${id}.json`,board);
-    manifest.events[id]={...manifest.events[id],updatedAt:board.updatedAt};
+  const baseline=publishedEventTotalsBaseline===null?null:assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
+  const usePublished=baseline!==null&&serverTotals.updatedAt<baseline.totals.updatedAt;
+  const dependencies={serverTotals,projections:projections.filter(value=>value.totalsEligible!==false),capturedRollingBoard};
+  const combined=usePublished?reconcileNativeEventTotalsFromPublished({...dependencies,projections,publishedBaseline:baseline}):projectNativeEventTotals(dependencies);
+  for(const projection of combined.publicationProjections||projections){
+    const board=projection.board,id=board.id;
+    if(usePublished&&projection.totalsEligible===false&&board.nativeEventOverlay){
+      const oldPin=captureContext.eventSourcePins?.[id],source=captureContext.eventSources.get(id);
+      demand(HASH.test(oldPin||'')&&source&&nativeEventSourceHash(source)===board.nativeEventOverlay.baselineDigest,'retained published event source companion unavailable: '+id);
+      const previousBytes=await fs.readFile(path.join(cache,oldPin+'.json'));
+      demand(sha(previousBytes)===oldPin,'retained published event source companion changed: '+id);pins[id]=oldPin;
+    }
+    await json(directory,`events/${id}.json`,board);
+    manifest.events[id]={...manifest.events[id],path:'events/'+id+'.json',updatedAt:board.updatedAt};
     for(const replay of projection.promotedReplays){
       const relative=`event-replays/${id}/${replay.accountId}.json`;
       await json(directory,relative,replay);manifest.eventReplays||={};
@@ -249,7 +260,7 @@ export async function runNativeSnapshotPhase(options={}){
 }
 
 async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,reuseOnly=false,
-  verify,now=Date.now,captureContext,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
+  verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
   rebuild=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,
   publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={}){
@@ -323,7 +334,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     for(const trackId of deferred){delete publicationPolicy.trackContentHashes[trackId];delete publicationPolicy.trackGeometries[trackId];}
     const normal=await applyNormal({directory:candidate,ledger:verification.ledger,ledgerRoot,policy:publicationPolicy,
       canonicalRows,rebuildDerived:false,now:now()});
-    const events=await eventCompiler({root,directory:candidate,inputs,ledger:verification.ledger,policy:publicationPolicy,captureContext:context,now});
+    const events=await eventCompiler({root,directory:candidate,inputs,ledger:verification.ledger,policy:publicationPolicy,captureContext:context,publishedEventTotalsBaseline,now});
     const overall=await rebuild({directory:candidate,now});await buildProfiles(candidate);
     demand(events.ready!==false,'event compilation incomplete');
     // Confirm local root authority did not change while the private phase ran.

@@ -296,6 +296,7 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
   const base = 'projects/polytrack-052/databases/(default)/documents/';
   const results = '0.6.2_race_results', boards = '0.6.2_s1_leaderboards_track';
   const data = new Map(), versions = new Map(), requests = [], queries = [], partBatches = [];
+  const proofReads = {current:0, historical:0};
   let now = start, snapshot;
   const replay = 'expiry-budget-proof', replayHash = createHash('sha256').update(replay).digest('hex');
   const rows = Array.from({length:count}, (_, i) => ({accountId:`r${String(i).padStart(4,'0')}`,
@@ -325,6 +326,8 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
     assert(requests.length <= 48, 'reserve two requests below the hard 50 for cold auth/other overhead');
     if (route === ':batchGet') {
       const body = JSON.parse(init.body), source = body.readTime ? snapshot : data;
+      proofReads[body.readTime ? 'historical' : 'current'] += body.documents
+        .filter(name => name.startsWith(base + VERIFICATION_COLLECTION + '/' + track + '_')).length;
       const partIds = body.documents.filter(name => name.includes('/'+TRACK_BUILD_PARTS+'/'));
       if (partIds.length) partBatches.push(partIds);
       return body.documents.map(name => {
@@ -366,14 +369,17 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
     for (let minute = 0; minute <= (expires?55:35); minute += cadence) {
       now = start + minute * 60000 + (minute ? 59999 : 0);
       requests.length = 0;
+      proofReads.current = 0; proofReads.historical = 0;
       env.__FIRESTORE_READ_AUDIT={httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
       result = await rebuildTrack(env,track);
       assert(env.__FIRESTORE_READ_AUDIT.documentReadEstimate <= (minute === 0 ? 310 : 650),
         `pass document reads: ${env.__FIRESTORE_READ_AUDIT.documentReadEstimate}`);
       if(minute===0){
         assert.equal(env.__FIRESTORE_READ_AUDIT.collections[results],100);
-        assert(env.__FIRESTORE_READ_AUDIT.collections[VERIFICATION_COLLECTION]>=200,
-          'budget includes independent historical verdict and current CAS-preimage reads');
+        assert.deepEqual(proofReads, {current:100, historical:verified ? 0 : 100},
+          'every fresh proof remains required; missing shards still need historical reads');
+        assert.equal(env.__FIRESTORE_READ_AUDIT.collections[VERIFICATION_COLLECTION], verified ? 101 : 201,
+          'one unchanged root plus every required fresh and historical shard');
       }
       documentCounts.push(env.__FIRESTORE_READ_AUDIT.documentReadEstimate);
       counts.push(requests.length);

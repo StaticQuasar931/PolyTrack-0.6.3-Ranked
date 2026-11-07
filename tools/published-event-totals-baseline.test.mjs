@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {encodeSnapshot} from './snapshot-package.mjs';
-import {selectPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
+import {selectPublishedEventTotalsBaseline, loadTrustedPublishedEventTotalsBaseline,
+  assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {projectAssembledEventTotals, createNativeEventBaseline, nativeEventSourceHash} from './native-event-snapshot.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -23,13 +24,13 @@ const previousTotals = () => ({updatedAt: 3000, complete: true, totalEntries: 2,
 const exactBoard = value => ({...value, complete: true, totalEntries: value.entries.length});
 const write = (dir, file, value) => fs.writeFile(path.join(dir, file), JSON.stringify(value));
 
-async function fixture(t, {previous = previousTotals(), prior = board(), current, backendUpdatedAt = 2500} = {}) {
+async function fixture(t, {previous = previousTotals(), prior = board(), current, backendUpdatedAt = 2500, generation = 72} = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'published-event-baseline-'));
   t.after(() => fs.rm(root, {recursive: true, force: true}));
-  const directory = path.join(root, 'capture'), published = path.join(root, 'public-snapshots72');
+  const directory = path.join(root, 'capture'), published = path.join(root, 'public-snapshots' + generation);
   await fs.mkdir(path.join(directory, 'events'), {recursive: true});
   await fs.mkdir(published);
-  const index = {schemaVersion: 1, generation: 72, encoding: 'gzip-xor-a7-v1', files: {}};
+  const index = {schemaVersion: 1, generation, encoding: 'gzip-xor-a7-v1', files: {}};
   async function pack(logical, value) {
     const bytes = Buffer.from(await encodeSnapshot(value)), hash = sha(bytes);
     index.files[logical] = {path: hash + '.bin', sha256: hash, decodedBytes: Buffer.byteLength(JSON.stringify(value))};
@@ -41,7 +42,7 @@ async function fixture(t, {previous = previousTotals(), prior = board(), current
   // The permanent board is not a finite contribution source and must not be read.
   index.files['events/permanent-rolling-hills.json'] = {path: 'unavailable.bin'};
   await write(published, 'index.json', index);
-  await write(root, 'snapshot-current.json', {currentdir: 'public-snapshots72'});
+  await write(root, 'snapshot-current.json', {currentdir: 'public-snapshots' + generation});
   const raw = {updatedAt: backendUpdatedAt, entries: [], complete: true, totalEntries: 0};
   await write(directory, 'event-totals.json', raw);
   await write(directory, 'events/day1.json', current ?? exactBoard(prior));
@@ -199,3 +200,91 @@ test('rejects corrupted prior board even when current board is incomplete', asyn
 
 
 test('large packed index is not confused with the two MiB per-payload limit', async t=>{const f=await fixture(t);f.index.metadataPadding='x'.repeat(2*1024*1024);await write(f.published,'index.json',f.index);const r=await f.select();assert.equal(r.report.fallback,true);});
+
+const pinned = async f => ({root: f.root, expectedGeneration: f.index.generation,
+  expectedIndexSha256: sha(await fs.readFile(path.join(f.published, 'index.json')))});
+
+test('pinned current loader brands generation 75, preserves overlays and unknown residuals without writes', async t => {
+  const prior = exactBoard(board()); prior.nativeEventOverlay = {version: 'native-event-overlay-v1'};
+  prior.pendingPlaybacks = [{reviewHold: true, submittedAt: 1200, verifiedAt: 2300}];
+  const f = await fixture(t, {generation: 75, prior}), before = await fs.readFile(path.join(f.directory, 'event-totals.json'));
+  const baseline = await loadTrustedPublishedEventTotalsBaseline(await pinned(f));
+  assert.equal(assertTrustedPublishedEventTotalsBaseline(baseline), baseline);
+  assert.deepEqual(baseline.totals, f.previous);
+  assert.deepEqual(baseline.boards[0].board, prior);
+  assert.equal(baseline.boards[0].replaceable, true);
+  assert.deepEqual(baseline.residuals, [{accountId: account, rp: 23, events: 1}, {accountId: other, rp: 0, events: 0}]);
+  assert.equal(baseline.provenance.generation, 75);
+  assert.ok(Object.isFrozen(baseline.totals.entries[0]));
+  assert.throws(() => {baseline.totals.entries[0].rp++;}, TypeError);
+  assert.throws(() => assertTrustedPublishedEventTotalsBaseline(structuredClone(baseline)), /Branded trusted/);
+  assert.throws(() => assertTrustedPublishedEventTotalsBaseline({...baseline}), /Branded trusted/);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'event-totals.json')), before);
+});
+
+test('legacy prior coverage stays unknown rather than being promoted to complete', async t => {
+  const f = await fixture(t, {generation: 75});
+  const baseline = await loadTrustedPublishedEventTotalsBaseline(await pinned(f));
+  assert.equal(baseline.boards[0].replaceable, false);
+  assert.equal(baseline.boards[0].board.complete, undefined);
+});
+
+test('loader rejects missing pins, forged index hashes and a non-current predecessor', async t => {
+  const f = await fixture(t, {generation: 75}), options = await pinned(f);
+  await assert.rejects(loadTrustedPublishedEventTotalsBaseline({root: f.root}), /Independent/);
+  await assert.rejects(loadTrustedPublishedEventTotalsBaseline({...options, expectedIndexSha256: sha('forged')}), /index SHA256/);
+  await write(f.root, 'snapshot-current.json', {currentdir: 'public-snapshots76'});
+  await assert.rejects(loadTrustedPublishedEventTotalsBaseline(options), /immediately previous/);
+});
+
+for (const logical of ['event-totals.json', 'events/day1.json']) {
+  test('pinned loader validates payload hash: ' + logical, async t => {
+    const f = await fixture(t, {generation: 75}), options = await pinned(f);
+    await fs.appendFile(path.join(f.published, f.index.files[logical].path), 'corrupt');
+    await assert.rejects(loadTrustedPublishedEventTotalsBaseline(options), /Snapshot SHA256 mismatch/);
+  });
+  for (const kind of ['decodedBytes', 'path']) test('pinned loader validates ' + kind + ': ' + logical, async t => {
+    const f = await fixture(t, {generation: 75});
+    if (kind === 'decodedBytes') f.index.files[logical].decodedBytes++;
+    else f.index.files[logical].path = '../outside.bin';
+    await write(f.published, 'index.json', f.index);
+    await assert.rejects(loadTrustedPublishedEventTotalsBaseline(await pinned(f)), /decodedBytes|metadata/);
+  });
+}
+
+for (const [name, mutate] of [
+  ['overdrawn finite', value => {value.entries[0].finiteEventRp = 99; value.entries[0].rp = 106;}],
+  ['overdrawn event count', value => {value.entries[0].events = 0;}],
+  ['residual RP without event', value => {value.entries[0].events = 1;}],
+  ['conflicting rolling', value => {value.entries[0].permanentRollingHillsRp++;}],
+  ['duplicate account', value => {value.entries[1].accountId = account;}],
+  ['partial totals', value => {value.complete = false;}]
+]) test('pinned loader rejects incoherent prior ' + name, async t => {
+  const previous = previousTotals(); mutate(previous);
+  const f = await fixture(t, {generation: 75, previous});
+  await assert.rejects(loadTrustedPublishedEventTotalsBaseline(await pinned(f)));
+});
+
+test('pinned loader is local read-only with transport and filesystem writes disabled', async t => {
+  const f = await fixture(t, {generation: 75}), options = await pinned(f);
+  const forbidden = () => {throw Error('External IO forbidden');};
+  t.mock.method(globalThis, 'fetch', forbidden);
+  for (const method of ['writeFile', 'appendFile', 'mkdir', 'rename', 'unlink']) t.mock.method(fs, method, forbidden);
+  const result = await loadTrustedPublishedEventTotalsBaseline(options);
+  assert.equal(result.provenance.generation, 75);
+  t.mock.restoreAll();
+});
+
+test('pinned publication timestamp cannot predate its totals or included period boards', async t => {
+  const f = await fixture(t, {generation: 75});
+  for (const publishedAt of [null, -1, 2999]) {
+    f.index.publishedAt = publishedAt;
+    await write(f.published, 'index.json', f.index);
+    await assert.rejects(loadTrustedPublishedEventTotalsBaseline(await pinned(f)), /snapshot timestamp/);
+  }
+  const newer = board(); newer.updatedAt = 4000;
+  await f.pack('events/day1.json', newer);
+  f.index.publishedAt = 3000;
+  await write(f.published, 'index.json', f.index);
+  await assert.rejects(loadTrustedPublishedEventTotalsBaseline(await pinned(f)), /snapshot timestamp/);
+});

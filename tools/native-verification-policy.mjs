@@ -42,7 +42,8 @@ export function buildNativeVerificationPolicy({root, jobs = [], results = [], en
     if (hash === undefined) continue;
     addStatic(row.trackId, row.trackPath, hash);
   }
-  const hints = [...jobs, ...entries.map(entry => ({trackId: entry.binding?.trackId}))];
+  // Results select local assets only. Their claimed hashes never supply a pin.
+  const hints = [...jobs, ...results, ...entries.map(entry => ({trackId: entry.binding?.trackId}))];
   for (const row of loadWeeklyTrustedTrack(root, hints)) add(row.trackId, 'trusted/' + row.trackId + '.track', row.codeHash, true);
   const trackContentHashes = {}, trackGeometries = {};
   const witnesses = [...results.filter(row => row?.status === 'verified').map(row => ({

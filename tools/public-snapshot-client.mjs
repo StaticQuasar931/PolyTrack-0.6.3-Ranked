@@ -1,4 +1,5 @@
 import {snapshotPublicationTime} from './snapshot-publication.mjs';
+import {documentSnapshotPayloadShards,parseSnapshotPayloadShards,snapshotPayloadBase} from './snapshot-payload-shards.mjs';
 export {readSnapshotPublicationMeta} from './snapshot-publication.mjs';
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
 import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confirmation-time.mjs';
@@ -6,7 +7,8 @@ import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingT
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 const SNAPSHOT_CHUNK_TIMEOUT_MS=15000;
 // Public, same-origin backups never replace the authoritative PB submission path.
-export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,beforeGenerationChange,onGenerationChange,prepareRecording,onPlaybackFailure}){
+export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,beforeGenerationChange,onGenerationChange,prepareRecording,onPlaybackFailure,payloadShards=documentSnapshotPayloadShards()}){
+  let payloadMapping=parseSnapshotPayloadShards(payloadShards);
   const pending=new Map(),saved=new Map(),retryAt=new Map();
   const lookupCache=new Map(),lookupPending=new Map(),lookupRetryAt=new Map();let manifestValue=null;
 
@@ -178,7 +180,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         const previousBaseUrl=packageBase.href;
         // Synchronous veto: consumers with retained session data must opt in before any mutation.
         if(beforeGenerationChange&&beforeGenerationChange({previousBaseUrl,baseUrl:nextBase.href,generation:generation+1})!==true)return invalidPointer('Snapshot update requires a reload. Finish your current race, then reload the game.');
-        packageBase=nextBase;packagePublishedAt=0;
+        packageBase=nextBase;packagePublishedAt=0;payloadMapping=null;
         generation++;fastIndexDisabled=false;
         indexRequest=null;bootstrapRequest=null;
         indexFailures.clear();badCacheUrls.clear();lookupCache.clear();lookupPending.clear();lookupRetryAt.clear();
@@ -199,7 +201,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     const record=pack.index.files[logical];
     if(!record)return null;
     if(!/^[a-f0-9]{64}\.bin$/.test(record.path)||!Number.isSafeInteger(record.decodedBytes)||record.decodedBytes<1||record.decodedBytes>2*1024*1024)throw Error('Invalid snapshot record');
-    const url=new URL(record.path,pack.base);
+    const url=new URL(record.path,snapshotPayloadBase(payloadMapping,pack.base.href,record.path));
     // Content hash, not generation: unchanged payloads survive snapshot updates.
     const diskKey=new URL('../__polytrack_snapshot_cache__/'+record.sha256+'.bin',pack.base).href;
     return retryIntegrity(url,'force-cache',async cache=>{
