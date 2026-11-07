@@ -34,6 +34,14 @@ const COSMETICS = ['version', 'theme', 'accent', 'finish', 'plate', 'edge', 'sta
 const BOARD_FIELDS = ['trackId', 'updatedAt', 'builtAt', 'schemaVersion', 'algorithmVersion', 'revision', 'sourceRevision'];
 const NATIVE_STATUS_FIELDS = ['verified', 'runVerified', 'integrityVerified', 'verifiedState', 'verificationStatus',
   'validationState', 'verifiedAt', 'needsReview', 'reviewHold', 'excluded', 'unscored', 'playbackPending'];
+// Boards created from canonical PBs have no Worker generation. Revision one is
+// local to this canonical source; its frozen read point remains the source pin.
+export function canonicalBoardMetadata(metadata) {
+  return {...metadata, schemaVersion: metadata.schemaVersion ?? 6,
+    algorithmVersion: metadata.algorithmVersion ?? 'participation-v8-s1',
+    revision: metadata.revision ?? metadata.sourceRevision ?? 1,
+    sourceRevision: metadata.sourceRevision ?? metadata.revision ?? 1};
+}
 const sha = value => createHash('sha256').update(value).digest('hex');
 const plain = value => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
 const positive = n => Number.isSafeInteger(n) && n > 0;
@@ -689,7 +697,7 @@ export async function captureFullCanonical({db, directory, documentLimit = 10000
           const row = await tx.loadRow(rows.get(id));
           entries.push({...row.value, ...holds(row.value)}); releases.push(row.release);
         }
-        const output = {...metadata, complete: !missing, sourceComplete: !missing,
+        const output = {...canonicalBoardMetadata(metadata), complete: !missing, sourceComplete: !missing,
           totalEntries: entries.length, totalEntriesExact: !missing, ranksExact: !missing,
           entries: rankTrustedTrackEntries(entries, trackId)};
         demand(Number.isSafeInteger(output.updatedAt) && output.updatedAt >= 0 && output.updatedAt <= Date.parse(point), 'invalid_board_clock');

@@ -658,3 +658,21 @@ test('updater reuses exact saved pairs ahead of stale unavailable export records
   assert.equal(progress.raceExport.records[signature].available, true);
   assert.equal(Object.hasOwn(progress.raceExport.records[signature], 'reason'), false);
 });
+
+test('stored-proof reapplication cannot run online or request new native authority',async t=>{
+ const root=await fixture(t);
+ for(const options of [{offline:false,verificationAuthority:'firestore'},{offline:true,verificationAuthority:'snapshot-native'}])
+  await assert.rejects(updatePublicSnapshot({root,...options,reapplyStoredProofs:true}),/offline stored-proof mode/);
+});
+
+test('explicit offline stored-proof reapplication does not trust a stale packaged overlay marker',async t=>{
+ const root=await fixture(t),staging=path.join(root,'local-reports/snapshot-staging');
+ await writeFile(path.join(root,'verification-ledger-current.json'),'{}');
+ const manifest={tracks:{}};
+ manifest.nativeVerificationLedger={manifestHash:'b'.repeat(64),policyFingerprint:'stale'};
+ await writeFile(path.join(staging,'manifest.json'),JSON.stringify(manifest));let called=0;
+ const result=await updatePublicSnapshot({root,offline:true,reapplyStoredProofs:true,verificationAuthority:'firestore',env:{},log:()=>{},
+  resolveSourceCommit:()=> 'a'.repeat(40),prepareNativeCapture:async()=>({ledger:{manifestHash:'a'.repeat(64)}}),
+  nativePhase:async options=>{called++;assert.equal(options.reuseOnly,true);return{authority:'stored-proof-overlay',backendReads:0,backendWrites:0,complete:false,counts:{nativeDispatched:0,newProofs:0}}}});
+ assert.equal(called,1);assert.equal(result.nativeVerification.reuseOnly,true);assert.equal(result.nativeVerification.complete,false);
+});

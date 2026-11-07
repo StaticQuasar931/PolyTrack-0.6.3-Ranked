@@ -994,3 +994,10 @@ test('normal board above 2 MiB is retained under the 4 MiB board-only limit with
  assert.equal(result.complete,true);assert.equal(result.missingPriorCount,2100);const file=path.join(f.root,'tracks',track+'.json'),bytes=await fs.readFile(file);assert.ok(bytes.length>2*1024*1024&&bytes.length<=4*1024*1024);const value=JSON.parse(bytes);assert.equal(value.entries.length,2100);assert.ok(value.entries.every(row=>row.runVerified===false));
  const loaded=await loadCapturedNativeJobs({directory:f.root});assert.equal(loaded.jobs.length,0);assert.ok(loaded.coverage.gaps.length>=2100);
 });
+
+test('new canonical track boards carry current scoring metadata without changing verification',async t=>{
+ const f=await fixture(t);await f.run([source(1)]);const b=await f.read(`tracks/${track}.json`);
+ assert.equal(b.algorithmVersion,'participation-v8-s1');assert.equal(b.schemaVersion,6);
+ assert.equal(b.revision,1);assert.equal(b.sourceRevision,1);assert.equal(b.entries[0].runVerified,false);
+ assert.equal(b.entries[0].verified,false);
+});

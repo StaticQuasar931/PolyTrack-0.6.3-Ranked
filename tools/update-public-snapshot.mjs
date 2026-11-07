@@ -412,7 +412,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   captureOverall = capture === runPublicSnapshotBackup ? captureOverallProjection : null, overallCaptureOptions = {},
   calculateOverall = capture === runPublicSnapshotBackup ? rebuildSnapshotOverall : null,
   captureOptions = {}, exportPublic = exportPublicProfilesAndReplays, exportFetch = fetch, exportAuth = {}, log = console.log,
-  verificationAuthority: authorityOverride, nativePhaseOptions = {}, captureCheckpoint = null,
+  verificationAuthority: authorityOverride, nativePhaseOptions = {}, captureCheckpoint = null, reapplyStoredProofs = false,
   env = process.env,
   resolveSourceCommit = root => execFileSync('git',['rev-parse','--verify','HEAD'],
     {cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),
@@ -425,6 +425,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   }
   const absoluteRoot = path.resolve(root);
   const authority = await readRepositoryVerificationAuthority(absoluteRoot, authorityOverride ?? env.VERIFICATION_AUTHORITY);
+  if(typeof reapplyStoredProofs!=='boolean'||reapplyStoredProofs&&(!offline||authority!=='firestore'))throw Error('Stored proof reapplication requires offline stored-proof mode');
   const stagingDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-staging');
   const historyDirectory = path.join(absoluteRoot, 'local-reports', 'snapshot-history');
   const stageStat = await fs.stat(stagingDirectory).catch(error => error.code === 'ENOENT' ? null : Promise.reject(error));
@@ -468,7 +469,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const nativeCapture = proofPhase
     ? await prepareNativeCapture({root:absoluteRoot, directory:stagingDirectory}) : null;
   let reusePackagedOverlay = false;
-  if(offline && authority === 'firestore' && ledgerPointer){
+  if(offline && authority === 'firestore' && ledgerPointer && !reapplyStoredProofs){
     const retained = await readJsonIfPresent(path.join(stagingDirectory,'manifest.json'));
     if(retained?.nativeVerificationLedger){
       if(retained.nativeVerificationLedger.manifestHash !== nativeCapture?.ledger?.manifestHash)

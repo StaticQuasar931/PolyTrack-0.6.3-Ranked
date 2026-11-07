@@ -75,6 +75,8 @@ async function main(){
   const {loadCapturedNativeJobs}=await import('./verifier/local-snapshot-capture.mjs');
   const inputs=await loadCapturedNativeJobs({directory:path.join(c.root,'local-reports/snapshot-staging'),allowExtendedLocal:true});
   demand(inputs.captureSha256===c.captureSha256&&inputs.jobs.length===c.availableJobs&&inputs.coverage.missingBindings===12,'source replay cohort changed');
+  const {rebuildSnapshotOverall}=await import('./rebuild-snapshot-overall.mjs');
+  await rebuildSnapshotOverall({directory:path.join(c.root,'local-reports/snapshot-staging'),validateOnly:true});
   const {createLocalCaptureCheckpoint,createLocalNativePhaseReceipt}=await import('./local-capture-checkpoint.mjs');
   const {runNativeSnapshotPhase}=await import('./native-snapshot-phase.mjs');
   const {preparePublishedNativeBaseline}=await import('./published-native-baseline.mjs');
