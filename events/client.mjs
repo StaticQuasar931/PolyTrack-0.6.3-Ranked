@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=268';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=268';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=269';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=269';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,10 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=268';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=268';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=269';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=269';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
+const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 const PERMANENT_ROLLING=Object.freeze({id:'permanent-rolling-hills',kind:'permanent',trackId:ROLLING_TRACK_ID,trackName:'Rolling Hills Racer',maxRp:1001,permanent:true});
@@ -142,6 +143,58 @@ export function eventCatalogFreshUntil(periods,at=Date.now(),maxAge=300000){
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
 const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
+export function sameEventSubmission(a,b){
+  return !!a&&!!b&&['accountId','periodId','attemptId','timeMs','frames','replay'].every(key=>a[key]===b[key]);
+}
+export function createEventSubmissionRetry({load,save,now=Date.now,random=Math.random}){
+  const key=run=>JSON.stringify([run.accountId,run.periodId,run.attemptId]);
+  const valid=row=>row&&Number.isSafeInteger(row.failures)&&row.failures>=0&&row.failures<=100&&
+    Number.isSafeInteger(row.at)&&row.at>=0&&Number.isSafeInteger(row.nextAt)&&row.nextAt>=row.at&&row.nextAt-row.at<=86400000;
+  function state(){
+    const raw=load(),at=now(),clean=rows=>Object.fromEntries(Object.entries(rows&&typeof rows==='object'?rows:{})
+      .filter(([,row])=>valid(row)).slice(-128));
+    if(raw==null)return {version:1,attempts:{},accounts:{},quotaUntil:0};
+    if(raw.version!==1)throw Error('Event retry state unavailable');
+    return {version:1,attempts:clean(raw.attempts),accounts:clean(raw.accounts),
+      quotaUntil:Number.isSafeInteger(raw.quotaUntil)&&raw.quotaUntil>at?Math.min(raw.quotaUntil,at+86400000):0};
+  }
+  function persist(value){if(save(value)!==true)throw Error('Event retry state was not saved');}
+  function bound(value,queue){
+    const pending=new Set(queue.map(key));
+    value.attempts=Object.fromEntries(Object.entries(value.attempts).filter(([id])=>pending.has(id)));
+    value.accounts=Object.fromEntries(Object.entries(value.accounts).filter(([,row])=>now()-row.at<86400000));
+    return value;
+  }
+  function due(value,run){return Math.max(value.quotaUntil,value.attempts[key(run)]?.nextAt||0,value.accounts[run.accountId]?.nextAt||0);}
+  return {
+    reserve(run,queue){
+      const value=bound(state(),queue),at=now();if(at<due(value,run))return false;
+      // Persist a short in-flight lease before I/O. Reload/online/storage events
+      // cannot immediately repeat an unacknowledged attempt. Web Locks serialize tabs.
+      const previous=value.attempts[key(run)],account=value.accounts[run.accountId];
+      value.attempts[key(run)]={failures:previous?.failures||0,at,nextAt:at+60000};
+      value.accounts[run.accountId]={attempt:key(run),failures:Math.max(previous?.failures||0,account?.failures||0),at,nextAt:at+60000};
+      persist(value);return true;
+    },
+    failed(run,error,queue){
+      const value=state(),at=now(),prior=value.attempts[key(run)],account=value.accounts[run.accountId];
+      const failures=Math.min(100,Math.max(prior?.failures||0,account?.failures||0)+1);
+      const reason=String(error?.code||'')+' '+String(error?.message||error||'');
+      const quota=/resource-exhausted|quota|429/i.test(reason),auth=/unauthenticated|permission-denied|auth\//i.test(reason);
+      const base=Math.max([60000,300000,900000,3600000][Math.min(3,failures-1)],quota?3600000:auth?900000:0);
+      const jitter=Math.max(0,Math.min(1,Number(random())||0));
+      const row={attempt:key(run),failures,at,nextAt:at+Math.ceil(base*(1+jitter*.2))};
+      value.attempts[key(run)]=row;value.accounts[run.accountId]=row;
+      if(quota)value.quotaUntil=Math.max(value.quotaUntil,row.nextAt);
+      persist(bound(value,queue));
+    },
+    acknowledged(run,queue){
+      const value=state();delete value.attempts[key(run)];
+      if(value.accounts[run.accountId]?.attempt===key(run))delete value.accounts[run.accountId];
+      persist(bound(value,queue));
+    }
+  };
+}
 const eventName=kind=>kind==='kodub'?'Kodub weekly':kind==='weekly'?'Weekly':kind==='daily'?'Daily':'Event';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const EVENT_RECORD_HASH=/^[a-f0-9]{64}$/,EVENT_RECORD_LIMIT=10000,EVENT_PENDING_LIMIT=512,EVENT_TIME_LIMIT=300000;
@@ -554,7 +607,8 @@ export function createNormalKodubErpDecorator(bridge){
 }
 export function installEvents(bridge){
   const normalKodubErp=createNormalKodubErpDecorator(bridge);
-  const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,catalogFreshUntil=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
+  const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,catalogFreshUntil=0,fetching=null,flushing=false,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
+  const submissionRetry=createEventSubmissionRetry({load:()=>read(SUBMISSION_RETRY,null),save:value=>{write(SUBMISSION_RETRY,value);return true;}});
   let boundaryTimer=null;
   let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
   const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
@@ -654,15 +708,29 @@ export function installEvents(bridge){
   }
   function message(text){statusText=text;for(const status of document.querySelectorAll('.sq-event-status,.sq-event-inline-status'))if(status.textContent!==text)status.textContent=text;}
   async function flush(){
-    if(!hasPending||flushing||now()<retryAt||navigator.onLine===false)return;
+    if(!hasPending||flushing||navigator.onLine===false)return;
+    const accountId=bridge.accountId();
     flushing=true;
-    try{
+    const drain=async()=>{
       for(const run of read(QUEUE,[])){
-        if(run.accountId!==bridge.accountId())continue;
-        if(now()>=run.endsAt){message('An offline event run missed the closing time. Your normal PB is unchanged.');write(QUEUE,read(QUEUE,[]).filter(row=>row.attemptId!==run.attemptId));continue;}
-        try{await bridge.submit(run);write(QUEUE,read(QUEUE,[]).filter(row=>row.attemptId!==run.attemptId));message('Event PB submitted. Waiting for replay verification.');cache.delete(run.periodId);invalidateReceipt(run.periodId+'_'+run.accountId);}
-        catch(error){retryAt=now()+60000;message('Event PB saved on this device. Cloud submission will retry.');break;}
+        if(navigator.onLine===false||bridge.accountId()!==accountId)break;
+        if(run.accountId!==accountId)continue;
+        const queued=read(QUEUE,[]);if(!queued.some(row=>sameEventSubmission(row,run)))continue;
+        if(now()>=run.endsAt){message('An offline event run missed the closing time. Your normal PB is unchanged.');write(QUEUE,queued.filter(row=>!sameEventSubmission(row,run)));continue;}
+        if(!submissionRetry.reserve(run,queued))continue;
+        try{await bridge.submit(run);}
+        catch(error){submissionRetry.failed(run,error,read(QUEUE,[]));message('Event PB saved on this device. Cloud submission will retry after a cooldown.');break;}
+        // Remove only these acknowledged bytes, never a faster PB queued while
+        // submit was in flight. Retry-ledger cleanup cannot resurrect an upload.
+        const remaining=read(QUEUE,[]).filter(row=>!sameEventSubmission(row,run));write(QUEUE,remaining);
+        try{submissionRetry.acknowledged(run,remaining);}catch{/* Durable queue removal already records this acknowledgement. */}
+        message('Event PB submitted. Waiting for replay verification.');cache.delete(run.periodId);invalidateReceipt(run.periodId+'_'+run.accountId);
       }
+    };
+    try{
+      if(navigator.locks?.request)await navigator.locks.request(STORE+'-submission',{ifAvailable:true},lock=>lock?drain():undefined);
+      else await drain();
+    }catch{message('Event PB remains on this device. Cloud retry state could not be saved.');
     }finally{hasPending=read(QUEUE,[]).length>0;flushing=false;}
   }
   function captured(run){
