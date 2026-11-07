@@ -1,18 +1,29 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 320,
+    "number": 321,
     "version": "0.6.3",
-    "revision": 268,
+    "revision": 269,
     "notes": [
-      "Leader names, records and personal bests load more reliably.",
-      "Event placements and Event RP badges now match across menus.",
-      "Clearer route targets and practice suggestions use your saved results.",
-      "Updates work from game menus without interrupting a run.",
-      "Reduced repeated cloud work and improved overnight replay checks."
+      "Fewer repeated cloud requests when syncing saved runs.",
+      "Event uploads retry less often during outages and keep your best run.",
+      "Faster snapshot preparation with the same replay safety checks."
     ]
   },
   "entries": [
+    {
+      "number": 320,
+      "title": "Reduce cloud work and repair snapshot and menu consistency",
+      "commit": "56d016fe401435b0f42f1deaf7ba3a2cc0dd2863",
+      "committedAt": "2026-11-07T21:10:24.000Z",
+      "notes": [
+        "Leader names, records and personal bests load more reliably.",
+        "Event placements and Event RP badges now match across menus.",
+        "Clearer route targets and practice suggestions use your saved results.",
+        "Updates work from game menus without interrupting a run.",
+        "Reduced repeated cloud work and improved overnight replay checks."
+      ]
+    },
     {
       "number": 319,
       "title": "Refresh snapshot downloads and release notes",
@@ -179,18 +190,6 @@
       "notes": [
         "Fixed the Ranked button appearing late when returning to the menu.",
         "Home buttons now follow the same entrance timing."
-      ]
-    },
-    {
-      "number": 299,
-      "title": "Fix delayed update notices and bound blocked profile retries",
-      "commit": "66a547ac30f5a60bf3da5137c82bf289b31e2b4d",
-      "committedAt": "2026-11-06T05:07:06.000Z",
-      "notes": [
-        "Update alerts appear sooner when you return to a menu.",
-        "Clearer snapshot status and navigation labels.",
-        "Improved weekly-track thumbnail layout.",
-        "Fixed profile updates getting stuck behind other updates."
       ]
     }
   ],

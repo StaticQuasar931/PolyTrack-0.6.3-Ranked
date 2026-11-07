@@ -1,3 +1,4 @@
+const {createHash}=require('node:crypto');
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -23,10 +24,10 @@ function extract(text,name){
   return text.slice(start,end+4);
 }
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
-function harness(text=source,{tracks=[track],warm=false}={}){
-  let current=account,user={uid:'owner'},gate=deferred(),failure=null,writeFailure=false;
+function harness(text=source,{tracks=[track],warm=false,exact=false}={}){
+  let current=account,user={uid:'owner'},gate=deferred(),failure=null,writeFailure=false,clock=1000000;
   const ledger={},docs=new Map();
-  const row=id=>({accountId:account,ownerUid:'owner',trackId:id,uploadId:8,replay:warm?'repair':'old',raceTimeFrames:100,carStyle:'style'});
+  const row=id=>({accountId:account,ownerUid:'owner',trackId:id,uploadId:8,replay:warm?'repair':'old',raceTimeFrames:100,carStyle:'style',...(exact?{timeMs:100,replayHash:createHash('sha256').update('repair').digest('hex')}: {})});
   for(const id of tracks)docs.set(account+'_'+id,row(id));
   const rows=tracks.map(id=>row(id));
   const cost=id=>ledger[id]??={getCalls:0,serverDocuments:0,writes:0,deletes:0};
@@ -35,7 +36,7 @@ function harness(text=source,{tracks=[track],warm=false}={}){
       cost(id).serverDocuments++;return {exists:!!saved,data:()=>saved,metadata:{fromCache:false}};},
     set:async patch=>{if(writeFailure)throw writeFailure instanceof Error?writeFailure:Error('write unavailable');cost(id).writes++;docs.set(id,{...docs.get(id),...patch});}
   })};}};
-  const context={activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
+  const context={Date:{now:()=>clock},localRaceGeneration:0,trackCacheGeneration:0,profileSnapshotEpoch:0,sha256Hex:exact?async value=>createHash('sha256').update(value).digest('hex'):undefined,activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
     runFirebaseTransaction:async(_database,callback)=>{
       const writes=[];
       const result=await callback({get:ref=>ref.get(),set:(ref,patch)=>writes.push([ref,patch])});
@@ -48,7 +49,7 @@ function harness(text=source,{tracks=[track],warm=false}={}){
   vm.runInContext(extract(text,'recordingRepairPatch')+'\n'+extract(text,'repairOwnNativeRecording'),context);
   return {context,database,ledger,docs,rows,
     run:(options={})=>context.repairOwnNativeRecording(options.database||database,options.recId??8,options.recording??'repair',options.payload??{frames:100},options.style??'style',options.colors??null,options.carId??null),
-    release:()=>gate.resolve(),hold:()=>{gate=deferred();},fail:value=>{failure=value;},failWrite:value=>{writeFailure=value;},
+    advance:ms=>{clock+=ms;},release:()=>gate.resolve(),hold:()=>{gate=deferred();},fail:value=>{failure=value;},failWrite:value=>{writeFailure=value;},
     account:value=>{current=value;},user:value=>{user=value;},
     totals:()=>Object.values(ledger).reduce((sum,row)=>{for(const key in sum)sum[key]+=row[key];return sum;},{getCalls:0,serverDocuments:0,writes:0,deletes:0}),
     pending:()=>context.repairOwnNativeRecording.requests?.get(database)?.size||0};
@@ -198,4 +199,39 @@ for(const mode of ['exact','conflict','missing-replay','denied'])test(`custom PB
     measurements.push(cold);
   }
   t.diagnostic(JSON.stringify({scenario:'custom-PB-'+mode,before:measurements[0],after:measurements[1],warmAdditionalDocuments:0,liveDocuments:0}));
+});
+
+test('exact-binding settled repair receipt eliminates duplicate reads for 30 seconds without storing replay',async()=>{
+  const h=harness(source,{exact:true});h.release();await h.run();
+  for(let i=0;i<100;i++)assert.equal(await h.run(),1);
+  assert.deepEqual(h.totals(),{getCalls:1,serverDocuments:1,writes:1,deletes:0});
+  const receipts=h.context.repairOwnNativeRecording.acknowledgements.get(h.database);
+  assert.equal(receipts.size,1);
+  for(const value of receipts.values())assert.equal(Object.hasOwn(value,'recording'),false);
+  h.advance(30000);await h.run();assert.equal(h.totals().getCalls,2);assert.equal(h.totals().writes,1);
+});
+for(const change of ['time','hash','upload','local-generation','board-generation','package-generation','identity-epoch','user'])test('repair receipt rejects changed exact evidence: '+change,async()=>{
+  const h=harness(source,{exact:true});h.release();await h.run();
+  if(change==='time'){h.rows[0].timeMs=101;h.docs.get(account+'_'+track).timeMs=101;}
+  if(change==='hash'){h.rows[0].replayHash='e'.repeat(64);h.docs.get(account+'_'+track).replayHash='e'.repeat(64);}
+  if(change==='upload')h.rows[0].uploadId=9;
+  if(change==='local-generation')h.context.localRaceGeneration++;
+  if(change==='board-generation')h.context.trackCacheGeneration++;
+  if(change==='package-generation')h.context.profileSnapshotEpoch++;
+  if(change==='identity-epoch')h.context.runFirebaseTransaction.identityEpoch=1;
+  if(change==='user')h.user({uid:'owner'});
+  await h.run();
+  assert.equal(h.totals().getCalls,change==='upload'?1:2);
+});
+test('exact receipt cannot hide a subsequently observed foreign canonical binding or failed commit',async()=>{
+  const h=harness(source,{exact:true});h.release();await h.run();
+  h.docs.get(account+'_'+track).ownerUid='foreign';h.context.trackCacheGeneration++;
+  assert.equal(await h.run(),0);assert.equal(h.totals().getCalls,2);assert.equal(h.totals().writes,1);
+  const failed=harness(source,{exact:true});failed.failWrite(true);failed.release();await assert.rejects(failed.run());
+  assert.equal(failed.context.repairOwnNativeRecording.acknowledgements.get(failed.database).size,0);
+  failed.failWrite(false);await failed.run();assert.equal(failed.totals().getCalls,2);
+});
+test('different replay bytes cannot inherit an exact digest receipt',async()=>{
+  const h=harness(source,{exact:true});h.release();await h.run();
+  await h.run({recording:'different bytes'});assert.equal(h.totals().getCalls,2);
 });

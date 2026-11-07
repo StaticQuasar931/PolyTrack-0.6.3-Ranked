@@ -29,7 +29,7 @@ function harness() {
     cleanUserId: value => String(value || ''), activeRankedAccountId: () => SELF,
     readLocalRaceRows: () => [{accountId: SELF, trackId: TRACK, timeMs: 15000}],
     readTrackSnapshotCache: () => null,
-    readPublicSnapshotBackup: (kind, id) => { requests.push({kind, id}); return Promise.resolve(kind === 'track' ? board : {results: [finish(), finish(OTHER)]}); },
+    readPublicSnapshotBackup: (kind, id) => { requests.push({kind, id}); return Promise.resolve(kind === 'track' ? board : {accountId: id, results: [finish(), finish(OTHER)]}); },
     visibleTrackEntries: rows => rows, localTrackDisplayEntries: (_id, rows) => rows,
     entryTimeMs: row => row.timeMs, pbTimestamp: () => 0, knownFinishWeight: () => 3,
   });
@@ -75,11 +75,12 @@ test('an older placement warmup cannot overwrite a newly hydrated complete profi
 
 test('complete profiles stay cached after local placement warming', async () => {
   const h = harness();
+  await h.c.loadProfileSnapshotResults(SELF);
   h.saved.set(SELF, {results: [finish(OTHER)]});
   assert.equal(await h.c.warmProfileLocalPlacements(SELF), true);
   assert.equal(h.saved.get(SELF).results.length, 2);
   assert.equal(await h.c.loadProfileSnapshotResults(SELF), false);
-  assert.equal(h.requests.filter(r => r.kind === 'profile-results').length, 0);
+  assert.equal(h.requests.filter(r => r.kind === 'profile-results').length, 1);
 });
 
 test('partial-cache hydration coalesces requests and discards old-generation replies', async () => {

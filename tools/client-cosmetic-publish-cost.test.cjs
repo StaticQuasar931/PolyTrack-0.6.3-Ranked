@@ -7,28 +7,28 @@ const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'u
 const start=source.indexOf('  async function flushPendingCosmeticPublishes(');
 const end=source.indexOf('  async function saveRankedProfileCosmetics(',start);
 assert.ok(start>0&&end>start);
-function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount=false,retry=false,ackWritable=true}={}){
+function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount=false,retry=false,ackWritable=true,hideDuringRead=false,hideAfterCommit=false}={}){
   const draft=id=>({accountId:'account',ownerUid:'uid',draftId:id,cosmetics:{theme:id},nextAttemptAt:0});
   let pending=draft('old'),active='account',replaced=false;
   const cost={reads:0,writes:0,jobs:0,worker:0,ownership:0},committed=[],acks=[];
   const replace=()=>{if(!replaced){pending=draft('new');replaced=true;}};
   let user={uid:'uid',getIdToken:async()=> 'offline-token'},clock=1000000;
-  const timers=new Map();let timerId=0;
+  const timers=new Map(),listeners=new Map();let timerId=0,connections=0;
   const context=vm.createContext({
-    navigator:{onLine:true},Date:{now:()=>clock},Promise,
+    document:{visibilityState:'visible',addEventListener:(name,callback)=>listeners.set(name,callback)},navigator:{onLine:true},Date:{now:()=>clock},Promise,
     clearTimeout:id=>timers.delete(id),setTimeout:(fn,delay)=>{const id=++timerId;timers.set(id,{fn,delay});return id;},
     firebaseQuotaPaused:()=>false,
     activeRankedAccountId:()=>active,
     readCosmeticPublishQueue:()=>({entries:pending?{account:pending}:{}}),
     cosmeticPublishIdentityMatches:(item,account,uid)=>!!item&&item.accountId===account&&item.ownerUid===uid,
-    db:async()=>({collection:()=>({doc:()=>({set:async()=>{cost.jobs++;}})})}),
+    db:async()=>{connections++;return {collection:()=>({doc:()=>({set:async()=>{cost.jobs++;}})})};},
     window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
     runFirebaseTransaction:async(_db,callback)=>{
       if(replaceAt==='before-read')replace();
       const attempt=async()=>{
         const staged=[];
         const result=await callback({
-          get:async()=>{cost.reads++;if(replaceAt==='during-read')replace();if(switchAccount)active='other';return {exists:true,data:()=>({ownerUid:foreignOwner?'foreign':'uid'})};},
+          get:async()=>{cost.reads++;if(hideDuringRead){context.document.visibilityState='hidden';hideDuringRead=false;}if(replaceAt==='during-read')replace();if(switchAccount)active='other';return {exists:true,data:()=>({ownerUid:foreignOwner?'foreign':'uid'})};},
           set:(_ref,value)=>staged.push(value)
         });
         return {result,staged};
@@ -36,7 +36,7 @@ function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount
       let attemptResult=await attempt();
       if(retry&&committed.length===0&&!replaced){replace();attemptResult=await attempt();}
       if(failCommit)throw Error('offline commit failure');
-      cost.writes+=attemptResult.staged.length;committed.push(...attemptResult.staged);
+      cost.writes+=attemptResult.staged.length;committed.push(...attemptResult.staged);if(hideAfterCommit)context.document.visibilityState='hidden';
       return attemptResult.result;
     },
     assertCloudOwner:(_account,uid,data)=>{cost.ownership++;if(data.ownerUid!==uid)throw Error('foreign owner');},
@@ -52,7 +52,8 @@ function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount
   vm.runInContext('let cosmeticPublishPromise=null,cosmeticPublishTimer=0;\n'+
     ['cosmeticPublishBackoff','matchingCosmeticCommitReceipt','scheduleCosmeticPublishRetry'].map(extract).join('\n')+'\n'+
     source.slice(start,end)+'\nthis.flush=flushPendingCosmeticPublishes;',context);
-  return {run:options=>context.flush(options),cost,committed,acks,pending:()=>pending,context,timers,
+  const resumeLine=source.split(/\r?\n/).find(line=>line.includes("document.addEventListener('visibilitychange'")&&line.includes('flushPendingCosmeticPublishes'));assert.ok(resumeLine);vm.runInContext(resumeLine,context);
+  return {connections:()=>connections,resume:()=>listeners.get('visibilitychange')(),run:options=>context.flush(options),cost,committed,acks,pending:()=>pending,context,timers,
     advance:ms=>{clock+=ms;},setAckWritable:value=>{ackWritable=value;},
     setDraft:id=>{pending=draft(id);},setAccount:value=>{active=value;},
     setUser:value=>{user=value;},receipts:()=>context.flush.receipts};
@@ -121,4 +122,36 @@ test('cosmetic receipts remain bounded across accounts',async()=>{
   const h=harness({ackWritable:false});await h.run();
   for(let i=0;i<20;i++)h.receipts().set('stale-'+i,{});
   h.setDraft('replacement');await h.run();assert.ok(h.receipts().size<=8);
+});
+
+for(const state of ['hidden','offline'])test('queued cosmetic retry performs no cloud I/O while '+state+', even forced',async()=>{
+  const h=harness();if(state==='hidden')h.context.document.visibilityState='hidden';else h.context.navigator.onLine=false;
+  await h.run({force:true});assert.equal(h.connections(),0);
+  assert.deepEqual(h.cost,{reads:0,writes:0,jobs:0,worker:0,ownership:0});assert.equal(h.timers.size,0);assert.ok(h.pending());
+});
+test('visible resume preserves persisted retry deadline and publishes once it is due',async()=>{
+  const h=harness();h.pending().nextAttemptAt=1060000;h.context.document.visibilityState='hidden';await h.run();
+  assert.equal(h.connections(),0);
+  h.context.document.visibilityState='visible';h.resume();await h.run();
+  assert.equal(h.connections(),0);assert.equal([...h.timers.values()][0].delay,60000);
+  h.advance(60000);h.resume();await h.run();
+  assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,1);assert.equal(h.pending(),null);
+});
+test('hidden/offline changes while waiting for auth suppress subsequent document I/O',async()=>{
+  for(const hidden of [true,false]){
+    const h=harness();
+    h.context.db=async()=>{if(hidden)h.context.document.visibilityState='hidden';else h.context.navigator.onLine=false;return {};};
+    const result=await h.run();assert.equal(result.paused,true);assert.equal(h.cost.reads,0);assert.equal(h.cost.writes,0);
+  }
+});
+test('visibility loss after a read prevents the write and resumes without treating pause as a cloud failure',async()=>{
+  const h=harness({hideDuringRead:true});const result=await h.run();
+  assert.equal(result.paused,true);assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,0);assert.equal(h.pending().nextAttemptAt,0);
+  h.context.document.visibilityState='visible';await h.run();assert.equal(h.cost.writes,1);assert.equal(h.pending(),null);
+});
+test('visibility loss after cloud commit suppresses optional job/Worker calls without replaying the commit',async()=>{
+  const h=harness({hideAfterCommit:true});const result=await h.run();
+  assert.equal(result.published,true);assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,1);
+  assert.equal(h.cost.jobs,0);assert.equal(h.cost.worker,0);assert.equal(h.pending(),null);
+  h.context.document.visibilityState='visible';h.resume();await h.run();assert.equal(h.cost.reads,1);
 });

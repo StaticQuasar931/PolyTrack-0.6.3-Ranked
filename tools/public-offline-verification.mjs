@@ -6,6 +6,7 @@ import {readLedger} from './native-verification-ledger.mjs';
 import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verification.mjs';
 import {prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
+import {cloneBounded} from './bounded-clone.mjs';
 
 export const PUBLIC_76_VERIFICATION_BASELINE=Object.freeze({generation:76,
   indexSha256:'7d0e1d6ee6c7e8d3ad5b698caf86090ed81b2a7811c715b932c4f7065e5eabaf',
@@ -64,7 +65,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   // Exercise scoring, events, profiles and local CAS using ONLY old public
   // proofs before asking for any new native work. Never publish to source root.
   const preflightDirectory=path.join(runDirectory,'preflight-candidate');
-  await fs.cp(directory,preflightDirectory,{recursive:true,dereference:false,errorOnExist:true,force:false});
+  await cloneBounded({source:directory,destination:preflightDirectory});
   const preflight=await preflightPhase({root,publicationRoot:runDirectory,directory:preflightDirectory,sourceCommit,captureContext,
     publishedEventTotalsBaseline,reuseOnly:true});
   demand(preflight.backendReads===0&&preflight.backendWrites===0&&preflight.counts?.nativeDispatched===0&&

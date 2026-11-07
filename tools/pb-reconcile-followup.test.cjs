@@ -139,3 +139,31 @@ test('restored stored replay makes same-signature waiting PB eligible immediatel
   assert.equal(h.storage.get('state').acct.waitingReplay.t,undefined);
   assert.notEqual(h.storage.get('state').acct.confirmed.t,undefined);
 });
+
+test('persisted continuation cannot be accelerated by menu triggers or direct calls, including reload',async()=>{
+  const rows=Array.from({length:17},(_,i)=>({trackId:'track-'+i,timeMs:10000+i,replay:'r'+i,replayHash:replayHash('r'+i)}));
+  let reads=0;
+  const make=()=>{const h=productionHarness({rows,readDoc:async()=>{reads++;return docMissing();}});
+    h.mirrorRaceResult=async(_url,row)=>{h.rememberConfirmedLocalPb('acct',row);return {saved:true};};return h;};
+  const h=make();await h.reconcileLocalPersonalBestsToCloud('acct');
+  assert.equal(reads,16);assert.equal(h.storage.get('state').acct.continuationAt,h.Date.now()+60000);
+  h.scheduleLocalPbCloudReconcile('acct',0);const timer=[...h.timers.keys()][0];
+  for(let i=0;i<100;i++)h.scheduleLocalPbCloudReconcile('acct',0);
+  assert.equal([...h.timers.keys()][0],timer,'menu triggers retain the earliest permitted timer');
+  assert.equal((await h.reconcileLocalPersonalBestsToCloud('acct')).deferred,true);assert.equal(reads,16);
+  const reloaded=make();for(const [key,value]of h.storage)reloaded.storage.set(key,JSON.parse(JSON.stringify(value)));
+  reloaded.scheduleLocalPbCloudReconcile('acct',900);
+  assert.equal([...reloaded.timers.values()][0].delay,60000);
+  assert.equal((await reloaded.reconcileLocalPersonalBestsToCloud('acct')).deferred,true);assert.equal(reads,16);
+  reloaded.advance(60000);await reloaded.reconcileLocalPersonalBestsToCloud('acct');
+  assert.equal(reads,17);assert.equal(reloaded.storage.get('state').acct.continuationAt,undefined);
+});
+test('memory fallback bounds continuation after storage failure; malformed future data cannot stall forever',()=>{
+  const h=productionHarness({rows:[],readDoc:async()=>docMissing()});
+  const entry=h.rememberLocalPbReconcileContinuation('acct',{},true);
+  h.scheduleLocalPbCloudReconcile('acct',0);assert.equal([...h.timers.values()][0].delay,60000);
+  h.advance(60000);assert.equal(h.localPbReconcileNotBefore('acct',entry),0);
+  for(const value of [{continuationAt:Infinity},{continuationIssuedAt:h.Date.now()+999999,continuationAt:h.Date.now()+1059999},
+    {continuationIssuedAt:h.Date.now(),continuationAt:h.Date.now()+999999}])
+    assert.equal(h.localPbReconcileNotBefore('acct',value),0);
+});

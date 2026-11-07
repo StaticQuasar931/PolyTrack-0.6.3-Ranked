@@ -165,11 +165,11 @@ test('synchronous SDK transaction failure releases invalidation state and permit
   h.database.runTransaction=original;await h.sync();assert.equal(h.costs.profiles,1);
 });
 
-test('another transaction invalidates acknowledgement, including failed transactions',async()=>{
+test('proven no-write transactions retain acknowledgement, including failed no-write transactions',async()=>{
   const h=harness();await h.sync();
   await h.context.runFirebaseTransaction(h.database,async()=>{});await h.sync();
   h.failTransaction(true);await assert.rejects(h.context.runFirebaseTransaction(h.database,async()=>{}));
-  h.failTransaction(false);await h.sync();assert.equal(h.costs.profiles,3);
+  h.failTransaction(false);await h.sync();assert.equal(h.costs.profiles,1);
 });
 
 test('an outstanding external transaction prevents cached identity suppression',async()=>{
@@ -225,4 +225,51 @@ test('PB confirmation proof is not promoted into an idle upload shortcut',()=>{
   assert.match(mirror,/const currentSnap = await tx.get\(ref\)/);
   assert.match(mirror,/const profileSnap = await tx.get\(profileRef\)/);
   assert.doesNotMatch(mirror,/profileIdentityAcknowledgement|syncAcknowledgedPublicIdentity/);
+});
+
+test('actual set/update/delete attempts still invalidate, including failed writes and chaining',async()=>{
+  for(const method of ['set','update','delete']){
+    const h=harness();await h.sync();
+    const original=h.database.runTransaction;
+    h.database.runTransaction=callback=>original(async tx=>{
+      const raw={get:tx.get,set(ref,value){tx.set(ref,value);return this;},
+        update(ref,value){tx.set(ref,value);return this;},delete(ref){tx.set(ref,{deleted:true});return this;}};
+      return callback(raw);
+    });
+    await h.context.runFirebaseTransaction(h.database,tx=>{tx[method]({id:'unrelated'},{marker:method});});
+    await h.sync();assert.equal(h.costs.profiles,2,method);
+    h.failTransaction(true);
+    await assert.rejects(h.context.runFirebaseTransaction(h.database,tx=>tx.set({id:'unrelated'},{marker:'failed'})));
+    h.failTransaction(false);await h.sync();assert.equal(h.costs.profiles,3,method+' failed commit');
+  }
+});
+test('100 interleaved no-op/menu cycles preserve exact identity proof without skipping auth',async()=>{
+  const h=harness();await h.post();
+  const before={...h.costs};
+  for(let i=0;i<100;i++){await h.context.runFirebaseTransaction(h.database,async()=>{});await h.post();}
+  assert.equal(h.costs.profiles,before.profiles);assert.equal(h.costs.moderation,before.moderation);
+  assert.equal(h.costs.auth,before.auth+100);assert.equal(h.costs.writes,before.writes);
+});
+test('profile mutation revalidates and transaction facade preserves native method receiver/chaining',async()=>{
+  const h=harness();await h.sync();
+  let calls=0;
+  const transaction={get(){assert.equal(this,transaction);return Promise.resolve({exists:false});},
+    set(){assert.equal(this,transaction);calls++;return this;},update(){assert.equal(this,transaction);calls++;return this;},
+    delete(){assert.equal(this,transaction);calls++;return this;}};
+  h.database.runTransaction=callback=>callback(transaction);
+  await h.context.runFirebaseTransaction(h.database,async tx=>{
+    await tx.get({});assert.equal(tx.set({},{}).update({},{}).delete({}),tx);
+  });
+  assert.equal(calls,3);assert.equal(h.context.runFirebaseTransaction.identityPending,0);
+  assert.ok(h.context.runFirebaseTransaction.identityEpoch>0);
+});
+test('a discarded writing SDK attempt stays conservatively invalidating when final callback is a no-op',async()=>{
+  const h=harness();await h.sync();const before=h.context.runFirebaseTransaction.identityEpoch;
+  h.database.runTransaction=async callback=>{
+    await callback({set(){},get:async()=>({exists:false})});
+    return callback({set(){},get:async()=>({exists:false})});
+  };
+  let attempt=0;
+  await h.context.runFirebaseTransaction(h.database,tx=>{if(!attempt++)tx.set({},{});});
+  assert.ok(h.context.runFirebaseTransaction.identityEpoch>before);assert.equal(h.context.runFirebaseTransaction.identityPending,0);
 });

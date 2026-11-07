@@ -4,6 +4,7 @@ import {publishedEventPairingTotals} from './published-event-pairing.mjs';
 import {refreshCapturedEventHighlights} from './refresh-event-highlights.mjs';
 import {LEGACY_ARCHIVE_REPLAY_EXCEPTIONS,annotateLegacyArchiveReplayBoard} from './legacy-archive-replay-exceptions.mjs';
 import fs from 'node:fs/promises';
+import {cloneBounded} from './bounded-clone.mjs';
 import path from 'node:path';
 import os from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
@@ -312,7 +313,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   const temporary=await privateRoot(),candidate=path.join(temporary,'candidate'),ledgerRoot=path.join(temporary,'ledger');
   let retained=false;
   try{
-    await timed('copyMs',()=>fs.cp(directory,candidate,{recursive:true,dereference:false}));
+    await timed('copyMs',()=>cloneBounded({source:directory,destination:candidate}));
     const scoringPreflight=await timed('scoringPreflightMs',()=>preflight({directory:candidate,now,validateOnly:true}));
     demand(expectedScoringSha256===null||scoringPreflight.sourceSha256===expectedScoringSha256,'scoring inputs changed since preparation');
     await copyLedger(context.ledgerRoot,ledgerRoot,context.ledger.manifestHash);
@@ -403,7 +404,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     demand(!compiling&&!compiled&&!disposed,'verification capability is busy, consumed or disposed');
     compiling=true;
     try{
-    if(verificationOnly)await fs.cp(source,candidate,{recursive:true,dereference:false,errorOnExist:true,force:false});
+    if(verificationOnly)await cloneBounded({source,destination:candidate});
     const policy=await buildPolicy({root,jobs:inputs.jobs,entries:verification.ledger.entries});
     // Existing approvals not covered by current review cannot sneak back in via
     // a generic ledger applier. Restrict those tracks, retaining server baselines.

@@ -17,6 +17,7 @@ import {readRepositoryVerificationAuthority, verificationAuthority as validateVe
 import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
 import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
 import {eventCatalogHandoffFromEnvironment} from './capture-event-catalog.mjs';
+import {writeHydratedFiles} from './hydrated-file-writer.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -207,13 +208,7 @@ export async function hydrateStaging(root, stagingDirectory) {
   }
   const hydratedByPath = new Map(hydrated.map(item => [item.logicalPath, item]));
   hydrated.push(...reconstructOmittedBoards(index, hydratedByPath));
-  await fs.mkdir(stagingDirectory, { recursive: true });
-  for (const { logicalPath, decoded } of hydrated) {
-    const target = path.resolve(stagingDirectory, ...logicalPath.split('/'));
-    if (!target.startsWith(`${path.resolve(stagingDirectory)}${path.sep}`)) throw new Error(`Snapshot path escaped staging: ${logicalPath}`);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, decoded, { flag: 'wx' });
-  }
+  await writeHydratedFiles(stagingDirectory, hydrated);
   return { directory: pointer.currentdir, files: hydrated.length };
 }
 

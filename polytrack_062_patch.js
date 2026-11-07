@@ -73,17 +73,17 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=268',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=269',document.currentScript?.src||location.href).href;
   let nativePartialReplaySelection=null,nativePartialReplayRevision=0;
   document.addEventListener('click',nativePartialReplayStartupClick,true);
-  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=268',eventsModuleUrl).href)
+  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=269',eventsModuleUrl).href)
     .then(installNativePartialReplayFallback).catch(error=>{console.warn('Native partial replay controls unavailable',error);return null;});
   let helpControlsModule=null,releaseInfoModule=null,installedRevisionNotice=null,siteUpdateHandle=null,siteUpdateMenuState=null;
-  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=268',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=268',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=268',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
+  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=269',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=269',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=269',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
       siteUpdateMenuState=menuState;releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='268';
+  const extraCatalogRevision='269';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -124,7 +124,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=268',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=269',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -164,7 +164,7 @@
     const epoch=warmLocalWeeklyCatalog.snapshotEpoch||0,isCurrent=()=>epoch===(warmLocalWeeklyCatalog.snapshotEpoch||0);
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=268',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=269',eventsModuleUrl).href);
       if(!isCurrent())return;
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       if(!isCurrent())return;
@@ -310,7 +310,7 @@
         let payload=await response.json();
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=268');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=269');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
@@ -1412,7 +1412,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }catch(error){noteFirebaseQuota(error);log('error','[STREAK401] Daily activity was not queued',String(error?.message||error));return null;}
   }
   async function getDailyActivityController(){
-    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=268').catch(error=>{dailyActivityModulePromise=null;throw error;});
+    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=269').catch(error=>{dailyActivityModulePromise=null;throw error;});
     const {createDailyActivitySync}=await dailyActivityModulePromise;
     if(!dailyActivityController)dailyActivityController=createDailyActivitySync({
       now:()=>Date.now(),
@@ -1914,8 +1914,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=268');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=268');
+    const module=await import('./tools/developer-diagnostics.mjs?v=269');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=269');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1988,16 +1988,16 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=268');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=269');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=268');
-        localInsights=module.createLocalInsights({storage,revision:268});
-        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=268').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:268,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
-        void import('./tools/control-usage.mjs?v=268').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=269');
+        localInsights=module.createLocalInsights({storage,revision:269});
+        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=269').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:269,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
+        void import('./tools/control-usage.mjs?v=269').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=268');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=269');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -2021,7 +2021,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=268');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=269');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2554,7 +2554,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       normalizeReplayPayloadString(row.replay||row.recording||'')===payload.recording);
     let prepared;
     if(own&&payload.verifiedState===0){
-      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=268',eventsModuleUrl).href);
+      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=269',eventsModuleUrl).href);
       const options={accountId:context.accountId,trackId:context.trackId,recordingId:selectedRow.recordingId,isSelf:true,explicitSelection:true};
       try{prepared=await module.prepareOwnLocalPbPlayback(own,payload,options);}
       catch(error){
@@ -2623,35 +2623,87 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function repairOwnNativeRecording(database,recId,recording,payload,style,colors,carId){
     const accountId=activeRankedAccountId(),user=window.firebase?.auth?.().currentUser,ownerUid=user?.uid;
     if(!accountId||!ownerUid)return 0;
-    const tracks=[...new Set(readLocalRaceRows().filter(row=>String(row.accountId||row.userId||'')===accountId&&safeRecordingId(row.uploadId||row.id)===recId).map(row=>String(row.trackId||'')).filter(id=>/^[a-f0-9]{64}$/.test(id)))].slice(0,10);
+    const bindings=()=>{
+      const byTrack=new Map();
+      for(const row of readLocalRaceRows()){
+        if(String(row.accountId||row.userId||'')!==accountId||safeRecordingId(row.uploadId||row.id)!==recId||
+          !/^[a-f0-9]{64}$/.test(String(row.trackId||'')))continue;
+        if(!byTrack.has(row.trackId))byTrack.set(row.trackId,{trackId:row.trackId,timeMs:row.timeMs,replayHash:row.replayHash});
+        if(byTrack.size===10)break;
+      }
+      return [...byTrack.values()].sort((a,b)=>a.trackId.localeCompare(b.trackId));
+    };
+    const local=bindings(),tracks=local.map(row=>row.trackId);
     if(!tracks.length)return 0;
+    const bindingKey=JSON.stringify(local),trackKey=JSON.stringify(tracks);
+    const frames=Number(payload.frames??payload.numberOfFrames??payload.raceTimeFrames);
+    const exactLocal=Number.isSafeInteger(frames)&&frames>0&&local.every(row=>
+      Number.isSafeInteger(row.timeMs)&&row.timeMs>0&&/^[a-f0-9]{64}$/.test(row.replayHash||''));
+    const bindingGeneration=()=>JSON.stringify([typeof localRaceGeneration==='number'?localRaceGeneration:0,
+      typeof trackCacheGeneration==='number'?trackCacheGeneration:0,
+      typeof profileSnapshotEpoch==='number'?profileSnapshotEpoch:0]);
+    const generation=()=>JSON.stringify([bindingGeneration(),runFirebaseTransaction.identityEpoch||0]);
     const requests=repairOwnNativeRecording.requests||(repairOwnNativeRecording.requests=new WeakMap());
     let pending=requests.get(database);
     if(!pending){pending=new Set();requests.set(database,pending);}
-    const frames=Number(payload.frames??payload.numberOfFrames??payload.raceTimeFrames);
-    const trackKey=JSON.stringify(tracks);
-    // Share only identical work in flight. Settled repairs never prove a later PB is current.
     for(const prior of pending){
       if(prior.user===user&&prior.accountId===accountId&&prior.recId===recId&&prior.recording===recording&&
-        Object.is(prior.frames,frames)&&prior.style===style&&prior.colors===colors&&prior.carId===carId&&prior.trackKey===trackKey)return prior.promise;
+        Object.is(prior.frames,frames)&&prior.style===style&&prior.colors===colors&&prior.carId===carId&&
+        prior.trackKey===trackKey&&prior.bindingKey===bindingKey)return prior.promise;
     }
-    const state={user,accountId,recId,recording,frames,style,colors,carId,trackKey};
+    const acknowledgements=repairOwnNativeRecording.acknowledgements||(repairOwnNativeRecording.acknowledgements=new WeakMap());
+    let receipts=acknowledgements.get(database);
+    if(!receipts){receipts=new Map();acknowledgements.set(database,receipts);}
+    const now=Date.now(),initialGeneration=generation(),initialBindingGeneration=bindingGeneration();
+    for(const [key,receipt] of receipts){
+      if(receipt.user!==user||receipt.accountId!==accountId||receipt.until<=now||receipt.until>now+30000||
+        receipt.generation!==initialGeneration||receipt.bindingKey!==bindingKey)receipts.delete(key);
+    }
+    const receiptKey=JSON.stringify([accountId,ownerUid,recId,frames,style,colors,carId,bindingKey]);
+    const receipt=exactLocal?receipts.get(receiptKey):null;
+    if(receipt&&typeof sha256Hex==='function'){
+      let digest;try{digest=await sha256Hex(recording);}catch{}
+      if(digest===receipt.digest&&receipt.until>Date.now()&&generation()===receipt.generation&&
+        bindingKey===JSON.stringify(bindings())&&activeRankedAccountId()===accountId&&window.firebase?.auth?.().currentUser===user)return receipt.matched;
+    }
+    for(const prior of pending){
+      if(prior.user===user&&prior.accountId===accountId&&prior.recId===recId&&prior.recording===recording&&
+        Object.is(prior.frames,frames)&&prior.style===style&&prior.colors===colors&&prior.carId===carId&&
+        prior.trackKey===trackKey&&prior.bindingKey===bindingKey)return prior.promise;
+    }
+    const state={user,accountId,recId,recording,frames,style,colors,carId,trackKey,bindingKey};
     state.promise=(async()=>{
-      let matched=0;
+      let matched=0;const proof=[];
       await Promise.all(tracks.map(async trackId=>{
         const ref=database.collection(COLLECTIONS.raceResults).doc(accountId+'_'+trackId);
+        let exact=null;
         const repaired=await runFirebaseTransaction(database,async tx=>{
+          exact=null;
           if(activeRankedAccountId()!==accountId||window.firebase?.auth?.().currentUser!==user)return 0;
           const doc=await tx.get(ref);
           if(!doc.exists)return 0;
           const row=doc.data()||{};
-          if(activeRankedAccountId()!==accountId||window.firebase?.auth?.().currentUser!==user||row.ownerUid!==ownerUid||row.accountId!==accountId||row.trackId!==trackId||safeRecordingId(row.uploadId)!==recId)return 0;
+          if(activeRankedAccountId()!==accountId||window.firebase?.auth?.().currentUser!==user||
+            row.ownerUid!==ownerUid||row.accountId!==accountId||row.trackId!==trackId||safeRecordingId(row.uploadId)!==recId)return 0;
           const patch=recordingRepairPatch(row,recording,payload,style,colors,carId);
           if(patch&&Object.keys(patch).length)tx.set(ref,{...patch,ingestedAt:window.firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+          const bound=local.find(value=>value.trackId===trackId);
+          if(exactLocal&&bound.timeMs===row.timeMs&&bound.replayHash===row.replayHash)exact={trackId,digest:row.replayHash};
           return 1;
         });
-        matched+=repaired;
+        matched+=repaired;if(repaired&&exact)proof.push(exact);
       }));
+      if(exactLocal&&proof.length===tracks.length&&typeof sha256Hex==='function'){
+        let digest;try{digest=await sha256Hex(recording);}catch{}
+        if(/^[a-f0-9]{64}$/.test(digest||'')&&proof.every(row=>row.digest===digest)&&
+          activeRankedAccountId()===accountId&&window.firebase?.auth?.().currentUser===user&&
+          bindingKey===JSON.stringify(bindings())&&
+          initialBindingGeneration===bindingGeneration()){
+          // A short exact-binding retry receipt, not verification or proof of future cloud state.
+          receipts.set(receiptKey,{user,accountId,bindingKey,digest,generation:generation(),matched,until:Date.now()+30000});
+          while(receipts.size>32)receipts.delete(receipts.keys().next().value);
+        }
+      }
       return matched;
     })();
     if(pending.size<32)pending.add(state);
@@ -3057,12 +3109,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=268').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=269').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null,firebaseUsageRetryAt=0;
   async function observeFirestore(database){
-    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=268',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
+    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=269',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
     if(!database||!firebaseUsageModule&&Date.now()<firebaseUsageRetryAt)return database;
     // Await the early-started observer, but never block saving on diagnostics failure.
     const module=firebaseUsageModule||await withTimeout(firebaseUsageModulePromise,1500,'Usage observer unavailable').catch(()=>{firebaseUsageRetryAt=Date.now()+60000;return null;});
@@ -3111,12 +3163,27 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
 
   function runFirebaseTransaction(database,callback){
-    // Any transaction can change profile identity. Never reuse an acknowledgement across one.
-    runFirebaseTransaction.identityEpoch=(runFirebaseTransaction.identityEpoch||0)+1;
+    // Pending work blocks reuse; only proven no-write callbacks may retain old identity proof.
+    runFirebaseTransaction.identityEpoch=runFirebaseTransaction.identityEpoch||0;
+    let identityDirty=false;
+    const invalidate=()=>{
+      if(identityDirty)return;
+      identityDirty=true;
+      runFirebaseTransaction.identityEpoch=(runFirebaseTransaction.identityEpoch||0)+1;
+    };
     runFirebaseTransaction.identityPending=(runFirebaseTransaction.identityPending||0)+1;
-    // Compat ignores maxAttempts. Quota read failures must not trigger SDK retries.
     return Promise.resolve().then(()=>database.runTransaction(async transaction=>{
-      try{return await callback(transaction);}
+      const facade=new Proxy(transaction,{get(target,key){
+        const value=Reflect.get(target,key,target);
+        if(typeof value!=='function')return value;
+        if(key==='set'||key==='update'||key==='delete')return (...args)=>{
+          invalidate();
+          const result=value.apply(target,args);
+          return result===target?facade:result;
+        };
+        return value.bind(target);
+      }});
+      try{return await callback(facade);}
       catch(cause){
         if(!/resource-exhausted|quota|429/i.test(String(cause?.code||'')+' '+String(cause?.message||cause)))throw cause;
         noteFirebaseQuota(cause);
@@ -3125,7 +3192,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         throw error;
       }
     })).finally(()=>{
-      runFirebaseTransaction.identityEpoch++;
+      if(identityDirty)runFirebaseTransaction.identityEpoch=(runFirebaseTransaction.identityEpoch||0)+1;
       runFirebaseTransaction.identityPending--;
     });
   }
@@ -3174,7 +3241,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=268',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=269',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -3673,7 +3740,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=268',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=269',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -4187,7 +4254,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=268',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=269',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -6342,7 +6409,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=268').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=269').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -6368,7 +6435,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=268',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=269',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -6413,7 +6480,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=268',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=269',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -6433,8 +6500,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=268',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=268',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=268',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=269',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=269',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=269',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -7259,7 +7326,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=268',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=269',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -7378,9 +7445,9 @@ function rankingScopeMarkup(category,scope='total'){
   const plannerPublishedProfiles=new Map(),plannerBoardRequests=new Map(),plannerPracticePlans=new Map();
   function loadProfileSnapshotResults(userId){
     const id=cleanUserId(userId);
-    const cached=profileSnapshotResults.get(id);
+    const cached=profileSnapshotResults.get(id),published=plannerPublishedProfiles.get(id);
     // Local placement warming is not a complete per-racer snapshot load.
-    if(!/^[a-f0-9]{64}$/.test(id)||(cached&&cached._localPlacementsOnly!==true)||Date.now()<(profileSnapshotRetryAt.get(id)||0))return Promise.resolve(false);
+    if(!/^[a-f0-9]{64}$/.test(id)||(cached&&cached._localPlacementsOnly!==true&&published?.epoch===profileSnapshotEpoch&&published.profile?.accountId===id)||Date.now()<(profileSnapshotRetryAt.get(id)||0))return Promise.resolve(false);
     if(profileSnapshotRequests.has(id))return profileSnapshotRequests.get(id);
     const epoch=profileSnapshotEpoch;
     const request=readPublicSnapshotBackup('profile-results',id).then(value=>{
@@ -8401,7 +8468,7 @@ function compactPlannerEvidenceLabel(action) {
     return [...byTrack.values()];
   }
   function openRankedProfile(userId){
-    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=268').then(module=>{
+    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=269').then(module=>{
       compactProfilePresentation=module;
       const current=document.getElementById('overallProfilePopup');
       if(current?.dataset.profileUser&&isElementVisible(current))openRankedProfile(current.dataset.profileUser);
@@ -8673,7 +8740,7 @@ function compactPlannerEvidenceLabel(action) {
     const isCurrent=()=>snapshotUpdateRequest===job&&!job.controller.signal.aborted&&origin?.isConnected&&origin===document.getElementById('overallFreshness')&&isElementVisible(document.getElementById('overallLeaderboardPanel'))&&!['overallHelpPopup','overallProfilePopup'].some(id=>isElementVisible(document.getElementById(id)));
     let module;
     try{
-      module=await import('./tools/snapshot-update-check.mjs?v=268');
+      module=await import('./tools/snapshot-update-check.mjs?v=269');
       if(!isCurrent())return;
       snapshotUpdateChecker||=module.createSnapshotUpdateCheck();
       const generation=Number(/public-snapshots([0-9]+)\//.exec(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'')?.[1]);
@@ -8900,7 +8967,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(268));
+    headers.set('X-PolyTrack-Revision', String(269));
     return observedWorkerFetch(url, {...options, headers});
   }
 
@@ -9058,7 +9125,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=268'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=269'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -9137,8 +9204,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     return false;
   }
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=268').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=268');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=269').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=269');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,publication:module.readSnapshotPublicationMeta(document),prepareRecording:ptPrepareGatedRecording,beforeGenerationChange:allowSnapshotGenerationChange,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent(metric.source==='memory'?'cache':'snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         invalidateNativePartialReplay(true);
@@ -9226,7 +9293,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=268');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=269');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -9364,7 +9431,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   }
   function scheduleCosmeticPublishRetry(){
     clearTimeout(cosmeticPublishTimer);cosmeticPublishTimer=0;
-    if(globalThis.navigator?.onLine===false)return;
+    if(globalThis.navigator?.onLine===false||typeof document!=='undefined'&&document.visibilityState==='hidden')return;
     const accountId=activeRankedAccountId();
     const item=readCosmeticPublishQueue().entries[accountId];
     const uid=window.firebase?.auth?.().currentUser?.uid||'';
@@ -9383,7 +9450,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         const accountId=activeRankedAccountId();
         let item=readCosmeticPublishQueue().entries[accountId];
         if(!item)return outcome;
-        if(globalThis.navigator?.onLine===false)return {...outcome,queued:true,offline:true};
+        if(globalThis.navigator?.onLine===false||typeof document!=='undefined'&&document.visibilityState==='hidden')return {...outcome,queued:true,offline:globalThis.navigator?.onLine===false,hidden:typeof document!=='undefined'&&document.visibilityState==='hidden'};
         const initialUid=window.firebase?.auth?.().currentUser?.uid||'';
         if(initialUid&&!cosmeticPublishIdentityMatches(item,accountId,initialUid))return {...outcome,queued:true,switched:true};
         const receipt=matchingCosmeticCommitReceipt(item,window.firebase?.auth?.().currentUser);
@@ -9403,6 +9470,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         if(!force&&Number(item.nextAttemptAt||0)>Date.now())return {...outcome,queued:true,deferred:true};
         attempted=item;
         const fire=await db();
+        if(globalThis.navigator?.onLine===false||typeof document!=='undefined'&&document.visibilityState==='hidden'){attempted=null;return {...outcome,queued:true,paused:true};}
         const user=window.firebase?.auth?.().currentUser;
         item=readCosmeticPublishQueue().entries[accountId];
         if(!user||!cosmeticPublishIdentityMatches(item,activeRankedAccountId(),user.uid)){attempted=null;return {...outcome,queued:true,switched:true};}
@@ -9413,6 +9481,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         let published=false;
         await runFirebaseTransaction(fire,async(tx)=>{
           published=false;
+          if(globalThis.navigator?.onLine===false||typeof document!=='undefined'&&document.visibilityState==='hidden')throw Object.assign(new Error('Cosmetic publish paused'),{code:'cosmetic-paused'});
           const currentUser=window.firebase?.auth?.().currentUser;
           if(!currentUser||!cosmeticPublishIdentityMatches(item,activeRankedAccountId(),currentUser.uid)){const error=new Error('Active account changed before publish.');error.code='cosmetic-account-switched';throw error;}
           // A replacement draft needs its own transaction, not an obsolete public write.
@@ -9420,6 +9489,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
           const previous=await tx.get(profileRef);
           if(!cosmeticPublishIdentityMatches(item,activeRankedAccountId(),window.firebase?.auth?.().currentUser?.uid||'')){const error=new Error('Active account changed before publish.');error.code='cosmetic-account-switched';throw error;}
           assertCloudOwner(item.accountId,item.ownerUid,previous.exists?previous.data():null);
+          if(globalThis.navigator?.onLine===false||typeof document!=='undefined'&&document.visibilityState==='hidden')throw Object.assign(new Error('Cosmetic publish paused'),{code:'cosmetic-paused'});
           if(readCosmeticPublishQueue().entries[item.accountId]?.draftId!==item.draftId)return false;
           tx.set(profileRef,{profileCosmetics:item.cosmetics,cosmeticsUpdatedAt:now,cosmeticsSyncedAt:window.firebase.firestore.FieldValue.serverTimestamp(),updatedAt:now},{merge:true});
           published=true;
@@ -9440,7 +9510,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         // Do not move the shared-query cursor to this one local write. Doing so can
         // skip every other racer update between the prior cursor and this timestamp.
         writeCosmeticDirectory({...directory,entries:{...directory.entries,[item.accountId]:{at:now,value:item.cosmetics}}});
-        if(cosmeticPublishIdentityMatches(item,activeRankedAccountId(),window.firebase?.auth?.().currentUser?.uid||'')){
+        if(cosmeticPublishIdentityMatches(item,activeRankedAccountId(),window.firebase?.auth?.().currentUser?.uid||'')&&
+          globalThis.navigator?.onLine!==false&&(typeof document==='undefined'||document.visibilityState!=='hidden')){
           // The public profile is the school-safe path. The Worker job is optional and
           // must never make the public save fail when workers.dev is blocked.
           try{
@@ -9449,7 +9520,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
             log('warn','[COSMETIC202] Public design saved; optional Worker job deferred',String(jobError&&(jobError.message||jobError)));
           }
           const endpoint=rankedBrokerUrl();
-          if(endpoint&&rankedEdgeAvailable()){
+          if(endpoint&&rankedEdgeAvailable()&&globalThis.navigator?.onLine!==false&&
+            (typeof document==='undefined'||document.visibilityState!=='hidden')){
             try{
               const token=await user.getIdToken(false);
               if(!cosmeticPublishIdentityMatches(item,activeRankedAccountId(),window.firebase?.auth?.().currentUser?.uid||''))return outcome;
@@ -9473,6 +9545,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     })().catch((error)=>{
       noteFirebaseQuota(error);
       if(error?.code==='cosmetic-account-switched')return {published:false,queued:true,switched:true,message:'Saved on this device. Switch back to this racer to retry publishing.'};
+      if(error?.code==='cosmetic-paused'){attempted=null;return {published:false,queued:true,paused:true};}
       if(attempted){
         const current=readCosmeticPublishQueue().entries[attempted.accountId];
         if(current?.draftId===attempted.draftId){
@@ -9560,6 +9633,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   }
   window.addEventListener('online',()=>setTimeout(()=>{resumeRankedNotifications().catch(()=>{});flushPendingCosmeticPublishes().catch(()=>{});},1200));
   setTimeout(()=>flushPendingCosmeticPublishes().catch(()=>{}),2500);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&navigator.onLine!==false)void flushPendingCosmeticPublishes().catch(()=>{});});
 
   function makeUserPayload(profile={}){
     const accountId = String(profile.accountId || localStorage.getItem('polytrack-0.6.2-active-account-id') || guestAccountId);
@@ -10093,6 +10167,69 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     return JSON.stringify([String(row.trackId||''),canonicalRaceTimeMs(row),String(row.replayHash||'')]);
   }
 
+  function localPbReconcileNotBefore(accountId,entry,now=Date.now()){
+    const valid=value=>Number.isSafeInteger(value?.continuationIssuedAt)&&Number.isSafeInteger(value?.continuationAt)&&
+      value.continuationIssuedAt<=now&&value.continuationAt-value.continuationIssuedAt===60000&&
+      value.continuationAt>now?value.continuationAt:0;
+    const memory=localPbReconcileNotBefore.deadlines?.get(accountId);
+    const until=Math.max(valid(entry),valid(memory));
+    if(!valid(memory))localPbReconcileNotBefore.deadlines?.delete(accountId);
+    return until;
+  }
+  function rememberLocalPbReconcileContinuation(accountId,entry,hasRemaining,now=Date.now()){
+    const deadlines=localPbReconcileNotBefore.deadlines||(localPbReconcileNotBefore.deadlines=new Map());
+    if(hasRemaining){
+      entry.continuationIssuedAt=now;entry.continuationAt=now+60000;
+      deadlines.set(accountId,{continuationIssuedAt:now,continuationAt:now+60000});
+      while(deadlines.size>32)deadlines.delete(deadlines.keys().next().value);
+    }else{
+      delete entry.continuationIssuedAt;delete entry.continuationAt;deadlines.delete(accountId);
+    }
+    return entry;
+  }
+  async function localPbPublishedObservation(accountId){
+    const empty=()=>({matches:new Map(),current:()=>false});
+    if(!/^[a-f0-9]{64}$/.test(accountId)||typeof plannerPublishedProfiles==='undefined'||
+      typeof profileSnapshotEpoch!=='number')return empty();
+    const epoch=profileSnapshotEpoch,user=window.firebase?.auth?.().currentUser||null;
+    const sessionCurrent=()=>profileSnapshotEpoch===epoch&&activeRankedAccountId()===accountId&&
+      (window.firebase?.auth?.().currentUser||null)===user;
+    let record=plannerPublishedProfiles.get(accountId);
+    if(record?.epoch!==epoch||record?.profile?.accountId!==accountId){
+      try{await loadProfileSnapshotResults(accountId);}catch{}
+    }
+    if(!sessionCurrent())return {matches:new Map(),current:()=>false,deferred:true};
+    record=plannerPublishedProfiles.get(accountId);
+    const profile=record?.epoch===epoch?record.profile:null;
+    // Positive package observation only; never a cloud confirmation or verification receipt.
+    const held=row=>[row?.local,row?.localPending,row?.pending,row?._localPlacementsOnly,
+      row?.needsReview,row?.reviewHold,row?.excluded,row?.unscored].some(value=>value!=null&&value!==false)||
+      row?.source==='local'||
+      [row?.status,row?.runStatus,row?.validationState,row?.verificationStatus,row?.reviewStatus,row?.reason].some(value=>
+        /^(rejected|mismatch|held|hold|quarantined|review_hold|review|needs_review|pending_review|excluded|review_excluded|unavailable_final|expired)$/i.test(String(value||'')));
+    if(!profile||profile.accountId!==accountId||held(profile)||!Array.isArray(profile.results)||profile.results.length>2000||
+      profile.results.some(row=>!row||typeof row!=='object'||Array.isArray(row)||!/^[a-f0-9]{64}$/.test(row.trackId||'')))return empty();
+    const matches=new Map(),seen=new Set();
+    for(const row of profile.results){
+      const trackId=row.trackId;
+      if(seen.has(trackId)){matches.delete(trackId);continue;}
+      seen.add(trackId);
+      if(held(row)||row.complete===false||row.sourceComplete===false||row.authoritative===false||
+        row.accountId!=null&&row.accountId!==accountId||row.userId!=null&&row.userId!==accountId||
+        !Number.isSafeInteger(row.timeMs)||row.timeMs<=0||!/^[a-f0-9]{64}$/.test(row.replayHash||''))continue;
+      matches.set(trackId,{timeMs:row.timeMs,replayHash:row.replayHash});
+    }
+    return {matches,current:()=>sessionCurrent()&&plannerPublishedProfiles.get(accountId)===record};
+  }
+  function localPbMatchesPublishedObservation(row,accountId,observation){
+    if(!observation?.current()||!Number.isSafeInteger(row?.timeMs)||row.timeMs<=0||
+      !/^[a-f0-9]{64}$/.test(row?.trackId||'')||!/^[a-f0-9]{64}$/.test(row?.replayHash||'')||
+      String(row.accountId||row.userId||'')!==accountId||
+      row.accountId!=null&&row.accountId!==accountId||row.userId!=null&&row.userId!==accountId)return false;
+    const observed=observation.matches.get(row.trackId);
+    return Boolean(observed&&observed.timeMs===row.timeMs&&observed.replayHash===row.replayHash);
+  }
+
   function localPbCloudConfirmed(row,accountId){
     if(!row?.trackId||!accountId||String(row.accountId||row.userId||'')!==String(accountId)||canonicalRaceTimeMs(row)<=0||!/^[a-f0-9]{64}$/.test(row.replayHash||''))return false;
     const state=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
@@ -10123,12 +10260,16 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     const safeId=cleanUserId(accountId);
     if(!safeId||!isCurrentLocalPbReconcileIdentity(safeId))return;
     if(navigator.onLine===false||document.visibilityState==='hidden')return;
-    const state=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
-    const retryDelay=Math.max(0,Number(state[safeId]?.retryAt||0)-Date.now());
-    delay=Math.max(Number(delay)||0,retryDelay,firebaseQuotaPaused()?Number(readJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,0)||0)-Date.now():0);
-    clearTimeout(localPbReconcileTimers.get(safeId));
+    const now=Date.now(),state=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
+    const notBefore=Math.max(Number(state[safeId]?.retryAt||0),localPbReconcileNotBefore(safeId,state[safeId],now),
+      firebaseQuotaPaused()?Number(readJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,0)||0):0);
+    delay=Math.max(Number(delay)||0,notBefore-now);
+    const dueAt=now+Math.max(0,delay),deadlines=scheduleLocalPbCloudReconcile.deadlines||(scheduleLocalPbCloudReconcile.deadlines=new Map());
+    const existing=deadlines.get(safeId);
+    if(localPbReconcileTimers.has(safeId)&&existing>=notBefore&&existing<=dueAt)return;
+    clearTimeout(localPbReconcileTimers.get(safeId));deadlines.set(safeId,dueAt);
     localPbReconcileTimers.set(safeId,setTimeout(()=>{
-      localPbReconcileTimers.delete(safeId);
+      localPbReconcileTimers.delete(safeId);deadlines.delete(safeId);
       if(!isCurrentLocalPbReconcileIdentity(safeId)||navigator.onLine===false||document.visibilityState==='hidden')return;
       reconcileLocalPersonalBestsToCloud(safeId).catch((error)=>log('warn','[SYNC409] Local PB reconciliation failed',String(error&&(error.message||error))));
     },Math.max(0,delay)));
@@ -10195,6 +10336,17 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     const safeId=cleanUserId(accountId);
     let localRows=localBestRowsForAccount(safeId);
     if(!safeId)return {checked:0,uploaded:0,repaired:0};
+    let publishedObservation=null;
+    if(localRows.length&&/^[a-f0-9]{64}$/.test(safeId)&&typeof plannerPublishedProfiles!=='undefined'){
+      const priorConfirmations=(readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[safeId]?.confirmed;
+      if(localRows.some(row=>priorConfirmations?.[row.trackId]!==localPbSyncSignature(row))){
+        const observationEpoch=profileSnapshotEpoch,observationUser=window.firebase?.auth?.().currentUser||null;
+        publishedObservation=await localPbPublishedObservation(safeId);
+        if(publishedObservation.deferred||profileSnapshotEpoch!==observationEpoch||activeRankedAccountId()!==safeId||
+          (window.firebase?.auth?.().currentUser||null)!==observationUser)return {checked:0,uploaded:0,repaired:0,observed:0,deferred:true,sourceChanged:true};
+        localRows=localBestRowsForAccount(safeId);
+      }
+    }
     const fingerprint=localRows.map((row)=>`${row.trackId}:${canonicalRaceTimeMs(row)}:${String(row.replayHash||'').slice(0,16)}`).join('|');
     const state=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
     const prior=state[safeId]||{};
@@ -10216,6 +10368,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(!localRows.length)return {checked:0,uploaded:0,repaired:0};
     localRows=localRows.filter(row=>!localPbCanonicalConflict(row,state[safeId],ownerUid));
     if(!localRows.length)return {checked:0,uploaded:0,repaired:0,superseded:Object.keys(canonicalConflicts).length,cached:true};
+    const continuationAt=localPbReconcileNotBefore(safeId,prior);
+    if(Date.now()<continuationAt){scheduleLocalPbCloudReconcile(safeId,continuationAt-Date.now());return {checked:0,uploaded:0,repaired:0,deferred:true};}
     const waitingReplay={...(prior.waitingReplay||{})};
     const rowsByTrack=new Map(localRows.map(row=>[String(row.trackId),row]));
     let waitingChanged=false;
@@ -10229,14 +10383,18 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       }
     }
     if(waitingChanged){state[safeId]={...prior,waitingReplay};writeJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,state);}
-    if(firebaseQuotaPaused()||(Date.now()<Number(prior.retryAt||0)&&!newlyAvailableReplay.size)){
-      const retryAt=Math.max(Number(state[safeId]?.retryAt||0),Number(readJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,0)||0));
+    if(firebaseQuotaPaused()||Date.now()<localPbReconcileNotBefore(safeId,prior)||(Date.now()<Number(prior.retryAt||0)&&!newlyAvailableReplay.size)){
+      const retryAt=Math.max(Number(state[safeId]?.retryAt||0),localPbReconcileNotBefore(safeId,state[safeId]),Number(readJsonStorage(FIREBASE_QUOTA_PAUSE_KEY,0)||0));
       scheduleLocalPbCloudReconcile(safeId,Math.max(1000,retryAt-Date.now()));
       return {checked:0,uploaded:0,repaired:0,deferred:true};
     }
-    if(state[safeId]?.fingerprint===fingerprint)return {checked:localRows.length,uploaded:0,repaired:0,cached:true};
+    if(state[safeId]?.fingerprint===fingerprint&&localRows.every(row=>state[safeId]?.confirmed?.[row.trackId]===localPbSyncSignature(row)))return {checked:localRows.length,uploaded:0,repaired:0,cached:true};
     localRows=localRows.filter(row=>state[safeId]?.confirmed?.[row.trackId]!==localPbSyncSignature(row)&&state[safeId]?.waitingReplay?.[row.trackId]!==localPbSyncSignature(row));
     if(!localRows.length)return {checked:0,uploaded:0,repaired:0,cached:true};
+    const observedRows=localRows.filter(row=>localPbMatchesPublishedObservation(row,safeId,publishedObservation));
+    const observed=observedRows.length;
+    localRows=localRows.filter(row=>!localPbMatchesPublishedObservation(row,safeId,publishedObservation));
+    if(!localRows.length)return {checked:0,uploaded:0,repaired:0,observed,publishedObserved:true};
     const eligibleRows=localRows.filter(row=>localPbPermissionRetryAt(row,state[safeId],ownerUid)<=Date.now());
     if(!eligibleRows.length){
       const retryAt=Math.min(...localRows.map(row=>localPbPermissionRetryAt(row,state[safeId],ownerUid)));
@@ -10339,7 +10497,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         overallLoadState.nextRefreshAt=Date.now();
       }
       log('info','[SYNC299] Saved local PB reconciliation pass complete',{accountId:safeId,checked:pass.checked,total:localRows.length,remaining:pass.remaining,uploaded,repaired,adopted,failed:pass.failed});
-      return {checked:pass.checked,uploaded,repaired,adopted,superseded,failed:pass.failed,permissionDenied:pass.permissionDenied,remaining:pass.remaining};
+      return {checked:pass.checked,uploaded,repaired,adopted,superseded,observed:publishedObservation?.current()?observed:0,failed:pass.failed,permissionDenied:pass.permissionDenied,remaining:pass.remaining};
     })();
     localPbReconcilePromises.set(safeId,reconcilePromise);
     let reconcileOutcome=null;
@@ -10365,7 +10523,9 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
         const latest=readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{};
         const currentRows=localBestRowsForAccount(safeId);
         const uid=window.firebase?.auth?.().currentUser?.uid||'';
-        const pending=currentRows.filter(row=>!localPbCanonicalConflict(row,latest[safeId],uid)&&latest[safeId]?.confirmed?.[row.trackId]!==localPbSyncSignature(row)&&(latest[safeId]?.waitingReplay?.[row.trackId]!==localPbSyncSignature(row)||localPbHasAvailableReplay(row)));
+        const pending=currentRows.filter(row=>!localPbMatchesPublishedObservation(row,safeId,publishedObservation)&&!localPbCanonicalConflict(row,latest[safeId],uid)&&latest[safeId]?.confirmed?.[row.trackId]!==localPbSyncSignature(row)&&(latest[safeId]?.waitingReplay?.[row.trackId]!==localPbSyncSignature(row)||localPbHasAvailableReplay(row)));
+        latest[safeId]=rememberLocalPbReconcileContinuation(safeId,latest[safeId]||{},pending.length>0);
+        writeJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,latest);
         const earliest=pending.length?Math.min(...pending.map(row=>localPbPermissionRetryAt(row,latest[safeId],uid))):0;
         const delay=earliest>Date.now()?Math.max(earliest-Date.now(),Number(latest[safeId]?.retryAt||0)-Date.now()):localPbReconcileContinuationDelay(pending.length>0,latest[safeId]?.retryAt,Date.now());
         if(delay!==null)scheduleLocalPbCloudReconcile(safeId,delay);
@@ -11507,7 +11667,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   });
 
   function boot(){
-    void import('./tools/finish-presentation.mjs?v=268').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
+    void import('./tools/finish-presentation.mjs?v=269').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
     void initializePracticeHistory();
     setInterval(()=>{const popup=document.getElementById('overallProfilePopup');if(popup&&isElementVisible(popup))schedulePracticeProfileRefresh();},30000);
     // Warm only same-origin schedule assets, never the database, before menus open.
@@ -11528,10 +11688,10 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=268'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=269'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=268',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=268',eventsModuleUrl).href)]).then(([module,release])=>{
-      siteUpdateHandle=module.installSiteUpdates({revision:268,document,
+    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=269',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=269',eventsModuleUrl).href)]).then(([module,release])=>{
+      siteUpdateHandle=module.installSiteUpdates({revision:269,document,
         onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false&&onlineServicePageAllowed();},
         isIdle:canOfferSiteUpdate,
         canReload:canOfferSiteUpdate,endpoint:module.CANONICAL_SITE_VERSION_URL});
@@ -11596,7 +11756,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=268').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=269').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -11623,7 +11783,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=268', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=269', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});
