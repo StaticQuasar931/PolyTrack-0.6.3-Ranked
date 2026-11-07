@@ -92,6 +92,12 @@ async function fixture(t,options={}){
  await page.setContent('<button id="open">Events</button><button id="ranked" data-track-id="a">Ranked profile track</button><button id="native"><span class="track-title"><p>Fixture track</p></span></button><div class="track-info-ui"><div class="leaderboard-ui"><h2>Leaderboard</h2><h3>Version 0.6</h3><div class="total-players"></div><div class="container">Normal leaderboard 9999</div><div class="pages"></div><div class="button-wrapper"><button class="button back">Back</button><button class="button icon-button first"><img src="images/pin.svg"></button><button class="button only-verified">Only verified<img src="images/verified.svg"></button></div></div><div class="side-panel"><h2>Fixture track</h2><div class="personal-best-title">Personal best</div><div class="personal-best">9999</div><div class="opponents-container">Normal opponents</div><button class="button watch">Watch</button></div></div>');
  await page.evaluate(setup,{focus,nativeRow,nativeTimeFormatter,...options});return page;
 }
+async function jumpToArchiveMonth(page,month){
+ const dates=page.locator('.sq-archive-dates');
+ if(!await dates.evaluate(node=>node.open))await dates.locator(':scope > summary').click();
+ await dates.locator('input[name="archive-month"]').fill(month);
+ await dates.getByRole('button',{name:'Go',exact:true}).click();
+}
 async function enter(page){await page.locator('#open').click();await page.locator('[data-event-id]').click();await page.locator('.sq-event-board').waitFor();}
 async function installReturnProbe(page){
  await page.evaluate(()=>{
@@ -127,8 +133,8 @@ test('event Back restores track selection once after native Back and ignores sta
 test('archive Back restores track selection once and never enters the event',async t=>{
  const p=await fixture(t);await installReturnProbe(p);
  await p.locator('#open').click();await p.locator('[data-event-archives]').click();
- await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
- await p.getByRole('button',{name:'Jump to month',exact:true}).click();
+ await jumpToArchiveMonth(p,new Date(Date.now()-172800000).toISOString().slice(0,7));
+
  await p.locator('[data-archive-event-id="old-event"] summary').click();
  await p.getByRole('button',{name:'Track details / practice'}).click();
  await p.locator('.sq-event-board .back').click();
@@ -226,8 +232,8 @@ test('archived standings use the native track panel as frozen rows and launch no
   bridgeFixture.readArchivedSnapshot=async id=>({...await read(id),complete:true,totalEntries:1,racerCount:1});
  });
  await p.locator('#open').click();await p.locator('[data-event-archives]').click();
- await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
- await p.getByRole('button',{name:'Jump to month',exact:true}).click();
+ await jumpToArchiveMonth(p,new Date(Date.now()-172800000).toISOString().slice(0,7));
+
  await p.locator('[data-archive-event-id="old-event"] summary').click();
  await p.getByRole('button',{name:'Track details / practice'}).click();await p.locator('.sq-event-board').waitFor();
  assert.equal(await p.evaluate(()=>document.querySelector('.sq-event-board')===initialNativeBoard),true);
@@ -252,8 +258,8 @@ test('zero-racer archive remains accessible for saved-track practice without eve
   bridgeFixture.readArchiveMonth=async()=>({periods:[{...period,racerCount:0}]});
  });
  await p.locator('#open').click();await p.locator('[data-event-archives]').click();
- await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
- await p.getByRole('button',{name:'Jump to month',exact:true}).click();
+ await jumpToArchiveMonth(p,new Date(Date.now()-172800000).toISOString().slice(0,7));
+
  const state=await p.locator('[data-archive-event-id="empty-event"]').evaluate(details=>({open:details.open,disabled:details.querySelector('summary').getAttribute('aria-disabled'),tabIndex:details.querySelector('summary').tabIndex}));
  assert.equal(state.open,false);assert.equal(state.disabled,null);assert.equal(state.tabIndex,0);
  await p.locator('[data-archive-event-id="empty-event"] summary').click();
@@ -512,8 +518,8 @@ test('archived filtered standings share visible ranks and local pagination witho
    entries:Array.from({length:26},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Saved '+i,timeMs:1000+i,rank:i+1,rp:100,...(i===0?{verified:false}:i===1?{needsReview:true}:{} )}))};};
  });
  await p.locator('#open').click();await p.locator('[data-event-archives]').click();
- await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));
- await p.getByRole('button',{name:'Jump to month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"] summary').click();
+ await jumpToArchiveMonth(p,new Date(Date.now()-172800000).toISOString().slice(0,7));
+ await p.locator('[data-archive-event-id="old-event"] summary').click();
  await p.getByRole('button',{name:'Track details / practice'}).click();
  const board=p.locator('.sq-event-board');await board.waitFor();
  assert.match(await board.locator('.total-players').innerText(),/23 saved results.*30 event entrants.*personal filters.*Page 1 of 2/);
@@ -1058,7 +1064,7 @@ test('live and archived event browser fits phone, tablet and desktop without hor
   assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px live content');
  }
  if(process.env.EVENT_MENU_SCREENSHOT)await p.screenshot({path:process.env.EVENT_MENU_SCREENSHOT});
- await p.locator('[data-event-archives]').click();await p.locator('input[name="archive-month"]').fill(new Date(Date.now()-172800000).toISOString().slice(0,7));await p.getByRole('button',{name:'Jump to month',exact:true}).click();await p.locator('[data-archive-event-id="old-event"]').waitFor();
+ await p.locator('[data-event-archives]').click();await jumpToArchiveMonth(p,new Date(Date.now()-172800000).toISOString().slice(0,7));await p.locator('[data-archive-event-id="old-event"]').waitFor();
  for(const [width,height] of [[320,720],[390,844],[844,390],[768,1024],[820,1180],[1920,1080],[384,216]]){
   await p.setViewportSize({width,height});await assertContainedPreviews();assert.equal(await p.locator('.sq-events-dialog main').evaluate(node=>node.scrollWidth<=node.clientWidth+2),true,width+'px archive content');
   if(width===384&&height===216){
@@ -1149,4 +1155,23 @@ test('event loading distinguishes missing standings from an empty event',async t
  await p.waitForFunction(()=>document.querySelector('.sq-event-board .container').getAttribute('aria-busy')==='false');
  assert.match(await p.locator('.sq-event-board').innerText(),/Standings are not in the saved data yet/);
  assert.doesNotMatch(await p.locator('.sq-event-board').innerText(),/No event times yet/);
+});
+
+for(const kind of ['kodub','weekly','daily'])test(kind+' native event RP distinguishes zero, absent, invalid, string and pending scores',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(kind=>{
+  const period={id:kind+'-rp-fixture',kind,trackId:id,startsAt:Date.now()-1000,endsAt:Date.now()+3600000,maxRp:700};
+  bridgeFixture.readCatalog=async()=>({periods:[period],archives:[]});
+  const scores=[{rp:0},{},{rp:null},{rp:'84'},{rp:99,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting'}];
+  bridgeFixture.readSnapshot=async()=>({period,updatedAt:Date.now(),entries:scores.map((score,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),name:'Score case '+i,rank:i+1,timeMs:19000+i,...score}))});
+ },kind);
+ await enter(p);
+ const rows=p.locator('.sq-event-board .container > button.main');
+ assert.equal(await rows.count(),5);
+ assert.equal(await rows.nth(0).locator('.sq-event-earned-rp').innerText(),'0 ERP');
+ for(const i of [1,2])assert.equal(await rows.nth(i).locator('.sq-event-earned-rp').innerText(),'ERP unavailable');
+ assert.equal(await rows.nth(3).locator('.sq-event-earned-rp').innerText(),'84 ERP');
+ assert.equal(await rows.nth(4).locator('.sq-event-earned-rp').count(),0);
+ assert.equal(await rows.nth(4).getAttribute('data-event-pending'),'true');
+ assert.match(await rows.nth(4).locator('.verified-state').getAttribute('title'),/Pending/);
 });

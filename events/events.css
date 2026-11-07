@@ -1351,3 +1351,10 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
 #ui .track-selection-ui .sq-featured-events>.sq-permanent-track .track-title p{
  min-width:0!important;max-width:100%!important;width:auto!important;overflow-wrap:anywhere!important;
 }
+
+/* Normal Kodub ERP is separate metadata, never part of the verification-age badge. */
+.track-info-ui .leaderboard-ui:not(.sq-event-board) button.main .sq-normal-kodub-erp{position:absolute;left:230px;bottom:1px;max-width:calc(100% - 244px);box-sizing:border-box;margin:0;padding:0 4px;border:0;border-radius:2px;background:rgba(255,255,255,.07);color:#d5dbea;font-family:inherit;font-size:11px;line-height:14px;font-weight:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:600px) and (orientation:portrait){
+  .track-info-ui .leaderboard-ui:not(.sq-event-board) button.main:has(.sq-normal-kodub-erp)>.right{gap:2px!important}
+  .track-info-ui .leaderboard-ui:not(.sq-event-board) button.main .sq-normal-kodub-erp{position:static;flex:none;align-self:flex-start;max-width:100%;font-size:11px;line-height:14px}
+}

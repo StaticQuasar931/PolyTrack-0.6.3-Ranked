@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=263';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=263';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=264';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=264';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,8 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=263';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=263';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=264';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=264';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
 const ROLLING_TRACK_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
@@ -159,6 +159,16 @@ export function eventRowVerified(row){
   return !!row&&row.pending!==true&&row.needsReview!==true&&row.reviewHold!==true&&
     !['verified','runVerified','physicsVerified','replayIntegrityVerified','integrityVerified','eventRpEligible'].some(field=>row[field]===false)&&
     !['status','verificationStatus'].some(field=>row[field]!==undefined&&row[field]!=='verified');
+}
+export function eventRpPresentation(row){
+  if(!eventRowVerified(row))return null;
+  const group=row.groupRp!==undefined&&row.groupRp!==null,value=group?row.groupRp:row.rp;
+  // Only normalize explicit integer scores. Missing, blank and invalid values are not zero.
+  const score=typeof value==='number'?value:typeof value==='string'&&/^\d+$/.test(value)?Number(value):null;
+  const available=Number.isSafeInteger(score)&&score>=0,label=group?'Group ERP':'ERP';
+  return {text:available?score+' '+label:label+' unavailable',
+    title:available?(group?'Filtered group Event RP':'Published Event RP'):
+      (group?'No valid filtered group Event RP is available for this result.':'No valid published Event RP is available for this result.')};
 }
 export function eventVerifiedPendingMatch(board,candidate){
   const period=board?.period;
@@ -463,7 +473,77 @@ export function retryDeferredEventCarRenders(view,renderCachedCar){
     if(style&&renderCachedCar(button,style))view.deferredCarRows.delete(button);
   }
 }
+export function createNormalKodubErpDecorator(bridge){
+  const boards=new Map(),bindings=new WeakMap(),labels=new Set();let epoch;
+  const getEpoch=()=>bridge.normalEventSnapshotEpoch?.()??0;
+  const identity=period=>JSON.stringify([period?.id,period?.trackId,period?.startsAt,period?.endsAt]);
+  const runTime=row=>row?.timeMs??row?.frames??row?.raceTimeFrames;
+  function invalidate(){
+    boards.clear();epoch=getEpoch();
+    for(const label of labels)label.remove();labels.clear();
+  }
+  function decorate(button,row,trackId){
+    if(epoch!==getEpoch())invalidate();
+    const period=bridge.normalKodubPeriod?.(),host=button.closest('.leaderboard-ui');
+    const accountId=row?.accountId||row?.userId,timeMs=runTime(row),replayHash=row?.replayHash||'';
+    const old=bindings.get(button),remove=()=>{
+      old?.label?.remove();if(old?.label)labels.delete(old.label);bindings.delete(button);
+    };
+    if(!host||host.classList.contains('sq-event-board')||!period?.id||period.kind!=='kodub'||period.trackId!==trackId||
+      period.startsAt>Date.now()||period.endsAt<=Date.now()||bridge.currentTrackId?.()!==trackId||
+      !EVENT_RECORD_HASH.test(accountId||'')||!Number.isSafeInteger(timeMs)||timeMs<=0||
+      row.trackId!==undefined&&row.trackId!==trackId){remove();return;}
+    const key=identity(period),viewer=bridge.accountId(),atEpoch=epoch;
+    const signature=JSON.stringify([key,atEpoch,viewer,accountId,timeMs,replayHash,eventRowVerified(row)]);
+    if(old?.signature===signature&&old.label?.isConnected)return;
+    remove();
+    const state=button.querySelector('.verified-state');if(!state)return;
+    const label=button.ownerDocument.createElement('span');label.className='sq-normal-kodub-erp';
+    label.textContent='Event ERP loading';state.after(label);labels.add(label);
+    for(const stale of labels)if(!stale.isConnected)labels.delete(stale);
+    const visibleName=button.querySelector('.name')?.textContent?.trim();
+    const binding={signature,label};bindings.set(button,binding);
+    const current=()=>bindings.get(button)===binding&&button.isConnected&&label.isConnected&&
+      button.closest('.leaderboard-ui')===host&&!host.classList.contains('sq-event-board')&&
+      getEpoch()===atEpoch&&bridge.accountId()===viewer&&bridge.currentTrackId?.()===trackId&&
+      identity(bridge.normalKodubPeriod?.())===key&&period.startsAt<=Date.now()&&period.endsAt>Date.now()&&
+      button.dataset.sqRacerAccountId===accountId&&button.dataset.sqRacerReplayHash===replayHash&&
+      button.querySelector('.name')?.textContent?.trim()===visibleName&&button.querySelector('.verified-state')===state&&
+      button.querySelector('.left p:not(.position)')?.textContent?.trim()===bridge.formatTime(timeMs);
+    let request=boards.get(key);
+    if(!request){
+      // This bridge is static-only: never use the live event snapshot/cache fallback.
+      request=Promise.resolve().then(()=>bridge.readStaticEventSnapshot?.(period.id)).then(board=>{
+        if(board?.period?.id!==period.id||board.period.kind!=='kodub'||board.period.trackId!==trackId||
+          board.period.startsAt!==period.startsAt||board.period.endsAt!==period.endsAt||
+          !Array.isArray(board.entries)||board.entries.length>EVENT_RECORD_LIMIT)return null;
+        return board;
+      }).catch(()=>null);
+      boards.set(key,request);if(boards.size>4)boards.delete(boards.keys().next().value);
+    }
+    void request.then(board=>{
+      if(!current()){
+        if(bindings.get(button)===binding){label.remove();labels.delete(label);bindings.delete(button);}
+        return;
+      }
+      const matches=board?.entries.filter(entry=>entry?.accountId===accountId);
+      const saved=matches?.length===1?matches[0]:null;
+      const rp=saved&&eventRpPresentation(saved);
+      if(!board||matches?.length>1||saved&&(!rp||saved.trackId!==undefined&&saved.trackId!==trackId||
+        saved.periodId!==undefined&&saved.periodId!==period.id||!Number.isSafeInteger(saved.timeMs)||saved.timeMs<=0||saved.timeMs>EVENT_TIME_LIMIT)){
+        label.textContent='Event ERP unavailable';label.title='No valid published event result is available in this snapshot.';return;
+      }
+      if(!saved){label.textContent='No published Event PB';label.title='This snapshot has no published Event PB for this racer; no zero score is inferred.';return;}
+      const exact=eventRowVerified(row)&&saved.timeMs===timeMs&&EVENT_RECORD_HASH.test(replayHash)&&saved.replayHash===replayHash;
+      label.textContent=exact?rp.text:'Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text;
+      label.title=exact?'Published Kodub Event RP for this exact PB.':
+        'Published Kodub Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text+'. Separate from the ordinary leaderboard run; Event RP is not attributed to the ordinary run.';
+    });
+  }
+  return {decorate,invalidate};
+}
 export function installEvents(bridge){
+  const normalKodubErp=createNormalKodubErpDecorator(bridge);
   const sessions=createEventSession();let capture=null,catalog=read(STORE,{periods:[],archives:[]}),catalogAt=0,catalogFreshUntil=0,fetching=null,flushing=false,retryAt=0,dialog=null,returnFocus=null,selected=null,requestId=0,entryRequest=0;
   let boundaryTimer=null;
   let statusText='',latestFinish=null,permanent=read(STORE+'-permanent',null),permanentAt=0,permanentFetching=null;
@@ -698,7 +778,7 @@ export function installEvents(bridge){
     const labels={waiting:'Waiting for replay verification.',verified:receipt.eventImproved===true?'Run verified. Event PB saved.':receipt.eventImproved===false?'Run verified. Event points unchanged.':'Run verified.',no_improvement:'An equal or faster event PB is already saved.',mismatch:'Replay did not match the submitted time. No points were added.',unavailable_final:'Verification could not finish. No points were added for this run.',expired:'This event closed before the run could be scored.',event_admission_capacity:'This event reached its submission limit. Your normal PB is safe.',event_entrant_capacity:'This event is full. Your normal PB is safe.',event_submit_rate:'This attempt arrived too soon after another run. No points were added.',events_disabled:'Event submissions are paused.'};
     return labels[receipt.status==='rejected'?receipt.reason:receipt.status]||'This submission could not be scored. Your normal PB is safe.';
   }
-  function rows(entries){return entries.map(row=>`<li><img class="sq-event-result-verified" src="images/state_verified.svg" alt="Verified"><b>#${Number(row.rank)||''}</b><span>${escape(displayName(row))}${row.accountId===bridge.accountId()?' <strong class="sq-event-you">YOU</strong>':''}</span><time>${time(row.timeMs)}</time><strong>${Number(row.groupRp??row.rp)||0} ${row.groupRp!=null?'Group ERP':'RP'}</strong></li>`).join('');}
+  function rows(entries){return entries.map(row=>`<li><img class="sq-event-result-verified" src="images/state_verified.svg" alt="Verified"><b>#${Number(row.rank)||''}</b><span>${escape(displayName(row))}${row.accountId===bridge.accountId()?' <strong class="sq-event-you">YOU</strong>':''}</span><time>${time(row.timeMs)}</time><strong>${eventRpPresentation(row)?.text||'ERP pending'}</strong></li>`).join('');}
   async function openPermanent(){
     shell();selectView('home');selected=PERMANENT_ROLLING;const token=++requestId;body('<p>Loading permanent standings...</p>');
     await loadPermanent();if(!dialog||token!==requestId)return;
@@ -1391,7 +1471,7 @@ export function installEvents(bridge){
     const statusDescription=receipt||localRecord?receiptText(receipt,localRecord,period,{board,accountId}):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,board?._publicBackup,board?.complete,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.runId,row.pending,row.rp,row.name,row.carStyle,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
+    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,board?._publicBackup,board?.complete,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.runId,row.pending,row.rp,row.groupRp,row.name,row.carStyle,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -1429,7 +1509,7 @@ export function installEvents(bridge){
       button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
-      if(!row.pending){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=Math.round(Number(row.groupRp??row.rp)||0)+(row.groupRp!=null?' Group ERP':' ERP');points.title=row.groupRp!=null?'Filtered group Event RP':'Verified Event RP';state.prepend(points);}
+      const rp=eventRpPresentation(row);if(rp){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=rp.text;points.title=rp.title;state.prepend(points);}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
       button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const stateIcon=state.querySelector('img');stateIcon.classList.add('sq-event-verification-icon');stateIcon.alt=row.pending?'Unverified recording':'Verified replay';
@@ -1672,5 +1752,5 @@ export function installEvents(bridge){
     ensureCapture();
     tick({cachedOnly:true});
   }
-  return {prepareCapture,captureReady:()=>!!capture,finishPositions,isTrackNavigationCurrent,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:selection=>{if(selection?.matches?.('.track-selection-ui'))featuredSelection=selection;return ensureFeaturedSection(document,selection);},open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
+  return {prepareCapture,decorateNormalLeaderboardRow:normalKodubErp.decorate,invalidateNormalLeaderboardERP:normalKodubErp.invalidate,captureReady:()=>!!capture,finishPositions,isTrackNavigationCurrent,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:selection=>{if(selection?.matches?.('.track-selection-ui'))featuredSelection=selection;return ensureFeaturedSection(document,selection);},open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
 }

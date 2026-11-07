@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {eventPagination,renderEventPagination,eventSnapshotFields,eventFieldSummary,eventRowVerified,decorateEventRowPresentation,eventDisplayRunAt,renderEventPersonalBest} from './client.mjs';
+import {eventPagination,renderEventPagination,eventSnapshotFields,eventFieldSummary,eventRowVerified,eventRpPresentation,decorateEventRowPresentation,eventDisplayRunAt,renderEventPersonalBest} from './client.mjs';
 
 const hash=n=>n.toString(16).padStart(64,'0');
 const row=n=>({accountId:hash(n),name:'Racer '+n,timeMs:1000+n,rank:n,rp:1,
@@ -143,7 +143,7 @@ test('actual active board renders page 13 offline, then clamps and counts its ve
     signature:'',pb:element(),opponentsNote:element(),deferredCarRows:new Set(),carStyles:new WeakMap()};
   let filterActive=false;
   const context={document,nativeView:view,cache:new Map([[period.id,saved]]),localBest:()=>null,ownReceipts:new Map(),
-    eventSnapshotFields,eventPagination,renderEventPagination,eventFieldSummary,eventRowVerified,decorateEventRowPresentation,eventDisplayRunAt,
+    eventSnapshotFields,eventPagination,renderEventPagination,eventFieldSummary,eventRowVerified,eventRpPresentation,decorateEventRowPresentation,eventDisplayRunAt,
     bridge:{accountId:()=>accountId,snapshotOnly:()=>true,filterRevision:()=>Number(filterActive),
       filterRows:rows=>({active:filterActive,rows:filterActive?rows.filter(row=>row.timeMs<1004):rows})},
     displayName:r=>r.name,eventName:()=> 'Weekly',periodName:()=> 'Fixture',now:()=>Date.now(),
