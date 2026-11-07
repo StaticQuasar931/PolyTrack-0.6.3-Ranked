@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 305,
+    "number": 307,
     "version": "0.6.3",
-    "revision": 263,
+    "revision": 264,
     "notes": [
-      "Fresh snapshot downloads are smaller, with all saved replays retained.",
-      "Improved profile and replay lookup loading."
+      "Fixed route planning for profiles that were only partly loaded.",
+      "Kodub weekly leaderboards now show published Event RP alongside the right run."
     ]
   },
   "entries": [
+    {
+      "number": 305,
+      "title": "Compact snapshot lookup downloads without dropping replays",
+      "commit": "34180c99103f0da28ffc616609eb8a45f0283e9b",
+      "committedAt": "2026-11-06T14:42:15.000Z",
+      "notes": [
+        "Fresh snapshot downloads are smaller, with all saved replays retained.",
+        "Improved profile and replay lookup loading."
+      ]
+    },
     {
       "number": 304,
       "title": "Publish refreshed Snapshot 74 with verified replay coverage",
@@ -210,16 +220,6 @@ const historyData = {
       "notes": [
         "Snapshot updates handle changed PB replay data more safely.",
         "Unavailable replays stay unverified instead of blocking valid saved results."
-      ]
-    },
-    {
-      "number": 284,
-      "title": "Repair private snapshot identity and guard one authorized replacement",
-      "commit": "7bd4471b15da3fe04d74b56f535d688bc7211d73",
-      "committedAt": "2026-11-05T13:29:18.000Z",
-      "notes": [
-        "Safer recovery when a leaderboard snapshot update is interrupted.",
-        "Improved private access checks before loading snapshot data."
       ]
     }
   ],
