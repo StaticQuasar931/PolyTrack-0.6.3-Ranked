@@ -1,4 +1,4 @@
-const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 const oldCopyBoots = new WeakMap();
 const OLD_COPY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -29,6 +29,21 @@ const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
 const noticeInstallations = new WeakMap();
 const acknowledgedRevisions = new WeakMap();
+const LAST_RELEASE_ACK_KEY='polytrack-site-update-last-ack-v2';
+/** Snapshot the prior manual release identity before any dialog acknowledgement. */
+export function readReleaseAcknowledgement(release,{document=globalThis.document,storage,sessionStorage,history=RELEASE_HISTORY}={}) {
+  const stores=[],identities=[];
+  for(const [provided,name]of [[storage,'localStorage'],[sessionStorage,'sessionStorage']]){try{const value=provided===undefined?document?.defaultView?.[name]:provided;if(value)stores.push(value);}catch{}}
+  for(const store of stores){try{const raw=store.getItem(LAST_RELEASE_ACK_KEY);if(typeof raw==='string'&&raw.length<=1024){const value=JSON.parse(raw);if(Number.isSafeInteger(value?.number)&&value.number>0&&(value.commit===null||/^[a-f0-9]{40}$/.test(value.commit||'')))identities.push({number:value.number,commit:value.commit});}}catch{}}
+  const remembered=acknowledgedRevisions.get(document);
+  const legacy=findAcknowledgedRelease(release,number=>{const key='polytrack-site-update-ack-release-v1:'+number;if(remembered?.has(key))return true;for(const store of stores){try{if(store.getItem(key)==='acknowledged')return true;}catch{}}return false;},history);
+  // Do not let a number-only legacy key override an explicit conflicting commit.
+  if(legacy&&!identities.some(value=>value.number===legacy.number&&value.commit&&value.commit!==legacy.commit))identities.push(legacy);
+  const known=identities.map(identity=>({identity,count:missedReleaseUpdates(release,identity,history).count})).filter(value=>value.count!==null).sort((a,b)=>a.count-b.count);
+  const chosen=known[0]?.identity||identities[0]||null;
+  return chosen?Object.freeze({...chosen}):null;
+}
+
 const ageBindings = new WeakMap();
 const verifiedPointers = new WeakMap();
 export const UPDATED_GAME_URL = 'https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/';
@@ -303,6 +318,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     }
     return false;
   };
+  let previousAcknowledgement;
   let disposed = false, dialog = null, previousFocus = null, ageBinding = null, historyBinding = null;
   const close = (restoreFocus = false) => {
     ageBinding?.dispose(); ageBinding = null;
@@ -316,7 +332,8 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   const acknowledge = () => {
     if (disposed || !dialog?.isConnected) return;
     remembered.add(key);
-    for (const store of stores()) { try { store.setItem(key, 'acknowledged'); } catch { /* Keep the in-page acknowledgement. */ } }
+    for (const store of stores()) { try { store.setItem(key, 'acknowledged'); } catch { /* Keep the in-page acknowledgement. */ }
+      if(validRevision(release.number))try{store.setItem(LAST_RELEASE_ACK_KEY,JSON.stringify({number:release.number,commit:/^[a-f0-9]{40}$/.test(release.commit||'')?release.commit:null}));}catch{} }
     close(true);
   };
   const resume = () => {
@@ -340,16 +357,12 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     ageNode.dataset.siteUpdateAge = '';
     Object.assign(ageNode.style, {display: 'block', marginTop: '8px', color: '#a7d5ff', fontSize: '0.85em'});
     description.append(ageNode);
-    const updates = countKnownUpdates(release, number => {
-      const previousKey = 'polytrack-site-update-ack-release-v1:'+number;
-      if (remembered.has(previousKey)) return true;
-      for (const store of stores()) { try { if (store.getItem(previousKey) === 'acknowledged') return true; } catch {} }
-      return false;
-    }, releaseHistory);
-    if (updates > 1) {
-      const count = document.createElement('small'); count.dataset.siteUpdatesSinceAck = '';
-      count.textContent = updates+' updates since you last checked';
-      Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'}); description.append(count);
+    if(previousAcknowledgement===undefined)previousAcknowledgement=readReleaseAcknowledgement(release,{document,storage,sessionStorage,history:releaseHistory});
+    const updates=missedReleaseUpdates(release,previousAcknowledgement,releaseHistory).count;
+    if(updates>1){
+      const count=document.createElement('small');count.dataset.siteUpdatesSinceAck='';
+      count.textContent=updates+' update'+(updates===1?'':'s')+' since you last checked';
+      count.setAttribute('role','status');Object.assign(count.style,{display:'block',marginTop:'6px',fontSize:'18px',color:'#a7d5ff'});description.append(count);
     }
     themeDialog(node, title, description);
     const notes = document.createElement('ul');
@@ -361,7 +374,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       Object.assign(item.style, {marginBottom: '8px', overflowWrap: 'anywhere'});
       notes.append(item);
     }
-    const archive = createReleaseHistory(document, {release,history:releaseHistory,now:now()});
+    const archive = createReleaseHistory(document, {release,history:releaseHistory,now:now(),acknowledgedRelease:previousAcknowledgement});
     if (archive) historyBinding = bindReleaseHistory(archive);
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});

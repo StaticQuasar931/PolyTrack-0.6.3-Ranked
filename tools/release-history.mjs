@@ -2,14 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 326,
+    "number": 328,
     "version": "0.6.3",
-    "revision": 273,
+    "revision": 274,
     "notes": [
-      "Improved recovery when saving completed replay checks fails."
+      "Leaderboards keep names and verification labels steady while loading.",
+      "Track loading spends less time waiting on the browser cache.",
+      "Event RP clearly distinguishes your event result from your normal PB.",
+      "Earlier updates highlight releases you have not seen, with shorter titles."
     ]
   },
   "entries": [
+    {
+      "number": 326,
+      "title": "Validate original proof policy and preserve completion before backup",
+      "commit": "32d9ade0854d9d331cbb00134fbd70d4d20cac8e",
+      "committedAt": "2026-11-08T02:32:14.000Z",
+      "notes": [
+        "Improved recovery when saving completed replay checks fails."
+      ]
+    },
     {
       "number": 325,
       "title": "Preserve completed verification and repair event packaging",
@@ -175,18 +187,6 @@ const historyData = {
         "Fresh snapshot downloads are smaller, with all saved replays retained.",
         "Improved profile and replay lookup loading."
       ]
-    },
-    {
-      "number": 304,
-      "title": "Publish refreshed Snapshot 74 with verified replay coverage",
-      "commit": "5aba11535cc5040ecbfb7b84557f6d4969c555e8",
-      "committedAt": "2026-11-06T14:21:14.000Z",
-      "notes": [
-        "Fresh rankings, profiles and event standings.",
-        "New personal bests and saved replays are synchronized.",
-        "Old archived finishes show when a replay is unavailable.",
-        "Fixed safe playback of compact long recordings."
-      ]
     }
   ],
   "coverage": {
@@ -228,19 +228,36 @@ export function selectReleaseHistory(release, history = RELEASE_HISTORY) {
   return valid ? {matches:true, entries:history.entries, olderOmitted:history.coverage.olderOmitted} : {matches:false, entries:[], olderOmitted:false};
 }
 
-/** Count recorded published releases, never commit or revision-number gaps. */
-export function countKnownUpdates(release, isAcknowledged, history = RELEASE_HISTORY) {
-  const selected = selectReleaseHistory(release, history);
-  if (!selected.matches || typeof isAcknowledged !== 'function') return null;
-  // A manual commit is not necessarily a published release. Count only entries
-  // with a release number and matching central release notes, never revision gaps.
-  const published = [{number:release.number}, ...selected.entries.filter(entry => positiveInteger(entry.number) && finishedNotes(entry.notes))];
-  const numbers = published.map(entry => entry.number);
-  if (new Set(numbers).size !== numbers.length) return null; // Old acknowledgement keys cannot disambiguate repeated titles.
-  for (const [index, entry] of published.entries()) {
-    try { if (isAcknowledged(entry.number) === true) return index; } catch { /* Missing/blocked storage is not a first-play measurement. */ }
-  }
+/** Only releases with real central notes count; gaps and capture commits do not. */
+function publishedReleases(release, history) {
+  const selected=selectReleaseHistory(release,history);
+  if(!selected.matches)return null;
+  const rows=[{number:release.number,commit:hash(release.commit)?release.commit:null,current:true},
+    ...selected.entries.filter(entry=>positiveInteger(entry.number)&&finishedNotes(entry.notes))];
+  return new Set(rows.map(row=>row.number)).size===rows.length?rows:null;
+}
+export function findAcknowledgedRelease(release,isAcknowledged,history=RELEASE_HISTORY) {
+  const rows=publishedReleases(release,history);
+  if(!rows||typeof isAcknowledged!=='function')return null;
+  for(const row of rows){try{if(isAcknowledged(row.number)===true)return {number:row.number,commit:row.commit};}catch{}}
   return null;
+}
+export function missedReleaseUpdates(release,acknowledged,history=RELEASE_HISTORY) {
+  const rows=publishedReleases(release,history),unknown={count:null,missedCommits:[],currentMissed:false,baseline:null};
+  if(!rows||!positiveInteger(acknowledged?.number)||acknowledged.commit!=null&&!hash(acknowledged.commit))return unknown;
+  const index=rows.findIndex(row=>row.number===acknowledged.number&&(!acknowledged.commit||row.commit===acknowledged.commit));
+  if(index<0)return unknown; // Outside the public 20: do not guess totals or highlights.
+  return {count:index,missedCommits:rows.slice(1,index).map(row=>row.commit),currentMissed:index>0,baseline:{number:rows[index].number,commit:rows[index].commit}};
+}
+/** Count recorded manual release identities, never subtract Git/revision numbers. */
+export function countKnownUpdates(release,isAcknowledged,history=RELEASE_HISTORY) {
+  return missedReleaseUpdates(release,findAcknowledgedRelease(release,isAcknowledged,history),history).count;
+}
+export function releaseArchiveTitle(entry) {
+  const text=[entry.displayTitle,...(Array.isArray(entry.notes)?entry.notes:[]),entry.title].find(value=>typeof value==='string'&&value.trim());
+  const compact=String(text||'Game improvements').replace(/\s+/g,' ').trim();
+  const sentence=compact.split(/(?<=[.!?])\s+/)[0];
+  return sentence.length<=88?sentence:sentence.slice(0,85).replace(/\s+\S*$/,'').trimEnd()+'...';
 }
 export function releaseHistoryTime(committedAt, now = Date.now(), source = 'committed') {
   const at = canonicalTime(committedAt);
@@ -255,17 +272,19 @@ export function releaseHistoryTime(committedAt, now = Date.now(), source = 'comm
 function archiveModel(options) {
   const selected = selectReleaseHistory(options.release, options.history);
   if (!selected.matches || !selected.entries.length) return null;
-  return {...selected, entries:selected.entries.map(entry => {
+  const missed=missedReleaseUpdates(options.release,options.acknowledgedRelease,options.history);
+  const missedSet=new Set(missed.missedCommits);
+  return {...selected,missed,entries:selected.entries.map(entry => {
     const source = entry.committedAt ? 'committed' : 'prepared', timeLabel = source === 'committed' ? 'Committed' : 'Prepared';
     const now = options.now === undefined ? Date.now() : options.now;
     const time = releaseHistoryTime(entry.committedAt ?? entry.preparedAt, now, source);
     const ageLabel = Number.isFinite(now) && now >= Date.parse(time.dateTime) ? `${timeLabel} ${time.age}` : time.age;
-    return {...entry, label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`, timeLabel, time, ageLabel};
+    return {...entry,displayTitle:releaseArchiveTitle(entry),missed:missedSet.has(entry.commit),label:entry.number === null ? 'Recorded update' : `Update ${entry.number}`,timeLabel,time,ageLabel,originalTitle:'Original title: '+entry.title+'\n'+timeLabel+': '+time.local};
   })};
 }
 export function renderReleaseHistory(options = {}) {
   const model = archiveModel(options); if (!model) return '';
-  return `<details class="release-history" data-release-history><summary>Earlier updates</summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry><summary title="${escape(entry.timeLabel+': '+entry.time.local)}"><strong>${escape(entry.label)}</strong><span>${escape(entry.title)}</span><small>${escape(entry.ageLabel)}</small></summary><p class="release-history-date">${entry.timeLabel} <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
+  return `<details class="release-history" data-release-history><summary>Earlier updates</summary><div class="release-history-body"><ol>${model.entries.map(entry => `<li><details data-release-history-entry${entry.missed?' data-release-missed="true" style="border-left:3px solid #7ee7ff;padding-left:10px"':''}><summary title="${escape(entry.originalTitle)}"><strong>${escape(entry.label)}</strong><span>${escape(entry.displayTitle)}</span>${entry.missed?'<small class="release-history-missed">New since you last checked</small>':''}<small>${escape(entry.ageLabel)}</small></summary><p class="release-history-date">${entry.timeLabel} <time datetime="${entry.time.dateTime}">${escape(entry.time.local)}</time></p>${entry.notes.length ? `<ul>${entry.notes.map(note => `<li>${escape(note)}</li>`).join('')}</ul>` : '<p>No recorded notes.</p>'}</details></li>`).join('')}</ol><button class="button" type="button" data-release-history-close>Close archive</button></div></details>`;
 }
 
 /** Native DOM version for the installed notice; no history fetch or HTML execution. */
@@ -279,10 +298,13 @@ export function createReleaseHistory(document, options = {}) {
   const list = make('ol'); Object.assign(list.style,{listStyle:'none',padding:'0',margin:'8px 0',maxHeight:'min(42dvh, 360px)',overflow:'auto'});
   for (const entry of model.entries) {
     const item = make('li'), detail = make('details'); detail.setAttribute('data-release-history-entry','');
-    const heading = make('summary',`${entry.label}: ${entry.title}`); heading.title = entry.timeLabel+': '+entry.time.local; Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
+    const heading = make('summary',`${entry.label}: ${entry.displayTitle}`); heading.title=entry.originalTitle; Object.assign(heading.style,{cursor:'pointer',padding:'8px 0'});
+    if(entry.missed){detail.setAttribute('data-release-missed','true');Object.assign(detail.style,{borderLeft:'3px solid #7ee7ff',paddingLeft:'10px'});heading.setAttribute('aria-label',entry.label+': '+entry.displayTitle+'. New since you last checked');}
+
     const when = make('time',`${entry.ageLabel} (${entry.time.local})`); when.setAttribute('datetime',entry.time.dateTime);
     Object.assign(when.style,{display:'block',fontSize:'18px',color:'#a7d5ff',overflowWrap:'anywhere'});
     detail.append(heading,when);
+    if(entry.missed)detail.append(make('small','New since you last checked','release-history-missed'));
     if (entry.notes.length) { const notes = make('ul'); for (const note of entry.notes) notes.append(make('li',note)); detail.append(notes); }
     else detail.append(make('p','No recorded notes.'));
     item.append(detail); list.append(item);

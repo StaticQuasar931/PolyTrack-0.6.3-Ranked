@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=273';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=273';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=274';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=274';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,8 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=273';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=273';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=274';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=274';
+import {eventAwardPresentation} from '../tools/event-award-presentation.mjs?v=274';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
@@ -559,7 +560,7 @@ export function createNormalKodubErpDecorator(bridge){
     label.textContent='';label.hidden=true;state.prepend(label);labels.add(label);
     for(const stale of labels)if(!stale.isConnected)labels.delete(stale);
     const visibleName=button.querySelector('.name')?.textContent?.trim();
-    const binding={signature,label};bindings.set(button,binding);
+    const binding={signature,label,row:{...row,timeMs}};bindings.set(button,binding);
     const current=()=>bindings.get(button)===binding&&button.isConnected&&label.isConnected&&
       button.closest('.leaderboard-ui')===host&&!host.classList.contains('sq-event-board')&&
       getEpoch()===atEpoch&&bridge.accountId()===viewer&&bridge.currentTrackId?.()===trackId&&
@@ -587,20 +588,14 @@ export function createNormalKodubErpDecorator(bridge){
         if(bindings.get(button)===binding){label.remove();labels.delete(label);bindings.delete(button);}
         return;
       }
-      const matches=board?.entries.filter(entry=>entry?.accountId===accountId);
-      const saved=matches?.length===1?matches[0]:null;
-      const rp=saved&&eventRpPresentation(saved);
-      if(!board||matches?.length>1||saved&&(!rp||saved.trackId!==undefined&&saved.trackId!==trackId||
-        saved.periodId!==undefined&&saved.periodId!==period.id||!Number.isSafeInteger(saved.timeMs)||saved.timeMs<=0||saved.timeMs>EVENT_TIME_LIMIT)){
-        label.textContent='';label.hidden=true;return;
-      }
-      if(!saved||!rp.available){label.textContent='';label.hidden=true;return;}
-      const exact=eventRowVerified(row)&&saved.timeMs===timeMs&&EVENT_RECORD_HASH.test(replayHash)&&saved.replayHash===replayHash;
-      label.dataset.separate=String(!exact);
-      label.textContent=exact?rp.text:'Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text;
+      const presentation=eventAwardPresentation({board,period,normalRow:binding.row,trackId,formatTime:bridge.formatTime});
+      label.dataset.status=presentation.status;label.dataset.separate=String(presentation.separate);
+      label.dataset.verified=String(presentation.verified);label.title=presentation.title;
+      if(presentation.status==='unavailable'){label.textContent='';label.hidden=true;return;}
+      label.textContent=presentation.pairedText||presentation.text;
+      label.style.color=presentation.verified?'':'inherit';label.style.opacity=presentation.verified?'1':'.7';
+      label.setAttribute('aria-label',(presentation.verified?'Verified published event award: ':'')+label.textContent);
       label.hidden=false;
-      label.title=exact?'Published Kodub Event RP for this exact PB.':
-        'Published Kodub Event PB '+bridge.formatTime(saved.timeMs)+' / '+rp.text+'. Separate from the ordinary leaderboard run; Event RP is not attributed to the ordinary run.';
     });
   }
   return {decorate,invalidate};
