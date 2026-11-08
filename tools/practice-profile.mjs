@@ -198,7 +198,7 @@ function cardDetails(row, evidence) {
   const additional = evidence.slice(1).map(evidenceMarkup).join('');
   if (!additional && !observations.length && !practical.length) return '';
   return '<details class="pp-card-details" data-pp-details-key="track:' + esc(row.trackId) + '">' +
-    '<summary aria-label="More history for ' + esc(row.trackName || row.trackId) + '">More history</summary>' +
+    '<summary aria-label="More history for ' + esc(row.trackName || row.trackId) + ' and other cards in this row" title="Opens or closes history for all visible cards in this row">More history</summary>' +
     (additional ? '<div class="pp-extra-evidence">' + additional + '</div>' : '') +
     (observations.length ? '<dl class="pp-card-observations">' + observations.map(([label, value]) =>
       '<div><dt>' + esc(label) + '</dt><dd>' + formatActiveTime(value) + '</dd></div>').join('') + '</dl>' : '') +
@@ -207,7 +207,7 @@ function cardDetails(row, evidence) {
     '</details>';
 }
 
-function card(row, lookup, preview, results, rows, trackType, plannerRoutes) {
+function card(row, lookup, preview, results, rows, trackType, plannerRoutes, suggestionOptions) {
   const name = nameOf(row, lookup);
   const attempts = count(row.attempts);
   const finishes = count(row.finishes);
@@ -227,12 +227,12 @@ function card(row, lookup, preview, results, rows, trackType, plannerRoutes) {
   if (num(row.longestHuntMs)) metrics.push({ sort: 'longest-hunt', text: formatActiveTime(row.longestHuntMs) + ' longest hunt' });
   if (num(row.biggestObservedImprovementMs)) metrics.push({sort:'observed-gain',text:time(row.biggestObservedImprovementMs)+' largest observed gain'});
   if (num(row.biggestPbImprovementMs)) metrics.push({sort:'driven-gain',text:time(row.biggestPbImprovementMs)+' largest driven PB gain'});
-  const advice = practiceAdvice(row, Date.now(), { results, routes: plannerRoutes });
+  const advice = practiceSuggestionEligible(row, suggestionOptions) ? practiceAdvice(row, Date.now(), { results, routes: plannerRoutes }) : {factor:1,text:''};
   const guidance = advice.kind || advice.factor !== 1 && date(row.lastPlayedAt) ? advice.text : '';
   const includesEarlier = num(row.legacyActiveMs) > 0;
   const playedDate=date(row.lastPlayedAt);
   const lastPlayed=playedDate?playedDate+' '+new Date(row.lastPlayedAt).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):'';
-  const official=row.official===true||row.type==='official'||(typeof trackType==='function'&&trackType(row.trackId)==='official');
+  const official=practiceTrackMetadata(row, suggestionOptions).type==='official';
   const completed=finishes>0||tracked>0||evidence.length>0||num(row.bestMs)>0;
   const activeTime = num(row.activeMs) ? formatActiveTime(row.activeMs) : 'Not measured';
   const knownResults = evidence.length
@@ -303,13 +303,60 @@ function coverageMarkup(coverage) {
     ' Active race time is focused race-clock progress, including stationary attempts. Earlier estimates are retained separately in More history. Saved PBs do not imply a tracked finish.</p></details>';
 }
 
-export function renderPracticeProfile({ rows = [], coverage = null, trackName, trackPreview, trackType, results = [], accountId = '', plannerRoutes = [] } = {}) {
+function practiceTrackMetadata(row, {trackInfo, trackType} = {}) {
+  let info, type;
+  try { info = typeof trackInfo === 'function' ? trackInfo(row.trackId) : null; } catch {}
+  try { type = typeof trackType === 'function' ? trackType(row.trackId) : null; } catch {}
+  return {...row, ...(info && typeof info === 'object' ? info : {}),
+    type: info?.type || type || row.type || (row.official === true ? 'official' : '')};
+}
+
+export function practiceSuggestionEligible(row, options = {}) {
+  if (!row?.trackId) return false;
+  const at = options.at ?? Date.now(), info = practiceTrackMetadata(row, options);
+  if (options.officialOnly === true && info.type !== 'official') return false;
+  let permitted;
+  if (typeof options.canSuggestTrack === 'function') {
+    try { permitted = options.canSuggestTrack(row.trackId, info); } catch { return false; }
+    if (permitted !== true) return false;
+  }
+  const kodub = info.source === 'kodub' || info.type === 'kodub';
+  if (info.expired === true || info.available === false) return false;
+  if (kodub) {
+    const end = Number(info.endTime ?? info.endsAt ?? info.expiresAt);
+    const start = Number(info.startTime ?? info.startsAt);
+    if (Number.isFinite(end) && end > 0) {
+      if (end <= at || Number.isFinite(start) && start > at) return false;
+    } else if (permitted !== true) return false;
+  }
+  return true;
+}
+
+export function practiceSuggestionCandidates(rows = [], options = {}) {
+  const eligible = (Array.isArray(rows) ? rows : []).filter(row => practiceSuggestionEligible(row, options));
+  const ids = new Set(eligible.map(row => row.trackId));
+  return localPracticeSuggestions(eligible, {at: options.at ?? Date.now(),
+    results: (Array.isArray(options.results) ? options.results : []).filter(row => ids.has(row?.trackId)),
+    routes: (Array.isArray(options.plannerRoutes) ? options.plannerRoutes : []).filter(row => ids.has(row?.trackId)),
+    limit: eligible.length});
+}
+
+export function compactPracticeSuggestion(suggestion) {
+  if (suggestion.kind === 'unfinished') return 'No local finish; aim for #' + suggestion.targetRank;
+  if (suggestion.kind === 'stale') return suggestion.value + 'd since practice; try a baseline';
+  if (suggestion.kind === 'consistent') return 'Consistent finishes; compare your PB';
+  return suggestion.text;
+}
+
+export function renderPracticeProfile({ rows = [], coverage = null, trackName, trackPreview, trackType, trackInfo, canSuggestTrack, results = [], accountId = '', plannerRoutes = [] } = {}) {
   const safe = Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
   const observed = safe.filter(row => num(row.activeMs) || count(row.attempts) || count(row.finishes));
-  const suggestions = localPracticeSuggestions(observed, { results, routes: plannerRoutes });
-  const suggestionMarkup = suggestions.length ? '<section class="pp-more" data-pp-suggestions aria-label="Local practice suggestions"><h3>Practice next</h3><ul>' + suggestions.map(suggestion =>
-    '<li><button type="button" class="pp-track-name-button" data-pp-suggestion-track-id="' + esc(suggestion.trackId) + '" data-track-id="' + esc(suggestion.trackId) + '">' + esc(nameOf(observed.find(row => row.trackId === suggestion.trackId), trackName)) + '</button><p class="pp-note">' + esc(suggestion.text) + '</p></li>'
-  ).join('') + '</ul></section>' : '';
+  const suggestionOptions = {trackInfo, trackType, canSuggestTrack};
+  const suggestions = practiceSuggestionCandidates(observed, {...suggestionOptions, results, plannerRoutes});
+  const suggestionMarkup = suggestions.length ? '<section class="pp-next" data-pp-suggestions aria-label="Local practice suggestions"><h3>Practice next</h3><ul>' + suggestions.map((suggestion, index) => {
+    const name = nameOf(observed.find(row => row.trackId === suggestion.trackId), trackName);
+    return '<li data-pp-suggestion-id="' + esc(suggestion.trackId) + '"' + (index >= 3 ? ' hidden' : '') + '><button type="button" class="pp-track-name-button" data-pp-suggestion-track-id="' + esc(suggestion.trackId) + '" data-track-id="' + esc(suggestion.trackId) + '" aria-label="Open ' + esc(name) + '. ' + esc(suggestion.text) + '" title="' + esc(suggestion.text) + '">' + esc(name) + '</button><small class="pp-note">' + esc(compactPracticeSuggestion(suggestion)) + '</small></li>';
+  }).join('') + '</ul></section>' : '';
   const total = observed.reduce((sum, row) => sum + num(row.activeMs), 0);
   const finishes = finishItems(observed, trackName);
   const details = sessionDetailsMarkup(observed, trackName);
@@ -337,7 +384,7 @@ export function renderPracticeProfile({ rows = [], coverage = null, trackName, t
       ' of ' + first.firstPlacement.total + '</strong><small>' + esc(nameOf(first, trackName)) +
       ' · first known during tracking, not first-ever</small></span>'
     : '';
-  const cards = observed.map(row => card(row, trackName, trackPreview, results, observed, trackType, plannerRoutes)).join('');
+  const cards = observed.map(row => card(row, trackName, trackPreview, results, observed, trackType, plannerRoutes, suggestionOptions)).join('');
 
   const body = observed.length
     ? '<div class="pp-summary" aria-label="Practice history for this browser profile. Earlier runs may be missing.">' +
@@ -408,6 +455,29 @@ export function installPracticeProfileControls(root, { storage } = {}) {
     sort: sort?.value || 'active', direction: direction?.dataset.ppDirection || 'desc'
   }, storage);
 
+  // Native toggle events do not bubble; capture them and suppress our queued echoes.
+  const synchronizedToggles = new WeakMap();
+  const onHistoryToggle = event => {
+    const detail = event.target;
+    if (!detail?.matches?.('.pp-card-details')) return;
+    if (synchronizedToggles.has(detail)) {
+      const expected = synchronizedToggles.get(detail);
+      synchronizedToggles.delete(detail);
+      if (detail.open === expected) return;
+    }
+    const card = detail.closest('.pp-track');
+    if (!card || card.hidden || !card.getClientRects().length) return;
+    const top = card.getBoundingClientRect().top;
+    for (const sibling of list.querySelectorAll('.pp-track')) {
+      if (sibling.hidden || !sibling.getClientRects().length ||
+        Math.abs(sibling.getBoundingClientRect().top - top) > 1) continue;
+      const other = sibling.querySelector('.pp-card-details');
+      if (!other || other === detail || other.open === detail.open) continue;
+      synchronizedToggles.set(other, detail.open);
+      other.open = detail.open;
+    }
+  };
+
   const filter = () => {
     const query = (search?.value || '').trim().toLocaleLowerCase();
     const items = [...list.querySelectorAll('.pp-track')];
@@ -419,6 +489,15 @@ export function installPracticeProfileControls(root, { storage } = {}) {
       ).toLocaleLowerCase().includes(query);
     }
     const visible = items.filter(item => !item.hidden);
+    // Filter the complete candidate pool before taking three, not the old top three.
+    const visibleIds = new Set(visible.map(item => item.dataset.ppTrackId));
+    const suggestions = root.querySelector('[data-pp-suggestions]');
+    let suggestionCount = 0;
+    for (const suggestion of root.querySelectorAll('[data-pp-suggestion-id]')) {
+      suggestion.hidden = !visibleIds.has(suggestion.dataset.ppSuggestionId) || suggestionCount >= 3;
+      if (!suggestion.hidden) suggestionCount++;
+    }
+    if (suggestions) suggestions.hidden = suggestionCount === 0;
     const key = sort?.value || 'active';
     const sign = direction?.dataset.ppDirection === 'asc' ? 1 : -1;
     if (direction) {
@@ -470,6 +549,7 @@ export function installPracticeProfileControls(root, { storage } = {}) {
   root.addEventListener('pp-view-refresh', filter);
   direction?.addEventListener('click', onDirectionChoice);
   root.addEventListener('click', onView);
+  root.addEventListener('toggle', onHistoryToggle, true);
   filter();
   return () => {
     search?.removeEventListener('input', filter);
@@ -477,6 +557,7 @@ export function installPracticeProfileControls(root, { storage } = {}) {
     root.removeEventListener('pp-view-refresh', filter);
     direction?.removeEventListener('click', onDirectionChoice);
     root.removeEventListener('click', onView);
+    root.removeEventListener('toggle', onHistoryToggle, true);
   };
 }
 

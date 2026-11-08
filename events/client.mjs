@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=278';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=278';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=279';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=279';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,10 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=278';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=278';
-import {eventAwardPresentation} from '../tools/event-award-presentation.mjs?v=278';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=279';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=279';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=279';
+const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
 const REPLAYS=STORE+'-replays',PROFILE_CACHE='polytrack-0.6.2-s1-overall-snapshot-v5';
@@ -211,19 +212,20 @@ export function eventPendingRows(pending){
   return [...byAccount.values()];
 }
 export function eventRowVerified(row){
-  return !!row&&row.pending!==true&&row.needsReview!==true&&row.reviewHold!==true&&
+  return !!row&&row.pending!==true&&!eventAwardRowRestricted(row)&&row.verifiedState!==0&&
     !['verified','runVerified','physicsVerified','replayIntegrityVerified','integrityVerified','eventRpEligible'].some(field=>row[field]===false)&&
-    !['status','verificationStatus'].some(field=>row[field]!==undefined&&row[field]!=='verified');
+    !['status','verificationStatus','validationState'].some(field=>row[field]!==undefined&&row[field]!=='verified');
 }
 export function eventRpPresentation(row){
   if(!eventRowVerified(row))return null;
-  const group=row.groupRp!==undefined&&row.groupRp!==null,value=group?row.groupRp:row.rp;
+  const value=row.rp,group=row.groupRp!==undefined&&row.groupRp!==null;
   // Only normalize explicit integer scores. Missing, blank and invalid values are not zero.
   const score=typeof value==='number'?value:typeof value==='string'&&/^\d+$/.test(value)?Number(value):null;
-  const available=Number.isSafeInteger(score)&&score>=0,label=group?'Group ERP':'ERP';
-  return {available,text:available?score+' '+label:label+' unavailable',
-    title:available?(group?'Filtered group Event RP':'Published Event RP'):
-      (group?'No valid filtered group Event RP is available for this result.':'No valid published Event RP is available for this result.')};
+  const available=Number.isSafeInteger(score)&&score>=0;
+  const groupScore=typeof row.groupRp==='number'?row.groupRp:typeof row.groupRp==='string'&&/^\d+$/.test(row.groupRp)?Number(row.groupRp):null;
+  const groupText=group?(Number.isSafeInteger(groupScore)&&groupScore>=0?groupScore+' Group ERP':'Group ERP unavailable'):null;
+  return {available,score:available?score:null,groupText,text:(available?score+' ERP':'ERP unavailable')+(groupText?' · '+groupText:''),
+    title:(available?'Published Event RP':'No valid published Event RP is available for this result.')+(group?' Filtered group ERP is separate and does not replace this earned award.':'')};
 }
 export function eventVerifiedPendingMatch(board,candidate){
   const period=board?.period;
@@ -1069,38 +1071,27 @@ export function installEvents(bridge){
     // Individual actions invalidate the batch token, so release all its loading rows.
     for(const [id,target] of pendingGhosts)if(target.groupToken)pendingGhosts.delete(id);
   }
+  const eventReplayKey=(session,period,row)=>(session.archive?'archive:':'live:')+period.trackId+'_'+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.pending?'waiting':'verified')+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
+  const selectedEventRowBinding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name,
+    row.needsReview,row.reviewHold,row.excluded,row.unscored,row.status,row.verificationStatus,row.validationState,row.verifiedState,row.verified,row.eventRpEligible]);
+  const selectionMatches=(selection,period,row,viewer)=>selection?.periodId===period.id&&selection.accountId===viewer&&selection.targetAccountId===row.accountId&&selection.targetTimeMs===row.timeMs&&selection.targetPending===!!row.pending&&selection.targetRunId===(row.runId||null)&&selection.targetReplayHash===(row.replayHash||null);
+  function eventGhostSelection(session,period,row,viewer){
+    return {periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,
+      ghost:preparedGhosts.get(eventReplayKey(session,period,row)+'_'+viewer)||null};
+  }
   async function selectReplay(period,row,{silent=false}={}){
     const session=sessions.current()||archiveIntent,viewer=bridge.accountId(),readReplay=session?.archive?bridge.readArchivedReplay:bridge.readReplay;
-    if(!session||session.periodId!==period.id||typeof readReplay!=='function')return;
-    const pendingSelection=pendingGhosts.get(row.accountId);
-    if(pendingSelection?.periodId===period.id&&pendingSelection.accountId===viewer&&pendingSelection.targetTimeMs===row.timeMs&&pendingSelection.targetPending===!!row.pending&&pendingSelection.targetRunId===(row.runId||null)){
-      ++topSelectionToken;++replayRequest;pendingGhosts.delete(row.accountId);cancelPendingEventGroups();if(!silent)message('Event ghost selection cancelled.');tick();return false;
+    if(!session||session.periodId!==period.id||session.accountId!==viewer||typeof readReplay!=='function'||row.replayUnavailable===true)return false;
+    ++topSelectionToken;++replayRequest;cancelPendingEventGroups();pendingGhosts.delete(row.accountId);
+    if(selectionMatches(selectedGhosts.get(row.accountId),period,row,viewer)){
+      selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;
+      if(!silent)message('Event ghost unselected.');tick();return false;
     }
-    const previous=selectedGhosts.get(row.accountId);
-    if(previous?.periodId===period.id&&previous.accountId===viewer&&previous.targetTimeMs===row.timeMs&&previous.targetPending===!!row.pending&&previous.targetRunId===(row.runId||null)){
-      ++topSelectionToken;++replayRequest;pendingGhosts.delete(row.accountId);cancelPendingEventGroups();selectedGhosts.delete(row.accountId);selectedGhost=[...selectedGhosts.values()].at(-1)||null;if(!silent){message('Event ghost unselected.');tick();}return false;
-    }
-    ++topSelectionToken;const token=++replayRequest;cancelPendingEventGroups();const pending={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null};pendingGhosts.set(row.accountId,pending);if(!silent){message('Loading event replay...');tick();}
-    const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||''),failureKey=key+'_'+viewer;
-    try{
-      const failure=replayFailure(failureKey);if(failure)throw Error(failure);
-      let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
-      if(!payload)throw Error(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');
-      if(pendingGhosts.get(row.accountId)!==pending)return;
-      if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
-      const ghostKey=key+'_'+viewer;
-      let ghost=preparedGhosts.get(ghostKey);
-      if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
-      if(pendingGhosts.get(row.accountId)!==pending)return;
-      if(!replayContextActive(session)){pendingGhosts.delete(row.accountId);tick();return;}
-      replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
-      const selection={periodId:period.id,accountId:viewer,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,ghost};
-      if(token===replayRequest)selectedGhost=selection;
-      if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
-      selectedGhosts.set(row.accountId,selection);pendingGhosts.delete(row.accountId);
-      if(!silent){if(token===replayRequest)message(session.archive?'Archived replay selected. Use Watch to view it.':'Replay ready: '+displayName(row)+(row.pending?' (unverified)':'')+'. Play to race this ghost.');tick();}
-      return true;
-    }catch(error){if(pendingGhosts.get(row.accountId)===pending){rememberReplayFailure(failureKey,error);pendingGhosts.delete(row.accountId);if(!silent&&replayContextActive(session)){if(token===replayRequest)message(error.message||'Event replay unavailable.');tick();}}return false;}
+    const selection=eventGhostSelection(session,period,row,viewer);
+    if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
+    selectedGhosts.set(row.accountId,selection);selectedGhost=selection;
+    if(!silent)message(session.archive?'Archived replay selected. Use Watch to load it.':'Event replay selected. Use Play or Watch to load it.');
+    tick();return true;
   }
   function clearEventGhostSelection(periodId,accountId,{render=true}={}){
     ++topSelectionToken;++replayRequest;
@@ -1119,6 +1110,28 @@ export function installEvents(bridge){
     replayFailures.delete(key);replayFailures.set(key,{message:error?.message||'Event replay unavailable. Please try again later.',until:now()+delay});
     if(replayFailures.size>32)replayFailures.delete(replayFailures.keys().next().value);
   }
+  async function prepareSelectedEventGhost(session,period,selection,row,current){
+    if(!current()||!selectionMatches(selection,period,row||{},session.accountId)||row.replayUnavailable===true)throw Error('Selected replay no longer matches standings.');
+    if(eventAwardRowRestricted(row))throw Error('Selected event replay is held or excluded.');
+    if(row.pending?row.verified!==false||row.eventRpEligible!==false||row.verificationStatus!=='waiting':!eventRowVerified(row))throw Error('Selected event replay is no longer eligible.');
+    if(row.pending&&!/^[a-f0-9]{64}$/.test(row.runId||''))throw Error('Pending event replay has no exact run binding.');
+    const key=eventReplayKey(session,period,row),ghostKey=key+'_'+session.accountId;
+    const failure=replayFailure(ghostKey);if(failure)throw Error(failure);
+    try{
+      const cached=preparedGhosts.get(ghostKey);if(cached)return cached;
+      const readReplay=session.archive?bridge.readArchivedReplay:bridge.readReplay;
+      const payload=replayCache.get(key)||await readReplay?.(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
+      if(!current())throw Error('Event replay context changed.');
+      if(!payload)throw Error(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');
+      const ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer:session.accountId});
+      if(!current())throw Error('Event replay context changed.');
+      if(!ghost)throw Error('Saved event replay unavailable.');
+      replayFailures.delete(ghostKey);replayCache.set(key,payload);preparedGhosts.set(ghostKey,ghost);
+      if(replayCache.size>16)replayCache.delete(replayCache.keys().next().value);
+      if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);
+      return ghost;
+    }catch(error){if(current())rememberReplayFailure(ghostKey,error);throw error;}
+  }
   async function selectEventRows(first,last,fromTop=false,explicitRows=null){
     const view=nativeView,session=sessions.current()||archiveIntent,accountId=bridge.accountId();
     if(!view||!session||session.periodId!==view.periodId||session.accountId!==accountId)return;
@@ -1128,58 +1141,13 @@ export function installEvents(bridge){
     const offset=fromTop?0:view.page*20,sourceRows=view.archive?view.visibleRows||archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows;
     const chosen=(explicitRows||sourceRows.slice(offset+first-1,offset+last)).slice(0,10).map(row=>({...row}));
     const active=[...selectedGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId);
-    const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>{const selected=selectedGhosts.get(row.accountId);return selected?.periodId===period.id&&selected.accountId===accountId&&selected.targetTimeMs===row.timeMs&&selected.targetRunId===(row.runId||null)&&selected.targetPending===!!row.pending;});
-    const pendingActive=[...pendingGhosts.values()].filter(row=>row.periodId===period.id&&row.accountId===accountId),groupToken=pendingActive[0]?.groupToken;
-    const pendingSame=chosen.length>0&&Number.isSafeInteger(groupToken)&&pendingActive.length===chosen.length&&chosen.every(row=>{const pending=pendingGhosts.get(row.accountId);return pending?.groupToken===groupToken&&pending.targetTimeMs===row.timeMs&&pending.targetRunId===(row.runId||null)&&pending.targetPending===!!row.pending;});
+    const same=chosen.length>0&&active.length===chosen.length&&chosen.every(row=>selectionMatches(selectedGhosts.get(row.accountId),period,row,accountId));
     if(fromTop)view.page=0;
-    if(same||pendingSame){clearEventGhostSelection(period.id,accountId,{render:false});message('Event ghosts unselected.');tick();return;}
-    for(const [id,row] of pendingGhosts)if(row.periodId===period.id&&row.accountId===accountId)pendingGhosts.delete(id);
+    if(same){clearEventGhostSelection(period.id,accountId,{render:false});message('Event ghosts unselected.');tick();return;}
     if(!chosen.length){message('No playable replays in these places.');tick();return;}
-    const token=++topSelectionToken,requestToken=++replayRequest,page=view.page,trackId=period.trackId,onlyVerified=view.onlyVerified;
-    const current=()=>{
-      if(token!==topSelectionToken||requestToken!==replayRequest||nativeView!==view||view.page!==page||view.onlyVerified!==onlyVerified||period.trackId!==trackId||view.root&&!view.root.isConnected||!replayContextActive(session))return false;
-      const latestRows=new Map((view.archive?view.visibleRows||archivePeriodCounts(period,view.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view.onlyVerified}).rows).map(row=>[row.accountId,row]));
-      return chosen.every(row=>{const latest=latestRows.get(row.accountId);return latest&&latest.timeMs===row.timeMs&&(latest.runId||null)===(row.runId||null)&&!!latest.pending===!!row.pending&&(latest.replayHash||null)===(row.replayHash||null);});
-    };
-    const release=()=>{for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);};
-    for(const row of chosen)pendingGhosts.set(row.accountId,{periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,groupToken:token});
-    message(`Loading up to ${chosen.length} event replays...`);
-    tick();
-    const prepared=await Promise.all(chosen.map(async row=>{
-      const pending=pendingGhosts.get(row.accountId);
-      try{
-        const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
-        const failureKey=key+'_'+accountId,failure=replayFailure(failureKey);if(failure)throw Error(failure);
-        if(typeof readReplay!=='function'||row.pending&&!/^[a-f0-9]{64}$/.test(row.runId||''))throw Error('Saved event replay unavailable.');
-        let payload=replayCache.get(key);if(!payload)payload=await readReplay(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
-        if(!payload)throw Error(session.archive?'Saved archived replay is unavailable.':'Saved event replay unavailable.');
-        if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||!replayContextActive(session))return null;
-        const ghostKey=key+'_'+accountId;let ghost=preparedGhosts.get(ghostKey);
-        if(!ghost){ghost=await preparePublishedEventGhost({require:bridge.require(),row:payload,period,entry:row,viewer:accountId});preparedGhosts.set(ghostKey,ghost);if(preparedGhosts.size>16)preparedGhosts.delete(preparedGhosts.keys().next().value);}
-        if(token!==topSelectionToken||requestToken!==replayRequest||pendingGhosts.get(row.accountId)!==pending||!replayContextActive(session))return null;
-        replayFailures.delete(failureKey);if(replayCache.size>=16)replayCache.delete(replayCache.keys().next().value);replayCache.set(key,payload);
-        return {row,ghost};
-      }catch(error){if(token===topSelectionToken&&requestToken===replayRequest&&pendingGhosts.get(row.accountId)===pending)rememberReplayFailure((session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'')+'_'+accountId,error);return null;}
-    }));
-    if(token!==topSelectionToken||requestToken!==replayRequest){release();tick();return;}
-    if(!current()){release();tick();return;}
-    const ready=prepared.filter(Boolean),failed=chosen.filter((_row,index)=>!prepared[index]).map(row=>({row}));
-    if(!ready.length){release();message('Saved event replays unavailable or failed playback validation. Your selection is unchanged.');tick();return;}
-    if(failed.length){
-      let accepted=false;
-      try{accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',returnFocus:document.activeElement});}catch{}
-      if(!current()){release();tick();return;}
-      if(accepted!==true){release();message('Event ghost selection cancelled. Your previous selection is unchanged.');tick();return;}
-    }
     clearEventGhostSelection(period.id,accountId,{render:false});
-    for(const {row,ghost} of ready){
-      const selection={periodId:period.id,accountId,targetAccountId:row.accountId,targetTimeMs:row.timeMs,targetPending:!!row.pending,targetRunId:row.runId||null,targetReplayHash:row.replayHash||null,ghost};
-      if(selectedGhosts.size>=10&&!selectedGhosts.has(row.accountId))selectedGhosts.delete(selectedGhosts.keys().next().value);
-      selectedGhosts.set(row.accountId,selection);selectedGhost=selection;
-    }
-    for(const row of chosen)if(pendingGhosts.get(row.accountId)?.groupToken===token)pendingGhosts.delete(row.accountId);
-    message(`${ready.length} of ${chosen.length} ${fromTop?'top ':''}event ghosts ready. ${session.archive?'Use Watch to view them.':'Play to race them.'}`);
-    tick();
+    for(const row of chosen){const selection=eventGhostSelection(session,period,row,accountId);selectedGhosts.set(row.accountId,selection);selectedGhost=selection;}
+    message(chosen.length+' event ghosts selected. '+(session.archive?'Use Watch to load them.':'Use Play or Watch to load them.'));tick();
   }
   function selectTopEventRows(count){return selectEventRows(1,count,true);}
   function selectEventRange(first,last){return selectEventRows(first,last,false);}
@@ -1203,7 +1171,7 @@ export function installEvents(bridge){
         if(preparedOwnGhosts.size>8)preparedOwnGhosts.delete(preparedOwnGhosts.keys().next().value);
       }catch{preparedOwnGhosts.delete(key);}
     }
-    const selected=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost);
+    const selected=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).map(row=>row.ghost).filter(Boolean);
     const selectedSelf=selected.find(row=>row.isSelf);if(selectedSelf)ownGhost=selectedSelf;
     return {ownGhost,opponents:selected.filter(row=>!row.isSelf)};
   }
@@ -1211,11 +1179,13 @@ export function installEvents(bridge){
     if(!eventIntent&&!sessions.current())return false;
     const session=sessions.current();
     if(!session||session.trackId!==trackId||session.accountId!==bridge.accountId()){message('This event replay cannot start a race after its event closes or racer changes.');return true;}
+    if([...selectedGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId&&!row.ghost)){message('Use Event Play to load the selected ghosts before resuming.');return true;}
     try{bridge.startEventRace({...session,...raceGhosts(session,nativeView?.onlyVerified===true)},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
     return true;
   }
   function watchEvent(){
     const session=sessions.current()||archiveIntent;if(!session||session.accountId!==bridge.accountId())return;
+    if(launching){message('Event Play is preparing the selected replays.');return;}
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before watching.');return;}
     if(watchEvent.pending?.isCurrent())return watchEvent.pending.work;
     const job={isCurrent:()=>false};watchEvent.pending=job;
@@ -1228,9 +1198,9 @@ export function installEvents(bridge){
         const selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
         const own=!session.archive&&selections.length<10&&!selections.some(row=>row.targetAccountId===session.accountId)&&bridge.supportsEventGhost?.()?getOwnReplay(session.periodId):null;
         const boardRows=()=>session.archive?view?.visibleRows||archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view?.onlyVerified===true}).rows;
-        const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null,row.name]);
+        const binding=selectedEventRowBinding;
         const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
-        const current=()=>watchEvent.pending===job&&replayContextActive(session)&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
+        const current=()=>watchEvent.pending===job&&replayContextActive(session)&&period.trackId===session.trackId&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
           selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&selections.every(row=>selectedGhosts.get(row.targetAccountId)===row)&&
           selections.every(row=>binding(boardRows().find(entry=>entry.accountId===row.targetAccountId))===binding(entries.get(row.targetAccountId)))&&(!own||JSON.stringify(getOwnReplay(session.periodId))===JSON.stringify(own));
         job.isCurrent=current;
@@ -1240,14 +1210,7 @@ export function installEvents(bridge){
         const prepare=async item=>{
           if(item.own)return prepareOwnEventGhost({require:bridge.require(),row:item.payload,session,best:bestRecords[session.periodId+'_'+session.accountId]});
           const {selection,row}=item;
-          if(row.accountId!==selection.targetAccountId||row.timeMs!==selection.targetTimeMs||(row.runId||null)!==selection.targetRunId||!!row.pending!==selection.targetPending||(row.replayHash||null)!==selection.targetReplayHash)throw Error('Selected replay no longer matches standings.');
-          const key=(session.archive?'archive:':'live:')+period.id+'_'+row.accountId+'_'+row.timeMs+'_'+(row.runId||'verified')+'_'+(row.replayHash||'');
-          if(!item.payload){
-            const readReplay=session.archive?bridge.readArchivedReplay:bridge.readReplay;
-            item.payload=replayCache.get(key)||await readReplay?.(period.id,row.accountId,row.pending?row.runId:null,{timeMs:row.timeMs,trackId:period.trackId,runId:row.runId||null,replayHash:row.replayHash});
-          }
-          if(!item.payload)throw Error('Saved event replay unavailable.');
-          return preparePublishedEventGhost({require:bridge.require(),row:item.payload,period,entry:row,viewer:session.accountId});
+          return prepareSelectedEventGhost(session,period,selection,row,current);
         };
         message('Checking selected replays for Watch...');
         const checked=await Promise.all(candidates.map(async item=>{try{const ghost=await prepare(item);return {...item,ghost};}catch(error){return {...item,error};}}));
@@ -1264,8 +1227,15 @@ export function installEvents(bridge){
         }
         if(!current())return;
         const ghosts=ready.map(item=>item.ghost);
+        const indexed=ghosts.filter(ghost=>ghost?.requiredPlaybackEngine);
+        if(indexed.length){
+          const workerBridge=getPlaybackWorkerBridge();if(!workerBridge)throw Error('Indexed event playback unavailable');
+          await Promise.all(indexed.map(ghost=>workerBridge.prepareEventRecording(ghost.recording.serialize(),ghost.time.numberOfFrames)));
+        }
+        if(!current())return;
         if(session.archive)nativeWatch.open(ghosts);
         else{if(typeof bridge.watchEvent!=='function')throw Error('Event Watch is unavailable.');bridge.watchEvent(session,ghosts);}
+        for(const item of ready)if(item.selection&&selectedGhosts.get(item.selection.targetAccountId)===item.selection)item.selection.ghost=item.ghost;
         // Remove only explicitly skipped selections, and only after the native handoff succeeds.
         for(const item of failed)if(item.selection&&selectedGhosts.get(item.selection.targetAccountId)===item.selection)selectedGhosts.delete(item.selection.targetAccountId);
         selectedGhost=[...selectedGhosts.values()].at(-1)||null;
@@ -1277,20 +1247,22 @@ export function installEvents(bridge){
   }
   async function playEvent(){
     const session=sessions.current();if(!session||now()>=session.endsAt||session.accountId!==bridge.accountId()){message('This event is no longer open for this racer. Reopen Events to continue.');return;}if(launching)return;
+    if(watchEvent.pending?.isCurrent()){message('Event Watch is preparing the selected replays.');return;}
     if([...pendingGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId)){message('Selected replays are still loading. Wait or unselect them before playing.');return;}
     if(typeof bridge.startEventRace!=='function'){message('Event Play is unavailable: safe event race launch is not connected. Normal PB ghosts will not be used.');return;}
     const root=nativeView?.root||document.querySelector('.track-info-ui');
     const nativeTrack=()=>root?.isConnected&&root===document.querySelector('.track-info-ui')&&root.__pt062EventWatch?.version===1&&root.__pt062EventWatch.trackId===session.trackId;
     if(!nativeTrack()){message('The event track is still opening. Please try Play again.');return;}
-    const replay=getOwnReplay(session.periodId),{ownGhost,opponents}=raceGhosts(session,nativeView?.onlyVerified===true);
+    const replay=getOwnReplay(session.periodId);let {ownGhost,opponents}=raceGhosts(session,nativeView?.onlyVerified===true);
+    const view=nativeView,page=view?.page,filter=view?.onlyVerified;
     const token=replayRequest,selections=[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId);
     const period=knownPeriods.get(session.periodId);
-    const binding=row=>JSON.stringify(row&&[row.accountId,row.timeMs,row.runId||null,!!row.pending,row.replayHash||null]);
+    const binding=selectedEventRowBinding;
     const bindings=selections.map(selection=>binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId)));
     // Before dispatch, selections must stay exact. Native disposal may clear them after the click.
     let committed=false;
     const handoffCurrent=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&now()<session.endsAt;
-    const current=()=>handoffCurrent()&&replayRequest===token&&
+    const current=()=>handoffCurrent()&&period?.trackId===session.trackId&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&nativeTrack()&&replayRequest===token&&
       selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&
       selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
@@ -1298,6 +1270,21 @@ export function installEvents(bridge){
       // A nested HTMLElement.click() is suppressed while its original click is dispatching.
       await Promise.resolve();
       if(!nativeTrack()||!current())throw Error('Event launch context changed');
+      const checked=await Promise.all(selections.map(async selection=>{
+        const row=eventDisplayRows(period,{onlyVerified:filter===true}).rows.find(row=>row.accountId===selection.targetAccountId);
+        try{return {selection,row,ghost:await prepareSelectedEventGhost(session,period,selection,row,current)};}
+        catch(error){return {selection,row:row||{name:'Racer'},error};}
+      }));
+      if(!current())return;
+      const ready=checked.filter(item=>!item.error),failed=checked.filter(item=>item.error);
+      if(failed.length){
+        if(!ready.length){message('No selected replay is ready to play. Your selection is unchanged.');return;}
+        const accepted=await confirmPartialReplaySelection({document,ready,failed,isCurrent:current,source:'event',mode:'play',returnFocus:root.querySelector('.side-panel button.play')});
+        if(!current()||accepted!==true){if(current())message('Play cancelled. Your selection is unchanged.');return;}
+      }
+      for(const item of ready)item.selection.ghost=item.ghost;
+      const selectedSelf=ready.find(item=>item.ghost.isSelf);if(selectedSelf)ownGhost=selectedSelf.ghost;
+      opponents=ready.map(item=>item.ghost).filter(ghost=>!ghost.isSelf);
       // Parsed ghosts outlive workers. Reauthorize only indexed inputs, using cached engine assets.
       const indexed=[ownGhost,...opponents].filter(ghost=>ghost?.requiredPlaybackEngine);
       if(indexed.length>11)throw Error('Too many indexed event ghosts');
@@ -1315,6 +1302,9 @@ export function installEvents(bridge){
         nativePlayPermit=true;try{play.click();}finally{nativePlayPermit=false;play.removeEventListener('click',observed,true);}
         if(!dispatched)throw Error('Native Play click was not dispatched');
       },()=>committed?handoffCurrent():current());
+      for(const item of ready)if(selectedGhosts.get(item.selection.targetAccountId)===item.selection)item.selection.ghost=item.ghost;
+      for(const item of failed)if(selectedGhosts.get(item.selection.targetAccountId)===item.selection)selectedGhosts.delete(item.selection.targetAccountId);
+      selectedGhost=[...selectedGhosts.values()].at(-1)||null;
     }
     catch{if(sessions.current()===session)message('Event race could not start safely. No normal PB ghost was loaded.');}
     finally{launching=false;}
