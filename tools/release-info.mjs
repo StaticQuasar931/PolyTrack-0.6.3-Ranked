@@ -1,12 +1,11 @@
 const releaseInfo = {
-  "number": 332,
+  "number": 333,
   "version": "0.6.3",
-  "revision": 277,
+  "revision": 278,
   "notes": [
-    "Completed replay checks are saved earlier, reducing the risk of losing results during packaging.",
-    "Snapshot preparation now stages files in fewer safe batches."
+    "Large snapshot updates now skip unnecessary cleanup work."
   ],
-  "preparedAt": "2026-11-08T05:18:30.905Z"
+  "preparedAt": "2026-11-08T05:58:27.485Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

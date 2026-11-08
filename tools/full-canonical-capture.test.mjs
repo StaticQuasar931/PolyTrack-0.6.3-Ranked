@@ -864,6 +864,74 @@ test('non-faster replacement and upload collisions fail closed', async t => {
   }
 });
 
+function monitorOwnedTemporaries(t, root, {failRenameAt=0, failRestore=false, partialWriteAt=0}={}) {
+  const original={rename:fs.rename,lstat:fs.lstat,unlink:fs.unlink,writeFile:fs.writeFile};
+  const consumed=new Set(),cleaned=new Set(),created=new Set(),moves=[];
+  let renameAttempts=0,writeAttempts=0,forwardFailed=false,restoreAttempts=0;
+  const owned=file=>String(file).startsWith(root+path.sep)&&String(file).endsWith('.tmp');
+  t.mock.method(fs,'lstat',async(file,...args)=>{
+    assert.equal(consumed.has(String(file)),false,'consumed temp must not be probed again');
+    return original.lstat(file,...args);
+  });
+  t.mock.method(fs,'unlink',async(file,...args)=>{
+    assert.equal(consumed.has(String(file)),false,'consumed temp must not be unlinked again');
+    const result=await original.unlink(file,...args);if(owned(file))cleaned.add(String(file));return result;
+  });
+  t.mock.method(fs,'writeFile',async(file,bytes,...args)=>{
+    if(owned(file)){
+      writeAttempts++;
+      if(writeAttempts===partialWriteAt){
+        await original.writeFile(file,bytes.subarray(0,Math.min(7,bytes.length)),...args);
+        created.add(String(file));throw Error('synthetic partial temp write');
+      }
+      const result=await original.writeFile(file,bytes,...args);created.add(String(file));return result;
+    }
+    return original.writeFile(file,bytes,...args);
+  });
+  t.mock.method(fs,'rename',async(from,to,...args)=>{
+    if(owned(from)){
+      renameAttempts++;
+      if(renameAttempts===failRenameAt){forwardFailed=true;throw Error('synthetic forward rename failure');}
+      if(forwardFailed){restoreAttempts++;if(failRestore)throw Error('synthetic restore rename failure');}
+    }
+    const result=await original.rename(from,to,...args);
+    if(owned(from)){consumed.add(String(from));moves.push({from:String(from),to:String(to),rollback:forwardFailed});}
+    return result;
+  });
+  return {consumed,cleaned,created,moves,restoreAttempts:()=>restoreAttempts};
+}
+
+test('owned temp bookkeeping never probes or deletes successfully renamed commit paths',async t=>{
+  const f=await fixture(t),state=monitorOwnedTemporaries(t,f.root);
+  const result=await f.run([source(1),source(2,{trackId:secondTrack})],{checkpointDirectory:f.checkpoint});
+  assert.equal(result.complete,true);assert(state.moves.length>2);
+  assert.equal(state.created.size,state.consumed.size);assert.equal(state.cleaned.size,0);
+  assert.equal(new Set(state.moves.map(move=>move.to)).size,state.moves.length,'ordered plans retain distinct destinations');
+  assert.equal((await f.read('recordings/1.json')).accountId,id(1));
+  assert.equal((await f.read('recordings/2.json')).accountId,id(2));
+  assert.equal(Object.keys(await tree(f.root)).some(name=>name.endsWith('.tmp')),false);
+});
+
+test('owned temp bookkeeping cleans prepared and partial writes when staging fails',async t=>{
+  const f=await fixture(t),before=await tree(f.root),state=monitorOwnedTemporaries(t,f.root,{partialWriteAt:2});
+  await assert.rejects(f.run([source(1)],{checkpointDirectory:f.checkpoint}),/local_io_failed/);
+  assert.equal(state.created.size,2);assert.deepEqual(state.cleaned,state.created);
+  assert.equal(state.moves.length,0);assert.deepEqual(await tree(f.root),before);
+});
+
+for(const failRestore of [false,true])test('owned temp bookkeeping '+(failRestore?'cleans a failed restore temp without claiming rollback success':'skips consumed restore temps and cleans all unrenamed forward temps'),async t=>{
+  const f=await fixture(t),old=saved(source(1));await baseline(f,[old]);
+  await f.put(`canonical/${track}/${id(1)}.json`,old);
+  const fresh=source(1,{uploadId:3,timeMs:1000});
+  await f.put('recordings/3.json',{...saved(fresh),verified:true,runVerified:true,verifiedState:1,recording:replay});
+  const before=await tree(f.root),state=monitorOwnedTemporaries(t,f.root,{failRenameAt:4,failRestore});
+  await assert.rejects(f.run([fresh,source(2,{trackId:secondTrack})],{checkpointDirectory:f.checkpoint}),failRestore?/rollback_failed/:/local_io_failed/);
+  assert(state.restoreAttempts()>0);assert(state.cleaned.size>0);
+  assert.deepEqual(new Set([...state.consumed,...state.cleaned]),state.created,'every created temp is either renamed or cleaned');
+  assert.equal(Object.keys(await tree(f.root)).some(name=>name.endsWith('.tmp')),false);
+  if(!failRestore){assert(state.moves.some(move=>move.rollback));assert.deepEqual(await tree(f.root),before);}
+});
+
 test('rename failure rolls back existing and newly created files and directories', async t => {
   const f = await fixture(t); await baseline(f, [saved(source(1))]);
   const before = await tree(f.root), rename = fs.rename; let count = 0;

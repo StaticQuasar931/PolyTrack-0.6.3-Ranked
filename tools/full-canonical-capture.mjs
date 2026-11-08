@@ -397,7 +397,9 @@ async function transaction(root, checkpoint, memory) {
       let i = 0;
       for (const [relative, ref] of writes) {
         await unchanged(relative, originals.get(relative));
-        await fs.rename(await checked(root, temporary[i++]), await checked(root, relative));
+        const index = i++, temp = temporary[index];
+        await fs.rename(await checked(root, temp), await checked(root, relative));
+        temporary[index] = null;
         committed.push([relative, ref]);
       }
     } catch (error) {
@@ -408,9 +410,10 @@ async function transaction(root, checkpoint, memory) {
           const old = originals.get(relative), target = await checked(root, relative);
           if (old === null) await fs.unlink(target);
           else {
-            const temp = `${relative}.${randomUUID()}.tmp`; temporary.push(temp);
+            const temp = `${relative}.${randomUUID()}.tmp`, index = temporary.length; temporary.push(temp);
             await fs.writeFile(await checked(root, temp), await materialize(old), {flag: 'wx', mode: 0o600});
             await fs.rename(await checked(root, temp), await checked(root, relative));
+            temporary[index] = null;
           }
         } catch { rollbackFailed = true; }
       }
@@ -418,6 +421,7 @@ async function transaction(root, checkpoint, memory) {
       throw error;
     } finally {
       for (const relative of temporary) {
+        if (relative === null) continue;
         try { await fs.unlink(await checked(root, relative)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
       for (const dir of directories.reverse()) {
