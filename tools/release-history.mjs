@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 325,
+    "number": 326,
     "version": "0.6.3",
-    "revision": 272,
+    "revision": 273,
     "notes": [
-      "More reliable event replay checks and recovery of completed verification results."
+      "Improved recovery when saving completed replay checks fails."
     ]
   },
   "entries": [
+    {
+      "number": 325,
+      "title": "Preserve completed verification and repair event packaging",
+      "commit": "8bc1f6f64dd75146c270ab4d3434350224cd8154",
+      "committedAt": "2026-11-08T02:19:17.000Z",
+      "notes": [
+        "More reliable event replay checks and recovery of completed verification results."
+      ]
+    },
     {
       "number": 324,
       "title": "Preserve pending event replays and respect verification holds",
@@ -177,17 +186,6 @@ const historyData = {
         "New personal bests and saved replays are synchronized.",
         "Old archived finishes show when a replay is unavailable.",
         "Fixed safe playback of compact long recordings."
-      ]
-    },
-    {
-      "number": 303,
-      "title": "Reconcile newer PBs and preserve coherent Event RP baselines",
-      "commit": "efca578b6c331e544a79ab3f85b9f625d7e2c223",
-      "committedAt": "2026-11-06T13:34:38.000Z",
-      "notes": [
-        "Fixed newer personal bests being paired with old snapshot times.",
-        "Kept Event RP calculations consistent with published standings.",
-        "Old archived finishes clearly show when a replay is unavailable."
       ]
     }
   ],

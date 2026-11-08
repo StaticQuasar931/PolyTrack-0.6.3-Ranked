@@ -26,6 +26,7 @@ export const APPROVED_COMPLETED_NATIVE_PACKAGING=freeze({
   sourceBinding:{sourceCommit:'aacaea1d036a0a18c299f0ccb7b88830d49184f8',captureSha256:'af4dc37433726d86943d66e778038ce7ef4757eddd3e6bb9ab61bf84312050b0'},
   ledgerManifestHash:'a6ec5883724a60fc266eaffb6c2ead5e49d2b48952df41ee7d8d61b8fa921df6',
   completedLedgerEntries:5569,publishedBaseline:{...PUBLIC_76_VERIFICATION_BASELINE},
+  legacyPolicySha256:'88e26ac34ae42c627eaf8e39d9dab2a02eb490b8ed5b17e41621025e38954fe6',
   scoringSha256:'ba152cb9b89112ad673a71304617d978e3a1b67ce4bf77131f6bb76139934bec',
   maxJobs:10000,maxRuntimeMs:1500000,
   counts:{known:13471,verified:5095,held:0,excluded:0,mismatch:0,unavailable:140,unprocessed:8236,
@@ -35,10 +36,39 @@ const equal=(actual,expected,message)=>demand(isDeepStrictEqual(actual,expected)
 const parse=bytes=>{try{return JSON.parse(bytes);}catch{throw Error('Completed packaging recovery: invalid JSON evidence');}};
 const validCount=value=>Number.isSafeInteger(value)&&value>=0;
 
+/** Reconstruct only the policy-builder inputs, never native execution results.
+ * This exact approval has one new approved witness per dispatched native job.
+ * Receipt decision order retains the original positive observation order. */
+export function completedNativeLegacyPolicyInputs(receipt,oldLedger,completedLedger,pins){
+  demand(Array.isArray(receipt.decisions)&&receipt.decisions.length===pins.counts.known,'incomplete legacy policy targets');
+  const old=new Set(oldLedger.entries.map(entry=>entry.key)),entries=new Map(completedLedger.entries.map(entry=>[entry.key,entry]));
+  const jobs=[],results=[],seen=new Set();
+  for(const decision of receipt.decisions){
+    const binding=ledgerBinding(decision.binding);
+    demand(decision.key===ledgerKey(binding)&&!seen.has(decision.key),'invalid legacy policy target identity');
+    seen.add(decision.key);jobs.push(binding);
+    if(decision.status!=='verified'){
+      demand(!entries.has(decision.key),'nonverified decision has completed proof');continue;
+    }
+    if(old.has(decision.key))continue;
+    const entry=entries.get(decision.key);
+    demand(entry&&isDeepStrictEqual(entry.binding,binding)&&entry.witnesses.length===1,'ambiguous new legacy policy witness');
+    const witness=entry.witnesses[0];
+    demand(witness.review.disposition==='approved'&&witness.engineDigest===receipt.engineDigest&&
+      witness.verifierFingerprint===receipt.verifierFingerprint,'incompatible new legacy policy witness');
+    results.push({status:'verified',trackId:binding.trackId,trackContentHash:witness.trackContentHash,
+      trackGeometry:witness.trackGeometry,geometryPolicy:witness.geometryPolicy,engineDigest:witness.engineDigest,
+      binding:{verifierFingerprint:witness.verifierFingerprint}});
+  }
+  demand(results.length===pins.counts.nativeDispatched&&completedLedger.entries.filter(entry=>!old.has(entry.key)).length===results.length,
+    'legacy policy native observation count mismatch');
+  return {jobs,results,entries:oldLedger.entries};
+}
+
 /** Pure consistency check, not an admission capability. Synthetic pins are useful
  * for tests; the recovery entry point below accepts ONLY the fixed approval. */
 export function validateCompletedNativePackagingEvidence({verifiedBytes,preparedBytes,checkpointBytes,evidenceBytes,terminalBytes,
-  oldLedger,completedLedger,currentPolicy},pins){
+  oldLedger,completedLedger,currentPolicy,legacyPolicy},pins){
   demand(pins&&HASH.test(pins.receiptSha256||'')&&sha(verifiedBytes)===pins.receiptSha256,'completed receipt SHA mismatch');
   demand(HASH.test(pins.terminalResultSha256||'')&&sha(terminalBytes)===pins.terminalResultSha256,'terminal supervisor result SHA mismatch');
   equal(parse(terminalBytes),{status:1,signal:null,timedOut:false},'original supervised run is not confirmed terminal after compilation failure');
@@ -77,9 +107,12 @@ export function validateCompletedNativePackagingEvidence({verifiedBytes,prepared
     !Object.hasOwn(evidence,'phase')&&evidence.complete===receipt.verificationComplete,'interrupted or incomplete evidence transport');
   for(const key of ['sourceBinding','ledgerManifestHash','previousLedgerManifestHash','counts','decisions','engineDigest','verifierFingerprint','policySha256','scoringPreflight','sourceCoverage'])
     equal(evidence[key],receipt[key],'completed checkpoint evidence differs: '+key);
-  demand(HASH.test(receipt.engineDigest||'')&&HASH.test(receipt.verifierFingerprint||'')&&HASH.test(receipt.policySha256||'')&&
+  demand(HASH.test(pins.legacyPolicySha256||'')&&receipt.policySha256===pins.legacyPolicySha256&&
+    sha(JSON.stringify(legacyPolicy))===pins.legacyPolicySha256,'exact legacy policy digest mismatch');
+  const currentPublicationPolicySha256=nativePolicyFingerprint(currentPolicy);
+  demand(HASH.test(receipt.engineDigest||'')&&HASH.test(receipt.verifierFingerprint||'')&&
     currentPolicy.engineDigest===receipt.engineDigest&&currentPolicy.verifierFingerprint===receipt.verifierFingerprint&&
-    nativePolicyFingerprint(currentPolicy)===receipt.policySha256,'current compiler policy differs from completed proofs');
+    nativePolicyFingerprint(legacyPolicy)===currentPublicationPolicySha256,'current compiler policy differs from completed proofs');
   demand(oldLedger.manifestHash===pins.publishedBaseline.ledgerManifestHash&&oldLedger.entries.length===pins.publishedBaseline.ledgerEntries&&
     completedLedger.manifestHash===pins.ledgerManifestHash&&completedLedger.entries.length===pins.completedLedgerEntries,'pinned ledger hash or entry count mismatch');
   const entries=new Map(completedLedger.entries.map(entry=>[entry.key,entry])),old=new Map(oldLedger.entries.map(entry=>[entry.key,entry]));
@@ -102,14 +135,14 @@ export function validateCompletedNativePackagingEvidence({verifiedBytes,prepared
         currentPolicy.trackContentHashes[entry.binding.trackId]===w.trackContentHash&&
         isDeepStrictEqual(currentPolicy.trackGeometries[entry.binding.trackId],{geometryPolicy:w.geometryPolicy,trackGeometry:w.trackGeometry})),
       'verified decision lacks current-policy proof');
-    }
+    }else demand(!entries.has(decision.key),'nonverified decision has completed proof');
   }
   for(const [key,value]of Object.entries(tally))demand(value===counts[key],'decision counts mismatch');
   demand(Array.isArray(evidence.eligibleKeys)&&evidence.eligibleKeys.length===eligible.size&&new Set(evidence.eligibleKeys).size===eligible.size&&
     evidence.eligibleKeys.every(key=>eligible.has(key)),'eligible proof set mismatch');
   for(const entry of entries.values())if(!old.has(entry.key)||entry.witnesses.some(w=>!old.get(entry.key).witnesses.some(previous=>isDeepStrictEqual(w,previous))))
     demand(eligible.has(entry.key),'completed ledger adds an unapproved proof');
-  return {authority:false,receipt,checkpoint,prepared};
+  return {authority:false,receipt,checkpoint,prepared,legacyPolicySha256:pins.legacyPolicySha256,currentPublicationPolicySha256};
 }
 
 export function assertCompletedPackagingCohort(cohort,pins=APPROVED_COMPLETED_NATIVE_PACKAGING){
@@ -201,8 +234,11 @@ export async function recoverApprovedCompletedNativePackaging(options){
   const publicBefore=await published(root,pins.publishedBaseline);
   const approvedSource=path.join(checkpointDirectory,'ledger');
   const approvedLedger=readLedger({root:approvedSource,expectedManifestHash:pins.ledgerManifestHash});
-  const currentPolicy=buildNativeVerificationPolicy({root,entries:approvedLedger.entries});
-  validateCompletedNativePackagingEvidence({verifiedBytes,preparedBytes,checkpointBytes,evidenceBytes,terminalBytes,oldLedger:publicBefore.ledger,completedLedger:approvedLedger,currentPolicy},pins);
+  const legacyInputs=completedNativeLegacyPolicyInputs(verified,publicBefore.ledger,approvedLedger,pins);
+  const legacyPolicy=buildNativeVerificationPolicy({root,...legacyInputs});
+  const currentPolicy=buildNativeVerificationPolicy({root,jobs:legacyInputs.jobs,entries:approvedLedger.entries});
+  const policyValidation=validateCompletedNativePackagingEvidence({verifiedBytes,preparedBytes,checkpointBytes,evidenceBytes,terminalBytes,
+    oldLedger:publicBefore.ledger,completedLedger:approvedLedger,currentPolicy,legacyPolicy},pins);
   const checkCompiler=()=>withOfflineVerification(()=>assertBoundedLocalSource({workspace:root,sourceCommit:options.compilerSourceCommit,
     runnerFile:path.join(root,'tools/local-overnight-capture.mjs'),deadline:Date.now()+120000}));
   await checkCompiler();
@@ -231,14 +267,18 @@ export async function recoverApprovedCompletedNativePackaging(options){
   await checkCompiler();await published(root,pins.publishedBaseline);
   await nativeLedgerPublicationFiles(recovery);
   demand(readLedger({root:path.join(recovery,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash}).entries.length===pins.completedLedgerEntries,'recovery ledger cohort changed');
-  demand(nativePolicyFingerprint(buildNativeVerificationPolicy({root,entries:approvedLedger.entries}))===verified.policySha256,'current compiler policy changed during packaging');
+  const finalLegacyPolicy=buildNativeVerificationPolicy({root,...legacyInputs});
+  const finalCurrentPolicy=buildNativeVerificationPolicy({root,jobs:legacyInputs.jobs,entries:approvedLedger.entries});
+  demand(sha(JSON.stringify(finalLegacyPolicy))===pins.legacyPolicySha256&&
+    nativePolicyFingerprint(finalCurrentPolicy)===policyValidation.currentPublicationPolicySha256,'current compiler policy changed during packaging');
   equal(await bytes(completedRun,'prepared.json'),preparedBytes,'prepared evidence changed during packaging');
   equal(await bytes(checkpointDirectory,'receipt.json',8192),checkpointBytes,'checkpoint receipt changed during packaging');
   demand(sha(await bytes(completedRun,'verified.json'))===pins.receiptSha256&&sha(await bytes(checkpointDirectory,'verification.json'))===checkpoint.evidenceSha256&&
     sha(await bytes(terminalDirectory,'offline-supervisor-v3.json',2048))===pins.terminalResultSha256,'completed inputs changed during packaging');
   const result={schemaVersion:1,kind:'approved-completed-native-packaging-recovery',authority:false,receiptSha256:pins.receiptSha256,
     sourceBinding:{...pins.sourceBinding},compilerSourceCommit:options.compilerSourceCommit,terminalResultSha256:pins.terminalResultSha256,
-    originalVerificationComplete:verified.verificationComplete,originalNativeCounts:{...pins.counts},policySha256:verified.policySha256,
+    originalVerificationComplete:verified.verificationComplete,originalNativeCounts:{...pins.counts},
+    legacyPolicySha256:policyValidation.legacyPolicySha256,currentPublicationPolicySha256:policyValidation.currentPublicationPolicySha256,
     newPhysics:0,backendReads:0,backendWrites:0,usage,directory,publicationRoot:recovery,cohort};
   await fs.writeFile(path.join(recovery,'recovery-receipt.json'),JSON.stringify(result)+'\n',{flag:'wx',mode:0o600,flush:true});
   return result;

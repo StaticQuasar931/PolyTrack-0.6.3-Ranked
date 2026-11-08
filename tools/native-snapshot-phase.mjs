@@ -394,7 +394,6 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         manifestHash:verification.ledgerManifestHash,previousManifestHash:context.rootManifestHash,
         evidence:{...outcome,authority:false,kind:'private-native-phase-evidence',scoringPreflight,
           sourceCoverage:inputs.coverage,timings}});
-      if(proofCheckpoint)await proofCheckpoint(privateProofCheckpoint);
     }
     const receipt={schemaVersion:1,authority:false,kind:'completed-in-process-native-verification',
       sourceBinding:binding,ledgerManifestHash:verification.ledgerManifestHash,
@@ -403,6 +402,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       policySha256:verification.policySha256,
       verificationComplete:verification.complete,priority:priority.counts,sourceCoverage:inputs.coverage,scoringPreflight,privateProofCheckpoint};
     if(nativeCompleted)await nativeCompleted(structuredClone(receipt));
+    if(privateProofCheckpoint&&proofCheckpoint)await proofCheckpoint(privateProofCheckpoint);
     let compiling=false,compiled=false,disposed=false;
     const source=path.join(temporary,'verified-source');
     if(verificationOnly)await fs.rename(candidate,source);

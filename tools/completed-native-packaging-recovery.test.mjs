@@ -9,7 +9,7 @@ import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 import {createLedgerEntry,ledgerBinding,ledgerKey,writeLedger,readLedger,nativePolicyFingerprint} from './native-verification-ledger.mjs';
-import {APPROVED_COMPLETED_NATIVE_PACKAGING as approved,validateCompletedNativePackagingEvidence,assertCompletedPackagingCohort,recoverApprovedCompletedNativePackaging,withCompletedPackagingTransportFence} from './completed-native-packaging-recovery.mjs';
+import {APPROVED_COMPLETED_NATIVE_PACKAGING as approved,completedNativeLegacyPolicyInputs,validateCompletedNativePackagingEvidence,assertCompletedPackagingCohort,recoverApprovedCompletedNativePackaging,withCompletedPackagingTransportFence} from './completed-native-packaging-recovery.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const encode=value=>Buffer.from(JSON.stringify(value)+'\n');
@@ -45,8 +45,9 @@ async function fixture(t){
   const decisions=[previous,fresh,deferred].map(({job},index)=>({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),
     status:index===2?'unprocessed':'verified',reason:index===2?'native_budget':'native_exact_finish'}));
   const baseline={generation:76,indexSha256:sha('synthetic-public-index'),ledgerManifestHash:oldLedger.manifestHash,ledgerEntries:1};
+  const legacyPolicy={...structuredClone(policy),knownTrackIds:[track]};
   const common={sourceBinding,ledgerManifestHash:completedLedger.manifestHash,previousLedgerManifestHash:oldLedger.manifestHash,counts,decisions,
-    engineDigest:engine,verifierFingerprint:fingerprint,policySha256:nativePolicyFingerprint(policy),scoringPreflight,
+    engineDigest:engine,verifierFingerprint:fingerprint,policySha256:sha(JSON.stringify(legacyPolicy)),scoringPreflight,
     sourceCoverage:{scope:'current-captured-board-bindings',knownBindings:3,availableBindings:3,missingBindings:0,complete:true,gaps:[]}};
   const evidence={schemaVersion:1,offlineOnly:true,...structuredClone(common),complete:false,
     eligibleKeys:decisions.filter(d=>d.status==='verified').map(d=>d.key),authority:false,kind:'private-native-phase-evidence',timings:{verificationMs:1}};
@@ -60,11 +61,11 @@ async function fixture(t){
       scoringPreflight:structuredClone(scoringPreflight),counts:{nativeDispatched:0,newProofs:0,storedProofs:1}}};
   const terminal={status:1,signal:null,timedOut:false};
   const pins={receiptSha256:sha(encode(receipt)),terminalResultSha256:sha(encode(terminal)),sourceBinding,ledgerManifestHash:completedLedger.manifestHash,completedLedgerEntries:2,
-    publishedBaseline:structuredClone(baseline),scoringSha256:scoringPreflight.sourceSha256,maxJobs:16,maxRuntimeMs:480000,counts:structuredClone(counts)};
+    legacyPolicySha256:sha(JSON.stringify(legacyPolicy)),publishedBaseline:structuredClone(baseline),scoringSha256:scoringPreflight.sourceSha256,maxJobs:16,maxRuntimeMs:480000,counts:structuredClone(counts)};
   const input=()=>({verifiedBytes:encode(receipt),preparedBytes:encode(prepared),checkpointBytes:encode(checkpoint),evidenceBytes:encode(evidence),terminalBytes:encode(terminal),
-    oldLedger,completedLedger,currentPolicy:structuredClone(policy)});
+    oldLedger,completedLedger,currentPolicy:structuredClone(legacyPolicy),legacyPolicy:structuredClone(legacyPolicy)});
   const relink=()=>{checkpoint.evidenceSha256=sha(encode(evidence));Object.assign(receipt.privateProofCheckpoint,checkpoint);pins.receiptSha256=sha(encode(receipt));};
-  return {directory,receipt,prepared,checkpoint,evidence,terminal,pins,input,relink,oldLedger,completedLedger,previous,fresh};
+  return {directory,receipt,prepared,checkpoint,evidence,terminal,pins,input,relink,oldLedger,completedLedger,previous,fresh,deferred};
 }
 
 test('synthetic completed bounded result with deferred jobs validates without physics or new authority',async t=>{
@@ -77,7 +78,45 @@ test('fixed recovery approval is immutable and pins the exact actual completed r
   assert.equal(approved.receiptSha256,'8bd167277b1e4bc294839e39c6b80fec3c293d8b4c2bc1e279db271c6ebfa1d4');
   assert.equal(approved.publishedBaseline.ledgerEntries,4358);assert.equal(approved.completedLedgerEntries,5569);
   assert.equal(approved.counts.nativeDispatched,1211);assert.equal(approved.counts.reusedPhysics,3884);assert.equal(approved.counts.unprocessed,8236);
+  assert.equal(approved.legacyPolicySha256,'88e26ac34ae42c627eaf8e39d9dab2a02eb490b8ed5b17e41621025e38954fe6');
   assert.throws(()=>{approved.sourceBinding.sourceCommit='b'.repeat(40);},TypeError);
+});
+test('legacy raw JSON digest and canonical publication fingerprint remain distinct and receipt stays unchanged',async t=>{
+  const f=await fixture(t),before=encode(f.receipt),input=f.input();
+  assert.notEqual(sha(JSON.stringify(input.legacyPolicy)),nativePolicyFingerprint(input.currentPolicy));
+  const result=validateCompletedNativePackagingEvidence(input,f.pins);
+  assert.equal(result.legacyPolicySha256,f.receipt.policySha256);
+  assert.equal(result.currentPublicationPolicySha256,nativePolicyFingerprint(input.currentPolicy));
+  assert.notEqual(result.legacyPolicySha256,result.currentPublicationPolicySha256);assert(before.equals(encode(f.receipt)));
+});
+test('legacy reconstruction rejects serialization order or discovery changes even when canonical policy is identical',async t=>{
+  const f=await fixture(t);
+  for(const change of [p=>Object.fromEntries(Object.entries(p).reverse()),p=>({...p,knownTrackIds:[...p.knownTrackIds,sha('extra')]} )]){
+    const input=f.input();input.legacyPolicy=change(input.legacyPolicy);
+    assert.equal(nativePolicyFingerprint(input.legacyPolicy),nativePolicyFingerprint(input.currentPolicy));
+    assert.throws(()=>validateCompletedNativePackagingEvidence(input,f.pins),/legacy policy digest/);
+  }
+});
+test('legacy inputs use original target order and only unique newly approved policy witnesses',async t=>{
+  const f=await fixture(t),before=encode(f.receipt),inputs=completedNativeLegacyPolicyInputs(f.receipt,f.oldLedger,f.completedLedger,f.pins);
+  assert.deepEqual(inputs.jobs,f.receipt.decisions.map(d=>ledgerBinding(d.binding)));assert.equal(inputs.results.length,1);
+  assert.equal(inputs.results[0].trackContentHash,f.fresh.entry.witnesses[0].trackContentHash);
+  assert.equal(inputs.entries,f.oldLedger.entries);assert(before.equals(encode(f.receipt)));
+  const duplicate=structuredClone(f.completedLedger);duplicate.entries.find(e=>e.key===f.fresh.entry.key).witnesses.push(structuredClone(f.fresh.entry.witnesses[0]));
+  assert.throws(()=>completedNativeLegacyPolicyInputs(f.receipt,f.oldLedger,duplicate,f.pins),/ambiguous new legacy policy witness/);
+  assert.throws(()=>completedNativeLegacyPolicyInputs(f.receipt,f.oldLedger,f.completedLedger,{...f.pins,counts:{...f.pins.counts,nativeDispatched:2}}),/observation count/);
+});
+for(const status of ['unavailable','unprocessed','held','excluded','mismatch'])test('nonverified '+status+' decision cannot have any completed-ledger proof',async t=>{
+  const f=await fixture(t),input=f.input();
+  f.receipt.decisions[2].status=status;f.evidence.decisions[2].status=status;
+  if(status!=='unprocessed'){
+    f.receipt.counts.unprocessed=0;f.receipt.counts[status]=1;
+    f.evidence.counts=structuredClone(f.receipt.counts);f.pins.counts=structuredClone(f.receipt.counts);
+  }
+  f.relink();Object.assign(input,f.input());input.completedLedger=structuredClone(f.completedLedger);input.completedLedger.entries.push(f.deferred.entry);
+  const pins={...f.pins,completedLedgerEntries:3};
+  assert.throws(()=>validateCompletedNativePackagingEvidence(input,pins),/nonverified decision has completed proof/);
+  assert.throws(()=>completedNativeLegacyPolicyInputs(f.receipt,f.oldLedger,input.completedLedger,pins),/nonverified decision has completed proof/);
 });
 test('terminal supervisor receipt rejects altered bytes, signals and timeout even with a relinked synthetic pin',async t=>{
   const f=await fixture(t);f.terminal.timedOut=true;assert.throws(()=>validateCompletedNativePackagingEvidence(f.input(),f.pins),/terminal supervisor/);
@@ -134,6 +173,16 @@ test('rejects a changed current policy without forging engine compatibility',asy
   for(const change of [p=>{p.engineDigest=sha('new engine');},p=>{p.verifierFingerprint=sha('new verifier');},
     p=>{p.compatibleEngines.push(sha('old engine'));},p=>{p.trackContentHashes[track]=sha('other track');},p=>{p.reviewPolicyVersions=['other-review'];}]){
     const input=f.input();change(input.currentPolicy);assert.throws(()=>validateCompletedNativePackagingEvidence(input,f.pins),/current compiler policy/);
+  }
+});
+test('every eligible witness still requires current engine, assets, geometry, profile and review policy',async t=>{
+  const f=await fixture(t);
+  for(const change of [w=>{w.engineDigest=sha('other engine');},w=>{w.verifierFingerprint=sha('other verifier');},
+    w=>{w.trackContentHash=sha('other asset');},w=>{w.trackGeometry.parts++;},w=>{w.resourceProfile='extended-local';},
+    w=>{w.review.policyVersion='other-review';}]){
+    const input=f.input();input.completedLedger=structuredClone(f.completedLedger);
+    change(input.completedLedger.entries.find(e=>e.key===f.fresh.entry.key).witnesses[0]);
+    assert.throws(()=>validateCompletedNativePackagingEvidence(input,f.pins),/current-policy proof/);
   }
 });
 test('rejects missing old proofs and unauthorized new proof keys',async t=>{

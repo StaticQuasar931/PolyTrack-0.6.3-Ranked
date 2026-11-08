@@ -700,3 +700,14 @@ test('stored overlays and malformed callbacks cannot mint native completion',asy
     assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
   }
 });
+
+
+test('completed receipt survives encrypted proof backup failure without allowing compilation',async t=>{
+  const f=await fixture(t),before=await inventory(f.root);let completed,compiled=false;
+  await assert.rejects(runNativeSnapshotPhase({...f.options,nativeCompleted:async receipt=>{completed=receipt;},
+    proofCheckpoint:async checkpoint=>{assert(completed);assert.equal(completed.privateProofCheckpoint.directory,checkpoint.directory);throw Error('encrypted backup unavailable');},
+    eventCompiler:async()=>{compiled=true;}}),/encrypted backup unavailable/);
+  assert.equal(compiled,false);assert.equal(f.calls.length,1);assert.equal(completed.counts.nativeDispatched,1);
+  assert.equal((await read(completed.privateProofCheckpoint.directory,'receipt.json')).ledgerManifestHash,completed.ledgerManifestHash);
+  assert.deepEqual(await inventory(f.root),before);
+});
