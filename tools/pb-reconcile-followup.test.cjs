@@ -204,3 +204,19 @@ test('restored replay wake never shortens global quota or persisted continuation
   h.storage.set('quota',h.Date.now()+900000);h.storage.set('state',{acct:{waitingReplay:{track:h.localPbSyncSignature(row)},retryAt:h.Date.now()+300000}});
   h.writeRecordingStore(7,{recording:'r',frames:10000});assert.ok([...h.timers.values()][0].delay>=900000);
 });
+
+
+test('reconciliation accepts an exact cloud confirmation without claiming a new write',async()=>{
+ const row={trackId:'confirmed',timeMs:10000,replay:'replay',replayHash:replayHash('replay')};
+ const h=productionHarness({rows:[row],readDoc:async()=>docMissing()});
+ h.mirrorRaceResult=async()=>({saved:false,cloudConfirmed:true});
+ const result=await h.reconcileLocalPersonalBestsToCloud('acct');
+ assert.equal(result.failed,0);assert.equal(result.uploaded,0);
+ assert.equal(h.storage.get('state').acct.confirmed.confirmed,h.localPbSyncSignature(row));
+});
+test('a service outage stops a six-PB batch after the first read and keeps all PBs pending',async()=>{
+ const rows=Array.from({length:6},(_,i)=>({trackId:'outage-'+i,timeMs:10000,replay:'replay',replayHash:replayHash('replay')}));let reads=0;
+ const h=productionHarness({rows,readDoc:async()=>{reads++;throw Object.assign(Error('service unavailable'),{code:'unavailable'});}});
+ await assert.rejects(h.reconcileLocalPersonalBestsToCloud('acct'),/service unavailable/);
+ assert.equal(reads,1);assert.equal(rows.length,6);assert.ok(h.storage.get('state').acct.retryAt>1000000);
+});

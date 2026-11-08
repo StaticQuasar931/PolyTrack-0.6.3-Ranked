@@ -226,3 +226,15 @@ test('a cached response cannot establish even an otherwise exact canonical recei
   const result = await h.run();
   assert.equal(result.failed, 1); assert.equal(h.context.localPbCloudConfirmed(pb(), accountId), false);
 });
+
+
+test('reconciliation uses its owned canonical transaction instead of a faster browsed-cache hint',async()=>{
+ const h=mirrorHarness({publicationFails:false});h.context.readTrackSnapshotCache=()=>({entries:[pb({timeMs:500})]});
+ const result=await h.context.mirrorRaceResult('fixture',{accountId,trackId,timeMs:1000,frames:1000,recording:'local-replay',nickname:'Racer',carStyle:'style'},{accountId,ownerUid:'uid'});
+ assert.equal(result.saved,true);assert.equal(result.cloudConfirmed,true);assert.equal(h.writes.filter(row=>row.ref.kind==='races').length,1);
+});
+test('service errors inside the upload propagate to reconciliation without deleting the local PB',async()=>{
+ const h=mirrorHarness();h.context.runFirebaseTransaction=async()=>{throw Object.assign(Error('offline'),{code:'unavailable'});};
+ await assert.rejects(h.context.mirrorRaceResult('fixture',{accountId,trackId,timeMs:1000,frames:1000,recording:'local-replay',nickname:'Racer',carStyle:'style'},{accountId,ownerUid:'uid'}),e=>e.code==='unavailable');
+ assert.equal(h.rows.length,1);assert.equal(h.writes.length,0);
+});

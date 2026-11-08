@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 335,
+    "number": 336,
     "version": "0.6.3",
-    "revision": 280,
+    "revision": 281,
     "notes": [
-      "Podium targets keep their compact layout on smaller screens."
+      "Saved PB syncing handles confirmations and connection failures more reliably.",
+      "Podium cards sit below your car again."
     ]
   },
   "entries": [
+    {
+      "number": 335,
+      "title": "Keep podium targets compact across screen sizes",
+      "commit": "91e0ad24af5c5de2bd83eb8de86db48d733dce7d",
+      "committedAt": "2026-11-08T07:24:19.000Z",
+      "notes": [
+        "Podium targets keep their compact layout on smaller screens."
+      ]
+    },
     {
       "number": 334,
       "title": "Repair route scoring and streamline event and practice controls",
@@ -182,13 +192,6 @@
       "title": "Recover complete captured PB pages without another database scan",
       "commit": "4f13ff93a261a8a0dd348660440a8adf55cbe401",
       "committedAt": "2026-11-07T09:51:38.000Z",
-      "notes": []
-    },
-    {
-      "number": 312,
-      "title": "Prepare retained proofs from the pinned published baseline",
-      "commit": "8b28442932979460aa7dc369501a7b4b3f88e745",
-      "committedAt": "2026-11-07T09:15:54.000Z",
       "notes": []
     }
   ],

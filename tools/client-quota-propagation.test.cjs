@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 
-const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'utf8').replace(/\r\n/g,'\n');
 function extract(name){
   const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));
   assert.ok(start>=0,name);
@@ -266,6 +266,7 @@ test('persisted denied ledger suppresses SDK reads after reload',async()=>{
 test('denied rows never delay unrelated new PBs before their retry is due',async()=>{
   const h=pbHarness([pb()]);await h.run();
   h.rows.push(pb('valid'));
+  assert.equal((await h.run()).deferred,true);h.advance(60000);
   const outcome=await h.run();
   assert.equal(outcome.checked,1);assert.deepEqual(h.reads,['acct_denied','acct_valid']);
   assert.equal(h.state().confirmed.valid,h.context.localPbSyncSignature(h.rows[1]));
@@ -280,21 +281,22 @@ test('a denied batch does not impose a global cooldown on the next batch',async(
     return {exists:true,data:()=>h.rows[16]};
   }})})});
   await h.run();assert.equal(h.reads.length,16);
+  assert.equal((await h.run()).deferred,true);h.advance(60000);
   const second=await h.run();assert.equal(second.checked,1);
   assert.equal(h.reads.length,17);assert.equal(h.reads[16],'acct_valid');
 });
 
-test('changed PB time or replay signature immediately resets its denied retry budget',async()=>{
+test('changed PB resets its denied retry budget after the bounded continuation window',async()=>{
   for(const change of [row=>row.timeMs--,row=>row.replayHash='new-hash']){
     const h=pbHarness([pb()]);await h.run();
-    change(h.rows[0]);await h.run();
+    change(h.rows[0]);h.advance(60000);await h.run();
     assert.equal(h.reads.length,2);assert.equal(h.state().permissionDenied.denied.attempts,1);
     assert.equal(h.state().permissionDenied.denied.signature,h.context.localPbSyncSignature(h.rows[0]));
   }
 });
 
-test('Firebase UID change immediately resets denied rows and their attempt counters',async()=>{
-  const h=pbHarness([pb()]);await h.run();h.setUid('new-owner');await h.run();
+test('Firebase UID change resets denied rows after the bounded continuation window',async()=>{
+  const h=pbHarness([pb()]);await h.run();h.setUid('new-owner');h.advance(60000);await h.run();
   assert.equal(h.reads.length,2);assert.equal(h.state().permissionDenied.denied.ownerUid,'new-owner');
   assert.equal(h.state().permissionDenied.denied.attempts,1);
 });
@@ -330,7 +332,7 @@ test('upload permission denial, not only document reads, uses the row ledger',as
 test('unavailable PB reads retain ordinary five-minute retry and do not create a denial',async()=>{
   const h=pbHarness([pb()]);
   h.context.db=async()=>({collection:()=>({doc:()=>({get:async()=>{h.reads.push('read');throw failure('unavailable');}})})});
-  const result=await h.run();assert.equal(result.failed,1);assert.equal(result.permissionDenied,0);
+  await assert.rejects(h.run(),error=>error.code==='unavailable');
   assert.equal(h.state().retryAt-h.context.Date.now(),300000);
   assert.equal(Object.keys(h.state().permissionDenied).length,0);
   assert.equal((await h.run()).deferred,true);assert.equal(h.reads.length,1);
@@ -349,7 +351,7 @@ test('actual mirror catch propagates only permission-denied while retaining loca
   const start=source.indexOf("      if(error?.code==='local-pb-account-changed')"),end=source.indexOf('\n    }\n    })();',start);
   assert.ok(start>=0&&end>start);
   for(const code of ['permission-denied','unavailable','resource-exhausted']){
-    const c={error:failure(code),accountId:'acct',trackId:'track',timeMs:10000,frames:10000,name:'Racer',carStyle:'style',
+    const c={reconcileGuard:null,error:failure(code),accountId:'acct',trackId:'track',timeMs:10000,frames:10000,name:'Racer',carStyle:'style',
       uploadId:1,priorLocal:null,dailyRecorded:false,raceRow:{},replayData:'r',canonicalCommitted:false,localSaved:false,
       noteFirebaseQuota:()=>{},recordDailyActivity:()=>{},addLocalRaceRow:()=>true,writeRecordingStore:()=>{},
       retainTrackSnapshotAfterLocalPb:()=>{},log:()=>{},showCloudOwnerConflict:()=>{},
