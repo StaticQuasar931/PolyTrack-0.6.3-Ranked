@@ -43,7 +43,8 @@ function fn(text,name){
   assert.fail('Unterminated production function '+name);
 }
 
-function fixture(t,{edge='healthy'}={}){
+// Required-registry fixtures retain their separate future-deployment cost contract.
+function fixture(t,{edge='healthy',registryMode='required'}={}){
   t.mock.method(console,'log',()=>{});t.mock.method(console,'error',()=>{});
   let clock=start,user=null,serial=0,upload=0,step='setup',sdkFailure=null,edgeMode=edge;
   const data=new Map(),versions=new Map(),disk=new Map(),localRows=[],recordings=new Map(),events=[],tasks=new Set();
@@ -140,6 +141,7 @@ function fixture(t,{edge='healthy'}={}){
     FIREBASE_QUOTA_PAUSE_KEY:'quota',MODERATION_REFRESH_MS:600000,firestorePromise:null,firebaseRetryAt:0,
     compatibilityOnlineAllowed:true,assertOnlineCompatibility(){},observeFirestore:async value=>value,
     loadScript:async url=>{sdkLoads.push(url);},legacyNameTransactions:new WeakSet(),
+    publicNameRegistryMode:registryMode,
     profileNameModulePromise:Promise.resolve({claimProfileNameWithLegacyBridge}),moderationDecision:()=>({blocked:false}),
     profileIdentityPostSequence:0,profileIdentityPostTail:Promise.resolve(),profileIdentityAcknowledgement:null,
     manualModerationCache:new Map(),manualModerationRequests:new Map(),cloudOwnerConflicts:new Map(),
@@ -429,4 +431,14 @@ test('measured candidate only: existing coalesced lane on one additional busy fi
   assert.ok(receipts[1].delta.writes<receipts[0].delta.writes);
   process.stdout.write('BUSY_JOURNEY_CANDIDATE '+JSON.stringify({receipts,scope:'fixture-only allowlist input; no production configuration edited',
     excludes:'actual native proof publication, Overall, future readers and production attribution'})+'\n');
+});
+
+test('the actual deployed legacy naming mode completes five tracks without registry operations',async t=>{
+ const mode=/const publicNameRegistryMode='([^']+)'/.exec(patch)?.[1];assert.equal(mode,'legacy');
+ const f=fixture(t,{registryMode:mode});await f.phase('legacy-profile-create',f.profilePost);
+ for(const id of f.selected)await f.phase('legacy-finish',()=>f.finish(id,30000));
+ assert.equal(f.localRows.length,5);assert.equal(f.data.get(E.profiles+'/'+account).pbCount,5);
+ for(const id of f.selected){const row=f.data.get(E.canonical+'/'+account+'_'+id);assert.equal(row.ownerUid,owner);assert.equal(row.timeMs,30000);}
+ assert.equal([...f.data.keys()].filter(key=>key.startsWith('0.6.2_name_claims/')).length,0);
+ assert.equal(f.totals().failedAttempts,0);assert.equal(f.transactions.size,0);
 });

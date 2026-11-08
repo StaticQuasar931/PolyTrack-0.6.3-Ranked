@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 339,
+    "number": 340,
     "version": "0.6.3",
-    "revision": 283,
+    "revision": 284,
     "notes": [
-      "Faster cached track standings without flashing old names.",
-      "Saves no longer wait for a leaderboard download.",
-      "Clearer cloud-permission diagnostics and safer sign-in recovery handling."
+      "Better release checks for fresh-account cloud saves."
     ]
   },
   "entries": [
+    {
+      "number": 339,
+      "title": "Speed cached standings and protect cloud sign-in recovery",
+      "commit": "51ea2228cc2246af353f96a08a919315f198edcd",
+      "committedAt": "2026-11-08T23:32:35.000Z",
+      "notes": [
+        "Faster cached track standings without flashing old names.",
+        "Saves no longer wait for a leaderboard download.",
+        "Clearer cloud-permission diagnostics and safer sign-in recovery handling."
+      ]
+    },
     {
       "number": 337,
       "title": "Polish medal tiles and next-podium targets",
@@ -192,13 +201,6 @@ const historyData = {
       "title": "Repair canonical board metadata and publish saved data without new verification",
       "commit": "e11d4db3592ecc1d5964948a98884cc7a158e3c2",
       "committedAt": "2026-11-07T17:51:52.000Z",
-      "notes": []
-    },
-    {
-      "number": 315,
-      "title": "Resume saved full captures offline with exclusive verification guards",
-      "commit": "6875804d5f0d5bf8f8b89db6c6e7cc6c394c46dd",
-      "committedAt": "2026-11-07T17:08:44.000Z",
       "notes": []
     }
   ],
