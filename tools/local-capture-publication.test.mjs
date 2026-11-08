@@ -12,7 +12,7 @@ test('exact isolated source rejects uncommitted/untracked executables and an ext
   const workspace=await fixture(t),git=args=>execFileSync('git',args,{cwd:workspace,encoding:'utf8',stdio:['ignore','pipe','pipe']});
   git(['init']);await fs.mkdir(path.join(workspace,'tools'));
   for(const name of ['local-overnight-capture','local-capture-worker','local-capture-publication','local-capture-process',
-    'local-capture-git','local-capture-checkpoint','local-playback-cache','local-archive-replay-repair'])await fs.writeFile(path.join(workspace,'tools',name+'.mjs'),'// committed\n');
+    'local-capture-git','local-publication-argv','local-capture-checkpoint','local-playback-cache','local-archive-replay-repair'])await fs.writeFile(path.join(workspace,'tools',name+'.mjs'),'// committed\n');
   git(['add','tools']);git(['-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-m','fixture']);
   const sourceCommit=git(['rev-parse','HEAD']).trim(),runnerFile=path.join(workspace,'tools/local-overnight-capture.mjs');
   await assertLocalSource({workspace,sourceCommit,runnerFile});

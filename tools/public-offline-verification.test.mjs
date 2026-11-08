@@ -71,6 +71,63 @@ test('changed runtime after preparation cannot dispatch native work',async t=>{
  await assert.rejects(prepared.verify(),/runtime changed/);assert.equal(f.counts().native,0);
 });
 
+test('native completion is durable before the phase returns and matches the returned receipt',async t=>{
+ const f=await fixture(t),original=f.capabilities.verifyPhase;
+ f.capabilities.verifyPhase=async input=>{
+   const result=await original(input);await input.nativeCompleted(result.receipt);
+   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.options.runDirectory,'verified.json'),'utf8')),result.receipt);
+   return result;
+ };
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities),verified=await prepared.verify();
+ await verified.dispose();assert.deepEqual(f.counts(),{native:1,compiled:0,disposed:1});
+});
+
+test('failure after native completion retains exact receipt without compilation or native retry',async t=>{
+ const f=await fixture(t),original=f.capabilities.verifyPhase;
+ const receipt={authority:false,actualAttestations:true};
+ f.capabilities.verifyPhase=async input=>{
+   await original(input);await input.nativeCompleted(receipt);throw Error('Synthetic phase rename failed');
+ };
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);
+ await assert.rejects(prepared.verify(),/phase rename failed/);
+ assert.equal(await fs.readFile(path.join(f.options.runDirectory,'verified.json'),'utf8'),JSON.stringify(receipt)+'\n');
+ await assert.rejects(prepared.verify(),/already requested/);
+ assert.deepEqual(f.counts(),{native:1,compiled:0,disposed:0});
+});
+
+for(const mode of ['different-return','repeated','repeated-different','caught-repeat'])
+test('native completion rejects '+mode+' without replacing the first receipt or granting compile',async t=>{
+ const f=await fixture(t),original=f.capabilities.verifyPhase;
+ const receipt={authority:false,actualAttestations:true};
+ f.capabilities.verifyPhase=async input=>{
+   const result=await original(input);await input.nativeCompleted(receipt);
+   if(mode==='different-return')return {...result,receipt:{...receipt,changed:true}};
+   const again=()=>input.nativeCompleted(mode==='repeated-different'?{...receipt,changed:true}:receipt);
+   if(mode==='caught-repeat')await assert.rejects(again(),/repeated/);
+   else await again();
+   return result;
+ };
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);
+ await assert.rejects(prepared.verify(),mode==='different-return'?/differs/:/repeated/);
+ assert.equal(await fs.readFile(path.join(f.options.runDirectory,'verified.json'),'utf8'),JSON.stringify(receipt)+'\n');
+ await assert.rejects(prepared.verify(),/already requested/);
+ assert.deepEqual(f.counts(),{native:1,compiled:0,disposed:['different-return','caught-repeat'].includes(mode)?1:0});
+});
+
+test('early receipt write is exclusive and a caught write failure still blocks compilation',async t=>{
+ const f=await fixture(t),original=f.capabilities.verifyPhase;
+ f.capabilities.verifyPhase=async input=>{
+   const result=await original(input);
+   await assert.rejects(input.nativeCompleted(result.receipt),error=>error.code==='EEXIST');return result;
+ };
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);
+ const target=path.join(f.options.runDirectory,'verified.json');await fs.writeFile(target,'preserved');
+ await assert.rejects(prepared.verify(),error=>error.code==='EEXIST');
+ assert.equal(await fs.readFile(target,'utf8'),'preserved');
+ await assert.rejects(prepared.verify(),/already requested/);
+ assert.deepEqual(f.counts(),{native:1,compiled:0,disposed:1});
+});
+
 for(const field of ['proofCheckpoint','ledgerRoot','captureContext','directory','verify','publicationRoot'])test('rejects private or alternate authority input: '+field,async t=>{
   const f=await fixture(t);
   await assert.rejects(preparePublishedOfflineVerification({...f.options,[field]:'private-failed-proof'},f.capabilities),/unknown option/);

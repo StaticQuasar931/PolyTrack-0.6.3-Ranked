@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {encode, decode} from './firestore.mjs';
 import {orderSelectedJobsFastestFirst, publishResults, prioritizeQueueDocuments, selectJobs, verifiedControlReference, verifiedTrackCounts} from './runner.mjs';
 import {VERIFICATION_COLLECTION, VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, pendingSlot, verificationKey} from '../../workers/ranked/src/verification.js';
 
@@ -328,4 +329,93 @@ test('verification summaries use the current Kodub track name instead of a forma
  assert.equal(result[0].trackName,feed.current.name);assert.equal(result[0].count,3);
  const history=JSON.parse(await fs.readFile(new URL('../../events/kodub/history.json',import.meta.url),'utf8'));
  const archived=history.find(row=>row.name&&row.trackId!==feed.current.trackId);assert.equal(verifiedTrackCounts({[archived.trackId]:1})[0].trackName,archived.name);
+});
+// REST-shaped mock applies masks/transforms atomically and preserves raw timestamp precision.
+function timingCorrectionPublicationFixture({legacy=true,status='verified'}={}){
+ const canonical={...row,timeMs:legacy?Math.round(row.frames*1000/60):row.frames,timingVersion:legacy?1:2};
+ const correctionJob={...canonical,resultId:job.resultId,queueKey:verificationKey(canonical),queueCollection:VERIFICATION_COLLECTION,
+  timeMs:row.frames,correctionCandidate:legacy?{frames:row.frames,originalTimeMs:canonical.timeMs}:null};
+ const verdict={...verified,trackId:TRACK,timeMs:correctionJob.timeMs,replayHash:canonical.replayHash,status};
+ const canonicalName='0.6.2_race_results/'+job.resultId,queueName=VERIFICATION_COLLECTION+'/'+TRACK;
+ const documents=new Map(),commits=[],reads=[],serverTime='2026-11-08T01:02:03.456Z';let version=0;
+ const rawCanonical={...encode(canonical).mapValue.fields,
+  ingestedAt:{timestampValue:'2026-11-01T01:00:00.123456789Z'},pbAt:{timestampValue:'2026-10-31T01:00:00.987654321Z'},
+  updatedAt:{timestampValue:'2026-11-01T01:00:00.111222333Z'},custom:{mapValue:{fields:{keep:{stringValue:'unchanged'}}}}};
+ documents.set(canonicalName,{fields:structuredClone(rawCanonical),updateTime:'canonical-v1'});
+ documents.set(queueName,{fields:encode({trackId:TRACK,slots:{racer:pendingSlot(canonical,0)}}).mapValue.fields,updateTime:'queue-v1'});
+ const db={
+  get:async(collection,id)=>{const name=collection+'/'+id;reads.push(name);const doc=documents.get(name);return doc?{...structuredClone(doc),data:decode({mapValue:{fields:doc.fields}})}:null;},
+  write:(collection,id,data,prior)=>({update:{name:collection+'/'+id,fields:encode(data).mapValue.fields},currentDocument:prior?.updateTime?{updateTime:prior.updateTime}:{exists:false}}),
+  call:async(endpoint,{writes})=>{
+   assert.equal(endpoint,':commit');commits.push(structuredClone(writes));
+   for(const write of writes){const old=documents.get(write.update.name);if(write.currentDocument.updateTime!==undefined)assert.equal(write.currentDocument.updateTime,old?.updateTime);else assert.equal(old,undefined);}
+   const writeResults=[];
+   for(const write of writes){
+    const old=documents.get(write.update.name),fields=write.updateMask?structuredClone(old.fields):{};
+    for(const field of write.updateMask?.fieldPaths||Object.keys(write.update.fields))fields[field]=structuredClone(write.update.fields[field]);
+    for(const transform of write.updateTransforms||[]){assert.deepEqual(transform,{fieldPath:'ingestedAt',setToServerValue:'REQUEST_TIME'});fields.ingestedAt={timestampValue:serverTime};}
+    const updateTime='committed-v'+ ++version;documents.set(write.update.name,{fields,updateTime});writeResults.push({updateTime});
+   }
+   return {writeResults};
+  }
+ };
+ return {db,correctionJob,verdict,documents,commits,reads,rawCanonical,canonicalName,queueName,serverTime};
+}
+
+test('timing correction advances ingestion in the same four-write CAS commit and preserves PB chronology',async()=>{
+ const f=timingCorrectionPublicationFixture();
+ const totals=await publishResults(f.db,[f.correctionJob],[f.verdict]);
+ assert.equal(totals.corrected,1);assert.equal(totals.verified,1);
+ assert.equal(f.commits.length,1);assert.equal(f.commits[0].length,4,'transform adds no document write');
+ assert.equal(f.reads.length,4,'queue, canonical, reconcile state and audit only');
+ const writes=f.commits[0],canonicalWrites=writes.filter(w=>w.update.name===f.canonicalName);
+ assert.equal(canonicalWrites.length,1);const write=canonicalWrites[0];
+ assert.deepEqual(write.currentDocument,{updateTime:'canonical-v1'});
+ assert.deepEqual(write.updateMask,{fieldPaths:['timeMs','timingVersion']});
+ assert.deepEqual(write.update.fields,encode({timeMs:row.frames,timingVersion:2}).mapValue.fields);
+ assert.deepEqual(write.updateTransforms,[{fieldPath:'ingestedAt',setToServerValue:'REQUEST_TIME'}]);
+ assert.ok(writes.filter(w=>w!==write).every(w=>!Object.hasOwn(w,'updateTransforms')),'no transform on queue/state/audit');
+ const stored=f.documents.get(f.canonicalName).fields;
+ assert.deepEqual(stored,{...f.rawCanonical,...encode({timeMs:row.frames,timingVersion:2}).mapValue.fields,ingestedAt:{timestampValue:f.serverTime}});
+ const corrected=decode({mapValue:{fields:stored}}),key=verificationKey(corrected);
+ const slot=decode({mapValue:{fields:f.documents.get(f.queueName).fields}}).slots.racer;
+ assert.equal(slot.key,key);assert.notEqual(key,f.correctionJob.queueKey);
+ assert.equal(verificationKey({...corrected,ingestedAt:new Date(0)}),key,'ingestion timestamp cannot alter native proof binding');
+ const audit=writes.find(w=>w.update.name.startsWith('0.6.2_s1_verification_audit/'));
+ assert.equal(decode({mapValue:{fields:audit.update.fields}}).key,key);
+});
+
+test('repeating an already applied correction is a no-op and cannot bump ingestion again',async()=>{
+ const f=timingCorrectionPublicationFixture();
+ await publishResults(f.db,[f.correctionJob],[f.verdict]);
+ const stored=structuredClone(f.documents.get(f.canonicalName));
+ const totals=await publishResults(f.db,[f.correctionJob],[f.verdict]);
+ assert.equal(totals.corrected,0);assert.equal(totals.superseded,1);
+ assert.equal(f.commits.length,1);assert.deepEqual(f.documents.get(f.canonicalName),stored);
+});
+
+for(const options of [{legacy:false},{status:'unavailable'},{status:'mismatch'}]){
+ test('only a verified legacy correction gets an ingestion transform '+JSON.stringify(options),async()=>{
+  const f=timingCorrectionPublicationFixture(options),before=structuredClone(f.documents.get(f.canonicalName));
+  const totals=await publishResults(f.db,[f.correctionJob],[f.verdict]);
+  assert.equal(totals.corrected,0);assert.equal(f.commits.length,1);assert.equal(f.commits[0].length,3);
+  assert.ok(f.commits[0].every(w=>w.update.name!==f.canonicalName&&!Object.hasOwn(w,'updateTransforms')));
+  assert.deepEqual(f.documents.get(f.canonicalName),before);
+ });
+}
+
+test('a competing canonical PB cancels correction and timestamp atomically after CAS conflict',async()=>{
+ const f=timingCorrectionPublicationFixture();let attempted=0;
+ const newer={...f.rawCanonical,...encode({timeMs:row.frames-1,frames:row.frames-1,raceTimeFrames:row.frames-1,uploadId:8}).mapValue.fields};
+ f.db.call=async(endpoint,{writes})=>{
+  assert.equal(endpoint,':commit');attempted++;
+  assert.equal(writes.length,4);assert.deepEqual(writes[3].currentDocument,{updateTime:'canonical-v1'});
+  assert.deepEqual(writes[3].updateTransforms,[{fieldPath:'ingestedAt',setToServerValue:'REQUEST_TIME'}]);
+  f.documents.set(f.canonicalName,{fields:structuredClone(newer),updateTime:'concurrent-v2'});
+  throw Error('Firestore request failed: 409');
+ };
+ const totals=await publishResults(f.db,[f.correctionJob],[f.verdict]);
+ assert.equal(attempted,1);assert.equal(totals.corrected,0);assert.equal(totals.superseded,1);
+ assert.deepEqual(f.documents.get(f.canonicalName),{fields:newer,updateTime:'concurrent-v2'});
+ assert.equal(f.documents.get(f.queueName).updateTime,'queue-v1');
 });

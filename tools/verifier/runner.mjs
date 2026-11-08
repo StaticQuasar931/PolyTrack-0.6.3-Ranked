@@ -339,9 +339,10 @@ export async function publishResults(db, jobs, results, {allowExtendedLocal = fa
           ...(correct ? {correctedFromKey: job.queueKey, correctedFromTimeMs: current.data.timeMs, correctedTimeMs: frames} : {})}, audit)
       ];
       if (correct) {
-        // A field mask preserves every other field, including sub-millisecond Firestore timestamps.
+        // Keep PB chronology intact; advance ingestion in this same CAS-protected write.
         writes.push({...db.write('0.6.2_race_results', job.resultId, {timeMs: frames, timingVersion: 2}, current),
-          updateMask: {fieldPaths: ['timeMs', 'timingVersion']}});
+          updateMask: {fieldPaths: ['timeMs', 'timingVersion']},
+          updateTransforms: [{fieldPath: 'ingestedAt', setToServerValue: 'REQUEST_TIME'}]});
       }
       if(reviewWrite) writes.push(reviewWrite);
       try {

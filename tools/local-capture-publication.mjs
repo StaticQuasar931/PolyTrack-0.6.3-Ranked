@@ -12,7 +12,7 @@ export async function assertLocalSource({workspace,sourceCommit,runnerFile}){
   if((process.platform==='win32'?realRunner.toLowerCase():realRunner)!==(process.platform==='win32'?expected.toLowerCase():expected))
     throw Error('Execute the runner inside the tested isolated workspace');
   for(const file of ['tools/local-overnight-capture.mjs','tools/local-capture-worker.mjs','tools/local-capture-publication.mjs','tools/local-capture-process.mjs',
-    'tools/local-capture-git.mjs','tools/local-capture-checkpoint.mjs','tools/local-playback-cache.mjs','tools/local-archive-replay-repair.mjs']){
+    'tools/local-capture-git.mjs','tools/local-publication-argv.mjs','tools/local-capture-checkpoint.mjs','tools/local-playback-cache.mjs','tools/local-archive-replay-repair.mjs']){
     const committed=git(['show',sourceCommit+':'+file]).replace(/\r\n?/g,'\n');
     if((await fs.readFile(path.join(workspace,file),'utf8')).replace(/\r\n?/g,'\n')!==committed)throw Error('Runner implementation is not in the tested commit');
   }

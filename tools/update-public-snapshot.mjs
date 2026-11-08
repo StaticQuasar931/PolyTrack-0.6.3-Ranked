@@ -282,7 +282,7 @@ async function rebaseStaging(root, stagingDirectory, currentDirectory, currentGe
   return { directory: currentDirectory, backup: path.basename(backup) };
 }
 
-function makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary) {
+function makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary, evidence = {}) {
   const replayCount = manifest?.eventReplays && typeof manifest.eventReplays === 'object'
     ? Object.keys(manifest.eventReplays).length
     : Number.isSafeInteger(manifest?.eventReplays) ? manifest.eventReplays : null;
@@ -323,11 +323,45 @@ function makeCoverage(overall, manifest, exportResult, previousCoverage, savedEx
     incompletePage: savedExportSummary.incompletePage === true,
   } : previousCoverage?.profileReplay && typeof previousCoverage.profileReplay === 'object'
     ? previousCoverage.profileReplay : { requested: false, complete: false };
+  const priorProvenance = previousCoverage?.profileReplay?.provenance;
+  const exportSummary = savedExportSummary || (!exportResult ? priorProvenance : null);
+  const replay = evidence.replay || null, profiles = evidence.profiles || null;
+  const legacyExceptions = replay ? replay.legacyReplayUnavailable ?? 0 : null;
+  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const currentStaging = {
+    scope: 'current-staged-publication',
+    status: replay && profiles ? 'validated-and-profile-results-built' : 'not-yet-validated',
+    binding: {parsedManifestJsonSha256: evidence.parsedManifestJsonSha256 || null,
+      scope: 'parsed-manifest-json-only-not-full-snapshot', snapshotCaptureDigest: null},
+    counts: {
+      profileResultAccounts: count(profiles?.profiles), normalBoardResultReferences: count(profiles?.results),
+      normalBoards: count(profiles?.boards), normalReplayKnownBindings: count(replay?.normal?.known),
+      normalReplayValidatedBindings: count(replay?.normal?.available),
+      fullCanonicalSourceRows: count(manifest?.fullCanonicalCapture?.sourceRows),
+      fullCanonicalStagingRows: count(manifest?.fullCanonicalCapture?.stagingRows),
+      verifiedLaneManifestReferences: replayCount,
+      eventBothLaneKnownBindings: count(replay?.events?.known),
+      eventBothLaneValidatedBindings: count(replay?.events?.published),
+    },
+    sourceGaps: {tracksMissing: backup.tracksMissing, eventsMissing: backup.eventsMissing},
+    legacyReplayExceptions: legacyExceptions,
+    replayValidationComplete: replay?.complete === true,
+    replayValidation: replay,
+    complete: Boolean(replay && profiles && replay.complete === true && legacyExceptions === 0 &&
+      backup.overallComplete && backup.tracksMissing === 0 && backup.eventsMissing === 0),
+  };
   return {
     schemaVersion: 1,
-    complete: backup.overallComplete && backup.tracksMissing === 0 && backup.eventsMissing === 0 && profileReplay.complete && backup.pendingPlaybacks?.complete !== false && backup.eventPlayback?.complete !== false,
+    complete: backup.overallComplete && backup.tracksMissing === 0 && backup.eventsMissing === 0 && profileReplay.complete && backup.pendingPlaybacks?.complete !== false && backup.eventPlayback?.complete !== false &&
+      (!replay || replay.complete === true && legacyExceptions === 0),
     backup,
-    profileReplay,
+    profileReplay: {...profileReplay, scope: 'historical-public-export',
+      provenance: {kind: exportResult ? 'current-run-export-result' : savedExportSummary ? 'retained-export-summary' : 'retained-coverage',
+        countsDescribe: 'export-time-inventory-not-current-staging',
+        capturedAt: exportSummary?.capturedAt || null,
+        profilesCapturedAt: exportSummary?.profilesCapturedAt || null,
+        replaysCapturedAt: exportSummary?.replaysCapturedAt || null}},
+    currentStaging,
   };
 }
 
@@ -561,10 +595,14 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
   const previousCoverage = await readJsonIfPresent(path.join(stagingDirectory, 'coverage.json'));
   const savedExportSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
-  const coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);
+  let coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);
+  // Keep the pre-validation checkpoint if either existing publication barrier fails.
   await fs.writeFile(path.join(stagingDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`);
-  await assertSnapshotReplayCompleteness(stagingDirectory);
-  await buildProfileSnapshotResults(stagingDirectory);
+  const replay = await assertSnapshotReplayCompleteness(stagingDirectory);
+  const profiles = await buildProfileSnapshotResults(stagingDirectory);
+  coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary,
+    {replay, profiles, parsedManifestJsonSha256: sha256(JSON.stringify(manifest))});
+  await fs.writeFile(path.join(stagingDirectory, 'coverage.json'), `${JSON.stringify(coverage, null, 2)}\n`);
 
   let oldCurrent = null;
   try {

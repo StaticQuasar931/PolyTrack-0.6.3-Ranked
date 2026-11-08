@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 330,
+    "number": 332,
     "version": "0.6.3",
-    "revision": 276,
+    "revision": 277,
     "notes": [
-      "Replay checks now catch missing or changed browser dependencies before starting."
+      "Completed replay checks are saved earlier, reducing the risk of losing results during packaging.",
+      "Snapshot preparation now stages files in fewer safe batches."
     ]
   },
   "entries": [
+    {
+      "number": 330,
+      "title": "Fail fast on missing or changed offline verifier dependencies",
+      "commit": "4b0754292b02769f25d3d5d4cb5da3a313b8c258",
+      "committedAt": "2026-11-08T04:13:28.000Z",
+      "notes": [
+        "Replay checks now catch missing or changed browser dependencies before starting."
+      ]
+    },
     {
       "number": 329,
       "title": "Repair stuck PB uploads and event highlights and pack verification batches",
@@ -175,16 +185,6 @@
         "Improved snapshot recovery when a newer PB arrives before its cached replay.",
         "Kept earlier verification tied to the exact run it approved.",
         "Improved overnight update reliability."
-      ]
-    },
-    {
-      "number": 308,
-      "title": "Reduce cloud rebuild costs and prepare complete snapshot capture",
-      "commit": "ad6a5e63f12e1bb8fb81fa96a5c7472d93382b77",
-      "committedAt": "2026-11-07T05:22:20.000Z",
-      "notes": [
-        "Improved cloud sync and reduced repeated work for saved runs.",
-        "Improved snapshot update checks and kept event scores consistent."
       ]
     }
   ],

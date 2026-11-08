@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
-import {encodeSnapshot} from './snapshot-package.mjs';
+import {encodeSnapshot,decodeSnapshot} from './snapshot-package.mjs';
 import {createHash} from 'node:crypto';
 import {buildOverallSnapshotPaging,buildTrackSnapshotPaging,buildBoardPageManifest} from './track-snapshot-paging.mjs';
 import fs from 'node:fs/promises';
@@ -118,20 +118,33 @@ test('two logical paths sharing one immutable payload share fetch and decode wit
   const values=await Promise.all([read('profile',id),read('profile-results',id)]);assert(values.every(Boolean));assert.equal(payloads,1);
 });
 
-test('actual generation 77: 20-row cold windows avoid the global manifest and full monolith, full reads stay complete',async t=>{
-  const directory=new URL('../public-snapshots77/',import.meta.url),index=JSON.parse(await fs.readFile(new URL('index.json',directory),'utf8'));
+test('actual current generation: 20-row cold windows avoid the global manifest and full monolith, full reads stay complete',async t=>{
+  const pointer=JSON.parse(await fs.readFile(new URL('../snapshot-current.json',import.meta.url),'utf8'));
+  assert.match(pointer.currentdir,/^public-snapshots[1-9]\d*$/);
+  const directory=new URL('../'+pointer.currentdir+'/',import.meta.url),index=JSON.parse(await fs.readFile(new URL('index.json',directory),'utf8'));
+  assert.equal(index.generation,Number(pointer.currentdir.slice('public-snapshots'.length)));
   const id='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038',requests=[];let bytes=0;
+  const trackPath=`tracks/${id}.json`,pagePath=`track-pages/${id}/1.json`;
+  const expected=JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(new URL(index.files[trackPath].path,directory)))).toString('utf8'));
+  assert(expected.entries.length>20);assert.equal(expected.complete,true);
+  const size=async logical=>(await fs.stat(new URL(index.files[logical]?.path||logical,directory))).size;
+  const bootstrapBytes=await size('bootstrap-fast.json'),pageBytes=await size(pagePath),trackBytes=await size(trackPath),manifestBytes=await size('manifest.json');
   const logicals=new Map(Object.entries(index.files).map(([logical,record])=>[record.path,logical]));
-  const read=createPublicSnapshotReader({packed:true,bootstrap:true,optimizedIndex:true,baseUrl:'https://offline.test/public-snapshots77/',byteCache:{open:async()=>null},fetchImpl:async url=>{
+  const read=createPublicSnapshotReader({packed:true,bootstrap:true,optimizedIndex:true,baseUrl:`https://offline.test/${pointer.currentdir}/`,byteCache:{open:async()=>null},fetchImpl:async url=>{
     const asset=new URL(url).pathname.split('/').at(-1),body=await fs.readFile(new URL(asset,directory));requests.push(logicals.get(asset)||asset);bytes+=body.length;return new Response(body);
   }});
-  const value=await read.trackWindow(id,{limit:20});assert.equal(value.count,20);assert.equal(value.totalEntries,2312);assert.equal(value.complete,false);assert.equal(value.hasMore,true);
+  const [value,joined]=await Promise.all([read.trackWindow(id,{limit:20}),read.trackWindow(id,{limit:20})]);
+  assert.deepEqual(joined,value);assert.equal(value.count,20);assert.equal(value.totalEntries,expected.entries.length);assert.equal(value.complete,false);assert.equal(value.hasMore,true);
   assert.equal(requests.length,2);assert.deepEqual(requests,['bootstrap-fast.json',`track-pages/${id}/1.json`]);
-  const windowBytes=bytes;assert.equal(windowBytes,299517);
-  const full=await read('track',id);assert.equal(full.entries.length,2312);assert.equal(full.complete,true);assert.equal(requests.length,3);assert.equal(requests.includes('manifest.json'),false);
+  const windowBytes=bytes;assert.equal(windowBytes,bootstrapBytes+pageBytes);
+  const full=await read('track',id);assert.equal(full.entries.length,expected.entries.length);assert.equal(full.complete,true);assert.equal(requests.length,3);assert.equal(requests.includes('manifest.json'),false);
+  assert.deepEqual(requests,['bootstrap-fast.json',pagePath,trackPath]);assert.equal(bytes,bootstrapBytes+pageBytes+trackBytes);
+  const tuple=e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId];
+  assert.deepEqual(full.entries.map(tuple),expected.entries.map(tuple));
   assert.deepEqual(value.entries.map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]),full.entries.slice(0,20).map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]));
-  t.diagnostic(JSON.stringify({generation:77,firstPaintRows:value.count,fieldRows:full.entries.length,firstPaintRequests:2,firstPaintBytes:windowBytes,
-    baselineFullColdRequests:3,baselineFullColdBytes:838043,fullAfterWindowRequests:requests.length,fullAfterWindowBytes:bytes}));
+  assert(windowBytes<bootstrapBytes+manifestBytes+trackBytes);
+  t.diagnostic(JSON.stringify({generation:index.generation,firstPaintRows:value.count,fieldRows:full.entries.length,firstPaintRequests:2,firstPaintBytes:windowBytes,
+    baselineFullColdRequests:3,baselineFullColdBytes:bootstrapBytes+manifestBytes+trackBytes,fullAfterWindowRequests:requests.length,fullAfterWindowBytes:bytes}));
 });
 test('packed public racer directory is cached and rejects private fields',async()=>{
   const id='a'.repeat(64);

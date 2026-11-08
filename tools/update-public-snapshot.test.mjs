@@ -635,6 +635,9 @@ test('checkpoint persists before native work and replay guard checks the transfo
       await assert.rejects(update, {code: 'SNAPSHOT_REPLAYS_INCOMPLETE'});
       await assert.rejects(readFile(path.join(root, 'snapshot-current.json')), {code: 'ENOENT'});
       await assert.rejects(readFile(path.join(staging, 'racer-directory.json')), {code: 'ENOENT'});
+      const failedCoverage = JSON.parse(await readFile(path.join(staging, 'coverage.json'), 'utf8'));
+      assert.equal(failedCoverage.currentStaging.status, 'not-yet-validated');
+      assert.equal(failedCoverage.currentStaging.replayValidation, null);
     }
     assert.deepEqual(order, ['checkpoint', 'native']);
     assert.equal(await readFile(checkpoint, 'utf8'), 'retained');
@@ -675,4 +678,68 @@ test('explicit offline stored-proof reapplication does not trust a stale package
   resolveSourceCommit:()=> 'a'.repeat(40),prepareNativeCapture:async()=>({ledger:{manifestHash:'a'.repeat(64)}}),
   nativePhase:async options=>{called++;assert.equal(options.reuseOnly,true);return{authority:'stored-proof-overlay',backendReads:0,backendWrites:0,complete:false,counts:{nativeDispatched:0,newProofs:0}}}});
  assert.equal(called,1);assert.equal(result.nativeVerification.reuseOnly,true);assert.equal(result.nativeVerification.complete,false);
+});
+
+
+test('coverage separates retained export provenance from current validated staging without another scan', async t => {
+  const root = await fixture(t), staging = path.join(root, 'local-reports', 'snapshot-staging');
+  const row = replayEntry(), other = 'c'.repeat(64);
+  await mkdir(path.join(staging, 'tracks'));
+  await mkdir(path.join(staging, 'profiles'));
+  await writeFile(path.join(staging, 'tracks', row.trackId + '.json'), JSON.stringify({trackId: row.trackId, entries: [row]}));
+  for (const accountId of [row.accountId, other])
+    await writeFile(path.join(staging, 'profiles', accountId + '.json'), JSON.stringify({accountId}));
+  await writeReplayEvidence(staging, row);
+  await writeFile(path.join(staging, 'overall.json'), JSON.stringify({complete:true, entries:[]}));
+  const manifest = {trackIdsKnown:89, trackBackupsPresent:1, trackBackupsMissing:88, eventsMissing:0,
+    tracks:{[row.trackId]:{path:'tracks/' + row.trackId + '.json'}}, eventReplays:{old:{}},
+    fullCanonicalCapture:{sourceRows:16849, stagingRows:16849, complete:true}};
+  await writeFile(path.join(staging, 'manifest.json'), JSON.stringify(manifest));
+  const capturedAt = '2026-11-01T00:00:00.000Z';
+  const historical = {complete:true, counts:{profiles:2889,canonical:7743,recordings:7743},
+    capturedAt, profilesCapturedAt:capturedAt, replaysCapturedAt:capturedAt,
+    coverage:{available:7743,missing:0,invalid:0,complete:true,scope:'current-staged-track-snapshots'}};
+  await writeFile(path.join(staging, 'public-export-summary.json'), JSON.stringify(historical));
+  const result = await updatePublicSnapshot({root,offline:true,log:()=>{}}), coverage = result.coverage;
+  assert.deepEqual(coverage.profileReplay.counts, historical.counts);
+  assert.equal(coverage.profileReplay.scope, 'historical-public-export');
+  assert.equal(coverage.profileReplay.provenance.capturedAt, capturedAt);
+  assert.equal(coverage.profileReplay.provenance.profilesCapturedAt, capturedAt);
+  assert.equal(coverage.profileReplay.provenance.replaysCapturedAt, capturedAt);
+  assert.deepEqual(JSON.parse(await readFile(path.join(staging,'public-export-summary.json'),'utf8')), historical);
+  const current = coverage.currentStaging;
+  assert.equal(current.counts.profileResultAccounts, 2);
+  assert.equal(current.counts.normalBoardResultReferences, 1);
+  assert.equal(current.counts.normalBoards, 1);
+  assert.equal(current.counts.normalReplayValidatedBindings, 1);
+  assert.equal(current.counts.fullCanonicalSourceRows, 16849);
+  assert.equal(current.counts.verifiedLaneManifestReferences, 1);
+  assert.equal(current.counts.eventBothLaneValidatedBindings, 0);
+  assert.equal(current.binding.parsedManifestJsonSha256, createHash('sha256').update(JSON.stringify(manifest)).digest('hex'));
+  assert.equal(current.binding.snapshotCaptureDigest, null);
+  assert.equal(current.replayValidationComplete, true);
+  assert.equal(current.sourceGaps.tracksMissing, 88);
+  assert.equal(current.complete, false); assert.equal(coverage.complete, false);
+  assert.deepEqual(JSON.parse(await readFile(path.join(staging,'coverage.json'),'utf8')), coverage);
+});
+
+test('exception-adjusted replay success never becomes unqualified complete coverage', async () => {
+  const {runInNewContext} = await import('node:vm');
+  const source = await readFile(new URL('./update-public-snapshot.mjs',import.meta.url),'utf8');
+  const begin = source.indexOf('function makeCoverage('), end = source.indexOf('async function updateMeta(',begin);
+  const make = runInNewContext(source.slice(begin,end) + ';makeCoverage');
+  const manifest = {trackBackupsMissing:0,eventsMissing:0,eventReplays:{one:{},two:{}}};
+  const historical = {complete:true,counts:{profiles:2889},coverage:{complete:true}};
+  const evidence = {profiles:{profiles:3024,results:16849,boards:380},
+    replay:{complete:true,normal:{known:16849,available:16849},events:{known:775,published:775},legacyReplayUnavailable:12}};
+  const result = make({complete:true},manifest,null,null,historical,evidence);
+  assert.equal(result.profileReplay.complete,true);
+  assert.equal(result.currentStaging.replayValidationComplete,true);
+  assert.equal(result.currentStaging.legacyReplayExceptions,12);
+  assert.equal(result.currentStaging.counts.verifiedLaneManifestReferences,2);
+  assert.equal(result.currentStaging.counts.eventBothLaneValidatedBindings,775);
+  assert.equal(result.currentStaging.counts.profileResultAccounts,3024);
+  assert.equal(result.currentStaging.complete,false); assert.equal(result.complete,false);
+  evidence.replay.legacyReplayUnavailable=0;
+  assert.equal(make({complete:true},manifest,null,null,historical,evidence).complete,true);
 });

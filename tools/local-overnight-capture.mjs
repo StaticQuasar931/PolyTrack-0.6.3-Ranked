@@ -7,6 +7,7 @@ import {createRequire} from 'node:module';
 import {localOvernightCapturePlan,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
 import {snapshotPublicationFiles} from './local-capture-publication.mjs';
+import {publicationAddArgvBatches} from './local-publication-argv.mjs';
 import {runBoundedCaptureProcess} from './local-capture-process.mjs';
 import {createLocalCaptureGit,assertBoundedLocalSource,publishLocalCaptureCommit,reconcileLocalPublication} from './local-capture-git.mjs';
 import {prepareLocalArchiveReplayRepair} from './local-archive-replay-repair.mjs';
@@ -224,12 +225,13 @@ async function main(){
       const {nativeLedgerPublicationFiles}=await import('./verifier/local-snapshot-verification.mjs');
       const files=['events/public-catalog.json','tools/workflow-capture-state.json','index.html','snapshot-current.json',
         ...await nativeLedgerPublicationFiles(workspace),...await snapshotPublicationFiles({root:workspace,directory:result.directory})];
+      const stagingArgv=publicationAddArgvBatches(files);
       const allowed=new Set(files);
       if((await git(['diff','--name-only','HEAD','--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean).some(file=>!allowed.has(file))||
         (await git(['ls-files','--others','--exclude-standard','-z'])).split('\0').filter(Boolean).some(file=>!allowed.has(file)&&!file.startsWith('local-reports/')))
         throw Error('Unexpected source or untracked change during capture');
       // Bounded argv batches fit Windows; never stage arbitrary neighboring files.
-      for(let i=0;i<files.length;i+=100)await git(['add','--',...files.slice(i,i+100)]);
+      for(const args of stagingArgv)await git(args);
       await git(['add','-u','--',':(glob)public-snapshots[0-9]*/**']);
       const staged=(await git(['diff','--cached','--name-only','--diff-filter=ACMRTUXB'])).trim().split('\n').filter(Boolean);
       if(staged.some(file=>!allowed.has(file)))throw Error('Unexpected capture publication file');

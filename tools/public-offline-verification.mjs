@@ -88,10 +88,29 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
       await checkPins();
       const local=JSON.parse(await read(runDirectory,'verification-ledger-current.json',2048));
       demand(local.manifestHash===pins.ledgerManifestHash,'prepared ledger changed');
-      const verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
+      let completionCalls=0,completionBytes,completionWrite,completionError;
+      const nativeCompleted=async receipt=>{
+        try{
+          demand(++completionCalls===1,'native completion receipt repeated');
+          demand(receipt&&typeof receipt==='object'&&!Array.isArray(receipt),'invalid native completion receipt');
+          completionBytes=JSON.stringify(receipt)+'\n';
+          completionWrite=fs.writeFile(path.join(runDirectory,'verified.json'),completionBytes,{flag:'wx',mode:0o600,flush:true});
+          await completionWrite;
+        }catch(error){completionError=error;throw error;}
+      };
+      let verified;
+      try{verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
         publishedEventTotalsBaseline,maxJobs,maxRuntimeMs,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
-        expectedScoringSha256:preflight.scoringPreflight.sourceSha256});
-      try{await fs.writeFile(path.join(runDirectory,'verified.json'),JSON.stringify(verified.receipt)+'\n',{flag:'wx',mode:0o600,flush:true});}
+        expectedScoringSha256:preflight.scoringPreflight.sourceSha256,nativeCompleted});}
+      catch(error){await completionWrite?.catch(()=>{});throw error;}
+      try{
+        if(completionWrite)await completionWrite;
+        if(completionError)throw completionError;
+        // Trusted adapters may omit the callback; real native completion persists
+        // before phase rename/cleanup can fail, without granting recovery authority.
+        if(completionCalls===0)await nativeCompleted(verified.receipt);
+        demand(completionBytes===JSON.stringify(verified.receipt)+'\n','native completion receipt differs from returned receipt');
+      }
       catch(error){await verified.dispose();throw error;}
       return Object.freeze({...verified,compile:async()=>{await checkPins();return verified.compile();}});
     }});
