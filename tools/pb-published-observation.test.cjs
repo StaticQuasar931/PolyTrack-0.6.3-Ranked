@@ -129,3 +129,16 @@ test('a false fingerprint without matching canonical confirmation signatures can
   h.storage.set('state',{[ACCOUNT]:{fingerprint}});
   await h.run();assert.equal(h.cost.get,1);
 });
+
+for(const settled of ['confirmed','published'])test('track 501 remains uploadable after 500 '+settled+' PBs with no extra observed GETs',async()=>{
+  const rows=Array.from({length:501},(_,i)=>local({trackId:(i+1).toString(16).padStart(64,'0'),uploadId:i+1}));
+  const last=rows.at(-1),profile=published({results:settled==='published'?rows.slice(0,500).map(r=>({trackId:r.trackId,timeMs:r.timeMs,replayHash:r.replayHash})):[]});
+  const h=fixture({rows,profile,cloud:{accountId:ACCOUNT,ownerUid:'owner',trackId:last.trackId,timeMs:11000,replayHash:hash('slower')}});
+  h.c.readLocalRaceRows=()=>h.rows;vm.runInContext(extract('localBestRowsForAccount'),h.c);
+  if(settled==='confirmed')h.storage.set('state',{[ACCOUNT]:{confirmed:Object.fromEntries(rows.slice(0,500).map(r=>[r.trackId,JSON.stringify([r.trackId,r.timeMs,r.replayHash])]))}});
+  assert.equal(h.c.localBestRowsForAccount(ACCOUNT).length,501);
+  const result=await h.run();assert.equal(result.checked,1);assert.equal(result.uploaded,1);assert.equal(h.cost.get,1);assert.equal(h.cost.ownership,1);
+  assert.equal(h.uploads[0].trackId,last.trackId);assert.equal(h.uploads[0].timeMs,10000);
+  if(settled==='published')assert.equal(result.observed,500);
+  await h.run();assert.equal(h.cost.get,1,'settled and snapshot-observed rows never add confirmation reads');
+});

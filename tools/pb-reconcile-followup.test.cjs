@@ -167,3 +167,40 @@ test('memory fallback bounds continuation after storage failure; malformed futur
     {continuationIssuedAt:h.Date.now(),continuationAt:h.Date.now()+999999}])
     assert.equal(h.localPbReconcileNotBefore('acct',value),0);
 });
+
+function withRecordingWriter(h,rows,{storageFails=false}={}){
+  const data=new Map(),key='recordings';
+  Object.assign(h,{RECORDING_STORE_KEY:key,readLocalRaceRows:()=>rows,activeRankedAccountId:()=> 'acct',
+    safeRecordingId:value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):null,
+    cleanCarId:()=>'',__pt062NormalizeStyle:value=>value,getDefaultCarStyle:()=>'',
+    localStorage:{getItem:name=>data.get(name)||null,setItem:(name,value)=>{if(storageFails)throw Error('storage unavailable');data.set(name,value);}},
+    readRecordingStore:ids=>{const records=JSON.parse(data.get(key)||'{}');return ids.map(id=>records[String(id)]||null);}});
+  const a=source.indexOf('  function localBestRowsForAccount('),b=source.indexOf('  function localPbSyncSignature(',a);
+  vm.runInContext(source.slice(a,b),h);
+  const start=source.indexOf('  function writeRecordingStore('),end=source.indexOf('  function readRecordingStore(',start);
+  vm.runInContext(source.slice(start,end),h);return data;
+}
+test('persisting a restored waiting replay automatically schedules bounded retry and uploads without a manual resume',async()=>{
+  const rows=[{accountId:'acct',trackId:'track',timeMs:10000,replayHash:replayHash('restored'),uploadId:7}];let reads=0,uploads=0;
+  const h=productionHarness({rows,readDoc:async()=>{reads++;return docMissing();}});withRecordingWriter(h,rows);
+  h.mirrorRaceResult=async(_url,row)=>{uploads++;assert.equal(row.recording,'restored');h.rememberConfirmedLocalPb('acct',row);return {saved:true};};
+  await h.reconcileLocalPersonalBestsToCloud('acct');assert.equal(reads,1);assert.equal(h.timers.size,0);
+  h.writeRecordingStore(7,{recording:'restored',frames:10000});assert.equal(h.timers.size,1);
+  const timer=[...h.timers.values()][0];assert.ok(timer.delay>=300000,'existing account retry backoff is retained');
+  for(let i=0;i<20;i++)h.writeRecordingStore(7,{recording:'restored',frames:10000});assert.equal(h.timers.size,1,'writes coalesce, never poll');
+  h.advance(timer.delay);await timer.fn();for(let i=0;i<30&&!uploads;i++)await Promise.resolve();
+  assert.equal(reads,2);assert.equal(uploads,1);assert.ok(h.storage.get('state').acct.confirmed.track);
+});
+for(const mode of ['unrelated','other-account','no-wait','confirmed','hidden','offline','storage-failure','stale-signature'])test('recording persistence does not schedule an unrelated/unsafe wake: '+mode,()=>{
+  const row={accountId:mode==='other-account'?'other':'acct',trackId:'track',timeMs:10000,replayHash:replayHash('r'),uploadId:7};
+  const h=productionHarness({rows:[row],readDoc:async()=>docMissing()});withRecordingWriter(h,[row],{storageFails:mode==='storage-failure'});
+  const signature=h.localPbSyncSignature(row);h.storage.set('state',{acct:{waitingReplay:mode==='no-wait'?{}:{track:mode==='stale-signature'?'stale':signature},...(mode==='confirmed'?{confirmed:{track:signature}}:{})}});
+  if(mode==='hidden')h.document.visibilityState='hidden';if(mode==='offline')h.navigator.onLine=false;
+  h.writeRecordingStore(mode==='unrelated'?8:7,{recording:'r',frames:10000});assert.equal(h.timers.size,0);
+});
+test('restored replay wake never shortens global quota or persisted continuation bounds',()=>{
+  const row={accountId:'acct',trackId:'track',timeMs:10000,replayHash:replayHash('r'),uploadId:7};
+  const h=productionHarness({rows:[row],readDoc:async()=>docMissing(),paused:()=>true});withRecordingWriter(h,[row]);
+  h.storage.set('quota',h.Date.now()+900000);h.storage.set('state',{acct:{waitingReplay:{track:h.localPbSyncSignature(row)},retryAt:h.Date.now()+300000}});
+  h.writeRecordingStore(7,{recording:'r',frames:10000});assert.ok([...h.timers.values()][0].delay>=900000);
+});

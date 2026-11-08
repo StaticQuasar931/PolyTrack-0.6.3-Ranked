@@ -3,8 +3,8 @@ const source=fs.readFileSync(path.join(__dirname,'..','polytrack_062_patch.js'),
 function extract(name){const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m'));assert(start>=0,name);const tail=source.slice(start),end=tail.indexOf('\n  }');assert(end>0,name);return tail.slice(0,end+4);}
 function setup(saved=null){
  const elements=new Map(),ctx={console,Date,Map,Set,Number,Promise,practiceObserver:null,overallRacerQuery:'',overallCategory:'events',overallPage:0,OVERALL_PAGE_SIZE:15,overallEntriesCache:[],rankedFilterResult:null,eventTotalsSnapshot:null,eventTotalsRequest:null,eventTotalsState:{status:'idle',checkedAt:0},EVENT_TOTALS_CACHE_KEY:'test',readJsonStorage:()=>saved,writeJsonStorage:(_k,v)=>{saved=v;},readPublicSnapshotBackup:async()=>null,snapshotOnlyForNewAccount:()=>false,profileSnapshotResults:new Map(),loadProfileSnapshotResults:async()=>false,warmProfileLocalPlacements:async()=>false,localPlannerProfileEntry:()=>null,cleanUserId:x=>String(x),withTimeout:p=>p,renderEntries:()=>{},updateRankedFreshness:()=>{},eventCloudRead:async()=>({entries:[],updatedAt:1}),document:{getElementById:id=>elements.get(id),querySelector:()=>null,querySelectorAll:()=>[]},window:{},syncCategorySelect:()=>{},hydrateOverallCarModels:()=>{},escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('"','&quot;'),safeDisplayName:x=>x,formatRp:String,formatRaceTime:value=>`${value}ms`,durationLabel:value=>`${value}ms`,activeRankedAccountId:()=>'',racerCosmeticClasses:()=>'',carModelPreview:()=>'',countryFlagMarkup:()=>'',profileBadgeMarkup:()=>'',ageLabel:String};
- ctx.sanitizeProfileCosmetics=value=>({...value});ctx.rankedIdentityForRacer=event=>({...event,...ctx.overallEntriesCache.find(row=>(row.userId||row.accountId)===event.accountId)});ctx.syncRankedFilterRowsSafely=()=>null;ctx.applyPersonalFilters=rows=>({rows,active:false});ctx.personalFilterRuntime=null;ctx.rankedFilterSnapshotMeta={complete:false};
- vm.createContext(ctx);for(const name of ['searchRankingRows','eventIdentityPresentation','normalizeEventTotals','savedEventTotals','fetchEventTotals','sortedEventEntries','renderEventEntryRow','renderEventEntries','updateEventFreshness','sortedOverallEntries','currentLeaderboardCount','updateOverallPager','changeOverallPage'])vm.runInContext(extract(name),ctx);
+ ctx.compactProfilePresentationLoad=Promise.resolve();ctx.paintLeaderboardRows=(target,html)=>{target.innerHTML=html;return true;};ctx.sanitizeProfileCosmetics=value=>({...value});ctx.rankedIdentityForRacer=event=>({...event,...ctx.overallEntriesCache.find(row=>(row.userId||row.accountId)===event.accountId)});ctx.syncRankedFilterRowsSafely=()=>null;ctx.applyPersonalFilters=rows=>({rows,active:false});ctx.personalFilterRuntime=null;ctx.rankedFilterSnapshotMeta={complete:false};
+ vm.createContext(ctx);for(const name of ['searchRankingRows','eventIdentityPresentation','normalizedEventHighlights','normalizeEventTotals','savedEventTotals','fetchEventTotals','sortedEventEntries','eventRpHighlightMarkup','renderEventEntryRow','renderEventEntries','updateEventFreshness','sortedOverallEntries','currentLeaderboardCount','updateOverallPager','changeOverallPage'])vm.runInContext(extract(name),ctx);
  return {ctx,elements,getSaved:()=>saved};
 }
 const row=(id='a',rp=20,rank=1)=>({accountId:id,name:'Event Racer',rp,rank,events:2});
@@ -29,7 +29,7 @@ test('Rolling Hills totals preserve bounded optional contribution, time and adva
  const valid=ctx.normalizeEventTotals({updatedAt,entries:[{...row(),rollingHillsRunAgeMs:1000,rollingHillsEventRpContribution:500,permanentRollingHillsRp:500,rollingHillsTimeMs:20000}]}).entries[0];
  assert.equal(valid.rollingHillsRunAgeMs,1000);assert.equal(valid.rollingHillsEventRpContribution,500);assert.equal(valid.permanentRollingHillsRp,500);assert.equal(valid.rollingHillsTimeMs,20000);
  ctx.eventTotalsSnapshot={updatedAt,entries:[valid]};const html=ctx.renderEventEntryRow(valid,0);
- assert.match(html,/Rolling Hills/);assert.match(html,/\+500 ERP/);assert.match(html,/20000ms/);assert.match(html,/run [5-9]\d{3}ms old/);
+ assert.match(html,/Rolling Hills/);assert.match(html,/\+500 ERP/);assert.doesNotMatch(html,/20000ms|run .*old/);
  const invalid=ctx.normalizeEventTotals({updatedAt,entries:[{...row('b'),rollingHillsRunAgeMs:-1,rollingHillsEventRpContribution:1002,permanentRollingHillsRp:'500',rollingHillsTimeMs:0}]}).entries[0];
  assert.equal(invalid.rollingHillsRunAgeMs,null);assert.equal(invalid.rollingHillsEventRpContribution,null);assert.equal(invalid.permanentRollingHillsRp,null);assert.equal(invalid.rollingHillsTimeMs,null);
  assert.doesNotMatch(ctx.renderEventEntryRow(invalid,0),/Rolling Hills/);
@@ -72,7 +72,7 @@ test('unknown event profile opens honest dialog without run reads',()=>{
  const {ctx,elements}=setup();const content={dataset:{}},popup={};elements.set('overallProfileContent',content);elements.set('overallProfilePopup',popup);let opened=false;ctx.openRankedDialog=p=>{assert.equal(p,popup);opened=true;};vm.runInContext(extract('openRankedProfile'),ctx);ctx.openRankedProfile('unknown');assert(opened);assert.match(content.innerHTML,/No Overall score or track results are inferred/);
 });
 test('manual refresh selects event fetch and normal category selection does not open totals dialog',()=>{
- const {ctx}=setup();Object.assign(ctx,{lastRankedManualRefreshAt:0,RANKED_MANUAL_REFRESH_COOLDOWN_MS:120000,rankedManualRefreshFailed:false,rankedRefreshCooldownTimer:0,setTimeout:()=>1,clearTimeout(){}});let forced=false;ctx.fetchEventTotals=force=>forced=force;vm.runInContext(extract('requestRankedRefresh'),ctx);ctx.requestRankedRefresh();assert(forced);assert.doesNotMatch(extract('setOverallCategory'),/ui\.totals/);assert.match(source,/window\.__pt062OpenRankedEvents=function/);assert.match(extract('renderEntries'),/renderEventEntries\(listEl\)/);
+ const {ctx}=setup();Object.assign(ctx,{lastRankedManualRefreshAt:0,RANKED_MANUAL_REFRESH_COOLDOWN_MS:120000,rankedManualRefreshFailed:false,rankedRefreshCooldownTimer:0,setTimeout:()=>1,clearTimeout(){}});let forced=false;ctx.fetchEventTotals=force=>forced=force;vm.runInContext(extract('requestRankedRefresh'),ctx);ctx.requestRankedRefresh();assert(forced);assert.doesNotMatch(extract('setOverallCategory'),/ui\.totals/);assert.match(source,/window\.__pt062OpenRankedEvents=function/);assert.match(extract('renderEntries'),/renderEventEntries\(listEl,quietRows\)/);
 });
 
 test('unknown appearance never fabricates a default car',()=>{const {ctx}=setup();ctx.carModelPreview=()=>assert.fail('invented appearance');ctx.renderEventEntryRow(row(),0);});
@@ -134,6 +134,41 @@ test('Event RP normalization retains public presentation and drops private field
 test('Event RP omits redundant summary and uses the middle for event information',()=>{
  const {ctx}=setup({updatedAt:5,entries:[row('a',100,1)]});ctx.updateOverallPager=()=>{};
  const list={innerHTML:'',scrollTop:0};ctx.renderEventEntries(list);assert.doesNotMatch(list.innerHTML,/event-rp-summary/);assert.match(list.innerHTML,/Average 50 ERP per event/);
+});
+
+test('published event highlights survive normalization, caching and rendering without changing scores',async()=>{
+ const {ctx,getSaved}=setup();const highlight={kind:'kodub',periodId:'kodub_week',trackId:'a'.repeat(64),name:'Zonda',eventRp:489,rank:4,fieldSize:87};
+ const input={updatedAt:5,entries:[{...row('a',1000),finiteEventRp:489,rollingHillsEventRpContribution:511,eventHighlights:[highlight]}]};
+ ctx.readPublicSnapshotBackup=async()=>input;ctx.eventCloudRead=()=>assert.fail('Static event data must not call the backend');
+ await ctx.fetchEventTotals();const [entry]=ctx.sortedEventEntries(),html=ctx.renderEventEntryRow(entry,0);
+ assert.equal(entry.rp,1000);assert.equal(entry.finiteEventRp,489);assert.equal(entry.rank,1);
+ assert.equal(getSaved().entries[0].eventHighlights[0].name,'Zonda');assert.match(html,/Zonda<\/b> \+489 ERP/);
+ assert.match(html,/489 ERP from timed events/);assert.match(html,/#4 \/ 87 verified/);
+ entry.eventHighlights[0].name='Changed';assert.equal(input.entries[0].eventHighlights[0].name,'Zonda');
+});
+
+test('malformed or over-budget highlights stay absent without invalidating a valid aggregate',()=>{
+ const {ctx}=setup();const item={kind:'weekly',periodId:'weekly',trackId:'a'.repeat(64),name:'Track',eventRp:20,rank:null,fieldSize:null};
+ for(const eventHighlights of [[{...item,eventRp:101}],[item,item],[{...item,rank:1}],[{...item,trackId:'bad'}],[{...item,eventRp:11}]]){
+  const [entry]=ctx.normalizeEventTotals({updatedAt:1,entries:[{...row('a',100),finiteEventRp:10,eventHighlights}]}).entries;
+  assert.equal(entry.rp,100);assert.equal(entry.eventHighlights.length,0);
+ }
+});
+
+test('invalid and missing component evidence cannot finance event highlight details',()=>{
+ const {ctx}=setup(),finite={kind:'kodub',periodId:'kodub_week',trackId:'a'.repeat(64),name:'Invalid detail',eventRp:500,rank:null,fieldSize:null};
+ const permanent={...finite,kind:'permanent',periodId:'permanent-rolling-hills',trackId:'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778',eventRp:1000};
+ for(const extra of [
+  {finiteEventRp:1001,eventHighlights:[finite]},
+  {permanentRollingHillsRp:900,eventHighlights:[finite]},
+  {finiteEventRp:900,permanentRollingHillsRp:100,eventHighlights:[permanent]},
+  {permanentRollingHillsRp:100,rollingHillsEventRpContribution:200,eventHighlights:[finite]},
+  {eventHighlights:[finite]}
+ ]){
+  const [entry]=ctx.normalizeEventTotals({updatedAt:1,entries:[{...row('a',1000),...extra}]}).entries;
+  assert.equal(entry.rp,1000);assert.equal(entry.eventHighlights.length,0);
+  assert.doesNotMatch(ctx.renderEventEntryRow(entry,0),/Invalid detail/);
+ }
 });
 
 

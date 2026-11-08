@@ -203,6 +203,27 @@ test('native adapter groups standard jobs <=16, extended singly, preserving inpu
   assert(result.every(value=>value.trackId===track&&value.status==='unavailable'));
 });
 
+test('interleaved standard peers share a launch without merging extended jobs or changing output identity',async()=>{
+  const first=job(1),second=job(2),third=job(3),long={...job(50),resourceProfile:'extended-local',timeMs:400000,frames:400000};
+  const jobs=[first,long,second,third],before=structuredClone(jobs),calls=[];
+  const results=await verifyLocalNativeBatch('fixture',jobs,[],{verifyBatch:async(_root,selected,_tracks,{profile})=>{
+    calls.push({profile,ids:selected.map(value=>value.resultId)});
+    return selected.map(value=>({...native(value),status:'unavailable',reason:'fixture'}));
+  }});
+  assert.deepEqual(calls,[{profile:'standard',ids:[first.resultId,second.resultId,third.resultId]},{profile:'extended-local',ids:[long.resultId]}]);
+  assert.deepEqual(results.map(value=>value.resultId),jobs.map(value=>value.resultId));
+  assert.deepEqual(jobs,before);
+});
+
+test('profile packing keeps first-group order and standard batches bounded at sixteen',async()=>{
+  const longs=[40,41].map(n=>({...job(n),resourceProfile:'extended-local',timeMs:400000,frames:400000}));
+  const jobs=[longs[0],...Array.from({length:8},(_,i)=>job(i+1)),longs[1],...Array.from({length:10},(_,i)=>job(i+9))],calls=[];
+  await verifyLocalNativeBatch('fixture',jobs,[],{verifyBatch:async(_root,selected,_tracks,{profile})=>{
+    calls.push([profile,selected.length]);return selected.map(value=>({...native(value),status:'unavailable',reason:'fixture'}));
+  }});
+  assert.deepEqual(calls,[['extended-local',1],['standard',16],['extended-local',1],['standard',2]]);
+});
+
 test('explicit extended policy works within unchanged limits and full-call plus packaging reserve',async t=>{
   const {options}=await fixture(t),extended={...job(),resourceProfile:'extended-local',timeMs:400000,frames:400000};
   options.jobs=[extended];options.policy={...policy,resourceProfiles:['standard','extended-local']};
@@ -214,6 +235,21 @@ test('explicit extended policy works within unchanged limits and full-call plus 
   assert.equal(calls,0);assert.equal(deferred.counts.unprocessed,1);
   const passed=await verifyLocalSnapshot({...options,expectedManifestHash:deferred.ledgerManifestHash,maxRuntimeMs:200000,packReserveMs:60000});
   assert.equal(calls,1);assert.equal(passed.counts.verified,1);
+});
+
+test('packed selection cannot renew the absolute allowance for an interleaved extended job',async t=>{
+ const {options}=await fixture(t);let elapsed=0;const calls=[];
+ const currentPolicy={...policy,resourceProfiles:['standard','extended-local']};
+ const long={...job(50),resourceProfile:'extended-local',timeMs:400000,frames:400000};
+ const result=await verifyLocalSnapshot({...options,jobs:[job(1),long,job(2)],policy:currentPolicy,
+  now:()=>100000+elapsed,maxRuntimeMs:200000,packReserveMs:60000,
+  verify:async(_root,selected,_tracks,capability)=>{
+   calls.push({profile:capability.profile,ids:selected.map(value=>value.resultId),deadline:capability.deadline});
+   assert.equal(capability.profile,'standard');elapsed+=20000;return selected.map(value=>native(value,currentPolicy));
+  }});
+ assert.equal(calls.length,1);assert.equal(calls[0].ids.length,2);assert(Number.isFinite(calls[0].deadline));
+ assert.equal(result.counts.nativeDispatched,2);assert.equal(result.counts.verified,2);assert.equal(result.counts.unprocessed,1);
+ assert.equal(result.decisions.find(value=>value.binding.timeMs===400000).reason,'native_budget');
 });
 
 test('direct native adapter excludes trusted assets belonging to a later split batch',async()=>{

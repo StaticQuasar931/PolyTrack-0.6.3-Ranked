@@ -1,17 +1,28 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 328,
+    "number": 329,
     "version": "0.6.3",
-    "revision": 274,
+    "revision": 275,
     "notes": [
-      "Leaderboards keep names and verification labels steady while loading.",
-      "Track loading spends less time waiting on the browser cache.",
-      "Event RP clearly distinguishes your event result from your normal PB.",
-      "Earlier updates highlight releases you have not seen, with shorter titles."
+      "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
+      "Event rankings retain saved event highlights and validate their point totals.",
+      "Replay verification shares more browser launches while keeping its existing safety limits."
     ]
   },
   "entries": [
+    {
+      "number": 328,
+      "title": "Stabilize leaderboard loading and clarify event points and missed updates",
+      "commit": "64a5298293efc2f7255cfaa458a0ffb62c0fa796",
+      "committedAt": "2026-11-08T03:45:29.000Z",
+      "notes": [
+        "Leaderboards keep names and verification labels steady while loading.",
+        "Track loading spends less time waiting on the browser cache.",
+        "Event RP clearly distinguishes your event result from your normal PB.",
+        "Earlier updates highlight releases you have not seen, with shorter titles."
+      ]
+    },
     {
       "number": 326,
       "title": "Validate original proof policy and preserve completion before backup",
@@ -175,16 +186,6 @@
       "notes": [
         "Fixed route planning for profiles that were only partly loaded.",
         "Kodub weekly leaderboards now show published Event RP alongside the right run."
-      ]
-    },
-    {
-      "number": 305,
-      "title": "Compact snapshot lookup downloads without dropping replays",
-      "commit": "34180c99103f0da28ffc616609eb8a45f0283e9b",
-      "committedAt": "2026-11-06T14:42:15.000Z",
-      "notes": [
-        "Fresh snapshot downloads are smaller, with all saved replays retained.",
-        "Improved profile and replay lookup loading."
       ]
     }
   ],

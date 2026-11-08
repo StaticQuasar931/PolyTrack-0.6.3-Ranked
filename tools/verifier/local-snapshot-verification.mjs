@@ -129,11 +129,15 @@ async function defaultEngine({root,policy}) {
     'current pinned engine/policy mismatch');
 }
 function nativeGroups(jobs) {
-  const groups=[];
+  const groups=[];let standard=null;
   for (const job of jobs) {
-    const profile=job.resourceProfile || 'standard',last=groups.at(-1);
-    if (profile === 'standard' && last?.profile === profile && last.jobs.length < 16) last.jobs.push(job);
-    else groups.push({profile,jobs:[job]});
+    const profile=job.resourceProfile || 'standard';
+    if(profile==='standard'){
+      // Pack only this admitted selection, without a second browser for standard
+      // peers separated by extended singletons. Return values still use input order.
+      if(!standard||standard.jobs.length===16){standard={profile,jobs:[]};groups.push(standard);}
+      standard.jobs.push(job);
+    }else groups.push({profile,jobs:[job]});
   }
   return groups;
 }
