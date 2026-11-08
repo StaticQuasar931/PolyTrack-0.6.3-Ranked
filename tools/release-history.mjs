@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 336,
+    "number": 337,
     "version": "0.6.3",
-    "revision": 281,
+    "revision": 282,
     "notes": [
-      "Saved PB syncing handles confirmations and connection failures more reliably.",
-      "Podium cards sit below your car again."
+      "Cleaner medal counts and next-podium targets below your car."
     ]
   },
   "entries": [
+    {
+      "number": 336,
+      "title": "Fix saved PB reconciliation and restore under-car podium cards",
+      "commit": "bf840b8ff6d349c2139e4fb4536202c4c75e731f",
+      "committedAt": "2026-11-08T22:40:54.000Z",
+      "notes": [
+        "Saved PB syncing handles confirmations and connection failures more reliably.",
+        "Podium cards sit below your car again."
+      ]
+    },
     {
       "number": 335,
       "title": "Keep podium targets compact across screen sizes",
@@ -186,13 +195,6 @@ const historyData = {
       "title": "Support full catch-up encrypted recovery checkpoints",
       "commit": "f9011194f790d8b1789d8632a5d72c57ebdb72a8",
       "committedAt": "2026-11-07T10:13:36.000Z",
-      "notes": []
-    },
-    {
-      "number": 313,
-      "title": "Recover complete captured PB pages without another database scan",
-      "commit": "4f13ff93a261a8a0dd348660440a8adf55cbe401",
-      "committedAt": "2026-11-07T09:51:38.000Z",
       "notes": []
     }
   ],

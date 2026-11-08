@@ -95,3 +95,8 @@ test('route labels do not default an unknown new target to number one', async ()
   assert.equal(evidence({simulationComplete:true,currentRank:0}),'Points improve at this target, not every finish');
   assert.doesNotMatch(evidence({simulationComplete:true}),/loaded standings|easy/i);
 });
+
+test('profile podium tiles retain all three known counts without inventing missing totals',()=>{
+ const html=achievements({gold:2,silver:0,bronze:1},{showEmpty:true});assert.equal((html.match(/class="profile-achievements/g)||[]).length,3);assert.match(html,/Silver podiums: 0/);
+ assert.doesNotMatch(achievements({gold:2},{showEmpty:true}),/Silver podiums: 0/);
+});

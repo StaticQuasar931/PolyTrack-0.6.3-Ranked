@@ -30,7 +30,7 @@ export function compactProfileParticipationMarkup(entry, savedExtraCount = 0, { 
 }
 
 /** medalIcon returns a trusted native image URL, not markup. No zero medals are invented. */
-export function compactProfileAchievementMarkup(medals, { escapeHtml = escapeAttribute, medalIcon } = {}) {
+export function compactProfileAchievementMarkup(medals, { escapeHtml = escapeAttribute, medalIcon, showEmpty = false } = {}) {
   const rows = [['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']]
     .map(([kind, label]) => [kind, label, knownCount(medals?.[kind])]);
   const earned = rows.filter(([, , count]) => count !== null && count > 0);
@@ -40,7 +40,7 @@ export function compactProfileAchievementMarkup(medals, { escapeHtml = escapeAtt
     const detail = unknown ? 'Podium counts unavailable.' : 'Top 3 on recognized tracks with 5+ racers.';
     return `<p class="profile-no-medals" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${label}. ${detail}`)}">${label}</p>`;
   }
-  return earned.map(([kind, label, count]) => {
+  return (showEmpty && rows.every(([, , count]) => count !== null) ? rows : earned).map(([kind, label, count]) => {
     const url = typeof medalIcon === 'function' ? medalIcon(kind) : '';
     const image = typeof url === 'string' && url ? `<img src="${escapeHtml(url)}" alt="">` : '';
     return `<span class="profile-achievements profile-medal-card ${kind}" title="${escapeHtml(`${label}: top 3 on recognized tracks with 5+ racers.`)}" aria-label="${escapeHtml(`${label} podiums: ${count}`)}">${image}<b>${count}</b><small>${label}</small></span>`;
