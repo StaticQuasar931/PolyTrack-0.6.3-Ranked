@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 323,
+  "number": 324,
   "version": "0.6.3",
-  "revision": 270,
+  "revision": 271,
   "notes": [
-    "Improved reliability of snapshot updates."
+    "Fixed a problem that could stop event results from updating."
   ],
-  "preparedAt": "2026-11-08T00:24:26.126Z",
-  "committedAt": "2026-11-08T00:49:47.000Z"
+  "preparedAt": "2026-11-08T01:03:30.411Z",
+  "committedAt": "2026-11-08T01:11:40.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -332,7 +332,7 @@ function blocked(row) {
   return row.needsReview === true || row.reviewHold === true || row.excluded === true || row.unscored === true ||
     ['status', 'verificationStatus', 'validationState', 'verifiedState'].some(key =>
       typeof row[key] === 'string' && /(?:held|hold|review|excluded|rejected|mismatch|unavailable_final)/.test(row[key])) ||
-    typeof row.reason === 'string' && /(?:review|hold|excluded|rejected)/.test(row.reason);
+    typeof row.reason === 'string' && /(?:held|hold|review|excluded|rejected|mismatch|unavailable_final)/.test(row.reason);
 }
 function uniqueRows(rows, lane) {
   demand(Array.isArray(rows) && rows.length <= MAX_ENTRIES, 'current source rows');

@@ -194,13 +194,14 @@ test('exact current canonical and recording required; stale sources cannot resto
   assert.throws(() => overlay(f, ledger, {canonicalRows:[f.job, {...f.job, uploadId:2}]}), /duplicate current/);
 });
 
-test('holds and exclusions in current source/recording/board block approval', t => {
-  const f = fixture(), ledger = writeLedger({root:temporary(t), entries:[createLedgerEntry(f)], expectedManifestHash:null});
+for(const lane of ['normal','event'])test(lane+' holds and exclusions in current source/recording/board block approval', t => {
+  const f = fixture({lane}), ledger = writeLedger({root:temporary(t), entries:[createLedgerEntry(f)], expectedManifestHash:null});
   for (const flag of [{needsReview:true}, {excluded:true}, {reviewHold:true}, {status:'rejected'},
-    {verificationStatus:'unavailable_final'}, {reason:'review_excluded'}]) {
+    {verificationStatus:'unavailable_final'}, {reason:'review_excluded'}, {reason:'held'},
+    {reason:'native_time_mismatch'}, {reason:'unavailable_final'}]) {
     assert.equal(overlay(f, ledger, {canonicalRows:[{...f.job, ...flag}]}).report.verified, 0);
     assert.equal(overlay(f, ledger, {recordings:[{...f.job, ...flag}]}).report.verified, 0);
-    assert.equal(overlay(f, ledger, {board:{trackId:track, entries:[{...f.job, ...flag}]}}).report.verified, 0);
+    assert.equal(overlay(f, ledger, {board:{trackId:track,...(lane==='event'?{periodId:f.job.periodId}:{}),entries:[{...f.job,...flag}]}}).report.verified,0);
   }
 });
 

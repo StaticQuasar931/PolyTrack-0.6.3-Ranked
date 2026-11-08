@@ -387,6 +387,89 @@ test('missing or incompatible retained native media preserves the protected prev
   assert.deepEqual(missing.retainedNativeEntries.day1.recordings,[]);
 });
 
+async function pendingEventWithPublishedProof(t){
+  const f=await fixture(t,{events:true}),files=['events/day1.json',`event-playbacks/day1/${runId}.json`,'event-totals.json'];
+  const pristine=await Promise.all(files.map(file=>fs.readFile(path.join(f.directory,file))));
+  await runNativeSnapshotPhase(f.options);
+  assert.equal(f.calls.length,1);
+  const pointer=await read(f.root,'verification-ledger-current.json');
+  const ledger=readLedger({root:path.join(f.root,pointer.directory),expectedManifestHash:pointer.manifestHash});
+  assert(ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.runId===runId));
+  for(let i=0;i<files.length;i++)await fs.writeFile(path.join(f.directory,files[i]),pristine[i]);
+  // The public source can still be pending even when its exact root proof exists.
+  await fs.unlink(path.join(f.directory,`event-replays/day1/${account}.json`));
+  assert((await read(f.directory,'manifest.json')).nativeVerificationLedger);
+  f.reuseOptions={...f.options,reuseOnly:true,
+    verify:async()=>assert.fail('published pending proof reuse must not dispatch physics'),
+    reviewFactory:async()=>assert.fail('published pending proof reuse must not mint reviews'),
+    proofCheckpoint:async()=>assert.fail('published pending proof reuse must not import or checkpoint private proofs')};
+  return f;
+}
+
+test('public pending event playback with an exact root proof is retained and compiles reuse-only',async t=>{
+  const f=await pendingEventWithPublishedProof(t),pointer=await read(f.root,'verification-ledger-current.json');
+  const context=await prepareNativeSnapshotCapture(f.reuseOptions),retained=context.retainedNativeEntries.day1;
+  assert.equal(retained.previousBoard.entries.length,0);assert.equal(retained.previousBoard.pendingPlaybacks.length,1);
+  assert.equal(retained.recordings.length,1);assert.equal(retained.recordings[0].runId,runId);
+  assert.equal(retained.recordings[0].replay,replay);assert.equal(retained.recordings[0].submittedAt,2000);
+  assert.equal(context.retainedJobs.filter(job=>job.source===`event-playbacks/day1/${runId}.json`).length,1);
+  const result=await runNativeSnapshotPhase({...f.reuseOptions,captureContext:context});
+  assert.equal(result.authority,'stored-proof-overlay');assert.equal(result.counts.nativeDispatched,0);
+  assert.equal(result.counts.newProofs,0);assert.equal(result.backendReads,0);assert.equal(result.backendWrites,0);
+  assert.equal(f.calls.length,1);assert.equal(result.events.ready,true);
+  const board=await read(f.directory,'events/day1.json');
+  assert.equal(board.entries.length,1);assert.equal(board.entries[0].runId,runId);assert.equal(board.entries[0].verified,true);
+  assert.equal((board.pendingPlaybacks||[]).length,0);
+  assert.deepEqual(await read(f.root,'verification-ledger-current.json'),pointer);
+});
+
+const pendingMediaRestrictions={
+  'pending media hold':{reviewHold:true},
+  'pending media needsReview':{needsReview:true},
+  'pending media excluded':{excluded:true},
+  'pending media unscored':{unscored:true},
+  'pending media held status':{status:'held'},
+  'pending media held verificationStatus':{verificationStatus:'held'},
+  'pending media review validationState':{validationState:'review_required'},
+  'pending media excluded verifiedState':{verifiedState:'excluded'},
+  'pending media held reason':{reason:'held'},
+  'pending media hold reason':{reason:'hold'},
+  'pending media review reason':{reason:'review_required'},
+  'pending media excluded reason':{reason:'excluded'},
+  'pending media rejected reason':{reason:'rejected'},
+  'pending media mismatch reason':{reason:'mismatch'},
+  'pending media unavailable reason':{reason:'unavailable_final'}
+};
+for(const scenario of ['missing media','changed replay bytes','changed replay hash','conflicting submission date','missing pending submittedAt with legacy date',
+  'out-of-period submission date','incompatible policy','pending row hold',...Object.keys(pendingMediaRestrictions)])
+test('public pending proof reuse fails closed for '+scenario,async t=>{
+  const f=await pendingEventWithPublishedProof(t),file=`event-playbacks/day1/${runId}.json`;
+  const board=await read(f.directory,'events/day1.json'),raw=await read(f.directory,file);
+  if(scenario==='missing media')await fs.unlink(path.join(f.directory,file));
+  else if(scenario==='incompatible policy'){
+    const changed=structuredClone(policy);changed.verifierFingerprint='0'.repeat(64);
+    f.reuseOptions.buildPolicy=async()=>changed;
+  }else{
+    if(scenario==='changed replay bytes')raw.replay=deflateSync(Buffer.alloc(15,1)).toString('base64url');
+    if(scenario==='changed replay hash')raw.replayHash='1'.repeat(64);
+    if(scenario==='conflicting submission date')raw.submittedAt++;
+    if(scenario==='missing pending submittedAt with legacy date'){raw.runCreatedAt=raw.submittedAt;delete raw.submittedAt;}
+    if(scenario==='out-of-period submission date')board.pendingPlaybacks[0].submittedAt=raw.submittedAt=board.period.endsAt;
+    if(scenario==='pending row hold')board.pendingPlaybacks[0].reviewHold=true;
+    if(Object.hasOwn(pendingMediaRestrictions,scenario))Object.assign(raw,pendingMediaRestrictions[scenario]);
+    await write(f.directory,'events/day1.json',board);await write(f.directory,file,raw);
+  }
+  const before=await inventory(f.root);
+  if(['missing media','incompatible policy','pending row hold'].includes(scenario)||Object.hasOwn(pendingMediaRestrictions,scenario)){
+    const context=await prepareNativeSnapshotCapture(f.reuseOptions);
+    assert.deepEqual(context.retainedNativeEntries.day1.previousBoard,board);
+    assert.equal(context.retainedNativeEntries.day1.recordings.length,0);
+  }
+  await assert.rejects(runNativeSnapshotPhase(f.reuseOptions),
+    /approved event payload unavailable|protected retained (?:event|pending) .*mismatch|Retained event requires original submittedAt|Invalid exact event ledger binding|Invalid retained event pending lane|Invalid public pending event playback binding|Invalid retained event status/);
+  assert.equal(f.calls.length,1);assert.deepEqual(await inventory(f.root),before);
+});
+
 test('a hash-valid companion cannot smuggle private fields through cold hydration',async t=>{
   const f=await fixture(t,{events:true});await runNativeSnapshotPhase(f.options);
   const manifest=await read(f.directory,'manifest.json'),old=manifest.nativeEventSources.day1;

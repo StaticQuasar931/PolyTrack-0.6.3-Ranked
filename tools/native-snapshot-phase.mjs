@@ -175,16 +175,20 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
     if(id==='permanent-rolling-hills')continue;
     const sourceBytes=await fs.readFile(path.join(directory,record.path)),previousBoard=JSON.parse(sourceBytes);
     if(previousBoard.nativeEventOverlay)overlaidSourceHashes[id]=nativeEventSourceHash(publicEventBackup(previousBoard,id));
-    const media=[];
-    for(const row of previousBoard.entries||[]){
+    const media=[],previousRows=[...(previousBoard.entries||[]).map(row=>({row,pending:false})),
+      ...(previousBoard.pendingPlaybacks||[]).map(row=>({row,pending:true}))];
+    for(const {row,pending} of previousRows){
       if(!HASH.test(row.runId||'')||!HASH.test(row.replayHash||'')||!Number.isSafeInteger(row.submittedAt))continue;
-      const relative=`event-replays/${id}/${row.accountId}.json`,raw=await optional(directory,relative);
+      const relative=pending?`event-playbacks/${id}/${row.runId}.json`:`event-replays/${id}/${row.accountId}.json`,raw=await optional(directory,relative);
       if(!raw)continue;
-      const job={lane:'event',kind:'event',source:relative,accountId:row.accountId,trackId:previousBoard.period.trackId,
+      const job={lane:'event',kind:pending?'event-pending':'event',source:relative,accountId:row.accountId,trackId:previousBoard.period.trackId,
         periodId:id,runId:row.runId,timeMs:row.timeMs,frames:row.timeMs,uploadId:raw.uploadId??null,replayHash:row.replayHash,
         replay:raw.replay,submittedAt:row.submittedAt,resultId:row.runId};
       const entry=ledger.entries.find(value=>value.key===ledgerKey(ledgerBinding(job)));
       if(!entry||ledgerDisposition(entry)!=='verified')continue;
+      if(pending)demand(row.pending===true&&row.verified===false&&row.eventRpEligible===false&&
+        raw.pending===true&&raw.verified===false&&raw.eventRpEligible===false&&raw.submittedAt===row.submittedAt,
+        'protected retained pending status/date mismatch');
       demand(raw.periodId===id&&raw.trackId===job.trackId&&raw.accountId===job.accountId&&raw.runId===job.runId&&
         raw.timeMs===job.timeMs&&raw.frames===job.frames&&raw.replayHash===job.replayHash&&sha(raw.replay)===job.replayHash,
         'protected retained event binding mismatch');
@@ -192,12 +196,12 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
       demand(submittedAt===row.submittedAt,'protected retained event submission date mismatch');
       const retained={...raw,submittedAt,uploadId:job.uploadId};
       const gate=applyLedgerToBoard({board:{periodId:id,trackId:job.trackId,entries:[{...row,...ledgerBinding(job)}]},
-        ledger,policy,canonicalRows:[job],recordings:[{...job,replay:raw.replay}],lane:'event'});
+        ledger,policy,canonicalRows:[job],recordings:[{...raw,...job,replay:raw.replay}],lane:'event'});
       if(gate.report.verified!==1)continue;
       media.push(retained);retainedJobs.push(job);
     }
     // Missing/incompatible media must defer a protected native admission, never erase it.
-    const hasNative=previousBoard.entries?.some(row=>ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&
+    const hasNative=previousRows.some(({row})=>ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&
       entry.binding.accountId===row.accountId&&entry.binding.timeMs===row.timeMs&&
       (row.runId===undefined||entry.binding.runId===row.runId)));
     if(media.length||hasNative)retainedNativeEntries[id]={previousBoard,recordings:media,expectedSourceHash:sha(sourceBytes),sourceBytes};
