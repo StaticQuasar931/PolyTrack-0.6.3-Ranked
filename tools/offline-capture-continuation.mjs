@@ -42,8 +42,8 @@ export async function validateOfflineSource(c){
  demand(checkpoint.status==='failed'&&checkpoint.phase==='pre-native'&&checkpoint.sourceCommit===c.capturedSourceCommit&&checkpoint.failure?.operation==='encryption','capture must have stopped before physics');
  const source=await capturedInventory(c.sourceDirectory);
  demand(source.sha256===c.inventorySha256&&source.entries.length===c.inventoryFiles&&source.bytes===c.inventoryBytes,'saved capture changed');
- for(const file of ['native-complete.receipt.json','proofs.receipt.json','proofs.ptenc'])await absent(path.join(path.dirname(c.failedFile),file));
- for(const file of ['running.json','complete.json','failed.json','native-complete.receipt.json'])await absent(path.join(c.receiptDirectory,file));
+ for(const file of ['native-complete.receipt.json','verification-completed.json','verification-completed.receipt.json','proofs.receipt.json','proofs.ptenc'])await absent(path.join(path.dirname(c.failedFile),file));
+ for(const file of ['running.json','complete.json','failed.json','native-complete.receipt.json','verification-completed.json','verification-completed.receipt.json'])await absent(path.join(c.receiptDirectory,file));
  await absent(path.join(c.root,'local-reports/snapshot-staging'));
  return source;
 }

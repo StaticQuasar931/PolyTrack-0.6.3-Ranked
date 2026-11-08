@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 324,
+    "number": 325,
     "version": "0.6.3",
-    "revision": 271,
+    "revision": 272,
     "notes": [
-      "Fixed a problem that could stop event results from updating."
+      "More reliable event replay checks and recovery of completed verification results."
     ]
   },
   "entries": [
+    {
+      "number": 324,
+      "title": "Preserve pending event replays and respect verification holds",
+      "commit": "aacaea1d036a0a18c299f0ccb7b88830d49184f8",
+      "committedAt": "2026-11-08T01:11:40.000Z",
+      "notes": [
+        "Fixed a problem that could stop event results from updating."
+      ]
+    },
     {
       "number": 323,
       "title": "Make local snapshots more reliable and prevent stale captures",
@@ -178,16 +187,6 @@ const historyData = {
       "notes": [
         "Fixed newer personal bests being paired with old snapshot times.",
         "Kept Event RP calculations consistent with published standings.",
-        "Old archived finishes clearly show when a replay is unavailable."
-      ]
-    },
-    {
-      "number": 302,
-      "title": "Prepare bounded snapshot catch-up with honest legacy replay labels",
-      "commit": "01e51ba5ba4b5f969fcf817158a0872b4c680fe8",
-      "committedAt": "2026-11-06T13:14:33.000Z",
-      "notes": [
-        "Refreshing saved rankings and event replays.",
         "Old archived finishes clearly show when a replay is unavailable."
       ]
     }

@@ -24,6 +24,7 @@ import {connect} from './verifier/firestore.mjs';
 import {runPublicSnapshotBackup} from './public-snapshot-backup.mjs';
 import {prepareLocalArchiveReplayRepair,repairLocalArchiveReplays,ARCHIVE_REPAIR_COLLECTION,ARCHIVE_REPAIR_NOT_BEFORE} from './local-archive-replay-repair.mjs';
 import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
+import {createLocalNativeVerificationCompletion} from './local-native-verification-completion.mjs';
 import {assertLocalSource} from './local-capture-publication.mjs';
 import {validateLocalEvidence} from './local-overnight-capture.mjs';
 
@@ -135,6 +136,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
         return backup;},
       nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),
       nativePhaseOptions:{sourceCommit:receipt.testedCommit,publishedEventTotalsBaseline,maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
+        nativeCompleted:createLocalNativeVerificationCompletion({root,directory,owner,sourceCommit:receipt.testedCommit,maxJobs:plan.maxJobs}),
         proofCheckpoint:({directory:source,sourceBinding,ledgerManifestHash})=>checkpoint({directory:source,
           sourceCommit:receipt.testedCommit,phase:'native-proofs',sourceBinding,ledgerManifestHash})}});
     if(aborted)throw Error('Local capture cancelled; do not publish');

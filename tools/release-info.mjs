@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 324,
+  "number": 325,
   "version": "0.6.3",
-  "revision": 271,
+  "revision": 272,
   "notes": [
-    "Fixed a problem that could stop event results from updating."
+    "More reliable event replay checks and recovery of completed verification results."
   ],
-  "preparedAt": "2026-11-08T01:03:30.411Z",
-  "committedAt": "2026-11-08T01:11:40.000Z"
+  "preparedAt": "2026-11-08T02:15:11.956Z",
+  "committedAt": "2026-11-08T02:19:17.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

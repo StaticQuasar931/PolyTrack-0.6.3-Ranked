@@ -64,9 +64,9 @@ test('stale, malformed, foreign or caller-mismatched Pages metadata fails closed
   assert.equal(releaseUpdateAge({...release,revision:undefined},{document:page(),now}).source,'unknown');
 });
 
-test('real commit age still updates in minutes, hours and days and reports clock skew',()=>{
+test('real commit age updates in minutes, hours, days and weeks and reports clock skew',()=>{
   const document=page(),start=Date.parse(metadata.committedAt);
-  for (const [elapsed,text] of [[0,'less than a minute'],[60000,'1 minute'],[3600000,'1 hour'],[86400000,'1 day'],[1209600000,'14 days']]) {
+  for (const [elapsed,text] of [[0,'less than a minute'],[60000,'1 minute'],[3600000,'1 hour'],[86400000,'1 day'],[604800000,'1 week'],[1209600000,'2 weeks']]) {
     const age=releaseUpdateAge(release,{document,now:start+elapsed});
     assert.equal(age.text,`Committed ${text} ago`);
     assert.ok(age.nextUpdateMs>0&&age.nextUpdateMs<=60000);

@@ -463,11 +463,30 @@ export async function projectNativeEventSnapshot({baseline, ledger, canonicalRow
       if (witnesses.every(entry => ledgerDisposition(entry) !== 'verified')) {report.retainedBlocked++; continue;}
       demand(integer(row.submittedAt) && row.submittedAt >= period.startsAt && row.submittedAt < period.endsAt,
         'Retained event requires original submittedAt');
-      const media = prior.recordings.filter(value => value.periodId === period.id && value.trackId === period.trackId &&
+      let media = prior.recordings.filter(value => value.periodId === period.id && value.trackId === period.trackId &&
         value.accountId === row.accountId && value.timeMs === row.timeMs &&
         (value.submittedAt === row.submittedAt || priorVisible && value.submittedAt === undefined) &&
         (row.runId === undefined || row.runId === value.runId) && (row.replayHash === undefined || row.replayHash === value.replayHash));
       demand(media.length <= 1, 'Ambiguous retained native event recording');
+      // A proof completed after context preparation can use its exact current
+      // source payload. Missing old media alone is never permission to admit.
+      if (!media.length && HEX.test(row.runId || '') && HEX.test(row.replayHash || '') &&
+          Object.keys(restrictions(row)).length === 0) {
+        const binding = {...row, periodId: period.id, trackId: period.trackId};
+        const records = canonicalRows.filter(value => sameBinding(value, binding) && witnesses.some(entry =>
+          ledgerDisposition(entry) === 'verified' && ledgerKey(ledgerBinding(value, 'event')) === entry.key));
+        demand(records.length <= 1, 'Duplicate current retained event binding');
+        const sourceRows = [...source.entries, ...(source.pendingPlaybacks || [])].filter(value =>
+          value.accountId === row.accountId && value.timeMs === row.timeMs && value.submittedAt === row.submittedAt &&
+          (value.runId === undefined || value.runId === row.runId) &&
+          (value.replayHash === undefined || value.replayHash === row.replayHash));
+        if (records.length === 1 && sourceRows.length === 1 &&
+            [records[0], sourceRows[0]].every(value => Object.keys(restrictions(value)).length === 0)) {
+          const currentMedia = boundRecordings(recordings, records[0]);
+          demand(currentMedia.length <= 1, 'Ambiguous current retained event recording');
+          if (currentMedia.length === 1 && Object.keys(restrictions(currentMedia[0])).length === 0) media = currentMedia;
+        }
+      }
       if (!media.length) {
         if(row.runId&&row.replayHash)boundRecordings(prior.recordings,{...row,periodId:period.id,trackId:period.trackId},priorVisible);
         const exact = witnesses.filter(entry => entry.binding.runId === row.runId && entry.binding.replayHash === row.replayHash);

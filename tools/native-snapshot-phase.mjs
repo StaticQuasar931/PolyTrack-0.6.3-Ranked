@@ -242,7 +242,7 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
       baseline:createNativeEventBaseline({serverBoard:board,serverTotals:pairingTotals,expectedSourceHash:nativeEventSourceHash(board)}),
       retainedNativeEntries:captureContext.retainedNativeEntries?.[captured.id]}):await projectRetainedEventVerifications({...dependencies,
       serverBoard:board,expectedSourceHash:nativeEventSourceHash(board)});
-    demand(projection.ready!==false,'approved event payload unavailable');projections.push(projection);
+    demand(projection.ready!==false,'approved event payload unavailable: '+captured.id);projections.push(projection);
     const bytes=Buffer.from(JSON.stringify({schemaVersion:1,board})+'\n'),pin=sha(bytes);
     await fs.mkdir(cache,{recursive:true});await fs.writeFile(path.join(cache,pin+'.json'),bytes,{mode:0o600});pins[board.id]=pin;
   }
@@ -303,12 +303,13 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
-  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,
+  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,nativeCompleted=null,
   publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={},verificationOnly=false){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
+  demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
   demand(typeof preflight==='function','read-only scoring preflight required');
   demand((expectedCaptureSha256===null||HASH.test(expectedCaptureSha256))&&(expectedScoringSha256===null||HASH.test(expectedScoringSha256)),'invalid prepared source pins');
   const timings={};
@@ -401,6 +402,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       decisions:verification.decisions,engineDigest:verification.engineDigest,verifierFingerprint:verification.verifierFingerprint,
       policySha256:verification.policySha256,
       verificationComplete:verification.complete,priority:priority.counts,sourceCoverage:inputs.coverage,scoringPreflight,privateProofCheckpoint};
+    if(nativeCompleted)await nativeCompleted(structuredClone(receipt));
     let compiling=false,compiled=false,disposed=false;
     const source=path.join(temporary,'verified-source');
     if(verificationOnly)await fs.rename(candidate,source);

@@ -56,6 +56,8 @@ export async function preflightLocalCaptureCheckpoints({workspace,directory,reco
     await absent(path.join(target,name+'.ptenc'));await absent(path.join(target,name+'.receipt.json'));
   }
   await absent(path.join(target,'native-complete.receipt.json'));
+  await absent(path.join(target,'verification-completed.json'));
+  await absent(path.join(target,'verification-completed.receipt.json'));
   const probe=path.join(target,'.checkpoint-preflight-'+randomUUID());
   const handle=await fs.open(probe,'wx',0o600);
   try{await handle.writeFile('checkpoint preflight\n');await handle.sync();}

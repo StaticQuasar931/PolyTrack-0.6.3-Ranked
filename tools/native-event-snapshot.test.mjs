@@ -476,6 +476,142 @@ test('a protected prior pending source can prove admission after raw archive cle
   assert.equal(result.board.entries[0].verifiedAt, 3000);
 });
 
+function newlyVerifiedPriorPending(t) {
+  const previousBoard = board({rows: []});
+  return {...setup(t, {serverBoard: board({rows: []})}), retainedNativeEntries: {previousBoard,
+    recordings: [], expectedSourceHash: nativeEventSourceHash(previousBoard)}};
+}
+
+test('newly verified prior pending uses exact current media instead of reporting missing old media', async t => {
+  const options = newlyVerifiedPriorPending(t), before = JSON.stringify(options);
+  const result = await projectNativeEventSnapshot(options);
+  assert.equal(result.ready, true);
+  assert.equal(result.report.unavailableRetained, 0);
+  assert.equal(result.report.unavailableRecording, 0);
+  assert.equal(result.board.entries.length, 1);
+  assert.equal(result.board.entries[0].runId, run().runId);
+  assert.equal(result.board.entries[0].verified, true);
+  assert.equal(result.board.entries[0].submittedAt, 2000);
+  assert.equal(result.board.entries[0].verifiedAt, 3000);
+  assert.equal((result.board.pendingPlaybacks || []).length, 0);
+  assert.equal(result.promotedReplays.length, 1);
+  assert.equal(result.promotedReplays[0].replay, replay);
+  assert.equal(result.promotedReplays[0].replayHash, sha(replay));
+  assert.equal(result.adjustments.length, 1);
+  assert.equal(result.adjustments[0].deltaRp, eventRp(period, 1000));
+  assert.equal(JSON.stringify(options), before);
+});
+
+for (const scenario of ['missing current record', 'missing current media', 'wrong current record date', 'wrong current media date',
+  'wrong current record hash', 'wrong current media hash', 'wrong current record run', 'wrong current media run',
+  'wrong current record upload', 'wrong current media upload', 'corrupt current replay',
+  'missing current record date', 'missing current media date with legacy fallback', 'missing prior pending date',
+  'current record hold', 'current media hold', 'current media excluded', 'current media unscored',
+  'current media held status', 'current media held reason', 'current pending hold', 'held disposition', 'excluded disposition',
+  'missing proof', 'incompatible proof policy', 'duplicate current record', 'duplicate current media'])
+test('newly verified prior pending cannot fabricate admission for ' + scenario, async t => {
+  const options = newlyVerifiedPriorPending(t);
+  if (scenario === 'missing current record') options.canonicalRows = [];
+  if (scenario === 'missing current media') options.recordings = [];
+  if (scenario === 'wrong current record date') options.canonicalRows[0].submittedAt++;
+  if (scenario === 'wrong current media date') options.recordings[0].submittedAt++;
+  if (scenario === 'wrong current record hash') options.canonicalRows[0].replayHash = sha('other-current-record');
+  if (scenario === 'wrong current media hash') options.recordings[0].replayHash = sha('other-current-media');
+  if (scenario === 'wrong current record run') options.canonicalRows[0].runId = sha('other-current-run');
+  if (scenario === 'wrong current media run') options.recordings[0].runId = sha('other-current-run');
+  if (scenario === 'wrong current record upload') options.canonicalRows[0].uploadId = 1;
+  if (scenario === 'wrong current media upload') options.recordings[0].uploadId = 1;
+  if (scenario === 'corrupt current replay') options.recordings[0].replay += 'changed';
+  if (scenario === 'missing current record date') delete options.canonicalRows[0].submittedAt;
+  if (scenario === 'missing current media date with legacy fallback') {
+    options.recordings[0].runCreatedAt = options.recordings[0].submittedAt;
+    delete options.recordings[0].submittedAt;
+  }
+  if (scenario === 'missing prior pending date') {
+    delete options.retainedNativeEntries.previousBoard.pendingPlaybacks[0].submittedAt;
+    options.retainedNativeEntries.expectedSourceHash = nativeEventSourceHash(options.retainedNativeEntries.previousBoard);
+  }
+  if (scenario === 'current record hold') options.canonicalRows[0].needsReview = true;
+  if (scenario === 'current media hold') options.recordings[0].reviewHold = true;
+  if (scenario === 'current media excluded') options.recordings[0].excluded = true;
+  if (scenario === 'current media unscored') options.recordings[0].unscored = true;
+  if (scenario === 'current media held status') options.recordings[0].status = 'held';
+  if (scenario === 'current media held reason') options.recordings[0].reason = 'held';
+  if (scenario === 'current pending hold') {
+    options.baseline = createNativeEventBaseline({serverBoard: board({rows: [], waiting: [{...pending(), reviewHold: true}]}),
+      period, serverTotals: totals()});
+  }
+  if (scenario === 'held disposition' || scenario === 'excluded disposition')
+    options.ledger = loaded(t, [ledgerEntry(run(), scenario === 'held disposition' ? 'held' : 'excluded')]);
+  if (scenario === 'missing proof') options.ledger = loaded(t, []);
+  if (scenario === 'incompatible proof policy') options.policy = {...policy, verifierFingerprint: sha('incompatible-current-proof')};
+  if (scenario === 'duplicate current record') options.canonicalRows.push({...options.canonicalRows[0]});
+  if (scenario === 'duplicate current media') options.recordings.push({...options.recordings[0]});
+  const before = JSON.stringify(options);
+  let result;
+  try { result = await projectNativeEventSnapshot(options); }
+  catch (error) {
+    assert.match(error.message, /date conflict|submittedAt|pending lane|binding|replay|recording|frames|status|upload mismatch/i);
+    assert.equal(JSON.stringify(options), before);
+    return;
+  }
+  assert.equal(result.board.entries.length, 0);
+  assert.equal(result.promotedReplays.length, 0);
+  assert.equal(result.report.retainedAdmitted, 0);
+  assert.equal(result.report.admitted, 0);
+  assert.equal(result.adjustments.length, 0);
+  assert.equal(JSON.stringify(options), before);
+  if (scenario.startsWith('missing current') || scenario.startsWith('wrong current')) assert.equal(result.ready, false);
+});
+
+test('newly verified prior pending fallback never waives missing protected media for a prior visible PB', async t => {
+  const prior = await previousNative(t), options = setup(t, {serverBoard: board({rows: [], waiting: []})});
+  const result = await projectNativeEventSnapshot({...options,
+    retainedNativeEntries: {...prior.retainedNativeEntries, recordings: []}});
+  assert.equal(result.ready, false);
+  assert.equal(result.report.unavailableRetained, 1);
+  assert.equal(result.board.entries.length, 0);
+  assert.equal(result.promotedReplays.length, 0);
+});
+
+for (const freshLane of ['visible', 'pending'])
+test('newly verified prior visible uses exact fresh ' + freshLane + ' source and current media without changing its RP or date', async t => {
+  const previousBoard = board({rows: eventLeaderboard(period, [run()]), waiting: []}), priorRow = previousBoard.entries[0];
+  const serverBoard = board({rows: freshLane === 'visible' ? [structuredClone(priorRow)] : [],
+    waiting: freshLane === 'pending' ? [pending()] : []});
+  const options = {...setup(t, {serverBoard}), retainedNativeEntries: {previousBoard, recordings: [],
+    expectedSourceHash: nativeEventSourceHash(previousBoard)}};
+  const before = JSON.stringify(options), result = await projectNativeEventSnapshot(options);
+  assert.equal(result.ready, true);
+  assert.equal(result.report.unavailableRetained, 0);
+  assert.equal(result.report.retainedAdmitted, 1);
+  assert.equal(result.board.entries.length, 1);
+  const row = result.board.entries[0];
+  for (const key of ['accountId', 'runId', 'replayHash', 'timeMs', 'submittedAt', 'rp']) assert.equal(row[key], priorRow[key]);
+  assert.equal(row.verified, true); assert.equal(row.verifiedAt, 3000);
+  assert.equal(result.promotedReplays.length, 1);
+  assert.equal(result.promotedReplays[0].replay, replay);
+  assert.equal(result.promotedReplays[0].submittedAt, priorRow.submittedAt);
+  assert.equal((result.board.pendingPlaybacks || []).length, 0);
+  if (freshLane === 'visible') assert.deepEqual(result.adjustments, []);
+  assert.equal(JSON.stringify(options), before);
+});
+
+for (const field of ['runId', 'replayHash', 'submittedAt'])
+test('newly verified prior visible cannot borrow current media from a fresh source row with a different ' + field, async t => {
+  const previousBoard = board({rows: eventLeaderboard(period, [run()]), waiting: []});
+  const currentRow = {...previousBoard.entries[0], [field]: field === 'submittedAt' ? 2001 : sha('different-fresh-' + field)};
+  const options = {...setup(t, {serverBoard: board({rows: [currentRow], waiting: []})}),
+    retainedNativeEntries: {previousBoard, recordings: [], expectedSourceHash: nativeEventSourceHash(previousBoard)}};
+  const before = JSON.stringify(options), result = await projectNativeEventSnapshot(options);
+  assert.equal(result.ready, false);
+  assert.equal(result.report.unavailableRetained, 1);
+  assert.equal(result.report.retainedAdmitted, 0);
+  assert.equal(result.promotedReplays.length, 0);
+  assert.equal(result.board.entries[0][field], currentRow[field]);
+  assert.equal(JSON.stringify(options), before);
+});
+
 test('current root ledger hold/exclusion vetoes stale previously approved native snapshots', async t => {
   const prior = await previousNative(t);
   for (const disposition of ['held', 'excluded']) {

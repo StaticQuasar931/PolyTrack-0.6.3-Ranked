@@ -659,3 +659,44 @@ test('routine capture envelope decrypts exactly, authenticates its binding, and 
   await assert.rejects(encryptNativeSnapshotRecovery({...options,outputFile:path.join(f.root,'unsafe.ptenc')}),/safe boundary/);
   assert.equal(await fs.stat(path.join(f.root,'unsafe.ptenc')).then(()=>true,()=>false),false);
 });
+
+
+test('native completion is recorded once before compilation and survives a later packaging error',async t=>{
+  const f=await fixture(t),before=await inventory(f.root);let completion,calls=0;
+  await assert.rejects(runNativeSnapshotPhase({...f.options,
+    nativeCompleted:async receipt=>{calls++;completion=receipt;assert.equal(receipt.kind,'completed-in-process-native-verification');assert.equal(receipt.authority,false);},
+    eventCompiler:async()=>{assert(completion);throw Error('packaging failed after native completion');}}),/packaging failed after native completion/);
+  assert.equal(calls,1);assert.equal(f.calls.length,1);assert.equal(completion.counts.nativeDispatched,1);
+  assert.equal(completion.sourceBinding.sourceCommit,f.options.sourceCommit);assert.equal(completion.verificationComplete,true);
+  assert.equal(completion.privateProofCheckpoint.ledgerManifestHash,completion.ledgerManifestHash);
+  assert.deepEqual(await inventory(f.root),before);
+});
+
+test('a failed completion recorder prevents compilation without hiding the original error',async t=>{
+  const f=await fixture(t),before=await inventory(f.root),error=Error('completion disk full');let compiled=false;
+  await assert.rejects(runNativeSnapshotPhase({...f.options,nativeCompleted:async()=>{throw error;},
+    eventCompiler:async()=>{compiled=true;}}),actual=>actual===error);
+  assert.equal(compiled,false);assert.equal(f.calls.length,1);assert.deepEqual(await inventory(f.root),before);
+});
+
+test('interrupted verification never calls the completed-verification recorder',async t=>{
+  const f=await fixture(t),error=Error('review failed before completion');
+  await assert.rejects(runNativeSnapshotPhase({...f.options,reviewFactory:async()=>{throw error;},
+    nativeCompleted:async()=>assert.fail('interrupted work is not completion')}),actual=>actual===error);
+});
+
+test('a returned bounded pass records unavailable decisions honestly',async t=>{
+  const f=await fixture(t);let completion;
+  const result=await runNativeSnapshotPhase({...f.options,buildPolicy:async()=>({...structuredClone(policy),knownTrackIds:[]}),
+    nativeCompleted:async receipt=>{completion=receipt;}});
+  assert.equal(completion.verificationComplete,false);assert.equal(completion.counts.unavailable,1);
+  assert.equal(completion.counts.nativeDispatched,0);assert.equal(f.calls.length,0);assert.equal(result.complete,false);
+});
+
+test('stored overlays and malformed callbacks cannot mint native completion',async t=>{
+  for(const value of [()=>{},'callback']){
+    const f=await fixture(t),before=await inventory(f.root);
+    await assert.rejects(runNativeSnapshotPhase({...f.options,reuseOnly:true,nativeCompleted:value}),/native completion capability/);
+    assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
+  }
+});
