@@ -628,3 +628,18 @@ html body #overallProfilePopup button.profile-podium-target { border: 1px solid 
 html body #overallProfilePopup button.profile-podium-target .profile-track-image-frame { width: 42px; height: 42px !important; min-height: 42px !important; max-height: 42px !important; flex: 0 0 42px; }
 html body #overallProfilePopup button.profile-podium-target:focus-visible { outline: 2px solid #7ee7ff; outline-offset: 2px; }
 html body .leaderboard-ui button.main .right .verified-state { align-self: flex-end !important; margin-left: auto !important; max-width: 100%; width: max-content; }
+
+/* Keep earned and next-podium cards beneath the car. */
+html body #overallProfilePopup .profile-car-column { display:flex !important; flex-direction:column; gap:10px; min-width:0; max-height:none; overflow:visible; align-self:start; }
+html body #overallProfilePopup .profile-car-column > .profile-podium-wide { display:grid !important; grid-template-columns:minmax(0,1fr); align-content:center; justify-items:center; aspect-ratio:1.4; min-height:150px; padding:12px !important; gap:10px; text-align:center; }
+html body #overallProfilePopup .profile-podium-wide .profile-achievement-medals { width:100%; justify-content:center; }
+html body #overallProfilePopup .profile-podium-wide .profile-ranked-count { margin:0; }
+html body #overallProfilePopup button.profile-podium-target { width:100%; display:grid; grid-template-columns:42px minmax(0,1fr); gap:10px; box-sizing:border-box; }
+@media(max-width:700px) { html body #overallProfilePopup .profile-car-column > .profile-podium-wide { aspect-ratio:auto; min-height:136px; } }
+
+html body #overallProfilePopup .profile-car-column > .overall-car-model { width:100% !important; height:auto !important; aspect-ratio:1.6; }
+html body #overallProfilePopup .profile-car-column .profile-podium-wide .profile-achievement-medals { display:flex !important; min-width:0; flex-wrap:wrap; }
+html body #overallProfilePopup .profile-car-column button.profile-podium-target { width:100% !important; min-width:0; flex:1; white-space:normal; }
+html body #overallProfilePopup button.profile-podium-target .profile-track-image-frame { width:42px !important; min-width:42px !important; max-width:42px !important; }
+
+html body #overallProfilePopup #overallProfileContent .profile-car-column > .overall-car-model { width:100% !important; max-width:100% !important; min-width:0 !important; height:auto !important; aspect-ratio:1.6; }

@@ -1,11 +1,12 @@
 const releaseInfo = {
-  "number": 335,
+  "number": 336,
   "version": "0.6.3",
-  "revision": 280,
+  "revision": 281,
   "notes": [
-    "Podium targets keep their compact layout on smaller screens."
+    "Saved PB syncing handles confirmations and connection failures more reliably.",
+    "Podium cards sit below your car again."
   ],
-  "preparedAt": "2026-11-08T07:21:45.128Z"
+  "preparedAt": "2026-11-08T22:37:22.524Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
