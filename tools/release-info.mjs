@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 330,
+  "number": 332,
   "version": "0.6.3",
-  "revision": 276,
+  "revision": 277,
   "notes": [
-    "Replay checks now catch missing or changed browser dependencies before starting."
+    "Completed replay checks are saved earlier, reducing the risk of losing results during packaging.",
+    "Snapshot preparation now stages files in fewer safe batches."
   ],
-  "preparedAt": "2026-11-08T04:12:04.311Z",
-  "committedAt": "2026-11-08T04:13:28.000Z"
+  "preparedAt": "2026-11-08T05:18:30.905Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
