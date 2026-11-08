@@ -5989,5 +5989,29 @@
     "codeModifiedAt": "2026-10-04T16:42:45.000Z",
     "sizeBytes": 61429,
     "category": "Kodub weekly"
+  },
+  {
+    "id": "kodub-b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f",
+    "trackId": "b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f",
+    "name": "Magician's Residence",
+    "author": "Jurre",
+    "source": "Kodub weekly",
+    "sourceUrl": "https://www.kodub.com/apps/polytrack",
+    "tags": [
+      "kodub-weekly"
+    ],
+    "tier": "Community",
+    "archiveImport": true,
+    "trackPath": "events/kodub/assets/ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd.track",
+    "thumbnailUrl": "events/kodub/assets/abffe59a5af14a0fd4c19a70553b059badc0a917d9409d8a38a90b91c4bb1bfb.webp",
+    "description": "Official Kodub weekly selection. Captured weekly end: 2026-11-15T20:00:00.000Z. Start date not asserted.",
+    "weeklyEndsAt": "2026-11-15T20:00:00.000Z",
+    "dateProvenance": "events/kodub/selections.json",
+    "codeHash": "ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd",
+    "codeName": "Magician's Residence",
+    "codeAuthor": "Jurre",
+    "codeModifiedAt": "2026-11-06T17:56:55.000Z",
+    "sizeBytes": 93502,
+    "category": "Kodub weekly"
   }
 ]
