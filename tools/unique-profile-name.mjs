@@ -13,14 +13,18 @@ function ownershipError() {
   return Object.assign(new Error('This racer belongs to a different cloud session.'), {code:'account-session-conflict'});
 }
 
-// Call after reading the profile and any PB documents, before scheduling other writes.
-// Unchanged profiles do not need a registry read. Name changes claim/release atomically.
-export async function claimProfileName({tx, db, accountId, ownerUid, previous = null, requestedName, now = Date.now(), crypto = globalThis.crypto, isNameAllowed = () => true}) {
+function validateClaimRequest({accountId,ownerUid,previous=null,requestedName}) {
   if (!accountId || !ownerUid || typeof accountId !== 'string' || accountId.length > 128) throw ownershipError();
   if (previous && (previous.ownerUid !== ownerUid || previous.accountId !== accountId)) throw ownershipError();
   if (typeof requestedName !== 'string' || !requestedName.trim() || requestedName.length > 24 || /[\u0000-\u001f\u007f]/.test(requestedName)) {
     throw Object.assign(new Error('Choose a valid racer name.'), {code:'invalid-public-name'});
   }
+}
+
+// Call after reading the profile and any PB documents, before scheduling other writes.
+// Unchanged profiles do not need a registry read. Name changes claim/release atomically.
+export async function claimProfileName({tx, db, accountId, ownerUid, previous = null, requestedName, now = Date.now(), crypto = globalThis.crypto, isNameAllowed = () => true}) {
+  validateClaimRequest({accountId,ownerUid,previous,requestedName});
   if (previous?.name === requestedName && previous?.nickname === requestedName) return requestedName;
   const claims = db.collection(NAME_CLAIMS_COLLECTION), read = new Map();
   async function inspect(name) {
@@ -58,10 +62,25 @@ export async function claimProfileName({tx, db, accountId, ownerUid, previous = 
 
 // Rollout bridge only: the active server rules still decide whether any profile write is legal.
 // No network/quota/conflict failure is downgraded, and claims are read before any writes.
+function legacyProfileName(options){
+  validateClaimRequest(options);
+  const allowed=options.isNameAllowed||(()=>true);
+  let name=options.requestedName;
+  if(!allowed(name)){
+    const previous=options.previous?.name;
+    if(typeof previous!=='string'||!previous.trim()||previous.length>24||/[\u0000-\u001f\u007f]/.test(previous)||!allowed(previous))
+      throw Object.assign(new Error('Choose an allowed racer name.'),{code:'public-name-unavailable'});
+    name=previous;
+  }
+  return {name,legacy:true};
+}
 export async function claimProfileNameWithLegacyBridge(options){
+  const mode=options.registryMode??'auto';
+  if(!['auto','legacy','required'].includes(mode))throw Error('Invalid name registry mode');
+  if(mode==='legacy')return legacyProfileName(options);
   try{return {name:await claimProfileName(options),legacy:false};}
   catch(error){
-    if(error.nameClaimReadDenied===true)return {name:options.requestedName,legacy:true};
+    if(mode==='auto'&&error.nameClaimReadDenied===true)return legacyProfileName(options);
     throw error;
   }
 }

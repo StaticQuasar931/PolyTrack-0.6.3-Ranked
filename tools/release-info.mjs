@@ -1,11 +1,11 @@
 const releaseInfo = {
-  "number": 337,
+  "number": 340,
   "version": "0.6.3",
-  "revision": 282,
+  "revision": 284,
   "notes": [
-    "Cleaner medal counts and next-podium targets below your car."
+    "Better release checks for fresh-account cloud saves."
   ],
-  "preparedAt": "2026-11-08T23:00:25.829Z"
+  "preparedAt": "2026-11-08T23:41:22.832Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
