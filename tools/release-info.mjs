@@ -1,13 +1,11 @@
 const releaseInfo = {
-  "number": 334,
+  "number": 335,
   "version": "0.6.3",
-  "revision": 279,
+  "revision": 280,
   "notes": [
-    "Route plans now use complete saved scoring results.",
-    "Event replays load when you choose Play or Watch.",
-    "Clearer event points, compact practice suggestions and row-wide history details."
+    "Podium targets keep their compact layout on smaller screens."
   ],
-  "preparedAt": "2026-11-08T07:13:04.273Z"
+  "preparedAt": "2026-11-08T07:21:45.128Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
