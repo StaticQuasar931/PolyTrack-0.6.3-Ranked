@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 323,
+    "number": 324,
     "version": "0.6.3",
-    "revision": 270,
+    "revision": 271,
     "notes": [
-      "Improved reliability of snapshot updates."
+      "Fixed a problem that could stop event results from updating."
     ]
   },
   "entries": [
+    {
+      "number": 323,
+      "title": "Make local snapshots more reliable and prevent stale captures",
+      "commit": "65ec0aaacfabe24b0d2ab99dadf62ed13151528a",
+      "committedAt": "2026-11-08T00:49:47.000Z",
+      "notes": [
+        "Improved reliability of snapshot updates."
+      ]
+    },
     {
       "number": 321,
       "title": "Reuse snapshot PBs and reduce repeated cloud requests",
@@ -180,16 +189,6 @@ const historyData = {
       "notes": [
         "Refreshing saved rankings and event replays.",
         "Old archived finishes clearly show when a replay is unavailable."
-      ]
-    },
-    {
-      "number": 301,
-      "title": "Restore Kodub native button bounce",
-      "commit": "5859d5c1a20ec130ec7b8d889e303007cf409ddf",
-      "committedAt": "2026-11-06T06:26:16.000Z",
-      "notes": [
-        "Restored Kodub's original bouncy button entrance.",
-        "Kept the synchronized Ranked button timing."
       ]
     }
   ],
