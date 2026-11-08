@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 321,
+    "number": 323,
     "version": "0.6.3",
-    "revision": 269,
+    "revision": 270,
     "notes": [
-      "Fewer repeated cloud requests when syncing saved runs.",
-      "Event uploads retry less often during outages and keep your best run.",
-      "Faster snapshot preparation with the same replay safety checks."
+      "Improved reliability of snapshot updates."
     ]
   },
   "entries": [
+    {
+      "number": 321,
+      "title": "Reuse snapshot PBs and reduce repeated cloud requests",
+      "commit": "417dd3ce46b6eca2d534a561ac1bdfc1ca8d140c",
+      "committedAt": "2026-11-07T23:00:16.000Z",
+      "notes": [
+        "Fewer repeated cloud requests when syncing saved runs.",
+        "Event uploads retry less often during outages and keep your best run.",
+        "Faster snapshot preparation with the same replay safety checks."
+      ]
+    },
     {
       "number": 320,
       "title": "Reduce cloud work and repair snapshot and menu consistency",
@@ -181,16 +190,6 @@ const historyData = {
       "notes": [
         "Restored Kodub's original bouncy button entrance.",
         "Kept the synchronized Ranked button timing."
-      ]
-    },
-    {
-      "number": 300,
-      "title": "Synchronize home button entrances and remove delayed Ranked reveal",
-      "commit": "2e46b3df40199c5192a1eb8cdd1ccd832f0c12d3",
-      "committedAt": "2026-11-06T05:36:32.000Z",
-      "notes": [
-        "Fixed the Ranked button appearing late when returning to the menu.",
-        "Home buttons now follow the same entrance timing."
       ]
     }
   ],
