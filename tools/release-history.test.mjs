@@ -6,8 +6,8 @@ import path from 'node:path';
 import vm from 'node:vm';
 import {RELEASE_INFO} from './release-info.mjs';
 import {RELEASE_HISTORY,buildReleaseHistory,writeOrCheckReleaseHistory,selectReleaseHistory,countKnownUpdates,releaseHistoryTime,
-  renderReleaseHistory,createReleaseHistory,bindReleaseHistory} from './release-history.mjs';
-import {installInstalledRevisionNotice} from './site-updates.mjs';
+  renderReleaseHistory,createReleaseHistory,bindReleaseHistory,missedReleaseUpdates,releaseArchiveTitle} from './release-history.mjs';
+import {installInstalledRevisionNotice,readReleaseAcknowledgement} from './site-updates.mjs';
 import {renderHelpControls} from './help-controls.mjs';
 const iso='2026-10-01T12:00:00.000Z',base=Date.parse(iso);
 const sha=number=>number.toString(16).padStart(40,'0');
@@ -50,7 +50,8 @@ test('compact archive preserves every recorded entry and note in both rendering 
   for(const [index,entry] of RELEASE_HISTORY.entries.entries()) {
     assert.ok(html.includes(entry.title));
     const detail=dom.querySelectorAll('[data-release-history-entry]')[index];
-    assert.equal(detail.querySelector('summary').textContent,'Update '+entry.number+': '+entry.title);
+    assert.equal(detail.querySelector('summary').textContent,'Update '+entry.number+': '+releaseArchiveTitle(entry));
+    assert.ok(detail.querySelector('summary').title.includes(entry.title));
     assert.deepEqual(detail.querySelectorAll('li').map(node=>node.textContent),entry.notes);
   }
   const full=history();full.coverage.olderOmitted=false;
@@ -213,7 +214,7 @@ test('browser fixture bundles parse offline and the static history UI has no net
   const [historySource,releaseSource,updatesSource,helpSource]=await Promise.all(['release-history.mjs','release-info.mjs','site-updates.mjs','help-controls.mjs'].map(file=>fs.readFile(new URL('./'+file,import.meta.url),'utf8')));
   const runtime=historySource.slice(0,historySource.indexOf('/** Offline builder.'));
   assert.doesNotMatch(runtime.slice(runtime.indexOf('// END GENERATED RELEASE HISTORY')),/\bfetch\s*\(|XMLHttpRequest|firebase|node:/i);
-  const names='RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
+  const names='RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
   const bundled='const {'+names+'}=(()=>{'+runtime.replace(/\bexport /g,'')+';return {'+names+'};})();\n';
   const strip=source=>source.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'').replace(/\bexport /g,'');
   const fixture=bundled+strip(releaseSource)+strip(updatesSource)+strip(helpSource);
@@ -230,9 +231,10 @@ test('entry hover dates use recorded local commit or preparation time, never a f
     if(prepared){entry.preparedAt=entry.committedAt;delete entry.committedAt;}
     const value=entry.committedAt??entry.preparedAt,label=prepared?'Prepared':'Committed',local=new Date(value).toLocaleString();
     const html=renderReleaseHistory({release:release(),history:data,now:base});
-    assert.ok(html.includes('title="'+label+': '+local+'"'));
+    assert.ok(html.includes(label+': '+local));
+    assert.ok(html.includes('Original title: '+entry.title));
     const document=new Document(),dom=createReleaseHistory(document,{release:release(),history:data,now:base});
-    assert.equal(dom.querySelector('[data-release-history-entry]').querySelector('summary').title,label+': '+local);
+    assert.equal(dom.querySelector('[data-release-history-entry]').querySelector('summary').title,'Original title: '+entry.title+'\n'+label+': '+local);
     assert.equal(dom.querySelector('summary').textContent,'Earlier updates');
     delete entry.committedAt;delete entry.preparedAt;
     assert.equal(renderReleaseHistory({release:release(),history:data,now:base}),'','undated historical input is not assigned the current release date');
@@ -250,4 +252,46 @@ test('archive clock warnings distinguish prepared dates and do not look like rel
   assert.doesNotMatch(html,/(?:Prepared|Committed) Device clock/);
  }
  assert.equal(releaseHistoryTime(iso,NaN).age,'Commit time unavailable');
+});
+
+test('missed highlights use exact manual acknowledgements for zero, one and several releases',()=>{
+  const info=release(),data=history(info);
+  for(const [number,count,commits]of [[266,0,[]],[265,1,[]],[263,3,[sha(265),sha(264)]],[254,4,[sha(265),sha(264),sha(263)]]]){
+    const ack={number,commit:number===266?null:sha(number)},m=missedReleaseUpdates(info,ack,data);
+    assert.equal(m.count,count);assert.deepEqual(m.missedCommits,commits);
+    const html=renderReleaseHistory({release:info,history:data,acknowledgedRelease:ack});
+    assert.equal((html.match(/data-release-missed="true"/g)||[]).length,commits.length);
+  }
+});
+test('unknown/outside-20 and conflicting identities never manufacture missed highlights',()=>{
+  const info=release(),data=history(info);
+  for(const ack of [null,{number:200,commit:sha(200)},{number:265,commit:sha(999)}]){
+    assert.equal(missedReleaseUpdates(info,ack,data).count,null);
+    assert.doesNotMatch(renderReleaseHistory({release:info,history:data,acknowledgedRelease:ack}),/data-release-missed/);
+  }
+  data.entries=[{...record(265),number:null},record(264),record(254)];
+  assert.equal(missedReleaseUpdates(info,{number:254},data).count,2);
+});
+test('friendly archive titles use explicit display text then notes and keep original titles in tooltips',()=>{
+  const data=history();data.entries[0].title='Technical pipeline and internal cohort work';data.entries[0].displayTitle='Clearer race results';
+  assert.equal(releaseArchiveTitle(data.entries[0]),'Clearer race results');delete data.entries[0].displayTitle;
+  assert.equal(releaseArchiveTitle(data.entries[0]),data.entries[0].notes[0]);
+  assert.ok(releaseArchiveTitle({...data.entries[0],notes:['Word '.repeat(50)]}).length<=88);
+  const html=renderReleaseHistory({release:release(),history:data});assert.match(html,/Original title: Technical pipeline and internal cohort work/);
+});
+test('opening and reopening the notice preserves prior acknowledgement until explicit dismissal',()=>{
+  const store=storage();store.setItem('polytrack-site-update-last-ack-v2',JSON.stringify({number:263,commit:sha(263)}));
+  const h=notice({store});assert.equal(h.dialog.querySelectorAll('[data-release-missed]').length,2);
+  assert.equal(JSON.parse(store.getItem('polytrack-site-update-last-ack-v2')).number,263);
+  h.dialog.querySelectorAll('button').find(node=>node.textContent==='OK').fire('click');
+  assert.equal(JSON.parse(store.getItem('polytrack-site-update-last-ack-v2')).number,266);h.handle.dispose();
+});
+
+test('acknowledgements reconcile local/session fallback by recorded release order, not numeric distance',()=>{
+  const local=storage(),session=storage(),document=new Document(),info=release(),data=history(info);
+  local.setItem('polytrack-site-update-last-ack-v2',JSON.stringify({number:263,commit:sha(263)}));
+  session.setItem('polytrack-site-update-last-ack-v2',JSON.stringify({number:265,commit:sha(265)}));
+  assert.equal(readReleaseAcknowledgement(info,{document,storage:local,sessionStorage:session,history:data}).number,265);
+  local.setItem('polytrack-site-update-ack-release-v1:266','acknowledged');
+  assert.equal(readReleaseAcknowledgement(info,{document,storage:local,sessionStorage:session,history:data}).number,266);
 });

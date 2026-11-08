@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {createPublicSnapshotReader} from './public-snapshot-client.mjs';
 import {encodeSnapshot} from './snapshot-package.mjs';
 import {createHash} from 'node:crypto';
-import {buildOverallSnapshotPaging} from './track-snapshot-paging.mjs';
+import {buildOverallSnapshotPaging,buildTrackSnapshotPaging,buildBoardPageManifest} from './track-snapshot-paging.mjs';
+import fs from 'node:fs/promises';
 
 test('Overall first-page slices do not wait for the capture catalog; full boards still confirm it',async()=>{
   const board={algorithmVersion:'participation-v8-s1',schemaVersion:6,updatedAt:100,revision:1,sourceRevision:1,
@@ -21,6 +22,116 @@ test('Overall first-page slices do not wait for the capture catalog; full boards
   assert.equal(catalogReads,1);
   catalog.resolve(Response.json({schemaVersion:1,tracks:{},overall:{path:'overall.json',updatedAt:100,revision:1,checkedAt:200}}));
   assert.equal((await full)._snapshotCapturedAt,200);
+});
+
+async function windowFixture({count=231,omit=false,intercept,changePage}={}){
+  const id='a'.repeat(64),board={trackId:id,schemaVersion:6,algorithmVersion:'participation-v8-s1',revision:3,sourceRevision:3,updatedAt:4,
+    complete:true,totalEntries:count,entries:Array.from({length:count},(_,i)=>({accountId:(i+1).toString(16).padStart(64,'0'),
+      uploadId:i+1,timeMs:1000+i,rank:i+1,replayHash:createHash('sha256').update('replay-'+i).digest('hex'),runVerified:i%2===0}))};
+  const paging=buildTrackSnapshotPaging(board,{capturedAt:'2026-11-08T00:00:00.000Z'}),files={
+    [`track-previews/${id}.json`]:paging.preview,[`track-manifests/${id}.json`]:buildBoardPageManifest(board,paging.preview,omit),
+    'manifest.json':{schemaVersion:1,tracks:{[id]:{path:`tracks/${id}.json`,updatedAt:4,revision:3,checkedAt:1794096000000}}}
+  };
+  if(!omit)files[`tracks/${id}.json`]=board;
+  for(const page of paging.pages)files[`track-pages/${id}/${page.pageNumber}.json`]=changePage?.(structuredClone(page))||page;
+  const encoded=new Map();for(const [logical,value]of Object.entries(files))encoded.set(logical,await packedEntry(value));
+  const calls=[],reader=createPublicSnapshotReader({packed:true,bootstrap:true,optimizedIndex:true,baseUrl:'https://offline.test/public-snapshots77/',byteCache:{open:async()=>null},fetchImpl:async(url,options)=>{
+    const asset=new URL(url).pathname.split('/').at(-1);
+    if(asset==='bootstrap-fast.json'){calls.push({logical:asset,cache:options.cache});return Response.json({schemaVersion:1,generation:77,
+      encoding:'gzip-xor-a7-v1',partial:true,fallbackIndex:'index.json',files:Object.fromEntries([...encoded].map(([p,e])=>[p,e.record]))});}
+    const [logical,entry]=[...encoded].find(([,entry])=>entry.record.path===asset)||[];
+    assert(entry,'unexpected static asset '+asset);calls.push({logical,cache:options.cache});await intercept?.(logical);return new Response(entry.bytes);
+  }});
+  return {id,board,paging,read:reader,calls};
+}
+
+test('20-row first paint uses only immutable bootstrap plus page 1, never catalog/preview/monolith',async()=>{
+  const f=await windowFixture(),value=await f.read.trackWindow(f.id,{limit:20});
+  assert.equal(value.kind,'track-window');assert.equal(value.count,20);assert.equal(value.totalEntries,231);assert.equal(value.publishedEntries,231);
+  assert.equal(value.complete,false);assert.equal(value.hasMore,true);assert.equal(value.nextOffset,20);
+  assert.deepEqual(value.entries.map(e=>e.globalRank),Array.from({length:20},(_,i)=>i+1));
+  assert.equal(value.entries[0].replayHash,f.board.entries[0].replayHash);assert.equal(value.entries[0].uploadId,1);
+  assert.deepEqual(f.calls.map(c=>c.logical),['bootstrap-fast.json',`track-pages/${f.id}/1.json`]);
+  assert(f.calls.every(c=>c.cache==='force-cache'));
+});
+test('concurrent windows join one page fetch; cancellation detaches only that caller',async()=>{
+  const blocked=deferred(),started=deferred();
+  const f=await windowFixture({intercept:async logical=>{if(logical.includes('track-pages/')){started.resolve();await blocked.promise;}}});
+  const abort=new AbortController(),first=f.read.trackWindow(f.id,{limit:20,signal:abort.signal});
+  const second=f.read.trackWindow(f.id,{limit:30});await started.promise;abort.abort();
+  assert.equal(await first,null);blocked.resolve();assert.equal((await second).count,30);
+  assert.equal(f.calls.filter(c=>c.logical.includes('track-pages/')).length,1);
+  const before=f.calls.length;assert.equal((await f.read.trackWindow(f.id,{limit:20})).count,20);assert.equal(f.calls.length,before);
+});
+test('pre-aborted windows and invalid bounds issue no requests',async()=>{
+  const f=await windowFixture(),abort=new AbortController();abort.abort();
+  assert.equal(await f.read.trackWindow(f.id,{limit:20,signal:abort.signal}),null);
+  for(const options of [{limit:101},{limit:0},{offset:-1},{offset:10001},{signal:{}}])assert.equal(await f.read.trackWindow(f.id,options),null);
+  assert.equal(await f.read.trackWindow('../private',{limit:20}),null);assert.equal(f.calls.length,0);
+});
+test('windows traverse the full field without missing pages, resetting ranks or inventing completeness',async()=>{
+  const f=await windowFixture({omit:true}),entries=[];let offset=0;
+  do{const value=await f.read.trackWindow(f.id,{offset,limit:100});assert(value);entries.push(...value.entries);
+    if(value.nextOffset===null)break;assert(value.nextOffset>offset);offset=value.nextOffset;
+  }while(true);
+  assert.equal(entries.length,231);assert.deepEqual(entries.map(e=>e.globalRank),Array.from({length:231},(_,i)=>i+1));
+  const full=await f.read('track',f.id);assert.equal(full.entries.length,231);assert.equal(full.complete,true);assert.equal(full._reconstructedFromPages,true);
+  assert.equal(f.calls.filter(c=>c.logical.includes('track-pages/')).length,3,'full-board reconstruction joins already validated pages');
+  assert.equal(f.calls.some(c=>c.logical==='manifest.json'),false,'matching page capture metadata avoids the global catalog');
+});
+test('cross-page window validates both boundaries and preserves exact ordinal ranks',async()=>{
+  const f=await windowFixture(),value=await f.read.trackWindow(f.id,{offset:95,limit:20});
+  assert.deepEqual(value.entries.map(e=>e.globalRank),Array.from({length:20},(_,i)=>i+96));assert.equal(value.nextOffset,115);
+  assert.equal(f.calls.filter(c=>c.logical.includes('track-pages/')).length,2);
+  const bad=await windowFixture({changePage:p=>p.pageNumber===2?{...p,revision:4}:p});
+  assert.equal(await bad.read.trackWindow(bad.id,{offset:95,limit:20}),null);
+});
+test('window rows cannot mutate the shared page cache and final short pages retain honest totals',async()=>{
+  const f=await windowFixture();const value=await f.read.trackWindow(f.id,{limit:20});value.entries[0].timeMs=0;
+  assert.equal((await f.read.trackWindow(f.id,{limit:20})).entries[0].timeMs,1000);
+  const tail=await f.read.trackWindow(f.id,{offset:200,limit:100});assert.equal(tail.count,31);assert.equal(tail.hasMore,false);assert.equal(tail.nextOffset,null);assert.equal(tail.complete,false);
+  const empty=await f.read.trackWindow(f.id,{offset:300,limit:20});assert.equal(empty.count,0);assert.equal(empty.totalEntries,231);assert.equal(empty.hasMore,false);
+});
+test('an empty source can be complete, but a partial source window never fabricates a full field',async()=>{
+  const f=await windowFixture({count:0}),value=await f.read.trackWindow(f.id);assert.equal(value.count,0);assert.equal(value.complete,true);assert.equal(value.hasMore,false);
+});
+test('a cached first-page capture confirms its matching monolith without another global-manifest fetch',async()=>{
+  const f=await windowFixture();await f.read.trackWindow(f.id,{limit:20});const before=f.calls.length;
+  const full=await f.read('track',f.id);assert.equal(full._snapshotCapturedAt,Date.parse(f.paging.preview.capturedAt));
+  assert.equal(full.entries.length,231);assert.equal(f.calls.length,before+1);assert.equal(f.calls.some(c=>c.logical==='manifest.json'),false);
+});
+test('slow CacheStorage opening cannot hold immutable payload delivery beyond its opportunistic budget',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let payloads=0;
+  const entry=await packedEntry({updatedAt:4,entries:[]});
+  const read=createPublicSnapshotReader({packed:true,baseUrl:'https://offline.test/public-snapshots77/',byteCache:{open:()=>new Promise(()=>{})},fetchImpl:async url=>{
+    if(String(url).endsWith('index.json'))return packedIndex(entry.record);payloads++;return new Response(entry.bytes);
+  }});
+  const result=read('overall');await new Promise(resolve=>setImmediate(resolve));assert.equal(payloads,0);
+  t.mock.timers.tick(50);assert.equal((await result).updatedAt,4);assert.equal(payloads,1);
+});
+test('two logical paths sharing one immutable payload share fetch and decode without relaxing each schema',async()=>{
+  const id='b'.repeat(64),entry=await packedEntry({accountId:id,updatedAt:4,results:[]});let payloads=0;
+  const read=createPublicSnapshotReader({packed:true,baseUrl:'https://offline.test/public-snapshots77/',byteCache:{open:async()=>null},fetchImpl:async url=>{
+    if(String(url).endsWith('index.json'))return Response.json({schemaVersion:1,encoding:'gzip-xor-a7-v1',files:{[`profiles/${id}.json`]:entry.record,[`profile-results/${id}.json`]:entry.record}});
+    payloads++;return new Response(entry.bytes);
+  }});
+  const values=await Promise.all([read('profile',id),read('profile-results',id)]);assert(values.every(Boolean));assert.equal(payloads,1);
+});
+
+test('actual generation 77: 20-row cold windows avoid the global manifest and full monolith, full reads stay complete',async t=>{
+  const directory=new URL('../public-snapshots77/',import.meta.url),index=JSON.parse(await fs.readFile(new URL('index.json',directory),'utf8'));
+  const id='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038',requests=[];let bytes=0;
+  const logicals=new Map(Object.entries(index.files).map(([logical,record])=>[record.path,logical]));
+  const read=createPublicSnapshotReader({packed:true,bootstrap:true,optimizedIndex:true,baseUrl:'https://offline.test/public-snapshots77/',byteCache:{open:async()=>null},fetchImpl:async url=>{
+    const asset=new URL(url).pathname.split('/').at(-1),body=await fs.readFile(new URL(asset,directory));requests.push(logicals.get(asset)||asset);bytes+=body.length;return new Response(body);
+  }});
+  const value=await read.trackWindow(id,{limit:20});assert.equal(value.count,20);assert.equal(value.totalEntries,2312);assert.equal(value.complete,false);assert.equal(value.hasMore,true);
+  assert.equal(requests.length,2);assert.deepEqual(requests,['bootstrap-fast.json',`track-pages/${id}/1.json`]);
+  const windowBytes=bytes;assert.equal(windowBytes,299517);
+  const full=await read('track',id);assert.equal(full.entries.length,2312);assert.equal(full.complete,true);assert.equal(requests.length,3);assert.equal(requests.includes('manifest.json'),false);
+  assert.deepEqual(value.entries.map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]),full.entries.slice(0,20).map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]));
+  t.diagnostic(JSON.stringify({generation:77,firstPaintRows:value.count,fieldRows:full.entries.length,firstPaintRequests:2,firstPaintBytes:windowBytes,
+    baselineFullColdRequests:3,baselineFullColdBytes:838043,fullAfterWindowRequests:requests.length,fullAfterWindowBytes:bytes}));
 });
 test('packed public racer directory is cached and rejects private fields',async()=>{
   const id='a'.repeat(64);
@@ -303,7 +414,8 @@ test('a settled recovery is not reused to duplicate later missing payload reques
 });
 
 test('concurrent logical reads recover together and return data from the current generation',async()=>{
-  const oldOverall=await packedEntry({updatedAt:7,entries:[]}),oldTotals=await packedEntry({updatedAt:7,entries:[]});
+  // Distinct bytes are intentional: identical immutable payloads now coalesce.
+  const oldOverall=await packedEntry({updatedAt:7,entries:[]}),oldTotals=await packedEntry({updatedAt:17,entries:[]});
   const currentOverall=await packedEntry({updatedAt:8,entries:[]}),currentTotals=await packedEntry({updatedAt:9,entries:[]});
   const oldIndex=Response.json({schemaVersion:1,encoding:'gzip-xor-a7-v1',files:{
     'overall.json':oldOverall.record,'event-totals.json':oldTotals.record}});
@@ -563,7 +675,7 @@ test('packed checksum failure retries once with reload and shares successful rec
   assert.ok(values.every(value=>value?.updatedAt===4));
   assert.ok(values.every(value=>value===values[0]),'concurrent callers share the verified result');
   assert.deepEqual(requests,[
-    {asset:'index.json',cache:'default',credentials:'omit'},
+    {asset:'index.json',cache:'force-cache',credentials:'omit'},
     {asset:entry.record.path,cache:'force-cache',credentials:'omit'},
     {asset:entry.record.path,cache:'reload',credentials:'omit'}
   ]);
@@ -582,7 +694,7 @@ test('repeated packed checksum poison has bounded reload attempts and a shared s
   }});
   const batch=()=>Promise.all(Array.from({length:20},()=>read('overall')));
   assert.ok((await batch()).every(value=>value===null));
-  assert.deepEqual(requests.map(request=>request.cache),['default','force-cache','reload']);
+  assert.deepEqual(requests.map(request=>request.cache),['force-cache','force-cache','reload']);
   assert.ok((await batch()).every(value=>value===null));assert.equal(requests.length,3);
   now=29_999;assert.equal(await read('overall'),null);assert.equal(requests.length,3);
   now=30_000;
@@ -614,7 +726,7 @@ test('checksummed structural invalidity is not retried or treated as cache poiso
     }});
     const batch=()=>Promise.all(Array.from({length:20},()=>read(fixture.kind,fixture.id)));
     assert.ok((await batch()).every(value=>value===null));
-    assert.deepEqual(requests.map(request=>request.cache),['default','force-cache']);
+    assert.deepEqual(requests.map(request=>request.cache),['force-cache','force-cache']);
     assert.ok((await batch()).every(value=>value===null));assert.equal(requests.length,2);
     for(const time of [30_000,15*60_000-1]){
       now=time;assert.equal(await read(fixture.kind,fixture.id),null);assert.equal(requests.length,2);

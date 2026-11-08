@@ -147,9 +147,9 @@ test('central release metadata follows the client cache revision, not the manual
 });
 
 test('event dialog and archive dependency stamps advance together and reject missing anchors', () => {
-  const source = "import '../tools/partial-replay-selection.mjs?v=194';import './archive-view.mjs?v=194';import './archive-track.mjs?v=194';import './native-binding.mjs?v=153';";
+  const source = "import '../tools/partial-replay-selection.mjs?v=194';import '../tools/event-award-presentation.mjs';import './archive-view.mjs?v=194';import './archive-track.mjs?v=194';import './native-binding.mjs?v=153';";
   const next = stampEventClientRelease(source,195);
-  for (const file of ['partial-replay-selection','archive-view','archive-track']) assert.ok(next.includes(file+'.mjs?v=195'));
+  for (const file of ['partial-replay-selection','event-award-presentation','archive-view','archive-track']) assert.ok(next.includes(file+'.mjs?v=195'));
   assert.ok(next.includes('native-binding.mjs?v=153'));
   assert.equal(stampEventClientRelease(next,195),next);
   assert.throws(()=>stampEventClientRelease('',195),/anchors/);

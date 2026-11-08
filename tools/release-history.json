@@ -1,14 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 326,
+    "number": 328,
     "version": "0.6.3",
-    "revision": 273,
+    "revision": 274,
     "notes": [
-      "Improved recovery when saving completed replay checks fails."
+      "Leaderboards keep names and verification labels steady while loading.",
+      "Track loading spends less time waiting on the browser cache.",
+      "Event RP clearly distinguishes your event result from your normal PB.",
+      "Earlier updates highlight releases you have not seen, with shorter titles."
     ]
   },
   "entries": [
+    {
+      "number": 326,
+      "title": "Validate original proof policy and preserve completion before backup",
+      "commit": "32d9ade0854d9d331cbb00134fbd70d4d20cac8e",
+      "committedAt": "2026-11-08T02:32:14.000Z",
+      "notes": [
+        "Improved recovery when saving completed replay checks fails."
+      ]
+    },
     {
       "number": 325,
       "title": "Preserve completed verification and repair event packaging",
@@ -173,18 +185,6 @@
       "notes": [
         "Fresh snapshot downloads are smaller, with all saved replays retained.",
         "Improved profile and replay lookup loading."
-      ]
-    },
-    {
-      "number": 304,
-      "title": "Publish refreshed Snapshot 74 with verified replay coverage",
-      "commit": "5aba11535cc5040ecbfb7b84557f6d4969c555e8",
-      "committedAt": "2026-11-06T14:21:14.000Z",
-      "notes": [
-        "Fresh rankings, profiles and event standings.",
-        "New personal bests and saved replays are synchronized.",
-        "Old archived finishes show when a replay is unavailable.",
-        "Fixed safe playback of compact long recordings."
       ]
     }
   ],

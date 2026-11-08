@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 
 function historyBrowserBundle() {
   const source = readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8');
-  return 'const {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
+  return 'const {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
 }
 
 class FakeElement {

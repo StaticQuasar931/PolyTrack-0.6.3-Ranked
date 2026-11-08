@@ -1,12 +1,15 @@
 const releaseInfo = {
-  "number": 326,
+  "number": 328,
   "version": "0.6.3",
-  "revision": 273,
+  "revision": 274,
   "notes": [
-    "Improved recovery when saving completed replay checks fails."
+    "Leaderboards keep names and verification labels steady while loading.",
+    "Track loading spends less time waiting on the browser cache.",
+    "Event RP clearly distinguishes your event result from your normal PB.",
+    "Earlier updates highlight releases you have not seen, with shorter titles."
   ],
-  "preparedAt": "2026-11-08T02:28:42.888Z",
-  "committedAt": "2026-11-08T02:32:14.000Z"
+  "preparedAt": "2026-11-08T03:41:07.033Z",
+  "committedAt": "2026-11-08T03:45:29.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

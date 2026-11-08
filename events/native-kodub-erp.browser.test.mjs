@@ -74,12 +74,19 @@ async function fixture(t,{deferred=false,board=eventBoard}={}){
 const labelFor=(page,account)=>page.locator('[data-test-account="'+account+'"] .sq-normal-kodub-erp');
 test('real native batch hydrates 18 exact and four separate synthetic v1 Kodub Event PBs with one static read',async t=>{
   const p=await fixture(t);
-  await p.waitForFunction(()=>![...document.querySelectorAll('.sq-normal-kodub-erp')].some(node=>node.textContent.includes('loading')));
+  await p.waitForFunction(()=>{const labels=[...document.querySelectorAll('.sq-normal-kodub-erp')];return labels.length===22&&labels.every(node=>!node.hidden&&node.dataset.status==='awarded');});
   let exact=0,separate=0;
   for(const saved of eventBoard.entries){
     const normal=normalBoard.entries.find(row=>row.accountId===saved.accountId);
     const same=normal.timeMs===saved.timeMs&&normal.replayHash===saved.replayHash;
-    assert.equal(await labelFor(p,saved.accountId).innerText(),same?saved.rp+' ERP':'Event PB '+saved.timeMs+' / '+saved.rp+' ERP');
+    const label=labelFor(p,saved.accountId);
+    assert.equal(await label.innerText(),same?saved.rp+' ERP':'Event PB \u00b7 '+saved.rp+' ERP');
+    assert.equal(await label.getAttribute('data-verified'),'true');
+    assert.equal(await label.getAttribute('data-separate'),String(!same));
+    if(!same){
+      assert.ok((await label.getAttribute('title')).includes(String(saved.timeMs)));
+      assert.ok(!(await label.getAttribute('title')).includes(String(normal.timeMs)));
+    }
     if(same)exact++;else separate++;
   }
   assert.equal(exact,18);assert.equal(separate,4);
@@ -89,6 +96,8 @@ test('real native batch hydrates 18 exact and four separate synthetic v1 Kodub E
   await p.evaluate(()=>{for(let i=0;i<20;i++)batch();});
   assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[1,0]);
   assert.equal(await p.locator('.original-status').count(),22);
+  assert.equal(await p.locator('.sq-normal-kodub-erp img').count(),0,'ERP does not duplicate the native verification icon');
+  assert.equal(await p.locator('.sq-normal-kodub-erp').evaluateAll(labels=>labels.some(label=>label.style.backgroundImage)),false);
 });
 test('snapshot epoch replacement discards late old awards and clears already rendered labels',async t=>{
   const p=await fixture(t,{deferred:true});await p.waitForFunction(()=>!!window.resolveBoard);
@@ -120,22 +129,51 @@ test('late hydration cannot write into a replaced/rebound row or another track/a
   await p.evaluate(()=>{trackId='f'.repeat(64);batch();});
   assert.equal(await p.locator('.sq-normal-kodub-erp').count(),0);
 });
-test('unknown, zero and unavailable scores never become invented awards or trigger live fallback',async t=>{
+test('published zero, confirmed absence, pending and unavailable ERP stay distinct without live fallback',async t=>{
   const board=structuredClone(eventBoard);board.entries[0].rp=0;delete board.entries[1].rp;board.entries.pop();
+  board.totalEntries=board.entries.length;
   const p=await fixture(t,{board});
   await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='0 ERP');
-  assert.equal(await labelFor(p,board.entries[1].accountId).textContent(),'');
+  const zero=labelFor(p,board.entries[0].accountId),unknown=labelFor(p,board.entries[1].accountId);
+  assert.equal(await zero.getAttribute('data-verified'),'true');
+  assert.equal(await zero.getAttribute('data-status'),'awarded');
+  assert.equal(await unknown.textContent(),'');assert.equal(await unknown.isHidden(),true);
+  assert.equal(await unknown.getAttribute('data-status'),'unavailable');
   const outside=normalBoard.entries.find(row=>!board.entries.some(entry=>entry.accountId===row.accountId));
-  assert.equal(await labelFor(p,outside.accountId).textContent(),'');
+  const absent=labelFor(p,outside.accountId);
+  assert.equal(await absent.textContent(),'No event result');assert.equal(await absent.isHidden(),false);
+  assert.equal(await absent.getAttribute('data-status'),'none');assert.equal(await absent.getAttribute('data-verified'),'false');
+  const pendingTime=outside.timeMs+500;
+  await p.evaluate(({accountId,timeMs})=>{
+    saved={...saved,pendingPlaybacks:[{accountId,timeMs,runId:'d'.repeat(64),replayHash:'e'.repeat(64),
+      submittedAt:period.startsAt+1000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'}]};
+    snapshotEpoch++;batch();
+  },{accountId:outside.accountId,timeMs:pendingTime});
+  await p.waitForFunction(account=>document.querySelector('[data-test-account="'+account+'"] .sq-normal-kodub-erp')?.dataset.status==='pending',outside.accountId);
+  assert.equal(await absent.textContent(),'Event PB \u00b7 ERP pending');assert.equal(await absent.getAttribute('data-verified'),'false');
+  assert.ok((await absent.getAttribute('title')).includes(String(pendingTime)));
+  assert.doesNotMatch(await absent.textContent(),/\d+ ERP/);
+  for(const mode of ['partial','count-mismatch']){
+    await p.evaluate(mode=>{
+      saved={...saved,pendingPlaybacks:[],complete:mode!=='partial',sourceComplete:mode!=='partial',
+        totalEntries:saved.entries.length+(mode==='count-mismatch'?1:0)};snapshotEpoch++;batch();
+    },mode);
+    await p.waitForFunction(account=>document.querySelector('[data-test-account="'+account+'"] .sq-normal-kodub-erp')?.dataset.status==='unavailable',outside.accountId);
+    assert.equal(await absent.textContent(),'');assert.equal(await absent.isHidden(),true);
+  }
   await p.evaluate(()=>{snapshotEpoch++;saved=null;batch();});
-  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='');
-  assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[2,0]);
+  await p.waitForFunction(()=>{const labels=[...document.querySelectorAll('.sq-normal-kodub-erp')];return labels.length===22&&labels.every(label=>label.dataset.status==='unavailable'&&label.hidden&&label.textContent==='');});
+  assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[5,0]);
+  assert.equal(await p.evaluate(account=>rows.find(row=>row.accountId===account).runVerified,outside.accountId),true);
 });
 test('equal time with another replay stays a separate Event PB and never changes ordinary proof',async t=>{
   const p=await fixture(t,{deferred:true});await p.waitForFunction(()=>!!window.resolveBoard);
   await p.evaluate(()=>{rows[0].replayHash='f'.repeat(64);render();resolveBoard(saved);});
   await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent.startsWith('Event PB '));
-  assert.equal(await labelFor(p,eventBoard.entries[0].accountId).innerText(),'Event PB 51459 / 489 ERP');
+  const label=labelFor(p,eventBoard.entries[0].accountId);
+  assert.equal(await label.innerText(),'Event PB \u00b7 489 ERP');
+  assert.equal(await label.getAttribute('data-separate'),'true');
+  assert.ok((await label.getAttribute('title')).includes('51459'));
   assert.equal(await p.evaluate(()=>rows[0].runVerified),true);
   assert.equal(await p.evaluate(()=>staticReads),1);
 });

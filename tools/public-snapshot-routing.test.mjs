@@ -8,6 +8,12 @@ const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url
 function section(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
 // Extracted production routes must include their shared transport dependency.
 function runClientSource(code,context,...options){
+  if(code.includes('async function getTrackEntries(')){
+    // These routing fixtures isolate transport/selection from identity hydration.
+    // Dedicated identity tests below exercise the real directory overlay.
+    if(!('metadataRecovery' in context))context.metadataRecovery=null;
+    if(!('overlaySnapshotRacerDirectory' in context))context.overlaySnapshotRacerDirectory=rows=>rows;
+  }
   if(code.includes('rankedFetch(')&&!code.includes('function rankedFetch(')){
     context.Headers=Headers;context.performance=performance;context.noteDeveloperEvent=()=>{};
     vm.runInContext(section('  function rankedFetch(', '  function rankedBrokerUrl('),context);

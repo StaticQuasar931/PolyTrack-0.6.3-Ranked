@@ -19,7 +19,7 @@ test('real update archive fits phones, closes without acknowledgment and keeps k
     const number=await page.evaluate(async()=>{
       const {RELEASE_INFO}=await import('/tools/release-info.mjs');
       const {RELEASE_HISTORY}=await import('/tools/release-history.mjs');
-      const previous=RELEASE_HISTORY.entries.filter(entry=>Number.isSafeInteger(entry.number))[1];
+      const previous=RELEASE_HISTORY.entries.filter(entry=>Number.isSafeInteger(entry.number)&&entry.notes.length>0)[1];
       localStorage.setItem('polytrack-site-update-ack-release-v1:'+previous.number,'acknowledged');
       const {installInstalledRevisionNotice}=await import('/tools/site-updates.mjs');
       window.notice=installInstalledRevisionNotice({revision:RELEASE_INFO.revision,release:RELEASE_INFO,isReady:()=>true,isIdle:()=>true});
@@ -27,14 +27,18 @@ test('real update archive fits phones, closes without acknowledgment and keeps k
     });
     const dialog=page.locator('dialog[data-site-installed-release]'),archive=dialog.locator('[data-release-history]');
     await dialog.waitFor();
-    assert.match(await dialog.locator('[data-site-updates-since-ack]').innerText(),/^2 newer updates$/);
+    assert.match(await dialog.locator('[data-site-updates-since-ack]').innerText(),/^2 updates since you last checked$/);
     for(const [width,height] of [[1366,900],[390,844],[320,568],[844,390]]){
       await page.setViewportSize({width,height});
       await archive.locator(':scope > summary').click();
       assert.equal(await archive.evaluate(node=>node.open),true);
       const entry=archive.locator('[data-release-history-entry]').first();
       assert.equal(await archive.locator(':scope > summary').innerText(),'Earlier updates');
-      assert.match(await entry.locator('summary').getAttribute('title'),/^Committed: .+/);
+      const expected=await page.evaluate(async()=>{const {RELEASE_HISTORY,releaseArchiveTitle}=await import('/tools/release-history.mjs');return {original:RELEASE_HISTORY.entries[0].title,friendly:releaseArchiveTitle(RELEASE_HISTORY.entries[0])};});
+      assert.equal(await archive.locator('[data-release-missed="true"]').count(),1,'only the earlier missed manual update is highlighted; current update is separate');
+      const tooltip=await entry.locator('summary').getAttribute('title');
+      assert.ok(tooltip.startsWith('Original title: '+expected.original+'\nCommitted: '),'original Git title and local commit date remain available');
+      assert.ok((await entry.locator('summary').innerText()).includes(expected.friendly),'visible title uses player-facing notes/display title');
       await entry.locator('summary').click();await page.keyboard.press('Escape');
       assert.equal(await entry.evaluate(node=>node.open),false);
       assert.equal(await archive.evaluate(node=>node.open),true);

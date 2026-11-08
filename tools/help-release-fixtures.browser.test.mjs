@@ -8,7 +8,7 @@ const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 async function historyBrowserBundle() {
   const source=await fs.readFile(new URL('./release-history.mjs',import.meta.url),'utf8');
-  const names='RELEASE_HISTORY,countKnownUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
+  const names='RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory';
   return 'const {'+names+'}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {'+names+'};})();\n';
 }
 const stripImports=source=>source.replace(/^const \{[^\n]+\}=await import\([^\n]+;\r?\n/gm,'');
@@ -41,7 +41,7 @@ test('release age stays accurate while open, after sleep, on rebind and after cl
   });
   const age=page.locator('[data-hc-release-age]');
   await page.locator('[data-hc-view="release"]').click();
-  for(const [elapsed,text] of [[0,'less than a minute ago'],[60000,'1 minute ago'],[3600000,'1 hour ago'],[86400000,'1 day ago'],[604800000,'7 days ago'],[1209600000,'14 days ago'],[-1,'Device clock is before commit time']]){
+  for(const [elapsed,text] of [[0,'less than a minute ago'],[60000,'1 minute ago'],[3600000,'1 hour ago'],[86400000,'1 day ago'],[604800000,'1 week ago'],[1209600000,'2 weeks ago'],[-1,'Device clock is before commit time']]){
     await page.evaluate(elapsed=>window.advanceAge(elapsed),elapsed);
     assert.equal(await age.textContent(),text);
     assert.equal(await page.evaluate(()=>window.ageTimers.size),1);

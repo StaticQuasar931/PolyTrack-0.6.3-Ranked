@@ -6,10 +6,11 @@ import {matchingTrackStatistics,snapshotConfirmationTime} from './snapshot-confi
 import {normalEventRecordingState,eventRecordingCandidateMatches,eventRecordingToNormal} from './event-recording-binding.mjs';
 import {publicEventPlaybackForPublication as publicEventPlaybackProjection} from './public-event-playback.mjs?v=185';
 const SNAPSHOT_CHUNK_TIMEOUT_MS=15000;
+const COMPRESSED_CACHE_READ_BUDGET_MS=50;
 // Public, same-origin backups never replace the authoritative PB submission path.
 export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now,packed=false,bootstrap=false,optimizedIndex=false,publication=null,byteCache,onRead,beforeGenerationChange,onGenerationChange,prepareRecording,onPlaybackFailure,payloadShards=documentSnapshotPayloadShards()}){
   let payloadMapping=parseSnapshotPayloadShards(payloadShards);
-  const pending=new Map(),saved=new Map(),retryAt=new Map();
+  const pending=new Map(),saved=new Map(),retryAt=new Map(),payloadPending=new Map();
   const lookupCache=new Map(),lookupPending=new Map(),lookupRetryAt=new Map();let manifestValue=null;
 
   let byteCachePromise=null,byteCacheDisabled=false,byteCacheQueued=0,byteCacheWrites=Promise.resolve();
@@ -17,6 +18,17 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(byteCacheDisabled)return null;
     if(!byteCachePromise)byteCachePromise=(async()=>{try{return await (byteCache??globalThis.caches)?.open('polytrack-snapshot-bytes-v1')||null;}catch{byteCacheDisabled=true;return null;}})();
     return byteCachePromise;
+  }
+  async function cachedCompressedResponse(key){
+    let timer;
+    const lookup=(async()=>{
+      const disk=await compressedCache();if(!disk)return {disk:null,response:null};
+      try{return {disk,response:await disk.match(key)}}catch{byteCacheDisabled=true;return {disk:null,response:null};}
+    })();
+    // CacheStorage is opportunistic. A slow disk must not indefinitely delay
+    // an immutable network request, and late cache results cannot replace it.
+    try{return await Promise.race([lookup,new Promise(resolve=>{timer=setTimeout(()=>resolve({disk:null,response:null}),COMPRESSED_CACHE_READ_BUDGET_MS);})]);}
+    finally{clearTimeout(timer);}
   }
   function rememberCompressed(key,bytes){
     if(bytes.length>128*1024||byteCacheQueued>=4)return;byteCacheQueued++;
@@ -62,7 +74,8 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(!(compact?bootstrapRequest:indexRequest)){
       const requestedBase=packageBase,requestedGeneration=generation;
       const url=new URL(compact&&optimizedIndex&&!fastIndexDisabled?'bootstrap-fast.json':compact?'bootstrap-index.json':'index.json',requestedBase);
-      const request=retryIntegrity(url,'default',async cache=>{
+      const indexCache=/\/public-snapshots[1-9]\d*\/$/.test(requestedBase.pathname)?'force-cache':'default';
+      const request=retryIntegrity(url,indexCache,async cache=>{
         let response=await fetchSnapshot(url,{credentials:'omit',cache,signal:AbortSignal.timeout(5000)});
         if(compact&&optimizedIndex&&!fastIndexDisabled&&(response.status===404||response.status===410))response=await fetchSnapshot(new URL('bootstrap-index.json',requestedBase),{credentials:'omit',cache,signal:AbortSignal.timeout(5000)});
         if(compact&&(response.status===404||response.status===410))return null;
@@ -185,7 +198,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         indexRequest=null;bootstrapRequest=null;
         indexFailures.clear();badCacheUrls.clear();lookupCache.clear();lookupPending.clear();lookupRetryAt.clear();
         // Retired requests may finish later, but their epoch cannot write these caches.
-        pending.clear();saved.clear();retryAt.clear();manifestValue=null;
+        pending.clear();payloadPending.clear();saved.clear();retryAt.clear();manifestValue=null;
         // Notify once after invalidation. Do not await callbacks that may read the new package.
         try{Promise.resolve(onGenerationChange?.({previousBaseUrl,baseUrl:packageBase.href,generation})).catch(()=>{});}catch{}
         return true;
@@ -204,17 +217,19 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     const url=new URL(record.path,snapshotPayloadBase(payloadMapping,pack.base.href,record.path));
     // Content hash, not generation: unchanged payloads survive snapshot updates.
     const diskKey=new URL('../__polytrack_snapshot_cache__/'+record.sha256+'.bin',pack.base).href;
-    return retryIntegrity(url,'force-cache',async cache=>{
+    const payloadKey=requestedGeneration+'|'+url.href+'|'+record.decodedBytes;
+    if(payloadPending.has(payloadKey))return payloadPending.get(payloadKey);
+    const request=retryIntegrity(url,'force-cache',async cache=>{
     let response=null,fromDisk=false;
-    const disk=await compressedCache();
-    if(disk&&cache!=='reload')try{response=await disk.match(diskKey);fromDisk=Boolean(response);}catch{byteCacheDisabled=true;}
+    const cached=cache==='reload'?{disk:null,response:null}:await cachedCompressedResponse(diskKey);
+    const disk=cached.disk;response=cached.response;fromDisk=Boolean(response);
     // Cold WebGL startup can delay a larger immutable body; keep short index/pointer limits.
     if(!response)response=await fetchSnapshot(url,{credentials:'omit',cache,signal:AbortSignal.timeout(SNAPSHOT_CHUNK_TIMEOUT_MS)});
     if(!response.ok){const error=Error('Snapshot unavailable');error.status=response.status;error.base=pack.base.href;throw error;}
     const bytes=new Uint8Array(await responseBody(response,'arrayBuffer'));if(bytes.length>2*1024*1024)throw integrityError('Snapshot payload too large');
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
     if(hash!==record.sha256){if(fromDisk)await disk.delete(diskKey).catch(()=>{});throw integrityError('Snapshot checksum mismatch');}
-    const originalBytes=disk&&!fromDisk&&bytes.length<=128*1024?bytes.slice():null;
+    const originalBytes=!byteCacheDisabled&&!fromDisk&&bytes.length<=128*1024?bytes.slice():null;
     for(let i=0;i<bytes.length;i++)bytes[i]^=0xa7;
     const reader=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
     const chunks=[];let total=0;
@@ -226,6 +241,11 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
     if(originalBytes)rememberCompressed(diskKey,originalBytes);
     return new TextDecoder().decode(output);
     });
+    if(payloadPending.size<64){
+      payloadPending.set(payloadKey,request);
+      request.finally(()=>{if(payloadPending.get(payloadKey)===request)payloadPending.delete(payloadKey);}).catch(()=>{});
+    }
+    return request;
   }
   async function packedText(logical,requestedGeneration){
     try{return await packedTextAtCurrent(logical,requestedGeneration);}
@@ -267,8 +287,9 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         const trackBoard=['track','track-preview','track-page','track-manifest'].includes(kind);
         const overallBoard=['overall','overall-preview','overall-page','overall-manifest'].includes(kind);
         const overallSlice=overallBoard&&kind!=='overall';
-        const knownTrack=trackBoard?saved.get('track-statistics.json')?.value?.tracks?.[id]:null;
-        const confirmationManifest=overallBoard&&!overallSlice||kind==='event'||kind==='track'&&!knownTrack?readAtGeneration('manifest','','',requestedGeneration):null;
+         let knownTrack=trackBoard?saved.get('track-statistics.json')?.value?.tracks?.[id]:null;
+         const knownPreview=kind==='track'?(saved.get(`track-previews/${id}.json`)?.value||saved.get(`track-pages/${id}/1.json`)?.value):null;
+         const confirmationManifest=overallBoard&&!overallSlice||kind==='event'||kind==='track'&&!knownTrack&&!knownPreview?readAtGeneration('manifest','','',requestedGeneration):null;
       try{
         let body,materialized=null;
         if(packed){
@@ -310,6 +331,12 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(kind==='event-replay'&&(value.periodId!==id||value.accountId!==accountId||typeof value.replay!=='string'||value.replay.length>65536))throw Error('Public replay identity mismatch');
         const result={...value,_publicBackup:true,_dataSource:'snapshot',...(packagePublishedAt&&(trackBoard||overallBoard||['event','event-totals','snapshot-meta'].includes(kind))?{_snapshotPackageAt:packagePublishedAt}:{})};
         if(trackBoard||overallBoard||kind==='event'||kind==='event-totals'){
+           if(trackBoard)knownTrack=saved.get('track-statistics.json')?.value?.tracks?.[id]||knownTrack;
+           const previewStatistics=knownPreview&&knownPreview.trackId===id&&
+             ['schemaVersion','algorithmVersion','revision','sourceRevision','updatedAt'].every(key=>knownPreview[key]===value[key])?
+             {capturedAt:knownPreview.capturedAt,revision:knownPreview.revision,updatedAt:knownPreview.updatedAt,
+               complete:knownPreview.sourceComplete,count:knownPreview.publishedEntries}:null;
+           if(!matchingTrackStatistics(value,knownTrack)&&matchingTrackStatistics(value,previewStatistics))knownTrack=previewStatistics;
           // Matching statistics/paged track metadata already carry a board-specific check.
           const hasTrackCapture=kind==='event-totals'||trackBoard&&(matchingTrackStatistics(value,knownTrack)||value.pagingVersion===1&&snapshotConfirmationTime(kind,value)!==null);
           // First-page rendering must not wait for the larger capture catalog.
@@ -440,6 +467,63 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
       // Rejoin the current generation even when a retired pending request succeeds or fails.
       if(requestedGeneration===generation)return kind==='recording'&&(value?.playbackPending===true||value?.verifiedState===0)?null:value;
     }
+  };
+  function selectedRead(task,signal){
+    if(signal?.aborted)return Promise.resolve(null);
+    if(!signal)return Promise.resolve().then(task);
+    return new Promise(resolve=>{
+      let settled=false;
+      const finish=value=>{if(settled)return;settled=true;signal.removeEventListener('abort',aborted);resolve(value);};
+      const aborted=()=>finish(null);signal.addEventListener('abort',aborted,{once:true});
+      Promise.resolve().then(()=>settled?null:task()).then(finish,()=>finish(null));
+      if(signal.aborted)aborted();
+    });
+  }
+  function trackWindowValue(metadata,entries,offset){
+    const {entries:ignored,bounds,count,pageNumber,previewSize,pageBounds,kind,complete,...rest}=metadata;
+    const end=offset+entries.length,hasMore=end<metadata.publishedEntries;
+    return {...rest,kind:'track-window',offset,count:entries.length,entries:entries.map(row=>({...row})),
+      complete:metadata.sourceComplete&&offset===0&&entries.length===metadata.totalEntries,
+      hasMore,nextOffset:hasMore?end:null};
+  }
+  // Explicit partial-board contract. Full-board consumers still use read('track')
+  // and receive every page; cancellation only detaches this selection's waiter.
+  read.trackWindow=async(id,{offset=0,limit=15,signal}={})=>{
+    if(!/^[a-f0-9]{64}$/.test(id)||!Number.isSafeInteger(offset)||offset<0||offset>10000||
+      !Number.isSafeInteger(limit)||limit<1||limit>100||signal&&
+      (typeof signal.aborted!=='boolean'||typeof signal.addEventListener!=='function'||typeof signal.removeEventListener!=='function'))return null;
+    const epoch=generation,pageNumber=Math.floor(offset/100)+1;
+    const pagePath=`track-pages/${id}/${pageNumber}.json`,cachedPage=saved.get(pagePath);
+    const cachedPreview=saved.get(`track-previews/${id}.json`);
+    if(cachedPreview&&(packed||now()-cachedPreview.checkedAt<600000)&&offset+limit<=cachedPreview.value.entries.length){
+      const preview=await selectedRead(()=>readAtGeneration('track-preview',id,'',epoch),signal);
+      return preview&&epoch===generation&&!signal?.aborted?trackWindowValue(preview,preview.entries.slice(offset,offset+limit),offset):null;
+    }
+    // A native first page asks for 20 rows, not the 15-row practice preview.
+    // Page 1 is self-describing, so do not serialize preview/manifest fetches.
+    if(Math.floor((offset+limit-1)/100)===pageNumber-1&&(limit>15||offset>=15||cachedPage)){
+      const page=await selectedRead(()=>readAtGeneration('track-page',id,pageNumber,epoch),signal);
+      if(epoch!==generation||signal?.aborted)return null;
+      if(page)return trackWindowValue(page,page.entries.slice(offset-page.offset,offset-page.offset+limit),offset);
+    }
+    const preview=await selectedRead(()=>readAtGeneration('track-preview',id,'',epoch),signal);
+    if(!preview||epoch!==generation||signal?.aborted)return null;
+    if(offset>=preview.publishedEntries)return trackWindowValue(preview,[],offset);
+    const end=Math.min(offset+limit,preview.publishedEntries);
+    if(end<=preview.entries.length)return trackWindowValue(preview,preview.entries.slice(offset,end),offset);
+    const first=Math.floor(offset/100),last=Math.floor((end-1)/100);
+    const pages=await selectedRead(()=>Promise.all(Array.from({length:last-first+1},(_,index)=>
+      readAtGeneration('track-page',id,first+index+1,epoch))),signal);
+    if(!pages||epoch!==generation||signal?.aborted)return null;
+    const entries=[];
+    for(const [index,page]of pages.entries()){
+      const bound=preview.pageBounds[first+index];
+      if(!page||['publishedEntries','totalEntries','totalEntriesExact','sourceComplete','ranksExact','pageSize','pageCount',
+        'capturedAt','updatedAt','revision','sourceRevision','algorithmVersion','schemaVersion'].some(key=>page[key]!==preview[key])||
+        Object.entries(bound).some(([key,value])=>page.bounds[key]!==value))return null;
+      entries.push(...page.entries);
+    }
+    return trackWindowValue(preview,entries.slice(offset-first*100,end-first*100),offset);
   };
   read.refresh=()=>recoverCurrentGeneration({manual:true});
   function reportPlaybackFailure(error){

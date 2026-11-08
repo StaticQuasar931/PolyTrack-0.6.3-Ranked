@@ -27,5 +27,5 @@ export function stampClientRelease(patch, index, revision) {
 export function stampEventClientRelease(source, revision) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new TypeError('Invalid release revision');
   if (!source.includes('../tools/partial-replay-selection.mjs')) throw Error('Event release anchors are missing. No files were changed.');
-  return source.replace(/(\.\.\/tools\/(?:partial-replay-selection|finish-presentation)\.mjs|\.\/archive-(?:view|track)\.mjs)(?:\?v=\d+)?(['"])/g, '$1?v='+revision+'$2');
+  return source.replace(/(\.\.\/tools\/(?:partial-replay-selection|finish-presentation|event-award-presentation)\.mjs|\.\/archive-(?:view|track)\.mjs)(?:\?v=\d+)?(['"])/g, '$1?v='+revision+'$2');
 }
