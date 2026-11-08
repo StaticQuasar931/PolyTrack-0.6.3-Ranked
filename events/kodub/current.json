@@ -1,14 +1,14 @@
 {
-  "serverTime": "2026-11-07T23:28:47.135Z",
+  "serverTime": "2026-11-08T23:27:26.005Z",
   "current": {
-    "trackId": "1d496526b5ae956596d1988e4f205ba00708718cbb376c3ed39e11a33ba4a679",
-    "name": "Zonda",
-    "author": "Xander (route) + Vanyayuyay (deco)",
-    "lastModified": "2026-10-04T16:42:45.000Z",
+    "trackId": "b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f",
+    "name": "Magician's Residence",
+    "author": "Jurre",
+    "lastModified": "2026-11-06T17:56:55.000Z",
     "environment": 0,
-    "endTime": "2026-11-08T20:00:00.000Z",
-    "trackUrl": "assets/4537096722ec72f550bb8f5fb48f0c3bf9f7eb2ec11f5e062283d39dcb771be7.track",
-    "thumbnailUrl": "assets/9ebc2fedecf25ec0d86f212c3f0c05b910cbbfe03a7bb3d4f4152428ac9e622d.webp",
-    "coverUrl": "assets/cfc3a0a4f745f81e35141d445d6c6197af3f98403a8de537acadb8f491597f5e.webp"
+    "endTime": "2026-11-15T20:00:00.000Z",
+    "trackUrl": "assets/ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd.track",
+    "thumbnailUrl": "assets/abffe59a5af14a0fd4c19a70553b059badc0a917d9409d8a38a90b91c4bb1bfb.webp",
+    "coverUrl": "assets/809a76d5ec51b21a555870dbe20843bb385e873d45ba45e7b4d6f9c809ce5c56.webp"
   }
 }
