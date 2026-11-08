@@ -19,7 +19,7 @@ async function fixture(t){
   const pins={generation:76,indexSha256:sha(await fs.readFile(path.join(root,'public-snapshots76/index.json'))),ledgerManifestHash:ledger.manifestHash,ledgerEntries:0};
   const options={root,runDirectory:path.join(parent,'private-run'),sourceCommit:'a'.repeat(40),publishedBaseline:pins};
   let native=0,compiled=0,disposed=0;
-  const capabilities={hydrate:async(source,target)=>{assert.equal(source,root);await write(target,'manifest.json',{source:'public-76'});},
+  const capabilities={validateRuntime:async()=>({fixture:true}),hydrate:async(source,target)=>{assert.equal(source,root);await write(target,'manifest.json',{source:'public-76'});},
     prepare:async({root:source,directory})=>{assert.equal(source,root);assert.equal(directory,path.join(options.runDirectory,'candidate'));return {fixture:true};},
     loadTotals:async({root:source,expectedGeneration,expectedIndexSha256})=>{assert.equal(source,root);assert.equal(expectedGeneration,76);assert.equal(expectedIndexSha256,pins.indexSha256);return {fixture:true};},
     preflightPhase:async input=>{
@@ -56,6 +56,19 @@ test('public 76 wrapper fixes the exact 4358-entry public ledger pins',async()=>
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.ledgerEntries,4358);
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.generation,76);
   assert.throws(()=>preparePublic76OfflineVerification({publishedBaseline:{}}),/cannot be overridden/);
+});
+
+test('missing native runtime fails before creating a run or copying public data',async t=>{
+ const f=await fixture(t);f.capabilities.validateRuntime=async()=>{throw Error('Missing pinned Playwright');};
+ f.capabilities.hydrate=()=>assert.fail('No hydration before dependency acceptance');
+ await assert.rejects(preparePublishedOfflineVerification(f.options,f.capabilities),/Missing pinned Playwright/);
+ await assert.rejects(fs.stat(f.options.runDirectory),error=>error.code==='ENOENT');assert.equal(f.counts().native,0);
+});
+
+test('changed runtime after preparation cannot dispatch native work',async t=>{
+ let changed=false;const f=await fixture(t);f.capabilities.validateRuntime=async()=>({version:changed?'other':'pinned'});
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);changed=true;
+ await assert.rejects(prepared.verify(),/runtime changed/);assert.equal(f.counts().native,0);
 });
 
 for(const field of ['proofCheckpoint','ledgerRoot','captureContext','directory','verify','publicationRoot'])test('rejects private or alternate authority input: '+field,async t=>{

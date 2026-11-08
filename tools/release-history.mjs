@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 329,
+    "number": 330,
     "version": "0.6.3",
-    "revision": 275,
+    "revision": 276,
     "notes": [
-      "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
-      "Event rankings retain saved event highlights and validate their point totals.",
-      "Replay verification shares more browser launches while keeping its existing safety limits."
+      "Replay checks now catch missing or changed browser dependencies before starting."
     ]
   },
   "entries": [
+    {
+      "number": 329,
+      "title": "Repair stuck PB uploads and event highlights and pack verification batches",
+      "commit": "830a61697e3e0e3c6237249975279576d0aa7511",
+      "committedAt": "2026-11-08T03:58:17.000Z",
+      "notes": [
+        "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
+        "Event rankings retain saved event highlights and validate their point totals.",
+        "Replay verification shares more browser launches while keeping its existing safety limits."
+      ]
+    },
     {
       "number": 328,
       "title": "Stabilize leaderboard loading and clarify event points and missed updates",
@@ -177,16 +186,6 @@ const historyData = {
       "notes": [
         "Improved cloud sync and reduced repeated work for saved runs.",
         "Improved snapshot update checks and kept event scores consistent."
-      ]
-    },
-    {
-      "number": 307,
-      "title": "Fix profile route planning and Kodub Event RP display",
-      "commit": "8c8d85fee1247c8e95dccf1d265a7d8d73de25d7",
-      "committedAt": "2026-11-07T05:00:56.000Z",
-      "notes": [
-        "Fixed route planning for profiles that were only partly loaded.",
-        "Kodub weekly leaderboards now show published Event RP alongside the right run."
       ]
     }
   ],

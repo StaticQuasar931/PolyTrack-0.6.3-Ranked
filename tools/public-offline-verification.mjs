@@ -7,6 +7,7 @@ import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verificati
 import {prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {cloneBounded} from './bounded-clone.mjs';
+import {validateOfflineNativeRuntime} from './offline-native-runtime.mjs';
 
 export const PUBLIC_76_VERIFICATION_BASELINE=Object.freeze({generation:76,
   indexSha256:'7d0e1d6ee6c7e8d3ad5b698caf86090ed81b2a7811c715b932c4f7065e5eabaf',
@@ -42,7 +43,9 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   runDirectory=path.join(await fs.realpath(path.dirname(runDirectory)),path.basename(runDirectory));
   demand(!inside(root,runDirectory)&&!inside(runDirectory,root),'run directory must be disjoint from the publication root');
   const {hydrate=hydrateStaging,prepare=prepareNativeSnapshotCapture,preflightPhase=runNativeSnapshotPhase,
-    verifyPhase=verifyNativeSnapshotPhase,loadTotals=loadTrustedPublishedEventTotalsBaseline}=capabilities;
+    verifyPhase=verifyNativeSnapshotPhase,loadTotals=loadTrustedPublishedEventTotalsBaseline,
+    validateRuntime=validateOfflineNativeRuntime}=capabilities;
+  const runtime=await validateRuntime({root});
   async function checkPins(){
     const pointer=JSON.parse(await read(root,'snapshot-current.json',2048));
     demand(pointer.currentdir==='public-snapshots'+pins.generation,'public generation changed');
@@ -75,12 +78,13 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(path.dirname(preflightDirectory)===runDirectory,'unsafe preflight cleanup');
   await fs.rm(preflightDirectory,{recursive:true,force:true});
   const receipt={schemaVersion:1,kind:'prepared-public-offline-verification',authority:false,sourceCommit,
-    publishedBaseline:pins,maxJobs,maxRuntimeMs,preflight,backendReads:0,backendWrites:0};
+    publishedBaseline:pins,maxJobs,maxRuntimeMs,runtime,preflight,backendReads:0,backendWrites:0};
   await fs.writeFile(path.join(runDirectory,'prepared.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600,flush:true});
   let started=false;
   return Object.freeze({receipt:structuredClone(receipt),directory,
     verify:async()=>{
       demand(!started,'fresh verification already requested');started=true;
+      demand(JSON.stringify(await validateRuntime({root}))===JSON.stringify(runtime),'native runtime changed after preparation');
       await checkPins();
       const local=JSON.parse(await read(runDirectory,'verification-ledger-current.json',2048));
       demand(local.manifestHash===pins.ledgerManifestHash,'prepared ledger changed');

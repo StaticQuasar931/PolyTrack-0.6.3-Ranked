@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 329,
+  "number": 330,
   "version": "0.6.3",
-  "revision": 275,
+  "revision": 276,
   "notes": [
-    "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
-    "Event rankings retain saved event highlights and validate their point totals.",
-    "Replay verification shares more browser launches while keeping its existing safety limits."
+    "Replay checks now catch missing or changed browser dependencies before starting."
   ],
-  "preparedAt": "2026-11-08T03:56:38.142Z",
-  "committedAt": "2026-11-08T03:58:17.000Z"
+  "preparedAt": "2026-11-08T04:12:04.311Z",
+  "committedAt": "2026-11-08T04:13:28.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
