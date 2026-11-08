@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 334,
+    "number": 335,
     "version": "0.6.3",
-    "revision": 279,
+    "revision": 280,
     "notes": [
-      "Route plans now use complete saved scoring results.",
-      "Event replays load when you choose Play or Watch.",
-      "Clearer event points, compact practice suggestions and row-wide history details."
+      "Podium targets keep their compact layout on smaller screens."
     ]
   },
   "entries": [
+    {
+      "number": 334,
+      "title": "Repair route scoring and streamline event and practice controls",
+      "commit": "5d504aeaceb159c9f3f01ed403e4c65baf20d045",
+      "committedAt": "2026-11-08T07:20:37.000Z",
+      "notes": [
+        "Route plans now use complete saved scoring results.",
+        "Event replays load when you choose Play or Watch.",
+        "Clearer event points, compact practice suggestions and row-wide history details."
+      ]
+    },
     {
       "number": 333,
       "title": "Skip cleanup probes for successfully saved snapshot files",
@@ -181,13 +190,6 @@ const historyData = {
       "title": "Prepare retained proofs from the pinned published baseline",
       "commit": "8b28442932979460aa7dc369501a7b4b3f88e745",
       "committedAt": "2026-11-07T09:15:54.000Z",
-      "notes": []
-    },
-    {
-      "number": 311,
-      "title": "Reuse captured sources for approved full PB catch-up",
-      "commit": "edadececd50f85dc8595edee0a90541ed1c03458",
-      "committedAt": "2026-11-07T09:06:01.000Z",
       "notes": []
     }
   ],

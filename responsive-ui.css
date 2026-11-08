@@ -625,6 +625,6 @@ html body #overallLeaderboardPanel[data-category="topTracks"] #overallDailyGrid 
 }
 html body #overallProfilePopup .profile-podium-wide { box-sizing: border-box !important; min-width: 0; max-width: 100%; }
 html body #overallProfilePopup button.profile-podium-target { border: 1px solid #607fad; background: #1b2c5c; color: inherit; padding: 6px 12px; text-align: left; cursor: pointer; }
-html body #overallProfilePopup button.profile-podium-target .profile-track-image-frame { width: 42px; height: 42px; flex: 0 0 42px; }
+html body #overallProfilePopup button.profile-podium-target .profile-track-image-frame { width: 42px; height: 42px !important; min-height: 42px !important; max-height: 42px !important; flex: 0 0 42px; }
 html body #overallProfilePopup button.profile-podium-target:focus-visible { outline: 2px solid #7ee7ff; outline-offset: 2px; }
 html body .leaderboard-ui button.main .right .verified-state { align-self: flex-end !important; margin-left: auto !important; max-width: 100%; width: max-content; }
