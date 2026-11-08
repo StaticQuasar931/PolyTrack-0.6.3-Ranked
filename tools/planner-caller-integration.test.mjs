@@ -31,6 +31,20 @@ function harness(){
 }
 const entry={userId:'self',name:'Me',raceCount:3};
 const render=(c,...display)=>c.profileGuideMarkup(entry,null,true,...(display.length?display:[[],[],[]]));
+
+test('caller uses scored lanes even when the normal profile contains extra pending rows',async()=>{
+  const c=harness();await c.loadProfileSnapshotResults('self');
+  const profile=c.plannerPublishedProfiles.get('self').profile;
+  const finishes=profile.results.map(row=>({...row}));
+  profile.results.push({trackId:'pending-normal',rank:4,fieldSize:100,timeMs:9000,weight:9});
+  c.plannerScoringIndex={epoch:0,updatedAt:1000,profiles:new Map([['self',finishes]]),fields:c.overallTrackSummariesCache,
+    boards:new Map()};
+  const input=c.plannerProfileInput(entry);
+  assert.equal(input.complete,true);assert.equal(input.finishes.length,3);
+  assert.ok(input.played.includes('pending-normal'));assert.ok(!input.finishes.some(f=>f.trackId==='pending-normal'));
+  c.readPublicSnapshotBackup=()=>{throw Error('Scored lanes must not read normal boards');};
+  assert.equal(await c.readPlannerPackageBoard('not-scored'),null);
+});
 test('embedded model and isolated snapshot IIFE match the owned modules with no imports',()=>{
   const model=fs.readFileSync(new URL('./planner-route-model.mjs',import.meta.url),'utf8').replace(/\r\n/g,'\n')
     .replace(/^export \{[^\n]+\n/m,'').replace(/\bexport /g,'').replace(/\bpositive\b/g,'plannerPositive')

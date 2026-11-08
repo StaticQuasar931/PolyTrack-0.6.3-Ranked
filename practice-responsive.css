@@ -233,3 +233,18 @@
   .polytrack-practice-profile .pp-toolbar [aria-label="Track layout"] { grid-column: 1; grid-row: 4; }
   .polytrack-practice-profile .pp-toolbar [data-pp-count] { grid-row: 5; text-align: left; }
 }
+
+/* Compact local prompts; native history disclosures synchronize within each visual row. */
+.polytrack-practice-profile .pp-next { display: flex; align-items: start; gap: 12px; padding: 8px 10px; border: 1px solid var(--pp-line); background: #1e3264; }
+.polytrack-practice-profile .pp-next h3 { margin: 9px 0 0; font-size: 17px; white-space: nowrap; }
+.polytrack-practice-profile .pp-next ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 6px 14px; flex: 1; min-width: 0; list-style: none; padding: 0; margin: 0; }
+.polytrack-practice-profile .pp-next li { min-width: 0; }
+.polytrack-practice-profile .pp-next .pp-track-name-button { display: block; width: 100%; padding: 5px 0; min-height: 44px; overflow-wrap: anywhere; }
+.polytrack-practice-profile .pp-next .pp-note { display: block; margin: 0; color: #c7d9f3; font-size: 13px; line-height: 1.3; }
+.polytrack-practice-profile .pp-next[hidden], .polytrack-practice-profile .pp-next li[hidden] { display: none !important; }
+@container practice (max-width: 600px) {
+  .polytrack-practice-profile .pp-next { display: block; }
+  .polytrack-practice-profile .pp-next h3 { margin: 0 0 3px; }
+  .polytrack-practice-profile .pp-next ul { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .polytrack-practice-profile .pp-next li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; }
+}

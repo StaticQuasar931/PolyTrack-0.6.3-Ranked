@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {decodeSnapshot} from './snapshot-package.mjs';
 import {eventAwardPresentation,publishedEventAwardPresentation} from './event-award-presentation.mjs';
+import {eventRpPresentation} from '../events/client.mjs';
+import {isLegacyArchiveReplayException} from './legacy-archive-replay-exceptions.mjs';
 
 const hash=n=>n.toString(16).padStart(64,'0'),accountId=hash(1),trackId=hash(2),replayHash=hash(3);
 const period={id:'snapshot77_shape',kind:'kodub',trackId,startsAt:1000,endsAt:10000};
@@ -60,7 +62,8 @@ test('known waiting Event PB and known absence are distinct from unavailable or 
   assert.equal(result.status,'pending');assert.equal(result.text,'ERP pending');assert.equal(result.verified,false);
   assert.equal(result.eventTimeMs,51000);assert.equal(result.eventPbText,'Event PB time-51000');assert.equal(result.score,null);
   for(const b of [null,board([],{complete:false}),board([],{complete:undefined,sourceComplete:undefined}),
-    board([],{totalEntries:1}),board([],{totalEntries:undefined}),board([],{sourceComplete:false}),board([],{pendingPlaybacks:{}})])assert.equal(show({board:b}).status,'unavailable');
+    board([],{totalEntries:1}),board([],{totalEntries:undefined}),board([],{sourceComplete:false}),board([],{pendingPlaybacks:{}}),
+    board([],{totalEntriesExact:false}),board([],{publicationPending:true})])assert.equal(show({board:b}).status,'unavailable');
   assert.equal(show({board:board([])}).status,'none');
   assert.equal(show({normalRow:normal({timeMs:600000}),board:board([])}).status,'none');
 });
@@ -91,27 +94,49 @@ test('event/track/account context and duplicate published accounts fail closed',
   assert.equal(show({normalRow:{userId:accountId,trackId,timeMs:51459,replayHash}}).relation,'exact');
 });
 
-test('snapshot77 static latest Kodub rows preserve published score and exact versus separate identity',async()=>{
-  const root=new URL('../public-snapshots77/',import.meta.url),indexBytes=await fs.readFile(new URL('index.json',root));
+test('current static finite awards and latest Kodub preserve earned ERP and exact versus separate identity',async t=>{
+  const pointer=JSON.parse(await fs.readFile(new URL('../snapshot-current.json',import.meta.url),'utf8'));
+  assert.match(pointer.currentdir,/^public-snapshots[1-9]\d*$/);
+  const root=new URL('../'+pointer.currentdir+'/',import.meta.url),indexBytes=await fs.readFile(new URL('index.json',root));
   const sha=value=>createHash('sha256').update(value).digest('hex');
-  assert.equal(sha(indexBytes),'fe8e85d0955c71396e78ac658d768921a41b82c68ee777c4597fe015a3a4035c');
   const index=JSON.parse(indexBytes);let reads=0;
+  assert.equal(index.generation,Number(pointer.currentdir.slice('public-snapshots'.length)));
   const load=async logical=>{
     const entry=index.files[logical];assert(entry);assert(++reads<=180);assert(entry.decodedBytes<=4*1024*1024);
     const encoded=await fs.readFile(new URL(entry.path,root));assert.equal(sha(encoded),entry.sha256);
     const decoded=await decodeSnapshot(encoded);assert.equal(decoded.length,entry.decodedBytes);return JSON.parse(Buffer.from(decoded));
   };
-  const manifest=await load('manifest.json'),events=[];
-  for(const record of Object.values(manifest.events)){const event=await load(record.path);if(event.period?.kind==='kodub')events.push(event);}
+  const manifest=await load('manifest.json'),events=[];let finiteAwards=0,pending=0,historical=0;
+  for(const record of Object.values(manifest.events)){
+    if(record.path===null)continue;const event=await load(record.path);
+    if(!event.period?.id)continue;
+    for(const row of event.entries){
+      const award=publishedEventAwardPresentation(row),visible=eventRpPresentation(row);
+      if(isLegacyArchiveReplayException({sourcePath:record.path,board:event,row})){
+        assert.equal(award.status,'unavailable');assert.equal(award.verified,false);historical++;
+      }else{
+        assert.equal(award.status,'awarded',event.period.id+' verified row must retain its earned ERP');
+        assert.equal(award.score,Number(row.rp));finiteAwards++;
+      }
+      assert.equal(visible.score,Number(row.rp));assert.equal(visible.text,Number(row.rp)+' ERP');
+    }
+    for(const row of event.pendingPlaybacks||[]){assert.notEqual(publishedEventAwardPresentation(row).status,'awarded');assert.equal(eventRpPresentation(row),null);pending++;}
+    if(event.period.kind==='kodub')events.push(event);
+  }
+  assert(finiteAwards>0);
+  assert.equal(historical,12,'only the original pinned legacy rows lack new verification authority');
   events.sort((a,b)=>b.period.startsAt-a.period.startsAt);const event=events[0];assert(event);
   const ordinary=await load(manifest.tracks[event.period.trackId].path),counts={exact:0,separate:0,none:0};
   for(const row of ordinary.entries){
     const result=eventAwardPresentation({board:event,period:event.period,trackId:event.period.trackId,normalRow:row});
     const saved=event.entries.find(value=>value.accountId===(row.accountId||row.userId));
-    if(!saved){assert.equal(result.status,'none');counts.none++;continue;}
+    if(!saved){
+      assert.equal(result.status,event.pendingPlaybacks?.some(value=>value.accountId===(row.accountId||row.userId))?'pending':'none');counts.none++;continue;
+    }
     assert.equal(result.status,'awarded');assert.equal(result.score,saved.rp);assert.equal(result.eventTimeMs,saved.timeMs);
     const exact=row.timeMs===saved.timeMs&&row.replayHash===saved.replayHash;
     assert.equal(result.relation,exact?'exact':'separate');counts[exact?'exact':'separate']++;
   }
-  assert.deepEqual(counts,{exact:21,separate:3,none:62});
+  assert(counts.exact>0);assert(counts.separate>0);assert.equal(counts.exact+counts.separate+counts.none,ordinary.entries.length);
+  t.diagnostic(JSON.stringify({generation:index.generation,finiteAwards,historical,pending,latestKodub:counts,staticReads:reads}));
 });

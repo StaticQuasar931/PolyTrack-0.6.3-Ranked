@@ -4,39 +4,24 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {eventExactRunAt,eventVerificationLabel} from './client.mjs';
 import {archiveSnapshotState} from './archive-view.mjs';
+import {harness,racer,deferred,until} from './event-replay-test-fixture.mjs';
 
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
-const selectionSource=source.slice(source.indexOf('  const replayContextActive='),source.indexOf('  function selectTopEventRows('));
-function selectionFixture(){
- const period={id:'daily',trackId:'b'.repeat(64)},session={periodId:'daily',accountId:'viewer'};
- const rows=['one','two','three'].map(accountId=>({accountId,timeMs:1000}));
- const pendingGhosts=new Map(),selectedGhosts=new Map(),reads=new Map();
- const context={period,session,rows,pendingGhosts,selectedGhosts,
-  bridge:{accountId:()=>session.accountId,readReplay:(_period,account)=>new Promise(resolve=>reads.set(account,resolve)),require:()=>null},
-  sessions:{current:()=>session},archiveIntent:null,nativeView:{period,periodId:period.id,page:0},
-  knownPeriods:new Map(),catalog:{periods:[period]},eventDisplayRows:()=>({rows}),
-  replayCache:new Map(),preparedGhosts:new Map(),replayFailures:new Map(),
-  preparePublishedEventGhost:async()=>({recording:'fixture'}),now:()=>1000,
-  message(){},tick(){},displayName:row=>row.accountId};
- const api=vm.runInNewContext(`(()=>{let topSelectionToken=0,replayRequest=0,selectedGhost=null;${selectionSource};return {selectReplay,selectEventRows};})()`,context);
- return {...api,period,rows,pendingGhosts,selectedGhosts,resolveAll(){for(const resolve of reads.values())resolve({});}};
-}
-
-test('cancelling one loading ghost cancels its entire invalidated batch',async()=>{
- const f=selectionFixture(),batch=f.selectEventRows(1,3);
- assert.equal(f.pendingGhosts.size,3);
- await f.selectReplay(f.period,f.rows[0]);
- f.resolveAll();await batch;
- assert.equal(f.pendingGhosts.size,0,'cancelled batch must not strand loading rows');
- assert.equal(f.selectedGhosts.size,0,'late cancelled results must not select ghosts');
+test('cancelling one selected ghost invalidates an action without reviving loaded ghosts',async()=>{
+ const gate=deferred(),h=harness({read:async row=>{await gate.promise;return {...row};}});
+ await h.selectTopEventRows(3);const work=h.action('watch');await until(()=>h.reads.length===3);
+ await h.select(h.rows[0]);gate.resolve();await work;
+ assert.equal(h.pending(),0);assert.equal(h.selected().length,2);assert.equal(h.watches.length,0);
+ assert(h.selected().every(row=>row.ghost===null));
 });
 
-test('a newer individual selection replaces a batch without reviving old ghosts',async()=>{
- const f=selectionFixture(),batch=f.selectEventRows(1,3);
- const individual=f.selectReplay(f.period,{accountId:'four',timeMs:1100});
- f.resolveAll();await Promise.all([batch,individual]);
- assert.equal(f.pendingGhosts.size,0);
- assert.deepEqual([...f.selectedGhosts.keys()],['four']);
+test('a newer individual selection invalidates Play while retaining the chosen group',async()=>{
+ const gate=deferred(),rows=['one','two','three','four'].map((id,i)=>racer(id,1000+i));
+ const h=harness({rows,read:async row=>{await gate.promise;return {...row};}});
+ await h.selectTopEventRows(3);const work=h.action('play');await until(()=>h.reads.length===3);
+ await h.select(rows[3]);gate.resolve();await work;
+ assert.equal(h.pending(),0);assert.deepEqual(Array.from(h.selected(),row=>row.targetAccountId),rows.map(row=>row.accountId));
+ assert.equal(h.launches.length,0);assert.equal(h.reads.length,3);
 });
 
 test('future exact replay timestamps remain unknown in verification labels',()=>{

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { renderPracticeProfile, installPracticeProfileControls } from './practice-profile.mjs';
+import { renderPracticeProfile, installPracticeProfileControls, practiceSuggestionCandidates, practiceSuggestionEligible, compactPracticeSuggestion } from './practice-profile.mjs';
 import { practiceProfileChoiceKey, readPracticeProfileChoice, writePracticeProfileChoice } from './practice-profile.mjs';
 
 test('sort preference keys isolate profiles and never use an anonymous shared key', () => {
@@ -242,7 +242,7 @@ test('practice identity and controls survive injected popup CSS in narrow grid a
     // The real patch appends styles at runtime, after the linked stylesheets.
     await page.addStyleTag({ content: injectedCss });
     await page.evaluate(async () => {
-      const { renderPracticeProfile, installPracticeProfileControls } = await import('/practice.mjs');
+      const { renderPracticeProfile, installPracticeProfileControls, practiceSuggestionCandidates, practiceSuggestionEligible, compactPracticeSuggestion } = await import('/practice.mjs');
       document.querySelector('#overallProfileContent').innerHTML =
         '<section class="profile-guide"><div class="profile-guide-body"><button class="profile-guide-track">Route planner</button></div></section>' +
         renderPracticeProfile({
@@ -493,4 +493,43 @@ test('a recent local PB suppresses stale practice regardless of cache refresh da
   const at=Date.now(),old=row({lastPlayedAt:at-10*86400000,lastPbAt:0});
   const html=renderPracticeProfile({rows:[old],results:[{trackId:old.trackId,timeMs:9000,pbAt:at-86400000,source:'local'}]});
   assert.doesNotMatch(html,/try a baseline run/);
+});
+
+test('practice candidate eligibility excludes expired and unproven Kodub weeks without discarding history',()=>{
+ const at=Date.now(),old=row({source:'kodub',endTime:at-1,lastPlayedAt:at-10*86400000,lastPbAt:0});
+ assert.equal(practiceSuggestionEligible(old,{at}),false);
+ assert.equal(practiceSuggestionEligible({...old,endTime:undefined},{at}),false);
+ assert.equal(practiceSuggestionEligible({...old,endTime:at+1000},{at}),true);
+ assert.equal(practiceSuggestionEligible({...old,endTime:at+1000,startTime:at+1},{at}),false);
+ assert.equal(practiceSuggestionEligible({...old,endTime:undefined},{at,canSuggestTrack:()=>true}),true);
+ assert.equal(practiceSuggestionEligible(old,{at,canSuggestTrack:()=>true}),false,'known expiry cannot be overridden');
+ assert.deepEqual(practiceSuggestionCandidates([old],{at}),[]);
+ const html=renderPracticeProfile({rows:[old]});
+ assert.match(html,/data-pp-track-id="track-a"/);
+ assert.doesNotMatch(html,/data-pp-suggestions|data-pp-suggestion-track-id|Practice suggestion/);
+});
+
+test('actual complete plannerRoutes support unfinished targets only for currently eligible rows',()=>{
+ const at=Date.now(),unfinished=row({lastPlayedAt:at,lastPbAt:0,finishes:0,trackedBestMs:0,bestMs:0});
+ const route={trackId:unfinished.trackId,value:2,targetRank:6,simulationComplete:true};
+ assert.equal(practiceSuggestionCandidates([unfinished],{at,plannerRoutes:[route]})[0].targetRank,6);
+ assert.deepEqual(practiceSuggestionCandidates([unfinished],{at,plannerRoutes:[{...route,simulationComplete:false}]}),[]);
+ assert.deepEqual(practiceSuggestionCandidates([unfinished],{at,plannerRoutes:[route],canSuggestTrack:()=>false}),[]);
+ assert.deepEqual(practiceSuggestionCandidates([unfinished],{at,plannerRoutes:[route],results:[{trackId:unfinished.trackId,timeMs:9000}]}),[]);
+ const before=structuredClone(unfinished);
+ renderPracticeProfile({rows:[unfinished],plannerRoutes:[route],trackInfo:()=>({source:'kodub'}),canSuggestTrack:()=>false});
+ assert.deepEqual(unfinished,before);
+});
+
+test('official-only suggestions use live metadata and filter candidates before the top-three limit',()=>{
+ const at=Date.now(),rows=Array.from({length:6},(_,i)=>row({trackId:'track-'+i,lastPlayedAt:at-(20-i)*86400000,lastPbAt:0,type:i<3?'community':'official'}));
+ assert.equal(practiceSuggestionCandidates(rows,{at}).length,6);
+ assert.deepEqual(practiceSuggestionCandidates(rows,{at,officialOnly:true}).map(r=>r.trackId),['track-3','track-4','track-5']);
+ assert.equal(practiceSuggestionEligible({...rows[0],official:true},{at,officialOnly:true,trackInfo:()=>({type:'community'})}),false);
+ assert.equal(practiceSuggestionEligible(rows[3],{at,canSuggestTrack:()=>{throw Error('stale caller');}}),false);
+ const html=renderPracticeProfile({rows});
+ assert.equal((html.match(/data-pp-suggestion-id=/g)||[]).length,6,'all eligible prompts remain available to active filters');
+ assert.equal((html.match(/data-pp-suggestion-id="[^"]+" hidden/g)||[]).length,3);
+ assert.match(html,/class="pp-next"/);
+ assert.equal(compactPracticeSuggestion({kind:'unfinished',targetRank:6}),'No local finish; aim for #6');
 });

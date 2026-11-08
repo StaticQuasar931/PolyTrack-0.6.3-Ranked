@@ -17,14 +17,17 @@ test('event RP distinguishes published zero, numeric strings, absent fields and 
   }
   assert.equal(eventRpPresentation({}).text,'ERP unavailable');
 });
-test('group ERP never falls back to global ERP when an explicit group score is invalid',()=>{
-  assert.equal(eventRpPresentation({rp:84,groupRp:0}).text,'0 Group ERP');
-  assert.equal(eventRpPresentation({rp:84,groupRp:'42'}).text,'42 Group ERP');
-  assert.equal(eventRpPresentation({rp:84,groupRp:'bad'}).text,'Group ERP unavailable');
+test('group ERP is labelled separately without hiding the actual published award',()=>{
+  assert.equal(eventRpPresentation({rp:84,groupRp:0}).text,'84 ERP · 0 Group ERP');
+  assert.equal(eventRpPresentation({rp:84,groupRp:'42'}).text,'84 ERP · 42 Group ERP');
+  assert.equal(eventRpPresentation({rp:84,groupRp:'bad'}).text,'84 ERP · Group ERP unavailable');
+  assert.equal(eventRpPresentation({groupRp:42}).available,false);
+  assert.equal(eventRpPresentation({groupRp:42}).score,null);
   assert.equal(eventRpPresentation({rp:84,groupRp:null}).text,'84 ERP');
 });
 test('scores never promote pending, held, rejected or explicitly unverified results',()=>{
-  for(const flags of [{pending:true},{verified:false},{eventRpEligible:false},{needsReview:true},{reviewHold:true},{verificationStatus:'waiting'},{status:'rejected'}]){
+  for(const flags of [{pending:true},{verified:false},{eventRpEligible:false},{needsReview:true},{reviewHold:true},{verificationStatus:'waiting'},{status:'rejected'},
+    {excluded:true},{unscored:true},{reason:'held'},{validationState:'mismatch'},{verifiedState:0}]){
     const row={rp:84,groupRp:90,...flags},before=structuredClone(row);
     assert.equal(eventRpPresentation(row),null);
     assert.deepEqual(row,before);
@@ -57,7 +60,7 @@ test('fallback event list uses the same zero and unavailable rules as native row
   const start=source.indexOf('  function rows(entries)'),end=source.indexOf('  async function openPermanent()',start);
   assert.ok(start>=0&&end>start);
   const render=vm.runInNewContext(source.slice(start,end)+';rows;',{eventRpPresentation,displayName:()=> 'Racer',escape:value=>value,time:String,bridge:{accountId:()=> 'viewer'}});
-  for(const [row,label] of [[{rp:0},'0 ERP'],[{},'ERP unavailable'],[{rp:'84'},'84 ERP'],[{rp:10,groupRp:0},'0 Group ERP'],[{rp:99,pending:true},'ERP pending']]){
+  for(const [row,label] of [[{rp:0},'0 ERP'],[{},'ERP unavailable'],[{rp:'84'},'84 ERP'],[{rp:10,groupRp:0},'10 ERP · 0 Group ERP'],[{rp:99,pending:true},'ERP pending']]){
     assert.ok(render([{timeMs:100,rank:1,...row}]).includes('<strong>'+label+'</strong>'));
   }
 });

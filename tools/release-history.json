@@ -1,14 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 333,
+    "number": 334,
     "version": "0.6.3",
-    "revision": 278,
+    "revision": 279,
     "notes": [
-      "Large snapshot updates now skip unnecessary cleanup work."
+      "Route plans now use complete saved scoring results.",
+      "Event replays load when you choose Play or Watch.",
+      "Clearer event points, compact practice suggestions and row-wide history details."
     ]
   },
   "entries": [
+    {
+      "number": 333,
+      "title": "Skip cleanup probes for successfully saved snapshot files",
+      "commit": "fdd135c42094b62232e33b8a163add95274127cf",
+      "committedAt": "2026-11-08T06:04:38.000Z",
+      "notes": [
+        "Large snapshot updates now skip unnecessary cleanup work."
+      ]
+    },
     {
       "number": 332,
       "title": "Preserve completed replay checks and streamline snapshot preparation",
@@ -176,13 +187,6 @@
       "title": "Reuse captured sources for approved full PB catch-up",
       "commit": "edadececd50f85dc8595edee0a90541ed1c03458",
       "committedAt": "2026-11-07T09:06:01.000Z",
-      "notes": []
-    },
-    {
-      "number": 310,
-      "title": "Pace full captures within existing Worker safeguards",
-      "commit": "d67fcc28564974a252265559b424cf467192e1ec",
-      "committedAt": "2026-11-07T08:17:14.000Z",
       "notes": []
     }
   ],

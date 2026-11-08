@@ -79,6 +79,7 @@ export function eventAwardPresentation({board,period=board?.period,normalRow,tra
   if(waiting.length){const best=waiting.reduce((a,b)=>b.timeMs<a.timeMs?b:a);return pair(publishedEventAwardPresentation(best),best,normalRow,formatTime,waiting);}
   if(pendingRows.length)return model('unavailable');
   const complete=(board.complete===true||board.sourceComplete===true)&&board.complete!==false&&board.sourceComplete!==false&&
+    board.totalEntriesExact!==false&&board.publicationPending!==true&&
     Number.isSafeInteger(board.totalEntries)&&board.totalEntries===board.entries.length;
   return complete?model('none',{title:'This complete published event snapshot has no award or waiting Event PB for this account. A verified normal PB alone does not earn ERP.'}):model('unavailable');
 }
