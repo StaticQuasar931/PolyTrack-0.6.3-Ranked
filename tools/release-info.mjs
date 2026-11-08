@@ -1,12 +1,11 @@
 const releaseInfo = {
-  "number": 336,
+  "number": 337,
   "version": "0.6.3",
-  "revision": 281,
+  "revision": 282,
   "notes": [
-    "Saved PB syncing handles confirmations and connection failures more reliably.",
-    "Podium cards sit below your car again."
+    "Cleaner medal counts and next-podium targets below your car."
   ],
-  "preparedAt": "2026-11-08T22:37:22.524Z"
+  "preparedAt": "2026-11-08T23:00:25.829Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

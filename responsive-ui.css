@@ -643,3 +643,17 @@ html body #overallProfilePopup .profile-car-column button.profile-podium-target 
 html body #overallProfilePopup button.profile-podium-target .profile-track-image-frame { width:42px !important; min-width:42px !important; max-width:42px !important; }
 
 html body #overallProfilePopup #overallProfileContent .profile-car-column > .overall-car-model { width:100% !important; max-width:100% !important; min-width:0 !important; height:auto !important; aspect-ratio:1.6; }
+
+/* Calm, equal-sized medal tiles and a single clear podium target. */
+html body #overallProfilePopup .profile-podium-wide .profile-achievement-label { font-size:14px; letter-spacing:.06em; line-height:1.3; }
+html body #overallProfilePopup .profile-car-column .profile-podium-wide[data-podium-kind="earned"] .profile-achievement-medals { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px !important; }
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card { display:grid !important; grid-template-columns:minmax(0,1fr) !important; grid-template-rows:22px 28px 15px; place-items:center; gap:4px; min-width:0 !important; width:auto !important; margin:0 !important; padding:10px 3px !important; background:#14244c; border:1px solid #5476a16b; box-sizing:border-box; }
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card img { width:22px !important; height:22px !important; margin:0 !important; grid-row:1; }
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card b { font-size:25px !important; line-height:1; grid-row:2; }
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card small { font-size:12px !important; line-height:1; grid-row:3; }
+html body #overallProfilePopup .profile-podium-wide .profile-ranked-count { width:100%; padding-top:7px; border-top:1px solid #638cb044; color:#bacde9; font-size:13px; line-height:1.3; }
+html body #overallProfilePopup .profile-car-column button.profile-podium-target { border:0; background:transparent; min-height:76px; padding:8px 3px; gap:12px; }
+html body #overallProfilePopup .profile-podium-copy { display:grid; gap:7px; min-width:0; }
+html body #overallProfilePopup .profile-podium-copy strong { font-size:18px; line-height:1.2; overflow-wrap:anywhere; }
+html body #overallProfilePopup .profile-podium-copy small { font-size:14px; color:#b9d5ed; line-height:1.3; }
+html body #overallProfilePopup button.profile-podium-target:hover { background:#243869; }
