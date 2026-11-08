@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 321,
+  "number": 323,
   "version": "0.6.3",
-  "revision": 269,
+  "revision": 270,
   "notes": [
-    "Fewer repeated cloud requests when syncing saved runs.",
-    "Event uploads retry less often during outages and keep your best run.",
-    "Faster snapshot preparation with the same replay safety checks."
+    "Improved reliability of snapshot updates."
   ],
-  "preparedAt": "2026-11-07T22:02:30.634Z",
-  "committedAt": "2026-11-07T23:00:16.000Z"
+  "preparedAt": "2026-11-08T00:24:26.126Z",
+  "committedAt": "2026-11-08T00:49:47.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

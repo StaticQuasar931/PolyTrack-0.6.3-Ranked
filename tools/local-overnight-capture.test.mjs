@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {runLocalOvernightCapture,validateLocalEvidence,validatePriorLocalCapture,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
+import {runLocalOvernightCapture,assertClaimedLocalAdmission,validateLocalEvidence,validatePriorLocalCapture,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
 import {publishLocalCaptureCommit,reconcileLocalPublication} from './local-capture-git.mjs';
 import {assertLocalCaptureOwner} from './local-capture-worker.mjs';
 import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
@@ -286,4 +286,22 @@ test('malformed prior JSON never becomes valid completion evidence',async t=>{
   const f=await priorReceiptFixture(t),bytes='{incomplete';await fs.writeFile(f.file,bytes);
   f.evidence.sha256=createHash('sha256').update(bytes).digest('hex');
   await assert.rejects(validatePriorLocalCapture(f.receipt,{plan:f.plan}),SyntaxError);
+});
+
+ test('post-claim metadata failure prevents authentication and capture while preserving the failed receipt',async()=>{
+  let checked=0;const f=fixture({revalidateAdmission:async()=>{checked++;throw Error('source advanced');}});
+  await assert.rejects(runLocalOvernightCapture(f.options),/source advanced/);assert.equal(checked,1);
+  assert.equal(f.calls.includes('claim'),true);assert.equal(f.calls.includes('auth'),false);assert.equal(f.calls.includes('capture'),false);assert.equal(f.calls.at(-1),'failed');
+});
+ test('post-claim revalidation cannot consume the admission window and still authenticate',async()=>{
+  let clock=N.start;const f=fixture({now:()=>clock,revalidateAdmission:async()=>{clock=N.latestCaptureStart;}});
+  await assert.rejects(runLocalOvernightCapture(f.options),/authorized time window/);assert.equal(f.calls.includes('auth'),false);assert.equal(f.calls.at(-1),'failed');
+});
+
+test('post-claim admission requires exact own claim and complete idle job inventory',()=>{
+  const valid={head:source,claimed:true,claimSource:source,active:false,complete:true};assert.doesNotThrow(()=>assertClaimedLocalAdmission(valid,source));
+  for(const patch of [{head:'b'.repeat(40)},{claimed:false},{claimSource:'b'.repeat(40)},{active:true},{active:undefined},{complete:false},{complete:undefined}])
+    assert.throws(()=>assertClaimedLocalAdmission({...valid,...patch},source),/Admission changed/);
+  assert.throws(()=>assertClaimedLocalAdmission(null,source),/Admission changed/);
+  assert.throws(()=>assertClaimedLocalAdmission(valid,'not-a-source'),/Admission changed/);
 });

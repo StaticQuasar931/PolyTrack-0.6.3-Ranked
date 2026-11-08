@@ -12,6 +12,7 @@ import {eventEncode,eventDecode} from '../workers/ranked/src/events-store.js';
 import {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION} from '../workers/ranked/src/verification.js';
 import {utcEventCandidates} from '../events/schedule.mjs';
 import {keepEventBest,matchingEventRuns} from '../events/session.mjs';
+import {createEventSubmissionRetry,sameEventSubmission} from '../events/client.mjs';
 import {claimProfileNameWithLegacyBridge} from './unique-profile-name.mjs';
 import {createFirebaseAuthApp} from './firebase-auth-app.mjs';
 import * as dailyModule from './daily-activity-sync.mjs';
@@ -134,7 +135,7 @@ function fixture(t,{edge='healthy'}={}){
   const app={auth:()=>({get currentUser(){return user;},signInAnonymously:async()=>{user={uid:owner,getIdToken:async()=> 'synthetic-token'};}}),firestore:()=>database};
   const c={Date:Clock,Intl,crypto:webcrypto,TextEncoder,URL,Headers,Request,Response,Promise,Map,Set,WeakSet,JSON,Math,Number,String,Array,Error,
     window:{firebase:sdk,addEventListener(){}},document:{visibilityState:'visible',addEventListener(){},getElementById:()=>null,querySelectorAll:()=>[]},
-    navigator:{onLine:true,locks:{request:async(_key,work)=>work()}},localStorage:ls,
+    navigator:{onLine:true,locks:{request:async(_key,options,work)=>typeof options==='function'?options():work({})}},localStorage:ls,
     setTimeout:(callback,delay)=>{const id=++timer;timers.set(id,{callback,delay});return id;},clearTimeout:id=>timers.delete(id),
     FIREBASE_QUOTA_PAUSE_KEY:'quota',MODERATION_REFRESH_MS:600000,firestorePromise:null,firebaseRetryAt:0,
     compatibilityOnlineAllowed:true,assertOnlineCompatibility(){},observeFirestore:async value=>value,
@@ -212,12 +213,14 @@ function fixture(t,{edge='healthy'}={}){
   put('0.6.2_s1_worker_jobs/canonical_reconcile_v2',{backfillComplete:true,schemaVersion:2,pendingTrackIds:[],pendingResultIds:{},pendingFullRebuildTrackIds:[]});
   for(const id of selected)put('0.6.2_s1_leaderboards_track/'+id,{trackId:id,entries:[],totalEntries:0,sourceComplete:true,complete:true,revision:1,
     algorithmVersion:'participation-v8-s1',schemaVersion:6,signature:'synthetic-existing-board'});
-  const eventDiskKey='polytrack-062-events-v1-queue';
+  const eventStore='polytrack-062-events-v1',eventDiskKey=eventStore+'-queue',eventRetryKey=eventStore+'-submission-retry-v1';
   Object.assign(c,{now:()=>clock,bridge:{accountId:()=>account},sessions:{current:()=>null},eventIntent:null,archiveIntent:null,latestFinish:null,
-    catalog:{periods},knownPeriods:new Map(periods.map(p=>[p.id,p])),bestRecords:{},hasPending:false,flushing:false,retryAt:0,
-    QUEUE:eventDiskKey,BEST:'event-best',REPLAYS:'event-replays',matchingEventRuns,keepEventBest,cache:new Map(),
+    catalog:{periods},knownPeriods:new Map(periods.map(p=>[p.id,p])),bestRecords:{},hasPending:false,flushing:false,
+    STORE:eventStore,QUEUE:eventDiskKey,BEST:'event-best',REPLAYS:'event-replays',matchingEventRuns,keepEventBest,sameEventSubmission,cache:new Map(),
     read:(key,fallback)=>c.readJsonStorage(key,fallback),write:(key,value)=>c.writeJsonStorage(key,value),cacheWrite:(key,value)=>c.writeJsonStorage(key,value),
     invalidateReceipt(){},message(){},tick(){}});
+  c.submissionRetry=createEventSubmissionRetry({now:()=>clock,random:()=>0,
+    load:()=>c.readJsonStorage(eventRetryKey,null),save:value=>c.writeJsonStorage(eventRetryKey,value)});
   const submitStart=patch.indexOf('submit:async run=>{'),submitEnd=patch.indexOf('\n        }\n',submitStart);
   assert.ok(submitStart>0&&submitEnd>submitStart);
   c.bridge.submit=vm.runInContext('('+patch.slice(submitStart+'submit:'.length,submitEnd+'\n        }'.length)+')',c);
@@ -246,6 +249,8 @@ function fixture(t,{edge='healthy'}={}){
     profileGet:()=>c.mockPayload(new URL(origin+'/user'),'GET',{accountId}),
     rename:()=>c.mockPayload(new URL(origin+'/user'),'POST',{accountId,nickname:'Renamed Journey',carStyle:'fixture-style'}),
     reconcile:()=>c.reconcileLocalPersonalBestsToCloud(account),advance:ms=>{clock+=ms;},setEdge:value=>{edgeMode=value;},
+    now:()=>clock,eventRetryAt:()=>{const ledger=c.readJsonStorage(eventRetryKey,null);assert.ok(ledger,'retry state must be persisted');
+      return Math.max(ledger.quotaUntil||0,...Object.values(ledger.accounts).map(row=>row.nextAt),...Object.values(ledger.attempts).map(row=>row.nextAt));},
     fail:(code,collection,remaining=1,op='read')=>{sdkFailure=code?{code,collection,remaining,op}:null;},
     queue:()=>c.readJsonStorage(eventDiskKey,[]),clearConfirmations:()=>disk.delete('reconcile'),
     report:scenario=>process.stdout.write('FIVE_TRACK_JOURNEY '+JSON.stringify({scenario,headFixture:'synthetic-not-gameplay',executedClientSha256:sha(rawPatch),roles,
@@ -259,6 +264,15 @@ function fixture(t,{edge='healthy'}={}){
           failedAttempts:rows.filter(row=>row.op.startsWith('failed-')).length};}),
       localPbs:localRows.length,localReplays:recordings.size,pendingEventOutbox:c.readJsonStorage(eventDiskKey,[]).length,
       failedBilling:'unknown; failed attempts are not counted as zero billable reads',excluded:'actual auth/network, SDK retries, rules/index reads, physics, scheduled Overall/event publication, real browser UI'})+'\n')};
+}
+
+async function waitForEventRetry(f){
+  const deadline=f.eventRetryAt();assert.ok(deadline>f.now(),'recovery must respect a future persisted deadline');
+  const before=f.totals(),pending=f.queue();
+  f.advance(deadline-f.now()-1);await f.c.flush();await f.settle();
+  assert.deepEqual(f.totals(),before,'no paid attempts before the persisted retry deadline');
+  assert.deepEqual(f.queue(),pending,'cooldown retains the exact pending PBs');
+  f.advance(1);
 }
 
 test('EXACT fresh first five successful finishes: one PB per role, no extra finishes or mocked verdicts',async t=>{
@@ -335,7 +349,7 @@ for(const mode of ['offline','403'])test('mixed event outbox '+mode+': latest PB
   await f.phase('five-local-tracks-with-cloud-inbox-unavailable',async()=>{for(const id of f.selected)await f.finish(id,30000);});
   assert.ok(f.queue().length>0);const queued=f.queue().length;
   await f.phase('same-minute-event-flush-is-local-backoff',()=>f.c.flush());assert.equal(f.queue().length,queued);
-  f.fail(null);f.advance(61000);await f.phase('recover-inbox-writes',()=>f.c.flush());assert.equal(f.queue().length,0);
+  f.fail(null);await waitForEventRetry(f);await f.phase('recover-inbox-writes',()=>f.c.flush());assert.equal(f.queue().length,0);
   await f.phase('worker-consumes-recovered-inbox',f.drainInbox);
   for(const p of f.periods)assert.equal(f.data.get(E.queues+'/'+p.id).admitted,1,JSON.stringify([...f.data].filter(([key])=>key.startsWith(E.receipts+'/'))));
   assert.equal(f.c.firebaseQuotaPaused(),false,'ordinary unavailable/403 is not demonstrated quota exhaustion');
@@ -352,7 +366,7 @@ test('unknown quota state: first failure counted unknown, local five-track PBs s
   assert.deepEqual(f.totals(),before);
   f.advance(16*60000);await f.phase('quota-recovery-local-PB-reconcile',f.reconcile);
     assert.equal(f.data.get(E.profiles+'/'+account).pbCount,5,'each recovered first PB counts once, not again in the bootstrap floor');assert.equal(f.localRows.length,5);
-  await f.phase('quota-recovery-event-outbox',()=>f.c.flush());assert.equal(f.queue().length,0);
+  await waitForEventRetry(f);await f.phase('quota-recovery-event-outbox',()=>f.c.flush());assert.equal(f.queue().length,0);
   await f.phase('quota-recovery-event-intake',f.drainInbox);
   for(const p of f.periods)assert.equal(f.data.get(E.queues+'/'+p.id).admitted,1);
   f.report('quota-cooldown-recovery');
@@ -375,7 +389,7 @@ test('event outbox is account-bound and coalesces two offline improvements to th
   const id=f.periods[0].trackId;
   await f.phase('two-offline-event-improvements',async()=>{await f.finish(id,30000);await f.finish(id,29000);});
   assert.equal(f.queue().length,1);assert.equal(f.queue()[0].timeMs,29000);
-  f.advance(61000);f.c.bridge.accountId=()=> 'f'.repeat(64);const before=f.totals();
+  await waitForEventRetry(f);f.c.bridge.accountId=()=> 'f'.repeat(64);const before=f.totals();
   await f.phase('other-account-must-not-upload-old-outbox',()=>f.c.flush());assert.deepEqual(f.totals(),before);assert.equal(f.queue().length,1);
   f.c.bridge.accountId=()=>account;f.fail(null);
   await f.phase('original-account-recovers-one-latest-inbox-write',()=>f.c.flush());assert.equal(f.queue().length,0);

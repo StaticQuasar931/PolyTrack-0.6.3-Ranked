@@ -1,9 +1,15 @@
-import test from 'node:test';
+import test,{before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {createConnection} from 'node:net';
 import {EventEmitter} from 'node:events';
-import {runBoundedCaptureProcess,terminateOwnedCaptureTree} from './local-capture-process.mjs';
+import {runBoundedCaptureProcess,terminateOwnedCaptureTree,prepareCaptureProcessSupervisor,disposeCaptureProcessSupervisor,createCaptureProcessSupervisor} from './local-capture-process.mjs';
 import {createLocalCaptureGit,assertBoundedLocalSource,publishLocalCaptureCommit,reconcileLocalPublication,completeReconciledLocalPublication} from './local-capture-git.mjs';
+
+before(async()=>{await prepareCaptureProcessSupervisor();});
+after(async()=>{try{await disposeCaptureProcessSupervisor();}catch(error){
+  console.error(JSON.stringify({supervisorDisposalFailure:error.supervisor??null}));throw error;
+}});
 
 const source='a'.repeat(40),candidate='b'.repeat(40);
 function gitFixture({reply={type:'git-result',stdout:'ok'},result={status:0,timedOut:false},patch={}}={}){
@@ -46,9 +52,9 @@ test('real hung wrapper and stdout-holding descendant are both terminated before
   });
   const code=`const {spawn}=require('node:child_process');process.once('message',()=>{const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:['ignore','pipe','pipe'],windowsHide:true});process.send({type:'fixture-pid',pid:child.pid});setInterval(()=>{},1000);});`;
   const git=createLocalCaptureGit({workspace:process.cwd(),deadline:Date.now()+60000,
-    runProcess:options=>runBoundedCaptureProcess({...options,timeoutMs:1000}).catch(error=>{
+    runProcess:options=>runBoundedCaptureProcess({...options,args:['-e',code],timeoutMs:8000}).catch(error=>{
       t.diagnostic(JSON.stringify({supervisorFailure:error.message,termination:error.termination}));throw error;}),
-    spawnWorker:(_file,_argv,options)=>{const child=spawn(process.execPath,['-e',code],options);wrapper=child;
+    spawnWorker:(file,args,options)=>{const child=spawn(file,args,options);wrapper=child;
       child.on('message',value=>{if(value.type==='fixture-pid')descendant=value.pid;});return child;}});
   await assert.rejects(git(['status']),{code:'LOCAL_GIT_TIMEOUT'});assert(Number.isSafeInteger(descendant));
   let alive=true;
@@ -60,6 +66,16 @@ test('actual owned Git worker returns bounded IPC output without credential or n
   const git=createLocalCaptureGit({workspace:process.cwd(),deadline:Date.now()+60000});
   assert.match(await git(['--version']),/^git version /);
 });
+test('Windows supervisor survives 100 consecutive read-only Git operations and confirms disposal',{skip:process.platform!=='win32',timeout:420000},async t=>{
+  const supervisor=createCaptureProcessSupervisor();
+  const git=createLocalCaptureGit({workspace:process.cwd(),deadline:Date.now()+360000,
+    runProcess:options=>runBoundedCaptureProcess({...options,supervisor})});
+  let completed=0;
+  // This is the total benchmark allowance; each Git operation retains its 30s cap.
+  try{for(let i=0;i<100;i++){assert.match(await git(['--version']),/^git version /);completed++;}}
+  finally{await supervisor.dispose();t.diagnostic(JSON.stringify({completed,requested:100,closed:true}));}
+});
+
 test('existing source assertion runs in a bounded owned child without changing its policy',async()=>{
   await assertBoundedLocalSource({workspace:process.cwd(),sourceCommit:source,runnerFile:'fixture-runner',deadline:16000,now:()=>0,
     runProcess:async options=>{
@@ -269,27 +285,104 @@ test('unconfirmed supervisor termination cannot be promoted into recoverable tim
 test('parallel owned tree termination leaves an unrelated supervised sibling alive',async t=>{
   const roots=[],descendants=[];let sibling;
   t.after(async()=>{
-    for(const child of roots)if(child.exitCode===null&&child.signalCode===null)
-      await terminateOwnedCaptureTree(child,{isRunning:()=>child.exitCode===null&&child.signalCode===null});
+    const outcomes=await Promise.allSettled(roots.filter(child=>child.exitCode===null&&child.signalCode===null).map(child=>
+      terminateOwnedCaptureTree(child,{isRunning:()=>child.exitCode===null&&child.signalCode===null})));
+    const errors=outcomes.filter(value=>value.status==='rejected').map(value=>value.reason);if(errors.length)throw new AggregateError(errors,'All parallel fixture roots attempted');
   });
   const spawnOwned=(file,args,options)=>{const child=spawn(file,args,options);roots.push(child);return child;};
   const other=runBoundedCaptureProcess({file:process.execPath,
     args:['-e',"const hold=setInterval(()=>{},1000);process.on('message',m=>{if(m.finish){clearInterval(hold);process.disconnect();}});"],
-    options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:20000,graceMs:0,
+    options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:30000,graceMs:0,
     spawnImpl:(...args)=>{sibling=spawnOwned(...args);return sibling;}});
   // Register the rejection handler now, before waiting for the other fixtures.
   const siblingResult=other.then(result=>({result}),error=>({error}));
   const code="const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true});process.send({pid:child.pid});setInterval(()=>{},1000);";
+  let operationError;
   try {
-    const results=await Promise.all(Array.from({length:3},()=>runBoundedCaptureProcess({file:process.execPath,args:['-e',code],
-      options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:2000,graceMs:0,
+    // Allow parallel gate/workload startup; 8s plus the unchanged 15s cleanup fits inside the sibling's 30s.
+    const outcomes=await Promise.allSettled(Array.from({length:3},()=>runBoundedCaptureProcess({file:process.execPath,args:['-e',code],
+      options:{stdio:['ignore','ignore','ignore','ipc']},timeoutMs:8000,graceMs:0,
       spawnImpl:(...args)=>{const child=spawnOwned(...args);child.on('message',message=>{if(Number.isSafeInteger(message.pid))descendants.push(message.pid);});return child;}})));
-    assert(results.every(result=>result.timedOut===true));assert.equal(descendants.length,3);
+    const errors=outcomes.filter(value=>value.status==='rejected').map(value=>value.reason);if(errors.length)throw new AggregateError(errors,'All parallel fixtures settled');
+    const results=outcomes.map(value=>value.value);assert(results.every(result=>result.timedOut===true));assert.equal(descendants.length,3);
     for(const pid of descendants)assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
     assert.equal(sibling.exitCode,null);assert.equal(sibling.signalCode,null);assert.equal(sibling.connected,true);
-  } finally {
+  } catch(error){operationError=error;} finally {
     if(sibling?.connected)sibling.send({finish:true},()=>{});
   }
   const completed=await siblingResult;
+  if(operationError)throw operationError;
   assert.equal(completed.error,undefined);assert.deepEqual(completed.result,{status:0,signal:null,timedOut:false});
+});
+
+test('Job Object retains an orphaned grandchild after zero and nonzero workload exit',{skip:process.platform!=='win32'},async t=>{
+  const roots=[];let sibling;
+  t.after(async()=>{
+    const outcomes=await Promise.allSettled(roots.filter(child=>child.exitCode===null&&child.signalCode===null).map(child=>
+      terminateOwnedCaptureTree(child,{isRunning:()=>child.exitCode===null&&child.signalCode===null})));
+    const errors=outcomes.filter(value=>value.status==='rejected').map(value=>value.reason);if(errors.length)throw new AggregateError(errors,'All orphan fixture roots cleaned');
+  });
+  const spawnOwned=(file,args,options)=>{const child=spawn(file,args,options);roots.push(child);return child;};
+  const siblingRun=runBoundedCaptureProcess({file:process.execPath,timeoutMs:20000,graceMs:0,
+    args:['-e',"const hold=setInterval(()=>{},1000);process.on('message',m=>{if(m.finish){clearInterval(hold);process.disconnect();}});"],
+    spawnImpl:(...args)=>{sibling=spawnOwned(...args);return sibling;}});
+  const siblingResult=siblingRun.then(value=>({value}),error=>({error}));
+  let operationError;
+  try{
+    for(const code of [0,7]){
+      let descendant;
+      const program=`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',"process.send({ready:true});setInterval(()=>{},1000);"],{stdio:['ignore','ignore','ignore','ipc'],windowsHide:true,detached:true});child.once('message',()=>process.send({descendant:child.pid},()=>{process.disconnect();process.exit(${code});}));`;
+      const operation=runBoundedCaptureProcess({file:process.execPath,args:['-e',program],timeoutMs:10000,graceMs:0,
+        spawnImpl:(...args)=>{const child=spawnOwned(...args);child.on('message',message=>{if(Number.isSafeInteger(message.descendant))descendant=message.descendant;});return child;}});
+      if(code===0)await assert.rejects(operation,/surviving descendants/);
+      else assert.notEqual((await operation).status,0);
+      assert(Number.isSafeInteger(descendant));
+      let alive=true;for(let i=0;i<100;i++){try{process.kill(descendant,0);}catch(error){if(error.code==='ESRCH'){alive=false;break;}throw error;}await new Promise(resolve=>setTimeout(resolve,20));}
+      assert.equal(alive,false,'contained grandchild survives neither intermediate exit nor root exit');
+      assert.equal(sibling.exitCode,null);assert.equal(sibling.signalCode,null);assert.equal(sibling.connected,true);
+    }
+  }catch(error){operationError=error;}finally{if(sibling?.connected)sibling.send({finish:true},()=>{});}
+  const completed=await siblingResult;if(operationError)throw operationError;assert.equal(completed.error,undefined);assert.deepEqual(completed.value,{status:0,signal:null,timedOut:false});
+});
+
+for(const mode of ['control EOF','helper death'])test('registered Job containment survives '+mode+' without recovery',{skip:process.platform!=='win32'},async t=>{
+  let helper,control,root,helperResult,operationResult,fixtureReady,recoveries=0;
+  const ready=new Promise(resolve=>{fixtureReady=resolve;});
+  const supervisor=createCaptureProcessSupervisor({connectControl:options=>{control=createConnection(options);return control;},spawnHelper:(...args)=>{
+    helper=spawn(...args);helperResult=new Promise(resolve=>helper.once('close',(code,signal)=>resolve({code,signal})));return helper;
+  }});
+  const bounded=async(promise,ms)=>{
+    let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Fixture observation deadline exceeded')),ms);})]);}
+    finally{clearTimeout(timer);}
+  };
+  t.after(async()=>{
+    // The captured ChildProcess is the exact helper we spawned, never a PID lookup.
+    // Its non-inherited Job handles contain every fixture descendant.
+    if(helper&&helper.exitCode===null&&helper.signalCode===null)helper.kill();
+    const outcomes=await Promise.allSettled([
+      helperResult?bounded(helperResult,10000):Promise.resolve(),
+      operationResult?bounded(operationResult,20000):Promise.resolve(),
+      supervisor.dispose().catch(error=>{if(!/Helper|helper/.test(error.message))throw error;})
+    ]);
+    const errors=outcomes.filter(value=>value.status==='rejected').map(value=>value.reason);if(errors.length)throw new AggregateError(errors,'All failed-helper fixture cleanup attempted');
+  });
+  await supervisor.prepare();
+  const program="const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',\"process.send({ready:true});setInterval(()=>{},1000);\"],{stdio:['ignore','ignore','ignore','ipc'],windowsHide:true,detached:true});child.once('message',()=>process.send({workload:process.pid,descendant:child.pid}));setInterval(()=>{},1000);";
+  operationResult=runBoundedCaptureProcess({file:process.execPath,args:['-e',program],timeoutMs:30000,graceMs:0,supervisor,
+    recoverAfterTimeout:()=>{recoveries++;},spawnImpl:(...args)=>{
+      root=spawn(...args);root.on('message',message=>{if(Number.isSafeInteger(message.workload)&&Number.isSafeInteger(message.descendant))fixtureReady(message);});return root;
+    }}).then(value=>({value}),error=>({error}));
+  const pids=await bounded(ready,5000);
+  assert.equal(root.exitCode,null);assert.equal(root.signalCode,null);
+  if(mode==='control EOF')control.end();else assert.equal(helper.kill(),true);
+  const [outcome,helperExit]=await bounded(Promise.all([operationResult,helperResult]),20000);
+  assert(outcome.error,'lost supervisor is never cleanup attestation');assert.equal(outcome.value,undefined);
+  assert.equal(outcome.error.cleanupConfirmed,false);assert.equal(recoveries,0);
+  await assert.rejects(supervisor.dispose(),/Helper|helper/);
+  await assert.rejects(supervisor.dispose(),/Helper|helper/);
+  for(const pid of [root.pid,pids.workload,pids.descendant,helper.pid]){
+    let alive=true;for(let i=0;i<100;i++){try{process.kill(pid,0);}catch(error){if(error.code==='ESRCH'){alive=false;break;}throw error;}await new Promise(resolve=>setTimeout(resolve,20));}
+    assert.equal(alive,false,'exact fixture process '+pid+' must not survive '+mode);
+  }
+  t.diagnostic(JSON.stringify({mode,helperExit,ownedPids:[root.pid,pids.workload,pids.descendant],helperPid:helper.pid,recoveries}));
 });

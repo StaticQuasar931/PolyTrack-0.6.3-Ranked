@@ -14,10 +14,17 @@ import {preflightLocalCaptureCheckpoints} from './local-capture-checkpoint.mjs';
 const REPO='StaticQuasar931/PolyTrack-0.6.3-Ranked',BASE='https://api.github.com/repos/'+REPO;
 const PASSIVE=new Set(['Publish CDN release','pages build and deployment']);
 
-export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record,reconcilePublication}={}){
+export function assertClaimedLocalAdmission(admission,sourceCommit){
+  if(!/^[a-f0-9]{40}$/.test(sourceCommit||'')||admission?.head!==sourceCommit||admission.claimed!==true||
+    admission.claimSource!==sourceCommit||admission.active!==false||admission.complete!==true)
+    throw Error('Admission changed after claim; preserve guards without database capture');
+}
+
+export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record,reconcilePublication,revalidateAdmission}={}){
   localOvernightCapturePlan({now:now(),receipt});
   for(const fn of [inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record])if(typeof fn!=='function')throw Error('Local capture capability missing');
   if(reconcilePublication!==undefined&&typeof reconcilePublication!=='function')throw Error('Invalid read-only reconciliation capability');
+  if(revalidateAdmission!==undefined&&typeof revalidateAdmission!=='function')throw Error('Invalid admission revalidation capability');
   const admission=await inspect();
   if(admission.head!==receipt.testedCommit)return {status:'blocked',reason:'tested-source-changed'};
   if(admission.claimed)return {status:'already-claimed'};
@@ -34,6 +41,7 @@ export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,pre
     if(!await claim()){await record({status:'already-claimed'});return {status:'already-claimed'};}
     phase='admission-revalidation';
     localOvernightCapturePlan({now:now(),receipt});
+    if(revalidateAdmission){await revalidateAdmission();localOvernightCapturePlan({now:now(),receipt});}
     phase='authentication';
     await authenticate();
     phase='capture-start-receipt';
@@ -160,21 +168,26 @@ async function main(){
     if(r.status===404)return null;if(!r.ok)throw Error('GitHub admission metadata unavailable');return r.json();
   };
   const record=value=>writeLocalCaptureReceipt({directory,owner,value});
-  const result=await runLocalOvernightCapture({receipt,
-    preflight:async()=>{await preflightLocalCaptureCheckpoints({workspace,directory,recoveryPublicKeyFile:receipt.recoveryPublicKeyFile});
-      if(receipt.archiveReplayRepair)await prepareLocalArchiveReplayRepair({directory:path.join(workspace,'local-reports/snapshot-staging'),
-        planFile:receipt.archiveReplayRepair.file,planSha256:receipt.archiveReplayRepair.sha256,maxDocuments:receipt.archiveReplayRepair.maxDocuments});},
-    reconcilePublication:({candidateCommit})=>reconcileLocalPublication({candidateCommit,readMain:async()=>(await read('/git/ref/heads/main'))?.object?.sha}),
-    inspect:async()=>{
+  const inspectAdmission=async()=>{
       const head=await read('/git/ref/heads/main'),claimed=await read('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date));
       const previous=await read('/git/ref/tags/'+N.priorClaimTag);
       if(previous?.object?.sha!==N.priorSource)throw Error('Original claim changed; preserve and inspect');
       for(const status of ['in_progress','queued','waiting','pending','requested']){
         const rows=await read('/actions/runs?status='+status+'&per_page=100');
         if(!Array.isArray(rows?.workflow_runs)||rows.workflow_runs.length>=100)return {complete:false};
-        if(rows.workflow_runs.some(r=>!PASSIVE.has(r.name)))return {head:head?.object?.sha,claimed:!!claimed,complete:true,active:true};
+        if(rows.workflow_runs.some(r=>!PASSIVE.has(r.name)))return {head:head?.object?.sha,claimed:!!claimed,claimSource:claimed?.object?.sha,complete:true,active:true};
       }
-      return {head:head?.object?.sha,claimed:!!claimed,complete:true,active:false};
+      return {head:head?.object?.sha,claimed:!!claimed,claimSource:claimed?.object?.sha,complete:true,active:false};
+  };
+  const result=await runLocalOvernightCapture({receipt,
+    preflight:async()=>{await preflightLocalCaptureCheckpoints({workspace,directory,recoveryPublicKeyFile:receipt.recoveryPublicKeyFile});
+      if(receipt.archiveReplayRepair)await prepareLocalArchiveReplayRepair({directory:path.join(workspace,'local-reports/snapshot-staging'),
+        planFile:receipt.archiveReplayRepair.file,planSha256:receipt.archiveReplayRepair.sha256,maxDocuments:receipt.archiveReplayRepair.maxDocuments});},
+    reconcilePublication:({candidateCommit})=>reconcileLocalPublication({candidateCommit,readMain:async()=>(await read('/git/ref/heads/main'))?.object?.sha}),
+    inspect:inspectAdmission,
+    revalidateAdmission:async()=>{
+      const latest=await inspectAdmission();
+      assertClaimedLocalAdmission(latest,receipt.testedCommit);
     },
     acquireGuard:async()=>{
       for(const name of ['complete.json','failed.json','running.json','dispatch.json'])if(await fs.lstat(path.join(directory,name)).then(()=>true,e=>{if(e.code==='ENOENT')return false;throw e;}))return false;
