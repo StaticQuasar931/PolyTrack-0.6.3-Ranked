@@ -291,3 +291,16 @@ test('rollout bridge only downgrades a tagged registry read denial; quota and ow
   }
   await assert.rejects(claimProfileNameWithLegacyBridge({...options,ownerUid:''}),error=>error.code==='account-session-conflict');
 });
+
+
+test('explicit legacy deployment performs zero registry reads or writes and retains validation',async()=>{
+ let calls=0;const options={registryMode:'legacy',accountId:A,ownerUid:'owner',requestedName:'Racer',tx:{get:async()=>{calls++;throw Error('Unexpected read');},set:()=>calls++,delete:()=>calls++}};
+ assert.deepEqual(await claimProfileNameWithLegacyBridge(options),{name:'Racer',legacy:true});assert.equal(calls,0);
+ await assert.rejects(claimProfileNameWithLegacyBridge({...options,ownerUid:''}),e=>e.code==='account-session-conflict');
+ await assert.rejects(claimProfileNameWithLegacyBridge({...options,requestedName:'bad',isNameAllowed:()=>false}),e=>e.code==='public-name-unavailable');
+ assert.equal(calls,0);
+});
+test('required registry mode never downgrades a denied read',async()=>{
+ const db=new FirestoreSimulator(),tx={get:async()=>{throw Object.assign(Error('denied'),{code:'permission-denied'});}};
+ await assert.rejects(claimProfileNameWithLegacyBridge({registryMode:'required',db,tx,accountId:A,ownerUid:'owner',requestedName:'Racer',crypto:webcrypto}),e=>e.nameClaimReadDenied===true);
+});

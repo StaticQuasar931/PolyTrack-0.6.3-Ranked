@@ -468,3 +468,25 @@ test('default public standings are snapshot-only without an account-age or saved
  const context=vm.createContext({readOverallSnapshotCache:()=>assert.fail('No age lookup'),readLocalRaceRows:()=>assert.fail('No finish lookup'),localStorage:{getItem:()=>assert.fail('No age storage read')}});
  runClientSource(section('  const NEW_ACCOUNT_SNAPSHOT_MS=', '  let localOverallController='),context);assert.equal(context.snapshotOnlyForNewAccount(),true);
 });
+
+
+test('complete package-bound cached standings skip slow statistics after identity is ready',async()=>{
+ const cached={entries:[{accountId:'cached'}],source:'public-backup',fetchedAt:100000,snapshotCapturedAt:100,complete:true,totalEntries:1};let metadata=0;
+ const context=vm.createContext({Promise,Date:{now:()=>100000},TRACK_REFRESH_MS:100000,unrankedExtraTrackIds:new Set(),readTrackSnapshotCache:()=>cached,
+ publicSnapshotCapturedAt:100,trackSnapshotMetadataIsNewer:()=>false,trackEntryRequests:new Map(),metadataRecovery:{ensure:async()=>true},
+ readPublicSnapshotBackup:()=>{metadata++;return new Promise(()=>{});},loadTrackEntries:()=>{throw Error('Unexpected reload');}});
+ runClientSource(section('  async function getTrackEntries(', '  const nativeTrackSnapshotRefreshes='),context);
+ const result=await Promise.race([context.getTrackEntries('track',10),new Promise((_,reject)=>setTimeout(()=>reject(Error('Cached board blocked')),200))]);
+ assert.equal(result[0].accountId,'cached');assert.equal(metadata,1);
+});
+test('known package capture age rejects a stale cached board before first paint',async()=>{
+ const cached={entries:[{accountId:'old'}],source:'public-backup',snapshotCapturedAt:99,fetchedAt:100000};let loads=0;
+ const context=vm.createContext({Promise,Date:{now:()=>100000},TRACK_REFRESH_MS:100000,publicSnapshotCapturedAt:100,unrankedExtraTrackIds:new Set(),readTrackSnapshotCache:()=>cached,
+ trackSnapshotMetadataIsNewer:()=>false,trackEntryRequests:new Map(),loadTrackEntries:async()=>{loads++;return[{accountId:'new'}];}});
+ runClientSource(section('  async function getTrackEntries(', '  const nativeTrackSnapshotRefreshes='),context);
+ assert.equal((await context.getTrackEntries('track',10))[0].accountId,'new');assert.equal(loads,1);
+});
+test('finish submission never fetches a leaderboard before saving the run',()=>{
+ const start=source.indexOf("const amount = Math.min(100, Number(urlObj.searchParams.get('amount')"),end=source.indexOf('const mirrorMeta = await mirrorRaceResult',start);
+ assert.ok(start>0&&end>start);assert.doesNotMatch(source.slice(start,end),/await getTrackEntries/);assert.match(source.slice(start,end),/readTrackSnapshotCache/);
+});

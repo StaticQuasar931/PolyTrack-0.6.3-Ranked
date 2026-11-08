@@ -11,7 +11,9 @@ export function createFirebaseAuthApp({
   loadScript,
   resolveFirebaseConfig,
   waitForInitialAuth,
-  assertOnlineCompatibility
+  assertOnlineCompatibility,
+  expectedOwnerUid = () => '',
+  allowAnonymousCreation = () => true
 }) {
   let pending = null, readyApp = null;
 
@@ -19,10 +21,18 @@ export function createFirebaseAuthApp({
     return assertOnlineCompatibility();
   }
 
+  function assertKnownOwner(auth) {
+    const owner=expectedOwnerUid();
+    if(!auth.currentUser&&(owner||allowAnonymousCreation()===false))throw Object.assign(new Error('Your cloud sign-in could not be restored. Local PBs are safe; no replacement sign-in was created.'),{code:'cloud-signin-restoration-required'});
+    if(!owner)return;
+    if(auth.currentUser.uid!==owner)throw Object.assign(new Error('This cloud sign-in does not match this racer. Local PBs are safe.'),{code:'account-session-conflict'});
+  }
+
   return function ensureFirebaseAuthApp() {
     try {
       assertCompatible();
       // A fulfilled initialization promise is not proof of a current auth session.
+      if(readyApp)assertKnownOwner(readyApp.auth());
       if (readyApp && !readyApp.auth().currentUser) {
         pending = null;
         readyApp = null;
@@ -43,9 +53,11 @@ export function createFirebaseAuthApp({
       assertCompatible();
       const sdk = window.firebase;
       const app = sdk.apps?.length ? sdk.app() : sdk.initializeApp(config);
+      if(app.options?.projectId&&config.projectId&&app.options.projectId!==config.projectId)throw Object.assign(new Error('The loaded cloud app belongs to a different project.'),{code:'cloud-project-mismatch'});
       const auth = app.auth();
       await waitForInitialAuth(auth);
       assertCompatible();
+      assertKnownOwner(auth);
       if (!auth.currentUser) {
         await auth.signInAnonymously();
       }

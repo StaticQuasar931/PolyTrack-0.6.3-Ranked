@@ -190,3 +190,24 @@ test('failed lost-session recovery can retry without a second app', async () => 
   assert.ok(h.auth.currentUser);
   assert.equal(h.calls.initialize, 1);
 });
+
+
+test('acknowledged cloud owner prevents silent replacement after missing auth restoration',async()=>{
+ const h=harness(),ensure=createFirebaseAuthApp({...h.options,expectedOwnerUid:()=> 'original'});
+ await assert.rejects(ensure(),e=>e.code==='cloud-signin-restoration-required');assert.equal(h.calls.signIn,0);
+ h.auth.currentUser={uid:'original'};assert.equal(await ensure(),h.app);
+});
+test('acknowledged owner blocks a different current sign-in without changing it',async()=>{
+ const h=harness({user:{uid:'different'}}),ensure=createFirebaseAuthApp({...h.options,expectedOwnerUid:()=> 'original'});
+ await assert.rejects(ensure(),e=>e.code==='account-session-conflict');assert.equal(h.auth.currentUser.uid,'different');assert.equal(h.calls.signIn,0);
+});
+test('an existing app for another project is not reused or deleted',async()=>{
+ const h=harness({existing:true,user:{uid:'original'}});h.app.options={projectId:'another-project'};
+ await assert.rejects(createFirebaseAuthApp(h.options)(),e=>e.code==='cloud-project-mismatch');assert.equal(h.calls.signIn,0);assert.equal(h.calls.initialize,0);
+});
+
+test('existing cloud history also blocks anonymous replacement when the old owner is not recorded',async()=>{
+ const h=harness(),ensure=createFirebaseAuthApp({...h.options,allowAnonymousCreation:()=>false});
+ await assert.rejects(ensure(),e=>e.code==='cloud-signin-restoration-required');assert.equal(h.calls.signIn,0);
+ h.auth.currentUser={uid:'restored'};assert.equal(await ensure(),h.app);
+});

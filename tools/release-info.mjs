@@ -1,11 +1,13 @@
 const releaseInfo = {
-  "number": 337,
+  "number": 339,
   "version": "0.6.3",
-  "revision": 282,
+  "revision": 283,
   "notes": [
-    "Cleaner medal counts and next-podium targets below your car."
+    "Faster cached track standings without flashing old names.",
+    "Saves no longer wait for a leaderboard download.",
+    "Clearer cloud-permission diagnostics and safer sign-in recovery handling."
   ],
-  "preparedAt": "2026-11-08T23:00:25.829Z"
+  "preparedAt": "2026-11-08T23:26:28.506Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
