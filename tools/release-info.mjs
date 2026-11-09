@@ -1,9 +1,9 @@
 const releaseInfo = {
-  "number": 348,
+  "number": 349,
   "version": "0.6.3",
-  "revision": 292,
-  "notes": ["Fixed snapshot refreshes discarding valid saved track boards.","Reuses checked replay data without extra cloud reads."],
-  "preparedAt": "2026-11-09T02:33:08.485Z"
+  "revision": 293,
+  "notes": ["Verification checks saved records first so older approvals are not skipped.","Saved progress can be rechecked without replaying runs again."],
+  "preparedAt": "2026-11-09T02:57:17.857Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
