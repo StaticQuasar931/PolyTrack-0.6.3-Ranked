@@ -65,7 +65,7 @@ test('recommendation target is independent of selected sort using actual patched
     ${fragment('recommendationAction')} return recommendationAction;`);
   for(const sort of ['practice','impact','ease','training','benefit-ease']){
     const r=get(sort,minimumBenefitTarget)({trackId:'Summer1',rank:4,fieldSize:5},'improve',{raceCount:1},[{trackId:'Summer1',rank:4,fieldSize:5}]);
-    assert.equal(r.targetRank,3);assert.equal(r.value,10);
+    assert.equal(r.targetRank,2);assert.equal(r.minimumHelpfulRank,3);assert.equal(r.value,60);
   }
 });
 test('all four event kinds from local assignment metadata are eligible, no eight-card truncation',()=>{
@@ -141,12 +141,12 @@ test('event wrapper only reads local storage; all four cards keep existing event
   const filtered=markup({name:'Me'},null,true,one,{events:true});
   assert.ok(filtered.includes('<b>'+percentage(one[0].gain,one[0].benefitReference)+'%</b>'));
 });
-test('integration selects after normalization, preserves practice inputs and avoids event cache boundary reuse',()=>{
+test('integration normalizes within filters, preserves practice inputs and avoids event cache boundary reuse',()=>{
   const p=fragment('profileGuideMarkup');
-  assert.match(p,/Number.MAX_SAFE_INTEGER,plannerSort\)\.filter\(action=>plannerTrackAllowed/);
+  assert.match(p,/matchupPersonal.filter\(eligibleRoute\).map\(addEase\)/);
   assert.ok(!p.includes('action&&plannerTrackAllowed(action.trackId,played)&&TRACK_CATALOG'));
   assert.match(p,/benefitReference:Math.max\(0,\.\.\.allCarrying/);
-  assert.match(p,/Same target|All sorts retain the same target/);
+  assert.match(p,/Benefit compares that gain within your filters/);
   assert.match(fragment('event-cache-boundary'),/if\(plannerMetric==='events'\)return profileGuideMarkup/);
 });
 test('card percentage ignores shown maximum and explicitly distinguishes benefit from ease',()=>{

@@ -225,10 +225,10 @@ test('participation markup separates semantic counts, explicit zero, unknown dat
 
 test('empty podium markup provides a short eligibility explanation without fabricated medals',()=>{
   const c=context({medalIcon:kind=>kind});vm.runInContext(extract('profileAchievementMarkup'),c);
-  const html=c.profileAchievementMarkup({gold:0,silver:0,bronze:0});assert.match(html,/class="profile-no-medals"/);assert.match(html,/title="Top 3 on recognized tracks with 5\+ racers\."/);assert.doesNotMatch(html,/<img|profile-medal-card|<small>/);
+  const html=c.profileAchievementMarkup({gold:0,silver:0,bronze:0});assert.equal((html.match(/profile-medal-card/g)||[]).length,3);assert.equal((html.match(/<b>0<\/b>/g)||[]).length,3);assert.doesNotMatch(html,/Podiums not loaded/);
   for(const value of [undefined,'2',1.5,Infinity,-1]){
     const unknown=c.profileAchievementMarkup({gold:value,silver:0,bronze:0});
-    assert.match(unknown,/Podiums not loaded/);assert.doesNotMatch(unknown,/<img|profile-medal-card|No eligible podiums/);
+    assert.doesNotMatch(unknown,/profile-medal-card gold|<b>(?:2|Infinity|-1|1.5)<\/b>/);
   }
   assert.match(c.profileAchievementMarkup({gold:1}),/profile-medal-card gold/);
 });

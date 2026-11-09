@@ -73,17 +73,17 @@
     moderators: '0.6.2_moderators'
   });
 
-  const eventsModuleUrl=new URL('./events/client.mjs?v=284',document.currentScript?.src||location.href).href;
+  const eventsModuleUrl=new URL('./events/client.mjs?v=285',document.currentScript?.src||location.href).href;
   let nativePartialReplaySelection=null,nativePartialReplayRevision=0;
   document.addEventListener('click',nativePartialReplayStartupClick,true);
-  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=284',eventsModuleUrl).href)
+  const nativePartialReplayReady=import(new URL('../tools/partial-replay-selection.mjs?v=285',eventsModuleUrl).href)
     .then(installNativePartialReplayFallback).catch(error=>{console.warn('Native partial replay controls unavailable',error);return null;});
   let helpControlsModule=null,releaseInfoModule=null,installedRevisionNotice=null,siteUpdateHandle=null,siteUpdateMenuState=null;
-  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=284',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=284',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=284',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
+  const helpControlsPromise=Promise.all([import(new URL('../tools/help-controls.mjs?v=285',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=285',eventsModuleUrl).href),import(new URL('../tools/site-update-menu-state.mjs?v=285',eventsModuleUrl).href)]).then(([module,release,menuState])=>{
       siteUpdateMenuState=menuState;releaseInfoModule=release;return helpControlsModule=module;}).catch(()=>null);
   const rankedFiltersModuleUrl=new URL('../tools/ranked-filters.mjs',eventsModuleUrl).href;
   const extraTracksBaseUrl=new URL('../extra-tracks/',eventsModuleUrl);
-  const extraCatalogRevision='284';
+  const extraCatalogRevision='285';
   const extraTrackIdsKey='polytrack-0.6.3-extra-track-ids-v1';
   const unrankedExtraBestKey='polytrack-0.6.3-unranked-extra-bests-v1';
   // Persist the oversized challenge policy even when it is launched from saved Custom Tracks.
@@ -124,7 +124,7 @@
     return kodubHistoryLoad;
   }
   async function nativeWeeklyFeed(){
-    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=284',eventsModuleUrl).href);
+    kodubAdapter=await import(new URL('./kodub-weekly.mjs?v=285',eventsModuleUrl).href);
     await ensureEventUi();
     const response=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
     nativeWeeklySelection=response.current;
@@ -164,7 +164,7 @@
     const epoch=warmLocalWeeklyCatalog.snapshotEpoch||0,isCurrent=()=>epoch===(warmLocalWeeklyCatalog.snapshotEpoch||0);
     localWeeklyCatalogUntil=Date.now()+60000;
     const request=(async()=>{
-      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=284',eventsModuleUrl).href);
+      kodubAdapter ||= await import(new URL('./kodub-weekly.mjs?v=285',eventsModuleUrl).href);
       if(!isCurrent())return;
       const feed=await kodubAdapter.loadKodubWeekly({baseUrl:eventsModuleUrl,brokerUrl:rankedBrokerUrl(),fetcher:rankedWeeklyFetch});
       if(!isCurrent())return;
@@ -310,7 +310,7 @@
         let payload=await response.json();
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
-        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=284');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
+        if(payload?.pagination){const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=285');const saved=await readPublicSnapshotBackup(id==='totals'?'event-totals':'event',id);payload=await completeRankedSnapshot(payload,{saved,kind:id==='totals'?'event-totals':'event',trackId:id,endpoint:rankedBrokerUrl(),fetchImpl:rankedFetch});}
         if(!current())throw Error('Event snapshot generation changed');
         if(daily&&!readEventSnapshot(payload,daily))throw Error('Event service returned standings for a different period.');
         return {...payload,_eventLiveCheckedAt:Date.now()};
@@ -1412,7 +1412,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     }catch(error){noteFirebaseQuota(error);log('error','[STREAK401] Daily activity was not queued',String(error?.message||error));return null;}
   }
   async function getDailyActivityController(){
-    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=284').catch(error=>{dailyActivityModulePromise=null;throw error;});
+    if(!dailyActivityModulePromise)dailyActivityModulePromise=import('./tools/daily-activity-sync.mjs?v=285').catch(error=>{dailyActivityModulePromise=null;throw error;});
     const {createDailyActivitySync}=await dailyActivityModulePromise;
     if(!dailyActivityController)dailyActivityController=createDailyActivitySync({
       now:()=>Date.now(),
@@ -1914,8 +1914,8 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   async function openDeveloperInformation(practiceOnly=false,returnFocus=document.activeElement){
     await initializePracticeHistory();
     practiceObserver?.sample();
-    const module=await import('./tools/developer-diagnostics.mjs?v=284');
-    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=284');
+    const module=await import('./tools/developer-diagnostics.mjs?v=285');
+    const {collectLocalDiagnostics}=await import('./tools/local-diagnostics.mjs?v=285');
     const localData=await collectLocalDiagnostics({storage:localStorage,hashToken:sha256Hex,localRows:readLocalRaceRows(),trackInfo,practiceRows:id=>practiceHistory?.list(id)||[],profileInfo:id=>overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===id)||{name:getLastKnownName(id)},activeId:activeRankedAccountId()});
     module.openDiagnostics({practiceOnly,returnFocus,report:includePublicId=>{
       const account=activeRankedAccountId(),entry=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
@@ -1988,16 +1988,16 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     practiceSetupPromise=(async()=>{
       let storage;try{storage=window.localStorage;}catch{}
       if(!practiceHistory){
-        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=284');
+        const module=await importPracticeStartupModule('./tools/practice-history.mjs?v=285');
         practiceHistory=module.createPracticeHistory({storage,onChange:schedulePracticeProfileRefresh});practiceAdviceFor=module.practiceAdvice;
       }
       if(!localInsights){
-        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=284');
-        localInsights=module.createLocalInsights({storage,revision:284});
-        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=284').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:284,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
-        void import('./tools/control-usage.mjs?v=284').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
+        const module=await importPracticeStartupModule('./tools/local-insights.mjs?v=285');
+        localInsights=module.createLocalInsights({storage,revision:285});
+        if(window.__polytrackAnalyticsAllowed===true)void import('./tools/usage-analytics.mjs?v=285').then(module=>{workerUsageCounters=module.createWorkerUsageCounters({window});module.installUsageAnalytics({document,window,revision:285,readUsage:()=>localInsights?.usageSnapshot(),readWorkerUsage:()=>workerUsageCounters?.snapshot()});}).catch(()=>{});
+        void import('./tools/control-usage.mjs?v=285').then(module=>module.installControlUsage({document,record:(menu,control)=>localInsights?.control(menu,control)})).catch(()=>{});
       }
-      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=284');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
+      const profileModule=await importPracticeStartupModule('./tools/practice-profile.mjs?v=285');renderPracticeProfile=profileModule.renderPracticeProfile;installPracticeProfileControls=profileModule.installPracticeProfileControls;capturePracticeProfileView=profileModule.capturePracticeProfileView;restorePracticeProfileView=profileModule.restorePracticeProfileView;
       const account=activeRankedAccountId(),own=overallEntriesCache.find(row=>cleanUserId(row.userId||row.accountId)===account);
       practiceHistory.observeCoverage(account,Math.max(currentPlaytimeMs(),Number(own?.totalPlaytimeMs||0)));
       document.addEventListener('toggle',event=>{if(event.target.matches?.('.profile-guide')&&event.target.open)localInsights.action('planner-open');},true);
@@ -2021,7 +2021,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     if(Date.now()<practiceRetryAfter)return Promise.resolve();
     practiceInitPromise=(async()=>{
       await initializePracticeResources();
-      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=284');
+      const native=await importPracticeStartupModule('./tools/practice-native.mjs?v=285');
       for(let attempt=0;attempt<10;attempt++){
         const require=__pt062WebpackRequire();
         if(require){
@@ -2565,7 +2565,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
       normalizeReplayPayloadString(row.replay||row.recording||'')===payload.recording);
     let prepared;
     if(own&&payload.verifiedState===0){
-      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=284',eventsModuleUrl).href);
+      const module=await import(new URL('../tools/local-pb-lifecycle.mjs?v=285',eventsModuleUrl).href);
       const options={accountId:context.accountId,trackId:context.trackId,recordingId:selectedRow.recordingId,isSelf:true,explicitSelection:true};
       try{prepared=await module.prepareOwnLocalPbPlayback(own,payload,options);}
       catch(error){
@@ -3120,12 +3120,12 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
   }
   let firebaseAuthAppLoader=null;
   function ensureFirebaseAuthApp(){
-    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=284').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility,expectedOwnerUid:()=>{const id=activeRankedAccountId();return (readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[id]?.acknowledgedOwnerUid||'';},allowAnonymousCreation:()=>{const row=(readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[activeRankedAccountId()];return !Object.keys(row?.confirmed||{}).length&&!Object.keys(row?.permissionDenied||{}).length;}})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
+    if(!firebaseAuthAppLoader)firebaseAuthAppLoader=import('./tools/firebase-auth-app.mjs?v=285').then(({createFirebaseAuthApp})=>createFirebaseAuthApp({window,loadScript,resolveFirebaseConfig,waitForInitialAuth,assertOnlineCompatibility,expectedOwnerUid:()=>{const id=activeRankedAccountId();return (readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[id]?.acknowledgedOwnerUid||'';},allowAnonymousCreation:()=>{const row=(readJsonStorage(LOCAL_PB_RECONCILE_STATE_KEY,{})||{})[activeRankedAccountId()];return !Object.keys(row?.confirmed||{}).length&&!Object.keys(row?.permissionDenied||{}).length;}})).catch(error=>{firebaseAuthAppLoader=null;throw error;});
     return firebaseAuthAppLoader.then(ensure=>ensure());
   }
   let firebaseUsageModule=null,firebaseUsageModulePromise=null,firebaseUsageRetryAt=0;
   async function observeFirestore(database){
-    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=284',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
+    if(!firebaseUsageModulePromise&&Date.now()>=firebaseUsageRetryAt)firebaseUsageModulePromise=import(new URL('../tools/firebase-usage.mjs?v=285',eventsModuleUrl).href).then(module=>{firebaseUsageModule=module;return module;}).catch(()=>{firebaseUsageModulePromise=null;firebaseUsageRetryAt=Date.now()+60000;return null;});
     if(!database||!firebaseUsageModule&&Date.now()<firebaseUsageRetryAt)return database;
     // Await the early-started observer, but never block saving on diagnostics failure.
     const module=firebaseUsageModule||await withTimeout(firebaseUsageModulePromise,1500,'Usage observer unavailable').catch(()=>{firebaseUsageRetryAt=Date.now()+60000;return null;});
@@ -3255,7 +3255,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     assertCloudOwner(accountId,ownerUid,previous);
     if(!accountId||!ownerUid||previous&&(previous.accountId!==accountId||previous.ownerUid!==ownerUid))throw Object.assign(new Error('Cloud account identity mismatch.'),{code:'account-session-conflict'});
     if(previous?.name===requestedName&&previous?.nickname===requestedName)return requestedName;
-    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=284',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+    if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=285',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
     const {claimProfileNameWithLegacyBridge}=await profileNameModulePromise;
     const result=await claimProfileNameWithLegacyBridge({registryMode:publicNameRegistryMode,tx,db:d,accountId,ownerUid,previous,requestedName,isNameAllowed:name=>!moderationDecision(name).blocked});
     if(result.legacy)legacyNameTransactions.add(tx);
@@ -3754,7 +3754,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
     // Events have separate cards; never decorate the ordinary version of a track.
     document.querySelectorAll('.sq-weekly-title').forEach(title=>title.classList.remove('sq-weekly-title'));
   }
-  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=284',eventsModuleUrl).href;
+  const recordPlacementModuleUrl=new URL('../tools/record-placement.mjs?v=285',eventsModuleUrl).href;
   let recordPlacementUi=null,recordPlacementUiPromise=null,recordPlacementWarningShown=false;
   let recordPlacementOverallKey='',recordPlacementOverallPlacements=null,recordPlacementOverallSnapshot=null;
   let placementSnapshotGeneration=-1;
@@ -4268,7 +4268,7 @@ const q0='7f2a',q1='b19e',q2='d44c',q3='9a01';
         await runFirebaseTransaction(d,async tx=>{
           const snap=await tx.get(profileRef),previous=snap.exists?snap.data():null;
           if(previous){
-            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=284',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
+            if(!profileNameModulePromise)profileNameModulePromise=import(new URL('../tools/unique-profile-name.mjs?v=285',eventsModuleUrl).href).catch(error=>{profileNameModulePromise=null;throw error;});
             const chosen=await (await profileNameModulePromise).claimProfileNameWithLegacyBridge({registryMode:publicNameRegistryMode,tx,db:d,accountId,ownerUid:previous.ownerUid,previous,requestedName:replacement,isNameAllowed:name=>(isReservedOwnerName&&name===requestedClean)||!moderationDecision(name).blocked});replacement=chosen.name;
             tx.set(profileRef,{name:replacement,nickname:replacement,updatedAt:createdAt},{merge:true});
           }
@@ -6429,7 +6429,7 @@ function rankingScopeMarkup(category,scope='total'){
   let opponentPresetModule=null,opponentPresetPromise=null,opponentPreset=null;
   function ensureOpponentShortcut(){
     if(opponentPresetPromise)return opponentPresetPromise;
-    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=284').then(module=>{
+    opponentPresetPromise=import('./tools/opponent-presets.mjs?v=285').then(module=>{
       opponentPresetModule=module;opponentPreset=module.loadOpponentPreset(localStorage);return module;
     }).catch(error=>{opponentPresetPromise=null;log('warn','[GHOST-SHORTCUT]',String(error?.message||error));return null;});
     return opponentPresetPromise;
@@ -6455,7 +6455,7 @@ function rankingScopeMarkup(category,scope='total'){
     let filteredIds=[];
     if(value?.mode==='filters'){
       await ensurePersonalFilters();
-      const core=await import(new URL('../tools/filter-groups.mjs?v=284',eventsModuleUrl).href),data=personalFilterDataSource();
+      const core=await import(new URL('../tools/filter-groups.mjs?v=285',eventsModuleUrl).href),data=personalFilterDataSource();
       const result=core.filterGroupRows(rows,{...personalFilterRuntime.getFilter(),enabled:true,scope:'all',mode:'normal'},
         {...core.prepareGroupFilterData(data),trackId,complete:(id,kind)=>kind==='track'?data.boards.some(board=>board.trackId===id&&board.complete===true):snapshot.complete===true});
       filteredIds=result.rows.map(row=>cleanUserId(row.accountId||row.userId));
@@ -6500,7 +6500,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   function ensurePersonalFilters(){
     if(personalFilterPromise)return personalFilterPromise;
-    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=284',eventsModuleUrl).href).then(module=>{
+    personalFilterPromise=import(new URL('../tools/filter-runtime.mjs?v=285',eventsModuleUrl).href).then(module=>{
       personalFilterRuntime=module.createFilterRuntime({storage:localStorage,getData:personalFilterDataSource,onChange:personalFilterChanged});
       window.__pt062PersonalFilters={apply:applyPersonalFilters,open:openPersonalFilterMenu,revision:()=>personalFilterRuntime.getRevision(),active:()=>personalFilterRuntime.active(),state:()=>personalFilterRuntime.getFilter(),button:personalFilterButton};
       refreshPersonalFilterButtons();return personalFilterRuntime;
@@ -6520,8 +6520,8 @@ function rankingScopeMarkup(category,scope='total'){
   async function openPersonalFilterMenu(show=true){
     await ensurePersonalFilters();if(!personalFilterRuntime)return;
     if(!personalFilterMenu){
-      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=284',eventsModuleUrl).href;document.head.appendChild(link);}
-      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=284',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=284',eventsModuleUrl).href)]);
+      if(!document.getElementById('personalFilterCss')){const link=document.createElement('link');link.id='personalFilterCss';link.rel='stylesheet';link.href=new URL('../tools/filter-menu.css?v=285',eventsModuleUrl).href;document.head.appendChild(link);}
+      const [ui,core]=await Promise.all([import(new URL('../tools/filter-menu.mjs?v=285',eventsModuleUrl).href),import(new URL('../tools/filter-groups.mjs?v=285',eventsModuleUrl).href)]);
       personalFilterMenu=ui.mountFilterMenu({document,root:document.body,storage:localStorage,
         getRows:()=>personalFilterDataSource().profiles,getTracks:personalFilterTracks,
         onOpponentShortcut:button=>void openOpponentShortcutMenu(button),
@@ -7373,7 +7373,7 @@ function rankingScopeMarkup(category,scope='total'){
     if(kodubTrackHistory.has(id)||id===nativeWeeklySelection?.trackId){
       const record=kodubTrackHistory.get(id);
       if(!record?.trackUrl)throw Error('This weekly track is not included in the saved track files yet.');
-      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=284',eventsModuleUrl).href);
+      const {readKodubPracticeTrack}=await import(new URL('../tools/kodub-practice-track.mjs?v=285',eventsModuleUrl).href);
       const code=await readKodubPracticeTrack(record,{decode:value=>__pt062WebpackRequire()?.(9117)?.A?.fromExportString(value),baseUrl:eventsModuleUrl,isCurrent});
       if(!isCurrent()||!code)return false;
       return await importRankedTrackCode(code,isCurrent);
@@ -7496,9 +7496,9 @@ function rankingScopeMarkup(category,scope='total'){
     if(plannerScoringRequest)return plannerScoringRequest;
     if(Date.now()<plannerScoringRetryAt)return Promise.resolve(null);
     const epoch=profileSnapshotEpoch;
-    const request=Promise.all([readPublicSnapshotBackup('overall'),readPublicSnapshotBackup('overall-results'),
-      import('./tools/planner-scoring-source.mjs?v=284')]).then(async([overall,packed,module])=>{
-      const index=await module.buildPlannerScoringSource(overall,packed);
+    const request=Promise.all([readPublicSnapshotBackup('overall-manifest'),readPublicSnapshotBackup('overall-results'),
+      import('./tools/planner-scoring-source.mjs?v=285')]).then(async([overall,packed,module])=>{
+      const index=await module.buildPlannerScoringSourceFromManifest(overall,packed);
       if(epoch!==profileSnapshotEpoch)return null;
       plannerScoringIndex={...index,epoch,updatedAt:overall.updatedAt};return plannerScoringIndex;
     }).catch(()=>{if(epoch===profileSnapshotEpoch)plannerScoringRetryAt=Date.now()+5000;return null;})
@@ -7689,7 +7689,7 @@ function rankingScopeMarkup(category,scope='total'){
   }
   const PLANNER_METRICS=Object.freeze({overall:'Overall RP',skill:'Best-ten skill',medals:'Podium points',wins:'Track wins',podiumRate:'Podium rate',weight:'Total track weight',events:'Event RP'});
   let plannerMetric='overall';
-  let plannerSort='practice';
+  let plannerSort='impact';
   let plannerCurrentTracksOnly=false,plannerOfficialOnly=false;
   try{plannerCurrentTracksOnly=localStorage.getItem('polytrack-planner-current-only')==='true';plannerOfficialOnly=localStorage.getItem('polytrack-planner-official-only')==='true';}catch{}
   function plannerTrackAllowed(trackId,played){
@@ -7826,7 +7826,7 @@ function savedEventPlannerRoutes(catalog, boards, permanent, best, accountId, ri
   function eventPlannerMarkup(entry,self,isSelf,routes,availability){
     const rival=isSelf?'Your next event points':`Your event plan against <strong class="planner-rival-name">&quot;${escapeHtml(safeDisplayName(entry.name,entry.userId))}&quot;</strong>`;
     // Each route carries its pre-filter benefit reference.
-    const card=r=>`<button type="button" class="profile-guide-track" data-planner-event="${escapeHtml(r.period.id)}" data-event-kind="${r.period.kind}" data-event-track="${escapeHtml(r.trackId)}"><span class="profile-guide-image">${trackThumbnailMarkup(r.trackId)}</span><span class="profile-guide-copy"><b>${r.currentTime?'Improve':'Try'} <strong>${escapeHtml(trackInfo(r.trackId).name)}</strong></b><small>Aim for ${formatRaceTime(r.targetTime)} · +${r.gain} Event RP at this target</small><small>${r.currentTime?'Verified event PB: '+formatRaceTime(r.currentTime):'No verified event PB yet'}</small>${r.localTime&&(!r.currentTime||r.localTime<r.currentTime)?`<small>Local attempt: ${formatRaceTime(r.localTime)} · not included in points yet</small>`:''}<small>${r.minimumTime?formatRaceTime(r.minimumTime)+' or faster earns more points':'Target uses a published time/RP pair; intermediate points unavailable'}${r.rivalRp===null?'':' · rival: '+r.rivalRp+' RP'}</small></span><span class="profile-helpfulness" title="Gain to this target relative to the strongest eligible loaded event route before filters. Not ease or success probability."><b>${routeBenefitPercent(r.gain,r.benefitReference)}%</b><small>ROUTE BENEFIT</small></span></button>`;
+    const card=r=>`<button type="button" class="profile-guide-track" data-planner-event="${escapeHtml(r.period.id)}" data-event-kind="${r.period.kind}" data-event-track="${escapeHtml(r.trackId)}"><span class="profile-guide-image">${trackThumbnailMarkup(r.trackId)}</span><span class="profile-guide-copy"><b>${r.currentTime?'Improve':'Try'} <strong>${escapeHtml(trackInfo(r.trackId).name)}</strong></b><small>Aim for ${formatRaceTime(r.targetTime)} · +${r.gain} Event RP at this target</small><small>${r.currentTime?'Verified event PB: '+formatRaceTime(r.currentTime):'No verified event PB yet'}</small>${r.localTime&&(!r.currentTime||r.localTime<r.currentTime)?`<small>Local attempt: ${formatRaceTime(r.localTime)} · not included in points yet</small>`:''}<small>${r.minimumTime?formatRaceTime(r.minimumTime)+' or faster earns more points':'Target uses a published time/RP pair; intermediate points unavailable'}${r.rivalRp===null?'':' · rival: '+r.rivalRp+' RP'}</small></span><span class="profile-helpfulness" title="Gain to this target relative to the strongest eligible loaded event route within your filters. Not ease or success probability."><b>${routeBenefitPercent(r.gain,r.benefitReference)}%</b><small>ROUTE BENEFIT</small></span></button>`;
     return `<details class="profile-guide without-carry"><summary>${routes.slice(0,3).map(r=>`<span class="route-preview-item"><span class="route-preview-image">${trackThumbnailMarkup(r.trackId)}</span><span class="route-preview-copy"><b>${r.period.kind==='kodub'?'Kodub weekly':r.period.kind==='permanent'?'Permanent':r.period.kind} event</b><strong>${escapeHtml(trackInfo(r.trackId).name)}</strong><small>Aim for ${formatRaceTime(r.targetTime)}</small><small>+${r.gain} Event RP at target</small></span></span>`).join('')||(routes.filteredOut?'<span>No event routes match these filters</span>':routes.dataAvailable?'<span>Maximum points reached in loaded events</span>':'<span>Not enough event data</span>')}<em class="route-open-label">Full plan</em></summary><div class="profile-guide-body"><header><div><div class="profile-guide-controls"><label class="profile-guide-metric">Improve <select data-planner-metric aria-label="Leaderboard to improve">${Object.entries(PLANNER_METRICS).map(([k,v])=>`<option value="${k}" ${k==='events'?'selected':''} ${availability[k]?'':'disabled title="Not enough information at this time"'}>${v}${availability[k]?'':' (not enough data)'}</option>`).join('')}</select></label>${plannerFilterMarkup()}</div><h4>${rival}</h4></div></header><p>Saved standings. Gains use the shown target. Points count after verification; repeated runs do not stack.</p><div class="profile-guide-grid">${routes.missing?.length?'<p>Some events lack enough saved data for a recommendation.</p>':''}${routes.map(card).join('')||(routes.filteredOut?'<p>No event routes match these filters. Change a filter to see more options.</p>':routes.dataAvailable?'<p>You have reached the points cap in these loaded events. Check the next event for more opportunities.</p>':'<p>Not enough information at this time. Open an active event leaderboard first.</p>')}</div></div></details>`;
   }
 
@@ -7959,7 +7959,7 @@ function savedEventPlannerRoutes(catalog, boards, permanent, best, accountId, ri
     const fullCoverage=baseline.length>=Math.max(0,Number(entry?.raceCount||0)||0);
     if(kind!=='carry'&&!fullCoverage)return null;
     const scoreAt=recommendationSimulator(baseline,finish);
-    const benefit=kind==='carry'?null:minimumBenefitTarget({currentRank:current,fieldSize:field,baselineScore,scoreAt});
+    const benefit=kind==='carry'?null:minimumBenefitTarget({currentRank:current,fieldSize:field,baselineScore,scoreAt,gainFraction:.25});
     if(kind!=='carry'&&!benefit)return null;
     const target=kind==='carry'?current:benefit.targetRank;
     const weight=knownFinishWeight(projectedFinish(finish,target,field))||rankedTrackWeight(finish.trackId,field);
@@ -7986,14 +7986,14 @@ function savedEventPlannerRoutes(catalog, boards, permanent, best, accountId, ri
 
     const percent=routeBenefitPercent(Number(action.value||0),Number(action.benefitReference||0));
     const metricLabel=action.kind==='carry'?'STRENGTH':'ROUTE BENEFIT';
-    const current=action.currentRank?`Current #${action.currentRank} of ${action.currentFieldSize||action.fieldSize}`:'New track · no result';
-    const rivalTarget=Number(action.rivalRank||0)>0?`Pass ${action.rivalName||'rival'} at #${action.rivalRank} · `:'';
+    const current=action.currentRank?`#${action.currentRank} of ${action.currentFieldSize||action.fieldSize}`:'New track';
+    const rivalTarget=Number(action.rivalRank||0)>0?`Pass #${action.rivalRank} · `:'';
     const target=rivalTarget+compactPlannerTargetLabel(action);
-    const startNote=action.kind==='start'?'<small class="guide-start-note">'+escapeHtml(compactPlannerEvidenceLabel(action))+'</small>':'';
+    const startNote=action.minimumHelpfulRank>action.targetRank?'<small class="guide-start-note">First useful place: #'+action.minimumHelpfulRank+'</small>':'';
     const freshness=action.cachedAt?ageLabel(action.cachedAt):'snapshot estimate';
     const weightTitle=rankedWeightTitle(action.trackId,action.fieldSize,false,action);
-    const metricTitle=action.kind==='carry'?'Contribution relative to the strongest loaded contribution before filters. Not improvement benefit or success odds.':'Projected benefit relative to the strongest eligible loaded route (100%) before filters or card limits. Same target across sorts. Ease and practice affect order only, not this percentage. Not a success probability.';
-    return `<button type="button" class="profile-guide-track kind-${escapeHtml(action.kind||'route')}" data-track-id="${escapeHtml(action.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${escapeHtml(current)}. ${escapeHtml(target)}. ${percent}% relative ${metricLabel.toLowerCase()}." title="Open ${escapeHtml(info.name)}"><span class="profile-guide-image">${trackThumbnailMarkup(action.trackId)}</span><span class="profile-guide-copy"><b>${escapeHtml(verb)} <strong>${escapeHtml(info.name)}</strong></b><small class="guide-placement">${escapeHtml(current)} · ${escapeHtml(target)}</small>${startNote}${action.practice?.text?'<small class="guide-practice" title="Practice history on this device; not a success prediction">'+escapeHtml(action.practice.text)+'</small>':''}${action.ease?.gapMs>=5?`<small class="guide-ease">Time to gain: ${(action.ease.gapMs/1000).toFixed(2)}s</small>`:''}<small><span class="guide-weight" title="${escapeHtml(weightTitle)}">${action.weight.toFixed(2)}x</span> weight · ${escapeHtml(freshness)}</small></span><span class="profile-helpfulness" title="${escapeHtml(metricTitle)}"><b>${percent}%</b><small>${metricLabel}</small><i class="route-benefit-bar" style="--benefit:${percent}%" aria-hidden="true"></i></span></button>`;
+    const metricTitle=action.kind==='carry'?'Contribution relative to the strongest snapshot contribution before filters. Not improvement benefit or success odds.':'Projected benefit relative to the strongest eligible snapshot route (100%) within your filters. Same target across sorts. Ease and practice affect order only, not this percentage. Not a success probability.';
+    return `<button type="button" class="profile-guide-track kind-${escapeHtml(action.kind||'route')}" data-track-id="${escapeHtml(action.trackId)}" aria-label="Open ${escapeHtml(info.name)}. ${escapeHtml(current)}. ${escapeHtml(target)}. ${percent}% relative ${metricLabel.toLowerCase()}." title="Open ${escapeHtml(info.name)}"><span class="profile-guide-image">${trackThumbnailMarkup(action.trackId)}</span><span class="profile-guide-copy"><b>${escapeHtml(verb)} <strong>${escapeHtml(info.name)}</strong></b><small class="guide-placement">${escapeHtml(current)} · ${escapeHtml(target)}</small>${startNote}${typeof plannerSort!=='undefined'&&['practice','training'].includes(plannerSort)&&action.practice?.text?'<small class="guide-practice" title="Practice history on this device; not a success prediction">'+escapeHtml(action.practice.text)+'</small>':''}${action.ease?.gapMs>=5?`<small class="guide-ease">Time to beat: ${(action.ease.gapMs/1000).toFixed(2)}s</small>`:''}<small><span class="guide-weight" title="${escapeHtml(weightTitle)}">${action.weight.toFixed(2)}x</span> weight · ${escapeHtml(freshness)}</small></span><span class="profile-helpfulness" title="${escapeHtml(metricTitle)}"><b>${percent}%</b><small>${metricLabel}</small><i class="route-benefit-bar" style="--benefit:${percent}%" aria-hidden="true"></i></span></button>`;
   }
 // BEGIN PLANNER MODEL (generated from owned pure modules; no imports)
 const plannerPositive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0?value:0;
@@ -8108,10 +8108,10 @@ function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
 }
 
 /** Enumerate the real scorer: do not assume every leaderboard metric is monotonic. */
-function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,epsilon=.0005}={}){
+function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,epsilon=.0005,gainFraction=0}={}){
   if(!Number.isSafeInteger(currentRank)||currentRank<0||!Number.isSafeInteger(fieldSize)||
     fieldSize<2||currentRank>fieldSize||!Number.isFinite(baselineScore)||typeof scoreAt!=='function'||
-    !Number.isFinite(epsilon)||epsilon<0)return null;
+    !Number.isFinite(epsilon)||epsilon<0||!Number.isFinite(gainFraction)||gainFraction<0||gainFraction>1)return null;
   const choices=[];
   for(let rank=1;rank<=(currentRank?currentRank-1:fieldSize);rank++){
     const score=scoreAt(rank);
@@ -8120,15 +8120,16 @@ function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,eps
   }
   const helpful=choices.filter(row=>row.gain>epsilon);
   if(!helpful.length)return null;
-  const target=helpful.at(-1);
+  const maximumGain=helpful.reduce((best,row)=>Math.max(best,row.gain),0);
+  const target=helpful.filter(row=>row.gain>=maximumGain*gainFraction).at(-1);
   const helpfulRanks=new Set(helpful.map(row=>row.rank));
   let prefix=0;
   for(let rank=1;rank<=target.rank;rank++){
     if(!helpfulRanks.has(rank))break;
     prefix=rank;
   }
-  return {targetRank:target.rank,minimumHelpfulRank:target.rank,targetScore:target.score,
-    estimatedGain:target.gain,value:target.gain,maximumGain:helpful.reduce((best,row)=>Math.max(best,row.gain),0),
+  return {targetRank:target.rank,minimumHelpfulRank:helpful.at(-1).rank,targetScore:target.score,
+    estimatedGain:target.gain,value:target.gain,maximumGain,
     topGuaranteed:prefix>=target.rank};
 }
 
@@ -8278,9 +8279,10 @@ function compactPlannerEvidenceLabel(action) {
       await Promise.all([loadProfileSnapshotResults(plannerEntry.userId||plannerEntry.accountId),
         !isSelf?loadProfileSnapshotResults(entry.userId||entry.accountId):null,
         typeof loadPlannerScoringIndex==='function'?loadPlannerScoringIndex():null,
-        typeof metadataRecovery!=='undefined'&&metadataRecovery?metadataRecovery.ensure('track-statistics'):null]);
+        typeof loadPlannerScoringIndex!=='function'&&typeof metadataRecovery!=='undefined'&&metadataRecovery?metadataRecovery.ensure('track-statistics'):null]);
       if(!current())return '';
     }
+    if(plannerMetric!=='events'&&typeof loadPlannerScoringIndex==='function'&&plannerScoringIndex?.epoch!==epoch)return '<p class="profile-guide-empty">Scoring snapshot unavailable. Reopen this profile to retry.</p>';
     const groupMode=personalFilterRuntime?.active()&&personalFilterRuntime.getFilter().mode==='smart';
     const plannerInput=plannerProfileInput(plannerEntry),viewedInput=isSelf?plannerInput:plannerProfileInput(entry);
     let plannerFinishes=plannerInput.finishes,viewedFinishes=viewedInput.finishes,fields=plannerInput.fields;
@@ -8357,7 +8359,8 @@ function compactPlannerEvidenceLabel(action) {
         practiceHistory?.coverage(plannerEntry.userId||plannerEntry.accountId)),
         practice:practiceAdviceFor(row?{...row,trackId:action.trackId}:null,Date.now(),{results:historyResults})};
     };
-    const priority=orderedPlannerRoutes((rivalMode?rival:[]).map(addEase),matchupPersonal.map(addEase),Number.MAX_SAFE_INTEGER,plannerSort).filter(action=>plannerTrackAllowed(action.trackId,played)).slice(0,8);
+    const eligibleRoute=action=>plannerTrackAllowed(action.trackId,played);
+    const priority=orderedPlannerRoutes((rivalMode?rival:[]).filter(eligibleRoute).map(addEase),matchupPersonal.filter(eligibleRoute).map(addEase),Number.MAX_SAFE_INTEGER,plannerSort).slice(0,8);
     const allowDefense=sourceComplete&&plannerMetric==='overall'&&priority.length===0&&plannerDefenseAllowed(simulationFinishes,scoringEntry,fields);
     const priorityIds=new Set(priority.map((action)=>action.trackId));
     const allCarrying=(allowDefense?(plannerFinishes||[]):[]).filter((finish)=>Number(finish.fieldSize||0)>=2).sort((a,b)=>Number(b.contribution||0)-Number(a.contribution||0)).map((finish)=>recommendationAction(finish,'carry',scoringEntry,simulationFinishes)).filter(Boolean);
@@ -8377,8 +8380,8 @@ function compactPlannerEvidenceLabel(action) {
     const availability={...plannerCategoryAvailability(simulationFinishes,fields),events:eventRoutes.dataAvailable===true};
     const coverageNote=sourceComplete?'Results loaded':'More results needed';
     const noRoute=!priority.length&&!carrying.length;
-    const emptySummary='<span class="route-preview-empty"><strong>No helpful move found</strong><small>No useful upgrade found in the loaded results. Try another category or change the filters.</small></span>';
-    return `<details class="profile-guide ${noRoute?'is-empty ':''}${strongest?'':'without-carry'}" ${noRoute?'open':''}><summary>${previewMarkup||emptySummary}${noRoute?'':'<em class="route-open-label" aria-hidden="true">Full plan</em>'}</summary><div class="profile-guide-body"><header><div><div class="planner-heading"><h4>${context}</h4><small>${coverageNote} · ${escapeHtml(overallLoadState.serverUpdatedAt?`snapshot changed ${ageLabel(overallLoadState.serverUpdatedAt)}`:'saved profile data')}</small></div><div class="profile-guide-controls"><label class="profile-guide-metric">Improve <select data-planner-metric aria-label="Leaderboard to improve">${Object.entries(PLANNER_METRICS).map(([key,label])=>`<option value="${key}" ${plannerMetric===key?'selected':''} ${availability[key]?'':'disabled title="Not enough information at this time"'}>${label}${availability[key]?'':' (not enough data)'}</option>`).join('')}</select></label><label class="profile-guide-metric">Sort by <select data-planner-sort aria-label="Route order"><option value="practice" ${plannerSort==='practice'?'selected':''}>Practice + benefit</option><option value="impact" ${plannerSort==='impact'?'selected':''}>Biggest benefit</option><option value="ease" ${plannerSort==='ease'?'selected':''}>Easiest (local estimate)</option><option value="benefit-ease" ${plannerSort==='benefit-ease'?'selected':''}>Benefit + Ease</option><option value="training" ${plannerSort==='training'?'selected':''}>Practice focus</option></select></label><details class="planner-explanation"><summary aria-label="About this plan"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M12 10.5v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/></svg></summary><div class="planner-tooltip"><strong>About this plan</strong><p>Benefit estimates the gain if you reach the target, not the chance of reaching it. Ease compares complete-field time gaps with bounded hints from active, moving local practice and observed finishes. Missing or partial history is not personal ability. Benefit + Ease emphasizes smaller effort while retaining meaningful benefit.</p><p>Practice + benefit balances local practice hints with points. Practice focus favors played tracks and local practice hints. All sorts retain the same target. Benefit percentages compare the strongest eligible loaded route before filters or card limits; they are not ease percentages or success odds. Scores stay unchanged.</p><p>History stays on this device. Earlier playtime is not retroactively measured. <button type="button" data-open-practice>View practice history</button></p></div></details>${plannerFilterMarkup()}</div></div></header><section class="profile-route-priorities">${plannerMetric==='weight'?'<p>Complete new tracks to add weight.</p>':''}<div class="profile-guide-grid">${cards(priority)}</div></section>${carrying.length?`<section class="profile-route-strengths"><h5>Your other strong contributions</h5><p>Track Strength compares each contribution with your strongest loaded contribution before filters.</p><div class="profile-guide-grid compact">${cards(carrying)}</div></section>`:''}</div></details>`;
+    const emptySummary='<span class="route-preview-empty"><strong>No helpful move found</strong><small>Try another category or change the filters.</small></span>';
+    return `<details class="profile-guide ${noRoute?'is-empty ':''}${strongest?'':'without-carry'}" ${noRoute?'open':''}><summary>${previewMarkup||emptySummary}${noRoute?'':'<em class="route-open-label" aria-hidden="true">Full plan</em>'}</summary><div class="profile-guide-body"><header><div><div class="planner-heading"><h4>${context}</h4><small>${coverageNote} · ${escapeHtml(overallLoadState.serverUpdatedAt?`snapshot changed ${ageLabel(overallLoadState.serverUpdatedAt)}`:'saved profile data')}</small></div><div class="profile-guide-controls"><label class="profile-guide-metric">Improve <select data-planner-metric aria-label="Leaderboard to improve">${Object.entries(PLANNER_METRICS).map(([key,label])=>`<option value="${key}" ${plannerMetric===key?'selected':''} ${availability[key]?'':'disabled title="Not enough information at this time"'}>${label}${availability[key]?'':' (not enough data)'}</option>`).join('')}</select></label><label class="profile-guide-metric">Sort by <select data-planner-sort aria-label="Route order"><option value="impact" ${plannerSort==='impact'?'selected':''}>Biggest benefit</option><option value="benefit-ease" ${plannerSort==='benefit-ease'?'selected':''}>Benefit + time gap</option><option value="ease" ${plannerSort==='ease'?'selected':''}>Smallest time gap</option><option value="practice" ${plannerSort==='practice'?'selected':''}>Benefit + practice</option><option value="training" ${plannerSort==='training'?'selected':''}>Practice focus</option></select></label><details class="planner-explanation"><summary aria-label="About this plan"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M12 10.5v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/></svg></summary><div class="planner-tooltip"><strong>About this plan</strong><p>Targets use the full scoring snapshot, not the tracks you opened. Targets aim for a meaningful gain. Benefit compares that gain within your filters; 100% is the strongest option, not a success chance.</p><p>Time-gap sorts need complete saved times. Practice sorts use history on this device. Filters change the suggestions, not your score. <button type="button" data-open-practice>Practice history</button></p></div></details>${plannerFilterMarkup()}</div></div></header><section class="profile-route-priorities">${plannerMetric==='weight'?'<p>Complete new tracks to add weight.</p>':''}<div class="profile-guide-grid">${cards(priority)}</div></section>${carrying.length?`<section class="profile-route-strengths"><h5>Your other strong contributions</h5><p>Track Strength compares each contribution with your strongest loaded contribution before filters.</p><div class="profile-guide-grid compact">${cards(carrying)}</div></section>`:''}</div></details>`;
   }
   function plannerProfileInput(entry){
     const id=cleanUserId(entry?.userId||entry?.accountId);
@@ -8545,7 +8548,7 @@ function compactPlannerEvidenceLabel(action) {
     return [...byTrack.values()];
   }
   function openRankedProfile(userId){
-    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=284').then(module=>{
+    if(!compactProfilePresentationLoad)compactProfilePresentationLoad=import('./tools/profile-compact-presentation.mjs?v=285').then(module=>{
       compactProfilePresentation=module;
       const current=document.getElementById('overallProfilePopup');
       if(current?.dataset.profileUser&&isElementVisible(current))openRankedProfile(current.dataset.profileUser);
@@ -8819,7 +8822,7 @@ function compactPlannerEvidenceLabel(action) {
     const isCurrent=()=>snapshotUpdateRequest===job&&!job.controller.signal.aborted&&origin?.isConnected&&origin===document.getElementById('overallFreshness')&&isElementVisible(document.getElementById('overallLeaderboardPanel'))&&!['overallHelpPopup','overallProfilePopup'].some(id=>isElementVisible(document.getElementById(id)));
     let module;
     try{
-      module=await import('./tools/snapshot-update-check.mjs?v=284');
+      module=await import('./tools/snapshot-update-check.mjs?v=285');
       if(!isCurrent())return;
       snapshotUpdateChecker||=module.createSnapshotUpdateCheck();
       const generation=Number(/public-snapshots([0-9]+)\//.exec(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'')?.[1]);
@@ -9046,7 +9049,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
 
   function rankedFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set('X-PolyTrack-Revision', String(284));
+    headers.set('X-PolyTrack-Revision', String(285));
     return observedWorkerFetch(url, {...options, headers});
   }
 
@@ -9204,7 +9207,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     if(Date.now()<localOverallInitRetryAt)return null;
     if(!localOverallControllerPromise)localOverallControllerPromise=(async()=>{
       const readerPromise=publicSnapshotReaderPromise||readPublicSnapshotBackup('snapshot-meta').then(()=>publicSnapshotReaderPromise);
-      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=284'),readerPromise]);
+      const [module,reader]=await Promise.all([import('./tools/overall-local-controller.mjs?v=285'),readerPromise]);
       if(!reader?.packageInfo)throw Error('Static package information is unavailable');
       localOverallReader=reader;localOverallObservedAccount=activeRankedAccountId();
       localOverallController=module.createLocalOverallController({storage:localStorage,read:(...args)=>reader(...args),
@@ -9283,8 +9286,8 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     return false;
   }
   async function readPublicSnapshotBackup(kind,id='',accountId='',{refresh=false}={}){
-    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=284').then(async module=>{
-      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=284');
+    if(!publicSnapshotReaderPromise)publicSnapshotReaderPromise=import('./tools/public-snapshot-client.mjs?v=285').then(async module=>{
+      const recoveryModule=await import('./tools/snapshot-metadata-recovery.mjs?v=285');
       const reader=module.createPublicSnapshotReader({baseUrl:new URL(document.querySelector('meta[name="polytrack-snapshot"]')?.content||'./public-snapshots/',document.baseURI),packed:Boolean(document.querySelector('meta[name="polytrack-snapshot"]')),bootstrap:true,optimizedIndex:true,publication:module.readSnapshotPublicationMeta(document),prepareRecording:ptPrepareGatedRecording,beforeGenerationChange:allowSnapshotGenerationChange,onPlaybackFailure:detail=>{noteDeveloperEvent('replay',detail.code);console.warn('[PolyTrack replay] '+detail.code+': Saved replay unavailable. Check for a newer snapshot or try again.');},onRead:metric=>noteDeveloperEvent(metric.source==='memory'?'cache':'snapshot',String(metric.kind).toUpperCase(),metric.durationMs,metric.source==='failed'?0:200),onGenerationChange:()=>{
         nativeRecordingEpoch++;nativeRecordingMemory.clear();nativeRecordingRequests.clear();nativeRecordingRetryAt.clear();
         invalidateNativePartialReplay(true);
@@ -9373,7 +9376,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(!contentType.includes('application/json'))throw new Error('Ranked edge was replaced by a network filter');
       let payload=await response.json();
       if(payload?.pagination){
-        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=284');
+        const {completeRankedSnapshot}=await import('./tools/ranked-live-snapshot.mjs?v=285');
         payload=await completeRankedSnapshot(payload,{saved,kind,trackId,endpoint,fetchImpl:rankedFetch});
       }
       clearRankedEdgeFailure();
@@ -11770,7 +11773,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
   });
 
   function boot(){
-    void import('./tools/finish-presentation.mjs?v=284').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
+    void import('./tools/finish-presentation.mjs?v=285').then(module=>{finishPresentationModule=module;module.enhanceFinishAnnouncers(document);}).catch(()=>{});
     void initializePracticeHistory();
     setInterval(()=>{const popup=document.getElementById('overallProfilePopup');if(popup&&isElementVisible(popup))schedulePracticeProfileRefresh();},30000);
     // Warm only same-origin schedule assets, never the database, before menus open.
@@ -11791,10 +11794,10 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       personalFilterChanged();
     });
     install();
-    void Promise.all([import('./tools/native-track-search.mjs?v=284'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
+    void Promise.all([import('./tools/native-track-search.mjs?v=285'),fetch(new URL('../tracks/search-metadata.json?v=176',eventsModuleUrl)).then(response=>{if(!response.ok)throw Error('Search metadata unavailable');return response.json();})])
       .then(([module,metadata])=>module.enhanceNativeTrackSearch({document,metadata})).catch(()=>{});
-    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=284',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=284',eventsModuleUrl).href)]).then(([module,release])=>{
-      siteUpdateHandle=module.installSiteUpdates({revision:284,document,
+    setTimeout(()=>void Promise.all([import(new URL('../tools/site-updates.mjs?v=285',eventsModuleUrl).href),import(new URL('../tools/release-info.mjs?v=285',eventsModuleUrl).href)]).then(([module,release])=>{
+      siteUpdateHandle=module.installSiteUpdates({revision:285,document,
         onCompatibilityChange:state=>{compatibilityOnlineAllowed=state.onlineAllowed!==false&&onlineServicePageAllowed();},
         isIdle:canOfferSiteUpdate,
         canReload:canOfferSiteUpdate,endpoint:module.CANONICAL_SITE_VERSION_URL});
@@ -11859,7 +11862,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
       if(event.target.closest?.('[data-open-practice]')){const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section){section.open=true;section.querySelector('summary')?.focus({preventScroll:true});section.scrollIntoView({block:'nearest'});}return;}
       const clear=event.target.closest?.('[data-clear-practice-history]');if(!clear)return;
       const account=activeRankedAccountId();
-      void import('./tools/developer-diagnostics.mjs?v=284').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
+      void import('./tools/developer-diagnostics.mjs?v=285').then(module=>module.openClearPracticeConfirmation({returnFocus:clear,onConfirm:()=>{if(activeRankedAccountId()!==account)throw Error('Racer changed; nothing cleared');practiceHistory?.clear(account);const section=document.querySelector('#overallProfileContent .polytrack-practice-profile');if(section)section.outerHTML=renderPracticeProfile({rows:[],coverage:practiceHistory?.coverage(account)});void refreshOpenProfilePlanner();}})).catch(()=>{if(clear.isConnected)clear.textContent='History controls unavailable - try again';});
     });
     for(const type of ['pointerover','focusin'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info)info.open=true;});
     for(const type of ['pointerout','focusout'])document.addEventListener(type,event=>{const info=event.target.closest?.('.planner-explanation');if(info&&!info.contains(event.relatedTarget))info.open=false;});
@@ -11886,7 +11889,7 @@ function prepareOverallFirstPreview(value,normalize,{model,schema,averageFinish,
     });
   }
 
-  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=284', document.currentScript?.src || location.href).href;
+  const nativeLeaderboardLatencyUrl = new URL('./tools/leaderboard-latency-hook.mjs?v=285', document.currentScript?.src || location.href).href;
   void import(nativeLeaderboardLatencyUrl).then(({installNativeInitialOpenLatencyHook})=>installNativeInitialOpenLatencyHook({onInitialOpen:()=>{
       const host=document.querySelector('.track-info-ui > .leaderboard-ui:not(.sq-event-board)');
       ensureNativeAllRunsDefault(host,undefined,callback=>callback(),()=>{});

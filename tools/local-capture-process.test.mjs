@@ -273,11 +273,14 @@ test('unowned objects cannot become broker termination requests',async()=>{
   assert.equal(f.writes.some(value=>value.startsWith('OWN ')),false);await lease.release();await f.broker.dispose();
 });
 
-test('late STOPPED never authorizes timeout recovery',async()=>{
+test('late STOPPED never authorizes timeout recovery',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
   let clock=1000;const b=brokerFixture({autoStop:false,now:()=>clock});
-  const f=fixture({file:process.execPath,timeoutMs:10,graceMs:0,supervisor:b.broker,killTree:terminateOwnedCaptureTree});
+  const f=fixture({file:process.execPath,timeoutMs:1000,graceMs:0,supervisor:b.broker,killTree:terminateOwnedCaptureTree});
   const pending=runBoundedCaptureProcess(f.config),rejected=assert.rejects(pending,/stale|unconfirmed|Unconfirmed/);
-  for(let i=0;i<20&&!b.writes.some(value=>value.startsWith('STOP '));i++)await new Promise(resolve=>setTimeout(resolve,5));
+  // Finish synthetic admission before advancing the timeout, independently of runner load.
+  await turn();assert(f.calls.some(value=>Array.isArray(value)&&value[0]==='ipc'&&value[1].type==='capture-supervisor-start'));
+  t.mock.timers.tick(1001);t.mock.timers.tick(0);await turn();
   const stop=b.writes.find(value=>value.startsWith('STOP '));assert(stop);clock+=10001;
   b.respond(`STOPPED ${b.session} ${stop.split(' ')[2]}\n`);f.exit(1);f.close();await rejected;await turn();
   assert.equal(f.calls.some(value=>Array.isArray(value)&&value[0]==='recover'),false);await assert.rejects(b.broker.dispose());

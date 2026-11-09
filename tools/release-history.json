@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 340,
+    "number": 341,
     "version": "0.6.3",
-    "revision": 284,
+    "revision": 285,
     "notes": [
-      "Better release checks for fresh-account cloud saves."
+      "Route plans use the full scoring snapshot without loading every leaderboard page.",
+      "Clearer targets, better route sorting, and benefits that match your filters."
     ]
   },
   "entries": [
+    {
+      "number": 340,
+      "title": "Test fresh-account saves against deployed naming rules",
+      "commit": "341bc54ebb9d6131c8b34663d518609ada3c22b2",
+      "committedAt": "2026-11-08T23:44:56.000Z",
+      "notes": [
+        "Better release checks for fresh-account cloud saves."
+      ]
+    },
     {
       "number": 339,
       "title": "Speed cached standings and protect cloud sign-in recovery",
@@ -193,13 +203,6 @@
       "title": "Preserve exact pending replay files when retaining published event rows",
       "commit": "b08c81b0c79505235230f23d3375f107d26b6e6f",
       "committedAt": "2026-11-07T18:08:09.000Z",
-      "notes": []
-    },
-    {
-      "number": 316,
-      "title": "Repair canonical board metadata and publish saved data without new verification",
-      "commit": "e11d4db3592ecc1d5964948a98884cc7a158e3c2",
-      "committedAt": "2026-11-07T17:51:52.000Z",
       "notes": []
     }
   ],

@@ -151,3 +151,10 @@ test('practice evidence orders dated runs and refuses to manufacture an undated 
   assert.deepEqual(plannerPracticeEvidence(shuffled),plannerPracticeEvidence(practice));
   assert.equal(plannerPracticeEvidence({...practice,recentFinishes:practice.recentFinishes.map(({at,...run})=>run)}).improvementTrend,0);
 });
+
+test('meaningful targets do not rank tracks by threshold rounding noise',()=>{
+ const result=minimumBenefitTarget({currentRank:0,fieldSize:12,baselineScore:100,scoreAt:rank=>80+rank*2,gainFraction:.25});
+ assert.equal(result.minimumHelpfulRank,9);assert.equal(result.targetRank,7);assert.equal(result.estimatedGain,6);
+ assert.ok(result.estimatedGain>=result.maximumGain*.25);
+ assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:100,scoreAt:()=>99,gainFraction:NaN}),null);
+});

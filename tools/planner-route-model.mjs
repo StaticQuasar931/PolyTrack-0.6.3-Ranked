@@ -111,10 +111,10 @@ export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
 }
 
 /** Enumerate the real scorer: do not assume every leaderboard metric is monotonic. */
-export function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,epsilon=.0005}={}){
+export function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scoreAt,epsilon=.0005,gainFraction=0}={}){
   if(!Number.isSafeInteger(currentRank)||currentRank<0||!Number.isSafeInteger(fieldSize)||
     fieldSize<2||currentRank>fieldSize||!Number.isFinite(baselineScore)||typeof scoreAt!=='function'||
-    !Number.isFinite(epsilon)||epsilon<0)return null;
+    !Number.isFinite(epsilon)||epsilon<0||!Number.isFinite(gainFraction)||gainFraction<0||gainFraction>1)return null;
   const choices=[];
   for(let rank=1;rank<=(currentRank?currentRank-1:fieldSize);rank++){
     const score=scoreAt(rank);
@@ -123,14 +123,15 @@ export function minimumBenefitTarget({currentRank=0,fieldSize,baselineScore,scor
   }
   const helpful=choices.filter(row=>row.gain>epsilon);
   if(!helpful.length)return null;
-  const target=helpful.at(-1);
+  const maximumGain=helpful.reduce((best,row)=>Math.max(best,row.gain),0);
+  const target=helpful.filter(row=>row.gain>=maximumGain*gainFraction).at(-1);
   const helpfulRanks=new Set(helpful.map(row=>row.rank));
   let prefix=0;
   for(let rank=1;rank<=target.rank;rank++){
     if(!helpfulRanks.has(rank))break;
     prefix=rank;
   }
-  return {targetRank:target.rank,minimumHelpfulRank:target.rank,targetScore:target.score,
-    estimatedGain:target.gain,value:target.gain,maximumGain:helpful.reduce((best,row)=>Math.max(best,row.gain),0),
+  return {targetRank:target.rank,minimumHelpfulRank:helpful.at(-1).rank,targetScore:target.score,
+    estimatedGain:target.gain,value:target.gain,maximumGain,
     topGuaranteed:prefix>=target.rank};
 }

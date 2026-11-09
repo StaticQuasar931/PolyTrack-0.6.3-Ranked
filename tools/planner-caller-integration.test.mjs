@@ -56,18 +56,18 @@ test('embedded model and isolated snapshot IIFE match the owned modules with no 
   const c=vm.createContext({});vm.runInContext(block,c);
   assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(buildPlannerSnapshotInput())',c)),buildPlannerSnapshotInput());
 });
-test('actual recommendation action uses weakest positive-benefit rank for new and played tracks',()=>{
+test('actual recommendation action uses a meaningful target and retains the first helpful rank for new and played tracks',()=>{
   const c=harness(),baseline=['official','community','permanent'].map(trackId=>({trackId,rank:5,fieldSize:20,timeMs:20000,weight:3}));
   for(const sort of ['practice','impact','ease','training','benefit-ease']){
     c.plannerSort=sort;
     for(const finish of [{trackId:'new',rank:0,fieldSize:20,weight:3},baseline[0]]){
       const action=c.recommendationAction(finish,finish.rank?'improve':'start',entry,baseline);
       const baselineScore=c.projectedOverallScore(baseline),scoreAt=c.recommendationSimulator(baseline,finish);
-      const expected=minimumBenefitTarget({currentRank:finish.rank,fieldSize:finish.fieldSize+(finish.rank?0:1),baselineScore,scoreAt});
+      const expected=minimumBenefitTarget({currentRank:finish.rank,fieldSize:finish.fieldSize+(finish.rank?0:1),baselineScore,scoreAt,gainFraction:.25});
       assert.ok(action&&action.targetRank>1);
       assert.equal(action.targetRank,expected.targetRank);assert.equal(action.value,baselineScore-scoreAt(action.targetRank));
-      if(action.targetRank<action.fieldSize&&(!finish.rank||action.targetRank+1<finish.rank))
-        assert.ok(baselineScore-scoreAt(action.targetRank+1)<=.0005);
+      assert.ok(action.estimatedGain>=expected.maximumGain*.25);
+      assert.equal(action.minimumHelpfulRank,expected.minimumHelpfulRank);
     }
   }
 });
