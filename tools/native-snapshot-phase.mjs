@@ -212,7 +212,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
   await pinRetainedNativeBoards({context,directory,root});return context;
 }
 
-async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null}){
+async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null,validateOnly=false}){
   const manifest=await read(directory,'manifest.json'),serverTotals=await optional(directory,'event-totals.json');
   const periods=inputs.eventBoards.filter(board=>board.id!=='permanent-rolling-hills');
   if(!serverTotals){demand(periods.length===0,'event totals source unavailable');return {periods:0,ready:true};}
@@ -255,6 +255,7 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   const usePublished=exactPublished||baseline!==null&&serverTotals.updatedAt<baseline.totals.updatedAt;
   const dependencies={serverTotals:pairingTotals,projections:projections.filter(value=>value.totalsEligible!==false),capturedRollingBoard};
   const combined=usePublished?reconcileNativeEventTotalsFromPublished({...dependencies,projections,publishedBaseline:baseline}):projectNativeEventTotals(dependencies);
+  if(validateOnly)return {periods:periods.length,ready:true,backendReads:0,backendWrites:0};
   for(const projection of combined.publicationProjections||projections){
     const board=projection.board,id=board.id;
     if(usePublished&&projection.totalsEligible===false&&board.nativeEventOverlay){
@@ -332,6 +333,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       const published=publishedEventTotalsBaseline&&assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
       demand(published&&isDeepStrictEqual(totalsInput,published.totals),'exact trusted published totals required before native work');
     }
+    await timed('eventPreflightMs',()=>compileEvents({root,directory:candidate,inputs,ledger:context.ledger,policy:context.policy,captureContext:context,publishedEventTotalsBaseline,validateOnly:true,now}));
     const freshJobs=inputs.jobs.slice(),knownKeys=new Set(freshJobs.map(job=>ledgerKey(ledgerBinding(job))));
     for(const job of context.retainedJobs||[])if(!knownKeys.has(ledgerKey(ledgerBinding(job)))){
       inputs.jobs.push(job);inputs.canonicalRows.push({...job});inputs.recordings.push({...job});knownKeys.add(ledgerKey(ledgerBinding(job)));

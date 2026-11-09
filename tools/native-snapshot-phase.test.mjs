@@ -742,3 +742,11 @@ test('unchanged stored proofs do not copy progress checkpoints',async t=>{
  });
 
 test('phase proof-only mode cannot dispatch physics or manufacture a new approval',async t=>{const f=await fixture(t),result=await runNativeSnapshotPhase({...f.options,allowNativeDispatch:false,verify:()=>assert.fail('physics is forbidden')});assert.equal(result.backendReads,0);assert.equal(result.backendWrites,0);assert.equal(result.counts.nativeDispatched,0);assert.equal(result.counts.unprocessed,1);assert.equal(result.complete,false);assert.equal((await read(f.directory,'tracks/'+track+'.json')).entries[0].runVerified,false);});
+
+test('inconsistent captured event totals fail before any new physics dispatch',async t=>{
+ const f=await fixture(t,{events:true}),board=await read(f.directory,'events/day1.json');
+ board.entries=[{accountId:account,timeMs:1200,rank:1,rp:833,runId:'2'.repeat(64),replayHash}];board.totalEntries=1;
+ await write(f.directory,'events/day1.json',board);
+ await assert.rejects(runNativeSnapshotPhase(f.options),/totals|contribution|baseline/i);
+ assert.equal(f.calls.length,0);
+});

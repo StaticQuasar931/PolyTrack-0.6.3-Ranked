@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 349,
+    "number": 350,
     "version": "0.6.3",
-    "revision": 293,
+    "revision": 294,
     "notes": [
-      "Verification checks saved records first so older approvals are not skipped.",
-      "Saved progress can be rechecked without replaying runs again."
+      "Snapshot updates keep the last published event totals when the cloud copy is older.",
+      "Checks event data before replay verification to avoid wasted work."
     ]
   },
   "entries": [
+    {
+      "number": 349,
+      "title": "Review saved verification proofs before new physics jobs",
+      "commit": "d25834479e3470f74b681361b5fcdd374bd51c0d",
+      "committedAt": "2026-11-09T03:00:40.000Z",
+      "notes": [
+        "Verification checks saved records first so older approvals are not skipped.",
+        "Saved progress can be rechecked without replaying runs again."
+      ]
+    },
     {
       "number": 348,
       "title": "Retain authenticated native boards across snapshot refreshes",
@@ -197,15 +207,6 @@ const historyData = {
         "Track loading spends less time waiting on the browser cache.",
         "Event RP clearly distinguishes your event result from your normal PB.",
         "Earlier updates highlight releases you have not seen, with shorter titles."
-      ]
-    },
-    {
-      "number": 326,
-      "title": "Validate original proof policy and preserve completion before backup",
-      "commit": "32d9ade0854d9d331cbb00134fbd70d4d20cac8e",
-      "committedAt": "2026-11-08T02:32:14.000Z",
-      "notes": [
-        "Improved recovery when saving completed replay checks fails."
       ]
     }
   ],

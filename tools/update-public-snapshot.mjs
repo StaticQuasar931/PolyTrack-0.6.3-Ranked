@@ -1,3 +1,4 @@
+import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {rememberPublishedHydration} from './retained-native-board-cache.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -497,6 +498,14 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     if(!/^[a-f0-9]{40}$/.test(sourceCommit||''))throw Error('A pinned snapshot source commit is required before capture');
     if(env.GITHUB_ENV)await fs.appendFile(env.GITHUB_ENV,'SNAPSHOT_NATIVE_SOURCE_COMMIT='+sourceCommit+'\n');
   }
+  let publishedEventTotalsBaseline=nativePhaseOptions.publishedEventTotalsBaseline??null;
+  if(proofPhase&&!publishedEventTotalsBaseline){
+    const current=await readJsonIfPresent(path.join(absoluteRoot,'snapshot-current.json'));
+    if(current&&/^public-snapshots[1-9][0-9]*$/.test(current.currentdir||'')){
+      const indexBytes=await fs.readFile(path.join(absoluteRoot,current.currentdir,'index.json')),index=JSON.parse(indexBytes);
+      if(index.files?.['event-totals.json'])publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root:absoluteRoot,expectedGeneration:Number(current.currentdir.slice(16)),expectedIndexSha256:sha256(indexBytes)});
+    }
+  }
   const nativeCapture = proofPhase
     ? await prepareNativeCapture({root:absoluteRoot, directory:stagingDirectory}) : null;
   let reusePackagedOverlay = false;
@@ -583,7 +592,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     }
     const result = await nativePhase({...nativePhaseOptions, root:absoluteRoot, directory:stagingDirectory,
       sourceCommit,reuseOnly:authority === 'firestore',
-      captureContext:nativeCapture});
+      captureContext:nativeCapture,publishedEventTotalsBaseline});
     if (!result || result.backendReads !== 0 || result.backendWrites !== 0)
       throw Error('Proof publication phase did not establish zero Firebase publication usage');
     if(authority === 'firestore' && (result.counts?.nativeDispatched !== 0 || result.counts?.newProofs !== 0))
