@@ -1,9 +1,13 @@
 const releaseInfo = {
-  "number": 351,
+  "number": 352,
   "version": "0.6.3",
-  "revision": 295,
-  "notes": ["Updated saved Summer 1 PBs and recovered completed replay checks.","Keeps older event replay history when a faster run replaces it."],
-  "preparedAt": "2026-11-09T03:53:53.007Z"
+  "revision": 296,
+  "notes": [
+    "More room for saves: downloaded rankings now use separate local cache storage.",
+    "Keeps personal saves, replays and older-version save formats unchanged."
+  ],
+  "preparedAt": "2026-11-09T05:08:50.016Z",
+  "committedAt": "2026-11-09T05:15:51.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

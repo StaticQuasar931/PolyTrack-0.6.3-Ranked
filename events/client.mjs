@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=295';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=295';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=296';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=296';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=295';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=295';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=295';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=296';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=296';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=296';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -142,8 +142,9 @@ export function eventCatalogFreshUntil(periods,at=Date.now(),maxAge=300000){
   }
   return Math.min(at+age,nextBoundary);
 }
-const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
-const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
+const eventDataStorage=()=>globalThis.__ptRankedDataStorage||localStorage;
+const read=(key,fallback)=>{try{return JSON.parse(eventDataStorage().getItem(key))??fallback;}catch{return fallback;}};
+const write=(key,value)=>eventDataStorage().setItem(key,JSON.stringify(value));
 const cacheWrite=(key,value)=>{try{write(key,value);}catch{/* Cache storage is optional; never discard a successful cloud read. */}};
 export function sameEventSubmission(a,b){
   return !!a&&!!b&&['accountId','periodId','attemptId','timeMs','frames','replay'].every(key=>a[key]===b[key]);
