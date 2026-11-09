@@ -1,11 +1,12 @@
 const releaseInfo = {
-  "number": 340,
+  "number": 341,
   "version": "0.6.3",
-  "revision": 284,
+  "revision": 285,
   "notes": [
-    "Better release checks for fresh-account cloud saves."
+    "Route plans use the full scoring snapshot without loading every leaderboard page.",
+    "Clearer targets, better route sorting, and benefits that match your filters."
   ],
-  "preparedAt": "2026-11-08T23:41:22.832Z"
+  "preparedAt": "2026-11-09T00:26:02.901Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

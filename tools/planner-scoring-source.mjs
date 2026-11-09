@@ -2,11 +2,32 @@ import {decodeProjectionResults} from './overall-projection-bundle.mjs';
 
 // These are the published scoring lanes, not normal-board or locally estimated ranks.
 export async function buildPlannerScoringSource(overall, packed) {
+  return buildScoringIndex(overall, packed, await decodeProjectionResults(packed));
+}
+
+// The bound manifest and complete compact results replace all Overall page downloads.
+export async function buildPlannerScoringSourceFromManifest(manifest, packed) {
+  const metadata=manifest?.boardMetadata;
+  if(manifest?.kind!=='overall-manifest'||manifest.complete!==true||manifest.sourceComplete!==true||
+    manifest.ranksExact!==true||manifest.totalEntriesExact!==true||!Number.isSafeInteger(manifest.totalEntries)||
+    !metadata||metadata.totalEntries!==manifest.totalEntries||metadata.complete!==true||metadata.ranksExact!==true||['algorithmVersion','schemaVersion','sourceRevision','updatedAt'].some(key=>manifest[key]!==metadata[key]))
+    throw Error('Incomplete planner manifest');
+  const decoded=await decodeProjectionResults(packed);
+  if(decoded.entries.length!==manifest.totalEntries)throw Error('Missing scoring profiles');
+  const entries=decoded.entries.map(row=>{
+    const tuples=typeof row.resultData==='string'?JSON.parse(row.resultData):null;
+    if(!Array.isArray(tuples))throw Error('Missing scoring results');
+    return {userId:row.userId,raceCount:tuples.length};
+  });
+  return buildScoringIndex({...metadata,entries},packed,decoded);
+}
+
+function buildScoringIndex(overall, packed, decoded) {
   if(overall?.complete!==true||overall.sourceComplete===false||overall.ranksExact!==true||
     !Array.isArray(overall.entries)||overall.entries.length>10000||
     !['algorithmVersion','schemaVersion','sourceRevision','builtRevision','updatedAt'].every(k=>overall[k]===packed?.[k]))
     throw Error('Planner scoring source is incomplete or mixed');
-  const decoded=await decodeProjectionResults(packed), tracks=decoded.resultTracks;
+  const tracks=decoded.resultTracks;
   if(new Set(tracks).size!==tracks.length||tracks.some(id=>typeof id!=='string'||!id))throw Error('Invalid scoring tracks');
   const packedRows=new Map(decoded.entries.map(row=>[row.userId,row]));
   if(packedRows.size!==decoded.entries.length)throw Error('Duplicate scoring profile');
