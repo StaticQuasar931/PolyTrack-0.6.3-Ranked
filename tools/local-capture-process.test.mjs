@@ -275,8 +275,11 @@ test('unowned objects cannot become broker termination requests',async()=>{
 
 test('late STOPPED never authorizes timeout recovery',async t=>{
   t.mock.timers.enable({apis:['setTimeout']});
-  let clock=1000;const b=brokerFixture({autoStop:false,now:()=>clock});
-  const f=fixture({file:process.execPath,timeoutMs:1000,graceMs:0,supervisor:b.broker,killTree:terminateOwnedCaptureTree});
+  let clock=1000,lease;const b=brokerFixture({autoStop:false,now:()=>clock});
+  // Exercise the broker protocol on every OS, never signal a synthetic Linux PID.
+  const supervisor={acquire:async options=>(lease=await b.broker.acquire(options))};
+  const f=fixture({file:process.execPath,timeoutMs:1000,graceMs:0,supervisor,
+    killTree:(_child,{deadline})=>lease.stop({deadline})});
   const pending=runBoundedCaptureProcess(f.config),rejected=assert.rejects(pending,/stale|unconfirmed|Unconfirmed/);
   // Finish synthetic admission before advancing the timeout, independently of runner load.
   await turn();assert(f.calls.some(value=>Array.isArray(value)&&value[0]==='ipc'&&value[1].type==='capture-supervisor-start'));

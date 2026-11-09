@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 344,
+    "number": 345,
     "version": "0.6.3",
-    "revision": 288,
+    "revision": 289,
     "notes": [
-      "More precise route comparisons and clearer local PB estimates.",
-      "Snapshot updates now verify saved replays offline and keep recovery progress."
+      "Fixed a cross-platform test blocking automatic snapshot updates."
     ]
   },
   "entries": [
+    {
+      "number": 344,
+      "title": "Refine route estimates and verify captured replays offline",
+      "commit": "6a5de3ad22306381afca4062ab551cfbea78ed04",
+      "committedAt": "2026-11-09T01:50:11.000Z",
+      "notes": [
+        "More precise route comparisons and clearer local PB estimates.",
+        "Snapshot updates now verify saved replays offline and keep recovery progress."
+      ]
+    },
     {
       "number": 343,
       "title": "Retry profile saves after schema compatibility repair",
@@ -197,19 +206,6 @@ const historyData = {
         "Fewer repeated cloud requests when syncing saved runs.",
         "Event uploads retry less often during outages and keep your best run.",
         "Faster snapshot preparation with the same replay safety checks."
-      ]
-    },
-    {
-      "number": 320,
-      "title": "Reduce cloud work and repair snapshot and menu consistency",
-      "commit": "56d016fe401435b0f42f1deaf7ba3a2cc0dd2863",
-      "committedAt": "2026-11-07T21:10:24.000Z",
-      "notes": [
-        "Leader names, records and personal bests load more reliably.",
-        "Event placements and Event RP badges now match across menus.",
-        "Clearer route targets and practice suggestions use your saved results.",
-        "Updates work from game menus without interrupting a run.",
-        "Reduced repeated cloud work and improved overnight replay checks."
       ]
     }
   ],
