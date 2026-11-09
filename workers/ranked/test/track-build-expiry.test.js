@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {rebuildTrack} from '../src/index.js';
+import {rebuildTrack, handleRequest} from '../src/index.js';
 import {pendingSlot, VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, verificationSchedule,
   VERIFICATION_COLLECTION} from '../src/verification.js';
 import {verificationShardId} from '../src/verification-shards.js';
 import {eventEncode, eventDecode} from '../src/events-store.js';
-import {preparePublicationPages} from '../src/paged-publication.js';
+import {preparePublicationPages, loadPublicationEntries} from '../src/paged-publication.js';
 import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_MAX_AGE_MS,
   TRACK_BUILD_JOBS, TRACK_BUILD_PARTS} from '../src/track-build.js';
 
@@ -289,8 +289,11 @@ test('initial pages reject overflow, false completion and mismatched read times 
 
 // Exercise the real Worker's normalizer, proof migration, part assembly and final
 // publication, not a cheap normalize stub. Every Firestore HTTP callback is counted.
-for (const [count,cadence] of [[900,5],[1000,5],[1401,5],[5000,1],[5000,5]]) for (const verified of [true, false]) for (const priorPaged of [false, true])
-test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, verified=${verified}, priorPaged=${priorPaged}`, async () => {
+for (const [count,cadence,admin] of [[900,5],[1000,5],[1401,5],[5000,1],[5000,5],
+  [2397,.5,true],[5000,.5,true],[2397,.5,'recover'],[2397,.5,'hold']]) for (const verified of [true, false]) for (const priorPaged of [false, true]) {
+if (admin === 'recover' && !priorPaged) continue;
+if (admin === 'hold' && (!verified || !priorPaged)) continue;
+test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, verified=${verified}, priorPaged=${priorPaged}, admin=${admin||false}`, async () => {
   const expires=count===5000&&cadence===5;
   const track = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
   const base = 'projects/polytrack-052/databases/(default)/documents/';
@@ -319,9 +322,16 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
       data.set(`${VERIFICATION_COLLECTION}/${id}`, {trackId:track,queueId:id,storageVersion:2,slots,...verificationSchedule(slots)});
     }
   }
+  let heldProof;
+  if(admin==='hold') {
+    heldProof={...pendingSlot(rows[0]),status:'unavailable',reason:'similar_replay_pending_manual_review'};
+    data.get(`${VERIFICATION_COLLECTION}/${verificationShardId(track,rows[0].accountId)}`).slots[rows[0].accountId]=heldProof;
+  }
   const time = key => `2026-10-26T00:00:00.${String(versions.get(key)||0).padStart(9,'0')}Z`;
   const wire = (key,value=data.get(key)) => ({name:base+key,fields:eventEncode(value).mapValue.fields,updateTime:time(key)});
-  const env = {__TEST_FIRESTORE:async (route,init={}) => {
+  let writesThisPass = 0;
+  const adminToken = 'offline-fixture-only';
+  const env = {ALLOWED_ORIGINS:'https://staticquasar931.github.io',ADMIN_REBUILD_TOKEN:adminToken,__TEST_FIRESTORE:async (route,init={}) => {
     requests.push(route);
     assert(requests.length <= 48, 'reserve two requests below the hard 50 for cold auth/other overhead');
     if (route === ':batchGet') {
@@ -347,6 +357,7 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
     }
     if (route === ':commit') {
       const writes = JSON.parse(init.body).writes;
+      writesThisPass += writes.length;
       for (const w of writes) {
         const key = w.update.name.slice(base.length);
         if (w.currentDocument) assert.deepEqual(w.currentDocument, data.has(key) ? {updateTime:time(key)} : {exists:false});
@@ -362,16 +373,61 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
     const source = url.searchParams.has('readTime') ? snapshot : data;
     return source?.has(key) ? wire(key,source.get(key)) : null;
   }};
-  const originalNow = Date.now, counts = [], documentCounts = [];
+  const oldParts = new Map();
+  if (admin === 'recover') {
+    const oldTime = new Date(start-51*60000).toISOString(), oldGeneration = 'd'.repeat(64);
+    const oldJob = {trackId:track,generation:oldGeneration,baseVersion:time(`${boards}/${track}`),readTime:oldTime,
+      afterName:base+results+'/'+rows[1899].accountId+'_'+track,sourceCount:1900,parts:19,complete:false,
+      blocked:true,blockedReason:'snapshot_expired',startedAt:start-51*60000,updatedAt:start-60000};
+    data.set(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}`,oldJob);
+    for(let part=0;part<19;part++) {
+      const key=`${TRACK_BUILD_PARTS}/${oldGeneration}_${part}`,value={entries:[{oldPaidPart:part}]};
+      oldParts.set(key,structuredClone(value));data.set(key,value);
+    }
+    data.set(`${TRACK_BUILD_JOBS}/canonical_reconcile_v2`,{schemaVersion:2,backfillComplete:true,
+      pendingTrackIds:[track],pendingFullRebuildTrackIds:[track],activeFullRebuildTrackId:'',
+      pendingResultIds:{[track]:rows.slice(0,200).map(row=>row.accountId+'_'+track)},
+      pendingResultBindings:{retained:'unchanged'},failedFullRebuilds:{[track]:{attempts:1,retryAt:start+3600000}}});
+  }
+  const originalNow = Date.now, counts = [], documentCounts = [], writeCounts = [], cpuMicros = [];
   let result;
   Date.now = () => now;
   try {
     for (let minute = 0; minute <= (expires?55:35); minute += cadence) {
-      now = start + minute * 60000 + (minute ? 59999 : 0);
+      now = start + minute * 60000 + (minute && !admin ? 59999 : 0);
       requests.length = 0;
+      writesThisPass = 0;
       proofReads.current = 0; proofReads.historical = 0;
       env.__FIRESTORE_READ_AUDIT={httpRequests:0,failedRequests:0,documentReadEstimate:0,collections:{}};
-      result = await rebuildTrack(env,track);
+      const cpuStart=process.cpuUsage(),queryStart=queries.length;
+      if(admin && (minute || admin==='recover')) {
+        const job=data.get(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}`);
+        const request=new Request('https://offline.test/v1/admin/track-build/continue',{
+          method:'POST',headers:{Origin:env.ALLOWED_ORIGINS,'X-Admin-Token':env.ADMIN_REBUILD_TOKEN},
+          body:JSON.stringify({trackId:track,generation:job.generation,
+            checkpointVersion:time(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}`),
+            recoverExpired:minute===0 && admin==='recover'})});
+        const originalLog=console.log;
+        let response;
+        console.log=(message,payload)=>{if(message==='Ranked request Firestore reads')env.__FIRESTORE_READ_AUDIT=JSON.parse(payload);};
+        try { response=await handleRequest(request,env); } finally { console.log=originalLog; }
+        assert.equal(response.status,200);
+        const body=await response.json();
+        if(body.pending) {
+          assert.equal(body.continueAfterMs,30000);
+          assert.equal(body.deadlineAt,start+TRACK_BUILD_MAX_AGE_MS);
+          assert.equal(body.generation,data.get(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}`).generation);
+          result={pending:true};
+        } else result={entries:await loadPublicationEntries(data.get(`${boards}/${track}`),'track',track,
+          async(c,id)=>({data:data.get(c+'/'+id)}))};
+        assert(requests.length<=45,'scoped endpoint retains 42 work / 45 total request cap');
+      } else result = await rebuildTrack(env,track);
+      const cpu=process.cpuUsage(cpuStart);cpuMicros.push(cpu.user+cpu.system);
+      if(admin) {
+        assert(queries.length-queryStart<=2,'no hidden page loop or global discovery');
+        assert(cpuMicros.at(-1)<5e6,'offline CPU regression ceiling: five CPU seconds per bounded call, not a live SLA');
+        assert(writesThisPass<=260,'bounded two-page proof/part writes plus publication and recovery/queue checkpoint');
+      }
       assert(env.__FIRESTORE_READ_AUDIT.documentReadEstimate <= (minute === 0 ? 310 : 650),
         `pass document reads: ${env.__FIRESTORE_READ_AUDIT.documentReadEstimate}`);
       if(minute===0){
@@ -382,6 +438,7 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
           'one unchanged root plus every required fresh and historical shard');
       }
       documentCounts.push(env.__FIRESTORE_READ_AUDIT.documentReadEstimate);
+      writeCounts.push(writesThisPass);
       counts.push(requests.length);
       if (!result.pending) break;
     }
@@ -405,7 +462,8 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
     assert(now-start<TRACK_BUILD_MAX_AGE_MS,'publication must finish before fixed-snapshot expiry');
   }
   assert.equal(data.get(`${boards}/${track}`).totalEntries, count);
-  assert.equal(result.entries.filter(row=>row.runVerified===true).length,verified?count:0);
+  assert.equal(result.entries.filter(row=>row.runVerified===true).length,verified?count-(heldProof?1:0):0);
+  if(heldProof)assert.deepEqual(data.get(`${VERIFICATION_COLLECTION}/${verificationShardId(track,rows[0].accountId)}`).slots[rows[0].accountId],heldProof);
   assert.equal(data.get(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}`).complete, true);
   assert.equal(queries.filter(q => !q.readTime).length, 1);
   assert(queries.every(q=>q.structuredQuery.limit===100));
@@ -413,6 +471,26 @@ test(`real Worker ${count}-row document budget at ${cadence}-minute cadence, ver
   assert.equal(partBatches.length, 1, 'final assembly uses exactly one batchGet');
   assert.equal(partBatches[0].length,Math.ceil(count/100),'the final batch includes every part');
   assert.equal(requests.filter(route => route.startsWith('/'+TRACK_BUILD_PARTS+'/')).length, 0);
+  if(admin) {
+    assert(now-start<13*60000,'2397 and 5000 rows finish within 13 minutes at bounded 30-second cadence');
+    assert(now-start<TRACK_BUILD_MAX_AGE_MS);
+    assert(counts.length<=26,'no more than 26 calls for a 5000-row generation, including EOF');
+    const queue=data.get(`${TRACK_BUILD_JOBS}/canonical_reconcile_v2`);
+    assert(!queue.pendingFullRebuildTrackIds.includes(track));
+    assert.equal(queue.activeFullRebuildTrackId,'');
+    if(admin==='recover') {
+      for(const [key,value]of oldParts)assert.deepEqual(data.get(key),value,'never erase or freshen old paid parts');
+      const archive=data.get(`${TRACK_BUILD_JOBS}/${trackBuildId(track)}_deadline_recovery_v1`);
+      assert.equal(archive.checkpoint.sourceCount,1900);assert.equal(archive.checkpoint.parts,19);
+      assert.equal(archive.checkpoint.blockedReason,'snapshot_expired');
+      assert.equal(queue.pendingResultIds[track].length,200,'post-readpoint keyed bindings stay queued');
+      assert.deepEqual(queue.pendingResultBindings,{retained:'unchanged'});
+    }
+  }
   console.log('Track build quota counts', JSON.stringify({count,verified,priorPaged,
-    initialDocuments:documentCounts[0],maxDocuments:Math.max(...documentCounts),maxRequests:Math.max(...counts)}));
+    admin:admin||false,calls:counts.length,elapsedMs:now-start,
+    initialDocuments:documentCounts[0],maxDocuments:Math.max(...documentCounts),maxRequests:Math.max(...counts),
+    totalReads:documentCounts.reduce((a,b)=>a+b,0),totalWrites:writeCounts.reduce((a,b)=>a+b,0),
+    maxWrites:Math.max(...writeCounts),maxCpuMicros:Math.max(...cpuMicros)}));
 });
+}

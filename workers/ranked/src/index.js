@@ -10,6 +10,7 @@ import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,P
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
 import {advanceTrackBuild, trackBuildDisposition, trackBuildId, TRACK_BUILD_JOBS, TRACK_BUILD_PAGE_SIZE} from './track-build.js';
+import {continueQueuedTrackBuild} from './track-build-continuation.js';
 import { safePublicName } from './public-name-policy.js';
 import {kodubWeekly} from './kodub-weekly.js';
 import { eventWorkerHandler, eventWorkerMaintenance } from './events-worker.js';
@@ -1329,14 +1330,15 @@ async function persistVerificationRows(env, trackId, rows, prior, complete = fal
   return slots;
 }
 
-export async function rebuildTrack(env, trackId, identityOverride = null, {deferPublication = false} = {}) {
-  const prior = await readDocument(env, COLLECTIONS.track, trackId);
-  const job = await readDocument(env,TRACK_BUILD_JOBS,trackBuildId(trackId));
+export async function rebuildTrack(env, trackId, identityOverride = null,
+  {deferPublication = false, prepared, recovery = false, continuation = false} = {}) {
+  const prior = prepared ? prepared.prior : await readDocument(env, COLLECTIONS.track, trackId);
+  const job = prepared ? prepared.job : await readDocument(env,TRACK_BUILD_JOBS,trackBuildId(trackId));
   let initial = null;
-  if (trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_BUILD_PAGE_SIZE);
-  if (!initial || !initial.ended) {
+  if (recovery || trackBuildDisposition({prior,job}).action === 'start') initial = await canonicalTrackPage(env,trackId,'','',TRACK_BUILD_PAGE_SIZE);
+  if (recovery || !initial || !initial.ended) {
     const historicalRoots = new Map();
-    const build = await advanceTrackBuild({trackId,prior,job,initial,
+    const build = await advanceTrackBuild({trackId,prior,job,initial,recovery,continuation,
       readPage:(cursor,readTime,limit)=>canonicalTrackPage(env,trackId,cursor,readTime,limit),
       normalize:(rows,readTime)=>normalizeBuildRows(env,trackId,rows,readTime,historicalRoots),
       read:(c,id)=>readDocument(env,c,id),
@@ -3055,6 +3057,27 @@ async function handleRequestInternal(request, env, context = {}) {
     return publicSnapshot(request, env, context, origin, COLLECTIONS.track, trackId);
   }
   if (request.method !== 'POST') return json(origin, env, 404, { error: 'not_found' });
+  if (path === '/v1/admin/track-build/continue') {
+    if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN)
+      return json(origin,env,403,{error:'admin_required'});
+    let body;
+    try {
+      body = await requestBody(request);
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw Error('INVALID_BODY');
+    } catch { return json(origin,env,400,{error:'invalid_request'}); }
+    const budget = {used:Number(env.__FIRESTORE_READ_AUDIT?.operationAttempts || 0),limit:42};
+    const scoped = {...env,__OVERALL_REQUEST_BUDGET:budget};
+    const result = await continueQueuedTrackBuild(body,{read:(c,id)=>readDocument(scoped,c,id),
+      rebuild:(id,options)=>rebuildTrack(scoped,id,null,{...options,deferPublication:true}),
+      beforePublish:()=>{budget.limit=45;},
+      commit:writes=>{
+        for (const write of writes) if (write.id === 'canonical_reconcile_v2' &&
+            new TextEncoder().encode(JSON.stringify({fields:encodeFields(write.data)})).length > RECONCILE_JOB_DOCUMENT_BUDGET - 512)
+          throw Error('RECONCILE_JOB_DOCUMENT_BUDGET');
+        return commitDocuments(scoped,writes);
+      }});
+    return json(origin,env,result.status,result.body);
+  }
   if (path === '/v1/admin/rebuild') {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     const adminRecovery = new URL(request.url).searchParams.get('recovery') === 'worker-rebuild';

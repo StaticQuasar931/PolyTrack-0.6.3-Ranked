@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 356,
+    "number": 357,
     "version": "0.6.3",
-    "revision": 300,
+    "revision": 301,
     "notes": [
-      "Restored missing racers in the rankings, including the full Summer 1 field.",
-      "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
+      "Large leaderboard updates can finish without restarting.",
+      "Reduces redundant cloud verification work."
     ]
   },
   "entries": [
+    {
+      "number": 356,
+      "title": "Restore missing racers and verify 1024 more runs",
+      "commit": "b530a931c5c74f78f17dfaa4a4352406317dd95e",
+      "committedAt": "2026-11-09T07:48:01.000Z",
+      "notes": [
+        "Restored missing racers in the rankings, including the full Summer 1 field.",
+        "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
+      ]
+    },
     {
       "number": 355,
       "title": "Stream replay review within bounded track memory",
@@ -196,15 +206,6 @@ const historyData = {
       "notes": [
         "Saved PB syncing handles confirmations and connection failures more reliably.",
         "Podium cards sit below your car again."
-      ]
-    },
-    {
-      "number": 335,
-      "title": "Keep podium targets compact across screen sizes",
-      "commit": "91e0ad24af5c5de2bd83eb8de86db48d733dce7d",
-      "committedAt": "2026-11-08T07:24:19.000Z",
-      "notes": [
-        "Podium targets keep their compact layout on smaller screens."
       ]
     }
   ],

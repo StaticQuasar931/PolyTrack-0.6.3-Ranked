@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 356,
+  "number": 357,
   "version": "0.6.3",
-  "revision": 300,
+  "revision": 301,
   "notes": [
-    "Restored missing racers in the rankings, including the full Summer 1 field.",
-    "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
+    "Large leaderboard updates can finish without restarting.",
+    "Reduces redundant cloud verification work."
   ],
-  "preparedAt": "2026-11-09T07:37:53.433Z",
-  "committedAt": "2026-11-09T07:48:01.000Z"
+  "preparedAt": "2026-11-09T07:52:43.309Z",
+  "committedAt": "2026-11-09T07:58:05.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

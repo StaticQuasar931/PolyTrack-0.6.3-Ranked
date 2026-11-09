@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
+import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import worker, {computeTrackEntries, handleRequest} from '../src/index.js';
 import {eventEncode as encode, eventDecode as decode} from '../src/events-store.js';
 import {VERIFICATION_BOOTSTRAP_ID, VERIFICATION_COLLECTION, pendingSlot,
@@ -22,6 +24,21 @@ const replay = 'authority-offline-replay', replayHash = createHash('sha256').upd
 const row = (accountId,timeMs) => ({accountId,ownerUid:'owner',trackId:track,name:accountId,
   timeMs,frames:timeMs,raceTimeFrames:timeMs,uploadId:1,pbAt:1000,replay,replayHash});
 const proof = r => ({...pendingSlot(r),status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION});
+
+test('tracked authority activation matches native policy and is the only deployment config change',()=>{
+  const config=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
+  const policy=JSON.parse(readFileSync(new URL('../../../tools/verification-authority.json',import.meta.url),'utf8'));
+  assert.equal(config.vars.VERIFICATION_AUTHORITY,'snapshot-native');
+  assert.equal(config.vars.VERIFICATION_AUTHORITY,policy.mode);
+  assert.equal(config.vars.PUBLIC_FIRESTORE_READ_MODE,'capture-only');
+  assert.equal(config.vars.BACKGROUND_MAINTENANCE_MODE,'coordinated');
+  assert.equal(config.vars.CANONICAL_DISCOVERY_BACKPRESSURE,'enabled');
+  const base=JSON.parse(execFileSync('git',['show','HEAD:workers/ranked/wrangler.jsonc'],{
+    cwd:new URL('../../../',import.meta.url),encoding:'utf8',windowsHide:true}));
+  delete base.vars.VERIFICATION_AUTHORITY;
+  delete config.vars.VERIFICATION_AUTHORITY;
+  assert.deepEqual(config,base,'no Overall, limiter, secret, trigger, runtime or other config changes');
+});
 
 function fixture(t, authority, maintenance = 'coordinated') {
   const data = new Map(), versions = new Map(), calls = [], errors = [], audits = [];

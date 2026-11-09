@@ -24,6 +24,7 @@
     "PUBLIC_READ_RATE_LIMIT_REQUIRED": "true",
     "PUBLIC_FIRESTORE_READ_MODE": "capture-only",
     "BACKGROUND_MAINTENANCE_MODE": "coordinated",
+    "VERIFICATION_AUTHORITY": "snapshot-native",
     "CANONICAL_DISCOVERY_BACKPRESSURE": "enabled",
     "FIRESTORE_OPERATION_LOGGING": "true",
     "MULTIPLAYER_ENABLED": "true",
