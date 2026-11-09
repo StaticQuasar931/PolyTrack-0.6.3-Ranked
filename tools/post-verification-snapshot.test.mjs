@@ -190,7 +190,7 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   const embedded=source=>source.match(/<<'NODE'\n([\s\S]*?)^          NODE$/m)?.[1];
   assert.ok(embedded(publisher));assert.equal(embedded(publisher),embedded(catalog));
   const paths=[...publisher.matchAll(/^          path: (.+)$/gm)].map(match=>match[1]);
-  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-recovery.ptenc','${{ runner.temp }}/polytrack-native-proofs.ptenc']);
+  assert.deepEqual(paths,['~/.cache/ms-playwright','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-replay-retries/history.json','${{ runner.temp }}/polytrack-recovery.ptenc','${{ runner.temp }}/polytrack-native-progress-*.ptenc','${{ runner.temp }}/polytrack-native-proofs.ptenc']);
   const recovery=step(publisher,'Retain encrypted recovery checkpoint');
   assert.match(recovery,/retention-days: 3/);assert.doesNotMatch(recovery,/SERVICE_ACCOUNT|PRIVATE_KEY|snapshot-staging/);
   const browser=step(publisher,'Cache the pinned offline browser');

@@ -1,9 +1,9 @@
 const releaseInfo = {
-  "number": 346,
+  "number": 347,
   "version": "0.6.3",
-  "revision": 290,
-  "notes": ["Fixed Linux process checks blocking automatic snapshot updates."],
-  "preparedAt": "2026-11-09T01:59:14.157Z"
+  "revision": 291,
+  "notes": ["Updated snapshot safety checks for encrypted verification progress."],
+  "preparedAt": "2026-11-09T02:03:39.837Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

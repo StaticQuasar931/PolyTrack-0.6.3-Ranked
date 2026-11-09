@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 346,
+    "number": 347,
     "version": "0.6.3",
-    "revision": 290,
+    "revision": 291,
     "notes": [
-      "Fixed Linux process checks blocking automatic snapshot updates."
+      "Updated snapshot safety checks for encrypted verification progress."
     ]
   },
   "entries": [
+    {
+      "number": 346,
+      "title": "Recognize terminated Linux fixture processes in snapshot tests",
+      "commit": "c95b3915bc989dc7d56ef0d0afd5bcd3dd674984",
+      "committedAt": "2026-11-09T01:59:42.000Z",
+      "notes": [
+        "Fixed Linux process checks blocking automatic snapshot updates."
+      ]
+    },
     {
       "number": 345,
       "title": "Fix Linux snapshot preflight process test",
@@ -194,15 +203,6 @@
       "committedAt": "2026-11-08T01:11:40.000Z",
       "notes": [
         "Fixed a problem that could stop event results from updating."
-      ]
-    },
-    {
-      "number": 323,
-      "title": "Make local snapshots more reliable and prevent stale captures",
-      "commit": "65ec0aaacfabe24b0d2ab99dadf62ed13151528a",
-      "committedAt": "2026-11-08T00:49:47.000Z",
-      "notes": [
-        "Improved reliability of snapshot updates."
       ]
     }
   ],
