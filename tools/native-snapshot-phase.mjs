@@ -301,7 +301,7 @@ export async function verifyNativeSnapshotPhase(options={}){
   return runNativeSnapshotPhaseImpl(options,true);
 }
 
-async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,reuseOnly=false,publicationRoot=root,
+async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,allowNativeDispatch=true,reuseOnly=false,publicationRoot=root,
   expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
@@ -310,6 +310,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
+  demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
   demand(progressCheckpoint===null||typeof progressCheckpoint==='function','invalid progress checkpoint capability');
   demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
@@ -381,7 +382,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
         :await timed('verificationMs',()=>verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
         expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
-        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now,onProgress:saveProgress}));
+        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,allowNativeDispatch,now,onProgress:saveProgress}));
     }catch(error){
       // Only completed, validated batches reach this private ledger. Its hash
       // identifies recovery evidence, never a new publication trust anchor.

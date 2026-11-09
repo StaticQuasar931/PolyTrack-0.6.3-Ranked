@@ -22,7 +22,9 @@ test('public proof hits, unknown media and holds remain in inventory without gai
   const hit=normal(1,500),unknown={...normal(2,999),trackId:id(88)},held={...normal(3,600),needsReview:true},pending=event(4,'daily');
   const jobs=[hit,unknown,held,pending],key=ledgerKey(ledgerBinding(hit));
   const result=prioritizeNativeTargets({jobs,eventBoards:[board('daily')],entries:[{key}],policy:{knownTrackIds:[track]},now:1000});
-  assert.deepEqual(result.jobs,[pending,held,hit,unknown]);assert.equal(result.jobs[1].needsReview,true);
+  assert.deepEqual(result.jobs,[hit,pending,held,unknown]);assert.equal(result.jobs[2].needsReview,true);
   assert.equal(result.counts.exactPublicBinding,1);assert.equal(result.counts.other,1);
   assert.equal(new Set(result.jobs).size,4);assert.equal(hit.verified,undefined);
 });
+
+test('exact proof reviews precede any new native workload without removing the full inventory',()=>{const hit=normal(1,1),fresh=normal(2,999),pending=event(3,'daily');const key=ledgerKey(ledgerBinding(hit));const result=prioritizeNativeTargets({jobs:[fresh,pending,hit],eventBoards:[board('daily')],entries:[{key}],policy:{knownTrackIds:[track]},now:1000});assert.deepEqual(result.jobs,[hit,pending,fresh]);assert.equal(result.jobs.length,3);});

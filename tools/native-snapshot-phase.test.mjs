@@ -740,3 +740,5 @@ test('unchanged stored proofs do not copy progress checkpoints',async t=>{
   await write(f.directory,'recordings/1.json',{recording:'wrong replay'});
   const corrupt={...context};assert.equal(await pinRetainedNativeBoards({context:corrupt,directory:f.directory,root:f.root}),0);assert.equal(matches(corrupt),false);
  });
+
+test('phase proof-only mode cannot dispatch physics or manufacture a new approval',async t=>{const f=await fixture(t),result=await runNativeSnapshotPhase({...f.options,allowNativeDispatch:false,verify:()=>assert.fail('physics is forbidden')});assert.equal(result.backendReads,0);assert.equal(result.backendWrites,0);assert.equal(result.counts.nativeDispatched,0);assert.equal(result.counts.unprocessed,1);assert.equal(result.complete,false);assert.equal((await read(f.directory,'tracks/'+track+'.json')).entries[0].runVerified,false);});

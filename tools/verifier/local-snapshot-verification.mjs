@@ -171,7 +171,7 @@ export async function verifyLocalNativeBatch(root,jobs,tracks,{deadline=Infinity
  */
 export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, ledgerRoot, expectedManifestHash,
   policy:providedPolicy, buildPolicy=buildNativeVerificationPolicy, review, verify=verifyLocalNativeBatch, validateEngine=defaultEngine, trustedTracks=[],
-  maxJobs=512, batchSize=16, maxRuntimeMs=480000, packReserveMs=60000, now=Date.now, env=process.env,
+  maxJobs=512, batchSize=16, maxRuntimeMs=480000, allowNativeDispatch=true, packReserveMs=60000, now=Date.now, env=process.env,
   onProgress=()=>{}}={}) {
   return withOfflineVerification(async()=>{
     demand(typeof root === 'string' && path.isAbsolute(root),'absolute repository root required');
@@ -181,6 +181,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     demand(expectedManifestHash === null || HASH.test(expectedManifestHash || ''),'explicit ledger manifest trust anchor required');
     demand(Array.isArray(jobs) && jobs.length <= 100000,'bounded source jobs required');
     demand(typeof review === 'function','completed clone/review adapter required');
+    demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
     demand(positive(maxJobs) && maxJobs <= 100000 && positive(batchSize) && batchSize <= 16 &&
       positive(maxRuntimeMs) && maxRuntimeMs <= 1500000 && Number.isSafeInteger(packReserveMs) &&
       packReserveMs >= 0 && packReserveMs < maxRuntimeMs,'invalid native budget');
@@ -238,7 +239,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         }
         const reused=restoredPhysics(entries.get(ledgerKey(ledgerBinding(job))),job,policy);
         if (reused) {raw.set(job.resultId,reused);counts.reusedPhysics++;}
-        else if (counts.nativeDispatched+native.length < maxJobs &&
+        else if (allowNativeDispatch && counts.nativeDispatched+native.length < maxJobs &&
           maxRuntimeMs-(now()-startedAt) >= resourceLimits(job.resourceProfile || 'standard').wallMs+10000+packReserveMs) native.push(job);
       }
       for (const group of nativeGroups(native)) {
@@ -267,7 +268,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       if(!ready.length) {
         for(const job of selected) {
           counts.unprocessed++;
-          decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:'native_budget'});
+          decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
         }
         cursor+=selected.length;
         await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
@@ -297,7 +298,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
             reviews:(reviewed.reviews||[]).filter(value=>readyKeys.has(value.bindingKey))};
         } else {
           for (const job of selected.filter(job=>!raw.has(job.resultId))) {
-            counts.unprocessed++;decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:'native_budget'});
+            counts.unprocessed++;decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
           }
           cursor+=selected.length;
           await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
@@ -343,7 +344,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       // If a partial batch used the last budget slot, no source row disappears.
       for (const job of selected.filter(job=>!raw.has(job.resultId))) {
         counts.unprocessed++;
-        decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:'native_budget'});
+        decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
       }
       cursor+=selected.length;
       await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,
@@ -351,7 +352,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     }
     for (const job of current.slice(cursor)) {
       counts.unprocessed++;
-      decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:'native_budget'});
+      decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
     }
     const result={schemaVersion:1,authority:'snapshot-native',offlineOnly:true,sourceBinding:structuredClone(sourceBinding),
       engineDigest:policy.engineDigest,verifierFingerprint:policy.verifierFingerprint,

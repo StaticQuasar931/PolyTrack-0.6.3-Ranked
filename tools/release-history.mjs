@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 348,
+    "number": 349,
     "version": "0.6.3",
-    "revision": 292,
+    "revision": 293,
     "notes": [
-      "Fixed snapshot refreshes discarding valid saved track boards.",
-      "Reuses checked replay data without extra cloud reads."
+      "Verification checks saved records first so older approvals are not skipped.",
+      "Saved progress can be rechecked without replaying runs again."
     ]
   },
   "entries": [
+    {
+      "number": 348,
+      "title": "Retain authenticated native boards across snapshot refreshes",
+      "commit": "84ad291122462b55707f79f3aebddd5bab249e2d",
+      "committedAt": "2026-11-09T02:35:05.000Z",
+      "notes": [
+        "Fixed snapshot refreshes discarding valid saved track boards.",
+        "Reuses checked replay data without extra cloud reads."
+      ]
+    },
     {
       "number": 347,
       "title": "Align snapshot recovery artifact safety checks",
@@ -196,15 +206,6 @@ const historyData = {
       "committedAt": "2026-11-08T02:32:14.000Z",
       "notes": [
         "Improved recovery when saving completed replay checks fails."
-      ]
-    },
-    {
-      "number": 325,
-      "title": "Preserve completed verification and repair event packaging",
-      "commit": "8bc1f6f64dd75146c270ab4d3434350224cd8154",
-      "committedAt": "2026-11-08T02:19:17.000Z",
-      "notes": [
-        "More reliable event replay checks and recovery of completed verification results."
       ]
     }
   ],

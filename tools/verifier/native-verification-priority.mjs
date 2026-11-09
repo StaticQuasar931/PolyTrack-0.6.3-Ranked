@@ -21,11 +21,11 @@ export function prioritizeNativeTargets({jobs,eventBoards=[],canonicalRows=[],po
     const live=pending&&board?.archived!==true&&(['open','settling'].includes(board?.state)||
       time(p?.startsAt)<=now&&time(p?.endsAt)+(Number.isSafeInteger(p?.graceMs)?p.graceMs:0)>now);
     const source=canonical.get(key),accepted=source?.sourceBoardStatus?.runVerified===true&&source?.sourceBoardStatus?.integrityVerified===true;
-    const priority=live?0:job.lane==='normal'&&!accepted&&!proofs.has(key)&&known.has(job.trackId)?1:pending?2:proofs.has(key)?3:4;
+    const priority=proofs.has(key)?0:live?1:job.lane==='normal'&&!accepted&&known.has(job.trackId)?2:pending?3:4;
     const recent=time(job.ingestedAt)||time(source?.ingestedAt)||time(source?.pbAt)||time(job.submittedAt);
     return {job,key,priority,recent};
   });
   ranked.sort((a,b)=>a.priority-b.priority||b.recent-a.recent||(a.key<b.key?-1:a.key>b.key?1:0));
   return {jobs:ranked.map(row=>row.job),counts:Object.fromEntries([0,1,2,3,4].map(priority=>[
-    ['liveEventPending','unverifiedKnownNormal','otherEventPending','exactPublicBinding','other'][priority],ranked.filter(row=>row.priority===priority).length]))};
+    ['exactPublicBinding','liveEventPending','unverifiedKnownNormal','otherEventPending','other'][priority],ranked.filter(row=>row.priority===priority).length]))};
 }

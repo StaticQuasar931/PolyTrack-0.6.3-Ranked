@@ -296,3 +296,11 @@ test('review preparation failure cannot spend a native budget or create a positi
   options.verify=async()=>assert.fail('native started before review preparation');
   await assert.rejects(verifyLocalSnapshot(options),error=>error===failure);
 });
+
+test('proof-only review rechecks exact existing physics but never dispatches new physics',async t=>{
+ const f=await fixture(t),first=await verifyLocalSnapshot(f.options);
+ const cached=f.options.jobs[0],fresh=job(2);
+ const second=await verifyLocalSnapshot({...f.options,jobs:[cached,fresh],allJobs:[cached,fresh],expectedManifestHash:first.ledgerManifestHash,allowNativeDispatch:false,verify:()=>assert.fail('proof-only mode must not execute physics')});
+ assert.equal(second.counts.nativeDispatched,0);assert.equal(second.counts.reusedPhysics,1);assert.equal(second.counts.verified,1);assert.equal(second.counts.unprocessed,1);
+ assert.equal(second.decisions.find(row=>row.binding.accountId===fresh.accountId).reason,'proof_only');
+});
