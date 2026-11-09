@@ -1,3 +1,4 @@
+import {pinRetainedNativeBoards,retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -722,3 +723,20 @@ test('completed batches checkpoint before a later interruption without promoting
 test('unchanged stored proofs do not copy progress checkpoints',async t=>{
  const f=await fixture(t);await runNativeSnapshotPhase(f.options);await runNativeSnapshotPhase({...f.options,progressCheckpoint:async()=>assert.fail('no changed ledger')});
 });
+
+ test('live native cache pins retain exact approved bytes, never serialized, mutated or differently bound evidence',async t=>{
+  const f=await fixture(t);await runNativeSnapshotPhase(f.options);
+  const unpinned=await prepareNativeSnapshotCapture(f.options);
+  assert.equal(await pinRetainedNativeBoards({context:unpinned,directory:f.directory,root:f.root}),0);
+  await publishSnapshot({root:f.root,stagingDirectory:f.directory});
+  const decoded=path.join(f.root,'trusted-hydrate');await fs.mkdir(decoded);await hydrateStaging(f.root,decoded);
+  const context=await prepareNativeSnapshotCapture({...f.options,directory:decoded}),bytes=await fs.readFile(path.join(f.directory,'tracks/'+track+'.json')),board=JSON.parse(bytes);
+  const matches=(ctx=context,raw=bytes,authority=context.sourceManifest.nativeVerificationLedger)=>retainedNativeBoardMatches({context:ctx,authority,board,bytes:raw});
+  assert.equal(matches(),true);assert.equal(matches({...context}),false);
+  assert.equal(matches(context,Buffer.concat([bytes,Buffer.from(' ')])),false);
+  assert.equal(matches(context,bytes,{manifestHash:'0'.repeat(64)}),false);
+  const altered={...context,canonicalRows:context.canonicalRows.map(row=>({...row,timeMs:row.timeMs+1}))};
+  assert.equal(await pinRetainedNativeBoards({context:altered,directory:f.directory,root:f.root}),0);assert.equal(matches(altered),false);
+  await write(f.directory,'recordings/1.json',{recording:'wrong replay'});
+  const corrupt={...context};assert.equal(await pinRetainedNativeBoards({context:corrupt,directory:f.directory,root:f.root}),0);assert.equal(matches(corrupt),false);
+ });

@@ -1,3 +1,5 @@
+import {pinRetainedNativeBoards} from './retained-native-board-cache.mjs';
+import {publishSnapshot} from './snapshot-package.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -369,4 +371,26 @@ test('normal source adapter requires explicit missing-file deferral and never in
  assert.equal(rows.length,2);assert(!rows.some(row=>row.accountId===f.sources[0].accountId));
  await fs.writeFile(path.join(f.directory,file),'{broken');
  await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true}),SyntaxError);
+});
+
+test('published untraced native derivative retains its exact board without inventing source confirmation',async t=>{
+ const f=await fixture(t);await applyNativeLedgerToCapturedTracks(f.options);
+ const manifest=await read(f.directory,'manifest.json');manifest.events={};manifest.eventReplays={};
+ const record=manifest.tracks[trackId];record.previousNativeLedgerOverlay=record.nativeLedgerOverlay;delete record.nativeLedgerOverlay;record.checkedAt=1500;
+ await write(f.directory,'manifest.json',manifest);
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'native-published-pin-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ await publishSnapshot({root,stagingDirectory:f.directory});
+ const context={ledger:f.ledger,policy,canonicalRows:await readCapturedNormalLedgerRows({directory:f.directory}),sourceManifest:manifest};
+ assert.equal(await pinRetainedNativeBoards({context,directory:f.directory,root}),1);
+ const overall=await read(f.directory,'overall.json');let tracks=0;
+ const fetchImpl=async input=>{const url=new URL(input);
+  if(url.pathname.endsWith('/overall'))return Response.json(overall);
+  if(url.pathname.endsWith('/catalog'))return Response.json({periods:[],archives:[]});
+  if(url.pathname==='/v1/snapshot/track'){tracks++;return new Response('',{status:404});}
+  if(url.pathname.includes('/permanent-rolling-hills/'))return Response.json({id:'permanent-rolling-hills',updatedAt:1000,entries:[]});
+  return new Response('',{status:404});};
+ const next=await runPublicSnapshotBackup({directory:f.directory,trackIds:[trackId],fetchImpl,now:2000,log(){},nativeVerification:context});
+ assert.equal(next.tracks[trackId].path,'tracks/'+trackId+'.json');assert.equal(next.tracks[trackId].checkedAt,1500);
+ assert.equal(next.tracks[trackId].nativeLedgerOverlay,undefined);assert.equal(tracks,0);
+ assert.equal((await read(f.directory,'tracks/'+trackId+'.json')).entries.length,f.board.entries.length);
 });

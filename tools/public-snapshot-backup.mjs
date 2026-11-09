@@ -1,3 +1,4 @@
+import {retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -902,7 +903,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       const overlay = !!record.nativeLedgerOverlay || cached.entries.some(row=>row.nativeLedgerKey);
       let sourceDigest = overlay ? nativeTrackSourceDigest(record,cached,cachedBytes,previous.nativeVerificationLedger,nativeVerification) : null;
       if (!overlay) try {sourceDigest=publicTrackConfirmationDigest(projected,id);} catch { /* Legacy partial boards cannot confirm authenticated source coverage. */ }
-      if (overlay && !sourceDigest) throw Error('Cached native overlay source binding is not validated');
+      if (overlay && !sourceDigest && !retainedNativeBoardMatches({context:nativeVerification,authority:previous.nativeVerificationLedger,board:cached,bytes:cachedBytes})) throw Error('Cached native overlay source binding is not validated');
       const confirmation = confirmedTracks instanceof Map ? confirmedTracks.get(id) : null;
       if (confirmation && TRACK_ID.test(confirmation.sha256||'') && sourceDigest && confirmation.sha256!==sourceDigest)
         throw Error('Authenticated source confirmation changed');

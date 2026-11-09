@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 347,
+    "number": 348,
     "version": "0.6.3",
-    "revision": 291,
+    "revision": 292,
     "notes": [
-      "Updated snapshot safety checks for encrypted verification progress."
+      "Fixed snapshot refreshes discarding valid saved track boards.",
+      "Reuses checked replay data without extra cloud reads."
     ]
   },
   "entries": [
+    {
+      "number": 347,
+      "title": "Align snapshot recovery artifact safety checks",
+      "commit": "4a1a370c8f9b94bc4d4a79fd9560c588f08f56de",
+      "committedAt": "2026-11-09T02:05:05.000Z",
+      "notes": [
+        "Updated snapshot safety checks for encrypted verification progress."
+      ]
+    },
     {
       "number": 346,
       "title": "Recognize terminated Linux fixture processes in snapshot tests",
@@ -194,15 +204,6 @@
       "committedAt": "2026-11-08T02:19:17.000Z",
       "notes": [
         "More reliable event replay checks and recovery of completed verification results."
-      ]
-    },
-    {
-      "number": 324,
-      "title": "Preserve pending event replays and respect verification holds",
-      "commit": "aacaea1d036a0a18c299f0ccb7b88830d49184f8",
-      "committedAt": "2026-11-08T01:11:40.000Z",
-      "notes": [
-        "Fixed a problem that could stop event results from updating."
       ]
     }
   ],

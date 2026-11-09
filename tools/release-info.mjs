@@ -1,9 +1,9 @@
 const releaseInfo = {
-  "number": 347,
+  "number": 348,
   "version": "0.6.3",
-  "revision": 291,
-  "notes": ["Updated snapshot safety checks for encrypted verification progress."],
-  "preparedAt": "2026-11-09T02:03:39.837Z"
+  "revision": 292,
+  "notes": ["Fixed snapshot refreshes discarding valid saved track boards.","Reuses checked replay data without extra cloud reads."],
+  "preparedAt": "2026-11-09T02:33:08.485Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

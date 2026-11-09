@@ -1,3 +1,4 @@
+import {rememberPublishedHydration} from './retained-native-board-cache.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -209,6 +210,7 @@ export async function hydrateStaging(root, stagingDirectory) {
   const hydratedByPath = new Map(hydrated.map(item => [item.logicalPath, item]));
   hydrated.push(...reconstructOmittedBoards(index, hydratedByPath));
   await writeHydratedFiles(stagingDirectory, hydrated);
+  rememberPublishedHydration(root,hydrated,pointer.currentdir);
   return { directory: pointer.currentdir, files: hydrated.length };
 }
 

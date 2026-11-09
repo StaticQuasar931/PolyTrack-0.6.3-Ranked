@@ -1,3 +1,4 @@
+import {pinRetainedNativeBoards} from './retained-native-board-cache.mjs';
 import {restoreRetainedPendingPlaybacks} from './restore-retained-pending-playbacks.mjs';
 import {assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {publishedEventPairingTotals} from './published-event-pairing.mjs';
@@ -206,8 +207,9 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
       (row.runId===undefined||entry.binding.runId===row.runId)));
     if(media.length||hasNative)retainedNativeEntries[id]={previousBoard,recordings:media,expectedSourceHash:sha(sourceBytes),sourceBytes};
   }
-  return {ledger,ledgerRoot,policy,canonicalRows,rootManifestHash:pointer?.manifestHash??null,
+  const context={ledger,ledgerRoot,policy,canonicalRows,rootManifestHash:pointer?.manifestHash??null,
     bootstrapRoot,eventSources,eventSourcePins,sourceManifest:manifest,retainedNativeEntries,retainedJobs,overlaidSourceHashes};
+  await pinRetainedNativeBoards({context,directory,root});return context;
 }
 
 async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null}){
