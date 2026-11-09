@@ -57,7 +57,7 @@ jobs:
     if: inputs.publication_changed && vars.POLYTRACK_POST_VERIFY_SNAPSHOTS_ENABLED != 'false' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     # Input may inherit checked-in native mode; step outputs are unavailable here.
-    timeout-minutes: ${{ inputs.overnight_native && 50 || 35 }}
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -207,7 +207,15 @@ jobs:
           node "$RUNNER_TEMP/polytrack-replay-retry-cache.mjs" restore "$RUNNER_TEMP/polytrack-replay-retries/history.json" local-reports/snapshot-staging/export-progress.json
       - name: Pin offline verification source commit
         if: steps.authority.outputs.mode == 'snapshot-native' || steps.authority.outputs.recovery_enabled == 'true' || hashFiles('verification-ledger-current.json') != ''
-        run: echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          ACTUAL_SOURCE_COMMIT=$(git rev-parse --verify HEAD)
+          if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$EXPECTED_SOURCE_COMMIT" != "$ACTUAL_SOURCE_COMMIT" ]; then
+            echo "Capture checkout differs from tested source" >&2
+            exit 1
+          fi
+          echo "SNAPSHOT_NATIVE_SOURCE_COMMIT=$ACTUAL_SOURCE_COMMIT" >> "$GITHUB_ENV"
       - name: Guard the one-time overnight capture
         id: overnight_guard
         if: inputs.overnight_native
@@ -283,7 +291,10 @@ jobs:
           const attempt=recovery?'repair-2':oneOff?'overnight-capture':'routine-capture';
           const encryptCapture=options=>encryptCaptureRecovery({...options,attempt});
           const captureCheckpoint=async({directory,sourceCommit})=>console.log(JSON.stringify({captureRecovery:await encryptCapture({directory,sourceCommit,outputFile,recipientPublicKey})}));
-          const nativePhaseOptions={...(oneOff?{maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs}:{}),
+          const nativePhaseOptions={...(process.env.VERIFICATION_AUTHORITY==='snapshot-native'?{maxJobs:10000,maxRuntimeMs:1500000}:{}),
+            progressCheckpoint:async({directory,sourceBinding,ledgerManifestHash,sequence})=>console.log(JSON.stringify({nativeProgress:await encryptCaptureRecovery({directory,attempt,
+              sourceCommit:sourceBinding.sourceCommit,sourceBinding,ledgerManifestHash,phase:'native-proofs',recipientPublicKey,
+              outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-native-progress-'+String(sequence).padStart(2,'0')+'.ptenc')})})),
             proofCheckpoint:async({directory,sourceBinding,ledgerManifestHash})=>console.log(JSON.stringify({proofRecovery:await encryptCaptureRecovery({directory,attempt,
               sourceCommit:sourceBinding.sourceCommit,sourceBinding,ledgerManifestHash,phase:'native-proofs',recipientPublicKey,
               outputFile:path.join(process.env.RUNNER_TEMP,'polytrack-native-proofs.ptenc')})}))};
@@ -398,6 +409,15 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+      - name: Retain encrypted incremental verification progress
+        if: always() && steps.authority.outputs.mode == 'snapshot-native' && steps.authority.outputs.recovery_enabled == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: polytrack-native-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/polytrack-native-progress-*.ptenc
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: ignore
       - name: Locate encrypted private proof checkpoint
         id: proof_recovery
         if: always() && steps.authority.outputs.recovery_enabled == 'true' && (steps.snapshot.outcome == 'success' || steps.snapshot.outcome == 'failure' || steps.snapshot.outcome == 'cancelled') && ((inputs.replacement_capture && inputs.repair_attempt == 'repair-2') || steps.snapshot.outputs.capture_status != 'complete' || steps.publication.outcome != 'success')

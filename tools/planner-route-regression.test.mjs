@@ -21,7 +21,7 @@ const fragment=id=>{
 };
 const order=new Function('orderPlannerRoutes',fragment('orderedPlannerRoutes')+';return orderedPlannerRoutes;')(orderPlannerRoutes);
 const route=(trackId,value,effortScore,extra={})=>({trackId,value,weight:1,currentRank:5,targetRank:1,kind:'improve',ease:{effortScore},...extra});
-const percentage=(value,max)=>!Number.isFinite(value)||!Number.isFinite(max)||value<=0||max<=0?0:Math.max(1,Math.min(100,Math.round(100*value/max)));
+const percentage=new Function(fragment('routeBenefitPercent')+';return routeBenefitPercent;')();
 
 // Entirely synthetic assignment metadata and standings; no live fixture needed.
 const periods=['daily','weekly','kodub'].map((kind,i)=>({id:'test_'+kind,kind,trackId:String(i+1).repeat(64),
@@ -155,7 +155,7 @@ test('card percentage ignores shown maximum and explicitly distinguishes benefit
       ageLabel:()=>'',rankedWeightTitle:()=>'',escapeHtml:String,trackThumbnailMarkup:()=>''});
   const r={...route('Summer1',80,.1),benefitReference:100};
   assert.equal(render(r,80),render(r,1000));assert.match(render(r,80),/<b>80%<\/b>/);
-  assert.match(render(r,80),/Ease and practice affect order only/);
+  assert.match(render(r,80),/Not your chance of success/);
   assert.match(render({...r,kind:'carry'},1),/Not improvement benefit/);
 });
 test('actual async profile path retains reference across sorts and current/official filters',async()=>{
@@ -181,4 +181,10 @@ test('event input is bounded to 120 periods, not limited to eight visible routes
   const rows=run(b,null,{periods:ps});assert.equal(rows.length,120);
   assert.equal(savedEventPlannerRoutes({periods:ps},b,null,{},null,null,at).length,0);
   assert.equal(savedEventPlannerRoutes({periods:ps},b,null,{},'me',null,NaN).length,0);
+});
+
+test('relative gains preserve linear differences without false maximum or minimum clamps',()=>{
+ assert.equal(percentage(99.6,100),99.6);assert.equal(percentage(99.999,100),99.9);
+ assert.equal(percentage(.4,100),.4);assert.equal(percentage(50,100),50);assert.equal(percentage(100,100),100);
+ assert.equal(percentage(0,100),0);assert.equal(percentage(NaN,100),0);
 });

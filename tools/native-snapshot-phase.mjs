@@ -303,12 +303,13 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
-  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,nativeCompleted=null,
+  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,progressCheckpoint=null,nativeCompleted=null,
   publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={},verificationOnly=false){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
+  demand(progressCheckpoint===null||typeof progressCheckpoint==='function','invalid progress checkpoint capability');
   demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
   demand(typeof preflight==='function','read-only scoring preflight required');
   demand((expectedCaptureSha256===null||HASH.test(expectedCaptureSha256))&&(expectedScoringSha256===null||HASH.test(expectedScoringSha256)),'invalid prepared source pins');
@@ -364,13 +365,21 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         demand(!coverage?.stop,'full-inventory controls preflight stopped: '+coverage?.stop);
       }
     };
+    let progressCount=0,progressAt=0,progressHash=context.ledger.manifestHash;
+    const saveProgress=async value=>{
+      if(!progressCheckpoint||value.ledgerManifestHash===progressHash||progressCount>=16||progressCount&&now()-progressAt<120000)return;
+      const checkpoint=await retainCompletedProofs({root:publicationRoot,ledgerRoot,sourceBinding:binding,
+        manifestHash:value.ledgerManifestHash,previousManifestHash:context.rootManifestHash,
+        evidence:{schemaVersion:1,authority:false,kind:'private-native-phase-evidence',phase:'verification-in-progress',complete:false,sourceBinding:binding,processed:value.processed,total:value.total,nativeDispatched:value.nativeDispatched,ledgerManifestHash:value.ledgerManifestHash,scoringPreflight,sourceCoverage:inputs.coverage}});
+      await progressCheckpoint({...checkpoint,sequence:++progressCount});progressAt=now();progressHash=value.ledgerManifestHash;
+    };
     let verification;
     try{
       verification=reuseOnly?{ledger:context.ledger,ledgerManifestHash:context.ledger.manifestHash,
         complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
         :await timed('verificationMs',()=>verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
         expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
-        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now}));
+        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,now,onProgress:saveProgress}));
     }catch(error){
       // Only completed, validated batches reach this private ledger. Its hash
       // identifies recovery evidence, never a new publication trust anchor.

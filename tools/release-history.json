@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 343,
+    "number": 344,
     "version": "0.6.3",
-    "revision": 287,
+    "revision": 288,
     "notes": [
-      "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
-      "Removed misleading sign-in warnings and retry old blocked PBs once."
+      "More precise route comparisons and clearer local PB estimates.",
+      "Snapshot updates now verify saved replays offline and keep recovery progress."
     ]
   },
   "entries": [
+    {
+      "number": 343,
+      "title": "Retry profile saves after schema compatibility repair",
+      "commit": "67dd6683e5716c95fb0f74bf5929199588035940",
+      "committedAt": "2026-11-09T01:26:01.000Z",
+      "notes": [
+        "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
+        "Removed misleading sign-in warnings and retry old blocked PBs once."
+      ]
+    },
     {
       "number": 342,
       "title": "Repair Studio defaults and saved PB notification recovery",
@@ -199,17 +209,6 @@
         "Clearer route targets and practice suggestions use your saved results.",
         "Updates work from game menus without interrupting a run.",
         "Reduced repeated cloud work and improved overnight replay checks."
-      ]
-    },
-    {
-      "number": 319,
-      "title": "Refresh snapshot downloads and release notes",
-      "commit": "376b05cc1212f57cafc5e443b87582992a66ba02",
-      "committedAt": "2026-11-07T18:40:20.000Z",
-      "notes": [
-        "Updated saved personal bests, rankings and profile data.",
-        "Kept earlier event results paired with their saved replays.",
-        "Some recent runs are still waiting for verification."
       ]
     }
   ],

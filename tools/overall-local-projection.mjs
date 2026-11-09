@@ -512,8 +512,9 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
   for (const [trackId, receipt] of best) {
     const board = byTrack.get(trackId);
     const previous = board.entries.find(row => row.accountId === accountId);
-    if (previous && (previous.timeMs < receipt.timeMs || previous.timeMs === receipt.timeMs &&
-        previous.runVerified === true && previous.integrityVerified === true)) continue;
+    // Snapshot rows at this time or faster remain authoritative, even when pending.
+    // Only a strictly faster local estimate may replace a pending row in this isolated projection.
+    if (previous && previous.timeMs <= receipt.timeMs) continue;
     // Only the isolated calculation assumes eventual verification. No hypothetical
     // trusted rows leave this helper or reach the canonical/public caches.
     const entry = {...previous, accountId, userId: accountId, trackId, timeMs: receipt.timeMs,

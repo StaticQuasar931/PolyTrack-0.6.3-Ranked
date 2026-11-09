@@ -1,14 +1,14 @@
-name: Verify PolyTrack runs and refresh public snapshots
+name: Capture snapshots and verify replays
 on:
   # Three :50 windows remain; 08:45 follows the :41 Overall publication, without forcing rebuilds.
-  # Verification is due-gated; each successful scheduled check requests bounded capture.
+  # Snapshot-native authority captures first, then verifies saved replays offline.
   schedule:
     - cron: '50 0,12,20 * * *'
     - cron: '45 8 * * *'
   workflow_dispatch:
     inputs:
       catch_up:
-        description: 'Catch up backlog (larger bounded Firebase budget; manual only)'
+        description: 'Legacy Firestore-authority catch-up only; not used in offline verification'
         type: boolean
         default: false
       overnight_capture:
@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       expected_source_commit:
-        description: 'Exact tested main commit required by an explicit overnight kickoff'
+        description: 'Optional exact tested main commit; required for an overnight kickoff'
         type: string
         default: ''
 permissions:
@@ -64,12 +64,14 @@ jobs:
           import {overnightSnapshotPlan} from './tools/overnight-snapshot-plan.mjs';
           const configuredMode=await readRepositoryVerificationAuthority(process.cwd(),process.env.POLYTRACK_VERIFICATION_AUTHORITY);
           const manualOvernight=process.env.MANUAL_OVERNIGHT==='true';
+          const expected=process.env.EXPECTED_SOURCE_COMMIT||'';
+          if(expected&&(!/^[a-f0-9]{40}$/.test(expected)||execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==expected))throw Error('Capture request differs from tested source');
           if(manualOvernight&&(process.env.MANUAL_CATCH_UP==='true'||!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_SOURCE_COMMIT||'')||
             execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.EXPECTED_SOURCE_COMMIT))throw Error('Explicit overnight kickoff requires its tested commit and cannot catch up live queues');
           let prior=null;try{prior=JSON.parse(fs.readFileSync('tools/workflow-capture-state.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
           const plan=overnightSnapshotPlan({eventName:process.env.GITHUB_EVENT_NAME,schedule:process.env.CAPTURE_SCHEDULE,
             now:Date.now(),runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),configuredMode,previousCaptureStartedAt:prior?.startedAt,manualOvernight});
-          const sourceCommit=plan.overnight?execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim():'';
+          const sourceCommit=plan.overnight||expected?execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim():'';
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'mode='+plan.mode+'\novernight='+plan.overnight+'\nskip='+plan.skip+'\nsource_commit='+sourceCommit+'\n');
           console.log(JSON.stringify({overnightPlan:plan}));
           AUTHORITY

@@ -711,3 +711,14 @@ test('completed receipt survives encrypted proof backup failure without allowing
   assert.equal((await read(completed.privateProofCheckpoint.directory,'receipt.json')).ledgerManifestHash,completed.ledgerManifestHash);
   assert.deepEqual(await inventory(f.root),before);
 });
+
+test('completed batches checkpoint before a later interruption without promoting private evidence',async t=>{
+ const f=await multiBatchFixture(t),failure=Error('second batch stopped');let checkpoints=0,progress,reviews=0;
+ await assert.rejects(runNativeSnapshotPhase({...f.options,reviewFactory:async context=>{const review=await f.options.reviewFactory(context);return async value=>{if(++reviews===2)throw failure;return review(value);};},
+ progressCheckpoint:async value=>{checkpoints++;progress=value;assert.equal(value.sequence,1);assert.equal(value.authority,false);const proof=readLedger({root:path.join(value.directory,'ledger'),expectedManifestHash:value.ledgerManifestHash});assert.equal(proof.entries.length,16);}}),actual=>actual===failure);
+ assert.equal(checkpoints,1);assert.equal((await read(progress.directory,'receipt.json')).authority,false);
+ assert.equal(readLedger({root:path.join(f.root,'verification-ledger'),expectedManifestHash:(await read(f.root,'verification-ledger-current.json')).manifestHash}).entries.length,0);
+});
+test('unchanged stored proofs do not copy progress checkpoints',async t=>{
+ const f=await fixture(t);await runNativeSnapshotPhase(f.options);await runNativeSnapshotPhase({...f.options,progressCheckpoint:async()=>assert.fail('no changed ledger')});
+});

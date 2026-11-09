@@ -62,7 +62,9 @@ test('explicit authority flag reaches the parent capture hook; default command r
 
 test('source commit is pinned before capture and separate locks remain non-cancelling',()=>{
   const pin=step(capture,'Pin offline verification source commit');
-  assert.match(pin,/SNAPSHOT_NATIVE_SOURCE_COMMIT=\$\(git rev-parse --verify HEAD\)/);
+  assert.match(pin,/ACTUAL_SOURCE_COMMIT=\$\(git rev-parse --verify HEAD\)/);
+  assert.match(pin,/EXPECTED_SOURCE_COMMIT.*!=.*ACTUAL_SOURCE_COMMIT/);
+  assert.match(pin,/SNAPSHOT_NATIVE_SOURCE_COMMIT=\$ACTUAL_SOURCE_COMMIT/);
   assert.ok(capture.indexOf(pin)<capture.indexOf(step(capture,'Capture public event assignments')));
   assert.match(capture,/group: public-repository-captures-\$\{\{ github.repository \}\}/);
   assert.match(verify,/group: polytrack-run-verifier/);

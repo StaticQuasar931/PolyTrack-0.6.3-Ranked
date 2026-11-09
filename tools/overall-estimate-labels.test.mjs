@@ -105,7 +105,7 @@ test('score hover and accessible note use the same concise estimate without the 
 
 test('RP estimate uses the requested two-value wording without redundant prose',()=>{
  const html=fixture().render(row(2.402,2,2.572,2));
- assert.equal(title(html),'Local RP-2.402. Verified RP-2.572.');
+ assert.equal(title(html),'Assumes new PBs pass verification. Local RP-2.402. Verified RP-2.572.');
  const note=html.match(/<div class="overall-stats" title="([^"]*)" aria-label="([^"]*)"/);
- assert.equal(note[2],'Local RP-2.402. Verified RP-2.572.');
+ assert.equal(note[2],'Assumes new PBs pass verification. Local RP-2.402. Verified RP-2.572.');
 });

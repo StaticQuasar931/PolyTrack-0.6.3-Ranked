@@ -114,11 +114,38 @@ test('pending snapshot rows remain excluded from Overall and hypothetical PBs ne
   assert.equal(result.racers.some(row=>row.userId==='pending'),false);
   assert.doesNotMatch(JSON.stringify(result),/"(?:rank|runVerified|integrityVerified|badges|profileCosmetics)":/);
 });
-test('an accepted PB already published as pending is still projected into Overall',()=>{
+test('an accepted PB already published at the same time as pending is not promoted',()=>{
   const input=fixture([board(official[0],[['a',10000],['b',12000,false],['c',14000]])]);
   input.acceptedPbs=[receipt(official[0],12000)];
-  const result=assertOracle(input);assert.equal(result.projection.raceCount,1);
-  assert.equal(result.projection.trackResults[0].fieldSize,3);
+  const result=projectLocalOverall(input);assert.equal(result.status,'unchanged');
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').runVerified,false);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').integrityVerified,false);
+});
+test('equal local run is not promoted when its snapshot row is explicitly unverified',()=>{
+  const input=fixture([board(official[0],[['a',10000],['b',12000,false],['c',14000]])]);
+  input.localPbs=[{accountId:'b',generation,trackId:official[0],timeMs:12000,observedAt:200}];
+  const result=projectLocalOverall(input);assert.equal(result.status,'unchanged');
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').runVerified,false);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').integrityVerified,false);
+});
+test('strictly faster local PB estimates past an older pending row without changing snapshot verification',()=>{
+  const input=fixture([board(official[0],[['a',10000],['b',12000,false],['c',14000]])]);
+  input.localPbs=[{accountId:'b',generation,trackId:official[0],timeMs:11000,observedAt:200}];
+  const result=projectLocalOverall(input);assert.equal(result.status,'projected');
+  assert.equal(result.localPbsApplied,true);assert.match(result.assumption,/provisional estimates/);
+  assert.equal(result.projection.trackResults[0].timeMs,11000);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').timeMs,12000);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').runVerified,false);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').integrityVerified,false);
+  assert.doesNotMatch(JSON.stringify(result),/"(?:runVerified|integrityVerified)"\s*:\s*true/);
+});
+test('slower local PB never replaces a faster snapshot row regardless of snapshot flags',()=>{
+  const input=fixture([board(official[0],[['a',10000],['b',11000,false],['c',14000]])]);
+  input.localPbs=[{accountId:'b',generation,trackId:official[0],timeMs:12000,observedAt:200}];
+  const result=projectLocalOverall(input);assert.equal(result.status,'unchanged');
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').timeMs,11000);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').runVerified,false);
+  assert.equal(input.tracks[0].entries.find(row=>row.accountId==='b').integrityVerified,false);
 });
 test('frozen caller objects are not mutated; no fetch or storage is used',()=>{
   const input=fixture();input.acceptedPbs=[receipt(official[0],9000)];const before=JSON.stringify(input);
