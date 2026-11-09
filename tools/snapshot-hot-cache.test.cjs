@@ -49,7 +49,7 @@ test('a backwards clock change cannot prolong the short cache window',()=>{
 
 test('oversized derived boards stay available in memory without consuming track storage',()=>{
  const f=fixture(),next={entries:[],padding:'x'.repeat(262145)};
- assert.equal(f.context.writeJsonStorage('tracks',next),true);assert.equal(f.data.has('tracks'),false);
+ assert.equal(f.context.writeJsonStorage('tracks',next),true);assert.equal(f.data.has('tracks'),true);assert.equal(JSON.parse(f.data.get('tracks')).entries[0],1);
  assert.equal(f.context.readJsonStorage('tracks'),next);
  const small={entries:[6]};assert.equal(f.context.writeJsonStorage('tracks',small),true);assert.equal(f.context.readJsonStorage('tracks'),small);
 });
@@ -57,4 +57,32 @@ test('a quota-failed cache write keeps the newer board rather than an older pers
  const f=fixture(),next={entries:[9]};f.context.localStorage.setItem=()=>{throw Object.assign(Error('full'),{name:'QuotaExceededError'});};
  assert.equal(f.context.writeJsonStorage('tracks',next),true);assert.equal(f.context.readJsonStorage('tracks'),next);
  assert.equal(f.context.writeJsonStorage('settings',{on:true}),false);
+});
+
+test('the IndexedDB facade supplies moved caches without using localStorage capacity',()=>{
+ const f=fixture(),idb=new Map([['tracks',JSON.stringify({entries:[7]})]]);
+ f.context.window={__ptRankedDataStorage:{getItem:key=>idb.get(key)??null,setItem:(key,value)=>idb.set(key,value)}};
+ assert.equal(f.context.readJsonStorage('tracks').entries[0],7);
+ const next={entries:[8],padding:'x'.repeat(300000)};
+ assert.equal(f.context.writeJsonStorage('tracks',next),true);
+ assert.equal(JSON.parse(idb.get('tracks')).entries[0],8);
+ assert.equal(JSON.parse(f.data.get('tracks')).entries[0],1);
+ assert.equal(f.context.readJsonStorage('tracks'),next);
+});
+
+test('pending PB and replay stores are never included in the cache migration integration',()=>{
+ assert.match(source,/storage=typeof window==='object'&&window\.__ptRankedDataStorage\|\|localStorage/);
+ const recording=source.slice(source.indexOf('  function writeRecordingStore('),source.indexOf('  function readRecordingStore('));
+ assert.match(recording,/localStorage\.setItem\(RECORDING_STORE_KEY/);
+});
+test('unchanged racer names reuse the parsed cache and do not rewrite the large name directory',()=>{
+ const f=fixture(),key='polytrack-0.6.2-profile-last-names-v1';f.data.set(key,JSON.stringify({racer:'Known Racer'}));
+ let writes=0;f.context.safeDisplayName=x=>x;f.context.localStorage.setItem=(k,v)=>{writes++;f.data.set(k,v);};
+ for(const name of ['getLastKnownName','setLastKnownName']){
+  const begin=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',begin)+4;
+  vm.runInContext(source.slice(begin,end),f.context);
+ }
+ for(let i=0;i<1000;i++){assert.equal(f.context.getLastKnownName('racer'),'Known Racer');f.context.setLastKnownName('racer','Known Racer');}
+ assert.equal(writes,0);f.context.setLastKnownName('racer','New Name');assert.equal(writes,1);
+ assert.equal(f.context.getLastKnownName('racer'),'New Name');
 });

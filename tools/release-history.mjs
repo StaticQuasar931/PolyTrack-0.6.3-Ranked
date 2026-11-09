@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 351,
+    "number": 352,
     "version": "0.6.3",
-    "revision": 295,
+    "revision": 296,
     "notes": [
-      "Updated saved Summer 1 PBs and recovered completed replay checks.",
-      "Keeps older event replay history when a faster run replaces it."
+      "More room for saves: downloaded rankings now use separate local cache storage.",
+      "Keeps personal saves, replays and older-version save formats unchanged."
     ]
   },
   "entries": [
+    {
+      "number": 351,
+      "title": "Recover completed verifications and reconcile saved snapshot data",
+      "commit": "9adc19588e5767ef2b1d203d6dcb4f254c759ec2",
+      "committedAt": "2026-11-09T04:17:54.000Z",
+      "notes": [
+        "Updated saved Summer 1 PBs and recovered completed replay checks.",
+        "Keeps older event replay history when a faster run replaces it."
+      ]
+    },
     {
       "number": 350,
       "title": "Validate event totals before offline verification",
@@ -194,17 +204,6 @@ const historyData = {
       "committedAt": "2026-11-08T04:13:28.000Z",
       "notes": [
         "Replay checks now catch missing or changed browser dependencies before starting."
-      ]
-    },
-    {
-      "number": 329,
-      "title": "Repair stuck PB uploads and event highlights and pack verification batches",
-      "commit": "830a61697e3e0e3c6237249975279576d0aa7511",
-      "committedAt": "2026-11-08T03:58:17.000Z",
-      "notes": [
-        "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
-        "Event rankings retain saved event highlights and validate their point totals.",
-        "Replay verification shares more browser launches while keeping its existing safety limits."
       ]
     }
   ],

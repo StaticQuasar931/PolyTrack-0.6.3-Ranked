@@ -5,7 +5,7 @@ export const disposableLeaderboardKeys=Object.freeze([
  'polytrack-0.6.2-s1-overall-snapshot-v5'
 ]);
 const probeKey='polytrack-0.6.3-import-space-probe';
-export function reserveTrackSpace(storage,codeLength,{onEvict=()=>{}}={}){
+export function reserveTrackSpace(storage,codeLength,{onEvict=()=>{},preserveCaches=false}={}){
  if(!Number.isSafeInteger(codeLength)||codeLength<1||codeLength>524288)throw Error('Invalid track size.');
  const value=' '.repeat(codeLength+65536);
  const probe=()=>{try{storage.setItem(probeKey,value);storage.removeItem(probeKey);return true;}catch(error){
@@ -15,7 +15,7 @@ export function reserveTrackSpace(storage,codeLength,{onEvict=()=>{}}={}){
  }};
  if(probe())return [];
  const removed=[];
- for(const key of disposableLeaderboardKeys){
+ for(const key of preserveCaches?[]:disposableLeaderboardKeys){
   const raw=storage.getItem(key);if(raw===null)continue;
   storage.removeItem(key);removed.push(key);onEvict(key,raw);
   if(probe())return removed;
