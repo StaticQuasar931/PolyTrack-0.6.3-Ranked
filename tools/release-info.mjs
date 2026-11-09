@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 355,
+  "number": 357,
   "version": "0.6.3",
-  "revision": 299,
+  "revision": 301,
   "notes": [
-    "Replay verification can handle larger snapshots without keeping every replay in memory.",
-    "Existing replay, clone-review and safety checks remain in place."
+    "Large leaderboard updates can finish without restarting.",
+    "Reduces redundant cloud verification work."
   ],
-  "preparedAt": "2026-11-09T06:30:17.082Z",
-  "committedAt": "2026-11-09T06:32:09.000Z"
+  "preparedAt": "2026-11-09T07:52:43.309Z",
+  "committedAt": "2026-11-09T07:58:05.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

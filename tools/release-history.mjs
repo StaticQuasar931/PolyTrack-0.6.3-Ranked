@@ -2,15 +2,35 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 355,
+    "number": 357,
     "version": "0.6.3",
-    "revision": 299,
+    "revision": 301,
     "notes": [
-      "Replay verification can handle larger snapshots without keeping every replay in memory.",
-      "Existing replay, clone-review and safety checks remain in place."
+      "Large leaderboard updates can finish without restarting.",
+      "Reduces redundant cloud verification work."
     ]
   },
   "entries": [
+    {
+      "number": 356,
+      "title": "Restore missing racers and verify 1024 more runs",
+      "commit": "b530a931c5c74f78f17dfaa4a4352406317dd95e",
+      "committedAt": "2026-11-09T07:48:01.000Z",
+      "notes": [
+        "Restored missing racers in the rankings, including the full Summer 1 field.",
+        "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
+      ]
+    },
+    {
+      "number": 355,
+      "title": "Stream replay review within bounded track memory",
+      "commit": "200f9da37696b9be214c9477938deb769ca52aa8",
+      "committedAt": "2026-11-09T06:32:09.000Z",
+      "notes": [
+        "Replay verification can handle larger snapshots without keeping every replay in memory.",
+        "Existing replay, clone-review and safety checks remain in place."
+      ]
+    },
     {
       "number": 354,
       "title": "Preserve racer coverage and streamline offline checks",
@@ -186,26 +206,6 @@ const historyData = {
       "notes": [
         "Saved PB syncing handles confirmations and connection failures more reliably.",
         "Podium cards sit below your car again."
-      ]
-    },
-    {
-      "number": 335,
-      "title": "Keep podium targets compact across screen sizes",
-      "commit": "91e0ad24af5c5de2bd83eb8de86db48d733dce7d",
-      "committedAt": "2026-11-08T07:24:19.000Z",
-      "notes": [
-        "Podium targets keep their compact layout on smaller screens."
-      ]
-    },
-    {
-      "number": 334,
-      "title": "Repair route scoring and streamline event and practice controls",
-      "commit": "5d504aeaceb159c9f3f01ed403e4c65baf20d045",
-      "committedAt": "2026-11-08T07:20:37.000Z",
-      "notes": [
-        "Route plans now use complete saved scoring results.",
-        "Event replays load when you choose Play or Watch.",
-        "Clearer event points, compact practice suggestions and row-wide history details."
       ]
     }
   ],
