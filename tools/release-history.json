@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 352,
+    "number": 353,
     "version": "0.6.3",
-    "revision": 296,
+    "revision": 297,
     "notes": [
-      "More room for saves: downloaded rankings now use separate local cache storage.",
-      "Keeps personal saves, replays and older-version save formats unchanged."
+      "Read update notes while the game loads, instead of waiting for the main menu.",
+      "Update notes stay out of the way during races."
     ]
   },
   "entries": [
+    {
+      "number": 352,
+      "title": "Keep downloaded rankings out of save storage",
+      "commit": "1b98d649dfc7734536e4ea29b317ee2b5b940692",
+      "committedAt": "2026-11-09T05:15:51.000Z",
+      "notes": [
+        "More room for saves: downloaded rankings now use separate local cache storage.",
+        "Keeps personal saves, replays and older-version save formats unchanged."
+      ]
+    },
     {
       "number": 351,
       "title": "Recover completed verifications and reconcile saved snapshot data",
@@ -194,15 +204,6 @@
       "notes": [
         "Completed replay checks are saved earlier, reducing the risk of losing results during packaging.",
         "Snapshot preparation now stages files in fewer safe batches."
-      ]
-    },
-    {
-      "number": 330,
-      "title": "Fail fast on missing or changed offline verifier dependencies",
-      "commit": "4b0754292b02769f25d3d5d4cb5da3a313b8c258",
-      "committedAt": "2026-11-08T04:13:28.000Z",
-      "notes": [
-        "Replay checks now catch missing or changed browser dependencies before starting."
       ]
     }
   ],

@@ -164,3 +164,15 @@ test('installed native and event replay choosers use the same current cache vers
   const native=await readFile(new URL('polytrack_062_patch.js',root),'utf8');
   for(const source of [events,native])assert.ok(source.includes('partial-replay-selection.mjs?v='+manifest.revision));
 });
+
+test('early notice entry advances on every release and retains async module boot', () => {
+  for (const query of ['', '?v=44']) {
+    const html = index + `<script type="module" async src="./tools/early-update-notice.mjs${query}"></script>`;
+    const first = stampClientRelease(patch, html, 45);
+    assert.ok(first.index.includes('<script type="module" async src="./tools/early-update-notice.mjs?v=45"></script>'));
+    assert.deepEqual(stampClientRelease(first.patch, first.index, 45), first);
+    const next = stampClientRelease(first.patch, first.index, 46);
+    assert.ok(next.index.includes('early-update-notice.mjs?v=46'));
+    assert.ok(!next.index.includes('early-update-notice.mjs?v=45'));
+  }
+});
