@@ -1,12 +1,9 @@
 const releaseInfo = {
-  "number": 343,
+  "number": 344,
   "version": "0.6.3",
-  "revision": 287,
-  "notes": [
-    "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
-    "Removed misleading sign-in warnings and retry old blocked PBs once."
-  ],
-  "preparedAt": "2026-11-09T01:24:31.445Z"
+  "revision": 288,
+  "notes":["More precise route comparisons and clearer local PB estimates.","Snapshot updates now verify saved replays offline and keep recovery progress."],
+  "preparedAt": "2026-11-09T01:47:34.509Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
