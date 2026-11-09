@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 341,
+    "number": 342,
     "version": "0.6.3",
-    "revision": 285,
+    "revision": 286,
     "notes": [
-      "Route plans use the full scoring snapshot without loading every leaderboard page.",
-      "Clearer targets, better route sorting, and benefits that match your filters."
+      "Fixed fresh-account Studio defaults and clearer design publishing messages.",
+      "Saved PB notifications retry safely after a connection failure.",
+      "Cloud sign-in recovery preserves your racer and local PBs."
     ]
   },
   "entries": [
+    {
+      "number": 341,
+      "title": "Build route plans from compact scoring snapshots",
+      "commit": "cd4f3ad6f8a28ffd0d46d84acd4cd82251245f4a",
+      "committedAt": "2026-11-09T00:29:35.000Z",
+      "notes": [
+        "Route plans use the full scoring snapshot without loading every leaderboard page.",
+        "Clearer targets, better route sorting, and benefits that match your filters."
+      ]
+    },
     {
       "number": 340,
       "title": "Test fresh-account saves against deployed naming rules",
@@ -197,13 +208,6 @@ const historyData = {
       "title": "Refresh public ranked snapshot with captured PBs and profiles",
       "commit": "4f86fe80e81014534b467b6406f13d5cdcd81539",
       "committedAt": "2026-11-07T18:27:00.000Z",
-      "notes": []
-    },
-    {
-      "number": 317,
-      "title": "Preserve exact pending replay files when retaining published event rows",
-      "commit": "b08c81b0c79505235230f23d3375f107d26b6e6f",
-      "committedAt": "2026-11-07T18:08:09.000Z",
       "notes": []
     }
   ],

@@ -7,7 +7,7 @@ const source=fs.readFileSync(path.join(__dirname,'../polytrack_062_patch.js'),'u
 const start=source.indexOf('  async function flushPendingCosmeticPublishes(');
 const end=source.indexOf('  async function saveRankedProfileCosmetics(',start);
 assert.ok(start>0&&end>start);
-function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount=false,retry=false,ackWritable=true,hideDuringRead=false,hideAfterCommit=false}={}){
+function harness({replaceAt='',failCommit=false,denyCommit=false,foreignOwner=false,switchAccount=false,retry=false,ackWritable=true,hideDuringRead=false,hideAfterCommit=false}={}){
   const draft=id=>({accountId:'account',ownerUid:'uid',draftId:id,cosmetics:{theme:id},nextAttemptAt:0});
   let pending=draft('old'),active='account',replaced=false;
   const cost={reads:0,writes:0,jobs:0,worker:0,ownership:0},committed=[],acks=[];
@@ -35,12 +35,13 @@ function harness({replaceAt='',failCommit=false,foreignOwner=false,switchAccount
       };
       let attemptResult=await attempt();
       if(retry&&committed.length===0&&!replaced){replace();attemptResult=await attempt();}
+      if(denyCommit)throw Object.assign(Error('Missing or insufficient permissions.'),{code:'permission-denied'});
       if(failCommit)throw Error('offline commit failure');
       cost.writes+=attemptResult.staged.length;committed.push(...attemptResult.staged);if(hideAfterCommit)context.document.visibilityState='hidden';
       return attemptResult.result;
     },
     assertCloudOwner:(_account,uid,data)=>{cost.ownership++;if(data.ownerUid!==uid)throw Error('foreign owner');},
-    transitionCosmeticPublishQueue:action=>{if(action.type==='ack'){acks.push(action.draftId);if(!ackWritable)return null;if(pending?.draftId===action.draftId)pending=null;}return {entries:pending?{account:pending}:{}};},
+    transitionCosmeticPublishQueue:action=>{if(action.type==='failure'&&pending?.draftId===action.draftId)pending={...pending,nextAttemptAt:action.nextAttemptAt};if(action.type==='ack'){acks.push(action.draftId);if(!ackWritable)return null;if(pending?.draftId===action.draftId)pending=null;}return {entries:pending?{account:pending}:{}};},
     readCosmeticDirectory:()=>({entries:{}}),writeCosmeticDirectory:()=>{},
     rankedBrokerUrl:()=> 'https://offline.invalid',rankedEdgeAvailable:()=>true,
     rankedFetch:async()=>{cost.worker++;return {status:200,ok:true,json:async()=>({accepted:true})};},
@@ -154,4 +155,10 @@ test('visibility loss after cloud commit suppresses optional job/Worker calls wi
   assert.equal(result.published,true);assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,1);
   assert.equal(h.cost.jobs,0);assert.equal(h.cost.worker,0);assert.equal(h.pending(),null);
   h.context.document.visibilityState='visible';h.resume();await h.run();assert.equal(h.cost.reads,1);
+});
+
+test('permission-denied designs retain the draft and do not repeat automatic document operations for one hour',async()=>{
+ const h=harness({denyCommit:true});const result=await h.run();assert.equal(result.published,false);assert.match(result.message,/confirmed unlock|sign-in/);
+ assert.equal(h.pending().nextAttemptAt,4600000);assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,0);
+ await h.run();h.advance(300000);await h.run();assert.equal(h.cost.reads,1);assert.equal(h.cost.worker,0);assert.equal(h.cost.jobs,0);
 });

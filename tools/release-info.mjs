@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 341,
+  "number": 342,
   "version": "0.6.3",
-  "revision": 285,
+  "revision": 286,
   "notes": [
-    "Route plans use the full scoring snapshot without loading every leaderboard page.",
-    "Clearer targets, better route sorting, and benefits that match your filters."
+    "Fixed fresh-account Studio defaults and clearer design publishing messages.",
+    "Saved PB notifications retry safely after a connection failure.",
+    "Cloud sign-in recovery preserves your racer and local PBs."
   ],
-  "preparedAt": "2026-11-09T00:26:02.901Z"
+  "preparedAt": "2026-11-09T01:02:13.787Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

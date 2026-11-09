@@ -371,7 +371,7 @@ test('malformed bootstrap and legacy index retry once with cache bypass', async 
       let indexes = 0;
       const h = readerFixture(f, { bootstrap, intercept: filename => filename === indexName && ++indexes === 1 ? new Response(badIndex) : null });
       assert.equal((await h.read('overall')).updatedAt, 100);
-      assert.deepEqual(h.requests.filter(request => request.filename === indexName).map(request => request.options.cache), ['default', 'reload']);
+      assert.deepEqual(h.requests.filter(request => request.filename === indexName).map(request => request.options.cache), ['force-cache', 'reload']);
       if (bootstrap) assert.equal(h.count('index.json'), 0);
     }
   }
