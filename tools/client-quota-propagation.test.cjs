@@ -369,3 +369,13 @@ test('PB reconciliation tolerates a loaded Firebase SDK before its app is initia
   const result=await h.run();assert.equal(result.failed,1);assert.equal(h.reads.length,1);
   assert.equal(h.state().permissionDenied.denied.ownerUid,'uid');
 });
+
+test('profile-schema repair retries legacy permission blocks once, then preserves normal denial backoff',async()=>{
+ const h=pbHarness([pb()]);await h.run();const old=h.state();delete old.profileWriteSchemaVersion;h.context.writeJsonStorage('pb-state',{acct:old});h.advance(60000);
+ await h.run();assert.equal(h.reads.length,2);assert.equal(h.state().profileWriteSchemaVersion,1);
+ h.advance(60000);await h.run();assert.equal(h.reads.length,2,'new policy denial stays backed off across further passes');
+});
+test('profile-schema repair preserves confirmed PB receipts',async()=>{
+ const h=pbHarness([pb('valid')]);await h.run();const old=h.state(),receipt=old.confirmed.valid;delete old.profileWriteSchemaVersion;h.context.writeJsonStorage('pb-state',{acct:old});h.advance(60000);await h.run();
+ assert.equal(h.state().confirmed.valid,receipt);assert.equal(h.reads.length,1);
+});

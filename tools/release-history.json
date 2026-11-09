@@ -1,16 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 342,
+    "number": 343,
     "version": "0.6.3",
-    "revision": 286,
+    "revision": 287,
     "notes": [
-      "Fixed fresh-account Studio defaults and clearer design publishing messages.",
-      "Saved PB notifications retry safely after a connection failure.",
-      "Cloud sign-in recovery preserves your racer and local PBs."
+      "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
+      "Removed misleading sign-in warnings and retry old blocked PBs once."
     ]
   },
   "entries": [
+    {
+      "number": 342,
+      "title": "Repair Studio defaults and saved PB notification recovery",
+      "commit": "3bb77e252bd41c6a87692453c878210691d4589d",
+      "committedAt": "2026-11-09T01:07:03.000Z",
+      "notes": [
+        "Fixed fresh-account Studio defaults and clearer design publishing messages.",
+        "Saved PB notifications retry safely after a connection failure.",
+        "Cloud sign-in recovery preserves your racer and local PBs."
+      ]
+    },
     {
       "number": 341,
       "title": "Build route plans from compact scoring snapshots",
@@ -201,13 +211,6 @@
         "Kept earlier event results paired with their saved replays.",
         "Some recent runs are still waiting for verification."
       ]
-    },
-    {
-      "number": 318,
-      "title": "Refresh public ranked snapshot with captured PBs and profiles",
-      "commit": "4f86fe80e81014534b467b6406f13d5cdcd81539",
-      "committedAt": "2026-11-07T18:27:00.000Z",
-      "notes": []
     }
   ],
   "coverage": {
