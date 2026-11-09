@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 355,
+  "number": 356,
   "version": "0.6.3",
-  "revision": 299,
+  "revision": 300,
   "notes": [
-    "Replay verification can handle larger snapshots without keeping every replay in memory.",
-    "Existing replay, clone-review and safety checks remain in place."
+    "Restored missing racers in the rankings, including the full Summer 1 field.",
+    "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
   ],
-  "preparedAt": "2026-11-09T06:30:17.082Z",
-  "committedAt": "2026-11-09T06:32:09.000Z"
+  "preparedAt": "2026-11-09T07:37:53.433Z",
+  "committedAt": "2026-11-09T07:48:01.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

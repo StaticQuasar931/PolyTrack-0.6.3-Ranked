@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 355,
+    "number": 356,
     "version": "0.6.3",
-    "revision": 299,
+    "revision": 300,
     "notes": [
-      "Replay verification can handle larger snapshots without keeping every replay in memory.",
-      "Existing replay, clone-review and safety checks remain in place."
+      "Restored missing racers in the rankings, including the full Summer 1 field.",
+      "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
     ]
   },
   "entries": [
+    {
+      "number": 355,
+      "title": "Stream replay review within bounded track memory",
+      "commit": "200f9da37696b9be214c9477938deb769ca52aa8",
+      "committedAt": "2026-11-09T06:32:09.000Z",
+      "notes": [
+        "Replay verification can handle larger snapshots without keeping every replay in memory.",
+        "Existing replay, clone-review and safety checks remain in place."
+      ]
+    },
     {
       "number": 354,
       "title": "Preserve racer coverage and streamline offline checks",
@@ -195,17 +205,6 @@ const historyData = {
       "committedAt": "2026-11-08T07:24:19.000Z",
       "notes": [
         "Podium targets keep their compact layout on smaller screens."
-      ]
-    },
-    {
-      "number": 334,
-      "title": "Repair route scoring and streamline event and practice controls",
-      "commit": "5d504aeaceb159c9f3f01ed403e4c65baf20d045",
-      "committedAt": "2026-11-08T07:20:37.000Z",
-      "notes": [
-        "Route plans now use complete saved scoring results.",
-        "Event replays load when you choose Play or Watch.",
-        "Clearer event points, compact practice suggestions and row-wide history details."
       ]
     }
   ],
