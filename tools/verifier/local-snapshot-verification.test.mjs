@@ -5,8 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
+import {createRequire} from 'node:module';
+import {buildNativeVerificationPolicy} from '../native-verification-policy.mjs';
+import {VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
 import {verifyLocalSnapshot,verifyLocalNativeBatch,verificationAuthority,readRepositoryVerificationAuthority,withOfflineVerification,writeLocalVerificationReceipt} from './local-snapshot-verification.mjs';
-import {ledgerBinding,ledgerKey,applyLedgerToBoard} from '../native-verification-ledger.mjs';
+import {ledgerBinding,ledgerKey,applyLedgerToBoard,readLedger} from '../native-verification-ledger.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),engine='b'.repeat(64),fingerprint='c'.repeat(64),content='d'.repeat(64);
@@ -303,4 +306,106 @@ test('proof-only review rechecks exact existing physics but never dispatches new
  const second=await verifyLocalSnapshot({...f.options,jobs:[cached,fresh],allJobs:[cached,fresh],expectedManifestHash:first.ledgerManifestHash,allowNativeDispatch:false,verify:()=>assert.fail('proof-only mode must not execute physics')});
  assert.equal(second.counts.nativeDispatched,0);assert.equal(second.counts.reusedPhysics,1);assert.equal(second.counts.verified,1);assert.equal(second.counts.unprocessed,1);
  assert.equal(second.decisions.find(row=>row.binding.accountId===fresh.accountId).reason,'proof_only');
+});
+
+async function policyFixture(t) {
+  const fixtureValue=await fixture(t),{root,options}=fixtureValue;
+  const code='offline synthetic track',codeHash=sha(code);
+  await fs.mkdir(path.join(root,'tools/verifier'),{recursive:true});
+  await fs.mkdir(path.join(root,'tracks'));await fs.mkdir(path.join(root,'extra-tracks'));
+  await fs.writeFile(path.join(root,'tracks/fixture.track'),code);
+  await fs.writeFile(path.join(root,'tools/verifier/engine-manifest.json'),JSON.stringify({engineDigest:VERIFIER_ENGINE_DIGEST,tracks:{'tracks/fixture.track':codeHash}}));
+  await fs.writeFile(path.join(root,'tools/verifier/track-geometry.json'),JSON.stringify({tracks:[{id:track,name:'tracks/fixture.track',hash:codeHash}]}));
+  await fs.writeFile(path.join(root,'extra-tracks/catalog.json'),'[]');
+  const trustedPolicy={...policy,engineDigest:VERIFIER_ENGINE_DIGEST,
+    verifierFingerprint:createRequire(import.meta.url)('./verify.cjs').verifierFingerprint,
+    resourceProfiles:['standard','extended-local'],trackContentHashes:{[track]:codeHash},knownTrackIds:[track]};
+  Object.assign(options,{policy:trustedPolicy,verify:async(_root,jobs)=>jobs.map(value=>native(value,trustedPolicy)),now:()=>123456789});
+  return {...fixtureValue,trustedPolicy};
+}
+
+test('built-in policy compacts duplicate witnesses without skipping sixteen-job checks or checkpoints',async t=>{
+  const {root,options}=await policyFixture(t);
+  const jobs=Array.from({length:160},(_,i)=>job(i+1));
+  const seed=await verifyLocalSnapshot({...options,jobs:jobs.slice(0,128)});
+  const baselineRoot=path.join(root,'baseline-ledger');await fs.cp(options.ledgerRoot,baselineRoot,{recursive:true});
+  let pins=0,reviews=0;const checkpoints=[];
+  const optimized=await verifyLocalSnapshot({...options,policy:undefined,jobs,expectedManifestHash:seed.ledgerManifestHash,
+    validateEngine:async()=>{pins++;},review:async input=>{reviews++;assert.equal(input.allJobs.length,160);return review()(input);},
+    onProgress:async value=>{const ledger=readLedger({root:options.ledgerRoot,expectedManifestHash:value.ledgerManifestHash});checkpoints.push({processed:value.processed,entries:ledger.entries.length});}});
+  const baseline=await verifyLocalSnapshot({...options,policy:undefined,jobs,ledgerRoot:baselineRoot,
+    expectedManifestHash:seed.ledgerManifestHash,buildPolicy:input=>buildNativeVerificationPolicy(input)});
+  assert.deepEqual(optimized.decisions,baseline.decisions);assert.deepEqual(optimized.counts,baseline.counts);
+  assert.equal(optimized.ledgerManifestHash,baseline.ledgerManifestHash);
+  assert.equal(optimized.policySha256,baseline.policySha256);
+  assert.equal(optimized.counts.reusedPhysics,128);assert.equal(optimized.counts.nativeDispatched,32);
+  assert.equal(optimized.operations.policyBuilds,3);assert.equal(pins,3);
+  assert.equal(optimized.operations.policyWitnesses,5);assert.equal(baseline.operations.policyWitnesses,448);
+  assert.equal(reviews,10);assert.equal(optimized.operations.reviewBatches,10);
+  assert.deepEqual(checkpoints.map(value=>value.processed),Array.from({length:10},(_,i)=>(i+1)*16));
+  assert.deepEqual(checkpoints.map(value=>value.entries),[128,128,128,128,128,128,128,128,144,160]);
+  assert.equal(optimized.operations.ledgerCheckpoints,2);
+  assert(optimized.operations.ledgerIndexVisits<128+144+160,'index updates must beat full reindexing at each checkpoint');
+});
+
+test('compacted policy retains conflicting geometry and still rereads changed local assets per native batch',async t=>{
+  for(const fault of ['geometry','asset']) {
+    const {root,options,trustedPolicy}=await policyFixture(t);
+    const jobs=Array.from({length:32},(_,i)=>job(i+1));let calls=0,progress=0;
+    await assert.rejects(verifyLocalSnapshot({...options,policy:undefined,jobs,
+      onProgress:async()=>{progress++;if(fault==='asset')await fs.writeFile(path.join(root,'tracks/fixture.track'),'changed');},
+      verify:async(_root,batch)=>{calls++;return batch.map(value=>{
+        const result=native(value,trustedPolicy);
+        if(fault==='geometry'&&calls===2)result.trackGeometry.parts++;
+        return result;
+      });}}),fault==='geometry'?/conflicting current track witnesses/:/static artifact bytes changed/);
+    assert.equal(calls,2);assert.equal(progress,1,'first completed batch remains checkpointed before second-batch rejection');
+    const manifestBytes=await fs.readFile(path.join(options.ledgerRoot,'manifest.json'));
+    assert.equal(readLedger({root:options.ledgerRoot,expectedManifestHash:sha(manifestBytes)}).entries.length,16);
+  }
+});
+
+test('custom policy builders retain full observed results including unavailable outcomes',async t=>{
+  const {options}=await fixture(t);let calls=0;
+  const result=await verifyLocalSnapshot({...options,policy:undefined,jobs:[job(1),job(2)],batchSize:1,
+    buildPolicy:input=>{calls++;assert.equal(input.results?.length||0,calls-1);
+      if(calls===3){assert.equal(input.entries.length,1);assert.equal(input.results[1].status,'unavailable');}
+      return policy;},
+    verify:async(_root,batch)=>batch.map(value=>value.timeMs===902?{...native(value),status:'unavailable',reason:'fixture'}:native(value))});
+  assert.equal(calls,3);assert.equal(result.counts.verified,1);assert.equal(result.counts.unavailable,1);
+});
+
+
+test('compaction preserves result-first multi-track policy ordering and exact policy hash',async t=>{
+  const {root,options,trustedPolicy}=await policyFixture(t),other='f'.repeat(64);
+  const b=number=>{const value={...job(number),trackId:other};value.resultId=value.accountId+'_'+other;return value;};
+  const expanded={...trustedPolicy,knownTrackIds:[track,other],
+    trackContentHashes:{...trustedPolicy.trackContentHashes,[other]:trustedPolicy.trackContentHashes[track]},
+    trackGeometries:{...trustedPolicy.trackGeometries,[other]:trustedPolicy.trackGeometries[track]}};
+  await fs.writeFile(path.join(root,'tools/verifier/track-geometry.json'),JSON.stringify({tracks:[track,other].map(id=>({id,name:'tracks/fixture.track',hash:trustedPolicy.trackContentHashes[track]}))}));
+  const verify=async(_root,jobs)=>jobs.map(value=>native(value,expanded));
+  const seed=await verifyLocalSnapshot({...options,policy:expanded,verify,jobs:[job(1),b(2)]});
+  const baselineRoot=path.join(root,'baseline-ledger');await fs.cp(options.ledgerRoot,baselineRoot,{recursive:true});
+  const input={...options,policy:undefined,verify,jobs:[job(1),b(2),b(3)],expectedManifestHash:seed.ledgerManifestHash};
+  const optimized=await verifyLocalSnapshot(input);
+  const baseline=await verifyLocalSnapshot({...input,ledgerRoot:baselineRoot,buildPolicy:input=>buildNativeVerificationPolicy(input)});
+  assert.deepEqual(optimized.decisions,baseline.decisions);
+  assert.equal(optimized.policySha256,baseline.policySha256);
+  assert.equal(optimized.ledgerManifestHash,baseline.ledgerManifestHash);
+});
+
+
+test('built-in compact policy and changed-key index preserve sticky holds and exclusions',async t=>{
+  for(const disposition of ['held','excluded']) {
+    const {options}=await policyFixture(t);
+    const seed=await verifyLocalSnapshot({...options,review:review(disposition)});
+    const result=await verifyLocalSnapshot({...options,policy:undefined,jobs:[job(1),job(2)],
+      expectedManifestHash:seed.ledgerManifestHash,review:review()});
+    assert.equal(result.counts.reusedPhysics,1);assert.equal(result.counts[disposition],1);
+    assert.equal(result.counts.verified,1);assert.equal(result.operations.ledgerCheckpoints,1);
+    const again=await verifyLocalSnapshot({...options,policy:undefined,jobs:[job(1),job(2)],
+      expectedManifestHash:result.ledgerManifestHash,review:review(),verify:()=>assert.fail('exact proofs must be reused')});
+    assert.equal(again.counts[disposition],1);assert.equal(again.counts.verified,1);
+    assert.equal(again.ledgerManifestHash,result.ledgerManifestHash);
+  }
 });

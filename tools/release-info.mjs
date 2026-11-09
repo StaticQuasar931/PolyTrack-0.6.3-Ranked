@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 353,
+  "number": 354,
   "version": "0.6.3",
-  "revision": 297,
+  "revision": 298,
   "notes": [
-    "Read update notes while the game loads, instead of waiting for the main menu.",
-    "Update notes stay out of the way during races."
+    "Safer snapshot updates check that known racers have not disappeared.",
+    "Replay checks reuse track evidence more efficiently without skipping verification."
   ],
-  "preparedAt": "2026-11-09T05:48:10.343Z",
-  "committedAt": "2026-11-09T05:50:59.000Z"
+  "preparedAt": "2026-11-09T05:58:23.169Z",
+  "committedAt": "2026-11-09T05:59:46.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

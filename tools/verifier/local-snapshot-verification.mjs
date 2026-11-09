@@ -118,6 +118,29 @@ function restoredPhysics(entry, job, policy) {
     trackGeometry:structuredClone(witness.trackGeometry),binding,boundInputFingerprint:digest(JSON.stringify(binding))};
 }
 
+// Only the built-in builder consumes these geometry/content witness fields.
+// Keep every distinct witness, including conflicts; never compact proof/review data.
+function policyWitnessInventory(entries) {
+  // Results stay separate and first in the builder to preserve policy map ordering.
+  const seen=new Set(), seenResults=new Set(), compactEntries=[], results=[];
+  const identity=(trackId,witness)=>JSON.stringify({trackId,trackContentHash:witness.trackContentHash,
+    engineDigest:witness.engineDigest,verifierFingerprint:witness.verifierFingerprint,
+    geometryPolicy:witness.geometryPolicy,trackGeometry:witness.trackGeometry});
+  for(const entry of entries) for(const witness of entry.witnesses) {
+    const key=identity(entry.binding.trackId,witness);
+    if(!seen.has(key)) {
+      seen.add(key);compactEntries.push({binding:entry.binding,witnesses:[witness]});
+    }
+  }
+  return {entries:compactEntries,results,add(batch) {
+    for(const result of batch) {
+      if(result?.status!=='verified')continue;
+      const key=identity(result.trackId,{...result,verifierFingerprint:result.binding?.verifierFingerprint});
+      if(!seenResults.has(key)){seenResults.add(key);results.push(structuredClone(result));}
+    }
+  }};
+}
+
 async function defaultEngine({root,policy}) {
   const {VERIFIER_ENGINE_DIGEST,VERIFIER_VERSION}=await import('../../workers/ranked/src/verification.js');
   const {sameHashMap}=require('./engine-pin.cjs');
@@ -211,9 +234,18 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       keys.add(key);ids.add(job.resultId);
     }
     let ledger=expectedManifestHash === null ? null : readLedger({root:ledgerRoot,expectedManifestHash});
-    let policy=providedPolicy ?? await buildPolicy({root,jobs:current,entries:ledger?.entries || []});
+    const operations={policyBuilds:0,policyWitnesses:0,engineChecks:0,reviewBatches:0,ledgerCheckpoints:0,ledgerIndexVisits:0};
+    const compactPolicy=!providedPolicy&&buildPolicy===buildNativeVerificationPolicy?policyWitnessInventory(ledger?.entries || []):null;
+    const rebuildPolicy=async results=>{
+      const inputs=compactPolicy || {entries:ledger?.entries || [],results};
+      operations.policyBuilds++;
+      operations.policyWitnesses+=inputs.entries.reduce((count,entry)=>count+entry.witnesses.length,0)+
+        (inputs.results || []).filter(result=>result?.status==='verified').length;
+      return buildPolicy({root,jobs:current,entries:inputs.entries,...(results===undefined?{}:{results:inputs.results})});
+    };
+    let policy=providedPolicy ?? await rebuildPolicy();
     // Pin checks happen before proof use or any native dispatch.
-    await validateEngine({root,policy});
+    operations.engineChecks++;await validateEngine({root,policy});
     ledger ||= writeLedger({root:ledgerRoot,entries:[],expectedManifestHash:null});
     // Use the ledger's policy validator rather than inventing a second one.
     applyLedgerToBoard({board:{entries:[]},ledger,canonicalRows:[],recordings:[],policy});
@@ -222,6 +254,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     const decisions=[],counts={known:current.length,verified:0,held:0,excluded:0,mismatch:0,unavailable:0,
       unprocessed:0,reusedPhysics:0,nativeDispatched:0,nativeBatches:0};
     const entries=new Map(ledger.entries.map(entry=>[entry.key,entry]));
+    operations.ledgerIndexVisits+=ledger.entries.length;
     const observed=[];
     let cursor=0;
     while (cursor < current.length && now()-startedAt < maxRuntimeMs-packReserveMs) {
@@ -255,12 +288,12 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
             replayHash:job.replayHash,status:'unavailable',reason:'native_adapter_unavailable'}));
         }
         for (const [id,result] of exactResults(group.jobs,results)) raw.set(id,result);
-        observed.push(...results);
+        if(compactPolicy)compactPolicy.add(results);else observed.push(...results);
         counts.nativeDispatched+=group.jobs.length;counts.nativeBatches++;
       }
       if (!providedPolicy && native.length) {
-        policy=await buildPolicy({root,jobs:current,results:observed,entries:ledger.entries});
-        await validateEngine({root,policy});
+        policy=await rebuildPolicy(observed);
+        operations.engineChecks++;await validateEngine({root,policy});
       }
       let ready=selected.filter(job=>raw.has(job.resultId));
       // Exhausted dispatch budgets still allow later exact public proof hits.
@@ -275,6 +308,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         continue;
       }
       const nativeResults=ready.map(job=>structuredClone(raw.get(job.resultId)));
+      operations.reviewBatches++;
       let reviewed=await review({jobs:structuredClone(ready),allJobs:field,
         nativeResults:structuredClone(nativeResults),ledger,sourceBinding:structuredClone(sourceBinding),policy});
       if (reviewed?.complete === false) {
@@ -339,7 +373,19 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       }
       if (additions.length) {
         ledger=writeLedger({root:ledgerRoot,entries:additions,expectedManifestHash:ledger.manifestHash});
-        for (const entry of ledger.entries) entries.set(entry.key,entry);
+        operations.ledgerCheckpoints++;
+        // CAS union changes only addition keys. Read their fully merged entries
+        // from the validated sorted ledger, without reindexing every old proof.
+        for(const addition of additions) {
+          let low=0,high=ledger.entries.length-1,found=null;
+          while(low<=high) {
+            const middle=(low+high)>>>1,entry=ledger.entries[middle];
+            operations.ledgerIndexVisits++;
+            if(entry.key===addition.key){found=entry;break;}
+            if(entry.key<addition.key)low=middle+1;else high=middle-1;
+          }
+          demand(found,'checkpoint lost merged proof');entries.set(addition.key,found);
+        }
       }
       // If a partial batch used the last budget slot, no source row disappears.
       for (const job of selected.filter(job=>!raw.has(job.resultId))) {
@@ -358,7 +404,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       engineDigest:policy.engineDigest,verifierFingerprint:policy.verifierFingerprint,
       policySha256:digest(JSON.stringify(policy)),
       previousLedgerManifestHash:originalLedgerHash,ledgerManifestHash:ledger.manifestHash,
-      complete:counts.unprocessed === 0 && counts.unavailable === 0,counts,decisions,
+      complete:counts.unprocessed === 0 && counts.unavailable === 0,counts,operations,decisions,
       eligibleKeys:decisions.filter(value=>value.status === 'verified').map(value=>value.key),ledger};
     demand(decisions.length === current.length,'source decision coverage');
     return result;

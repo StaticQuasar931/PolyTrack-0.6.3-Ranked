@@ -176,6 +176,34 @@ function validBoardLength(value, legacyLimit) {
     p.totalEntries === value.entries.length && p.pageCount === Math.ceil(value.entries.length / 100);
 }
 
+function hasCompleteTrackCoverage(board) {
+  return board?.complete === true && board.sourceComplete !== false && board.totalEntriesExact !== false &&
+    Array.isArray(board.entries) && (board.totalEntries === undefined || board.totalEntries === board.entries.length);
+}
+
+function assertTrackAccountCoverage(prior, incoming, trackId) {
+  if (!hasCompleteTrackCoverage(prior) || !hasCompleteTrackCoverage(incoming)) return;
+  const accounts = board => {
+    const seen = new Set();
+    for (const row of board.entries) {
+      const id = row.accountId ?? row.userId;
+      if (typeof id !== 'string' || !id ||
+          row.accountId != null && row.userId != null && row.accountId !== row.userId || seen.has(id)) {
+        throw new PublicBackupDeferredError('Track account coverage is ambiguous for ' + trackId);
+      }
+      seen.add(id);
+    }
+    return seen;
+  };
+  const previous = accounts(prior), current = accounts(incoming);
+  let missing = 0;
+  for (const id of previous) if (!current.has(id)) missing++;
+  // No trusted removal/identity-migration evidence contract exists in public responses.
+  // Revisions, totals, replay changes and ad hoc removal flags cannot authorize account loss.
+  if (missing) throw new PublicBackupDeferredError('Track account coverage regressed for ' + trackId +
+    ': ' + missing + ' prior accounts missing; reviewed removal or replacement evidence required');
+}
+
 export function publicOverallBackup(value) {
   if (!value || typeof value !== 'object' || !Number.isSafeInteger(value.updatedAt) || !Array.isArray(value.entries) ||
       !validBoardLength(value, 200) || !Array.isArray(value.trackSummaries) || value.trackSummaries.length > 500) {
@@ -869,6 +897,22 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   // This is local staging validation only; network responses retain their paged-source checks.
   const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
   const cachedTracks = {...previous.tracks};
+  async function assertSavedTrackCoverage(board, id) {
+    if (!hasCompleteTrackCoverage(board)) return;
+    const relative = 'tracks/' + id + '.json';
+    if (previous.tracks[id]?.path === relative) {
+      let bytes, prior = null;
+      try { bytes = await fs.readFile(path.join(directory, relative), 'utf8'); }
+      catch (error) {
+        if (error.code !== 'ENOENT') throw new PublicBackupDeferredError('Prior track source unavailable for ' + id);
+      }
+      if (bytes !== undefined) try { prior = cachedProjection(JSON.parse(bytes), id); }
+      catch { /* Invalid cached boards are not complete source baselines. */ }
+      // Compare the saved source even if cache freshness/overlay reuse was invalidated.
+      assertTrackAccountCoverage(prior, board, id);
+    }
+    assertTrackAccountCoverage(sourceRepairs.get(relative), board, id);
+  }
   if(capturedTracks!==null){
     if(!(capturedTracks instanceof Map)||capturedTracks.size>512)throw Error('Invalid captured source boards');
     for(const [id,value] of capturedTracks){
@@ -887,6 +931,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       // A timestamp is not a content binding. Reuse only the exact frozen bytes.
       if(cached&&Number(cached.updatedAt)===Number(board.updatedAt)&&
           cachedSource===publicTrackConfirmationDigest(board,id))continue;
+      await assertSavedTrackCoverage(board, id);
       sourceRepairs.set(relative,board);
       cachedTracks[id]={path:relative,revision:Number(board.revision||board.sourceRevision||0),sourceUpdatedAt:board.updatedAt,updatedAt:board.updatedAt};
     }
@@ -926,7 +971,9 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
-    return {id, value: full ? publicTrackBackup(full, id) : null};
+    const board = full ? publicTrackBackup(full, id) : null;
+    if (board) await assertSavedTrackCoverage(board, id);
+    return {id, value: board};
   });
   const fullSourceChecks=trackConfirmationNotBefore===null?null:(()=>{
     const records={...cachedTracks};

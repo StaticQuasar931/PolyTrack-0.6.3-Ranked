@@ -1246,3 +1246,190 @@ test('explicit catch-up allowance fills more than thirty pending replays and nev
 test('catch-up allowance rejects unsafe or unbounded values before network access',async()=>{
  for(const eventReplayFetchLimit of [-1,513,Infinity,1.5,'64'])await assert.rejects(runPublicSnapshotBackup({eventReplayFetchLimit,fetchImpl:()=>assert.fail('no network')}),/Invalid eventReplayFetchLimit/);
 });
+
+
+async function accountCoverageFixture(t, prior) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'track-account-coverage-'));
+  t.after(() => fs.rm(directory, {recursive: true, force: true}));
+  const relative = 'tracks/' + trackId + '.json';
+  const manifest = {schemaVersion: 1, tracks: {[trackId]: {path: relative, revision: prior.revision,
+    sourceUpdatedAt: prior.updatedAt, updatedAt: prior.updatedAt, checkedAt: 1}}, events: {}};
+  const files = {'manifest.json': JSON.stringify(manifest), [relative]: JSON.stringify(prior),
+    'overall.json': JSON.stringify({saved: true}), 'canonical/sentinel.json': JSON.stringify({untouched: true})};
+  for (const [name, bytes] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(directory, name)), {recursive: true});
+    await fs.writeFile(path.join(directory, name), bytes);
+  }
+  async function inventory() {
+    const result = {};
+    async function visit(relative = '') {
+      for (const entry of await fs.readdir(path.join(directory, relative), {withFileTypes: true})) {
+        const name = relative ? relative + '/' + entry.name : entry.name;
+        if (entry.isDirectory()) await visit(name);
+        else result[name] = await fs.readFile(path.join(directory, name), 'utf8');
+      }
+    }
+    await visit(); return result;
+  }
+  const before = await inventory(), calls = [];
+  async function capture(incoming, {captured = false, paged = false, additional = new Map()} = {}) {
+    const generation = 'c'.repeat(64), pageSize = 100;
+    const pagination = {version: 1, generation, pageSize, pageCount: Math.ceil(incoming.entries.length / pageSize),
+      totalEntries: incoming.entries.length, complete: true};
+    return runPublicSnapshotBackup({directory, now: 1000, log: () => {}, trackIds: [trackId],
+      trackFetchLimit: captured ? 0 : 20,
+      ...(captured ? {capturedTracks: new Map([...additional, [trackId, authenticatedOverallTrackBackup(incoming, trackId)]])} : {}),
+      fetchImpl: async input => {
+        const url = new URL(input); calls.push(url.pathname);
+        if (url.pathname === '/v1/snapshot/overall') return Response.json({...overall,
+          trackSummaries: [{trackId, updatedAt: incoming.updatedAt}]});
+        if (url.pathname === '/v1/events/catalog') return Response.json({periods: [], archives: []});
+        if (url.pathname === '/v1/snapshot/track') return Response.json(paged
+          ? {...incoming, complete: false, pagination, entries: incoming.entries.slice(0, 100)} : incoming);
+        if (url.pathname === '/v1/snapshot/track/page') {
+          const page = Number(url.searchParams.get('page'));
+          assert.equal(url.searchParams.get('generation'), generation);
+          return Response.json({...pagination, page, sourceRevision: incoming.sourceRevision, sourceComplete: true,
+            entries: incoming.entries.slice(page * pageSize, (page + 1) * pageSize)});
+        }
+        assert.equal(url.pathname, '/v1/events/permanent-rolling-hills/snapshot');
+        return new Response('', {status: 404});
+      }});
+  }
+  return {capture, calls, inventory, before, directory, relative};
+}
+
+function coverageBoard(count = 3) {
+  return authenticatedOverallTrackBackup(materializedTrack(count), trackId);
+}
+
+function nextCoverageBoard(prior, entries) {
+  const board = {...prior, revision: prior.revision + 1, sourceRevision: prior.sourceRevision + 1,
+    updatedAt: prior.updatedAt + 1, entries, totalEntries: entries.length};
+  delete board.pagination; delete board.paginatedSource;
+  return board;
+}
+
+test('Summer 1 missing-account regression defers complete paginated and captured inputs without any writes', async t => {
+  for (const captured of [false, true]) {
+    const prior = coverageBoard(2312);
+    prior.entries = prior.entries.map((row, i) => ({...row, runVerified: i < 1361}));
+    const missing = new Set([...prior.entries.slice(0, 251), ...prior.entries.slice(1361, 1464)].map(row => row.accountId));
+    const incoming = nextCoverageBoard(prior, prior.entries.filter(row => !missing.has(row.accountId)));
+    // Materialized authenticated inputs must carry a valid paging declaration above 500 rows.
+    incoming.paginatedSource = true;
+    incoming.pagination = {...prior.pagination, totalEntries: 1958, pageCount: 20};
+    assert.equal(incoming.entries.length, 1958);
+    assert.equal(incoming.entries.filter(row => row.runVerified).length, 1110);
+    const f = await accountCoverageFixture(t, prior);
+    const result = await f.capture(incoming, {captured, paged: !captured});
+    assert.equal(result.deferred, true);
+    assert.equal(result.previousBackupsPreserved, true);
+    assert.match(result.reason, /354 prior accounts missing/);
+    assert.deepEqual(await f.inventory(), f.before, 'no board, manifest, Overall, canonical or derived files change');
+    assert.equal(f.calls.includes('/v1/events/permanent-rolling-hills/snapshot'), false, 'stop before later capture work');
+  }
+});
+
+test('missing-account guard detects empty, equal-size and growing replacements regardless of status or claimed removal', async t => {
+  for (const mode of ['empty', 'equal-size', 'growing', 'pending-only', 'claimed-removal']) {
+    const prior = coverageBoard();
+    prior.entries[0].runVerified = false;
+    const replacement = {...prior.entries[0], accountId: 'f'.repeat(64)};
+    let entries = prior.entries.slice(1);
+    if (mode === 'empty') entries = [];
+    if (mode === 'equal-size' || mode === 'claimed-removal') entries = [...entries, replacement];
+    if (mode === 'growing') entries = [...entries, replacement, {...replacement, accountId: 'e'.repeat(64)}];
+    const incoming = nextCoverageBoard(prior, entries);
+    if (mode === 'claimed-removal') incoming.removedAccounts = [prior.entries[0].accountId];
+    const f = await accountCoverageFixture(t, prior), result = await f.capture(incoming);
+    assert.equal(result.deferred, true, mode);
+    assert.match(result.reason, /prior accounts missing/);
+    assert.deepEqual(await f.inventory(), f.before, mode);
+  }
+});
+
+test('complete-source account swaps defer captured inputs even after other frozen repairs are staged', async t => {
+  const prior = coverageBoard(), otherId = 'd'.repeat(64);
+  const incoming = nextCoverageBoard(prior, [...prior.entries.slice(1), {...prior.entries[0], accountId: 'f'.repeat(64)}]);
+  const other = {...coverageBoard(1), trackId: otherId};
+  const f = await accountCoverageFixture(t, prior);
+  const result = await f.capture(incoming, {captured: true, additional: new Map([[otherId, other]])});
+  assert.equal(result.deferred, true);
+  assert.deepEqual(await f.inventory(), f.before, 'earlier source repairs must not escape the rejected batch');
+});
+
+test('account coverage allows reordered rows, growth, legacy userId aliases and same-account PB replacements', async t => {
+  for (const captured of [false, true]) {
+    const prior = coverageBoard();
+    prior.entries = prior.entries.map(({accountId, ...row}) => ({...row, userId: accountId, uploadId: 10}));
+    const entries = prior.entries.map(({userId, ...row}) => ({...row, accountId: userId,
+      uploadId: 20, replayHash: 'e'.repeat(64), frames: 900, timeMs: 900, runVerified: false})).reverse();
+    entries.push({...entries[0], accountId: 'f'.repeat(64)});
+    const incoming = nextCoverageBoard(prior, entries), f = await accountCoverageFixture(t, prior);
+    const result = await f.capture(incoming, {captured});
+    assert.notEqual(result.deferred, true);
+    const saved = JSON.parse(await fs.readFile(path.join(f.directory, f.relative), 'utf8'));
+    assert.deepEqual(saved.entries, incoming.entries, 'coverage does not restore statuses or replace run bindings');
+  }
+});
+
+test('partial and explicitly inexact boards retain existing capture behavior instead of becoming coverage baselines', async t => {
+  for (const mode of ['prior-partial', 'prior-source-incomplete', 'prior-inexact', 'incoming-partial', 'incoming-source-incomplete']) {
+    const prior = coverageBoard();
+    if (mode === 'prior-partial') prior.complete = false;
+    if (mode === 'prior-source-incomplete') prior.sourceComplete = false;
+    if (mode === 'prior-inexact') prior.totalEntriesExact = false;
+    const incoming = nextCoverageBoard(coverageBoard(), [coverageBoard().entries[1]]);
+    if (mode === 'incoming-partial') { incoming.complete = false; incoming.totalEntries = 3; }
+    if (mode === 'incoming-source-incomplete') { incoming.complete = false; incoming.sourceComplete = false; }
+    const f = await accountCoverageFixture(t, prior), result = await f.capture(incoming);
+    assert.notEqual(result.deferred, true, mode);
+    const saved = JSON.parse(await fs.readFile(path.join(f.directory, f.relative), 'utf8'));
+    assert.equal(saved.entries.length, 1, mode);
+    assert.equal(saved.complete, incoming.complete, 'partial data is not promoted to complete');
+  }
+});
+
+test('ambiguous duplicate or conflicting account identities fail closed on complete boards', async t => {
+  for (const mode of ['duplicate', 'conflicting-alias', 'missing-identity']) {
+    const prior = coverageBoard(), incoming = nextCoverageBoard(prior, structuredClone(prior.entries));
+    if (mode === 'duplicate') incoming.entries[1] = {...incoming.entries[0]};
+    if (mode === 'conflicting-alias') incoming.entries[0].userId = 'f'.repeat(64);
+    if (mode === 'missing-identity') delete incoming.entries[0].accountId;
+    const f = await accountCoverageFixture(t, prior), result = await f.capture(incoming);
+    assert.equal(result.deferred, true, mode);
+    assert.match(result.reason, /coverage is ambiguous/);
+    assert.deepEqual(await f.inventory(), f.before, mode);
+  }
+});
+
+
+test('legacy complete coverage and invalidated native-overlay caches still reject missing accounts', async t => {
+  for (const mode of ['legacy', 'native-overlay']) {
+    const prior = coverageBoard();
+    if (mode === 'legacy') { delete prior.totalEntries; delete prior.sourceComplete; delete prior.totalEntriesExact; }
+    else prior.entries[0].nativeLedgerKey = 'f'.repeat(64);
+    const incoming = nextCoverageBoard(coverageBoard(), coverageBoard().entries.slice(1));
+    const f = await accountCoverageFixture(t, prior), result = await f.capture(incoming);
+    assert.equal(result.deferred, true, mode);
+    assert.match(result.reason, /1 prior accounts missing/);
+    assert.deepEqual(await f.inventory(), f.before, mode);
+  }
+});
+
+test('an unreadable prior source defers rather than bypassing the coverage guard', async t => {
+  const prior = coverageBoard(), incoming = nextCoverageBoard(prior, prior.entries.slice(1));
+  const f = await accountCoverageFixture(t, prior), originalRead = fs.readFile;
+  let result;
+  try {
+    fs.readFile = async (name, ...args) => {
+      if (String(name) === path.join(f.directory, f.relative)) throw Object.assign(Error('synthetic denied read'), {code: 'EACCES'});
+      return originalRead(name, ...args);
+    };
+    result = await f.capture(incoming);
+  } finally { fs.readFile = originalRead; }
+  assert.equal(result.deferred, true);
+  assert.match(result.reason, /Prior track source unavailable/);
+  assert.deepEqual(await f.inventory(), f.before);
+});

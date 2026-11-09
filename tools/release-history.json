@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 353,
+    "number": 354,
     "version": "0.6.3",
-    "revision": 297,
+    "revision": 298,
     "notes": [
-      "Read update notes while the game loads, instead of waiting for the main menu.",
-      "Update notes stay out of the way during races."
+      "Safer snapshot updates check that known racers have not disappeared.",
+      "Replay checks reuse track evidence more efficiently without skipping verification."
     ]
   },
   "entries": [
+    {
+      "number": 353,
+      "title": "Show update notes while the game loads",
+      "commit": "59321d1a4b7631ce2483fefdad5739844d30e64e",
+      "committedAt": "2026-11-09T05:50:59.000Z",
+      "notes": [
+        "Read update notes while the game loads, instead of waiting for the main menu.",
+        "Update notes stay out of the way during races."
+      ]
+    },
     {
       "number": 352,
       "title": "Keep downloaded rankings out of save storage",
@@ -194,16 +204,6 @@
       "committedAt": "2026-11-08T06:04:38.000Z",
       "notes": [
         "Large snapshot updates now skip unnecessary cleanup work."
-      ]
-    },
-    {
-      "number": 332,
-      "title": "Preserve completed replay checks and streamline snapshot preparation",
-      "commit": "13da4f48cb48ecf68527eb1b92f36c07513b627d",
-      "committedAt": "2026-11-08T05:19:41.000Z",
-      "notes": [
-        "Completed replay checks are saved earlier, reducing the risk of losing results during packaging.",
-        "Snapshot preparation now stages files in fewer safe batches."
       ]
     }
   ],
