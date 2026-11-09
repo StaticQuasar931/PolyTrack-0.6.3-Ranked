@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 342,
+  "number": 343,
   "version": "0.6.3",
-  "revision": 286,
+  "revision": 287,
   "notes": [
-    "Fixed fresh-account Studio defaults and clearer design publishing messages.",
-    "Saved PB notifications retry safely after a connection failure.",
-    "Cloud sign-in recovery preserves your racer and local PBs."
+    "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
+    "Removed misleading sign-in warnings and retry old blocked PBs once."
   ],
-  "preparedAt": "2026-11-09T01:02:13.787Z"
+  "preparedAt": "2026-11-09T01:24:31.445Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
