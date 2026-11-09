@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 354,
+  "number": 355,
   "version": "0.6.3",
-  "revision": 298,
+  "revision": 299,
   "notes": [
-    "Safer snapshot updates check that known racers have not disappeared.",
-    "Replay checks reuse track evidence more efficiently without skipping verification."
+    "Replay verification can handle larger snapshots without keeping every replay in memory.",
+    "Existing replay, clone-review and safety checks remain in place."
   ],
-  "preparedAt": "2026-11-09T05:58:23.169Z",
-  "committedAt": "2026-11-09T05:59:46.000Z"
+  "preparedAt": "2026-11-09T06:30:17.082Z",
+  "committedAt": "2026-11-09T06:32:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
