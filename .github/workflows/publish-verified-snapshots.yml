@@ -99,7 +99,7 @@ jobs:
       # Resolve the current default branch only after acquiring the shared capture lock.
       # Never check out verifier artifacts or a workflow_run head ref.
       - name: Test conflict-safe publishing
-        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/snapshot-recovery-workflow.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs
+        run: node --test tools/push-public-capture.test.mjs tools/post-verification-snapshot.test.mjs tools/snapshot-recovery-workflow.test.mjs tools/workflow-release-contract.test.mjs tools/workflow-capture-coordination.test.mjs tools/reconcile-superseded-pending-playbacks.test.mjs
       - name: Check Extra catalog, registry, and pins
         # Local consistency check; fail before fetching or writing public captures.
         run: node tools/extra-verification-check.mjs

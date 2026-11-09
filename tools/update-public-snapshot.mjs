@@ -603,7 +603,19 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   }
 
   const overall = await readJsonIfPresent(path.join(stagingDirectory, 'overall.json'));
-  const manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
+  let manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
+  if (manifest?.pendingPlaybackCoverage?.missing > 0 &&
+      manifest.pendingPlaybackCoverage.scope === 'selected-saved-event-boards') {
+    const previous = await readJsonIfPresent(path.join(absoluteRoot, 'snapshot-current.json'));
+    if (previous && /^public-snapshots[1-9][0-9]*$/.test(previous.currentdir || '')) {
+      const indexBytes = await fs.readFile(path.join(absoluteRoot, previous.currentdir, 'index.json'));
+      const {reconcileSupersededPendingPlaybacks} = await import('./reconcile-superseded-pending-playbacks.mjs');
+      const recovered = await reconcileSupersededPendingPlaybacks({root:absoluteRoot, directory:stagingDirectory,
+        expectedIndexSha256:sha256(indexBytes)});
+      log(JSON.stringify({supersededPendingReplayRecovery:recovered}));
+      manifest = await readJsonIfPresent(path.join(stagingDirectory, 'manifest.json'));
+    }
+  }
   const previousCoverage = await readJsonIfPresent(path.join(stagingDirectory, 'coverage.json'));
   const savedExportSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
   let coverage = makeCoverage(overall, manifest, exportResult, previousCoverage, savedExportSummary);

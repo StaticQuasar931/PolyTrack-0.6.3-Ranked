@@ -1,9 +1,9 @@
 const releaseInfo = {
-  "number": 350,
+  "number": 351,
   "version": "0.6.3",
-  "revision": 294,
-  "notes": ["Snapshot updates keep the last published event totals when the cloud copy is older.","Checks event data before replay verification to avoid wasted work."],
-  "preparedAt": "2026-11-09T03:22:58.116Z"
+  "revision": 295,
+  "notes": ["Updated saved Summer 1 PBs and recovered completed replay checks.","Keeps older event replay history when a faster run replaces it."],
+  "preparedAt": "2026-11-09T03:53:53.007Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -194,10 +194,12 @@ test('a reconciled standalone board passes the existing publication byte audit',
 
 test('indexed work over the existing budget rejects before any writes', async t => {
   const f = await fixture(t), before = await tree(f.root);
-  const bytes = Buffer.alloc(30);
+  // More than 4096 transitions uses the 30M-work budget, not the compact-input allowance.
+  const count = 1000, bytes = Buffer.alloc(15 + count * 5 * 3);
   for (let channel = 0; channel < 5; channel++) {
-    bytes.writeUIntLE(1, channel * 6, 3);
-    bytes.writeUIntLE(3999999, channel * 6 + 3, 3);
+    const offset = channel * (3 + count * 3);
+    bytes.writeUIntLE(count, offset, 3);
+    for (let i = 0; i < count; i++) bytes.writeUIntLE(i ? 1 : 3999000, offset + 3 + i * 3, 3);
   }
   const replay = deflateSync(bytes).toString('base64url');
   await assert.rejects(f.run([document({...source, frames: 4000000, raceTimeFrames: 4000000,

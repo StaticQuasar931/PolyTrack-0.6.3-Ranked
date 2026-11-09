@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 350,
+    "number": 351,
     "version": "0.6.3",
-    "revision": 294,
+    "revision": 295,
     "notes": [
-      "Snapshot updates keep the last published event totals when the cloud copy is older.",
-      "Checks event data before replay verification to avoid wasted work."
+      "Updated saved Summer 1 PBs and recovered completed replay checks.",
+      "Keeps older event replay history when a faster run replaces it."
     ]
   },
   "entries": [
+    {
+      "number": 350,
+      "title": "Validate event totals before offline verification",
+      "commit": "ff08d4038764f82f279470cf4332c501d854a7c0",
+      "committedAt": "2026-11-09T03:24:09.000Z",
+      "notes": [
+        "Snapshot updates keep the last published event totals when the cloud copy is older.",
+        "Checks event data before replay verification to avoid wasted work."
+      ]
+    },
     {
       "number": 349,
       "title": "Review saved verification proofs before new physics jobs",
@@ -195,18 +205,6 @@ const historyData = {
         "Fixed PB uploads getting stuck after replay recovery or a large local track history.",
         "Event rankings retain saved event highlights and validate their point totals.",
         "Replay verification shares more browser launches while keeping its existing safety limits."
-      ]
-    },
-    {
-      "number": 328,
-      "title": "Stabilize leaderboard loading and clarify event points and missed updates",
-      "commit": "64a5298293efc2f7255cfaa458a0ffb62c0fa796",
-      "committedAt": "2026-11-08T03:45:29.000Z",
-      "notes": [
-        "Leaderboards keep names and verification labels steady while loading.",
-        "Track loading spends less time waiting on the browser cache.",
-        "Event RP clearly distinguishes your event result from your normal PB.",
-        "Earlier updates highlight releases you have not seen, with shorter titles."
       ]
     }
   ],

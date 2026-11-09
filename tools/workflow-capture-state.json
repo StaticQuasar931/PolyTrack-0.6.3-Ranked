@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
-  "startedAt": 1794039549413,
-  "completedAt": 1794113668757,
-  "directory": "public-snapshots78",
-  "pointerSha256": "9e666ec4370d1720b45beee16707024e40a1a665257ea08db9c06c5435d4e91b",
-  "indexSha256": "b565f868ce85a82da91319b6489be43b10eafeb24545e2d51d7c3764c927c30f",
-  "catalogSha256": "f392493718b4ea71519543283bc2c4c071bc12f25c607af75a4d1f41292a306b",
+  "startedAt": 1794189941968,
+  "completedAt": 1794197592087,
+  "directory": "public-snapshots79",
+  "pointerSha256": "dad65d7e95249e23a6c8cb94c31dcaccd394e6f9cb89f5bc3df2e93b65240dba",
+  "indexSha256": "16a7f43295832d7d8abeb96a41d963c4b9c11059352ef708144949d892b37217",
+  "catalogSha256": "26d5e51b301d47b3cc17acc55af9ff08339963cb9ac1fe9fea78cc1341b2338b",
   "reusable": true,
   "coherenceReason": "source_bound"
 }
