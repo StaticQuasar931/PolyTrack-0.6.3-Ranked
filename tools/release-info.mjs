@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 352,
+  "number": 353,
   "version": "0.6.3",
-  "revision": 296,
+  "revision": 297,
   "notes": [
-    "More room for saves: downloaded rankings now use separate local cache storage.",
-    "Keeps personal saves, replays and older-version save formats unchanged."
+    "Read update notes while the game loads, instead of waiting for the main menu.",
+    "Update notes stay out of the way during races."
   ],
-  "preparedAt": "2026-11-09T05:08:50.016Z",
-  "committedAt": "2026-11-09T05:15:51.000Z"
+  "preparedAt": "2026-11-09T05:48:10.343Z",
+  "committedAt": "2026-11-09T05:50:59.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
