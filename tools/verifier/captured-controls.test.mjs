@@ -283,3 +283,168 @@ test('real adapter/orchestrator integration defers one affected track and comple
  assert.equal(result.ledger.entries[0].binding.accountId,healthy.accountId);
  assert.equal(result.decisions.find(r=>r.binding.accountId===affected.accountId).reason,'captured_controls_coverage_incomplete');
 });
+
+// Differential reference: pre-streaming build, with the same current comparison
+// fingerprint and review code. Used only on bounded fixtures fitting the old cap.
+const legacyBuild=`
+ async function build(){
+  summary.indexBuilds++;const start=clock(),checkWork=()=>{const at=clock();if(!Number.isFinite(at)||at<start||at-start+preparationMs>budget.maxRuntimeMs)fail('captured_controls_runtime_limit');};
+  const tracks=new Map();
+  try{
+   for(let i=0;i<rows.length;i++){
+    checkWork();const row=rows[i];
+    if(!tracks.has(row.meta.trackId))tracks.set(row.meta.trackId,[]);tracks.get(row.meta.trackId).push(row);
+    try{try{row.controls=decodeReplay(row.replay,row.meta.timeMs);}catch{
+      try{row.controls=decodeReplay(row.replay,row.meta.timeMs,'extended-local');}catch{
+       row.controls=decodeAnalysisReplay(row.replay,row.meta.timeMs);row.analysisOnly=true;summary.analysisOnlyRecords++;
+      }
+     }
+     row.signature=hash(JSON.stringify(row.controls.lists));
+     summary.events+=Object.values(row.controls.lists).reduce((n,list)=>n+list.length,0);
+     if(summary.events>budget.maxEvents)fail('captured_controls_event_limit');
+     row.advisory=inputRateEvidence(row.controls,row.meta.timeMs);summary.decodableRecords++;
+    }catch(error){if(error.message==='captured_controls_event_limit')throw error;row.invalid=String(error.reason||error.message).slice(0,128);summary.invalid.push({id:row.id,trackId:row.meta.trackId,reason:row.invalid});}
+    if((i&63)===0)await yieldNow();
+   }
+   for(const [trackId,all]of [...tracks].sort(([a],[b])=>a.localeCompare(b))){
+    checkWork();const current=all.filter(r=>!r.invalid),n=current.length,pairs=new Set(),signatures=new Map(),postings=new Map();
+    const track={trackId,records:all.length,decodableRecords:n,candidatePairs:0,comparedPairs:0,complete:false};summary.tracks.push(track);
+    const add=(a,b)=>{
+     if(++summary.pairWork>budget.maxPairWork)fail('captured_controls_pair_work_limit');
+     if((summary.pairWork&1023)===0)checkWork();
+     if(current[a].meta.accountId===current[b].meta.accountId)return;
+     const key=Math.min(a,b)*n+Math.max(a,b);if(pairs.has(key))return;
+     if(summary.candidatePairs>=budget.maxPairs)fail('captured_controls_pair_limit');
+     pairs.add(key);summary.candidatePairs++;
+    };
+    for(let i=0;i<n;i++){
+     checkWork();const row=current[i],key=row.meta.timeMs+':'+row.signature;
+     if(!signatures.has(key))signatures.set(key,[]);signatures.get(key).push(i);
+     for(const token of windows(row.controls)){
+      if(++summary.postings>budget.maxPostings)fail('captured_controls_posting_limit');
+      if(!postings.has(token))postings.set(token,[]);postings.get(token).push(i);
+     }
+    }
+    // Exact-input ownership follows the earliest reliable submission per account,
+    // not a later same-account event copy or result-ID ordering.
+    for(const group of signatures.values()){
+     const earliest=new Map();
+     for(const i of group){const row=current[i],at=row.meta.ingestedAt;
+      if(at!==null)earliest.set(row.meta.accountId,Math.min(earliest.get(row.meta.accountId)??Infinity,at));}
+     for(const i of group)current[i].exactOrder=earliest.get(current[i].meta.accountId)??null;
+    }
+    const groups=new Set();
+    for(const group of [...signatures.values(),...postings.values()]){
+     if(group.length<2)continue;const key=group.join(',');if(groups.has(key))continue;groups.add(key);
+     for(let a=0;a<group.length;a++)for(let b=a+1;b<group.length;b++)add(group[a],group[b]);
+    }
+    const order=current.map((_,i)=>i).sort((a,b)=>current[a].meta.timeMs-current[b].meta.timeMs);
+    for(let a=0;a<n;a++)for(let b=a+1;b<n&&current[order[b]].meta.timeMs-current[order[a]].meta.timeMs<=10;b++)add(order[a],order[b]);
+    track.candidatePairs=pairs.size;
+    for(const code of [...pairs].sort((a,b)=>a-b)){
+     checkWork();const a=current[Math.floor(code/n)],b=current[code%n],e=pairEvidence(a,b);
+     summary.comparedPairs++;track.comparedPairs++;
+     if(e){
+      if(summary.findings>=budget.maxFindings)fail('captured_controls_finding_limit');
+      summary.findings++;
+      a.findings.push({referenceId:b.id,referenceKey:b.key,evidence:e,recommendation:recommendation(a,b,e)});
+      const reverse={...e,segment:e.segment?{...e.segment,startTickA:e.segment.startTickB,endTickA:e.segment.endTickB,
+       startTickB:e.segment.startTickA,endTickB:e.segment.endTickA,offsetTicks:-e.segment.offsetTicks}:null};
+      b.findings.push({referenceId:a.id,referenceKey:a.key,evidence:reverse,recommendation:recommendation(b,a,reverse)});
+     }
+     if((summary.comparedPairs&127)===0)await yieldNow();
+    }
+    track.complete=all.length===n;for(const row of all)row.trackComplete=track.complete;
+    await yieldNow();
+   }
+   summary.complete=summary.invalid.length===0;
+  }catch(error){summary.stop=String(error.message).slice(0,128);}
+  // Drop decoded controls and replay bytes after the single complete candidate pass.
+  for(const row of rows){delete row.controls;delete row.replay;}
+ }
+`;
+async function legacyFactory(allJobs,extra={}) {
+ const moduleUrl=new URL('./captured-controls.mjs',import.meta.url);
+ let source=await fs.readFile(moduleUrl,'utf8');
+ const start=source.indexOf(' async function build(){'),end=source.indexOf(' const ensure=',start);
+ source=source.slice(0,start)+legacyBuild+source.slice(end);
+ source=source.replace(/import\.meta\.url/g,JSON.stringify(moduleUrl.href));
+ source=source.replace(/from '([^']+)'/g,(match,name)=>name.startsWith('.')?'from '+JSON.stringify(new URL(name,moduleUrl).href):match);
+ const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ return module.createCapturedControlReview({allJobs,sourceBinding,policy,...extra});
+}
+
+
+function onTrack(value,trackId){return {...value,trackId,resultId:value.lane==='event'?value.resultId:value.accountId+'_'+trackId};}
+function denseJobs(count,{sameTrack=false}={}){
+ const replay=encode({up:Array.from({length:20000},(_,i)=>i),right:Array.from({length:20000},(_,i)=>i),down:[],left:[],reset:[]});
+ return Array.from({length:count},(_,i)=>onTrack(job(i+1,{replay,replayHash:sha(replay)}),sameTrack?track:(i+1).toString(16).padStart(64,'0')));
+}
+
+test('track streaming exceeds two million aggregate events while retaining only one track controls inventory',async t=>{
+ const jobs=denseJobs(51),review=factory(jobs),summary=await review.inspect();
+ assert.equal(CAPTURED_CONTROL_LIMITS.maxEvents,2000000);
+ assert.equal(summary.stop,null);assert.equal(summary.complete,true);
+ assert.equal(summary.events,2040000);assert.equal(summary.peakEvents,40000);assert.equal(summary.retainedEvents,0);
+ assert.equal(summary.decodableRecords,51);assert.equal(summary.analysisOnlyRecords,51);
+ assert.equal(summary.tracks.length,51);assert(summary.tracks.every(value=>value.complete));
+ const result=await invoke(review,[jobs[0],jobs.at(-1)],await emptyLedger(t));
+ assert.equal(result.complete,true);assert.equal(result.reviews.length,2);
+ assert(result.reviews.every(value=>value.disposition==='approved'));
+ const artifact=await review.artifact();assert.deepEqual(artifact.rows.map(value=>value.binding.trackId),jobs.map(value=>value.trackId));
+ assert.equal(artifact.coverage.indexBuilds,1);assert.equal(artifact.coverage.retainedEvents,0);
+ assert(!JSON.stringify(artifact).includes(jobs[0].replay));
+});
+
+test('one track exceeding the unchanged two-million-event cap fails closed and releases controls',async t=>{
+ const jobs=denseJobs(51,{sameTrack:true}),review=factory(jobs),result=await invoke(review,[jobs[0]],await emptyLedger(t));
+ assert.equal(result.complete,false);assert.equal(result.reason,'captured_controls_event_limit');assert.deepEqual(result.reviews,[]);
+ assert.equal(result.results[0].status,'unavailable');const summary=await review.inspect();
+ assert.equal(summary.retainedEvents,0);assert.equal(summary.stop,'captured_controls_event_limit');
+ assert((await review.artifact()).rows.every(value=>!value.complete));
+});
+
+test('streamed findings, chronology, advisories, membership and attestation hashes exactly match pre-streaming review',async t=>{
+ const other='7'.repeat(64),badTrack1='9'.repeat(64),badTrack2='8'.repeat(64);
+ const a=job(1,{ingestedAt:100,ingestedAtSource:'firestore-server-timestamp'}),copy={...a,uploadId:999,ingestedAt:1000},
+  peer=job(2,{ingestedAt:500,ingestedAtSource:'firestore-server-timestamp'}),b=onTrack(job(3),other),c=onTrack(job(4,{timeMs:20001}),other);
+ const replay=encode({up:Array.from({length:24},(_,i)=>i*20),right:[],down:[],left:[],reset:[]}),rapid=job(5,{replay,replayHash:sha(replay)});
+ const badReplay=encode({up:[0,20001],right:[],down:[],left:[],reset:[]});
+ const bad1=onTrack(job(6,{replay:badReplay,replayHash:sha(badReplay)}),badTrack1),bad2=onTrack(job(7,{replay:badReplay,replayHash:sha(badReplay)}),badTrack2);
+ const jobs=[b,a,rapid,copy,bad1,peer,bad2,c],ledger=await emptyLedger(t),extra={previouslyAccepted:[accepted(a)]};
+ const streaming=factory(jobs,{...extra,limits:{maxEvents:400}}),baseline=await legacyFactory(jobs,{...extra,limits:{maxEvents:2000000}});
+ const targets=[copy,peer,b,c,rapid,bad1,bad2],input={allJobs:jobs};
+ const actual=await invoke(streaming,targets,ledger,input),expected=await invoke(baseline,targets,ledger,input);
+ assert.deepEqual(actual.reviews,expected.reviews);assert.deepEqual(actual.results,expected.results);
+ assert.deepEqual(actual.evidence,expected.evidence);assert.deepEqual(actual.incomplete,expected.incomplete);
+ const strip=({peakEvents,retainedEvents,...summary})=>summary;
+ assert.deepEqual(strip(actual.coverage),strip(expected.coverage));
+ const artifact=await streaming.artifact(),original=await baseline.artifact();
+ assert.deepEqual(artifact.rows,original.rows);assert.deepEqual(strip(artifact.coverage),strip(original.coverage));
+ assert.equal(actual.evidence.find(value=>value.id===artifact.rows[2].id).advisory.kind,'rapid_input');
+ assert.deepEqual(actual.coverage.invalid.map(value=>value.trackId),[badTrack1,badTrack2]);
+ assert.equal(actual.coverage.retainedEvents,0);assert(actual.coverage.events>actual.coverage.peakEvents);
+});
+
+test('posting, pair, work and finding budgets remain global across streamed tracks',async t=>{
+ const jobs=[job(1),job(2),onTrack(job(3),'7'.repeat(64)),onTrack(job(4),'7'.repeat(64))],ledger=await emptyLedger(t);
+ const firstTrack=await factory(jobs.slice(0,2)).inspect(),postingCount=firstTrack.postings;
+ for(const [limits,reason]of [[{maxPostings:postingCount},'posting'],[{maxPairs:1},'pair'],[{maxPairWork:firstTrack.pairWork},'pair_work'],[{maxFindings:1},'finding']]){
+  const review=factory(jobs,{limits}),result=await invoke(review,jobs,ledger);
+  assert.equal(result.complete,false);assert.equal(result.reason,'captured_controls_'+reason+'_limit');
+  assert.deepEqual(result.reviews,[]);const summary=await review.inspect();
+  assert.equal(summary.retainedEvents,0);assert(summary.tracks.some(value=>value.complete));
+  assert((await review.artifact()).rows.every(value=>!value.complete));
+ }
+});
+
+
+test('runtime budget is not renewed between tracks and failed work releases decoded controls',async t=>{
+ const jobs=[onTrack(job(1),'1'.repeat(64)),onTrack(job(2),'2'.repeat(64))],ledger=await emptyLedger(t);
+ let tick=0;const review=factory(jobs,{clock:()=>tick,limits:{maxRuntimeMs:1}});
+ setImmediate(()=>setImmediate(()=>{tick=100;}));
+ const result=await invoke(review,jobs,ledger),summary=await review.inspect();
+ assert.equal(result.complete,false);assert.equal(result.reason,'captured_controls_runtime_limit');
+ assert.deepEqual(result.reviews,[]);assert.equal(summary.retainedEvents,0);
+ assert.equal(summary.tracks.length,1);assert.equal(summary.tracks[0].complete,true);
+});

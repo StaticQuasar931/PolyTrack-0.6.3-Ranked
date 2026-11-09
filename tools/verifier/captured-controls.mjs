@@ -118,13 +118,14 @@ export function createCapturedControlReview({allJobs,sourceBinding,previouslyAcc
  if(allJobs.length>budget.maxJobs||previouslyAccepted.length>budget.maxJobs)fail('captured_controls_input_limit');
  const started=clock(),check=()=>{const at=clock();if(!Number.isFinite(at)||at<started||at-started>budget.maxRuntimeMs)fail('captured_controls_runtime_limit');};
  if(!Number.isFinite(started))fail('captured_controls_clock');
- const serialized=[],rows=[],byKey=new Map();let bytes=0;
+ const serialized=[],rows=[],byKey=new Map(),tracks=new Map();let bytes=0;
  for(const job of allJobs){
   check();const text=JSON.stringify(job);bytes+=Buffer.byteLength(text);if(bytes>budget.maxInputBytes)fail('captured_controls_input_limit');
   const meta=identity(job),key=hash(JSON.stringify(meta));if(byKey.has(key))fail('captured_controls_duplicate_binding');
   if(typeof job.replay!=='string'||job.replay.length>65536||hash(job.replay)!==meta.replayHash)fail('captured_controls_replay_binding');
   const row={key,id:'captured-control-'+hash(pinnedSource+key),meta,replay:job.replay,findings:[],advisory:null};
   rows.push(row);byKey.set(key,row);serialized.push(hash(text));
+  if(!tracks.has(meta.trackId))tracks.set(meta.trackId,[]);tracks.get(meta.trackId).push(row);
  }
  const inventoryHash=hash(JSON.stringify(serialized)),fingerprint=comparisonFingerprint();
  const accepted=new Set();
@@ -137,28 +138,32 @@ export function createCapturedControlReview({allJobs,sourceBinding,previouslyAcc
  const summary={policyVersion,comparisonFingerprint:fingerprint,inventoryHash,inputBytes:bytes,records:rows.length,
   scope:'exact-input/near-tie-whole/shared-19-token-segment candidates; not exhaustive TAS detection',
   indexBuilds:0,decodableRecords:0,analysisOnlyRecords:0,invalid:[],tracks:[],candidatePairs:0,comparedPairs:0,findings:0,
-  events:0,postings:0,pairWork:0,complete:false,stop:null};
+  events:0,peakEvents:0,retainedEvents:0,postings:0,pairWork:0,complete:false,stop:null};
  let built;
  async function build(){
   summary.indexBuilds++;const start=clock(),checkWork=()=>{const at=clock();if(!Number.isFinite(at)||at<start||at-start+preparationMs>budget.maxRuntimeMs)fail('captured_controls_runtime_limit');};
-  const tracks=new Map();
+  let decodedRows=0;
   try{
-   for(let i=0;i<rows.length;i++){
-    checkWork();const row=rows[i];
-    if(!tracks.has(row.meta.trackId))tracks.set(row.meta.trackId,[]);tracks.get(row.meta.trackId).push(row);
+   // Comparisons are track-local. Metadata stays capture-ordered; controls never
+   // survive the track that consumes them, including failed/oversized tracks.
+   for(const [trackId,all]of [...tracks].sort(([a],[b])=>a.localeCompare(b))){
+    try{
+    for(const row of all){
+     checkWork();
     try{try{row.controls=decodeReplay(row.replay,row.meta.timeMs);}catch{
       try{row.controls=decodeReplay(row.replay,row.meta.timeMs,'extended-local');}catch{
        row.controls=decodeAnalysisReplay(row.replay,row.meta.timeMs);row.analysisOnly=true;summary.analysisOnlyRecords++;
       }
      }
      row.signature=hash(JSON.stringify(row.controls.lists));
-     summary.events+=Object.values(row.controls.lists).reduce((n,list)=>n+list.length,0);
-     if(summary.events>budget.maxEvents)fail('captured_controls_event_limit');
+     const events=Object.values(row.controls.lists).reduce((n,list)=>n+list.length,0);
+     summary.events+=events;summary.retainedEvents+=events;
+     summary.peakEvents=Math.max(summary.peakEvents,summary.retainedEvents);
+     if(summary.retainedEvents>budget.maxEvents)fail('captured_controls_event_limit');
      row.advisory=inputRateEvidence(row.controls,row.meta.timeMs);summary.decodableRecords++;
     }catch(error){if(error.message==='captured_controls_event_limit')throw error;row.invalid=String(error.reason||error.message).slice(0,128);summary.invalid.push({id:row.id,trackId:row.meta.trackId,reason:row.invalid});}
-    if((i&63)===0)await yieldNow();
-   }
-   for(const [trackId,all]of [...tracks].sort(([a],[b])=>a.localeCompare(b))){
+    if((decodedRows++&63)===0)await yieldNow();
+    }
     checkWork();const current=all.filter(r=>!r.invalid),n=current.length,pairs=new Set(),signatures=new Map(),postings=new Map();
     const track={trackId,records:all.length,decodableRecords:n,candidatePairs:0,comparedPairs:0,complete:false};summary.tracks.push(track);
     const add=(a,b)=>{
@@ -207,11 +212,17 @@ export function createCapturedControlReview({allJobs,sourceBinding,previouslyAcc
      if((summary.comparedPairs&127)===0)await yieldNow();
     }
     track.complete=all.length===n;for(const row of all)row.trackComplete=track.complete;
+    }finally{
+     for(const row of all){delete row.controls;delete row.replay;}
+     summary.retainedEvents=0;
+    }
     await yieldNow();
    }
    summary.complete=summary.invalid.length===0;
   }catch(error){summary.stop=String(error.message).slice(0,128);}
-  // Drop decoded controls and replay bytes after the single complete candidate pass.
+  // Preserve capture-order diagnostics even though track execution is sorted.
+  if(summary.invalid.length>1){const order=new Map(rows.map((row,i)=>[row.id,i]));summary.invalid.sort((a,b)=>order.get(a.id)-order.get(b.id));}
+  // Also release unvisited replay bytes if any global work bound stopped the pass.
   for(const row of rows){delete row.controls;delete row.replay;}
  }
  const ensure=()=>built??=(build());
