@@ -28,6 +28,7 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
 const noticeInstallations = new WeakMap();
+const initialNoticeReadiness = new WeakMap();
 const acknowledgedRevisions = new WeakMap();
 const LAST_RELEASE_ACK_KEY='polytrack-site-update-last-ack-v2';
 /** Snapshot the prior manual release identity before any dialog acknowledgement. */
@@ -293,13 +294,19 @@ function expireLauncherDiscovery(document, commit) {
  * memory is the final fallback when both stores are denied (this page only).
  */
 export function installInstalledRevisionNotice({revision, release = {}, document = globalThis.document,
-  isReady = () => false, isIdle = defaultIdle, storage, sessionStorage,
+  isReady = () => false, isIdle = defaultIdle, isInitialLoading, storage, sessionStorage,
   verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
   now = Date.now, releaseHistory = RELEASE_HISTORY, setTimeout: schedule = globalThis.setTimeout, clearTimeout: unschedule = globalThis.clearTimeout} = {}) {
   if (!validRevision(revision)) throw new TypeError('revision must be a non-negative safe integer');
   if (!document?.addEventListener) throw new TypeError('document is required');
+  // A slow early import may finish after the patch installed the shared notice.
+  // Attach only its one-way boot check; preserve identity, acknowledgement and menu policy.
+  if (typeof isInitialLoading === 'function') initialNoticeReadiness.set(document, {revision, number:release.number, check:isInitialLoading});
   const existing = noticeInstallations.get(document);
-  if (existing) return existing;
+  if (existing) {
+    if (typeof isInitialLoading === 'function') existing.resume();
+    return existing;
+  }
   const view = document.defaultView;
   const key = validRevision(release.number) ? `polytrack-site-update-ack-release-v1:${release.number}` : `polytrack-site-update-ack-v1:${revision}`;
   let remembered = acknowledgedRevisions.get(document);
@@ -340,7 +347,11 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     if (disposed) return;
     if (acknowledged()) { close(); return; }
     let safe = false;
-    try { safe = !!document.body && isVisible(document) && isReady(document) && isIdle(document); } catch { /* Defer. */ }
+    try {
+      const boot = initialNoticeReadiness.get(document);
+      const loading = boot?.revision === revision && boot.number === release.number && boot.check(document);
+      safe = !!document.body && isVisible(document) && (loading || isReady(document) && isIdle(document));
+    } catch { /* Defer. */ }
     if (!safe) { close(); return; }
     if (dialog?.isConnected && dialog.open) { ageBinding?.refresh(); return; }
     close();
@@ -430,6 +441,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     for (const type of ['keydown', 'keyup']) view?.removeEventListener(type, guard, true);
     view?.removeEventListener('storage', storageChanged);
     noticeInstallations.delete(document);
+    initialNoticeReadiness.delete(document);
   }});
   noticeInstallations.set(document, handle); resume(); return handle;
 }
