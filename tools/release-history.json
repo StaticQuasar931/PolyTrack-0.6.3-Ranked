@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 345,
+    "number": 346,
     "version": "0.6.3",
-    "revision": 289,
+    "revision": 290,
     "notes": [
-      "Fixed a cross-platform test blocking automatic snapshot updates."
+      "Fixed Linux process checks blocking automatic snapshot updates."
     ]
   },
   "entries": [
+    {
+      "number": 345,
+      "title": "Fix Linux snapshot preflight process test",
+      "commit": "e1476d6d93a731688e356f28d25c62afd8762cfb",
+      "committedAt": "2026-11-09T01:55:05.000Z",
+      "notes": [
+        "Fixed a cross-platform test blocking automatic snapshot updates."
+      ]
+    },
     {
       "number": 344,
       "title": "Refine route estimates and verify captured replays offline",
@@ -194,17 +203,6 @@
       "committedAt": "2026-11-08T00:49:47.000Z",
       "notes": [
         "Improved reliability of snapshot updates."
-      ]
-    },
-    {
-      "number": 321,
-      "title": "Reuse snapshot PBs and reduce repeated cloud requests",
-      "commit": "417dd3ce46b6eca2d534a561ac1bdfc1ca8d140c",
-      "committedAt": "2026-11-07T23:00:16.000Z",
-      "notes": [
-        "Fewer repeated cloud requests when syncing saved runs.",
-        "Event uploads retry less often during outages and keep your best run.",
-        "Faster snapshot preparation with the same replay safety checks."
       ]
     }
   ],

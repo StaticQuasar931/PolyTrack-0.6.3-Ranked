@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createConnection} from 'node:net';
 import {EventEmitter} from 'node:events';
+import {readFileSync} from 'node:fs';
 import {runBoundedCaptureProcess,terminateOwnedCaptureTree,prepareCaptureProcessSupervisor,disposeCaptureProcessSupervisor,createCaptureProcessSupervisor} from './local-capture-process.mjs';
 import {createLocalCaptureGit,assertBoundedLocalSource,publishLocalCaptureCommit,reconcileLocalPublication,completeReconciledLocalPublication} from './local-capture-git.mjs';
 
@@ -12,6 +13,26 @@ after(async()=>{try{await disposeCaptureProcessSupervisor();}catch(error){
 }});
 
 const source='a'.repeat(40),candidate='b'.repeat(40);
+async function waitForExactProcessTermination(pid,{platform=process.platform,signal=process.kill,readStat=path=>readFileSync(path,'utf8'),attempts=20,delayMs=50}={}){
+  assert(Number.isSafeInteger(pid)&&pid>0,'expected an exact positive PID');
+  for(let attempt=0;attempt<attempts;attempt++){
+    try{signal(pid,0);}catch(error){if(error.code==='ESRCH')return;throw error;}
+    if(platform==='linux'){
+      try{const stat=readStat(`/proc/${pid}/stat`),close=stat.lastIndexOf(')');
+        if(close>=0&&['Z','X'].includes(stat.slice(close+1).trimStart()[0]))return;
+      }catch(error){if(error.code==='ENOENT')return;throw error;}
+    }
+    if(attempt+1<attempts)await new Promise(resolve=>setTimeout(resolve,delayMs));
+  }
+  assert.fail(`process ${pid} remains live after bounded termination poll`);
+}
+
+test('exact-PID termination poll recognizes Linux zombie and exited states',async()=>{
+  for(const state of ['Z','X'])await waitForExactProcessTermination(4321,{platform:'linux',signal:()=>{},readStat:()=>`4321 (child (worker)) ${state} 1 1 1`});
+  await assert.rejects(waitForExactProcessTermination(4321,{platform:'linux',signal:()=>{},readStat:()=>`4321 (child) S 1 1 1`,attempts:1}),/remains live/);
+  await waitForExactProcessTermination(4321,{platform:'linux',signal:()=>{throw Object.assign(Error('gone'),{code:'ESRCH'});},readStat:()=>assert.fail('must not inspect a missing PID')});
+});
+
 function gitFixture({reply={type:'git-result',stdout:'ok'},result={status:0,timedOut:false},patch={}}={}){
   const calls={};
   const git=createLocalCaptureGit({workspace:process.cwd(),deadline:15100,now:()=>80,
@@ -305,7 +326,7 @@ test('parallel owned tree termination leaves an unrelated supervised sibling ali
       spawnImpl:(...args)=>{const child=spawnOwned(...args);child.on('message',message=>{if(Number.isSafeInteger(message.pid))descendants.push(message.pid);});return child;}})));
     const errors=outcomes.filter(value=>value.status==='rejected').map(value=>value.reason);if(errors.length)throw new AggregateError(errors,'All parallel fixtures settled');
     const results=outcomes.map(value=>value.value);assert(results.every(result=>result.timedOut===true));assert.equal(descendants.length,3);
-    for(const pid of descendants)assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+    for(const pid of descendants)await waitForExactProcessTermination(pid);
     assert.equal(sibling.exitCode,null);assert.equal(sibling.signalCode,null);assert.equal(sibling.connected,true);
   } catch(error){operationError=error;} finally {
     if(sibling?.connected)sibling.send({finish:true},()=>{});
