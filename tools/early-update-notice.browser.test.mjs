@@ -71,3 +71,56 @@ test('real index shows one readable notice before deferred game boot, then respe
   await page.evaluate(async revision => {await import(`/tools/early-update-notice.mjs?v=${revision}`);}, RELEASE_INFO.revision);
   assert.equal(await notice.count(), 0, 'acknowledged release stays hidden across reload');
 });
+
+for (const patchFirst of [false, true]) test(`native loading with an older acknowledgement and ${patchFirst ? 'patch-first' : 'early-first'} installation shows the notice before WASM`, {timeout:45000}, async t => {
+  const browser = await chromium.launch({headless:true}); t.after(() => browser.close());
+  const page = await browser.newPage({viewport:{width:320,height:568},serviceWorkers:'block'});
+  const errors = [], wasm = [], calls = [];
+  let menuRoute;
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(previous => {
+    localStorage.setItem('polytrack-site-update-ack-release-v1:'+previous, 'acknowledged');
+    localStorage.setItem('polytrack-site-update-last-ack-v2', JSON.stringify({number:previous,commit:null}));
+  }, RELEASE_INFO.number-1);
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.origin !== 'https://native-notice.test') return route.abort();
+    if (/\.wasm$/.test(url.pathname)) {wasm.push(url.pathname); return;}
+    if (patchFirst && url.pathname.endsWith('/tools/site-update-menu-state.mjs')) {menuRoute=route; return;}
+    const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    try {
+      let body = await readFile(new URL(relative, root));
+      if (relative === 'tools/site-updates.mjs') {
+        const source=body.toString();
+        const anchor='  const existing = noticeInstallations.get(document);';
+        assert.ok(source.includes(anchor));
+        body=Buffer.from(source.replace(anchor, `  (window.__noticeCalls ||= []).push({existing:noticeInstallations.has(document),ready:String(isReady)});\n${anchor}`));
+      }
+      const contentType={html:'text/html',mjs:'text/javascript',js:'text/javascript',css:'text/css',svg:'image/svg+xml',woff2:'font/woff2',json:'application/json'}[relative.split('.').at(-1)]||'application/octet-stream';
+      return route.fulfill({body,contentType});
+    } catch {return route.abort();}
+  });
+  await page.goto('https://native-notice.test/',{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(() => document.querySelector('#ui > .menu-ui.loading-screen'),null,{timeout:20000});
+  if (patchFirst) {
+    await page.waitForFunction(() => window.__noticeCalls?.some(call => call.ready.includes('main-buttons-container')),null,{timeout:15000});
+    assert.ok(menuRoute);
+    await menuRoute.fulfill({body:await readFile(new URL('./site-update-menu-state.mjs',import.meta.url)),contentType:'text/javascript'});
+  }
+  await page.waitForFunction(() => window.__noticeCalls?.some(call => !call.ready.includes('main-buttons-container')),null,{timeout:15000});
+  calls.push(...await page.evaluate(() => window.__noticeCalls));
+  const notice=page.locator('dialog[data-site-installed-revision][open]');
+  await notice.waitFor({timeout:3000});
+  assert.equal(await notice.count(),1);
+  assert.equal(await notice.getAttribute('data-site-installed-revision'),String(RELEASE_INFO.revision));
+  assert.equal(await notice.locator('h2').textContent(),`PolyTrack Ranked - Update ${RELEASE_INFO.number}`);
+  assert.ok(wasm.length>0,'actual native engine is still withheld');
+  assert.equal(await page.locator('.main-buttons-container:not(.hidden)').count(),0);
+  assert.equal(await page.evaluate(() => !!document.querySelector('.track-selection-ui.hidden')),true,'real precreated hidden menu is present');
+  assert.equal(await notice.evaluate(node => {const box=node.getBoundingClientRect();return box.left>=0&&box.top>=0&&box.right<=innerWidth&&box.bottom<=innerHeight&&node.scrollWidth<=node.clientWidth;}),true);
+  if (patchFirst) assert.equal(calls[0].ready.includes('main-buttons-container'),true,'native patch really installed first');
+  await page.evaluate(() => document.getElementById('ui').append(Object.assign(document.createElement('div'),{className:'game-ui hidden'})));
+  await notice.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(number => localStorage.getItem('polytrack-site-update-ack-release-v1:'+number),RELEASE_INFO.number),null,'run veto never acknowledges the notice');
+  assert.deepEqual(errors,[]);
+});

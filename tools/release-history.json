@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 357,
+    "number": 358,
     "version": "0.6.3",
-    "revision": 301,
+    "revision": 302,
     "notes": [
-      "Large leaderboard updates can finish without restarting.",
-      "Reduces redundant cloud verification work."
+      "Update notes appear during loading, even on fast or cached starts.",
+      "Improves replay-review capacity for growing leaderboards."
     ]
   },
   "entries": [
+    {
+      "number": 357,
+      "title": "Finish large leaderboard updates and reduce redundant verification",
+      "commit": "f7415f77481937697a809b7d1d59e1e76dfe2d1a",
+      "committedAt": "2026-11-09T07:58:05.000Z",
+      "notes": [
+        "Large leaderboard updates can finish without restarting.",
+        "Reduces redundant cloud verification work."
+      ]
+    },
     {
       "number": 356,
       "title": "Restore missing racers and verify 1024 more runs",
@@ -195,16 +205,6 @@
       "committedAt": "2026-11-08T23:04:00.000Z",
       "notes": [
         "Cleaner medal counts and next-podium targets below your car."
-      ]
-    },
-    {
-      "number": 336,
-      "title": "Fix saved PB reconciliation and restore under-car podium cards",
-      "commit": "bf840b8ff6d349c2139e4fb4536202c4c75e731f",
-      "committedAt": "2026-11-08T22:40:54.000Z",
-      "notes": [
-        "Saved PB syncing handles confirmations and connection failures more reliably.",
-        "Podium cards sit below your car again."
       ]
     }
   ],

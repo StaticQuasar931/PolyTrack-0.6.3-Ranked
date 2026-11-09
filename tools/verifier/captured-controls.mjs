@@ -13,7 +13,7 @@ const {decodeReplay}=createRequire(import.meta.url)('./replay.cjs');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const HASH=/^[a-f0-9]{64}$/;
 export const CAPTURED_CONTROL_POLICY_VERSION='snapshot-controls-v1';
-export const CAPTURED_CONTROL_LIMITS=Object.freeze({maxInputBytes:64*1024*1024,maxJobs:20000,
+export const CAPTURED_CONTROL_LIMITS=Object.freeze({maxInputBytes:64*1024*1024,maxJobs:100000,
   maxPairs:2000000,maxRuntimeMs:120000,maxEvents:2000000,maxPostings:2000000,maxPairWork:8000000,maxFindings:10000});
 const SOURCES=['captured-controls.mjs','similarity.mjs','segment-similarity.mjs','input-rate.mjs','replay.cjs','analysis-replay-decoder.mjs',
   '../../workers/ranked/src/competitive-review.js'];

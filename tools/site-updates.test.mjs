@@ -1214,3 +1214,30 @@ test('release age uses readable weeks and local exact dates without a network ch
   assert.ok(age.nextUpdateMs>0&&age.nextUpdateMs<=60000);
  }
 });
+
+test('late initial-loading readiness upgrades a patch-first notice without replacing its menu gate or acknowledgement',()=>{
+  for(const returning of [false,true]){
+    let loading=true,menu=false;const storage=memoryStorage();
+    if(returning)storage.setItem('polytrack-site-update-ack-release-v1:356','acknowledged');
+    const release={number:357,revision:301,notes:['Fixture.']};
+    const h=noticeHarness({revision:301,release,storage,isReady:()=>menu,isIdle:()=>menu});
+    assert.equal(h.document.dialog,undefined);
+    const same=installInstalledRevisionNotice({document:h.document,revision:301,release,
+      isReady:()=>true,isIdle:()=>true,isInitialLoading:()=>loading});
+    assert.equal(same,h.handle);assert.equal(h.document.dialog?.open,true);
+    assert.equal(storage.getItem('polytrack-site-update-ack-release-v1:357'),null);
+    loading=false;same.resume();assert.equal(h.document.dialog,undefined,'cannot replace original menu/run gate');
+    menu=true;same.resume();assert.equal(h.document.dialog?.open,true);
+    h.document.dialog.children.at(-1).listeners.click();same.resume();assert.equal(h.document.dialog,undefined);
+    assert.equal(storage.getItem('polytrack-site-update-ack-release-v1:357'),'acknowledged');same.dispose();
+  }
+});
+
+test('boot-readiness upgrades are identity-bound and disposed with the original notice',()=>{
+  const h=noticeHarness({revision:301,release:{number:357},isReady:()=>false,isIdle:()=>false});
+  installInstalledRevisionNotice({document:h.document,revision:302,release:{number:358},isInitialLoading:()=>true});
+  assert.equal(h.document.dialog,undefined,'a different installed release cannot acquire the boot exception');
+  h.handle.dispose();
+  const next=noticeHarness({document:h.document,revision:302,release:{number:358},isReady:()=>false,isIdle:()=>false});
+  assert.equal(h.document.dialog,undefined,'disposal removes the previous boot callback');next.handle.dispose();
+});
