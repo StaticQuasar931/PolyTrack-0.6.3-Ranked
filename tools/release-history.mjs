@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 362,
+    "number": 363,
     "version": "0.6.3",
-    "revision": 306,
+    "revision": 307,
     "notes": [
-      "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
-      "Weekly and daily track cards show your place as 1/255 when the full field is known."
+      "Improves snapshot updates without dropping saved racers."
     ]
   },
   "entries": [
+    {
+      "number": 362,
+      "title": "Refresh verified flags by snapshot generation and show event place totals",
+      "commit": "87710c959c10455de64d6927b71bce1350580c4f",
+      "committedAt": "2026-11-12T08:37:07.000Z",
+      "notes": [
+        "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
+        "Weekly and daily track cards show your place as 1/255 when the full field is known."
+      ]
+    },
     {
       "number": 361,
       "title": "Restore hosted snapshot integrity checks for paged boards",
@@ -194,17 +203,6 @@ const historyData = {
       "notes": [
         "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
         "Removed misleading sign-in warnings and retry old blocked PBs once."
-      ]
-    },
-    {
-      "number": 342,
-      "title": "Repair Studio defaults and saved PB notification recovery",
-      "commit": "3bb77e252bd41c6a87692453c878210691d4589d",
-      "committedAt": "2026-11-09T01:07:03.000Z",
-      "notes": [
-        "Fixed fresh-account Studio defaults and clearer design publishing messages.",
-        "Saved PB notifications retry safely after a connection failure.",
-        "Cloud sign-in recovery preserves your racer and local PBs."
       ]
     }
   ],
