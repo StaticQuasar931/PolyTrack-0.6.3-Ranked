@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
 import {createOverallProjectionBundle,decodeOverallProjectionBundle,decodeProjectionResults} from './overall-projection-bundle.mjs';
 import {projectLocalOverall} from './overall-local-projection.mjs';
-import {computeOverall,trackWeightParts} from '../workers/ranked/src/index.js';
+import {computeOverall,trackWeightParts,rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
 const ids=['5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038','7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0','148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a'];
 function data(){
  const meta={algorithmVersion:'participation-v8-s1',schemaVersion:6,sourceRevision:10,builtRevision:10,updatedAt:1000};
@@ -38,4 +38,34 @@ test('real snapshot-reader metadata is accepted without relaxing unknown-field v
  const expected=decodeOverallProjectionBundle(bundle,options);
  for(const source of ['snapshot','cached'])assert.deepEqual(decodeOverallProjectionBundle({...bundle,_publicBackup:true,_dataSource:source,_snapshotCapturedAt:2000},options),expected);
  for(const extra of [{_publicBackup:false},{_dataSource:'live'},{_snapshotCapturedAt:-1},{ownerUid:'private'},{_arbitrary:'ignored'}])assert.throws(()=>decodeOverallProjectionBundle({...bundle,...extra},options));
+});
+
+test('version two account dictionary is lossless and rejects invalid references',async()=>{
+ const d=data(),old=await createOverallProjectionBundle(d),accounts=[...new Set(old.boards.flatMap(b=>b[4].map(r=>r[0])))];
+ const compact={...old,version:2,accounts,boards:old.boards.map(b=>[...b.slice(0,4),b[4].map(r=>[accounts.indexOf(r[0]),...r.slice(1)])])};
+ const options={overall:d.overall,generation:60};
+ assert.deepEqual(decodeOverallProjectionBundle(compact,options),decodeOverallProjectionBundle(old,options));
+ for(const mutate of [b=>b.accounts.push(b.accounts[0]),b=>b.accounts[0]='bad/id',b=>b.boards[0][4][0][0]=-1,b=>b.boards[0][4][0][0]=999,b=>b.boards[0][4][0][0]='0',b=>b.ownerUid='private']){
+  const bad=structuredClone(compact);mutate(bad);assert.throws(()=>decodeOverallProjectionBundle(bad,options));
+ }
+ assert.throws(()=>decodeOverallProjectionBundle({...old,accounts},options));
+});
+
+test('growing verified fields use dictionary encoding below the unchanged two MiB limit',async()=>{
+ const base=data(),n=6000,tracks=base.tracks.map(b=>({...b,totalEntries:n,entries:Array.from({length:n},(_,i)=>({
+  accountId:(i+1).toString(16).padStart(64,'0'),trackId:b.trackId,timeMs:10000+i*2,pbAt:1794000000000,
+  weight:Number(trackWeightParts(b.trackId,n,1).finalWeight.toFixed(3)),runVerified:true,integrityVerified:true,
+  pbCount:10000,totalPlaytimeMs:360000000,accountCreatedAt:1700000000000
+ }))}));
+ for(const board of tracks)board.entries=rankTrustedTrackEntries(board.entries,board.trackId);
+ const entries=computeOverall(tracks,[],new Set(),{includePlannerResults:true});
+ const overall={...base.overall,entries,totalEntries:entries.length,trackCatalog:tracks.map(b=>({trackId:b.trackId,updatedAt:b.updatedAt}))};
+ const results={...base.results,resultBundle:gzipSync(JSON.stringify({entries:entries.map(row=>({userId:row.userId,resultSamples:row.resultSamples})),resultTracks:ids})).toString('base64')};
+ const bundle=await createOverallProjectionBundle({overall,results,tracks});
+ assert.equal(bundle.version,2);assert.equal(bundle.accounts.length,n);
+ assert(Buffer.byteLength(JSON.stringify(bundle))<=2*1024*1024);
+ const decoded=decodeOverallProjectionBundle(bundle,{overall,generation:60});
+ assert.equal(decoded.reduce((sum,b)=>sum+b.entries.length,0),n*tracks.length);
+ assert.equal(decoded[0].entries[n-1].accountId,tracks[0].entries[n-1].accountId);
+ assert.equal(decoded[0].entries[n-1].totalPlaytimeMs,360000000);
 });

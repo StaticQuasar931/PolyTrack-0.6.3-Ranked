@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 358,
+    "number": 359,
     "version": "0.6.3",
-    "revision": 302,
+    "revision": 303,
     "notes": [
-      "Update notes appear during loading, even on fast or cached starts.",
-      "Improves replay-review capacity for growing leaderboards."
+      "Improves local ranking estimates for larger verified leaderboards."
     ]
   },
   "entries": [
+    {
+      "number": 358,
+      "title": "Show update notes during loading and expand replay review capacity",
+      "commit": "438f79dd457a190d483051dfe751ad32c3f9a856",
+      "committedAt": "2026-11-09T08:34:47.000Z",
+      "notes": [
+        "Update notes appear during loading, even on fast or cached starts.",
+        "Improves replay-review capacity for growing leaderboards."
+      ]
+    },
     {
       "number": 357,
       "title": "Finish large leaderboard updates and reduce redundant verification",
@@ -197,15 +206,6 @@ const historyData = {
         "Faster cached track standings without flashing old names.",
         "Saves no longer wait for a leaderboard download.",
         "Clearer cloud-permission diagnostics and safer sign-in recovery handling."
-      ]
-    },
-    {
-      "number": 337,
-      "title": "Polish medal tiles and next-podium targets",
-      "commit": "ca8e2764c48c8a464ab40acc1fce369a6539f6db",
-      "committedAt": "2026-11-08T23:04:00.000Z",
-      "notes": [
-        "Cleaner medal counts and next-podium targets below your car."
       ]
     }
   ],

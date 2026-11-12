@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 358,
+  "number": 359,
   "version": "0.6.3",
-  "revision": 302,
+  "revision": 303,
   "notes": [
-    "Update notes appear during loading, even on fast or cached starts.",
-    "Improves replay-review capacity for growing leaderboards."
+    "Improves local ranking estimates for larger verified leaderboards."
   ],
-  "preparedAt": "2026-11-09T08:29:26.332Z",
-  "committedAt": "2026-11-09T08:34:47.000Z"
+  "preparedAt": "2026-11-12T07:26:04.874Z",
+  "committedAt": "2026-11-12T07:26:36.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -3,6 +3,7 @@ projectionUrl.search=new URL(import.meta.url).search;
 const {projectLocalOverall,projectScopedSnapshot}=await import(projectionUrl.href);
 const bundleUrl=new URL('./overall-projection-bundle.mjs',import.meta.url);
 bundleUrl.search=new URL(import.meta.url).search;
+bundleUrl.search=new URL(import.meta.url).search;
 const {decodeOverallProjectionBundle}=await import(bundleUrl.href);
 
 export const LOCAL_OVERALL_RECEIPTS_KEY = 'polytrack-overall-accepted-pbs-v1';
