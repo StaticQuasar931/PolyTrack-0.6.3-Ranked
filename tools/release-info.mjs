@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 361,
+  "number": 362,
   "version": "0.6.3",
-  "revision": 305,
+  "revision": 306,
   "notes": [
-    "Restores hosted snapshot checks for the optimized leaderboard format."
+    "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
+    "Weekly and daily track cards show your place as 1/255 when the full field is known."
   ],
-  "preparedAt": "2026-11-12T08:13:11.674Z",
-  "committedAt": "2026-11-12T08:14:37.000Z"
+  "preparedAt": "2026-11-12T08:35:52.022Z",
+  "committedAt": "2026-11-12T08:37:07.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
