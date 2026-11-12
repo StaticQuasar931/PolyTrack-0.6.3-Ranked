@@ -63,6 +63,40 @@ test('finite event physics proof maps to native verified UI without legacy flags
   }
 });
 
+test('legacy zero requires both strict event proof flags and preserves source authority',()=>{
+  for(const flags of [{},{physicsVerified:true},{replayIntegrityVerified:true},
+    {runVerified:true,integrityVerified:true},{verified:true,eventRpEligible:true},
+    {physicsVerified:'true',replayIntegrityVerified:true},{physicsVerified:true,replayIntegrityVerified:1}]){
+    const entry={...row(1),verifiedState:0,...flags},before=structuredClone(entry);
+    assert.equal(eventRowVerified(entry),false,JSON.stringify(flags));
+    assert.equal(eventSnapshotFields(board([entry])).verified.rows.length,0);
+    assert.deepEqual(entry,before);
+  }
+  const entry={...row(1),verifiedState:0,physicsVerified:true,replayIntegrityVerified:true};
+  const saved=board([entry]),before=structuredClone(saved),fields=eventSnapshotFields(saved);
+  assert.equal(eventRowVerified(entry),true);
+  assert.deepEqual(fields.counts,{all:1,verified:1,pending:0,verifiedInAll:1});
+  assert.equal(fields.verified.rows[0].verifiedState,0,'filtering does not rewrite native flags');
+  assert.equal(fields.verified.rows[0].rp,entry.rp,'published award remains unchanged');
+  assert.deepEqual(saved,before);
+});
+
+test('complete event proof never overrides negative flags, waiting statuses or restrictions',()=>{
+  const proof={...row(1),verifiedState:0,physicsVerified:true,replayIntegrityVerified:true};
+  const vetoes=[{pending:true},...['verified','runVerified','physicsVerified','replayIntegrityVerified',
+    'integrityVerified','eventRpEligible'].map(field=>({[field]:false})),
+    ...['needsReview','reviewHold','excluded','unscored'].map(field=>({[field]:true})),
+    ...['status','verificationStatus','validationState'].flatMap(field=>
+      ['waiting','pending','rejected','review_hold','mismatch','unavailable_final','expired'].map(value=>({[field]:value}))),
+    ...['held','review_hold','excluded','mismatch'].map(reason=>({reason}))];
+  for(const veto of vetoes){
+    const entry={...proof,...veto},before=structuredClone(entry);
+    assert.equal(eventRowVerified(entry),false,JSON.stringify(veto));
+    assert.equal(eventSnapshotFields(board([entry])).verified.rows.length,0,JSON.stringify(veto));
+    assert.deepEqual(entry,before);
+  }
+});
+
 test('event status decoration maps authoritative proof to icon, class and shared status dataset',()=>{
   const classes=new Set(),icon={},state={dataset:{},childNodes:[],
     classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},querySelector:()=>icon,setAttribute() {}};

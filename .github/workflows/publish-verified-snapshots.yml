@@ -311,7 +311,7 @@ jobs:
           let result;
           try{
             result=await updatePublicSnapshot({refreshReplays:true,
-              ...(oneOff?{replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit}:{replayDocumentLimit:replayLimit}),
+              ...(oneOff?{replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit}:process.env.VERIFICATION_AUTHORITY==='snapshot-native'?{replayDocumentLimit:replayLimit}:{}),
               verificationAuthority:process.env.VERIFICATION_AUTHORITY,nativePhaseOptions,captureCheckpoint});
           }finally{
             // Includes early strict-gate failures and legacy Firestore paths without a native hook.

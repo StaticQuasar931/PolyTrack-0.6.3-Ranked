@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 363,
+  "number": 364,
   "version": "0.6.3",
-  "revision": 307,
+  "revision": 308,
   "notes": [
-    "Improves snapshot updates without dropping saved racers."
+    "Fixes event badges hidden by an older display flag after successful replay checks.",
+    "Fixes a hosted snapshot compatibility check."
   ],
-  "preparedAt": "2026-11-12T08:52:34.333Z",
-  "committedAt": "2026-11-12T08:53:30.000Z"
+  "preparedAt": "2026-11-12T08:59:01.923Z",
+  "committedAt": "2026-11-12T09:02:50.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
