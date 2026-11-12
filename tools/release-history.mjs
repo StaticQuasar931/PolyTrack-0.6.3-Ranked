@@ -2,14 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 363,
+    "number": 364,
     "version": "0.6.3",
-    "revision": 307,
+    "revision": 308,
     "notes": [
-      "Improves snapshot updates without dropping saved racers."
+      "Fixes event badges hidden by an older display flag after successful replay checks.",
+      "Fixes a hosted snapshot compatibility check."
     ]
   },
   "entries": [
+    {
+      "number": 363,
+      "title": "Recheck stale snapshot sources without dropping saved racers",
+      "commit": "c296b7a618a3e1f4bfd334787bd2747932dbfe1e",
+      "committedAt": "2026-11-12T08:53:30.000Z",
+      "notes": [
+        "Improves snapshot updates without dropping saved racers."
+      ]
+    },
     {
       "number": 362,
       "title": "Refresh verified flags by snapshot generation and show event place totals",
@@ -193,16 +203,6 @@ const historyData = {
       "notes": [
         "More precise route comparisons and clearer local PB estimates.",
         "Snapshot updates now verify saved replays offline and keep recovery progress."
-      ]
-    },
-    {
-      "number": 343,
-      "title": "Retry profile saves after schema compatibility repair",
-      "commit": "67dd6683e5716c95fb0f74bf5929199588035940",
-      "committedAt": "2026-11-09T01:26:01.000Z",
-      "notes": [
-        "Fixed cloud rules rejecting PBs and Studio saves on existing profiles.",
-        "Removed misleading sign-in warnings and retry old blocked PBs once."
       ]
     }
   ],

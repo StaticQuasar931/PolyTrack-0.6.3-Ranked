@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=307';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=307';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=308';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=308';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=307';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=307';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=307';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=308';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=308';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=308';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -213,7 +213,9 @@ export function eventPendingRows(pending){
   return [...byAccount.values()];
 }
 export function eventRowVerified(row){
-  return !!row&&row.pending!==true&&!eventAwardRowRestricted(row)&&row.verifiedState!==0&&
+  // Event proof may supersede only the legacy native UI flag, never a negative verdict.
+  return !!row&&row.pending!==true&&!eventAwardRowRestricted(row)&&
+    (row.verifiedState!==0||row.physicsVerified===true&&row.replayIntegrityVerified===true)&&
     !['verified','runVerified','physicsVerified','replayIntegrityVerified','integrityVerified','eventRpEligible'].some(field=>row[field]===false)&&
     !['status','verificationStatus','validationState'].some(field=>row[field]!==undefined&&row[field]!=='verified');
 }
