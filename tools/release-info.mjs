@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 358,
+  "number": 360,
   "version": "0.6.3",
-  "revision": 302,
+  "revision": 304,
   "notes": [
-    "Update notes appear during loading, even on fast or cached starts.",
-    "Improves replay-review capacity for growing leaderboards."
+    "6,451 more saved runs now have verified replays.",
+    "Leaderboards, rankings and racer profiles reflect the newly verified results."
   ],
-  "preparedAt": "2026-11-09T08:29:26.332Z",
-  "committedAt": "2026-11-09T08:34:47.000Z"
+  "preparedAt": "2026-11-12T07:47:58.071Z",
+  "committedAt": "2026-11-12T07:48:36.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

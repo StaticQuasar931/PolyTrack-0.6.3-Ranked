@@ -16,13 +16,16 @@ export function decodeOverallProjectionBundle(bundle,{overall,generation}={}){
       Object.hasOwn(bundle,'_snapshotCapturedAt')&&!positive(bundle._snapshotCapturedAt))throw Error('Invalid projection transport metadata');
     bundle=Object.fromEntries(Object.entries(bundle).filter(([key])=>!transport.includes(key)));
   }
-  if(!only(bundle,['version',...BINDINGS,'boards'])||bundle.version!==1||
+  const compact=bundle?.version===2;
+  if(!only(bundle,['version',...BINDINGS,'boards',...(compact?['accounts']:[])])||![1,2].includes(bundle.version)||
       !BINDINGS.every(key=>bundle[key]===overall?.[key])||!positive(bundle.sourceRevision)||
       bundle.algorithmVersion!=='participation-v8-s1'||bundle.schemaVersion!==6||
       !Array.isArray(bundle.boards)||bundle.boards.length>512||!Array.isArray(overall.trackCatalog)||
       bundle.boards.length!==overall.trackCatalog.length)throw Error('Invalid Overall projection source');
   const catalog=new Map(overall.trackCatalog.map(row=>[row.trackId,row.updatedAt]));
   if(catalog.size!==bundle.boards.length)throw Error('Duplicate Overall projection source');
+  if(compact&&(!Array.isArray(bundle.accounts)||bundle.accounts.length>100000||
+    bundle.accounts.some(id=>typeof id!=='string'||!ID.test(id))||new Set(bundle.accounts).size!==bundle.accounts.length))throw Error('Invalid projection account dictionary');
   const seen=new Set();let total=0;
   return bundle.boards.map(board=>{
     if(!Array.isArray(board)||board.length!==5||!ID.test(board[0])||seen.has(board[0])||
@@ -31,11 +34,13 @@ export function decodeOverallProjectionBundle(bundle,{overall,generation}={}){
         board[3]>10000||(total+=board[3])>100000)throw Error('Invalid Overall projection board');
     seen.add(board[0]);const accounts=new Set();
     const entries=board[4].map(tuple=>{
-      if(!Array.isArray(tuple)||tuple.length!==FIELDS.length||!ID.test(tuple[0])||accounts.has(tuple[0])||
+      if(!Array.isArray(tuple)||tuple.length!==FIELDS.length)throw Error('Invalid Overall projection row');
+      const accountId=compact?(Number.isSafeInteger(tuple[0])&&tuple[0]>=0?bundle.accounts[tuple[0]]:undefined):tuple[0];
+      if(typeof accountId!=='string'||!ID.test(accountId)||accounts.has(accountId)||
           !positive(tuple[1])||tuple[1]>36000000||!count(tuple[2])||typeof tuple[3]!=='number'||
           !Number.isFinite(tuple[3])||tuple[3]<0||typeof tuple[4]!=='boolean'||typeof tuple[5]!=='boolean'||
           tuple.slice(6).some(value=>!count(value)))throw Error('Invalid Overall projection row');
-      accounts.add(tuple[0]);return {...Object.fromEntries(FIELDS.map((key,index)=>[key,tuple[index]])),trackId:board[0]};
+      accounts.add(accountId);return {...Object.fromEntries(FIELDS.map((key,index)=>[key,index===0?accountId:tuple[index]])),trackId:board[0]};
     });
     return {algorithmVersion:bundle.algorithmVersion,schemaVersion:bundle.schemaVersion,
       trackId:board[0],sourceRevision:board[1],updatedAt:board[2],complete:true,sourceComplete:true,
@@ -59,12 +64,20 @@ export async function decodeProjectionResults(packed){
 
 export async function createOverallProjectionBundle({overall,results,tracks}={}){
   if(!Array.isArray(tracks)||tracks.length>512)throw Error('Missing bound Overall source boards');
-  const bundle={version:1,...Object.fromEntries(BINDINGS.map(key=>[key,overall?.[key]])),boards:tracks.map(board=>{
+  let bundle={version:1,...Object.fromEntries(BINDINGS.map(key=>[key,overall?.[key]])),boards:tracks.map(board=>{
     if((board.sourceComplete!==true&&board.complete!==true)||board.totalEntries!==board.entries?.length)throw Error('Incomplete Overall source board');
     return [board.trackId,board.sourceRevision,board.updatedAt??board.builtAt??0,board.entries.length,board.entries.map(row=>
       [row.accountId||row.userId,row.timeMs,row.pbAt??0,row.weight,row.runVerified,row.integrityVerified,
         row.pbCount??0,row.totalPlaytimeMs??0,row.accountCreatedAt??0])];
   })};
+  if(new TextEncoder().encode(JSON.stringify(bundle)).length>2*1024*1024){
+    const accounts=[],indices=new Map();
+    const boards=bundle.boards.map(board=>[...board.slice(0,4),board[4].map(tuple=>{
+      if(!indices.has(tuple[0])){indices.set(tuple[0],accounts.length);accounts.push(tuple[0]);}
+      return [indices.get(tuple[0]),...tuple.slice(1)];
+    })]);
+    bundle={...bundle,version:2,accounts,boards};
+  }
   if(new TextEncoder().encode(JSON.stringify(bundle)).length>2*1024*1024)throw Error('Overall projection source exceeds snapshot file limit');
   const generation='bound-source-check',boards=decodeOverallProjectionBundle(bundle,{overall,generation});
   const decoded=await decodeProjectionResults(results);
