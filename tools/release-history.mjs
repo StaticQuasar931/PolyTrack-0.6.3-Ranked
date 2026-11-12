@@ -2,14 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 359,
+    "number": 360,
     "version": "0.6.3",
-    "revision": 303,
+    "revision": 304,
     "notes": [
-      "Improves local ranking estimates for larger verified leaderboards."
+      "6,451 more saved runs now have verified replays.",
+      "Leaderboards, rankings and racer profiles reflect the newly verified results."
     ]
   },
   "entries": [
+    {
+      "number": 359,
+      "title": "Compact ranking inputs without dropping verified results",
+      "commit": "b0844d9e5761698011acf70b4a40ef3a56259e86",
+      "committedAt": "2026-11-12T07:26:36.000Z",
+      "notes": [
+        "Improves local ranking estimates for larger verified leaderboards."
+      ]
+    },
     {
       "number": 358,
       "title": "Show update notes during loading and expand replay review capacity",
@@ -195,17 +205,6 @@ const historyData = {
       "committedAt": "2026-11-08T23:44:56.000Z",
       "notes": [
         "Better release checks for fresh-account cloud saves."
-      ]
-    },
-    {
-      "number": 339,
-      "title": "Speed cached standings and protect cloud sign-in recovery",
-      "commit": "51ea2228cc2246af353f96a08a919315f198edcd",
-      "committedAt": "2026-11-08T23:32:35.000Z",
-      "notes": [
-        "Faster cached track standings without flashing old names.",
-        "Saves no longer wait for a leaderboard download.",
-        "Clearer cloud-permission diagnostics and safer sign-in recovery handling."
       ]
     }
   ],

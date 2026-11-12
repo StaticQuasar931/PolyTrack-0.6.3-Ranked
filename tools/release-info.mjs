@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 359,
+  "number": 360,
   "version": "0.6.3",
-  "revision": 303,
+  "revision": 304,
   "notes": [
-    "Improves local ranking estimates for larger verified leaderboards."
+    "6,451 more saved runs now have verified replays.",
+    "Leaderboards, rankings and racer profiles reflect the newly verified results."
   ],
-  "preparedAt": "2026-11-12T07:26:04.874Z",
-  "committedAt": "2026-11-12T07:26:36.000Z"
+  "preparedAt": "2026-11-12T07:47:58.071Z",
+  "committedAt": "2026-11-12T07:48:36.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
