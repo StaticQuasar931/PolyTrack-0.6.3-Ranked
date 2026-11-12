@@ -17,6 +17,7 @@ import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {captureOverallProjection, applyCapturedOverallProjection, overallCaptureForBackup} from './capture-overall-projection.mjs';
 import {readRepositoryVerificationAuthority, verificationAuthority as validateVerificationAuthority} from './verifier/local-snapshot-verification.mjs';
 import {nativePolicyFingerprint} from './native-verification-ledger.mjs';
+import {createCanonicalRetentionCapture} from './canonical-retention-capture.mjs';
 import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
 import {eventCatalogHandoffFromEnvironment} from './capture-event-catalog.mjs';
 import {writeHydratedFiles} from './hydrated-file-writer.mjs';
@@ -522,6 +523,10 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       if(totals?.nativeEventOverlay)throw Error('Overlaid event totals have no matching stored-proof manifest');
     }
   }
+  const replayReadLimit=fullPublic?2000:(replayDocumentLimit??100);
+  const canonicalRetention=!offline&&authority==='snapshot-native'&&capture===runPublicSnapshotBackup&&
+    replayReadLimit>1&&env.FIREBASE_VERIFIER_SERVICE_ACCOUNT?createCanonicalRetentionCapture({
+      ledger:nativeCapture.ledger,credential:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,readLimit:replayReadLimit}):null;
   if (!offline) {
     let latest=null;
     if(captureOverall){
@@ -534,6 +539,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const catalogHandoff = env.EVENT_CATALOG_HANDOFF_FILE ? eventCatalogHandoffFromEnvironment({env,
       sourceCommit:await resolveSourceCommit(absoluteRoot)}) : null;
     backupResult=await capture({...captureOptions,directory:stagingDirectory,log,
+      ...(canonicalRetention?{reconcileCanonicalTrack:canonicalRetention.reconcile}:{}),
       ...(catalogHandoff?{catalogHandoff}:{}),
       ...(nativeCapture?{nativeVerification:nativeCapture}:{}),
       ...(latest?{capturedOverall:overallCaptureForBackup(latest),confirmedTracks:latest.confirmedTracks,capturedTracks:latest.capturedTracks}:{})});
@@ -565,7 +571,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     const previousSummary = await readJsonIfPresent(path.join(stagingDirectory, 'public-export-summary.json'));
     const startFullSnapshot = fullPublic && previousProgress?.fullSnapshotPending !== true;
     try {
-      exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: fullPublic ? 2000 : (replayDocumentLimit ?? 100),
+      exportResult = await exportPublic({ directory: stagingDirectory, snapshotDirectory: stagingDirectory, maxDocuments: replayReadLimit-(canonicalRetention?.usedDocuments()||0),
         fullSnapshot: startFullSnapshot, includeProfiles: fullPublic, includePendingReplays:true, retryInvalidAfterMs:3600000,
         fetchImpl: replayCaptureFetch(createSnapshotExportFetch({ ...exportAuth, fetchImpl: exportFetch })), log });
     } catch (error) {
@@ -581,6 +587,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
     await fs.writeFile(path.join(stagingDirectory,'public-export-summary.json'),JSON.stringify(summary)+'\n');
   }
 
+  if(canonicalRetention)log(JSON.stringify({canonicalRetention:canonicalRetention.report(),sharedReplayDocumentLimit:replayReadLimit}));
   let nativeVerification = null;
   if (reusePackagedOverlay) {
     nativeVerification = {authority,reuseOnly:true,reusedOverlay:true,

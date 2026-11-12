@@ -1279,12 +1279,12 @@ async function accountCoverageFixture(t, prior, additionalPriors = new Map()) {
   }
   const before = await inventory(), calls = [], directCalls = [], reports = [];
   async function capture(incoming, {captured = false, paged = false, additional = new Map(),
-    capturedFetchLimit = 0, directBoard = incoming, directStatus = 200, extraTrackIds = []} = {}) {
+    capturedFetchLimit = 0, directBoard = incoming, directStatus = 200, extraTrackIds = [], reconcileCanonicalTrack = null} = {}) {
     const generation = 'c'.repeat(64), pageSize = 100;
     const pagination = {version: 1, generation, pageSize, pageCount: Math.ceil(incoming.entries.length / pageSize),
       totalEntries: incoming.entries.length, complete: true};
     return runPublicSnapshotBackup({directory, now: 1000, log: value => reports.push(JSON.parse(value).publicSnapshotBackup), trackIds: [trackId, ...extraTrackIds],
-      trackFetchLimit: captured ? capturedFetchLimit : 20,
+      reconcileCanonicalTrack, trackFetchLimit: captured ? capturedFetchLimit : 20,
       ...(captured ? {capturedTracks: new Map([...additional, [trackId, authenticatedOverallTrackBackup(incoming, trackId)]])} : {}),
       fetchImpl: async input => {
         const url = new URL(input); calls.push(url.pathname);
@@ -1501,4 +1501,114 @@ test('captured ambiguous identities cannot trigger direct source rechecks', asyn
   assert.match(result.reason, /coverage is ambiguous/);
   assert.deepEqual(f.directCalls, []);
   assert.deepEqual(await f.inventory(), f.before);
+});
+
+function canonicalRetentionResult(prior, board) {
+  const row = {...prior.entries[0], uploadId:'synthetic-upload', replayHash:'e'.repeat(64)};
+  return {board:nextCoverageBoard(board, [row, ...board.entries]), readDocuments:1,
+    retained:[{accountId:row.accountId, trackId, uploadId:row.uploadId, replayHash:row.replayHash,
+      canonicalUpdateTime:'2026-11-12T00:00:00Z', ownerUid:'private', rawDocument:{private:true}}],
+    rawDocuments:[{private:true}]};
+}
+
+test('canonical callback runs once only after exact direct account regression and reports public evidence', async t => {
+  for (const captured of [false, true]) {
+    const prior=coverageBoard(), incoming=nextCoverageBoard(prior, prior.entries.slice(1));
+    const f=await accountCoverageFixture(t,prior);
+    let calls=0;
+    const expected=canonicalRetentionResult(prior,incoming);
+    const result=await f.capture(incoming,{captured,capturedFetchLimit:1,reconcileCanonicalTrack:async args=>{
+      calls++;
+      assert.deepEqual(args,{trackId,prior,board:incoming});
+      assert.deepEqual(f.directCalls,[trackId]);
+      assert.deepEqual(await f.inventory(),f.before,'no writes before canonical validation');
+      return expected;
+    }});
+    assert.equal(calls,1);
+    assert.notEqual(result.deferred,true);
+    const evidence={...expected.retained[0]}; delete evidence.ownerUid; delete evidence.rawDocument;
+    assert.deepEqual(result.canonicalTrackRetention,{tracks:1,accounts:1,readDocuments:1,retained:[evidence]});
+    assert.deepEqual(f.reports.at(-1).canonicalTrackRetention,result.canonicalTrackRetention);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.directory,f.relative),'utf8')),expected.board);
+    assert.equal(JSON.stringify(await f.inventory()).includes('private'),false);
+  }
+});
+
+test('canonical callback is not called for normal, incomplete, ambiguous or unsafe prior sources', async t => {
+  for (const mode of ['normal','incoming-partial','prior-partial','prior-inexact','ambiguous','prior-ambiguous','unsafe-path','missing-prior']) {
+    const prior=coverageBoard();
+    if(mode==='prior-partial') prior.complete=false;
+    if(mode==='prior-inexact') prior.totalEntriesExact=false;
+    if(mode==='prior-ambiguous') prior.entries[1]={...prior.entries[0]};
+    const incoming=nextCoverageBoard(coverageBoard(),mode==='normal'?coverageBoard().entries:coverageBoard().entries.slice(1));
+    if(mode==='incoming-partial') incoming.complete=false;
+    if(mode==='ambiguous') incoming.entries=[incoming.entries[0],incoming.entries[0]];
+    const f=await accountCoverageFixture(t,prior);
+    if(mode==='unsafe-path') {
+      const manifest=JSON.parse(f.before['manifest.json']); manifest.tracks[trackId].path='../outside.json';
+      await fs.writeFile(path.join(f.directory,'manifest.json'),JSON.stringify(manifest));
+    }
+    if(mode==='missing-prior') await fs.unlink(path.join(f.directory,f.relative));
+    let calls=0;
+    await f.capture(incoming,{reconcileCanonicalTrack:()=>{calls++;throw Error('must not run');}});
+    assert.equal(calls,0,mode);
+  }
+});
+
+test('canonical reconciliation rejects bad boards, deletion and invalid evidence without partial writes or retries', async t => {
+  for(const mode of ['same-board','incomplete','delete-current','missing-evidence','bad-binding','bad-read-count','mutate-input','older-return-time','older-return-revision']) {
+    const prior=coverageBoard(), incoming=nextCoverageBoard(prior,[...prior.entries.slice(1),{...prior.entries[0],accountId:'f'.repeat(64)}]);
+    const f=await accountCoverageFixture(t,prior);
+    let calls=0;
+    const capture=f.capture(incoming,{reconcileCanonicalTrack:async args=>{
+      calls++;
+      const result=canonicalRetentionResult(prior,incoming);
+      if(mode==='same-board') result.board=incoming;
+      if(mode==='older-return-time') result.board.updatedAt=incoming.updatedAt-1;
+      if(mode==='older-return-revision') result.board.revision=incoming.revision-1;
+      if(mode==='incomplete') result.board.sourceComplete=false;
+      if(mode==='delete-current') result.board=nextCoverageBoard(result.board,result.board.entries.slice(0,-1));
+      if(mode==='missing-evidence') result.retained=[];
+      if(mode==='bad-binding') result.retained[0].replayHash='d'.repeat(64);
+      if(mode==='bad-read-count') result.readDocuments=-1;
+      if(mode==='mutate-input') {args.prior.entries=[];args.board.entries=[];result.board=nextCoverageBoard(incoming,[]);}
+      return result;
+    }});
+    if(['same-board','delete-current','mutate-input','older-return-time','older-return-revision'].includes(mode)) assert.equal((await capture).deferred,true,mode);
+    else await assert.rejects(capture,/Invalid authenticated|canonical track retention/,mode);
+    assert.equal(calls,1,mode);
+    assert.deepEqual(await f.inventory(),f.before,mode);
+  }
+});
+
+test('canonical callback errors propagate and source authorization, quota, missing and freshness failures never call it', async t => {
+  const prior=coverageBoard(),incoming=nextCoverageBoard(prior,prior.entries.slice(1));
+  const f=await accountCoverageFixture(t,prior), error=Error('synthetic canonical failure');
+  let calls=0;
+  await assert.rejects(f.capture(incoming,{reconcileCanonicalTrack:()=>{calls++;throw error;}}),value=>value===error);
+  assert.equal(calls,1);
+  assert.deepEqual(await f.inventory(),f.before);
+  for(const mode of [401,403,429,404,'older-time','older-revision','partial']) {
+    const f=await accountCoverageFixture(t,prior); let calls=0;
+    const directBoard={...incoming};
+    if(mode==='older-time') directBoard.updatedAt--;
+    if(mode==='older-revision') directBoard.revision--;
+    if(mode==='partial') directBoard.complete=false;
+    const capture=f.capture(incoming,{captured:true,capturedFetchLimit:1,directStatus:typeof mode==='number'?mode:200,directBoard,
+      reconcileCanonicalTrack:()=>{calls++;throw Error('must not run');}});
+    if(mode===401||mode===403) await assert.rejects(capture,new RegExp(String(mode)));
+    else assert.equal((await capture).deferred,true,String(mode));
+    assert.equal(calls,0,String(mode));
+    assert.deepEqual(await f.inventory(),f.before,String(mode));
+  }
+});
+
+test('canonical reconciliation defaults to the original exact account deferral', async t => {
+  for(const options of [{},{reconcileCanonicalTrack:null}]) {
+    const prior=coverageBoard(),f=await accountCoverageFixture(t,prior);
+    const result=await f.capture(nextCoverageBoard(prior,prior.entries.slice(1)),options);
+    assert.equal(result.deferred,true);
+    assert.equal(result.reason,'Track account coverage regressed for '+trackId+': 1 prior accounts missing; reviewed removal or replacement evidence required');
+    assert.deepEqual(await f.inventory(),f.before);
+  }
 });

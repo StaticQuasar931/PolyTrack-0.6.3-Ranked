@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 364,
+    "number": 365,
     "version": "0.6.3",
-    "revision": 308,
+    "revision": 309,
     "notes": [
-      "Fixes event badges hidden by an older display flag after successful replay checks.",
-      "Fixes a hosted snapshot compatibility check."
+      "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
     ]
   },
   "entries": [
+    {
+      "number": 364,
+      "title": "Fix event proof display and preserve legacy capture budgets",
+      "commit": "e4c454b38c7e748d18b35de2643ecee73913197f",
+      "committedAt": "2026-11-12T09:02:50.000Z",
+      "notes": [
+        "Fixes event badges hidden by an older display flag after successful replay checks.",
+        "Fixes a hosted snapshot compatibility check."
+      ]
+    },
     {
       "number": 363,
       "title": "Recheck stale snapshot sources without dropping saved racers",
@@ -193,16 +202,6 @@ const historyData = {
       "committedAt": "2026-11-09T01:55:05.000Z",
       "notes": [
         "Fixed a cross-platform test blocking automatic snapshot updates."
-      ]
-    },
-    {
-      "number": 344,
-      "title": "Refine route estimates and verify captured replays offline",
-      "commit": "6a5de3ad22306381afca4062ab551cfbea78ed04",
-      "committedAt": "2026-11-09T01:50:11.000Z",
-      "notes": [
-        "More precise route comparisons and clearer local PB estimates.",
-        "Snapshot updates now verify saved replays offline and keep recovery progress."
       ]
     }
   ],

@@ -817,7 +817,7 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
 
 async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null, reconcileCanonicalTrack = null} = {}) {
   const handoffNow = now === undefined ? Date.now : () => now;
   now ??= Date.now();
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > (trackConfirmationNotBefore===null?PUBLIC_SNAPSHOT_LIMITS.trackFetches:FULL_TRACK_CHECK_LIMIT))
@@ -894,6 +894,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     .filter(id => TRACK_ID.test(id)).sort();
   const sourceRepairs=new Map();
   const sourceRechecks = new Map();
+  const canonicalRetentions = new Map();
   // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
   // This is local staging validation only; network responses retain their paged-source checks.
   const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
@@ -982,14 +983,60 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
-    const board = full ? publicTrackBackup(full, id) : null;
+    let board = full ? publicTrackBackup(full, id) : null;
     const recheck = sourceRechecks.get(id);
     if (recheck && (!hasCompleteTrackCoverage(board) || board.updatedAt < recheck.board.updatedAt ||
         board.algorithmVersion === recheck.board.algorithmVersion &&
         Number(board.revision || board.sourceRevision || 0) < Number(recheck.board.revision || recheck.board.sourceRevision || 0))) {
       throw recheck.error;
     }
-    if (board) await assertSavedTrackCoverage(board, id);
+    if (board) try { await assertSavedTrackCoverage(board, id); }
+    catch (error) {
+      const regression = new RegExp('^Track account coverage regressed for ' + id +
+        ': [1-9][0-9]* prior accounts missing; reviewed removal or replacement evidence required$');
+      const relative = 'tracks/' + id + '.json';
+      if (!(error instanceof PublicBackupDeferredError) || !regression.test(error.message) ||
+          typeof reconcileCanonicalTrack !== 'function' || !hasCompleteTrackCoverage(board) ||
+          previous.tracks[id]?.path !== relative) throw error;
+      // Reload only the known safe prior path. Canonical/proof authority belongs to the callback.
+      const prior = cachedProjection(JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8')), id);
+      if (!hasCompleteTrackCoverage(prior)) throw error;
+      const original = structuredClone(board);
+      const result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)});
+      const reconciled = authenticatedOverallTrackBackup(result?.board, id);
+      if (reconciled.updatedAt < original.updatedAt ||
+          reconciled.algorithmVersion === original.algorithmVersion &&
+          Number(reconciled.revision || reconciled.sourceRevision || 0) < Number(original.revision || original.sourceRevision || 0))
+        throw error;
+      await assertSavedTrackCoverage(reconciled, id);
+      assertTrackAccountCoverage(prior, reconciled, id);
+      assertTrackAccountCoverage(original, reconciled, id);
+      if (!Array.isArray(result.retained) || !Number.isSafeInteger(result.readDocuments) || result.readDocuments < 0)
+        throw Error('Invalid canonical track retention result');
+      for(const row of original.entries){
+        const retained=reconciled.entries.find(value=>(value.accountId??value.userId)===(row.accountId??row.userId));
+        if(!retained||['timeMs','frames','raceTimeFrames','uploadId','replayHash'].some(key=>retained[key]!==row[key]))
+          throw Error('Invalid canonical track retention: changed incoming run binding');
+      }
+      const originalAccounts = new Set(original.entries.map(row => row.accountId ?? row.userId));
+      const missing = new Set(prior.entries.map(row => row.accountId ?? row.userId).filter(account => !originalAccounts.has(account)));
+      if(result.readDocuments!==missing.size)throw Error('Invalid canonical track retention: document count mismatch');
+      const retained = result.retained.map(value => {
+        const evidence = project(value, ['accountId', 'trackId', 'uploadId', 'replayHash', 'canonicalUpdateTime']);
+        const row = reconciled.entries.find(row => (row.accountId ?? row.userId) === evidence.accountId);
+        if (!missing.delete(evidence.accountId) || evidence.trackId !== id || !row ||
+            !PUBLIC_ACCOUNT_ID.test(evidence.accountId || '') || !TRACK_ID.test(evidence.replayHash || '') ||
+            evidence.uploadId !== row.uploadId || evidence.replayHash !== row.replayHash ||
+            !(typeof evidence.uploadId === 'string' && evidence.uploadId.length > 0 || Number.isSafeInteger(evidence.uploadId) && evidence.uploadId > 0) ||
+            !(typeof evidence.canonicalUpdateTime === 'string' && evidence.canonicalUpdateTime.length > 0 ||
+              Number.isSafeInteger(evidence.canonicalUpdateTime) && evidence.canonicalUpdateTime > 0))
+          throw Error('Invalid canonical track retention evidence');
+        return evidence;
+      });
+      if (missing.size) throw Error('Missing canonical track retention evidence');
+      canonicalRetentions.set(id, {retained, readDocuments:result.readDocuments});
+      board = reconciled;
+    }
     return {id, value: board};
   });
   const fullSourceChecks=trackConfirmationNotBefore===null?null:(()=>{
@@ -1198,6 +1245,13 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     overallResults = {path: 'overall-results.json', available: true};
   }
 
+  const canonicalTrackRetention = {tracks:canonicalRetentions.size, accounts:0, readDocuments:0, retained:[]};
+  for (const id of [...canonicalRetentions.keys()].sort()) {
+    const result = canonicalRetentions.get(id);
+    canonicalTrackRetention.accounts += result.retained.length;
+    canonicalTrackRetention.readDocuments += result.readDocuments;
+    canonicalTrackRetention.retained.push(...result.retained);
+  }
   const records = {};
   let tracksChanged = 0, eventsChanged = 0;
   for (const [relative, value] of pendingWrites) {
@@ -1232,7 +1286,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
     pendingPlaybackCoverage, replayCoverage,
-    trackSummaryMismatches,
+    trackSummaryMismatches, canonicalTrackRetention,
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null,
     ...(previous.nativeVerificationLedger ? {nativeVerificationLedger:previous.nativeVerificationLedger} : {})};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
@@ -1242,7 +1296,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    fullSourceChecks, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,
+    fullSourceChecks, canonicalTrackRetention, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,
