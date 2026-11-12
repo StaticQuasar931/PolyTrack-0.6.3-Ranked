@@ -1,15 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 360,
+    "number": 361,
     "version": "0.6.3",
-    "revision": 304,
+    "revision": 305,
     "notes": [
-      "6,451 more saved runs now have verified replays.",
-      "Leaderboards, rankings and racer profiles reflect the newly verified results."
+      "Restores hosted snapshot checks for the optimized leaderboard format."
     ]
   },
   "entries": [
+    {
+      "number": 360,
+      "title": "Publish 6451 verified replays and refreshed standings",
+      "commit": "8de02a4a75b239bb3eeb46e2301099cb296d14ca",
+      "committedAt": "2026-11-12T07:48:36.000Z",
+      "notes": [
+        "6,451 more saved runs now have verified replays.",
+        "Leaderboards, rankings and racer profiles reflect the newly verified results."
+      ]
+    },
     {
       "number": 359,
       "title": "Compact ranking inputs without dropping verified results",
@@ -195,15 +204,6 @@
       "notes": [
         "Route plans use the full scoring snapshot without loading every leaderboard page.",
         "Clearer targets, better route sorting, and benefits that match your filters."
-      ]
-    },
-    {
-      "number": 340,
-      "title": "Test fresh-account saves against deployed naming rules",
-      "commit": "341bc54ebb9d6131c8b34663d518609ada3c22b2",
-      "committedAt": "2026-11-08T23:44:56.000Z",
-      "notes": [
-        "Better release checks for fresh-account cloud saves."
       ]
     }
   ],

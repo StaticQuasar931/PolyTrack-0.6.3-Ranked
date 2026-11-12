@@ -125,10 +125,13 @@ test('actual current generation: 20-row cold windows avoid the global manifest a
   assert.equal(index.generation,Number(pointer.currentdir.slice('public-snapshots'.length)));
   const id='5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038',requests=[];let bytes=0;
   const trackPath=`tracks/${id}.json`,pagePath=`track-pages/${id}/1.json`;
-  const expected=JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(new URL(index.files[trackPath].path,directory)))).toString('utf8'));
+  const unpack=async logical=>JSON.parse(Buffer.from(await decodeSnapshot(await fs.readFile(new URL(index.files[logical].path,directory)))).toString('utf8'));
+  const manifestPath='track-manifests/'+id+'.json';
+  const paged=!index.files[trackPath],pageManifest=paged?await unpack(manifestPath):null;
+  const expected=paged?{...pageManifest.boardMetadata,complete:pageManifest.sourceComplete,entries:(await Promise.all(pageManifest.pageBounds.map(bound=>unpack(bound.path)))).flatMap(page=>page.entries)}:await unpack(trackPath);
   assert(expected.entries.length>20);assert.equal(expected.complete,true);
   const size=async logical=>(await fs.stat(new URL(index.files[logical]?.path||logical,directory))).size;
-  const bootstrapBytes=await size('bootstrap-fast.json'),pageBytes=await size(pagePath),trackBytes=await size(trackPath),manifestBytes=await size('manifest.json');
+  const bootstrapBytes=await size('bootstrap-fast.json'),pageBytes=await size(pagePath),trackBytes=paged?(await Promise.all(pageManifest.pageBounds.map(bound=>size(bound.path)))).reduce((a,b)=>a+b,0):await size(trackPath),manifestBytes=await size('manifest.json');
   const logicals=new Map(Object.entries(index.files).map(([logical,record])=>[record.path,logical]));
   const read=createPublicSnapshotReader({packed:true,bootstrap:true,optimizedIndex:true,baseUrl:`https://offline.test/${pointer.currentdir}/`,byteCache:{open:async()=>null},fetchImpl:async url=>{
     const asset=new URL(url).pathname.split('/').at(-1),body=await fs.readFile(new URL(asset,directory));requests.push(logicals.get(asset)||asset);bytes+=body.length;return new Response(body);
@@ -137,8 +140,11 @@ test('actual current generation: 20-row cold windows avoid the global manifest a
   assert.deepEqual(joined,value);assert.equal(value.count,20);assert.equal(value.totalEntries,expected.entries.length);assert.equal(value.complete,false);assert.equal(value.hasMore,true);
   assert.equal(requests.length,2);assert.deepEqual(requests,['bootstrap-fast.json',`track-pages/${id}/1.json`]);
   const windowBytes=bytes;assert.equal(windowBytes,bootstrapBytes+pageBytes);
-  const full=await read('track',id);assert.equal(full.entries.length,expected.entries.length);assert.equal(full.complete,true);assert.equal(requests.length,3);assert.equal(requests.includes('manifest.json'),false);
-  assert.deepEqual(requests,['bootstrap-fast.json',pagePath,trackPath]);assert.equal(bytes,bootstrapBytes+pageBytes+trackBytes);
+  const full=await read('track',id);assert.equal(full.entries.length,expected.entries.length);assert.equal(full.complete,true);assert.equal(requests.includes('manifest.json'),false);
+  const expectedRequests=paged?['bootstrap-fast.json',pagePath,manifestPath,...pageManifest.pageBounds.slice(1).map(bound=>bound.path)]:['bootstrap-fast.json',pagePath,trackPath];
+  assert.deepEqual(requests.slice(0,3),expectedRequests.slice(0,3));
+  assert.deepEqual(requests.slice(3).toSorted(),expectedRequests.slice(3).toSorted());
+  assert.equal(bytes,paged?bootstrapBytes+await size(manifestPath)+trackBytes:bootstrapBytes+pageBytes+trackBytes);
   const tuple=e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId];
   assert.deepEqual(full.entries.map(tuple),expected.entries.map(tuple));
   assert.deepEqual(value.entries.map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]),full.entries.slice(0,20).map(e=>[e.accountId,e.timeMs,e.replayHash,e.uploadId]));

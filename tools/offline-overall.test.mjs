@@ -277,7 +277,8 @@ test('existing capture bounds still reject Overall above 16 MB and projection co
   const oversized = fixture();
   oversized.previousOverall.entries[0].carStyle = 'x'.repeat(16 * 1024 * 1024);
   await assert.rejects(buildOfflineOverall(oversized), /overall\.json exceeds 16 MB artifact budget/);
-  const companion = populationFixture(201);
+  // Dictionary encoding keeps the old 20,100-row fixture below 2 MiB.
+  const companion = populationFixture(901);
   companion.tracks = Array.from({length: 100}, (_, i) => {
     const trackId = (i + 10000).toString(16).padStart(64, '0');
     const entries = rankTrustedTrackEntries(companion.tracks[0].entries.map(row => ({...row, trackId})), trackId);
