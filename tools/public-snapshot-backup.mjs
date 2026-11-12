@@ -893,6 +893,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const allTrackIds = [...new Set([...registry, ...eventTrackIds, ...(overall.trackCatalog || []).map(row => row.trackId), ...overall.trackSummaries.map(row => row.trackId), ...Object.keys(previous.tracks), ...(capturedTracks instanceof Map?capturedTracks.keys():[])])]
     .filter(id => TRACK_ID.test(id)).sort();
   const sourceRepairs=new Map();
+  const sourceRechecks = new Map();
   // Materialized authenticated inputs can exceed the public endpoint's 500-row cap.
   // This is local staging validation only; network responses retain their paged-source checks.
   const cachedProjection=(raw,id)=>raw?.entries?.length>500?authenticatedOverallTrackBackup(raw,id):publicTrackBackup(raw,id);
@@ -931,7 +932,15 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       // A timestamp is not a content binding. Reuse only the exact frozen bytes.
       if(cached&&Number(cached.updatedAt)===Number(board.updatedAt)&&
           cachedSource===publicTrackConfirmationDigest(board,id))continue;
-      await assertSavedTrackCoverage(board, id);
+      try { await assertSavedTrackCoverage(board, id); }
+      catch (error) {
+        const regression = new RegExp('^Track account coverage regressed for ' + id +
+          ': [1-9][0-9]* prior accounts missing; reviewed removal or replacement evidence required$');
+        if (!(error instanceof PublicBackupDeferredError) || !regression.test(error.message) || trackFetchLimit === 0) throw error;
+        sourceRechecks.set(id, {board, error});
+        if (sourceRechecks.size > trackFetchLimit) throw error;
+        continue;
+      }
       sourceRepairs.set(relative,board);
       cachedTracks[id]={path:relative,revision:Number(board.revision||board.sourceRevision||0),sourceUpdatedAt:board.updatedAt,updatedAt:board.updatedAt};
     }
@@ -966,12 +975,20 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       delete cachedTracks[id].checkedAt;
     }
   }
-  const selectedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds,cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
+  const plannedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds,cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
     trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
+  // Required source rechecks consume the existing budget before ordinary refreshes.
+  const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id))].slice(0, trackFetchLimit);
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
     const board = full ? publicTrackBackup(full, id) : null;
+    const recheck = sourceRechecks.get(id);
+    if (recheck && (!hasCompleteTrackCoverage(board) || board.updatedAt < recheck.board.updatedAt ||
+        board.algorithmVersion === recheck.board.algorithmVersion &&
+        Number(board.revision || board.sourceRevision || 0) < Number(recheck.board.revision || recheck.board.sourceRevision || 0))) {
+      throw recheck.error;
+    }
     if (board) await assertSavedTrackCoverage(board, id);
     return {id, value: board};
   });
@@ -1225,7 +1242,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   }
   log(JSON.stringify({publicSnapshotBackup: {workerRequests: Number(!capturedOverall) + Number(!handedOffCatalog) + trackRows.length + eventRows.length + replayCandidates.length + pageFetches, pageFetches,
     catalogFetches: Number(!handedOffCatalog), catalogReused: !!handedOffCatalog,
-    fullSourceChecks, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size,
+    fullSourceChecks, trackFetches: trackRows.length, tracksChanged, tracksMissing: missingTracks, sourceBoardsReused:sourceRepairs.size, sourceBoardsRechecked:sourceRechecks.size,
     eventFetches: eventRows.length, archivedEventsReused, archivedEventsUnavailable, eventsChanged, eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, eventsDeferred,
     ...(adminCapture ? {adminArchiveCapture:adminCapture.stats()} : {}),
     eventReplayCandidates: replayCandidates.length, eventReplays: Object.keys(eventReplays).length, pendingPlaybackCoverage, replayCoverage,

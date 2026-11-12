@@ -1248,7 +1248,7 @@ test('catch-up allowance rejects unsafe or unbounded values before network acces
 });
 
 
-async function accountCoverageFixture(t, prior) {
+async function accountCoverageFixture(t, prior, additionalPriors = new Map()) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'track-account-coverage-'));
   t.after(() => fs.rm(directory, {recursive: true, force: true}));
   const relative = 'tracks/' + trackId + '.json';
@@ -1256,6 +1256,12 @@ async function accountCoverageFixture(t, prior) {
     sourceUpdatedAt: prior.updatedAt, updatedAt: prior.updatedAt, checkedAt: 1}}, events: {}};
   const files = {'manifest.json': JSON.stringify(manifest), [relative]: JSON.stringify(prior),
     'overall.json': JSON.stringify({saved: true}), 'canonical/sentinel.json': JSON.stringify({untouched: true})};
+  for (const [id, board] of additionalPriors) {
+    const relative = 'tracks/' + id + '.json';
+    manifest.tracks[id] = {path: relative, revision: board.revision, sourceUpdatedAt: board.updatedAt, updatedAt: board.updatedAt, checkedAt: 1};
+    files[relative] = JSON.stringify(board);
+  }
+  files['manifest.json'] = JSON.stringify(manifest);
   for (const [name, bytes] of Object.entries(files)) {
     await fs.mkdir(path.dirname(path.join(directory, name)), {recursive: true});
     await fs.writeFile(path.join(directory, name), bytes);
@@ -1271,21 +1277,26 @@ async function accountCoverageFixture(t, prior) {
     }
     await visit(); return result;
   }
-  const before = await inventory(), calls = [];
-  async function capture(incoming, {captured = false, paged = false, additional = new Map()} = {}) {
+  const before = await inventory(), calls = [], directCalls = [], reports = [];
+  async function capture(incoming, {captured = false, paged = false, additional = new Map(),
+    capturedFetchLimit = 0, directBoard = incoming, directStatus = 200, extraTrackIds = []} = {}) {
     const generation = 'c'.repeat(64), pageSize = 100;
     const pagination = {version: 1, generation, pageSize, pageCount: Math.ceil(incoming.entries.length / pageSize),
       totalEntries: incoming.entries.length, complete: true};
-    return runPublicSnapshotBackup({directory, now: 1000, log: () => {}, trackIds: [trackId],
-      trackFetchLimit: captured ? 0 : 20,
+    return runPublicSnapshotBackup({directory, now: 1000, log: value => reports.push(JSON.parse(value).publicSnapshotBackup), trackIds: [trackId, ...extraTrackIds],
+      trackFetchLimit: captured ? capturedFetchLimit : 20,
       ...(captured ? {capturedTracks: new Map([...additional, [trackId, authenticatedOverallTrackBackup(incoming, trackId)]])} : {}),
       fetchImpl: async input => {
         const url = new URL(input); calls.push(url.pathname);
         if (url.pathname === '/v1/snapshot/overall') return Response.json({...overall,
           trackSummaries: [{trackId, updatedAt: incoming.updatedAt}]});
         if (url.pathname === '/v1/events/catalog') return Response.json({periods: [], archives: []});
-        if (url.pathname === '/v1/snapshot/track') return Response.json(paged
-          ? {...incoming, complete: false, pagination, entries: incoming.entries.slice(0, 100)} : incoming);
+        if (url.pathname === '/v1/snapshot/track') {
+          directCalls.push(url.searchParams.get('trackId'));
+          if (directStatus !== 200) return new Response('', {status: directStatus});
+          return Response.json(paged
+            ? {...incoming, complete: false, pagination, entries: incoming.entries.slice(0, 100)} : directBoard);
+        }
         if (url.pathname === '/v1/snapshot/track/page') {
           const page = Number(url.searchParams.get('page'));
           assert.equal(url.searchParams.get('generation'), generation);
@@ -1296,7 +1307,7 @@ async function accountCoverageFixture(t, prior) {
         return new Response('', {status: 404});
       }});
   }
-  return {capture, calls, inventory, before, directory, relative};
+  return {capture, calls, directCalls, reports, inventory, before, directory, relative};
 }
 
 function coverageBoard(count = 3) {
@@ -1431,5 +1442,63 @@ test('an unreadable prior source defers rather than bypassing the coverage guard
   } finally { fs.readFile = originalRead; }
   assert.equal(result.deferred, true);
   assert.match(result.reason, /Prior track source unavailable/);
+  assert.deepEqual(await f.inventory(), f.before);
+});
+
+
+test('captured account regression rechecks one full direct source within the existing budget', async t => {
+  const prior = coverageBoard(), candidate = nextCoverageBoard(prior, prior.entries.slice(1));
+  const directBoard = nextCoverageBoard(candidate, prior.entries.map(row => ({...row, timeMs: row.timeMs + 1})));
+  const f = await accountCoverageFixture(t, prior);
+  const result = await f.capture(candidate, {captured: true, capturedFetchLimit: 1, directBoard, extraTrackIds: ['0'.repeat(64)]});
+  assert.notEqual(result.deferred, true);
+  assert.deepEqual(f.directCalls, [trackId], 'forced source comes first and displaces ordinary work');
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.directory, f.relative), 'utf8')), directBoard);
+  assert.equal(f.reports.at(-1).trackFetches, 1);
+  assert.equal(f.reports.at(-1).sourceBoardsRechecked, 1);
+  assert.equal(f.reports.at(-1).sourceBoardsReused, 0);
+});
+
+test('captured regression direct rechecks fail closed without any writes', async t => {
+  for (const mode of ['still-missing', 'older-time', 'older-revision', 'partial', 'source-incomplete', 'inexact', '404', '429', '401', '403']) {
+    const prior = coverageBoard(), candidate = nextCoverageBoard(prior, prior.entries.slice(1));
+    let directBoard = nextCoverageBoard(candidate, structuredClone(prior.entries));
+    if (mode === 'still-missing') directBoard = candidate;
+    if (mode === 'older-time') directBoard.updatedAt = candidate.updatedAt - 1;
+    if (mode === 'older-revision') directBoard.revision = candidate.revision - 1;
+    if (mode === 'partial') directBoard.complete = false;
+    if (mode === 'source-incomplete') directBoard.sourceComplete = false;
+    if (mode === 'inexact') directBoard.totalEntriesExact = false;
+    const directStatus = /^\d+$/.test(mode) ? Number(mode) : 200;
+    const f = await accountCoverageFixture(t, prior);
+    const capture = f.capture(candidate, {captured: true, capturedFetchLimit: 1, directBoard, directStatus});
+    if (directStatus === 401 || directStatus === 403) await assert.rejects(capture, new RegExp(String(directStatus)));
+    else assert.equal((await capture).deferred, true, mode);
+    assert.deepEqual(f.directCalls, [trackId], mode + ': exactly one attempt');
+    assert.deepEqual(await f.inventory(), f.before, mode);
+  }
+});
+
+test('captured regression rechecks preserve zero and overfull budgets', async t => {
+  const prior = coverageBoard(), candidate = nextCoverageBoard(prior, prior.entries.slice(1));
+  const otherId = 'b'.repeat(64), otherPrior = {...prior, trackId: otherId};
+  for (const budget of [0, 1]) {
+    const f = await accountCoverageFixture(t, prior, new Map([[otherId, otherPrior]]));
+    const result = await f.capture(candidate, {captured: true, capturedFetchLimit: budget,
+      additional: new Map([[otherId, {...candidate, trackId: otherId}]])});
+    assert.equal(result.deferred, true);
+    assert.match(result.reason, /prior accounts missing/);
+    assert.deepEqual(f.directCalls, [], 'no requests when forced work cannot fit');
+    assert.deepEqual(await f.inventory(), f.before);
+  }
+});
+
+test('captured ambiguous identities cannot trigger direct source rechecks', async t => {
+  const prior = coverageBoard(), candidate = nextCoverageBoard(prior, [prior.entries[0], prior.entries[0]]);
+  const f = await accountCoverageFixture(t, prior);
+  const result = await f.capture(candidate, {captured: true, capturedFetchLimit: 1, directBoard: prior});
+  assert.equal(result.deferred, true);
+  assert.match(result.reason, /coverage is ambiguous/);
+  assert.deepEqual(f.directCalls, []);
   assert.deepEqual(await f.inventory(), f.before);
 });

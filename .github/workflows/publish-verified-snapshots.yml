@@ -6,6 +6,11 @@ on:
       FIREBASE_VERIFIER_SERVICE_ACCOUNT:
         required: true
     inputs:
+      replay_document_limit:
+        description: 'Bounded normal replay-document reads, 100 routine or 1000 manual catch-up'
+        required: false
+        type: string
+        default: '100'
       verification_authority:
         description: 'Explicit authority, or empty to inherit the checked-in repository policy'
         required: false
@@ -272,6 +277,7 @@ jobs:
           EVENT_CATALOG_CAPTURE_STARTED_AT: ${{ steps.coordination.outputs.started_at }}
           VERIFICATION_AUTHORITY: ${{ steps.authority.outputs.mode }}
           ONE_OFF_NATIVE: ${{ inputs.overnight_native }}
+          REPLAY_DOCUMENT_LIMIT: ${{ inputs.replay_document_limit || '100' }}
           REPAIR_ATTEMPT: ${{ inputs.repair_attempt }}
           RECOVERY_PUBLIC_KEY: ${{ inputs.recovery_public_key || vars.POLYTRACK_CAPTURE_RECOVERY_PUBLIC_KEY }}
         # The updater's parent-owned hook exports replays first, then invokes the
@@ -286,6 +292,8 @@ jobs:
           import {CAPTURE_REPAIR_SECOND} from './tools/capture-repair-plan.mjs';
           import {encryptCaptureRecovery} from './tools/capture-recovery.mjs';
           const oneOff=process.env.ONE_OFF_NATIVE==='true',recovery=oneOff&&process.env.REPAIR_ATTEMPT==='repair-2';
+          const replayLimit=Number(process.env.REPLAY_DOCUMENT_LIMIT||100);
+          if(![100,1000].includes(replayLimit))throw Error('Invalid bounded manual replay-document limit');
           const sourceCommit=process.env.SNAPSHOT_NATIVE_SOURCE_COMMIT;
           const recipientPublicKey=process.env.RECOVERY_PUBLIC_KEY,outputFile=path.join(process.env.RUNNER_TEMP,'polytrack-recovery.ptenc');
           const attempt=recovery?'repair-2':oneOff?'overnight-capture':'routine-capture';
@@ -303,7 +311,7 @@ jobs:
           let result;
           try{
             result=await updatePublicSnapshot({refreshReplays:true,
-              ...(oneOff?{replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit}:{}),
+              ...(oneOff?{replayDocumentLimit:recovery?CAPTURE_REPAIR_SECOND.replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit}:{replayDocumentLimit:replayLimit}),
               verificationAuthority:process.env.VERIFICATION_AUTHORITY,nativePhaseOptions,captureCheckpoint});
           }finally{
             // Includes early strict-gate failures and legacy Firestore paths without a native hook.

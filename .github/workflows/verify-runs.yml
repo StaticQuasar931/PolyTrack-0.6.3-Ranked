@@ -7,6 +7,11 @@ on:
     - cron: '45 8 * * *'
   workflow_dispatch:
     inputs:
+      replay_document_limit:
+        description: 'Replay-document read cap for this manual capture; routine runs remain at 100'
+        type: choice
+        options: ['100', '1000']
+        default: '100'
       catch_up:
         description: 'Legacy Firestore-authority catch-up only; not used in offline verification'
         type: boolean
@@ -160,6 +165,7 @@ jobs:
     uses: ./.github/workflows/publish-verified-snapshots.yml
     with:
       publication_changed: true
+      replay_document_limit: ${{ inputs.replay_document_limit || '100' }}
       capture_requested_at: ${{ needs.verify.outputs.capture_requested_at }}
       verification_authority: ${{ needs.verify.outputs.verification_authority }}
       overnight_native: ${{ needs.verify.outputs.overnight_native == 'true' }}

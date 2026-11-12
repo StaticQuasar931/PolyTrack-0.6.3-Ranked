@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 362,
+  "number": 363,
   "version": "0.6.3",
-  "revision": 306,
+  "revision": 307,
   "notes": [
-    "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
-    "Weekly and daily track cards show your place as 1/255 when the full field is known."
+    "Improves snapshot updates without dropping saved racers."
   ],
-  "preparedAt": "2026-11-12T08:35:52.022Z",
-  "committedAt": "2026-11-12T08:37:07.000Z"
+  "preparedAt": "2026-11-12T08:52:34.333Z",
+  "committedAt": "2026-11-12T08:53:30.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
