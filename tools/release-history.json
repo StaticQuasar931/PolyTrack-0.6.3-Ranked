@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 361,
+    "number": 362,
     "version": "0.6.3",
-    "revision": 305,
+    "revision": 306,
     "notes": [
-      "Restores hosted snapshot checks for the optimized leaderboard format."
+      "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
+      "Weekly and daily track cards show your place as 1/255 when the full field is known."
     ]
   },
   "entries": [
+    {
+      "number": 361,
+      "title": "Restore hosted snapshot integrity checks for paged boards",
+      "commit": "1b98a0a2e3c13bce86869067a7a0ed78346fa91f",
+      "committedAt": "2026-11-12T08:14:37.000Z",
+      "notes": [
+        "Restores hosted snapshot checks for the optimized leaderboard format."
+      ]
+    },
     {
       "number": 360,
       "title": "Publish 6451 verified replays and refreshed standings",
@@ -194,16 +204,6 @@
         "Fixed fresh-account Studio defaults and clearer design publishing messages.",
         "Saved PB notifications retry safely after a connection failure.",
         "Cloud sign-in recovery preserves your racer and local PBs."
-      ]
-    },
-    {
-      "number": 341,
-      "title": "Build route plans from compact scoring snapshots",
-      "commit": "cd4f3ad6f8a28ffd0d46d84acd4cd82251245f4a",
-      "committedAt": "2026-11-09T00:29:35.000Z",
-      "notes": [
-        "Route plans use the full scoring snapshot without loading every leaderboard page.",
-        "Clearer targets, better route sorting, and benefits that match your filters."
       ]
     }
   ],

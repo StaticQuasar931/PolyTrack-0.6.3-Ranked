@@ -71,7 +71,7 @@ test('desktop and mobile provisional previews keep time and place left aligned w
    const state=await page.locator('.sq-event-personal').evaluate(node=>({text:node.textContent,rows:[...node.children].map(row=>({text:getComputedStyle(row).textAlign,justify:getComputedStyle(row).justifyContent,overflow:row.scrollWidth>row.clientWidth}))}));
    assert.match(state.text,/2nd \(provisional\)/);assert.doesNotMatch(state.text,/[xX*]/);
    assert.ok(state.rows.every(row=>row.text==='left'&&row.justify==='flex-start'&&!row.overflow),JSON.stringify({width,state}));
-   assert.equal(await page.locator('.sq-event-record').innerText(),'2nd of 200 (provisional)');
+   assert.equal(await page.locator('.sq-event-record').innerText(),'2/? (provisional)');
   }
  }finally{await browser.close();}
 });

@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
 import {eventVerifiedPendingMatch,eventLocalReplayBinding,eventPublishedPbCoversReceipt,eventSnapshotFields,
-  eventSnapshotRows,eventOwnPlacementPresentation} from './client.mjs';
+  eventSnapshotRows,eventOwnPlacementPresentation,eventCompleteFieldSize} from './client.mjs';
 
 globalThis.fetch=()=>{throw Error('No network in event record reconciliation tests');};
 Socket.prototype.connect=globalThis.fetch;
@@ -23,17 +23,17 @@ function render(saved,{local=null,receipt=null,policy='all',enabled=true,filterR
   const accountId=hash(4),context={cache:new Map([[period.id,saved]]),localBest:()=>local,
     ownReceipts:new Map(receipt?[[period.id+'_'+accountId,receipt]]:[]),
     bridge:{accountId:()=>accountId,snapshotOnly:()=>true,filterRows},
-    eventSnapshotFields,eventOwnPlacementPresentation,readEventPlacementSettings:()=>({enabled,policy}),
+    eventSnapshotFields,eventOwnPlacementPresentation,eventCompleteFieldSize,readEventPlacementSettings:()=>({enabled,policy}),
     validEventTimestamp:()=>false,now:()=>Date.now(),displayName:r=>r.name||'You',time:String};
   return vm.runInNewContext(section('  function eventDisplayRows(', '  function syncNativeArchiveBoard(')+
     section('  function displayedRecordPlacement(', '  function cardStandings(')+
     ';({rows:()=>eventDisplayRows(period),markup:()=>recordMarkup(period)});',{...context,period});
 }
 
-test('weekly card reconciles the exact verified snapshot PB and displays 4th of 200, never Pending',()=>{
+test('weekly card reconciles the exact verified snapshot PB and displays 4/200, never Pending',()=>{
   const saved=board(),own=saved.entries[3],local={...own,periodId:period.id,trackId:period.trackId,attemptId:'local'},
     receipt={...local,status:'waiting'},before=structuredClone({saved,local,receipt}),ui=render(saved,{local,receipt});
-  assert.match(ui.markup(),/>4th of 200</);assert.doesNotMatch(ui.markup(),/Pending|provisional/);
+  assert.match(ui.markup(),/>4\/200</);assert.doesNotMatch(ui.markup(),/Pending|provisional/);
   assert.equal(ui.rows().rows.find(r=>r.accountId===own.accountId).pending,false);
   assert.equal(eventVerifiedPendingMatch(saved,waiting(local)),own);
   assert.equal(eventPublishedPbCoversReceipt(receipt,local,period,{board:saved,accountId:own.accountId}),true);
@@ -45,7 +45,8 @@ test('same-time different replay remains locally pending; verified-only keeps th
   const ui=render(saved,{local});
   assert.equal(eventVerifiedPendingMatch(saved,local),null);
   assert.equal(ui.rows().rows.find(r=>r.accountId===own.accountId).pending,true);
-  assert.match(ui.markup(),/>4th of 200 \(provisional\)</);
+  assert.match(ui.markup(),/>4\/200 \(provisional\)</);
+  assert.match(render(saved,{local,policy:'verified'}).markup(),/>4\/200</);
   assert.equal(eventPublishedPbCoversReceipt(null,local,period,{board:saved,accountId:own.accountId}),false);
   assert.equal(eventSnapshotFields(saved,{local}).verified.rows.find(r=>r.accountId===own.accountId).replayHash,own.replayHash);
 });
@@ -71,14 +72,14 @@ test('period, track, account, run identity and explicit holds cannot reconcile f
   assert.equal(eventVerifiedPendingMatch(blocked,own),null);
 });
 
-test('cards and sidebar presentation count the actual loaded union above 200, not intake limits or metadata',()=>{
+test('partial card previews never claim the loaded or filtered subset is the complete total',()=>{
   const saved=board(205);saved.complete=false;saved.totalEntries=999;
   saved.pendingPlaybacks=Array.from({length:36},(_,i)=>waiting(row(i+206)));
-  assert.match(render(saved).markup(),/>4th of 241 \(provisional\)</);
-  assert.match(render(saved,{policy:'verified'}).markup(),/>4th of 205</);
+  assert.match(render(saved).markup(),/>4\/\? \(provisional\)</);
+  assert.match(render(saved,{policy:'verified'}).markup(),/>4\/\?</);
   assert.equal(eventSnapshotRows(saved).rows.length,241);
-  assert.equal(eventOwnPlacementPresentation({rank:4,knownFieldSize:241,provisional:true}).text,'4th of 241 (provisional)');
-  assert.match(render(saved,{filterRows:rows=>({active:true,rows:rows.filter(r=>Number.parseInt(r.accountId,16)<=10)})}).markup(),/>4th of 10</);
+  assert.equal(eventOwnPlacementPresentation({rank:4,knownFieldSize:241,provisional:true}).text,'4/? (provisional)');
+  assert.match(render(saved,{filterRows:rows=>({active:true,rows:rows.filter(r=>Number.parseInt(r.accountId,16)<=10)})}).markup(),/>4\/\? \(provisional\)</);
   assert.doesNotMatch(render(saved,{enabled:false}).markup(),/4th|\/ 241/);
 });
 
@@ -93,4 +94,20 @@ test('legacy retained local bytes produce only an exact bounded identity hash, n
     assert.equal(await eventLocalReplayBinding(local,period,accountId,[{...raw,...change}]),null);
   assert.equal(await eventLocalReplayBinding(local,period,accountId,Array(9).fill(raw)),null);
   assert.equal(await eventLocalReplayBinding(local,period,accountId,[{...raw,replay:'x'.repeat(65537)}]),null);
+});
+
+test('daily and weekly complete 255 previews ignore personal filters; partial four and unknown totals stay unknown',()=>{
+  for(const kind of ['daily','weekly']){
+    const saved=board(255);saved.period={...period,kind,entrantLimit:512};
+    const previous=period.kind;period.kind=kind;
+    try{
+      const filterRows=rows=>({active:true,rows:rows.filter(r=>Number.parseInt(r.accountId,16)<=4)});
+      assert.match(render(saved,{filterRows}).markup(),/>4\/255</);
+      assert.match(render(saved,{filterRows,policy:'verified'}).markup(),/>4\/255</);
+      const partial={...saved,entries:saved.entries.slice(0,4),complete:false};
+      assert.match(render(partial).markup(),/>4\/\?</);
+      const unknown={...partial,complete:undefined,totalEntries:undefined};
+      assert.match(render(unknown).markup(),/>4\/\?</);
+    }finally{period.kind=previous;}
+  }
 });

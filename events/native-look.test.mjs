@@ -38,7 +38,7 @@ test('event row ordinal structure matches the actual shipped native renderer and
 
 test('preview cards retain compact placement boxes while sidebar uses ordinals and a truthful loaded-field percentile',()=>{
   const place={rank:4,knownFieldSize:200,provisional:false},before=structuredClone(place);
-  assert.equal(eventOwnPlacementPresentation(place).text,'4th of 200');
+  assert.equal(eventOwnPlacementPresentation(place).text,'4/?');
   assert.match(eventOwnPlacementPresentation(place).className,/sq-record-placement/);
   assert.equal(eventSidebarPlacementPresentation(place).text,'4th (2%)');
   assert.equal(eventSidebarPlacementPresentation({...place,rank:1}).text,'1st (0.5%)');
@@ -49,12 +49,12 @@ test('preview cards retain compact placement boxes while sidebar uses ordinals a
   assert.equal(eventSidebarPlacementPresentation({rank:0}),null);assert.deepEqual(place,before);
 });
 
-test('weekly placement previews use ordinal and loaded field, not font-dependent symbols',()=>{
+test('weekly placement previews use rank and complete total without changing sidebar ordinals',()=>{
   for(const [rank,ordinal] of [[1,'1st'],[2,'2nd'],[3,'3rd'],[11,'11th'],[12,'12th'],[13,'13th'],[22,'22nd']]){
-    const place={rank,knownFieldSize:200,provisional:true};
-    assert.equal(eventOwnPlacementPresentation(place).text,ordinal+' of 200 (provisional)');
-    assert.doesNotMatch(eventOwnPlacementPresentation(place).text,/[xX*\/]/);
-    assert.match(eventOwnPlacementPresentation(place).title,/provisional/);
+    const place={rank,fieldSize:255,knownFieldSize:200,provisional:true};
+    assert.equal(eventOwnPlacementPresentation(place).text,rank+'/255 (provisional)');
+    assert.doesNotMatch(eventOwnPlacementPresentation(place).text,/[xX*]/);
+    assert.match(eventOwnPlacementPresentation(place).title,/provisional/i);
     assert.equal(eventSidebarPlacementPresentation(place).ordinal,ordinal+' (provisional)');
   }
 });

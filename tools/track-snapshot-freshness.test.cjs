@@ -68,3 +68,12 @@ test('failed PB upload keeps the authoritative full board and leaves the PB as a
  f.context.retainTrackSnapshotAfterLocalPb('track',{accountId:'me',timeMs:900});
  assert.equal(f.board().entries.length,650);assert.equal(f.board().revision,7);assert.equal(f.board().complete,true);
 });
+
+test('offline proof publication replaces same-time flags and rejects retired package flags',()=>{
+ const f=fixture(),row={accountId:'racer',timeMs:100,runVerified:false};
+ f.context.writeTrackSnapshotCache('track',[row],200,{revision:3,source:'public-backup',snapshotCapturedAt:190,snapshotGeneration:80});
+ assert.equal(f.context.writeTrackSnapshotCache('track',[{...row,runVerified:true}],200,{revision:3,source:'public-backup',snapshotCapturedAt:190,snapshotGeneration:81}),true);
+ assert.equal(f.board().entries[0].runVerified,true);assert.equal(f.board().snapshotGeneration,81);
+ assert.equal(f.context.writeTrackSnapshotCache('track',[row],200,{revision:3,source:'public-backup',snapshotCapturedAt:190,snapshotGeneration:80}),false);
+ assert.equal(f.board().entries[0].runVerified,true);
+});

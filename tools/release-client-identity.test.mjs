@@ -683,3 +683,21 @@ test('planner PB merge is independent of the season display sort',()=>{
   const primary=[finish()],incoming=[finish({timeMs:19000,rank:2,cachedAt:200})];
   assert.deepEqual(profileMerges(primary,incoming,true,false,'season'),profileMerges(primary,incoming,true,false,'place'));
 });
+
+test('same capture time in a new package refreshes verified flags before releasing a cached board',async()=>{
+ const saved={...cached('A'),source:'public-backup',snapshotCapturedAt:100,snapshotGeneration:80,complete:true,totalEntries:1};
+ const h=trackHarness({A:saved});h.context.publicSnapshotCapturedAt=100;h.context.publicSnapshotGeneration=81;
+ const pending=h.get('A');await tick();assert.equal(h.loads.length,1);
+ h.loads[0].resolve({...board('A'),_publicBackup:true,_snapshotCapturedAt:100,_snapshotGeneration:81,entries:[{...row('A'),runVerified:true}]});
+ const rows=await pending;assert.equal(rows[0].runVerified,true);assert.equal(h.loads.length,1);
+});
+
+for(const oldGeneration of [0,80])for(const track of ['A','B'])test('package generation refreshes '+track+' verification from generation '+oldGeneration+' without repeated loads',async()=>{
+ const saved={...cached(track),entries:[{...row(track),runVerified:false}],source:'public-backup',snapshotCapturedAt:100,snapshotGeneration:oldGeneration,complete:true,totalEntries:1};
+ const h=trackHarness({[track]:saved});h.context.publicSnapshotCapturedAt=100;h.context.publicSnapshotGeneration=81;
+ const pending=h.get(track);await tick();assert.equal(h.loads.length,1);
+ h.loads[0].resolve({...board(track,saved.revision),updatedAt:saved.serverUpdatedAt,_publicBackup:true,_snapshotCapturedAt:100,_snapshotGeneration:81,entries:[{...row(track),runVerified:true}]});
+ const rows=await pending;assert.equal(rows[0].runVerified,true);assert.equal(h.loads.length,1);
+ assert.equal(h.cache.get(track).snapshotGeneration,81);
+ assert.equal((await h.get(track))[0].runVerified,true);assert.equal(h.loads.length,1,'same-generation warm selection reuses its accepted board');
+});

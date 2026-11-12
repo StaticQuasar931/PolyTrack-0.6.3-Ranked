@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {eventOrdinal,eventPendingRows,eventPlacementPresentation,eventRecordPlacement,eventTrackName,readEventPlacementSettings} from './client.mjs';
+import {eventOrdinal,eventOwnPlacementPresentation,eventPendingRows,eventPlacementPresentation,eventRecordPlacement,eventTrackName,readEventPlacementSettings} from './client.mjs';
 
 const account=n=>n.toString(16).padStart(64,'0');
 const period={id:'daily-fixture',trackId:'a'.repeat(64),entrantLimit:5};
@@ -79,4 +79,21 @@ test('cards, event detail, and archive adapter share the public-name resolver',(
   assert.match(source,/resolveName:periodName/);
   assert.match(source,/escape\(periodName\(p\)\)/);
   assert.match(source,/escape\(periodName\(period\)\)/);
+});
+
+test('complete field totals are proven, not inferred from loaded rows or racerCount',()=>{
+  const p={...period,entrantLimit:512},entries=Array.from({length:255},(_,i)=>verified(i+1,1000+i,i+1));
+  const full={...board(entries),period:p,complete:true,sourceComplete:true,totalEntries:255};
+  const place=(snapshot,policy='all',id=1,timeMs=1000)=>eventRecordPlacement({board:snapshot,period:p,accountId:account(id),timeMs,policy});
+  assert.equal(eventOwnPlacementPresentation(place(full)).text,'1/255');
+  assert.equal(eventOwnPlacementPresentation(place(full,'verified')).text,'1/255');
+  for(const extra of [{complete:false},{sourceComplete:false},{publicationPending:true},{pagination:{hasMore:true}},{totalEntries:256}])
+    assert.equal(place({...full,...extra}).fieldSize,null);
+  const partial={...full,entries:entries.slice(0,4),complete:false};
+  assert.equal(eventOwnPlacementPresentation(place(partial)).text,'1/?');
+  assert.equal(place({...partial,complete:undefined,totalEntries:undefined}).fieldSize,null);
+  const pending={...full,pendingPlaybacks:[waiting(256,999)]};
+  assert.equal(eventOwnPlacementPresentation(place(pending,'all',256,999)).text,'1/256 (provisional)');
+  assert.equal(place(pending,'verified',256,999),null);
+  assert.equal(eventOwnPlacementPresentation(place(pending,'verified')).text,'1/255');
 });

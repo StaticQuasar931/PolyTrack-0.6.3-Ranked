@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=305';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=305';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=306';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=306';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=305';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=305';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=305';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=306';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=306';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=306';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -372,6 +372,12 @@ export function readEventPlacementSettings(storage=globalThis.localStorage){
   try{return {enabled:storage?.getItem('polytrack-0.6.2-pb-podiums')!=='0',policy:storage?.getItem('polytrack-0.6.2-pb-podiums-verified-only')==='1'?'verified':'all'};}
   catch{return {enabled:true,policy:'all'};}
 }
+export function eventCompleteFieldSize(board,rows){
+  if(board?.complete!==true||board.sourceComplete===false||board.publicationPending===true||
+    board.pagination?.hasMore===true||!Array.isArray(board.entries)||
+    board.totalEntries!==undefined&&board.totalEntries!==board.entries.length)return null;
+  return rows.length;
+}
 export function eventRecordPlacement({board,period,accountId,timeMs,policy='all'}={}){
   if(!EVENT_RECORD_HASH.test(accountId||'')||!Number.isSafeInteger(timeMs)||timeMs<=0||!board||board.period?.id!==period?.id||board.period?.trackId!==period?.trackId||!Number.isSafeInteger(board.updatedAt)||board.updatedAt<0||!Array.isArray(board.entries))return null;
   const declared=Number(period?.entrantLimit),limit=Number.isSafeInteger(declared)&&declared>0&&declared<=EVENT_RECORD_LIMIT?declared:EVENT_RECORD_LIMIT;
@@ -402,7 +408,7 @@ export function eventRecordPlacement({board,period,accountId,timeMs,policy='all'
   const own=rows.find(row=>row.accountId===accountId&&row.timeMs===timeMs);
   if(!own||policy==='verified'&&own.pending)return null;
   const rank=1+rows.filter(row=>row.timeMs<timeMs).length;
-  return Object.freeze({rank,fieldSize:null,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),policy:policy==='verified'?'verified':'all'});
+  return Object.freeze({rank,fieldSize:eventCompleteFieldSize(board,rows),knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),policy:policy==='verified'?'verified':'all'});
 }
 export function eventPlacementPresentation(place){
   if(!place||!Number.isSafeInteger(place.rank)||place.rank<=0)return null;
@@ -419,9 +425,9 @@ export function eventOrdinal(rank){
 export function eventOwnPlacementPresentation(place){
   const presentation=eventPlacementPresentation(place);
   if(!presentation)return null;
-  const size=place.knownFieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
-  const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:presentation.title;
-  return {...presentation,text:eventOrdinal(place.rank)+(known?' of '+size:'')+(place.provisional?' (provisional)':''),
+  const size=place.fieldSize,known=Number.isSafeInteger(size)&&size>=place.rank;
+  const title=(known?`Event place #${place.rank} of ${size} racers.`:presentation.title)+(place.provisional?' Provisional placement.':'');
+  return {...presentation,text:place.rank+'/'+(known?size:'?')+(place.provisional?' (provisional)':''),
     className:presentation.className+' sq-record-placement'+(place.provisional?' estimated':''),title,ariaLabel:title};
 }
 export function eventSidebarPlacementPresentation(place){
@@ -431,7 +437,8 @@ export function eventSidebarPlacementPresentation(place){
   const value=known?Math.max(.0001,place.rank/size*100):null;
   const percentile=value===null?null:String(Number(value.toFixed(value<10?4:value<100?3:2)));
   const ordinal=eventOrdinal(place.rank)+(place.provisional?' (provisional)':'');
-  return {...presentation,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
+  const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:eventPlacementPresentation(place).title;
+  return {...presentation,title,ariaLabel:title,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
 }
 export function renderEventPersonalBest(host,{timeText,placement,pending=false,local=false,unscored=false,hasRecord=true}){
   const doc=host.ownerDocument;
@@ -807,19 +814,19 @@ export function installEvents(bridge){
     dialog.querySelector('[data-event-close]').focus();
   }
   const body=html=>{if(!dialog)return;const main=dialog.querySelector('main');const restore=main.contains(document.activeElement);main.innerHTML=html;if(restore)dialog.querySelector('[data-event-close]').focus({preventScroll:true});};
-  function displayedRecordPlacement(period,own,board,filterResult){
+  function displayedRecordPlacement(period,own,board,filterResult,preview=false){
     const settings=readEventPlacementSettings();
     if(!settings.enabled||!own)return null;
-    const display=eventDisplayRows(period,{onlyVerified:settings.policy==='verified'}),rows=display.rows;
+    const display=eventDisplayRows(period,{onlyVerified:settings.policy==='verified'}),rows=preview?display.sourceRows:display.rows;
     const mine=rows.find(row=>row.accountId===bridge.accountId()&&row.timeMs===own.timeMs);
-    return mine?{rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),
-      policy:settings.policy,visibleField:true,originalRank:mine.originalRank}:null;
+    return mine?{rank:mine.rank,fieldSize:preview?eventCompleteFieldSize(board,rows):rows.length,knownFieldSize:rows.length,provisional:rows.some(row=>row.pending),
+      policy:settings.policy,visibleField:!preview,originalRank:mine.originalRank}:null;
   }
   function recordMarkup(period){
     if(period?.scheduleOnly){const own=localBest(period);return own?'<time>'+time(own.timeMs)+'</time><small>Saved on this device</small>':'No event time';}
     const {rows,board,filterResult,sourceOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn;
     if(!own)return 'No record';
-    const presentation=shown?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult)):null;
+    const presentation=shown?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult,true)):null;
     return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.pending?' <small>Pending</small>':'');
   }
   function cardStandings(period){
