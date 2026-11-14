@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 373,
+  "number": 374,
   "version": "0.6.3",
-  "revision": 317,
+  "revision": 318,
   "notes": [
-    "Snapshot capture now starts with current personal bests before refreshing track boards.",
-    "Capture can publish using existing verification, with new replay verification running separately afterward."
+    "Improved snapshot readiness checks for capture-first publication."
   ],
-  "preparedAt": "2026-11-14T08:29:17.974Z",
-  "committedAt": "2026-11-14T08:31:50.000Z"
+  "preparedAt": "2026-11-14T08:46:03.850Z",
+  "committedAt": "2026-11-14T08:46:04.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
