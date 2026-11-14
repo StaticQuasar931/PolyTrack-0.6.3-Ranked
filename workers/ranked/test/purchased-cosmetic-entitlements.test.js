@@ -10,9 +10,12 @@ const earned=()=>({plate:['block','outline'],stage:['garage','slate'],stripe:['s
 const buy=(prior=null,id=SHOP_PROFILE_CATALOG[0].id)=>addPurchase(prior,id,at,binding);
 
 test('catalog is fixed profile-only version2 and distinct from retired native presets',()=>{
- assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);assert.equal(SHOP_PROFILE_CATALOG.length,3);
+ assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);assert.equal(SHOP_PROFILE_CATALOG.length,9);
  assert.deepEqual(SHOP_PROFILE_CATALOG.map(i=>[i.id,i.price,i.grants[0].slot,i.grants[0].value]),[
- ['profile-pitlane-ticket',20,'plate','pitlane-ticket'],['profile-apex-observatory',30,'stage','apex-observatory'],['profile-vector-ribbon',50,'stripe','vector-ribbon']]);
+ ['profile-pitlane-ticket',20,'plate','pitlane-ticket'],['profile-apex-observatory',30,'stage','apex-observatory'],['profile-vector-ribbon',50,'stripe','vector-ribbon'],
+ ['profile-petrol',16,'theme','petrol'],['profile-navy-secondary',20,'baseSecondary','navy'],
+ ['profile-rail',32,'edge','rail'],['profile-rally-lines',36,'stripe','rally-lines'],
+ ['profile-book-serif',45,'nameFont','book'],['profile-copper-ink',24,'nameColor','copper']]);
  for(const item of SHOP_PROFILE_CATALOG){assert.equal(item.kind,'profile-cosmetic');assert.equal(item.grants.length,1);assert.equal('style'in item,false);}
 });
 for(const item of SHOP_PROFILE_CATALOG)test('purchase projects only catalog grant: '+item.id,()=>{
@@ -100,4 +103,29 @@ test('known update-time CAS remains attached to rebuilt purchased allowance',asy
  const fenced=await fenceEntitlementWrites([{id:accountId,data:allowance}],previous,async()=>assert.fail('known version must not bless newer canonical payload'));
  assert.equal(fenced.canonicalReads,0);assert.deepEqual(fenced.writes[0].prior,{updateTime:'before-purchase'});
  assert.deepEqual(fenced.writes[0].data.purchased,data.purchased);
+});
+
+
+test('exact six staged design contracts append to the immutable original v2 prefix', async () => {
+ const {PROFILE_SHOP_EXPANDED_DESIGNS: designs}=await import('../../../tools/profile-shop-expanded-designs.mjs');
+ assert.equal(designs.length,6);assert.equal(SHOP_PROFILE_CATALOG.length,9);
+ assert.equal(new Set(SHOP_PROFILE_CATALOG.map(item=>item.id)).size,9);
+ assert.deepEqual(SHOP_PROFILE_CATALOG.slice(3).map(item=>({id:item.id,label:item.label,price:item.price,...item.grants[0]})),
+ designs.map(item=>({id:item.itemId,label:item.label,price:item.price,slot:item.slot,value:item.value})));
+ assert.equal(SHOP_PROFILE_CATALOG.reduce((sum,item)=>sum+item.price,0),273);
+});
+
+test('all new paid slots survive fresh earned projections without preserving stale earned authority',()=>{
+ let prior=earned();for(const item of SHOP_PROFILE_CATALOG)prior=buy(prior,item.id);
+ const purchased=structuredClone(prior.purchased);
+ prior.edge.push('forged-edge');prior.nameColor.push('forged-ink');prior.badge=['betaTester'];
+ const fresh=earned(),next=mergeEarnedAndPurchasedEntitlements(fresh,prior,binding);
+ assert.deepEqual(next.purchased,purchased);assert.deepEqual(next.serverIssued,fresh.serverIssued);
+ assert.equal(next.badge,undefined);assert.equal(next.edge.includes('forged-edge'),false);
+ assert.equal(next.nameColor.includes('forged-ink'),false);
+ for(const item of SHOP_PROFILE_CATALOG){const {slot,value}=item.grants[0];assert.ok(next[slot].includes(value));}
+ for(const item of SHOP_PROFILE_CATALOG.slice(3)){
+  const {slot,value}=item.grants[0];assert.equal(purchasedProfileCosmeticsUnlocked({[slot]:value},fresh,next,binding),true);
+  assert.equal(purchasedProfileCosmeticsUnlocked({[slot]:value},fresh,null,binding),false);
+ }
 });

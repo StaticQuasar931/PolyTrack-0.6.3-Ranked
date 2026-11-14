@@ -62,7 +62,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or CP\./);
+  assert.match(html,/Your progress/); assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or Tokens\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -93,12 +93,12 @@ test('player-facing goals use natural grammar and rewards use friendly category 
 test('purchased shop designs are not racing goals or spendable achievement awards',()=>{
  const model=buildAchievementProgress({cosmetics,progress:{confirmed:{...profile,cosmeticUnlocks:['plate:pitlane-ticket','stage:apex-observatory','stripe:vector-ribbon']}}});
  assert.ok(model.milestones.every(item=>!String(item.requirement).startsWith('shop:')));
- assert.doesNotMatch(renderAchievementJournal({model}),/Claim CP|earned CP|wallet balance|reward points/i);
+ assert.doesNotMatch(renderAchievementJournal({model}),/Claim Tokens|earned Tokens|wallet balance|reward points/i);
 });
 
-test('journal caption distinguishes listed cosmetic goals from personal tiers without extending CP rewards',()=>{
+test('journal caption distinguishes listed cosmetic goals from personal tiers without extending Tokens rewards',()=>{
  const html=renderAchievementJournal({progress:{local:{pbCount:1}},cosmetics:{}});
- assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or CP\./);
+ assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or Tokens\./);
  assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });
 
@@ -108,6 +108,6 @@ test('expanded details show exact goals and actual catalog rewards without propo
   assert.match(html,/View reward: Exact theme label/);
   assert.match(html,/Current progress: 1<br>Goal: 3/);
   assert.match(html,/<details class="aj-more" open><summary>How it counts/);
-  assert.match(html,/No cosmetic reward or CP\./);
-  assert.doesNotMatch(html,/rewardPoints|proposal-only|Claim CP|\+\d+ CP/);
+  assert.match(html,/No cosmetic reward or Tokens\./);
+  assert.doesNotMatch(html,/rewardPoints|proposal-only|Claim Tokens|\+\d+ Tokens/);
 });

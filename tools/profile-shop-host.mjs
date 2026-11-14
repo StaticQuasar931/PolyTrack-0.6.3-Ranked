@@ -2,8 +2,16 @@ import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-
 import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
 import {createShopControllerStore,createShopController} from './shop-controller.mjs';
-import {mountShopPreview} from './shop-preview.mjs';
+import {mountProfileShopUi as mountShopPreview} from './profile-shop-ui.mjs';
 import {bindProfileShopPreview} from './profile-shop-preview.mjs';
+
+/** Display price only, never ownership, an offer, or a wallet mutation. */
+export function priceForUi(slot,value){
+  if(typeof slot!=='string'||typeof value!=='string')return null;
+  const matches=PROFILE_SHOP_CATALOG.filter(item=>item.grants.some(grant=>grant.slot===slot&&grant.value===value));
+  const price=matches.length===1?matches[0].price:null;
+  return Number.isSafeInteger(price)&&price>=0?price:null;
+}
 
 // Optional response clock is presentation-only; never a receipt or wallet.
 function claimDayWindow(value){
@@ -96,8 +104,10 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   }
   function bind(content,{accountId,isSelf,openStudio,getPreviewController,applyDraft,onOwnedUiChange}={}){
     if(disposed||!content?.isConnected||isSelf!==true||accountId!==getAccountId()||!/^[a-f0-9]{64}$/.test(accountId||''))return ()=>{};
-    const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Profile shop';
-    const launcher=content.querySelector('.profile-achievement-journey');if(launcher)launcher.after(button);else content.append(button);
+    const studio=content.querySelector('.profile-customizer');if(!studio)return ()=>{};
+    const controls=studio.querySelector('.profile-customizer-actions')||studio;
+    const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
+    controls.append(button);
     let dialog=null,view=null,preview=null,closed=false,focus=null,publicViewGeneration=0;
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
@@ -108,10 +118,10 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
     }
     function createDialog(){
-      const css=new URL('./shop-preview.css',import.meta.url);css.searchParams.set('v',String(revision));
+      const css=new URL('./profile-shop-ui.css',import.meta.url);css.searchParams.set('v',String(revision));
       if(![...document.querySelectorAll('link[data-profile-shop-css]')].some(link=>link.href===css.href)){const link=document.createElement('link');link.rel='stylesheet';link.href=css.href;link.dataset.profileShopCss='';document.head.append(link);}
-      dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Profile shop');
-      dialog.innerHTML='<header class="sp-host-head"><strong>Profile shop</strong><button type="button" data-shop-host-close aria-label="Close profile shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
+      dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Style shop');
+      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
       content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
       dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
       const notice=dialog.querySelector('.sp-host-gate');
@@ -124,7 +134,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:2,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');
@@ -160,7 +170,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);}
     cleanup.open=open;return cleanup;
   }
-  return {bind,observeAuth,reset,
+  return {bind,observeAuth,reset,priceForUi,
     ownsForUi(accountId,unlockId){
       const ownerUid=user()?.uid;if(disposed||accountId!==getAccountId()||!ownerUid)return false;
       if(ownedCache.owns(accountId,ownerUid,unlockId))return true;

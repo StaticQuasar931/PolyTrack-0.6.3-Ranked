@@ -250,10 +250,10 @@ test('profile Apply is Studio-only and native equip accepts no client grants or 
 });
 
 
-test('wallet never infers profile ownership after inventory removal and cannot recharge orphaned entitlement',async()=>{
+test('wallet preserves canonical profile ownership after inventory removal and cannot recharge orphaned entitlement',async()=>{
   const f=fixture();f.funds(100);await f.run('purchase',{itemId:PROFILE_ITEMS[0]});
   for(const key of f.docs.keys())if(key.startsWith(C.inventory+'/'))f.docs.delete(key);
-  const before=copy(f.docs),wallet=await f.run('wallet');assert.deepEqual(wallet.ownedItemIds,[]);assert.equal(wallet.equipped,null);
+  const before=copy(f.docs),wallet=await f.run('wallet');assert.deepEqual(wallet.ownedItemIds,[PROFILE_ITEMS[0]]);assert.equal(wallet.equipped,null);
   await assert.rejects(f.run('purchase',{itemId:PROFILE_ITEMS[0]}),/inventory_entitlement_conflict/);assert.deepEqual(f.docs,before);
 });
 
@@ -375,7 +375,7 @@ test('profile wallet returns complete catalog-v2 inventory with exactly three po
   assert.equal(wallet.catalogVersion,2);assert.equal(wallet.inventoryComplete,true);assert.equal(wallet.balance,0);assert.equal(wallet.revision,3);
   assert.deepEqual(wallet.ownedItemIds,PROFILE_ITEMS.slice(0,2));assert.equal(wallet.equipped,null);assert.equal(wallet.equipRevision,0);
   const reads=f.calls.slice(start).filter(c=>c.route.startsWith('/'+C.inventory+'/'));
-  assert.equal(reads.length,3);assert.equal(new Set(reads.map(c=>c.route.split('?')[0])).size,3);assert.equal(f.calls.length-start,8);
+  assert.equal(reads.length,3);assert.equal(new Set(reads.map(c=>c.route.split('?')[0])).size,3);assert.equal(f.calls.length-start,9);
   assert.equal(f.commits.length,commits);assert.deepEqual((await fixture().run('wallet')).ownedItemIds,[]);
 });
 
@@ -463,7 +463,7 @@ test('revision overflow and invalid retired equip metadata never cause partial p
 
 
 test('bounded profile wallet and no-op paths retain exact document and transport ceilings',async()=>{
-  const f=fixture();f.funds(20);let start=f.calls.length;await f.run('wallet');assert.equal(f.calls.length-start,8);
+  const f=fixture();f.funds(20);let start=f.calls.length;await f.run('wallet');assert.equal(f.calls.length-start,9);
   const cmd=f.command('purchase',{itemId:PROFILE_ITEMS[0]});start=f.calls.length;await f.service().execute(UID,cmd);assert.equal(f.calls.length-start,8);
   start=f.calls.length;await f.service().execute(UID,cmd);assert.equal(f.calls.length-start,5);
   start=f.calls.length;await assert.rejects(f.run('purchase',{itemId:PROFILE_ITEMS[0]}),/item_already_owned/);assert.equal(f.calls.length-start,6);
@@ -543,11 +543,12 @@ function setMilestones(f, count) {
     catalog: SERVER_ACHIEVEMENT_CATALOG, casual: {count, ledger: [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')}}}});
 }
 
-test('profile shop: fixed original catalog has only three server grants and earned prices', () => {
-  assert.deepEqual(SHOP_CATALOG.map(item => [item.id, item.kind, item.price, item.grants]), [
+test('profile shop: append-only nine-item v2 catalog retains original three grants and prices', () => {
+  assert.deepEqual(SHOP_CATALOG.slice(0, 3).map(item => [item.id, item.kind, item.price, item.grants]), [
     [PROFILE_ITEMS[0], 'profile-cosmetic', 20, [{slot: 'plate', value: 'pitlane-ticket'}]],
     [PROFILE_ITEMS[1], 'profile-cosmetic', 30, [{slot: 'stage', value: 'apex-observatory'}]],
     [PROFILE_ITEMS[2], 'profile-cosmetic', 50, [{slot: 'stripe', value: 'vector-ribbon'}]]]);
+  assert.equal(SHOP_CATALOG.length, 9);
   assert.ok(SHOP_CATALOG.every(item => !('style' in item) && Object.isFrozen(item) && Object.isFrozen(item.grants[0])));
 });
 
@@ -757,7 +758,7 @@ test('profile shop: measured document costs bound claims purchases replays and n
       writes: f.commits.slice(n).reduce((n, commit) => n + commit.writes.length, 0), transport: calls.length}, expected);
   }
   const f = fixture(); setMilestones(f, 20);
-  await measure(f, () => f.run('wallet'), {reads: 6, writes: 0, transport: 8});
+  await measure(f, () => f.run('wallet'), {reads: 7, writes: 0, transport: 9});
   await measure(f, () => f.run('claim', {rewardId: 'login'}), {reads: 4, writes: 3, transport: 6});
   const claim = f.command('claim', {rewardId: 'milestones'});
   await measure(f, () => f.service().execute(UID, claim), {reads: 8, writes: 3, transport: 10});
@@ -938,14 +939,14 @@ test('quoted purchase: precommit transport failure and untrusted typed commit er
   assert.equal(response.status, 409); assert.deepEqual(await response.json(), {error: 'untrusted_store_error'});
 });
 
-test('quoted purchase: complete click is six POST reads plus six completion reads, never a preflight GET', async () => {
+test('quoted purchase: complete click is six POST reads plus seven completion reads, never a preflight GET', async () => {
   const f = fixture(); f.funds(100); const cmd = f.command('purchase', {itemId: PROFILE_ITEMS[0]});
   const start = f.calls.length, commits = f.commits.length;
   const outcome = await f.service().execute(UID, cmd);
   const wallet = await f.run('wallet'); assert.equal(outcome.balanceAfter, 80); assert.equal(wallet.balance, 80);
   const calls = f.calls.slice(start);
-  assert.equal(calls.filter(c => c.route.includes('?transaction=')).length, 12);
-  assert.equal(calls.length, 16);
+  assert.equal(calls.filter(c => c.route.includes('?transaction=')).length, 13);
+  assert.equal(calls.length, 17);
   assert.equal(f.commits.slice(commits).reduce((n, commit) => n + commit.writes.length, 0), 5);
 });
 
@@ -992,7 +993,7 @@ test('actual Worker profile shop: server milestone claim, login, all three purch
   response = await invoke('/v1/currency/wallet?accountId=' + ACCOUNT); const wallet = await response.json();
   assert.equal(wallet.balance, 8); assert.equal(wallet.revision, 5); assert.deepEqual(wallet.ownedItemIds, PROFILE_ITEMS);
   assert.equal(wallet.equipped, null); assert.equal(f.docs.get(META).data.entitlementEpoch, 3);
-  for (const item of SHOP_CATALOG) assert.ok(f.docs.get(ENT).data[item.grants[0].slot].includes(item.grants[0].value));
+  for (const item of SHOP_CATALOG.slice(0, 3)) assert.ok(f.docs.get(ENT).data[item.grants[0].slot].includes(item.grants[0].value));
   assert.deepEqual(f.commits.map(commit => commit.writes.length), [3, 3, 5, 5, 5]);
 });
 
@@ -1149,3 +1150,131 @@ test('failed or ambiguous fresh login commit never exposes successful clock meta
     }
   }
 });
+
+
+test('constant wallet inventory unions canonical and original compatibility ownership without writes', async () => {
+  for (const mode of ['empty', 'canonical', 'compatibility', 'both', 'union', 'allowance-only']) {
+    const f = fixture();
+    if (['canonical', 'both', 'union'].includes(mode)) f.put(ENT, {purchased: {version: 1, accountId: ACCOUNT,
+      ownerUid: UID, items: {[PROFILE_ITEMS[0]]: {catalogVersion: 2, acquiredAt: AT}}}});
+    if (['compatibility', 'both', 'union'].includes(mode)) {
+      const id = mode === 'union' ? PROFILE_ITEMS[1] : PROFILE_ITEMS[0];
+      f.put(C.inventory + '/' + await keyFor([ACCOUNT, id]), {accountId: ACCOUNT, ownerUid: UID,
+        itemId: id, kind: 'profile-cosmetic', catalogVersion: 2, purchasedAt: AT});
+    }
+    if (mode === 'allowance-only') f.put(ENT, {plate: ['pitlane-ticket'], badge: ['community']});
+    const before = copy(f.docs), start = f.calls.length, wallet = await f.run('wallet');
+    assert.deepEqual(wallet.ownedItemIds, mode === 'union' ? PROFILE_ITEMS.slice(0, 2) :
+      ['empty', 'allowance-only'].includes(mode) ? [] : [PROFILE_ITEMS[0]]);
+    assert.equal(wallet.inventoryComplete, true); assert.equal(wallet.catalogVersion, 2);
+    const calls = f.calls.slice(start), reads = calls.filter(c => c.route.includes('?transaction='));
+    assert.equal(reads.length, 7); assert.equal(calls.length, 9);
+    assert.equal(reads.filter(c => c.route.startsWith('/0.6.2_s1_cosmetic_entitlements/')).length, 1);
+    assert.deepEqual(reads.filter(c => c.route.startsWith('/' + C.inventory + '/')).map(c => c.route.split('?')[0]).sort(),
+      (await Promise.all(PROFILE_ITEMS.map(async id => '/' + C.inventory + '/' + await keyFor([ACCOUNT, id])))).sort());
+    assert.equal(f.commits.length, 0); assert.deepEqual(f.docs, before);
+  }
+});
+
+test('wallet fails closed on malformed canonical purchases even with valid fallback inventory', async () => {
+  for (const mutation of ['owner', 'account', 'version', 'catalog', 'time', 'unknown', 'empty', 'null', 'extra']) {
+    const f = fixture(); f.funds(100); await f.run('purchase', {itemId: PROFILE_ITEMS[0]});
+    const prior = copy(f.docs.get(ENT).data), purchased = prior.purchased;
+    if (mutation === 'owner') purchased.ownerUid = 'foreign';
+    if (mutation === 'account') purchased.accountId = 'b'.repeat(64);
+    if (mutation === 'version') purchased.version = 2;
+    if (mutation === 'catalog') purchased.items[PROFILE_ITEMS[0]].catalogVersion = 1;
+    if (mutation === 'time') purchased.items[PROFILE_ITEMS[0]].acquiredAt = -1;
+    if (mutation === 'unknown') purchased.items.forged = {catalogVersion: 2, acquiredAt: AT};
+    if (mutation === 'empty') purchased.items = {};
+    if (mutation === 'null') prior.purchased = null;
+    if (mutation === 'extra') purchased.grants = ['all'];
+    f.put(ENT, prior); const before = copy(f.docs), commits = f.commits.length;
+    await assert.rejects(f.run('wallet'), /PURCHASED_COSMETIC_ENTITLEMENT_INVALID/);
+    assert.deepEqual(f.docs, before); assert.equal(f.commits.length, commits);
+  }
+});
+
+test('wallet rejects conflicting canonical and inventory acquisition provenance', async () => {
+  const f = fixture(); f.funds(100); await f.run('purchase', {itemId: PROFILE_ITEMS[0]});
+  const key = C.inventory + '/' + await keyFor([ACCOUNT, PROFILE_ITEMS[0]]);
+  f.put(key, {...f.docs.get(key).data, purchasedAt: AT + 1}); const before = copy(f.docs);
+  await assert.rejects(f.run('wallet'), /inventory_entitlement_conflict/);
+  assert.deepEqual(f.docs, before); assert.equal(f.commits.length, 1);
+});
+
+// In-memory module variants exercise future catalog sizes without editing shared catalog/art files.
+function syntheticModule(file, overrides = {}) {
+  const url = new URL(file, import.meta.url);
+  const source = fs.readFileSync(url, 'utf8').replace(/from '([^']+)'/g, (match, spec) =>
+    "from '" + (overrides[spec] || new URL(spec, url).href) + "'");
+  return 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
+}
+async function syntheticCatalogService(count, version = 2, transform = items => items) {
+  const items = transform([...SHOP_CATALOG, ...Array.from({length: Math.max(0, count - SHOP_CATALOG.length)}, (_, i) =>
+    ({id: 'synthetic-profile-' + i, label: 'Synthetic ' + i, price: 20, kind: 'profile-cosmetic',
+      grants: [{slot: 'plate', value: 'synthetic-' + i}]}))].slice(0, count));
+  const catalog = 'data:text/javascript;base64,' + Buffer.from('export const PROFILE_SHOP_CATALOG_VERSION=' + version +
+    ';export const PROFILE_SHOP_CATALOG=' + JSON.stringify(items) + ';').toString('base64');
+  const helper = syntheticModule('../src/purchased-cosmetic-entitlements.js', {'../../../tools/profile-shop-catalog.mjs': catalog});
+  const module = await import(syntheticModule('../src/currency-wallet.js', {
+    '../../../tools/profile-shop-catalog.mjs': catalog, './purchased-cosmetic-entitlements.js': helper}));
+  return {items, create: module.createCurrencyService};
+}
+
+for (const count of [3, 9, 32]) test('synthetic catalog size ' + count + ' retains exactly seven reads and three original hashes', async () => {
+  const {items, create} = await syntheticCatalogService(count), f = fixture(), last = items.at(-1);
+  f.put(ENT, {purchased: {version: 1, accountId: ACCOUNT, ownerUid: UID,
+    items: {[last.id]: {catalogVersion: 2, acquiredAt: AT}}}});
+  const before = copy(f.docs), wallet = await create({store: f.store, now: () => AT}).execute(UID, {op: 'wallet', accountId: ACCOUNT});
+  assert.deepEqual(wallet.ownedItemIds, [last.id]); assert.equal(wallet.inventoryComplete, true);
+  assert.equal(f.calls.filter(c => c.route.includes('?transaction=')).length, 7);
+  assert.deepEqual(f.calls.filter(c => c.route.startsWith('/' + C.inventory + '/')).map(c => c.route.split('?')[0]).sort(),
+    (await Promise.all(PROFILE_ITEMS.map(async id => '/' + C.inventory + '/' + await keyFor([ACCOUNT, id])))).sort());
+  assert.equal(f.calls.length, 9); assert.equal(f.commits.length, 0); assert.deepEqual(f.docs, before);
+});
+
+test('catalog bound version and original compatibility identities fail closed before storage', async () => {
+  for (const [count, version, transform] of [[2, 2], [33, 2], [3, 3], [3, 2, items => items.map((item, i) =>
+    i === 0 ? {...item, id: 'missing-original'} : item)], [4, 2, items => [...items.slice(0, 3), items[0]]]]) {
+    const {create} = await syntheticCatalogService(count, version, transform), f = fixture();
+    assert.throws(() => create({store: f.store}), /inventory_catalog_limit/); assert.equal(f.calls.length, 0);
+  }
+});
+
+
+test('actual nine-item catalog buys all slots atomically and retains constant seven-read ownership', async () => {
+ const f=fixture(),total=SHOP_CATALOG.reduce((sum,item)=>sum+item.price,0);assert.equal(total,273);f.funds(total);
+ const bought=[];
+ for(const item of SHOP_CATALOG){
+  const cmd=f.command('purchase',{itemId:item.id}),start=f.calls.length,commits=f.commits.length;
+  const outcome=await f.service().execute(UID,cmd);bought.push(item.id);
+  assert.equal(outcome.catalogVersion,2);assert.equal(outcome.delta,-item.price);
+  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,6);
+  assert.equal(f.commits.length-commits,1);assert.equal(f.commits.at(-1).writes.length,5);
+  const before=copy(f.docs),readStart=f.calls.length,wallet=await f.run('wallet');
+  assert.deepEqual(wallet.ownedItemIds,bought);assert.equal(wallet.inventoryComplete,true);
+  assert.equal(f.calls.slice(readStart).filter(call=>call.route.includes('?transaction=')).length,7);
+  assert.equal(f.calls.slice(readStart).filter(call=>call.route.startsWith('/'+C.inventory+'/')).length,3);
+  assert.deepEqual(f.docs,before);
+  const replayStart=f.calls.length,replay=await f.service().execute(UID,cmd);
+  assert.deepEqual(replay,{...outcome,duplicate:true});assert.deepEqual(f.docs,before);
+  assert.equal(f.calls.slice(replayStart).filter(call=>call.route.includes('?transaction=')).length,3);
+ }
+ assert.equal((await f.run('wallet')).balance,0);assert.equal(f.commits.length,9);
+ for(const item of SHOP_CATALOG){const {slot,value}=item.grants[0];assert.ok(f.docs.get(ENT).data[slot].includes(value));}
+ const provenance=copy(f.docs.get(ENT).data.purchased);
+ for(const item of SHOP_CATALOG.slice(3))f.docs.delete(C.inventory+'/'+await keyFor([ACCOUNT,item.id]));
+ assert.deepEqual((await f.run('wallet')).ownedItemIds,SHOP_CATALOG.map(item=>item.id));
+ assert.deepEqual(f.docs.get(ENT).data.purchased,provenance);
+});
+
+for(const slot of ['badge','title','emblem','serverIssued','purchased','community','__proto__','unknown'])
+ test('purchase helper rejects unapproved catalog grant slot '+slot+' without any debit',async()=>{
+  const {create}=await syntheticCatalogService(9,2,items=>items.map((item,i)=>i===3?
+   {...item,grants:[{slot,value:'forged'}]}:item));
+  const f=fixture();f.funds(100);const before=copy(f.docs);
+  await assert.rejects(create({store:f.store,now:()=>AT}).execute(UID,f.command('purchase',{itemId:'profile-petrol'})),
+   /PURCHASED_COSMETIC_ENTITLEMENT_INVALID/);
+  assert.deepEqual(f.docs,before);assert.equal(f.commits.length,0);
+ });

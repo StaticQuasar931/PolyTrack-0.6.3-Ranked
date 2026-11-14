@@ -4,22 +4,17 @@ const ACCOUNT=/^[a-f0-9]{64}$/;
 const FIELDS=['version','accepted','accountId','badgeId','source','membershipVerified','alreadyClaimed'];
 let serial=0;
 
-export function normalizeCommunityInvite(value){
-  if(typeof value!=='string'||value.length>256)return null;
-  const input=value.trim();if(/^[A-Za-z0-9_-]{2,100}$/.test(input))return input;
-  try{
-    const url=new URL(/^(?:www\.)?discord\.(?:gg|com)\//i.test(input)?'https://'+input:input);
-    if(url.protocol!=='https:'||url.username||url.password||url.port)return null;
-    const host=url.hostname.toLowerCase(),match=(['discord.gg','www.discord.gg'].includes(host)?/^\/([A-Za-z0-9_-]{2,100})\/?$/:['discord.com','www.discord.com'].includes(host)?/^\/invite\/([A-Za-z0-9_-]{2,100})\/?$/:/$a/).exec(url.pathname);
-    return match?.[1]||null;
-  }catch{return null;}
+export function normalizeCommunityCode(value){
+  if(typeof value!=='string'||value.length>192)return null;
+  const input=value.trim();return /^[A-Z2-7]{16}$/.test(input)?input:null;
 }
+export const normalizeCommunityInvite=normalizeCommunityCode;
 
 export function validateCommunityBadgeResponse(value,accountId){
   if(!ACCOUNT.test(accountId||'')||!value||typeof value!=='object'||Array.isArray(value)||
     Object.keys(value).length!==FIELDS.length||!FIELDS.every(key=>Object.hasOwn(value,key))||
     value.version!==1||value.accepted!==true||value.accountId!==accountId||value.badgeId!=='community'||
-    value.source!=='invite-code'||value.membershipVerified!==false||typeof value.alreadyClaimed!=='boolean')return null;
+    value.source!=='relay-code'||value.membershipVerified!==false||typeof value.alreadyClaimed!=='boolean')return null;
   return Object.freeze(Object.fromEntries(FIELDS.map(key=>[key,value[key]])));
 }
 
@@ -41,7 +36,7 @@ async function readResponse(response){
  * onUse must check isCurrent before editing only the draft; this module never saves.
  * Dispose before root replacement, profile close, or account/auth transitions.
  */
-export function mountCommunityBadge({document,root,accountId,getAccountId,getAuth,getAuthScope,fetch:fetcher=globalThis.fetch,revision,onClaimed,onUse,hasClaim=false}={}){
+export function mountCommunityBadge({document,root,accountId,getAccountId,getAuth,getAuthScope,fetch:fetcher=globalThis.fetch,revision,onClaimed,onUse,hasClaim=false,getSavedCode=()=>''}={}){
   const version=Number(revision);
   if(!document||root?.ownerDocument!==document||!ACCOUNT.test(accountId||'')||
     [getAccountId,getAuth,getAuthScope,fetcher].some(fn=>typeof fn!=='function')||
@@ -61,7 +56,7 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
     .community-badge [data-community-use]{background:#7ee7ff;color:#13274a}.community-badge :is(button,a,input):focus-visible{outline:3px solid #ffda83;outline-offset:3px}
     .community-badge [role=status]{color:#ffda83;min-height:20px;overflow-wrap:anywhere}.community-badge .cb-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
     @media(max-width:460px){.community-badge form>input,.community-badge form>button{flex-basis:100%;width:100%}}
-  </style><h3 id="${id}-title">Community badge</h3><p>Claim with Discord invite code</p><p id="${id}-help">Membership is not checked.</p><form novalidate><label for="${id}-code">Discord code or invite</label><input id="${id}-code" data-community-input type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}-help ${id}-status"><button type="submit" data-community-claim>Claim</button></form><div class="cb-actions"><a href="${INVITE}" target="_blank" rel="noopener noreferrer">Join Discord</a><button type="button" data-community-use>Use badge</button></div><p id="${id}-status" role="status" aria-live="polite"></p>`;
+  </style><h3 id="${id}-title">Community badge</h3><p>Claim with the community relay code</p><p id="${id}-help">Membership is not checked.</p><form novalidate><label for="${id}-code">Community code</label><input id="${id}-code" data-community-input type="password" maxlength="16" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}-help ${id}-status"><button type="submit" data-community-claim>Claim</button></form><div class="cb-actions"><a href="${INVITE}" target="_blank" rel="noopener noreferrer">Join Discord</a><button type="button" data-community-use>Use badge</button></div><p id="${id}-status" role="status" aria-live="polite"></p>`;
   root.append(section);
   const form=section.querySelector('form'),input=section.querySelector('input'),claimButton=section.querySelector('[data-community-claim]'),useButton=section.querySelector('[data-community-use]'),status=section.querySelector('[role=status]');
   const current=()=>!disposed&&root.isConnected&&section.isConnected&&safe(getAccountId)===accountId&&
@@ -75,8 +70,8 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
   }
   async function claim(event){
     event.preventDefault();if(pending||!current()||hasBadge())return;
-    const inviteCode=normalizeCommunityInvite(input.value);
-    if(!inviteCode){input.setAttribute('aria-invalid','true');status.textContent='Enter a Discord invite code or invite link.';input.focus();return;}
+    const communityCode=normalizeCommunityCode(input.value);
+    if(!communityCode){input.setAttribute('aria-invalid','true');status.textContent='Enter the 16-character community relay code.';input.focus();return;}
     input.removeAttribute('aria-invalid');const generation=epoch,controller=new AbortController();pending=controller;status.textContent='Waiting for confirmation...';render();
     const sameContext=()=>current()&&epoch===generation;
     const valid=()=>sameContext()&&!controller.signal.aborted;
@@ -89,11 +84,11 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
       });
       if(!valid())return;
       if(typeof token!=='string'||!token||token.length>16384||/[\r\n]/.test(token))throw Error('invalid_token');
-      const response=await fetcher(ENDPOINT,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+token,'X-PolyTrack-Revision':String(version)},body:JSON.stringify({accountId,inviteCode}),signal:controller.signal,credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer'});
+      const response=await fetcher(ENDPOINT,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+token,'X-PolyTrack-Revision':String(version)},body:JSON.stringify({accountId,communityCode}),signal:controller.signal,credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer'});
       const result=validateCommunityBadgeResponse(await readResponse(response),accountId);if(!valid())return;if(!result)throw Error('invalid_response');
       claimed=true;status.textContent=result.alreadyClaimed?'Community badge already claimed.':'Community badge claimed.';render();
       if(valid()){try{onClaimed?.(result);}catch{if(valid())status.textContent='Badge claimed. Reopen Studio to use it.';}}
-    }catch{if(sameContext())status.textContent='Claim could not be confirmed. Check the invite or reopen Studio before trying again.';}
+    }catch{if(sameContext())status.textContent='Claim could not be confirmed. Check the community code or reopen Studio before trying again.';}
     finally{clearTimeout(timer);if(pending===controller){pending=null;render();}}
   }
   function use(){
@@ -102,7 +97,8 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
     try{const result=onUse(Object.freeze({accountId,badgeId:'community',draftOnly:true,isCurrent}));if(result?.then)Promise.resolve(result).catch(()=>{if(isCurrent())status.textContent='Could not open the badge draft. Nothing was published.';});}
     catch{if(isCurrent())status.textContent='Could not open the badge draft. Nothing was published.';}
   }
+  const savedCode=normalizeCommunityCode(safe(getSavedCode));if(savedCode)input.value=savedCode;
   form.addEventListener('submit',claim);useButton.addEventListener('click',use);render();
-  status.textContent=hasBadge()?'Community badge already claimed.':current()?'':'Sign in to claim this badge.';
+  status.textContent=hasBadge()?'Community badge already claimed.':!current()?'Sign in to claim this badge.':savedCode?'Your saved relay code is ready. Claim to confirm the badge.':'';
   return function dispose(){if(disposed)return;disposed=true;epoch++;pending?.abort();pending=null;unsubscribe?.();form.removeEventListener('submit',claim);useButton.removeEventListener('click',use);section.remove();};
 }

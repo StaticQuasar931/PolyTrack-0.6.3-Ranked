@@ -21,7 +21,7 @@ const starter = Object.freeze({theme: ['classic', 'cyan'], accent: ['cyan', 'whi
 function itemFor(id) {
   const item = PROFILE_SHOP_CATALOG.find(item => item.id === id);
   requireValid(item && item.kind === 'profile-cosmetic' && item.grants.length === 1 &&
-    ['plate', 'stage', 'stripe'].includes(item.grants[0].slot));
+    ['plate', 'stage', 'stripe', 'theme', 'baseSecondary', 'edge', 'nameFont', 'nameColor'].includes(item.grants[0].slot));
   return item;
 }
 
@@ -97,6 +97,6 @@ export function addCommunityBadge(prior, claimedAt, {accountId, ownerUid} = {}) 
   requireValid(account(accountId) && owner(ownerUid) && timestamp(claimedAt) && (prior == null || plain(prior)));
   const binding = {accountId, ownerUid};
   const community = readCommunityClaim(prior, binding) || {version: 1, accountId, ownerUid,
-    campaign: COMMUNITY_CAMPAIGN, badgeId: 'community', source: 'invite-code', membershipVerified: false, claimedAt};
+    campaign: COMMUNITY_CAMPAIGN, badgeId: 'community', source: 'relay-code', membershipVerified: false, claimedAt};
   return projectCommunityClaim(projectPurchased(prior || starter, readPurchasedCosmetics(prior, binding)), community);
 }

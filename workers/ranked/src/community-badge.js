@@ -1,7 +1,7 @@
 import {invalidateEntitlements, ENTITLEMENT_COLLECTION} from './overall-entitlement-cache.js';
 
-export const COMMUNITY_CAMPAIGN = 'discord-invite-jW2az4AQUH-v1';
-const INVITES = new Set(['jW2az4AQUH', 'https://discord.gg/jW2az4AQUH']);
+export const COMMUNITY_CAMPAIGN = 'relay-code-v1';
+export const LEGACY_COMMUNITY_CAMPAIGN = 'discord-invite-jW2az4AQUH-v1';
 const plain = value => value !== null && typeof value === 'object' &&
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const own = (value, key) => Object.hasOwn(value, key);
@@ -20,7 +20,8 @@ export function readCommunityClaim(prior, {accountId, ownerUid} = {}) {
   if (!plain(claim) || Object.keys(claim).length !== keys.length || !keys.every(key => own(claim, key)) ||
       claim.version !== 1 || !account(accountId) || claim.accountId !== accountId || !owner(claim.ownerUid) ||
       ownerUid !== undefined && (!owner(ownerUid) || claim.ownerUid !== ownerUid) ||
-      claim.campaign !== COMMUNITY_CAMPAIGN || claim.badgeId !== 'community' || claim.source !== 'invite-code' ||
+      !(claim.campaign === COMMUNITY_CAMPAIGN && claim.source === 'relay-code' ||
+        claim.campaign === LEGACY_COMMUNITY_CAMPAIGN && claim.source === 'invite-code') || claim.badgeId !== 'community' ||
       claim.membershipVerified !== false || !atValid(claim.claimedAt)) invalid();
   return structuredClone(claim);
 }
@@ -33,14 +34,25 @@ export function projectCommunityClaim(allowance, claim) {
   next.community = structuredClone(claim);
   return next;
 }
-export function createCommunityBadgeService({store, grantEntitlement, now = Date.now}) {
+export function createCommunityBadgeService({store, grantEntitlement, relayCodeSha256, now = Date.now}) {
   if (typeof store?.transaction !== 'function' || typeof grantEntitlement !== 'function' || typeof now !== 'function')
     throw Error('Invalid Community dependencies');
   return Object.freeze({async claim(uid, body) {
-    if (!plain(body) || Object.keys(body).length !== 2 || !own(body, 'accountId') || !own(body, 'inviteCode') ||
+    if (!plain(body) || Object.keys(body).length !== 2 || !own(body, 'accountId') ||
+        !(own(body, 'communityCode') !== own(body, 'inviteCode')) ||
         !account(body.accountId)) throw new CommunityBadgeError('invalid_request');
-    if (typeof body.inviteCode !== 'string' || !INVITES.has(body.inviteCode)) throw new CommunityBadgeError('invalid_invite_code');
     if (!owner(uid)) throw new CommunityBadgeError('authentication_required', 401);
+    const code = own(body, 'communityCode') ? body.communityCode : body.inviteCode;
+    if (typeof code !== 'string' || code.length !== 16 || !/^[A-Z2-7]{16}$/.test(code))
+      throw new CommunityBadgeError('invalid_community_code');
+    if (typeof relayCodeSha256 !== 'string' || relayCodeSha256.length !== 64 || !/^[a-f0-9]{64}$/i.test(relayCodeSha256))
+      throw new CommunityBadgeError('community_unavailable', 503);
+    // Verify before starting a transaction, including repeats of legacy grants.
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code)));
+    let mismatch = 0;
+    for (let index = 0; index < digest.length; index += 1)
+      mismatch |= digest[index] ^ Number.parseInt(relayCodeSha256.slice(index * 2, index * 2 + 2), 16);
+    if (mismatch !== 0) throw new CommunityBadgeError('invalid_community_code');
     const {accountId} = body;
     return store.transaction(async tx => {
       const profile = await tx.get('0.6.2_profiles_public/' + accountId);
@@ -48,7 +60,7 @@ export function createCommunityBadgeService({store, grantEntitlement, now = Date
       const entitlementPath = ENTITLEMENT_COLLECTION + '/' + accountId;
       const prior = await tx.get(entitlementPath);
       const existing = readCommunityClaim(prior, {accountId, ownerUid: uid});
-      const result = {version: 1, accepted: true, accountId, badgeId: 'community', source: 'invite-code',
+      const result = {version: 1, accepted: true, accountId, badgeId: 'community', source: 'relay-code',
         membershipVerified: false, alreadyClaimed: existing !== null};
       if (existing) {
         if (!Array.isArray(prior.badge) || !prior.badge.every(value => typeof value === 'string') || !prior.badge.includes('community'))

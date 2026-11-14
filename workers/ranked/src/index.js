@@ -121,24 +121,24 @@ const COLLECTIONS = Object.freeze({
   unrankedExtra: '0.6.2_extra_unranked_leaderboards'
 });
 const PROFILE_COSMETIC_OPTIONS = Object.freeze({
-  theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta']),
+  theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta', 'petrol']),
   accent: new Set(['cyan', 'white', 'lime', 'gold', 'orange', 'coral', 'pink', 'violet', 'ice']),
   finish: new Set(['gradient', 'solid', 'split', 'gloss', 'carbon', 'horizon']),
   plate: new Set(['block', 'solid', 'outline', 'notch', 'bar', 'pitlane-ticket']),
-  edge: new Set(['accent', 'wide', 'none', 'double', 'dashed']),
+  edge: new Set(['accent', 'wide', 'none', 'double', 'dashed', 'rail']),
   stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora', 'apex-observatory']),
   stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono', 'orange', 'violet']),
-  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive', 'vector-ribbon']),
+  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive', 'vector-ribbon', 'rally-lines']),
   emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
   emblem2: new Set(['none', 'star', 'bolt', 'flag', 'diamond', 'flame', 'crown']),
   emblem3: new Set(['none', 'chevron', 'wings', 'laurel']),
   emblemBackdrop: new Set(['none', 'disc', 'shield', 'hex']),
   stageEffect: new Set(['none', 'speed', 'spark', 'halos']),
-  nameFont: new Set(['classic', 'clean', 'racing', 'serif', 'condensed', 'wide', 'mono', 'rounded']),
+  nameFont: new Set(['classic', 'clean', 'racing', 'serif', 'condensed', 'wide', 'mono', 'rounded', 'book']),
   nameSize: new Set(['normal', 'large', 'compact']),
   nameWeight: new Set(['regular', 'bold']),
-  nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose']),
-  baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice']),
+  nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose', 'copper']),
+  baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice', 'navy']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
   badge: new Set(['auto', 'member', 'none', 'betaTester', 'community'])
 });
@@ -3169,7 +3169,8 @@ async function handleRequestInternal(request, env, context = {}) {
       const result = await createCommunityBadgeService({
         store: createEventFirestoreStore({request: (route, init) => firestoreRequest(env, route, init),
           projectId: String(env.FIREBASE_PROJECT_ID || PROJECT_ID), retries: 0}),
-        grantEntitlement: addCommunityBadge
+        grantEntitlement: addCommunityBadge,
+        relayCodeSha256: env.COMMUNITY_RELAY_CODE_SHA256
       }).claim(uid, body);
       const response = json(origin, env, 200, result);
       response.headers.set('Cache-Control', 'private, no-store');

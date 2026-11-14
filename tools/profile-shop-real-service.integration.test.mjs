@@ -17,7 +17,7 @@ import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG} from '../workers
 
 const A = 'a'.repeat(64), B = 'b'.repeat(64), OWNER_A = 'owner-a', OWNER_B = 'owner-b';
 const AT = Date.UTC(2026, 10, 14), BASE = 'projects/polytrack-052/databases/(default)/documents/';
-const clone = value => structuredClone(value), ITEMS = PROFILE_SHOP_CATALOG.map(item => item.id);
+const clone = value => structuredClone(value), ITEMS = PROFILE_SHOP_CATALOG.slice(0, 3).map(item => item.id);
 const pendingKey = id => 'polytrack-shop-pending-v1:' + id;
 
 beforeEach(t => t.mock.method(globalThis, 'fetch', () => assert.fail('external network forbidden')));
@@ -140,7 +140,7 @@ test('real client controller claims 100 then buys all three quoted v2 items with
   let before = f.checkpoint(); const claim = await claimMilestones(ui);
   assert.equal(claim.outcome.delta, 100); assert.equal(claim.outcome.outcomeOnly, true); assert.equal(claim.wallet.balance, 100);
   assert.deepEqual(claim.outcome.claimedRewardIds, ['tracks-1', 'tracks-5', 'tracks-20']);
-  assert.deepEqual(f.cost(before), {reads: 14, writes: 3, transport: 18});
+  assert.deepEqual(f.cost(before), {reads: 15, writes: 3, transport: 19});
   const balances = [80, 50, 0];
   for (const [index, itemId] of ITEMS.entries()) {
     before = f.checkpoint(); const result = await ui.view().actions.onPurchase(purchaseIntent(ui, itemId));
@@ -151,7 +151,7 @@ test('real client controller claims 100 then buys all three quoted v2 items with
     assert.equal(result.outcome.itemKind, 'profile-cosmetic'); assert.equal(result.outcome.catalogVersion, 2); assert.equal('carStyle' in result.outcome, false);
     assert.equal(result.outcome.outcomeOnly, true); assert.equal(result.wallet.balance, balances[index]);
     assert.deepEqual(result.inventory.ownedIds, ITEMS.slice(0, index + 1));
-    assert.deepEqual(f.cost(before), {reads: 12, writes: 5, transport: 16});
+    assert.deepEqual(f.cost(before), {reads: 13, writes: 5, transport: 17});
   }
   assert.deepEqual(f.commits.map(commit => commit.writes.length), [3, 5, 5, 5]);
   assert.equal(f.local.size, 0); assert.equal(posts(f, '/v1/shop/equip').length, 0);
@@ -167,7 +167,7 @@ test('real session never treats claim or purchase receipt balance as current wal
   assert.equal(result.result.balanceAfter, 80); assert.equal(result.wallet, null); assert.equal(result.inventory, null);
   const before = f.checkpoint(); result = await session.load({refresh: true});
   assert.equal(result.wallet.balance, 80); assert.deepEqual(result.inventory.ownedItemIds, [ITEMS[0]]);
-  assert.deepEqual(f.cost(before), {reads: 6, writes: 0, transport: 8}); session.dispose();
+  assert.deepEqual(f.cost(before), {reads: 7, writes: 0, transport: 9}); session.dispose();
 });
 
 test('lost real purchase survives controller recreation and same original quote recovers outcome only before a fresh completion GET', async () => {
@@ -186,7 +186,7 @@ test('lost real purchase survives controller recreation and same original quote 
   assert.equal(recovered.outcome.balanceAfter, 80); assert.equal(recovered.wallet.balance, 88);
   assert.deepEqual(recovered.inventory.ownedIds, [ITEMS[0]]);
   assert.deepEqual(posts(f, '/v1/shop/purchase')[1].body, first); assert.equal(f.local.size, 0);
-  assert.deepEqual(f.cost(before), {reads: 9, writes: 0, transport: 13});
+  assert.deepEqual(f.cost(before), {reads: 10, writes: 0, transport: 14});
   const transient = ui.states.find(state => state.phase === 'outcome');
   assert.equal(transient.wallet, null); assert.equal(transient.inventory, null); ui.dispose();
 });
@@ -316,7 +316,7 @@ test('actual saved rules hash and match inventory leave every currency/shop coll
 for (const version of [1,7]) test('actual saved owner-update/allowance expressions accept version ' + version + ' only after real server purchases', async () => {
   const predicates = rulePredicates(savedRules()), f = fixture(), ui = mount(f);
   const design = {...sanitizeProfileCosmetics({}), version};
-  for (const item of PROFILE_SHOP_CATALOG) design[item.grants[0].slot] = item.grants[0].value;
+  for (const item of PROFILE_SHOP_CATALOG.slice(0, 3)) design[item.grants[0].slot] = item.grants[0].value;
   const prior = clone(f.docs.get('0.6.2_profiles_public/' + A).data), timestamp = {toMillis: () => AT};
   const update = {...prior, profileCosmetics: design, cosmeticsSyncedAt: timestamp, cosmeticsUpdatedAt: AT, updatedAt: AT};
   assert.equal(predicates.validCosmetics(design), true);

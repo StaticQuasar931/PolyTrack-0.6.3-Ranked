@@ -17,7 +17,7 @@ const publishSource=fs.readFileSync(new URL('./profile-cosmetics-idempotency.tes
 assert.ok(start>=0&&end>start);
 const publishFixture=Function('assert','sanitizeProfileCosmetics','eventEncode','eventDecode','preparePublicationPages','PUBLIC_PAGE_COLLECTION','handleRequest','worker','origin','accountId','profilePath','overallPath','jobPath','cosmeticJobPath','cosmetics',publishSource.slice(start,end)+';return fixture;')(assert,sanitizeProfileCosmetics,eventEncode,eventDecode,preparePublicationPages,PUBLIC_PAGE_COLLECTION,handleRequest,worker,origin,accountId,profilePath,overallPath,jobPath,cosmeticJobPath,cosmetics);
 
-test('actual forced and companion-cache rebuilds preserve all three server purchases',async t=>{
+test('actual forced and companion-cache rebuilds preserve all nine server purchases',async t=>{
  t.mock.method(globalThis,'fetch',async()=>assert.fail('external network forbidden'));t.mock.method(Date,'now',()=>AT);
  const f=fixture(2),board=f.data.get(TRACKS+'/'+TRACK);board.entries[0].accountId=accountId;f.mutate(TRACKS+'/'+TRACK,board);
  assert.equal((await rebuildOverall(f.env,true)).rebuilt,true);
@@ -28,7 +28,7 @@ test('actual forced and companion-cache rebuilds preserve all three server purch
 });
 for(const version of [1,7])test('actual current/legacy profile publish accepts owned-only design version'+version,async t=>{
  const f=await publishFixture(t);let entitlement=null;const design={...cosmetics,version};for(const item of SHOP_PROFILE_CATALOG){entitlement=addPurchase(entitlement,item.id,AT,{accountId,ownerUid:'owner'});design[item.grants[0].slot]=item.grants[0].value;}
- for(const item of SHOP_PROFILE_CATALOG)assert.equal(sanitizeProfileCosmetics(design)[item.grants[0].slot],item.grants[0].value,'Worker must recognize new catalog ID without defaulting it');
+ for(const item of SHOP_PROFILE_CATALOG.filter(item=>design[item.grants[0].slot]===item.grants[0].value))assert.equal(sanitizeProfileCosmetics(design)[item.grants[0].slot],item.grants[0].value,'Worker must recognize new catalog ID without defaulting it');
  f.replace(ENT+'/'+accountId,entitlement);f.replace(profilePath,{...f.db.get(profilePath),profileCosmetics:design});
  const accepted=await f.save(design);assert.equal(accepted.status,202);
  assert.equal((await accepted.json()).accepted,true);
@@ -37,7 +37,7 @@ for(const version of [1,7])test('actual current/legacy profile publish accepts o
  assert.equal(f.writes.length,version===1?3:2,'legacy normalization may rewrite the profile; neither path rewrites grants');
  const written=f.writes.length,readStart=f.reads();assert.equal((await f.save(design)).status,200);
  assert.equal(f.reads()-readStart,10);assert.equal(f.writes.length,written,'confirmed repeat publishes nothing');
- for(const item of SHOP_PROFILE_CATALOG)assert.equal(f.db.get(overallPath).entries[0].profileCosmetics[item.grants[0].slot],item.grants[0].value);
+ for(const item of SHOP_PROFILE_CATALOG.filter(item=>design[item.grants[0].slot]===item.grants[0].value))assert.equal(f.db.get(overallPath).entries[0].profileCosmetics[item.grants[0].slot],item.grants[0].value);
  assert.deepEqual(f.db.get(ENT+'/'+accountId).purchased,entitlement.purchased);
 });
 
@@ -100,4 +100,13 @@ test('actual rebuild fails closed on corrupt purchase provenance instead of dele
  entitlement.purchased.accountId='b'.repeat(64);f.mutate(ENT+'/'+accountId,entitlement);f.mutate(META,invalidateEntitlements(f.data.get(META),[accountId]));
  const overall=clone(f.data.get(OVERALL));f.dirty();await assert.rejects(rebuildOverall({...f.env},true),/PURCHASED_COSMETIC_ENTITLEMENT_INVALID/);
  assert.deepEqual(f.data.get(ENT+'/'+accountId),entitlement);assert.deepEqual(f.data.get(OVERALL),overall);
+});
+
+
+for(const item of SHOP_PROFILE_CATALOG.slice(3))test('Worker recognizes paid-only option without granting it as earned: '+item.id,async()=>{
+ const {profileCosmeticsUnlocked}=await import('../src/index.js');const {slot,value}=item.grants[0];
+ const design={...sanitizeProfileCosmetics({version:7}),[slot]:value};
+ assert.equal(sanitizeProfileCosmetics(design)[slot],value);
+ assert.equal(profileCosmeticsUnlocked(design,{raceCount:1000,pbCount:1000,trackWins:1000,extraCount:1000,
+ totalPlaytimeMs:999999999,rank:1},true),false);
 });

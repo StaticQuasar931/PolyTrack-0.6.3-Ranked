@@ -3,7 +3,7 @@
 // Store MUST implement real serializable transactions, not read/mutate/save.
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
-import {addPurchase} from './purchased-cosmetic-entitlements.js';
+import {addPurchase, readPurchasedCosmetics} from './purchased-cosmetic-entitlements.js';
 import {invalidateEntitlements} from './overall-entitlement-cache.js';
 import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT} from './server-achievements.js';
 
@@ -33,7 +33,11 @@ export const CURRENCY_REWARDS = Object.freeze({login: 8, 'tracks-1': 20, 'tracks
 const account = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const requestKey = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(value);
 const uint = value => Number.isSafeInteger(value) && value >= 0;
-const INVENTORY_LOOKUP_LIMIT = 3;
+// Compatibility reads never grow with the current sellable catalog.
+const ORIGINAL_PROFILE_INVENTORY_IDS = Object.freeze([
+  'profile-pitlane-ticket', 'profile-apex-observatory', 'profile-vector-ribbon'
+]);
+const PROFILE_CATALOG_LIMIT = 32;
 const path = (kind, id) => CURRENCY_COLLECTIONS[kind] + '/' + id;
 export class CurrencyError extends Error {
   // Do not set transport `status`: the shared Firestore adapter retries 409s.
@@ -104,7 +108,10 @@ function checkedMilestoneGrant(grant, accountId, uid, rewardId) {
 
 export function createCurrencyService({store, now = Date.now}) {
   demand(typeof store?.transaction === 'function' && typeof now === 'function', 'transaction_store_required', 503);
-  demand(SHOP_CATALOG.length === INVENTORY_LOOKUP_LIMIT && SHOP_CATALOG_VERSION === 2, 'inventory_catalog_limit', 503);
+  demand(SHOP_CATALOG_VERSION === 2 && SHOP_CATALOG.length >= ORIGINAL_PROFILE_INVENTORY_IDS.length &&
+    SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(SHOP_CATALOG.map(item => item.id)).size === SHOP_CATALOG.length &&
+    ORIGINAL_PROFILE_INVENTORY_IDS.every(id => SHOP_CATALOG.some(item => item.id === id && item.kind === 'profile-cosmetic')),
+  'inventory_catalog_limit', 503);
   return Object.freeze({
     async execute(uid, command) {
       demand(typeof uid === 'string' && uid.length > 0 && uid.length <= 128, 'authentication_required', 401);
@@ -135,8 +142,8 @@ export function createCurrencyService({store, now = Date.now}) {
       const legacyGrants = rewardId === 'milestones' ? await Promise.all(MILESTONE_IDS.map(async id =>
         [id, await hash([accountId, id, 'lifetime'])])) : [];
       const inventoryId = item || legacyItem ? await hash([accountId, itemId]) : null;
-      const catalogInventory = op === 'wallet' ? await Promise.all(SHOP_CATALOG.map(async selected =>
-        [selected, await hash([accountId, selected.id])])) : [];
+      const compatibilityInventory = op === 'wallet' ? await Promise.all(ORIGINAL_PROFILE_INVENTORY_IDS.map(async id =>
+        [SHOP_CATALOG.find(item => item.id === id), await hash([accountId, id])])) : [];
       const outcome = await store.transaction(async tx => {
         const profile = await tx.get('0.6.2_profiles_public/' + accountId);
         demand(profile?.accountId === accountId && profile.ownerUid === uid, 'profile_not_owned', 403);
@@ -146,16 +153,20 @@ export function createCurrencyService({store, now = Date.now}) {
         if (op === 'wallet') {
           const equipped = checkedEquip(await tx.get(path('equip', accountId)), accountId, uid, knownEquipRevision);
           demand(equipped.projection || equipped.revision === 0, 'equipped_state_missing', 409);
-          const ownedItemIds = [];
-          for (const [selected, id] of catalogInventory) {
+          const purchased = readPurchasedCosmetics(await tx.get(ENTITLEMENT_PATH + accountId), {accountId, ownerUid: uid});
+          const ownedIds = new Set(Object.keys(purchased?.items || {}));
+          for (const [selected, id] of compatibilityInventory) {
             const inventory = await tx.get(path('inventory', id));
             if (inventory) {
               demand(owned(inventory, accountId, uid, selected), 'inventory_owner_changed', 409);
-              ownedItemIds.push(selected.id);
+              const canonical = purchased?.items[selected.id];
+              demand(!canonical || inventory.purchasedAt === canonical.acquiredAt, 'inventory_entitlement_conflict', 409);
+              ownedIds.add(selected.id);
             }
           }
-          // Retired native state never authorizes or renders a profile cosmetic.
-          // Keep its counter, but never add a fourth inventory lookup or expose its recipe.
+          // Canonical purchases cover all new items; only the original three need fallback reads.
+          // This read-only union neither repairs legacy provenance nor exposes retired native recipes.
+          const ownedItemIds = SHOP_CATALOG.filter(item => ownedIds.has(item.id)).map(item => item.id);
           return {accountId, catalogVersion: SHOP_CATALOG_VERSION, balance, revision, ownedItemIds, inventoryComplete: true,
             equipRevision: equipped.revision, equipped: null};
         }

@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
 const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
+const cosmeticClass=grant=>`cosmetic-${grant.slot.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())}-${grant.value}`;
 const root=fileURLToPath(new URL('../',import.meta.url)),account='a'.repeat(64);
 const evidence=process.env.PROFILE_SHOP_EVIDENCE_DIR||path.resolve(root,'../../2026-11-14/profile-shop-originals');
 let browser,server,base,patch,nativeFixture;
@@ -24,7 +25,7 @@ before(async()=>{
   try{res.setHeader('content-type',name.endsWith('.mjs')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':'font/woff2');res.end(await fs.readFile(path.join(root,name.slice(1))));}catch{res.writeHead(404).end();}
  });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;
  nativeFixture=new Function('patch','extract','base','assert','return ('+helpers.slice(start,end).replaceAll("'racer-a'",JSON.stringify(account))+')')(patch,extract,base,assert);
- browser=await chromium.launch({headless:true});await fs.mkdir(evidence,{recursive:true});
+ browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});await fs.mkdir(evidence,{recursive:true});
 });
 after(async()=>{await browser?.close();server?.closeAllConnections();if(server)await new Promise(resolve=>server.close(resolve));});
 async function fixture(t,width=390,height=844){
@@ -43,35 +44,47 @@ async function fixture(t,width=390,height=844){
   for(const button of studio.querySelectorAll('[data-cosmetic-choice]'))if(PROFILE_SHOP_CATALOG.some(item=>item.grants[0].slot===button.dataset.cosmeticKind&&item.grants[0].value===button.dataset.cosmeticValue)){
    button.dataset.cosmeticLocked='true';button.removeAttribute('aria-disabled');button.title='Shop design. Preview only.';const text=button.querySelector('small');if(text)text.textContent='Shop design - preview only';
   }
-  const draft=()=>({...profileCosmeticDrafts.get(account)});window.originalDraft=JSON.stringify(draft());window.draftWrites=0;const set=profileCosmeticDrafts.set.bind(profileCosmeticDrafts);profileCosmeticDrafts.set=(...args)=>{draftWrites++;return set(...args);};
+  const draft=()=>({...profileCosmeticDrafts.get(account)});window.originalDraft=JSON.stringify(draft());window.originalUnlocks=JSON.stringify(nativeEntry.cosmeticUnlocks);window.draftWrites=0;const set=profileCosmeticDrafts.set.bind(profileCosmeticDrafts);profileCosmeticDrafts.set=(...args)=>{draftWrites++;return set(...args);};
   window.nativePreview=bindCosmeticPreview(studio,{catalog:nativeCatalog,onPreview:option=>applyProfileCosmetics(card,{...draft(),[option.kind]:option.id}),onRestore:()=>applyProfileCosmetics(card,draft())});
   window.shopPreview=bindProfileShopPreview(content,{accountId:account,getAccountId:()=>activeAccount,getAuthScope:()=>authScope,getCatalog:()=>liveCatalog,getPreviewController:()=>nativePreview,openStudio:reward=>cleanup.open('studio',reward),revision:'original-art-test'});
   document.querySelector('.ph-heading p').textContent='OFFLINE ART TEST - WALLET OFF';
   window.tryDesign=(itemId,signal)=>shopPreview.preview({accountId:account,itemId,previewOnly:true,isCurrent:()=>true,signal});
-  window.readState=()=>({draft:JSON.stringify(draft()),writes:draftWrites,publishes:window.published||0,active:nativePreview.isActive(),canPublish:nativePreview.canPublish()});
+  window.readState=()=>({draft:JSON.stringify(draft()),writes:draftWrites,publishes:window.published||0,active:nativePreview.isActive(),canPublish:nativePreview.canPublish(),unlocks:JSON.stringify(nativeEntry.cosmeticUnlocks)});
  },account);
  await page.evaluate(()=>document.fonts.ready);page.noExternal=()=>assert.equal(external,0);return page;
 }
-test('canonical original drop is exactly three fixed single-slot grants, deeply frozen, with version two',()=>{
- assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);assert.deepEqual(PROFILE_SHOP_CATALOG.map(item=>item.price),[20,30,50]);assert.deepEqual(PROFILE_SHOP_CATALOG.map(item=>item.grants[0].slot),['plate','stage','stripe']);
- assert.equal(new Set(PROFILE_SHOP_CATALOG.map(item=>item.id)).size,3);assert.ok(Object.isFrozen(PROFILE_SHOP_CATALOG));
+test('canonical nine-design catalog has exact fixed single-slot grants and prices, deeply frozen, with version two',()=>{
+ assert.equal(PROFILE_SHOP_CATALOG_VERSION,2);
+ assert.deepEqual(PROFILE_SHOP_CATALOG.map(item=>[item.id,item.label,item.price,item.grants]),[
+  ['profile-pitlane-ticket','Pitlane Ticket',20,[{slot:'plate',value:'pitlane-ticket'}]],
+  ['profile-apex-observatory','Apex Observatory',30,[{slot:'stage',value:'apex-observatory'}]],
+  ['profile-vector-ribbon','Vector Ribbon',50,[{slot:'stripe',value:'vector-ribbon'}]],
+  ['profile-petrol','Petrol',16,[{slot:'theme',value:'petrol'}]],
+  ['profile-navy-secondary','Midnight Navy',20,[{slot:'baseSecondary',value:'navy'}]],
+  ['profile-rail','Pit Rail',32,[{slot:'edge',value:'rail'}]],
+  ['profile-rally-lines','Rally Lines',36,[{slot:'stripe',value:'rally-lines'}]],
+  ['profile-book-serif','Book Serif',45,[{slot:'nameFont',value:'book'}]],
+  ['profile-copper-ink','Copper Ink',24,[{slot:'nameColor',value:'copper'}]]
+ ]);
+ assert.equal(new Set(PROFILE_SHOP_CATALOG.map(item=>item.id)).size,9);assert.ok(Object.isFrozen(PROFILE_SHOP_CATALOG));
  for(const item of PROFILE_SHOP_CATALOG){assert.equal(item.kind,'profile-cosmetic');assert.equal(item.grants.length,1);assert.ok(Object.isFrozen(item)&&Object.isFrozen(item.grants)&&Object.isFrozen(item.grants[0]));assert.equal(Object.hasOwn(item,'style'),false);}
 });
-test('three original designs preview through actual Studio classes on phone/laptop, never mutate drafts or publish, and clear safely',{timeout:30000},async t=>{
+
+test('all nine designs preview through actual Studio classes on phone/laptop, never mutate drafts or publish, and clear safely',{timeout:30000},async t=>{
  for(const [name,width,height]of[['phone',390,844],['laptop',1366,768]]){
   const page=await fixture(t,width,height);await page.evaluate(()=>cleanup.open('studio'));
   for(const item of PROFILE_SHOP_CATALOG){
    const carBefore=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {width:r.width,height:r.height,clip:s.clipPath,padding:s.padding};});
    await page.evaluate(id=>tryDesign(id),item.id);await page.locator('link[data-profile-shop-art-css][href$="v=original-art-test"]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
    assert.deepEqual(await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {width:r.width,height:r.height,clip:s.clipPath,padding:s.padding};}),carBefore,'original profile art must not alter car geometry');
-   const grant=item.grants[0];assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),`cosmetic-${grant.slot}-${grant.value}`),true);
+   const grant=item.grants[0];assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),cosmeticClass(grant)),true);
    assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('.cosmetic-preview-banner strong').innerText(),'Preview only - not applied');
-   const state=await page.evaluate(()=>readState());assert.equal(state.draft,await page.evaluate(()=>originalDraft));assert.equal(state.writes,0);assert.equal(state.publishes,0);assert.equal(state.canPublish,false);
+   const state=await page.evaluate(()=>readState());assert.equal(state.draft,await page.evaluate(()=>originalDraft));assert.equal(state.writes,0);assert.equal(state.publishes,0);assert.equal(state.canPublish,false);assert.equal(state.unlocks,await page.evaluate(()=>originalUnlocks),'preview never grants ownership');
    await page.locator('[data-save-profile-cosmetics]').dispatchEvent('click');assert.equal(await page.evaluate(()=>window.published||0),0);
    await page.locator('dialog').waitFor({state:'visible'});await page.locator('.profile-customizer-preview').scrollIntoViewIfNeeded();
-   await page.screenshot({path:path.join(evidence,`${item.id}-${name}.png`)});
-   await page.evaluate(()=>shopPreview.clear());assert.equal(await page.locator('.cosmetic-preview-banner').count(),0);assert.equal(await page.evaluate(()=>readState().active),false);
-   assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),`cosmetic-${grant.slot}-${grant.value}`),false);
+   await page.screenshot({path:path.join(evidence,`${item.id}-${name}.png`),timeout:5000});
+   await page.evaluate(()=>shopPreview.clear());assert.equal(await page.evaluate(()=>readState().unlocks),await page.evaluate(()=>originalUnlocks),'clearing preview never grants ownership');assert.equal(await page.locator('.cosmetic-preview-banner').count(),0);assert.equal(await page.evaluate(()=>readState().active),false);
+   assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),cosmeticClass(grant)),false);
   }
   assert.equal(await page.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);page.noExternal();
  }

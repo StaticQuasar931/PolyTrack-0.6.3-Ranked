@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 383,
+    "number": 384,
     "version": "0.6.3",
-    "revision": 325,
+    "revision": 326,
     "notes": [
-      "Clearer, larger achievement goals without profile patterns.",
-      "Combine cosmetic previews, undo changes, and see unsaved edits.",
-      "Cleaner profile layout and a redesigned Apex Observatory backdrop."
+      "Customize your car in Garage with starter paint palettes and roof accessories.",
+      "Browse nine profile designs in the Style shop inside Racer Studio.",
+      "Clearer Token prices, more profile styles, and local car appearance saves."
     ]
   },
   "entries": [
+    {
+      "number": 383,
+      "title": "Clearer achievements and reversible Studio previews",
+      "commit": "a45906a9d2deaa0564dbbc8bb5132bcbdaf39f10",
+      "committedAt": "2026-11-14T20:11:07.000Z",
+      "notes": [
+        "Clearer, larger achievement goals without profile patterns.",
+        "Combine cosmetic previews, undo changes, and see unsaved edits.",
+        "Cleaner profile layout and a redesigned Apex Observatory backdrop."
+      ]
+    },
     {
       "number": 382,
       "title": "Community badge and cosmetic consistency",
@@ -194,15 +205,6 @@
       "notes": [
         "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
         "Weekly and daily track cards show your place as 1/255 when the full field is known."
-      ]
-    },
-    {
-      "number": 361,
-      "title": "Restore hosted snapshot integrity checks for paged boards",
-      "commit": "1b98a0a2e3c13bce86869067a7a0ed78346fa91f",
-      "committedAt": "2026-11-12T08:14:37.000Z",
-      "notes": [
-        "Restores hosted snapshot checks for the optimized leaderboard format."
       ]
     }
   ],

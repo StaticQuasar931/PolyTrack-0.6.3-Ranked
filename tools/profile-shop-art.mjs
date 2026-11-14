@@ -3,13 +3,10 @@
  * Load profile-shop-art.css after the existing cosmetic styles.
  */
 import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';
-
-export const PROFILE_SHOP_DESIGNS = Object.freeze(PROFILE_SHOP_CATALOG.map(item => {
-  const {slot, value} = item.grants[0];
-  return Object.freeze({itemId:item.id, slot, value, label:item.label, price:item.price});
-}));
+import {PROFILE_SHOP_EXPANDED_DESIGNS,PROFILE_SHOP_EXPANDED_CSS} from './profile-shop-expanded-designs.mjs';
 
 const ART = Object.freeze({
+  ...Object.fromEntries(PROFILE_SHOP_EXPANDED_DESIGNS.map(item=>[item.itemId,item.art])),
   'profile-pitlane-ticket': Object.freeze({
     description:'An ink-blue pit ticket with cut corners and a warm timing-line edge.',
     base:'<path fill="#14263b" stroke="#edc889" stroke-width="2" d="M12 12H298L308 22V66L298 76H12L2 66V22Z"/><path fill="#edc889" d="M12 12H18V76H12L2 66V22Z"/>',
@@ -27,8 +24,24 @@ const ART = Object.freeze({
   })
 });
 
+// A catalog entry is drawable only when its exact, single-slot grant is known.
+// Unknown future IDs fail closed instead of crashing or borrowing paid artwork.
+const knownGrants = [
+  {itemId:'profile-pitlane-ticket',slot:'plate',value:'pitlane-ticket'},
+  {itemId:'profile-apex-observatory',slot:'stage',value:'apex-observatory'},
+  {itemId:'profile-vector-ribbon',slot:'stripe',value:'vector-ribbon'},
+  ...PROFILE_SHOP_EXPANDED_DESIGNS
+];
+export const PROFILE_SHOP_DESIGNS = Object.freeze(PROFILE_SHOP_CATALOG.filter(item=>{
+  const known=knownGrants.find(design=>design.itemId===item.id);
+  return known && item.grants?.length===1 && item.grants[0]?.slot===known.slot && item.grants[0]?.value===known.value;
+}).map(item=>{
+  const {slot,value}=item.grants[0];
+  return Object.freeze({itemId:item.id,slot,value,label:item.label,price:item.price});
+}));
+
 export const PROFILE_SHOP_ART = Object.freeze(PROFILE_SHOP_DESIGNS.map(design => Object.freeze({
-  ...design, className:`cosmetic-${design.slot}-${design.value}`, description:ART[design.itemId].description
+  ...design, className:`cosmetic-${design.slot.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())}-${design.value}`, description:ART[design.itemId].description
 })));
 
 export function getProfileShopDesign(itemId) {
@@ -42,7 +55,7 @@ export function profileShopArt(kind, id) {
 /** Decorative fixed markup only. Host supplies a text label and preview/ownership state. */
 export function renderProfileShopArt(itemId, {density='normal'}={}) {
   if (!['normal','low'].includes(density)) throw TypeError('Unsupported profile art density');
-  const item = PROFILE_SHOP_ART.find(value => value.itemId === itemId);
+  const item = PROFILE_SHOP_ART.find(value => value.itemId === itemId) ?? PROFILE_SHOP_EXPANDED_DESIGNS.find(value=>value.itemId===itemId);
   if (!item) return '';
   const art = ART[itemId];
   // Card-only example. The real plate background below is a text-free gradient.
@@ -69,4 +82,4 @@ export const PROFILE_SHOP_ART_CSS = `/* Original profile art only. No car geomet
 :is([data-profile-art-density="low"],.sq-plain-racer-themes) .cosmetic-stage-apex-observatory,.cosmetic-stage-apex-observatory[data-profile-art-density="low"]{--stage-bg:${sceneLow} center/cover no-repeat #152c3d;--stage-fx:none}
 :is([data-profile-art-density="low"],.sq-plain-racer-themes) .cosmetic-stripe-vector-ribbon,.cosmetic-stripe-vector-ribbon[data-profile-art-density="low"]{--sq-stripe-art:${ribbonLow};--profile-pattern:${ribbonLow}}
 @media(prefers-reduced-motion:reduce){.profile-shop-art{animation:none!important;transition:none!important}}
-`;
+` + PROFILE_SHOP_EXPANDED_CSS;

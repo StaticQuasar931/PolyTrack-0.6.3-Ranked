@@ -1,0 +1,9 @@
+@import url('./shop-preview.css');
+/* Dedicated Studio-facing presentation. Transport and wallet state stay unchanged. */
+.profile-customizer .profile-customizer-actions .profile-shop-open{min-height:44px;margin:0;flex:0 1 auto}
+.profile-shop-dialog .sp-summary strong{overflow-wrap:anywhere}
+.profile-shop-dialog .sp-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.profile-shop-dialog .sp-item-meta>span{overflow-wrap:anywhere}
+.profile-shop-dialog .sp-item{min-width:0}
+@media(max-width:800px){.profile-shop-dialog .sp-grid{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.profile-shop-dialog *{scroll-behavior:auto!important}}

@@ -12,7 +12,7 @@ const evidence = process.env.ACHIEVEMENT_EVIDENCE_DIR || 'C:/Users/Static/Docume
 
 test('offline readability, exact rewards, input and static Apex evidence',{timeout:90000},async () => {
   await fs.mkdir(evidence,{recursive:true});
-  const allowed = new Set(['achievement-journal.css','achievement-journal.mjs','achievement-model.mjs','profile-shop-art.css','profile-shop-art.mjs','profile-shop-catalog.mjs','racer-studio-polish.css']);
+  const allowed = new Set(['achievement-journal.css','achievement-journal.mjs','achievement-model.mjs','profile-shop-art.css','profile-shop-art.mjs','profile-shop-expanded-designs.mjs','profile-shop-catalog.mjs','racer-studio-polish.css']);
   const server = http.createServer(async(req,res) => {
     const url = new URL(req.url,'http://localhost');
     if(url.pathname === '/') {
@@ -59,7 +59,7 @@ test('offline readability, exact rewards, input and static Apex evidence',{timeo
       });
       await mouse('[data-aj-select="achievement:v1:practice-finishes:10"]');
       const detail=page.locator('[data-aj-detail]');
-      assert.match(await detail.innerText(),/No cosmetic reward or CP/);
+      assert.match(await detail.innerText(),/No cosmetic reward or Tokens/);
       assert.match(await detail.innerText(),/Current progress: 2\s+Goal: 10/);
       assert.equal(await detail.locator('.aj-more').getAttribute('open'),'');
       const metrics=await page.evaluate(()=>{

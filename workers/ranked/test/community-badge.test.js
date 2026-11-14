@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {rebuildOverall} from '../src/index.js';
 import {purchasedProfileCosmeticsUnlocked} from '../src/purchased-cosmetic-entitlements.js';
 import {ENTITLEMENT_CACHE_COLLECTION as CACHE, invalidateEntitlements} from '../src/overall-entitlement-cache.js';
-import {createCommunityBadgeService, readCommunityClaim, COMMUNITY_CAMPAIGN} from '../src/community-badge.js';
+import {createCommunityBadgeService, readCommunityClaim, COMMUNITY_CAMPAIGN, LEGACY_COMMUNITY_CAMPAIGN} from '../src/community-badge.js';
 import {addCommunityBadge, addPurchase, mergeEarnedAndPurchasedEntitlements} from '../src/purchased-cosmetic-entitlements.js';
 import {createEventFirestoreStore, eventEncode, eventDecode} from '../src/events-store.js';
 import worker, {handleRequest, sanitizeProfileCosmetics} from '../src/index.js';
@@ -13,15 +13,22 @@ import {preparePublicationPages, PUBLIC_PAGE_COLLECTION} from '../src/paged-publ
 const A = 'a'.repeat(64), B = 'b'.repeat(64), UID = 'owner', AT = 1792000000000;
 const ENT = '0.6.2_s1_cosmetic_entitlements/', META = '0.6.2_s1_release_meta/current';
 const BASE = 'projects/polytrack-052/databases/(default)/documents/';
-const body = {accountId: A, inviteCode: 'jW2az4AQUH'};
+// Synthetic fixtures only; never use the configured relay code or digest.
+const FAKE_CODE = 'ABCDEFGHIJKLMNOP';
+const fakeHash = code => createHash('sha256').update(code).digest('hex');
+const body = {accountId: A, communityCode: FAKE_CODE};
 beforeEach(t => {t.mock.method(Date, 'now', () => AT);t.mock.method(globalThis, 'fetch', () => assert.fail('No external requests'));t.mock.method(console, 'log', () => {});});
-function fixture() {
-  const docs = new Map(), snapshots = new Map(), calls = [], commits = []; let version = 0, fail = false, lose = false, hook;
+function fixture(secret = fakeHash(FAKE_CODE)) {
+  const docs = new Map(), snapshots = new Map(), calls = [], commits = []; let version = 0, fail = false, lose = false, hook, barrier;
   const put = (key, value) => docs.set(key, {data: structuredClone(value), version: ++version});
   put('0.6.2_profiles_public/' + A, {accountId: A, ownerUid: UID});
   const request = async (route, init = {}) => {
     calls.push(route); const data = init.body ? JSON.parse(init.body) : null;
-    if (route === ':beginTransaction') {const id = 'tx-' + ++version; snapshots.set(id, {docs: structuredClone(docs), reads: new Set()}); return {transaction: id};}
+    if (route === ':beginTransaction') {
+      const id = 'tx-' + ++version; snapshots.set(id, {docs: structuredClone(docs), reads: new Set()});
+      if (barrier) {const current = barrier; if (++current.arrivals === 2) {barrier = null; current.release();} await current.ready;}
+      return {transaction: id};
+    }
     if (route === ':rollback') {snapshots.delete(data.transaction); return {};}
     if (route === ':commit') {
       if (hook) {const callback = hook; hook = null; await callback();}
@@ -41,17 +48,18 @@ function fixture() {
     return value ? {fields: eventEncode(value.data).mapValue.fields, updateTime: String(value.version)} : null;
   };
   const store = createEventFirestoreStore({request, projectId: 'polytrack-052', retries: 2, pause: async () => {}});
-  const service = createCommunityBadgeService({store, grantEntitlement: addCommunityBadge, now: () => AT});
+  const service = createCommunityBadgeService({store, grantEntitlement: addCommunityBadge, relayCodeSha256: secret, now: () => AT});
   const allow = {limit: async () => ({success: true})};
-  const env = {ALLOWED_ORIGINS: 'https://test.invalid', __TEST_UID: UID, WRITE_IP_RATE_LIMITER: allow,
+  const env = {COMMUNITY_RELAY_CODE_SHA256: secret, ALLOWED_ORIGINS: 'https://test.invalid', __TEST_UID: UID, WRITE_IP_RATE_LIMITER: allow,
     PB_NOTIFY_RATE_LIMITER: allow, __TEST_FIRESTORE: request};
   const post = (payload = body, extra = {}, headers = {}) => handleRequest(new Request('https://worker.invalid/v1/profile/community-badge',
     {method: 'POST', headers: {Origin: 'https://test.invalid', 'CF-Connecting-IP': '192.0.2.1', ...headers}, body: JSON.stringify(payload)}), {...env, ...extra});
   return {docs, calls, commits, service, put, post, fail: () => {fail = true;}, lose: () => {lose = true;}, hook: fn => {hook = fn;},
+    synchronize: () => {let release; const ready = new Promise(resolve => {release = resolve;}); barrier = {ready, release, arrivals: 0};},
     reads: () => calls.filter(route => route.includes('?transaction=')).length};
 }
 const expected = alreadyClaimed => ({version: 1, accepted: true, accountId: A, badgeId: 'community',
-  source: 'invite-code', membershipVerified: false, alreadyClaimed});
+  source: 'relay-code', membershipVerified: false, alreadyClaimed});
 test('first actual Worker claim is three reads two atomic writes; repeat is two reads zero writes', async () => {
   const f = fixture(); f.put(META, {entitlementEpoch: 4, unrelated: true});
   const before = structuredClone(f.docs.get('0.6.2_profiles_public/' + A));
@@ -62,8 +70,8 @@ test('first actual Worker claim is three reads two atomic writes; repeat is two 
   assert.equal(f.docs.get(META).data.entitlementEpoch, 5); assert.equal(f.docs.get(META).data.dirty, true);
   assert.deepEqual(f.docs.get('0.6.2_profiles_public/' + A), before);
   assert.deepEqual(f.docs.get(ENT + A).data.community, {version: 1, accountId: A, ownerUid: UID,
-    campaign: COMMUNITY_CAMPAIGN, badgeId: 'community', source: 'invite-code', membershipVerified: false, claimedAt: AT});
-  const docs = structuredClone(f.docs); response = await f.post({...body, inviteCode: 'https://discord.gg/jW2az4AQUH'});
+    campaign: COMMUNITY_CAMPAIGN, badgeId: 'community', source: 'relay-code', membershipVerified: false, claimedAt: AT});
+  const docs = structuredClone(f.docs); response = await f.post({accountId: A, inviteCode: FAKE_CODE});
   assert.equal(response.status, 200); assert.deepEqual(await response.json(), expected(true));
   assert.equal(f.reads(), 5); assert.equal(f.calls.length, 9); assert.equal(f.commits.length, 1); assert.deepEqual(f.docs, docs);
   assert.ok([...f.docs.keys()].every(key => !key.includes('currency') && !key.includes('badges/')));
@@ -72,11 +80,11 @@ test('invalid public codes, URLs and strict body shapes cause zero DB or URL req
   const f = fixture();
   for (const inviteCode of ['', 'other', 'https://evil.invalid/jW2az4AQUH', 'http://discord.gg/jW2az4AQUH',
     'https://discord.gg/jW2az4AQUH?x=1', 'https://discord.gg/jW2az4AQUH/', 'https://discord.gg@evil.invalid/jW2az4AQUH', ' jW2az4AQUH', null, 7]) {
-    const response = await f.post({...body, inviteCode}); assert.equal(response.status, 400);
+    const response = await f.post({...body, communityCode: inviteCode}); assert.equal(response.status, 400);
   }
   for (const payload of [{...body, badgeId: 'betaTester'}, {...body, accountId: '../x'}, {accountId: A}, [], {...body, membershipVerified: true}])
     assert.equal((await f.post(payload)).status, 400);
-  assert.equal((await f.post({...body, inviteCode: 'x'.repeat(3000)})).status, 400);
+  assert.equal((await f.post({...body, communityCode: 'x'.repeat(3000)})).status, 400);
   assert.equal(f.calls.length, 0);
 });
 test('origin revision freeze IP and UID gates remain before all Community database work', async () => {
@@ -164,11 +172,12 @@ const isRefinement = writes => writes.some(write => write.update.name.includes('
 assert.ok(fixtureBody.startsWith('function fixture('));
 const rebuildFixture = Function('assert','BASE','META','TRACKS','TRACK','AT','ENT','CACHE','OVERALL','eventEncode','eventDecode','clone','isRefinement', fixtureBody + ';return fixture;')
   (assert, BASE, META, TRACKS, TRACK, AT, ENT.slice(0, -1), CACHE, OVERALL, eventEncode, eventDecode, clone, isRefinement);
-test('actual forced and cache-companion rebuild preserve Community plus purchases and reject foreign publication binding', async () => {
+for (const legacy of [false, true]) test('actual rebuild preserves typed Community plus purchases, legacy=' + legacy, async () => {
   const f = rebuildFixture(2), board = f.data.get(TRACKS + '/' + TRACK);
   board.entries[0].accountId = A; f.mutate(TRACKS + '/' + TRACK, board); await rebuildOverall(f.env, true);
   let entitlement = addPurchase(f.data.get(ENT + A), 'profile-pitlane-ticket', AT, {accountId: A, ownerUid: UID});
   entitlement = addCommunityBadge(entitlement, AT, {accountId: A, ownerUid: UID});
+  if (legacy) {entitlement.community.campaign = LEGACY_COMMUNITY_CAMPAIGN; entitlement.community.source = 'invite-code';}
   const proof = clone(entitlement.community), purchase = clone(entitlement.purchased);
   f.mutate(ENT + A, entitlement); f.mutate(META, invalidateEntitlements(f.data.get(META), [A])); f.dirty();
   assert.equal((await rebuildOverall(f.env, true)).rebuilt, true);
@@ -207,7 +216,7 @@ test('real rebuild CAS cannot overwrite a concurrent Community grant and cache i
 });
 
 test('actual Community route conflict has no automatic retry and explicit repeat is bounded', async () => {
-  const f = fixture(); const responses = await Promise.all([f.post(), f.post()]);
+  const f = fixture(); f.synchronize(); const responses = await Promise.all([f.post(), f.post()]);
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 503]);
   assert.equal(f.reads(), 6); assert.equal(f.commits.length, 1);
   assert.equal((await f.post()).status, 200); assert.equal(f.reads(), 8); assert.equal(f.commits.length, 1);
@@ -222,9 +231,10 @@ assert.ok(publishStart >= 0 && publishEnd > publishStart);
 const publishFixture = Function('assert','sanitizeProfileCosmetics','eventEncode','eventDecode','preparePublicationPages','PUBLIC_PAGE_COLLECTION','handleRequest','worker','origin','accountId','profilePath','overallPath','jobPath','cosmeticJobPath','cosmetics',
   publishSource.slice(publishStart, publishEnd) + ';return fixture;')
   (assert,sanitizeProfileCosmetics,eventEncode,eventDecode,preparePublicationPages,PUBLIC_PAGE_COLLECTION,handleRequest,worker,origin,accountId,profilePath,overallPath,jobPath,cosmeticJobPath,cosmetics);
-test('actual profile publisher accepts canonical Community without a fresh Overall/snapshot grant and rejects foreign proof', async t => {
+for (const legacy of [false, true]) test('actual profile publisher preserves typed Community, legacy=' + legacy, async t => {
   const f = await publishFixture(t), design = sanitizeProfileCosmetics({version: 7, badge: 'community'});
   const entitlement = addCommunityBadge(null, AT, {accountId: A, ownerUid: UID});
+  if (legacy) {entitlement.community.campaign = LEGACY_COMMUNITY_CAMPAIGN; entitlement.community.source = 'invite-code';}
   f.replace(ENT + A, entitlement); f.replace(profilePath, {...f.db.get(profilePath), profileCosmetics: design});
   assert.equal(f.db.get(overallPath).entries[0].profileCosmetics.badge, 'auto');
   let response = await f.save(design); assert.equal(response.status, 202); assert.equal((await response.json()).accepted, true);
@@ -234,4 +244,78 @@ test('actual profile publisher accepts canonical Community without a fresh Overa
   assert.equal((await response.json()).error, 'cosmetic_locked'); assert.equal(f.writes.length, writes);
   f.db.delete(ENT + A); response = await f.save(design); assert.equal(response.status, 403);
   assert.equal(f.writes.length, writes);
+});
+
+
+test('exact uppercase base32 and either wire field are required before database work', async () => {
+  const f = fixture();
+  for (const code of [FAKE_CODE.toLowerCase(), ' ' + FAKE_CODE, FAKE_CODE + ' ', FAKE_CODE.slice(1),
+    FAKE_CODE + 'A', FAKE_CODE + '\n', FAKE_CODE + '\r\n', '0' + FAKE_CODE.slice(1), '1' + FAKE_CODE.slice(1), '8' + FAKE_CODE.slice(1),
+    FAKE_CODE.slice(0, 15) + '\n', '\uFF21' + FAKE_CODE.slice(1), 'Q'.repeat(16), null, [], {}]) {
+    for (const field of ['communityCode', 'inviteCode']) {
+      const response = await f.post({accountId: A, [field]: code});
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {error: 'invalid_community_code'});
+    }
+  }
+  assert.equal((await f.post({...body, inviteCode: FAKE_CODE})).status, 400);
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.post({accountId: A, inviteCode: FAKE_CODE})).status, 200);
+});
+
+test('unset malformed or wrong server verifier never opens a transaction or echoes input', async () => {
+  for (const secret of [null, '', 'a'.repeat(63), 'a'.repeat(65), 'g'.repeat(64), 'a'.repeat(64) + '\n', {}, fakeHash('Q'.repeat(16))]) {
+    const f = fixture(secret), response = await f.post();
+    assert.equal(response.status, typeof secret === 'string' && secret.length === 64 && /^[a-f0-9]{64}$/i.test(secret) ? 400 : 503);
+    assert.deepEqual(await response.json(), {error: response.status === 400 ? 'invalid_community_code' : 'community_unavailable'});
+    assert.equal(f.calls.length, 0); assert.equal(f.commits.length, 0);
+  }
+  const f = fixture();
+  assert.equal((await f.post(body, {COMMUNITY_RELAY_CODE_SHA256: undefined})).status, 503);
+  assert.equal(f.calls.length, 0);
+});
+
+test('base32 digits and uppercase hex verifier are supported without storing request secrets', async () => {
+  const fakeCode = 'ABCDEFGH234567AB', f = fixture(fakeHash(fakeCode).toUpperCase());
+  const response = await f.post({accountId: A, communityCode: fakeCode});
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), expected(false));
+  const stored = JSON.stringify([...f.docs]);
+  assert.equal(stored.includes(fakeCode), false); assert.equal(stored.includes(fakeHash(fakeCode)), false);
+  assert.equal(stored.includes(fakeHash(fakeCode).toUpperCase()), false);
+  assert.equal(stored.includes('communityCode'), false); assert.equal(stored.includes('inviteCode'), false);
+});
+
+test('strict legacy provenance preserves existing grants but cannot bypass relay verification', async () => {
+  const f = fixture(), prior = addCommunityBadge(null, AT, {accountId: A, ownerUid: UID});
+  prior.community.campaign = LEGACY_COMMUNITY_CAMPAIGN; prior.community.source = 'invite-code';
+  f.put(ENT + A, prior); const before = structuredClone(f.docs);
+  for (const inviteCode of ['jW2az4AQUH', 'https://discord.gg/jW2az4AQUH', 'Q'.repeat(16)]) {
+    assert.equal((await f.post({accountId: A, inviteCode})).status, 400);
+  }
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.post(body, {COMMUNITY_RELAY_CODE_SHA256: undefined})).status, 503);
+  assert.equal(f.calls.length, 0);
+  const response = await f.post(); assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), expected(true));
+  assert.equal(f.reads(), 2); assert.equal(f.commits.length, 0); assert.deepEqual(f.docs, before);
+  const purchase = addPurchase(prior, 'profile-pitlane-ticket', AT + 1, {accountId: A, ownerUid: UID});
+  assert.deepEqual(purchase.community, prior.community);
+  assert.deepEqual(addCommunityBadge(purchase, AT + 2, {accountId: A, ownerUid: UID}).community, prior.community);
+});
+
+test('legacy and relay campaign/source pairs cannot be mixed or acquire extra provenance fields', () => {
+  const binding = {accountId: A, ownerUid: UID};
+  for (const legacy of [false, true]) {
+    const prior = addCommunityBadge(null, AT, binding);
+    if (legacy) {prior.community.campaign = LEGACY_COMMUNITY_CAMPAIGN; prior.community.source = 'invite-code';}
+    assert.deepEqual(readCommunityClaim(prior, binding), prior.community);
+    for (const field of ['version', 'accountId', 'ownerUid', 'campaign', 'badgeId', 'source', 'membershipVerified', 'claimedAt', 'extra']) {
+      const corrupt = structuredClone(prior);
+      corrupt.community[field] = field === 'source' ? legacy ? 'relay-code' : 'invite-code' :
+        field === 'campaign' ? legacy ? COMMUNITY_CAMPAIGN : LEGACY_COMMUNITY_CAMPAIGN :
+        field === 'membershipVerified' ? true : field === 'claimedAt' ? 0 : 'forged';
+      assert.throws(() => readCommunityClaim(corrupt, binding), /COMMUNITY_ENTITLEMENT_INVALID/);
+      assert.throws(() => mergeEarnedAndPurchasedEntitlements({badge: ['auto', 'none']}, corrupt, binding), /COMMUNITY_ENTITLEMENT_INVALID/);
+    }
+  }
 });
