@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 366,
+  "number": 367,
   "version": "0.6.3",
-  "revision": 310,
+  "revision": 311,
   "notes": [
-    "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
-    "Adds random Extra Track previews with saved filters and right-click quick picking.",
-    "Fixes oversized snapshot progress files and local capture sign-in timing."
+    "Improves checks used before publishing updates and preparing overnight snapshots."
   ],
-  "preparedAt": "2026-11-14T03:44:19.243Z",
-  "committedAt": "2026-11-14T03:46:23.000Z"
+  "preparedAt": "2026-11-14T03:53:24.293Z",
+  "committedAt": "2026-11-14T03:53:42.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

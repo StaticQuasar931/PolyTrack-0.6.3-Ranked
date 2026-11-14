@@ -135,7 +135,7 @@ function fixture(t,{edge='healthy',registryMode='required'}={}){
     initializeApp(){this.apps.push({});return app;},app:()=>app};
   const app={auth:()=>({get currentUser(){return user;},signInAnonymously:async()=>{user={uid:owner,getIdToken:async()=> 'synthetic-token'};}}),firestore:()=>database};
   const c={Date:Clock,Intl,crypto:webcrypto,TextEncoder,URL,Headers,Request,Response,Promise,Map,Set,WeakSet,JSON,Math,Number,String,Array,Error,
-    window:{firebase:sdk,addEventListener(){}},document:{visibilityState:'visible',addEventListener(){},getElementById:()=>null,querySelectorAll:()=>[]},
+    window:{firebase:sdk,addEventListener(){}},document:{visibilityState:'visible',addEventListener(){},getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[]},
     navigator:{onLine:true,locks:{request:async(_key,options,work)=>typeof options==='function'?options():work({})}},localStorage:ls,
     setTimeout:(callback,delay)=>{const id=++timer;timers.set(id,{callback,delay});return id;},clearTimeout:id=>timers.delete(id),
     FIREBASE_QUOTA_PAUSE_KEY:'quota',MODERATION_REFRESH_MS:600000,firestorePromise:null,firebaseRetryAt:0,
@@ -185,7 +185,7 @@ function fixture(t,{edge='healthy',registryMode='required'}={}){
   };
   for(const name of ['firebaseQuotaRetryAt','firebaseQuotaPaused','noteFirebaseQuota','db','runFirebaseTransaction','resolveManualNameOverride',
     'assertCloudOwner','syncAcknowledgedPublicIdentity','claimCloudProfileName','saveClaimedPublicProfile','mockPayload',
-    'mirrorRaceResult','syncExactCarPreview','queueRankedNotification','sendRankedNotification','sendRankedProfileNotification','snapshotOnlyForNewAccount'])
+    'localPbDrivingActive','resumeLocalPbAfterTrackLeave','mirrorRaceResult','syncExactCarPreview','queueRankedNotification','sendRankedNotification','sendRankedProfileNotification','snapshotOnlyForNewAccount'])
     vm.runInContext(fn(patch,name),c);
   vm.runInContext(section(patch,"  const DAILY_ACTIVITY_LOCAL_KEY=",'  async function loadStreakLeader('),c);
   vm.runInContext(section(patch,'  function localBestRowsForAccount(','  function hookLegacyNetworking('),c);
@@ -441,4 +441,21 @@ test('the actual deployed legacy naming mode completes five tracks without regis
  for(const id of f.selected){const row=f.data.get(E.canonical+'/'+account+'_'+id);assert.equal(row.ownerUid,owner);assert.equal(row.timeMs,30000);}
  assert.equal([...f.data.keys()].filter(key=>key.startsWith('0.6.2_name_claims/')).length,0);
  assert.equal(f.totals().failedAttempts,0);assert.equal(f.transactions.size,0);
+});
+
+
+test('offline PB harness executes the production driving guard for native activity states',t=>{
+  const h=fixture(t),nodes=new Map();
+  h.c.document.querySelector=selector=>nodes.get(selector)||null;
+  h.c.isElementVisible=node=>node.visible===true;
+  assert.equal(h.c.localPbDrivingActive(),false);
+  nodes.set('.game-ui',{visible:false});
+  assert.equal(h.c.localPbDrivingActive(),true,'hidden HUD retains the native driving session');
+  nodes.set('.track-info-ui',{visible:true});
+  assert.equal(h.c.localPbDrivingActive(),false,'track sidebar is a menu, not driving');
+  nodes.set('.pause-screen-ui',{visible:true});
+  assert.equal(h.c.localPbDrivingActive(),true,'pause is not a track exit');
+  nodes.clear();nodes.set('.session-end-ui',{visible:true});
+  assert.equal(h.c.localPbDrivingActive(),true,'finish/reset remains a native track session');
+  assert.deepEqual(h.events,[],'activity checks perform no document I/O');
 });

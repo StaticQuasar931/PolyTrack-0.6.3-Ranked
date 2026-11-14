@@ -2,16 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 366,
+    "number": 367,
     "version": "0.6.3",
-    "revision": 310,
+    "revision": 311,
     "notes": [
-      "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
-      "Adds random Extra Track previews with saved filters and right-click quick picking.",
-      "Fixes oversized snapshot progress files and local capture sign-in timing."
+      "Improves checks used before publishing updates and preparing overnight snapshots."
     ]
   },
   "entries": [
+    {
+      "number": 366,
+      "title": "Coalesce PB uploads, add random previews and prepare local capture",
+      "commit": "aafbb59833b3884ee94577cfe96a2a9326955c74",
+      "committedAt": "2026-11-14T03:46:23.000Z",
+      "notes": [
+        "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
+        "Adds random Extra Track previews with saved filters and right-click quick picking.",
+        "Fixes oversized snapshot progress files and local capture sign-in timing."
+      ]
+    },
     {
       "number": 365,
       "title": "Reconcile cached boards with exact existing canonical replay proofs",
@@ -195,15 +204,6 @@ const historyData = {
       "committedAt": "2026-11-09T02:05:05.000Z",
       "notes": [
         "Updated snapshot safety checks for encrypted verification progress."
-      ]
-    },
-    {
-      "number": 346,
-      "title": "Recognize terminated Linux fixture processes in snapshot tests",
-      "commit": "c95b3915bc989dc7d56ef0d0afd5bcd3dd674984",
-      "committedAt": "2026-11-09T01:59:42.000Z",
-      "notes": [
-        "Fixed Linux process checks blocking automatic snapshot updates."
       ]
     }
   ],
