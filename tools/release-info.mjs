@@ -1,15 +1,15 @@
 const releaseInfo = {
-  "number": 369,
+  "number": 370,
   "version": "0.6.3",
-  "revision": 313,
+  "revision": 314,
   "notes": [
-    "Find your next cosmetic unlock in the new Achievements menu, with a clearer Racer Studio.",
+    "Explore Achievements to find your next cosmetic unlock, with a clearer Racer Studio.",
     "Extra Tracks has simpler controls, featured picks and easier random-track filters.",
     "Help checks for updates when opened. Event badges and track menus are more consistent.",
     "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
   ],
-  "preparedAt": "2026-11-14T05:13:44.498Z",
-  "committedAt": "2026-11-14T05:28:48.000Z"
+  "preparedAt": "2026-11-14T05:29:52.243Z",
+  "committedAt": "2026-11-14T05:29:57.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
