@@ -449,8 +449,8 @@ test('all expected replay HTTP deferrals stop without publishing or retrying', a
     assert.equal(requests, 1);
     await f.unchanged();
     const progress = JSON.parse(await readFile(path.join(f.staging, 'export-progress.json'), 'utf8'));
-    assert.equal(progress.raceExport.pending.length, 1);
-    assert.equal(Object.keys(progress.raceExport.covered).length, 0);
+    assert.equal(progress.raceExport.pending, undefined);
+    assert.equal(progress.raceExport.covered, undefined);
   }
 });
 
@@ -658,8 +658,8 @@ test('updater reuses exact saved pairs ahead of stale unavailable export records
   assert.equal(result.profileReplay.deferredBindingRetries, 0);
   assert.equal(result.profileReplay.counts.recordings, 1);
   const progress = JSON.parse(await readFile(path.join(f.staging, 'export-progress.json'), 'utf8'));
-  assert.equal(progress.raceExport.records[signature].available, true);
-  assert.equal(Object.hasOwn(progress.raceExport.records[signature], 'reason'), false);
+  assert.equal(progress.raceExport.records[signature], undefined);
+  assert.deepEqual(progress.raceExport.records, {});
 });
 
 test('stored-proof reapplication cannot run online or request new native authority',async t=>{

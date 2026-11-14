@@ -186,7 +186,11 @@ test('real updater and exporter stop incremental replay reads at 100 documents u
   assert.equal(documents,100);assert.equal(requests,5);assert.equal(exchanges,1);
   const progress=JSON.parse(await fs.readFile(path.join(root,'local-reports/snapshot-staging/export-progress.json'),'utf8'));
   const summary=JSON.parse(await fs.readFile(path.join(root,'local-reports/snapshot-staging/public-export-summary.json'),'utf8'));
-  assert.equal(progress.raceExport.known,101);assert.equal(progress.raceExport.pending.length,1);
+  assert.equal(progress.raceExport.known,101);assert.equal(progress.raceExport.pending,undefined);
+  assert.equal(progress.raceExport.covered,undefined);
+  const retries=Object.values(progress.raceExport.records);assert.equal(retries.length,100);
+  assert.ok(retries.every(record=>record.available===false&&record.reason==='missing'&&record.attempts===1));
+  assert.equal(summary.counts.missing,100);
   assert.equal(summary.budgetReached,true);assert.equal(summary.complete,false);
   await assert.rejects(fs.stat(path.join(root,'snapshot-current.json')),error=>error.code==='ENOENT');
 });
