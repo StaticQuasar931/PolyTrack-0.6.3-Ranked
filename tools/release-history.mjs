@@ -2,14 +2,33 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 368,
+    "number": 370,
     "version": "0.6.3",
-    "revision": 312,
+    "revision": 314,
     "notes": [
-      "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
+      "Explore Achievements to find your next cosmetic unlock, with a clearer Racer Studio.",
+      "Extra Tracks has simpler controls, featured picks and easier random-track filters.",
+      "Help checks for updates when opened. Event badges and track menus are more consistent.",
+      "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
     ]
   },
   "entries": [
+    {
+      "number": null,
+      "title": "Polish achievements, track discovery and rankings; prepare bounded full catch-up",
+      "commit": "4e9327c1bd70c1c7ab300c79dc8563d64f7178f5",
+      "committedAt": "2026-11-14T05:28:48.000Z",
+      "notes": []
+    },
+    {
+      "number": 368,
+      "title": "Complete compact snapshot recovery contract coverage",
+      "commit": "27bea27ccee08fcfe98e471dd767c6a570089e98",
+      "committedAt": "2026-11-14T04:03:21.000Z",
+      "notes": [
+        "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
+      ]
+    },
     {
       "number": 367,
       "title": "Complete driving-state deployment regression coverage",
@@ -184,26 +203,6 @@ const historyData = {
       "notes": [
         "Snapshot updates keep the last published event totals when the cloud copy is older.",
         "Checks event data before replay verification to avoid wasted work."
-      ]
-    },
-    {
-      "number": 349,
-      "title": "Review saved verification proofs before new physics jobs",
-      "commit": "d25834479e3470f74b681361b5fcdd374bd51c0d",
-      "committedAt": "2026-11-09T03:00:40.000Z",
-      "notes": [
-        "Verification checks saved records first so older approvals are not skipped.",
-        "Saved progress can be rechecked without replaying runs again."
-      ]
-    },
-    {
-      "number": 348,
-      "title": "Retain authenticated native boards across snapshot refreshes",
-      "commit": "84ad291122462b55707f79f3aebddd5bab249e2d",
-      "committedAt": "2026-11-09T02:35:05.000Z",
-      "notes": [
-        "Fixed snapshot refreshes discarding valid saved track boards.",
-        "Reuses checked replay data without extra cloud reads."
       ]
     }
   ],

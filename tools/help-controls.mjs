@@ -1,7 +1,7 @@
 const {renderReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 // Keep this dependency on the same client cache revision as the loaded Help module.
 const {parseReleasePreparedAt}=await import(new URL('./release-info.mjs'+new URL(import.meta.url).search,import.meta.url).href);
-const {releaseUpdateAge,formatReleaseUpdateAge,readReleaseAcknowledgement}=await import(new URL('./site-updates.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {releaseUpdateAge,formatReleaseUpdateAge,readReleaseAcknowledgement,requestSiteUpdateCheck}=await import(new URL('./site-updates.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 // Native action names and IDs mirror main.bundle.js: defaultKeyBindings / module 3277.
 const nativeRows = [
@@ -248,6 +248,7 @@ function guardHelpKeyboard(doc, binding) {
  * Uses local DOM events; key highlights never dispatch gameplay actions or fetch data.
  */
 export function bindHelpControls(root) {
+  void requestSiteUpdateCheck(root?.ownerDocument);
   const host=root?.matches?.('[data-help-controls]')?root:root?.querySelector?.('[data-help-controls]');
   if(!host)return ()=>{};
   bindingsByRoot.get(host)?.();
@@ -312,6 +313,7 @@ export function bindHelpControls(root) {
     host.querySelector('[data-hc-clear]').disabled=!input.value;
   }
   function showView(name) {
+    if(name==='release')void requestSiteUpdateCheck(root?.ownerDocument);
     releaseKeys();
     for(const panel of host.querySelectorAll('[data-hc-panel]'))panel.hidden=panel.dataset.hcPanel!==name;
     for(const toggle of views)toggle.setAttribute('aria-pressed',String(toggle.dataset.hcView===name));

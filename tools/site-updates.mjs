@@ -27,6 +27,10 @@ function confirmedOldCopyBoot(document, revision, now) {
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
+// Explicit menu opens bypass only the background cooldown, never reload safety.
+export function requestSiteUpdateCheck(document = globalThis.document) {
+  return installations.get(document)?.check({force:true});
+}
 const noticeInstallations = new WeakMap();
 const initialNoticeReadiness = new WeakMap();
 const acknowledgedRevisions = new WeakMap();
@@ -357,6 +361,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     close();
     const node = document.createElement('dialog');
     dialog = node; previousFocus = document.activeElement;
+    void requestSiteUpdateCheck(document);
     node.dataset.siteInstalledRevision = String(revision);
     if (validRevision(release.number)) node.dataset.siteInstalledRelease = String(release.number);
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
@@ -734,7 +739,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       refreshOldCopyNotice();
     } catch { /* Keep gameplay independent of notification UI. */ }
   };
-  const check = async () => {
+  const check = async ({force = false} = {}) => {
     if (disposed) return;
     resume();
     // Discovery is safe during a race; displaying prompts and reloading remain idle-only.
@@ -743,7 +748,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     if (inFlight) return inFlight;
     let startedAt;
     try { startedAt = now(); } catch { failOpen(); return; }
-    if (startedAt - lastCheckedAt < intervalMs) return;
+    if (force !== true && startedAt - lastCheckedAt < intervalMs) return;
     lastCheckedAt = startedAt;
     inFlight = Promise.resolve().then(async () => {
       const read = async url => {

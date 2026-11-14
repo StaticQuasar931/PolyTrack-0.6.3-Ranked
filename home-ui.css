@@ -1149,3 +1149,15 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 #overallProfilePopup .profile-achievements img{width:20px!important;height:20px!important;flex:none}
 #overallProfilePopup .profile-achievements b{font-size:17px;line-height:1.2;font-variant-numeric:tabular-nums}
 #overallProfilePopup .profile-achievements small{font-size:12px;line-height:1.2;letter-spacing:0}
+/* Prepare the custom footer before showing it, rather than flashing native text first. */
+.menu-ui > .info:not([data-fp]),.menu > .info:not([data-fp]){visibility:hidden!important}
+.menu-ui > .info .staticFunChar{animation:none!important;opacity:1!important;transform:none!important}
+/* Give the ranking selector a larger, steady hit target. */
+#overallLeaderboardPanel .sq-category-trigger{min-height:48px;padding:10px 16px;font-size:20px}
+.sq-ranking-intro{width:min(480px,calc(100vw - 24px));box-sizing:border-box;max-height:calc(100dvh - 24px);overflow:auto;background:#192c58;color:#edf8ff;border:2px solid #83dbf4;padding:24px;font:20px/1.4 ForcedSquare,sans-serif}
+.sq-ranking-intro::backdrop{background:#060c22bd}.sq-ranking-intro h2{margin:0 0 12px;font-size:28px}.sq-ranking-intro p{margin:0 0 18px}.sq-ranking-intro label{display:flex;align-items:center;gap:8px;font-size:17px}.sq-ranking-intro input{width:20px;height:20px}.sq-ranking-intro button{display:block;margin:20px 0 0 auto;min-height:44px;padding:8px 20px;background:#83def0;color:#10254a;border:0;font:inherit;cursor:pointer}
+.profile-achievement-journey{margin:18px 0;border:1px solid #5477a9;border-left:5px solid #ffd185;background:#182b55;color:#edf8ff}
+.profile-achievement-journey>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;cursor:pointer;padding:12px 18px;font:20px ForcedSquare,sans-serif}
+.profile-achievement-journey>summary strong{color:#ffd185}.profile-achievement-journey>summary span{font-size:16px;color:#b9d4e9}
+.profile-achievement-journey>summary:focus-visible{outline:3px solid #85e8fb;outline-offset:2px}
+@media(max-width:480px){.profile-achievement-journey>summary{align-items:flex-start;flex-direction:column;gap:4px}}
