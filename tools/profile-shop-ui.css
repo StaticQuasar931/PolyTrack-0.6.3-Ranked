@@ -7,3 +7,26 @@
 .profile-shop-dialog .sp-item{min-width:0}
 @media(max-width:800px){.profile-shop-dialog .sp-grid{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){.profile-shop-dialog *{scroll-behavior:auto!important}}
+/* Blue UI chrome is independent of the racer's cosmetic colors. */
+.profile-shop-dialog .shop-preview{--sp-cyan:#bed7ff;--sp-amber:#c7d7ed;--sp-line:#4b6c9e;background:#203762}
+.profile-shop-dialog .sp-host-head{background:#28477c}
+.profile-shop-dialog .sp-item{background:#233e6b;border-color:#4b6c9e;border-top-color:#6d8fb9}
+.profile-shop-dialog .sp-item-actions>button:last-child:not(:disabled){background:#4269a7;color:#fff;border-color:#7fa0d2}
+.profile-shop-dialog .sp-live-layout{display:grid;grid-template-columns:minmax(250px,340px) minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
+.profile-shop-dialog .sp-host-body{min-width:0}
+.profile-shop-dialog .sp-live-preview{position:relative;display:block;min-width:0;width:auto;max-width:none;max-height:none;margin:0;padding:20px;background:#192e53;border:0;border-right:1px solid #4b6c9e;overflow:auto}
+.profile-shop-dialog .sp-live-preview>header{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:16px;font-family:ForcedSquare,sans-serif}
+.profile-shop-dialog .sp-live-preview>header>span{font-size:12px;letter-spacing:1px;color:#adc5e8}
+.profile-shop-dialog .sp-live-preview .profile-preview-stage{width:100%;min-height:100px;height:auto;max-height:none;margin:0}
+.profile-shop-dialog .sp-live-preview [data-sp-live-note]{font:15px/1.4 ForcedSquare,sans-serif;color:#c3d5ee;overflow-wrap:anywhere}
+.profile-shop-dialog .sp-live-preview button{min-height:44px;padding:8px 14px;border:1px solid #88a6cf;background:#2c4d80;color:white;font:18px ForcedSquare,sans-serif;cursor:pointer}
+.profile-shop-dialog .sp-live-preview [hidden]{display:none!important}
+.profile-achievement-journey.ph-has-shop{grid-template-columns:repeat(3,minmax(0,1fr))}
+.profile-hub [data-ph-shop]{min-height:44px;min-width:0;padding:10px 16px;background:#2c4d80;border:1px solid #6489bb;color:#eef5ff;font:19px ForcedSquare,sans-serif;cursor:pointer}
+.profile-hub [data-ph-shop][hidden],.profile-achievement-journey [data-ph-launch=shop][hidden]{display:none!important}
+@media(max-width:600px){.profile-shop-dialog .sp-live-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.profile-shop-dialog .sp-live-preview{max-height:220px;padding:10px 14px;border-right:0;border-bottom:1px solid #4b6c9e;overflow:auto}.profile-shop-dialog .sp-live-preview>header{margin-bottom:4px}.profile-shop-dialog .sp-live-preview .profile-preview-stage{min-height:60px}.profile-shop-dialog .sp-live-preview [data-sp-live-note]{margin:4px 0}.profile-achievement-journey.ph-has-shop{grid-template-columns:minmax(0,1fr)}}
+@media(min-width:601px) and (max-height:500px){.profile-shop-dialog .sp-live-layout{grid-template-columns:minmax(200px,30%) minmax(0,1fr)}.profile-shop-dialog .sp-live-preview{padding:12px}}
+.profile-shop-dialog .sp-live-preview{min-height:0!important;box-sizing:border-box;align-self:stretch}
+.profile-shop-dialog .sp-live-preview{inset:auto!important;transform:none}
+
+.profile-shop-dialog .profile-row-showcase{display:block;margin-top:12px}.profile-shop-dialog .showcase-row{width:100%;box-sizing:border-box;min-width:0}.profile-shop-dialog .showcase-row b{overflow-wrap:anywhere}.profile-shop-dialog .sp-live-preview [data-sp-live-stage]{min-width:0}

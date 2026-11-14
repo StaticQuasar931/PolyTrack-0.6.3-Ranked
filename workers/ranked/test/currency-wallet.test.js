@@ -835,7 +835,7 @@ test('profile shop: malformed aggregate grants or changed account ownership neve
     if (mutation === 'owner') grant.ownerUid = 'foreign';
     if (mutation === 'account') grant.accountId = 'b'.repeat(64);
     if (mutation === 'duplicate') grant.claimedRewardIds = ['tracks-1', 'tracks-1'];
-    if (mutation === 'unknown') grant.claimedRewardIds = ['tracks-89'];
+    if (mutation === 'unknown') grant.claimedRewardIds = ['tracks-90'];
     if (mutation === 'delta') grant.delta = 999;
     f.put(key, grant); const before = copy(f.docs);
     for (const rewardId of ['milestones', 'tracks-1'])
@@ -1278,3 +1278,96 @@ for(const slot of ['badge','title','emblem','serverIssued','purchased','communit
    /PURCHASED_COSMETIC_ENTITLEMENT_INVALID/);
   assert.deepEqual(f.docs,before);assert.equal(f.commits.length,0);
  });
+
+
+const EXPANDED_TRACK_TIERS = [[1,20],[5,30],[20,50],[35,30],[50,40],[70,50],[89,60]];
+test('server track curve pays exactly the bounded seven immutable tiers at each threshold',async()=>{
+ const {CURRENCY_MILESTONES}=await import('../src/currency-wallet.js');
+ assert.deepEqual(CURRENCY_MILESTONES.map(({threshold,amount})=>[threshold,amount]),EXPANDED_TRACK_TIERS);
+ assert.ok(Object.isFrozen(CURRENCY_MILESTONES)&&CURRENCY_MILESTONES.every(Object.isFrozen));
+ for(const count of [1,4,5,19,20,34,35,49,50,69,70,88,89]){
+  const f=fixture();setMilestones(f,count);const eligible=EXPANDED_TRACK_TIERS.filter(([threshold])=>threshold<=count);
+  const result=await f.run('claim',{rewardId:'milestones'});
+  assert.equal(result.delta,eligible.reduce((sum,[,amount])=>sum+amount,0));
+  assert.deepEqual(result.claimedRewardIds,eligible.map(([threshold])=>'tracks-'+threshold));
+  assert.equal(f.calls.filter(call=>call.route.includes('?transaction=')).length,8);
+  assert.equal(f.commits.length,1);assert.equal(f.commits[0].writes.length,3);
+ }
+});
+
+test('every legacy individual-claim combination retroactively tops up to280 exactly once',async()=>{
+ for(let mask=0;mask<8;mask++){
+  const f=fixture();setMilestones(f,89);let paid=0;
+  for(let i=0;i<3;i++)if(mask&(1<<i)){
+   const [threshold,amount]=EXPANDED_TRACK_TIERS[i];paid+=amount;
+   assert.equal((await f.run('claim',{rewardId:'tracks-'+threshold})).delta,amount);
+  }
+  const cmd=f.command('claim',{rewardId:'milestones'}),result=await f.service().execute(UID,cmd);
+  assert.equal(result.delta,280-paid);assert.equal(result.balanceAfter,280);
+  const before=copy(f.docs);assert.deepEqual(await f.service().execute(UID,cmd),{...result,duplicate:true});
+  await assert.rejects(f.run('claim',{rewardId:'milestones'}),/reward_already_claimed/);
+  for(const [threshold]of EXPANDED_TRACK_TIERS)await assert.rejects(f.run('claim',{rewardId:'tracks-'+threshold}),/reward_already_claimed/);
+  assert.deepEqual(f.docs,before);assert.equal((await f.run('wallet')).balance,280);
+ }
+});
+
+test('historical100 aggregate receipt remains immutable after one retroactive180 top-up',async()=>{
+ const f=fixture();setMilestones(f,20);const old=f.command('claim',{rewardId:'milestones'});
+ const historical=await f.service().execute(UID,old);assert.equal(historical.delta,100);
+ const oldKey=C.receipts+'/'+await keyFor([UID,ACCOUNT,old.requestId]),receipt=copy(f.docs.get(oldKey));
+ setMilestones(f,89);assert.deepEqual(await f.service().execute(UID,old),{...historical,duplicate:true});
+ const start=f.calls.length,newer=await f.run('claim',{rewardId:'milestones'});
+ assert.equal(newer.delta,180);assert.deepEqual(newer.claimedRewardIds,['tracks-35','tracks-50','tracks-70','tracks-89']);
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,8);
+ assert.deepEqual(f.docs.get(oldKey),receipt);assert.deepEqual(await f.service().execute(UID,old),{...historical,duplicate:true});
+ assert.equal((await f.run('wallet')).balance,280);
+});
+
+test('new individual aliases use one aggregate and exactly five reads irrespective of tier count',async()=>{
+ const f=fixture();setMilestones(f,89);
+ for(const [threshold,amount]of EXPANDED_TRACK_TIERS.slice(3)){
+  const cmd=f.command('claim',{rewardId:'tracks-'+threshold}),start=f.calls.length,commits=f.commits.length;
+  const result=await f.service().execute(UID,cmd);assert.equal(result.delta,amount);
+  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,5);
+  assert.equal(f.commits.length-commits,1);assert.equal(f.commits.at(-1).writes.length,3);
+  const replayStart=f.calls.length;assert.deepEqual(await f.service().execute(UID,cmd),{...result,duplicate:true});
+  assert.equal(f.calls.slice(replayStart).filter(call=>call.route.includes('?transaction=')).length,3);
+  assert.equal([...f.docs.keys()].filter(key=>key.startsWith(C.grants+'/')).length,1);
+ }
+ assert.equal((await f.run('claim',{rewardId:'milestones'})).delta,100);
+ const grant=f.docs.get(C.grants+'/'+await keyFor([ACCOUNT,'milestones','lifetime'])).data;
+ assert.equal(grant.rewardId,'milestones');assert.equal(grant.delta,280);assert.equal(grant.claimedRewardIds.length,7);
+});
+
+for(const [threshold]of EXPANDED_TRACK_TIERS.slice(3))test('concurrent new alias and batch deduplicate tracks-'+threshold,async()=>{
+ const f=fixture();setMilestones(f,89);f.synchronize();
+ const results=await Promise.allSettled([f.run('claim',{rewardId:'milestones'}),f.run('claim',{rewardId:'tracks-'+threshold})]);
+ assert.equal(results.filter(result=>result.status==='fulfilled').reduce((sum,result)=>sum+result.value.delta,0),280);
+ assert.ok(results.filter(result=>result.status==='rejected').every(result=>result.reason.message==='reward_already_claimed'));
+ assert.equal((await f.run('wallet')).balance,280);
+ assert.equal([...f.docs.keys()].filter(key=>key.startsWith(C.grants+'/')).length,1);
+});
+
+test('new tiers require canonical exact-width count-consistent ledger and reject arbitrary counter inputs',async()=>{
+ for(const rewardId of ['tracks-35','tracks-50','tracks-70','tracks-89']){
+  const f=fixture();setMilestones(f,20);const before=copy(f.docs);
+  await assert.rejects(f.run('claim',{rewardId}),/server_milestone_required/);assert.deepEqual(f.docs,before);
+  for(const extra of [{count:89},{amount:1000},{raceCount:89},{rewardIds:['tracks-89']}])
+   await assert.rejects(f.run('claim',{rewardId,...extra}),/invalid_command/);
+  setMilestones(f,89);const entitlement=copy(f.docs.get(ENT).data);
+  entitlement.serverIssued.achievements.casual.ledger='ff'.repeat(12);f.put(ENT,entitlement);
+  await assert.rejects(f.run('claim',{rewardId}),/server_milestone_required/);assert.equal(f.commits.length,0);
+ }
+ const f=fixture();for(const rewardId of ['tracks-90','pb-100','event-1','beat-owner-1','raceCount'])
+  await assert.rejects(f.run('claim',{rewardId}),/unknown_reward/);
+ assert.equal(f.calls.length,0);
+});
+
+test('lost expanded claim reply recovers the exact receipt without re-awarding old or new tiers',async()=>{
+ const f=fixture();setMilestones(f,89);const cmd=f.command('claim',{rewardId:'milestones'});f.loseReply();
+ await assert.rejects(f.service().execute(UID,cmd),/FIRESTORE_503/);
+ const before=copy(f.docs),start=f.calls.length,result=await f.service().execute(UID,cmd);
+ assert.equal(result.delta,280);assert.equal(result.duplicate,true);assert.deepEqual(f.docs,before);
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,3);
+ assert.equal(f.commits.length,1);assert.equal((await f.run('wallet')).balance,280);
+});

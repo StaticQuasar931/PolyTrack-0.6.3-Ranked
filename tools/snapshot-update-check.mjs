@@ -146,7 +146,7 @@ function showInlineResult(result, {document, origin, signal, isCurrent}) {
   }, 30);
   return handle;
 }
-export function showSnapshotUpdateResult(result, {document = globalThis.document, reload = () => globalThis.location.reload(),
+export function showSnapshotUpdateResult(result, {document = globalThis.document, reload = () => {globalThis.__polytrackExitGuard?.allowReload();globalThis.location.reload();},
   origin = document?.activeElement, signal, isCurrent = () => true} = {}) {
   if (signal?.aborted || result?.status === 'cancelled' || !isCurrent() || !origin?.isConnected) return noop;
   if (result?.status !== 'newer') return showInlineResult(result || {}, {document, origin, signal, isCurrent});

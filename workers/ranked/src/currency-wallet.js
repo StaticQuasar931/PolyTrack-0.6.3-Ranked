@@ -28,8 +28,13 @@ export const SHOP_CATALOG = PROFILE_SHOP_CATALOG;
 export const SHOP_CATALOG_VERSION = PROFILE_SHOP_CATALOG_VERSION;
 const ENTITLEMENT_PATH = '0.6.2_s1_cosmetic_entitlements/';
 const META_PATH = '0.6.2_s1_release_meta/current';
-const MILESTONE_IDS = Object.freeze(['tracks-1', 'tracks-5', 'tracks-20']);
-export const CURRENCY_REWARDS = Object.freeze({login: 8, 'tracks-1': 20, 'tracks-5': 30, 'tracks-20': 50});
+// Historical amounts/IDs are immutable. Only these three have separate legacy grant documents.
+const LEGACY_MILESTONE_IDS = Object.freeze(['tracks-1', 'tracks-5', 'tracks-20']);
+export const CURRENCY_REWARDS = Object.freeze({login: 8, 'tracks-1': 20, 'tracks-5': 30, 'tracks-20': 50,
+  'tracks-35': 30, 'tracks-50': 40, 'tracks-70': 50, 'tracks-89': 60});
+export const CURRENCY_MILESTONES = Object.freeze([1, 5, 20, 35, 50, 70, 89].map(threshold =>
+  Object.freeze({rewardId: 'tracks-' + threshold, threshold, amount: CURRENCY_REWARDS['tracks-' + threshold]})));
+const MILESTONE_IDS = Object.freeze(CURRENCY_MILESTONES.map(tier => tier.rewardId));
 const account = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const requestKey = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(value);
 const uint = value => Number.isSafeInteger(value) && value >= 0;
@@ -137,9 +142,12 @@ export function createCurrencyService({store, now = Date.now}) {
       const receiptId = op === 'wallet' ? null : await hash([uid, accountId, requestId]);
       const fingerprint = JSON.stringify([op, accountId, rewardId ?? null, itemId ?? null,
         ...(op === 'purchase' && !legacyPurchase ? [catalogVersion, expectedPrice, expectedWalletRevision] : [])]);
-      const grantId = op === 'claim' ? await hash([accountId, rewardId, rewardId === 'login' ? day : 'lifetime']) : null;
+      // New individual tier aliases share the aggregate; they never create per-tier documents.
+      const grantRewardId = op === 'claim' && rewardId !== 'login' && !LEGACY_MILESTONE_IDS.includes(rewardId)
+        ? 'milestones' : rewardId;
+      const grantId = op === 'claim' ? await hash([accountId, grantRewardId, rewardId === 'login' ? day : 'lifetime']) : null;
       const aggregateId = op === 'claim' && rewardId !== 'login' ? await hash([accountId, 'milestones', 'lifetime']) : null;
-      const legacyGrants = rewardId === 'milestones' ? await Promise.all(MILESTONE_IDS.map(async id =>
+      const legacyGrants = rewardId === 'milestones' ? await Promise.all(LEGACY_MILESTONE_IDS.map(async id =>
         [id, await hash([accountId, id, 'lifetime'])])) : [];
       const inventoryId = item || legacyItem ? await hash([accountId, itemId]) : null;
       const compatibilityInventory = op === 'wallet' ? await Promise.all(ORIGINAL_PROFILE_INVENTORY_IDS.map(async id =>
@@ -192,7 +200,7 @@ export function createCurrencyService({store, now = Date.now}) {
         let purchasedEntitlement = null, nextMeta = null, aggregate = null, aggregateRewardIds = null;
         if (op === 'claim') {
           grant = await tx.get(path('grants', grantId));
-          checkedMilestoneGrant(grant, accountId, uid, rewardId);
+          checkedMilestoneGrant(grant, accountId, uid, grantRewardId);
           if (rewardId === 'login') {
             if (grant) {
               const error = domainRejection('reward_already_claimed', 409);
@@ -205,18 +213,19 @@ export function createCurrencyService({store, now = Date.now}) {
             }
             evidence = {kind: 'authenticated-server-utc-day', day}; delta = CURRENCY_REWARDS.login;
           } else {
-            aggregate = rewardId === 'milestones' ? grant : await tx.get(path('grants', aggregateId));
+            aggregate = grantRewardId === 'milestones' ? grant : await tx.get(path('grants', aggregateId));
             checkedMilestoneGrant(aggregate, accountId, uid, 'milestones');
             const claimed = new Set(aggregate?.claimedRewardIds || []);
-            if (rewardId === 'milestones') {
+            if (grantRewardId === 'milestones') {
               for (const [id, key] of legacyGrants) {
                 const old = await tx.get(path('grants', key)); checkedMilestoneGrant(old, accountId, uid, id);
                 if (old) claimed.add(id);
               }
               const entitlement = await tx.get(ENTITLEMENT_PATH + accountId);
-              milestoneEvidence(entitlement, 1);
+              milestoneEvidence(entitlement, rewardId === 'milestones' ? 1 : Number(rewardId.slice(7)));
               const count = entitlement.serverIssued.achievements.casual.count;
-              claimedRewardIds = MILESTONE_IDS.filter(id => count >= Number(id.slice(7)) && !claimed.has(id));
+              claimedRewardIds = MILESTONE_IDS.filter(id => (rewardId === 'milestones' || id === rewardId) &&
+                count >= Number(id.slice(7)) && !claimed.has(id));
               demand(claimedRewardIds.length > 0, 'reward_already_claimed', 409);
               delta = claimedRewardIds.reduce((sum, id) => sum + CURRENCY_REWARDS[id], 0);
               aggregateRewardIds = MILESTONE_IDS.filter(id => claimed.has(id) || claimedRewardIds.includes(id));
@@ -251,7 +260,7 @@ export function createCurrencyService({store, now = Date.now}) {
           balance: nextBalance, revision: nextRevision, updatedAt: at,
           ...(knownEquipRevision === null ? {} : {equipRevision: knownEquipRevision})});
         if (op === 'claim') {
-          const data = {accountId, ownerUid: uid, rewardId, delta: aggregateRewardIds ?
+          const data = {accountId, ownerUid: uid, rewardId: grantRewardId, delta: aggregateRewardIds ?
             aggregateRewardIds.reduce((sum, id) => sum + CURRENCY_REWARDS[id], 0) : delta, grantedAt: at, evidence,
             ...(aggregateRewardIds ? {claimedRewardIds: aggregateRewardIds} : {})};
           if (grant) await tx.set(path('grants', grantId), data);

@@ -2,16 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 386,
+    "number": 387,
     "version": "0.6.3",
-    "revision": 328,
+    "revision": 329,
     "notes": [
-      "Protection against accidental closing, and smoother Garage navigation.",
-      "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
-      "More reliable local PB replays and snapshot-based route suggestions."
+      "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
+      "Favorite-track previews and cleaner Racer Studio controls.",
+      "Rolling Hills Event RP now rewards both placement and pace, including past results.",
+      "Safer loading for your recent local replays."
     ]
   },
   "entries": [
+    {
+      "number": 386,
+      "title": "Garage safety and reliable local replay loading",
+      "commit": "5e47f1ef8805f183b418e1c0c6d5b890ed465f87",
+      "committedAt": "2026-11-14T21:50:20.000Z",
+      "notes": [
+        "Protection against accidental closing, and smoother Garage navigation.",
+        "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
+        "More reliable local PB replays and snapshot-based route suggestions."
+      ]
+    },
     {
       "number": 385,
       "title": "Readable car workshop controls on phones",
@@ -198,16 +210,6 @@ const historyData = {
       "committedAt": "2026-11-12T09:33:22.000Z",
       "notes": [
         "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
-      ]
-    },
-    {
-      "number": 364,
-      "title": "Fix event proof display and preserve legacy capture budgets",
-      "commit": "e4c454b38c7e748d18b35de2643ecee73913197f",
-      "committedAt": "2026-11-12T09:02:50.000Z",
-      "notes": [
-        "Fixes event badges hidden by an older display flag after successful replay checks.",
-        "Fixes a hosted snapshot compatibility check."
       ]
     }
   ],

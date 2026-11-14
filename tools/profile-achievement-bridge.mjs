@@ -13,9 +13,12 @@ const hubIcon = name => {
  * content.__profileHubOpen is the same opener. Cleanup BEFORE replacing content.
  * No Studio node is cloned, no choice is clicked, and no save is synthesized.
  * Optional model/buildModel follow the journal's existing pure model contract.
+ * getRecommendations and onRecommendedTrack pass unchanged to the journal.
+ * The journal owns requesting/rendering; the parent owns async account guards
+ * and track navigation/modal closure. Mount does not invoke either adapter.
  * Optional storage defaults safely to this document's localStorage; null disables.
  */
-export function mountProfileAchievements(content, {accountId,confirmed,local,cosmetics,onTryCosmetic,onNavigate,revision,storage,model,buildModel,launcher = true} = {}) {
+export function mountProfileAchievements(content, {accountId,confirmed,local,cosmetics,onTryCosmetic,onNavigate,getRecommendations,onRecommendedTrack,revision,storage,model,buildModel,launcher = true} = {}) {
   if (!content?.ownerDocument || !content.isConnected) {
     const noop = () => {}; noop.open = () => false; noop.close = noop; return noop;
   }
@@ -47,6 +50,8 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   const entry = doc.createElement('div');
   entry.className = 'profile-achievement-journey'; entry.setAttribute('role','group'); entry.setAttribute('aria-label','Racer progress and design');
   entry.innerHTML = `<button type="button" data-ph-launch="achievements" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('achievements')}</span><span><strong>Achievements</strong><small>Goals &amp; rewards</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button><button type="button" data-ph-launch="studio" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('studio')}</span><span><strong>Racer Studio</strong><small>Design your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button>`;
+  const shopButton=doc.createElement('button');shopButton.type='button';shopButton.dataset.phLaunch='shop';shopButton.setAttribute('aria-haspopup','dialog');
+  shopButton.innerHTML='<span class="ph-entry-mark">'+hubIcon('flag')+'</span><span><strong>Style shop</strong><small>Try styles on your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span>';entry.append(shopButton);
   const initialStudio = content.querySelector('.profile-customizer');
   const initialHidden = initialStudio?.hidden;
   if (initialStudio) initialStudio.hidden = true;
@@ -57,7 +62,12 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   dialog.id = id; dialog.className = 'profile-hub'; dialog.dataset.accountId = String(accountId ?? '');
   dialog.setAttribute('aria-labelledby',`${id}-title`);
   dialog.innerHTML = `<header class="ph-header"><div class="ph-brand">${hubIcon('flag')}</div><div class="ph-heading"><p>YOUR RACER</p><h2 id="${id}-title">Achievements &amp; Studio</h2></div><button type="button" class="ph-close" data-ph-close aria-label="Close racer hub">Close <span aria-hidden="true">&#215;</span></button></header><div class="ph-tabbar" role="tablist" aria-label="Racer hub"><button type="button" role="tab" id="${id}-tab-achievements" aria-controls="${id}-achievements" aria-selected="true" data-ph-tab="achievements">${hubIcon('achievements')}<span>Achievements</span></button><button type="button" role="tab" id="${id}-tab-studio" aria-controls="${id}-studio" aria-selected="false" tabindex="-1" data-ph-tab="studio">${hubIcon('studio')}<span>Racer Studio</span></button><span class="ph-tab-hint">Earn styles as you race.</span></div><section class="ph-panel" id="${id}-achievements" role="tabpanel" aria-labelledby="${id}-tab-achievements"><div data-ph-journal></div></section><section class="ph-panel ph-studio-panel" id="${id}-studio" role="tabpanel" aria-labelledby="${id}-tab-studio" hidden><p class="ph-studio-note">Change your car in the main menu garage.</p><div data-ph-studio></div></section>`;
+  const profileName=content.querySelector('.profile-preview-stage>span>b')?.textContent?.trim();
+  dialog.querySelector('.ph-heading>p').textContent=profileName||confirmed?.name||'Racer profile';
   content.append(dialog);
+  const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.textContent='Style shop';dialog.querySelector('.ph-tabbar').append(shopNav);
+  const shopReady=()=>{const available=typeof content.__profileShopOpen==='function';shopButton.hidden=!available;shopNav.hidden=!available;shopButton.style.display=available?'':'none';shopNav.style.display=available?'':'none';entry.classList.toggle('ph-has-shop',available);};
+  content.addEventListener('profile-shop-ready',shopReady);shopReady();
   const journalHost = dialog.querySelector('[data-ph-journal]'), studioHost = dialog.querySelector('[data-ph-studio]');
   const studioPanel = dialog.querySelector('.ph-studio-panel');
   const tabs = [...dialog.querySelectorAll('[data-ph-tab]')];
@@ -147,7 +157,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
     pending = import(moduleURL.href).then(api => {
       if (!current() || !dialog.open) return;
       journalHost.innerHTML = api.renderAchievementJournal({progress:{confirmed,local},cosmetics,model,buildModel,embedded:true});
-      unbind = api.bindAchievementJournal(journalHost,{onTryCosmetic:viewReward,onNavigate:navigate,onClose:closeHub,storage:preferenceStorage});
+      unbind = api.bindAchievementJournal(journalHost,{onTryCosmetic:viewReward,onNavigate:navigate,onClose:closeHub,storage:preferenceStorage,getRecommendations,onRecommendedTrack});
     }).catch(() => {
       if (current() && dialog.open) journalHost.textContent = 'Achievements could not load. Close and reopen to try again.';
     }).finally(() => {pending = null;if (current()) journalHost.removeAttribute('aria-busy');});
@@ -158,6 +168,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
     if (!current()) return false;
     if (!dialog.open) {
       returnFocus = doc.activeElement; moveStudio(); dialog.showModal();
+      win.addEventListener('keydown',captureEscape,true);
       previewResize.observe(studioPanel);
       previewResize.observe(dialog.querySelector('.ph-studio-note'));
       observer.observe(doc.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-account-id']});
@@ -165,6 +176,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
     showTab(tab,reward,true); return true;
   }
   function finishClose(restoreFocus = true) {
+    win.removeEventListener('keydown',captureEscape,true);
     previewResize.disconnect();
     if (!snapshot && !returnFocus) {observer.disconnect();return;}
     observer.disconnect(); restoreStudio();
@@ -178,7 +190,10 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   function closeHub() {if (dialog.open) dialog.close();finishClose();}
   function keydown(event) {
     if (!dialog.open || !dialog.contains(event.target)) return;
-    if (event.key === 'Escape') {event.preventDefault();event.stopPropagation();closeHub();return;}
+    if (event.key === 'Escape') {
+      if(event.defaultPrevented||event.target.closest?.('[data-cosmetic-favorite][aria-expanded="true"]'))return;
+      event.preventDefault();event.stopPropagation();closeHub();return;
+    }
     if (event.key === 'Tab') {
       // Trap only our Tab key, before the underlying profile's bubble-phase trap.
       event.stopPropagation();
@@ -194,30 +209,41 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
       showTab(tabs[next].dataset.phTab,undefined,true);
     }
   }
+  function captureEscape(event){
+    if(event.key!=='Escape'||event.defaultPrevented||!current()||!dialog.open||!dialog.contains(event.target))return;
+    // The native favorite input owns the first Escape; preview owns the next layer.
+    if(event.target.closest?.('[data-cosmetic-favorite][aria-expanded="true"]')||studio?.classList.contains('cosmetic-preview-active'))return;
+    keydown(event);
+  }
   const click = event => {
     const target = event.target.closest('button');
+    if(target===shopNav){if(current())content.__profileShopOpen?.();return;}
     if (target?.hasAttribute('data-ph-close')) closeHub();
     else if (target?.hasAttribute('data-ph-tab')) showTab(target.dataset.phTab,undefined,true);
     // Native Studio click/change/input events bubble unchanged.
   };
-  const launch = event => {const button = event.target.closest('[data-ph-launch]');if (button && entry.contains(button)) openHub(button.dataset.phLaunch);};
+  const launch = event => {const button = event.target.closest('[data-ph-launch]');if (button && entry.contains(button)){if(button===shopButton){if(current())content.__profileShopOpen?.();}else openHub(button.dataset.phLaunch);}};
   const cancel = event => {event.preventDefault();event.stopPropagation();closeHub();};
   const closed = () => {if (!dialog.open) finishClose();};
   entry.addEventListener('click',launch);
   dialog.addEventListener('click',click); dialog.addEventListener('keydown',keydown);
   dialog.addEventListener('cancel',cancel); dialog.addEventListener('close',closed);
+  function closeOwnedHub(){if(!current())return false;content.__profileShopClose?.();closeHub();return true;}
   function cleanup() {
     if (disposed) return;
+    if(current())content.__profileShopClose?.();
     disposed = true; observer.disconnect(); previewResize.disconnect(); unbind?.(); unbind = null;
     if (dialog.open) dialog.close(); finishClose(false);
     if (initialStudio) initialStudio.hidden = initialHidden;
+    content.removeEventListener('profile-shop-ready',shopReady);
     entry.removeEventListener('click',launch);
     dialog.removeEventListener('click',click); dialog.removeEventListener('keydown',keydown);
     dialog.removeEventListener('cancel',cancel); dialog.removeEventListener('close',closed);
     entry.remove(); dialog.remove();
     if (content.__profileHubOpen === openHub) delete content.__profileHubOpen;
+    if(content.__profileHubClose===closeOwnedHub)delete content.__profileHubClose;
   }
   cleanup.open = openHub; cleanup.close = closeHub; cleanup.dialog = dialog;
-  content.__profileHubOpen = openHub;
+  content.__profileHubOpen = openHub;content.__profileHubClose=closeOwnedHub;
   return cleanup;
 }

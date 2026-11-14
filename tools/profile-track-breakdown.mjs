@@ -12,5 +12,5 @@ export function trackCoverageSummary({saved,ranked,localOnly=false}={}){
   const word=saved===1?'track':'tracks';
   if(localOnly||ranked===null)return format(saved)+' saved '+word;
   if(saved===ranked)return format(saved)+' '+word;
-  return format(saved)+' saved / '+format(ranked)+' ranked';
+  return format(saved)+' saved tracks, '+format(ranked)+' ranked';
 }

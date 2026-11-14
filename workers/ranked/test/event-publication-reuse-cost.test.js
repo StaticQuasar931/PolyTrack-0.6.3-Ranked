@@ -98,7 +98,8 @@ for(const mode of ['continuous','coordinated'])test('completed-part staging fail
   assert.equal(f.data.get(jobPath).complete,true);
   const all=await loadPublicationEntries(f.data.get(C.public+'/totals_full'),'event_totals','main',
     async(collection,id)=>({data:f.data.get(collection+'/'+id)}));
-  assert.equal(all.length,10001);assert.equal(all[0].accountId,'racer-00000');
+  assert.equal(all.length,10001);assert.equal(all[0].accountId,'rolling');
+  assert.equal(all[0].permanentRollingHillsRp,10101);
   assert.equal(f.data.get(cursor).retries,undefined);
 });
 

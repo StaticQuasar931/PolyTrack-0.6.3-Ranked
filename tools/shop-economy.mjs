@@ -4,15 +4,16 @@
  * establish that every recorded finish was strictly physics-verified.
  * Import existing constants without creating a service or touching backend state.
  */
-import {CURRENCY_REWARDS, SHOP_CATALOG} from '../workers/ranked/src/currency-wallet.js';
+import {CURRENCY_REWARDS, CURRENCY_MILESTONES, SHOP_CATALOG} from '../workers/ranked/src/currency-wallet.js';
 
+export const CURRENCY_DISPLAY_NAME = 'Style Coins';
 export const CURRENT_REWARDS = Object.freeze({...CURRENCY_REWARDS});
 export const PRICES = Object.freeze(SHOP_CATALOG.map(({id, label, price}) => Object.freeze({id, label, price})));
-export const MILESTONES = Object.freeze([1, 5, 20].map(tracks =>
-  Object.freeze({serverRecordedTracks: tracks, rewardId: `tracks-${tracks}`, credits: CURRENT_REWARDS[`tracks-${tracks}`]})));
+export const MILESTONES = Object.freeze(CURRENCY_MILESTONES.map(({threshold, rewardId, amount}) =>
+  Object.freeze({serverRecordedTracks: threshold, rewardId, credits: amount})));
 export const DRAFT = Object.freeze({label: 'UNIMPLEMENTED weekly participation proposal', login: 0,
   participation: 20, participationsPerWeek: 3, optionalPerformancePerWeek: 4,
-  recurringWeeklyCap: 64, milestones: 'unchanged 1/5/20-track awards'});
+  recurringWeeklyCap: 64, milestones: 'current canonical track awards unchanged by draft'});
 const whole = (value, max = 1000000) => Number.isSafeInteger(value) && value >= 0 && value <= max;
 const requireWhole = (value, name, max) => {if (!whole(value, max)) throw Error(`invalid_${name}`);};
 
@@ -95,8 +96,12 @@ export function simulate(scenario, {model = 'current', horizonDays = 365} = {}) 
 }
 
 export function review({horizonDays = 90} = {}) {
-  return {reviewOnly: true, observedPlayerStats: false, currentRewards: CURRENT_REWARDS, prices: PRICES,
-    affordability: [0, 1, 5, 20].map(serverRecordedTracks => ({serverRecordedTracks,
+  return {reviewOnly: true, observedPlayerStats: false, currencyDisplayName: CURRENCY_DISPLAY_NAME,
+    lifetimeTrackCap: 280, milestones: MILESTONES,
+    claimCosts: {batch: {reads: 8, writes: 3}, newIndividual: {reads: 5, writes: 3},
+      legacyIndividual: {reads: 6, writes: 3}, receiptReplay: {reads: 3, writes: 0}, wallet: {reads: 7, writes: 0}},
+    currentRewards: CURRENT_REWARDS, prices: PRICES,
+    affordability: [0, 1, 5, 20, 35, 50, 70, 89].map(serverRecordedTracks => ({serverRecordedTracks,
       items: PRICES.map(item => ({id: item.id, ...currentAffordability(item.price, {serverRecordedTracks})}))})),
     draft: DRAFT,
     scenarios: SCENARIOS.map(scenario => ({id: scenario.id, assumptions: scenario,
@@ -107,7 +112,7 @@ export function review({horizonDays = 90} = {}) {
       'After lifetime milestones, current continued play adds zero currency beyond login.',
       'Draft participation/performance need new authoritative replay-safe evidence and atomic dedupe; not implemented.',
       'Draft has no consecutive-day requirement; three participation proofs may occur on one day.',
-      'Prices buy proposed saved stock-style presets, not exclusive new assets or quality tiers.',
+      'Prices buy the current nine original profile cosmetics, never native car unlocks or performance.',
       'Wallet activation and all deployed source/runbook/readiness state remain untouched.']};
 }
 

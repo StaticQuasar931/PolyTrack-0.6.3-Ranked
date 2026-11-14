@@ -1,3 +1,4 @@
+import {permanentRollingHillsRp} from '../../workers/ranked/src/permanent-rolling-hills.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -103,17 +104,25 @@ function safeSnapshotName(logical) {
     !logical.split('/').some(part => !part || part === '.' || part === '..');
 }
 
-function validPermanentBoard(board) {
+export function validPermanentBoard(board, {normalSource}={}) {
+  const captured=board?.sourceCompleteness==='captured-native-complete';
+  const hybrid=board?.scoreVersion==='rolling-hills-pace-placement-v2';
   const uint = value => Number.isSafeInteger(value) && value >= 0;
   if (!board || board.id !== PERMANENT_ID || board.kind !== 'permanent' || board.trackId !== PERMANENT_TRACK ||
       board.period !== undefined || board.archived === true || board.complete !== true || board.sourceComplete === false ||
       !Array.isArray(board.entries) || !board.entries.length || board.entries.length > 10000 ||
       board.totalEntries !== board.entries.length || !uint(board.sourceTotalEntries) || board.sourceTotalEntries < board.totalEntries ||
       !uint(board.updatedAt) || board.updatedAt === 0 || !uint(board.sourceRevision) || board.sourceRevision === 0 ||
-      board.scoreVersion !== 'rolling-hills-live-verified-v1' || board.targetPolicy !== 'live-fastest-physics-verified' ||
-      board.maxRp !== 1001 || !uint(board.targetMs) || board.targetMs === 0 || board.targetMs > 300000 ||
-      !['explicit-snapshot-metadata', 'legacy-exact-field-size', 'paged-source-manifest'].includes(board.sourceCompleteness) ||
+      (!hybrid && board.scoreVersion !== 'rolling-hills-live-verified-v1') || board.targetPolicy !== 'live-fastest-physics-verified' ||
+      board.maxRp !== (hybrid?10101:1001) || !uint(board.targetMs) || board.targetMs === 0 || board.targetMs > 300000 ||
+      !captured&&!['explicit-snapshot-metadata', 'legacy-exact-field-size', 'paged-source-manifest'].includes(board.sourceCompleteness) ||
       board.contributions?.normalRp !== true || board.contributions?.eventRp !== true) return false;
+  if(captured){
+    const source=board.capturedNativeSource;
+    if(!normalSource||normalSource.trackId!==PERMANENT_TRACK||source?.kind!=='captured-native-content-v1'||source.sourceHashMode!=='canonical-json'||!HASH.test(source.sourceHash||'')||!uint(source.sourceUpdatedAt)||source.sourceUpdatedAt<=0||!uint(source.sourceBuiltAt)||source.sourceBuiltAt<=0)return false;
+    const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+    if(digest(Buffer.from(JSON.stringify(canonical(normalSource))))!==source.sourceHash)return false;
+  }
   const seen = new Set();
   for (const row of board.entries) {
     if (!ACCOUNT.test(row?.accountId || '') || seen.has(row.accountId) ||
@@ -123,6 +132,12 @@ function validPermanentBoard(board) {
         row.normalRpEligible !== true || !uint(row.rank) || row.rank < 1 || row.rank > board.entries.length ||
         !uint(row.rp) || row.rp > board.maxRp || row.eventRpContribution !== row.rp) return false;
     seen.add(row.accountId);
+  }
+  if(hybrid){
+    const sorted=[...board.entries].sort((a,b)=>a.timeMs-b.timeMs||(a.accountId<b.accountId?-1:a.accountId>b.accountId?1:0));let rank=0;
+    for(let i=0;i<sorted.length;i++){const row=sorted[i];if(i===0||row.timeMs!==sorted[i-1].timeMs)rank=i+1;
+      if(row.rank!==rank||row.rp!==permanentRollingHillsRp(rank,board.targetMs,row.timeMs)||row.pending===true||row.reviewHold===true||row.reviewHeld===true||[row.status,row.verificationStatus,row.runStatus].some(value=>/^(pending|failed|rejected|mismatch|held)$/i.test(String(value||''))))return false;
+    }
   }
   return Math.min(...board.entries.map(row => row.timeMs)) === board.targetMs;
 }
@@ -220,7 +235,7 @@ export async function loadSnapshotAuditInputs({root = DEFAULT_ROOT} = {}) {
     const board = await readIndexedPayload(snapshotDir, index, logical, cache);
     const period = logical.slice('events/'.length, -'.json'.length);
     if (period === PERMANENT_ID) {
-      if (!validPermanentBoard(board)) issues.push({kind: 'permanent_board_invalid', source: logical});
+      if (!validPermanentBoard(board,{normalSource:board?.sourceCompleteness==='captured-native-complete'?await readIndexedPayload(snapshotDir,index,'tracks/'+PERMANENT_TRACK+'.json',cache):undefined})) issues.push({kind: 'permanent_board_invalid', source: logical});
       // This derived board has no timed period or recording namespace. Normal track jobs cover its replays.
       continue;
     }

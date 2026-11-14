@@ -2,7 +2,7 @@ import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-
 import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
 import {createShopControllerStore,createShopController} from './shop-controller.mjs';
-import {mountProfileShopUi as mountShopPreview} from './profile-shop-ui.mjs';
+const {mountProfileShopUi:mountShopPreview}=await import(new URL('./profile-shop-ui.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 import {bindProfileShopPreview} from './profile-shop-preview.mjs';
 
 /** Display price only, never ownership, an offer, or a wallet mutation. */
@@ -47,6 +47,9 @@ async function loginMetadata(response){
  * Shop open or refresh invokes transport; tokens remain request-local.
  * noteAccountTransition MUST precede all active-account writes, including A-B-A.
  * observeAuth MUST also be called whenever the host initializes/replaces auth.
+ * bind accepts optional getPreviewIdentity:()=>({accountId,name}) from the parent.
+ * Rendering still uses getPreviewController/openStudio and the existing Studio DOM.
+ * content.__profileShopOpen / __profileShopClose are guarded root-local hooks.
  */
 export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,fetch:fetcher,assertOnline=()=>{}}={}){
   if(!document||typeof getAccountId!=='function'||typeof getAuth!=='function')throw TypeError('Profile shop host adapters required');
@@ -102,26 +105,69 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     }
     return store;
   }
-  function bind(content,{accountId,isSelf,openStudio,getPreviewController,applyDraft,onOwnedUiChange}={}){
+  function ensureStyle(){
+      const css=new URL('./profile-shop-ui.css',import.meta.url);css.searchParams.set('v',String(revision));
+      if(![...document.querySelectorAll('link[data-profile-shop-css]')].some(link=>link.href===css.href)){const link=document.createElement('link');link.rel='stylesheet';link.href=css.href;link.dataset.profileShopCss='';document.head.append(link);}
+  }
+  function bind(content,{accountId,isSelf,openStudio,getPreviewController,applyDraft,onOwnedUiChange,getPreviewIdentity}={}){
     if(disposed||!content?.isConnected||isSelf!==true||accountId!==getAccountId()||!/^[a-f0-9]{64}$/.test(accountId||''))return ()=>{};
-    const studio=content.querySelector('.profile-customizer');if(!studio)return ()=>{};
+    const studio=content.querySelector('.profile-customizer');if(!studio)return ()=>{};ensureStyle();
     const controls=studio.querySelector('.profile-customizer-actions')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,closed=false,focus=null,publicViewGeneration=0;
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorQueued=false,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0;
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
     const goStudio=reward=>{if(!current())return false;dialog?.close();return openStudio?.(reward)===true;};
+    const racerName=()=>{
+      if(!current())return '';
+      if(typeof getPreviewIdentity==='function'){
+        let value;try{value=getPreviewIdentity();}catch{return '';}
+        return value?.accountId===accountId&&typeof value.name==='string'?value.name.trim().slice(0,80):'';
+      }
+      return studio.querySelector('.profile-preview-stage>span>b')?.textContent?.trim().slice(0,80)||'';
+    };
+    function syncMirror(){
+      if(!current()||!dialog?.open||!mirrorObserver)return;
+      const target=dialog.querySelector('[data-sp-live-stage]'),source=studio.querySelector('.profile-preview-stage');
+      if(!target)return;
+      const heading=dialog.querySelector('.sp-live-preview>header>strong');if(heading)heading.textContent=racerName()||'Profile preview';
+      const locked=getPreviewController?.()?.isActive?.()===true;
+      dialog.querySelector('[data-sp-live-note]').textContent=locked?'Preview only. Not applied or unlocked.':'Your current racer. Try a style to preview it here.';
+      dialog.querySelector('[data-sp-live-clear]').hidden=!locked;
+      if(!source){target.textContent='Open Racer Studio to load your preview.';return;}
+      if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';return;}
+      const copy=source.cloneNode(true);copy.inert=true;
+      const name=copy.querySelector(':scope>span>b');if(name&&racerName())name.textContent=racerName();
+      for(const node of [copy,...copy.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){
+        node.removeAttribute('id');node.removeAttribute('autofocus');
+        if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');
+      }
+      const row=studio.querySelector('.profile-row-showcase')?.cloneNode(true);
+      if(row){row.inert=true;for(const node of [row,...row.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){node.removeAttribute('id');node.removeAttribute('autofocus');if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');}target.replaceChildren(copy,row);}else target.replaceChildren(copy);
+      if(source!==mirrorSource){
+        mirrorSource=source;mirrorObserver.disconnect();
+        mirrorObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true});
+        const card=content.closest('.overall-profile-card');if(card)mirrorObserver.observe(card,{attributes:true,attributeFilter:['class','style']});
+      }
+    }
+    const keepShopPreview=reward=>{if(!current()||openStudio?.(reward)!==true)return false;syncMirror();return true;};
     function close(invalidate=false){
       publicViewGeneration++;
-      preview?.dispose();preview=null;view?.dispose();view=null;dialog?.close();dialog?.remove();dialog=null;
+      mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;
+      preview?.dispose();preview=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
     }
     function createDialog(){
-      const css=new URL('./profile-shop-ui.css',import.meta.url);css.searchParams.set('v',String(revision));
-      if(![...document.querySelectorAll('link[data-profile-shop-css]')].some(link=>link.href===css.href)){const link=document.createElement('link');link.rel='stylesheet';link.href=css.href;link.dataset.profileShopCss='';document.head.append(link);}
+      ensureStyle();
       dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Style shop');
       dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
+      const grid=document.createElement('div');grid.className='sp-live-layout';
+      const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
+      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><button type="button" data-sp-live-clear hidden>Exit preview</button>';
+      const body=dialog.querySelector('.sp-host-body');body.before(grid);grid.append(live,body);
+      mirrorObserver=new document.defaultView.MutationObserver(()=>{if(mirrorQueued)return;mirrorQueued=true;queueMicrotask(()=>{mirrorQueued=false;syncMirror();});});
+      live.querySelector('[data-sp-live-clear]').addEventListener('click',()=>{if(clearUiPreview)clearUiPreview();else preview?.clear();syncMirror();});
       content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
       dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
       const notice=dialog.querySelector('.sp-host-gate');
@@ -129,20 +175,20 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       notice.hidden=!notice.textContent;
       const active=sharedStore();
       // The fixed public art catalog is not ownership, balance, or purchase proof.
-      if(typeof getPreviewController==='function'&&typeof openStudio==='function')preview=bindProfileShopPreview(content,{accountId,getAccountId,getAuthScope:previewScope,getCatalog:()=>({version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG}),getPreviewController,openStudio:goStudio,revision});
+      if(typeof getPreviewController==='function'&&typeof openStudio==='function')preview=bindProfileShopPreview(content,{accountId,getAccountId,getAuthScope:previewScope,getCatalog:()=>({version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG}),getPreviewController,openStudio:keepShopPreview,revision});
       view=createShopController({root:dialog.querySelector('.sp-host-body'),store:active,
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,getRacerName:racerName,hasLivePreview:true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');
-                return preview.preview({accountId,itemId:item.id,previewOnly:true,isCurrent});
-              },onRestorePreview:()=>preview?.clear()
+                const result=preview.preview({accountId,itemId:item.id,previewOnly:true,isCurrent});syncMirror();return result;
+              },onRestorePreview:()=>{preview?.clear();syncMirror();}
             }:{})}};
           };
-          const cleanup=mountShopPreview(root,decorate(options)),update=cleanup.update;
+          const cleanup=mountShopPreview(root,decorate(options)),update=cleanup.update;clearUiPreview=cleanup.clearPreview;
           cleanup.update=options=>{preview?.clear();update(decorate(options));};return cleanup;
         },
         onCarPreview:preview?request=>preview.preview(request):undefined,onRestorePreview:()=>preview?.clear(),
@@ -160,14 +206,19 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     }
     async function open(){
       if(!current())return false;focus=document.activeElement;observeAuth(currentAuth());
-      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();
+      openStudio?.();if(!current())return false;
+      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();
       if(enabled&&user()){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Server status could not be confirmed. Refresh explicitly to try again.';}}}
       return current();
     }
+    const launchShop=()=>{if(!current())return false;void open();return true;};
+    const closeShop=()=>{if(current())close(true);};
+    content.__profileShopOpen=launchShop;content.__profileShopClose=closeShop;
+    content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));
     const click=()=>{void open();};button.addEventListener('click',click);
-    const mount={close,refresh:reason=>{if(current())onOwnedUiChange?.(reason);}};mounts.add(mount);
+    const mount={close,cleanup,refresh:reason=>{if(current())onOwnedUiChange?.(reason);}};mounts.add(mount);
     observeAuth(currentAuth());mount.refresh('cache');
-    function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);}
+    function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);if(content.__profileShopOpen===launchShop)delete content.__profileShopOpen;if(content.__profileShopClose===closeShop)delete content.__profileShopClose;content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));}
     cleanup.open=open;return cleanup;
   }
   return {bind,observeAuth,reset,priceForUi,
@@ -180,5 +231,5 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       return false;
     },
     noteAccountTransition(next){if(next!==lastAccount){lastAccount=next;reset();}},
-    dispose(){if(disposed)return;disposed=true;unsubscribe?.();ownedUnsubscribe?.();for(const mount of mounts)mount.close(true);mounts.clear();store?.dispose();}};
+    dispose(){if(disposed)return;disposed=true;unsubscribe?.();ownedUnsubscribe?.();for(const mount of [...mounts])mount.cleanup();mounts.clear();store?.dispose();}};
 }

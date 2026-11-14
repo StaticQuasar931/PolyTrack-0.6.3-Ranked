@@ -80,7 +80,7 @@ export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low'}=
   let storage;try{storage=window.localStorage;}catch{}
   const density=()=>{const value=safe(getDensity);return ['medium','high'].includes(value)?value:'low';};
   const safe=fn=>{try{return fn();}catch{return null;}};
-  function close(owner){const state=garages.get(owner);if(!state)return;garages.delete(owner);state.dead=true;state.epoch++;state.visibilityObserver?.disconnect();state.launcher?.remove();state.clear?.();state.panel.remove();}
+  function close(owner){const state=garages.get(owner);if(!state)return;garages.delete(owner);state.dead=true;state.epoch++;state.visibilityObserver?.disconnect();state.barAbort?.abort();state.launcher?.remove();state.clear?.();state.panel.remove();}
   function refresh(state){state.clear?.();state.clear=null;state.renderedAccessory='none';try{state.clear=mountAccessory(state.capability,state.accessory,density());state.renderedAccessory=state.accessory;state.panel.dataset.carAccessory=state.accessory;return true;}catch{state.status.textContent='Accessory preview is unavailable. Original car is unchanged.';return false;}}
   async function identify(state){
     const token=safe(state.capability.getProfileToken);if(typeof token!=='string'||!token||token.length>4096){state.status.textContent='Select a local racer profile to save accessories.';return;}
@@ -99,8 +99,8 @@ export function installCarCosmetics({window,getAccountId,getDensity=()=> 'low'}=
     const launcher=document.createElement('button');launcher.type='button';launcher.className='button';launcher.dataset.carWorkshopTab='';launcher.textContent='Car workshop';launcher.setAttribute('aria-label','Open roof accessory workshop');launcher.style.borderLeft='2px solid #7ee7ff';launcher.style.marginLeft='8px';
     if(bar)bar.append(launcher);else{launcher.style.cssText+=';position:fixed;left:12px;bottom:12px;z-index:20000';document.body.append(launcher);}state.launcher=launcher;state.expanded=Date.now()<requestedUntil;requestedUntil=0;
     const syncVisibility=()=>{const hidden=!capability.root.isConnected||capability.root.classList.contains('hidden')||window.getComputedStyle(capability.root).display==='none';panel.hidden=hidden||!state.expanded;launcher.hidden=hidden;};
-    const setExpanded=value=>{state.expanded=value;toggle.setAttribute('aria-expanded',String(value));launcher.setAttribute('aria-expanded',String(value));syncVisibility();};
-    launcher.addEventListener('click',()=>setExpanded(!state.expanded));toggle.addEventListener('click',()=>{setExpanded(false);launcher.focus({preventScroll:true});});
+    const setExpanded=value=>{state.expanded=value;launcher.classList.toggle('selected',value);toggle.setAttribute('aria-expanded',String(value));launcher.setAttribute('aria-expanded',String(value));syncVisibility();};
+    launcher.addEventListener('click',()=>setExpanded(!state.expanded));bar?.addEventListener('click',event=>{if(event.target.closest('button')!==launcher)setExpanded(false);},{signal:(state.barAbort=new window.AbortController()).signal});toggle.addEventListener('click',()=>{setExpanded(false);launcher.focus({preventScroll:true});});
     panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setExpanded(false);launcher.focus({preventScroll:true});}});
     state.visibilityObserver=new window.MutationObserver(syncVisibility);state.visibilityObserver.observe(capability.root,{attributes:true,attributeFilter:['class','style']});setExpanded(state.expanded);
     for(const [id,label]of CAR_ACCESSORIES){const option=document.createElement('option');option.value=id;option.textContent=label;state.select.append(option);}

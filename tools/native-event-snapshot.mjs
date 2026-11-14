@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {capturedEventLeaderboard, capturedEventRp, eventRp} from '../workers/ranked/src/events.js';
-import {derivePermanentRollingHills, mergePermanentRollingIntoTotals, PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
+import {derivePermanentRollingHills, mergePermanentRollingIntoTotals, PERMANENT_ROLLING_HILLS,
+  permanentRollingHillsRp, permanentResultEligible} from '../workers/ranked/src/permanent-rolling-hills.js';
 import {publicEventBackup, publicEventReplayBackup} from './public-snapshot-backup.mjs';
 import {publicEventPlaybackForPublication} from './public-event-playback.mjs';
 import {validatePublicReplayForPublication} from './public-replay-playback.mjs';
@@ -134,7 +135,7 @@ export function deriveCapturedNativeRollingHills({board, expectedSourceHash, sou
       (source.accountId === undefined || source.userId === undefined || source.accountId === source.userId),
     'Duplicate or invalid captured-native Rolling Hills account');
     seen.add(accountId);
-    if (source.runVerified !== true || source.integrityVerified !== true || Object.keys(restrictions(source)).length ||
+    if (source.runVerified !== true || source.integrityVerified !== true || !permanentResultEligible(source) || Object.keys(restrictions(source)).length ||
       source.pending === true || source.playbackPending === true || source.verified === false ||
       source.physicsVerified === false || source.replayIntegrityVerified === false ||
       source.verificationStatus !== undefined && source.verificationStatus !== 'verified') continue;
@@ -152,17 +153,19 @@ export function deriveCapturedNativeRollingHills({board, expectedSourceHash, sou
   const targetMs = Math.min(...eligible.map(row => row.source.timeMs));
   const text = (value, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : '';
   const rows = eligible.map(({source, accountId, frames}) => {
-    // Exact existing Rolling Hills ERP: floor(1001 * fastestVerified / time).
-    const rp = Math.min(p.maxRp, Number(BigInt(p.maxRp) * BigInt(targetMs) / BigInt(source.timeMs)));
     const runAt = integer(source.pbAt) && source.pbAt > 0 ? source.pbAt : integer(source.createdAt) && source.createdAt > 0 ? source.createdAt : 0;
-    return {accountId, trackId: p.trackId, timeMs: source.timeMs, frames, rp, eventRpContribution: rp, normalRpEligible: true,
+    return {accountId, trackId: p.trackId, timeMs: source.timeMs, frames, normalRpEligible: true,
       runAt, runAgeMs: runAt ? Math.max(0, updatedAt - runAt) : null,
       name: text(source.name || source.nickname, 24) || 'Racer', countryCode: text(source.countryCode, 8).toUpperCase(),
       carStyle: text(source.carStyle, 256), replayHash: source.replayHash,
       physicsVerified: true, replayIntegrityVerified: true};
   }).sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
   let rank = 0;
-  const entries = rows.map((row, index) => {if (!index || row.timeMs !== rows[index - 1].timeMs) rank = index + 1; return {...row, rank};});
+  const entries = rows.map((row, index) => {
+    if (!index || row.timeMs !== rows[index - 1].timeMs) rank = index + 1;
+    const rp = permanentRollingHillsRp(rank, targetMs, row.timeMs);
+    return {...row, rank, rp, eventRpContribution: rp};
+  });
   const result = freeze({id: p.id, kind: 'permanent', trackId: p.trackId, scoreVersion: p.scoreVersion,
     targetPolicy: 'live-fastest-physics-verified', targetMs, maxRp: p.maxRp,
     sourceRevision: snapshot.sourceRevision, updatedAt, complete: true, totalEntries: entries.length,

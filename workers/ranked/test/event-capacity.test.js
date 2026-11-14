@@ -145,7 +145,7 @@ async function combinedFixture(){
 
 test('Rolling Hills-only PB invalidates combined RP atomically, preserves last good generation, and rebuilds ranks',async()=>{
  const f=await combinedFixture(),prior=structuredClone(f.data.get(C.public+'/totals_full'));
- assert.deepEqual(prior.entries.map(row=>[row.accountId,row.rp,row.rank]),[[f.a,1001,1],[f.c,950,2],[f.b,900,3]]);
+ assert.deepEqual(prior.entries.map(row=>[row.accountId,row.rp,row.rank]),[[f.a,10101,1],[f.b,1901,2],[f.c,950,3]]);
  const finite=structuredClone([...f.data].filter(([key])=>key.startsWith(C.totals+'/')));
  const {result,row}=await f.improve();assert.equal(result.changed,true);
  assert.equal(result.entries.find(value=>value.accountId===f.b).runVerified,true);
@@ -160,7 +160,7 @@ test('Rolling Hills-only PB invalidates combined RP atomically, preserves last g
  }
  const after=f.calls.length;assert.equal((await publishEventCapacity(f.runtime)).published,true);assert.ok(f.calls.length-after<50);
  const current=f.data.get(C.public+'/totals_full');assert.notEqual(current.pagination.generation,prior.pagination.generation);
- assert.deepEqual(current.entries.map(value=>[value.accountId,value.rp,value.rank]),[[f.b,1401,1],[f.c,950,2],[f.a,900,3]]);
+ assert.deepEqual(current.entries.map(value=>[value.accountId,value.rp,value.rank]),[[f.b,10501,1],[f.a,4864,2],[f.c,950,3]]);
  assert.equal(current.dynamicComponents.permanentRollingHills.sourceRevision,2);
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
  assert.equal((await f.service.publicPage('event_totals','main',prior.pagination.generation,0)).entries[0].accountId,f.a);
@@ -224,7 +224,7 @@ test('Rolling-only refresh reuses completed finite scan even after snapshot quer
  assert.equal(f.data.get(C.public+'/totals_full').dynamicComponents.permanentRollingHills.sourceRevision,2);
  assert.equal(f.data.get(C.public+'/totals').publicationPending,false);
  // A real finite revision change MUST start a fresh authoritative scan.
- f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:9999,events:1});
+ f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:19999,events:1});
  f.data.get(C.public+'/totals').revision++;
  f.data.get(C.public+'/totals').publicationPending=true;
  f.time(f.runtime.now()+15*60000); // Scheduled finite refresh coalesces new revisions.
@@ -299,7 +299,7 @@ for(const revision of [0,8])test(`finite revision ${revision} changing during a 
    const result=await request(route,init);
    if(route===':runQuery'&&!changed){
      changed=true;
-     f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:9999,events:1});
+     f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:19999,events:1});
      f.data.get(C.public+'/totals').revision++;
    }
    return result;
@@ -348,7 +348,7 @@ test('older reuse invocation cannot overwrite a newer finite publication',async(
    const result=await request(route,init);
    if(route===':commit'&&!overlapped){
      overlapped=true;
-     f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:9999,events:1});
+     f.data.set(C.totals+'/new',{accountId:'new',name:'New',rp:19999,events:1});
      f.data.get(C.public+'/totals').revision++;
      assert.equal((await advanceEventPublication(f.runtime)).published,true);
      newer=structuredClone(f.data.get(C.public+'/totals_full'));
@@ -683,7 +683,7 @@ test('24h finite revision churn bounds restart scans; quiescent recovery preserv
  const board=f.data.get(C.public+'/totals_full');
  const actual=await loadPublicationEntries(board,'event_totals','main',async(c,id)=>({data:f.data.get(c+'/'+id)}));
  const scores=new Map([...f.data].filter(([key])=>key.startsWith(C.totals+'/')).map(([,row])=>[row.accountId,row.rp]));
- scores.set(f.a,(scores.get(f.a)||0)+1001);scores.set(f.b,(scores.get(f.b)||0)+500);
+ scores.set(f.a,(scores.get(f.a)||0)+10101);scores.set(f.b,(scores.get(f.b)||0)+1501);
  const expected=[...scores].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));let rank=0;
  assert.deepEqual(actual.map(row=>[row.accountId,row.rp,row.rank]),expected.map(([id,rp],i)=>{if(!i||rp!==expected[i-1][1])rank=i+1;return [id,rp,rank];}));
  f.data.delete(C.totals+'/'+f.c);f.data.get(C.public+'/totals').revision++;f.data.get(C.public+'/totals').publicationPending=true;

@@ -7,8 +7,8 @@ export const PERMANENT_ROLLING_HILLS = Object.freeze({
   collection: '0.6.2_s1_leaderboards_track',
   algorithmVersion: 'participation-v8-s1',
   minimumSchemaVersion: 6,
-  scoreVersion: 'rolling-hills-live-verified-v1',
-  maxRp: 1001,
+  scoreVersion: 'rolling-hills-pace-placement-v2',
+  maxRp: 10101,
   entryLimit: 500
 });
 
@@ -20,13 +20,41 @@ const fail = code => { throw new PermanentRollingHillsError(code); };
 const integer = (value, min = 0) => Number.isSafeInteger(value) && value >= min;
 const string = (value, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f]/g, '').slice(0, max) : '';
 
+export const ROLLING_HILLS_SCORING_FORMULA = 'floor(10101 * (targetMs / timeMs)^2 / rank^0.75), clamped to [0, 10101]';
+
+export function permanentRollingHillsRp(rank, targetMs, timeMs) {
+  if (!integer(rank, 1)) fail('permanent_rolling_hills_invalid_rank');
+  if (!integer(targetMs, 1) || targetMs > 300000 || !integer(timeMs, 1) || timeMs > 300000)
+    fail('permanent_rolling_hills_invalid_time');
+  // Raise the inequality to the fourth power: award^4 * time^8 * rank^3
+  // <= (cap * target^2)^4. Integer search gives the exact floor, without pow rounding.
+  const numerator = (BigInt(PERMANENT_ROLLING_HILLS.maxRp) * BigInt(targetMs) ** 2n) ** 4n;
+  const denominator = BigInt(timeMs) ** 8n * BigInt(rank) ** 3n;
+  let low = 0, high = PERMANENT_ROLLING_HILLS.maxRp;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (BigInt(middle) ** 4n * denominator <= numerator) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+export function permanentResultEligible(row) {
+  return ['pending', 'playbackPending', 'needsReview', 'reviewHold'].every(key => row?.[key] === undefined || row[key] === false) &&
+    ['verified', 'runVerified', 'integrityVerified', 'physicsVerified', 'replayIntegrityVerified', 'eventRpEligible'].every(key => row?.[key] === undefined || row[key] === true) &&
+    ['status', 'verificationStatus', 'runStatus'].every(key => row?.[key] === undefined || row[key] === 'verified') &&
+    (row?.validationState === undefined || ['integrity', 'verified'].includes(row.validationState)) &&
+    row?.reason !== 'similar_replay_pending_manual_review';
+}
+
 function snapshotIdentityValid(snapshot) {
   return snapshot && snapshot.trackId === PERMANENT_ROLLING_HILLS.trackId &&
     snapshot.algorithmVersion === PERMANENT_ROLLING_HILLS.algorithmVersion &&
     integer(snapshot.schemaVersion, PERMANENT_ROLLING_HILLS.minimumSchemaVersion) &&
     integer(snapshot.revision, 1) && snapshot.sourceRevision === snapshot.revision &&
     typeof snapshot.signature === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(snapshot.signature) &&
-    integer(snapshot.builtAt, 1) && integer(snapshot.updatedAt, 1) && Array.isArray(snapshot.entries);
+    integer(snapshot.builtAt, 1) && integer(snapshot.updatedAt, 1) && Array.isArray(snapshot.entries) &&
+    snapshot.entries.length <= 10000 && snapshot.sourceComplete !== false && snapshot.publicationPending !== true;
 }
 
 function normalizeCompleteSnapshot(snapshot) {
@@ -48,7 +76,9 @@ function normalizeCompleteSnapshot(snapshot) {
 function eligibleEntry(entry) {
   const accountId = string(entry?.accountId || entry?.userId, 128);
   const timeMs = entry?.timeMs, frames = entry?.raceTimeFrames ?? entry?.frames;
-  return accountId && entry.trackId === PERMANENT_ROLLING_HILLS.trackId &&
+  return accountId && /^[A-Za-z0-9_.:-]{1,128}$/.test(accountId) &&
+    (entry.accountId == null || entry.accountId === accountId) && (entry.userId == null || entry.userId === accountId) &&
+    permanentResultEligible(entry) && entry.trackId === PERMANENT_ROLLING_HILLS.trackId &&
     integer(timeMs, 1) && timeMs <= 300000 && frames === timeMs &&
     (entry.frames == null || entry.raceTimeFrames == null || entry.frames === entry.raceTimeFrames) &&
     entry.runVerified === true && entry.integrityVerified === true &&
@@ -71,20 +101,19 @@ export function derivePermanentRollingHills(snapshot) {
   if (!eligible.length) fail('permanent_rolling_hills_no_verified_entries');
   const targetMs = Math.min(...eligible.map(row => row.timeMs));
   const rows = eligible.map(({ source, accountId, timeMs, frames, runAt }) => {
-    const rp = Math.min(PERMANENT_ROLLING_HILLS.maxRp,
-      Number(BigInt(PERMANENT_ROLLING_HILLS.maxRp) * BigInt(targetMs) / BigInt(timeMs)));
     return {
-    accountId, trackId: PERMANENT_ROLLING_HILLS.trackId, timeMs, frames, rp,
-    eventRpContribution: rp, normalRpEligible: true, runAt,
+    accountId, trackId: PERMANENT_ROLLING_HILLS.trackId, timeMs, frames,
+    normalRpEligible: true, runAt,
     runAgeMs: runAt ? Math.max(0, completeSnapshot.updatedAt - runAt) : null,
     name: string(source.name || source.nickname, 24) || 'Racer', countryCode: string(source.countryCode, 8).toUpperCase(),
     carStyle: string(source.carStyle, 256), replayHash: source.replayHash.toLowerCase(),
     physicsVerified: true, replayIntegrityVerified: true
-  };}).sort((a, b) => a.timeMs - b.timeMs || a.accountId.localeCompare(b.accountId));
+  };}).sort((a, b) => a.timeMs - b.timeMs || (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0));
   let rank = 0;
   const entries = rows.map((row, index) => {
     if (!index || row.timeMs !== rows[index - 1].timeMs) rank = index + 1;
-    return { ...row, rank };
+    const rp = permanentRollingHillsRp(rank, targetMs, row.timeMs);
+    return { ...row, rank, rp, eventRpContribution: rp };
   });
   return { id: PERMANENT_ROLLING_HILLS.id, kind: 'permanent', trackId: PERMANENT_ROLLING_HILLS.trackId,
     scoreVersion: PERMANENT_ROLLING_HILLS.scoreVersion, targetPolicy: 'live-fastest-physics-verified',

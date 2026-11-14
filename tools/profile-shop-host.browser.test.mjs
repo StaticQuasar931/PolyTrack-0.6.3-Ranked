@@ -69,20 +69,20 @@ test('profile render and disabled Shop open issue no wallet/token/Firestore read
  assert.equal(await page.locator('[data-sp-action="claim"]:enabled,[data-sp-action="buy"]:enabled').count(),0);assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
 });
 
-test('all canonical locked Studio choices show their Tokens price, never raw requirement IDs',async t=>{
+test('all canonical locked Studio choices show their Style Coins price, never raw requirement IDs',async t=>{
  const page=await fixture(t,{enabled:false});
  for(const item of PROFILE_SHOP_CATALOG){
   const {slot:kind,value:id}=item.grants[0];
   const label=await page.locator(`[data-cosmetic-kind="${kind}"][data-cosmetic-value="${id}"] small`).innerText();
-  assert.equal(label,item.price+' Tokens');assert.doesNotMatch(label,/shop:|tracks|\bCP\b/i);
+  assert.equal(label,item.price+' Style Coins');assert.doesNotMatch(label,/shop:|tracks|\bCP\b/i);
  }
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
 });
 test('explicit own Shop open fetches confirmed wallet using current user token; claim and refresh are explicit',{timeout:20000},async t=>{
- const page=await fixture(t);assert.equal(await page.evaluate(()=>network.length),0);await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
+ const page=await fixture(t);assert.equal(await page.evaluate(()=>network.length),0);await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
  const first=await page.evaluate(()=>network);assert.equal(first.length,2);assert.ok(first.every(row=>row.method==='GET'&&row.authorization==='Bearer offline-test-token'));
  if(!await page.locator('.sp-earn').getAttribute('open'))await page.locator('.sp-earn summary').click();
- await page.getByRole('button',{name:'Daily visit Claim 8 Tokens',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='108 Tokens');
+ await page.getByRole('button',{name:'Daily visit Claim 8 Style Coins',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='108 Style Coins');
  assert.deepEqual(await page.evaluate(()=>claims),['login']);assert.equal(await page.evaluate(()=>network.filter(row=>row.path.includes('equip')).length),0);
  const n=await page.evaluate(()=>network.length);await page.getByRole('button',{name:'Refresh balance'}).click();await page.waitForFunction(n=>network.length===n+2,n);
  assert.equal(await page.evaluate(()=>dbCalls),0);page.noExternal();
@@ -125,8 +125,8 @@ test('auth A-B-A and all three account-set paths invalidate held-token requests 
 });
 test('native host phone and laptop show original art without overflow or fake live balances',{timeout:20000},async t=>{
  for(const [name,width,height]of[['phone',360,800],['laptop',1366,768]]){
-  const page=await fixture(t,{width,height});await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
-  await page.evaluate(()=>document.querySelector('.sp-host-gate').textContent='Offline integration fixture. Sample Tokens, not a live balance.');await page.locator('.sp-host-gate').evaluate(node=>node.hidden=false);
+  const page=await fixture(t,{width,height});await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+  await page.evaluate(()=>document.querySelector('.sp-host-gate').textContent='Offline integration fixture. Sample Style Coins, not a live balance.');await page.locator('.sp-host-gate').evaluate(node=>node.hidden=false);
   assert.equal(await page.locator('.sp-art svg').count(),PROFILE_SHOP_CATALOG.length);assert.equal(await page.locator('.profile-shop-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
   await page.screenshot({path:path.join(evidence,`native-profile-shop-v2-${name}.png`)});page.noExternal();
  }
@@ -143,12 +143,12 @@ test('login-409 server-day metadata is bounded and internally consistent',async(
 test('definite daily rejection disables only login, with no extra reads or balance grant; marker expires and resets on auth A-B-A',{timeout:20000},async t=>{
  const page=await fixture(t,{width:1366,height:768});
  await page.evaluate(()=>{window.monotonicOffset=0;const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+monotonicOffset});window.claimRejection={error:'reward_already_claimed',notCommitted:true,claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000};});
- await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
- await page.getByRole('button',{name:'Daily visit Claim 8 Tokens',exact:true}).click();
+ await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+ await page.getByRole('button',{name:'Daily visit Claim 8 Style Coins',exact:true}).click();
  const daily=page.locator('[data-sp-reward="login"]');await page.waitForFunction(()=>document.querySelector('[data-sp-reward="login"]')?.textContent.includes('Claimed today'));
  assert.equal(await daily.isDisabled(),true);assert.equal(await page.evaluate(()=>network.length),3,'409 does not trigger a wallet read');
  assert.equal(await page.evaluate(()=>serverWallet.balance),100);assert.equal(await page.evaluate(()=>Object.entries(localStorage).some(([key,value])=>key.includes('claimDay')||value.includes('claimDay'))),false);
- await page.locator('[data-sp-action="refresh"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
+ await page.locator('[data-sp-action="refresh"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
  assert.equal(await daily.isDisabled(),true);assert.equal(await page.locator('[data-sp-reward="milestones"]').isEnabled(),true);
  await page.evaluate(()=>{Date.now=()=>0;});assert.equal(await daily.isDisabled(),true,'device calendar cannot extend or reset server day');
  await page.evaluate(()=>monotonicOffset=86400000);await page.locator('[data-sp-action="refresh"]').click();await page.waitForFunction(()=>document.querySelector('[data-sp-reward="login"]')?.disabled===false);
@@ -162,8 +162,8 @@ test('legacy, malformed, milestone and ambiguous rejections never create daily m
  for(const [reward,change,status]of[['login',{dayEndsAt:1},409],['login',{claimDay:undefined,serverNow:undefined,dayEndsAt:undefined},409],['milestones',{},409],['login',{},503]]){
   const page=await fixture(t,{width:1366,height:768});
   await page.evaluate(({change,status})=>{window.claimStatus=status;window.claimRejection={error:'reward_already_claimed',notCommitted:true,claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000,...change};},{change,status});
-  await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
-  await page.locator('[data-sp-reward="'+reward+'"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent!=='100 Tokens');
+  await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+  await page.locator('[data-sp-reward="'+reward+'"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent!=='100 Style Coins');
   assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);assert.equal(await page.evaluate(()=>network.length),3);page.noExternal();
  }
 });
@@ -175,7 +175,7 @@ test('native journal progress, subtitle, goals and shop balance helpers do not i
  const samples=await page.locator('.aj-summary p,.aj-notice,.aj-progress>span,.aj-node-reward,.aj-inspector-info p,.ph-heading p,[data-aj-select]>strong').evaluateAll(nodes=>nodes.map(node=>({text:node.textContent.slice(0,60),font:getComputedStyle(node).fontFamily,style:getComputedStyle(node).fontStyle})));
  assert.ok(samples.length>5);for(const sample of samples){assert.match(sample.font,/ForcedSquare/i,JSON.stringify(sample));assert.equal(sample.style,'normal');}
  await page.screenshot({path:path.join(evidence,'fixture-achievements-native-body-font-390.png')});
- await page.locator('[data-ph-close]').click();await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
+ await page.locator('[data-ph-close]').click();await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
  await page.locator('link[data-profile-shop-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));await page.evaluate(()=>document.fonts.ready);
  const helpers=await page.locator('.sp-status span,.sp-summary span,.sp-earn p').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).fontFamily));assert.ok(helpers.length>2);for(const font of helpers)assert.match(font,/ForcedSquare/i);page.noExternal();
 });
@@ -188,14 +188,14 @@ test('public original art preview works with wallet unavailable or gate OFF, wit
   if(enabled)await page.waitForFunction(()=>document.querySelector('.sp-host-gate')?.textContent.includes('could not be confirmed'));
   assert.equal(await page.locator('[data-sp-action="buy"]:enabled,[data-sp-action="apply"]:enabled,[data-sp-action="claim"]:enabled').count(),0);
   const before=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),requests:network.length,tokens:tokenCalls,writes:draftWrites}));
-  await page.locator('[data-sp-action="preview"]').first().click();await page.locator('.cosmetic-preview-banner').waitFor();
-  assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');assert.match(await page.locator('.cosmetic-preview-banner strong').innerText(),/Preview only - not applied/);
-  const header=await page.evaluate(()=>{const banner=document.querySelector('.cosmetic-preview-banner').getBoundingClientRect(),tabs=document.querySelector('.profile-customizer .studio-tabs').getBoundingClientRect();return {top:banner.top,bottom:banner.bottom,tabsTop:tabs.top,height:innerHeight};});assert.ok(header.top>=0&&header.bottom<=header.height&&header.bottom<=header.tabsTop+1,JSON.stringify(header));
+  await page.locator('[data-sp-action="preview"]').first().click();await page.locator('[data-sp-live-clear]').waitFor();
+  assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');assert.match(await page.locator('[data-sp-live-note]').innerText(),/Preview only/);
+  const header=await page.evaluate(()=>{const banner=document.querySelector('[data-sp-live-note]').getBoundingClientRect();return {top:banner.top,bottom:banner.bottom,tabsTop:innerHeight,height:innerHeight};});assert.ok(header.top>=0&&header.bottom<=header.height&&header.bottom<=header.tabsTop+1,JSON.stringify(header));
   const after=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),requests:network.length,tokens:tokenCalls,writes:draftWrites}));assert.deepEqual(after,before);
   assert.equal(await page.evaluate(()=>network.filter(row=>row.method==='POST').length+dbCalls+(window.published||0)),0);
   if(!enabled)assert.equal(before.requests+before.tokens,0);
   await page.screenshot({path:path.join(evidence,`fixture-public-shop-preview-${enabled?'wallet-unavailable':'gate-off'}-390.png`)});
-  await page.locator('[data-cosmetic-preview-clear]').click();assert.equal(await page.evaluate(()=>document.querySelector('#content').__cosmeticPreviewController.isActive()),false);
+  await page.locator('[data-sp-live-clear]').click();assert.equal(await page.evaluate(()=>document.querySelector('#content').__cosmeticPreviewController.isActive()),false);
   assert.equal(await page.evaluate(()=>JSON.stringify(profileCosmeticDrafts.get(activeAccount))),before.draft);page.noExternal();
  }
 });
@@ -211,8 +211,8 @@ test('fresh login response clock requires exact fresh result and originating req
 test('fresh200 login disables daily immediately without repeated POST/GET; server-day expiry and auth A-B-A clear only UI marker',{timeout:20000},async t=>{
  const page=await fixture(t,{width:1366,height:768});
  await page.evaluate(()=>{window.monotonicOffset=0;const original=performance.now.bind(performance);Object.defineProperty(performance,'now',{value:()=>original()+monotonicOffset});window.freshLoginClock={claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000};});
- await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');
- await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='108 Tokens');
+ await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+ await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='108 Style Coins');
  const daily=page.locator('[data-sp-reward="login"]');assert.match(await daily.innerText(),/Claimed today/);assert.equal(await daily.isDisabled(),true);assert.equal(await page.locator('[data-sp-reward="milestones"]').isEnabled(),true);
  const count=await page.evaluate(()=>network.length);assert.equal(count,4,'initial2 + explicit POST + one completion wallet GET only');
  await daily.dispatchEvent('click');assert.equal(await page.evaluate(()=>network.length),count);assert.deepEqual(await page.evaluate(()=>claims),['login']);
@@ -220,7 +220,7 @@ test('fresh200 login disables daily immediately without repeated POST/GET; serve
  await page.evaluate(()=>{Date.now=()=>0;monotonicOffset=86400000;});await page.locator('[data-sp-action="refresh"]').click();await page.waitForFunction(()=>document.querySelector('[data-sp-reward="login"]')?.disabled===false);
  assert.equal(await page.evaluate(()=>claims.length),1,'clock expiry never auto-claims');
  await page.evaluate(()=>{const day=20001;window.monotonicOffset=0;freshLoginClock={claimDay:day,serverNow:day*86400000+1000,dayEndsAt:(day+1)*86400000};});
- await daily.click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='116 Tokens');assert.equal(await daily.isDisabled(),true);
+ await daily.click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='116 Style Coins');assert.equal(await daily.isDisabled(),true);
  await page.evaluate(()=>{fixtureAuth.emit(null);fixtureAuth.emit({...fixtureUser,uid:'other-owner'});fixtureAuth.emit(fixtureUser);});
  await openShop(page);await page.waitForFunction(()=>document.querySelector('[data-sp-reward="login"]')?.disabled===false);assert.equal(await page.evaluate(()=>dbCalls),0);page.noExternal();
 });
@@ -228,14 +228,14 @@ test('fresh200 login disables daily immediately without repeated POST/GET; serve
 test('duplicate old receipt and malformed fresh200 clocks never mark today',{timeout:20000},async t=>{
  for(const change of [{duplicate:true},{dayEndsAt:1},{requestId:'wrong-request-123'},{delta:16}]){
   const page=await fixture(t,{width:1366,height:768});await page.evaluate(change=>{window.freshLoginClock={claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000};window.claimSuccessOverride=change;},change);
-  await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent!=='100 Tokens');
+  await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent!=='100 Style Coins');
   assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);assert.equal(await page.evaluate(()=>claims.length),1);page.noExternal();
  }
 });
 
 test('late fresh200 success cannot carry daily UI marker across auth/account A-B-A',{timeout:15000},async t=>{
  const page=await fixture(t,{width:1366,height:768});await page.evaluate(()=>{window.holdClaimResponse=true;window.freshLoginClock={claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000};});
- await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Tokens');await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>typeof releaseClaim==='function');
+ await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>typeof releaseClaim==='function');
  await page.evaluate(({A,B})=>{fixtureAuth.emit(null);fixtureAuth.emit(fixtureUser);actualAccountTransition(B);activeAccount=B;actualAccountTransition(A);activeAccount=A;holdClaimResponse=false;releaseClaim();},{A,B});
  await openShop(page);await page.locator('[data-sp-reward="login"]').waitFor();await page.waitForTimeout(50);assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);assert.equal(await page.evaluate(()=>claims.length),1);assert.equal(await page.evaluate(()=>dbCalls),0);page.noExternal();
 });
@@ -252,7 +252,7 @@ test('owned Shop preview Escape and Apply round-trip preserve saved styles and o
   await page.locator('.sp-host-gate').evaluate(node=>{node.textContent='Offline fixture - confirmed sample inventory, not a live balance.';node.hidden=false;});
   assert.equal(await page.locator('.sp-item').count(),PROFILE_SHOP_CATALOG.length);assert.equal(await page.locator('[data-sp-action="buy"]').count(),0);assert.equal(await page.locator('dialog.profile-shop-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
   const sample=await page.locator('.sp-item').first().locator('svg').evaluate(svg=>{const box=svg.getBoundingClientRect();return {texts:[...svg.querySelectorAll('[data-profile-art-sample] text')].map(node=>{const r=node.getBoundingClientRect();return {text:node.textContent,inside:r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom,font:getComputedStyle(node).fontFamily};})};});
-  assert.deepEqual(sample.texts.map(row=>row.text),['#7','RACER']);assert.ok(sample.texts.every(row=>row.inside&&/ForcedSquare/.test(row.font)),JSON.stringify(sample));
+  assert.deepEqual(sample.texts.map(row=>row.text),[]);assert.ok(sample.texts.every(row=>row.inside&&/ForcedSquare/.test(row.font)),JSON.stringify(sample));
   assert.doesNotMatch(await page.locator('.overall-profile-card').evaluate(node=>getComputedStyle(node).getPropertyValue('--plate-bg')),/url\(|RACER|text/i);
   await page.screenshot({path:path.join(evidence,`owned-shop-${name}-${width}x${height}.png`)});
   await page.locator('[data-sp-action="preview"]').first().click();await page.locator('.cosmetic-preview-banner').waitFor();
@@ -279,4 +279,67 @@ test('Style shop launcher lives in Studio actions, not after the achievement jou
  assert.doesNotMatch(await page.locator('.profile-shop-dialog').innerText(),/\bCP\b|Three original/);
  const price=await page.evaluate(()=>actualShopHost().priceForUi('plate','pitlane-ticket'));assert.equal(price,PROFILE_SHOP_CATALOG.find(item=>item.id==='profile-pitlane-ticket').price);
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
+});
+
+test('real rendered racer stays beside shop while locked preview changes no draft or balance',async t=>{
+ for(const [width,height]of [[1366,768],[390,844],[844,390]]){
+  const page=await fixture(t,{enabled:false,width,height});
+  const expectedName=await page.evaluate(()=>nativeEntry.name);
+  assert.equal(await page.locator('[data-ph-launch="shop"]').isVisible(),true);
+  await page.locator('[data-ph-launch="shop"]').click();await page.locator('.profile-shop-dialog[open]').waitFor();
+  assert.equal(await page.locator('.sp-live-preview>header>strong').innerText(),expectedName);
+  const sourceRow=(await page.locator('.profile-customizer .profile-row-showcase').textContent()).replace(/\s+/g,' ').trim();
+  assert.equal((await page.locator('[data-sp-live-stage] .profile-row-showcase').textContent()).replace(/\s+/g,' ').trim(),sourceRow);
+  assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage>span>b').innerText(),expectedName);
+  const before=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),writes:draftWrites,network:network.length}));
+  await page.locator('[data-sp-action="preview"][data-sp-id="profile-petrol"]').click();await page.locator('[data-sp-live-clear]').waitFor();
+  assert.equal(await page.locator('.profile-shop-dialog').evaluate(node=>node.open),true);
+  assert.equal(await page.evaluate(()=>document.querySelector('#content').__cosmeticPreviewController.canPublish()),false);
+  assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage>span>b').innerText(),expectedName);
+  assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage').evaluate(node=>node.inert),true);
+  const layout=await page.locator('.sp-live-preview').evaluate(node=>{const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:innerHeight,grid:document.querySelector('.sp-live-layout').getBoundingClientRect().height,visible:r.top>=0&&r.bottom<=innerHeight+1,overflow:document.querySelector('dialog.profile-shop-dialog').scrollWidth>innerWidth};});
+  assert.equal(layout.visible,true,JSON.stringify({width,height,layout}));assert.equal(layout.overflow,false);
+  assert.deepEqual(await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),writes:draftWrites,network:network.length})),before);
+  await page.screenshot({path:path.join(evidence,`personal-shop-${width}x${height}.png`)});
+  await page.locator('[data-sp-live-clear]').click();assert.equal(await page.evaluate(()=>document.querySelector('#content').__cosmeticPreviewController.canPublish()),true);
+  await page.evaluate(()=>document.querySelector('#content').__profileHubClose());assert.equal(await page.locator('dialog[open]').count(),0);
+  page.noExternal();
+ }
+});
+
+test('parent identity callback is account-scoped and does not cause independent reads',async t=>{
+ const page=await fixture(t,{enabled:false});
+ await page.evaluate(()=>{
+  const root=document.querySelector('#content');root.__shopCleanup();window.identityAccount=activeAccount;
+  root.__shopCleanup=actualShopHost().bind(root,{accountId:activeAccount,isSelf:true,openStudio:reward=>cleanup.open('studio',reward),getPreviewController:()=>root.__cosmeticPreviewController,getPreviewIdentity:()=>({accountId:identityAccount,name:'Supplied Fixture'})});
+ });
+ await openShop(page);
+ assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage>span>b').innerText(),'Supplied Fixture');
+ const texts=await page.locator('.sp-art svg text').allTextContents();assert.ok(texts.length>0&&texts.every(text=>text==='Supplied Fixture'));
+ assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);
+ await page.evaluate(B=>identityAccount=B,B);await page.locator('[data-sp-action="preview"]').first().click();
+ assert.match(await page.locator('[data-sp-live-stage]').innerText(),/unavailable/);
+ await page.evaluate(()=>{fixtureAuth.emit(null);fixtureAuth.emit(fixtureUser);});assert.equal(await page.locator('.profile-shop-dialog').count(),0);
+ page.noExternal();
+});
+
+test('revisioned host bypasses warm unversioned UI/art and propagates the full release query',async t=>{
+ const page=await fixture(t,{enabled:false});const requests=[],errors=[];
+ page.on('request',request=>requests.push(new URL(request.url()).pathname+new URL(request.url()).search));page.on('pageerror',error=>errors.push(error.message));
+ await page.route('**/tools/profile-shop-ui.mjs',route=>route.fulfill({contentType:'text/javascript',body:'export function mountProfileShopUi(){throw Error("stale unversioned UI used");}'}));
+ await page.route('**/tools/profile-shop-art.mjs',route=>route.fulfill({contentType:'text/javascript',body:'export function renderProfileShopArt(){throw Error("stale unversioned art used");}'}));
+ await page.evaluate(async()=>{
+  await import('/tools/profile-shop-ui.mjs');await import('/tools/profile-shop-art.mjs');
+  const {createProfileShopHost}=await import('/tools/profile-shop-host.mjs?v=328&probe=cache');
+  const root=document.querySelector('#content');root.__shopCleanup();
+  window.revisionHost=createProfileShopHost({document,getAccountId:()=>activeAccount,getAuth:()=>fixtureAuth,storage:localStorage,revision:328,enabled:false,fetch:rankedFetch});
+  root.__shopCleanup=revisionHost.bind(root,{accountId:activeAccount,isSelf:true,openStudio:reward=>cleanup.open('studio',reward),getPreviewController:()=>root.__cosmeticPreviewController});
+  await root.__shopCleanup.open();
+ });
+ assert.ok(requests.includes('/tools/profile-shop-ui.mjs?v=328&probe=cache'),JSON.stringify(requests));
+ assert.ok(requests.includes('/tools/profile-shop-art.mjs?v=328&probe=cache'),JSON.stringify(requests));
+ assert.equal(await page.locator('.sp-item').count(),PROFILE_SHOP_CATALOG.length);
+ assert.match(await page.locator('.profile-shop-dialog').innerText(),/Style Coins/);
+ assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);assert.deepEqual(errors,[]);
+ await page.evaluate(()=>revisionHost.dispose());assert.equal(await page.locator('.profile-shop-dialog').count(),0);page.noExternal();
 });

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {buildAchievementProgress,renderAchievementJournal} from './achievement-journal.mjs';
+import {buildAchievementProgress,buildAchievementJournalModel,sortAchievementJournalItems,renderAchievementJournal} from './achievement-journal.mjs';
 
 const patch = fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const catalogText = patch.match(/const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\n  \});/)[1];
@@ -62,7 +62,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or Tokens\./);
+  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock named styles\. Style Coins require an explicit Shop check and claim\. Device observations do not award Style Coins\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -75,7 +75,7 @@ test('only current authoritative unlock IDs qualify, not a count or a stale proo
 test('empty state and unsupported requirements remain honest', () => {
   assert.deepEqual(buildAchievementProgress().counts,{earned:0,total:0,confirmed:0,local:0});
   assert.equal(buildAchievementProgress({cosmetics:{theme:[['x','Unknown','future:10']]}}).milestones.length,0);
-  assert.match(renderAchievementJournal(),/No progress yet/);
+  assert.match(renderAchievementJournal(),/confirmed completion count not supplied/);
 });
 
 test('player-facing goals use natural grammar and rewards use friendly category labels', () => {
@@ -87,27 +87,62 @@ test('player-facing goals use natural grammar and rewards use friendly category 
   assert.equal(model.milestones.find(item => item.id === 'local:practiceFinishes:10').goal,'10 practice finishes');
   const html = renderAchievementJournal({cosmetics,progress:{local:{practiceFinishes:1}}});
   for (const raw of ['(nameFont)','(emblemBackdrop)','(stageTint)','Preview ','Journal milestone / no reward']) assert.ok(!html.includes(raw),raw);
-  for (const text of ['Achievements','Earn styles as you race.','View reward:','Background color','Name font','Emblem background','Personal milestone','Saved on this device']) assert.ok(html.includes(text),text);
+  for (const text of ['Achievements','Earn styles as you race.','View reward:','Background color','Name font','Emblem background','Device progress','Tracking only']) assert.ok(html.includes(text),text);
 });
 
 test('purchased shop designs are not racing goals or spendable achievement awards',()=>{
  const model=buildAchievementProgress({cosmetics,progress:{confirmed:{...profile,cosmeticUnlocks:['plate:pitlane-ticket','stage:apex-observatory','stripe:vector-ribbon']}}});
  assert.ok(model.milestones.every(item=>!String(item.requirement).startsWith('shop:')));
- assert.doesNotMatch(renderAchievementJournal({model}),/Claim Tokens|earned Tokens|wallet balance|reward points/i);
+ assert.doesNotMatch(renderAchievementJournal({model}),/Claim Style Coins|earned Style Coins|wallet balance|reward points/i);
 });
 
-test('journal caption distinguishes listed cosmetic goals from personal tiers without extending Tokens rewards',()=>{
+test('journal caption distinguishes listed cosmetic goals from personal tiers without extending Style Coins rewards',()=>{
  const html=renderAchievementJournal({progress:{local:{pbCount:1}},cosmetics:{}});
- assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or Tokens\./);
+ assert.match(html,/Cosmetic goals unlock named styles\. Style Coins require an explicit Shop check and claim\. Device observations do not award Style Coins\./);
  assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });
 
 test('expanded details show exact goals and actual catalog rewards without proposing currency', () => {
   const html = renderAchievementJournal({cosmetics:{theme:[['test-theme','Exact theme label',3]]},progress:{confirmed:{raceCount:1},local:{practiceFinishes:2}}});
-  assert.match(html,/Actual rewards: 1 cosmetic choice/);
+  assert.match(html,/Direct unlock: Theme: Exact theme label/);
   assert.match(html,/View reward: Exact theme label/);
   assert.match(html,/Current progress: 1<br>Goal: 3/);
   assert.match(html,/<details class="aj-more" open><summary>How it counts/);
-  assert.match(html,/No cosmetic reward or Tokens\./);
-  assert.doesNotMatch(html,/rewardPoints|proposal-only|Claim Tokens|\+\d+ Tokens/);
+  assert.match(html,/No unlock or Style Coins\./);
+  assert.doesNotMatch(html,/rewardPoints|proposal-only|Claim Style Coins|\+\d+ Style Coins/);
+});
+
+
+test('rewarded journal excludes all proposal tiers and keeps exact local observations separate',()=>{
+ const input={cosmetics,progress:{confirmed:{...profile,extraCount:0},local:{practiceFinishes:17,extraCount:25,historyVisits:10,teleportCount:100}}};
+ const before=JSON.stringify(input),model=buildAchievementJournalModel(input);
+ assert.ok(model.milestones.length>0);assert.ok(model.milestones.every(item=>item.source==='catalog'&&item.rewards.length>0||item.source==='currency'&&item.reward.amount>0&&!item.earned));
+ assert.ok(!model.milestones.some(item=>item.id.startsWith('achievement:v1:')));
+ assert.equal(model.counts.local,0);assert.equal(model.milestones.find(x=>x.id==='discovery:extra:1').earned,false);
+ assert.deepEqual(model.observations,[{metric:'practiceFinishes',value:17},{metric:'extraCount',value:25}]);
+ assert.equal(JSON.stringify(input),before);
+ const html=renderAchievementJournal(input);assert.doesNotMatch(html,/cosmetic choice|Tokens|\bCP\b|teleportCount|historyVisits/);
+ assert.match(html,/data-aj-sort/);assert.match(html,/aria-describedby=/);assert.match(html,/data-aj-reward-icon/);
+ assert.match(html,/No unlock or Style Coins/);
+});
+
+test('sorting is stable, pure, unknown-last for progress, and counts actual unlocks only',()=>{
+ const items=[{id:'a',goal:'Alpha',target:3,value:null,ratio:0,rewards:[{}]},{id:'b',goal:'Bravo',target:2,value:1,ratio:.5,rewards:[{},{}]},{id:'c',goal:'Charlie',target:1,value:1,ratio:1,rewards:[{}]}];
+ const before=JSON.stringify(items);
+ assert.deepEqual(sortAchievementJournalItems(items,'progress').map(x=>x.id),['c','b','a']);
+ assert.deepEqual(sortAchievementJournalItems(items,'rewards').map(x=>x.id),['b','c','a']);
+ assert.deepEqual(sortAchievementJournalItems(items,'name').map(x=>x.id),['a','b','c']);
+ assert.deepEqual(sortAchievementJournalItems(items,'target').map(x=>x.id),['c','b','a']);
+ assert.equal(JSON.stringify(items),before);
+});
+
+
+test('seven actual currency rows use confirmed casual completions, never infer claims or money from local progress',()=>{
+ const model=buildAchievementJournalModel({progress:{confirmed:{casualCompletionCount:20},local:{casualCompletionCount:89,raceCount:89,teleportCount:100}}});
+ const rows=model.milestones.filter(x=>x.source==='currency');assert.equal(rows.length,7);assert.equal(model.counts.earned,0);
+ assert.ok(rows.every(x=>!x.earned&&x.value===20&&x.reward.currency==='Style Coins'));
+ const html=renderAchievementJournal({model,family:'currency',filter:'all'});
+ assert.match(html,/Eligible to check/);assert.match(html,/Open Shop to check &amp; claim/);assert.match(html,/Claim history is not supplied here/);
+ assert.doesNotMatch(html,/already claimed|CLAIMED|coins earned|balanceAfter|wallet balance/i);
+ assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,20]);
 });

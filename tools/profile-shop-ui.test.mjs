@@ -12,12 +12,12 @@ test('display prices follow every canonical grant without auth, storage, network
  assert.equal(io,0);host.dispose();assert.equal(io,0);
 });
 
-test('Tokens presentation has no I/O or legacy CP labels, and leaves generic shop APIs intact',()=>{
+test('Style Coins presentation has no I/O or legacy CP labels, and leaves generic shop APIs intact',()=>{
  const source=fs.readFileSync(new URL('./profile-shop-ui.mjs',import.meta.url),'utf8');
  assert.doesNotMatch(source,/\bCP\b|Three original|fetch\(|XMLHttpRequest|firebase|localStorage|sessionStorage|indexedDB/);
  assert.match(source,/export function mountProfileShopUi/);assert.match(source,/walletRevision:revision/);
  assert.match(source,/draftOnly:true/);assert.match(source,/item\.price===known\.price/);
  const host=fs.readFileSync(new URL('./profile-shop-host.mjs',import.meta.url),'utf8');
- assert.match(host,/from '\.\/profile-shop-ui\.mjs'/);assert.match(host,/profile-shop-ui\.css/);
+ assert.match(host,/profile-shop-ui\.mjs.*new URL\(import\.meta\.url\)\.search/);assert.match(source,/profile-shop-art\.mjs.*new URL\(import\.meta\.url\)\.search/);assert.match(host,/profile-shop-ui\.css/);
  assert.doesNotMatch(host,/profile-achievement-journey|version:2,items:PROFILE_SHOP_CATALOG/);
 });

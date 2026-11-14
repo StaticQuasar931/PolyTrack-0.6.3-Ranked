@@ -1161,3 +1161,7 @@ html body .track-info-ui .leaderboard-ui > .button-wrapper:has(> [data-personal-
 .profile-achievement-journey>summary strong{color:#ffd185}.profile-achievement-journey>summary span{font-size:16px;color:#b9d4e9}
 .profile-achievement-journey>summary:focus-visible{outline:3px solid #85e8fb;outline-offset:2px}
 @media(max-width:480px){.profile-achievement-journey>summary{align-items:flex-start;flex-direction:column;gap:4px}}
+
+[data-studio-favorite-preview]{display:flex;align-items:center;gap:8px;color:#c6d9ef;font-size:16px;min-width:0}[data-studio-favorite-preview] img,[data-studio-favorite-preview] svg{width:28px!important;height:28px!important;object-fit:contain;flex:none}.studio-track-options [role=option]{display:flex;align-items:center;gap:10px}.studio-track-options [role=option] img,.studio-track-options [role=option] svg{width:42px!important;height:42px!important;object-fit:contain;flex:none}
+
+.profile-hub{background-color:color-mix(in srgb,var(--profile-accent,#7ee7ff) 4%,#203363)!important}.profile-hub .ph-header{border-bottom-color:color-mix(in srgb,var(--profile-accent,#7ee7ff) 25%,#7395bd)}[data-studio-preview-part]{cursor:pointer}[data-studio-preview-part]:focus-visible{outline:2px solid #7ee7ff;outline-offset:3px}

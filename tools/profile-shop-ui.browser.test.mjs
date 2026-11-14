@@ -38,7 +38,7 @@ async function fixture(t,extra={},viewport={width:1366,height:768}){
   },{catalog:SHOP_CATALOG,extra});return page;
 }
 
-test('all canonical and staged styles render with Tokens, categories and no overflow on phone/laptop',async t=>{
+test('all canonical and staged styles render with Style Coins, categories and no overflow on phone/laptop',async t=>{
  assert.ok(SHOP_CATALOG.length>=9);
  for(const [name,width,height]of[['laptop',1366,768],['phone',360,800]]){
   const page=await fixture(t,{}, {width,height});assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length);assert.equal(await page.locator('.sp-art svg').count(),SHOP_CATALOG.length);
@@ -55,7 +55,7 @@ test('all canonical and staged styles render with Tokens, categories and no over
 });
 test('points are comma formatted; only confirmed same-account wallet data is shown',async t=>{
  const page=await fixture(t,{wallet:{status:'confirmed',accountId:'driver-a',balance:12345,revision:2},catalog:SHOP_CATALOG.map((item,index)=>index?item:{...item,price:1234})});
- assert.equal(await page.locator('.sp-summary strong').innerText(),'12,345 Tokens');assert.equal(await page.getByRole('button',{name:'Buy for 1,234 Tokens'}).count(),0);assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length-1);
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'12,345 Style Coins');assert.equal(await page.getByRole('button',{name:'Buy for 1,234 Style Coins'}).count(),0);assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length-1);
  await page.evaluate(()=>cleanup.update({wallet:{status:'pending',accountId:'driver-a',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not available');
  await page.evaluate(()=>cleanup.update({wallet:{status:'confirmed',accountId:'other',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not available');
  assert.equal(await page.locator('[data-sp-action="claim"]:enabled,[data-sp-action="buy"]:enabled').count(),0);
@@ -65,16 +65,16 @@ test('purchase requires confirmation, cancel restores focus, and pending never d
  await buy().click();assert.equal(await page.evaluate(()=>calls.buy.length),0);await page.keyboard.press('Escape');assert.equal(await buy().evaluate(node=>node===document.activeElement),true);
  await buy().click();const bounds=await page.locator('.sp-confirm').boundingBox();assert.ok(bounds.y>=60&&bounds.y+bounds.height<=800);
  await page.screenshot({path:path.join(evidence,'studio-style-shop-confirm-phone.png')});await page.getByRole('button',{name:'Confirm purchase'}).click();assert.equal(await page.evaluate(()=>calls.buy.length),1);
- assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Tokens');assert.equal(await page.locator('[data-sp-action="buy"]:enabled,[data-sp-action="claim"]:enabled').count(),0);
- await page.evaluate(()=>resolveBuy({status:'pending'}));assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Tokens');
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');assert.equal(await page.locator('[data-sp-action="buy"]:enabled,[data-sp-action="claim"]:enabled').count(),0);
+ await page.evaluate(()=>resolveBuy({status:'pending'}));assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');
 });
-test('daily 8 Tokens and milestone claims are explicit; pending/error never invent points',async t=>{
- const page=await fixture(t);assert.equal(await page.evaluate(()=>calls.claim.length),0);assert.match(await page.locator('.sp-earn').innerText(),/1 track \+20 Tokens.*5 tracks \+30 Tokens.*20 tracks \+50 Tokens/);
- await page.getByRole('button',{name:'Daily visit Claim 8 Tokens',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[0].rewardId),'login');
- assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Tokens');assert.equal(await page.locator('[data-sp-action="claim"]:enabled').count(),0);
- await page.evaluate(()=>resolveClaim({confirmed:true,accountId:'driver-a',rewardId:'login',wallet:{status:'confirmed',accountId:'driver-a',balance:108,revision:3}}));await page.waitForFunction(()=>document.querySelector('.sp-summary strong').textContent==='108 Tokens');
- await page.getByRole('button',{name:'1 / 5 / 20 ranked tracks Claim milestones',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[1].rewardId),'milestones');
- await page.evaluate(()=>rejectClaim(Error('not confirmed')));await page.waitForFunction(()=>document.querySelector('.sp-status').textContent.includes('Could not confirm'));assert.equal(await page.locator('.sp-summary strong').innerText(),'108 Tokens');
+test('daily 8 Style Coins and milestone claims are explicit; pending/error never invent points',async t=>{
+ const page=await fixture(t);assert.equal(await page.evaluate(()=>calls.claim.length),0);assert.match(await page.locator('.sp-earn').innerText(),/1 track \+20 Style Coins.*5 tracks \+30 Style Coins.*20 tracks \+50 Style Coins.*35 tracks \+30 Style Coins.*50 tracks \+40 Style Coins.*70 tracks \+50 Style Coins.*89 tracks \+60 Style Coins/);
+ await page.getByRole('button',{name:'Daily visit Claim 8 Style Coins',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[0].rewardId),'login');
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');assert.equal(await page.locator('[data-sp-action="claim"]:enabled').count(),0);
+ await page.evaluate(()=>resolveClaim({confirmed:true,accountId:'driver-a',rewardId:'login',wallet:{status:'confirmed',accountId:'driver-a',balance:108,revision:3}}));await page.waitForFunction(()=>document.querySelector('.sp-summary strong').textContent==='108 Style Coins');
+ await page.getByRole('button',{name:'1 / 5 / 20 / 35 / 50 / 70 / 89 ranked tracks Claim milestones',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[1].rewardId),'milestones');
+ await page.evaluate(()=>rejectClaim(Error('not confirmed')));await page.waitForFunction(()=>document.querySelector('.sp-status').textContent.includes('Could not confirm'));assert.equal(await page.locator('.sp-summary strong').innerText(),'108 Style Coins');
 });
 test('Apply requires confirmed ownership and invokes draft-only callback, never purchase or publication',async t=>{
  const page=await fixture(t);assert.equal(await page.locator('[data-sp-action="apply"]').count(),0);
@@ -88,7 +88,16 @@ test('closed gates, legacy car catalogs, unsafe labels and late cross-account re
  await page.evaluate(()=>cleanup.update({catalog:{version:1,items:[{id:'mint-rally',label:'stock',price:20}]}}));assert.equal(await page.locator('.sp-item').count(),0);
  await page.evaluate(async()=>{const {PROFILE_SHOP_CATALOG}=await import('/tools/profile-shop-catalog.mjs');cleanup.update({catalog:PROFILE_SHOP_CATALOG.map((item,index)=>index?item:{...item,label:'<img src=x onerror=alert(1)>'}),purchaseEnabled:true});});assert.equal(await page.locator('img').count(),0);
  await page.locator('[data-sp-action="buy"][data-sp-id="profile-pitlane-ticket"]').click();await page.getByRole('button',{name:'Confirm purchase'}).click();
- await page.evaluate(()=>{cleanup.update({accountId:'driver-b',wallet:{status:'confirmed',accountId:'driver-b',balance:7,revision:1},inventory:{status:'confirmed',accountId:'driver-b',ownedIds:[]}});resolveBuy({confirmed:true,accountId:'driver-a',itemId:'profile-pitlane-ticket',wallet:{status:'confirmed',accountId:'driver-a',balance:80,revision:3}});});assert.equal(await page.locator('.sp-summary strong').innerText(),'7 Tokens');
+ await page.evaluate(()=>{cleanup.update({accountId:'driver-b',wallet:{status:'confirmed',accountId:'driver-b',balance:7,revision:1},inventory:{status:'confirmed',accountId:'driver-b',ownedIds:[]}});resolveBuy({confirmed:true,accountId:'driver-a',itemId:'profile-pitlane-ticket',wallet:{status:'confirmed',accountId:'driver-a',balance:80,revision:3}});});assert.equal(await page.locator('.sp-summary strong').innerText(),'7 Style Coins');
  const source=await fs.readFile(new URL('./profile-shop-ui.mjs',import.meta.url),'utf8');assert.doesNotMatch(source,/fetch\(|XMLHttpRequest|firebase|localStorage|sessionStorage|indexedDB/);
  await page.evaluate(()=>cleanup());assert.equal(await page.locator('.shop-preview').count(),0);
+});
+
+test('swatch text uses only host-provided racer identity, never invented generic identity or rank',async t=>{
+ const page=await fixture(t);
+ assert.equal(await page.locator('[data-profile-art-sample]').count(),0);
+ assert.equal(await page.locator('.sp-art svg text').count(),0);
+ await page.evaluate(()=>cleanup.update({getRacerName:()=> 'Fixture Racer'}));
+ const texts=await page.locator('.sp-art svg text').allTextContents();assert.ok(texts.length>0);assert.ok(texts.every(text=>text==='Fixture Racer'));
+ assert.doesNotMatch(await page.locator('.shop-preview').innerText(),/\bTokens\b|\bCP\b/);
 });

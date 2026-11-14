@@ -22,7 +22,7 @@ before(async () => {
     if (url.pathname === '/') {
       res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PolyTrack native racer hub fixture</title><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#16254c;color:white;font-family:ForcedSquare,sans-serif}</style><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><div class="overall-profile-card"><button id="profile-return" type="button">Racer profile</button><main id="content"></main></div></div></div></html>');return;
     }
-    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/tools/studio-art-polish.css','/tools/profile-shop-art.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
+    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-journal-currency|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/tools/studio-art-polish.css','/tools/profile-shop-art.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
     if (!allowed) {res.writeHead(404).end();return;}
     const gate = gates.get(url.searchParams.get('v'));
     if (url.pathname === '/tools/achievement-journal.mjs' && gate) {gate.started();await gate.wait;}
@@ -73,7 +73,7 @@ async function nativeFixture(page) {
       sanitizeProfileCosmetics:value=>({...COSMETIC_DEFAULTS,...value}),cosmeticsForEntry:()=>({...COSMETIC_DEFAULTS}),
       localExtraTrackCount:()=>0,cosmeticTitleText:()=> 'Contender',profileBadgeMarkup:()=>'',
       escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
-      trackInfo:id=>({id,name:'Summer 1'}),safeDisplayName:value=>value,
+      trackInfo:id=>({id,name:'Summer 1'}),trackThumbnailMarkup:()=>'',safeDisplayName:value=>value,
       __pt062NormalizeStyle:value=>value||'',__pt062GetRememberedStyle:()=>'',normalizeCarColorId:value=>value,
       overallFooterLayoutCss:()=>'',TRACK_CATALOG:new Map([['summer1',{id:'summer1',name:'Summer 1',type:'official'}]]),
       saveRankedProfileCosmetics:()=>{window.published=(window.published||0)+1;}
@@ -84,6 +84,7 @@ async function nativeFixture(page) {
     ${extract('applyProfileCosmetics')}
     ${extract('ensureStyles')}
     ${extract('profileCustomizerMarkup')}
+    ${extract('renderStudioFavorite')}
     ${extract('setupRacerStudio')}
     ensureStyles();
     const fixtureEntry={userId:'racer-a',name:'APEX RACER',raceCount:8,pbCount:14,extraCount:0,totalPlaytimeMs:5400000,trackWins:0,rank:18,badges:{betaTester:false},cosmeticUnlocks:[]};
@@ -93,7 +94,7 @@ async function nativeFixture(page) {
     panel.addEventListener('click',event=>{${patch.slice(choiceStart,choiceEnd)}${patch.slice(tabStart,tabEnd)}${patch.slice(saveStart,saveEnd)}});
     panel.addEventListener('change',event=>{${patch.slice(changeStart,changeEnd)}});
     window.nativeCatalog=PROFILE_COSMETIC_OPTIONS;window.nativeEntry=fixtureEntry;
-    window.originalStudio=document.querySelector('.profile-customizer');
+    window.originalStudio=document.querySelector('.profile-customizer');window.originalStudioHidden=originalStudio.hidden;
   `});
   await page.addStyleTag({url:base + '/tools/racer-studio-polish.css'});
   await page.evaluate(async () => {
@@ -109,7 +110,7 @@ test('native dialog is lazy, revision pinned, inline to event ancestry, and rest
   assert.equal(await page.locator('.profile-achievements').count(),0);
   assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
   assert.equal(await page.locator('[data-aj-root]').count(),0);
-  assert.equal(await page.locator('[data-ph-launch]').count(),2);
+  assert.equal(await page.locator('[data-ph-launch]:not([hidden])').count(),2);
   assert.equal(await page.locator('.profile-customizer').isVisible(),false);
   assert.ok(!requests.some(url => url.includes('/achievement-journal.mjs')));
   await page.evaluate(() => {window.original = document.querySelector('.profile-customizer');original.addEventListener('input',()=>window.draftEvents=(window.draftEvents||0)+1);});
@@ -169,7 +170,7 @@ test('native cosmetic delegation, drafts, search and explicit publish survive St
   await page.locator('[data-save-profile-cosmetics]').click();assert.equal(await page.evaluate(() => published),1);
   await page.evaluate(() => cleanup());
   assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el === originalStudio),true);
-  assert.equal(await page.locator('#content>.profile-customizer').getAttribute('hidden'),null);
+  assert.equal(await page.locator('#content>.profile-customizer').evaluate(node=>node.hidden===originalStudioHidden),true);
   assert.equal(await page.locator('dialog').count(),0);
 });
 
@@ -240,7 +241,7 @@ test('native full-screen hub fits desktop, phone and landscape with usable rewar
     assert.equal(await page.locator('dialog').evaluate(el => el.scrollWidth <= el.clientWidth),true,name);
     if (name==='landscape') {
       const goal=await page.locator('[data-aj-node]:visible').first().boundingBox();
-      assert.ok(goal.y<height-30,'short landscape viewport shows the actual first goal, not only chrome');
+      assert.ok(goal.y<height-30,'short landscape viewport shows the actual first goal, not only chrome: '+JSON.stringify({goal,height}));
     }
     if (name!=='narrow') await page.screenshot({path:path.join(evidence,`racer-hub-achievements-${name}.png`),animations:'disabled'});
     if (name==='phone'||name==='laptop') {
@@ -257,7 +258,7 @@ test('native full-screen hub fits desktop, phone and landscape with usable rewar
 
 test('joined launcher has two native destinations with distinct recognizable SVG marks',async t=>{
   const page=await pageFor(t,{width:390,height:844});await nativeFixture(page);
-  const launcher=page.locator('.profile-achievement-journey');assert.equal(await launcher.locator('button').count(),2);
+  const launcher=page.locator('.profile-achievement-journey');assert.equal(await launcher.locator('button:not([hidden])').count(),2);
   await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
   assert.equal(await launcher.locator('[data-ph-launch="achievements"] svg[data-ph-icon="achievements"]').count(),1);
   assert.equal(await launcher.locator('[data-ph-launch="studio"] svg[data-ph-icon="studio"]').count(),1);
@@ -279,8 +280,8 @@ test('bounded joined launcher preserves native profile paint but keeps hub and a
   await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
   await page.evaluate(()=>document.fonts.ready);
   const launcher=page.locator('.profile-achievement-journey');
-  const joined=await launcher.evaluate(root=>({highlight:getComputedStyle(root).borderBottomWidth,accent:getComputedStyle(root).borderBottomColor,buttons:[...root.querySelectorAll('button')].map(button=>({background:getComputedStyle(button).backgroundColor,border:getComputedStyle(button).borderBottomWidth}))}));
-  assert.equal(joined.highlight,'3px');assert.equal(joined.accent,'rgb(255, 213, 110)');assert.ok(joined.buttons.every(button=>button.background==='rgba(0, 0, 0, 0)'&&button.border==='0px'));
+  const joined=await launcher.evaluate(root=>{const probe=document.createElement('i');probe.style.borderBottomColor='color-mix(in srgb,var(--profile-accent,#7ee7ff) 35%,#8ca8cf)';root.append(probe);const expectedAccent=getComputedStyle(probe).borderBottomColor;probe.remove();return {expectedAccent,highlight:getComputedStyle(root).borderBottomWidth,accent:getComputedStyle(root).borderBottomColor,buttons:[...root.querySelectorAll('button')].map(button=>({background:getComputedStyle(button).backgroundColor,border:getComputedStyle(button).borderBottomWidth}))};});
+  assert.equal(joined.highlight,'3px');assert.equal(joined.accent,joined.expectedAccent);assert.ok(joined.buttons.every(button=>button.background==='rgba(0, 0, 0, 0)'&&button.border==='0px'));
   await launcher.screenshot({path:path.join(evidence,`joined-theme-launcher-${name}.png`),timeout:5000});
   await launcher.locator('[data-ph-launch="studio"]').click();
   assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');
@@ -292,8 +293,12 @@ test('bounded joined launcher preserves native profile paint but keeps hub and a
   await page.screenshot({path:path.join(evidence,`joined-theme-studio-${name}.png`),timeout:5000});
   await page.keyboard.press('Escape');await launcher.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();
   assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'false');
-  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 44, 60)',image:'none'},'journal has an opaque neutral reading surface');
-  assert.doesNotMatch(await page.locator('[data-aj-root]').innerText(),/wallet|planned coins|reward points|proposal|claim|credits earned/i);
+  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 51, 99)',image:'none'},'journal has an opaque neutral reading surface');
+  const journalText=await page.locator('[data-aj-root]').innerText();
+  assert.doesNotMatch(journalText,/wallet|planned coins|reward points|proposal|credits earned/i);
+  assert.match(journalText,/Style Coins require an explicit Shop check and claim/);
+  assert.match(journalText,/Device observations do not award Style Coins/);
+  assert.equal(await page.locator('[data-aj-root] [data-sp-action="claim"],[data-aj-root] [data-aj-claim]').count(),0);
   if(name==='phone'){
    const rail=await page.locator('.aj-paths button:visible').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {family:node.dataset.ajFamily,x:r.x,right:r.right,scrollFits:node.scrollWidth<=node.clientWidth};}));
    assert.ok(rail.some(node=>node.family==='discovery'),'Discovery is visible without horizontal scrolling');
@@ -305,7 +310,7 @@ test('bounded joined launcher preserves native profile paint but keeps hub and a
   await page.evaluate(()=>{const card=document.querySelector('.overall-profile-card');card.classList.replace('cosmetic-theme-forest','cosmetic-theme-crimson');card.classList.replace('cosmetic-stripe-grid','cosmetic-stripe-chevron');});
   assert.notEqual(await page.locator('dialog').evaluate(node=>getComputedStyle(node).getPropertyValue('--profile-pattern')),before,'native pattern variables update without cloning or remounting');
   assert.equal(await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage),'none','profile changes cannot bleed into neutral chrome');
-  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 44, 60)',image:'none'},'journal stays opaque after a profile change');
+  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 51, 99)',image:'none'},'journal stays opaque after a profile change');
   assert.equal(await page.evaluate(()=>window.published||0),0);
  }
 });
@@ -374,4 +379,69 @@ test('1366x768 native sticky preview stays inside its panel and both design acti
   await page.setViewportSize({width:390,height:844});
   assert.equal(await preview.evaluate(el=>getComputedStyle(el).position),'static');
   assert.equal(await preview.evaluate(el=>getComputedStyle(el).maxHeight),'none');
+});
+
+test('owned hub close hook releases its top layer, restores Studio and never resurrects after cleanup',async t=>{
+ const page=await pageFor(t);await nativeFixture(page);await page.evaluate(()=>cleanup.open('studio'));
+ assert.equal(await page.evaluate(()=>document.querySelector('#content').__profileHubClose()),true);
+ assert.equal(await page.locator('dialog.profile-hub[open]').count(),0);
+ assert.equal(await page.locator('dialog.profile-hub .profile-customizer').count(),0);
+ assert.equal(await page.evaluate(()=>document.querySelector('.profile-customizer').isConnected),true);
+ const result=await page.evaluate(()=>{const root=document.querySelector('#content'),old=root.__profileHubClose;cleanup();return {removed:!root.__profileHubClose,stale:old()};});
+ assert.deepEqual(result,{removed:true,stale:false});
+});
+
+test('shop bridge exposes third navigation only when a scoped shop callback is registered',async t=>{
+ const page=await pageFor(t);await nativeFixture(page);
+ assert.equal(await page.locator('[data-ph-launch="shop"]').isVisible(),false);
+ await page.evaluate(()=>{window.shopOpens=0;const root=document.querySelector('#content');root.__profileShopOpen=()=>shopOpens++;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
+ await page.locator('[data-ph-launch="shop"]').click();assert.equal(await page.evaluate(()=>shopOpens),1);
+ await page.evaluate(()=>cleanup.open('studio'));await page.locator('[data-ph-shop]').click();assert.equal(await page.evaluate(()=>shopOpens),2);
+ await page.evaluate(()=>{const root=document.querySelector('#content');delete root.__profileShopOpen;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
+ assert.equal(await page.locator('[data-ph-shop]').isVisible(),false);
+});
+
+test('favorite list consumes first Escape, hub consumes second, outer profile stays open',async t=>{
+ const page=await pageFor(t);await nativeFixture(page);await open(page,'studio');
+ await page.locator('[data-studio-tab="identity"]').click();const favorite=page.locator('[data-cosmetic-favorite]');
+ await favorite.fill('Summer');assert.equal(await favorite.getAttribute('aria-expanded'),'true');
+ await favorite.press('Escape');assert.equal(await favorite.getAttribute('aria-expanded'),'false');
+ assert.equal(await page.locator('dialog.profile-hub').evaluate(node=>node.open),true);
+ assert.equal(await favorite.evaluate(node=>node===document.activeElement),true);
+ await favorite.press('Escape');assert.equal(await page.locator('dialog.profile-hub').evaluate(node=>node.open),false);
+ assert.equal(await page.locator('#overallProfilePopup').isVisible(),true);
+ await page.evaluate(()=>cleanup.open('studio'));await page.locator('[data-studio-tab="identity"]').click();
+ await favorite.fill('Summer');await favorite.press('Escape');assert.equal(await page.locator('dialog.profile-hub').evaluate(node=>node.open),true);
+ await page.evaluate(()=>cleanup());await page.locator('#profile-return').focus();await page.keyboard.press('Escape');
+ assert.equal(await page.locator('dialog.profile-hub').count(),0);
+});
+
+test('recommendation adapters pass unchanged to lazy journal, preserving async result and parent navigation',async t=>{
+ const page=await pageFor(t);
+ await page.route('**/tools/achievement-journal.mjs?v=recommendations-bridge',route=>route.fulfill({contentType:'text/javascript',body:`
+  export function renderAchievementJournal(){return '<div data-aj-root>Offline recommendation adapter fixture</div>';}
+  export function bindAchievementJournal(root,options){window.forwarded=options;return ()=>{window.recommendationDisposals++;};}
+ `}));
+ await page.evaluate(async()=>{
+  const {mountProfileAchievements}=await import('/tools/profile-achievement-bridge.mjs');
+  const root=document.querySelector('#content');root.innerHTML='<details class="profile-customizer"><summary>Studio</summary></details>';
+  window.recommendationRequests=[];window.recommendedTracks=[];window.recommendationDisposals=0;
+  window.recommendationResult=Object.freeze(Array.from({length:5},(_,index)=>Object.freeze({id:'fixture-'+index})));
+  window.parentGetRecommendations=async request=>{recommendationRequests.push(request);return recommendationResult;};
+  window.parentOnRecommendedTrack=track=>{root.__profileHubClose();recommendedTracks.push(track);};
+  window.cleanup=mountProfileAchievements(root,{accountId:'racer-a',revision:'recommendations-bridge',storage:null,
+   getRecommendations:parentGetRecommendations,onRecommendedTrack:parentOnRecommendedTrack});
+ });
+ assert.equal(await page.evaluate(()=>recommendationRequests.length+recommendedTracks.length),0);
+ await page.evaluate(()=>cleanup.open('studio'));
+ assert.equal(await page.evaluate(()=>typeof forwarded),'undefined');
+ await page.evaluate(()=>cleanup.open('achievements'));await page.waitForFunction(()=>!!window.forwarded);
+ const result=await page.evaluate(async()=>{
+  const request=Object.freeze({scope:'opaque-journal-request'}),rows=await forwarded.getRecommendations(request);
+  const row=rows[0];forwarded.onRecommendedTrack(row);
+  return {getter:forwarded.getRecommendations===parentGetRecommendations,navigation:forwarded.onRecommendedTrack===parentOnRecommendedTrack,
+   request:recommendationRequests[0]===request,result:rows===recommendationResult,count:rows.length,track:recommendedTracks[0]===row,open:document.querySelector('dialog.profile-hub').open};
+ });
+ assert.deepEqual(result,{getter:true,navigation:true,request:true,result:true,count:5,track:true,open:false});
+ await page.evaluate(()=>cleanup());assert.equal(await page.evaluate(()=>recommendationDisposals),1);
 });

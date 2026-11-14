@@ -149,3 +149,15 @@ test('future catalog mapping admits exact supported grants only and skips unknow
   const rejected=await import('data:text/javascript;base64,'+Buffer.from(wrong).toString('base64'));
   assert.equal(rejected.getProfileShopDesign('profile-petrol'),null);
 });
+
+
+test('Apex floor shares native contain sizing and never alters car geometry',()=>{
+ assert.match(PROFILE_SHOP_ART_CSS,/--stage-bg:[^}]+center\/contain repeat-x,[^}]+center\/cover/);
+ const ground=PROFILE_SHOP_ART_CSS.match(/--stage-bg:url\("data:image\/svg\+xml,([^"]+)"\) center\/contain/)[1];
+ const svg=decodeURIComponent(ground);assert.match(svg,/viewBox="0 0 200 200"/);assert.match(svg,/M0 164H200V200H0Z/);
+ assert.doesNotMatch(svg,/<image|<filter|<animate|href=/);
+ for(const [width,height]of [[50,48],[58,54],[82,68],[124,100],[260,180],[300,184]]){
+  const unit=Math.min(width,height),nativeBottom=height/2+((160+1)/200-.5)*unit*1.08,groundTop=height/2+(164/200-.5)*unit;
+  assert.ok(nativeBottom>=groundTop&&nativeBottom-groundTop<=3,width+'x'+height+' native contact boundary');
+ }
+});

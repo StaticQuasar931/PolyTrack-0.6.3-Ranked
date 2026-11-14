@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {eventRowVerified} from './client.mjs';
+import {publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs';
 import {finishOrdinal} from '../tools/finish-presentation.mjs';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const dates=source.slice(source.indexOf('export function eventRunDate('),source.indexOf('export function eventStandingsLabel('));
 const ordinals=source.slice(source.indexOf('export function eventOrdinal('),source.indexOf('export function eventTrackName('));
-const ui=vm.runInNewContext(`(()=>{${(dates+ordinals).replace(/export function /g,'function ')};return {eventRunDate,eventExactRunAt,eventDisplayRunAt,eventVerificationLabel,decorateEventRowPresentation,eventOrdinal};})()`,{Date,Number,String,Object,Math,eventRowVerified,finishOrdinal});
+const ui=vm.runInNewContext(`(()=>{${(dates+ordinals).replace(/export function /g,'function ')};return {eventRunDate,eventExactRunAt,eventDisplayRunAt,eventVerificationLabel,decorateEventRowPresentation,eventOrdinal};})()`,{Date,Number,String,Object,Math,eventRowVerified,finishOrdinal,publishedEventAwardPresentation});
 const now=Date.now(),received=now-3600000;
 function rowButton(){
   const element=(tagName='span')=>({nodeType:1,tagName:tagName.toUpperCase(),dataset:{},childNodes:[],attributes:{},setAttribute(key,value){this.attributes[key]=value;},
@@ -89,4 +90,12 @@ test('event finish keeps the native plain-text ordinal and stable updates',()=>{
   const text=f.position.childNodes[0];sync();assert.equal(f.position.childNodes[0],text,'stable ticks do not replace native text');
   place.rank=21;sync();assert.equal(f.position.textContent,'21st');assert.equal(place.rank,21);
   place.rank=1001;place.fieldSize=2048;sync();assert.equal(f.position.textContent,'1\u202f001st');assert.equal(f.position.childNodes.length,1);
+});
+
+test('badge hover reports only actual published earned ERP and never promotes pending points',()=>{
+ const row={rank:2,rp:5050,physicsVerified:true,replayIntegrityVerified:true,pbAt:received};
+ const f=rowButton();ui.decorateEventRowPresentation(f.button,row,now);
+ assert.match(f.state.title,/Published earned ERP: 5,050 ERP/);assert.match(f.state.title,/Not the reward cap or lifetime total/);
+ const pending=rowButton();ui.decorateEventRowPresentation(pending.button,{...row,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting'},now);
+ assert.doesNotMatch(pending.state.title,/5,050|earned ERP/);assert.match(pending.state.title,/Pending$/);
 });

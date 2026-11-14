@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 386,
+  "number": 387,
   "version": "0.6.3",
-  "revision": 328,
+  "revision": 329,
   "notes": [
-    "Protection against accidental closing, and smoother Garage navigation.",
-    "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
-    "More reliable local PB replays and snapshot-based route suggestions."
+    "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
+    "Favorite-track previews and cleaner Racer Studio controls.",
+    "Rolling Hills Event RP now rewards both placement and pace, including past results.",
+    "Safer loading for your recent local replays."
   ],
-  "preparedAt": "2026-11-14T21:49:39.010Z",
-  "committedAt": "2026-11-14T21:50:20.000Z"
+  "preparedAt": "2026-11-14T22:32:11.181Z",
+  "committedAt": "2026-11-14T22:38:32.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

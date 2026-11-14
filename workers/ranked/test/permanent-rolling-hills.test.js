@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { eventWorkerHandler } from '../src/events-worker.js';
 import { eventEncode } from '../src/events-store.js';
 import { PERMANENT_ROLLING_HILLS as R, PermanentRollingHillsError, derivePermanentRollingHills,
-  readPermanentRollingHills, mergePermanentRollingIntoTotals } from '../src/permanent-rolling-hills.js';
+  readPermanentRollingHills, mergePermanentRollingIntoTotals, permanentRollingHillsRp } from '../src/permanent-rolling-hills.js';
 
 const entry = (accountId, timeMs, extra = {}) => ({ accountId, trackId: R.trackId, timeMs, frames: timeMs,
   raceTimeFrames: timeMs, runVerified: true, integrityVerified: true, replayHash: 'a'.repeat(64),
@@ -20,7 +20,7 @@ test('permanent Rolling Hills derives live first-place scoring only from explici
   ]));
   assert.equal(result.complete, true); assert.equal(result.targetMs, 10000);
   assert.equal(result.targetPolicy, 'live-fastest-physics-verified');
-  assert.deepEqual(result.entries.map(row => [row.accountId, row.rp]), [['first', 1001], ['second', 500]]);
+  assert.deepEqual(result.entries.map(row => [row.accountId, row.rp]), [['first', 10101], ['second', 1501]]);
   assert(result.entries.every(row => row.physicsVerified && row.replayIntegrityVerified));
   assert.deepEqual(result.contributions, { normalRp: true, eventRp: true });
   assert(result.entries.every(row => row.runAgeMs === 100 && row.eventRpContribution === row.rp && row.normalRpEligible));
@@ -54,6 +54,7 @@ test('permanent Rolling Hills fails closed for missing, partial, stale or unveri
   for (const value of [
     { ...snapshot(), signature: '' }, { ...snapshot(), sourceRevision: 6 }, { ...snapshot(), schemaVersion: 4 },
     { ...snapshot(), complete: false }, { ...snapshot(), totalEntries: 3 },
+    { ...snapshot(), sourceComplete: false }, { ...snapshot(), publicationPending: true },
     snapshot([entry('hash-only', 10000, { runVerified: false })]),
     snapshot([entry('frame-mismatch', 10000, { frames: 600, raceTimeFrames: 600 })]),
     snapshot(Array.from({ length: R.entryLimit }, (_, index) => entry(`racer-${index}`, 10000 + index)))
@@ -70,8 +71,8 @@ test('combined EventRP preserves earned finite RP and labels the moving permanen
   const combined = mergePermanentRollingIntoTotals({ entries: finiteEntries, complete: true,
     totalEntries: finiteEntries.length, updatedAt: 150 }, rolling);
   const second = combined.entries.find(row => row.accountId === 'second');
-  assert.equal(second.finiteEventRp, 900); assert.equal(second.permanentRollingHillsRp, 500); assert.equal(second.rp, 1400);
-  assert.equal(second.rollingHillsRunAgeMs, 100); assert.equal(second.rollingHillsEventRpContribution, 500);
+  assert.equal(second.finiteEventRp, 900); assert.equal(second.permanentRollingHillsRp, 1501); assert.equal(second.rp, 2401);
+  assert.equal(second.rollingHillsRunAgeMs, 100); assert.equal(second.rollingHillsEventRpContribution, 1501);
   assert.equal(second.events, 3); assert.equal(combined.eventRpComplete, true);
   assert.equal(combined.dynamicComponents.permanentRollingHills.targetPolicy, 'live-fastest-physics-verified');
   assert.throws(() => mergePermanentRollingIntoTotals({ entries: finiteEntries, updatedAt: 150 }, rolling),
@@ -83,7 +84,7 @@ test('reader uses the exact existing S1 snapshot document and wrapper exposes on
   const calls = [];
   const firestore = async path => { calls.push(path); return path === expectedPath ?
     { fields: eventEncode(snapshot()).mapValue.fields } : null; };
-  assert.equal((await readPermanentRollingHills(firestore)).entries[0].rp, 1001);
+  assert.equal((await readPermanentRollingHills(firestore)).entries[0].rp, 10101);
   assert.deepEqual(calls, [expectedPath]);
   const handler = eventWorkerHandler({ EVENTS_ENABLED: 'true', EVENT_RATE_LIMITER: { limit: async () => ({ success: true }) } },
     { request: firestore, authenticate: async () => 'unused', origins: new Set(['https://game.test']) });
@@ -99,4 +100,47 @@ test('merged totals preserve the full field before publication paging',()=>{
  const entries=Array.from({length:199},(_,i)=>({accountId:'finite-'+i,rp:10}));
  const large=mergePermanentRollingIntoTotals({entries,complete:true,totalEntries:199},rolling);
  assert.equal(large.entries.length,201);assert.equal(large.totalEntries,201);assert.equal(large.complete,true);
+});
+
+test('bounded hybrid samples, ties and input-order independence', () => {
+  assert.equal(R.scoreVersion, 'rolling-hills-pace-placement-v2');
+  assert.deepEqual([1,2,3,5,10,25,100].map(rank => permanentRollingHillsRp(rank,10000,10000)), [10101,6006,4431,3020,1796,903,319]);
+  for (const rank of [0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER + 1])
+    assert.throws(() => permanentRollingHillsRp(rank,10000,10000), /invalid_rank/);
+  const rows = [entry('z',10000),entry('a',10000),entry('third',10001)];
+  const result = derivePermanentRollingHills(snapshot(rows));
+  assert.deepEqual(result.entries.map(row => [row.accountId,row.rank,row.rp]), [['a',1,10101],['z',1,10101],['third',3,4430]]);
+  assert.deepEqual(result, derivePermanentRollingHills(snapshot([...rows].reverse())));
+  let previous = R.maxRp;
+  for (let rank = 1; rank <= 10000; rank++) {
+    const rp = permanentRollingHillsRp(rank,10000,10000);
+    assert(rp >= 0 && rp <= previous); previous = rp;
+  }
+});
+
+test('hybrid depends on pace and placement with exact floor, cap and zero', () => {
+  assert.equal(permanentRollingHillsRp(10,18641,19000),1729);
+  assert.equal(permanentRollingHillsRp(10,18641,22000),1289);
+  assert(permanentRollingHillsRp(5,18641,19000)>permanentRollingHillsRp(10,18641,19000));
+  assert.equal(permanentRollingHillsRp(1,20000,10000),10101);
+  assert.equal(permanentRollingHillsRp(10000,1,300000),0);
+  // rank 16 has an exact divisor of 8, exercising an integer floor boundary.
+  assert.equal(permanentRollingHillsRp(16,10000,10000),1262);
+  for(const invalid of [0,-1,1.5,NaN,Infinity,300001,undefined]) {
+    assert.throws(()=>permanentRollingHillsRp(1,invalid,10000),/invalid_time/);
+    assert.throws(()=>permanentRollingHillsRp(1,10000,invalid),/invalid_time/);
+  }
+  for(let rank=1;rank<=100;rank++)for(const time of [10000,10001,12000,20000,300000])
+    assert.equal(permanentRollingHillsRp(rank,10000,time),Math.floor(10101*(10000/time)**2/rank**0.75));
+});
+
+test('negative proof and pending/review states never enter ranking or establish the target', () => {
+  const patches = [{pending:true},{playbackPending:true},{needsReview:true},{reviewHold:true},
+    {verified:false},{eventRpEligible:false},{physicsVerified:false},{replayIntegrityVerified:false},{verified:null},
+    {status:'unavailable'},{verificationStatus:'pending'},{runStatus:'rejected'},
+    {validationState:'mismatch'},{reason:'similar_replay_pending_manual_review'}];
+  const result = derivePermanentRollingHills(snapshot([entry('valid',20000,{validationState:'integrity'}),
+    ...patches.map((patch,i) => entry('excluded-'+i,10000,patch))]));
+  assert.equal(result.targetMs,20000);
+  assert.deepEqual(result.entries.map(row => [row.accountId,row.rp]), [['valid',10101]]);
 });

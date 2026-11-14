@@ -181,7 +181,7 @@ for (const disposition of ['held', 'excluded']) test('an exact ledger ' + dispos
   assert.deepEqual(second.totals, first.totals);
   assert.equal(first.totals.entries[0].finiteEventRp, 77);
   assert.equal(first.totals.entries[0].events, 3);
-  assert.equal(first.totals.entries[0].rp, 77 + 1001);
+  assert.equal(first.totals.entries[0].rp, 77 + 10101);
 });
 
 test('legacy missing run/hash binds only one exact retained original, never a same-time guess', async t => {
@@ -279,7 +279,7 @@ test('totals apply exact old-to-new finite delta once and replace Rolling Hills 
   const result = first.totals.entries[0];
   assert.equal(result.finiteEventRp, 1000 + 77, 'unknown archived contributions remain untouched');
   assert.equal(result.permanentRollingHillsRp, derivePermanentRollingHills(rolling()).entries[0].rp);
-  assert.equal(result.rp, 1077 + 1001);
+  assert.equal(result.rp, 1077 + 10101);
   assert.equal(result.events, 4, 'improving an existing event is not another event');
   assert.equal(result.name, 'Profile Name');
   assert.equal(result.identityUpdatedAt, 1000);
@@ -296,7 +296,7 @@ test('fresh server totals reject old companions, then rebase without doubling or
   assert.deepEqual(rebased.adjustments, []);
   const result = projectNativeEventTotals({serverTotals: freshTotals, projections: [rebased], rollingNormalBoard: rolling()});
   assert.equal(result.totals.entries[0].finiteEventRp, 1077);
-  assert.equal(result.totals.entries[0].rp, 2078);
+  assert.equal(result.totals.entries[0].rp, 11178);
 });
 
 test('new entrant adds one finite event, not any unknown historical periods', async t => {
@@ -899,7 +899,7 @@ test('explicit captured-native Rolling source safely merges 269 totals while sig
   const args = {serverTotals, capturedRollingBoard};
   const first = projectNativeEventTotals(args), second = projectNativeEventTotals(args);
   assert.equal(first.totals.entries.length, 269);
-  assert.equal(first.totals.entries.find(value => value.accountId === accountId).rp, 1011);
+  assert.equal(first.totals.entries.find(value => value.accountId === accountId).rp, 10111);
   assert.equal(Object.hasOwn(first.totals, 'paginatedSource'), false);
   assert.equal(first.totals.nativeEventOverlay.rollingSource.kind, 'captured-native-content-v1');
   assert.deepEqual(first.totals, second.totals);
@@ -921,7 +921,7 @@ test('captured-native Rolling golden ERP/ranks/dates match Worker math with a va
   assert.deepEqual(actual.entries, expected.entries);
   assert.equal(actual.targetMs, expected.targetMs);
   assert.deepEqual(actual.entries.map(value => value.rank), [1, 1, 3]);
-  assert.equal(actual.entries.find(value => value.timeMs === 1500).rp, 667);
+  assert.equal(actual.entries.find(value => value.timeMs === 1500).rp, 1969);
   assert.equal(normal.entries.find(value => value.timeMs === 1860000).runVerified, true, 'normal verification is unchanged');
   assert.equal(actual.sourceTotalEntries, 6); assert.equal(actual.totalEntries, 3); assert.equal(actual.trackId, rh);
   for (const field of ['signature', 'sourceSignature', 'builtAt']) assert.equal(Object.hasOwn(actual, field), false, field);
@@ -1000,7 +1000,7 @@ test('published rebase ignores stale backend deltas and preserves historical res
     projections: [projection], rollingNormalBoard: rolling()});
   const row = result.totals.entries[0];
   assert.equal(row.finiteEventRp, 1077);
-  assert.equal(row.rp, 1077 + 1001);
+  assert.equal(row.rp, 1077 + 10101);
   assert.equal(row.events, 4);
   assert.equal(row.accountCreatedAt, 500);
   assert.equal(row.identityUpdatedAt, 1000);
@@ -1142,8 +1142,8 @@ test('published recovery accepts only a branded captured rolling source and appl
   const captured = deriveCapturedNativeRollingHills({board: normal, expectedSourceHash: nativeEventSourceHash(normal)});
   const args = {publishedBaseline: published, serverTotals: totals(), capturedRollingBoard: captured};
   const result = rebaseNativeEventTotalsFromPublished(args);
-  assert.equal(result.totals.entries[0].permanentRollingHillsRp, 1001);
-  assert.equal(result.totals.entries[0].rp, result.totals.entries[0].finiteEventRp + 1001);
+  assert.equal(result.totals.entries[0].permanentRollingHillsRp, 10101);
+  assert.equal(result.totals.entries[0].rp, result.totals.entries[0].finiteEventRp + 10101);
   assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, capturedRollingBoard: structuredClone(captured)}), /Pinned captured-native/);
   assert.throws(() => rebaseNativeEventTotalsFromPublished({...args, rollingNormalBoard: normal}), /Choose one/);
 });
