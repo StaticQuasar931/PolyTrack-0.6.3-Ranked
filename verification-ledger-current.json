@@ -1,1 +1,5 @@
-{"schemaVersion":1,"directory":"verification-ledger","manifestHash":"9c947b4af046daf852879fa2960a1ca0b806228b264c85bc71240ada634c4abe"}
+{
+  "schemaVersion": 1,
+  "directory": "verification-ledger",
+  "manifestHash": "5a01fb784e07d2411c42c3b2e8834b0a299b509a10a8a3d9ef28ebe7fcc3cf83"
+}
