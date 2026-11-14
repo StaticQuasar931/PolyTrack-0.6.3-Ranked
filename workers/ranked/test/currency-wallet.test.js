@@ -1371,3 +1371,38 @@ test('lost expanded claim reply recovers the exact receipt without re-awarding o
  assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,3);
  assert.equal(f.commits.length,1);assert.equal((await f.run('wallet')).balance,280);
 });
+
+
+async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, holdReply} = {}) {
+ const {createShopControllerStore}=await import('../../../tools/shop-controller.mjs');
+ const {createShopTransport}=await import('../../../tools/shop-transport.mjs');
+ const requests=[];let nonce=0;
+ const storage={getItem:key=>local.get(key)??null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)};
+ const transport=createShopTransport({revision:388,getToken:async()=> 'offline-fixture-token',fetch:async(url,init)=>{
+  const body=init.body?JSON.parse(init.body):null,row={path:new URL(url).pathname,method:init.method,body};requests.push(row);
+  if(body){const saved=JSON.parse(local.get('polytrack-shop-pending-v1:'+ACCOUNT));assert.equal(saved.requestId,body.requestId);}
+  const response=await handleCurrencyRequest(new Request(url,init),{env:{CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION},
+   store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT});
+  const result=await response.clone().json();row.status=response.status;row.result=copy(result);
+  if(row.path==='/v1/currency/claim'&&response.ok){if(afterClaim)await afterClaim(row);if(holdReply)await holdReply(row);}
+  return mutateReply?mutateReply(row,response):response;
+ }});
+ const store=createShopControllerStore({transport,storage,getAccountId:()=>ACCOUNT,getAuthScope:()=> 'offline-auth',
+  makeRequestId:()=> 'milestone-client-'+(++nonce),withAccountLock:async(_id,work)=>work(),now:()=>AT,enabled:true});
+ return {store,requests,local};
+}
+
+test('regression388: real seven-tier claim completes with fresh confirmed280 wallet, fixed costs and exact serialized request',async t=>{
+ t.mock.method(globalThis,'fetch',()=>assert.fail('no real network'));
+ const f=fixture();setMilestones(f,89);const client=await milestoneClient(f);await client.store.load();
+ const start=f.calls.length,commits=f.commits.length,requests=client.requests.length;
+ const result=await client.store.claim('milestones',{confirmed:true});
+ assert.equal(result.outcome.delta,280);assert.equal(result.wallet.status,'confirmed');assert.equal(result.wallet.balance,280);
+ assert.equal(client.store.state().wallet.balance,280);assert.equal(client.store.state().busy,false);assert.equal(client.local.size,0);
+ const calls=f.calls.slice(start),sent=client.requests.slice(requests);
+ assert.equal(calls.filter(call=>call.route.includes('?transaction=')).length,15);
+ assert.equal(f.commits.length-commits,1);assert.equal(f.commits.at(-1).writes.length,3);
+ assert.equal(calls.length,19);assert.deepEqual(sent.map(row=>[row.method,row.path]),[['POST','/v1/currency/claim'],['GET','/v1/currency/wallet']]);
+ assert.deepEqual(sent[0].body,{accountId:ACCOUNT,requestId:'milestone-client-1',rewardId:'milestones'});
+ assert.equal(sent[0].status,200);client.store.dispose();
+});

@@ -14,7 +14,7 @@ function fixture({disk=new Map(),clock={at:1000000},queue,submit=async()=>{throw
   let calls=0,ledgerWrites=0,accountId='self',failSave=false;
   const context={hasPending:!!disk.get('queue')?.length,flushing:false,now:()=>clock.at,QUEUE:'queue',STORE:'events',
     read:(key,fallback)=>clone(disk.has(key)?disk.get(key):fallback),write:(key,value)=>disk.set(key,clone(value)),
-    message:()=>{},cache:new Map(),invalidateReceipt:()=>{},sameEventSubmission,
+    message:()=>{},cache:new Map(),snapshotAttempts:new Map(),invalidateReceipt:()=>{},sameEventSubmission,
     navigator:{onLine:true,...(locks?{locks}:{})},bridge:{accountId:()=>accountId,submit:async value=>{calls++;return submit(value);}}};
   context.submissionRetry=createEventSubmissionRetry({now:()=>clock.at,random,load:()=>clone(disk.get('retry')),
     save:value=>{ledgerWrites++;if(failSave)throw Error('storage full');disk.set('retry',clone(value));return true;}});
@@ -135,4 +135,16 @@ test('old acknowledgement cannot clear a newer attempt cooldown in a concurrent 
 test('failed retry-ledger cleanup after durable acknowledgement never reuploads the accepted attempt',async()=>{
   const f=fixture({queue:[run()],submit:async()=>{f.failSave(true);return {status:'waiting'};}});
   await f.flush();assert.deepEqual(f.queue,[]);f.advance(86400000);await f.flush();assert.equal(f.calls,1);
+});
+
+test('submission acknowledgement retains the displayed board until validated replacement, without any replay reads',async()=>{
+ const f=fixture({queue:[run()],submit:async()=>({status:'waiting'})});
+ const published={period:{id:'weekly'},updatedAt:10,entries:[{accountId:'self',timeMs:21000}]};
+ f.context.cache.set('weekly',published);f.context.snapshotAttempts.set('weekly',{nextAt:9999999});
+ f.context.bridge.readReplay=()=>assert.fail('No replay prefetch');
+ await f.flush();
+ assert.deepEqual(f.context.cache.get('weekly').entries,published.entries);
+ assert.equal(f.context.cache.get('weekly').updatedAt,10);
+ assert.equal(f.context.cache.get('weekly')._eventRefreshNeeded,true);
+ assert.equal(f.context.snapshotAttempts.has('weekly'),false);assert.equal(f.queue.length,0);
 });

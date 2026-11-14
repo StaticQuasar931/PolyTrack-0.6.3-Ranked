@@ -1,12 +1,14 @@
 const releaseInfo = {
-  "number": 388,
+  "number": 389,
   "version": "0.6.3",
-  "revision": 330,
+  "revision": 331,
   "notes": [
-    "More reliable delivery of the latest update and snapshot files."
+    "Fixed uploads after several personal bests in one track session.",
+    "Fixed milestone claims getting stuck after earning newer rewards.",
+    "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
   ],
-  "preparedAt": "2026-11-14T22:43:49.508Z",
-  "committedAt": "2026-11-14T22:46:45.000Z"
+  "preparedAt": "2026-11-14T23:23:51.221Z",
+  "committedAt": "2026-11-14T23:25:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

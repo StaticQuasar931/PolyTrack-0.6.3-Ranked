@@ -64,7 +64,8 @@ test('cache reads do not slide server freshness indefinitely',async()=>{
 test('failed refresh invalidates previously cached authoritative state',async()=>{
  const f=fixture();await f.session.load();f.setHandler(async()=>{throw error('network',false);});
  await assert.rejects(f.session.load({refresh:true}));const count=f.calls.length;
- await assert.rejects(f.session.load());assert.equal(f.calls.length,count+2);assert.equal(f.session.state().wallet,null);
+ await assert.rejects(f.session.load());assert.equal(f.calls.length,count+2);assert.equal(f.session.state().wallet,null);assert.equal(f.session.state().inventory,null);
+ assert.throws(()=>f.session.preparePurchase('mint-rally'),{code:'wallet_unknown'});
 });
 test('authoritative equipment projection is bound to inventory and equip revision',async()=>{
  const e={itemId:'mint-rally',catalogVersion:1,carStyle:'encoded',equippedAt:100,revision:2,ownerUid:'must-not-be-exposed'};
@@ -165,4 +166,60 @@ test('legacy v1 completion still refetches catalog and wallet and keeps legacy p
   const f=fixture(),chosen=await prepared(f);await confirm(f,chosen);assert.equal(f.calls.length,5);
   const before=f.calls.length;await f.session.load({refresh:true,completion:true});
   assert.equal(f.calls.length-before,2);assert.equal(f.calls[before].path,'/v1/shop/catalog');assert.match(f.calls[before+1].path,/\/wallet\?/);
+});
+
+
+const milestoneReceipt=(req,ids,delta,extra={})=>({op:'claim',accountId:req.body.accountId,requestId:req.body.requestId,
+ rewardId:'milestones',outcomeOnly:true,balanceAfter:100+delta,walletRevision:4,duplicate:false,alreadyClaimed:false,
+ delta,claimedRewardIds:ids,...extra});
+
+test('exact backend seven-tier allowlist accepts all127 valid subsets and never turns receipts into wallets',async()=>{
+ const {CURRENCY_MILESTONES}=await import('../workers/ranked/src/currency-wallet.js');
+ assert.deepEqual(CURRENCY_MILESTONES.map(t=>t.rewardId),['tracks-1','tracks-5','tracks-20','tracks-35','tracks-50','tracks-70','tracks-89']);
+ for(let mask=1;mask<128;mask++){
+  const tiers=CURRENCY_MILESTONES.filter((_,i)=>mask&(1<<i)),ids=tiers.map(t=>t.rewardId),delta=tiers.reduce((sum,t)=>sum+t.amount,0);
+  const f=fixture();await f.session.load();f.setHandler(async req=>milestoneReceipt(req,ids,delta));
+  const result=await f.session.claim('milestones',{confirmed:true});assert.equal(result.result.delta,delta);
+  assert.equal(result.wallet,null);assert.equal(result.inventory,null);assert.equal(f.data.size,0);
+  assert.equal(posts(f).length,1);assert.deepEqual(posts(f)[0].body,{accountId:A,requestId:'request-1',rewardId:'milestones'});
+ }
+});
+
+test('unknown duplicate mispriced and malformed milestone outcomes retain original pending identity',async()=>{
+ for(const [ids,delta]of [[['tracks-90'],60],[['tracks-35','tracks-35'],60],[['tracks-35'],31],
+  [[],1],[null,1],[[35],30],[[{}],30],[Array(8).fill('tracks-1'),160]]){
+  const f=fixture();await f.session.load();f.setHandler(async req=>milestoneReceipt(req,ids,delta));
+  await assert.rejects(f.session.claim('milestones',{confirmed:true}),{code:'invalid_claim_response'});
+  assert.equal(f.session.state().wallet,null);
+  assert.equal(JSON.parse([...f.data.values()][0]).requestId,'request-1');assert.equal(f.ids(),1);
+  await assert.rejects(f.session.claim('milestones',{confirmed:true}),{code:'reconciliation_required'});
+ }
+});
+
+test('transient failure hides old balance until fresh confirmation; auth and invalid responses cannot resurrect it',async()=>{
+ const f=fixture();await f.session.load();f.setHandler(async()=>{throw Object.assign(Error('offline'),{code:'shop_unavailable',status:503});});
+ await assert.rejects(f.session.load({refresh:true}));assert.equal(f.session.state().wallet,null);
+ assert.throws(()=>f.session.preparePurchase('mint-rally'),{code:'wallet_unknown'});assert.equal(f.session.state().ownedStatus,'unknown');
+ f.setHandler(async req=>req.path.includes('catalog')?cat:wallet(A,{balance:108,revision:4}));
+ await f.session.load({refresh:true});assert.equal(f.session.state().wallet.balance,108);
+ f.setHandler(async()=>{throw Object.assign(Error('denied'),{code:'profile_not_owned',status:403});});
+ await assert.rejects(f.session.load({refresh:true}));assert.equal(f.session.state().wallet,null);
+ f.setHandler(async()=>{throw Object.assign(Error('offline'),{code:'shop_unavailable',status:503});});
+ await assert.rejects(f.session.load({refresh:true}));assert.equal(f.session.state().wallet,null);
+ f.account(B);f.session.syncAccount();await assert.rejects(f.session.load());assert.equal(f.session.state().wallet,null);
+ f.account(A);f.session.syncAccount();await assert.rejects(f.session.load());assert.equal(f.session.state().wallet,null);
+});
+
+test('ambiguous claim hides balance, serializes clicks, and recovers original identity explicitly',async()=>{
+ const f=fixture();await f.session.load();const d=deferred();f.setHandler(()=>d.promise);
+ const active=f.session.claim('milestones',{confirmed:true});await new Promise(resolve=>setImmediate(resolve));
+ await assert.rejects(f.session.claim('milestones',{confirmed:true}),{code:'purchase_in_flight'});
+ assert.throws(()=>f.session.load(),{code:'purchase_in_flight'});assert.equal(posts(f).length,1);assert.equal(f.ids(),1);
+ d.resolve(Promise.reject(Object.assign(Error('lost'),{code:'shop_unavailable',ambiguous:true})));
+ await assert.rejects(active);assert.equal(f.session.state().wallet,null);
+ assert.equal(f.data.size,1);const saved=[...f.data.values()][0];
+ f.setHandler(async req=>milestoneReceipt(req,['tracks-35','tracks-50','tracks-70','tracks-89'],180,{duplicate:true}));
+ const recovered=await f.session.reconcilePending({confirmed:true});assert.equal(recovered.result.delta,180);
+ assert.equal(recovered.wallet,null);assert.equal(f.data.size,0);assert.equal(f.ids(),1);
+ assert.equal(posts(f)[1].body.requestId,JSON.parse(saved).requestId);
 });

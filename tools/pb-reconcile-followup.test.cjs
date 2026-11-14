@@ -171,6 +171,7 @@ test('memory fallback bounds continuation after storage failure; malformed futur
 
 function withRecordingWriter(h,rows,{storageFails=false}={}){
   const data=new Map(),key='recordings';
+  Object.assign(h,{nativeRecordingMemory:new Map(),nativeRecordingRetryAt:new Map(),invalidateNativePartialReplay:()=>{}});
   Object.assign(h,{RECORDING_STORE_KEY:key,readLocalRaceRows:()=>rows,activeRankedAccountId:()=> 'acct',
     safeRecordingId:value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):null,
     cleanCarId:()=>'',__pt062NormalizeStyle:value=>value,getDefaultCarStyle:()=>'',
@@ -233,4 +234,13 @@ test('native leave wakes one bounded reconciliation, while driving resume and qu
   active=false;h.storage.set('quota',h.Date.now()+900000);h.firebaseQuotaPaused=()=>true;
   h.resumeLocalPbAfterTrackLeave.active=true;h.resumeLocalPbAfterTrackLeave();
   assert.ok([...h.timers.values()].some(timer=>timer.delay>=900000));
+});
+
+test('PB write repair retries a saved denial once, then keeps the confirmed binding on reload',async()=>{
+ const row={trackId:'track',timeMs:1000,replay:'r',replayHash:replayHash('r')};let reads=0;
+ const h=productionHarness({rows:[row],readDoc:async()=>{reads++;return docMissing();}});
+ h.storage.set('state',{acct:{profileWriteSchemaVersion:1,permissionDenied:{track:{signature:h.localPbSyncSignature(row),ownerUid:'uid',retryAt:h.Date.now()+10000000}},retryAt:h.Date.now()+10000000}});
+ h.mirrorRaceResult=async()=>({saved:true});assert.equal((await h.reconcileLocalPersonalBestsToCloud('acct')).uploaded,1);assert.equal(reads,1);
+ assert.equal(h.storage.get('state').acct.profileWriteSchemaVersion,2);
+ assert.equal((await h.reconcileLocalPersonalBestsToCloud('acct')).cached,true);assert.equal(reads,1);
 });

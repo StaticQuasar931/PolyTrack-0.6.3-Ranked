@@ -14,6 +14,9 @@ const uint = n => Number.isSafeInteger(n) && n >= 0;
 const account = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
 const item = id => typeof id === 'string' && /^[a-z0-9-]{1,80}$/.test(id);
 const request = id => typeof id === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(id);
+// Receipt validation only; the server remains the sole award/eligibility authority.
+const MILESTONE_AWARDS = Object.freeze({'tracks-1':20,'tracks-5':30,'tracks-20':50,
+  'tracks-35':30,'tracks-50':40,'tracks-70':50,'tracks-89':60});
 const copy = value => structuredClone(value);
 const fail = code => { throw new ShopSessionError(code); };
 
@@ -285,8 +288,8 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       if(result?.op!=='claim'||result.accountId!==id||result.requestId!==p.requestId||result.rewardId!==p.rewardId||result.outcomeOnly!==true||!uint(result.balanceAfter)||!uint(result.walletRevision)||typeof result.duplicate!=='boolean'||result.alreadyClaimed!==false||!uint(result.delta)||result.delta<1)fail('invalid_claim_response');
       if(p.rewardId==='login'&&result.delta!==8)fail('invalid_claim_response');
       if(p.rewardId==='milestones'){
-        const awards={'tracks-1':20,'tracks-5':30,'tracks-20':50},ids=result.claimedRewardIds;
-        if(!Array.isArray(ids)||ids.length<1||ids.length>3||new Set(ids).size!==ids.length||ids.some(id=>!Object.hasOwn(awards,id))||ids.reduce((n,id)=>n+awards[id],0)!==result.delta)fail('invalid_claim_response');
+        const awards=MILESTONE_AWARDS,ids=result.claimedRewardIds;
+        if(!Array.isArray(ids)||ids.length<1||ids.length>Object.keys(awards).length||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!Object.hasOwn(awards,id))||ids.reduce((n,id)=>n+awards[id],0)!==result.delta)fail('invalid_claim_response');
       }
       check(id,g);const cleaned=remove(p);state.pending=cleaned?null:p;state.result=copy(result);state.wallet=null;state.inventory=null;caches.delete(id);state.status=cleaned?'claimed':'reconciliation-required';return snapshot();
     }catch(error){

@@ -220,7 +220,7 @@ function fixture(t,{edge='healthy',registryMode='required'}={}){
   const eventStore='polytrack-062-events-v1',eventDiskKey=eventStore+'-queue',eventRetryKey=eventStore+'-submission-retry-v1';
   Object.assign(c,{now:()=>clock,bridge:{accountId:()=>account},sessions:{current:()=>null},eventIntent:null,archiveIntent:null,latestFinish:null,
     catalog:{periods},knownPeriods:new Map(periods.map(p=>[p.id,p])),bestRecords:{},hasPending:false,flushing:false,
-    STORE:eventStore,QUEUE:eventDiskKey,BEST:'event-best',REPLAYS:'event-replays',matchingEventRuns,keepEventBest,sameEventSubmission,cache:new Map(),
+    STORE:eventStore,QUEUE:eventDiskKey,BEST:'event-best',REPLAYS:'event-replays',matchingEventRuns,keepEventBest,sameEventSubmission,cache:new Map(),snapshotAttempts:new Map(),
     read:(key,fallback)=>c.readJsonStorage(key,fallback),write:(key,value)=>c.writeJsonStorage(key,value),cacheWrite:(key,value)=>c.writeJsonStorage(key,value),
     invalidateReceipt(){},message(){},tick(){}});
   c.submissionRetry=createEventSubmissionRetry({now:()=>clock,random:()=>0,

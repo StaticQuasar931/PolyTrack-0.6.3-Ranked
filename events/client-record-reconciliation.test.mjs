@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
 import {eventVerifiedPendingMatch,eventLocalReplayBinding,eventPublishedPbCoversReceipt,eventSnapshotFields,
-  eventSnapshotRows,eventOwnPlacementPresentation,eventCompleteFieldSize} from './client.mjs';
+  eventSnapshotRows,eventOwnPlacementPresentation,eventCompleteFieldSize,createEventPbPreviews} from './client.mjs';
 
 globalThis.fetch=()=>{throw Error('No network in event record reconciliation tests');};
 Socket.prototype.connect=globalThis.fetch;
@@ -20,7 +20,7 @@ const waiting=entry=>({...entry,pending:true,verified:false,eventRpEligible:fals
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a);return source.slice(a,b);}
 function render(saved,{local=null,receipt=null,policy='all',enabled=true,filterRows}={}){
-  const accountId=hash(4),context={cache:new Map([[period.id,saved]]),localBest:()=>local,
+  const accountId=hash(4),context={pbPreviews:createEventPbPreviews(),cache:new Map([[period.id,saved]]),localBest:()=>local,
     ownReceipts:new Map(receipt?[[period.id+'_'+accountId,receipt]]:[]),
     bridge:{accountId:()=>accountId,snapshotOnly:()=>true,filterRows},
     eventSnapshotFields,eventOwnPlacementPresentation,eventCompleteFieldSize,readEventPlacementSettings:()=>({enabled,policy}),

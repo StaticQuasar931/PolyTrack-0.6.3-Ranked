@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {retainEventSnapshotDates} from './client.mjs';
+import {retainEventSnapshotDates,eventPendingRows} from './client.mjs';
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function snapshot('),source.indexOf('  function updateEventRefreshControl('));
 function fixture(readSnapshot,readArchivedSnapshot,snapshotOnly=false){
  const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),saved=new Map();let at=1000000;
- const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,retainEventSnapshotDates,bridge:{readSnapshot,readArchivedSnapshot,snapshotOnly:()=>snapshotOnly}};
- return {cache,snapshotFetching,snapshotAttempts,saved,advance:ms=>{at+=ms;},run:vm.runInNewContext('('+fn+')',context)};
+ const context={cache,snapshotFetching,snapshotAttempts,catalog:{periods:[]},read:(k,v)=>saved.get(k)??v,cacheWrite:(k,v)=>saved.set(k,v),STORE:'test',now:()=>at,retainEventSnapshotDates,eventPendingRows,bridge:{readSnapshot,readArchivedSnapshot,snapshotOnly:()=>snapshotOnly}};
+ return {context,cache,snapshotFetching,snapshotAttempts,saved,advance:ms=>{at+=ms;},run:vm.runInNewContext('('+fn+')',context)};
 }
 const period={id:'p',trackId:'a'.repeat(64)};
 const board=at=>({period,entries:[{accountId:'b'.repeat(64),timeMs:20000,rank:1,rp:100}],updatedAt:at});
@@ -143,4 +143,20 @@ test('production archive bridge keeps bound ended captures nonfinal and rejects 
  for(const invalid of [{...saved,id:'different'},{...saved,period:{...saved.period,id:'different'}},{...saved,period:{...saved.period,trackId:'bad'}},{...saved,entries:null},{...saved,period:{...saved.period,endsAt:1001}}]){value=invalid;assert.equal(await read('old'),null);}
  const before=reads.length;assert.equal(await read('../wrong'),null);assert.equal(reads.length,before);
  assert.ok(reads.every(([kind,id])=>kind==='event'&&id==='old'));
+});
+
+for(const change of ['account','epoch','period'])test('in-flight snapshot is discarded after '+change+' changes without restoring a stale PB',async()=>{
+ let resolve,account='a',epoch=1;const f=fixture(()=>new Promise(done=>resolve=done));
+ f.context.bridge.accountId=()=>account;f.context.bridge.normalEventSnapshotEpoch=()=>epoch;
+ const p={...period,startsAt:100,endsAt:200},request=f.run(p,true);
+ if(change==='account')account='b';else if(change==='epoch')epoch=2;else p.endsAt=300;
+ resolve({...board(20),period:{...period,startsAt:100,endsAt:200}});
+ await assert.rejects(request,/context changed/);assert.equal(f.cache.size,0);assert.equal(f.saved.size,0);
+});
+test('partial source cannot remove a known own PB; validated complete same-period source may replace it',async()=>{
+ const self='b'.repeat(64);let value={...board(30),entries:[],complete:false};const f=fixture(async()=>value,undefined,true);
+ f.context.bridge.accountId=()=>self;const prior={...board(20),complete:true,totalEntries:1};f.cache.set('p',prior);
+ assert.equal(await f.run(period,true),prior);
+ f.advance(60000);value={...value,complete:true,totalEntries:0,updatedAt:40};const next=await f.run(period,true);
+ assert.equal(next.entries.length,0);assert.equal(next.updatedAt,40);
 });

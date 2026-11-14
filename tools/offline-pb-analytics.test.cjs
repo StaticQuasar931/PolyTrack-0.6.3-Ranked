@@ -148,7 +148,7 @@ async function uploadLatest(h){
   const row=h.localBestRowsForAccount('acct')[0];
   return h.mirrorRaceResult('local-pb-reconcile',{...row,recording:row.replay},{accountId:'acct',ownerUid:'uid'});
 }
-test('three driving PBs save replay and analytics immediately, then commit only the best with all increments',async()=>{
+test('three driving PBs save replay and analytics immediately, then commit one canonical PB without losing local increments',async()=>{
   let h=harness();h.paused=false;drive(h);
   for(const time of [3000,2900,2800]){const result=await h.submit('one',time);assert.equal(result.deferred,true);assert.equal(h.cloud.size,0);}
   assert.equal(h.activity().pbs,3);assert.equal(h.activity().runs,3);
@@ -157,9 +157,9 @@ test('three driving PBs save replay and analytics immediately, then commit only 
   h=harness(h.disk);h.paused=false;h.retry=true;
   assert.equal((await uploadLatest(h)).cloudConfirmed,true);
   assert.equal(h.cloud.get('races/acct_one').timeMs,2800);
-  assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  assert.equal(h.cloud.get('profiles/acct').pbCount,1);
   assert.equal(h.cloud.get('races/acct_one').pendingPbTimes,undefined,'local accounting is not a cloud replay field');
-  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,1);
   assert.equal(h.activity().pbs,3);assert.equal(h.activity().runs,3);
 });
 test('pause, hidden HUD and reset stay deferred; native menus and sidebar leave driving',async()=>{
@@ -175,12 +175,12 @@ test('pause, hidden HUD and reset stay deferred; native menus and sidebar leave 
   assert.equal(h.activity().pbs,1);assert.equal(h.activity().runs,2);
   drive(h,['.track-info-ui']);await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,1);
 });
-test('coalesced counter counts only improvements faster than an intervening canonical best',async()=>{
+test('coalesced counter increments once after an intervening canonical best',async()=>{
   const h=harness();h.paused=false;drive(h);
   for(const time of [3000,2900,2800])await h.submit('one',time);
   drive(h,[]);h.cloud.set('races/acct_one',{accountId:'acct',trackId:'one',timeMs:2950});
   h.cloud.set('profiles/acct',{pbCount:10});
-  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,12);
+  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,11);
 });
 test('a guarded upload cannot bypass driving deferral',async()=>{
   const h=harness();drive(h);await h.submit('one',3000);h.paused=false;
@@ -191,7 +191,7 @@ test('a native resubmit from the menu keeps deferred improvement accounting',asy
   const h=harness();h.paused=false;drive(h);
   for(const time of [3000,2900,2800])await h.submit('one',time);
   drive(h,['.menu-ui']);const result=await h.submit('one',2800);
-  assert.equal(result.cloudConfirmed,true);assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  assert.equal(result.cloudConfirmed,true);assert.equal(h.cloud.get('profiles/acct').pbCount,1);
   assert.equal(h.activity().pbs,3);
 });
 test('recording POST for a deferred PB persists locally without a cloud repair or database call',async()=>{

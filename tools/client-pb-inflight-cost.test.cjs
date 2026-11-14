@@ -120,3 +120,15 @@ test('pending work stays bounded without dropping distinct submissions',async()=
   assert.equal(f.cost.transactions,40);assert.equal(f.cost.activity,40);
   assert.equal(f.c.mirrorRaceResult.cloudState.pending.size,0);
 });
+
+for(const priorCount of [null,12,999999])test('coalesced local PB history commits one rule-compatible counter increment: '+priorCount,async()=>{
+ const f=harness({cloud:null}),writes=[];let reads=0,transactions=0;
+ const profile=priorCount===null?null:{accountId:'a'.repeat(64),ownerUid:'uid',pbCount:priorCount,accountCreatedAt:1000000};
+ f.c.runFirebaseTransaction=async(_db,callback)=>{transactions++;await callback({get:async ref=>{reads++;const data=ref.kind==='profiles'?profile:null;return {exists:!!data,data:()=>data};},set:(ref,value)=>writes.push({ref,value})});};
+ const result=await f.run({pendingPbTimes:[1200,1100,1000],ownerUid:'uid'},{accountId:'a'.repeat(64),ownerUid:'uid'});
+ assert.equal(result.saved,true);const race=writes.find(w=>w.ref.kind==='races').value,updated=writes.find(w=>w.ref.kind==='profiles').value;
+ assert.equal(race.pbCount,priorCount===null?1:priorCount+1,'one canonical document represents one committed PB');assert.equal(updated.pbCount,race.pbCount);
+ assert.equal(Object.hasOwn(race,'pendingPbTimes'),false,'local grinding history is never a cloud authority field');
+ assert.equal(transactions,1);assert.equal(reads,2);assert.equal(writes.length,2,'no per-intermediate-PB cloud work');
+ assert.equal(f.h.rows[0].pendingPbTimes.length,3,'local history is retained');
+});

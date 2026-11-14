@@ -2,14 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 388,
+    "number": 389,
     "version": "0.6.3",
-    "revision": 330,
+    "revision": 331,
     "notes": [
-      "More reliable delivery of the latest update and snapshot files."
+      "Fixed uploads after several personal bests in one track session.",
+      "Fixed milestone claims getting stuck after earning newer rewards.",
+      "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
     ]
   },
   "entries": [
+    {
+      "number": 388,
+      "title": "Scope CDN publication to current snapshot files",
+      "commit": "8aa96636bbbba17260771086c75691195365f8ce",
+      "committedAt": "2026-11-14T22:46:45.000Z",
+      "notes": [
+        "More reliable delivery of the latest update and snapshot files."
+      ]
+    },
     {
       "number": 387,
       "title": "Style Coins rewards and pace-based Rolling Hills scoring",
@@ -199,17 +210,6 @@ const historyData = {
       "committedAt": "2026-11-14T03:53:42.000Z",
       "notes": [
         "Improves checks used before publishing updates and preparing overnight snapshots."
-      ]
-    },
-    {
-      "number": 366,
-      "title": "Coalesce PB uploads, add random previews and prepare local capture",
-      "commit": "aafbb59833b3884ee94577cfe96a2a9326955c74",
-      "committedAt": "2026-11-14T03:46:23.000Z",
-      "notes": [
-        "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
-        "Adds random Extra Track previews with saved filters and right-click quick picking.",
-        "Fixes oversized snapshot progress files and local capture sign-in timing."
       ]
     }
   ],
