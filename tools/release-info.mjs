@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 383,
+  "number": 384,
   "version": "0.6.3",
-  "revision": 325,
+  "revision": 326,
   "notes": [
-    "Clearer, larger achievement goals without profile patterns.",
-    "Combine cosmetic previews, undo changes, and see unsaved edits.",
-    "Cleaner profile layout and a redesigned Apex Observatory backdrop."
+    "Customize your car in Garage with starter paint palettes and roof accessories.",
+    "Browse nine profile designs in the Style shop inside Racer Studio.",
+    "Clearer Token prices, more profile styles, and local car appearance saves."
   ],
-  "preparedAt": "2026-11-14T20:08:17.735Z",
-  "committedAt": "2026-11-14T20:11:07.000Z"
+  "preparedAt": "2026-11-14T21:03:30.958Z",
+  "committedAt": "2026-11-14T21:07:07.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
