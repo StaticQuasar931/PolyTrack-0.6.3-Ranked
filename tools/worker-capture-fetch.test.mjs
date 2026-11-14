@@ -76,7 +76,7 @@ test('signer emits exact standard RS256 claims, preserves query bytes, and never
       const parts = options.headers.get(CAPTURE_HEADER_NAME).split('.');
       assert.deepEqual(decode(parts[0]), {alg: 'RS256', typ: 'JWT', kid: account.private_key_id});
       assert.deepEqual(decode(parts[1]), {iss: account.client_email, aud: CAPTURE_AUDIENCE,
-        method: 'GET', path, iat: time / 1000, exp: time / 1000 + 60});
+        method: 'GET', path, iat: time / 1000 - 5, exp: time / 1000 + 55});
       assert.equal(verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]), pair.publicKey,
         Buffer.from(parts[2], 'base64url')), true);
       return new Response('fixture');
@@ -190,4 +190,19 @@ test('normalized URLs and the maximum accepted URL length interoperate with the 
   }});
   await capture(origin + '/v1/events/periods/../catalog?x=%2f');
   await capture(origin + '/v1/status?q=' + 'a'.repeat(2048 - '/v1/status?q='.length));
+});
+
+
+test('small positive signer clock skew is accepted without extending token lifetime', async () => {
+  let serverTime = at;
+  const verifyRead = createCaptureReadVerifier({cryptoImpl:webcrypto,now:()=>serverTime,fetchImpl:async()=>new Response(JSON.stringify({keys:[{...pair.publicKey.export({format:'jwk'}),kid:account.private_key_id}]}),{headers:{'content-type':'application/json'}})});
+  const capture = createWorkerCaptureFetch({serviceAccount:account,now:()=>at+2000,fetchImpl:async(url,options)=>{
+    const request = new Request(url,options), claims=decode(options.headers.get(CAPTURE_HEADER_NAME).split('.')[1]);
+    assert.equal(claims.exp-claims.iat,60);
+    assert.equal(await verifyRead(request,{CAPTURE_SERVICE_ACCOUNT_EMAIL:account.client_email}),true);
+    serverTime=claims.exp*1000;
+    assert.equal(await verifyRead(request,{CAPTURE_SERVICE_ACCOUNT_EMAIL:account.client_email}),false);
+    return new Response(null,{status:204});
+  }});
+  await capture(origin+'/v1/capture-auth');
 });

@@ -36,7 +36,7 @@ function harness(text=source,{tracks=[track],warm=false,exact=false}={}){
       cost(id).serverDocuments++;return {exists:!!saved,data:()=>saved,metadata:{fromCache:false}};},
     set:async patch=>{if(writeFailure)throw writeFailure instanceof Error?writeFailure:Error('write unavailable');cost(id).writes++;docs.set(id,{...docs.get(id),...patch});}
   })};}};
-  const context={Date:{now:()=>clock},localRaceGeneration:0,trackCacheGeneration:0,profileSnapshotEpoch:0,sha256Hex:exact?async value=>createHash('sha256').update(value).digest('hex'):undefined,activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
+  const context={localPbDrivingActive:()=>false,readLocalRaceRows:()=>[],Date:{now:()=>clock},localRaceGeneration:0,trackCacheGeneration:0,profileSnapshotEpoch:0,sha256Hex:exact?async value=>createHash('sha256').update(value).digest('hex'):undefined,activeRankedAccountId:()=>current,window:{firebase:{auth:()=>({currentUser:user}),firestore:{FieldValue:{serverTimestamp:()=> 'server'}}}},
     runFirebaseTransaction:async(_database,callback)=>{
       const writes=[];
       const result=await callback({get:ref=>ref.get(),set:(ref,patch)=>writes.push([ref,patch])});
@@ -124,7 +124,7 @@ test('the coalescing registry is bounded without dropping unique repairs',async(
 test('cold and warm profile GETs stay on published snapshots with zero direct SDK reads',async t=>{
   for(const text of [baseline,source].filter(Boolean)){
     let snapshots=0,schedules=0;
-    const context={URL,log(){},parsePayload:()=>({}),guestAccountId:account,accountIdFromPayload:async()=>account,
+    const context={localPbDrivingActive:()=>false,readLocalRaceRows:()=>[],URL,log(){},parsePayload:()=>({}),guestAccountId:account,accountIdFromPayload:async()=>account,
       invalidateNativePartialReplayAccount(){},localStorage:{setItem(){}},scheduleLocalPbCloudReconcile:()=>{schedules++;},
       PUBLIC_STANDINGS_SNAPSHOT_ONLY:true,readPublicSnapshotBackup:async()=>{snapshots++;return {accountId:account};},
       rememberSnapshotAccountAge(){},makeUserPayload:value=>value,db:()=>{throw Error('Unexpected SDK access');}};
@@ -169,7 +169,7 @@ test('ordinary unavailable and permission failures do not impose quota cooldowns
 function pbHarness(text,mode){
   const storage=new Map(),ledger={};let timer=0;
   const row={accountId:account,ownerUid:'owner',trackId:track,timeMs:1000,replayHash:'f'.repeat(64),replay:mode==='missing-replay'?'':'r'};
-  const context={Date:{now:()=>1000000},LOCAL_PB_RECONCILE_STATE_KEY:'state',FIREBASE_QUOTA_PAUSE_KEY:'quota',OVERALL_PB_DIRTY_KEY:'dirty',
+  const context={localPbDrivingActive:()=>false,readLocalRaceRows:()=>[],Date:{now:()=>1000000},LOCAL_PB_RECONCILE_STATE_KEY:'state',FIREBASE_QUOTA_PAUSE_KEY:'quota',OVERALL_PB_DIRTY_KEY:'dirty',
     COLLECTIONS:{raceResults:'0.6.2_race_results'},localPbReconcilePromises:new Map(),localPbReconcileTimers:new Map(),
     activeRankedAccountId:()=>account,cleanUserId:value=>value,localBestRowsForAccount:()=>[row],canonicalRaceTimeMs:value=>Number(value?.timeMs)||0,
     readJsonStorage:(key,fallback)=>storage.has(key)?JSON.parse(JSON.stringify(storage.get(key))):fallback,

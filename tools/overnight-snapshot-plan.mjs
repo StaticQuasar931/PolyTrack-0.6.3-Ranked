@@ -1,11 +1,11 @@
 export const OVERNIGHT_SNAPSHOT = Object.freeze({
   priorDirectReservations:0,priorWorkerRequests:0,
-  claimTag:'polytrack-oneoff-2026-11-08',priorClaimTag:'polytrack-oneoff-2026-11-07-stored-publication-1',priorSource:'e11d4db3592ecc1d5964948a98884cc7a158e3c2',
+  claimTag:'polytrack-oneoff-2026-11-14',priorClaimTag:'polytrack-oneoff-2026-11-07-stored-publication-1',priorSource:'e11d4db3592ecc1d5964948a98884cc7a158e3c2',
   priorOutcome:'complete',priorPublicationCommit:'4f86fe80e81014534b467b6406f13d5cdcd81539',
-  date:'2026-11-08',execution:'local',cron:'45 8 * * *',start:Date.parse('2026-11-08T08:05:00Z'),
-  reset:Date.parse('2026-11-08T08:00:00Z'),localReservationEnd:Date.parse('2026-11-08T13:00:00Z'),
-  latestFallback:Date.parse('2026-11-08T12:15:00Z'),deadline:Date.parse('2026-11-08T13:00:00Z'),
-  latestCaptureStart:Date.parse('2026-11-08T08:15:00Z'),
+  date:'2026-11-14',execution:'local',cron:'45 8 * * *',start:Date.parse('2026-11-14T08:00:00Z'),
+  reset:Date.parse('2026-11-14T08:00:00Z'),localReservationEnd:Date.parse('2026-11-14T13:00:00Z'),
+  latestFallback:Date.parse('2026-11-14T12:15:00Z'),deadline:Date.parse('2026-11-14T13:00:00Z'),
+  latestCaptureStart:Date.parse('2026-11-14T08:15:00Z'),
   maxJobs:10000,maxRuntimeMs:1500000,packReserveMs:60000,jobTimeoutMinutes:50,replayDocumentLimit:1000
 });
 
@@ -28,7 +28,7 @@ export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,confi
   if(now>=OVERNIGHT_SNAPSHOT.latestCaptureStart)return skip('fresh-capture-deadline-offline-fallback-only');
   if(Number.isSafeInteger(previousCaptureStartedAt)&&previousCaptureStartedAt>=OVERNIGHT_SNAPSHOT.reset&&previousCaptureStartedAt<=now)
     return skip('a-post-midnight-capture-is-already-recorded');
-  return {mode:'snapshot-native',overnight:true,skip:false,reason:manualOvernight?'one-time-Nov8-explicit-kickoff':'one-time-Nov8-scheduled-capture',
+  return {mode:'snapshot-native',overnight:true,skip:false,reason:manualOvernight?'one-time-Nov14-explicit-kickoff':'one-time-Nov14-scheduled-capture',
     maxJobs:OVERNIGHT_SNAPSHOT.maxJobs,maxRuntimeMs:OVERNIGHT_SNAPSHOT.maxRuntimeMs,
     packReserveMs:OVERNIGHT_SNAPSHOT.packReserveMs,jobTimeoutMinutes:OVERNIGHT_SNAPSHOT.jobTimeoutMinutes,
     replayDocumentLimit:OVERNIGHT_SNAPSHOT.replayDocumentLimit};

@@ -69,7 +69,7 @@ function harness(){
   vm.createContext(c);
   vm.runInContext(section("  const DAILY_ACTIVITY_LOCAL_KEY=",'  async function loadStreakLeader('),c);
   vm.runInContext('dailyActivityModulePromise=Promise.resolve(dailyModule);',c);
-  vm.runInContext(section('  async function mirrorRaceResult(','  function localBestRowsForAccount('),c);
+  vm.runInContext(section('  function localPbDrivingActive(','  function localBestRowsForAccount('),c);
   return {c,disk,stats,listeners,logs,cloud:()=>copy(cloud),
     local:()=>JSON.parse(disk.get(LOCAL)||'{"version":2,"buckets":[]}'),
     pending:()=>JSON.parse(disk.get(PENDING)||'{"version":1,"entries":[]}'),

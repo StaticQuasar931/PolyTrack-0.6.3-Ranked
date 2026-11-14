@@ -72,7 +72,8 @@ export function createWorkerCaptureFetch({fetchImpl = globalThis.fetch,
       credential();
       const at = now();
       if (!Number.isSafeInteger(at) || at < 0) throw Error('Invalid Worker capture signing time');
-      const iat = Math.floor(at / 1000);
+      // Backdate within the same 60-second lifetime to tolerate small clock skew.
+      const iat = Math.max(0, Math.floor(at / 1000) - 5);
       const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
       const unsigned = encode({alg: 'RS256', typ: 'JWT', kid: account.private_key_id}) + '.' +
         encode({iss: account.client_email, aud: CAPTURE_AUDIENCE, method: 'GET', path: url.pathname + url.search, iat, exp: iat + 60});

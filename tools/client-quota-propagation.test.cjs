@@ -48,7 +48,7 @@ function harness(){
   localStorage.setItem('polytrack-0.6.2-active-account-id','acct');
   localStorage.setItem('polytrack-0.6.2-last-active-car-style','style');
   const user={uid:'uid'};
-  const context={
+  const context={localPbDrivingActive:()=>false,readLocalRaceRows:()=>[],
     Date:Clock,Intl,Error,EventTarget,Event,MessageEvent,
     CloseEvent:class extends Event{constructor(type,init){super(type);Object.assign(this,init);}},
     crypto:{randomUUID:()=> 'socket'},setTimeout,localStorage,

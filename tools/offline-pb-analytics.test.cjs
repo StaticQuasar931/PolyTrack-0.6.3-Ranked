@@ -11,6 +11,7 @@ function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a
 function harness(disk=new Map()){
   const cloud=new Map();let serial=0,user={uid:'uid'};
   const h={disk,cloud,paused:true,account:'acct',uid:'uid',failStorage:false,dbGate:null,retry:false,
+    document:{querySelector:()=>null},isElementVisible:node=>node.visible!==false,
     lastMirrorSig:'',lastMirrorAt:0,guestAccountId:'acct',LAST_ACTIVE_NAME_KEY:'name',
     LOCAL_PB_RECONCILE_STATE_KEY:'receipts',OVERALL_PB_DIRTY_KEY:'dirty',FIREBASE_QUOTA_PAUSE_KEY:'quota',
     COLLECTIONS:{raceResults:'races',profilesPublic:'profiles'},legacyNameTransactions:new WeakSet(),
@@ -46,7 +47,7 @@ function harness(disk=new Map()){
   vm.runInContext(section("  const DAILY_ACTIVITY_LOCAL_KEY=",'  function dailySpotlight(')+
     section('  function recordDailyActivity(','  async function syncDailyActivity(')+
     section('  function localPersonalBestMs(','  function deploymentSourceOrigin(')+
-    section('  async function mirrorRaceResult(','  function localPbHasAvailableReplay(')+
+    section('  function localPbDrivingActive(','  function localPbHasAvailableReplay(')+
     section('  function rememberConfirmedLocalPb(','  function scheduleLocalPbCloudReconcile('),h);
   h.submit=(track,time,guard=null)=>h.mirrorRaceResult('test',{accountId:'acct',trackId:track,timeMs:time,frames:time,recording:'replay'+time,nickname:'Racer'},guard);
   h.activity=(account=h.account)=>JSON.parse(disk.get('polytrack-0.6.3-daily-activity-local-v2')||'{"buckets":[]}').buckets.find(row=>row.accountId===account)||{};
@@ -136,4 +137,72 @@ test('RacerStudio account switch retains bound queue and does not publish',async
   const h=studio();h.queueCosmeticPublish('acct','uid',{theme:'gold'});h.uid='other';h.paused=false;
   const result=await h.flushPendingCosmeticPublishes({force:true});assert.equal(result.published,false);assert.equal(result.switched,true);
   assert.ok(h.readCosmeticPublishQueue().entries.acct);assert.equal(h.cloud.size,0);
+});
+
+function drive(h,selectors=['.game-ui']){
+  const nodes=new Map(selectors.map(key=>[key,{visible:true}]));
+  h.document.querySelector=key=>nodes.get(key)||null;
+  return nodes;
+}
+async function uploadLatest(h){
+  const row=h.localBestRowsForAccount('acct')[0];
+  return h.mirrorRaceResult('local-pb-reconcile',{...row,recording:row.replay},{accountId:'acct',ownerUid:'uid'});
+}
+test('three driving PBs save replay and analytics immediately, then commit only the best with all increments',async()=>{
+  let h=harness();h.paused=false;drive(h);
+  for(const time of [3000,2900,2800]){const result=await h.submit('one',time);assert.equal(result.deferred,true);assert.equal(h.cloud.size,0);}
+  assert.equal(h.activity().pbs,3);assert.equal(h.activity().runs,3);
+  assert.equal(h.localBestRowsForAccount('acct')[0].replay,'replay2800');
+  assert.deepEqual(Array.from(h.localBestRowsForAccount('acct')[0].pendingPbTimes),[3000,2900,2800]);
+  h=harness(h.disk);h.paused=false;h.retry=true;
+  assert.equal((await uploadLatest(h)).cloudConfirmed,true);
+  assert.equal(h.cloud.get('races/acct_one').timeMs,2800);
+  assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  assert.equal(h.cloud.get('races/acct_one').pendingPbTimes,undefined,'local accounting is not a cloud replay field');
+  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  assert.equal(h.activity().pbs,3);assert.equal(h.activity().runs,3);
+});
+test('pause, hidden HUD and reset stay deferred; native menus and sidebar leave driving',async()=>{
+  const h=harness();h.paused=false;
+  for(const scene of [['.game-ui'],['.game-ui','.pause-screen-ui'],['.session-end-ui']]){
+    drive(h,scene);assert.equal(h.localPbDrivingActive(),true);
+  }
+  const nodes=drive(h);nodes.get('.game-ui').visible=false;assert.equal(h.localPbDrivingActive(),true);
+  for(const menu of ['.menu-ui','.track-info-ui','.track-selection-ui']){
+    drive(h,['.game-ui',menu]);assert.equal(h.localPbDrivingActive(),false);
+  }
+  drive(h);await h.submit('one',3000);await h.submit('one',3000);
+  assert.equal(h.activity().pbs,1);assert.equal(h.activity().runs,2);
+  drive(h,['.track-info-ui']);await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,1);
+});
+test('coalesced counter counts only improvements faster than an intervening canonical best',async()=>{
+  const h=harness();h.paused=false;drive(h);
+  for(const time of [3000,2900,2800])await h.submit('one',time);
+  drive(h,[]);h.cloud.set('races/acct_one',{accountId:'acct',trackId:'one',timeMs:2950});
+  h.cloud.set('profiles/acct',{pbCount:10});
+  await uploadLatest(h);assert.equal(h.cloud.get('profiles/acct').pbCount,12);
+});
+test('a guarded upload cannot bypass driving deferral',async()=>{
+  const h=harness();drive(h);await h.submit('one',3000);h.paused=false;
+  assert.equal((await uploadLatest(h)).cancelled,true);assert.equal(h.cloud.size,0);
+});
+
+test('a native resubmit from the menu keeps deferred improvement accounting',async()=>{
+  const h=harness();h.paused=false;drive(h);
+  for(const time of [3000,2900,2800])await h.submit('one',time);
+  drive(h,['.menu-ui']);const result=await h.submit('one',2800);
+  assert.equal(result.cloudConfirmed,true);assert.equal(h.cloud.get('profiles/acct').pbCount,3);
+  assert.equal(h.activity().pbs,3);
+});
+test('recording POST for a deferred PB persists locally without a cloud repair or database call',async()=>{
+  const h=harness();h.paused=false;drive(h);const result=await h.submit('one',3000);
+  let localWrites=0,databases=0;
+  Object.assign(h,{method:'POST',body:{recordingId:result.uploadId,recording:'replay3000',frames:3000},
+    LAST_ACTIVE_COLORS_KEY:'colors',LAST_ACTIVE_CAR_ID_KEY:'car',cleanCarId:x=>x,
+    recordingUploadAlreadyConfirmed:async()=>false,unrankedExtraRecordings:new Set(),
+    writeRecordingStore:()=>localWrites++,db:async()=>{databases++;throw Error('must not call');}});
+  const first=source.indexOf("      if (String(method).toUpperCase() === 'POST') {",source.indexOf("    if (urlObj.pathname === '/recordings'"));
+  const last=source.indexOf('      const rawIds =',first);
+  const response=await vm.runInContext('(async()=>{'+source.slice(first,last)+'})()',h);
+  assert.equal(response.success,true);assert.equal(localWrites,1);assert.equal(databases,0);
 });

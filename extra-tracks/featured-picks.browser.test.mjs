@@ -7,7 +7,7 @@ let chromium; try {
   const engines = require(process.env.PLAYWRIGHT_MODULE || '../tools/verifier/node_modules/playwright');
   chromium = process.env.POLYTRACK_LAYOUT_BROWSER === 'firefox' ? engines.firefox : engines.chromium;
 } catch {}
-const sources = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'builder-contact.mjs'].map(name => [name, fs.readFileSync(new URL(name, import.meta.url), 'utf8')]));
+const sources = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'random-picker.mjs', 'builder-contact.mjs'].map(name => [name, fs.readFileSync(new URL(name, import.meta.url), 'utf8')]));
 sources.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const font=fs.readFileSync(new URL('../forced_square.woff2',import.meta.url)).toString('base64');
 const css = fs.readFileSync(new URL('catalog.css', import.meta.url), 'utf8')+`\n@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{font-family:ForcedSquare,sans-serif}`;

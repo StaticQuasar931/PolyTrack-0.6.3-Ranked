@@ -16,6 +16,7 @@ function productionHarness({rows,readDoc,paused=()=>false,readRecordingStore=()=
   const timers=new Map(),storage=new Map(),listeners=new Map();
   const addEventListener=(name,callback)=>listeners.set(name,callback);
   const context={
+    localPbDrivingActive:()=>false,
     Date:{now:()=>now},Math,JSON,Map,Array,String,Number,Error,
     LOCAL_PB_RECONCILE_STATE_KEY:'state',FIREBASE_QUOTA_PAUSE_KEY:'quota',OVERALL_PB_DIRTY_KEY:'dirty',
     COLLECTIONS:{raceResults:'race_results'},localPbReconcilePromises:new Map(),localPbReconcileTimers:new Map(),
@@ -37,7 +38,7 @@ function productionHarness({rows,readDoc,paused=()=>false,readRecordingStore=()=
     writeJsonStorage:undefined,log:()=>{},overallLoadState:{},
   };
   context.writeJsonStorage=(key,value)=>storage.set(key,JSON.parse(JSON.stringify(value)));
-  vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+  vm.createContext(context);vm.runInContext(source.slice(source.indexOf('  function localPbDrivingActive('),source.indexOf('  async function mirrorRaceResult('))+source.slice(start,end),context);
   context.advance=ms=>{now+=ms;};context.timers=timers;context.storage=storage;context.listeners=listeners;
   return context;
 }
@@ -219,4 +220,17 @@ test('a service outage stops a six-PB batch after the first read and keeps all P
  const h=productionHarness({rows,readDoc:async()=>{reads++;throw Object.assign(Error('service unavailable'),{code:'unavailable'});}});
  await assert.rejects(h.reconcileLocalPersonalBestsToCloud('acct'),/service unavailable/);
  assert.equal(reads,1);assert.equal(rows.length,6);assert.ok(h.storage.get('state').acct.retryAt>1000000);
+});
+
+test('native leave wakes one bounded reconciliation, while driving resume and queued callbacks do not upload',async()=>{
+  let active=true,reads=0;
+  const h=productionHarness({rows:[{trackId:'track',timeMs:1000,replay:'r'}],readDoc:async()=>{reads++;return docMissing();}});
+  h.localPbDrivingActive=()=>active;
+  h.resumeLocalPbAfterTrackLeave();h.listeners.get('online')();assert.equal(h.timers.size,0);
+  assert.equal((await h.reconcileLocalPersonalBestsToCloud('acct')).deferred,true);assert.equal(reads,0);
+  active=false;h.resumeLocalPbAfterTrackLeave();h.resumeLocalPbAfterTrackLeave();assert.equal(h.timers.size,1);
+  active=true;const timer=[...h.timers.values()][0];await timer.fn();assert.equal(reads,0);
+  active=false;h.storage.set('quota',h.Date.now()+900000);h.firebaseQuotaPaused=()=>true;
+  h.resumeLocalPbAfterTrackLeave.active=true;h.resumeLocalPbAfterTrackLeave();
+  assert.ok([...h.timers.values()].some(timer=>timer.delay>=900000));
 });

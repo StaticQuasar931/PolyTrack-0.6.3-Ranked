@@ -1,12 +1,14 @@
 const releaseInfo = {
-  "number": 365,
+  "number": 366,
   "version": "0.6.3",
-  "revision": 309,
+  "revision": 310,
   "notes": [
-    "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
+    "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
+    "Adds random Extra Track previews with saved filters and right-click quick picking.",
+    "Fixes oversized snapshot progress files and local capture sign-in timing."
   ],
-  "preparedAt": "2026-11-12T09:29:36.191Z",
-  "committedAt": "2026-11-12T09:33:22.000Z"
+  "preparedAt": "2026-11-14T03:44:19.243Z",
+  "committedAt": "2026-11-14T03:46:23.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

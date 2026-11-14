@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {compactExportCheckpoint} from './export-checkpoint.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -90,8 +91,8 @@ function decodeDocument(document) {
 
 async function atomicWrite(directory, relative, value) {
   const destination = path.join(directory, relative);
-  const data = Buffer.from(`${JSON.stringify(value)}\n`, 'utf8');
   const privateCheckpoint = relative === 'export-progress.json';
+  const data = Buffer.from(`${JSON.stringify(privateCheckpoint ? compactExportCheckpoint(value) : value)}\n`, 'utf8');
   if (data.byteLength > (privateCheckpoint ? MAX_RESPONSE_BYTES : MAX_FILE_BYTES)) {
     if (privateCheckpoint) throw Error('Private export checkpoint exceeds its size limit');
     return false;

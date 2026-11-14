@@ -24,12 +24,21 @@ jsDelivr returned explicit 50 MB package-size denials for the source tree on
 October 24, 2026. Cached files could still return 200 while other files returned
 403, so one successful icon request did not establish package availability.
 
-Publication builds two separate Git trees: `cdn-assets` contains runtime files,
-and `cdn-snapshots` contains the current snapshot package. Each omits obsolete
-snapshot generations and development directories/tests. The `cdn-release` branch
-is the small pointer connecting those two immutable trees. All three generated
-branches are required by the current publishing workflow. The source main branch
-and its history are not deleted or rewritten. No private untracked files are read or copied.
+Publication uses seven generated branches:
+
+- `cdn-release`: the small mutable public release pointer.
+- `cdn-assets`: the runtime package, including its bound entry HTML.
+- `cdn-snapshots`: current snapshot metadata, indexes and bootstrap files.
+- `cdn-snapshot-payload-0`, `cdn-snapshot-payload-1`,
+  `cdn-snapshot-payload-2` and `cdn-snapshot-payload-3`: hashed snapshot
+  payloads, routed by the first hexadecimal hash digit modulo four.
+
+The pointer connects six immutable package commits. Splitting metadata and
+payloads keeps each package within the archive budget; combining them can exceed
+it even when individual files are small. Generated package trees omit obsolete
+snapshot generations and development directories/tests. All seven generated
+branches are required by the current publisher. The source main branch and its
+history are not deleted or rewritten. No private untracked files are read or copied.
 
 Every file in the generated tree must be strictly below 20,000,000 bytes,
 including files outside the initial readiness probes. The publisher separately
@@ -38,9 +47,11 @@ headers, and rejects packages at or above 49,000,000 bytes. The archive is a
 measurement, not one large file served to browsers. Identical asset trees reuse
 their existing immutable commit.
 
-The pointer's `commit` is the runtime asset commit, `snapshotCommit` identifies
-the snapshot tree, and `sourceCommit` records the main commit they were built from.
-The publisher binds the entry HTML to that exact immutable snapshot URL. Existing
+The pointer's `commit` is the runtime asset commit; `snapshotCommit` and
+`metadataSnapshotCommit` identify the metadata package; `payloadShards` binds
+its metadata base and four payload bases to full immutable commit URLs.
+`sourceCommit` records the main commit they were built from. The publisher binds
+the entry HTML to that exact metadata URL and payload mapping. Existing
 automatic HTML already reads `commit`, so this change does not require another Apps Script HTML replacement.
 
 ## Order And Coverage
@@ -49,7 +60,7 @@ automatic HTML already reads `commit`, so this change does not require another A
 2. The publisher checks out current main after acquiring its shared release lock.
 3. It checks local snapshot pointers, all bootstrap bindings and required asset
    paths, builds the compact asset tree, enforces all per-file limits, measures
-   each package size, and pushes the runtime and snapshot branches.
+   each package size, and pushes metadata, all four payload branches and runtime.
 4. It compares CDN bytes against the committed entry point, directly referenced
    files, runtime modules, native startup images, physics worker/WASM, snapshot
    bootstrap, and initial rankings payloads. Only after these pass does it
@@ -72,8 +83,8 @@ token with contents:write is needed; no new secret or access token is required.
 
 Commit and push the workflow, tool, tests, and this document to canonical main.
 Check that `Publish CDN release` completes successfully. If repository rules
-prevent creating or updating `cdn-release`, `cdn-assets` or `cdn-snapshots`, fix that narrowly. Do not disable
-main protections or broaden token permissions.
+prevent creating or updating any of the seven generated branches listed above,
+fix that narrowly. Do not disable main protections or broaden token permissions.
 
 Then replace Apps Script's index HTML with the separately generated private
 automatic index.html and update the existing web-app deployment. Keep its normal
@@ -98,7 +109,7 @@ pointer commit. Retry `Publish CDN release` only, not verification or snapshot
 capture. A current mirror alone cannot confirm the canonical loader URL.
 
 Asset readiness failures, hash mismatches and invalid pointers still fail the job.
-An asset readiness failure leaves the old pointer untouched. All five workflows
+An asset readiness failure leaves the old pointer untouched. All repository workflows
 are syntax-checked by the checksum-pinned official actionlint validator before
 CDN publication; offline release-contract tests cover their job handoffs.
 
@@ -120,6 +131,32 @@ CDN-only discovery path.
 Readiness probes cover initial critical files, not full UI correctness, every
 replay or every dynamic import. Run normal release tests before pushing game-code
 changes to main. This channel treats main as the approved publishing branch.
+
+## History, Cleanup And Rollback
+
+Keep all seven generated branches and their immutable package histories. Each
+new package commit retains the previous branch tip as its parent. Commit hashes
+inside release JSON and HTML are text, not Git reachability links. Do not delete,
+force-push, recreate or prune package branches/history merely because the latest
+pointer no longer names an older package. This publisher has no safe automatic
+retirement policy for historical packages.
+
+The five-minute discovery cache is not a package-retention deadline. Already-open
+clients, pinned launchers, saved fallback releases and embedded baselines may
+still request older metadata or payload commits. Browser payload caching is
+opportunistic, not a complete offline release or a reason to remove remote refs.
+Removing obsolete files from a new package tree does not require deleting old
+package history. Any future cleanup needs a separately reviewed dependency and
+retention plan covering all these consumers, not just the current pointer.
+
+Rollback is forward-only through the supported publisher: revert the faulty
+source change in a new descendant commit on main and publish a new release.
+Preserve the old packages throughout. Do not reset branches or restore an old
+release.json verbatim: the publisher rejects backward source ancestry, and the
+loader ignores publication dates older than its saved release. A new release
+must carry its own bound package URLs, entry digest and publication date. No
+Firebase recapture is required solely to revert game code when the existing
+snapshot remains valid. CDN publication is not a fully offline game distribution.
 
 ## References
 

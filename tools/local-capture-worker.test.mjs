@@ -26,7 +26,7 @@ test('wrong collection, duplicate and unplanned documents never reach storage',a
 test('missing or failed document closes the storage capability',async t=>{const f=await fixture(t);f.db.get=async()=>{throw Error('quota');};await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{const id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(getDocument('0.6.2_event_replays',id),/quota/);return getDocument('0.6.2_event_replays',f.targets[1].periodId+'_'+f.targets[1].accountId);}}),/boundary/);});
 test('archive recovery runs after fresh or reused backup and before canonical capture and native verification',async()=>{
   const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
-  assert.match(source,/const backup=reused\?\.manifest\|\|await runPublicSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;/);
+  assert.match(source,/const backup=reused\?\.manifest\|\|await runLocalSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;/);
   const start=source.indexOf('capture:async options=>'),end=source.indexOf('nativePhase:createLocalNativePhaseReceipt',start);
   assert(start>=0&&end>start);
   const callback=source.slice(start,end),backup=callback.indexOf('const backup='),repair=callback.indexOf('await repairPreparedLocalArchives('),canonical=callback.indexOf('await captureLocalCompleteSources(');
@@ -97,7 +97,7 @@ for(const mode of ['fresh','reused','deferred'])test('backup callback executes s
   const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
   const match=/capture:async options=>\{([\s\S]*?return backup;)\},\s*nativePhase:/.exec(source);assert(match);
   const events=[],manifest={deferred:mode==='deferred',marker:'fixture'},capturedCanonical={readTime:'frozen-point'};
-  const callback=Function('reused','runPublicSnapshotBackup','repairPreparedLocalArchives','captureLocalCompleteSources',
+  const callback=Function('reused','runLocalSnapshotBackup','repairPreparedLocalArchives','captureLocalCompleteSources',
     'console','receipt','staging','fullPolicy','directory','capturedCanonical','capturedProfiles','process',
     'return async options=>{'+match[1]+'}')(
     mode==='reused'?{manifest,summary:{}}:null,

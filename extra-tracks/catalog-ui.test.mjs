@@ -1680,3 +1680,81 @@ test('spotlight motivation reuses normalized cached PBs and imports, refreshing 
   assert.doesNotMatch(cls(root, 'sq-extra-featured')[0].textContent, /NaN|undefined|rewards|sponsored/);
   api.destroy();
 });
+
+
+test('random picker opens options on left click and preview only on quick pick or confirmation', async () => {
+ const selected=[], items=[entry(1)];
+ const {root,api}=fixture(items,{onSelect:item=>selected.push(item),onPlay:()=>assert.fail('must not import or drive'),onSave:()=>assert.fail('must not save')});
+ api.open();
+ const [choose,quick]=tag(cls(root,'sq-extra-random-actions')[0],'button');
+ await click(choose);
+ assert.equal(selected.length,0);
+ assert.equal(cls(root,'sq-extra-picker-modal')[0].hidden,false);
+ await click(tag(cls(root,'sq-extra-picker')[0],'button').find(node=>node.textContent==='Open random preview'));
+ assert.deepEqual(selected,items);
+ api.open(); await click(quick); assert.equal(selected.length,2);
+ api.open(); await choose.dispatch('contextmenu'); assert.equal(selected.length,3);
+ api.destroy();
+});
+
+test('picker applies current catalog filters across all pages, never samples an empty set and refuses unsafe fallback', async () => {
+ const selected=[], items=Array.from({length:30},(_,i)=>entry(i+1));
+ const {root,api}=fixture(items,{onSelect:item=>selected.push(item),onPlay:()=>assert.fail('unsafe fallback')});
+ api.open();
+ const search=tag(cls(root,'sq-extra-search-field')[0],'input')[0];
+ search.value='Track 30'; await search.dispatch('input');
+ const choose=tag(cls(root,'sq-extra-random-actions')[0],'button')[0]; await click(choose);
+ const panel=cls(root,'sq-extra-picker')[0];
+ const pool=tag(field(panel,'Track pool'),'select')[0]; pool.value='filtered'; await pool.dispatch('change');
+ await click(tag(panel,'button').find(node=>node.textContent==='Back'));
+ await choose.dispatch('contextmenu'); assert.equal(selected[0],items[29]);
+ api.open(); search.value='no-such-track'; await search.dispatch('input');
+ await choose.dispatch('contextmenu'); assert.equal(selected.length,1);
+ assert.match(cls(root,'sq-extra-picker-status')[0].textContent,/No tracks match/);
+ api.destroy();
+ const missing=fixture([entry(1)],{onPlay:()=>assert.fail('must not call onPlay')}); missing.api.open();
+ await tag(cls(missing.root,'sq-extra-random-actions')[0],'button')[1].dispatch('click');
+ assert.match(cls(missing.root,'sq-extra-picker-status')[0].textContent,/parent must connect onSelect/);
+ missing.api.destroy();
+});
+
+test('picker history callbacks remain optional and failures never turn unknown into unplayed or unimported', async () => {
+ const {root,api}=fixture([entry(1)],{onSelect:()=>assert.fail('unknown cannot match'),getPersonalBest:()=>{throw Error();},isLoaded:()=>{throw Error();}}); api.open();
+ await click(tag(cls(root,'sq-extra-random-actions')[0],'button')[0]);
+ const panel=cls(root,'sq-extra-picker')[0];
+ for (const caption of ['Recorded finish (local / cached PB)','Import known on this device']) {
+  const select=tag(field(panel,caption),'select')[0]; select.value='no'; await select.dispatch('change');
+  assert.match(cls(root,'sq-extra-picker-status')[0].textContent,/No tracks match/);
+ }
+ api.destroy();
+});
+
+test('preview rejection stays retryable and late completion cannot close a reopened catalog', async () => {
+ let fail=true; const request=deferred();
+ const {root,api,document}=fixture([entry(1)],{onSelect:()=>{if(fail)throw Error('preview failed');return request.promise;}}); api.open();
+ const choose=tag(cls(root,'sq-extra-random-actions')[0],'button')[0]; await click(choose);
+ const panel=cls(root,'sq-extra-picker')[0]; const pick=tag(panel,'button').find(node=>node.textContent==='Open random preview');
+ await click(pick); assert.equal(cls(root,'sq-extra-picker-modal')[0].hidden,false); assert.equal(pick.disabled,false);
+ assert.match(cls(root,'sq-extra-picker-status')[0].textContent,/could not open/);
+ fail=false; const pending=click(pick); api.close(); api.open(); request.resolve(); await pending;
+ assert.equal(cls(root,'sq-extra-overlay')[0].hidden,false);
+ await click(choose); const pool=tag(field(panel,'Track pool'),'select')[0];
+ assert.equal(document.activeElement,pool);
+ await document.listeners.get('keydown')({key:'Escape',preventDefault(){}});
+ assert.equal(cls(root,'sq-extra-picker-modal')[0].hidden,true);
+ assert.equal(cls(root,'sq-extra-overlay')[0].hidden,false);
+ api.destroy();
+});
+
+
+test('picker preview bridge is single-flight and exposes a cancellation guard for close or destroy', async () => {
+ const request=deferred(); let calls=0, context;
+ const {root,api}=fixture([entry(1)],{onSelect:(item,options)=>{calls++;context=options;return request.promise;}}); api.open();
+ const quick=tag(cls(root,'sq-extra-random-actions')[0],'button')[1];
+ const pending=click(quick); assert.equal(calls,1); assert.equal(context.isCurrent(),true);
+ await click(quick); assert.equal(calls,1);
+ api.close(); assert.equal(context.isCurrent(),false);
+ api.open(); assert.equal(context.isCurrent(),false);
+ api.destroy(); request.resolve(); await pending;
+ assert.equal(context.isCurrent(),false);
+});

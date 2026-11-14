@@ -20,7 +20,8 @@ import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {syncPublicEventCatalog} from './sync-event-catalog.mjs';
 import {recordCapture} from './workflow-capture-coordination.mjs';
 import {preflightLocalCaptureCheckpoints,createLocalCaptureCheckpoint,retainLocalCaptureFailure,createLocalNativePhaseReceipt} from './local-capture-checkpoint.mjs';
-import {connect} from './verifier/firestore.mjs';
+import {connect,decode} from './verifier/firestore.mjs';
+import {createCanonicalRetentionCapture} from './canonical-retention-capture.mjs';
 import {runPublicSnapshotBackup} from './public-snapshot-backup.mjs';
 import {prepareLocalArchiveReplayRepair,repairLocalArchiveReplays,ARCHIVE_REPAIR_COLLECTION,ARCHIVE_REPAIR_NOT_BEFORE} from './local-archive-replay-repair.mjs';
 import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
@@ -32,6 +33,32 @@ import {validateLocalEvidence} from './local-overnight-capture.mjs';
 export function localCaptureSourceStages({captureOverall=captureOverallProjection,captureTotals=capturePublicEventTotals,calculateOverall=rebuildSnapshotOverall}={}){
   for(const stage of [captureOverall,captureTotals,calculateOverall])if(typeof stage!=='function')throw Error('Complete local capture source stages required');
   return {captureOverall,captureTotals,calculateOverall};
+}
+
+// Keep the shared proof/replay checks, but use the local fence's exact POST read route.
+export function createLocalCanonicalRetention({ledger,serviceAccount,connectImpl=connect}={}){
+  let database,stopped=false;
+  return createCanonicalRetentionCapture({ledger,readLimit:N.replayDocumentLimit,readCanonical:async(accountId,trackId)=>{
+    if(stopped||! /^[a-f0-9]{64}$/.test(accountId)||! /^[a-f0-9]{64}$/.test(trackId))throw Error('Local canonical retention stopped');
+    try{
+      if(typeof serviceAccount!=='string'||!serviceAccount)throw Error('Local canonical retention credential unavailable');
+      database||=connectImpl(serviceAccount,{env:{},mode:'scheduled',documentReadLimit:32,documentWriteLimit:1,maxReadRetries:0});
+      const db=await database,name='projects/polytrack-052/databases/(default)/documents/0.6.2_race_results/'+accountId+'_'+trackId;
+      const rows=await db.call(':batchGet',{documents:[name]});
+      if(db.writeAttempts()!==0||!Array.isArray(rows)||rows.length!==1||rows[0]?.found?.name!==name||rows[0].missing||rows[0].error)
+        throw Error('Local canonical retention exact document unavailable');
+      const document=rows[0].found;
+      return {...document,data:decode({mapValue:{fields:document.fields||{}}})};
+    }catch(error){stopped=true;throw error;}
+  }});
+}
+
+export async function runLocalSnapshotBackup(options,{serviceAccount=process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,
+  backup=runPublicSnapshotBackup,connectImpl=connect,log=console.log}={}){
+  if(options?.reconcileCanonicalTrack!==undefined)throw Error('Local canonical retention callback must be locally bound');
+  const retention=createLocalCanonicalRetention({ledger:options?.nativeVerification?.ledger,serviceAccount,connectImpl});
+  try{return await backup({...options,reconcileCanonicalTrack:retention.reconcile});}
+  finally{log(JSON.stringify({localCanonicalRetention:retention.report(),replayDocumentLimit:N.replayDocumentLimit}));}
 }
 
 export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,capturedCanonical=null,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
@@ -128,7 +155,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
         if(preflight.additionalFirestoreReads!==0||preflight.additionalFirestoreWrites!==0)throw Error('Offline scoring preflight used backend');
         await checkpoint(input);
       },
-      capture:async options=>{const backup=reused?.manifest||await runPublicSnapshotBackup(options);if(backup?.deferred)return backup;
+      capture:async options=>{const backup=reused?.manifest||await runLocalSnapshotBackup(options);if(backup?.deferred)return backup;
         if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));
         const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));
         const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});

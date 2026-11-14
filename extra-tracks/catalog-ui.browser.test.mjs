@@ -10,7 +10,7 @@ try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } c
 const browserSkip = !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwright package to run this browser test.';
 const moduleSource = fs.readFileSync(new URL('./catalog-ui.mjs', import.meta.url), 'utf8');
 const reviewSource = fs.readFileSync(new URL('./review.mjs', import.meta.url), 'utf8');
-const reviewedModules = new Map(['reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs'].map(name => [name, fs.readFileSync(new URL('./' + name, import.meta.url), 'utf8')]));
+const reviewedModules = new Map(['reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'random-picker.mjs'].map(name => [name, fs.readFileSync(new URL('./' + name, import.meta.url), 'utf8')]));
 reviewedModules.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));

@@ -22,6 +22,7 @@ function common(rows = []) {
   let now = 1000000, uid = 'uid', timerId = 0;
   const storage = new Map(), timers = new Map(), listeners = new Map();
   const context = {
+    localPbDrivingActive: () => false,
     Date: {now: () => now}, Map, Set, Math, JSON, Array, String, Number, Error,
     LOCAL_PB_RECONCILE_STATE_KEY: 'state', FIREBASE_QUOTA_PAUSE_KEY: 'quota', OVERALL_PB_DIRTY_KEY: 'dirty',
     COLLECTIONS: {raceResults: 'races', profilesPublic: 'profiles'},
@@ -85,7 +86,7 @@ function mirrorHarness({cloud = null, publicationFails = true, localWritable = t
   if (!localWritable) c.addLocalRaceRow = () => false;
   vm.createContext(c);
   vm.runInContext(section('  function localPbSyncSignature(row){', '  function scheduleLocalPbCloudReconcile('), c);
-  vm.runInContext(section('  async function mirrorRaceResult(', '  function localBestRowsForAccount('), c);
+  vm.runInContext(section('  function localPbDrivingActive(', '  function localBestRowsForAccount('), c);
   h.run = () => c.mirrorRaceResult('fixture', {accountId, trackId, timeMs: 1000, frames: 1000, recording: 'local-replay', nickname: 'Racer', carStyle: 'style'});
   h.writes = writes; h.scheduled = () => scheduled; h.quotaErrors = () => quotaErrors;
   return h;

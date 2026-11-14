@@ -11,7 +11,7 @@ function deferred(){let resolve;const promise=new Promise(value=>resolve=value);
 function fixture({rows=[local()],profile=published(),cloud=null,failStatic=false}={}){
   let user={uid:'owner'},active=ACCOUNT,reader=async()=>profile,now=1000000;
   const storage=new Map(),timers=new Map(),uploads=[],cost={static:0,db:0,get:0,confirm:0,ownership:0};let serial=0;
-  const c=vm.createContext({Map,Set,Promise,JSON,Math,Array,Number,String,Error,Date:{now:()=>now},
+  const c=vm.createContext({localPbDrivingActive:()=>false,Map,Set,Promise,JSON,Math,Array,Number,String,Error,Date:{now:()=>now},
     profileSnapshotEpoch:7,plannerPublishedProfiles:new Map(),profileSnapshotResults:new Map(),profileSnapshotRequests:new Map(),profileSnapshotRetryAt:new Map(),
     cleanUserId:value=>String(value||''),activeRankedAccountId:()=>active,
     readPublicSnapshotBackup:async(kind,id)=>{assert.equal(kind,'profile-results');assert.equal(id,ACCOUNT);cost.static++;if(failStatic)throw Error('missing package');return reader();},

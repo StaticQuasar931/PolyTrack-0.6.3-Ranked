@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 let chromium;
 try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch {}
 const logoUrl = 'https://cdn.jsdelivr.net/gh/StaticQuasar931/Images@main/squarestaticquasar931logo.jpg';
-const modules = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs'].map(name => [name, fs.readFileSync(new URL(name, import.meta.url), 'utf8')]));
+const modules = new Map(['catalog-ui.mjs', 'review.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'random-picker.mjs'].map(name => [name, fs.readFileSync(new URL(name, import.meta.url), 'utf8')]));
 modules.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const font = fs.readFileSync(new URL('../forced_square.woff2', import.meta.url)).toString('base64');

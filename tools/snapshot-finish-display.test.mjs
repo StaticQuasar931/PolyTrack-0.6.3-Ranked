@@ -15,7 +15,7 @@ function finishContext(rows,local=[]){
     readLocalRaceRows:()=>local,safeRecordingId:id=>id,buildRecordingId:()=>99,nextUploadId:()=>99,
     mirrorRaceResult:async()=>{local.push({accountId,trackId:'summer1',timeMs:55,frames:55,uploadId:99});return {accountId,timeMs:55,uploadId:99};}});
   vm.runInContext(section('  function localTrackDisplayEntries(', '  function computeTrackTopEntries('),context);
-  const start=source.indexOf('        const preEntries = eventUi?.isEntered(trackId)');
+  const start=source.indexOf('        const preEntries = readTrackSnapshotCache(trackId)?.entries||[];');
   const end=source.indexOf('\n      }\n      hinted.userTokenHash',start);
   assert.ok(start>0&&end>start);
   vm.runInContext('async function finish(){'+source.slice(start,end)+'\n}',context);
