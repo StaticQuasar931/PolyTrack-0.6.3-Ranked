@@ -299,3 +299,13 @@ test('nonzero native preflight, reused directories and excess budgets fail close
     preflightPhase:async()=>({backendReads:0,backendWrites:0,counts:{nativeDispatched:1},ledgerManifestHash:f.options.publishedBaseline.ledgerManifestHash})}),/changed proof authority/);
   await assert.rejects(preparePublishedOfflineVerification(f.options,f.capabilities),error=>error.code==='EEXIST');
 });
+
+
+test('above16MiB index passes public preparation, lower published budget and partial compilation without widened physics limits',async t=>{
+ const f=await publishedFixture(t),file=path.join(f.root,'public-snapshots76/index.json'),head=await fs.readFile(file);await fs.writeFile(file,Buffer.concat([head,Buffer.alloc(17*1024*1024-head.length,32)]));f.options.publishedBaseline.indexSha256=sha(await fs.readFile(file));
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities),verified=await prepared.verify();assert.equal(f.runtime(),5400000);assert.equal(verified.compilationEligible,true);assert.equal((await verified.compile()).compilationComplete,true);await verified.dispose();
+});
+test('above20MiB public index stops before preparation/native and ledger pointer size remains2048',async t=>{
+ const f=await fixture(t),file=path.join(f.root,'public-snapshots76/index.json');let h=await fs.open(file,'r+');await h.truncate(20*1024*1024+1);await h.close();await assert.rejects(preparePublishedOfflineVerification(f.options,f.capabilities),/unsafe public input/);assert.equal(f.counts().native,0);
+ await write(f.root,'public-snapshots76/index.json',{generation:76,fixture:true});f.options.publishedBaseline.indexSha256=sha(await fs.readFile(file));await fs.appendFile(path.join(f.root,'verification-ledger-current.json'),' '.repeat(2048));await assert.rejects(preparePublishedOfflineVerification(f.options,f.capabilities),/unsafe public input/);assert.equal(f.counts().native,0);
+});

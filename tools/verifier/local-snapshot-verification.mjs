@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES} from '../private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
@@ -38,7 +39,7 @@ export async function withPublishedOfflineVerification({root,publishedBaseline,s
     const bytes=await fs.readFile(file);demand(bytes.length===stat.size,'published budget input changed');return bytes;
   };
   demand(JSON.parse(await read('snapshot-current.json',2048)).currentdir==='public-snapshots'+pins.generation,'published budget generation changed');
-  demand(digest(await read('public-snapshots'+pins.generation+'/index.json',16*1024*1024))===pins.indexSha256,'published budget index changed');
+  demand(digest(await read('public-snapshots'+pins.generation+'/index.json',PRIVATE_SNAPSHOT_INDEX_BYTES))===pins.indexSha256,'published budget index changed');
   const files=await nativeLedgerPublicationFiles(root);
   demand(files.length>=2&&JSON.parse(await read('verification-ledger-current.json',2048)).manifestHash===pins.ledgerManifestHash,'published budget ledger changed');
   const ledger=readLedger({root:path.join(root,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash});

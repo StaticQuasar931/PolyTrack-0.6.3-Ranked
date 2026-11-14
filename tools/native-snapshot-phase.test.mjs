@@ -21,6 +21,7 @@ import {publishSnapshot} from './snapshot-package.mjs';
 import {hydrateStaging} from './update-public-snapshot.mjs';
 import {nativeEventSourceHash} from './native-event-snapshot.mjs';
 import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
+import vm from 'node:vm';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),account='b'.repeat(64),engine='c'.repeat(64),fingerprint='d'.repeat(64),content='e'.repeat(64);
@@ -28,6 +29,111 @@ const replay=deflateSync(Buffer.alloc(15)).toString('base64url'),replayHash=sha(
 const policy={engineDigest:engine,compatibleEngines:[],verifierVersion:'polytrack-native-bounded-v1',verifierFingerprint:fingerprint,
   resourceProfiles:['standard','extended-local'],reviewPolicyVersions:['snapshot-controls-v1'],
   trackContentHashes:{[track]:content},trackGeometries:{[track]:{geometryPolicy:'default',trackGeometry:{parts:1,spanX:10,spanZ:20}}}};
+
+function exactFunction(source,name){
+ const start=source.search(new RegExp('^(?:export )?(?:async )?function '+name+'\\(','m'));
+ assert.ok(start>=0,name);const end=source.indexOf('\n}',start);assert.ok(end>start,name);
+ return source.slice(start,end+2).replace(/^export /,'');
+}
+test('retained ledger lookup preserves strict wildcard presence, every disposition, and duplicate rejection',async()=>{
+ const source=await fs.readFile(new URL('./native-snapshot-phase.mjs',import.meta.url),'utf8');
+ const context=vm.createContext({Map,Set,demand:(ok,message)=>assert.ok(ok,message)});
+ vm.runInContext(exactFunction(source,'retainedLedgerLookup'),context);
+ const entries=['verified','held','excluded'].map((disposition,i)=>({key:String(i).repeat(64),disposition,
+  binding:{lane:'event',periodId:'period',accountId:account,timeMs:900,runId:sha('presence'+i)}}));
+ entries.push({key:'f'.repeat(64),binding:{lane:'normal',periodId:'normal',accountId:account,timeMs:900,runId}});
+ const lookup=context.retainedLedgerLookup(entries);
+ const old=(id,row)=>entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&
+  entry.binding.accountId===row.accountId&&entry.binding.timeMs===row.timeMs&&
+  (row.runId===undefined||entry.binding.runId===row.runId));
+ for(const row of [{accountId:account,timeMs:900},...entries.slice(0,3).map(entry=>({...entry.binding})),
+  {accountId:account,timeMs:900,runId:null},{accountId:account,timeMs:900,runId:false},
+  {accountId:account,timeMs:900,runId:'wrong'},{accountId:account,timeMs:'900'},
+  {accountId:account,timeMs:NaN},{accountId:account,timeMs:new Number(900)},
+  {accountId:new String(account),timeMs:900},{},false]){
+  for(const id of ['period','missing','normal'])assert.equal(lookup.hasEvent(id,row),old(id,row));
+ }
+ assert.equal(lookup.hasEvent('missing',null),old('missing',null));
+ assert.throws(()=>old('period',null));assert.throws(()=>lookup.hasEvent('period',null));
+ assert.equal(lookup.byKey.get(entries[1].key),entries[1]);
+ assert.throws(()=>context.retainedLedgerLookup([...entries,entries[0]]),/duplicate retained ledger key/);
+});
+
+test('retained preparation is byte-equivalent to legacy scans with one binding hash per available job',async t=>{
+ const source=await fs.readFile(new URL('./native-snapshot-phase.mjs',import.meta.url),'utf8');
+ const optimized=exactFunction(source,'prepareNativeSnapshotCapture');
+ const indexLine='  const lookup=manifest.nativeVerificationLedger?retainedLedgerLookup(ledger.entries):null;';
+ const getLine='const entry=lookup.byKey.size?lookup.byKey.get(ledgerKey(ledgerBinding(job))):undefined;';
+ const presenceLine='const hasNative=previousRows.some(({row})=>lookup.hasEvent(id,row));';
+ for(const text of [indexLine,getLine,presenceLine])assert.ok(optimized.includes(text),text);
+ const legacy=optimized.replace(indexLine,'').replace(getLine,'const entry=ledger.entries.find(value=>value.key===ledgerKey(ledgerBinding(job)));')
+  .replace(presenceLine,"const hasNative=previousRows.some(({row})=>ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&entry.binding.accountId===row.accountId&&entry.binding.timeMs===row.timeMs&&(row.runId===undefined||entry.binding.runId===row.runId)));");
+ const root='C:/synthetic-public',directory=root+'/candidate',manifestHash='9'.repeat(64),files=new Map();
+ const norm=file=>String(file).replace(/\\/g,'/'),put=(file,value)=>files.set(norm(file),Buffer.from(JSON.stringify(value)));
+ const board={id:'day1',period:{id:'day1',trackId:track},entries:[],pendingPlaybacks:[],nativeEventOverlay:{version:1}};
+ const entries=Array.from({length:100},(_,i)=>({key:sha('unrelated'+i),disposition:'verified',
+  binding:{lane:'event',periodId:'elsewhere',accountId:sha('filler'+i),timeMs:2000+i,runId:sha('filler-run'+i)}}));
+ for(let i=0;i<12;i++){
+  const pending=i%2===1,row={accountId:sha('retained'+i),runId:sha('retained-run'+i),timeMs:900+i,replayHash,submittedAt:2000+i,
+   ...(pending?{pending:true,verified:false,eventRpEligible:false}:{verified:true})};
+  (pending?board.pendingPlaybacks:board.entries).push(row);
+  const job={lane:'event',kind:pending?'event-pending':'event',source:pending?`event-playbacks/day1/${row.runId}.json`:`event-replays/day1/${row.accountId}.json`,
+   ...row,trackId:track,periodId:'day1',frames:row.timeMs,uploadId:null,replay,resultId:row.runId};
+  if(i!==4)entries.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),disposition:i===2?'held':i===3?'excluded':'verified'});
+  if(i!==5)put(directory+'/'+job.source,{...row,periodId:'day1',trackId:track,frames:row.timeMs,replay,...(i===6?{reviewHold:true}:{})});
+ }
+ const legacyBoard={id:'legacy',period:{id:'legacy',trackId:track},entries:[{accountId:account,timeMs:900,verified:false}]};
+ entries.push({key:sha('legacy-held'),binding:{lane:'event',periodId:'legacy',accountId:account,timeMs:900,runId},disposition:'held'});
+ const ledger={manifestHash,entries};
+ put(root+'/verification-ledger-current.json',{manifestHash});
+ put(directory+'/manifest.json',{tracks:{},events:{day1:{path:'events/day1.json'},legacy:{path:'events/legacy.json'}},nativeVerificationLedger:{manifestHash}});
+ put(directory+'/events/day1.json',board);put(directory+'/events/legacy.json',legacyBoard);
+ async function run(text,observe=false,{emptyLedger=false,invalidBinding=false}={}){
+  const activeLedger=emptyLedger?{...ledger,entries:[]}:ledger;
+  let hashes=0;const gates=[],progress=[];
+  const readBytes=async file=>{
+   const bytes=files.get(norm(file));if(!bytes)throw Object.assign(Error('missing fixture'),{code:'ENOENT'});
+   if(invalidBinding&&norm(file)===directory+'/events/day1.json'){
+    const value=JSON.parse(bytes);value.entries[0].timeMs=0;return Buffer.from(JSON.stringify(value));
+   }
+   return Buffer.from(bytes);
+  };
+  const read=async(dir,file)=>JSON.parse(await readBytes(dir+'/'+file));
+  const optional=async(dir,file)=>{try{return await read(dir,file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};
+  const context=vm.createContext({Map,Set,Object,Array,Number,JSON,Buffer,path,HASH:/^[a-f0-9]{64}$/,
+   demand:(ok,message)=>assert.ok(ok,message),read,optional,fs:{readFile:readBytes},sha,
+   buildNativeVerificationPolicy:()=>assert.fail('explicit synthetic policy required'),
+   nativeLedgerPublicationFiles:async value=>{assert.equal(value,root);return [];},
+   readLedger:({root:value,expectedManifestHash})=>{assert.equal(norm(value),root+'/verification-ledger');assert.equal(expectedManifestHash,manifestHash);return activeLedger;},
+   readCapturedNormalLedgerRows:async()=>[],privateRoot:()=>assert.fail('no private checkpoint authority'),
+   ledgerBinding:(value,lane)=>ledgerBinding(JSON.parse(JSON.stringify(value)),lane),
+   ledgerKey:binding=>{hashes++;return ledgerKey(binding);},ledgerDisposition:entry=>entry.disposition,
+   publicEventBackup:value=>structuredClone(value),nativeEventSourceHash:value=>sha(JSON.stringify(value)),
+   applyLedgerToBoard:args=>{assert.equal(args.ledger,activeLedger,'the original validated ledger, never the lookup Map, remains authority');gates.push(args);return {report:{verified:args.recordings[0].reviewHold?0:1}};},
+   pinRetainedNativeBoards:async()=>{}});
+  vm.runInContext(exactFunction(source,'retainedLedgerLookup')+'\n'+text,context);
+  const result=await context.prepareNativeSnapshotCapture({root,directory,buildPolicy:async()=>structuredClone(policy),
+   ...(observe?{onProgress:value=>{assert(Object.isFrozen(value));progress.push({...value});}}:{})});
+  return {hashes,progress,bytes:JSON.stringify({...result,eventSources:[...result.eventSources]}),gates:JSON.stringify(gates)};
+ }
+ const before=await run(legacy),after=await run(optimized),observed=await run(optimized,true);
+ assert.equal(after.bytes,before.bytes);assert.equal(after.gates,before.gates);assert.equal(observed.bytes,after.bytes);
+ assert.equal(after.hashes,11);assert.equal(observed.hashes,11);assert.ok(before.hashes>1000);
+ t.diagnostic('available previousRows key hashes: legacy='+before.hashes+', indexed='+after.hashes);
+ assert.equal(after.progress.length,0);
+ assert.deepEqual(observed.progress.map(row=>row.phase),['native-prepare-public-ledger','native-prepare-canonical','native-prepare-retained','native-prepare-complete']);
+ assert(observed.progress.every(row=>row.authority===false));
+ const output=JSON.parse(after.bytes);
+ assert.equal(output.retainedNativeEntries.legacy.recordings.length,0,'legacy wildcard protects held source without granting media');
+ assert.equal(output.retainedNativeEntries.legacy.previousBoard.entries[0].verified,false);
+ const emptyBefore=await run(legacy,false,{emptyLedger:true,invalidBinding:true});
+ const emptyAfter=await run(optimized,false,{emptyLedger:true,invalidBinding:true});
+ assert.equal(emptyAfter.bytes,emptyBefore.bytes);assert.equal(emptyAfter.gates,emptyBefore.gates);
+ assert.equal(emptyBefore.hashes,0);assert.equal(emptyAfter.hashes,0,'empty validated ledger must not evaluate malformed job bindings');
+ const errorOf=async text=>{try{await run(text,false,{invalidBinding:true});assert.fail('nonempty ledger must reject malformed job');}catch(error){return error.message;}};
+ const legacyError=await errorOf(legacy),indexedError=await errorOf(optimized);
+ assert.match(legacyError,/Native ledger:/);assert.equal(indexedError,legacyError);
+});
 const read=async(directory,file)=>JSON.parse(await fs.readFile(path.join(directory,file),'utf8'));
 async function write(directory,file,value){const target=path.join(directory,file);await fs.mkdir(path.dirname(target),{recursive:true});await fs.writeFile(target,JSON.stringify(value)+'\n');}
 async function inventory(directory){

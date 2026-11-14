@@ -107,3 +107,13 @@ test('COPYFILE_EXCL refuses a file appearing at its reserved destination',async 
  }finally{fs.copyFile=original;}
  assert(checked);await absent(f.destination);
 });
+
+
+test('only root index.json accepts20MiB; nested, case variants, ordinary files and tighter budgets stay bounded',async t=>{
+ const f=await fixture(t),file=path.join(f.source,'index.json');let h=await fs.open(file,'w');await h.truncate(20*1024*1024);await h.close();
+ const report=await cloneBounded(f);assert.equal(report.authority,false);assert.equal((await fs.stat(path.join(f.destination,'index.json'))).size,20*1024*1024);
+ for(const [name,size]of [['index.json',20*1024*1024+1],['nested/index.json',16*1024*1024+1],['Index.json',16*1024*1024+1],['ordinary.json',16*1024*1024+1]]){
+  await fs.unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});const target=path.join(f.source,name);h=await fs.open(target,'w');await h.truncate(size);await h.close();const destination=path.join(f.root,'reject-index-'+name.replaceAll('/','-'));await assert.rejects(cloneBounded({...f,destination}),/bound/);await absent(destination);await fs.unlink(target);
+ }
+ h=await fs.open(file,'w');await h.truncate(17*1024*1024);await h.close();for(const limits of [{fileBytes:1024},{bytes:16*1024*1024}])await assert.rejects(cloneBounded({...f,destination:path.join(f.root,'tighter-'+Object.keys(limits)[0]),limits}),/bound/);
+});

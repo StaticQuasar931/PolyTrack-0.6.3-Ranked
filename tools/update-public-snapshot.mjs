@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {rememberPublishedHydration} from './retained-native-board-cache.mjs';
 import { createHash } from 'node:crypto';
@@ -184,7 +185,7 @@ export async function hydrateStaging(root, stagingDirectory) {
     throw new Error('Current snapshot pointer is invalid');
   }
   const generationDirectory = containedChild(root, pointer.currentdir);
-  const indexBytes = await fs.readFile(path.join(generationDirectory, 'index.json'));
+  const indexBytes = await readPrivateSnapshotIndex(path.join(generationDirectory, 'index.json'));
   const index = JSON.parse(indexBytes.toString('utf8'));
   const pointerGeneration = Number(pointer.currentdir.replace('public-snapshots', ''));
   if (index.schemaVersion !== 1 || index.encoding !== 'gzip-xor-a7-v1' || index.generation !== pointerGeneration ||
@@ -376,7 +377,7 @@ async function updateMeta(root, generationDirectory) {
   const expression = /<meta\s+name=["']polytrack-snapshot["'][^>]*>/i;
   html = expression.test(html) ? html.replace(expression, meta) : html.replace(/<head\b[^>]*>/i, match => `${match}\n    ${meta}`);
   if (!html.includes(meta)) throw new Error('Could not insert snapshot meta tag into index.html');
-  const packageIndex=await readJsonIfPresent(path.join(root,generationDirectory,'index.json'));
+  const packageIndex=await readPrivateSnapshotIndex(path.join(root,generationDirectory,'index.json')).then(bytes=>JSON.parse(bytes),error=>{if(error.code==='ENOENT')return null;throw error;});
   const publication=Number.isSafeInteger(packageIndex?.publishedAt)&&packageIndex.publishedAt>0
     ?{generation:packageIndex.generation,publishedAt:packageIndex.publishedAt}:null;
   const publicationTag=/<meta\s+name=["']polytrack-snapshot-publication["'][^>]*>/i;
@@ -503,7 +504,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   if(proofPhase&&!publishedEventTotalsBaseline){
     const current=await readJsonIfPresent(path.join(absoluteRoot,'snapshot-current.json'));
     if(current&&/^public-snapshots[1-9][0-9]*$/.test(current.currentdir||'')){
-      const indexBytes=await fs.readFile(path.join(absoluteRoot,current.currentdir,'index.json')),index=JSON.parse(indexBytes);
+      const indexBytes=await readPrivateSnapshotIndex(path.join(absoluteRoot,current.currentdir,'index.json')),index=JSON.parse(indexBytes);
       if(index.files?.['event-totals.json'])publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root:absoluteRoot,expectedGeneration:Number(current.currentdir.slice(16)),expectedIndexSha256:sha256(indexBytes)});
     }
   }
@@ -615,7 +616,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
       manifest.pendingPlaybackCoverage.scope === 'selected-saved-event-boards') {
     const previous = await readJsonIfPresent(path.join(absoluteRoot, 'snapshot-current.json'));
     if (previous && /^public-snapshots[1-9][0-9]*$/.test(previous.currentdir || '')) {
-      const indexBytes = await fs.readFile(path.join(absoluteRoot, previous.currentdir, 'index.json'));
+      const indexBytes = await readPrivateSnapshotIndex(path.join(absoluteRoot, previous.currentdir, 'index.json'));
       const {reconcileSupersededPendingPlaybacks} = await import('./reconcile-superseded-pending-playbacks.mjs');
       const recovered = await reconcileSupersededPendingPlaybacks({root:absoluteRoot, directory:stagingDirectory,
         expectedIndexSha256:sha256(indexBytes)});

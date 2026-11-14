@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -69,7 +70,7 @@ export async function loadTrustedPublishedEventTotalsBaseline({root, expectedGen
   const pointerBytes = await read(root, 'snapshot-current.json');
   const pointer = JSON.parse(pointerBytes), currentdir = 'public-snapshots' + expectedGeneration;
   demand(pointer?.currentdir === currentdir, 'Pinned generation is not the immediately previous published current snapshot');
-  const indexBytes = await read(root, currentdir + '/index.json', 16 * 1024 * 1024);
+  const indexBytes = await read(root, currentdir + '/index.json', PRIVATE_SNAPSHOT_INDEX_BYTES);
   demand(sha(indexBytes) === expectedIndexSha256, 'Published index SHA256 mismatch');
   const index = JSON.parse(indexBytes);
   demand(index?.schemaVersion === 1 && index.generation === expectedGeneration && index.encoding === 'gzip-xor-a7-v1' &&
@@ -143,7 +144,7 @@ export async function selectPublishedEventTotalsBaseline({root, directory} = {})
   const pointer = JSON.parse(await read(root, 'snapshot-current.json'));
   demand(pointer?.currentdir === 'public-snapshots72', 'Expected trusted public-snapshots72 pointer');
   const published = path.join(root, pointer.currentdir);
-  const indexBytes = await read(published, 'index.json', 16 * 1024 * 1024);
+  const indexBytes = await read(published, 'index.json', PRIVATE_SNAPSHOT_INDEX_BYTES);
   const index = JSON.parse(indexBytes);
   demand(index?.schemaVersion === 1 && index.generation === 72 && index.encoding === 'gzip-xor-a7-v1' &&
     index.files && typeof index.files === 'object' && !Array.isArray(index.files), 'Invalid trusted snapshot index');

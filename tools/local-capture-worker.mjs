@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {createHash} from 'node:crypto';
 import {prepareNativeSnapshotCapture} from './native-snapshot-phase.mjs';
 import {openFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
@@ -121,7 +122,7 @@ export async function assertLocalStagingBase({root,publishedBaseline}={}){
  const pointer=JSON.parse(await read('snapshot-current.json')),base=JSON.parse(await read('local-reports/snapshot-staging-base.json'));
  const {generation,indexSha256}=publishedBaseline||{};
  if(!Number.isSafeInteger(generation)||generation<1||! /^[a-f0-9]{64}$/.test(indexSha256||'')||pointer.currentdir!=='public-snapshots'+generation||base.schemaVersion!==1||base.generation!==generation)throw Error('Prepared staging base changed before source acquisition');
- const bytes=await read('public-snapshots'+generation+'/index.json');
+ const bytes=await readPrivateSnapshotIndex(path.join(root,'public-snapshots'+generation,'index.json'));
  if(createHash('sha256').update(bytes).digest('hex')!==indexSha256)throw Error('Published source baseline changed');
 }
 

@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {decodeSnapshot,MAX_DECODED_BYTES} from './snapshot-package.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,7 +16,7 @@ async function publishedBoards(root){
  let pointer;try{pointer=JSON.parse(await fs.readFile(path.join(root,'snapshot-current.json'),'utf8'));}catch(error){if(error.code==='ENOENT')return null;throw error;}
  const generation=pointer.currentdir;if(!/^public-snapshots[1-9][0-9]*$/.test(generation||''))throw Error('Invalid published cache source');
  const cached=published.get(path.resolve(root));if(cached?.generation===generation)return cached.boards;
- const directory=path.join(root,generation),index=JSON.parse(await fs.readFile(path.join(directory,'index.json'),'utf8'));
+ const directory=path.join(root,generation),index=JSON.parse(await readPrivateSnapshotIndex(path.join(directory,'index.json')));
  if(index.schemaVersion!==1||index.encoding!=='gzip-xor-a7-v1'||index.generation!==Number(generation.slice(16)))throw Error('Invalid published cache index');
  const files=[];for(const [logicalPath,item]of Object.entries(index.files||{})){
   if(!/^tracks\/[a-f0-9]{64}\.json$/.test(logicalPath))continue;

@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -58,7 +59,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   async function checkPins(){
     const pointer=JSON.parse(await read(root,'snapshot-current.json',2048));
     demand(pointer.currentdir==='public-snapshots'+pins.generation,'public generation changed');
-    demand(sha(await read(root,pointer.currentdir+'/index.json'))===pins.indexSha256,'public index changed');
+    demand(sha(await read(root,pointer.currentdir+'/index.json',PRIVATE_SNAPSHOT_INDEX_BYTES))===pins.indexSha256,'public index changed');
     const ledgerPointer=JSON.parse(await read(root,'verification-ledger-current.json',2048));
     demand(ledgerPointer.manifestHash===pins.ledgerManifestHash,'public ledger changed');
     const files=await nativeLedgerPublicationFiles(root);

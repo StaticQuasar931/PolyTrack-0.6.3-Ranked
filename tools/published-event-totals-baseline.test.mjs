@@ -288,3 +288,12 @@ test('pinned publication timestamp cannot predate its totals or included period 
   await write(f.published, 'index.json', f.index);
   await assert.rejects(loadTrustedPublishedEventTotalsBaseline(await pinned(f)), /snapshot timestamp/);
 });
+
+
+test('both published baseline index readers accept above16MiB, reject above20MiB, keep payload caps',async t=>{
+ const f=await fixture(t),file=path.join(f.published,'index.json'),head=await fs.readFile(file);
+ await fs.writeFile(file,Buffer.concat([head,Buffer.alloc(17*1024*1024-head.length,32)]));const indexSha256=sha(await fs.readFile(file));
+ assert.equal((await f.select()).report.fallback,true);
+ const trusted=await loadTrustedPublishedEventTotalsBaseline({root:f.root,expectedGeneration:72,expectedIndexSha256:indexSha256});assert.equal(assertTrustedPublishedEventTotalsBaseline(trusted),trusted);
+ const h=await fs.open(file,'r+');await h.truncate(20*1024*1024+1);await h.close();await assert.rejects(f.select(),/too large/);await assert.rejects(loadTrustedPublishedEventTotalsBaseline({root:f.root,expectedGeneration:72,expectedIndexSha256:indexSha256}),/too large/);
+});

@@ -141,9 +141,31 @@ async function retainCompletedProofs({root,ledgerRoot,sourceBinding,manifestHash
   }catch(error){await fs.rm(directory,{recursive:true,force:true});throw error;}
 }
 
+// Index validated public-ledger data, not proof authority. Keep presence separate
+// from approval: held/excluded entries still protect their visible source rows.
+function retainedLedgerLookup(entries){
+  const byKey=new Map(),events=new Map();
+  for(const entry of entries){
+    demand(!byKey.has(entry.key),'duplicate retained ledger key');byKey.set(entry.key,entry);
+    const binding=entry.binding;if(binding.lane!=='event')continue;
+    let accounts=events.get(binding.periodId);if(!accounts)events.set(binding.periodId,accounts=new Map());
+    let times=accounts.get(binding.accountId);if(!times)accounts.set(binding.accountId,times=new Map());
+    let runs=times.get(binding.timeMs);if(!runs)times.set(binding.timeMs,runs=new Set());
+    runs.add(binding.runId);
+  }
+  return {byKey,hasEvent:(periodId,row)=>{
+    const accounts=events.get(periodId);if(!accounts)return false;
+    const times=accounts.get(row.accountId);if(!times)return false;
+    const runs=times.get(row.timeMs);if(!runs)return false;
+    return row.runId===undefined||runs.has(row.runId);
+  }};
+}
+
 /** Before capture: local authority/context only, never credentials or transport. */
-export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=buildNativeVerificationPolicy}={}){
+export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=buildNativeVerificationPolicy,onProgress=null}={}){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||''),'explicit absolute context paths required');
+  demand(onProgress===null||typeof onProgress==='function','invalid preparation progress callback');
+  const progress=async(phase,counts)=>{if(onProgress)await onProgress(Object.freeze({authority:false,phase,...counts}));};
   const manifest=await read(directory,'manifest.json'),pointer=await optional(root,'verification-ledger-current.json');
   let ledger,ledgerRoot,bootstrapRoot;
   if(pointer){
@@ -155,8 +177,11 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
     bootstrapRoot=await privateRoot();ledgerRoot=path.join(bootstrapRoot,'ledger');
     ledger=writeLedger({root:ledgerRoot,entries:[],expectedManifestHash:null});
   }
+  await progress('native-prepare-public-ledger',{ledgerEntries:ledger.entries.length});
   const canonicalRows=await readCapturedNormalLedgerRows({directory,allowMissingCanonical:true});
+  await progress('native-prepare-canonical',{canonicalRows:canonicalRows.length});
   const policy=await buildPolicy({root,jobs:canonicalRows,entries:ledger.entries});
+  const lookup=manifest.nativeVerificationLedger?retainedLedgerLookup(ledger.entries):null;
   const eventSources=new Map(),eventSourcePins=manifest.nativeEventSources||{},retainedNativeEntries={},retainedJobs=[],overlaidSourceHashes={};
   // Public-safe, Node-consumed source projections travel inside the immutable
   // snapshot, not an ignored local cache. No full/private Worker periods here.
@@ -185,7 +210,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
       const job={lane:'event',kind:pending?'event-pending':'event',source:relative,accountId:row.accountId,trackId:previousBoard.period.trackId,
         periodId:id,runId:row.runId,timeMs:row.timeMs,frames:row.timeMs,uploadId:raw.uploadId??null,replayHash:row.replayHash,
         replay:raw.replay,submittedAt:row.submittedAt,resultId:row.runId};
-      const entry=ledger.entries.find(value=>value.key===ledgerKey(ledgerBinding(job)));
+      const entry=lookup.byKey.size?lookup.byKey.get(ledgerKey(ledgerBinding(job))):undefined;
       if(!entry||ledgerDisposition(entry)!=='verified')continue;
       if(pending)demand(row.pending===true&&row.verified===false&&row.eventRpEligible===false&&
         raw.pending===true&&raw.verified===false&&raw.eventRpEligible===false&&raw.submittedAt===row.submittedAt,
@@ -202,14 +227,14 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
       media.push(retained);retainedJobs.push(job);
     }
     // Missing/incompatible media must defer a protected native admission, never erase it.
-    const hasNative=previousRows.some(({row})=>ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&
-      entry.binding.accountId===row.accountId&&entry.binding.timeMs===row.timeMs&&
-      (row.runId===undefined||entry.binding.runId===row.runId)));
+    const hasNative=previousRows.some(({row})=>lookup.hasEvent(id,row));
     if(media.length||hasNative)retainedNativeEntries[id]={previousBoard,recordings:media,expectedSourceHash:sha(sourceBytes),sourceBytes};
   }
+  await progress('native-prepare-retained',{periods:Object.keys(retainedNativeEntries).length,retainedJobs:retainedJobs.length});
   const context={ledger,ledgerRoot,policy,canonicalRows,rootManifestHash:pointer?.manifestHash??null,
     bootstrapRoot,eventSources,eventSourcePins,sourceManifest:manifest,retainedNativeEntries,retainedJobs,overlaidSourceHashes};
-  await pinRetainedNativeBoards({context,directory,root});return context;
+  await pinRetainedNativeBoards({context,directory,root});
+  await progress('native-prepare-complete',{retainedJobs:retainedJobs.length});return context;
 }
 
 async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null,validateOnly=false}){

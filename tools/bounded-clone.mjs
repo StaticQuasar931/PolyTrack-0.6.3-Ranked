@@ -1,3 +1,4 @@
+import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {constants} from 'node:fs';
@@ -35,7 +36,8 @@ async function inventory(root,limits){
    }else{
     demand(stat.isFile(),'non-regular source');
     const size=Number(stat.size);
-    const fileLimit=logical==='overall.json'&&limits.fileBytes===HARD.fileBytes?32*1024*1024:limits.fileBytes;
+    const fileLimit=limits.fileBytes!==HARD.fileBytes?limits.fileBytes:
+     logical==='overall.json'?32*1024*1024:logical==='index.json'?PRIVATE_SNAPSHOT_INDEX_BYTES:limits.fileBytes;
     demand(Number.isSafeInteger(size)&&size>=0&&size<=fileLimit&&files.length<limits.files&&bytes+size<=limits.bytes,'file or byte bound');
     bytes+=size;files.push({path:logical,bytes:size,version:version(stat),identity:identity(stat),links:Number(stat.nlink)});
    }
