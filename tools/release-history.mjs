@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 377,
+    "number": 379,
     "version": "0.6.3",
-    "revision": 321,
+    "revision": 322,
     "notes": [
-      "Support larger track lists and preserve completed verification progress."
+      "Faster offline replay checks and safer handling of larger snapshots."
     ]
   },
   "entries": [
+    {
+      "number": 377,
+      "title": "Support larger snapshot catalogs and bounded partial verification",
+      "commit": "91d0f7ec6bdcca57464f0037824442d34dee98fd",
+      "committedAt": "2026-11-14T11:27:26.000Z",
+      "notes": [
+        "Support larger track lists and preserve completed verification progress."
+      ]
+    },
     {
       "number": 376,
       "title": "Recover frozen snapshot data without repeating database reads",
@@ -191,16 +200,6 @@ const historyData = {
       "notes": [
         "Update notes appear during loading, even on fast or cached starts.",
         "Improves replay-review capacity for growing leaderboards."
-      ]
-    },
-    {
-      "number": 357,
-      "title": "Finish large leaderboard updates and reduce redundant verification",
-      "commit": "f7415f77481937697a809b7d1d59e1e76dfe2d1a",
-      "committedAt": "2026-11-09T07:58:05.000Z",
-      "notes": [
-        "Large leaderboard updates can finish without restarting.",
-        "Reduces redundant cloud verification work."
       ]
     }
   ],
