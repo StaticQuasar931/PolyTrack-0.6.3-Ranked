@@ -2,17 +2,29 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 370,
+    "number": 371,
     "version": "0.6.3",
-    "revision": 314,
+    "revision": 315,
     "notes": [
-      "Explore Achievements to find your next cosmetic unlock, with a clearer Racer Studio.",
-      "Extra Tracks has simpler controls, featured picks and easier random-track filters.",
-      "Help checks for updates when opened. Event badges and track menus are more consistent.",
-      "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
+      "Achievements and Racer Studio share a full-screen hub, with more goals and locked-item previews.",
+      "Save local friends and find friendly PB challenges using saved snapshot data.",
+      "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
+      "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
     ]
   },
   "entries": [
+    {
+      "number": 370,
+      "title": "Achievements, track discovery and full snapshot preparation",
+      "commit": "7cd4e5a09305f777f09b2f0aa99dabf21e2c416a",
+      "committedAt": "2026-11-14T05:29:57.000Z",
+      "notes": [
+        "Explore Achievements to find your next cosmetic unlock, with a clearer Racer Studio.",
+        "Extra Tracks has simpler controls, featured picks and easier random-track filters.",
+        "Help checks for updates when opened. Event badges and track menus are more consistent.",
+        "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
+      ]
+    },
     {
       "number": null,
       "title": "Polish achievements, track discovery and rankings; prepare bounded full catch-up",
@@ -193,16 +205,6 @@ const historyData = {
       "notes": [
         "Updated saved Summer 1 PBs and recovered completed replay checks.",
         "Keeps older event replay history when a faster run replaces it."
-      ]
-    },
-    {
-      "number": 350,
-      "title": "Validate event totals before offline verification",
-      "commit": "ff08d4038764f82f279470cf4332c501d854a7c0",
-      "committedAt": "2026-11-09T03:24:09.000Z",
-      "notes": [
-        "Snapshot updates keep the last published event totals when the cloud copy is older.",
-        "Checks event data before replay verification to avoid wasted work."
       ]
     }
   ],

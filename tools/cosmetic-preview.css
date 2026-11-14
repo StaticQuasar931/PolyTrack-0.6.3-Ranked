@@ -1,0 +1,4 @@
+.cosmetic-preview-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px dashed #ffc978;background:#473419;color:#ffe4b5;font:14px/1.4 'Trebuchet MS',sans-serif;box-sizing:border-box;max-width:100%}
+.cosmetic-preview-banner strong{min-width:0;overflow-wrap:anywhere}
+.cosmetic-preview-banner .cosmetic-preview-clear{min-height:44px;max-width:100%;white-space:normal;cursor:pointer}
+.cosmetic-preview-active [data-save-profile-cosmetics],.cosmetic-preview-active [data-cosmetic-publish]{opacity:.55;cursor:not-allowed}

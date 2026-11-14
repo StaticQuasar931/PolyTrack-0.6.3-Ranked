@@ -1,3 +1,4 @@
+const {updateReminderPreference,bindUpdateDismissal}=await import(new URL('./site-update-dismissal.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory}=await import(new URL('./release-history.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 const oldCopyBoots = new WeakMap();
@@ -479,6 +480,10 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
   let compatibility = null, pendingManifest = null, latestManifest = null;
+  const reminder = updateReminderPreference(document);
+  let dismissalMenu = null, explicitOffer = false;
+  const criticalUpdate = () => validRevision(latestManifest?.minimumSupportedRevision) && revision < latestManifest.minimumSupportedRevision;
+  const suppressReminder = () => !explicitOffer && !criticalUpdate() && reminder.suppressed();
   let oldCopyNotice = null, oldCopyDismissed = false, oldCopyCount = 0, oldCopyConfirmed = false;
   let blockedUpdate = false, blockedObserver = null, blockedTimer = null;
   const stopBlockedWatch = () => {
@@ -529,6 +534,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     try { if (restore && node.__previousFocus?.isConnected) node.__previousFocus.focus(); } catch { /* Best-effort focus restoration. */ }
   };
   const refreshOldCopyNotice = () => {
+    if (suppressReminder()) { clearOldCopyNotice(); return; }
     try {
       const blocked = [...(document.querySelectorAll?.('dialog[open], [role="dialog"][aria-modal="true"]') || [])]
         .some(node => node.isConnected && (node.open || node.getClientRects?.().length));
@@ -687,7 +693,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     // when a new manifest arrives, so an existing offer cannot follow a live run.
     try {
       const safe = !!document.body && isVisible(document) && isIdle(document);
-      if (button) button.hidden = !safe;
+      if (button) { button.hidden = !safe || suppressReminder(); button.style.display = button.hidden ? 'none' : 'inline-block'; }
+      if (!safe || suppressReminder() || criticalUpdate()) dismissalMenu?.close();
       if (!safe) {
         clearOldCopyNotice();
         if (dialog) { clearDialog(); pendingManifest = latestManifest; }
@@ -704,7 +711,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       // Invalid policy must not suppress an otherwise valid optional update offer.
       try { applyCompatibility(data); } catch { failOpen(); }
       oldCopyConfirmed = false;
-      if (data.revision <= revision) { clearOldCopyNotice(); stopBlockedWatch(); blockedUpdate = false; button?.remove(); button = null; return; }
+      if (data.revision <= revision) { clearOldCopyNotice(); stopBlockedWatch(); blockedUpdate = false; dismissalMenu?.dispose(); dismissalMenu=null; button?.remove(); button = null; return; }
+      if (suppressReminder()) { dismissalMenu?.close(); if (button) { button.hidden = true; button.style.display='none'; } clearOldCopyNotice(); return; }
       const launcherCommit = automaticLauncherCommit(document);
       const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
       const minimum = data.minimumSupportedRevision;
@@ -712,6 +720,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         oldCopyCount = confirmedOldCopyBoot(document, revision, now); oldCopyConfirmed = true;
       }
       if (button?.isConnected) { refreshOldCopyNotice(); return; }
+      dismissalMenu?.dispose();
       button = document.createElement(reloadHere ? 'button' : 'a');
       if (reloadHere) button.type = 'button';
       else { button.href = UPDATED_GAME_URL; button.target = '_blank'; button.rel = 'noopener noreferrer'; }
@@ -736,11 +745,16 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
         } catch { event?.preventDefault(); failOpen(); }
       });
       document.body.append(button);
+      dismissalMenu = bindUpdateDismissal({document,button,preference:reminder,enabled:()=>!criticalUpdate(),
+        onDismiss:()=>{explicitOffer=false; button.hidden=true; button.style.display='none'; clearOldCopyNotice();
+          const body=document.body, prior=body.getAttribute?.('tabindex'); body.setAttribute('tabindex','-1'); body.focus?.();
+          if (prior == null) body.removeAttribute?.('tabindex'); else body.setAttribute('tabindex',prior);}});
       refreshOldCopyNotice();
     } catch { /* Keep gameplay independent of notification UI. */ }
   };
   const check = async ({force = false} = {}) => {
     if (disposed) return;
+    if (force === true) explicitOffer = true;
     resume();
     // Discovery is safe during a race; displaying prompts and reloading remain idle-only.
     try { if (!isVisible(document)) return; }
@@ -850,6 +864,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     cancelRequest?.();
     clearDialog();
     publish({ onlineAllowed: true, revision, latestRevision: null, minimumSupportedRevision: null, reason: 'disposed' });
+    dismissalMenu?.dispose();
     button?.remove();
     installations.delete(document);
   } });
