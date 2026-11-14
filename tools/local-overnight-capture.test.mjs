@@ -320,19 +320,41 @@ test('capture-first postvalidation rejects any native dispatch/new proofs or mis
 
 test('replacement namespace/accounting validation reads immutable failed attempt and rejects resets/changed evidence',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'replacement-admission-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const priorDir=path.join(root,'2026-11-13','overnight-local'),directory=path.join(root,'2026-11-14','replacement-local');
- await fs.mkdir(priorDir,{recursive:true});await fs.mkdir(directory,{recursive:true});
- const failure=path.join(priorDir,'failed.json'),log=path.join(priorDir,'capture.log');
- const failureBytes=JSON.stringify({status:'failed',sourceCommit:N.priorSource});
+ const priorDir=path.join(root,'2026-11-14','replacement-local'),logDir=path.join(root,'2026-11-13','overnight-local'),directory=path.join(root,'2026-11-14','admission-repair-local');
+ await fs.mkdir(priorDir,{recursive:true});await fs.mkdir(logDir,{recursive:true});await fs.mkdir(directory,{recursive:true});
+ const failure=path.join(priorDir,'failed.json'),log=path.join(logDir,'capture.log');
+ const failureBytes=JSON.stringify({status:'failed',sourceCommit:N.priorSource,phase:'admission-revalidation'});
  const operations={directDocumentReadReservations:37,workerRequests:88,maxDirectReservations:40000,maxWorkerRequests:1024,documentWrites:0};
  await fs.writeFile(failure,failureBytes);await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:operations})+'\n');
  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
  const r={...receipt,replacementDirectory:directory.replace(/\\/g,'/'),priorFailure:{file:failure,sha256:hash(failureBytes)},priorAccounting:{...receipt.priorAccounting,evidence:{file:log,sha256:hash(await fs.readFile(log))}}};
  assert.deepEqual(await validateReplacementContext(r,{directory}),{priorDirectReservations:37,priorWorkerRequests:88});
  assert.equal(await fs.readFile(failure,'utf8'),failureBytes);
+ await fs.writeFile(path.join(priorDir,'capture.log'),'possible capture');await assert.rejects(validateReplacementContext(r,{directory}),/may have acquired/);await fs.unlink(path.join(priorDir,'capture.log'));
  await assert.rejects(validateReplacementContext(r,{directory:priorDir}),/distinct private/);
  await assert.rejects(validateReplacementContext({...r,replacementDirectory:priorDir},{directory}),/distinct private/);
  await fs.appendFile(log,'changed');await assert.rejects(validateReplacementContext(r,{directory}),/log changed/);
  await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:{...operations,directDocumentReadReservations:0}})+'\n');
  r.priorAccounting.evidence.sha256=hash(await fs.readFile(log));await assert.rejects(validateReplacementContext(r,{directory}),/carry exact/);
+});
+
+import {confirmClaimedLocalAdmission} from './local-overnight-capture.mjs';
+test('GitHub-only confirmation tolerates temporary claim visibility and busy jobs without renewing data budgets',async()=>{
+ let calls=0,clock=100;const observed=[],valid={head:source,claimed:true,claimSource:source,active:false,complete:true};
+ const result=await confirmClaimedLocalAdmission({sourceCommit:source,deadline:10000,now:()=>clock,sleep:async ms=>{clock+=ms;},observe:async value=>observed.push(value),inspect:async()=>{calls++;return calls===1?{...valid,claimed:false,claimSource:undefined}:calls===2?{...valid,active:true}:valid;}});
+ assert.equal(result,valid);assert.equal(calls,3);assert.equal(observed.length,3);
+});
+test('admission confirmation never retries changed source/claim or incomplete inventory',async()=>{
+ const valid={head:source,claimed:true,claimSource:source,active:false,complete:true};
+ for(const patch of [{head:'b'.repeat(40)},{claimSource:'b'.repeat(40)},{complete:false}]){let calls=0;await assert.rejects(confirmClaimedLocalAdmission({sourceCommit:source,deadline:100,now:()=>0,sleep:()=>assert.fail('No metadata retry'),inspect:async()=>{calls++;return {...valid,...patch};}}),e=>/^LOCAL_ADMISSION_/.test(e.code));assert.equal(calls,1);}
+});
+test('metadata confirmation has an exact check bound and preserves actionable diagnostic code',async()=>{
+ let calls=0;await assert.rejects(confirmClaimedLocalAdmission({sourceCommit:source,deadline:1000,now:()=>0,sleep:async()=>{},inspect:async()=>{calls++;return{head:source,claimed:false,complete:true,active:false};}}),e=>e.code==='LOCAL_ADMISSION_CLAIM_NOT_VISIBLE');assert.equal(calls,12);
+});
+
+test('slow inspection and diagnostic writes cannot authenticate after confirmation deadline',async()=>{
+ for(const phase of ['inspect','observe']){let clock=0;await assert.rejects(confirmClaimedLocalAdmission({sourceCommit:source,deadline:100,now:()=>clock,inspect:async()=>{if(phase==='inspect')clock=101;return{head:source,claimed:true,claimSource:source,active:false,complete:true};},observe:async()=>{clock=101;}}),e=>e.code==='LOCAL_ADMISSION_WAIT_EXPIRED');}
+});
+test('malformed metadata diagnostics contain only public SHA strings and boolean flags',async()=>{
+ let observed;await assert.rejects(confirmClaimedLocalAdmission({sourceCommit:source,deadline:100,now:()=>0,inspect:async()=>({head:{private:'never log'},claimed:true,claimSource:'bad data',active:{private:'never log'},complete:true}),observe:async value=>{observed=value;}}));assert.deepEqual(observed,{check:1,head:null,claimed:true,claimSource:null,active:null,complete:true});
 });

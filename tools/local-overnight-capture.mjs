@@ -16,9 +16,35 @@ const REPO='StaticQuasar931/PolyTrack-0.6.3-Ranked',BASE='https://api.github.com
 const PASSIVE=new Set(['Publish CDN release','pages build and deployment']);
 
 export function assertClaimedLocalAdmission(admission,sourceCommit){
-  if(!/^[a-f0-9]{40}$/.test(sourceCommit||'')||admission?.head!==sourceCommit||admission.claimed!==true||
-    admission.claimSource!==sourceCommit||admission.active!==false||admission.complete!==true)
-    throw Error('Admission changed after claim; preserve guards without database capture');
+ const code=!/^[a-f0-9]{40}$/.test(sourceCommit||'')?'LOCAL_ADMISSION_SOURCE_INVALID':
+  admission?.head!==sourceCommit?'LOCAL_ADMISSION_SOURCE_CHANGED':
+  admission?.complete!==true?'LOCAL_ADMISSION_INVENTORY_INCOMPLETE':
+  admission?.claimed!==true?'LOCAL_ADMISSION_CLAIM_NOT_VISIBLE':
+  admission?.claimSource!==sourceCommit?'LOCAL_ADMISSION_CLAIM_CHANGED':
+  admission?.active!==false?'LOCAL_ADMISSION_EXISTING_JOB':null;
+ if(code)throw Object.assign(Error('Admission changed after claim; preserve guards without database capture'),{code});
+}
+
+export async function confirmClaimedLocalAdmission({inspect,sourceCommit,deadline,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),observe=async()=>{}}={}){
+ if(typeof inspect!=='function'||!Number.isFinite(deadline))throw Error('Bounded admission confirmation required');
+ const expired=()=>Object.assign(Error('Admission confirmation deadline'),{code:'LOCAL_ADMISSION_WAIT_EXPIRED'});
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(1,deadline-now()));
+ const bounded=work=>new Promise((resolve,reject)=>{
+  const abort=()=>reject(expired());if(controller.signal.aborted){abort();return;}
+  controller.signal.addEventListener('abort',abort,{once:true});
+  Promise.resolve().then(work).then(resolve,reject).finally(()=>controller.signal.removeEventListener('abort',abort));
+ });
+ const checkTime=()=>{if(controller.signal.aborted||now()>=deadline)throw expired();};
+ try{for(let check=1;check<=12;check++){
+  checkTime();const admission=await bounded(()=>inspect({signal:controller.signal,deadline}));checkTime();
+  const publicSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value)?value:null;
+  await bounded(()=>observe({check,head:publicSha(admission?.head),claimed:admission?.claimed===true,claimSource:publicSha(admission?.claimSource),active:typeof admission?.active==='boolean'?admission.active:null,complete:admission?.complete===true}));checkTime();
+  try{assertClaimedLocalAdmission(admission,sourceCommit);return admission;}
+  catch(error){
+   if(!['LOCAL_ADMISSION_CLAIM_NOT_VISIBLE','LOCAL_ADMISSION_EXISTING_JOB'].includes(error.code)||check===12)throw error;
+   const delay=Math.min(2000,deadline-now());if(delay<=0)throw error;await bounded(()=>sleep(delay));
+  }
+ }}finally{clearTimeout(timer);controller.abort();}
 }
 
 export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record,reconcilePublication,revalidateAdmission}={}){
@@ -154,10 +180,16 @@ export async function validateReplacementContext(receipt,{directory}={}){
   if(!path.isAbsolute(directory||'')||!normalized(directory).endsWith('/'+N.privateDirectorySuffix)||
     receipt.replacementDirectory!==normalized(directory))throw Error('Replacement requires its distinct private guard directory');
   const prior=receipt.priorFailure,usage=receipt.priorAccounting?.evidence;
-  if(!prior||!path.isAbsolute(prior.file||'')||!normalized(prior.file).endsWith('/2026-11-13/overnight-local/failed.json')||
-    !usage||!path.isAbsolute(usage.file||'')||path.dirname(usage.file)!==path.dirname(prior.file)||path.basename(usage.file)!=='capture.log'||
+  if(!prior||!path.isAbsolute(prior.file||'')||!normalized(prior.file).endsWith('/2026-11-14/replacement-local/failed.json')||
+    !usage||!path.isAbsolute(usage.file||'')||!normalized(usage.file).endsWith('/2026-11-13/overnight-local/capture.log')||
     !/^[a-f0-9]{64}$/.test(usage.sha256||''))throw Error('Exact failed-attempt receipt and accounting log required');
   await validatePriorLocalCapture(receipt);
+  const failure=JSON.parse(await fs.readFile(prior.file,'utf8'));
+  if(failure.phase!=='admission-revalidation')throw Error('Repair requires a pre-capture admission failure');
+  for(const name of ['capture-admitted.json','capture.log','capture-result.json','native-complete.receipt.json']){
+    try{await fs.lstat(path.join(path.dirname(prior.file),name));}catch(error){if(error.code==='ENOENT')continue;throw error;}
+    throw Error('Previous replacement may have acquired source; no admission repair allowed');
+  }
   const stat=await fs.lstat(usage.file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)throw Error('Unsafe prior accounting log');
   const bytes=await fs.readFile(usage.file);
   if(createHash('sha256').update(bytes).digest('hex')!==usage.sha256)throw Error('Prior accounting log changed');
@@ -187,18 +219,18 @@ async function main(){
   const credential=await git(['credential','fill'],{input:'protocol=https\nhost=github.com\n\n'});
   const token=credential.split(/\r?\n/).find(v=>v.startsWith('password='))?.slice(9);
   if(!token)throw Error('Existing GitHub authorization unavailable');
-  const read=async route=>{
-    const remaining=N.deadline-Date.now();if(remaining<=0)throw Error('Publication metadata deadline reached');
-    const r=await fetch(BASE+route,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'},redirect:'error',signal:AbortSignal.timeout(Math.min(20000,remaining))});
+  const read=async(route,{signal,deadline=N.deadline}={})=>{
+    const remaining=Math.min(N.deadline,deadline)-Date.now();if(remaining<=0)throw Error('Publication metadata deadline reached');
+    const r=await fetch(BASE+route,{headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Cache-Control':'no-cache'},redirect:'error',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(Math.min(20000,remaining))]):AbortSignal.timeout(Math.min(20000,remaining))});
     if(r.status===404)return null;if(!r.ok)throw Error('GitHub admission metadata unavailable');return r.json();
   };
   const record=value=>writeLocalCaptureReceipt({directory,owner,value});
-  const inspectAdmission=async()=>{
-      const head=await read('/git/ref/heads/main'),claimed=await read('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date));
-      const previous=await read('/git/ref/tags/'+N.priorClaimTag);
+  const inspectAdmission=async(options={})=>{
+      const head=await read('/git/ref/heads/main',options),claimed=await read('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date),options);
+      const previous=await read('/git/ref/tags/'+N.priorClaimTag,options);
       if(previous?.object?.sha!==N.priorSource)throw Error('Original claim changed; preserve and inspect');
       for(const status of ['in_progress','queued','waiting','pending','requested']){
-        const rows=await read('/actions/runs?status='+status+'&per_page=100');
+        const rows=await read('/actions/runs?status='+status+'&per_page=100',options);
         if(!Array.isArray(rows?.workflow_runs)||rows.workflow_runs.length>=100)return {complete:false};
         if(rows.workflow_runs.some(r=>!PASSIVE.has(r.name)))return {head:head?.object?.sha,claimed:!!claimed,claimSource:claimed?.object?.sha,complete:true,active:true};
       }
@@ -211,8 +243,9 @@ async function main(){
     reconcilePublication:({candidateCommit})=>reconcileLocalPublication({candidateCommit,readMain:async()=>(await read('/git/ref/heads/main'))?.object?.sha}),
     inspect:inspectAdmission,
     revalidateAdmission:async()=>{
-      const latest=await inspectAdmission();
-      assertClaimedLocalAdmission(latest,receipt.testedCommit);
+      await confirmClaimedLocalAdmission({inspect:inspectAdmission,sourceCommit:receipt.testedCommit,
+        deadline:Math.min(Date.now()+60000,N.latestCaptureStart),
+        observe:diagnostic=>record({status:'admission-observed',sourceCommit:receipt.testedCommit,diagnostic})});
     },
     acquireGuard:async()=>{
       for(const name of ['complete.json','failed.json','running.json','dispatch.json'])if(await fs.lstat(path.join(directory,name)).then(()=>true,e=>{if(e.code==='ENOENT')return false;throw e;}))return false;
