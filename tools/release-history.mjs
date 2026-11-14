@@ -2,16 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 384,
+    "number": 385,
     "version": "0.6.3",
-    "revision": 326,
+    "revision": 327,
     "notes": [
-      "Customize your car in Garage with starter paint palettes and roof accessories.",
-      "Browse nine profile designs in the Style shop inside Racer Studio.",
-      "Clearer Token prices, more profile styles, and local car appearance saves."
+      "Readable car workshop controls on phones and smaller screens.",
+      "Collapse the workshop while viewing your car; native Save dialogs stay clear."
     ]
   },
   "entries": [
+    {
+      "number": 384,
+      "title": "Car workshop and expanded Studio style shop",
+      "commit": "cbf4cb672be59c5df47cf2b1379c0a278d5fbf0b",
+      "committedAt": "2026-11-14T21:07:07.000Z",
+      "notes": [
+        "Customize your car in Garage with starter paint palettes and roof accessories.",
+        "Browse nine profile designs in the Style shop inside Racer Studio.",
+        "Clearer Token prices, more profile styles, and local car appearance saves."
+      ]
+    },
     {
       "number": 383,
       "title": "Clearer achievements and reversible Studio previews",
@@ -196,16 +206,6 @@ const historyData = {
       "committedAt": "2026-11-12T08:53:30.000Z",
       "notes": [
         "Improves snapshot updates without dropping saved racers."
-      ]
-    },
-    {
-      "number": 362,
-      "title": "Refresh verified flags by snapshot generation and show event place totals",
-      "commit": "87710c959c10455de64d6927b71bce1350580c4f",
-      "committedAt": "2026-11-12T08:37:07.000Z",
-      "notes": [
-        "Verified-only leaderboards refresh after replay checks, including on devices with older cached results.",
-        "Weekly and daily track cards show your place as 1/255 when the full field is known."
       ]
     }
   ],
