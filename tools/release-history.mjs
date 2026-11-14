@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 372,
+    "number": 373,
     "version": "0.6.3",
-    "revision": 316,
+    "revision": 317,
     "notes": [
-      "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
-      "Keyboard focus returns to your selected item when you exit a preview."
+      "Snapshot capture now starts with current personal bests before refreshing track boards.",
+      "Capture can publish using existing verification, with new replay verification running separately afterward."
     ]
   },
   "entries": [
+    {
+      "number": 372,
+      "title": "Keep locked previews clearly visible",
+      "commit": "84c96100853a10002036d0fbba75c21fe999d40a",
+      "committedAt": "2026-11-14T07:15:57.000Z",
+      "notes": [
+        "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
+        "Keyboard focus returns to your selected item when you exit a preview."
+      ]
+    },
     {
       "number": 371,
       "title": "Racer hub, local friends and Field RP routes",
@@ -195,16 +205,6 @@ const historyData = {
       "notes": [
         "Read update notes while the game loads, instead of waiting for the main menu.",
         "Update notes stay out of the way during races."
-      ]
-    },
-    {
-      "number": 352,
-      "title": "Keep downloaded rankings out of save storage",
-      "commit": "1b98d649dfc7734536e4ea29b317ee2b5b940692",
-      "committedAt": "2026-11-09T05:15:51.000Z",
-      "notes": [
-        "More room for saves: downloaded rankings now use separate local cache storage.",
-        "Keeps personal saves, replays and older-version save formats unchanged."
       ]
     }
   ],

@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 372,
+  "number": 373,
   "version": "0.6.3",
-  "revision": 316,
+  "revision": 317,
   "notes": [
-    "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
-    "Keyboard focus returns to your selected item when you exit a preview."
+    "Snapshot capture now starts with current personal bests before refreshing track boards.",
+    "Capture can publish using existing verification, with new replay verification running separately afterward."
   ],
-  "preparedAt": "2026-11-14T07:14:50.163Z",
-  "committedAt": "2026-11-14T07:15:57.000Z"
+  "preparedAt": "2026-11-14T08:29:17.974Z",
+  "committedAt": "2026-11-14T08:31:50.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -52,6 +52,9 @@ export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,pre
     phase='capture-postvalidation';
     if(!result||result.deferred||result.published!==true||result.nativeVerification?.backendReads!==0||result.nativeVerification?.backendWrites!==0)
       throw Error('Capture deferred or offline proof assertion failed; retain recovery, do not publish');
+    if(receipt.captureOnly===true&&(result.nativeVerification?.reuseOnly!==true||
+      result.nativeVerification?.counts?.nativeDispatched!==0||result.nativeVerification?.counts?.newProofs!==0))
+      throw Error('Capture-only publication requires stored-proof reuse with zero native dispatch/new proofs');
     if(now()>=N.deadline)throw Error('Publication deadline reached; preserve candidate');
     generation=result.generation;snapshotDirectory=result.directory;phase='publication-validation';
     const published=await publish(result,value=>{publication={...publication,...value};phase=value.phase||phase;});
@@ -144,12 +147,33 @@ export async function validateLocalEvidence(receipt){
   if(receipt.localSignerAccepted!==true||receipt.publicationRequiresCompleteReplays!==true)throw Error('Capture signer or strict replay gate not ready');
 }
 
+
+/** Offline receipt/namespace/accounting check before any admission or credential access. */
+export async function validateReplacementContext(receipt,{directory}={}){
+  const normalized=value=>path.resolve(value).replace(/\\/g,'/');
+  if(!path.isAbsolute(directory||'')||!normalized(directory).endsWith('/'+N.privateDirectorySuffix)||
+    receipt.replacementDirectory!==normalized(directory))throw Error('Replacement requires its distinct private guard directory');
+  const prior=receipt.priorFailure,usage=receipt.priorAccounting?.evidence;
+  if(!prior||!path.isAbsolute(prior.file||'')||!normalized(prior.file).endsWith('/2026-11-13/overnight-local/failed.json')||
+    !usage||!path.isAbsolute(usage.file||'')||path.dirname(usage.file)!==path.dirname(prior.file)||path.basename(usage.file)!=='capture.log'||
+    !/^[a-f0-9]{64}$/.test(usage.sha256||''))throw Error('Exact failed-attempt receipt and accounting log required');
+  await validatePriorLocalCapture(receipt);
+  const stat=await fs.lstat(usage.file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)throw Error('Unsafe prior accounting log');
+  const bytes=await fs.readFile(usage.file);
+  if(createHash('sha256').update(bytes).digest('hex')!==usage.sha256)throw Error('Prior accounting log changed');
+  const rows=bytes.toString('utf8').split(/\r?\n/).filter(line=>line.startsWith('{')).flatMap(line=>{try{const v=JSON.parse(line);return v.fullSnapshotOperations?[v.fullSnapshotOperations]:[];}catch{return [];}});
+  if(rows.length!==1||rows[0].directDocumentReadReservations!==N.priorDirectReservations||rows[0].workerRequests!==N.priorWorkerRequests||
+    rows[0].maxDirectReservations!==40000||rows[0].maxWorkerRequests!==1024||rows[0].documentWrites!==0)
+    throw Error('Replacement must carry exact 37/88 usage within unchanged total budgets');
+  return {priorDirectReservations:N.priorDirectReservations,priorWorkerRequests:N.priorWorkerRequests};
+}
+
 async function main(){
   const args=process.argv.slice(2);
   if(args.length!==2||args[0]!=='--receipt'||!path.isAbsolute(args[1]))throw Error('Usage: node tools/local-overnight-capture.mjs --receipt ABSOLUTE_READY_JSON');
   const receipt=JSON.parse(await fs.readFile(args[1],'utf8')),directory=path.dirname(args[1]),owner=randomUUID();
   localOvernightCapturePlan({receipt});fullSnapshotPolicy(receipt);await validateLocalEvidence(receipt);
-  await validatePriorLocalCapture(receipt);
+  await validateReplacementContext(receipt,{directory});
   const workspace=receipt.workspace;
   if(!path.isAbsolute(workspace||'')||!path.isAbsolute(receipt.credentialFile||'')||!path.isAbsolute(receipt.recoveryPublicKeyFile||'')||
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');

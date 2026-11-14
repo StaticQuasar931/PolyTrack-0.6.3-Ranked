@@ -1,4 +1,4 @@
-export const OVERNIGHT_SNAPSHOT = Object.freeze({
+export const ORIGINAL_OVERNIGHT_SNAPSHOT = Object.freeze({
   priorDirectReservations:0,priorWorkerRequests:0,
   claimTag:'polytrack-oneoff-2026-11-14',priorClaimTag:'polytrack-oneoff-2026-11-07-stored-publication-1',priorSource:'e11d4db3592ecc1d5964948a98884cc7a158e3c2',
   priorOutcome:'complete',priorPublicationCommit:'4f86fe80e81014534b467b6406f13d5cdcd81539',
@@ -7,6 +7,16 @@ export const OVERNIGHT_SNAPSHOT = Object.freeze({
   latestFallback:Date.parse('2026-11-14T12:15:00Z'),deadline:Date.parse('2026-11-14T13:00:00Z'),
   latestCaptureStart:Date.parse('2026-11-14T08:15:00Z'),
   maxJobs:10000,maxRuntimeMs:1500000,packReserveMs:60000,jobTimeoutMinutes:50,replayDocumentLimit:1000
+});
+
+// One new human-authorized replacement, not a retry of the immutable failed attempt.
+export const OVERNIGHT_SNAPSHOT = Object.freeze({...ORIGINAL_OVERNIGHT_SNAPSHOT,
+  authorizationId:'nov14-explicit-replacement-1',publicationMode:'capture-first',
+  privateDirectorySuffix:'2026-11-14/replacement-local',
+  priorDirectReservations:37,priorWorkerRequests:88,
+  claimTag:'polytrack-oneoff-2026-11-14-replacement-1',
+  priorClaimTag:ORIGINAL_OVERNIGHT_SNAPSHOT.claimTag,priorSource:'84c96100853a10002036d0fbba75c21fe999d40a',priorOutcome:'failed',
+  start:Date.parse('2026-11-14T08:15:00Z'),latestCaptureStart:Date.parse('2026-11-14T09:00:00Z')
 });
 
 export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,configuredMode='firestore',previousCaptureStartedAt=null,manualOvernight=false}={}){
@@ -36,12 +46,16 @@ export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,confi
 
 export function localOvernightCapturePlan({now=Date.now(),receipt}={}){
   const n=OVERNIGHT_SNAPSHOT;
+  if(receipt?.replacementAuthorization?.id!==n.authorizationId||receipt.replacementAuthorization.requestedBy!=='user'||
+    receipt.replacementAuthorization.publicationMode!==n.publicationMode||receipt.replacementAuthorization.automaticRetry!==false||
+    receipt.captureOnly!==true||receipt.claimTag!==n.claimTag||receipt.priorAccounting?.directDocumentReadReservations!==n.priorDirectReservations||
+    receipt.priorAccounting?.workerRequests!==n.priorWorkerRequests)throw Error('Explicit replacement authorization and carried accounting required');
   if(n.execution!=='local'||!Number.isSafeInteger(now)||now<n.start||now>=n.latestCaptureStart||
     receipt?.ready!==true||receipt.targetDate!==n.date||receipt.execution!=='local'||
-    receipt.oneOffAuthority!=='snapshot-native'||! /^[a-f0-9]{40}$/.test(receipt.testedCommit||'')||
+    receipt.oneOffAuthority!=='firestore'||! /^[a-f0-9]{40}$/.test(receipt.testedCommit||'')||
     receipt.scheduledCaptureAt!==new Date(n.start).toISOString()||receipt.replayDocumentLimit!==n.replayDocumentLimit)
     throw Error('Local overnight capture requires exact tested readiness and the authorized time window');
-  return {mode:'snapshot-native',maxJobs:n.maxJobs,maxRuntimeMs:n.maxRuntimeMs,
+  return {mode:'firestore',maxJobs:n.maxJobs,maxRuntimeMs:n.maxRuntimeMs,
     replayDocumentLimit:n.replayDocumentLimit,deadline:n.deadline};
 }
 

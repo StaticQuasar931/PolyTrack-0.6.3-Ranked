@@ -4,11 +4,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {runLocalOvernightCapture,assertClaimedLocalAdmission,validateLocalEvidence,validatePriorLocalCapture,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
+import {runLocalOvernightCapture,assertClaimedLocalAdmission,validateLocalEvidence,validatePriorLocalCapture,validateReplacementContext,localCaptureFailure,writeLocalCaptureReceipt} from './local-overnight-capture.mjs';
 import {publishLocalCaptureCommit,reconcileLocalPublication} from './local-capture-git.mjs';
 import {assertLocalCaptureOwner} from './local-capture-worker.mjs';
 import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
-const source='a'.repeat(40),receipt={ready:true,targetDate:N.date,execution:'local',oneOffAuthority:'snapshot-native',testedCommit:source,
+const source='a'.repeat(40),receipt={ready:true,targetDate:N.date,execution:'local',oneOffAuthority:'firestore',testedCommit:source,captureOnly:true,claimTag:N.claimTag,
+  replacementAuthorization:{id:N.authorizationId,requestedBy:'user',publicationMode:'capture-first',automaticRetry:false},
+  priorAccounting:{directDocumentReadReservations:37,workerRequests:88},
   scheduledCaptureAt:new Date(N.start).toISOString(),replayDocumentLimit:1000};
 function fixture(patch={}){
   const calls=[];let guarded=false;
@@ -16,7 +18,7 @@ function fixture(patch={}){
   return {calls,options:{receipt,now:()=>N.start,inspect:step('inspect',{head:source,complete:true}),
     preflight:step('checkpoint-preflight'),
     acquireGuard:async()=>{calls.push('guard');guarded=true;return true;},claim:step('claim',true),authenticate:step('auth'),
-    capture:step('capture',{published:true,generation:73,nativeVerification:{backendReads:0,backendWrites:0}}),publish:step('publish',{publicationCommit:'b'.repeat(40)}),
+    capture:step('capture',{published:true,generation:73,nativeVerification:{backendReads:0,backendWrites:0,reuseOnly:true,counts:{nativeDispatched:0,newProofs:0}}}),publish:step('publish',{publicationCommit:'b'.repeat(40)}),
     record:async value=>calls.push(value.status),...patch}};
 }
 test('local capture orders exact-source inspection, both guards, auth, capture and publication',async()=>{
@@ -86,7 +88,7 @@ test('failure receipt errors never mask the original error and remain in sanitiz
 });
 test('successful push followed by completion-write failure retains acknowledged commit without retry',async()=>{
   const records=[],candidate='b'.repeat(40);let pushes=0,captures=0;
-  const f=fixture({capture:async()=>{captures++;return {published:true,generation:73,nativeVerification:{backendReads:0,backendWrites:0}};},
+  const f=fixture({capture:async()=>{captures++;return {published:true,generation:73,nativeVerification:{backendReads:0,backendWrites:0,reuseOnly:true,counts:{nativeDispatched:0,newProofs:0}}};},
     publish:async(result,onState)=>publishLocalCaptureCommit({sourceCommit:source,directory:'public-snapshots73',deadline:N.deadline,now:()=>N.start,
       git:args=>{if(args[0]==='push')pushes++;return args[0]==='rev-parse'?args[1]==='HEAD'?candidate:source:'';},
       record:async value=>records.push(value),onState}),
@@ -132,7 +134,7 @@ test('malformed, non-string and mismatched publication commits never complete',a
 function unattendedFixture({loseAcknowledgement=true,completionFailures=0,readMain=async()=>'b'.repeat(40)}={}){
   const candidate='b'.repeat(40),records=[],counters={capture:0,push:0,read:0,completion:0};
   const original=Object.assign(Error('original publication failure'),{code:'EIO'});
-  const f=fixture({capture:async()=>{counters.capture++;return {published:true,generation:73,directory:'public-snapshots73',nativeVerification:{backendReads:0,backendWrites:0}};},
+  const f=fixture({capture:async()=>{counters.capture++;return {published:true,generation:73,directory:'public-snapshots73',nativeVerification:{backendReads:0,backendWrites:0,reuseOnly:true,counts:{nativeDispatched:0,newProofs:0}}};},
     publish:async(result,onState)=>publishLocalCaptureCommit({sourceCommit:source,directory:result.directory,deadline:N.deadline,now:()=>N.start,
       git:async args=>{if(args[0]==='push'){counters.push++;if(loseAcknowledgement)throw original;}
         return args[0]==='rev-parse'?args[1]==='HEAD'?candidate:source:'';},record:async value=>records.push(value),onState}),
@@ -304,4 +306,33 @@ test('post-claim admission requires exact own claim and complete idle job invent
     assert.throws(()=>assertClaimedLocalAdmission({...valid,...patch},source),/Admission changed/);
   assert.throws(()=>assertClaimedLocalAdmission(null,source),/Admission changed/);
   assert.throws(()=>assertClaimedLocalAdmission(valid,'not-a-source'),/Admission changed/);
+});
+
+test('capture-first postvalidation rejects any native dispatch/new proofs or missing reuse-only claim',async()=>{
+ for(const verification of [{backendReads:0,backendWrites:0,reuseOnly:false,counts:{nativeDispatched:0,newProofs:0}},
+ {backendReads:0,backendWrites:0,reuseOnly:true,counts:{nativeDispatched:1,newProofs:0}},
+ {backendReads:0,backendWrites:0,reuseOnly:true,counts:{nativeDispatched:0,newProofs:1}},
+ {backendReads:0,backendWrites:0,reuseOnly:true,counts:{}}]){
+  const f=fixture({capture:async()=>({published:true,nativeVerification:verification})});
+  await assert.rejects(runLocalOvernightCapture(f.options),/Capture-only/);assert.equal(f.calls.includes('publish'),false);
+ }
+});
+
+test('replacement namespace/accounting validation reads immutable failed attempt and rejects resets/changed evidence',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'replacement-admission-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const priorDir=path.join(root,'2026-11-13','overnight-local'),directory=path.join(root,'2026-11-14','replacement-local');
+ await fs.mkdir(priorDir,{recursive:true});await fs.mkdir(directory,{recursive:true});
+ const failure=path.join(priorDir,'failed.json'),log=path.join(priorDir,'capture.log');
+ const failureBytes=JSON.stringify({status:'failed',sourceCommit:N.priorSource});
+ const operations={directDocumentReadReservations:37,workerRequests:88,maxDirectReservations:40000,maxWorkerRequests:1024,documentWrites:0};
+ await fs.writeFile(failure,failureBytes);await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:operations})+'\n');
+ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+ const r={...receipt,replacementDirectory:directory.replace(/\\/g,'/'),priorFailure:{file:failure,sha256:hash(failureBytes)},priorAccounting:{...receipt.priorAccounting,evidence:{file:log,sha256:hash(await fs.readFile(log))}}};
+ assert.deepEqual(await validateReplacementContext(r,{directory}),{priorDirectReservations:37,priorWorkerRequests:88});
+ assert.equal(await fs.readFile(failure,'utf8'),failureBytes);
+ await assert.rejects(validateReplacementContext(r,{directory:priorDir}),/distinct private/);
+ await assert.rejects(validateReplacementContext({...r,replacementDirectory:priorDir},{directory}),/distinct private/);
+ await fs.appendFile(log,'changed');await assert.rejects(validateReplacementContext(r,{directory}),/log changed/);
+ await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:{...operations,directDocumentReadReservations:0}})+'\n');
+ r.priorAccounting.evidence.sha256=hash(await fs.readFile(log));await assert.rejects(validateReplacementContext(r,{directory}),/carry exact/);
 });

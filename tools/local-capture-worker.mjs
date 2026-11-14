@@ -1,6 +1,8 @@
+import {createHash} from 'node:crypto';
+import {prepareNativeSnapshotCapture} from './native-snapshot-phase.mjs';
+import {openFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
 import {openCapturedProfileDelta} from './captured-profile-input.mjs';
 import {openCapturedCanonicalInput} from './captured-canonical-input.mjs';
-import {preparePublishedNativeBaseline} from './published-native-baseline.mjs';
 import {reuseCompletedWorkerBackup} from './reuse-worker-backup.mjs';
 import {captureBackendQueueDiagnostic} from './backend-queue-diagnostic.mjs';
 import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
@@ -112,6 +114,17 @@ export async function repairPreparedLocalArchives({receipt,directory,connectImpl
   return {...result,documentBudget:db.documentBudget()};
 }
 
+export async function assertLocalStagingBase({root,publishedBaseline}={}){
+ const parent=path.join(root,'local-reports'),stage=path.join(parent,'snapshot-staging');
+ for(const p of [parent,stage]){const st=await fs.lstat(p);if(!st.isDirectory()||st.isSymbolicLink())throw Error('Unsafe prepared staging');}
+ const read=async relative=>{const p=path.join(root,relative),st=await fs.lstat(p);if(!st.isFile()||st.isSymbolicLink()||st.size>16*1024*1024)throw Error('Unsafe prepared base file');return fs.readFile(p);};
+ const pointer=JSON.parse(await read('snapshot-current.json')),base=JSON.parse(await read('local-reports/snapshot-staging-base.json'));
+ const {generation,indexSha256}=publishedBaseline||{};
+ if(!Number.isSafeInteger(generation)||generation<1||! /^[a-f0-9]{64}$/.test(indexSha256||'')||pointer.currentdir!=='public-snapshots'+generation||base.schemaVersion!==1||base.generation!==generation)throw Error('Prepared staging base changed before source acquisition');
+ const bytes=await read('public-snapshots'+generation+'/index.json');
+ if(createHash('sha256').update(bytes).digest('hex')!==indexSha256)throw Error('Published source baseline changed');
+}
+
 export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const fullPolicy=fullSnapshotPolicy(receipt);
   await validateLocalEvidence(receipt);
@@ -135,6 +148,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   };
   // Only this bounded child holds credentials. The offline native phase strips them.
   const staging=path.join(root,'local-reports/snapshot-staging');
+  await assertLocalStagingBase({root,publishedBaseline:fullPolicy.publishedBaseline});
   const catalogHandoff={file:path.join(directory,'catalog.private'),binding:{sourceCommit:receipt.testedCommit,
     repository:'StaticQuasar931/PolyTrack-0.6.3-Ranked',runId:String(startedAt),runAttempt:'1',startedAt}};
   const checkpoint=createLocalCaptureCheckpoint({root,directory,recipientPublicKey,sourceCommit:receipt.testedCommit});
@@ -148,22 +162,27 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
     if(reused)await fs.writeFile(path.join(root,'events/public-catalog.json'),reused.catalogBytes);
     const catalog=reused?{deferred:false}:await syncPublicEventCatalog({outputFile:path.join(root,'events/public-catalog.json'),stagingDirectory:staging,catalogHandoff});
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
+    // Prepare prior proof authority before current canonical rows replace old bindings.
+    const priorContext=await prepareNativeSnapshotCapture({root,directory:staging});
+    const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
+    console.log(JSON.stringify({fullSnapshotCapture:full}));
+    const fullCanonicalSource=await openFullCanonicalTrackSource({directory:staging,report:full.canonical});
+    const captureOnly=receipt.captureOnly===true;
     const result=await updatePublicSnapshot({...localCaptureSourceStages(),root,refreshReplays:false,replayDocumentLimit:null,
-      ...(reused?{prepareNativeCapture:()=>preparePublishedNativeBaseline({root,publishedBaseline:fullPolicy.publishedBaseline})}:{}),
-      verificationAuthority:'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:async input=>{
+      prepareNativeCapture:()=>priorContext,
+
+      verificationAuthority:captureOnly?'firestore':'snapshot-native',captureOptions:{catalogHandoff,trackFetchLimit:fullPolicy.trackCheckLimit,trackConfirmationNotBefore:startedAt,eventReplayFetchLimit:fullPolicy.eventReplayLimit},captureCheckpoint:async input=>{
         const preflight=await rebuildSnapshotOverall({directory:input.directory,validateOnly:true});
         if(preflight.additionalFirestoreReads!==0||preflight.additionalFirestoreWrites!==0)throw Error('Offline scoring preflight used backend');
         await checkpoint(input);
       },
-      capture:async options=>{const backup=reused?.manifest||await runLocalSnapshotBackup(options);if(backup?.deferred)return backup;
+      capture:async options=>{const backup=reused?.manifest||await runLocalSnapshotBackup({...options,fullCanonicalSource});if(backup?.deferred)return backup;
         if(reused)console.log(JSON.stringify({publicSnapshotBackupReused:{...reused.summary,newWorkerRequests:0,verificationAuthority:false}}));
         const repair=await repairPreparedLocalArchives({receipt,directory:staging});if(repair)console.log(JSON.stringify({archiveReplayRepair:repair}));
-        const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
-        console.log(JSON.stringify({fullSnapshotCapture:full}));
         return backup;},
-      nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),
+      nativePhase:captureOnly?runNativeSnapshotPhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase}),
       nativePhaseOptions:{sourceCommit:receipt.testedCommit,publishedEventTotalsBaseline,maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
-        nativeCompleted:createLocalNativeVerificationCompletion({root,directory,owner,sourceCommit:receipt.testedCommit,maxJobs:plan.maxJobs}),
+        ...(captureOnly?{}:{nativeCompleted:createLocalNativeVerificationCompletion({root,directory,owner,sourceCommit:receipt.testedCommit,maxJobs:plan.maxJobs})}),
         proofCheckpoint:({directory:source,sourceBinding,ledgerManifestHash})=>checkpoint({directory:source,
           sourceCommit:receipt.testedCommit,phase:'native-proofs',sourceBinding,ledgerManifestHash})}});
     if(aborted)throw Error('Local capture cancelled; do not publish');

@@ -24,15 +24,15 @@ test('prepared archive recovery passes zero-retry bounded auth and only exact GE
 test('pre-reset and changed plan fail before authentication',async t=>{const f=await fixture(t);await assert.rejects(repairPreparedLocalArchives({...f.options,now:()=>ARCHIVE_REPAIR_NOT_BEFORE-1}),/before reset/);f.options.receipt.archiveReplayRepair.sha256='0'.repeat(64);await assert.rejects(repairPreparedLocalArchives(f.options),/fingerprint/);assert.equal(f.connects(),0);});
 test('wrong collection, duplicate and unplanned documents never reach storage',async t=>{for(const kind of ['collection','duplicate','unknown']){const f=await fixture(t),id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{if(kind==='duplicate')await getDocument('0.6.2_event_replays',id);return getDocument(kind==='collection'?'other':'0.6.2_event_replays',kind==='unknown'?'bad':id);}}),/boundary/);assert.equal(f.gets(),kind==='duplicate'?1:0);}});
 test('missing or failed document closes the storage capability',async t=>{const f=await fixture(t);f.db.get=async()=>{throw Error('quota');};await assert.rejects(repairPreparedLocalArchives({...f.options,repair:async({getDocument})=>{const id=f.targets[0].periodId+'_'+f.targets[0].accountId;await assert.rejects(getDocument('0.6.2_event_replays',id),/quota/);return getDocument('0.6.2_event_replays',f.targets[1].periodId+'_'+f.targets[1].accountId);}}),/boundary/);});
-test('archive recovery runs after fresh or reused backup and before canonical capture and native verification',async()=>{
-  const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
-  assert.match(source,/const backup=reused\?\.manifest\|\|await runLocalSnapshotBackup\(options\);if\(backup\?\.deferred\)return backup;/);
-  const start=source.indexOf('capture:async options=>'),end=source.indexOf('nativePhase:createLocalNativePhaseReceipt',start);
-  assert(start>=0&&end>start);
-  const callback=source.slice(start,end),backup=callback.indexOf('const backup='),repair=callback.indexOf('await repairPreparedLocalArchives('),canonical=callback.indexOf('await captureLocalCompleteSources(');
-  assert(backup>=0&&repair>backup&&canonical>repair&&callback.indexOf('return backup;',canonical)>canonical);
+test('prior proof context and complete canonical source precede Worker backup and archive recovery',async()=>{
+ const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');
+ const prior=source.indexOf('const priorContext=await prepareNativeSnapshotCapture'),canonical=source.indexOf('const full=await captureLocalCompleteSources'),opened=source.indexOf('const fullCanonicalSource=await openFullCanonicalTrackSource'),updater=source.indexOf('const result=await updatePublicSnapshot('),backup=source.indexOf('const backup=reused?.manifest||await runLocalSnapshotBackup'),repair=source.indexOf('await repairPreparedLocalArchives',backup);
+ assert(prior>=0&&canonical>prior&&opened>canonical&&updater>opened&&backup>updater&&repair>backup);
+ assert(source.includes('prepareNativeCapture:()=>priorContext'));
+ assert(source.includes("verificationAuthority:captureOnly?'firestore':'snapshot-native'"));
+ assert(source.includes('nativePhase:captureOnly?runNativeSnapshotPhase:createLocalNativePhaseReceipt'));
+ assert(source.includes('...(captureOnly?{}:{nativeCompleted:createLocalNativeVerificationCompletion'));
 });
-
 
 test('a wrapped local backup keeps authenticated Overall, Event RP totals and local calculation stages',async()=>{
  const {captureOverallProjection}=await import('./capture-overall-projection.mjs');
@@ -60,7 +60,8 @@ test('local canonical capture disables the later duplicate replay-export branch'
   assert(start>=0&&end>start);const caller=source.slice(start,end);
   assert.match(caller,/root,refreshReplays:false,replayDocumentLimit:null/);
   assert.doesNotMatch(caller,/fullPublic\s*:\s*true|refreshReplays\s*:\s*true/);
-  assert.equal((caller.match(/await captureLocalCompleteSources\(/g)||[]).length,1);
+  assert.equal((source.match(/await captureLocalCompleteSources\(/g)||[]).length,1);
+  assert.equal(caller.includes('await captureLocalCompleteSources('),false,'no duplicate full scan in backup callback');
   const updater=await fs.readFile(new URL('./update-public-snapshot.mjs',import.meta.url),'utf8');
   assert.match(updater,/export async function updatePublicSnapshot\(\{[^\n]*fullPublic = false, refreshReplays = false/);
   const capture=updater.indexOf('backupResult=await capture('),exports=updater.indexOf('if (!offline && (fullPublic || refreshReplays))'),checkpoint=updater.indexOf('await captureCheckpoint(');
@@ -98,13 +99,26 @@ for(const mode of ['fresh','reused','deferred'])test('backup callback executes s
   const match=/capture:async options=>\{([\s\S]*?return backup;)\},\s*nativePhase:/.exec(source);assert(match);
   const events=[],manifest={deferred:mode==='deferred',marker:'fixture'},capturedCanonical={readTime:'frozen-point'};
   const callback=Function('reused','runLocalSnapshotBackup','repairPreparedLocalArchives','captureLocalCompleteSources',
-    'console','receipt','staging','fullPolicy','directory','capturedCanonical','capturedProfiles','process',
+    'console','receipt','staging','fullPolicy','directory','capturedCanonical','capturedProfiles','process','fullCanonicalSource',
     'return async options=>{'+match[1]+'}')(
     mode==='reused'?{manifest,summary:{}}:null,
-    async options=>{events.push('backup');assert.deepEqual(options,{marker:'options'});return manifest;},
+    async options=>{events.push('backup');assert.deepEqual(options,{marker:'options',fullCanonicalSource:'bound-source'});return manifest;},
     async()=>{events.push('repair');return null;},
     async options=>{events.push('canonical');assert.equal(options.capturedCanonical,capturedCanonical);return {complete:true};},
-    {log:()=>{}},{},'synthetic-staging',fullPolicy,'synthetic-private',capturedCanonical,null,{env:{}});
+    {log:()=>{}},{},'synthetic-staging',fullPolicy,'synthetic-private',capturedCanonical,null,{env:{}},'bound-source');
   assert.equal(await callback({marker:'options'}),manifest);
-  assert.deepEqual(events,mode==='deferred'?['backup']:mode==='reused'?['repair','canonical']:['backup','repair','canonical']);
+  assert.deepEqual(events,mode==='deferred'?['backup']:mode==='reused'?['repair']:['backup','repair']);
+});
+
+import {assertLocalStagingBase} from './local-capture-worker.mjs';
+test('stale or missing prepared base stops before acquiring current data',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'capture-base-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ await fs.mkdir(path.join(root,'local-reports/snapshot-staging'),{recursive:true});await fs.mkdir(path.join(root,'public-snapshots81'));
+ const bytes=Buffer.from('{"generation":81}');await fs.writeFile(path.join(root,'public-snapshots81/index.json'),bytes);await fs.writeFile(path.join(root,'snapshot-current.json'),JSON.stringify({currentdir:'public-snapshots81'}));
+ const base=path.join(root,'local-reports/snapshot-staging-base.json'),publishedBaseline={generation:81,indexSha256:createHash('sha256').update(bytes).digest('hex')};
+ await assert.rejects(assertLocalStagingBase({root,publishedBaseline}),/ENOENT/);
+ await fs.writeFile(base,JSON.stringify({schemaVersion:1,generation:80}));await assert.rejects(assertLocalStagingBase({root,publishedBaseline}),/base changed/);
+ await fs.writeFile(base,JSON.stringify({schemaVersion:1,generation:81}));await assertLocalStagingBase({root,publishedBaseline});
+ await fs.appendFile(path.join(root,'public-snapshots81/index.json'),' ');await assert.rejects(assertLocalStagingBase({root,publishedBaseline}),/baseline changed/);
+ const source=await fs.readFile(new URL('./local-capture-worker.mjs',import.meta.url),'utf8');assert(source.indexOf('await assertLocalStagingBase(')<source.indexOf('process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT=await fs.readFile'));
 });

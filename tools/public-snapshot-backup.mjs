@@ -1,3 +1,5 @@
+import {isDeepStrictEqual} from 'node:util';
+import {isFullCanonicalTrackSource} from './full-canonical-track-source.mjs';
 import {retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
 import {selectFullTrackChecks,assertFullTrackChecks,FULL_TRACK_CHECK_LIMIT} from './full-snapshot-source-checks.mjs';
 import crypto from 'node:crypto';
@@ -817,7 +819,8 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
 
 async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirectory, now,
   trackIds = null, log = console.log, archiveExport = null, capturedOverall = null, confirmedTracks = null, capturedTracks = null,
-  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null, reconcileCanonicalTrack = null} = {}) {
+  trackFetchLimit = PUBLIC_SNAPSHOT_LIMITS.trackFetches, trackConfirmationNotBefore = null, eventReplayFetchLimit = PUBLIC_SNAPSHOT_LIMITS.eventReplayFetches, nativeVerification = null, catalogHandoff = null, reconcileCanonicalTrack = null, fullCanonicalSource = null} = {}) {
+  if(fullCanonicalSource!==null&&!isFullCanonicalTrackSource(fullCanonicalSource))throw Error('Opaque full canonical source required');
   const handoffNow = now === undefined ? Date.now : () => now;
   now ??= Date.now();
   if (!Number.isSafeInteger(trackFetchLimit) || trackFetchLimit < 0 || trackFetchLimit > (trackConfirmationNotBefore===null?PUBLIC_SNAPSHOT_LIMITS.trackFetches:FULL_TRACK_CHECK_LIMIT))
@@ -918,6 +921,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   if(capturedTracks!==null){
     if(!(capturedTracks instanceof Map)||capturedTracks.size>512)throw Error('Invalid captured source boards');
     for(const [id,value] of capturedTracks){
+      if(fullCanonicalSource?.has(id))continue;
       if(!TRACK_ID.test(id))throw Error('Invalid captured source track');
       const board=authenticatedOverallTrackBackup(value,id),relative='tracks/'+id+'.json';
       if(JSON.stringify(board)!==JSON.stringify(value)||!(board.complete===true||board.sourceComplete===true)||board.totalEntries!==board.entries.length)throw Error('Invalid captured source board');
@@ -953,6 +957,15 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       if (record.path !== `tracks/${id}.json`) throw Error('Unexpected cached track path');
       const cachedBytes = sourceRepairs.has(record.path) ? jsonText(sourceRepairs.get(record.path)) : await fs.readFile(path.join(directory, record.path), 'utf8');
       const cached = sourceRepairs.get(record.path)||JSON.parse(cachedBytes);
+      if(fullCanonicalSource?.has(id)){
+        const source=fullCanonicalSource.validate(id,cachedBytes),projected=cachedProjection(source,id);
+        // The canonical importer additionally keeps these public audit fields.
+        projected.entries=projected.entries.map((row,index)=>({...row,...project(source.entries[index],
+          ['updatedAt','ingestedAt','ingestedAtSource','eventRpEligible','status','physicsVerified','replayIntegrityVerified','originalRank','originalTimeMs'])}));
+        if(!isDeepStrictEqual(projected,source))throw Error('Canonical board is not a public projection');
+        cachedTracks[id]={...record,checkedAt:fullCanonicalSource.checkedAt,missing:false};
+        continue;
+      }
       const projected = cachedProjection(cached, id);
       if (JSON.stringify(projected) !== JSON.stringify(cached)) throw Error('Cached track is not a public projection');
       const overlay = !!record.nativeLedgerOverlay || cached.entries.some(row=>row.nativeLedgerKey);
@@ -971,12 +984,13 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
           (projected.complete === true || projected.sourceComplete === true) && projected.totalEntries === projected.entries.length && projected.entries.length <= 10000 &&
           sourceDigest === confirmation.sha256)
         cachedTracks[id] = {...record, checkedAt: confirmation.checkedAt};
-    } catch {
+    } catch(error) {
+      if(fullCanonicalSource?.has(id))throw error;
       cachedTracks[id] = {...record, path: null, missing: false};
       delete cachedTracks[id].checkedAt;
     }
   }
-  const plannedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds,cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
+  const plannedTracks = trackConfirmationNotBefore!==null ? selectFullTrackChecks(allTrackIds.filter(id=>!fullCanonicalSource?.has(id)),cachedTracks,{notBefore:trackConfirmationNotBefore,limit:trackFetchLimit}) : chooseTrackFetches(allTrackIds, [...(overall.trackCatalog || []), ...overall.trackSummaries], cachedTracks,
     trackFetchLimit, now, catalog.periods.filter(period => liveIds.has(period.id)).map(period => period.trackId));
   // Required source rechecks consume the existing budget before ordinary refreshes.
   const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id))].slice(0, trackFetchLimit);
@@ -1043,7 +1057,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     const records={...cachedTracks};
     for(const {id,value} of trackRows)records[id]=value?{path:'tracks/'+id+'.json',checkedAt:now}:
       records[id]?.path||previous.tracks[id]?.path?{...records[id],path:records[id]?.path||previous.tracks[id].path,missing:true}:{path:null,missing:true,checkedAt:now};
-    return assertFullTrackChecks(allTrackIds,records,trackConfirmationNotBefore);
+    return {...assertFullTrackChecks(allTrackIds.filter(id=>!fullCanonicalSource?.has(id)),records,trackConfirmationNotBefore),...(fullCanonicalSource?{canonicalSource:{tracks:fullCanonicalSource.tracks,rows:fullCanonicalSource.rows,readPoint:fullCanonicalSource.readPoint}}:{})};
   })();
   const eventRows = await mapLimit(eventFetchIds, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
     const url = id === 'permanent-rolling-hills'
