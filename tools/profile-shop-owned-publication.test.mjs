@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
+import {sanitizeProfileCosmetics} from '../workers/ranked/src/index.js';
+import {addPurchase,purchasedProfileCosmeticsUnlocked} from '../workers/ranked/src/purchased-cosmetic-entitlements.js';
+const A='a'.repeat(64),ownerUid='same-auth-owner',binding={accountId:A,ownerUid};
+test('real publication allowance requires current earned union plus server-owned purchase provenance, never the UI cache',()=>{
+ const defaults=sanitizeProfileCosmetics({}),earned=Object.fromEntries(Object.entries(defaults).map(([key,value])=>[key,[value]]));
+ earned.emblem.push('target');earned.stripe.push('overdrive');
+ const design=sanitizeProfileCosmetics({...defaults,version:7,plate:'pitlane-ticket',stage:'apex-observatory',emblem:'target',stripe:'overdrive'});
+ const server=addPurchase(addPurchase(null,'profile-pitlane-ticket',100,binding),'profile-apex-observatory',101,binding);
+ assert.equal(purchasedProfileCosmeticsUnlocked(design,earned,server,binding),true);
+ assert.equal(purchasedProfileCosmeticsUnlocked(design,earned,null,binding),false);
+ assert.equal(purchasedProfileCosmeticsUnlocked(design,{...earned,emblem:['none']},server,binding),false,'purchase cannot preserve stale/unearned owner-beat styles');
+ const map=new Map(),cache=createProfileShopOwnedCache({getItem:key=>map.get(key)??null,setItem:(key,value)=>map.set(key,value)});
+ cache.remember({...binding,catalogVersion:2,revision:3,complete:true,ownedItemIds:['profile-pitlane-ticket','profile-apex-observatory']});
+ assert.equal(cache.owns(A,ownerUid,'plate:pitlane-ticket'),true);
+ assert.equal(purchasedProfileCosmeticsUnlocked(design,earned,cache.read(A,ownerUid),binding),false,'editable local ownership record is not server purchase provenance');
+ assert.throws(()=>purchasedProfileCosmeticsUnlocked(design,earned,server,{accountId:A,ownerUid:'different-owner'}));
+ assert.equal(purchasedProfileCosmeticsUnlocked({...design,badge:'betaTester'},earned,server,binding),false,'paid designs do not grant badges');
+});

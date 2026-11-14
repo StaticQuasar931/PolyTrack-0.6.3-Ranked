@@ -8,6 +8,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
 import {snapshotPayloadShard,parseSnapshotPayloadShards} from './snapshot-payload-shards.mjs';
+import {MAX_RELEASE_PROBES} from './publish-cdn-release.mjs';
 
 const sha='a'.repeat(40),hash=b=>createHash('sha256').update(b).digest('hex');
 function isolatedGitEnvironment(inherited,overrides={}){
@@ -43,6 +44,35 @@ function fixture(){
   return {files,read:async file=>{if(!files.has(file))throw Error('Missing '+file);return files.get(file);}};
 }
 const response=bytes=>({ok:true,async arrayBuffer(){return Buffer.from(bytes);}});
+
+async function expandedProbeFixture(total,recursive){
+  const f=fixture(),base=await releasePlan({commit:sha,...f});
+  const extra=total-base.files.length;
+  if(recursive){
+    f.files.set('polytrack_062_patch.js',Buffer.from("import('./tools/probe-root.mjs');"));
+    const imports=[];
+    for(let i=1;i<extra;i++){imports.push(`import './probe-${i}.mjs';`);f.files.set(`tools/probe-${i}.mjs`,Buffer.from('export const ready=true;'));}
+    f.files.set('tools/probe-root.mjs',Buffer.from(imports.join('\n')));
+  }else{
+    const links=[];
+    for(let i=0;i<extra;i++){links.push(`<link href="./images/probe-${i}.svg">`);f.files.set(`images/probe-${i}.svg`,Buffer.from('<svg/>'));}
+    f.files.set('index.html',Buffer.from(f.files.get('index.html').toString().replace('</head>',links.join('')+'</head>')));
+  }
+  return f;
+}
+
+test('reviewed 288-probe ceiling admits the 260-asset UI closure and exact boundary',async()=>{
+  assert.equal(MAX_RELEASE_PROBES,288,'changing this reviewed policy requires explicit review');
+  for(const recursive of [false,true])for(const size of [260,288]){
+    const f=await expandedProbeFixture(size,recursive),plan=await releasePlan({commit:sha,...f});
+    assert.equal(plan.files.length,size);assert.equal(new Set(plan.files.map(file=>file.path)).size,size);
+    for(const file of plan.files)assert.equal(file.sha256,hash(await f.read(file.path)),'every admitted asset remains byte-bound');
+  }
+});
+
+test('entry assets and recursive module growth still reject 289 release probes',async()=>{
+  for(const recursive of [false,true])await assert.rejects(releasePlan({commit:sha,...await expandedProbeFixture(289,recursive)}),/requires review: too many release probes/);
+});
 
 test('a release references a whole commit, including unchanged entry files', async()=>{
   const f=fixture(),first=await releasePlan({commit:sha,...f}),second=await releasePlan({commit:'b'.repeat(40),...f});

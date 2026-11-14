@@ -1,4 +1,12 @@
 let serial = 0;
+const hubIcon = name => {
+  const paths = {
+    achievements:'M8 3h8v7a4 4 0 0 1-8 0V3ZM8 5H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4m-4 2v5m-4 2h8m-6-2h4',
+    studio:'M4 10l2-5h12l2 5M3 10h18v9H3v-9Zm2 9v2m14-2v2M6 14h2m8 0h2M8 5l-1 5m9-5 1 5',
+    flag:'M5 22V2h15v12H5m0-6h15M10 2v12m5-12v12'
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-ph-icon="${name}"><path d="${paths[name]}"/>${name === 'flag' ? '<path fill="currentColor" stroke="none" d="M5 2h5v6H5zM15 2h5v6h-5zM10 8h5v6h-5z"/>' : ''}</svg>`;
+};
 
 /** Mount after setupRacerStudio, inside the existing profile card/panel ancestry.
  * Returns cleanup() with .open('achievements'|'studio', reward?) and .close().
@@ -22,14 +30,23 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   moduleURL.search = new URL(import.meta.url).search;
   if (revision !== undefined && revision !== null) moduleURL.searchParams.set('v',String(revision));
   const cssURL = new URL('./achievement-journal.css',import.meta.url); cssURL.search = moduleURL.search;
+  const artURL = new URL('./studio-art-polish.css',import.meta.url); artURL.search = moduleURL.search;
+  if (![...doc.querySelectorAll('link[data-studio-art-polish-css]')].some(link => link.href === artURL.href)) {
+    const link = doc.createElement('link'); link.rel = 'stylesheet'; link.href = artURL.href;
+    link.dataset.studioArtPolishCss = ''; doc.head.append(link);
+  }
   if (![...doc.querySelectorAll('link[data-profile-achievements-css]')].some(link => link.href === cssURL.href)) {
     const link = doc.createElement('link'); link.rel = 'stylesheet'; link.href = cssURL.href;
     link.dataset.profileAchievementsCss = ''; doc.head.append(link);
   }
 
+  const shopArtURL = new URL('./profile-shop-art.css',import.meta.url);shopArtURL.search=moduleURL.search;
+  if(![...doc.querySelectorAll('link[data-profile-shop-art-css]')].some(link=>link.href===shopArtURL.href)){
+    const link=doc.createElement('link');link.rel='stylesheet';link.href=shopArtURL.href;link.dataset.profileShopArtCss='';doc.head.append(link);
+  }
   const entry = doc.createElement('div');
   entry.className = 'profile-achievement-journey'; entry.setAttribute('role','group'); entry.setAttribute('aria-label','Racer progress and design');
-  entry.innerHTML = `<button type="button" data-ph-launch="achievements" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark" aria-hidden="true">//</span><span><strong>Achievements</strong><small>Find your next unlock</small></span></button><button type="button" data-ph-launch="studio" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark" aria-hidden="true">//</span><span><strong>Racer Studio</strong><small>Make it yours</small></span></button>`;
+  entry.innerHTML = `<button type="button" data-ph-launch="achievements" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('achievements')}</span><span><strong>Achievements</strong><small>Goals &amp; rewards</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button><button type="button" data-ph-launch="studio" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('studio')}</span><span><strong>Racer Studio</strong><small>Design your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button>`;
   const initialStudio = content.querySelector('.profile-customizer');
   const initialHidden = initialStudio?.hidden;
   if (initialStudio) initialStudio.hidden = true;
@@ -39,7 +56,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   const dialog = doc.createElement('dialog');
   dialog.id = id; dialog.className = 'profile-hub'; dialog.dataset.accountId = String(accountId ?? '');
   dialog.setAttribute('aria-labelledby',`${id}-title`);
-  dialog.innerHTML = `<header class="ph-header"><div class="ph-brand" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M7 38V8h30l-6 9 6 9H10M16 8v18M26 8v18M10 17h24" stroke="currentColor" stroke-width="3"/></svg></div><div class="ph-heading"><p>YOUR RACER</p><h2 id="${id}-title">Achievements &amp; Studio</h2></div><button type="button" class="ph-close" data-ph-close aria-label="Close racer hub">Close <span aria-hidden="true">&#215;</span></button></header><div class="ph-tabbar" role="tablist" aria-label="Racer hub"><button type="button" role="tab" id="${id}-tab-achievements" aria-controls="${id}-achievements" aria-selected="true" data-ph-tab="achievements">Achievements</button><button type="button" role="tab" id="${id}-tab-studio" aria-controls="${id}-studio" aria-selected="false" tabindex="-1" data-ph-tab="studio">Racer Studio</button><span class="ph-tab-hint">Earn styles as you race.</span></div><section class="ph-panel" id="${id}-achievements" role="tabpanel" aria-labelledby="${id}-tab-achievements"><div data-ph-journal></div></section><section class="ph-panel ph-studio-panel" id="${id}-studio" role="tabpanel" aria-labelledby="${id}-tab-studio" hidden><p class="ph-studio-note">Choose your style.</p><div data-ph-studio></div></section>`;
+  dialog.innerHTML = `<header class="ph-header"><div class="ph-brand">${hubIcon('flag')}</div><div class="ph-heading"><p>YOUR RACER</p><h2 id="${id}-title">Achievements &amp; Studio</h2></div><button type="button" class="ph-close" data-ph-close aria-label="Close racer hub">Close <span aria-hidden="true">&#215;</span></button></header><div class="ph-tabbar" role="tablist" aria-label="Racer hub"><button type="button" role="tab" id="${id}-tab-achievements" aria-controls="${id}-achievements" aria-selected="true" data-ph-tab="achievements">${hubIcon('achievements')}<span>Achievements</span></button><button type="button" role="tab" id="${id}-tab-studio" aria-controls="${id}-studio" aria-selected="false" tabindex="-1" data-ph-tab="studio">${hubIcon('studio')}<span>Racer Studio</span></button><span class="ph-tab-hint">Earn styles as you race.</span></div><section class="ph-panel" id="${id}-achievements" role="tabpanel" aria-labelledby="${id}-tab-achievements"><div data-ph-journal></div></section><section class="ph-panel ph-studio-panel" id="${id}-studio" role="tabpanel" aria-labelledby="${id}-tab-studio" hidden><p class="ph-studio-note">Change your car in the main menu garage.</p><div data-ph-studio></div></section>`;
   content.append(dialog);
   const journalHost = dialog.querySelector('[data-ph-journal]'), studioHost = dialog.querySelector('[data-ph-studio]');
   const studioPanel = dialog.querySelector('.ph-studio-panel');

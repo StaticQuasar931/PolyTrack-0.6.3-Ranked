@@ -145,6 +145,8 @@ function fixture(t,{edge='healthy',registryMode='required'}={}){
     profileNameModulePromise:Promise.resolve({claimProfileNameWithLegacyBridge}),moderationDecision:()=>({blocked:false}),
     profileIdentityPostSequence:0,profileIdentityPostTail:Promise.resolve(),profileIdentityAcknowledgement:null,
     manualModerationCache:new Map(),manualModerationRequests:new Map(),cloudOwnerConflicts:new Map(),
+    // The Shop host is outside this PB-cost fixture and adds no cloud I/O.
+    noteProfileShopAccountTransition(){},
     activeRankedAccountId:()=>ls.getItem('polytrack-0.6.2-active-account-id')||account,
     accountIdFromPayload:async value=>value.accountId||account,guestAccountId:account,parsePayload:value=>value,
     cleanUserId:value=>String(value||''),sanitizeDisplayName:value=>String(value||''),enforceSafeDisplayName:async value=>value,

@@ -1,4 +1,12 @@
 .cosmetic-preview-banner{position:sticky;top:0;z-index:5;flex-shrink:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px dashed #ffc978;background:#473419;color:#ffe4b5;font:14px/1.4 'Trebuchet MS',sans-serif;box-sizing:border-box;max-width:100%}
 .cosmetic-preview-banner strong{min-width:0;overflow-wrap:anywhere}
 .cosmetic-preview-banner .cosmetic-preview-clear{min-height:44px;max-width:100%;white-space:normal;cursor:pointer}
+.cosmetic-preview-banner .cosmetic-preview-clear{background:#ffda83!important;color:#182442!important;border:1px solid #ffda83!important}
 .cosmetic-preview-active [data-save-profile-cosmetics],.cosmetic-preview-active [data-cosmetic-publish]{opacity:.55;cursor:not-allowed}
+/* Compact Studio: the notice belongs to the scrolling panel, not the car pane. */
+.ph-studio-panel>.cosmetic-preview-banner{position:sticky;top:0;z-index:20;margin:0 0 12px;background:#473419;box-shadow:0 4px 12px #10204066;font-family:'Trebuchet MS',sans-serif}
+.ph-studio-panel>.cosmetic-preview-banner strong{font:700 13px/1.4 'Trebuchet MS',sans-serif}
+.ph-studio-panel>.cosmetic-preview-banner .cosmetic-preview-clear{flex:0 0 auto;width:auto!important;min-height:44px;padding:8px 12px;font:17px/1.2 ForcedSquare,sans-serif}
+@media(max-width:850px),(max-height:500px){.profile-customizer>.cosmetic-preview-banner{position:sticky;top:0;z-index:20;margin-bottom:12px}}
+/* The sticky warning and native category tabs occupy separate header rows. */
+@media(max-width:850px),(max-height:500px){.ph-studio-panel .profile-customizer.cosmetic-preview-active .studio-tabs{position:sticky!important}.ph-studio-panel .profile-customizer .studio-tabs,.profile-customizer.cosmetic-preview-active .studio-tabs{top:var(--cosmetic-preview-header-height,-1px)!important}}

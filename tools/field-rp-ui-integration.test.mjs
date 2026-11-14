@@ -21,7 +21,7 @@ function harness(){
     trackSnapshotStore(){throw Error('Normal-board access forbidden');},cachedProfileFinishes(){throw Error('Display cache forbidden');},
     trackInfo:trackId=>({name:trackId}),escapeHtml:String,trackThumbnailMarkup:()=>'',ageLabel:()=>'',rankedWeightTitle:()=>'',
     compactPlannerTargetLabel:row=>'#'+row.currentRank+' to #'+row.targetRank,rpDecimals:()=>3});
-  vm.runInContext(['formatRp','fieldRpProfileSummary','fieldRpTrackCard','profileFieldRpCards','categoryTrackMarkup','fieldRpPlannerControls',
+  vm.runInContext(['formatRp','fieldRpProfileSummary','categoryTrackMarkup','fieldRpPlannerControls',
     'routeBenefitPercent','guideTrackCard','fieldRpGuideMarkup','profileGuideMarkup'].map(fn).join('\n'),c);
   return {c,index,finishes,entry:{userId:'me',name:'Me',raceCount:2,resultSamples:finishes}};
 }
@@ -47,16 +47,14 @@ test('viewing rivals never fabricates a Field margin; group, partial and late re
   const request=c.profileGuideMarkup(entry,null,true,[],[],[]);c.plannerMetric='overall';resolve(c.plannerScoringIndex);
   assert.equal(await request,'');
 });
-test('actual Field profile cards and ranking middle column show correct contribution units and signed differences',()=>{
-  const {c,entry}=harness();
-  const cards=c.profileFieldRpCards(entry),middle=c.categoryTrackMarkup(entry);
-  for(const label of ['Strongest Field RP','Largest Field boost','Largest Field reduction'])assert.ok(cards.includes(label));
-  assert.match(cards,/FIELD - OVERALL/);assert.match(cards,/Not movement over time/);
-  assert.match(middle,/Strongest Field/);assert.match(middle,/Field boost/);assert.match(middle,/Field reduction/);
-  assert.match(middle,/<em>\+/);assert.match(middle,/<em>-/);
-  assert.match(c.profileFieldRpCards({...entry,raceCount:3}),/>N\/A</);
-  assert.match(source,/data-profile-field-results/);assert.match(source,/ensureProfileFieldRp\(content,entry\)/);
+test('Field ranking details remain while the three unwanted profile cards are absent',()=>{
+ const {c,entry}=harness(),middle=c.categoryTrackMarkup(entry);
+ assert.match(middle,/Strongest Field/);assert.match(middle,/Field boost/);assert.match(middle,/Field reduction/);
+ assert.match(middle,/<em>\+/);assert.match(middle,/<em>-/);
+ assert.doesNotMatch(source,/data-profile-field-results|function profileFieldRpCards|function ensureProfileFieldRp/);
+ assert.match(source,/fieldRpGuideMarkup/);
 });
+
 test('real RP formatter caches exactly three precision formatters; formatting never changes numbers',()=>{
   const {c}=harness();
   assert.equal(c.formatRp(12345.678),'12,345.678');const cache=c.formatRp.formats;

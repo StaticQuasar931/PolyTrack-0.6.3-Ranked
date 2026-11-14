@@ -22,7 +22,7 @@ before(async () => {
     if (url.pathname === '/') {
       res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PolyTrack native racer hub fixture</title><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#16254c;color:white;font-family:ForcedSquare,sans-serif}</style><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><div class="overall-profile-card"><button id="profile-return" type="button">Racer profile</button><main id="content"></main></div></div></div></html>');return;
     }
-    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
+    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/tools/studio-art-polish.css','/tools/profile-shop-art.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
     if (!allowed) {res.writeHead(404).end();return;}
     const gate = gates.get(url.searchParams.get('v'));
     if (url.pathname === '/tools/achievement-journal.mjs' && gate) {gate.started();await gate.wait;}
@@ -231,24 +231,81 @@ test('cleanup is root-scoped and storage persists safely across account mounts',
 });
 
 test('native full-screen hub fits desktop, phone and landscape with usable reward navigation',{timeout:60000},async t => {
-  for (const [name,width,height] of [['desktop',1440,1000],['phone',390,844],['landscape',844,390],['narrow',320,640]]) {
+  for (const [name,width,height] of [['desktop',1440,1000],['laptop',1366,768],['phone',390,844],['landscape',844,390],['narrow',320,640]]) {
     const page = await pageFor(t,{width,height});await nativeFixture(page);
     assert.equal(await page.locator('.profile-customizer').isVisible(),false);
     if (name==='desktop'||name==='phone') await page.locator('.profile-achievement-journey').screenshot({path:path.join(evidence,`racer-hub-launcher-${name}.png`),animations:'disabled'});
     await page.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();await page.evaluate(() => document.fonts.ready);
     const bounds = await page.locator('dialog').boundingBox();assert.equal(Math.round(bounds.width),width);assert.equal(Math.round(bounds.height),height);
     assert.equal(await page.locator('dialog').evaluate(el => el.scrollWidth <= el.clientWidth),true,name);
+    if (name==='landscape') {
+      const goal=await page.locator('[data-aj-node]:visible').first().boundingBox();
+      assert.ok(goal.y<height-30,'short landscape viewport shows the actual first goal, not only chrome');
+    }
     if (name!=='narrow') await page.screenshot({path:path.join(evidence,`racer-hub-achievements-${name}.png`),animations:'disabled'});
-    if (name==='phone') {
+    if (name==='phone'||name==='laptop') {
       await page.locator('[data-aj-node]:visible [data-aj-select]').first().click();
-      assert.equal(await page.locator('[data-aj-node]>.aj-detail').count(),1);
-      await page.screenshot({path:path.join(evidence,'racer-hub-achievements-phone-reward.png'),animations:'disabled'});
+      assert.equal(await page.locator(name==='phone'?'[data-aj-node]>.aj-detail':'.aj-lane>.aj-detail').count(),1);
+      await page.screenshot({path:path.join(evidence,`racer-hub-achievements-${name}-reward.png`),animations:'disabled'});
     }
     await page.getByRole('tab',{name:'Racer Studio',exact:true}).click();
     assert.equal(await page.locator('dialog').evaluate(el => el.scrollWidth <= el.clientWidth),true,name+' studio');
     assert.equal(await page.locator('.ph-studio-panel').evaluate(el => el.scrollWidth <= el.clientWidth),true,name+' studio panel');
     if (name!=='narrow') await page.screenshot({path:path.join(evidence,`racer-hub-studio-${name}.png`),animations:'disabled'});
   }
+});
+
+test('joined launcher has two native destinations with distinct recognizable SVG marks',async t=>{
+  const page=await pageFor(t,{width:390,height:844});await nativeFixture(page);
+  const launcher=page.locator('.profile-achievement-journey');assert.equal(await launcher.locator('button').count(),2);
+  await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+  assert.equal(await launcher.locator('[data-ph-launch="achievements"] svg[data-ph-icon="achievements"]').count(),1);
+  assert.equal(await launcher.locator('[data-ph-launch="studio"] svg[data-ph-icon="studio"]').count(),1);
+  assert.equal(await launcher.locator('svg:not([aria-hidden="true"])').count(),0);
+  assert.doesNotMatch(await launcher.innerText(),/\/\//);
+  const bounds=await launcher.locator('button').evaluateAll(buttons=>buttons.map(button=>button.getBoundingClientRect().toJSON()));
+  assert.ok(Math.abs(bounds[0].x+bounds[0].width-bounds[1].x)<2,`two destinations share one joined edge: ${JSON.stringify(bounds)}`);
+  await launcher.locator('[data-ph-launch="studio"]').click();
+  assert.equal(await page.getByRole('tab',{name:'Racer Studio',exact:true}).getAttribute('aria-selected'),'true');
+  await page.keyboard.press('Escape');
+  await launcher.locator('[data-ph-launch="achievements"]').click();
+  assert.equal(await page.getByRole('tab',{name:'Achievements',exact:true}).getAttribute('aria-selected'),'true');
+});
+
+test('bounded joined launcher shares one highlight, preserves separate initial tabs and carries native pattern beneath panels',{timeout:30000},async t=>{
+ for(const [name,width,height]of[['phone',390,844],['laptop',1366,768]]){
+  const page=await pageFor(t,{width,height});await nativeFixture(page);
+  await page.evaluate(()=>applyProfileCosmetics(document.querySelector('.overall-profile-card'),{theme:'forest',accent:'gold',stripe:'grid'}));
+  await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+  await page.evaluate(()=>document.fonts.ready);
+  const launcher=page.locator('.profile-achievement-journey');
+  const joined=await launcher.evaluate(root=>({highlight:getComputedStyle(root).borderBottomWidth,accent:getComputedStyle(root).borderBottomColor,buttons:[...root.querySelectorAll('button')].map(button=>({background:getComputedStyle(button).backgroundColor,border:getComputedStyle(button).borderBottomWidth}))}));
+  assert.equal(joined.highlight,'3px');assert.equal(joined.accent,'rgb(255, 213, 110)');assert.ok(joined.buttons.every(button=>button.background==='rgba(0, 0, 0, 0)'&&button.border==='0px'));
+  await launcher.screenshot({path:path.join(evidence,`joined-theme-launcher-${name}.png`)});
+  await launcher.locator('[data-ph-launch="studio"]').click();
+  assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'false');
+  assert.match(await page.locator('.ph-studio-note').innerText(),/main menu garage/);
+  assert.equal(await page.locator('.ph-studio-note button,.ph-studio-note a').count(),0);
+  const painted=await page.locator('dialog').evaluate(root=>{const probe=document.createElement('i');probe.style.cssText='position:absolute;background-image:var(--profile-pattern,none)';root.append(probe);const pattern=getComputedStyle(probe).backgroundImage;probe.remove();return {background:getComputedStyle(root).backgroundImage,pattern,preview:getComputedStyle(root.querySelector('.profile-customizer-preview')).backgroundColor};});
+  assert.ok(painted.pattern.includes('linear-gradient')&&painted.background.includes(painted.pattern),JSON.stringify(painted));assert.notEqual(painted.preview,'rgba(0, 0, 0, 0)');
+  await page.screenshot({path:path.join(evidence,`joined-theme-studio-${name}.png`)});
+  await page.keyboard.press('Escape');await launcher.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();
+  assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'false');
+  assert.equal(await page.locator('[data-aj-root]').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.doesNotMatch(await page.locator('[data-aj-root]').innerText(),/wallet|planned coins|reward points|proposal|claim|credits earned/i);
+  if(name==='phone'){
+   const rail=await page.locator('.aj-paths button:visible').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {family:node.dataset.ajFamily,x:r.x,right:r.right,scrollFits:node.scrollWidth<=node.clientWidth};}));
+   assert.ok(rail.some(node=>node.family==='discovery'),'Discovery is visible without horizontal scrolling');
+   assert.ok(rail.every(node=>node.x>=0&&node.right<=width&&node.scrollFits),JSON.stringify(rail));
+  }
+  assert.equal(await page.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
+  await page.screenshot({path:path.join(evidence,`joined-theme-achievements-${name}.png`)});
+  const before=await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage);
+  await page.evaluate(()=>{const card=document.querySelector('.overall-profile-card');card.classList.replace('cosmetic-theme-forest','cosmetic-theme-crimson');card.classList.replace('cosmetic-stripe-grid','cosmetic-stripe-chevron');});
+  assert.notEqual(await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage),before,'native theme and pattern update without cloning or remounting');
+  assert.equal(await page.evaluate(()=>window.published||0),0);
+ }
 });
 
 test('actual parent hook can still find moved Studio and focus reward without publication',async t => {
@@ -266,13 +323,16 @@ test('actual parent hook can still find moved Studio and focus reward without pu
 });
 
 test('native hub body and rewards are explicitly sans serif while titles remain ForcedSquare',async t => {
-  const page=await pageFor(t);await nativeFixture(page);await open(page);await page.evaluate(()=>document.fonts.ready);
+  const page=await pageFor(t);await nativeFixture(page);await open(page);
+  await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+  await page.evaluate(()=>document.fonts.ready);
   const typography=await page.evaluate(()=>{
     const read=selector=>{const style=getComputedStyle(document.querySelector(selector));return {fontFamily:style.fontFamily,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight)};};
     return {root:read('dialog.profile-hub'),notice:read('.aj-notice'),reward:read('.aj-reward-label'),hint:read('.ph-tab-hint'),heading:read('.ph-heading h2'),goal:read('.aj-detail h3')};
   });
-  for(const key of ['root','notice','reward','hint']) {
-    assert.match(typography[key].fontFamily,/Trebuchet MS/);assert.match(typography[key].fontFamily,/sans-serif/);
+  const bodyFamilies={root:'Trebuchet MS',notice:'ForcedSquare',reward:'ForcedSquare',hint:'ForcedSquare'};
+  for(const [key,family] of Object.entries(bodyFamilies)) {
+    assert.deepEqual(typography[key].fontFamily.replaceAll('"','').split(',').map(value=>value.trim()),[family,'sans-serif'],`${key} intended font stack`);
     assert.ok(typography[key].fontSize>=13&&typography[key].fontSize<=14,`${key} body size`);
     assert.ok(typography[key].lineHeight/typography[key].fontSize>=1.35,`${key} body leading`);
   }
@@ -283,6 +343,7 @@ test('native hub body and rewards are explicitly sans serif while titles remain 
   typography.renderedNoticeFonts=(await cdp.send('CSS.getPlatformFontsForNode',{nodeId:noticeNode.nodeId})).fonts;
   assert.ok(typography.renderedNoticeFonts.length>0);
   assert.ok(typography.renderedNoticeFonts.every(font=>!/Times|Roman|Serif/i.test(font.familyName)), 'rendered prose must not fall back to a serif font');
+  assert.ok(typography.renderedNoticeFonts.some(font=>font.isCustomFont&&font.glyphCount>0&&/forced.*square/i.test(font.familyName)), 'notice must render using the loaded native game font');
   await fs.writeFile(path.join(evidence,'racer-hub-typography.json'),JSON.stringify(typography,null,2));
 });
 

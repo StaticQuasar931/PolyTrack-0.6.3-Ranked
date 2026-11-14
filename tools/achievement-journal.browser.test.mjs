@@ -96,7 +96,7 @@ test('portrait, narrow phone, zoom and reduced motion fit without horizontal ove
       await page.locator('[data-aj-select="achievement:v1:event-participation:3"]').click();
       assert.match(await page.locator('[data-aj-node="achievement:v1:event-participation:3"] .aj-detail').innerText(),/Personal milestone/);
       assert.match(await page.locator('[data-aj-node="achievement:v1:event-participation:3"] .aj-detail').innerText(),/Saved on this device/);
-    } else assert.equal(await page.locator('.aj-layout>.aj-detail').count(),1);
+    } else assert.equal(await page.locator('.aj-lane>.aj-detail').count(),1);
     if (width === 390) await page.screenshot({path:path.join(evidence,'achievement-journal-phone.png'),fullPage:true,animations:'disabled'});
   }
   // A 1280x900 window at 200% zoom has a 640x450 CSS layout viewport.
@@ -142,4 +142,29 @@ test('known goals lead by default, unknowns stay under All tiers, and proposal p
   await page.locator('[data-aj-node]:visible [data-aj-select]').first().click();
   assert.equal(await page.locator('.aj-more').count(),1);
   assert.equal(await page.locator('.aj-more').getAttribute('open'),null);
+});
+
+test('full-width lanes preserve all 81 model tiers and use recognizable inline path icons',async t=>{
+  const context=await browser.newContext({viewport:{width:1366,height:768}}),page=await context.newPage();t.after(()=>context.close());
+  await fixture(page);await page.locator('[data-aj-filter="all"]').click();await page.locator('[data-aj-family="all"]').click();
+  const ids=await page.locator('[data-aj-node]').evaluateAll(nodes=>nodes.map(node=>node.dataset.ajNode));
+  assert.equal(ids.filter(id=>id.startsWith('achievement:v1:')).length,81);assert.equal(new Set(ids).size,ids.length);
+  assert.ok(await page.locator('[data-aj-lane]').count()>10);
+  const widths=await page.locator('[data-aj-lane]:visible').evaluateAll(lanes=>lanes.map(lane=>({lane:lane.getBoundingClientRect().width,tree:lane.closest('.aj-tree').getBoundingClientRect().width})));
+  assert.ok(widths.every(row=>Math.abs(row.lane-row.tree)<2),'lanes occupy the full goal area');
+  assert.equal(await page.locator('[data-aj-family="daily"] svg[data-aj-icon="daily"]').count(),1);
+  assert.equal(await page.locator('[data-aj-family="style"] svg[data-aj-icon="style"]').count(),1);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.locator('[data-aj-family="practice"]').click();
+  assert.match(await page.locator('.aj-lane-head h4').allTextContents().then(names=>names.join(' ')),/Personal bests|Finish your practice runs/);
+});
+
+test('lane overview starts compact and opens or closes the actual selected reward inspector by keyboard',async t=>{
+  const context=await browser.newContext({viewport:{width:1366,height:768}}),page=await context.newPage();t.after(()=>context.close());
+  await fixture(page);assert.equal(await page.locator('.aj-detail').isVisible(),false);
+  const goal=page.locator('[data-aj-node]:visible [data-aj-select]').first();
+  assert.equal(await goal.getAttribute('aria-expanded'),'false');await goal.focus();await goal.press('Enter');
+  assert.equal(await goal.getAttribute('aria-expanded'),'true');assert.equal(await page.locator('.aj-lane>.aj-detail').isVisible(),true);
+  await goal.press('Enter');assert.equal(await goal.getAttribute('aria-expanded'),'false');assert.equal(await page.locator('.aj-detail').isVisible(),false);
+  await goal.press('Enter');await page.locator('[data-aj-filter="all"]').click();assert.equal(await page.locator('.aj-detail').isVisible(),false);
 });

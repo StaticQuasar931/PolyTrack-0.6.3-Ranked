@@ -25,7 +25,7 @@ const row = (accountId,timeMs) => ({accountId,ownerUid:'owner',trackId:track,nam
   timeMs,frames:timeMs,raceTimeFrames:timeMs,uploadId:1,pbAt:1000,replay,replayHash});
 const proof = r => ({...pendingSlot(r),status:'verified',engineDigest:VERIFIER_ENGINE_DIGEST,verifierVersion:VERIFIER_VERSION});
 
-test('tracked authority activation matches native policy and is the only deployment config change',()=>{
+test('tracked authority and reviewed shop activation preserve all other deployment settings',()=>{
   const config=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
   const policy=JSON.parse(readFileSync(new URL('../../../tools/verification-authority.json',import.meta.url),'utf8'));
   assert.equal(config.vars.VERIFICATION_AUTHORITY,'snapshot-native');
@@ -35,6 +35,12 @@ test('tracked authority activation matches native policy and is the only deploym
   assert.equal(config.vars.CANONICAL_DISCOVERY_BACKPRESSURE,'enabled');
   const base=JSON.parse(execFileSync('git',['show','HEAD:workers/ranked/wrangler.jsonc'],{
     cwd:new URL('../../../',import.meta.url),encoding:'utf8',windowsHide:true}));
+  // The reviewed profile-shop activation adds only these two gate variables.
+  for (const [key, expected] of Object.entries({CURRENCY_ENABLED:'true', CURRENCY_RULES_VERSION:'currency-server-only-v1'})) {
+    assert.equal(config.vars[key], expected);
+    if (Object.hasOwn(base.vars, key)) assert.equal(base.vars[key], expected);
+    delete config.vars[key]; delete base.vars[key];
+  }
   delete base.vars.VERIFICATION_AUTHORITY;
   delete config.vars.VERIFICATION_AUTHORITY;
   assert.deepEqual(config,base,'no Overall, limiter, secret, trigger, runtime or other config changes');

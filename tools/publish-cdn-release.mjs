@@ -12,6 +12,8 @@ export const ASSET_BRANCH = 'cdn-assets';
 export const SNAPSHOT_BRANCH = 'cdn-snapshots';
 export const PAYLOAD_BRANCH = 'cdn-snapshot-payload-';
 export const PAYLOAD_SHARD_COUNT = 4;
+// Reviewed profile/shop closure: 260 probes. Keep growth bounded and reviewed.
+export const MAX_RELEASE_PROBES = 288;
 export const POINTER_URL = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${POINTER_BRANCH}/release.json`;
 export const POINTER_MIRRORS = ['fastly.jsdelivr.net','gcore.jsdelivr.net'].map(host => POINTER_URL.replace('cdn.jsdelivr.net',host));
 const sha = value => typeof value === 'string' && value.length === 40 && /^[a-f0-9]{40}$/.test(value);
@@ -82,7 +84,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
       if (target.startsWith('../') || !/^[a-zA-Z0-9_./-]+$/.test(target)) throw Error('Unsafe module dependency: '+file+' -> '+relative);
       if (!probes.has(target)) { probes.add(target); if(/\.[cm]?js$/.test(target)) modules.push(target); }
     }
-    if (probes.size > 256) throw Error('Runtime graph requires review: too many release probes');
+    if (probes.size > MAX_RELEASE_PROBES) throw Error('Runtime graph requires review: too many release probes');
   }
   const files = [];
   for (const file of probes) {
@@ -93,7 +95,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     if (/^[a-f0-9]{64}\.bin$/.test(path.posix.basename(file)) && path.posix.basename(file) !== hash + '.bin') throw Error('Snapshot digest mismatch');
     files.push({path:file, sha256:hash});
   }
-  if (files.length > 256) throw Error('Entry point requires review: too many release probes');
+  if (files.length > MAX_RELEASE_PROBES) throw Error('Entry point requires review: too many release probes');
   return {pointer:{schemaVersion:1, repository:REPOSITORY, commit, snapshotDirectory:directory, indexSha256:digest(index), publishedAt:now.toISOString()}, files, entryHtml:html};
 }
 

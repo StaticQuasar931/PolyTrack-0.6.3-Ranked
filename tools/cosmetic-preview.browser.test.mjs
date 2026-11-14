@@ -1,14 +1,26 @@
 import test,{before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {gunzipSync} from 'node:zlib';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
 const source=fs.readFileSync(new URL('./cosmetic-preview.mjs',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('./cosmetic-preview.css',import.meta.url),'utf8');
-let browser;
+let browser,server,base;
+const root=fileURLToPath(new URL('../',import.meta.url));
+const evidence=process.env.COSMETIC_EVIDENCE_DIR||path.resolve(root,'../../2026-11-14/studio-preview-polish');
+const patch=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
+const extract = name => {
+  const match = patch.match(new RegExp(`  function ${name}\\([^\\n]*\\)\\{[\\s\\S]*?\\n  \\}`));
+  assert.ok(match,`native function ${name}`);return match[0];
+};
 before(async()=>{browser=await chromium.launch({headless:true});});
-after(async()=>{await browser?.close();});
+after(async()=>{await browser?.close();if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}});
 async function fixture(t,{busy=false,storageFailure=false,width=800}={}){
  const context=await browser.newContext({viewport:{width,height:800}});t.after(()=>context.close());const page=await context.newPage();await page.route('**/*',route=>route.abort());
  await page.setContent(`<style>body{margin:8px;font-family:serif;background:#17223b;color:white}button{min-height:32px}details{max-width:700px}.preview{min-height:60px}.theme-blue{color:#9bd4ff}.theme-gold{color:#ffda83}</style><details class="profile-customizer studio-original" data-account-id="alpha" open><summary>Studio</summary><form id="studio-form"><section class="profile-customizer-preview preview theme-blue" style="--tone:blue"><span data-cosmetic-title-preview>Original title</span><span data-cosmetic-badge-preview><b class="original-badge">Original badge</b></span><div class="profile-customizer-actions"><span role="status">Original status</span><button type="button" data-save-profile-cosmetics data-account-id="alpha" title="Original publish" ${busy?'disabled':''}>Publish</button><button type="button" data-discard-profile-cosmetics>Discard</button></div></section><div><button type="button" id="gold" class="locked-choice" data-cosmetic-choice data-cosmetic-kind="theme" data-cosmetic-value="gold" data-cosmetic-locked="true" aria-disabled="true" aria-pressed="false">Locked gold</button><button type="button" id="blue" data-cosmetic-choice data-cosmetic-kind="theme" data-cosmetic-value="blue">Blue</button><button type="button" id="bad" data-cosmetic-choice data-cosmetic-kind="theme" data-cosmetic-value="missing" data-cosmetic-locked="true">Invalid</button><button type="button" id="try-title" data-cosmetic-try data-cosmetic-kind="title" data-cosmetic-value="champ">Try title</button><button type="button" id="disabled-badge" data-cosmetic-choice data-cosmetic-kind="badge" data-cosmetic-value="beta" data-cosmetic-locked="true" disabled>Locked badge</button><button type="button" id="try-badge" data-cosmetic-try data-cosmetic-kind="badge" data-cosmetic-value="beta">Try badge</button><input id="edit" value="original"></div></form></details><button id="outside">Outside</button>`);
@@ -129,4 +141,179 @@ test('explicit exit and Escape return banner focus to last locked choice only',a
   const refocused=await p.evaluate(reason=>{api.clear(reason);return document.activeElement===document.getElementById('gold');},reason);assert.equal(refocused,false,reason);
  }
  await p.evaluate(()=>api.preview({kind:'theme',id:'gold'}));await p.locator('#edit').focus();await p.keyboard.press('Escape');assert.equal(await p.locator('#edit').evaluate(node=>node===document.activeElement),true);
+});
+
+
+async function nativeArtSetup(page) {
+  const catalog = patch.match(/const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\n  \});/)[0];
+  const defaults = patch.match(/const COSMETIC_DEFAULTS=Object.freeze\((\{[^\n]+\})\);/)[0];
+  const choiceStart = patch.indexOf("      const cosmeticChoice=event.target.closest?.('[data-cosmetic-choice]');");
+  const choiceEnd = patch.indexOf("      const categoryInfo=",choiceStart);
+  const tabStart = patch.indexOf("      const studioTab=event.target.closest?.('[data-studio-tab]');",choiceEnd);
+  const tabEnd = patch.indexOf('      const podiumChoice=',tabStart);
+  const saveStart = patch.indexOf("      const cosmeticSave=event.target.closest?.('[data-save-profile-cosmetics]');",tabEnd);
+  const saveEnd = patch.indexOf('      const trackTarget=',saveStart);
+  const changeStart = patch.indexOf("      if(event.target?.matches?.('[data-cosmetic-favorite]')){");
+  const changeEnd = patch.indexOf('\n    });',changeStart);
+  assert.ok(choiceStart >= 0 && choiceEnd > choiceStart && saveEnd > saveStart);
+  await page.addScriptTag({content:`
+    ${catalog}; ${defaults};
+    Object.assign(window,{
+      cleanUserId:value=>String(value||''),profileCosmeticDrafts:new Map(),profileCosmeticEntries:new Map(),
+      sanitizeProfileCosmetics:value=>({...COSMETIC_DEFAULTS,...value}),cosmeticsForEntry:entry=>({...COSMETIC_DEFAULTS,...entry.profileCosmetics}),
+      localExtraTrackCount:()=>0,cosmeticTitleText:()=> 'Contender',profileBadgeMarkup:()=>'',
+      escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+      trackInfo:id=>({id,name:'Summer 1'}),safeDisplayName:value=>value,
+      __pt062NormalizeStyle:value=>value||'',__pt062GetRememberedStyle:()=>'',normalizeCarColorId:value=>value,
+      overallFooterLayoutCss:()=>'',TRACK_CATALOG:new Map([['summer1',{id:'summer1',name:'Summer 1',type:'official'}]]),
+      saveRankedProfileCosmetics:()=>{window.published=(window.published||0)+1;}
+    });
+    ${extract('cosmeticUnlocked')}
+    ${extract('cosmeticUnlockReason')}
+    ${extract('carModelPreview')}
+    ${extract('applyProfileCosmetics')}
+    ${extract('ensureStyles')}
+    ${extract('profileCustomizerMarkup')}
+    ${extract('setupRacerStudio')}
+    ensureStyles();
+    const fixtureEntry=window.publicFixture;
+    document.querySelector('#content').innerHTML=profileCustomizerMarkup(fixtureEntry);
+    setupRacerStudio(document.querySelector('#content'));
+    const panel=document.querySelector('#overallLeaderboardPanel');
+    panel.addEventListener('click',event=>{${patch.slice(choiceStart,choiceEnd)}${patch.slice(tabStart,tabEnd)}${patch.slice(saveStart,saveEnd)}});
+    panel.addEventListener('change',event=>{${patch.slice(changeStart,changeEnd)}});
+    window.nativeCatalog=PROFILE_COSMETIC_OPTIONS;window.nativeEntry=fixtureEntry;
+    window.originalStudio=document.querySelector('.profile-customizer');
+  `});
+  await page.addStyleTag({url:base + '/tools/racer-studio-polish.css'});
+  await page.evaluate(async () => {
+    const {mountProfileAchievements} = await import('/tools/profile-achievement-bridge.mjs?channel=studio');
+    const content = document.querySelector('#content');
+    window.rewardCalls = [];
+    cleanup = mountProfileAchievements(content,{accountId:nativeEntry.userId,confirmed:nativeEntry,local:{},cosmetics:nativeCatalog,revision:'native-hub',onTryCosmetic:value => rewardCalls.push(value),onNavigate:value => rewardCalls.push(value)});
+  });
+}
+
+async function nativePublicFixture(t,{width=390,height=844}={}){
+ if(!server){
+  server=http.createServer((req,res)=>{
+   const name=new URL(req.url,'http://localhost').pathname;
+   if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Saved public Studio fixture, offline audit</title><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#172b55;color:white;font-family:ForcedSquare,sans-serif}</style><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><div class="overall-profile-card"><main id="content"></main></div></div></div></html>');return;}
+   const allowed=/^\/tools\/(cosmetic-preview|profile-achievement-bridge|achievement-journal|achievement-model)\.mjs$/.test(name)||['/tools/cosmetic-preview.css','/tools/achievement-journal.css','/tools/studio-art-polish.css','/tools/racer-studio-polish.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(name);
+   if(!allowed){res.writeHead(404).end();return;}
+   try{res.setHeader('Content-Type',name.endsWith('.css')?'text/css':name.endsWith('.woff2')?'font/woff2':name.endsWith('.png')?'image/png':'text/javascript');res.end(fs.readFileSync(path.join(root,name.slice(1))));}catch{res.writeHead(404).end();}
+  });server.keepAliveTimeout=500;await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
+ }
+ const snapshotDirectory=JSON.parse(fs.readFileSync(path.join(root,'snapshot-current.json'),'utf8')).currentdir;
+ assert.match(snapshotDirectory,/^public-snapshots[1-9]\d*$/);
+ const index=JSON.parse(fs.readFileSync(path.join(root,snapshotDirectory,'bootstrap-fast.json'),'utf8'));
+ const [hash]=index.files['overall-pages/1.json'];assert.match(hash,/^[a-f0-9]{64}$/);
+ const bytes=fs.readFileSync(path.join(root,snapshotDirectory,hash+'.bin'));assert.equal(createHash('sha256').update(bytes).digest('hex'),hash);
+ const saved=JSON.parse(gunzipSync(bytes.map(value=>value^0xa7)).toString('utf8'));
+ const row=saved.entries.find(row=>row.trackWins===0)||saved.entries[0];assert.ok(row);
+ const publicFixture={...row,name:'PUBLIC FIXTURE'};
+ const context=await browser.newContext({viewport:{width,height},reducedMotion:'reduce'});t.after(()=>context.close());const page=await context.newPage();
+ let external=0;await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():(external++,route.abort()));await page.goto(base);
+ await page.evaluate(row=>{window.publicFixture=row;},publicFixture);await nativeArtSetup(page);
+ await page.addStyleTag({url:base+'/tools/cosmetic-preview.css'});
+ await page.evaluate(async()=>{
+  const {bindCosmeticPreview}=await import('/tools/cosmetic-preview.mjs');
+  window.studio=document.querySelector('.profile-customizer');const card=studio.closest('.overall-profile-card'),id=nativeEntry.userId;
+  const draft=()=>({...profileCosmeticDrafts.get(id)});window.originalDraft=JSON.stringify(draft());window.nativePublishCalls=0;
+  const restore=()=>applyProfileCosmetics(card,draft());restore();
+  window.nativePreview=bindCosmeticPreview(studio,{catalog:nativeCatalog,onPreview:option=>applyProfileCosmetics(card,{...draft(),[option.kind]:option.id}),onRestore:restore});
+  // Mirror setupCosmeticPreview: keyboard preview is enabled, ownership stays locked.
+  for(const button of studio.querySelectorAll('[data-cosmetic-locked="true"]')){button.removeAttribute('aria-disabled');button.dataset.cosmeticPreviewable='true';}
+  window.readNative=()=>({draft:JSON.stringify(draft()),active:nativePreview.isActive(),publishAllowed:nativePreview.canPublish(),publishCalls:window.published||0});
+  cleanup.open('studio');
+ });
+ await page.locator('link[data-studio-art-polish-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+ await page.evaluate(()=>document.fonts.ready);fs.mkdirSync(evidence,{recursive:true});
+ page.assertNoExternal=()=>assert.equal(external,0,'no external/Firebase calls');return page;
+}
+
+test('saved public native phone warning remains visible when car pane is offscreen; Exit/Escape still restore safely',{timeout:60000},async t=>{
+ const page=await nativePublicFixture(t);await page.locator('[data-studio-tab="name"]').click();
+ const target=page.locator('[data-cosmetic-kind="emblem3"][data-cosmetic-value="laurel"]');assert.equal(await target.getAttribute('data-cosmetic-locked'),'true');
+ await target.click();
+ const read=()=>page.evaluate(()=>{
+  const banner=document.querySelector('.cosmetic-preview-banner'),panel=document.querySelector('.ph-studio-panel'),preview=document.querySelector('.profile-customizer-preview');
+  const b=banner.getBoundingClientRect(),p=panel.getBoundingClientRect(),v=preview.getBoundingClientRect(),c=banner.querySelector('button').getBoundingClientRect();
+  return {parent:banner.parentElement===panel,inside:b.top>=p.top-1&&b.bottom<=Math.min(p.bottom,innerHeight)+1,buttonInside:c.top>=p.top-1&&c.bottom<=innerHeight,carOffscreen:v.bottom<p.top,topmost:banner.contains(document.elementFromPoint(c.x+c.width/2,c.y+c.height/2)),state:readNative()};
+ });
+ let current=await read();assert.ok(current.parent&&current.inside&&current.buttonInside&&current.topmost,JSON.stringify(current));assert.equal(current.carOffscreen,true);
+ assert.equal(current.state.draft,await page.evaluate(()=>originalDraft));assert.equal(current.state.publishAllowed,false);
+ await page.locator('[data-save-profile-cosmetics]').dispatchEvent('click');assert.equal(await page.evaluate(()=>window.published||0),0);
+ await page.screenshot({path:path.join(evidence,'native-phone-warning-visible-390.png')});
+ await page.locator('[data-cosmetic-preview-clear]').click();assert.equal(await target.evaluate(node=>node===document.activeElement),true);assert.equal(await page.evaluate(()=>readNative().active),false);
+ await target.click();await page.locator('[data-cosmetic-preview-clear]').focus();await page.keyboard.press('Escape');
+ assert.equal(await page.locator('dialog').evaluate(node=>node.open),true);assert.equal(await target.evaluate(node=>node===document.activeElement),true);
+ assert.equal(await page.evaluate(()=>readNative().draft),await page.evaluate(()=>originalDraft));
+ await target.click();await page.setViewportSize({width:1366,height:768});
+ await page.waitForFunction(()=>document.querySelector('.cosmetic-preview-banner')?.parentElement===document.querySelector('.profile-customizer-preview'));
+ await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('.cosmetic-preview-banner')?.parentElement===document.querySelector('.ph-studio-panel'));
+ current=await read();assert.ok(current.inside&&current.topmost);page.assertNoExternal();
+});
+
+test('native warning and category tabs never overlap on phone or landscape, and exit leaves no header gap',{timeout:60000},async t=>{
+ for(const [name,width,height]of[['phone',390,844],['landscape',844,390]]){
+  const page=await nativePublicFixture(t,{width,height});
+  // The real native home stylesheet has this higher-specificity mobile reset.
+  await page.addStyleTag({content:'@media(max-width:850px),(max-height:500px){#overallProfilePopup .studio-tabs{position:static}}'});
+  await page.locator('[data-studio-tab="name"]').click();
+  await page.locator('[data-cosmetic-kind="emblem3"][data-cosmetic-value="laurel"]').click();
+  const read=()=>page.evaluate(()=>{
+   const panel=document.querySelector('.ph-studio-panel'),banner=document.querySelector('.cosmetic-preview-banner'),tabs=document.querySelector('.studio-tabs');
+   const rect=node=>{const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right};};
+   return {banner:rect(banner),panel:rect(panel),tabs:rect(tabs),position:getComputedStyle(tabs).position,buttons:[...tabs.querySelectorAll('button')].map(rect),height:innerHeight};
+  });
+  for(const scroll of['current','bottom']){
+   if(scroll==='bottom')await page.evaluate(()=>{const panel=document.querySelector('.ph-studio-panel');panel.scrollTop=panel.scrollHeight;});
+   const layout=await read();
+   assert.equal(layout.position,'sticky');
+   assert.ok(layout.banner.top>=layout.panel.top-1&&layout.banner.bottom<=layout.height,JSON.stringify(layout));
+   assert.ok(layout.tabs.top>=layout.banner.bottom,JSON.stringify(layout));
+   assert.ok(layout.buttons.length>=4&&layout.buttons.every(button=>button.top>=layout.banner.bottom&&button.bottom<=layout.height),JSON.stringify(layout));
+  }
+  await page.screenshot({path:path.join(evidence,`native-warning-tabs-${name}-${width}.png`)});
+  await page.locator('[data-cosmetic-preview-clear]').click();
+  const cleared=await page.evaluate(()=>({banner:!!document.querySelector('.cosmetic-preview-banner'),offset:document.querySelector('.ph-studio-panel').style.getPropertyValue('--cosmetic-preview-header-height'),top:getComputedStyle(document.querySelector('.studio-tabs')).top,state:readNative()}));
+  assert.equal(cleared.banner,false);assert.equal(cleared.offset,'');assert.equal(cleared.top,'-1px');assert.equal(cleared.state.active,false);
+  assert.equal(cleared.state.draft,await page.evaluate(()=>originalDraft));page.assertNoExternal();
+ }
+});
+
+test('native backdrop has one motif in a reserved gutter, no legacy gradient over the name on phone or landscape',{timeout:20000},async t=>{
+ for(const [name,width,height]of[['phone',390,844],['landscape',844,390]]){
+  const page=await nativePublicFixture(t,{width,height});await page.evaluate(()=>nativePreview.preview({kind:'emblemBackdrop',id:'shield'}));
+  await page.locator('.profile-customizer-preview').scrollIntoViewIfNeeded();
+  const layout=await page.locator('.profile-preview-stage>span:not(.overall-car-model)').evaluate(node=>{const style=getComputedStyle(node),art=getComputedStyle(node,'::before'),range=document.createRange();range.selectNodeContents(node.querySelector('b'));const text=range.getBoundingClientRect(),box=node.getBoundingClientRect();return {background:style.backgroundImage,padding:parseFloat(style.paddingInlineEnd),textRight:text.right,artLeft:box.left+parseFloat(art.left),artWidth:parseFloat(art.width)};});
+  assert.equal(layout.background,'none');assert.ok(layout.padding>=48);assert.ok(layout.textRight<=layout.artLeft+1,JSON.stringify(layout));
+  await page.screenshot({path:path.join(evidence,`native-clean-backdrop-${name}.png`)});page.assertNoExternal();
+ }
+});
+
+test('native existing backdrop/detail swatches have distinct real shapes without clipping name text or granting choices',{timeout:60000},async t=>{
+ for(const [name,width,height]of[['laptop',1366,768],['phone',390,844]]){
+  const page=await nativePublicFixture(t,{width,height});await page.locator('[data-studio-tab="name"]').click();
+  const shapes=await page.locator('.kind-emblemBackdrop [data-cosmetic-choice]:not(.cosmetic-emblem-backdrop-none) .profile-cosmetic-preview i').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {width:r.width,height:r.height,mask:s.maskImage,clip:s.clipPath};}));
+  assert.equal(shapes.length,3);assert.equal(new Set(shapes.map(shape=>shape.mask)).size,3);assert.ok(shapes.every(shape=>shape.width===46&&shape.height===46&&shape.mask.includes('data:image/svg+xml')&&shape.clip==='none'));
+  const details=await page.locator('.kind-emblem3 [data-cosmetic-choice]:not(.cosmetic-emblem3-none) .profile-cosmetic-preview i').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).maskImage));
+  assert.equal(details.length,3);assert.equal(new Set(details).size,3);
+  await page.locator('.kind-emblemBackdrop').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(evidence,`native-emblem-controls-${name}.png`)});
+  const carBefore=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const s=getComputedStyle(node);return {clip:s.clipPath,radius:s.borderRadius,padding:s.padding,border:s.borderTopWidth};});
+  await page.evaluate(()=>nativePreview.preview({kind:'emblemBackdrop',id:'hex'}));
+  const layout=await page.locator('.profile-preview-stage>span:not(.overall-car-model)').evaluate(node=>{const art=getComputedStyle(node,'::before');return {clip:getComputedStyle(node).clipPath,border:getComputedStyle(node).borderTopWidth,mask:art.maskImage,maskSize:art.maskSize,maskRepeat:art.maskRepeat,width:art.width,height:art.height,background:art.background,transform:art.transform};});
+  assert.equal(layout.clip,'none');assert.equal(layout.border,'0px');assert.ok(layout.mask.includes('data:image/svg+xml'));
+  assert.ok(parseFloat(layout.width)>=40&&parseFloat(layout.height)>=40,'live emblem mask fits the label without clipping');
+  const carAfter=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const s=getComputedStyle(node);return {clip:s.clipPath,radius:s.borderRadius,padding:s.padding,border:s.borderTopWidth};});
+  assert.deepEqual(carAfter,carBefore,'emblem preview must not change native thumbnail geometry');
+  fs.writeFileSync(path.join(evidence,`native-art-layout-${name}.json`),JSON.stringify({layout,carBefore,carAfter},null,2));
+  await page.locator('.profile-customizer-preview').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(evidence,`native-backdrop-preview-${name}.png`)});
+  await page.evaluate(()=>nativePreview.preview({kind:'emblem3',id:'wings'}));
+  assert.equal(await page.evaluate(()=>readNative().draft),await page.evaluate(()=>originalDraft));assert.equal(await page.evaluate(()=>readNative().publishCalls),0);
+  await page.evaluate(()=>nativePreview.clear());assert.equal(await page.locator('.cosmetic-preview-banner').count(),0);assert.equal(await page.evaluate(()=>readNative().publishAllowed),true);
+  assert.equal(await page.evaluate(()=>document.querySelector('.ph-studio-panel').scrollWidth<=document.querySelector('.ph-studio-panel').clientWidth),true);
+  page.assertNoExternal();
+ }
 });

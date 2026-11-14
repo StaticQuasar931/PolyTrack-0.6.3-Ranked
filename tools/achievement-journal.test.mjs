@@ -11,7 +11,7 @@ const profile = {raceCount:8,pbCount:10,totalPlaytimeMs:3600000,extraCount:1,tra
 
 test('catalog goals cover every real non-starter cosmetic without copying catalog values', () => {
   const model = buildAchievementProgress({cosmetics});
-  const expected = Object.values(cosmetics).flat().filter(([id,,requirement]) => requirement !== 0 && !['auto','none'].includes(id)).length;
+  const expected = Object.values(cosmetics).flat().filter(([id,,requirement]) => requirement !== 0 && !String(requirement).startsWith('shop:') && !['auto','none'].includes(id)).length;
   assert.equal(model.milestones.reduce((sum,item) => sum + item.rewards.length,0),expected);
   assert.equal(model.counts.earned,0);
   assert.ok(model.milestones.every(item => item.value === null));
@@ -88,4 +88,10 @@ test('player-facing goals use natural grammar and rewards use friendly category 
   const html = renderAchievementJournal({cosmetics,progress:{local:{practiceFinishes:1}}});
   for (const raw of ['(nameFont)','(emblemBackdrop)','(stageTint)','Preview ','Journal milestone / no reward']) assert.ok(!html.includes(raw),raw);
   for (const text of ['Achievements','Earn styles as you race.','View reward:','Background color','Name font','Emblem background','Personal milestone','Saved on this device']) assert.ok(html.includes(text),text);
+});
+
+test('purchased shop designs are not racing goals or spendable achievement awards',()=>{
+ const model=buildAchievementProgress({cosmetics,progress:{confirmed:{...profile,cosmeticUnlocks:['plate:pitlane-ticket','stage:apex-observatory','stripe:vector-ribbon']}}});
+ assert.ok(model.milestones.every(item=>!String(item.requirement).startsWith('shop:')));
+ assert.doesNotMatch(renderAchievementJournal({model}),/Claim CP|earned CP|wallet balance|reward points/i);
 });

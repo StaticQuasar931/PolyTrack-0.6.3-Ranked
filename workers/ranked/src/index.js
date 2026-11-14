@@ -8,6 +8,7 @@ import {recallPublicResponse, rememberPublicResponse, publicResponseCacheScope, 
 import {EVENT_COLLECTIONS} from './events.js';
 import {createEventFirestoreStore} from './events-store.js';
 import {handleCurrencyRequest} from './currency-wallet.js';
+import {mergeEarnedAndPurchasedEntitlements, purchasedProfileCosmeticsUnlocked} from './purchased-cosmetic-entitlements.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
@@ -122,11 +123,11 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta']),
   accent: new Set(['cyan', 'white', 'lime', 'gold', 'orange', 'coral', 'pink', 'violet', 'ice']),
   finish: new Set(['gradient', 'solid', 'split', 'gloss', 'carbon', 'horizon']),
-  plate: new Set(['block', 'solid', 'outline', 'notch', 'bar']),
+  plate: new Set(['block', 'solid', 'outline', 'notch', 'bar', 'pitlane-ticket']),
   edge: new Set(['accent', 'wide', 'none', 'double', 'dashed']),
-  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora']),
+  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora', 'apex-observatory']),
   stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono', 'orange', 'violet']),
-  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive']),
+  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive', 'vector-ribbon']),
   emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
   emblem2: new Set(['none', 'star', 'bolt', 'flag', 'diamond', 'flame', 'crown']),
   emblem3: new Set(['none', 'chevron', 'wings', 'laurel']),
@@ -2082,8 +2083,9 @@ async function buildOverallSnapshot(env, metaDoc, meta, now, force = false, allo
   let entitlementWrites=[];
   const nextEntitlements = new Map();
   for(const row of entries){
-    const allowance=cosmeticEntitlement(row,row.badges?.betaTester===true);
     const old=priorEntitlements.get(row.userId)?.data;
+    const allowance=mergeEarnedAndPurchasedEntitlements(
+      cosmeticEntitlement(row,row.badges?.betaTester===true),old,{accountId:row.userId});
     const changed = Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION||!old||stableJson(allowance)!==stableJson(old);
     if(changed)entitlementWrites.push({collection:ENTITLEMENT_COLLECTION,id:row.userId,data:allowance});
     // New allowances already contain normalized beta evidence. Do not invent a server updateTime.
@@ -2437,7 +2439,17 @@ async function propagateProfileCosmetics(env, accountId, profile, cosmetics, iss
   ]);
   const entry = (Array.isArray(overall?.data?.entries) ? overall.data.entries : []).find((row) => safeText(row.userId || row.accountId, 128) === accountId) || {};
   const betaTester = Boolean(issuedBeta) || badge?.data?.betaTester === true || entry?.badges?.betaTester === true;
-  if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) return false;
+  if (!profileCosmeticsUnlocked(cosmetics, entry, betaTester)) {
+    // Only canonical server purchase provenance can extend earned permissions.
+    const entitlement = await readDocument(env, ENTITLEMENT_COLLECTION, accountId);
+    try {
+      if (!purchasedProfileCosmeticsUnlocked(cosmetics, cosmeticEntitlement(entry, betaTester),
+        entitlement?.data, {accountId, ownerUid: profile.data.ownerUid})) return false;
+    } catch (error) {
+      if (error?.message === 'PURCHASED_COSMETIC_ENTITLEMENT_INVALID') return false;
+      throw error;
+    }
+  }
   if (!overall) {
     // Reconstruct rankings only through the existing bounded publisher, never
     // fabricate a partial Overall from a single cosmetics request.

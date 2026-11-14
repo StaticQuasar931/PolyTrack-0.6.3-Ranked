@@ -50,7 +50,7 @@ test('compact archive preserves every recorded entry and note in both rendering 
   for(const [index,entry] of RELEASE_HISTORY.entries.entries()) {
     assert.ok(html.includes(entry.title));
     const detail=dom.querySelectorAll('[data-release-history-entry]')[index];
-    assert.equal(detail.querySelector('summary').textContent,'Update '+entry.number+': '+releaseArchiveTitle(entry));
+    assert.equal(detail.querySelector('summary').textContent,(entry.number===null?'Recorded update':'Update '+entry.number)+': '+releaseArchiveTitle(entry));
     assert.ok(detail.querySelector('summary').title.includes(entry.title));
     assert.deepEqual(detail.querySelectorAll('li').map(node=>node.textContent),entry.notes);
   }

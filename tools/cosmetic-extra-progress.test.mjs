@@ -121,7 +121,9 @@ test('local preview remains device-local while the Worker validates publication'
   assert.match(extractFunction('flushPendingCosmeticPublishes'),/\/v1\/profile\/cosmetics/);
   const propagation=workerSource.slice(workerSource.indexOf('async function propagateProfileCosmetics('),workerSource.indexOf('async function processProfileJob('));
   const handler=workerSource.slice(workerSource.indexOf('async function updateProfileCosmetics('),workerSource.indexOf('async function completeCosmeticJob('));
-  assert.match(propagation,/if\s*\(!profileCosmeticsUnlocked\(cosmetics,\s*entry,\s*betaTester\)\)\s*return false/);
+  assert.match(propagation,/if\s*\(!profileCosmeticsUnlocked\(cosmetics,\s*entry,\s*betaTester\)\)\s*\{[\s\S]*?const entitlement = await readDocument\(env, ENTITLEMENT_COLLECTION, accountId\)/);
+  assert.match(propagation,/if\s*\(!purchasedProfileCosmeticsUnlocked\(cosmetics,\s*cosmeticEntitlement\(entry,\s*betaTester\),\s*entitlement\?\.data,\s*\{accountId, ownerUid: profile\.data\.ownerUid\}\)\) return false/);
+  assert.match(propagation,/if \(error\?\.message === 'PURCHASED_COSMETIC_ENTITLEMENT_INVALID'\) return false/);
   assert.match(handler,/if\s*\(!await propagateProfileCosmetics\(env,\s*accountId,\s*profile,\s*cosmetics,\s*issuedBeta\)\)\s*return json\(origin,\s*env,\s*403,\s*\{\s*error:\s*'cosmetic_locked'\s*\}\)/);
 });
 
