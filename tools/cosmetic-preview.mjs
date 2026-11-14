@@ -34,7 +34,20 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
   const publishButtons=()=>[...studio.querySelectorAll(PUBLISH)];
   const accountStamp=()=>JSON.stringify([...new Set([studio.getAttribute('data-account-id'),...publishButtons().map(button=>button.getAttribute('data-account-id'))].filter(value=>value!==null))].sort());
   const account=accountStamp();
+  const compact=win.matchMedia('(max-width:850px), (max-height:500px)');
   let selected=null,snapshot=null,banner=null,disposed=false,restoring=false,modal=null,lastChoice=null;
+  let offsetHost=null,offsetBefore='';
+  function releaseOffset(){
+    if(offsetHost){
+      if(offsetBefore)offsetHost.style.setProperty('--cosmetic-preview-header-height',offsetBefore);
+      else offsetHost.style.removeProperty('--cosmetic-preview-header-height');
+    }
+    offsetHost=null;offsetBefore='';
+  }
+  function measureBanner(){
+    if(offsetHost&&banner)offsetHost.style.setProperty('--cosmetic-preview-header-height',`${Math.ceil(banner.getBoundingClientRect().height)+12}px`);
+  }
+  const bannerObserver=new win.ResizeObserver(measureBanner);
   const guarded=new Map();
   const capture=()=>({
     classes:[studio,...studio.querySelectorAll('*')].map(node=>({node,cls:node.getAttribute('class'),style:node.getAttribute('style')})),
@@ -63,10 +76,25 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
       const text=document.createElement('strong');text.textContent=LABEL;
       const close=document.createElement('button');close.type='button';close.className='button cosmetic-preview-clear';close.dataset.cosmeticPreviewClear='';close.textContent='Exit preview';
       banner.append(text,close);
-      const target=studio.querySelector('.profile-customizer-preview')||studio;
-      target.prepend(banner);
+      bannerObserver.observe(banner);
+      banner.addEventListener('click',event=>{
+        if(event.target.closest?.('[data-cosmetic-preview-clear]')){stop(event);clear('exit');}
+      });
+      banner.addEventListener('keydown',event=>{
+        if(event.key==='Escape'&&selected){stop(event);clear('escape');}
+      });
     }
+    placeBanner();
   }
+  function placeBanner(){
+    if(!banner)return;
+    const target=compact.matches?(studio.closest('.ph-studio-panel')||studio):(studio.querySelector('.profile-customizer-preview')||studio);
+    if(banner.parentElement!==target||target.firstElementChild!==banner)target.prepend(banner);
+    const next=compact.matches?target:null;
+    if(next!==offsetHost){releaseOffset();offsetHost=next;offsetBefore=next?.style.getPropertyValue('--cosmetic-preview-header-height')||'';}
+    measureBanner();
+  }
+  const layoutChange=()=>{if(current()&&selected)placeBanner();};
   function modalExit(event){if(selected)clear(event.type==='cancel'?'modal-cancel':'modal-close');}
   function watchModal(){
     const next=studio.closest('dialog');if(next===modal)return;
@@ -79,13 +107,13 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     const returnFocus=(reason==='exit'||reason==='escape')&&banner?.contains(document.activeElement)?lastChoice:null;
     const previous=selected;selected=null;restoring=true;
     try{restoreVisuals();onRestore(Object.freeze({reason,previous,previewOnly:true}));}
-    finally{banner?.remove();banner=null;studio.classList.remove('cosmetic-preview-active');releaseButtons();snapshot=null;restoring=false;releaseModal();
+    finally{bannerObserver.disconnect();releaseOffset();banner?.remove();banner=null;studio.classList.remove('cosmetic-preview-active');releaseButtons();snapshot=null;restoring=false;releaseModal();
       if(returnFocus?.isConnected&&studio.contains(returnFocus)&&!returnFocus.disabled&&!disposed&&accountStamp()===account)returnFocus.focus({preventScroll:true});
       lastChoice=null;}
     return true;
   }
   function dispose(reason='dispose'){
-    if(disposed)return;disposed=true;observer.disconnect();
+    if(disposed)return;disposed=true;observer.disconnect();compact.removeEventListener('change',layoutChange);
     studio.removeEventListener('click',click,true);studio.removeEventListener('keydown',keydown,true);studio.removeEventListener('submit',submit,true);studio.removeEventListener('input',edit,true);studio.removeEventListener('change',edit,true);studio.removeEventListener('toggle',toggle);
     try{clear(reason);}finally{releaseModal();if(bindings.get(studio)===api)bindings.delete(studio);}
   }
@@ -141,8 +169,9 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     if(modal&&!studio.closest('dialog')){clear('modal-detach');return;}
     watchModal();guardButtons();
   });
-  const api={preview,clear,dispose,isActive:()=>current()&&!!selected,canPublish,guardPublish};
+  const api={preview,clear,dispose,isActive:()=>current()&&!!selected,currentOption:()=>current()?selected:null,canPublish,guardPublish};
   bindings.set(studio,api);
+  compact.addEventListener('change',layoutChange);
   studio.addEventListener('click',click,true);studio.addEventListener('keydown',keydown,true);studio.addEventListener('submit',submit,true);studio.addEventListener('input',edit,true);studio.addEventListener('change',edit,true);studio.addEventListener('toggle',toggle);
   observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['data-account-id','open']});
   return api;

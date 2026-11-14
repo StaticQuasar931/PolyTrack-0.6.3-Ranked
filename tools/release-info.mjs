@@ -1,12 +1,14 @@
 const releaseInfo = {
-  "number": 379,
+  "number": 381,
   "version": "0.6.3",
-  "revision": 322,
+  "revision": 323,
   "notes": [
-    "Faster offline replay checks and safer handling of larger snapshots."
+    "A clearer full-screen Achievements and Racer Studio hub.",
+    "Claim cosmetic points and collect original profile designs.",
+    "Clearer route advice, previews and cosmetic details."
   ],
-  "preparedAt": "2026-11-14T13:20:50.477Z",
-  "committedAt": "2026-11-14T13:31:10.000Z"
+  "preparedAt": "2026-11-14T16:04:33.893Z",
+  "committedAt": "2026-11-14T16:34:37.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -2,14 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 379,
+    "number": 381,
     "version": "0.6.3",
-    "revision": 322,
+    "revision": 323,
     "notes": [
-      "Faster offline replay checks and safer handling of larger snapshots."
+      "A clearer full-screen Achievements and Racer Studio hub.",
+      "Claim cosmetic points and collect original profile designs.",
+      "Clearer route advice, previews and cosmetic details."
     ]
   },
   "entries": [
+    {
+      "number": 379,
+      "title": "Faster offline verification",
+      "commit": "bbb8c2dff758c635d3a0ff4b78a896dc762f2b13",
+      "committedAt": "2026-11-14T13:31:10.000Z",
+      "notes": [
+        "Faster offline replay checks and safer handling of larger snapshots."
+      ]
+    },
     {
       "number": 377,
       "title": "Support larger snapshot catalogs and bounded partial verification",
@@ -190,16 +201,6 @@ const historyData = {
       "committedAt": "2026-11-12T07:26:36.000Z",
       "notes": [
         "Improves local ranking estimates for larger verified leaderboards."
-      ]
-    },
-    {
-      "number": 358,
-      "title": "Show update notes during loading and expand replay review capacity",
-      "commit": "438f79dd457a190d483051dfe751ad32c3f9a856",
-      "committedAt": "2026-11-09T08:34:47.000Z",
-      "notes": [
-        "Update notes appear during loading, even on fast or cached starts.",
-        "Improves replay-review capacity for growing leaderboards."
       ]
     }
   ],

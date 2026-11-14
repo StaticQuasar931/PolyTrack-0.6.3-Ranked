@@ -3,6 +3,9 @@ import {plannerBenefitEaseScore} from './planner-route-model.mjs';
 
 const compareId = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const unavailable = reason => ({known: false, reason});
+// Exact fixed-field slope. Subtracting two large totals can erase a small gain.
+const placementGain = (component, places) =>
+  (100 / (component.fieldSize + 5)) * component.weight * component.populationMultiplier * places;
 
 /** Profile cards compare like-for-like contribution points, NEVER published Overall score.
  * Complete results are validated before an optional track filter is applied.
@@ -37,7 +40,7 @@ export function fieldRpBenefitReference(fields, {complete = false, expectedCount
     const last = fieldRpComponent({...field, rank: field?.fieldSize});
     if (!first || !last || seen.has(first.trackId)) return unavailable('invalid_or_duplicate_scoring_field');
     seen.add(first.trackId);
-    const gain = first.points - last.points;
+    const gain = placementGain(first, first.fieldSize - 1);
     if (!Number.isFinite(gain) || gain < 0) return unavailable('invalid_scoring_field_gain');
     benefitReference = Math.max(benefitReference, gain);
   }
@@ -48,17 +51,19 @@ export function fieldRpBenefitReference(fields, {complete = false, expectedCount
 /** Frozen-field placement counterfactual. No invented PB time, population or weight.
  * nextPlace can have negligible gain; firstUsefulPlace is the closest better rank
  * whose contribution gain is STRICTLY greater than epsilon (default .0005 points).
- * Binary search is valid because this exact fixed-field metric is monotonic.
+ * recommendedPlace also reaches 25% of the available gain, matching Overall routes.
+ * Binary searches are bounded and valid for this monotonic fixed-field metric.
  */
-export function fieldRpPlacementTargets(finish, {epsilon = .0005, benefitReference} = {}) {
+export function fieldRpPlacementTargets(finish, {epsilon = .0005, benefitReference, gainFraction = .25} = {}) {
   const current = fieldRpComponent(finish);
   if (!current || !Number.isFinite(epsilon) || epsilon < 0 ||
-      !Number.isFinite(benefitReference) || benefitReference < 0) return unavailable('invalid_placement_inputs');
-  const maximumGain = fieldRpComponent({...finish, rank: 1}).points - current.points;
+      !Number.isFinite(benefitReference) || benefitReference < 0 ||
+      !Number.isFinite(gainFraction) || gainFraction < 0 || gainFraction > 1) return unavailable('invalid_placement_inputs');
+  const maximumGain = placementGain(current, current.rank - 1);
   if (maximumGain > benefitReference) return unavailable('undersized_benefit_reference');
   const actionAt = targetRank => {
     const target = fieldRpComponent({...finish, rank: targetRank});
-    const value = target.points - current.points;
+    const value = placementGain(current, current.rank - targetRank);
     if (!Number.isFinite(value) || value < 0) return null;
     return {trackId: finish.trackId, currentRank: current.rank, targetRank,
     fieldSize: current.fieldSize, weight: current.weight, competition: finish.competition,
@@ -71,14 +76,22 @@ export function fieldRpPlacementTargets(finish, {epsilon = .0005, benefitReferen
   };
   const nextPlace = current.rank > 1 ? actionAt(current.rank - 1) : null;
   const first = current.rank > 1 ? actionAt(1) : null;
-  if (!first || first.value <= epsilon) return {known: true, nextPlace, firstUsefulPlace: null};
-  let low = 1, high = current.rank - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (actionAt(middle).value > epsilon) low = middle;
-    else high = middle - 1;
-  }
-  return {known: true, nextPlace, firstUsefulPlace: {...actionAt(low), minimumHelpfulRank: low, topGuaranteed: true, maximumGain}};
+  if (!first || first.value <= epsilon) return {known: true, nextPlace, firstUsefulPlace: null, recommendedPlace: null};
+  const closest = accepts => {
+    let low = 1, high = current.rank - 1;
+    while (low < high) {
+      const middle = low + Math.ceil((high - low) / 2);
+      if (accepts(actionAt(middle).value)) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+  const minimumHelpfulRank = closest(value => value > epsilon);
+  const decorate = rank => ({...actionAt(rank), minimumHelpfulRank, topGuaranteed: true, maximumGain});
+  // Match the normal planner's meaningful-target policy, not its loaded-list denominator.
+  const recommendedRank = closest(value => value > epsilon && value >= maximumGain * gainFraction);
+  return {known: true, nextPlace, firstUsefulPlace: decorate(minimumHelpfulRank),
+    recommendedPlace: {...decorate(recommendedRank), gainFraction}};
 }
 
 /** Complete profile + complete publication fields -> parent-ready Next Moves rows.
@@ -100,7 +113,7 @@ export function buildFieldRpPlanner(finishes, {complete = false, expectedCount, 
   }
   const summary = summarizeFieldRpTracks(finishes, {complete, expectedCount, trackIds});
   const selected = new Set(summary.tracks.map(row => row.trackId));
-  const baselinePoints = full.tracks.reduce((sum, row) => sum + row.points, 0);
+  const baselinePoints = full.points;
   const opportunities = [], routes = [];
   for (const finish of finishes) {
     if (!selected.has(finish.trackId)) continue;
@@ -110,11 +123,12 @@ export function buildFieldRpPlanner(finishes, {complete = false, expectedCount, 
       // Existing planner comparisons minimize cost; only the adapter changes sign.
       baselineScore: -baselinePoints, targetScore: -(baselinePoints + action.value),
       simulationComplete: true};
-    const nextPlace = decorate(targets.nextPlace), firstUsefulPlace = decorate(targets.firstUsefulPlace);
-    if ([nextPlace, firstUsefulPlace].some(action => action && !Number.isFinite(action.targetScore)))
+    const nextPlace = decorate(targets.nextPlace), firstUsefulPlace = decorate(targets.firstUsefulPlace),
+      recommendedPlace = decorate(targets.recommendedPlace);
+    if ([nextPlace, firstUsefulPlace, recommendedPlace].some(action => action && !Number.isFinite(action.targetScore)))
       return {...unavailable('projection_overflow'), routes: [], opportunities: []};
-    opportunities.push({trackId: finish.trackId, nextPlace, firstUsefulPlace});
-    if (firstUsefulPlace) routes.push(firstUsefulPlace);
+    opportunities.push({trackId: finish.trackId, nextPlace, firstUsefulPlace, recommendedPlace});
+    if (recommendedPlace) routes.push(recommendedPlace);
   }
   opportunities.sort((a, b) => compareId(a.trackId, b.trackId));
   routes.sort((a, b) => b.value - a.value || compareId(a.trackId, b.trackId));
