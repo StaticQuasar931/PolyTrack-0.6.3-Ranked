@@ -210,10 +210,10 @@ dialog.profile-hub { position:fixed; inset:0; width:100vw; max-width:none; heigh
 .ph-tabbar>[role=tab] { display:flex; align-items:center; justify-content:center; gap:10px; }
 .ph-tabbar>[role=tab] svg { width:24px; height:24px; flex:none; color:#87d9ef; }
 .ph-brand svg { width:36px; height:36px; }
-/* Reuse native profile paint below the content, never as a control-covering overlay. */
-dialog.profile-hub { background-color:color-mix(in srgb,var(--profile-b,var(--cosmetic-b,#192a56)) 40%,#1d2e61); background-image:var(--profile-pattern,none); background-size:var(--profile-pattern-size,auto); }
-.profile-hub .ph-header { background-color:color-mix(in srgb,var(--profile-a,var(--cosmetic-a,#30477e)) 40%,#30477e); background-image:var(--profile-pattern,none); background-size:var(--profile-pattern-size,auto); }
-.profile-hub .ph-studio-panel,.profile-hub .aj { background:transparent; }
+/* Keep hub chrome neutral; profile paint belongs only inside Studio previews. */
+dialog.profile-hub { background:#202c3c; }
+.profile-hub .ph-header { background:#29394d; }
+.profile-hub .ph-studio-panel { background:transparent; }
 .aj-layout { display:block; }
 .aj-tree { gap:30px; }
 .aj-branch>header { padding-bottom:18px; border-bottom:1px solid #5878a3; margin-bottom:0; }
@@ -303,4 +303,35 @@ dialog.profile-hub { background-color:color-mix(in srgb,var(--profile-b,var(--co
   .aj-lane-head h4 { font-size:21px; }
   .aj-lane-mark { width:30px; height:30px; }
   .aj-lane[data-aj-single=true] .aj-tier-list>li>button { min-height:86px; padding:10px 12px; }
+}
+
+/* Opaque reading surfaces never inherit the equipped profile pattern. */
+.aj.aj { --aj-cyan:#b9d9ee; --aj-amber:#f0d49b; --aj-muted:#d1dce8; --aj-line:#617083; background:#202c3c; color:#f5f7fa; font-size:20px; }
+.aj.aj .aj-summary,.aj.aj .aj-tools,.aj.aj .aj-paths { background:#202c3c; }
+.aj.aj .aj-paths>button { font-size:19px; }
+.aj.aj .aj-paths>button[aria-pressed=true] { background:#3b4c60; }
+.aj.aj .aj-branch .aj-tier-list>li>button { background:#2b394b; }
+.aj.aj .aj-branch .aj-tier-list>li>button:hover { background:#394b60; }
+.aj.aj .aj-branch .aj-tier-list>li>button[aria-pressed=true] { background:#3b4c60; box-shadow:inset 0 -3px #b9d9ee; }
+.aj.aj .aj-branch .aj-tier-list>li>button>strong { font-size:24px; line-height:1.3; }
+.aj.aj .aj-node-top,.aj.aj .aj-node-reward,.aj.aj .aj-progress,.aj.aj .aj-lane-count,.aj.aj .aj-mobile-prompt { font-size:16px; line-height:1.45; color:#d5e0ec; }
+.aj.aj .aj-lane-head p,.aj.aj .aj-kicker { font-size:14px!important; line-height:1.4; letter-spacing:.4px; }
+.aj.aj .aj-lane-head h4 { font-size:27px; line-height:1.3; }
+.aj.aj .aj-detail { background:#253244; border-color:#75879c; }
+.aj.aj .aj-inspector-info h3 { font-size:30px; line-height:1.25; }
+.aj.aj .aj-detail p,.aj.aj .aj-more,.aj.aj .aj-more[open]>p,.aj.aj .aj-summary>div>p,.aj.aj .aj-notice,.aj.aj .aj-branch-note,.aj.aj .aj-footer { font-size:17px!important; line-height:1.5!important; color:#dce5ef; }
+.aj.aj .aj-more summary { min-height:44px; padding:10px 0; color:#f5f7fa; font-size:18px; }
+.aj.aj .aj-goal-count { padding:12px 0; border-block:1px solid #617083; }
+.aj.aj .aj-personal-note { background:#2b394b; }
+.aj.aj .aj-reward-category { font-size:14px; line-height:1.4; }
+.aj.aj .aj-reward-label { font-size:18px; line-height:1.4; }
+.aj.aj .aj-rewards { max-height:none; }
+.aj.aj [data-aj-close],.profile-hub .ph-close { min-width:88px; min-height:48px; padding:10px 16px; border:2px solid #a7b9cc; border-radius:3px; background:#33465c; color:#fff; font:20px/1.2 ForcedSquare,sans-serif; box-shadow:0 2px 0 #101b29; }
+.aj.aj [data-aj-close]:hover,.profile-hub .ph-close:hover { background:#465f7b; border-color:#e1edf7; }
+.aj.aj [data-aj-close]:active,.profile-hub .ph-close:active { background:#253548; box-shadow:none; }
+.aj.aj [data-aj-close]:focus-visible,.profile-hub .ph-close:focus-visible { outline:3px solid #f0d49b!important; outline-offset:3px; }
+@media(max-width:660px) {
+  .aj.aj .aj-lane-head h4 { font-size:24px; }
+  .aj.aj .aj-lane-count { white-space:normal; }
+  .aj.aj .aj-inspector-info h3 { font-size:27px; }
 }

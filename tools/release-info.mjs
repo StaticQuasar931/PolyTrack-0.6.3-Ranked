@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 382,
+  "number": 383,
   "version": "0.6.3",
-  "revision": 324,
+  "revision": 325,
   "notes": [
-    "Claim a Community badge with the Discord invite code.",
-    "Shop designs stay visible during local recalculation.",
-    "Clearer achievement goals and cosmetic previews."
+    "Clearer, larger achievement goals without profile patterns.",
+    "Combine cosmetic previews, undo changes, and see unsaved edits.",
+    "Cleaner profile layout and a redesigned Apex Observatory backdrop."
   ],
-  "preparedAt": "2026-11-14T19:14:28.482Z",
-  "committedAt": "2026-11-14T19:18:40.000Z"
+  "preparedAt": "2026-11-14T20:08:17.735Z",
+  "committedAt": "2026-11-14T20:11:07.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

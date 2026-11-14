@@ -16,9 +16,9 @@ const ART = Object.freeze({
     detail:'<path fill="none" stroke="#edc889" stroke-opacity=".55" d="M279 24V34M279 40V48M279 54V64M28 24H62M28 64H62"/>'
   }),
   'profile-apex-observatory': Object.freeze({
-    description:'A still mountain observatory above an angular circuit, behind the profile car.',
-    base:'<path fill="#152c3d" d="M0 0H320V88H0Z"/><circle cx="249" cy="21" r="11" fill="#edc889"/><path fill="#345568" d="M0 63L55 21L100 55L158 12L228 64L273 38L320 69V88H0Z"/><path fill="#9abebc" d="M129 33L158 12L181 31L160 25L148 33L142 27Z"/><path fill="#0c2130" d="M0 76L75 59L129 74L203 60L320 78V88H0Z"/>',
-    detail:'<path fill="none" stroke="#edc889" stroke-width="1.5" stroke-opacity=".6" d="M20 86L79 69H118L140 79H210L232 70H275L303 86"/><path fill="none" stroke="#b8d8d2" stroke-opacity=".6" d="M269 53V43H283V53M266 43L276 36L286 43Z"/>'
+    description:'A still low-poly alpine circuit below a moonlit summit observatory, with a clear central car silhouette.',
+    base:'<path fill="#172c48" d="M0 0H320V88H0Z"/><circle cx="267" cy="18" r="10" fill="#f4d79e"/><path fill="#3d5874" d="M0 59L39 24L75 54L123 14L181 66L226 29L278 59L307 35L320 47V88H0Z"/><path fill="#c1d8de" d="M98 35L123 14L146 37L127 29L118 34L113 28Z"/><path fill="#293f56" d="M123 14L181 66L146 53L127 29Z"/><path fill="#213c4b" d="M0 72L53 57L109 76L188 57L252 65L320 54V88H0Z"/><path fill="#426069" d="M226 65L241 48H292L320 61V72L279 66Z"/><path fill="#98b5bc" d="M251 49V36H278V49Z"/><path fill="#d5e1df" d="M248 36L252 28L260 24H269L277 29L281 36Z"/><path fill="#638896" d="M265 25L272 30L274 36H281L277 29L269 24Z"/><path fill="#172c48" d="M257 40H263V49H257ZM269 40H274V45H269Z"/><path fill="#152b3a" d="M0 83L62 71L121 82L202 72L259 79L320 70V88H0Z"/><path fill="none" stroke="#7c9ca9" stroke-width="8" stroke-linejoin="bevel" d="M-6 85L47 75H80L103 84H191L216 75H251L279 85H326"/><path fill="none" stroke="#263c4e" stroke-width="5" stroke-linejoin="bevel" d="M-6 85L47 75H80L103 84H191L216 75H251L279 85H326"/>',
+    detail:'<path fill="none" stroke="#edc889" stroke-width="1.5" d="M22 79L38 76M87 78L99 83M202 80L215 76M261 79L273 83"/><path fill="none" stroke="#b8d8d2" d="M264 24V17L273 12M264 17L270 21L277 15L273 12Z"/><path fill="#b8d8d2" d="M24 15H26V17H24ZM192 12H194V14H192ZM297 23H299V25H297Z"/>'
   }),
   'profile-vector-ribbon': Object.freeze({
     description:'Two open racing ribbons at the far edge, leaving the racer name clear.',
