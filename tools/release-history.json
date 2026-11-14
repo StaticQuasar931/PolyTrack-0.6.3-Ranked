@@ -1,17 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 371,
+    "number": 372,
     "version": "0.6.3",
-    "revision": 315,
+    "revision": 316,
     "notes": [
-      "Achievements and Racer Studio share a full-screen hub, with more goals and locked-item previews.",
-      "Save local friends and find friendly PB challenges using saved snapshot data.",
-      "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
-      "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
+      "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
+      "Keyboard focus returns to your selected item when you exit a preview."
     ]
   },
   "entries": [
+    {
+      "number": 371,
+      "title": "Racer hub, local friends and Field RP routes",
+      "commit": "3e6888ba97990fdbba6712e6fe737fb57fe9f5f7",
+      "committedAt": "2026-11-14T06:55:14.000Z",
+      "notes": [
+        "Achievements and Racer Studio share a full-screen hub, with more goals and locked-item previews.",
+        "Save local friends and find friendly PB challenges using saved snapshot data.",
+        "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
+        "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
+      ]
+    },
     {
       "number": 370,
       "title": "Achievements, track discovery and full snapshot preparation",
@@ -194,16 +204,6 @@
       "notes": [
         "More room for saves: downloaded rankings now use separate local cache storage.",
         "Keeps personal saves, replays and older-version save formats unchanged."
-      ]
-    },
-    {
-      "number": 351,
-      "title": "Recover completed verifications and reconcile saved snapshot data",
-      "commit": "9adc19588e5767ef2b1d203d6dcb4f254c759ec2",
-      "committedAt": "2026-11-09T04:17:54.000Z",
-      "notes": [
-        "Updated saved Summer 1 PBs and recovered completed replay checks.",
-        "Keeps older event replay history when a faster run replaces it."
       ]
     }
   ],

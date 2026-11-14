@@ -34,7 +34,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
   const publishButtons=()=>[...studio.querySelectorAll(PUBLISH)];
   const accountStamp=()=>JSON.stringify([...new Set([studio.getAttribute('data-account-id'),...publishButtons().map(button=>button.getAttribute('data-account-id'))].filter(value=>value!==null))].sort());
   const account=accountStamp();
-  let selected=null,snapshot=null,banner=null,disposed=false,restoring=false,modal=null;
+  let selected=null,snapshot=null,banner=null,disposed=false,restoring=false,modal=null,lastChoice=null;
   const guarded=new Map();
   const capture=()=>({
     classes:[studio,...studio.querySelectorAll('*')].map(node=>({node,cls:node.getAttribute('class'),style:node.getAttribute('style')})),
@@ -63,9 +63,8 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
       const text=document.createElement('strong');text.textContent=LABEL;
       const close=document.createElement('button');close.type='button';close.className='button cosmetic-preview-clear';close.dataset.cosmeticPreviewClear='';close.textContent='Exit preview';
       banner.append(text,close);
-      const target=studio.querySelector('.profile-customizer-actions')||studio;
-      const status=target.querySelector('[role="status"]');
-      if(status)status.after(banner);else target.prepend(banner);
+      const target=studio.querySelector('.profile-customizer-preview')||studio;
+      target.prepend(banner);
     }
   }
   function modalExit(event){if(selected)clear(event.type==='cancel'?'modal-cancel':'modal-close');}
@@ -77,9 +76,12 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
   function releaseModal(){modal?.removeEventListener('close',modalExit);modal?.removeEventListener('cancel',modalExit);modal=null;}
   function clear(reason='exit'){
     if(!selected||restoring)return false;
+    const returnFocus=(reason==='exit'||reason==='escape')&&banner?.contains(document.activeElement)?lastChoice:null;
     const previous=selected;selected=null;restoring=true;
     try{restoreVisuals();onRestore(Object.freeze({reason,previous,previewOnly:true}));}
-    finally{banner?.remove();banner=null;studio.classList.remove('cosmetic-preview-active');releaseButtons();snapshot=null;restoring=false;releaseModal();}
+    finally{banner?.remove();banner=null;studio.classList.remove('cosmetic-preview-active');releaseButtons();snapshot=null;restoring=false;releaseModal();
+      if(returnFocus?.isConnected&&studio.contains(returnFocus)&&!returnFocus.disabled&&!disposed&&accountStamp()===account)returnFocus.focus({preventScroll:true});
+      lastChoice=null;}
     return true;
   }
   function dispose(reason='dispose'){
@@ -92,9 +94,11 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     if(!studio.isConnected||accountStamp()!==account){dispose(studio.isConnected?'account-change':'detached');return false;}
     return true;
   }
-  function preview(request){
+  function preview(request,trigger=null){
     if(!current())return false;
     const option=resolveCosmeticPreview(catalog,request);if(!option)return false;
+    const matches=node=>node.dataset.cosmeticKind===option.kind&&node.dataset.cosmeticValue===option.id;
+    lastChoice=trigger&&studio.contains(trigger)&&trigger.matches(CHOICE)&&matches(trigger)?trigger:[...studio.querySelectorAll(CHOICE)].find(matches)||null;
     watchModal();if(modal&&!modal.open){releaseModal();return false;}
     if(!snapshot)snapshot=capture();else restoreVisuals();
     selected=option;mark();
@@ -115,7 +119,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     const choice=target.closest(CHOICE);
     if(choice&&studio.contains(choice)){
       if(choice.hasAttribute('data-cosmetic-try')||choice.dataset.cosmeticLocked==='true'){
-        stop(event);preview({kind:choice.dataset.cosmeticKind,id:choice.dataset.cosmeticValue});
+        stop(event);preview({kind:choice.dataset.cosmeticKind,id:choice.dataset.cosmeticValue},choice);
       }else if(selected)clear('edit');
       return;
     }

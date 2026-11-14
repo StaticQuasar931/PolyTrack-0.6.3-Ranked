@@ -103,3 +103,30 @@ test('native dialog cancel restores preview even when the modal remains open',as
  const p=await fixture(t);await p.evaluate(()=>{const dialog=document.createElement('dialog');dialog.className='profile-hub';document.body.append(dialog);dialog.append(studio);dialog.showModal();window.hub=dialog;});
  await p.locator('#gold').click({force:true});await p.evaluate(()=>hub.dispatchEvent(new Event('cancel',{cancelable:true})));const state=await p.evaluate(()=>readState());assert.equal(state.active,false);assert.equal(state.title,'Original title');assert.deepEqual(state.restoreCalls,['modal-cancel']);assert.equal(state.disabled,false);assert.equal(await p.evaluate(()=>hub.open),true);
 });
+
+test('overflowed max-height preview keeps the first-child warning and exit control visible at every scroll position',async t=>{
+ const p=await fixture(t,{width:1366});await p.evaluate(()=>{
+  const pane=studio.querySelector('.profile-customizer-preview');pane.style.maxHeight='190px';pane.style.overflowY='auto';pane.style.width='340px';pane.style.padding='0';
+  const tall=document.createElement('div');tall.style.height='900px';tall.textContent='Actual scrollable showcase area';pane.insertBefore(tall,pane.querySelector('.profile-customizer-actions'));pane.scrollTop=400;
+ });
+ await p.locator('#gold').click({force:true});
+ for(const scroll of [0,250,10000]){
+  const result=await p.evaluate(scroll=>{
+   const pane=studio.querySelector('.profile-customizer-preview');pane.scrollTop=scroll;
+   const banner=pane.querySelector('.cosmetic-preview-banner'),button=banner.querySelector('button'),pr=pane.getBoundingClientRect(),br=banner.getBoundingClientRect(),cr=button.getBoundingClientRect();
+   return {first:pane.firstElementChild===banner,text:banner.textContent,sticky:getComputedStyle(banner).position,top:getComputedStyle(banner).top,z:getComputedStyle(banner).zIndex,overflow:pane.scrollHeight>pane.clientHeight,bannerInside:br.top>=pr.top-1&&br.bottom<=pr.bottom+1,buttonInside:cr.top>=pr.top-1&&cr.bottom<=pr.bottom+1,buttonOnTop:document.elementFromPoint(cr.x+cr.width/2,cr.y+cr.height/2)===button};
+  },scroll);
+  assert.equal(result.first,true);assert.match(result.text,/Preview only - not unlocked/);assert.equal(result.sticky,'sticky');assert.equal(result.top,'0px');assert.equal(result.z,'5');assert.equal(result.overflow,true);assert.ok(result.bannerInside&&result.buttonInside&&result.buttonOnTop,JSON.stringify({scroll,result}));
+ }
+ const state=await p.evaluate(()=>readState());assert.equal(state.disabled,true);assert.equal(state.canPublish,false);assert.equal(state.publishCalls,0);assert.deepEqual(state.draft,state.published);
+});
+
+test('explicit exit and Escape return banner focus to last locked choice only',async t=>{
+ const p=await fixture(t);await p.locator('#gold').click({force:true});await p.locator('[data-cosmetic-preview-clear]').click();assert.equal(await p.locator('#gold').evaluate(node=>node===document.activeElement),true);
+ await p.locator('#try-title').click();await p.locator('[data-cosmetic-preview-clear]').focus();await p.keyboard.press('Escape');assert.equal(await p.locator('#try-title').evaluate(node=>node===document.activeElement),true);
+ for(const reason of ['modal-close','modal-cancel','edit','account-change','dispose']){
+  await p.evaluate(()=>api.preview({kind:'theme',id:'gold'}));await p.locator('[data-cosmetic-preview-clear]').focus();
+  const refocused=await p.evaluate(reason=>{api.clear(reason);return document.activeElement===document.getElementById('gold');},reason);assert.equal(refocused,false,reason);
+ }
+ await p.evaluate(()=>api.preview({kind:'theme',id:'gold'}));await p.locator('#edit').focus();await p.keyboard.press('Escape');assert.equal(await p.locator('#edit').evaluate(node=>node===document.activeElement),true);
+});
