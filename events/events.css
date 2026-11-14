@@ -1368,3 +1368,10 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 
 .sq-event-board button.main .verified-state{left:auto!important;right:12px!important;display:flex;align-items:center;justify-content:flex-end;gap:4px;max-width:calc(100% - 24px);box-sizing:border-box;white-space:nowrap}
 .sq-event-board .sq-event-status-label{font:inherit;white-space:nowrap}
 .sq-event-board .sq-event-status-label[hidden]{display:none}
+
+/* Keep five-digit ERP awards intact without changing card geometry. */
+.sq-event-card .sq-event-reward,.sq-permanent-track .sq-event-reward,
+.sq-permanent-track .sq-permanent-note{
+ font-variant-numeric:tabular-nums;max-width:100%;min-width:0;box-sizing:border-box;
+ white-space:normal;overflow-wrap:normal;word-break:normal;
+}

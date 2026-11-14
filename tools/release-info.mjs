@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 385,
+  "number": 388,
   "version": "0.6.3",
-  "revision": 327,
+  "revision": 330,
   "notes": [
-    "Readable car workshop controls on phones and smaller screens.",
-    "Collapse the workshop while viewing your car; native Save dialogs stay clear."
+    "More reliable delivery of the latest update and snapshot files."
   ],
-  "preparedAt": "2026-11-14T21:14:10.737Z",
-  "committedAt": "2026-11-14T21:15:06.000Z"
+  "preparedAt": "2026-11-14T22:43:49.508Z",
+  "committedAt": "2026-11-14T22:46:45.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

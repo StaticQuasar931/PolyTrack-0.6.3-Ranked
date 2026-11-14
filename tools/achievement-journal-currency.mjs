@@ -1,0 +1,17 @@
+/** Presentation-only mirror of server wallet completion tiers. No I/O or awards.
+ * confirmed.casualCompletionCount is a hint for Shop checks, never proof of a grant.
+ * No local count, raceCount, history length, or fabricated claim state is accepted.
+ */
+export const STYLE_COIN_MILESTONES=Object.freeze([
+ [1,20],[5,30],[20,50],[35,30],[50,40],[70,50],[89,60]
+].map(([threshold,amount])=>Object.freeze({rewardId:'tracks-'+threshold,threshold,amount})));
+const counter=value=>Number.isSafeInteger(value)&&value>=0&&value<=89?value:null;
+export function buildStyleCoinAchievements(confirmed={}){
+ const value=counter(Object.getOwnPropertyDescriptor(confirmed??{},'casualCompletionCount')?.value);
+ return STYLE_COIN_MILESTONES.map(tier=>({id:'currency:'+tier.rewardId,laneId:'currency:recognized-tracks',laneTitle:'Ranked completion rewards',family:'currency',metric:'casualCompletionCount',source:'currency',
+ target:tier.threshold,value,localValue:null,ratio:value===null?0:Math.min(1,value/tier.threshold),earned:false,eligible:value!==null&&value>=tier.threshold,
+ goal:'Complete '+tier.threshold+' recognized ranked '+(tier.threshold===1?'track':'tracks'),
+ description:'Shop checks the server completion ledger and existing receipts. A confirmed profile count is a hint, not a claim receipt. Local navigation and practice observations never grant Style Coins.',
+ reward:Object.freeze({kind:'currency',currency:'Style Coins',amount:tier.amount,rewardId:tier.rewardId}),rewards:[],navigate:'shop'}));
+}
+export const isStyleCoinAchievement=item=>item?.source==='currency'&&STYLE_COIN_MILESTONES.some(tier=>tier.rewardId===item.reward?.rewardId&&tier.amount===item.reward?.amount&&tier.threshold===item.target);

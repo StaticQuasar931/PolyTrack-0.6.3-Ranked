@@ -74,7 +74,7 @@ const routeKey = value => JSON.stringify(value, function(key, item){
   return item && typeof item==='object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])) : item;
 });
 
-export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
+export function orderPlannerRoutes(rival,personal,limit=8,sort='impact',{benefitReference}={}){
   // Select each track's benefit target before applying any ordering preference.
   const unique=new Map();
   for(const action of [...(rival||[]),...(personal||[])]){
@@ -86,7 +86,11 @@ export function orderPlannerRoutes(rival,personal,limit=8,sort='impact'){
       action.targetRank===previous.targetRank&&routeKey(action)<routeKey(previous))))unique.set(action.trackId,action);
   }
   const actions=[...unique.values()];
-  const maximum=Math.max(0,...actions.map(a=>positive(a.value)));
+  const loadedMaximum=Math.max(0,...actions.map(a=>positive(a.value)));
+  if(benefitReference!==undefined&&(!Number.isFinite(benefitReference)||benefitReference<loadedMaximum))
+    throw Error('Invalid planner benefit reference');
+  // Compute this reference from all metric/context routes BEFORE track filters.
+  const maximum=benefitReference===undefined?loadedMaximum:benefitReference;
   const effort=a=>Number.isFinite(a?.ease?.effortScore)&&a.ease.effortScore>=0?a.ease.effortScore:null;
   const value=a=>positive(a.value),practice=a=>positive(a.practice?.factor)||1;
   const compare=(a,b)=>{

@@ -19,12 +19,15 @@ export function prepareOwnEventGhost({require,row,session,best,playbackEngine}){
   for(const name of ['up','right','down','left','reset']){
     const count=number();total+=count;if(count>EVENT_REPLAY_LIMITS.transitionsPerChannel||total>EVENT_REPLAY_LIMITS.transitions||cursor+count*3>bytes.length)fail();
     const frames=[];let frame=0;
-    for(let index=0;index<count;index++){const delta=number();if(index&&delta===0)fail();frame+=delta;if(frame>row.frames)fail();work+=Math.max(0,row.frames-(index?frames[index-1]+1:0));if(!engine&&work>EVENT_REPLAY_LIMITS.scanWork)fail();frames.push(frame);}
+    for(let index=0;index<count;index++){const delta=number();if(index&&delta===0)fail();frame+=delta;if(frame>row.frames)fail();work+=Math.max(0,row.frames-(index?frames[index-1]+1:0));frames.push(frame);}
     lists[name]=frames;
   }
   if(cursor!==bytes.length)fail();
   if(engine&&indexedForwardWork(Object.values(lists),row.frames)>EVENT_REPLAY_LIMITS.scanWork)fail();
   const Style=require(8724).A,styleBytes=base64.D(row.carStyle);if(!styleBytes)fail();
   const carStyle=Style.deserializeBinary(styleBytes);if(carStyle.serialize()!==row.carStyle)fail();
+  // Finish structural/style validation before requesting any worker capability.
+  if(!engine&&work>EVENT_REPLAY_LIMITS.scanWork)
+    throw Object.assign(Error('Local event replay requires indexed playback'),{code:'EVENT_REPLAY_WORK_LIMIT'});
   return Object.freeze({recording:new (require(1754).A)(lists),carStyle,time:new (require(6146).A)(row.frames),nickname:'Your event PB (local)',isSelf:true,...(engine?{requiredPlaybackEngine:engine}:{})});
 }

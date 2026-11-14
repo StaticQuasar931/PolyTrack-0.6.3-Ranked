@@ -2,15 +2,47 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 385,
+    "number": 388,
     "version": "0.6.3",
-    "revision": 327,
+    "revision": 330,
     "notes": [
-      "Readable car workshop controls on phones and smaller screens.",
-      "Collapse the workshop while viewing your car; native Save dialogs stay clear."
+      "More reliable delivery of the latest update and snapshot files."
     ]
   },
   "entries": [
+    {
+      "number": 387,
+      "title": "Style Coins rewards and pace-based Rolling Hills scoring",
+      "commit": "91c54039a2ac23adf5b05e5bd4a84d23f9fde895",
+      "committedAt": "2026-11-14T22:38:32.000Z",
+      "notes": [
+        "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
+        "Favorite-track previews and cleaner Racer Studio controls.",
+        "Rolling Hills Event RP now rewards both placement and pace, including past results.",
+        "Safer loading for your recent local replays."
+      ]
+    },
+    {
+      "number": 386,
+      "title": "Garage safety and reliable local replay loading",
+      "commit": "5e47f1ef8805f183b418e1c0c6d5b890ed465f87",
+      "committedAt": "2026-11-14T21:50:20.000Z",
+      "notes": [
+        "Protection against accidental closing, and smoother Garage navigation.",
+        "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
+        "More reliable local PB replays and snapshot-based route suggestions."
+      ]
+    },
+    {
+      "number": 385,
+      "title": "Readable car workshop controls on phones",
+      "commit": "603fb3ea7e4092f09faac228a218f4d03ec0095d",
+      "committedAt": "2026-11-14T21:15:06.000Z",
+      "notes": [
+        "Readable car workshop controls on phones and smaller screens.",
+        "Collapse the workshop while viewing your car; native Save dialogs stay clear."
+      ]
+    },
     {
       "number": 384,
       "title": "Car workshop and expanded Studio style shop",
@@ -178,34 +210,6 @@ const historyData = {
         "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
         "Adds random Extra Track previews with saved filters and right-click quick picking.",
         "Fixes oversized snapshot progress files and local capture sign-in timing."
-      ]
-    },
-    {
-      "number": 365,
-      "title": "Reconcile cached boards with exact existing canonical replay proofs",
-      "commit": "fbe8ad03abc7aef2d2d95a4e573c03ab30c8d3c3",
-      "committedAt": "2026-11-12T09:33:22.000Z",
-      "notes": [
-        "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
-      ]
-    },
-    {
-      "number": 364,
-      "title": "Fix event proof display and preserve legacy capture budgets",
-      "commit": "e4c454b38c7e748d18b35de2643ecee73913197f",
-      "committedAt": "2026-11-12T09:02:50.000Z",
-      "notes": [
-        "Fixes event badges hidden by an older display flag after successful replay checks.",
-        "Fixes a hosted snapshot compatibility check."
-      ]
-    },
-    {
-      "number": 363,
-      "title": "Recheck stale snapshot sources without dropping saved racers",
-      "commit": "c296b7a618a3e1f4bfd334787bd2747932dbfe1e",
-      "committedAt": "2026-11-12T08:53:30.000Z",
-      "notes": [
-        "Improves snapshot updates without dropping saved racers."
       ]
     }
   ],

@@ -64,6 +64,9 @@ export function renderProfileShopArt(itemId, {density='normal'}={}) {
 }
 
 const image = (itemId, density='normal') => `url("data:image/svg+xml,${encodeURIComponent(renderProfileShopArt(itemId,{density}))}")`;
+// Native 200px thumbnail ends at y=160; its existing 1.08 scale meets this plane.
+// The ground shares the native square thumbnail's contain frame, not the wide scene crop.
+const apexGround = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><path fill="#263c4e" d="M0 164H200V200H0Z"/><path fill="none" stroke="#536f81" d="M0 164H200"/></svg>')}")`;
 const scene = image('profile-apex-observatory');
 const sceneLow = image('profile-apex-observatory','low');
 const ribbon = image('profile-vector-ribbon');
@@ -75,11 +78,11 @@ export const PROFILE_SHOP_ART_CSS = `/* Original profile art only. No car geomet
 .cosmetic-plate-pitlane-ticket{--plate-bg:linear-gradient(90deg,#edc889 0 4px,#14263b 4px 100%);--plate-shadow:inset 0 0 0 1px #edc889;--plate-clip:polygon(7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px)}
 .cosmetic-plate-pitlane-ticket :is(.overall-rank,.showcase-row>strong,.np-preview>b),.cosmetic-plate-pitlane-ticket.np-preview>b{color:#f6e4c5!important}
 .leaderboard-ui button.main.cosmetic-plate-pitlane-ticket .position{background:var(--plate-bg);box-shadow:var(--plate-shadow);clip-path:var(--plate-clip);color:#f6e4c5!important}
-.cosmetic-stage-apex-observatory{--stage-bg:${scene} center/cover no-repeat #152c3d;--stage-fx:none}
+.cosmetic-stage-apex-observatory{--stage-bg:${apexGround} center/contain repeat-x,${scene} center/cover no-repeat #152c3d;--stage-fx:none}
 .cosmetic-stripe-vector-ribbon{--sq-stripe-art:${ribbon};--sq-stripe-size:100% 100%;--profile-pattern:${ribbon};--profile-pattern-size:100% 100%}
 .profile-cosmetic-choice.cosmetic-stripe-vector-ribbon .profile-cosmetic-preview i{background:${ribbon} center/cover no-repeat #14263b}
 .profile-cosmetic-choice.cosmetic-plate-pitlane-ticket .np-preview>b{background:var(--plate-bg);box-shadow:var(--plate-shadow);clip-path:var(--plate-clip)}
-:is([data-profile-art-density="low"],.sq-plain-racer-themes) .cosmetic-stage-apex-observatory,.cosmetic-stage-apex-observatory[data-profile-art-density="low"]{--stage-bg:${sceneLow} center/cover no-repeat #152c3d;--stage-fx:none}
+:is([data-profile-art-density="low"],.sq-plain-racer-themes) .cosmetic-stage-apex-observatory,.cosmetic-stage-apex-observatory[data-profile-art-density="low"]{--stage-bg:${apexGround} center/contain repeat-x,${sceneLow} center/cover no-repeat #152c3d;--stage-fx:none}
 :is([data-profile-art-density="low"],.sq-plain-racer-themes) .cosmetic-stripe-vector-ribbon,.cosmetic-stripe-vector-ribbon[data-profile-art-density="low"]{--sq-stripe-art:${ribbonLow};--profile-pattern:${ribbonLow}}
 @media(prefers-reduced-motion:reduce){.profile-shop-art{animation:none!important;transition:none!important}}
 ` + PROFILE_SHOP_EXPANDED_CSS;

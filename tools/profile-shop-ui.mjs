@@ -1,9 +1,9 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
-import {renderProfileShopArt} from './profile-shop-art.mjs';
+const {renderProfileShopArt}=await import(new URL('./profile-shop-art.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uint=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 export const formatShopPoints=value=>uint(value)?value.toLocaleString('en-US'):'Not available';
-const rewards=[{id:'login',label:'Daily visit',points:8},{id:'milestones',label:'1 / 5 / 20 ranked tracks',points:null}];
+const rewards=[{id:'login',label:'Daily visit',points:8},{id:'milestones',label:'1 / 5 / 20 / 35 / 50 / 70 / 89 ranked tracks',points:null}];
 let serial=0;
 
 /** Profile-only presentation. No transport, persistence, awards or balance arithmetic.
@@ -15,7 +15,7 @@ let serial=0;
  * onApply({accountId,itemId,draftOnly:true,isCurrent}) requires confirmed ownership.
  * Host must honor isCurrent, change ONLY the existing Studio draft, and return
  * {applied:true,accountId,itemId,draftOnly:true} before UI reports it was applied.
- * Optional actions: onRefresh,onPreview,onRestorePreview,onStudio,onClose.
+ * Optional actions: onRefresh,onPreview,onRestorePreview,onStudio,onClose. getRacerName may read existing owner-scoped rendered data.
  * Parent owns manual fetch, authentication, all server validation and publication.
  * Returns cleanup() with .update(nextOptions); late results cannot cross accounts.
  */
@@ -44,19 +44,24 @@ export function mountProfileShopUi(root,options={}) {
   function render(focusKey) {
     const list=items(),balance=wallet(),pending=!!operation,selected=list.find(item=>item.id===confirmId);
     host.innerHTML=`<header class="sp-head" ${state.embedded?'hidden':''}><div><p>PROFILE COLLECTION</p><h2 id="${prefix}-title">Style shop</h2></div>${state.actions?.onClose?'<button type="button" data-sp-action="close">Close</button>':''}</header>
-      <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||(!balance?'Check your balance to load confirmed Tokens.':'Original profile designs. No performance effects.'))}</span>${previewId?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
-      <div class="sp-summary"><div><span>Confirmed balance</span><strong>${balance?formatShopPoints(balance.balance)+' Tokens':'Not available'}</strong></div>${typeof state.actions?.onRefresh==='function'?`<button type="button" data-sp-action="refresh" ${pending||state.refreshEnabled===false?'disabled':''}>${balance?'Refresh balance':'Check balance'}</button>`:'<p>Balance appears after a manual server check.</p>'}</div>
-      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Tokens</span><small>Daily claim: 8 Tokens / milestones</small></summary><div class="sp-claim-body"><p>Server checks eligibility. One-time milestones: 1 track +20 Tokens / 5 tracks +30 Tokens / 20 tracks +50 Tokens.</p><div class="sp-claim-actions">${rewards.map(reward=>`<button type="button" data-sp-action="claim" data-sp-reward="${reward.id}" ${!canClaim(reward)?'disabled':''}><span>${reward.label}</span><strong>${reward.id==='login'&&state.dailyClaimed===true?'Claimed today':reward.points===null?'Claim milestones':'Claim '+formatShopPoints(reward.points)+' Tokens'}</strong></button>`).join('')}</div></div></details>
+      <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||(!balance?'Check your balance to load confirmed Style Coins.':'Original profile designs. No performance effects.'))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
+      <div class="sp-summary"><div><span>Confirmed balance</span><strong>${balance?formatShopPoints(balance.balance)+' Style Coins':'Not available'}</strong></div>${typeof state.actions?.onRefresh==='function'?`<button type="button" data-sp-action="refresh" ${pending||state.refreshEnabled===false?'disabled':''}>${balance?'Refresh balance':'Check balance'}</button>`:'<p>Balance appears after a manual server check.</p>'}</div>
+      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Daily claim: 8 Style Coins / milestones</small></summary><div class="sp-claim-body"><p>Server checks eligibility. One-time milestones: 1 track +20 Style Coins / 5 tracks +30 Style Coins / 20 tracks +50 Style Coins / 35 tracks +30 Style Coins / 50 tracks +40 Style Coins / 70 tracks +50 Style Coins / 89 tracks +60 Style Coins.</p><div class="sp-claim-actions">${rewards.map(reward=>`<button type="button" data-sp-action="claim" data-sp-reward="${reward.id}" ${!canClaim(reward)?'disabled':''}><span>${reward.label}</span><strong>${reward.id==='login'&&state.dailyClaimed===true?'Claimed today':reward.points===null?'Claim milestones':'Claim '+formatShopPoints(reward.points)+' Style Coins'}</strong></button>`).join('')}</div></div></details>
       <p class="sp-note">Profile styles for your collection. Preview first, apply owned styles in Racer Studio.</p><div class="sp-grid">${list.map(item=>{
-        const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Tokens needed':'Not owned';
+        const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
         const slot=item.grants[0].slot;
         const kind={theme:'COLOR THEME',baseSecondary:'SECONDARY COLOR',plate:'PLACE BLOCK',stage:'BACKDROP',stripe:'PATTERN',edge:'EDGE',nameFont:'NAME FONT',nameColor:'NAME COLOR'}[slot]||'PROFILE STYLE';
-        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true">${renderProfileShopArt(item.id,{density:state.density==='low'?'low':'normal'})}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${formatShopPoints(item.price)} Tokens</strong>`}</p><div class="sp-item-actions"><button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Preview selected':'Preview'}</button>${isOwned?`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''}>Buy for ${formatShopPoints(item.price)} Tokens</button>`}</div></article>`;
+        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch>${renderProfileShopArt(item.id,{density:state.density==='low'?'low':'normal'})}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions"><button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>${isOwned?`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
       }).join('')||'<p class="sp-empty">Profile styles are not available yet.</p>'}</div>
-      ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Tokens. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Tokens':'not available'}.</p><p>Purchase adds this profile design to your collection. Applying is separate.</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
-      <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?'<button type="button" data-sp-action="reconcile">Check pending transaction</button>':''}${typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':'<p>Owned styles can be applied in Racer Studio.</p>'}<span>Tokens are earned in-game. No real-money purchases.</span></footer>`;
+      ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Style Coins. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Style Coins':'not available'}.</p><p>Purchase adds this profile design to your collection. Applying is separate.</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
+      <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?'<button type="button" data-sp-action="reconcile">Check pending transaction</button>':''}${typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':'<p>Owned styles can be applied in Racer Studio.</p>'}<span>Style Coins are earned in-game. No real-money purchases.</span></footer>`;
     // Shop cards show the complete sample, even when the artwork uses native-row cropping.
-    for(const svg of host.querySelectorAll('.sp-art svg'))svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+    let name='';try{const value=state.getRacerName?.();if(typeof value==='string')name=value.trim().slice(0,80);}catch{}
+    for(const svg of host.querySelectorAll('.sp-art svg')){
+      svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+      svg.querySelector('[data-profile-art-sample]')?.remove();
+      for(const text of svg.querySelectorAll('text')){if(name)text.textContent=name;else text.remove();}
+    }
     if(focusKey)host.querySelector(`[data-sp-action="${focusKey}"]`)?.focus({preventScroll:true});
     if(focusKey==='confirm')host.querySelector('.sp-confirm')?.scrollIntoView({block:'center',behavior:'instant'});
   }
@@ -121,6 +126,7 @@ export function mountProfileShopUi(root,options={}) {
   const toggle=event=>{if(event.target.matches('.sp-earn'))earnOpen=event.target.open;};
   host.addEventListener('toggle',toggle,true);host.addEventListener('click',click);host.addEventListener('keydown',keydown);render();
   function cleanup(){if(disposed)return;disposed=true;++epoch;restorePreview();host.removeEventListener('toggle',toggle,true);host.removeEventListener('click',click);host.removeEventListener('keydown',keydown);host.remove();}
+  cleanup.clearPreview=()=>{if(disposed)return;restorePreview();message='Preview closed.';render();};
   cleanup.update=next=>{if(disposed)return;++epoch;restorePreview();state={...state,...next};confirmId=null;operation=null;previewId=null;message='';render();};
   return cleanup;
 }
