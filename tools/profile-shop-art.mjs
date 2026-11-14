@@ -45,7 +45,9 @@ export function renderProfileShopArt(itemId, {density='normal'}={}) {
   const item = PROFILE_SHOP_ART.find(value => value.itemId === itemId);
   if (!item) return '';
   const art = ART[itemId];
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="profile-shop-art profile-shop-art-${item.slot}" viewBox="0 0 320 88" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false" data-profile-art-density="${density}">${art.base}${density==='normal'?art.detail:''}</svg>`;
+  // Card-only example. The real plate background below is a text-free gradient.
+  const sample=item.slot==='plate'?'<g data-profile-art-sample="true" font-family="ForcedSquare,monospace"><path stroke="#edc889" stroke-opacity=".6" d="M92 25V63M112 60H244"/><text x="54" y="55" text-anchor="middle" font-size="28" fill="#f6e4c5">#7</text><text x="112" y="51" font-size="22" fill="#eef8ff">RACER</text></g>':'';
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="profile-shop-art profile-shop-art-${item.slot}" viewBox="0 0 320 88" preserveAspectRatio="xMidYMid ${item.slot==='plate'?'meet':'slice'}" aria-hidden="true" focusable="false" data-profile-art-density="${density}">${art.base}${sample}${density==='normal'?art.detail:''}</svg>`;
 }
 
 const image = (itemId, density='normal') => `url("data:image/svg+xml,${encodeURIComponent(renderProfileShopArt(itemId,{density}))}")`;

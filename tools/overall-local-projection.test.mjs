@@ -228,3 +228,15 @@ test('Rolling Hills local PBs match the Worker whether they pass a racer or keep
     assert.deepEqual(local.racers.map(({casualProjection,...row})=>row),oracle.racers.map(({casualProjection,...row})=>row));
   }
 });
+
+
+test('local cosmetic normalization preserves current shop designs and Community badge',async()=>{
+  const mirror=await readFile(new URL('./overall-local-projection.mjs',import.meta.url),'utf8');
+  const options=mirror.match(/const PROFILE_COSMETIC_OPTIONS = Object\.freeze\(\{[\s\S]*?\n\}\);/)[0];
+  const context=vm.createContext({OFFICIAL_IDS:new Set(official),COMMUNITY_IDS:new Set(),LEGACY_COMMUNITY_IDS:new Set(),EXTRA_TRACK_IDS:new Set()});
+  vm.runInContext('const PROFILE_COSMETICS_VERSION=7;\n'+options+'\n'+functionText(mirror,'safeText')+'\n'+functionText(mirror,'sanitizeProfileCosmetics'),context);
+  const design={version:7,theme:'classic',stage:'apex-observatory',plate:'pitlane-ticket',stripe:'vector-ribbon',badge:'community'};
+  const actual=JSON.parse(JSON.stringify(context.sanitizeProfileCosmetics(design)));
+  for(const slot of ['stage','plate','stripe','badge'])assert.equal(actual[slot],design[slot]);
+  assert.equal(context.sanitizeProfileCosmetics({...design,badge:'administrator'}).badge,'auto');
+});

@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 381,
+    "number": 382,
     "version": "0.6.3",
-    "revision": 323,
+    "revision": 324,
     "notes": [
-      "A clearer full-screen Achievements and Racer Studio hub.",
-      "Claim cosmetic points and collect original profile designs.",
-      "Clearer route advice, previews and cosmetic details."
+      "Claim a Community badge with the Discord invite code.",
+      "Shop designs stay visible during local recalculation.",
+      "Clearer achievement goals and cosmetic previews."
     ]
   },
   "entries": [
+    {
+      "number": 381,
+      "title": "Achievements and profile shop",
+      "commit": "e5b5969fa2f7128887130b306c1a09c9475231ad",
+      "committedAt": "2026-11-14T16:34:37.000Z",
+      "notes": [
+        "A clearer full-screen Achievements and Racer Studio hub.",
+        "Claim cosmetic points and collect original profile designs.",
+        "Clearer route advice, previews and cosmetic details."
+      ]
+    },
     {
       "number": 379,
       "title": "Faster offline verification",
@@ -191,15 +202,6 @@
       "notes": [
         "6,451 more saved runs now have verified replays.",
         "Leaderboards, rankings and racer profiles reflect the newly verified results."
-      ]
-    },
-    {
-      "number": 359,
-      "title": "Compact ranking inputs without dropping verified results",
-      "commit": "b0844d9e5761698011acf70b4a40ef3a56259e86",
-      "committedAt": "2026-11-12T07:26:36.000Z",
-      "notes": [
-        "Improves local ranking estimates for larger verified leaderboards."
       ]
     }
   ],

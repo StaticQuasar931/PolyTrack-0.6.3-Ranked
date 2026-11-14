@@ -16,11 +16,11 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   theme: new Set(['classic', 'cyan', 'ocean', 'ice', 'mono', 'sunset', 'neon', 'forest', 'ember', 'crimson', 'podium', 'beta']),
   accent: new Set(['cyan', 'white', 'lime', 'gold', 'orange', 'coral', 'pink', 'violet', 'ice']),
   finish: new Set(['gradient', 'solid', 'split', 'gloss', 'carbon', 'horizon']),
-  plate: new Set(['block', 'solid', 'outline', 'notch', 'bar']),
+  plate: new Set(['block', 'solid', 'outline', 'notch', 'bar', 'pitlane-ticket']),
   edge: new Set(['accent', 'wide', 'none', 'double', 'dashed']),
-  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora']),
+  stage: new Set(['garage', 'slate', 'aqua', 'grid', 'horizon', 'night', 'storm', 'dunes', 'podium', 'sunrise', 'aurora', 'apex-observatory']),
   stageTint: new Set(['natural', 'blue', 'teal', 'gold', 'red', 'pink', 'mono', 'orange', 'violet']),
-  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive']),
+  stripe: new Set(['standard', 'cyan', 'apex', 'chevron', 'sunset', 'split', 'grid', 'circuit', 'scan', 'blocks', 'gold', 'beta', 'overdrive', 'vector-ribbon']),
   emblem: new Set(['none', 'bolt', 'star', 'diamond', 'twinStars', 'flag', 'flame', 'crown', 'target']),
   emblem2: new Set(['none', 'star', 'bolt', 'flag', 'diamond', 'flame', 'crown']),
   emblem3: new Set(['none', 'chevron', 'wings', 'laurel']),
@@ -32,7 +32,7 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose']),
   baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
-  badge: new Set(['auto', 'member', 'none', 'betaTester'])
+  badge: new Set(['auto', 'member', 'none', 'betaTester', 'community'])
 });
 
 function safeText(value, max) {

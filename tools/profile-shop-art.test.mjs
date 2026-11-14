@@ -44,11 +44,24 @@ test('static decorative SVGs are distinct, bounded and simpler at low density', 
     assert(normal.includes('aria-hidden="true"'));assert(normal.includes('focusable="false"'));
     assert(low.length<normal.length);assert(low.includes('data-profile-art-density="low"'));
     assert(Buffer.byteLength(normal)<2500);
-    assert(!/<(?:script|foreignObject|image|filter|animate|set|text)\b|\bon\w+=|\b(?:href|id)=/i.test(normal));
+    assert(!/<(?:script|foreignObject|image|filter|animate|set)\b|\bon\w+=|\b(?:href|id)=/i.test(normal));
+    if(item.slot!=='plate')assert(!/<text\b/i.test(normal));
     assert.equal(normal,renderProfileShopArt(item.itemId));
   }
   assert.equal(images.size,3);
   assert.throws(()=>renderProfileShopArt('profile-vector-ribbon',{density:'low" onload="x'}),TypeError);
+});
+
+test('Pitlane Ticket card shows a fixed native sample but real plate CSS never contains rank/name artwork',()=>{
+  for(const density of ['normal','low']){
+    const art=renderProfileShopArt('profile-pitlane-ticket',{density});
+    assert.match(art,/preserveAspectRatio="xMidYMid meet"/);assert.match(art,/data-profile-art-sample="true"/);
+    assert.match(art,/font-family="ForcedSquare,monospace"/);assert.match(art,/>#7<\/text>/);assert.match(art,/>RACER<\/text>/);
+    assert.equal((art.match(/<text\b/g)||[]).length,2);
+  }
+  assert.doesNotMatch(PROFILE_SHOP_ART_CSS,/>\s*RACER\s*<|%3Ctext|data-profile-art-sample/i);
+  const plate=PROFILE_SHOP_ART_CSS.match(/\.cosmetic-plate-pitlane-ticket\{([^}]+)\}/)[1];
+  assert.match(plate,/--plate-bg:linear-gradient/);assert.doesNotMatch(plate,/url\(|content\s*:/);
 });
 
 test('CSS artifact matches exported renderer and preserves existing geometry and public hooks', async () => {

@@ -1,3 +1,4 @@
+import {readCommunityClaim, projectCommunityClaim, COMMUNITY_CAMPAIGN} from './community-badge.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
 
 export const SHOP_PROFILE_CATALOG = PROFILE_SHOP_CATALOG;
@@ -59,7 +60,8 @@ function projectPurchased(earned, purchased) {
 
 export function mergeEarnedAndPurchasedEntitlements(earned, prior, binding = {}) {
   // Never retain stale prior arrays or achievements as earned authority.
-  return projectPurchased(earned, readPurchasedCosmetics(prior, binding));
+  return projectCommunityClaim(projectPurchased(earned, readPurchasedCosmetics(prior, binding)),
+    readCommunityClaim(prior, binding));
 }
 
 export function addPurchase(prior, itemId, acquiredAt, {accountId, ownerUid} = {}) {
@@ -70,7 +72,8 @@ export function addPurchase(prior, itemId, acquiredAt, {accountId, ownerUid} = {
     {version: 1, accountId, ownerUid, items: {}};
   if (!owns(purchased.items, itemId)) purchased.items[itemId] =
     {catalogVersion: PROFILE_SHOP_CATALOG_VERSION, acquiredAt};
-  return projectPurchased(prior || starter, purchased);
+  return projectCommunityClaim(projectPurchased(prior || starter, purchased),
+    readCommunityClaim(prior, {accountId, ownerUid}));
 }
 
 export function mergePurchasedEntitlement(prior, {accountId, ownerUid, item, acquiredAt} = {}) {
@@ -89,3 +92,11 @@ export function purchasedProfileCosmeticsUnlocked(cosmetics, earned, prior, bind
   return true;
 }
 
+
+export function addCommunityBadge(prior, claimedAt, {accountId, ownerUid} = {}) {
+  requireValid(account(accountId) && owner(ownerUid) && timestamp(claimedAt) && (prior == null || plain(prior)));
+  const binding = {accountId, ownerUid};
+  const community = readCommunityClaim(prior, binding) || {version: 1, accountId, ownerUid,
+    campaign: COMMUNITY_CAMPAIGN, badgeId: 'community', source: 'invite-code', membershipVerified: false, claimedAt};
+  return projectCommunityClaim(projectPurchased(prior || starter, readPurchasedCosmetics(prior, binding)), community);
+}

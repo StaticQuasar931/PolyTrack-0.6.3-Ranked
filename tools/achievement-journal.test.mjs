@@ -11,7 +11,7 @@ const profile = {raceCount:8,pbCount:10,totalPlaytimeMs:3600000,extraCount:1,tra
 
 test('catalog goals cover every real non-starter cosmetic without copying catalog values', () => {
   const model = buildAchievementProgress({cosmetics});
-  const expected = Object.values(cosmetics).flat().filter(([id,,requirement]) => requirement !== 0 && !String(requirement).startsWith('shop:') && !['auto','none'].includes(id)).length;
+  const expected = Object.values(cosmetics).flat().filter(([id,,requirement]) => requirement !== 0 && requirement !== 'communityCode' && !String(requirement).startsWith('shop:') && !['auto','none'].includes(id)).length;
   assert.equal(model.milestones.reduce((sum,item) => sum + item.rewards.length,0),expected);
   assert.equal(model.counts.earned,0);
   assert.ok(model.milestones.every(item => item.value === null));
@@ -62,7 +62,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Cosmetics become available when your progress is confirmed\./);
+  assert.match(html,/Your progress/); assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or CP\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -94,4 +94,10 @@ test('purchased shop designs are not racing goals or spendable achievement award
  const model=buildAchievementProgress({cosmetics,progress:{confirmed:{...profile,cosmeticUnlocks:['plate:pitlane-ticket','stage:apex-observatory','stripe:vector-ribbon']}}});
  assert.ok(model.milestones.every(item=>!String(item.requirement).startsWith('shop:')));
  assert.doesNotMatch(renderAchievementJournal({model}),/Claim CP|earned CP|wallet balance|reward points/i);
+});
+
+test('journal caption distinguishes listed cosmetic goals from personal tiers without extending CP rewards',()=>{
+ const html=renderAchievementJournal({progress:{local:{pbCount:1}},cosmetics:{}});
+ assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or CP\./);
+ assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });

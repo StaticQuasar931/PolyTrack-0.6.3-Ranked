@@ -162,3 +162,20 @@ test('permission-denied designs retain the draft and do not repeat automatic doc
  assert.equal(h.pending().nextAttemptAt,4600000);assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,0);
  await h.run();h.advance(300000);await h.run();assert.equal(h.cost.reads,1);assert.equal(h.cost.worker,0);assert.equal(h.cost.jobs,0);
 });
+
+
+test('cloud commits describe snapshot delivery honestly without adding database work',async()=>{
+  for(const options of [{},{hideAfterCommit:true},{ackWritable:false}]){
+    const h=harness(options),result=await h.run();
+    assert.equal(result.published,true);
+    assert.equal(result.message,'Published. Other racers see it after the next snapshot.');
+    assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,1);
+  }
+});
+
+test('a propagation rejection does not imply that shared displays or unlocks were refreshed',async()=>{
+  const h=harness();h.context.rankedFetch=async()=>({status:403,ok:false,json:async()=>({error:'cosmetic_locked'})});
+  const result=await h.run();assert.equal(result.published,true);
+  assert.equal(result.message,'Published. Shared display is waiting for refreshed progress.');
+  assert.equal(h.cost.reads,1);assert.equal(h.cost.writes,1);
+});

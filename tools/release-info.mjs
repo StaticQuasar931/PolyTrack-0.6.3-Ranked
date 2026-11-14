@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 381,
+  "number": 382,
   "version": "0.6.3",
-  "revision": 323,
+  "revision": 324,
   "notes": [
-    "A clearer full-screen Achievements and Racer Studio hub.",
-    "Claim cosmetic points and collect original profile designs.",
-    "Clearer route advice, previews and cosmetic details."
+    "Claim a Community badge with the Discord invite code.",
+    "Shop designs stay visible during local recalculation.",
+    "Clearer achievement goals and cosmetic previews."
   ],
-  "preparedAt": "2026-11-14T16:04:33.893Z",
-  "committedAt": "2026-11-14T16:34:37.000Z"
+  "preparedAt": "2026-11-14T19:14:28.482Z",
+  "committedAt": "2026-11-14T19:18:40.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

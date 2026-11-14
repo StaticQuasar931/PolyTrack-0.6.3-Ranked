@@ -8,7 +8,8 @@ import {recallPublicResponse, rememberPublicResponse, publicResponseCacheScope, 
 import {EVENT_COLLECTIONS} from './events.js';
 import {createEventFirestoreStore} from './events-store.js';
 import {handleCurrencyRequest} from './currency-wallet.js';
-import {mergeEarnedAndPurchasedEntitlements, purchasedProfileCosmeticsUnlocked} from './purchased-cosmetic-entitlements.js';
+import {createCommunityBadgeService, CommunityBadgeError} from './community-badge.js';
+import {mergeEarnedAndPurchasedEntitlements, purchasedProfileCosmeticsUnlocked, addCommunityBadge} from './purchased-cosmetic-entitlements.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
@@ -139,7 +140,7 @@ const PROFILE_COSMETIC_OPTIONS = Object.freeze({
   nameColor: new Set(['default', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'aurora', 'sunset', 'lime', 'ice', 'rose']),
   baseSecondary: new Set(['auto', 'white', 'cyan', 'gold', 'coral', 'mint', 'violet', 'orange', 'ice']),
   title: new Set(['auto', 'none', 'contender', 'pbHunter', 'trackGrinder', 'podiumRegular', 'betaRacer']),
-  badge: new Set(['auto', 'member', 'none', 'betaTester'])
+  badge: new Set(['auto', 'member', 'none', 'betaTester', 'community'])
 });
 
 export function sanitizeProfileCosmetics(value) {
@@ -2446,7 +2447,7 @@ async function propagateProfileCosmetics(env, accountId, profile, cosmetics, iss
       if (!purchasedProfileCosmeticsUnlocked(cosmetics, cosmeticEntitlement(entry, betaTester),
         entitlement?.data, {accountId, ownerUid: profile.data.ownerUid})) return false;
     } catch (error) {
-      if (error?.message === 'PURCHASED_COSMETIC_ENTITLEMENT_INVALID') return false;
+      if (['PURCHASED_COSMETIC_ENTITLEMENT_INVALID', 'COMMUNITY_ENTITLEMENT_INVALID'].includes(error?.message)) return false;
       throw error;
     }
   }
@@ -3130,7 +3131,7 @@ async function handleRequestInternal(request, env, context = {}) {
     if (!env.ADMIN_REBUILD_TOKEN || request.headers.get('X-Admin-Token') !== env.ADMIN_REBUILD_TOKEN) return json(origin, env, 403, { error: 'admin_required' });
     return json(origin, env, 200, await migrateExtraVerificationQueues(env));
   }
-  if (path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/profile/group-code' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
+  if (path !== '/v1/profile/community-badge' && path !== '/v1/pb/notify' && path !== '/v1/profile/notify' && path !== '/v1/profile/cosmetics' && path !== '/v1/profile/group-code' && path !== '/v1/extra-tracks/submissions' && path !== '/v1/extra-tracks/reports' && path !== '/v1/extra-tracks/unranked') return json(origin, env, 404, { error: 'not_found' });
   if (String(env.RANKED_WRITES_ENABLED) === 'false') return json(origin, env, 503, { error: 'ranked_writes_disabled' });
   const admission = await admitWriteBurst(request, env);
   if (admission === 'limited') return rateLimited(origin, env);
@@ -3161,6 +3162,22 @@ async function handleRequestInternal(request, env, context = {}) {
     if (prior) return json(origin, env, 409, { error: 'one_submission_per_day' });
     await commitDocuments(env, [{ collection: COLLECTIONS.extraTrackSubmissions, id, data: { ownerUid: uid, name, author, description, code, difficulty, tags, sourceUrl, permissionGranted: true, status: 'pending', createdAt: Date.now() } }]);
     return json(origin, env, 201, { accepted: true });
+  }
+  if (path === '/v1/profile/community-badge') {
+    if (request.method !== 'POST') return json(origin, env, 405, {error: 'method_not_allowed'});
+    try {
+      const result = await createCommunityBadgeService({
+        store: createEventFirestoreStore({request: (route, init) => firestoreRequest(env, route, init),
+          projectId: String(env.FIREBASE_PROJECT_ID || PROJECT_ID), retries: 0}),
+        grantEntitlement: addCommunityBadge
+      }).claim(uid, body);
+      const response = json(origin, env, 200, result);
+      response.headers.set('Cache-Control', 'private, no-store');
+      return response;
+    } catch (error) {
+      return json(origin, env, error instanceof CommunityBadgeError ? error.httpStatus : 503,
+        {error: error instanceof CommunityBadgeError ? error.message : 'community_unavailable'});
+    }
   }
   if (path === '/v1/profile/cosmetics') return updateProfileCosmetics(request, env, context, uid, body);
   if (path === '/v1/profile/group-code') return profileGroupCode(request, env, context, uid, body);

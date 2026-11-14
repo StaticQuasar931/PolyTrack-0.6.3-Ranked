@@ -170,6 +170,7 @@ test('native journal progress, subtitle, goals and shop balance helpers do not i
  assert.ok(samples.length>5);for(const sample of samples){assert.match(sample.font,/ForcedSquare/i,JSON.stringify(sample));assert.equal(sample.style,'normal');}
  await page.screenshot({path:path.join(evidence,'fixture-achievements-native-body-font-390.png')});
  await page.locator('[data-ph-close]').click();await page.locator('.profile-shop-open').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 CP');
+ await page.locator('link[data-profile-shop-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));await page.evaluate(()=>document.fonts.ready);
  const helpers=await page.locator('.sp-status span,.sp-summary span,.sp-earn p').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).fontFamily));assert.ok(helpers.length>2);for(const font of helpers)assert.match(font,/ForcedSquare/i);page.noExternal();
 });
 
@@ -231,4 +232,32 @@ test('late fresh200 success cannot carry daily UI marker across auth/account A-B
  await page.locator('.profile-shop-open').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 CP');await page.locator('[data-sp-reward="login"]').click();await page.waitForFunction(()=>typeof releaseClaim==='function');
  await page.evaluate(({A,B})=>{fixtureAuth.emit(null);fixtureAuth.emit(fixtureUser);actualAccountTransition(B);activeAccount=B;actualAccountTransition(A);activeAccount=A;holdClaimResponse=false;releaseClaim();},{A,B});
  await page.locator('.profile-shop-open').click();await page.locator('[data-sp-reward="login"]').waitFor();await page.waitForTimeout(50);assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);assert.equal(await page.evaluate(()=>claims.length),1);assert.equal(await page.evaluate(()=>dbCalls),0);page.noExternal();
+});
+
+test('owned Shop preview Escape and Apply round-trip preserve saved styles and only change the Studio draft at all three viewports',{timeout:25000},async t=>{
+ for(const [name,width,height]of[['desktop',1366,768],['portrait',390,844],['landscape',844,390]]){
+  const owned=PROFILE_SHOP_CATALOG.map(item=>item.id);
+  let page=await fixture(t,{width,height,owned});await page.locator('.profile-shop-open').click();await page.waitForFunction(()=>document.querySelectorAll('[data-sp-action="apply"]:enabled').length===3);
+  page=await fixture(t,{width,height,owned,reusePage:page,savedDesign:{plate:'pitlane-ticket',stage:'apex-observatory',stripe:'vector-ribbon'}});
+  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0,'saved paid styles use only previously confirmed same-owner inventory on reload');
+  await page.locator('.profile-shop-open').click();await page.waitForFunction(()=>document.querySelectorAll('[data-sp-action="apply"]:enabled').length===3);
+  const initial=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),classes:document.querySelector('.overall-profile-card').className,style:document.querySelector('.overall-profile-card').getAttribute('style'),writes:draftWrites,requests:network.length}));
+  assert.equal(JSON.parse(initial.draft).plate,'pitlane-ticket');assert.equal(JSON.parse(initial.draft).stage,'apex-observatory');assert.equal(JSON.parse(initial.draft).stripe,'vector-ribbon');
+  await page.locator('.sp-host-gate').evaluate(node=>{node.textContent='Offline fixture - confirmed sample inventory, not a live balance.';node.hidden=false;});
+  assert.equal(await page.locator('.sp-item').count(),3);assert.equal(await page.locator('[data-sp-action="buy"]').count(),0);assert.equal(await page.locator('dialog.profile-shop-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
+  const sample=await page.locator('.sp-item').first().locator('svg').evaluate(svg=>{const box=svg.getBoundingClientRect();return {texts:[...svg.querySelectorAll('[data-profile-art-sample] text')].map(node=>{const r=node.getBoundingClientRect();return {text:node.textContent,inside:r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom,font:getComputedStyle(node).fontFamily};})};});
+  assert.deepEqual(sample.texts.map(row=>row.text),['#7','RACER']);assert.ok(sample.texts.every(row=>row.inside&&/ForcedSquare/.test(row.font)),JSON.stringify(sample));
+  assert.doesNotMatch(await page.locator('.overall-profile-card').evaluate(node=>getComputedStyle(node).getPropertyValue('--plate-bg')),/url\(|RACER|text/i);
+  await page.screenshot({path:path.join(evidence,`owned-shop-${name}-${width}x${height}.png`)});
+  await page.locator('[data-sp-action="preview"]').first().click();await page.locator('.cosmetic-preview-banner').waitFor();
+  assert.equal(await page.locator('[data-save-profile-cosmetics]').isDisabled(),true);assert.match(await page.locator('.cosmetic-preview-banner strong').innerText(),/Preview only - not applied/);
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#content').__cosmeticPreviewController.isActive());
+  const restored=await page.evaluate(()=>({draft:JSON.stringify(profileCosmeticDrafts.get(activeAccount)),classes:document.querySelector('.overall-profile-card').className,style:document.querySelector('.overall-profile-card').getAttribute('style'),writes:draftWrites,requests:network.length}));assert.deepEqual(restored,initial,'Escape restores already-owned saved style, no requests or draft writes');
+  assert.equal(await page.locator('dialog.profile-hub[open]').count(),1);await page.locator('[data-ph-close]').click();
+  await page.locator('.profile-shop-open').click();await page.locator('[data-sp-action="apply"]').last().click();
+  assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');
+  const applied=await page.evaluate(()=>({stripe:profileCosmeticDrafts.get(activeAccount).stripe,writes:draftWrites,posts:network.filter(row=>row.method==='POST').length,published:window.published||0,db:dbCalls,preview:document.querySelector('#content').__cosmeticPreviewController.isActive(),unlockIds:nativeEntry.cosmeticUnlocks}));
+  assert.equal(applied.stripe,'vector-ribbon');assert.equal(applied.writes,initial.writes+1);assert.equal(applied.posts+applied.published+applied.db,0);assert.equal(applied.preview,false);assert.deepEqual(applied.unlockIds,[]);
+  assert.equal(await page.locator('dialog.profile-hub').evaluate(node=>node.scrollWidth<=node.clientWidth),true);await page.screenshot({path:path.join(evidence,`owned-studio-${name}-${width}x${height}.png`)});page.noExternal();
+ }
 });

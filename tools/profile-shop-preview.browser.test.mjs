@@ -62,7 +62,7 @@ test('three original designs preview through actual Studio classes on phone/lapt
   const page=await fixture(t,width,height);await page.evaluate(()=>cleanup.open('studio'));
   for(const item of PROFILE_SHOP_CATALOG){
    const carBefore=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {width:r.width,height:r.height,clip:s.clipPath,padding:s.padding};});
-   await page.evaluate(id=>tryDesign(id),item.id);await page.locator('link[data-profile-shop-art-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+   await page.evaluate(id=>tryDesign(id),item.id);await page.locator('link[data-profile-shop-art-css][href$="v=original-art-test"]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
    assert.deepEqual(await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {width:r.width,height:r.height,clip:s.clipPath,padding:s.padding};}),carBefore,'original profile art must not alter car geometry');
    const grant=item.grants[0];assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),`cosmetic-${grant.slot}-${grant.value}`),true);
    assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('.cosmetic-preview-banner strong').innerText(),'Preview only - not applied');
@@ -78,7 +78,7 @@ test('three original designs preview through actual Studio classes on phone/lapt
 });
 test('ticket keeps four-digit ranks readable and low-density art stays static',{timeout:15000},async t=>{
  const page=await fixture(t,1366,768);await page.evaluate(()=>tryDesign('profile-pitlane-ticket'));
- await page.locator('link[data-profile-shop-art-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
+ await page.locator('link[data-profile-shop-art-css][href$="v=original-art-test"]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
  const ranks=await page.locator('.showcase-row>strong').evaluateAll(nodes=>nodes.map((node,index)=>{
   node.textContent=['#1','#999','#9999'][index];const range=document.createRange();range.selectNodeContents(node);const text=range.getBoundingClientRect(),r=node.getBoundingClientRect();return {label:node.textContent,width:r.width,textWidth:text.width,inside:text.left>=r.left&&text.right<=r.right,scrollFits:node.scrollWidth<=node.clientWidth,font:getComputedStyle(node).fontSize};
  }));assert.ok(ranks.every(row=>row.inside&&row.scrollFits),JSON.stringify(ranks));
