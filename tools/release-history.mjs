@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 374,
+    "number": 375,
     "version": "0.6.3",
-    "revision": 318,
+    "revision": 319,
     "notes": [
-      "Improved snapshot readiness checks for capture-first publication."
+      "More reliable snapshot coordination checks before data capture begins."
     ]
   },
   "entries": [
+    {
+      "number": 374,
+      "title": "Align snapshot preparation checks with capture-first mode",
+      "commit": "6bb2820834936592a1124171224d4b220498a182",
+      "committedAt": "2026-11-14T08:46:04.000Z",
+      "notes": [
+        "Improved snapshot readiness checks for capture-first publication."
+      ]
+    },
     {
       "number": 373,
       "title": "Capture current PBs before refreshing snapshot boards",
@@ -194,16 +203,6 @@ const historyData = {
       "notes": [
         "Replay verification can handle larger snapshots without keeping every replay in memory.",
         "Existing replay, clone-review and safety checks remain in place."
-      ]
-    },
-    {
-      "number": 354,
-      "title": "Preserve racer coverage and streamline offline checks",
-      "commit": "1b0809f74590e1b174f53a955015ca1983535bb6",
-      "committedAt": "2026-11-09T05:59:46.000Z",
-      "notes": [
-        "Safer snapshot updates check that known racers have not disappeared.",
-        "Replay checks reuse track evidence more efficiently without skipping verification."
       ]
     }
   ],
