@@ -2,16 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 389,
+    "number": 390,
     "version": "0.6.3",
-    "revision": 331,
+    "revision": 332,
     "notes": [
-      "Fixed uploads after several personal bests in one track session.",
-      "Fixed milestone claims getting stuck after earning newer rewards.",
-      "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
+      "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
+      "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
+      "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
+      "Offline event replay verification now builds an audited update from saved files."
     ]
   },
   "entries": [
+    {
+      "number": 389,
+      "title": "Fix coalesced PB uploads milestone claims and event PB previews",
+      "commit": "8cb1f3338690a5d46621b0213094efbd9e58373b",
+      "committedAt": "2026-11-14T23:25:08.000Z",
+      "notes": [
+        "Fixed uploads after several personal bests in one track session.",
+        "Fixed milestone claims getting stuck after earning newer rewards.",
+        "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
+      ]
+    },
     {
       "number": 388,
       "title": "Scope CDN publication to current snapshot files",
@@ -201,15 +213,6 @@ const historyData = {
       "committedAt": "2026-11-14T04:03:21.000Z",
       "notes": [
         "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
-      ]
-    },
-    {
-      "number": 367,
-      "title": "Complete driving-state deployment regression coverage",
-      "commit": "3446f00081658adcfa1489800d5aa91d81774449",
-      "committedAt": "2026-11-14T03:53:42.000Z",
-      "notes": [
-        "Improves checks used before publishing updates and preparing overnight snapshots."
       ]
     }
   ],

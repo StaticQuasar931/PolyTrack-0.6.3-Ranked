@@ -28,3 +28,13 @@ test('public proof hits, unknown media and holds remain in inventory without gai
 });
 
 test('exact proof reviews precede any new native workload without removing the full inventory',()=>{const hit=normal(1,1),fresh=normal(2,999),pending=event(3,'daily');const key=ledgerKey(ledgerBinding(hit));const result=prioritizeNativeTargets({jobs:[fresh,pending,hit],eventBoards:[board('daily')],entries:[{key}],policy:{knownTrackIds:[track]},now:1000});assert.deepEqual(result.jobs,[hit,pending,fresh]);assert.equal(result.jobs.length,3);});
+
+test('explicit event-only scheduling puts current Kodub before weekly proof hits and higher rewards before daily',()=>{
+ const kodub=event(1,'kodub'),weekly=event(2,'weekly'),daily=event(3,'daily');
+ const boards=[{...board('kodub'),period:{...board('kodub').period,kind:'kodub',maxRp:700}},
+  {...board('weekly'),period:{...board('weekly').period,kind:'weekly',maxRp:500}},
+  {...board('daily'),period:{...board('daily').period,kind:'daily',maxRp:100}}];
+ const jobs=[daily,weekly,kodub],result=prioritizeNativeTargets({jobs,eventBoards:boards,eventFirst:true,entries:[{key:ledgerKey(ledgerBinding(weekly))}],now:1000});
+ assert.deepEqual(result.jobs,[kodub,weekly,daily]);assert.deepEqual(jobs,[daily,weekly,kodub]);
+ assert.equal(kodub.verified,undefined,'scheduling confers no proof');
+});

@@ -30,3 +30,6 @@
 .profile-shop-dialog .sp-live-preview{inset:auto!important;transform:none}
 
 .profile-shop-dialog .profile-row-showcase{display:block;margin-top:12px}.profile-shop-dialog .showcase-row{width:100%;box-sizing:border-box;min-width:0}.profile-shop-dialog .showcase-row b{overflow-wrap:anywhere}.profile-shop-dialog .sp-live-preview [data-sp-live-stage]{min-width:0}
+.profile-shop-dialog .sp-live-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.profile-shop-dialog .sp-live-preview canvas{display:block;max-width:100%;height:auto}
+.profile-shop-dialog [data-sp-renderer-unavailable]{display:block;padding:10px;color:#c3d5ee;font:15px/1.4 ForcedSquare,sans-serif}

@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 389,
+  "number": 390,
   "version": "0.6.3",
-  "revision": 331,
+  "revision": 332,
   "notes": [
-    "Fixed uploads after several personal bests in one track session.",
-    "Fixed milestone claims getting stuck after earning newer rewards.",
-    "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
+    "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
+    "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
+    "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
+    "Offline event replay verification now builds an audited update from saved files."
   ],
-  "preparedAt": "2026-11-14T23:23:51.221Z",
-  "committedAt": "2026-11-14T23:25:08.000Z"
+  "preparedAt": "2026-11-14T23:47:45.324Z",
+  "committedAt": "2026-11-14T23:56:19.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

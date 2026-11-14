@@ -16,7 +16,7 @@ before(async()=>{
  server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/tools/achievement-journal.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#172b58}#host{--profile-accent:#edbe81;--profile-pattern:repeating-linear-gradient(45deg,red 0 20px,lime 20px 40px)}</style><main id="host"></main></html>');return;}
-  if(!['/tools/achievement-journal.mjs','/tools/achievement-journal-currency.mjs','/tools/achievement-journal.css','/forced_square.woff2'].includes(url.pathname)){res.writeHead(404).end();return;}
+  if(!['/tools/achievement-journal.mjs','/tools/achievement-journal-currency.mjs','/tools/achievement-coin-schedule.mjs','/tools/achievement-journal.css','/forced_square.woff2'].includes(url.pathname)){res.writeHead(404).end();return;}
   res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css':url.pathname.endsWith('.mjs')?'text/javascript':'font/woff2');
   try{res.end(await fs.readFile(path.join(root,url.pathname.slice(1))));}catch{res.writeHead(404).end();}
  });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base=`http://127.0.0.1:${server.address().port}`;

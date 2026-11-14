@@ -32,10 +32,11 @@ async function read(root,name,limit=16*1024*1024){
  * commit. Publication data is bound independently by publishedBaseline.
  */
 export async function preparePublishedOfflineVerification(options={},capabilities={}){
-  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs','mode','finishDeadlineMs','packagingReserveMs'];
+  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs','mode','finishDeadlineMs','packagingReserveMs','targetScope'];
   demand(Object.keys(options).every(key=>allowed.includes(key)),'unknown option (no checkpoint or ledger override accepted)');
   let {root,runDirectory,sourceCommit,publishedBaseline,maxJobs=512,maxRuntimeMs=480000,mode='capture-compatible',
-    finishDeadlineMs,packagingReserveMs=900000}=options;
+    finishDeadlineMs,packagingReserveMs=900000,targetScope='all'}=options;
+  demand(['all','events'].includes(targetScope),'unknown target scope');
   demand(['capture-compatible','postpublication-offline'].includes(mode),'unknown verification mode');
   const postpublication=mode==='postpublication-offline';
   demand(postpublication?Number.isSafeInteger(finishDeadlineMs)&&finishDeadlineMs>0&&packagingReserveMs===900000:
@@ -88,7 +89,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(path.dirname(preflightDirectory)===runDirectory,'unsafe preflight cleanup');
   await fs.rm(preflightDirectory,{recursive:true,force:true});
   const receipt={schemaVersion:1,kind:'prepared-public-offline-verification',authority:false,sourceCommit,
-    publishedBaseline:pins,maxJobs,maxRuntimeMs,mode,...(postpublication?{finishDeadlineMs,packagingReserveMs}:{}),runtime,preflight,backendReads:0,backendWrites:0};
+    publishedBaseline:pins,maxJobs,maxRuntimeMs,mode,targetScope,...(postpublication?{finishDeadlineMs,packagingReserveMs}:{}),runtime,preflight,backendReads:0,backendWrites:0};
   await fs.writeFile(path.join(runDirectory,'prepared.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600,flush:true});
   let started=false;
   return Object.freeze({receipt:structuredClone(receipt),directory,
@@ -112,7 +113,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
       const effectiveRuntime=postpublication?Math.min(maxRuntimeMs,finishDeadlineMs-now()-packagingReserveMs):maxRuntimeMs;
       demand(!postpublication||effectiveRuntime>60000,'no native time remains before packaging reserve');
       const run=async()=>{verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
-        publishedEventTotalsBaseline,maxJobs,maxRuntimeMs:effectiveRuntime,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
+        publishedEventTotalsBaseline,maxJobs,maxRuntimeMs:effectiveRuntime,targetScope,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
         expectedScoringSha256:preflight.scoringPreflight.sourceSha256,nativeCompleted});return verified;};
       try{
         if(postpublication){

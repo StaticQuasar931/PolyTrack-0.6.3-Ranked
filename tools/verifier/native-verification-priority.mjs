@@ -9,7 +9,7 @@ const time=value=>{
 /** Scheduling only: no proof, chronology/review exemption or filtered inventory.
  * Full allJobs stays in capture order. Ties use the exact stable ledger identity.
  */
-export function prioritizeNativeTargets({jobs,eventBoards=[],canonicalRows=[],policy,entries=[],now}={}){
+export function prioritizeNativeTargets({jobs,eventBoards=[],canonicalRows=[],policy,entries=[],now,eventFirst=false}={}){
   if(!Array.isArray(jobs)||jobs.length>100000||!Number.isSafeInteger(now)||now<=0)throw Error('Invalid native priority inventory');
   const boards=new Map(eventBoards.map(board=>[board.id,board]));
   const known=new Set(policy?.knownTrackIds||Object.keys(policy?.trackContentHashes||{}));
@@ -23,9 +23,11 @@ export function prioritizeNativeTargets({jobs,eventBoards=[],canonicalRows=[],po
     const source=canonical.get(key),accepted=source?.sourceBoardStatus?.runVerified===true&&source?.sourceBoardStatus?.integrityVerified===true;
     const priority=proofs.has(key)?0:live?1:job.lane==='normal'&&!accepted&&known.has(job.trackId)?2:pending?3:4;
     const recent=time(job.ingestedAt)||time(source?.ingestedAt)||time(source?.pbAt)||time(job.submittedAt);
-    return {job,key,priority,recent};
+    const kodub=p?.kind==='kodub'?1:0,weight=Number.isFinite(p?.maxRp)?p.maxRp:0;
+    return {job,key,priority,recent,kodub,weight,live};
   });
-  ranked.sort((a,b)=>a.priority-b.priority||b.recent-a.recent||(a.key<b.key?-1:a.key>b.key?1:0));
+  ranked.sort((a,b)=>(eventFirst?Number(b.live)-Number(a.live)||(a.live&&b.live?b.kodub-a.kodub||b.weight-a.weight:0):0)||
+    a.priority-b.priority||b.kodub-a.kodub||b.weight-a.weight||b.recent-a.recent||(a.key<b.key?-1:a.key>b.key?1:0));
   return {jobs:ranked.map(row=>row.job),counts:Object.fromEntries([0,1,2,3,4].map(priority=>[
     ['exactPublicBinding','liveEventPending','unverifiedKnownNormal','otherEventPending','other'][priority],ranked.filter(row=>row.priority===priority).length]))};
 }

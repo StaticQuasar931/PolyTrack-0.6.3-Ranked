@@ -189,6 +189,15 @@ test('prepares only public inputs, dry-compiles old proofs, then explicitly veri
   assert((await fs.readFile(path.join(f.root,'verification-ledger-current.json'))).equals(before));
 });
 
+test('public offline event scope is explicit and reaches only the one-shot verifier',async t=>{
+ const f=await fixture(t);f.options.targetScope='events';const original=f.capabilities.verifyPhase;
+ f.capabilities.verifyPhase=async input=>{assert.equal(input.targetScope,'events');return original(input);};
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);
+ assert.equal(prepared.receipt.targetScope,'events');const verified=await prepared.verify();await verified.dispose();
+ const invalid=await fixture(t);invalid.options.targetScope='unknown';
+ await assert.rejects(preparePublishedOfflineVerification(invalid.options,invalid.capabilities),/target scope/);
+});
+
 test('public 76 wrapper fixes the exact 4358-entry public ledger pins',async()=>{
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.ledgerEntries,4358);
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.generation,76);

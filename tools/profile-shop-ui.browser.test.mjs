@@ -19,7 +19,7 @@ before(async()=>{
     const name=new URL(req.url,'http://localhost').pathname;
     if(name==='/tools/profile-shop-catalog.mjs'){res.setHeader('Content-Type','text/javascript');res.end('export const PROFILE_SHOP_CATALOG_VERSION='+PROFILE_SHOP_CATALOG_VERSION+';export const PROFILE_SHOP_CATALOG='+JSON.stringify(SHOP_CATALOG)+';');return;}
     if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local PolyTrack shop draft</title><link rel="stylesheet" href="/tools/profile-shop-ui.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#192b57}main{max-width:1366px;margin:auto;--sp-sticky-top:60px}.fixture-banner{position:sticky;top:0;z-index:99;box-sizing:border-box;height:60px;display:flex;align-items:center;padding:12px;background:#ffd185;color:#142449;font:13px/18px Trebuchet MS,sans-serif;border-bottom:2px solid #b98b39}</style><aside class="fixture-banner" role="note">Offline test preview &middot; Sample credits, not a live balance</aside><main></main></html>');return;}
-    const types={'/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
+    const types={'/tools/achievement-coin-schedule.mjs':'text/javascript','/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
     if(!types[name]){res.writeHead(404).end();return;}
     try{res.setHeader('Content-Type',types[name]);res.end(await fs.readFile(path.join(root,name.slice(1))));}catch{res.writeHead(404).end();}
   });
@@ -100,4 +100,18 @@ test('swatch text uses only host-provided racer identity, never invented generic
  await page.evaluate(()=>cleanup.update({getRacerName:()=> 'Fixture Racer'}));
  const texts=await page.locator('.sp-art svg text').allTextContents();assert.ok(texts.length>0);assert.ok(texts.every(text=>text==='Fixture Racer'));
  assert.doesNotMatch(await page.locator('.shop-preview').innerText(),/\bTokens\b|\bCP\b/);
+});
+
+test('achievement bonuses are absent by default and explicit capability uses the existing claim callback only',async t=>{
+ const page=await fixture(t);assert.equal(await page.locator('[data-sp-reward="achievements"]').count(),0);
+ await page.evaluate(()=>cleanup.update({achievementClaimsEnabled:true}));
+ assert.match(await page.locator('[data-sp-achievement-policy]').innerText(),/14 once-only.*222 Style Coins/);
+ assert.match(await page.locator('[data-sp-achievement-policy]').innerText(),/Shared title\/style conditions pay once/);
+ assert.equal(await page.evaluate(()=>calls.claim.length),0);
+ await page.locator('[data-sp-reward="achievements"]').click();
+ assert.deepEqual(await page.evaluate(()=>calls.claim),[{accountId:'driver-a',rewardId:'achievements',walletRevision:2}]);
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');
+ assert.equal(await page.locator('[data-sp-reward="achievements"]').isDisabled(),true);
+ await page.evaluate(()=>resolveClaim({delta:222,policyVersion:1}));
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins','raw receipt amounts never become current balance');
 });

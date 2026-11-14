@@ -223,3 +223,26 @@ test('ambiguous claim hides balance, serializes clicks, and recovers original id
  assert.equal(recovered.wallet,null);assert.equal(f.data.size,0);assert.equal(f.ids(),1);
  assert.equal(posts(f)[1].body.requestId,JSON.parse(saved).requestId);
 });
+
+
+test('phase achievements receipts accept shared14-key policy only and old milestones still validate separately',async()=>{
+ const {ACHIEVEMENT_COIN_SCHEDULE:rows}=await import('./achievement-coin-schedule.mjs');
+ for(const entries of [rows,...rows.map(row=>[row])]){
+  const f=fixture();await f.session.load();const delta=entries.reduce((sum,row)=>sum+row.amount,0);
+  f.setHandler(async req=>({...milestoneReceipt(req,entries.map(row=>row.id),delta),rewardId:'achievements',policyVersion:1}));
+  const result=await f.session.claim('achievements',{confirmed:true});assert.equal(result.result.delta,delta);
+  assert.equal(result.wallet,null);assert.equal(f.data.size,0);assert.equal(posts(f).length,1);
+ }
+});
+
+test('invalid new policy receipts keep durable original request; no unknown reward IDs or fake sums',async()=>{
+ const {ACHIEVEMENT_COIN_SCHEDULE:rows}=await import('./achievement-coin-schedule.mjs');
+ for(const change of [{policyVersion:2},{delta:999},{claimedRewardIds:['tracks-1']},
+  {claimedRewardIds:[rows[0].id,rows[0].id]},{accountId:B},{rewardId:'milestones'},{claimedRewardIds:['fake-achievement']}]){
+  const f=fixture();await f.session.load();f.setHandler(async req=>({...milestoneReceipt(req,[rows[0].id],rows[0].amount),rewardId:'achievements',policyVersion:1,...change}));
+  await assert.rejects(f.session.claim('achievements',{confirmed:true}),{code:'invalid_claim_response'});
+  const saved=JSON.parse([...f.data.values()][0]);assert.equal(saved.schemaVersion,3);assert.equal(saved.rewardId,'achievements');
+  assert.equal(saved.requestId,'request-1');assert.equal(f.session.state().wallet,null);
+  await assert.rejects(f.session.claim('achievements',{confirmed:true}),{code:'reconciliation_required'});
+ }
+});

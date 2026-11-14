@@ -43,6 +43,7 @@ async function loginMetadata(response){
 }
 
 /** Host integration, default OFF. No SDK initialization or automatic wallet read.
+ * achievementClaimsEnabled defaults false until the parent enables the server phase.
  * getAuth returns the already initialized Firebase auth object. Only an explicit
  * Shop open or refresh invokes transport; tokens remain request-local.
  * noteAccountTransition MUST precede all active-account writes, including A-B-A.
@@ -50,8 +51,10 @@ async function loginMetadata(response){
  * bind accepts optional getPreviewIdentity:()=>({accountId,name}) from the parent.
  * Rendering still uses getPreviewController/openStudio and the existing Studio DOM.
  * content.__profileShopOpen / __profileShopClose are guarded root-local hooks.
+ * __profileShopRefreshPreview refreshes existing renderer output after a frame/identity
+ * update with no DOM mutation. It never starts a render, fetch, save or equip.
  */
-export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,fetch:fetcher,assertOnline=()=>{}}={}){
+export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,achievementClaimsEnabled=false,fetch:fetcher,assertOnline=()=>{}}={}){
   if(!document||typeof getAccountId!=='function'||typeof getAuth!=='function')throw TypeError('Profile shop host adapters required');
   let disposed=false,auth=null,unsubscribe=null,ownedUnsubscribe=null,authEpoch=0,lastAccount=getAccountId(),store=null;
   const ownedCache=createProfileShopOwnedCache(storage);
@@ -115,7 +118,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     const controls=studio.querySelector('.profile-customizer-actions')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorQueued=false,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0;
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0;
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
     const goStudio=reward=>{if(!current())return false;dialog?.close();return openStudio?.(reward)===true;};
@@ -132,29 +135,47 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       const target=dialog.querySelector('[data-sp-live-stage]'),source=studio.querySelector('.profile-preview-stage');
       if(!target)return;
       const heading=dialog.querySelector('.sp-live-preview>header>strong');if(heading)heading.textContent=racerName()||'Profile preview';
+      const garageTrigger=studio.querySelector('[data-car-workshop-open]');
+      dialog.querySelector('[data-sp-live-garage]').hidden=!garageTrigger||garageTrigger.disabled;
       const locked=getPreviewController?.()?.isActive?.()===true;
       dialog.querySelector('[data-sp-live-note]').textContent=locked?'Preview only. Not applied or unlocked.':'Your current racer. Try a style to preview it here.';
       dialog.querySelector('[data-sp-live-clear]').hidden=!locked;
       if(!source){target.textContent='Open Racer Studio to load your preview.';return;}
       if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';return;}
       const copy=source.cloneNode(true);copy.inert=true;
+      // cloneNode does not copy rendered pixels; reuse only the real renderer output.
+      const sourceCanvases=source.querySelectorAll('canvas');
+      for(const [index,canvas] of [...copy.querySelectorAll('canvas')].entries()){
+        try{
+          const original=sourceCanvases[index],context=canvas.getContext('2d');
+          if(!original?.width||!original.height||!context)throw Error('Renderer unavailable');
+          context.drawImage(original,0,0);
+        }catch{const note=document.createElement('span');note.textContent='Renderer preview unavailable.';note.dataset.spRendererUnavailable='';canvas.replaceWith(note);}
+      }
       const name=copy.querySelector(':scope>span>b');if(name&&racerName())name.textContent=racerName();
       for(const node of [copy,...copy.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){
         node.removeAttribute('id');node.removeAttribute('autofocus');
         if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');
       }
-      const row=studio.querySelector('.profile-row-showcase')?.cloneNode(true);
+      const sourceRow=studio.querySelector('.profile-row-showcase'),row=sourceRow?.cloneNode(true);
       if(row){row.inert=true;for(const node of [row,...row.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){node.removeAttribute('id');node.removeAttribute('autofocus');if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');}target.replaceChildren(copy,row);}else target.replaceChildren(copy);
-      if(source!==mirrorSource){
-        mirrorSource=source;mirrorObserver.disconnect();
+      const sourceRoot=source.closest('.profile-customizer-preview')||studio;
+      if(source!==mirrorSource||sourceRoot!==mirrorRoot||sourceRow!==mirrorRow){
+        mirrorSource=source;mirrorRoot=sourceRoot;mirrorRow=sourceRow;mirrorObserver.disconnect();
+        // Structure and renderer content only: publish guards mutate sibling controls.
+        mirrorObserver.observe(sourceRoot,{childList:true});
+        if(sourceRoot.parentElement)mirrorObserver.observe(sourceRoot.parentElement,{childList:true});
         mirrorObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true});
+        if(sourceRow)mirrorObserver.observe(sourceRow,{subtree:true,childList:true,characterData:true,attributes:true});
+        const actions=studio.querySelector('.profile-customizer-actions');if(actions)mirrorObserver.observe(actions,{childList:true});
+        if(garageTrigger)mirrorObserver.observe(garageTrigger,{attributes:true,attributeFilter:['disabled']});
         const card=content.closest('.overall-profile-card');if(card)mirrorObserver.observe(card,{attributes:true,attributeFilter:['class','style']});
       }
     }
     const keepShopPreview=reward=>{if(!current()||openStudio?.(reward)!==true)return false;syncMirror();return true;};
     function close(invalidate=false){
       publicViewGeneration++;
-      mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;
+      mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;mirrorRoot=null;mirrorRow=null;
       preview?.dispose();preview=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
     }
@@ -164,9 +185,15 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
       const grid=document.createElement('div');grid.className='sp-live-layout';
       const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
-      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><button type="button" data-sp-live-clear hidden>Exit preview</button>';
+      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><div class="sp-live-actions"><button type="button" data-sp-live-clear hidden>Exit preview</button><button type="button" data-sp-live-garage hidden>Car workshop</button></div>';
       const body=dialog.querySelector('.sp-host-body');body.before(grid);grid.append(live,body);
       mirrorObserver=new document.defaultView.MutationObserver(()=>{if(mirrorQueued)return;mirrorQueued=true;queueMicrotask(()=>{mirrorQueued=false;syncMirror();});});
+      live.querySelector('[data-sp-live-garage]').addEventListener('click',()=>{
+        const trigger=studio.querySelector('[data-car-workshop-open]');
+        if(!current()||!trigger?.isConnected||trigger.disabled)return;
+        close();if(!current())return;content.__profileHubClose?.();
+        if(current()&&trigger.isConnected&&!trigger.disabled)trigger.click();
+      });
       live.querySelector('[data-sp-live-clear]').addEventListener('click',()=>{if(clearUiPreview)clearUiPreview();else preview?.clear();syncMirror();});
       content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
       dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
@@ -180,7 +207,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,getRacerName:racerName,hasLivePreview:true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,getRacerName:racerName,hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');
@@ -213,13 +240,14 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     }
     const launchShop=()=>{if(!current())return false;void open();return true;};
     const closeShop=()=>{if(current())close(true);};
-    content.__profileShopOpen=launchShop;content.__profileShopClose=closeShop;
+    const refreshPreview=()=>{if(!current()){close(true);return false;}syncMirror();return !!dialog?.open;};
+    content.__profileShopOpen=launchShop;content.__profileShopClose=closeShop;content.__profileShopRefreshPreview=refreshPreview;
     content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));
     const click=()=>{void open();};button.addEventListener('click',click);
     const mount={close,cleanup,refresh:reason=>{if(current())onOwnedUiChange?.(reason);}};mounts.add(mount);
     observeAuth(currentAuth());mount.refresh('cache');
-    function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);if(content.__profileShopOpen===launchShop)delete content.__profileShopOpen;if(content.__profileShopClose===closeShop)delete content.__profileShopClose;content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));}
-    cleanup.open=open;return cleanup;
+    function cleanup(){if(closed)return;closed=true;close(true);button.removeEventListener('click',click);button.remove();mounts.delete(mount);if(content.__profileShopOpen===launchShop)delete content.__profileShopOpen;if(content.__profileShopClose===closeShop)delete content.__profileShopClose;if(content.__profileShopRefreshPreview===refreshPreview)delete content.__profileShopRefreshPreview;content.dispatchEvent(new document.defaultView.CustomEvent('profile-shop-ready'));}
+    cleanup.open=open;cleanup.refreshPreview=refreshPreview;return cleanup;
   }
   return {bind,observeAuth,reset,priceForUi,
     ownsForUi(accountId,unlockId){

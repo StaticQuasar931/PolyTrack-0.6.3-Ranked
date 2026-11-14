@@ -6,6 +6,7 @@ import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';
+import {ACHIEVEMENT_COIN_SCHEDULE,ACHIEVEMENT_COIN_POLICY_VERSION} from './achievement-coin-schedule.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
 const root=fileURLToPath(new URL('../',import.meta.url)),A='a'.repeat(64),B='b'.repeat(64);
 const evidence=process.env.SHOP_EVIDENCE_DIR||path.resolve(root,'../../2026-11-14/profile-shop-host');
@@ -29,7 +30,7 @@ after(async()=>{await browser?.close();server?.closeAllConnections();if(server)a
 async function fixture(t,{enabled=true,width=390,height=844,owned=[],reusePage=null,savedDesign=null,earned=[]}={}){
  const context=reusePage?reusePage.context():await browser.newContext({viewport:{width,height},reducedMotion:'reduce'});if(!reusePage)t.after(()=>context.close());const page=reusePage||await context.newPage();page.on('pageerror',error=>console.log('HOST PAGE ERROR:',error.message));let external=0;
  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():(external++,route.abort()));await page.goto(base);await page.evaluate(earned=>window.__fixtureEarned=earned,earned);await nativeFixture(page);await page.addStyleTag({url:base+'/tools/cosmetic-preview.css'});
- await page.evaluate(async({A,owned,catalog,savedDesign})=>{
+ await page.evaluate(async({A,owned,catalog,savedDesign,achievementReceipt})=>{
   window.PROFILE_COSMETICS_KEY='offline-confirmed-design';window.cosmeticEpoch=0;window.cosmeticResolveCache=new WeakMap();window.readCosmeticDirectory=()=>({entries:{}});window.readJsonStorage=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};if(savedDesign)localStorage.setItem(PROFILE_COSMETICS_KEY,JSON.stringify(savedDesign));
   window.activeAccount=A;window.tokenCalls=0;window.dbCalls=0;window.network=[];window.holdTokens=false;window.tokenWaiters=[];window.claims=[];
   window.fixtureUser={uid:'offline-owner',getIdToken:async()=>{tokenCalls++;if(holdTokens)await new Promise(resolve=>tokenWaiters.push(resolve));return 'offline-test-token';}};
@@ -41,13 +42,13 @@ async function fixture(t,{enabled=true,width=390,height=844,owned=[],reusePage=n
    const parsed=new URL(url),body=options.body?JSON.parse(options.body):null;network.push({path:parsed.pathname,method:options.method,body,authorization:options.headers.Authorization});
    if(parsed.pathname==='/v1/shop/catalog')return Response.json({version:2,items:catalog});
    if(parsed.pathname==='/v1/currency/wallet'){if(window.walletUnavailable)return Response.json({error:'currency_unavailable'},{status:503});return Response.json({...serverWallet,accountId:parsed.searchParams.get('accountId')});}
-   if(parsed.pathname==='/v1/currency/claim'){claims.push(body.rewardId);if(window.claimRejection)return Response.json(window.claimRejection,{status:window.claimStatus||409});const delta=body.rewardId==='login'?8:100;serverWallet.balance+=delta;serverWallet.revision++;if(window.holdClaimResponse)await new Promise(resolve=>window.releaseClaim=resolve);return Response.json({op:'claim',...body,outcomeOnly:true,delta,balanceAfter:serverWallet.balance,walletRevision:serverWallet.revision,alreadyClaimed:false,duplicate:false,...(body.rewardId==='login'&&window.freshLoginClock?window.freshLoginClock:{}),...(window.claimSuccessOverride||{}),...(body.rewardId==='milestones'?{claimedRewardIds:['tracks-1','tracks-5','tracks-20']}:{} )});}
+   if(parsed.pathname==='/v1/currency/claim'){claims.push(body.rewardId);if(window.claimRejection)return Response.json(window.claimRejection,{status:window.claimStatus||409});const delta=body.rewardId==='login'?8:body.rewardId==='achievements'?achievementReceipt.delta:(window.milestoneClaimDelta??100);serverWallet.balance+=delta;serverWallet.revision++;if(window.holdClaimResponse)await new Promise(resolve=>window.releaseClaim=resolve);return Response.json({op:'claim',...body,outcomeOnly:true,delta,balanceAfter:serverWallet.balance,walletRevision:serverWallet.revision,alreadyClaimed:false,duplicate:false,...(body.rewardId==='login'&&window.freshLoginClock?window.freshLoginClock:{}),...(window.claimSuccessOverride||{}),...(body.rewardId==='milestones'?{claimedRewardIds:window.milestoneClaimIds||['tracks-1','tracks-5','tracks-20']}:body.rewardId==='achievements'?achievementReceipt:{} )});}
    return Response.json({error:'unexpected_request'},{status:400});
   };
   const {bindCosmeticPreview}=await import('/tools/cosmetic-preview.mjs');const content=document.querySelector('#content');content.__socialEpoch=1;
   content.__cosmeticPreviewController=bindCosmeticPreview(content.querySelector('.profile-customizer'),{catalog:nativeCatalog,onPreview:option=>applyProfileCosmetics(content.closest('.overall-profile-card'),{...profileCosmeticDrafts.get(A),[option.kind]:option.id}),onRestore:()=>applyProfileCosmetics(content.closest('.overall-profile-card'),profileCosmeticDrafts.get(A))});
   window.draftWrites=0;const set=profileCosmeticDrafts.set.bind(profileCosmeticDrafts);profileCosmeticDrafts.set=(...args)=>{draftWrites++;return set(...args);};
- },{A,owned,catalog:PROFILE_SHOP_CATALOG,savedDesign});
+ },{A,owned,catalog:PROFILE_SHOP_CATALOG,savedDesign,achievementReceipt:{policyVersion:ACHIEVEMENT_COIN_POLICY_VERSION,delta:ACHIEVEMENT_COIN_SCHEDULE.reduce((sum,row)=>sum+row.amount,0),claimedRewardIds:ACHIEVEMENT_COIN_SCHEDULE.map(row=>row.id)}});
  await page.addScriptTag({content:cosmeticFunctions});
  await page.addScriptTag({content:hostSource.replace(/const PROFILE_SHOP_ENABLED=(?:true|false);/,`const PROFILE_SHOP_ENABLED=${enabled};`)+'\nwindow.actualShopSetup=setupProfileShop;window.actualShopHost=()=>profileShopHost;window.actualAccountTransition=noteProfileShopAccountTransition;window.actualShopReady=()=>profileShopHostRequest;'});
  await page.evaluate(()=>actualShopSetup(document.querySelector('#content'),nativeEntry,true));await page.locator('.profile-shop-open').waitFor({state:'attached'});await page.evaluate(()=>actualShopReady());
@@ -163,7 +164,9 @@ test('legacy, malformed, milestone and ambiguous rejections never create daily m
   const page=await fixture(t,{width:1366,height:768});
   await page.evaluate(({change,status})=>{window.claimStatus=status;window.claimRejection={error:'reward_already_claimed',notCommitted:true,claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000,...change};},{change,status});
   await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
-  await page.locator('[data-sp-reward="'+reward+'"]').click();await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent!=='100 Style Coins');
+  await page.locator('[data-sp-reward="'+reward+'"]').click();
+  await page.waitForFunction(()=>document.querySelector('.sp-item-meta')?.textContent.includes('Ownership not confirmed'),null,{timeout:5000});
+  assert.equal(await page.evaluate(()=>serverWallet.balance),100,'a rejection never awards coins');
   assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);assert.equal(await page.evaluate(()=>network.length),3);page.noExternal();
  }
 });
@@ -342,4 +345,79 @@ test('revisioned host bypasses warm unversioned UI/art and propagates the full r
  assert.match(await page.locator('.profile-shop-dialog').innerText(),/Style Coins/);
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);assert.deepEqual(errors,[]);
  await page.evaluate(()=>revisionHost.dispose());assert.equal(await page.locator('.profile-shop-dialog').count(),0);page.noExternal();
+});
+
+test('live mirror follows renderer row updates and replaced stages without draft/storage activity',async t=>{
+ const page=await fixture(t,{enabled:false});await openShop(page);
+ const before=await page.evaluate(()=>({writes:draftWrites,network:network.length,stored:JSON.stringify(Object.entries(localStorage))}));
+ await page.evaluate(()=>{nativeEntry.name='Updated Fixture';const root=document.querySelector('.profile-customizer .profile-row-showcase');root.querySelector('b').textContent='Updated Fixture';});
+ await page.waitForFunction(()=>document.querySelector('[data-sp-live-stage] .profile-row-showcase').textContent.includes('Updated Fixture'),null,{timeout:3000});
+ assert.equal(await page.locator('.sp-live-preview>header>strong').innerText(),'Updated Fixture');
+ await page.evaluate(()=>{const old=document.querySelector('.profile-customizer .profile-preview-stage'),next=old.cloneNode(true);next.dataset.rendererFrame='replacement';old.replaceWith(next);});
+ await page.waitForFunction(()=>document.querySelector('[data-sp-live-stage] [data-renderer-frame="replacement"]'),null,{timeout:3000});
+ assert.deepEqual(await page.evaluate(()=>({writes:draftWrites,network:network.length,stored:JSON.stringify(Object.entries(localStorage))})),before);
+ await page.evaluate(()=>document.querySelector('#content').__shopCleanup());
+ await page.evaluate(()=>document.querySelector('.profile-customizer .profile-row-showcase b').textContent='Disposed Fixture');
+ assert.equal(await page.locator('.profile-shop-dialog').count(),0);page.noExternal();
+});
+
+test('live canvas preview copies existing renderer pixels rather than an empty cloned bitmap',async t=>{
+ const page=await fixture(t,{enabled:false});
+ await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=16;canvas.height=8;canvas.dataset.rendererFixture='';const context=canvas.getContext('2d');context.fillStyle='#2468ac';context.fillRect(0,0,16,8);document.querySelector('.profile-customizer .profile-preview-stage').append(canvas);});
+ await openShop(page);
+ assert.deepEqual(await page.locator('[data-sp-live-stage] canvas').evaluate(node=>[...node.getContext('2d').getImageData(0,0,1,1).data]),[36,104,172,255]);
+ await page.evaluate(()=>{const canvas=document.querySelector('.profile-customizer canvas'),context=canvas.getContext('2d');context.fillStyle='#aabbcc';context.fillRect(0,0,16,8);document.querySelector('#content').__profileShopRefreshPreview();});
+ assert.deepEqual(await page.locator('[data-sp-live-stage] canvas').evaluate(node=>[...node.getContext('2d').getImageData(0,0,1,1).data]),[170,187,204,255]);
+ assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls+draftWrites),0);
+ assert.equal(await page.locator('[data-sp-live-stage] .profile-preview-stage').evaluate(node=>node.inert),true);page.noExternal();
+});
+
+test('shop Car workshop delegates existing parent Garage navigation only after clearing preview and owned modals',async t=>{
+ const page=await fixture(t,{enabled:false});
+ const hook=patch.match(/  function setupCarWorkshopLink\([^\n]*\)\{[\s\S]*?\n  \}/)?.[0];assert.ok(hook);
+ await page.evaluate(hook=>{
+  window.garageCalls=0;window.garageRequests=0;window.garageOpenModalCounts=[];
+  const menu=document.createElement('div');menu.className='main-buttons-container';const garage=document.createElement('button');garage.innerHTML='<img src="images/customize.svg">';menu.append(garage);document.body.append(menu);
+  garage.addEventListener('click',()=>{garageCalls++;garageOpenModalCounts.push(document.querySelectorAll('dialog[open]').length);});
+  const isElementVisible=node=>node.isConnected,closeRankedDialog=()=>{},closeOverallPanel=()=>{},nativeCarVisuals={runtime:{requestOpen:()=>garageRequests++}};
+  eval(hook+'\nsetupCarWorkshopLink(document.querySelector("#content"),true);');
+ },hook);
+ await openShop(page);await page.locator('[data-sp-action="preview"]').first().click();await page.locator('[data-sp-live-clear]').waitFor();
+ assert.equal(await page.locator('[data-sp-live-garage]').isVisible(),true);
+ await page.locator('[data-sp-live-garage]').click();
+ assert.deepEqual(await page.evaluate(()=>({garageCalls,garageRequests,garageOpenModalCounts,active:document.querySelector('#content').__cosmeticPreviewController.isActive(),writes:draftWrites,posts:network.filter(row=>row.method==='POST').length,published:window.published||0})),{garageCalls:1,garageRequests:1,garageOpenModalCounts:[0],active:false,writes:0,posts:0,published:0});
+ page.noExternal();
+});
+
+test('valid seven-tier milestone receipt is accepted without a daily marker, auto-apply or extra claim',async t=>{
+ const page=await fixture(t,{width:1366,height:768});
+ await page.evaluate(()=>{window.milestoneClaimDelta=280;window.milestoneClaimIds=['tracks-1','tracks-5','tracks-20','tracks-35','tracks-50','tracks-70','tracks-89'];});
+ await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+ await page.locator('[data-sp-reward="milestones"]').click();
+ await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='380 Style Coins',null,{timeout:5000});
+ assert.deepEqual(await page.evaluate(()=>claims),['milestones']);
+ assert.equal(await page.evaluate(()=>network.filter(row=>row.method==='POST').length),1);
+ assert.equal(await page.evaluate(()=>draftWrites+(window.published||0)+dbCalls),0);
+ assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);page.noExternal();
+});
+
+test('achievement capability makes one durable claim and accepts only the authoritative completion wallet',async t=>{
+ const page=await fixture(t,{width:1366,height:768});
+ assert.equal(await page.locator('[data-sp-reward="achievements"]').count(),0);
+ await page.evaluate(async()=>{
+  const root=document.querySelector('#content');root.__shopCleanup();actualShopHost().dispose();
+  const {createProfileShopHost}=await import('/tools/profile-shop-host.mjs');
+  window.achievementHost=createProfileShopHost({document,getAccountId:()=>activeAccount,getAuth:()=>fixtureAuth,storage:localStorage,revision:390,enabled:true,achievementClaimsEnabled:true,fetch:rankedFetch});
+  root.__shopCleanup=achievementHost.bind(root,{accountId:activeAccount,isSelf:true,openStudio:reward=>cleanup.open('studio',reward),getPreviewController:()=>root.__cosmeticPreviewController});
+ });
+ await openShop(page);await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='100 Style Coins');
+ assert.deepEqual(await page.evaluate(()=>claims),[]);
+ await page.locator('[data-sp-reward="achievements"]').click();
+ await page.waitForFunction(()=>document.querySelector('.sp-summary strong')?.textContent==='322 Style Coins',null,{timeout:5000});
+ assert.deepEqual(await page.evaluate(()=>claims),['achievements']);
+ const posts=await page.evaluate(()=>network.filter(row=>row.method==='POST'));assert.equal(posts.length,1);
+ assert.equal(posts[0].body.rewardId,'achievements');assert.equal(posts[0].body.accountId,A);assert.ok(posts[0].body.requestId);
+ assert.equal(await page.evaluate(()=>draftWrites+dbCalls+(window.published||0)),0);
+ assert.doesNotMatch(await page.locator('[data-sp-reward="login"]').innerText(),/Claimed today/);
+ page.noExternal();
 });

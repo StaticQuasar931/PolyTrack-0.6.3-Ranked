@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {createKodubErpFixtureV1} from './native-kodub-erp-fixture-v1.mjs';
-import {eventRpPresentation,eventSnapshotRows} from './client.mjs';
+import {eventRpPresentation,eventSnapshotRows,eventRunErpPresentation,eventRowVerified} from './client.mjs';
 
 const hash=n=>n.toString(16).padStart(64,'0');
 test('event RP distinguishes published zero, numeric strings, absent fields and invalid values',()=>{
@@ -57,9 +57,9 @@ test('synthetic v1 Kodub, weekly and daily RP uses published event rows, not lif
 });
 test('fallback event list uses the same zero and unavailable rules as native rows',()=>{
   const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
-  const start=source.indexOf('  function rows(entries)'),end=source.indexOf('  async function openPermanent()',start);
+  const start=source.indexOf('  function rows(entries'),end=source.indexOf('  async function openPermanent()',start);
   assert.ok(start>=0&&end>start);
-  const render=vm.runInNewContext(source.slice(start,end)+';rows;',{eventRpPresentation,displayName:()=> 'Racer',escape:value=>value,time:String,bridge:{accountId:()=> 'viewer'}});
+  const render=vm.runInNewContext(source.slice(start,end)+';rows;',{eventRpPresentation,eventRunErpPresentation,eventRowVerified,now:()=>Date.now(),displayName:()=> 'Racer',escape:value=>value,time:String,bridge:{accountId:()=> 'viewer'}});
   for(const [row,label] of [[{rp:0},'0 ERP'],[{},'ERP unavailable'],[{rp:'84'},'84 ERP'],[{rp:10,groupRp:0},'10 ERP · 0 Group ERP'],[{rp:99,pending:true},'ERP pending']]){
     assert.ok(render([{timeMs:100,rank:1,...row}]).includes('<strong>'+label+'</strong>'));
   }

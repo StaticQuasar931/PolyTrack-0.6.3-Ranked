@@ -1373,7 +1373,7 @@ test('lost expanded claim reply recovers the exact receipt without re-awarding o
 });
 
 
-async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, holdReply} = {}) {
+async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, holdReply, achievementEnabled = false} = {}) {
  const {createShopControllerStore}=await import('../../../tools/shop-controller.mjs');
  const {createShopTransport}=await import('../../../tools/shop-transport.mjs');
  const requests=[];let nonce=0;
@@ -1381,7 +1381,8 @@ async function milestoneClient(f, {local = new Map(), mutateReply, afterClaim, h
  const transport=createShopTransport({revision:388,getToken:async()=> 'offline-fixture-token',fetch:async(url,init)=>{
   const body=init.body?JSON.parse(init.body):null,row={path:new URL(url).pathname,method:init.method,body};requests.push(row);
   if(body){const saved=JSON.parse(local.get('polytrack-shop-pending-v1:'+ACCOUNT));assert.equal(saved.requestId,body.requestId);}
-  const response=await handleCurrencyRequest(new Request(url,init),{env:{CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION},
+  const response=await handleCurrencyRequest(new Request(url,init),{env:{CURRENCY_ENABLED:'true',CURRENCY_RULES_VERSION,
+   CURRENCY_ACHIEVEMENTS_ENABLED:achievementEnabled?'true':'false'},
    store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT});
   const result=await response.clone().json();row.status=response.status;row.result=copy(result);
   if(row.path==='/v1/currency/claim'&&response.ok){if(afterClaim)await afterClaim(row);if(holdReply)await holdReply(row);}
@@ -1405,4 +1406,190 @@ test('regression388: real seven-tier claim completes with fresh confirmed280 wal
  assert.equal(calls.length,19);assert.deepEqual(sent.map(row=>[row.method,row.path]),[['POST','/v1/currency/claim'],['GET','/v1/currency/wallet']]);
  assert.deepEqual(sent[0].body,{accountId:ACCOUNT,requestId:'milestone-client-1',rewardId:'milestones'});
  assert.equal(sent[0].status,200);client.store.dispose();
+});
+
+
+async function fullCoinEvidence() {
+ const {ACHIEVEMENT_COIN_SCHEDULE}=await import('../../../tools/achievement-coin-schedule.mjs');
+ const {OWNER_PUBLIC_ID,BEAT_OWNER_STAGES}=await import('../src/server-achievements.js');
+ const source=fs.readFileSync(new URL('../src/index.js',import.meta.url),'utf8');
+ const match=source.match(/const OFFICIAL_IDS = new Set\((\[[^\n]+?\])\);/);
+ const tracks=[...match[1].matchAll(/['"]([a-f0-9]{64})['"]/g)].map(match=>match[1]);
+ const entitlement={serverIssued:{version:1,beta:{id:'beta-tester',source:'release-migration',sourceRevision:1,issuedAt:AT-100,cutoffAt:0},
+  cosmeticUnlocks:BEAT_OWNER_STAGES.map(stage=>stage.cosmeticId),achievements:{version:1,catalog:SERVER_ACHIEVEMENT_CATALOG,
+   casual:{count:89,ledger:'ff'.repeat(11)+'01'},beatOwner:{targetAccountId:OWNER_PUBLIC_ID,count:3,ledger:'07'+'00'.repeat(11),
+    unlocks:BEAT_OWNER_STAGES.map((stage,index)=>({...stage,source:'ranked-track-snapshot',trackId:tracks[index],
+     sourceRevision:1,sourceUpdatedAt:AT-100,sourceSignature:'synthetic-proof-123456',unlockedAt:AT-50,playerTimeMs:10000,targetTimeMs:11000}))}}}};
+ for(const entry of ACHIEVEMENT_COIN_SCHEDULE)for(const {slot,value}of entry.markers)entitlement[slot]=[...new Set([...(entitlement[slot]||[]),value])];
+ return entitlement;
+}
+const achievementService=f=>createCurrencyService({store:f.store,now:()=>AT,achievementCoinsEnabled:true});
+const claimAchievements=f=>achievementService(f).execute(UID,f.command('claim',{rewardId:'achievements'}));
+
+test('phase-separated achievement batch is off by default and client fields cannot enable it',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());
+ await assert.rejects(f.run('claim',{rewardId:'achievements'}),error=>error.message==='achievement_coins_disabled'&&error.notCommitted===true);
+ await assert.rejects(f.run('claim',{rewardId:'achievements',achievementCoinsEnabled:true}),/invalid_command/);
+ assert.equal(f.calls.length,0);assert.equal(f.commits.length,0);
+});
+
+test('all14 evidenced achievements pay222 retroactively once with five reads and three writes',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());const evidence=copy(f.docs.get(ENT));
+ const cmd=f.command('claim',{rewardId:'achievements'}),result=await achievementService(f).execute(UID,cmd);
+ assert.equal(result.delta,222);assert.equal(result.policyVersion,1);assert.equal(result.claimedRewardIds.length,14);
+ assert.equal(f.calls.filter(call=>call.route.includes('?transaction=')).length,5);assert.equal(f.calls.length,7);
+ assert.equal(f.commits.length,1);assert.equal(f.commits[0].writes.length,3);assert.deepEqual(f.docs.get(ENT),evidence);
+ const before=copy(f.docs),start=f.calls.length;assert.deepEqual(await achievementService(f).execute(UID,cmd),{...result,duplicate:true});
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,3);
+ await assert.rejects(claimAchievements(f),/reward_already_claimed/);assert.deepEqual(f.docs,before);
+ assert.equal([...f.docs.keys()].filter(key=>key.startsWith(C.grants+'/')).length,1);
+});
+
+test('retroactive partial eligibility and old recognized-track receipts coexist without resetting grants',async()=>{
+ const f=fixture();setMilestones(f,20);const old=f.command('claim',{rewardId:'milestones'}),historical=await f.service().execute(UID,old);
+ assert.equal(historical.delta,100);
+ f.put(ENT,{theme:['ocean'],accent:['lime'],serverIssued:{version:1}});assert.equal((await claimAchievements(f)).delta,2);
+ f.put(ENT,await fullCoinEvidence());assert.equal((await claimAchievements(f)).delta,220);
+ assert.deepEqual(await f.service().execute(UID,old),{...historical,duplicate:true});
+ assert.equal((await f.run('wallet')).balance,322);
+});
+
+test('raw profile counters local-looking arrays and shop purchases cannot establish coin eligibility',async()=>{
+ for(const mode of ['raw-counters','untyped-allowances','wrong-version','paid-only']){
+  const f=fixture();f.put('0.6.2_profiles_public/'+ACCOUNT,{accountId:ACCOUNT,ownerUid:UID,pbCount:999,totalPlaytimeMs:999999999,raceCount:999,trackWins:999});
+  if(mode==='paid-only'){f.funds(100);await f.run('purchase',{itemId:'profile-petrol'});}
+  else {const entitlement=mode==='raw-counters'?{pbCount:999,totalPlaytimeMs:999999999}:await fullCoinEvidence();
+   if(mode==='untyped-allowances')delete entitlement.serverIssued;
+   if(mode==='wrong-version')entitlement.serverIssued.version=2;f.put(ENT,entitlement);}
+  const before=copy(f.docs),commits=f.commits.length;await assert.rejects(claimAchievements(f),/server_achievement_required/);
+  assert.deepEqual(f.docs,before);assert.equal(f.commits.length,commits);
+ }
+});
+
+test('PB/playtime cosmetic allowances never mint coins from client-origin counters',async()=>{
+ const f=fixture();f.put(ENT,{title:['pbHunter'],nameFont:['mono','rounded'],theme:['mono'],nameColor:['cyan','gold','lime','ice'],
+  pbCount:999,totalPlaytimeMs:999999999,serverIssued:{version:1}});
+ await assert.rejects(claimAchievements(f),/server_achievement_required/);assert.equal(f.commits.length,0);
+});
+
+test('beta coins require the typed canonical award, not a badge or cosmetic marker alone',async()=>{
+ for(const mode of ['missing','source','cutoff','revision']){
+  const f=fixture(),full=await fullCoinEvidence(),entitlement={theme:['beta'],badge:['betaTester'],serverIssued:{version:1,beta:full.serverIssued.beta}};
+  if(mode==='missing')delete entitlement.serverIssued.beta;
+  if(mode==='source')entitlement.serverIssued.beta.source='client-visit';
+  if(mode==='cutoff')Object.assign(entitlement.serverIssued.beta,{source:'open-beta-release',cutoffAt:AT-200});
+  if(mode==='revision')entitlement.serverIssued.beta.sourceRevision=1.5;
+  f.put(ENT,entitlement);await assert.rejects(claimAchievements(f),/server_achievement_required/);assert.equal(f.commits.length,0);
+ }
+});
+
+test('owner coins require exact tied-or-faster snapshot proof ledger bindings and pinned target',async()=>{
+ for(const mode of ['target','ledger','count','source','track','times','signature','unlock','null','duplicate','off-bit','missing-bit']){
+  const f=fixture(),full=await fullCoinEvidence();const entitlement={emblem:['target'],stripe:['overdrive'],serverIssued:full.serverIssued};delete entitlement.serverIssued.beta;
+  const owner=entitlement.serverIssued.achievements.beatOwner;
+  if(mode==='target')owner.targetAccountId='b'.repeat(64);
+  if(mode==='ledger')owner.ledger='ff'.repeat(12);
+  if(mode==='count')owner.count=88;
+  if(mode==='source')owner.unlocks.forEach(proof=>proof.source='client-pb');
+  if(mode==='track')owner.unlocks.forEach(proof=>proof.trackId='b'.repeat(64));
+  if(mode==='times')owner.unlocks.forEach(proof=>proof.playerTimeMs=12000);
+  if(mode==='signature')owner.unlocks.forEach(proof=>proof.sourceSignature='bad');
+  if(mode==='unlock')entitlement.serverIssued.cosmeticUnlocks=[];
+  if(mode==='null')owner.unlocks=[null];
+  if(mode==='duplicate')owner.unlocks=[owner.unlocks[0],owner.unlocks[0]];
+  if(mode==='off-bit')owner.ledger='03'+'00'.repeat(10)+'01';
+  if(mode==='missing-bit')owner.ledger='1c'+'00'.repeat(11);
+  f.put(ENT,entitlement);await assert.rejects(claimAchievements(f),/server_achievement_required/);assert.equal(f.commits.length,0);
+ }
+});
+
+test('a future sellable earned marker disables its coin condition without granting from a purchase',async()=>{
+ const {create}=await syntheticCatalogService(9,2,items=>items.map((item,index)=>index===3?{...item,grants:[{slot:'theme',value:'ocean'}]}:item));
+ const f=fixture();f.put(ENT,{theme:['ocean'],accent:['lime'],serverIssued:{version:1}});
+ await assert.rejects(create({store:f.store,now:()=>AT,achievementCoinsEnabled:true}).execute(UID,f.command('claim',{rewardId:'achievements'})),/server_achievement_required/);
+ assert.equal(f.commits.length,0);
+});
+
+test('concurrent achievements and existing milestones commit additive policies once, not per cosmetic',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());f.synchronize();
+ const result=await Promise.all([claimAchievements(f),f.run('claim',{rewardId:'milestones'})]);
+ assert.equal(result.reduce((sum,item)=>sum+item.delta,0),502);assert.equal((await f.run('wallet')).balance,502);
+ assert.equal(f.commits.length,2);assert.ok(f.commits.every(commit=>commit.writes.length===3));
+});
+
+test('actual gated HTTP/client achievement flow validates policy and confirms balance with12 total reads',async t=>{
+ t.mock.method(globalThis,'fetch',()=>assert.fail('no real network'));const f=fixture();f.put(ENT,await fullCoinEvidence());
+ const client=await milestoneClient(f,{achievementEnabled:true});await client.store.load();const start=f.calls.length,requests=client.requests.length;
+ const result=await client.store.claim('achievements',{confirmed:true});assert.equal(result.outcome.delta,222);assert.equal(result.wallet.balance,222);
+ assert.equal(client.local.size,0);assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,12);
+ assert.equal(f.calls.slice(start).length,16);assert.equal(client.requests.length-requests,2);assert.equal(f.commits.length,1);client.store.dispose();
+});
+
+
+test('schedule marker boundaries match actual Worker cosmetic policy, not raw claimed metrics',async()=>{
+ const {profileCosmeticsUnlocked,sanitizeProfileCosmetics}=await import('../src/index.js');
+ const {ACHIEVEMENT_COIN_SCHEDULE}=await import('../../../tools/achievement-coin-schedule.mjs');
+ for(const reward of ACHIEVEMENT_COIN_SCHEDULE.filter(row=>row.evidence==='earned-allowances')){
+  const current=reward.metric==='podium'?{rank:3}:{[reward.metric]:reward.threshold};
+  const previous=reward.metric==='podium'?{rank:4}:{[reward.metric]:reward.threshold-1};
+  const unlocked=(marker,entry)=>profileCosmeticsUnlocked({...sanitizeProfileCosmetics({version:7}),[marker.slot]:marker.value},entry,false);
+  assert.ok(reward.markers.every(marker=>unlocked(marker,current)),reward.id+' crosses actual earned policy');
+  assert.equal(reward.markers.every(marker=>unlocked(marker,previous)),false,reward.id+' cannot qualify below target');
+ }
+});
+
+test('new claim concurrent aliases and lost/failed replies cannot double-mint or partially commit',async()=>{
+ const concurrent=fixture();concurrent.put(ENT,await fullCoinEvidence());concurrent.synchronize();
+ const outcomes=await Promise.allSettled([claimAchievements(concurrent),claimAchievements(concurrent)]);
+ assert.equal(outcomes.filter(result=>result.status==='fulfilled').length,1);assert.equal(concurrent.commits.length,1);
+ assert.equal((await concurrent.run('wallet')).balance,222);
+ for(const lost of [false,true]){
+  const f=fixture();f.put(ENT,await fullCoinEvidence());const before=copy(f.docs),cmd=f.command('claim',{rewardId:'achievements'});
+  if(lost)f.loseReply();else f.fail('FIRESTORE_503');
+  await assert.rejects(achievementService(f).execute(UID,cmd),/FIRESTORE_503/);
+  if(!lost)assert.deepEqual(f.docs,before);
+  const result=await achievementService(f).execute(UID,cmd);assert.equal(result.delta,222);assert.equal(result.duplicate,lost);
+  assert.equal(f.commits.length,1);assert.equal((await f.run('wallet')).balance,222);
+ }
+});
+
+test('malformed aggregate policy/ownership or grant totals reject without minting or erasing history',async()=>{
+ for(const mode of ['owner','account','version','unknown','duplicate','delta']){
+  const f=fixture();f.put(ENT,await fullCoinEvidence());await claimAchievements(f);
+  const key=C.grants+'/'+await keyFor([ACCOUNT,'achievements','lifetime']),grant=copy(f.docs.get(key).data);
+  if(mode==='owner')grant.ownerUid='other';if(mode==='account')grant.accountId='b'.repeat(64);
+  if(mode==='version')grant.policyVersion=2;if(mode==='unknown')grant.claimedRewardIds=['fake-award'];
+  if(mode==='duplicate')grant.claimedRewardIds=[grant.claimedRewardIds[0],grant.claimedRewardIds[0]];
+  if(mode==='delta')grant.delta=999;f.put(key,grant);const before=copy(f.docs);
+  await assert.rejects(claimAchievements(f),/grant_owner_changed|grant_invalid/);assert.deepEqual(f.docs,before);
+ }
+});
+
+test('absent historical eligibility is not invented and revocation never removes prior lifetime claims',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());const cmd=f.command('claim',{rewardId:'achievements'});
+ const result=await achievementService(f).execute(UID,cmd);f.put(ENT,{serverIssued:{version:1}});
+ await assert.rejects(claimAchievements(f),/server_achievement_required/);
+ assert.deepEqual(await achievementService(f).execute(UID,cmd),{...result,duplicate:true});
+ f.put(ENT,await fullCoinEvidence());await assert.rejects(claimAchievements(f),/reward_already_claimed/);
+ assert.equal((await f.run('wallet')).balance,222);assert.equal(f.commits.length,1);
+});
+
+test('feature-off HTTP is a definite non-commit and leaves389 milestones/pending schema unaffected',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());const client=await milestoneClient(f);await client.store.load();
+ const start=f.calls.length;await assert.rejects(client.store.claim('achievements',{confirmed:true}),error=>error.code==='achievement_coins_disabled'&&error.notCommitted===true);
+ assert.equal(f.calls.length,start);assert.equal(client.local.size,0);assert.equal(f.commits.length,0);client.store.dispose();
+});
+
+test('lost new HTTP claim recovers original persisted identity after client recreation, with no new award',async()=>{
+ const f=fixture();f.put(ENT,await fullCoinEvidence());const local=new Map();let lost=true;
+ let client=await milestoneClient(f,{local,achievementEnabled:true,mutateReply:(row,response)=>{
+  if(row.path==='/v1/currency/claim'&&lost){lost=false;throw Error('synthetic lost reply');}return response;
+ }});
+ await client.store.load();await assert.rejects(client.store.claim('achievements',{confirmed:true}));
+ const saved=[...local.values()][0];assert.equal(JSON.parse(saved).rewardId,'achievements');client.store.dispose();
+ client=await milestoneClient(f,{local,achievementEnabled:true});await client.store.load();const start=f.calls.length;
+ const result=await client.store.reconcile({confirmed:true});assert.equal(result.outcome.duplicate,true);assert.equal(result.wallet.balance,222);
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,10);
+ assert.equal(client.requests.filter(row=>row.method==='POST').length,1);assert.equal(local.size,0);assert.equal(f.commits.length,1);
+ assert.equal(client.requests.find(row=>row.method==='POST').body.requestId,JSON.parse(saved).requestId);client.store.dispose();
 });

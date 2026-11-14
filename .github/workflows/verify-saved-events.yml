@@ -1,0 +1,114 @@
+name: Verify saved event replays offline
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact tested implementation commit on main
+        required: true
+        type: string
+      snapshot_source_commit:
+        description: Trusted existing published artifact commit, not a capture request
+        required: true
+        type: string
+      snapshot_generation:
+        required: true
+        type: string
+        default: '84'
+      snapshot_index_sha256:
+        required: true
+        type: string
+      ledger_manifest_sha256:
+        required: true
+        type: string
+      ledger_entries:
+        required: true
+        type: string
+        default: '19391'
+      native_job_limit:
+        description: One bounded pass; reruns cannot reset this budget
+        required: true
+        type: choice
+        options: ['16', '64', '128', '256', '512']
+        default: '64'
+
+permissions:
+  contents: read
+
+jobs:
+  verify_saved:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    concurrency:
+      group: polytrack-saved-event-offline-verification
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate first-attempt bounded source request before setup
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
+          SNAPSHOT_GENERATION: ${{ inputs.snapshot_generation }}
+          SNAPSHOT_INDEX_SHA256: ${{ inputs.snapshot_index_sha256 }}
+          LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
+          LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
+          NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
+        run: |
+          node --input-type=module <<'PLAN'
+          import {execFileSync} from 'node:child_process';
+          import {savedEventWorkflowConfig} from './tools/verifier/verify-saved-events.mjs';
+          const config=savedEventWorkflowConfig();
+          if(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==config.testedCommit)throw Error('Tested implementation changed');
+          console.log(JSON.stringify(config));
+          PLAN
+      - name: Test offline authority and saved-event scope before native setup
+        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs tools/verifier/saved-event-offline.test.mjs tools/verifier/native-verification-priority.test.mjs tools/public-offline-verification.test.mjs
+      - name: Install pinned native dependencies
+        run: npm ci --prefix tools/verifier --ignore-scripts
+      - name: Install pinned sandboxed browser
+        working-directory: tools/verifier
+        run: |
+          npx playwright install --with-deps chromium
+          BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
+      - name: Verify and live-compile an audited private candidate without capture or Git publication
+        timeout-minutes: 18
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
+          SNAPSHOT_GENERATION: ${{ inputs.snapshot_generation }}
+          SNAPSHOT_INDEX_SHA256: ${{ inputs.snapshot_index_sha256 }}
+          LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
+          LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
+          NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
+        run: node tools/verifier/verify-saved-events.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/saved-event-verification"
+      - name: Retain nonpublishable results and completed proof checkpoints
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: saved-event-offline-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/saved-event-verification/prepared.json
+            ${{ runner.temp }}/saved-event-verification/verified.json
+            ${{ runner.temp }}/saved-event-verification/event-candidate-complete.json
+            ${{ runner.temp }}/saved-event-verification/candidate-blocked-*.json
+            ${{ runner.temp }}/saved-event-verification/public-snapshots*/
+            ${{ runner.temp }}/saved-event-verification/snapshot-current.json
+            ${{ runner.temp }}/saved-event-verification/index.html
+            ${{ runner.temp }}/saved-event-verification/events/public-catalog.json
+            ${{ runner.temp }}/saved-event-verification/verification-ledger-current.json
+            ${{ runner.temp }}/saved-event-verification/verification-ledger/
+            ${{ runner.temp }}/saved-event-verification/progress-*.json
+            ${{ runner.temp }}/saved-event-verification/failure-checkpoint-*.json
+            ${{ runner.temp }}/saved-event-verification/local-reports/native-proof-checkpoints/

@@ -327,7 +327,7 @@ export async function verifyNativeSnapshotPhase(options={}){
   return runNativeSnapshotPhaseImpl(options,true);
 }
 
-async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,allowNativeDispatch=true,reuseOnly=false,publicationRoot=root,
+async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,allowNativeDispatch=true,reuseOnly=false,publicationRoot=root,targetScope='all',
   expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
@@ -337,6 +337,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
+  demand(['all','events'].includes(targetScope),'invalid native target scope');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
   demand(progressCheckpoint===null||typeof progressCheckpoint==='function','invalid progress checkpoint capability');
   demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
@@ -377,8 +378,8 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       }else if(inputs.eventBoards.some(board=>board.id===job.periodId&&board.entries.some(row=>row.accountId===job.accountId&&row.timeMs===job.timeMs&&
         (row.runId===undefined||row.runId===job.runId)&&row.needsReview!==true&&row.reviewHold!==true)))accepted.add(key);
     }
-    const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));return !accepted.has(key)||entries.has(key);}),
-      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now()});
+    const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));return targetScope==='events'?job.lane==='event':!accepted.has(key)||entries.has(key);}),
+      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'});
     const targets=priority.jobs;
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;
     const review=async value=>{

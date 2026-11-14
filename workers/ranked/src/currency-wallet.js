@@ -1,11 +1,12 @@
 // REVIEW-ONLY BACKEND: routes default OFF. No automatic awards or seeded funds.
 // Requires deny-all client access to these server-owned collections before enable.
 // Store MUST implement real serializable transactions, not read/mutate/save.
+import {ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchievementCoinReceipt} from '../../../tools/achievement-coin-schedule.mjs';
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
 import {addPurchase, readPurchasedCosmetics} from './purchased-cosmetic-entitlements.js';
 import {invalidateEntitlements} from './overall-entitlement-cache.js';
-import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT} from './server-achievements.js';
+import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT, OWNER_PUBLIC_ID, BEAT_OWNER_STAGES} from './server-achievements.js';
 
 export const CURRENCY_SCHEMA = 1;
 export const CURRENCY_RULES_VERSION = 'currency-server-only-v1';
@@ -43,6 +44,8 @@ const ORIGINAL_PROFILE_INVENTORY_IDS = Object.freeze([
   'profile-pitlane-ticket', 'profile-apex-observatory', 'profile-vector-ribbon'
 ]);
 const PROFILE_CATALOG_LIMIT = 32;
+// Pinned to the publisher's official-track registry; no live track lookups in claims.
+const COIN_OWNER_TRACK_BITS = new Map([["5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038",0],["7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0",1],["148826aa16ffaa23dbc453b32cff05e025ddbce1773fc7733cc13d218926515a",2],["93c7363dfea7fb09ca1d23b72cad5df43a30841d41c8ff25fb544c85bb03c7ae",3],["7603aaeffa1989a649dfaa8e1804bed4481b49df233e377687d0669899566e52",4],["c117823cf6788e3247b9ee63a0c091c07352bbe352c650a7790dc6718148c2fa",5],["e4bcaca3a583bb0eb62a700a69d14e89c852f0c5bf740fca76e0519ebdfc9ab1",6],["7239b17057127936907a805b0caa5d8c6f6c97eca9bdabf1a5312dce479629b7",7],["99864b635d1891d22e17eb9267527a07a92c49c0f02893729fa2ded90e3ca0f9",8],["a5341fe706097cff2a3812a3fc0d87399254557328351ae8e5c882700fc1a196",9],["7d134c939df80c676a258266201beedd3b93572d5603f3ff4339ff8679803715",10],["2fe4bd46b0075cc25fc770ce50adbb68447cf493c999635bb272d231811dd264",11],["c20b4ee3cd517ca6cae7e43f047548757287fbd08ba81b97892a3ef520159a34",12],["88647ea04145fbbbb19b55f1590e038fb0378acb2571110f02cb545cc46b0d57",13],["2806030c503abb41a1a26fa9a570888be14296172bb273798ef0ad87a108a2ec",14],["4697ea67b18c3f49b30a3d8884602115536650bc5435c88e3732e64d21a72d33",15],["e5d084e06db4ab71196fea44efeceb23c8561266a78669c324a38f92581fe2db",16],["fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778",17]]);
 const path = (kind, id) => CURRENCY_COLLECTIONS[kind] + '/' + id;
 export class CurrencyError extends Error {
   // Do not set transport `status`: the shared Firestore adapter retries 409s.
@@ -111,7 +114,47 @@ function checkedMilestoneGrant(grant, accountId, uid, rewardId) {
   }
 }
 
-export function createCurrencyService({store, now = Date.now}) {
+function eligibleAchievementCoins(entitlement) {
+  if (entitlement?.serverIssued?.version !== SERVER_ACHIEVEMENT_VERSION) return [];
+  return ACHIEVEMENT_COIN_SCHEDULE.filter(entry => {
+    // An earned marker must never be purchasable, including in a future catalog expansion.
+    if (!entry.markers.every(({slot,value}) => Array.isArray(entitlement[slot]) &&
+        entitlement[slot].every(item => typeof item === 'string') && entitlement[slot].includes(value) &&
+        !SHOP_CATALOG.some(item => item.grants.some(grant => grant.slot === slot && grant.value === value)))) return false;
+    if (entry.evidence === 'typed-beta') {
+      const beta = entitlement.serverIssued.beta;
+      return beta?.id === 'beta-tester' && ['open-beta-release','release-migration','ranked-overall-snapshot','legacy-cosmetic-entitlement'].includes(beta.source) &&
+        uint(beta.sourceRevision) && beta.sourceRevision > 0 && uint(beta.issuedAt) && beta.issuedAt > 0 && uint(beta.cutoffAt) &&
+        (beta.source !== 'open-beta-release' || beta.cutoffAt > 0 && beta.issuedAt <= beta.cutoffAt);
+    }
+    if (entry.evidence === 'owner-stage') {
+      const achievements = entitlement.serverIssued.achievements, owner = achievements?.beatOwner;
+      const stage = BEAT_OWNER_STAGES.find(stage => stage.threshold === entry.threshold);
+      if (!stage || achievements?.version !== SERVER_ACHIEVEMENT_VERSION || achievements.catalog !== SERVER_ACHIEVEMENT_CATALOG ||
+          owner?.targetAccountId !== OWNER_PUBLIC_ID || !Array.isArray(owner.unlocks) || owner.unlocks.length > BEAT_OWNER_STAGES.length ||
+          new Set(owner.unlocks.map(proof => proof?.id)).size !== owner.unlocks.length ||
+          !owner.unlocks.every(proof => BEAT_OWNER_STAGES.some(known => proof?.id === known.id && proof.threshold === known.threshold && proof.cosmeticId === known.cosmeticId)) ||
+          !Array.isArray(entitlement.serverIssued.cosmeticUnlocks) || !entitlement.serverIssued.cosmeticUnlocks.includes(stage.cosmeticId)) return false;
+      try { milestoneEvidence({serverIssued:{achievements:{...achievements,casual:owner}}},entry.threshold); } catch { return false; }
+      const allowedBits = new Set(COIN_OWNER_TRACK_BITS.values());
+      for (let bit = 0; bit < SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT; bit++)
+        if ((Number.parseInt(owner.ledger.slice((bit >> 3) * 2, (bit >> 3) * 2 + 2),16) & (1 << (bit & 7))) && !allowedBits.has(bit)) return false;
+      const proof = owner.unlocks.find(proof => proof.id === stage.id);
+      return proof?.threshold === stage.threshold && proof.cosmeticId === stage.cosmeticId && proof.source === 'ranked-track-snapshot' &&
+        COIN_OWNER_TRACK_BITS.has(proof.trackId) &&
+        (Number.parseInt(owner.ledger.slice((COIN_OWNER_TRACK_BITS.get(proof.trackId) >> 3) * 2, (COIN_OWNER_TRACK_BITS.get(proof.trackId) >> 3) * 2 + 2),16) & (1 << (COIN_OWNER_TRACK_BITS.get(proof.trackId) & 7))) !== 0 && ['sourceRevision','sourceUpdatedAt','unlockedAt','playerTimeMs','targetTimeMs'].every(key => uint(proof[key]) && proof[key] > 0) &&
+        proof.playerTimeMs <= proof.targetTimeMs && typeof proof.sourceSignature === 'string' && proof.sourceSignature.length >= 16 && proof.sourceSignature.length <= 128 && !/[^A-Za-z0-9_-]/.test(proof.sourceSignature);
+    }
+    return entry.evidence === 'earned-allowances';
+  });
+}
+function checkedAchievementGrant(grant, accountId, uid) {
+  if (!grant) return;
+  demand(grant.accountId === accountId && grant.ownerUid === uid && grant.rewardId === 'achievements', 'grant_owner_changed', 409);
+  demand(validAchievementCoinReceipt(grant), 'grant_invalid', 409);
+}
+
+export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false}) {
   demand(typeof store?.transaction === 'function' && typeof now === 'function', 'transaction_store_required', 503);
   demand(SHOP_CATALOG_VERSION === 2 && SHOP_CATALOG.length >= ORIGINAL_PROFILE_INVENTORY_IDS.length &&
     SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(SHOP_CATALOG.map(item => item.id)).size === SHOP_CATALOG.length &&
@@ -138,12 +181,13 @@ export function createCurrencyService({store, now = Date.now}) {
       const legacyItem = ['purchase', 'equip'].includes(op) ? LEGACY_SHOP_CATALOG.find(value => value.id === itemId) : null;
       if (['purchase', 'equip'].includes(op)) demand(item || legacyItem, 'unknown_item');
       if (op === 'claim') demand(typeof rewardId === 'string' &&
-        (Object.hasOwn(CURRENCY_REWARDS, rewardId) || rewardId === 'milestones'), 'unknown_reward');
+        (Object.hasOwn(CURRENCY_REWARDS, rewardId) || rewardId === 'milestones' || rewardId === 'achievements'), 'unknown_reward');
+      if (op === 'claim' && rewardId === 'achievements') demand(achievementCoinsEnabled === true, 'achievement_coins_disabled', 409);
       const receiptId = op === 'wallet' ? null : await hash([uid, accountId, requestId]);
       const fingerprint = JSON.stringify([op, accountId, rewardId ?? null, itemId ?? null,
         ...(op === 'purchase' && !legacyPurchase ? [catalogVersion, expectedPrice, expectedWalletRevision] : [])]);
       // New individual tier aliases share the aggregate; they never create per-tier documents.
-      const grantRewardId = op === 'claim' && rewardId !== 'login' && !LEGACY_MILESTONE_IDS.includes(rewardId)
+      const grantRewardId = op === 'claim' && rewardId !== 'login' && rewardId !== 'achievements' && !LEGACY_MILESTONE_IDS.includes(rewardId)
         ? 'milestones' : rewardId;
       const grantId = op === 'claim' ? await hash([accountId, grantRewardId, rewardId === 'login' ? day : 'lifetime']) : null;
       const aggregateId = op === 'claim' && rewardId !== 'login' ? await hash([accountId, 'milestones', 'lifetime']) : null;
@@ -200,8 +244,18 @@ export function createCurrencyService({store, now = Date.now}) {
         let purchasedEntitlement = null, nextMeta = null, aggregate = null, aggregateRewardIds = null;
         if (op === 'claim') {
           grant = await tx.get(path('grants', grantId));
-          checkedMilestoneGrant(grant, accountId, uid, grantRewardId);
-          if (rewardId === 'login') {
+          if (rewardId === 'achievements') checkedAchievementGrant(grant, accountId, uid);
+          else checkedMilestoneGrant(grant, accountId, uid, grantRewardId);
+          if (rewardId === 'achievements') {
+            const entitlement = await tx.get(ENTITLEMENT_PATH + accountId);
+            readPurchasedCosmetics(entitlement, {accountId, ownerUid: uid});
+            const eligible = eligibleAchievementCoins(entitlement), claimed = new Set(grant?.claimedRewardIds || []);
+            claimedRewardIds = eligible.filter(entry => !claimed.has(entry.id)).map(entry => entry.id);
+            demand(claimedRewardIds.length > 0, eligible.length ? 'reward_already_claimed' : 'server_achievement_required', eligible.length ? 409 : 403);
+            delta = ACHIEVEMENT_COIN_SCHEDULE.filter(entry => claimedRewardIds.includes(entry.id)).reduce((sum,entry) => sum + entry.amount,0);
+            aggregateRewardIds = ACHIEVEMENT_COIN_SCHEDULE.filter(entry => claimed.has(entry.id) || claimedRewardIds.includes(entry.id)).map(entry => entry.id);
+            evidence = {kind:'canonical-earned-entitlement', policyVersion:ACHIEVEMENT_COIN_POLICY_VERSION};
+          } else if (rewardId === 'login') {
             if (grant) {
               const error = domainRejection('reward_already_claimed', 409);
               const dayEndsAt = (day + 1) * 86400000;
@@ -253,6 +307,7 @@ export function createCurrencyService({store, now = Date.now}) {
         const nextRevision = revision + 1; demand(uint(nextRevision), 'wallet_revision_overflow', 409);
         const result = {op, accountId, requestId, outcomeOnly: true, delta, balanceAfter: nextBalance, walletRevision: nextRevision,
           ...(rewardId ? {rewardId} : {}), ...(claimedRewardIds ? {claimedRewardIds} : {}),
+          ...(rewardId === 'achievements' ? {policyVersion:ACHIEVEMENT_COIN_POLICY_VERSION} : {}),
           ...(item ? {itemId, itemKind: item.kind, catalogVersion: SHOP_CATALOG_VERSION} : {}),
           ...(op === 'claim' ? {alreadyClaimed: false} : {}), ...(op === 'purchase' ? {alreadyOwned: false} : {})};
         // All reads precede all writes, including canonical entitlement/cache CAS.
@@ -261,7 +316,8 @@ export function createCurrencyService({store, now = Date.now}) {
           ...(knownEquipRevision === null ? {} : {equipRevision: knownEquipRevision})});
         if (op === 'claim') {
           const data = {accountId, ownerUid: uid, rewardId: grantRewardId, delta: aggregateRewardIds ?
-            aggregateRewardIds.reduce((sum, id) => sum + CURRENCY_REWARDS[id], 0) : delta, grantedAt: at, evidence,
+            aggregateRewardIds.reduce((sum, id) => sum + (rewardId === 'achievements' ? ACHIEVEMENT_COIN_SCHEDULE.find(entry => entry.id === id).amount : CURRENCY_REWARDS[id]), 0) : delta, grantedAt: at, evidence,
+            ...(rewardId === 'achievements' ? {policyVersion:ACHIEVEMENT_COIN_POLICY_VERSION} : {}),
             ...(aggregateRewardIds ? {claimedRewardIds: aggregateRewardIds} : {})};
           if (grant) await tx.set(path('grants', grantId), data);
           else await tx.create(path('grants', grantId), data);
@@ -321,7 +377,7 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
       demand(body && typeof body === 'object' && !Array.isArray(body) && !Object.hasOwn(body, 'op'), 'invalid_body');
       command = {op: ops[pathname], ...body};
     }
-    const outcome = await createCurrencyService({store, now}).execute(uid, command);
+    const outcome = await createCurrencyService({store, now, achievementCoinsEnabled: env.CURRENCY_ACHIEVEMENTS_ENABLED === 'true'}).execute(uid, command);
     return respond(200, {...outcome,
       ...(command.op === 'claim' && command.rewardId === 'login' && outcome.duplicate === false ?
         successfulLoginClocks.get(outcome) : {})});

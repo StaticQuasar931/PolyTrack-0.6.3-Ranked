@@ -1375,3 +1375,18 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 
  font-variant-numeric:tabular-nums;max-width:100%;min-width:0;box-sizing:border-box;
  white-space:normal;overflow-wrap:normal;word-break:normal;
 }
+
+/* ERP breakdowns stay readable without competing with the native position/time lanes. */
+.sq-event-rp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:12px 0}
+.sq-event-rp-controls label{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sq-event-rp-controls select{min-height:44px;max-width:100%;padding:8px 12px;background:#15264c;color:#f0f8ff;border:2px solid #8bdcf5;font:inherit}
+.sq-event-rp-controls select:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.sq-event-rp-scope{color:#d0e7fa;max-width:76ch}
+.sq-event-results li.is-pending{border-left:3px solid #ffd08a}
+.sq-event-board button.main .verified-state{white-space:normal!important;flex-wrap:wrap;height:auto;line-height:1.25!important;padding:2px 5px;max-width:calc(100% - 24px)}
+.sq-event-board .sq-event-earned-rp,.sq-event-board .sq-event-estimated-rp{display:inline-block;max-width:100%;white-space:normal;overflow-wrap:normal;font-variant-numeric:tabular-nums}
+.sq-event-board .sq-event-earned-rp{color:#b4f3ca}
+.sq-event-board .sq-event-estimated-rp{color:#ffe0a6}
+.sq-event-verified-results li{grid-template-columns:22px 52px minmax(100px,1fr) auto auto}
+.sq-event-verified-results li img{width:20px;height:20px}
+@media(max-width:650px){.sq-event-verified-results li{grid-template-columns:20px 36px minmax(0,1fr);gap:7px}.sq-event-verified-results li time{grid-column:2/4}.sq-event-verified-results li>strong{grid-column:2/4;text-align:left}.sq-event-totals-results li{grid-template-columns:38px minmax(0,1fr)}.sq-event-totals-results li>strong,.sq-event-totals-results li>span:last-of-type{grid-column:2}}

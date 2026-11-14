@@ -276,6 +276,17 @@ test('one native job budget reaches a live waiting event before a normal backlog
   assert.equal(result.priority.liveEventPending,1);assert.equal(result.sourceCoverage.knownBindings,23);
 });
 
+test('events-only verification excludes normal native targets but retains complete controls inventory',async t=>{
+ const f=await fixture(t,{events:true});let fullInventory=0;
+ const before=await inventory(f.directory),verified=await verifyNativeSnapshotPhase({...f.options,targetScope:'events',maxJobs:1,
+  reviewFactory:async input=>{fullInventory=input.jobs.length;return f.options.reviewFactory(input);}});
+ try{
+  assert.equal(fullInventory,2);assert.equal(f.calls.length,1);assert(f.calls.flat().every(job=>job.lane==='event'));
+  assert.equal(verified.receipt.counts.nativeDispatched,1);assert.deepEqual(await inventory(f.directory),before);
+ }finally{await verified.dispose();}
+ await assert.rejects(verifyNativeSnapshotPhase({...f.options,targetScope:'unknown'}),/target scope/);
+});
+
 test('prepared capture and scoring pins fail before spending any native budget',async t=>{
   const f=await fixture(t);
   for(const option of ['expectedCaptureSha256','expectedScoringSha256']){

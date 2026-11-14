@@ -146,3 +146,11 @@ test('seven actual currency rows use confirmed casual completions, never infer c
  assert.doesNotMatch(html,/already claimed|CLAIMED|coins earned|balanceAfter|wallet balance/i);
  assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,20]);
 });
+
+test('eligible historical cosmetic achievements show exact coin bonuses without claiming a wallet grant',()=>{
+ const model=buildAchievementJournalModel({cosmetics:{theme:[['ocean','Ocean',1],['ice','Ice',3]]},progress:{confirmed:{raceCount:3}}});
+ const rows=model.milestones.filter(r=>r.source==='catalog');assert.deepEqual(rows.map(r=>r.coinReward.amount),[2,4]);assert.ok(rows.every(r=>r.earned));
+ assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(r=>r.coinReward.amount),[4,2]);
+ const html=renderAchievementJournal({model,filter:'all',family:'style'});assert.match(html,/4 Style Coins/);assert.match(html,/eligible past achievements/);assert.match(html,/Check rewards in Shop/);
+ assert.doesNotMatch(html,/coins claimed|balanceAfter|wallet balance|CLAIMED/);
+});
