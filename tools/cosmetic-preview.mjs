@@ -1,6 +1,12 @@
 /** TRY ONLY. Parent must pass the real catalog and synchronous visual-only hooks.
  * Never pass a saved draft to this controller. onPreview receives only a frozen
- * catalog option; parent renders an ephemeral copy, never writes draft/storage.
+ * catalog option plus frozen context {options,byKind,reason,replayIndex}.
+ * Replay calls onPreview for EVERY selected kind, oldest to newest. Parent must
+ * compose context.byKind over an ephemeral draft copy, never write draft/storage.
+ * currentOption remains the latest choice; currentOptions is the full stack.
+ * Repeating a choice removes that kind; undo removes the newest selected kind.
+ * onUndoDraft is synchronous and runs only when no locked preview remains.
+ * Text fields/editable content keep native keyboard undo, including in preview.
  * onRestore re-renders current authoritative/draft visuals outside studio scope.
  * Parent must call canPublish() in programmatic save paths and dispose before
  * account/UI replacement. Hooks must restore root-card visuals as well as studio
@@ -27,7 +33,7 @@ export function resolveCosmeticPreview(catalog,request){
   return Object.freeze({kind,id,label,requirement,previewOnly:true,unlocked:false});
 }
 
-export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
+export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore,onUndoDraft}={}){
   if(!studio?.ownerDocument||!studio.isConnected||typeof onPreview!=='function'||typeof onRestore!=='function')throw TypeError('Connected studio, catalog and synchronous visual-only hooks required');
   bindings.get(studio)?.dispose();
   const document=studio.ownerDocument,win=document.defaultView;
@@ -35,7 +41,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
   const accountStamp=()=>JSON.stringify([...new Set([studio.getAttribute('data-account-id'),...publishButtons().map(button=>button.getAttribute('data-account-id'))].filter(value=>value!==null))].sort());
   const account=accountStamp();
   const compact=win.matchMedia('(max-width:850px), (max-height:500px)');
-  let selected=null,snapshot=null,banner=null,disposed=false,restoring=false,modal=null,lastChoice=null;
+  let options=[],selected=null,snapshot=null,banner=null,disposed=false,restoring=false,modal=null,lastChoice=null;
   let offsetHost=null,offsetBefore='';
   function releaseOffset(){
     if(offsetHost){
@@ -80,9 +86,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
       banner.addEventListener('click',event=>{
         if(event.target.closest?.('[data-cosmetic-preview-clear]')){stop(event);clear('exit');}
       });
-      banner.addEventListener('keydown',event=>{
-        if(event.key==='Escape'&&selected){stop(event);clear('escape');}
-      });
+      banner.addEventListener('keydown',keydown);
     }
     placeBanner();
   }
@@ -105,8 +109,8 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
   function clear(reason='exit'){
     if(!selected||restoring)return false;
     const returnFocus=(reason==='exit'||reason==='escape')&&banner?.contains(document.activeElement)?lastChoice:null;
-    const previous=selected;selected=null;restoring=true;
-    try{restoreVisuals();onRestore(Object.freeze({reason,previous,previewOnly:true}));}
+    const previous=selected,previousOptions=Object.freeze([...options]);options=[];selected=null;restoring=true;
+    try{restoreVisuals();onRestore(Object.freeze({reason,previous,options:previousOptions,previewOnly:true}));}
     finally{bannerObserver.disconnect();releaseOffset();banner?.remove();banner=null;studio.classList.remove('cosmetic-preview-active');releaseButtons();snapshot=null;restoring=false;releaseModal();
       if(returnFocus?.isConnected&&studio.contains(returnFocus)&&!returnFocus.disabled&&!disposed&&accountStamp()===account)returnFocus.focus({preventScroll:true});
       lastChoice=null;}
@@ -128,13 +132,42 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     const matches=node=>node.dataset.cosmeticKind===option.kind&&node.dataset.cosmeticValue===option.id;
     lastChoice=trigger&&studio.contains(trigger)&&trigger.matches(CHOICE)&&matches(trigger)?trigger:[...studio.querySelectorAll(CHOICE)].find(matches)||null;
     watchModal();if(modal&&!modal.open){releaseModal();return false;}
-    if(!snapshot)snapshot=capture();else restoreVisuals();
-    selected=option;mark();
+    if(!snapshot)snapshot=capture();
+    const existing=options.find(item=>item.kind===option.kind);
+    options=options.filter(item=>item.kind!==option.kind);
+    if(existing?.id!==option.id)options.push(option);
+    if(!options.length){clear('toggle');return true;}
+    return replay(existing?.id===option.id?'toggle':'preview');
+  }
+  function replay(reason){
+    selected=options.at(-1);
+    const active=Object.freeze([...options]);
+    const byKind=Object.freeze(Object.fromEntries(active.map(option=>[option.kind,option.id])));
     try{
-      const result=onPreview(option);
-      if(result&&typeof result.then==='function')throw TypeError('Preview hook must be synchronous');
+      restoreVisuals();
+      // Reset parent-owned root visuals before replaying the complete ephemeral set.
+      if(banner)onRestore(Object.freeze({reason:'replay',previous:selected,options:active,previewOnly:true}));
+      mark();
+      for(const [index,option] of active.entries()){
+        const context=Object.freeze({reason,options:active,byKind,replayIndex:index,previewOnly:true});
+        const result=onPreview(option,context);
+        if(result&&typeof result.then==='function')throw TypeError('Preview hook must be synchronous');
+      }
       mark();return true;
     }catch(error){clear('render-failed');throw error;}
+  }
+  function undoPreview(){
+    if(!current()||!options.length)return false;
+    if(options.length===1)return clear('undo');
+    options=options.slice(0,-1);return replay('undo');
+  }
+  function undo(){
+    if(!current())return false;
+    if(options.length)return undoPreview();
+    if(typeof onUndoDraft!=='function')return false;
+    const result=onUndoDraft(Object.freeze({previewOnly:false}));
+    if(result&&typeof result.then==='function')throw TypeError('Draft undo hook must be synchronous');
+    return result!==false;
   }
   const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
   const canPublish=()=>current()&&!selected;
@@ -154,6 +187,12 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     if(selected&&target.matches('[data-discard-profile-cosmetics],[data-studio-close]'))clear('exit');
   }
   function keydown(event){
+    if(!current())return;
+    if((event.ctrlKey||event.metaKey)&&!event.shiftKey&&!event.altKey&&event.key.toLowerCase()==='z'){
+      // Text editing always retains the browser's native undo, even in preview.
+      if(event.target?.closest?.('input,textarea')||event.target?.isContentEditable)return;
+      if(selected||typeof onUndoDraft==='function'){stop(event);undo();}return;
+    }
     if(event.key==='Escape'&&selected){stop(event);clear('escape');return;}
     if(!['Enter',' '].includes(event.key))return;
     const choice=event.target?.closest?.(CHOICE);
@@ -169,7 +208,7 @@ export function bindCosmeticPreview(studio,{catalog,onPreview,onRestore}={}){
     if(modal&&!studio.closest('dialog')){clear('modal-detach');return;}
     watchModal();guardButtons();
   });
-  const api={preview,clear,dispose,isActive:()=>current()&&!!selected,currentOption:()=>current()?selected:null,canPublish,guardPublish};
+  const api={preview,clear,dispose,undo,undoPreview,currentOptions:()=>Object.freeze(current()?[...options]:[]),isActive:()=>current()&&!!selected,currentOption:()=>current()?selected:null,canPublish,guardPublish};
   bindings.set(studio,api);
   compact.addEventListener('change',layoutChange);
   studio.addEventListener('click',click,true);studio.addEventListener('keydown',keydown,true);studio.addEventListener('submit',submit,true);studio.addEventListener('input',edit,true);studio.addEventListener('change',edit,true);studio.addEventListener('toggle',toggle);

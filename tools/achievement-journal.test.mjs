@@ -101,3 +101,13 @@ test('journal caption distinguishes listed cosmetic goals from personal tiers wi
  assert.match(html,/Listed cosmetic goals require confirmation; personal milestones here award no cosmetics or CP\./);
  assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });
+
+test('expanded details show exact goals and actual catalog rewards without proposing currency', () => {
+  const html = renderAchievementJournal({cosmetics:{theme:[['test-theme','Exact theme label',3]]},progress:{confirmed:{raceCount:1},local:{practiceFinishes:2}}});
+  assert.match(html,/Actual rewards: 1 cosmetic choice/);
+  assert.match(html,/View reward: Exact theme label/);
+  assert.match(html,/Current progress: 1<br>Goal: 3/);
+  assert.match(html,/<details class="aj-more" open><summary>How it counts/);
+  assert.match(html,/No cosmetic reward or CP\./);
+  assert.doesNotMatch(html,/rewardPoints|proposal-only|Claim CP|\+\d+ CP/);
+});

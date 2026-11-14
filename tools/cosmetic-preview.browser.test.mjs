@@ -60,7 +60,7 @@ test('keyboard Enter previews and Escape clears without closing the studio',asyn
 
 test('switches do not accumulate temporary title/badge classes or grant disabled badge entitlement',async t=>{
  const p=await fixture(t);await p.locator('#gold').click({force:true});await p.locator('#try-title').click();await p.locator('#try-badge').click();
- assert.equal(await p.locator('#disabled-badge').isDisabled(),true);assert.equal(await p.evaluate(()=>previewCalls.length),3);assert.ok(await p.evaluate(()=>previewCalls.every(option=>option.previewOnly&&option.unlocked===false&&Object.isFrozen(option))));
+ assert.equal(await p.locator('#disabled-badge').isDisabled(),true);assert.equal(await p.evaluate(()=>previewCalls.length),6);assert.ok(await p.evaluate(()=>previewCalls.every(option=>option.previewOnly&&option.unlocked===false&&Object.isFrozen(option))));
  await p.evaluate(()=>api.clear());const state=await p.evaluate(()=>readState());assert.equal(state.title,'Original title');assert.equal(state.badge,'<b class="original-badge">Original badge</b>');assert.equal(state.previewClass,'profile-customizer-preview preview theme-blue');assert.deepEqual(state.draft,state.published);
 });
 
@@ -316,4 +316,101 @@ test('native existing backdrop/detail swatches have distinct real shapes without
   assert.equal(await page.evaluate(()=>document.querySelector('.ph-studio-panel').scrollWidth<=document.querySelector('.ph-studio-panel').clientWidth),true);
   page.assertNoExternal();
  }
+});
+
+async function stackFixture(t){
+ const p=await fixture(t);
+ await p.evaluate(async source=>{
+  api.dispose();const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+  const {bindCosmeticPreview}=await import(url);URL.revokeObjectURL(url);
+  window.stackCalls=[];window.draftUndos=0;window.ephemeral={...draft};
+  api=bindCosmeticPreview(studio,{catalog,onPreview:(option,context)=>{
+   if(!Object.isFrozen(option)||!Object.isFrozen(context)||!Object.isFrozen(context.options)||!Object.isFrozen(context.byKind))throw Error('Mutable callback contract');
+   stackCalls.push({kind:option.kind,ids:context.options.map(item=>item.id),reason:context.reason,index:context.replayIndex});
+   ephemeral={...draft,...context.byKind};
+   studio.querySelector('[data-cosmetic-title-preview]').textContent=ephemeral.title;
+  },onRestore:()=>{ephemeral={...draft};},onUndoDraft:()=>{draftUndos++;return true;}});
+ },source);return p;
+}
+
+test('stack composes every kind on an ephemeral copy and repeating removes only that kind',async t=>{
+ const p=await stackFixture(t);
+ await p.locator('#gold').click({force:true});await p.locator('#try-title').click();await p.locator('#try-badge').click();
+ assert.deepEqual(await p.evaluate(()=>ephemeral),{theme:'gold',title:'champ',badge:'beta'});
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['theme','title','badge']);
+ assert.equal(await p.evaluate(()=>api.currentOption().kind),'badge');
+ assert.equal(await p.evaluate(()=>Object.isFrozen(api.currentOptions())),true);
+ assert.deepEqual(await p.evaluate(()=>stackCalls.slice(-3).map(call=>call.index)),[0,1,2]);
+ await p.locator('#try-title').click();
+ assert.deepEqual(await p.evaluate(()=>ephemeral),{theme:'gold',title:'original',badge:'beta'});
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['theme','badge']);
+ assert.equal(await p.evaluate(()=>api.canPublish()),false);
+ assert.deepEqual(await p.evaluate(()=>draft),{theme:'blue',title:'original',badge:'original'});
+ await p.locator('#gold').click({force:true});await p.locator('#try-badge').click();
+ assert.equal(await p.evaluate(()=>api.currentOption()),null);assert.equal(await p.evaluate(()=>api.canPublish()),true);
+ assert.deepEqual(await p.evaluate(()=>ephemeral),await p.evaluate(()=>draft));
+});
+
+test('Ctrl/Cmd+Z removes newest preview before delegating to draft undo, without swallowing redo',async t=>{
+ const p=await stackFixture(t);await p.locator('#gold').click({force:true});await p.locator('#try-title').click();
+ await p.keyboard.press('Control+z');assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['theme']);
+ assert.equal(await p.evaluate(()=>draftUndos),0);assert.equal(await p.evaluate(()=>api.canPublish()),false);
+ await p.keyboard.press('Meta+z');assert.equal(await p.evaluate(()=>api.isActive()),false);assert.equal(await p.evaluate(()=>draftUndos),0);
+ await p.keyboard.press('Control+z');assert.equal(await p.evaluate(()=>draftUndos),1);
+ await p.keyboard.press('Control+Shift+z');assert.equal(await p.evaluate(()=>draftUndos),1);
+ await p.evaluate(()=>api.dispose());await p.keyboard.press('Control+z');assert.equal(await p.evaluate(()=>draftUndos),1);
+});
+
+test('same-kind replacement moves to top, undo removes it, and lifecycle clears every selection',async t=>{
+ const p=await stackFixture(t);
+ await p.evaluate(()=>{api.preview({kind:'theme',id:'gold'});api.preview({kind:'title',id:'champ'});api.preview({kind:'theme',id:'blue'});});
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['title','theme']);
+ await p.evaluate(()=>api.undoPreview());assert.deepEqual(await p.evaluate(()=>ephemeral),{theme:'blue',title:'champ',badge:'original'});
+ await p.evaluate(()=>{api.preview({kind:'badge',id:'beta'});studio.dataset.accountId='new-account';});
+ await p.waitForFunction(()=>!api.isActive());assert.deepEqual(await p.evaluate(()=>api.currentOptions()),[]);
+ assert.deepEqual(await p.evaluate(()=>ephemeral),await p.evaluate(()=>draft));assert.equal(await p.evaluate(()=>api.undo()),false);
+});
+
+test('compact sibling banner handles undo and clears a stacked preview on modal close',async t=>{
+ const p=await stackFixture(t);
+ await p.evaluate(()=>{
+  const dialog=document.createElement('dialog'),panel=document.createElement('section');
+  panel.className='ph-studio-panel';document.body.append(dialog);dialog.append(panel);panel.append(studio);dialog.showModal();window.hub=dialog;
+  api.preview({kind:'theme',id:'gold'});api.preview({kind:'title',id:'champ'});
+ });
+ assert.equal(await p.locator('.cosmetic-preview-banner').evaluate(node=>!studio.contains(node)),true);
+ await p.locator('[data-cosmetic-preview-clear]').focus();await p.keyboard.press('Control+z');
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['theme']);
+ await p.evaluate(()=>{api.preview({kind:'badge',id:'beta'});hub.close();});await p.waitForFunction(()=>!api.isActive());
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions()),[]);assert.deepEqual(await p.evaluate(()=>ephemeral),await p.evaluate(()=>draft));
+});
+
+test('failed replay clears all kinds; no callback leaves native undo untouched',async t=>{
+ const p=await fixture(t);await p.locator('#gold').click({force:true});
+ const result=await p.evaluate(()=>{failPreview=true;try{api.preview({kind:'title',id:'champ'});}catch(error){return {message:error.message,active:api.isActive(),options:api.currentOptions(),canPublish:api.canPublish()};}});
+ assert.match(result.message,/render failure/);assert.equal(result.active,false);assert.deepEqual(result.options,[]);assert.equal(result.canPublish,true);
+ const native=await p.evaluate(()=>{const event=new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true,cancelable:true});studio.dispatchEvent(event);return {prevented:event.defaultPrevented,undo:api.undo()};});
+ assert.deepEqual(native,{prevented:false,undo:false});
+});
+
+test('text editing always preserves native undo with or without a locked stack',async t=>{
+ const p=await stackFixture(t);
+ const result=await p.evaluate(()=>{
+  const input=document.querySelector('#edit'),textarea=document.createElement('textarea'),editable=document.createElement('div'),child=document.createElement('span'),readonly=document.createElement('input');
+  editable.contentEditable='true';child.textContent='Editable text';editable.append(child);readonly.readOnly=true;
+  studio.append(textarea,editable,readonly);
+  const outcomes=[];
+  for(const active of [false,true]){
+   if(active){api.preview({kind:'theme',id:'gold'});api.preview({kind:'title',id:'champ'});}
+   for(const target of [input,textarea,child,readonly])for(const modifier of ['ctrlKey','metaKey']){
+    const event=new KeyboardEvent('keydown',{key:'z',[modifier]:true,bubbles:true,cancelable:true});target.dispatchEvent(event);
+    outcomes.push({prevented:event.defaultPrevented,size:api.currentOptions().length,active});
+   }
+  }
+  return {outcomes,draftUndos};
+ });
+ assert.equal(result.draftUndos,0);
+ assert.ok(result.outcomes.every(item=>!item.prevented&&item.size===(item.active?2:0)));
+ await p.locator('#gold').focus();await p.keyboard.press('Control+z');
+ assert.deepEqual(await p.evaluate(()=>api.currentOptions().map(item=>item.kind)),['theme']);
 });

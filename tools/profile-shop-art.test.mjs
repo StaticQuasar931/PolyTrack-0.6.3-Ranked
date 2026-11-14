@@ -73,3 +73,16 @@ test('CSS artifact matches exported renderer and preserves existing geometry and
   assert(!/(?:transform|filter|content|z-index|position)\s*:|@keyframes|https?:|!\s*important[^}]*car/i.test(PROFILE_SHOP_ART_CSS));
   assert(Buffer.byteLength(PROFILE_SHOP_ART_CSS)<18000);
 });
+
+test('Apex Observatory retains its summit building and circuit at both static densities', () => {
+  const normal = renderProfileShopArt('profile-apex-observatory');
+  const low = renderProfileShopArt('profile-apex-observatory',{density:'low'});
+  for (const art of [normal,low]) {
+    assert.match(art,/M251 49V36H278V49Z/);
+    assert.match(art,/M248 36L252 28L260 24/);
+    assert.match(art,/stroke-width="8" stroke-linejoin="bevel"/);
+    assert.doesNotMatch(art,/<animate|<filter|<image|<script|href=|onload=/i);
+  }
+  assert.match(normal,/M264 24V17L273 12/);
+  assert.doesNotMatch(low,/M264 24V17L273 12/);
+});

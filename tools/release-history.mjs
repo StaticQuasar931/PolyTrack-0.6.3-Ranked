@@ -2,16 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 382,
+    "number": 383,
     "version": "0.6.3",
-    "revision": 324,
+    "revision": 325,
     "notes": [
-      "Claim a Community badge with the Discord invite code.",
-      "Shop designs stay visible during local recalculation.",
-      "Clearer achievement goals and cosmetic previews."
+      "Clearer, larger achievement goals without profile patterns.",
+      "Combine cosmetic previews, undo changes, and see unsaved edits.",
+      "Cleaner profile layout and a redesigned Apex Observatory backdrop."
     ]
   },
   "entries": [
+    {
+      "number": 382,
+      "title": "Community badge and cosmetic consistency",
+      "commit": "a570e00a4228798b552433bb85fc8ff157fbdc98",
+      "committedAt": "2026-11-14T19:18:40.000Z",
+      "notes": [
+        "Claim a Community badge with the Discord invite code.",
+        "Shop designs stay visible during local recalculation.",
+        "Clearer achievement goals and cosmetic previews."
+      ]
+    },
     {
       "number": 381,
       "title": "Achievements and profile shop",
@@ -193,16 +204,6 @@ const historyData = {
       "committedAt": "2026-11-12T08:14:37.000Z",
       "notes": [
         "Restores hosted snapshot checks for the optimized leaderboard format."
-      ]
-    },
-    {
-      "number": 360,
-      "title": "Publish 6451 verified replays and refreshed standings",
-      "commit": "8de02a4a75b239bb3eeb46e2301099cb296d14ca",
-      "committedAt": "2026-11-12T07:48:36.000Z",
-      "notes": [
-        "6,451 more saved runs now have verified replays.",
-        "Leaderboards, rankings and racer profiles reflect the newly verified results."
       ]
     }
   ],

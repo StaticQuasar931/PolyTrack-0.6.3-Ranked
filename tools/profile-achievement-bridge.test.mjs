@@ -272,7 +272,7 @@ test('joined launcher has two native destinations with distinct recognizable SVG
   assert.equal(await page.getByRole('tab',{name:'Achievements',exact:true}).getAttribute('aria-selected'),'true');
 });
 
-test('bounded joined launcher shares one highlight, preserves separate initial tabs and carries native pattern beneath panels',{timeout:30000},async t=>{
+test('bounded joined launcher preserves native profile paint but keeps hub and achievement reading surfaces neutral',{timeout:30000},async t=>{
  for(const [name,width,height]of[['phone',390,844],['laptop',1366,768]]){
   const page=await pageFor(t,{width,height});await nativeFixture(page);
   await page.evaluate(()=>applyProfileCosmetics(document.querySelector('.overall-profile-card'),{theme:'forest',accent:'gold',stripe:'grid'}));
@@ -281,18 +281,18 @@ test('bounded joined launcher shares one highlight, preserves separate initial t
   const launcher=page.locator('.profile-achievement-journey');
   const joined=await launcher.evaluate(root=>({highlight:getComputedStyle(root).borderBottomWidth,accent:getComputedStyle(root).borderBottomColor,buttons:[...root.querySelectorAll('button')].map(button=>({background:getComputedStyle(button).backgroundColor,border:getComputedStyle(button).borderBottomWidth}))}));
   assert.equal(joined.highlight,'3px');assert.equal(joined.accent,'rgb(255, 213, 110)');assert.ok(joined.buttons.every(button=>button.background==='rgba(0, 0, 0, 0)'&&button.border==='0px'));
-  await launcher.screenshot({path:path.join(evidence,`joined-theme-launcher-${name}.png`)});
+  await launcher.screenshot({path:path.join(evidence,`joined-theme-launcher-${name}.png`),timeout:5000});
   await launcher.locator('[data-ph-launch="studio"]').click();
   assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');
   assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'false');
   assert.match(await page.locator('.ph-studio-note').innerText(),/main menu garage/);
   assert.equal(await page.locator('.ph-studio-note button,.ph-studio-note a').count(),0);
   const painted=await page.locator('dialog').evaluate(root=>{const probe=document.createElement('i');probe.style.cssText='position:absolute;background-image:var(--profile-pattern,none)';root.append(probe);const pattern=getComputedStyle(probe).backgroundImage;probe.remove();return {background:getComputedStyle(root).backgroundImage,pattern,preview:getComputedStyle(root.querySelector('.profile-customizer-preview')).backgroundColor};});
-  assert.ok(painted.pattern.includes('linear-gradient')&&painted.background.includes(painted.pattern),JSON.stringify(painted));assert.notEqual(painted.preview,'rgba(0, 0, 0, 0)');
-  await page.screenshot({path:path.join(evidence,`joined-theme-studio-${name}.png`)});
+  assert.ok(painted.pattern.includes('linear-gradient'),'equipped profile pattern remains available to Studio');assert.equal(painted.background,'none','hub chrome must not paint the equipped profile pattern');assert.notEqual(painted.preview,'rgba(0, 0, 0, 0)');
+  await page.screenshot({path:path.join(evidence,`joined-theme-studio-${name}.png`),timeout:5000});
   await page.keyboard.press('Escape');await launcher.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();
   assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'false');
-  assert.equal(await page.locator('[data-aj-root]').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 44, 60)',image:'none'},'journal has an opaque neutral reading surface');
   assert.doesNotMatch(await page.locator('[data-aj-root]').innerText(),/wallet|planned coins|reward points|proposal|claim|credits earned/i);
   if(name==='phone'){
    const rail=await page.locator('.aj-paths button:visible').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {family:node.dataset.ajFamily,x:r.x,right:r.right,scrollFits:node.scrollWidth<=node.clientWidth};}));
@@ -300,10 +300,12 @@ test('bounded joined launcher shares one highlight, preserves separate initial t
    assert.ok(rail.every(node=>node.x>=0&&node.right<=width&&node.scrollFits),JSON.stringify(rail));
   }
   assert.equal(await page.locator('dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
-  await page.screenshot({path:path.join(evidence,`joined-theme-achievements-${name}.png`)});
-  const before=await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage);
+  await page.screenshot({path:path.join(evidence,`joined-theme-achievements-${name}.png`),timeout:5000});
+  const before=await page.locator('dialog').evaluate(node=>getComputedStyle(node).getPropertyValue('--profile-pattern'));
   await page.evaluate(()=>{const card=document.querySelector('.overall-profile-card');card.classList.replace('cosmetic-theme-forest','cosmetic-theme-crimson');card.classList.replace('cosmetic-stripe-grid','cosmetic-stripe-chevron');});
-  assert.notEqual(await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage),before,'native theme and pattern update without cloning or remounting');
+  assert.notEqual(await page.locator('dialog').evaluate(node=>getComputedStyle(node).getPropertyValue('--profile-pattern')),before,'native pattern variables update without cloning or remounting');
+  assert.equal(await page.locator('dialog').evaluate(node=>getComputedStyle(node).backgroundImage),'none','profile changes cannot bleed into neutral chrome');
+  assert.deepEqual(await page.locator('[data-aj-root]').evaluate(node=>({color:getComputedStyle(node).backgroundColor,image:getComputedStyle(node).backgroundImage})),{color:'rgb(32, 44, 60)',image:'none'},'journal stays opaque after a profile change');
   assert.equal(await page.evaluate(()=>window.published||0),0);
  }
 });
@@ -330,10 +332,12 @@ test('native hub body and rewards are explicitly sans serif while titles remain 
     const read=selector=>{const style=getComputedStyle(document.querySelector(selector));return {fontFamily:style.fontFamily,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight)};};
     return {root:read('dialog.profile-hub'),notice:read('.aj-notice'),reward:read('.aj-reward-label'),hint:read('.ph-tab-hint'),heading:read('.ph-heading h2'),goal:read('.aj-detail h3')};
   });
+  await fs.writeFile(path.join(evidence,'racer-hub-typography-computed.json'),JSON.stringify(typography,null,2));
   const bodyFamilies={root:'Trebuchet MS',notice:'ForcedSquare',reward:'ForcedSquare',hint:'ForcedSquare'};
+  const bodySizes={root:14,notice:17,reward:18,hint:14};
   for(const [key,family] of Object.entries(bodyFamilies)) {
     assert.deepEqual(typography[key].fontFamily.replaceAll('"','').split(',').map(value=>value.trim()),[family,'sans-serif'],`${key} intended font stack`);
-    assert.ok(typography[key].fontSize>=13&&typography[key].fontSize<=14,`${key} body size`);
+    assert.equal(typography[key].fontSize,bodySizes[key],`${key} intentional readable body size`);
     assert.ok(typography[key].lineHeight/typography[key].fontSize>=1.35,`${key} body leading`);
   }
   for(const key of ['heading','goal']) assert.match(typography[key].fontFamily,/ForcedSquare/);

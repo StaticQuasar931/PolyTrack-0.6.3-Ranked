@@ -190,3 +190,9 @@
   .profile-customizer .profile-cosmetic-choice { transition: none !important; }
 }
 .sq-reduced-effects .profile-customizer .profile-cosmetic-choice { transition: none !important; }
+
+/* A visible close action distinct from Save and cosmetic choices. */
+.profile-customizer .studio-close-bottom { border:2px solid #a7b9cc!important; border-radius:3px; background:#33465c!important; color:#fff!important; box-shadow:0 2px 0 #101b29; }
+.profile-customizer .studio-close-bottom:hover { background:#465f7b!important; border-color:#e1edf7!important; }
+.profile-customizer .studio-close-bottom:active { background:#253548!important; box-shadow:none; }
+.profile-customizer .studio-close-bottom:focus-visible { outline:3px solid #f0d49b!important; outline-offset:3px!important; }
