@@ -141,7 +141,7 @@ test('known goals lead by default, unknowns stay under All tiers, and proposal p
   assert.ok(await page.locator('[data-aj-node]:visible').count()>0);
   await page.locator('[data-aj-node]:visible [data-aj-select]').first().click();
   assert.equal(await page.locator('.aj-more').count(),1);
-  assert.equal(await page.locator('.aj-more').getAttribute('open'),null);
+  assert.equal(await page.locator('.aj-more').getAttribute('open'),'');
 });
 
 test('full-width lanes preserve all 81 model tiers and use recognizable inline path icons',async t=>{

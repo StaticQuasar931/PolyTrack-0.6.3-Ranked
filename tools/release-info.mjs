@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 384,
+  "number": 385,
   "version": "0.6.3",
-  "revision": 326,
+  "revision": 327,
   "notes": [
-    "Customize your car in Garage with starter paint palettes and roof accessories.",
-    "Browse nine profile designs in the Style shop inside Racer Studio.",
-    "Clearer Token prices, more profile styles, and local car appearance saves."
+    "Readable car workshop controls on phones and smaller screens.",
+    "Collapse the workshop while viewing your car; native Save dialogs stay clear."
   ],
-  "preparedAt": "2026-11-14T21:03:30.958Z",
-  "committedAt": "2026-11-14T21:07:07.000Z"
+  "preparedAt": "2026-11-14T21:14:10.737Z",
+  "committedAt": "2026-11-14T21:15:06.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
