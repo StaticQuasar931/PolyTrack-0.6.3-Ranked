@@ -1,15 +1,13 @@
 const releaseInfo = {
-  "number": 371,
+  "number": 372,
   "version": "0.6.3",
-  "revision": 315,
+  "revision": 316,
   "notes": [
-    "Achievements and Racer Studio share a full-screen hub, with more goals and locked-item previews.",
-    "Save local friends and find friendly PB challenges using saved snapshot data.",
-    "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
-    "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
+    "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
+    "Keyboard focus returns to your selected item when you exit a preview."
   ],
-  "preparedAt": "2026-11-14T06:35:00.560Z",
-  "committedAt": "2026-11-14T06:55:14.000Z"
+  "preparedAt": "2026-11-14T07:14:50.163Z",
+  "committedAt": "2026-11-14T07:15:57.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
