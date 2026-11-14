@@ -2,14 +2,43 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 365,
+    "number": 368,
     "version": "0.6.3",
-    "revision": 309,
+    "revision": 312,
     "notes": [
-      "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
+      "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
     ]
   },
   "entries": [
+    {
+      "number": 367,
+      "title": "Complete driving-state deployment regression coverage",
+      "commit": "3446f00081658adcfa1489800d5aa91d81774449",
+      "committedAt": "2026-11-14T03:53:42.000Z",
+      "notes": [
+        "Improves checks used before publishing updates and preparing overnight snapshots."
+      ]
+    },
+    {
+      "number": 366,
+      "title": "Coalesce PB uploads, add random previews and prepare local capture",
+      "commit": "aafbb59833b3884ee94577cfe96a2a9326955c74",
+      "committedAt": "2026-11-14T03:46:23.000Z",
+      "notes": [
+        "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
+        "Adds random Extra Track previews with saved filters and right-click quick picking.",
+        "Fixes oversized snapshot progress files and local capture sign-in timing."
+      ]
+    },
+    {
+      "number": 365,
+      "title": "Reconcile cached boards with exact existing canonical replay proofs",
+      "commit": "fbe8ad03abc7aef2d2d95a4e573c03ab30c8d3c3",
+      "committedAt": "2026-11-12T09:33:22.000Z",
+      "notes": [
+        "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
+      ]
+    },
     {
       "number": 364,
       "title": "Fix event proof display and preserve legacy capture budgets",
@@ -175,33 +204,6 @@ const historyData = {
       "notes": [
         "Fixed snapshot refreshes discarding valid saved track boards.",
         "Reuses checked replay data without extra cloud reads."
-      ]
-    },
-    {
-      "number": 347,
-      "title": "Align snapshot recovery artifact safety checks",
-      "commit": "4a1a370c8f9b94bc4d4a79fd9560c588f08f56de",
-      "committedAt": "2026-11-09T02:05:05.000Z",
-      "notes": [
-        "Updated snapshot safety checks for encrypted verification progress."
-      ]
-    },
-    {
-      "number": 346,
-      "title": "Recognize terminated Linux fixture processes in snapshot tests",
-      "commit": "c95b3915bc989dc7d56ef0d0afd5bcd3dd674984",
-      "committedAt": "2026-11-09T01:59:42.000Z",
-      "notes": [
-        "Fixed Linux process checks blocking automatic snapshot updates."
-      ]
-    },
-    {
-      "number": 345,
-      "title": "Fix Linux snapshot preflight process test",
-      "commit": "e1476d6d93a731688e356f28d25c62afd8762cfb",
-      "committedAt": "2026-11-09T01:55:05.000Z",
-      "notes": [
-        "Fixed a cross-platform test blocking automatic snapshot updates."
       ]
     }
   ],

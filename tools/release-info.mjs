@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 365,
+  "number": 368,
   "version": "0.6.3",
-  "revision": 309,
+  "revision": 312,
   "notes": [
-    "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
+    "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
   ],
-  "preparedAt": "2026-11-12T09:29:36.191Z",
-  "committedAt": "2026-11-12T09:33:22.000Z"
+  "preparedAt": "2026-11-14T04:03:08.206Z",
+  "committedAt": "2026-11-14T04:03:21.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

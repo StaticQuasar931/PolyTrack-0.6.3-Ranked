@@ -350,3 +350,23 @@
 .sq-extra-featured>.sq-extra-pick-roulette{--spotlight-accent:#f3ae88}
 .sq-extra-header>.sq-extra-builder-action{border:2px solid #c7e69a;background:#315742;color:#f2ffe1;box-shadow:inset 0 2px #79a875;font-size:15px}
 .sq-extra-weekly-context{margin:4px 0;color:#b8dafa;font-size:12px;line-height:1.35}
+
+/* Random preview discovery uses the catalog's native square blue controls. */
+.sq-extra-random-actions{display:flex;flex-wrap:wrap;gap:8px;padding:8px clamp(16px,2.2vw,36px);border-bottom:1px solid #597dab}
+.sq-extra-random-actions button,.sq-extra-picker button{min-height:44px;padding:8px 14px;border:2px solid #8bd5ec;background:#254b76;color:#fff;font:inherit;cursor:pointer}
+.sq-extra-random-actions button:first-child,.sq-extra-picker button:first-of-type{border-color:#c7e69a;background:#315742}
+.sq-extra-random-actions button:focus-visible,.sq-extra-picker :is(button,select,summary):focus-visible{outline:2px solid #fff2a3;outline-offset:2px}
+.sq-extra-random-actions button:disabled,.sq-extra-picker button:disabled{opacity:.55;cursor:default}
+.sq-extra-picker-modal{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:16px;background:#040a18d9;box-sizing:border-box}
+.sq-extra-picker-modal[hidden]{display:none!important}
+.sq-extra-picker{box-sizing:border-box;width:min(100%,560px);max-height:100%;overflow:auto;overscroll-behavior:contain;padding:20px;border:2px solid #8bd5ec;background:linear-gradient(#263f68,#142349);box-shadow:0 6px 0 #0b1936}
+.sq-extra-picker h3{margin:0 0 12px;font-size:28px;font-weight:normal}
+.sq-extra-picker p{line-height:1.45}
+.sq-extra-picker .sq-extra-field{margin:12px 0}
+.sq-extra-picker select,.sq-extra-picker summary{min-height:44px}
+.sq-extra-picker summary{cursor:pointer;align-content:center;color:#bde8ff}
+.sq-extra-picker-note{color:#bed2e9;font-size:13px}
+.sq-extra-picker button{margin:4px 8px 0 0}
+@media(max-width:380px){.sq-extra-picker{padding:14px}.sq-extra-random-actions button{flex:1}}
+
+.sq-extra-random-actions{flex-shrink:0}

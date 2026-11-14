@@ -4,6 +4,8 @@ const { snapshotPopularity } = await import(new URL(`snapshot-popularity.mjs${ne
 const { reviewedSummary, effectiveReviewTags, hasTagEdits, hasLocalReview, reviewTagOptions, tagLabel, reviewExportRow, hasReviewExportData } =
   await import(new URL(`review.mjs${new URL(import.meta.url).search}`, import.meta.url));
 
+const { normalizePickerPrefs, readPickerPrefs, savePickerPrefs, eligibleRecords, chooseUniform } = await import(new URL(`random-picker.mjs${new URL(import.meta.url).search}`, import.meta.url));
+
 const SUBMIT_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSel-vg-VwzQuA2dRTEPoKiLIUgDvJ4bCvjMI8u4hqB33gkvrQ/viewform';
 const PAGE_SIZE = 12;
 // These exact legacy source captures were verified as Kodub 0.6.3; do not infer a version for unknown records.
@@ -106,7 +108,7 @@ function searchRelevance(record, query, tokens) {
   return 4;
 }
 
-export function mountExtraTracks({ document, root, entries = [], onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport, now = () => Date.now() } = {}) {
+export function mountExtraTracks({ document, root, entries = [], onSelect, onPlay, onSave, getPersonalBest, isLoaded, getLocalRating, getFeedback, onFeedback, onExportFeedback, onSubmit, onReport, now = () => Date.now() } = {}) {
   if (!document?.createElement || !root?.append) throw new TypeError('document and root are required');
   let destroyed = false;
   let opened = false;
@@ -138,6 +140,11 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   let cardMenuPositionFrame = null;
   let filtersExpanded = false;
   const state = { search: '', source: '', tags: [], difficulty: '', curated: false, favorites: false, completion: 'all', review: 'all', sort: 'recommended', direction: 'desc', reviewedQuality: '', reviewedDifficulty: '', reviewedVote: '' };
+  let pickerPool = [];
+  let pickerBusy = false;
+  let pickerGeneration = 0;
+  let pickerReturnFocus = null;
+  let pickerPrefs = readPickerPrefs(pickerStorage());
   const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const make = (tag, className, content) => {
     const node = document.createElement(tag);
@@ -291,6 +298,122 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   advancedControls.append(reviewedControls);
   controls.append(searchLabel, sortControls, advancedToggle, advancedControls);
   dialog.append(controls);
+  const randomActions = make('div', 'sq-extra-random-actions');
+  const randomButton = button('Choose random track', '', openPicker);
+  const quickPickButton = button('Quick pick', '', quickPick);
+  randomButton.setAttribute('aria-haspopup', 'dialog');
+  randomButton.addEventListener('contextmenu', event => { event.preventDefault(); quickPick(); });
+  quickPickButton.title = 'Open a random track preview with your last saved picker filters';
+  randomActions.append(randomButton, quickPickButton);
+  dialog.append(randomActions);
+  const pickerModal = make('div', 'sq-extra-picker-modal');
+  pickerModal.hidden = true;
+  pickerModal.setAttribute('role', 'dialog');
+  pickerModal.setAttribute('aria-modal', 'true');
+  pickerModal.setAttribute('aria-label', 'Choose random track');
+  const pickerPanel = make('section', 'sq-extra-picker');
+  pickerModal.append(pickerPanel);
+  overlay.append(pickerModal);
+  pickerPanel.append(make('h3', '', 'Choose random track'));
+  pickerPanel.append(make('p', '', 'One equal chance per matching track. Opens a preview, never starts driving.'));
+  const pickerFields = [];
+  function pickerField(key, caption, choices, host = pickerPanel) {
+    const field = selectField(caption, choices);
+    field.count.remove();
+    field.select.value = pickerPrefs[key];
+    field.select.addEventListener('change', () => {
+      pickerPrefs = normalizePickerPrefs({...pickerPrefs, [key]: field.select.value});
+      savePickerPrefs(pickerStorage(), pickerPrefs);
+      syncPicker();
+    });
+    host.append(field.label);
+    pickerFields.push([key, field.select]);
+    return field.select;
+  }
+  pickerField('pool', 'Track pool', [['catalog', 'Entire catalog'], ['filtered', 'Current catalog filters']]);
+  const pickerAdvanced = make('details', 'sq-extra-picker-advanced');
+  pickerAdvanced.append(make('summary', '', 'Advanced options'));
+  pickerPanel.append(pickerAdvanced);
+  const levels = [['', 'Any (includes unknown)'], ['unknown', 'Unknown only'], ...Array.from({length:10}, (_, i) => [String(i+1), String(i+1) + '/10'])];
+  pickerField('level', 'Catalog difficulty level', levels, pickerAdvanced);
+  pickerField('difficulty', 'Published difficulty (rounded)', levels, pickerAdvanced);
+  pickerField('rating', 'Published rating', [['', 'Any (includes unknown)'], ['unknown', 'Unknown only'], ...Array.from({length:10}, (_, i) => [String(i+1), 'At least ' + (i+1) + '/10'])], pickerAdvanced);
+  pickerField('localRating', 'My rating on this device', levels, pickerAdvanced);
+  const playedSelect = pickerField('played', 'Recorded finish (local / cached PB)', [['any', 'Any'], ['yes', 'Has a recorded finish'], ['no', 'No known recorded finish']], pickerAdvanced);
+  const importedSelect = pickerField('imported', 'Import known on this device', [['any', 'Any'], ['yes', 'Known imported'], ['no', 'Not known imported']], pickerAdvanced);
+  pickerPanel.append(make('p', 'sq-extra-picker-note', 'Published grades, catalog levels and your ratings are separate. Unknown scores are not zero. No known finish is not proof a track was never played. Import knowledge covers only this device.'));
+  const pickerStatus = make('p', 'sq-extra-picker-status');
+  pickerStatus.setAttribute('role', 'status');
+  pickerStatus.setAttribute('aria-live', 'polite');
+  const pickerPick = button('Open random preview', '', () => pickRandom(false));
+  const pickerBack = button('Back', '', () => closePicker());
+  const pickerReset = button('Reset picker options', '', () => {
+    pickerPrefs = normalizePickerPrefs(null);
+    savePickerPrefs(pickerStorage(), pickerPrefs);
+    for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
+    syncPicker();
+    pickerFields[0][1].focus();
+  });
+  pickerPanel.append(pickerStatus, pickerPick, pickerBack, pickerReset);
+
+  function pickerStorage() {
+    try { return document.defaultView?.localStorage; } catch { return null; }
+  }
+  function syncPicker() {
+    playedSelect.disabled = typeof getPersonalBest !== 'function';
+    importedSelect.disabled = typeof isLoaded !== 'function';
+    const matches = eligibleRecords(pickerPrefs.pool === 'filtered' ? pickerPool : cachedRecords || [], pickerPrefs);
+    pickerStatus.textContent = matches.length ? matches.length + (matches.length === 1 ? ' matching track' : ' matching tracks') : 'No tracks match. Try broader options or reset catalog filters.';
+    if (playedSelect.disabled || importedSelect.disabled) pickerStatus.textContent += ' Some device history is unavailable; history filters require known data.';
+    if (typeof onSelect !== 'function') pickerStatus.textContent += ' Track preview is unavailable: the parent must connect onSelect(entry).';
+    pickerPick.disabled = pickerBusy || !matches.length || typeof onSelect !== 'function';
+  }
+  function openPicker() {
+    if (destroyed || !opened || pickerBusy) return;
+    pickerPrefs = readPickerPrefs(pickerStorage(), pickerPrefs);
+    for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
+    clearCardMenu();
+    pickerReturnFocus = document.activeElement;
+    pickerModal.hidden = false;
+    syncPicker(); syncDialogModality();
+    pickerFields[0][1].focus();
+  }
+  function closePicker(restoreFocus = true) {
+    if (pickerModal.hidden) return;
+    pickerModal.hidden = true;
+    syncDialogModality();
+    if (restoreFocus) (pickerReturnFocus || randomButton).focus();
+    pickerReturnFocus = null;
+  }
+  function quickPick() { return pickRandom(true); }
+  async function pickRandom(quick) {
+    if (destroyed || !opened || pickerBusy) return;
+    if (quick) {
+      pickerPrefs = readPickerPrefs(pickerStorage(), pickerPrefs);
+      for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
+    }
+    const eligible = eligibleRecords(pickerPrefs.pool === 'filtered' ? pickerPool : cachedRecords || [], pickerPrefs);
+    if (!eligible.length || typeof onSelect !== 'function') { openPicker(); return; }
+    const chosen = chooseUniform(eligible);
+    const generation = ++pickerGeneration;
+    pickerBusy = true;
+    randomButton.disabled = quickPickButton.disabled = pickerPick.disabled = true;
+    pickerStatus.textContent = 'Opening track preview...';
+    try {
+      await onSelect(chosen.entry, {isCurrent: () => !destroyed && opened && generation === pickerGeneration});
+      if (!destroyed && opened && generation === pickerGeneration) { closePicker(false); close(); }
+    } catch {
+      if (!destroyed && opened && generation === pickerGeneration) {
+        pickerBusy = false;
+        if (pickerModal.hidden) openPicker();
+        pickerStatus.textContent = 'The preview could not open. Please try again.';
+      }
+    } finally {
+      pickerBusy = false;
+      randomButton.disabled = quickPickButton.disabled = false;
+      if (!destroyed && opened && !pickerModal.hidden) pickerPick.disabled = typeof onSelect !== 'function' || !eligibleRecords(pickerPrefs.pool === 'filtered' ? pickerPool : cachedRecords || [], pickerPrefs).length;
+    }
+  }
 
   const featured = make('section', 'sq-extra-featured');
   featured.setAttribute('aria-label', 'Four ways to discover a track');
@@ -1200,8 +1323,9 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     const queryTokens = [...searchWords(query)];
     if (!cachedRecords) cachedRecords = all.map(entry => {
       let best = null, loaded = false, rating = null, favorite = false;
-      try { best = personalBest(typeof getPersonalBest === 'function' ? getPersonalBest(entry) : null); } catch { /* A missing PB must not break the catalog. */ }
-      try { loaded = typeof isLoaded === 'function' && Boolean(isLoaded(entry)); } catch { /* Local imports are optional. */ }
+      let finishKnown = false, importKnown = false;
+      try { if (typeof getPersonalBest === 'function') { best = personalBest(getPersonalBest(entry)); finishKnown = true; } } catch { /* A missing PB must not break the catalog. */ }
+      try { if (typeof isLoaded === 'function') { const value = isLoaded(entry); importKnown = typeof value === 'boolean'; loaded = Boolean(value); } } catch { /* Local imports are optional. */ }
       try { rating = typeof getLocalRating === 'function' ? Number(getLocalRating(entry)) : null; } catch { /* Local ratings are optional. */ }
       try { favorite = getFeedback?.(entry)?.favorite === true; } catch { /* Device storage is optional. */ }
       const searchName = normalizeSearchText(text(entry.name, 'Untitled track'));
@@ -1211,7 +1335,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       // Cache alias expansion alongside device feedback, not on each keystroke.
       const searchable = searchValues.flatMap(value => [value, ...searchAliases(value)]).map(normalizeSearchText).join(' ');
       return {
-        entry, best, loaded, favorite, effectiveTags, edited: hasLocalReview(entry, feedback),
+        entry, best, loaded, favorite, effectiveTags, finishKnown, importKnown, level: difficulty(entry), published: reviewedSummary(entry), edited: hasLocalReview(entry, feedback),
         activity: hasReviewExportData(reviewExportRow(entry, {feedback, imported: loaded, personalBestMs: best})),
         rating: Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null,
         searchValues, searchName, searchNameWords: searchWords(searchName), searchable, searchableWords: searchWords(searchable)
@@ -1295,6 +1419,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
         .sort((a, b) => a.relevance - b.relevance || a.index - b.index)
         .map(({ record }) => record);
     }
+    pickerPool = records;
+    if (!pickerModal.hidden) syncPicker();
     const pages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
     page = Math.min(page, pages);
     count.textContent = `${records.length} of ${all.length} tracks`;
@@ -1427,6 +1553,8 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     contactGeneration++;
     if (buildersView) showTrackView(false, false);
     opened = false;
+    pickerGeneration++;
+    closePicker(false);
     stopFeaturedTimer();
     viewGeneration++;
     clearCardMenu();
@@ -1439,7 +1567,7 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
   }
 
   function syncDialogModality() {
-    const nestedModalOpen = !submissionModal.hidden || !reportModal.hidden;
+    const nestedModalOpen = !pickerModal.hidden || !submissionModal.hidden || !reportModal.hidden;
     dialog.inert = nestedModalOpen;
     dialog.setAttribute('aria-modal', String(!nestedModalOpen));
   }
@@ -1483,13 +1611,15 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
     if (!opened) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      if (expandedCardMenu) clearCardMenu(true);
+      if (!pickerModal.hidden) closePicker();
+      else if (expandedCardMenu) clearCardMenu(true);
       else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
       else if (buildersView) showTrackView();
       else close();
       return;
     }
+    if (!pickerModal.hidden && event.key !== 'Tab') return;
     if (event.key === 'Tab' && expandedCardMenu) {
       const menuFocusables = [...expandedCardMenu.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];
       const first = menuFocusables[0], last = menuFocusables.at(-1);
@@ -1539,14 +1669,16 @@ export function mountExtraTracks({ document, root, entries = [], onPlay, onSave,
       }
     }
     if (event.key !== 'Tab') return;
-    const focusRoot = !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : dialog;
-    const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href]')].filter(node => {
+    const focusRoot = !pickerModal.hidden ? pickerModal : !reportModal.hidden ? reportModal : !submissionModal.hidden ? submissionModal : dialog;
+    const focusable = [...focusRoot.querySelectorAll('button:not([disabled]),input,textarea,select,a[href],summary')].filter(node => {
       for (let current = node; current; current = current.parentElement || current.parent) {
         if (current.hidden) return false;
         if (current === focusRoot) return true;
       }
       return false;
     });
+    const visibleFocusable = focusable.filter(node => !node.disabled && !(node.getClientRects && !node.getClientRects().length));
+    focusable.splice(0, focusable.length, ...visibleFocusable);
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
