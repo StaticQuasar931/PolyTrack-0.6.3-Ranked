@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
+import {releasePlan,checkReleaseFiles,refreshReleasePointer,publishRelease,publishAssetTree,listReleaseTreeEntries,bindSnapshotPackage,sameReleasePointer,validReleasePointer,includeReleaseAsset,assertCdnAssetSizes,POINTER_URL,POINTER_MIRRORS,REPOSITORY,validPurgeState} from './publish-cdn-release.mjs';
 import {snapshotPayloadShard,parseSnapshotPayloadShards} from './snapshot-payload-shards.mjs';
 import {MAX_RELEASE_PROBES} from './publish-cdn-release.mjs';
 
@@ -152,6 +152,44 @@ test('compact tree keeps current snapshots and runtime while excluding old gener
 test('every CDN file, not only readiness probes, must be strictly below 20 MB',()=>{
   assert.doesNotThrow(()=>assertCdnAssetSizes([{path:'large.bin',bytes:19999999}]));
   for(const bytes of [20000000,20000001,NaN,-1])assert.throws(()=>assertCdnAssetSizes([{path:'large.bin',bytes}]),/under 20,000,000/);
+});
+
+test('partition Git listings never recurse through historical snapshot generations and preserve all requested probes',async()=>{
+  const f=fixture(),plan=await releasePlan({commit:sha,...f});
+  f.files.set('public-snapshots0/obsolete.bin',Buffer.from('old'));
+  f.files.set('public-snapshots900/obsolete.bin',Buffer.from('old'));
+  const blob=file=>'100644 blob '+'b'.repeat(40)+' '+f.files.get(file).length+'\t'+file+'\0';
+  for(const partition of ['snapshot','metadata','payload','runtime','all']){
+    const calls=[];
+    const git=args=>{
+      calls.push(args);assert.equal(args[0],'ls-tree');assert.ok(!args.some(arg=>arg.includes(':(')),'no unsupported pathspec magic');
+      if(!args.includes('-r')){
+        assert.deepEqual(args,['ls-tree','-l','-z',sha]);
+        return [...new Set([...f.files.keys()].map(file=>file.split('/')[0]))].map(root=>
+          f.files.has(root)?blob(root):'040000 tree '+'c'.repeat(40)+' -\t'+root+'\0').join('');
+      }
+      const separator=args.indexOf('--');assert.ok(separator>0,'recursive calls must be explicitly scoped');
+      const roots=args.slice(separator+1);assert.ok(roots.length>0);
+      assert.ok(!roots.includes('public-snapshots0')&&!roots.includes('public-snapshots900'));
+      if(['snapshot','metadata','payload'].includes(partition))assert.deepEqual(roots,['public-snapshots1','snapshot-current.json']);
+      else assert.equal(roots.includes('public-snapshots1'),partition==='all');
+      return [...f.files.keys()].filter(file=>roots.some(root=>file===root||file.startsWith(root+'/'))).map(blob).join('');
+    };
+    const paths=new Set(listReleaseTreeEntries(plan,git,partition).map(line=>line.split('\t')[1]));
+    for(const probe of plan.files){
+      const snapshot=probe.path.startsWith('public-snapshots1/');
+      if(partition==='all'||partition==='runtime'&&!snapshot||['snapshot','metadata','payload'].includes(partition)&&(snapshot||probe.path==='snapshot-current.json'))
+        assert.ok(paths.has(probe.path),partition+' retains '+probe.path);
+    }
+    assert.equal(calls.length,['runtime','all'].includes(partition)?2:1);
+    assert.ok(![...paths].some(file=>/^public-snapshots(?:0|900)\//.test(file)));
+  }
+});
+
+test('empty root listing cannot fall back to an unscoped recursive scan',()=>{
+  const calls=[];
+  assert.deepEqual(listReleaseTreeEntries({pointer:{commit:sha,snapshotDirectory:'public-snapshots1'}},args=>{calls.push(args);return '';},'runtime'),[]);
+  assert.equal(calls.length,1);
 });
 test('the full tar archive, including padding, must stay strictly below 49 MB before push',async()=>{
   const calls=[];

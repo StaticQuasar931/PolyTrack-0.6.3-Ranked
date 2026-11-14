@@ -214,12 +214,31 @@ export function bindSnapshotPackage(plan, snapshotCommit, payloadCommits) {
   return html;
 }
 
+export function listReleaseTreeEntries(plan, git, partition='all') {
+  const source = plan.pointer.sourceCommit || plan.pointer.commit, current = plan.pointer.snapshotDirectory;
+  if (!sha(source) || !/^public-snapshots[1-9]\d*$/.test(current) ||
+      !['all','runtime','snapshot','metadata','payload'].includes(partition)) throw Error('Invalid CDN tree source');
+  let roots;
+  if (['snapshot','metadata','payload'].includes(partition)) roots = [current,'snapshot-current.json'];
+  else {
+    // Enumerate only root names first. Recursing before excluding historical
+    // generations can overflow Git's bounded output buffer even for runtime.
+    roots = git(['ls-tree','-l','-z',source]).toString().split('\0').filter(Boolean).map(line => {
+      const match = /^(\d+) (blob|tree) ([a-f0-9]{40})\s+(\d+|-)\t([^/\0]+)$/.exec(line);
+      if (!match || (match[2]==='tree' ? match[4]!=='-' : match[4]==='-')) throw Error('Unsupported release Git root entry');
+      return match[5];
+    }).filter(root => !/^public-snapshots\d+$/.test(root) || partition==='all' && root===current);
+  }
+  if (!roots.length) return [];
+  return git(['ls-tree','-r','-l','-z',source,'--',...roots]).toString().split('\0').filter(Boolean);
+}
+
 export async function publishAssetTree(plan, git, {partition='all', entryHtml, shardIndex, shardCount=PAYLOAD_SHARD_COUNT}={}) {
   if (!['all','runtime','snapshot','metadata','payload'].includes(partition) ||
       ['metadata','payload'].includes(partition) && ![2,4].includes(shardCount) ||
       partition==='payload' && (![2,4].includes(shardCount) || !Number.isInteger(shardIndex) || shardIndex<0 || shardIndex>=shardCount)) throw Error('Invalid CDN partition');
   const source = plan.pointer.sourceCommit || plan.pointer.commit;
-  const entries = git(['ls-tree','-r','-l','-z',source]).toString().split('\0').filter(Boolean);
+  const entries = listReleaseTreeEntries(plan,git,partition);
   const requiredFiles = new Set(plan.files.map(file=>file.path));
   const snapshotPath = file => file.startsWith(plan.pointer.snapshotDirectory+'/');
   const payloadShard = file => snapshotPath(file) ? snapshotPayloadShard(file.slice(plan.pointer.snapshotDirectory.length+1),shardCount) : null;

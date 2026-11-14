@@ -1,15 +1,12 @@
 const releaseInfo = {
-  "number": 387,
+  "number": 388,
   "version": "0.6.3",
-  "revision": 329,
+  "revision": 330,
   "notes": [
-    "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
-    "Favorite-track previews and cleaner Racer Studio controls.",
-    "Rolling Hills Event RP now rewards both placement and pace, including past results.",
-    "Safer loading for your recent local replays."
+    "More reliable delivery of the latest update and snapshot files."
   ],
-  "preparedAt": "2026-11-14T22:32:11.181Z",
-  "committedAt": "2026-11-14T22:38:32.000Z"
+  "preparedAt": "2026-11-14T22:43:49.508Z",
+  "committedAt": "2026-11-14T22:46:45.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

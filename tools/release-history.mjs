@@ -2,17 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 387,
+    "number": 388,
     "version": "0.6.3",
-    "revision": 329,
+    "revision": 330,
     "notes": [
-      "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
-      "Favorite-track previews and cleaner Racer Studio controls.",
-      "Rolling Hills Event RP now rewards both placement and pace, including past results.",
-      "Safer loading for your recent local replays."
+      "More reliable delivery of the latest update and snapshot files."
     ]
   },
   "entries": [
+    {
+      "number": 387,
+      "title": "Style Coins rewards and pace-based Rolling Hills scoring",
+      "commit": "91c54039a2ac23adf5b05e5bd4a84d23f9fde895",
+      "committedAt": "2026-11-14T22:38:32.000Z",
+      "notes": [
+        "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
+        "Favorite-track previews and cleaner Racer Studio controls.",
+        "Rolling Hills Event RP now rewards both placement and pace, including past results.",
+        "Safer loading for your recent local replays."
+      ]
+    },
     {
       "number": 386,
       "title": "Garage safety and reliable local replay loading",
@@ -201,15 +210,6 @@ const historyData = {
         "Saves repeated personal-best improvements locally while driving, then uploads your best when you leave the track.",
         "Adds random Extra Track previews with saved filters and right-click quick picking.",
         "Fixes oversized snapshot progress files and local capture sign-in timing."
-      ]
-    },
-    {
-      "number": 365,
-      "title": "Reconcile cached boards with exact existing canonical replay proofs",
-      "commit": "fbe8ad03abc7aef2d2d95a4e573c03ab30c8d3c3",
-      "committedAt": "2026-11-12T09:33:22.000Z",
-      "notes": [
-        "Improves snapshot recovery when cached leaderboards are behind, without dropping confirmed saved results."
       ]
     }
   ],
