@@ -273,10 +273,14 @@ test('731 users keep complete display fields above 2 MB within the existing page
   assert.deepEqual((await buildOfflineOverall({...f, now: 99999, previousCalculation: result.calculation})).files, result.files);
 });
 
-test('existing capture bounds still reject Overall above 16 MB and projection companions above 2 MB', async () => {
+test('private Overall accepts above 16 MB but rejects above 32 MB and companions stay at 2 MB', async () => {
   const oversized = fixture();
   oversized.previousOverall.entries[0].carStyle = 'x'.repeat(16 * 1024 * 1024);
-  await assert.rejects(buildOfflineOverall(oversized), /overall\.json exceeds 16 MB artifact budget/);
+  const expanded = await buildOfflineOverall(oversized);
+  assert.ok(expanded.report.artifactBytes['overall.json'] > 16 * 1024 * 1024);
+  assert.ok(expanded.report.artifactBytes['overall.json'] <= 32 * 1024 * 1024);
+  oversized.previousOverall.entries[0].carStyle = 'x'.repeat(32 * 1024 * 1024);
+  await assert.rejects(buildOfflineOverall(oversized), /overall\.json exceeds 32 MB artifact budget/);
   // Dictionary encoding keeps the old 20,100-row fixture below 2 MiB.
   const companion = populationFixture(901);
   companion.tracks = Array.from({length: 100}, (_, i) => {

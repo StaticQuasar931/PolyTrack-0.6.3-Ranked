@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 375,
+    "number": 376,
     "version": "0.6.3",
-    "revision": 319,
+    "revision": 320,
     "notes": [
-      "More reliable snapshot coordination checks before data capture begins."
+      "Safer snapshot recovery without fetching saved runs again."
     ]
   },
   "entries": [
+    {
+      "number": 375,
+      "title": "Confirm one-time snapshot admission before data access",
+      "commit": "5dba2db0eb73555d3103b51a570e2d19d452a7ad",
+      "committedAt": "2026-11-14T09:12:52.000Z",
+      "notes": [
+        "More reliable snapshot coordination checks before data capture begins."
+      ]
+    },
     {
       "number": 374,
       "title": "Align snapshot preparation checks with capture-first mode",
@@ -193,16 +202,6 @@ const historyData = {
       "notes": [
         "Restored missing racers in the rankings, including the full Summer 1 field.",
         "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
-      ]
-    },
-    {
-      "number": 355,
-      "title": "Stream replay review within bounded track memory",
-      "commit": "200f9da37696b9be214c9477938deb769ca52aa8",
-      "committedAt": "2026-11-09T06:32:09.000Z",
-      "notes": [
-        "Replay verification can handle larger snapshots without keeping every replay in memory.",
-        "Existing replay, clone-review and safety checks remain in place."
       ]
     }
   ],

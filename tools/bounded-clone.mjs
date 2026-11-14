@@ -35,7 +35,8 @@ async function inventory(root,limits){
    }else{
     demand(stat.isFile(),'non-regular source');
     const size=Number(stat.size);
-    demand(Number.isSafeInteger(size)&&size>=0&&size<=limits.fileBytes&&files.length<limits.files&&bytes+size<=limits.bytes,'file or byte bound');
+    const fileLimit=logical==='overall.json'&&limits.fileBytes===HARD.fileBytes?32*1024*1024:limits.fileBytes;
+    demand(Number.isSafeInteger(size)&&size>=0&&size<=fileLimit&&files.length<limits.files&&bytes+size<=limits.bytes,'file or byte bound');
     bytes+=size;files.push({path:logical,bytes:size,version:version(stat),identity:identity(stat),links:Number(stat.nlink)});
    }
   }

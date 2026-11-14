@@ -15,6 +15,22 @@ async function fixture(t){
  return {root,source,destination};
 }
 const absent=file=>assert.rejects(fs.stat(file),error=>error.code==='ENOENT');
+test('only exact root overall.json accepts 32 MiB; ordinary limits and totals stay bounded',async t=>{
+ const f=await fixture(t),large=path.join(f.source,'overall.json');
+ const handle=await fs.open(large,'w');await handle.truncate(32*1024*1024);await handle.close();
+ await cloneBounded(f);assert.equal((await fs.stat(path.join(f.destination,'overall.json'))).size,32*1024*1024);
+ for(const [name,size]of [['overall.json',32*1024*1024+1],['other.json',16*1024*1024+1],['nested/overall.json',16*1024*1024+1],['Overall.json',16*1024*1024+1]]){
+  const target=path.join(f.source,name);if(name!=='overall.json')await fs.unlink(large).catch(e=>{if(e.code!=='ENOENT')throw e;});
+  const file=await fs.open(target,'w');await file.truncate(size);await file.close();
+  const destination=path.join(f.root,'reject-'+size+'-'+name.replaceAll('/','-'));
+  await assert.rejects(cloneBounded({...f,destination}),/bound/);await absent(destination);await fs.unlink(target);
+ }
+ const file=await fs.open(large,'w');await file.truncate(17*1024*1024);await file.close();
+ await assert.rejects(cloneBounded({...f,destination:path.join(f.root,'lower-file'),limits:{fileBytes:1024}}),/bound/);
+ await assert.rejects(cloneBounded({...f,destination:path.join(f.root,'lower-total'),limits:{bytes:16*1024*1024}}),/bound/);
+ await assert.rejects(cloneBounded({...f,destination:path.join(f.root,'raise-total'),limits:{bytes:256*1024*1024+1}}),/limit/);
+ await assert.rejects(cloneBounded({...f,destination:path.join(f.root,'raise-count'),limits:{files:100001}}),/limit/);
+});
 test('exact bytes, empty directories, independent files and source immutability',async t=>{
  const f=await fixture(t),original=await fs.readFile(path.join(f.source,'root.json')),report=await cloneBounded(f);
  assert.equal(report.files,2);assert.equal(report.directories,2);assert.equal(report.authority,false);

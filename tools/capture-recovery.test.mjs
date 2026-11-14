@@ -154,6 +154,38 @@ test('per-file aggregate path and decoded-envelope bounds reject before content 
  await assert.rejects(inventoryCaptureRecovery(directory,{filesystem:v.io}),/boundary/);assert.equal(v.metrics.opens,0);
 });
 
+test('root Overall 32 MiB exception roundtrips; overflow and non-root large files reject',async t=>{
+ const f=await fixture(t),large=path.join(f.directory,'overall.json');
+ const file=await fs.open(large,'w');await file.truncate(32*1024*1024);await file.close();
+ const report=await encryptCaptureRecovery(f),destination=path.join(f.root,'large-restored');
+ await restoreCaptureRecovery({inputFile:f.outputFile,destination,privateKey,expectedSha256:report.ciphertextSha256,sourceCommit});
+ assert.equal((await fs.stat(path.join(destination,'overall.json'))).size,32*1024*1024);
+ assert.equal(sha(await fs.readFile(path.join(destination,'overall.json'))),sha(await fs.readFile(large)));
+ for(const [name,size]of [['overall.json',32*1024*1024+1],['other.json',16*1024*1024+1],['nested/overall.json',16*1024*1024+1],['Overall.json',16*1024*1024+1]]){
+  if(name!=='overall.json')await fs.unlink(large).catch(e=>{if(e.code!=='ENOENT')throw e;});
+  const target=path.join(f.directory,name);await fs.mkdir(path.dirname(target),{recursive:true});
+  const handle=await fs.open(target,'w');await handle.truncate(size);await handle.close();
+  await assert.rejects(inventoryCaptureRecovery(f.directory),/safe boundary/);await fs.unlink(target);
+  const entry={path:name,bytes:size,sha256:'0'.repeat(64)};
+  const archive=legacyArchive(JSON.stringify({entries:[entry],bytes:size})+'\n'+JSON.stringify({path:name,data:''})+'\n');
+  const inputFile=path.join(f.root,'invalid.ptenc');await fs.writeFile(inputFile,archive);
+  const output=path.join(f.root,'invalid-restored');
+  await assert.rejects(restoreCaptureRecovery({inputFile,destination:output,privateKey,expectedSha256:sha(archive),sourceCommit}),/Unsafe recovered path/);
+  await assert.rejects(fs.stat(output),e=>e.code==='ENOENT');
+ }
+});
+
+test('large Overall reads alone without raising ordinary read-ahead or hanging',async()=>{
+ const directory=path.join(os.tmpdir(),'virtual-large-overall'),v=virtualFiles(directory,3,{size:i=>i===0?32*1024*1024:1});
+ const translate=file=>path.basename(file)==='overall.json'?path.join(directory,v.names[0]):file;
+ const stat=v.io.lstat,open=v.io.open;
+ v.io.readdir=async()=>['overall.json',...v.names.slice(1)];
+ v.io.lstat=file=>stat(translate(file));v.io.open=file=>open(translate(file));
+ const result=await inventoryCaptureRecovery(directory,{filesystem:v.io});
+ assert.equal(result.entries.length,3);assert.equal(v.metrics.maxBytes,32*1024*1024);
+ assert.equal(v.metrics.active,0);assert.equal(v.metrics.opens,3);
+});
+
 test('read-ahead limits file buffers to 16 MiB and drains readers after failure',async()=>{
  const directory=path.join(os.tmpdir(),'virtual-recovery');
  const v=virtualFiles(directory,8,{size:i=>i%2===0?16*1024*1024:1});

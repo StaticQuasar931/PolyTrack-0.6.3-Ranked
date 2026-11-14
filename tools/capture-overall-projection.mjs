@@ -290,7 +290,7 @@ export async function applyCapturedOverallProjection({directory, capture}) {
     throw Error('Invalid Overall capture application');
   const serialized = new Map([...capture.files].map(([name, value]) => [name, JSON.stringify(value) + '\n']));
   // Overall is paged by the packager; the compact companion files are not.
-  if ([...serialized].some(([name,text]) => Buffer.byteLength(text) > (name==='overall.json'?16:2) * 1024 * 1024)) throw Error('Overall public file too large');
+  if ([...serialized].some(([name,text]) => Buffer.byteLength(text) > (name==='overall.json'?32:2) * 1024 * 1024)) throw Error('Overall public file too large');
   const manifestPath = path.join(directory, 'manifest.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
   for (const [name, bytes] of serialized) await fs.writeFile(path.join(directory, name), bytes);

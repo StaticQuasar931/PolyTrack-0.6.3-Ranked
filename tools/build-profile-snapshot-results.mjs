@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {publicDisplayName} from './public-display-name.mjs';
 import {fileURLToPath} from 'node:url';
+import {encodeRacerDirectory} from './racer-directory-codec.mjs';
 
 const ID=/^[a-f0-9]{64}$/;
 const fields=['trackId','rank','position','fieldSize','weight','competition','timeMs','frames','raceTimeFrames','timingVersion','pbAt','createdAt','updatedAt','runVerified','verified','verifiedState','integrityVerified','uploadId','replayHash'];
@@ -121,7 +122,7 @@ export async function buildProfileSnapshotResults(directory){
     })};
     await fs.writeFile(totalsPath,JSON.stringify(enriched)+'\n');
   }
-  const racerDirectory=JSON.stringify({updatedAt:Math.max(0,...[...identities.values()].map(row=>row.updatedAt)),entries:Object.fromEntries(identities)})+'\n';
+  const racerDirectory=JSON.stringify(await encodeRacerDirectory({updatedAt:Math.max(0,...[...identities.values()].map(row=>row.updatedAt)),entries:Object.fromEntries(identities)}))+'\n';
   if(Buffer.byteLength(racerDirectory)>2*1024*1024)throw Error('Snapshot racer directory exceeds client limit');
   await fs.writeFile(path.join(directory,'racer-directory.json'),racerDirectory);
   return {profiles:racers.size,results:resultCount,boards};

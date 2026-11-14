@@ -8,6 +8,7 @@ import {createHash,createPublicKey,createPrivateKey,publicEncrypt,privateDecrypt
 import {isDeepStrictEqual} from 'node:util';
 
 const MAGIC=Buffer.from('PTREC01\n'),MAX_BYTES=256*1024*1024,MAX_FILES=100000,MAX_FILE=16*1024*1024;
+const fileLimit=logical=>logical==='overall.json'?32*1024*1024:MAX_FILE;
 const MAX_DECODED=Math.ceil(MAX_BYTES*1.5),READ_AHEAD=4,READ_BYTES=MAX_FILE,PACK_BYTES=64*1024,BASE64_BYTES=48*1024;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const safe=relative=>typeof relative==='string'&&relative.length<512&&/^[A-Za-z0-9_./-]+$/.test(relative)&&
@@ -46,12 +47,12 @@ async function readEntry(root,entry,io){
  }finally{await handle.close();}
 }
 
-// Retain deterministic inventory order, at most four reads and 16 MiB of file buffers.
+// Ordinary read-ahead stays at 16 MiB; the sole root Overall exception reads alone.
 async function* readEntries(root,entries,io=fs){
  const pending=[];let next=0,bytes=0;
  try{
   while(next<entries.length||pending.length){
-   while(next<entries.length&&pending.length<READ_AHEAD&&bytes+entries[next].bytes<=READ_BYTES){
+   while(next<entries.length&&pending.length<READ_AHEAD&&(bytes+entries[next].bytes<=READ_BYTES||pending.length===0)){
     const entry=entries[next++];bytes+=entry.bytes;
     const result=readEntry(root,entry,io).then(data=>({data}),error=>({error}));
     pending.push({entry,result});
@@ -73,7 +74,7 @@ export async function inventoryCaptureRecovery(directory,{filesystem:io=fs}={}){
    if(info.isSymbolicLink())throw Error('Recovery refuses links');
    if(info.isDirectory())await visit(file,logical);
    else{
-    if(!info.isFile()||!safe(logical)||info.size>MAX_FILE||entries.length>=MAX_FILES||(bytes+=info.size)>MAX_BYTES)throw Error('Recovery source exceeds safe boundary');
+    if(!info.isFile()||!safe(logical)||info.size>fileLimit(logical)||entries.length>=MAX_FILES||(bytes+=info.size)>MAX_BYTES)throw Error('Recovery source exceeds safe boundary');
     entries.push({path:logical,bytes:info.size,sha256:'0'.repeat(64)});
    }
   }
@@ -164,7 +165,7 @@ export async function restoreCaptureRecovery({inputFile,destination,privateKey,e
  for(const line of lines){
   if(count>=manifest.entries.length)throw Error('Invalid recovery inventory');
   const entry=manifest.entries[count++],record=JSON.parse(line.toString('utf8'));
-  if(!entry||!safe(entry.path)||names.has(entry.path)||record?.path!==entry.path||!Number.isSafeInteger(entry.bytes)||entry.bytes<0||entry.bytes>MAX_FILE)throw Error('Unsafe recovered path');
+  if(!entry||!safe(entry.path)||names.has(entry.path)||record?.path!==entry.path||!Number.isSafeInteger(entry.bytes)||entry.bytes<0||entry.bytes>fileLimit(entry.path))throw Error('Unsafe recovered path');
   if(typeof record.data!=='string')throw Error('Invalid recovery content');
   const data=Buffer.from(record.data,'base64');if(data.toString('base64')!==record.data||data.length!==entry.bytes||hash(data)!==entry.sha256||(total+=data.length)>MAX_BYTES)throw Error('Recovered content mismatch');
   names.add(entry.path);

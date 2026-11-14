@@ -10,7 +10,7 @@ import {assertLocalCaptureOwner} from './local-capture-worker.mjs';
 import {OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 const source='a'.repeat(40),receipt={ready:true,targetDate:N.date,execution:'local',oneOffAuthority:'firestore',testedCommit:source,captureOnly:true,claimTag:N.claimTag,
   replacementAuthorization:{id:N.authorizationId,requestedBy:'user',publicationMode:'capture-first',automaticRetry:false},
-  priorAccounting:{directDocumentReadReservations:37,workerRequests:88},
+  priorAccounting:{directDocumentReadReservations:N.priorDirectReservations,workerRequests:N.priorWorkerRequests},
   scheduledCaptureAt:new Date(N.start).toISOString(),replayDocumentLimit:1000};
 function fixture(patch={}){
   const calls=[];let guarded=false;
@@ -319,6 +319,7 @@ test('capture-first postvalidation rejects any native dispatch/new proofs or mis
 });
 
 test('replacement namespace/accounting validation reads immutable failed attempt and rejects resets/changed evidence',async t=>{
+ const legacyPlan={...N,frozenContinuation:false,privateDirectorySuffix:'2026-11-14/admission-repair-local',priorDirectReservations:37,priorWorkerRequests:88};
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'replacement-admission-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const priorDir=path.join(root,'2026-11-14','replacement-local'),logDir=path.join(root,'2026-11-13','overnight-local'),directory=path.join(root,'2026-11-14','admission-repair-local');
  await fs.mkdir(priorDir,{recursive:true});await fs.mkdir(logDir,{recursive:true});await fs.mkdir(directory,{recursive:true});
@@ -328,14 +329,14 @@ test('replacement namespace/accounting validation reads immutable failed attempt
  await fs.writeFile(failure,failureBytes);await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:operations})+'\n');
  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
  const r={...receipt,replacementDirectory:directory.replace(/\\/g,'/'),priorFailure:{file:failure,sha256:hash(failureBytes)},priorAccounting:{...receipt.priorAccounting,evidence:{file:log,sha256:hash(await fs.readFile(log))}}};
- assert.deepEqual(await validateReplacementContext(r,{directory}),{priorDirectReservations:37,priorWorkerRequests:88});
+ assert.deepEqual(await validateReplacementContext(r,{directory,plan:legacyPlan}),{priorDirectReservations:37,priorWorkerRequests:88});
  assert.equal(await fs.readFile(failure,'utf8'),failureBytes);
- await fs.writeFile(path.join(priorDir,'capture.log'),'possible capture');await assert.rejects(validateReplacementContext(r,{directory}),/may have acquired/);await fs.unlink(path.join(priorDir,'capture.log'));
- await assert.rejects(validateReplacementContext(r,{directory:priorDir}),/distinct private/);
- await assert.rejects(validateReplacementContext({...r,replacementDirectory:priorDir},{directory}),/distinct private/);
- await fs.appendFile(log,'changed');await assert.rejects(validateReplacementContext(r,{directory}),/log changed/);
+ await fs.writeFile(path.join(priorDir,'capture.log'),'possible capture');await assert.rejects(validateReplacementContext(r,{directory,plan:legacyPlan}),/may have acquired/);await fs.unlink(path.join(priorDir,'capture.log'));
+ await assert.rejects(validateReplacementContext(r,{directory:priorDir,plan:legacyPlan}),/distinct private/);
+ await assert.rejects(validateReplacementContext({...r,replacementDirectory:priorDir},{directory,plan:legacyPlan}),/distinct private/);
+ await fs.appendFile(log,'changed');await assert.rejects(validateReplacementContext(r,{directory,plan:legacyPlan}),/log changed/);
  await fs.writeFile(log,JSON.stringify({fullSnapshotOperations:{...operations,directDocumentReadReservations:0}})+'\n');
- r.priorAccounting.evidence.sha256=hash(await fs.readFile(log));await assert.rejects(validateReplacementContext(r,{directory}),/carry exact/);
+ r.priorAccounting.evidence.sha256=hash(await fs.readFile(log));await assert.rejects(validateReplacementContext(r,{directory,plan:legacyPlan}),/carry exact/);
 });
 
 import {confirmClaimedLocalAdmission} from './local-overnight-capture.mjs';

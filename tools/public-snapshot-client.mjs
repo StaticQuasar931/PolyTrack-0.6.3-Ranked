@@ -1,4 +1,5 @@
 import {snapshotPublicationTime} from './snapshot-publication.mjs';
+import {expandRacerDirectory} from './racer-directory-codec.mjs';
 import {documentSnapshotPayloadShards,parseSnapshotPayloadShards,snapshotPayloadBase} from './snapshot-payload-shards.mjs';
 export {readSnapshotPublicationMeta} from './snapshot-publication.mjs';
 import {preparePublicRecordingPlayback} from './public-replay-playback.mjs';
@@ -306,6 +307,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         }
         if(body!==null&&body.length>2*1024*1024)throw Error('Public backup exceeds size limit');
         let value=materialized||JSON.parse(body);
+        if(kind==='racer-directory')value=await expandRacerDirectory(value);
         if(!value||typeof value!=='object'||Array.isArray(value)||(!['event-replay','event-playback','snapshot-meta','manifest','track-statistics','snapshot-paging'].includes(kind)&&!Number.isFinite(value.updatedAt)))throw Error('Invalid public backup');
         if(kind==='event-playback'){
           const board=await readAtGeneration('event',id,'',requestedGeneration);
@@ -348,7 +350,7 @@ export function createPublicSnapshotReader({baseUrl,fetchImpl=fetch,now=Date.now
         if(requestedGeneration!==generation)return null;
         if(kind==='manifest')manifestValue=result;
         else{
-          saved.delete(path);saved.set(path,{value:result,checkedAt:now(),bytes:(body===null?JSON.stringify(value).length:body.length)*2});
+          saved.delete(path);saved.set(path,{value:result,checkedAt:now(),bytes:(body===null||kind==='racer-directory'?JSON.stringify(value).length:body.length)*2});
           let bytes=0;for(const entry of saved.values())bytes+=entry.bytes;
           while(saved.size>128||bytes>8*1024*1024){const oldest=saved.keys().next().value;bytes-=saved.get(oldest).bytes;saved.delete(oldest);}
         }

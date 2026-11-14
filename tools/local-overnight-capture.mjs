@@ -1,3 +1,4 @@
+import {validateFrozenCaptureContext} from './frozen-capture-context.mjs';
 import {fullSnapshotPolicy} from './full-snapshot-policy.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -175,7 +176,9 @@ export async function validateLocalEvidence(receipt){
 
 
 /** Offline receipt/namespace/accounting check before any admission or credential access. */
-export async function validateReplacementContext(receipt,{directory}={}){
+export async function validateReplacementContext(receipt,{directory,plan=N}={}){
+  if(plan.frozenContinuation)return validateFrozenCaptureContext(receipt,{directory});
+  const N=plan;
   const normalized=value=>path.resolve(value).replace(/\\/g,'/');
   if(!path.isAbsolute(directory||'')||!normalized(directory).endsWith('/'+N.privateDirectorySuffix)||
     receipt.replacementDirectory!==normalized(directory))throw Error('Replacement requires its distinct private guard directory');
@@ -183,7 +186,7 @@ export async function validateReplacementContext(receipt,{directory}={}){
   if(!prior||!path.isAbsolute(prior.file||'')||!normalized(prior.file).endsWith('/2026-11-14/replacement-local/failed.json')||
     !usage||!path.isAbsolute(usage.file||'')||!normalized(usage.file).endsWith('/2026-11-13/overnight-local/capture.log')||
     !/^[a-f0-9]{64}$/.test(usage.sha256||''))throw Error('Exact failed-attempt receipt and accounting log required');
-  await validatePriorLocalCapture(receipt);
+  await validatePriorLocalCapture(receipt,{plan:N});
   const failure=JSON.parse(await fs.readFile(prior.file,'utf8'));
   if(failure.phase!=='admission-revalidation')throw Error('Repair requires a pre-capture admission failure');
   for(const name of ['capture-admitted.json','capture.log','capture-result.json','native-complete.receipt.json']){

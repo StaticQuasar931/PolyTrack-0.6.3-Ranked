@@ -11,12 +11,12 @@ export const ORIGINAL_OVERNIGHT_SNAPSHOT = Object.freeze({
 
 // One new human-authorized replacement, not a retry of the immutable failed attempt.
 export const OVERNIGHT_SNAPSHOT = Object.freeze({...ORIGINAL_OVERNIGHT_SNAPSHOT,
-  authorizationId:'nov14-pre-capture-admission-repair',publicationMode:'capture-first',
-  privateDirectorySuffix:'2026-11-14/admission-repair-local',
-  priorDirectReservations:37,priorWorkerRequests:88,
-  claimTag:'polytrack-oneoff-2026-11-14-admission-repair',
-  priorClaimTag:'polytrack-oneoff-2026-11-14-replacement-1',priorSource:'6bb2820834936592a1124171224d4b220498a182',priorOutcome:'failed',
-  start:Date.parse('2026-11-14T08:15:00Z'),latestCaptureStart:Date.parse('2026-11-14T10:00:00Z')
+  frozenContinuation:true,authorizationId:'nov14-frozen-capture-continuation',publicationMode:'capture-first',
+  privateDirectorySuffix:'2026-11-14/frozen-capture-continuation',
+  priorDirectReservations:26338,priorWorkerRequests:89,
+  claimTag:'polytrack-oneoff-2026-11-14-frozen-continuation',
+  priorClaimTag:'polytrack-oneoff-2026-11-14-admission-repair',priorSource:'5dba2db0eb73555d3103b51a570e2d19d452a7ad',priorOutcome:'failed',
+  start:Date.parse('2026-11-14T08:15:00Z'),latestCaptureStart:Date.parse('2026-11-14T11:00:00Z')
 });
 
 export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,configuredMode='firestore',previousCaptureStartedAt=null,manualOvernight=false}={}){

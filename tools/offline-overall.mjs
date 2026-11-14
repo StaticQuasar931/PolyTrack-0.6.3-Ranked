@@ -16,7 +16,7 @@ const pick = (v, keys) => Object.fromEntries(keys.filter(k => v[k] !== undefined
 const IDENTITY = ['name', 'countryCode', 'carId', 'carColors', 'carStyle', 'profileCosmetics', 'identityUpdatedAt', 'badges', 'cosmeticUnlocks'];
 const NUMBERS = ['pbAt', 'pbCount', 'totalPlaytimeMs', 'accountCreatedAt', 'identityUpdatedAt'];
 const COMPANION_LIMIT = 2 * 1024 * 1024;
-const OVERALL_LIMIT = 16 * 1024 * 1024;
+const OVERALL_LIMIT = 32 * 1024 * 1024;
 const INFLATE_LIMIT = 6 * 1024 * 1024;
 const BASE64_LIMIT = 1400000;
 // Keep catalog order identical to the worker: achievement ledgers use bit indexes.

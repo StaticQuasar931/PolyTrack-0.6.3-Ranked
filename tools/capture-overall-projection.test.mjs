@@ -149,6 +149,25 @@ test('stage application preserves fresh tracks, archives and replay lanes and re
   await assert.rejects(fs.stat(path.join(directory,'projection-source.json')),{code:'ENOENT'});
 });
 
+test('exact 32 MiB private Overall applies, overflow and oversized companions reject before writes',async t=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'overall-boundary-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const manifest=JSON.stringify({schemaVersion:1,tracks:{},events:{}});await fs.writeFile(path.join(directory,'manifest.json'),manifest);
+  const f=await fixture(),capture=await captureOverallProjection({fetchImpl:f.fetchImpl});
+  const value={...capture.files.get('overall.json'),boundaryPadding:''};
+  value.boundaryPadding='x'.repeat(32*1024*1024-Buffer.byteLength(JSON.stringify(value)+'\n'));
+  capture.files.set('overall.json',value);await applyCapturedOverallProjection({directory,capture});
+  assert.equal((await fs.stat(path.join(directory,'overall.json'))).size,32*1024*1024);
+  value.boundaryPadding+='x';
+  await assert.rejects(applyCapturedOverallProjection({directory,capture}),/too large/);
+  assert.equal((await fs.stat(path.join(directory,'overall.json'))).size,32*1024*1024);
+  value.boundaryPadding='';
+  for(const name of ['overall-results.json','projection-source.json']){
+    const original=capture.files.get(name);capture.files.set(name,{padding:'x'.repeat(2*1024*1024)});
+    await assert.rejects(applyCapturedOverallProjection({directory,capture}),/too large/);
+    capture.files.set(name,original);
+  }
+});
+
 test('Overall above 2 MiB applies as a private monolith and publishes complete bounded pages',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-large-pages-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const directory=path.join(root,'stage');await fs.mkdir(directory);
@@ -184,9 +203,9 @@ test('Overall above 2 MiB applies as a private monolith and publishes complete b
   for(const record of Object.values(index.files))assert.ok(record.decodedBytes<=MAX_DECODED_BYTES);
 });
 
-test('Overall above 16 MiB or either companion above 2 MiB rejects before any stage write',async t=>{
+test('Overall above 32 MiB or either companion above 2 MiB rejects before any stage write',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'overall-size-reject-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  for(const [name,limit] of [['overall.json',16],['overall-results.json',2],['projection-source.json',2]]) {
+  for(const [name,limit] of [['overall.json',32],['overall-results.json',2],['projection-source.json',2]]) {
     const directory=path.join(root,name);await fs.mkdir(directory);
     const originals={'manifest.json':JSON.stringify({schemaVersion:1,tracks:{},events:{}}),
       'overall.json':'OLD_OVERALL','overall-results.json':'OLD_RESULTS','projection-source.json':'OLD_PROJECTION','untouched.json':'UNRELATED'};
