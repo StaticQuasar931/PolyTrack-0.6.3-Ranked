@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {OWNER_CHALLENGE_POLICY_VERSION} from '../src/server-achievements.js';
 import worker, {scheduledIntervalDue} from '../src/index.js';
 import {VERIFICATION_BOOTSTRAP_ID} from '../src/verification.js';
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
@@ -24,7 +25,7 @@ async function checkDailyBaseline(jitterMs, mode) {
     else if (path === jobs + 'release_migration') data = {kind:'migration', completedAt:1, migrationVersion:999};
     else if (path === '/0.6.2_s1_leaderboards_track/' + PERMANENT_ROLLING_HILLS.trackId)
       data = {entries:[], schemaVersion:999};
-    else if (path === '/0.6.2_s1_release_meta/current') data = {dirty:false,
+    else if (path === '/0.6.2_s1_release_meta/current') data = {dirty:false, ownerChallengePolicyVersion:OWNER_CHALLENGE_POLICY_VERSION,
       plannerPublicationVersion:999, plannerBundleVersion:999, cosmeticEntitlementVersion:999,
       averagePlacementVersion:999, derivedMetricsVersion:999, builtRevision:1,
       lastOverallBuildAt:Date.now(),

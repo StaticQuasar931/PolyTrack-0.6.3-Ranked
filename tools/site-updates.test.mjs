@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 
 function historyBrowserBundle() {
   const source = readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8');
-  return 'const {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
+  return readFileSync(new URL('./site-update-dismissal.mjs',import.meta.url),'utf8').replace(/\bexport /g,'')+'\n'+'const {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory}=(()=>{'+source.slice(0,source.indexOf('/** Offline builder.')).replace(/\bexport /g,'')+';return {RELEASE_HISTORY,countKnownUpdates,findAcknowledgedRelease,missedReleaseUpdates,createReleaseHistory,bindReleaseHistory,renderReleaseHistory};})();\n';
 }
 
 class FakeElement {
@@ -946,9 +946,9 @@ test('old copy storage is optional, bounded and limited to pathname without quer
   }
   const document=new FakeDocument();document.location={href:'https://copy.example/path/?private=secret#player'};
   const operations=[],storage={getItem(key){operations.push(['get',key]);return null;},setItem(key,value){operations.push(['set',key]);assert.ok(value.length<256);assert.deepEqual(Object.keys(JSON.parse(value)),['revision','count','firstSeenAt']);}};
-  const h=oldCopyHarness(storage,{document});await h.handle.check();assert.deepEqual(operations,[['get',oldCopyKey],['set',oldCopyKey]]);h.handle.dispose();
+  const h=oldCopyHarness(storage,{document});await h.handle.check();assert.deepEqual(operations.filter(operation=>operation[1]!=='polytrack-update-reminders-v1'),[['get',oldCopyKey],['set',oldCopyKey]]);h.handle.dispose();
   document.location={href:'https://copy.example/'+ 'x'.repeat(257)};
-  const long=oldCopyHarness(storage,{document,revision:42});await long.handle.check();assert.equal(operations.length,2);long.handle.dispose();
+  const long=oldCopyHarness(storage,{document,revision:42});await long.handle.check();assert.equal(operations.filter(operation=>operation[1]!=='polytrack-update-reminders-v1').length,2);long.handle.dispose();
   for(const raw of ['bad','x'.repeat(257),JSON.stringify({revision:43,count:500,firstSeenAt:1000}),JSON.stringify({revision:43,count:2,firstSeenAt:2000})]){
     const bad=memoryStorage();bad.setItem(oldCopyKey,raw);const h=oldCopyHarness(bad);await h.handle.check();assert.equal(JSON.parse(bad.getItem(oldCopyKey)).count,1);h.handle.dispose();
   }
@@ -1016,7 +1016,7 @@ test('installed revision notice uses native keyboard focus, waits for safe menus
         const url = new URL(route.request().url());
         if (url.hostname !== 'notice.test') { external++; return route.abort(); }
         return route.fulfill({contentType: url.pathname.endsWith('.mjs') ? 'text/javascript' : 'text/html',
-          body: url.pathname.endsWith('release-history.mjs') ? readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8') : url.pathname.endsWith('.mjs') ? source : '<button id="play">Play</button><div id="menu" hidden>Settings</div>'});
+          body: url.pathname.endsWith('site-update-dismissal.mjs') ? readFileSync(new URL('./site-update-dismissal.mjs',import.meta.url),'utf8') : url.pathname.endsWith('release-history.mjs') ? readFileSync(new URL('./release-history.mjs',import.meta.url),'utf8') : url.pathname.endsWith('.mjs') ? source : '<button id="play">Play</button><div id="menu" hidden>Settings</div>'});
       });
       const install = async () => page.evaluate(async () => {
         window.module = await import('/site-updates.mjs'); window.ready = false; window.racing = false;
@@ -1249,4 +1249,12 @@ test('explicit menu checks bypass background cooldown while sharing in-flight wo
   h.setResponse({revision:44});await Promise.all([h.handle.check({force:true}),h.handle.check({force:true})]);
   assert.equal(h.calls,2);assert.ok(h.document.button);
   await h.handle.check();assert.equal(h.calls,2);h.handle.dispose();
+});
+
+
+test('permanent reminder preference never suppresses minimum-revision compatibility without a forced Help check',async()=>{
+  const document=new FakeDocument();
+  document.defaultView=Object.assign(new EventTarget(),{localStorage:{getItem:key=>key==='polytrack-update-reminders-v1'?JSON.stringify({v:1,d:3,wait:0,off:true}):null,setItem(){}}});
+  const h=harness({document,response:{revision:44,minimumSupportedRevision:44}});await h.handle.check();
+  assert.equal(h.handle.getCompatibility().onlineAllowed,false);assert.ok(document.dialog);h.handle.dispose();
 });

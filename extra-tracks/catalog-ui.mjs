@@ -115,7 +115,6 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   let buildersView = false;
   let contactGeneration = 0;
   let contactApi = null;
-  const hiddenTrackNodes = new Map();
   let activeSpotlight = 'daily';
   let spotlightExpanded = false;
   let featuredTimer = null;
@@ -187,6 +186,15 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       event.preventDefault(); event.stopPropagation?.(); headerMore.open = false; headerMoreSummary.focus();
     }
   });
+  const contribute = make('details', 'sq-extra-contribute');
+  const contributeSummary = make('summary', '', 'Contribute');
+  const contributeActions = make('div', 'sq-extra-contribute-actions');
+  contribute.append(contributeSummary, contributeActions);
+  contribute.addEventListener('toggle', () => {
+    if (contribute.open) headerMore.open = false;
+    else if (buildersView || builderProgram.open) showTrackView(false);
+  });
+  headerMore.addEventListener('toggle', () => { if (headerMore.open) contribute.open = false; });
   header.append(titleGroup);
   if (typeof onExportFeedback === 'function') {
     let exportPending = false;
@@ -223,14 +231,20 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     submitName.focus();
   });
   closeButton.remove();
-  const buildersButton = button('Builder program', 'sq-extra-builder-action', () => { headerMore.open = false; return buildersView ? showTrackView() : openBuilderContact(); });
+  const builderProgram = make('details', 'sq-extra-builder-submenu');
+  const buildersButton = make('summary', 'sq-extra-builder-action', 'Builder program');
   buildersButton.setAttribute('aria-expanded', 'false');
-  headerMoreActions.append(buildersButton);
-  header.append(submit, headerMore, closeButton);
+  buildersButton.addEventListener('click', async event => {
+    event.preventDefault();
+    if (builderProgram.open) showTrackView();
+    else { builderProgram.open = true; buildersButton.setAttribute('aria-expanded', 'true'); await openBuilderContact(); }
+  });
   const contactHost = make('section', 'sq-extra-contact-host');
   contactHost.id = 'sq-extra-contact-' + mountNumber; contactHost.hidden = true;
   buildersButton.setAttribute('aria-controls', contactHost.id);
-  dialog.append(contactHost);
+  builderProgram.append(buildersButton, contactHost);
+  contributeActions.append(make('p', 'sq-extra-contribute-intro', 'Share a track or discuss creator credits.'), submit, builderProgram);
+  header.append(contribute, headerMore, closeButton);
   const gradingHelp = make('details', 'sq-extra-grading-help');
   gradingHelp.append(make('summary', '', 'About ratings & difficulty'));
   gradingHelp.append(make('p', '', 'Rating measures track quality; Difficulty measures challenge, both out of 10. Published grades stay separate from your ratings saved on this device. Thanks to Window Cleaner for help with track gradings.'));
@@ -309,13 +323,14 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   controls.append(searchLabel, sortControls, advancedToggle, advancedControls);
   dialog.append(controls);
   const randomActions = make('div', 'sq-extra-random-actions');
-  const randomButton = button('Choose random track', '', openPicker);
+  const randomButton = button('Random', '', openPicker);
+  randomButton.setAttribute('aria-label', 'Choose random track');
   const quickPickButton = button('Quick pick', '', quickPick);
   randomButton.setAttribute('aria-haspopup', 'dialog');
   randomButton.addEventListener('contextmenu', event => { event.preventDefault(); quickPick(); });
   quickPickButton.title = 'Open a random track preview with your last saved picker filters';
   randomActions.append(randomButton, quickPickButton);
-  dialog.append(randomActions);
+
   const pickerModal = make('div', 'sq-extra-picker-modal');
   pickerModal.hidden = true;
   pickerModal.setAttribute('role', 'dialog');
@@ -412,6 +427,8 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     if (destroyed || !opened || pickerBusy) return;
     pickerPrefs = readPickerPrefs(pickerStorage(), pickerPrefs);
     for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
+    headerMore.open = false; contribute.open = false;
+    if (buildersView || builderProgram.open) showTrackView(false);
     clearCardMenu();
     pickerReturnFocus = document.activeElement;
     pickerModal.hidden = false;
@@ -458,7 +475,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   const featured = make('section', 'sq-extra-featured');
   featured.setAttribute('aria-label', 'Four ways to discover a track');
   featured.setAttribute('aria-description', 'Creator Spotlight and Route Roulette rotate daily at 00:00 UTC; Underplayed Discovery and Critics Line refresh Monday at 00:00 UTC. These are local editorial spotlights, not official Kodub selections. Underplayed means the lowest exact racer-count quarter of the worthy editorial pool, including genuine zeroes. Unknown coverage is never treated as zero.');
-  dialog.append(featured);
+
 
   const summary = make('div', 'sq-extra-summary');
   const count = make('p', 'sq-extra-count');
@@ -466,14 +483,14 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   count.setAttribute('role', 'status');
   count.setAttribute('aria-live', 'polite');
   search.setAttribute('aria-describedby', count.id);
-  summary.append(count, gradingHelp);
+  summary.append(count, randomActions, gradingHelp);
   const builderCreditsRoot = make('section', 'sq-extra-builder-slot');
   builderCreditsRoot.hidden = true;
   builderCreditsRoot.setAttribute('data-sq-slot', 'builder-credits');
   builderCreditsRoot.setAttribute('aria-label', 'Reviewed builder credits');
   // Parent-owned integration supplies reviewed, play-gated credits; this slot has no ranking logic.
   dialog.append(builderCreditsRoot);
-  dialog.append(summary);
+  dialog.append(summary, featured);
   const submissionModal = make('div', 'sq-extra-submission-modal');
   submissionModal.hidden = true;
   submissionModal.setAttribute('role', 'dialog');
@@ -1129,34 +1146,33 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   async function openBuilderContact() {
-    if (destroyed || !opened || buildersButton.disabled) return;
+    if (destroyed || !opened) return;
     const generation = ++contactGeneration;
-    buildersButton.disabled = true; buildersButton.setAttribute('aria-busy', 'true');
+    buildersButton.setAttribute('aria-busy', 'true');
     try {
       const {mountBuilderContact} = await import(new URL(`builder-contact.mjs${new URL(import.meta.url).search}`, import.meta.url));
-      if (destroyed || !opened || generation !== contactGeneration) return;
-      if (!contactApi) contactApi = mountBuilderContact({document, root: contactHost, onBack: () => showTrackView()});
+      if (destroyed || !opened || generation !== contactGeneration || !builderProgram.open || !contribute.open) return;
+      if (!contactApi) { contactHost.replaceChildren(); contactApi = mountBuilderContact({document, root: contactHost, onBack: () => showTrackView()}); }
       clearCardMenu(); stopFeaturedTimer();
       buildersView = true;
-      hiddenTrackNodes.clear();
-      for (const node of dialog.children) if (node !== header && node !== contactHost) {
-        hiddenTrackNodes.set(node, node.hidden); node.hidden = true;
-      }
       contactHost.hidden = false;
-      buildersButton.textContent = 'Tracks'; buildersButton.setAttribute('aria-expanded', 'true');
+      buildersButton.setAttribute('aria-expanded', 'true');
       contactApi.focus();
     } catch {
-      if (!destroyed && opened && generation === contactGeneration) showStatus('Builder contact could not open. Please try again.', true);
-    } finally {buildersButton.disabled = false; buildersButton.removeAttribute('aria-busy');}
+      if (!destroyed && opened && generation === contactGeneration) {
+        contactHost.hidden = false;
+        contactHost.textContent = 'Builder program could not open. Close this submenu and try again.';
+      }
+    } finally {if (generation === contactGeneration) buildersButton.removeAttribute('aria-busy');}
   }
 
   function showTrackView(restoreFocus = true, refresh = true) {
-    buildersView = false; contactHost.hidden = true;
-    for (const [node, hidden] of hiddenTrackNodes) node.hidden = hidden;
-    hiddenTrackNodes.clear();
-    buildersButton.textContent = 'Builder program'; buildersButton.setAttribute('aria-expanded', 'false');
-    if (!destroyed && opened && refresh) {render();scheduleFeaturedRefresh();}
-    if (restoreFocus) { headerMore.open = true; buildersButton.focus({preventScroll: true}); }
+    contactGeneration++;
+    buildersView = false; contactHost.hidden = true; builderProgram.open = false;
+    buildersButton.removeAttribute('aria-busy');
+    buildersButton.setAttribute('aria-expanded', 'false');
+    if (!destroyed && opened && refresh) {renderFeatured();scheduleFeaturedRefresh();}
+    if (restoreFocus) { contribute.open = true; buildersButton.focus({preventScroll: true}); }
   }
 
   function renderFeatured(all = currentEntries()) {
@@ -1242,8 +1258,9 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       const metrics = make('p', 'sq-extra-pick-note');
       const knownStats = [];
       if (pick.players !== null) knownStats.push(pick.players.toLocaleString() + (pick.players === 1 ? ' player' : ' players'));
-      if (Number.isFinite(pick.quality)) knownStats.push('Published ' + pick.quality.toFixed(1) + '/10');
-      metrics.textContent = knownStats.join(' · ');
+      if (Number.isFinite(pick.quality)) knownStats.push('Rating ' + pick.quality.toFixed(1) + '/10');
+      if (Number.isFinite(progress?.level) && progress.level >= 1 && progress.level <= 10) knownStats.push('Catalog level ' + progress.level + '/10');
+      for (const stat of knownStats) metrics.append(make('span', 'sq-extra-pick-stat', stat + ' '));
       metrics.hidden = knownStats.length === 0;
       metrics.title = pick.underplayed ? 'Lowest exact racer-count quarter of eligible editorial tracks; unknown counts are excluded.' : pick.fallbackReason === 'coverage-unavailable' ? 'Editorial fallback: exact racer coverage is unavailable. Not an underplayed claim.' : 'Published review and snapshot information, not a local rating or live play count.';
       const footer = make('div', 'sq-extra-pick-footer');
@@ -1592,10 +1609,10 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function close() {
-    headerMore.open = false;
+    headerMore.open = false; contribute.open = false;
     if (!opened || destroyed) return;
     contactGeneration++;
-    if (buildersView) showTrackView(false, false);
+    if (buildersView || builderProgram.open) showTrackView(false, false);
     opened = false;
     pickerGeneration++;
     closePicker(false);
@@ -1662,7 +1679,8 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       else if (expandedCardMenu) clearCardMenu(true);
       else if (!reportModal.hidden) closeReport();
       else if (!submissionModal.hidden) closeSubmission();
-      else if (buildersView) showTrackView();
+      else if (buildersView || builderProgram.open) showTrackView();
+      else if (contribute.open) { contribute.open = false; contributeSummary.focus(); }
       else close();
       return;
     }
@@ -1687,7 +1705,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       // The review popup is outside dialog; let native Tab move within it.
       return;
     }
-    if ((buildersView || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
+    if ((buildersView || contribute.open || headerMore.open || !submissionModal.hidden || !reportModal.hidden) && event.key !== 'Tab') return;
     const activeTag = document.activeElement?.tagName;
     const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
     const activeRating = document.activeElement?.getAttribute?.('data-quick-rating') === 'true';
@@ -1801,6 +1819,13 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function onCardMenuOutside(event) {
+    if (opened && pickerModal.hidden && submissionModal.hidden && reportModal.hidden) {
+      if (headerMore.open && !headerMore.contains(event.target)) headerMore.open = false;
+      if (contribute.open && !contribute.contains(event.target)) {
+        contribute.open = false;
+        if (buildersView || builderProgram.open) showTrackView(false);
+      }
+    }
     const path = event.composedPath?.() || [];
     if (expandedCardMenu && !expandedCardMenu.contains(event.target) && !expandedCardTrigger?.contains(event.target) &&
         !path.includes(expandedCardMenu) && !path.includes(expandedCardTrigger)) clearCardMenu();

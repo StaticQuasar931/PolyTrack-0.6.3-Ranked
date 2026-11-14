@@ -1,7 +1,9 @@
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
 
 export const SERVER_ACHIEVEMENT_VERSION = 1;
+export const OWNER_CHALLENGE_POLICY_VERSION = 2;
 export const SERVER_ACHIEVEMENT_CATALOG = 'ranked-recognized-2026-09-20-v1';
+export const SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT = 89;
 export const OWNER_PUBLIC_ID = '732873e979838acecbce2a663dc69122d6deca4634e999897d1cc5e677df660b';
 export const SPECIAL_ROLLING_HILLS_TRACK_ID = 'fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778';
 export const CASUAL_RP_MIN_PER_TRACK = 10;
@@ -61,7 +63,7 @@ function validSource(source, eligibleTracks) {
   const targetTimeMs = positiveInteger(source?.targetTimeMs);
   const sourceSignature = text(source?.sourceSignature, 128);
   if (!eligibleTracks.has(trackId) || !sourceRevision || !sourceUpdatedAt || !unlockedAt ||
-      !playerTimeMs || !targetTimeMs || playerTimeMs >= targetTimeMs || !/^[A-Za-z0-9_-]{16,128}$/.test(sourceSignature)) return null;
+      !playerTimeMs || !targetTimeMs || playerTimeMs > targetTimeMs || !/^[A-Za-z0-9_-]{16,128}$/.test(sourceSignature)) return null;
   return { trackId, source: 'ranked-track-snapshot', sourceRevision, sourceUpdatedAt, sourceSignature,
     playerTimeMs, targetTimeMs, playerPbAt: positiveInteger(source?.playerPbAt),
     targetPbAt: positiveInteger(source?.targetPbAt), unlockedAt };
@@ -128,7 +130,6 @@ export function aggregateServerAchievements(entries, trackDocuments, priorById, 
     if (!trackId) continue;
     audit.inputTrackDocuments += 1;
     const rows = Array.isArray(board?.entries) ? board.entries : [];
-    const verified = [];
     const verifiedByAccount = new Map();
     for (const entry of rows) {
       audit.inputEntries += 1;
@@ -142,7 +143,6 @@ export function aggregateServerAchievements(entries, trackDocuments, priorById, 
       if (!accountId || !timeMs) continue;
       audit.physicsVerifiedEntries += 1;
       const trustedEntry = { ...entry, accountId, timeMs };
-      verified.push(trustedEntry);
       const previous = verifiedByAccount.get(accountId);
       if (!previous || timeMs < previous.timeMs) verifiedByAccount.set(accountId, trustedEntry);
       if (eligibleTracks.has(trackId)) {
@@ -168,11 +168,12 @@ export function aggregateServerAchievements(entries, trackDocuments, priorById, 
       });
     }
     if (!beatOwnerTracks.has(trackId)) continue;
-    const target = verified.find(entry => entry.accountId === ownerPublicId);
+    const target = verifiedByAccount.get(ownerPublicId);
     if (!target) continue;
     audit.ownerTargets += 1;
-    for (const entry of verified) {
-      if (entry.accountId === ownerPublicId || entry.timeMs >= target.timeMs) continue;
+    for (const entry of verifiedByAccount.values()) {
+      // Equal verified PBs qualify for everyone, including the target account.
+      if (entry.timeMs > target.timeMs) continue;
       const source = boardSource(board, trackId, entry, target, positiveInteger(now));
       if (!source) continue;
       const tracks = ownerBeats.get(entry.accountId) || new Map();

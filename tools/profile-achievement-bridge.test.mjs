@@ -8,143 +8,305 @@ import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
 const root = fileURLToPath(new URL('../',import.meta.url));
-let server,browser,base;
+const evidence = path.resolve(process.env.ACHIEVEMENT_EVIDENCE_DIR || path.join(root,'2026-11-13/evening-update'));
+let server,browser,base,patch;
 const requests = [], gates = new Map();
+const extract = name => {
+  const match = patch.match(new RegExp(`  function ${name}\\([^\\n]*\\)\\{[\\s\\S]*?\\n  \\}`));
+  assert.ok(match,`native function ${name}`);return match[0];
+};
 before(async () => {
+  patch = await fs.readFile(path.join(root,'polytrack_062_patch.js'),'utf8');
   server = http.createServer(async (req,res) => {
-    const url = new URL(req.url,'http://localhost'); requests.push(url.pathname + url.search);
-    if (url.pathname === '/') {res.setHeader('Content-Type','text/html'); res.end('<!doctype html><html lang="en"><title>Inline achievements integration</title><main id="content"><div class="profile-customizer">Studio</div></main></html>');return;}
-    if (!['/tools/profile-achievement-bridge.mjs','/tools/achievement-journal.mjs','/tools/achievement-journal.css','/tools/racer-studio-polish.css'].includes(url.pathname)) {res.writeHead(404).end();return;}
+    const url = new URL(req.url,'http://localhost');requests.push(url.pathname + url.search);
+    if (url.pathname === '/') {
+      res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PolyTrack native racer hub fixture</title><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#16254c;color:white;font-family:ForcedSquare,sans-serif}</style><div id="overallLeaderboardPanel" style="display:flex"><div id="overallProfilePopup" style="display:flex"><div class="overall-profile-card"><button id="profile-return" type="button">Racer profile</button><main id="content"></main></div></div></div></html>');return;
+    }
+    const allowed = /^\/tools\/(profile-achievement-bridge|achievement-journal|achievement-model)\.mjs$/.test(url.pathname) || ['/tools/achievement-journal.css','/tools/racer-studio-polish.css','/forced_square.woff2','/images/car_thumbnail_placeholder.png'].includes(url.pathname);
+    if (!allowed) {res.writeHead(404).end();return;}
     const gate = gates.get(url.searchParams.get('v'));
     if (url.pathname === '/tools/achievement-journal.mjs' && gate) {gate.started();await gate.wait;}
-    try {res.setHeader('Content-Type',url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript');res.end(await fs.readFile(path.join(root,url.pathname.slice(1))));} catch {res.writeHead(404).end();}
+    try {res.setHeader('Content-Type',url.pathname.endsWith('.css') ? 'text/css' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.png') ? 'image/png' : 'text/javascript');res.end(await fs.readFile(path.join(root,url.pathname.slice(1))));} catch {res.writeHead(404).end();}
   });
-  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve)); base = `http://127.0.0.1:${server.address().port}`;
+  server.keepAliveTimeout = 500;
+  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));base = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {})});
+  await fs.mkdir(evidence,{recursive:true});
 });
-after(async () => {await browser?.close();if (server) await new Promise(resolve => server.close(resolve));});
+after(async () => {await browser?.close();if (server) {server.closeAllConnections();await new Promise(resolve => server.close(resolve));}});
 
-async function mount(page,revision,accountId = 'racer-a') {
+async function pageFor(t,viewport = {width:1440,height:1000}) {
+  const context = await browser.newContext({viewport,reducedMotion:'reduce'}),page = await context.newPage();t.after(() => context.close());
+  await page.route('**/*',route => route.request().url().startsWith(base + '/') ? route.continue() : route.abort());
+  await page.goto(base);return page;
+}
+async function mount(page,revision = 'hub-test',accountId = 'racer-a') {
   await page.evaluate(async ({revision,accountId}) => {
     const {mountProfileAchievements} = await import('/tools/profile-achievement-bridge.mjs?channel=studio');
     window.calls ??= {rewards:[],navigate:[]};
-    window.cleanup = mountProfileAchievements(document.querySelector('#content'),{accountId,revision,confirmed:{raceCount:0},local:{pbCount:0},cosmetics:{theme:[['ocean','Deep ocean',1]]},onTryCosmetic:value => calls.rewards.push(value),onNavigate:value => calls.navigate.push(value)});
+    const content = document.querySelector('#content');
+    if (!content.querySelector('.profile-customizer')) content.innerHTML = '<details class="profile-customizer"><summary>Customize</summary><input data-draft value="saved draft"><button type="button" data-save-profile-cosmetics>Publish design</button></details>';
+    window.cleanup = mountProfileAchievements(content,{accountId,revision,confirmed:{raceCount:0},local:{pbCount:0},cosmetics:{theme:[['ocean','Deep ocean',1]]},onTryCosmetic:value => calls.rewards.push(value),onNavigate:value => calls.navigate.push(value)});
   },{revision,accountId});
 }
+async function open(page,tab = 'achievements') {
+  await page.evaluate(tab => cleanup.open(tab),tab);
+  if (tab === 'achievements') await page.locator('dialog[open] [data-aj-root]').waitFor();
+}
 
-test('inline section is lazy, accessible, revision-pinned, callback-compatible and reusable',{timeout:60000},async t => {
-  const context = await browser.newContext(),page = await context.newPage();t.after(() => context.close());
-  let external = 0;
-  await page.route('**/*',route => route.request().url().startsWith(base + '/') ? route.continue() : (external++,route.abort()));
-  await page.goto(base);await mount(page,'bridge-copy');
-  assert.equal(await page.locator('.profile-customizer').evaluate(el => el.previousElementSibling.matches('details.profile-achievement-journey')),true);
-  assert.equal(await page.locator('summary').innerText(),'Achievements Find your next unlock');
-  assert.equal(await page.locator('[data-aj-root]').count(),0);
-  assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
-  assert.equal(await page.locator('.profile-achievements').count(),0);
-  await page.locator('link[data-profile-achievements-css]').evaluate(link => link.sheet ? undefined : new Promise(resolve => link.addEventListener('load',resolve,{once:true})));
-  assert.equal(await page.locator('.profile-achievement-journey-summary').evaluate(el => getComputedStyle(el).cursor),'pointer');
-  assert.ok(!requests.some(url => url.includes('/achievement-journal.mjs')));
-  await page.locator('summary').focus();await page.keyboard.press('Space');
-  await page.locator('[data-aj-root]').waitFor();
-  const href = await page.locator('link[data-profile-achievements-css]').getAttribute('href');
-  assert.equal(new URL(href).searchParams.get('channel'),'studio');assert.equal(new URL(href).searchParams.get('v'),'bridge-copy');
-  assert.ok(requests.some(url => url === '/tools/achievement-journal.mjs?channel=studio&v=bridge-copy'));
-  await page.locator('[data-aj-detail] [data-aj-try]').click();
-  assert.deepEqual(await page.evaluate(() => calls.rewards[0]),{kind:'theme',id:'ocean',label:'Deep ocean',requirement:1,confirmed:false,previewOnly:true});
-  await page.locator('[data-aj-detail] [data-aj-navigate]').click();
-  assert.deepEqual(await page.evaluate(() => calls.navigate),['style']);
-  await page.getByRole('button',{name:'Close achievements',exact:true}).click();
-  assert.equal(await page.locator('details').evaluate(el => el.open),false);
-  assert.equal(await page.locator('summary').evaluate(el => el === document.activeElement),true);
-  await page.locator('summary').click();await page.locator('[data-aj-root]').waitFor({state:'visible'});
-  assert.equal(await page.locator('[data-aj-root]').count(),1);
-  await page.locator('[data-aj-filter="all"]').click();
-  await page.evaluate(() => {window.oldButton = document.querySelector('[data-aj-try]');cleanup();cleanup();});
-  await mount(page,'bridge-copy','racer-b');await page.locator('summary').click();await page.locator('[data-aj-root]').waitFor();
-  assert.equal(await page.locator('details').getAttribute('data-account-id'),'racer-b');
-  assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
-  assert.equal(await page.locator('[data-aj-filter="all"]').getAttribute('aria-pressed'),'true');
-  await page.evaluate(() => oldButton.click());
-  assert.equal(await page.evaluate(() => calls.rewards.length),1);
-  assert.equal(external,0);
-});
-
-for (const mode of ['cleanup','disconnected']) test(`late import cannot mount after ${mode}`,{timeout:60000},async t => {
-  const context = await browser.newContext(),page = await context.newPage();t.after(() => context.close());
-  let release,started;
-  const wait = new Promise(resolve => {release = resolve;});
-  const began = new Promise(resolve => {started = resolve;});
-  const revision = `late-${mode}`; gates.set(revision,{wait,started});t.after(() => {release();gates.delete(revision);});
-  await page.goto(base);await mount(page,revision);
-  await page.locator('summary').click();await began;
-  await page.evaluate(mode => {
-    window.oldHost = document.querySelector('.profile-achievement-journey-content');
-    if (mode === 'cleanup') {cleanup();document.querySelector('#content').innerHTML = '<p>New account</p>';}
-    else document.querySelector('#content').remove();
-  },mode);
-  if (mode === 'cleanup') {
-    await mount(page,'replacement','racer-replacement');
-    await page.locator('summary').click();await page.locator('[data-aj-root]').waitFor();
-  }
-  const response = page.waitForResponse(res => res.url().includes(`/achievement-journal.mjs?channel=studio&v=${revision}`));
-  release();await response;
-  await page.evaluate(async revision => {
-    await import(`/tools/achievement-journal.mjs?channel=studio&v=${revision}`);
-    await new Promise(resolve => setTimeout(resolve,0));
-  },revision);
-  assert.equal(await page.evaluate(() => oldHost.querySelectorAll('[data-aj-root]').length),0);
-  assert.equal(await page.locator('[data-aj-root]').count(),mode === 'cleanup' ? 1 : 0);
-  if (mode === 'cleanup') assert.equal(await page.locator('details').getAttribute('data-account-id'),'racer-replacement');
-});
-
-test('separate roots keep callbacks and cleanup scoped to their own account',async t => {
-  const context = await browser.newContext(),page = await context.newPage();t.after(() => context.close());await page.goto(base);
+async function nativeFixture(page) {
+  const catalog = patch.match(/const PROFILE_COSMETIC_OPTIONS=(\{[\s\S]*?\n  \});/)[0];
+  const defaults = patch.match(/const COSMETIC_DEFAULTS=Object.freeze\((\{[^\n]+\})\);/)[0];
+  const choiceStart = patch.indexOf("      const cosmeticChoice=event.target.closest?.('[data-cosmetic-choice]');");
+  const choiceEnd = patch.indexOf("      const categoryInfo=",choiceStart);
+  const tabStart = patch.indexOf("      const studioTab=event.target.closest?.('[data-studio-tab]');",choiceEnd);
+  const tabEnd = patch.indexOf('      const podiumChoice=',tabStart);
+  const saveStart = patch.indexOf("      const cosmeticSave=event.target.closest?.('[data-save-profile-cosmetics]');",tabEnd);
+  const saveEnd = patch.indexOf('      const trackTarget=',saveStart);
+  const changeStart = patch.indexOf("      if(event.target?.matches?.('[data-cosmetic-favorite]')){");
+  const changeEnd = patch.indexOf('\n    });',changeStart);
+  assert.ok(choiceStart >= 0 && choiceEnd > choiceStart && saveEnd > saveStart);
+  await page.addScriptTag({content:`
+    ${catalog}; ${defaults};
+    Object.assign(window,{
+      cleanUserId:value=>String(value||''),profileCosmeticDrafts:new Map(),profileCosmeticEntries:new Map(),
+      sanitizeProfileCosmetics:value=>({...COSMETIC_DEFAULTS,...value}),cosmeticsForEntry:()=>({...COSMETIC_DEFAULTS}),
+      localExtraTrackCount:()=>0,cosmeticTitleText:()=> 'Contender',profileBadgeMarkup:()=>'',
+      escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+      trackInfo:id=>({id,name:'Summer 1'}),safeDisplayName:value=>value,
+      __pt062NormalizeStyle:value=>value||'',__pt062GetRememberedStyle:()=>'',normalizeCarColorId:value=>value,
+      overallFooterLayoutCss:()=>'',TRACK_CATALOG:new Map([['summer1',{id:'summer1',name:'Summer 1',type:'official'}]]),
+      saveRankedProfileCosmetics:()=>{window.published=(window.published||0)+1;}
+    });
+    ${extract('cosmeticUnlocked')}
+    ${extract('cosmeticUnlockReason')}
+    ${extract('carModelPreview')}
+    ${extract('applyProfileCosmetics')}
+    ${extract('ensureStyles')}
+    ${extract('profileCustomizerMarkup')}
+    ${extract('setupRacerStudio')}
+    ensureStyles();
+    const fixtureEntry={userId:'racer-a',name:'APEX RACER',raceCount:8,pbCount:14,extraCount:0,totalPlaytimeMs:5400000,trackWins:0,rank:18,badges:{betaTester:false},cosmeticUnlocks:[]};
+    document.querySelector('#content').innerHTML=profileCustomizerMarkup(fixtureEntry);
+    setupRacerStudio(document.querySelector('#content'));
+    const panel=document.querySelector('#overallLeaderboardPanel');
+    panel.addEventListener('click',event=>{${patch.slice(choiceStart,choiceEnd)}${patch.slice(tabStart,tabEnd)}${patch.slice(saveStart,saveEnd)}});
+    panel.addEventListener('change',event=>{${patch.slice(changeStart,changeEnd)}});
+    window.nativeCatalog=PROFILE_COSMETIC_OPTIONS;window.nativeEntry=fixtureEntry;
+    window.originalStudio=document.querySelector('.profile-customizer');
+  `});
+  await page.addStyleTag({url:base + '/tools/racer-studio-polish.css'});
   await page.evaluate(async () => {
     const {mountProfileAchievements} = await import('/tools/profile-achievement-bridge.mjs?channel=studio');
-    const second = document.createElement('main');second.id = 'second';document.body.append(second);
-    window.rootCalls = [];
-    const options = accountId => ({accountId,revision:'roots',confirmed:{raceCount:1},cosmetics:{theme:[['ocean','Deep ocean',1]]},storage:null,onTryCosmetic:() => rootCalls.push(accountId)});
-    window.disposeFirst = mountProfileAchievements(document.querySelector('#content'),options('first'));
-    window.disposeSecond = mountProfileAchievements(second,options('second'));
+    const content = document.querySelector('#content');
+    window.rewardCalls = [];
+    cleanup = mountProfileAchievements(content,{accountId:'racer-a',confirmed:nativeEntry,local:{pbCount:17,extraCount:3,eventParticipations:2,practiceFinishes:17,verifiedTracks:8,activeDays:4},cosmetics:nativeCatalog,revision:'native-hub',onTryCosmetic:value => rewardCalls.push(value),onNavigate:value => rewardCalls.push(value)});
   });
-  for (const selector of ['#content','#second']) {await page.locator(`${selector} summary`).click();await page.locator(`${selector} [data-aj-root]`).waitFor();await page.locator(`${selector} [data-aj-filter="earned"]`).click();}
-  await page.locator('#second [data-aj-detail] [data-aj-try]').click();
-  await page.evaluate(() => {disposeFirst();disposeFirst();});
-  assert.equal(await page.locator('#content details').count(),0);
-  assert.equal(await page.locator('#second [data-aj-root]').count(),1);
-  await page.locator('#second [data-aj-detail] [data-aj-try]').click();
-  assert.deepEqual(await page.evaluate(() => rootCalls),['second','second']);
+}
+
+test('native dialog is lazy, revision pinned, inline to event ancestry, and restores the exact Studio',async t => {
+  const page = await pageFor(t);await mount(page);
+  assert.equal(await page.locator('.profile-achievements').count(),0);
   assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
+  assert.equal(await page.locator('[data-aj-root]').count(),0);
+  assert.equal(await page.locator('[data-ph-launch]').count(),2);
+  assert.equal(await page.locator('.profile-customizer').isVisible(),false);
+  assert.ok(!requests.some(url => url.includes('/achievement-journal.mjs')));
+  await page.evaluate(() => {window.original = document.querySelector('.profile-customizer');original.addEventListener('input',()=>window.draftEvents=(window.draftEvents||0)+1);});
+  await page.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();
+  assert.equal(await page.locator('dialog').evaluate(el => el.matches(':modal')),true);
+  assert.equal(await page.locator('.profile-customizer').evaluate(el => el === original && !!el.closest('.overall-profile-card') && !!el.closest('#overallLeaderboardPanel')),true);
+  assert.ok(requests.includes('/tools/achievement-journal.mjs?channel=studio&v=hub-test'));
+  await page.getByRole('tab',{name:'Racer Studio',exact:true}).click();
+  await page.locator('[data-draft]').fill('Unpublished draft');
+  await page.getByRole('button',{name:'Close racer hub',exact:true}).click();
+  assert.equal(await page.locator('dialog').evaluate(el => el.open),false);
+  assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el === original && el.hidden && !el.open && !el.querySelector('summary').hidden),true);
+  assert.equal(await page.locator('[data-draft]').inputValue(),'Unpublished draft');
+  assert.equal(await page.evaluate(() => draftEvents),1);
+  assert.equal(await page.locator('[data-ph-launch="achievements"]').evaluate(el => el === document.activeElement),true);
 });
 
-test('blocked default localStorage does not stop the journal opening or filters working',async t => {
-  const context = await browser.newContext(),page = await context.newPage();t.after(() => context.close());await page.goto(base);
-  await page.evaluate(() => Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Blocked','SecurityError');},configurable:true}));
-  await mount(page,'blocked-storage');await page.locator('summary').click();await page.locator('[data-aj-root]').waitFor();
+test('modal keys stay scoped; native Studio handles its own keys; no duplicate global handlers',async t => {
+  const page = await pageFor(t);await mount(page);await open(page);
+  await page.evaluate(() => {window.outerKeys=[];document.querySelector('#overallLeaderboardPanel').addEventListener('keydown',event=>outerKeys.push(event.key));});
+  const tab = page.getByRole('tab',{name:'Achievements',exact:true});await tab.focus();await page.keyboard.press('ArrowRight');
+  assert.equal(await page.getByRole('tab',{name:'Racer Studio',exact:true}).getAttribute('aria-selected'),'true');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('dialog').evaluate(el => el.contains(document.activeElement)),true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog').evaluate(el => el.open),false);
+  assert.deepEqual(await page.evaluate(() => outerKeys),[]);
+  await page.locator('[data-ph-launch="achievements"]').focus();await page.keyboard.press('q');
+  assert.deepEqual(await page.evaluate(() => outerKeys),['q']);
+});
+
+test('native cosmetic delegation, drafts, search and explicit publish survive Studio movement',{timeout:60000},async t => {
+  const page = await pageFor(t);await nativeFixture(page);await open(page);
+  await page.locator('[data-aj-family="style"]').click();await page.locator('[data-aj-filter="all"]').click();
+  await page.locator('[data-aj-select="style:1"]').click();
+  await page.getByRole('button',{name:'View reward: Deep ocean',exact:true}).click();
+  assert.equal(await page.getByRole('tab',{name:'Racer Studio',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('.profile-customizer').evaluate(el => el === originalStudio),true);
+  assert.equal(await page.evaluate(() => window.published||0),0);
+  assert.equal(await page.locator('[data-cosmetic-kind="theme"][data-cosmetic-value="ocean"]').getAttribute('aria-pressed'),'false');
+  await page.locator('[data-cosmetic-kind="theme"][data-cosmetic-value="ocean"]').click();
+  assert.equal(await page.evaluate(() => profileCosmeticDrafts.get('racer-a').theme),'ocean');
+  const favorite = page.locator('[data-cosmetic-favorite]');
+  await page.locator('[data-studio-tab="identity"]').click();await favorite.fill('Summer 1');await favorite.press('Tab');
+  assert.equal(await page.evaluate(() => profileCosmeticDrafts.get('racer-a').favoriteTrackId),'summer1');
+  await favorite.fill('Summer');await favorite.press('Escape');
+  assert.equal(await page.locator('dialog').evaluate(el => el.open),true);
+  assert.equal(await page.locator('.studio-track-options').getAttribute('hidden'),'');
+  await favorite.press('ArrowDown');await favorite.press('ArrowDown');await favorite.press('Enter');
+  assert.equal(await page.evaluate(() => profileCosmeticDrafts.get('racer-a').favoriteTrackId),'summer1');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog').evaluate(el => el.open),false);
+  assert.equal(await page.evaluate(() => profileCosmeticDrafts.get('racer-a').theme),'ocean');
+  await open(page,'studio');
+  assert.equal(await page.locator('[data-cosmetic-favorite]').inputValue(),'Summer 1');
+  assert.equal(await page.evaluate(() => window.published||0),0);
+  await page.locator('[data-save-profile-cosmetics]').click();assert.equal(await page.evaluate(() => published),1);
+  await page.evaluate(() => cleanup());
+  assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el === originalStudio),true);
+  assert.equal(await page.locator('#content>.profile-customizer').getAttribute('hidden'),null);
+  assert.equal(await page.locator('dialog').count(),0);
+});
+
+test('two half-bar launchers use one hub and restore original hidden/open states and drafts',async t => {
+  for (const hidden of [false,true]) {
+    const page = await pageFor(t);
+    await page.evaluate(hidden => {
+      document.querySelector('#content').innerHTML='<details class="profile-customizer" open><summary>Customize</summary><input data-draft value="Unpublished"></details>';
+      window.savedStudio=document.querySelector('.profile-customizer');savedStudio.hidden=hidden;
+    },hidden);
+    await mount(page,'hidden-state');
+    assert.equal(await page.locator('.profile-customizer').isVisible(),false);
+    await page.locator('[data-ph-launch="studio"]').click();
+    assert.equal(await page.getByRole('tab',{name:'Racer Studio',exact:true}).getAttribute('aria-selected'),'true');
+    assert.equal(await page.locator('dialog .profile-customizer').evaluate(el => el===savedStudio&&!el.hidden&&el.open),true);
+    await page.locator('[data-draft]').fill('Keep this draft');
+    await page.evaluate(() => cleanup.close());
+    assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el.hidden&&el.open),true);
+    await page.evaluate(() => cleanup());
+    assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el===savedStudio&&el.open),true);
+    assert.equal(await page.locator('#content>.profile-customizer').evaluate(el => el.hidden),hidden);
+    assert.equal(await page.locator('[data-draft]').inputValue(),'Keep this draft');
+    assert.equal(await page.locator('dialog').count(),0);
+  }
+});
+
+for (const mode of ['cleanup','disconnected','replaced','account']) test(`late import cannot mount into stale account after ${mode}`,{timeout:60000},async t => {
+  const page = await pageFor(t);let release,started;
+  const wait = new Promise(resolve => {release=resolve;}), began = new Promise(resolve => {started=resolve;});
+  const revision = 'late-' + mode;gates.set(revision,{wait,started});t.after(() => {release();gates.delete(revision);});
+  await mount(page,revision);await page.evaluate(() => cleanup.open());await began;
+  await page.evaluate(mode => {
+    window.oldHost=document.querySelector('[data-ph-journal]');
+    if (mode==='cleanup') {cleanup();document.querySelector('#content').innerHTML='<p>New account</p>';}
+    else if (mode==='replaced') document.querySelector('#content').innerHTML='<p>New account</p>';
+    else if (mode==='account') document.querySelector('#content').dataset.accountId='different-racer';
+    else document.querySelector('#content').remove();
+  },mode);
+  if (mode==='cleanup') {await mount(page,'replacement','replacement-racer');await open(page);}
+  const response = page.waitForResponse(res => res.url().includes(`/achievement-journal.mjs?channel=studio&v=${revision}`));release();await response;
+  await page.evaluate(async revision => {await import(`/tools/achievement-journal.mjs?channel=studio&v=${revision}`);await new Promise(resolve => setTimeout(resolve,0));},revision);
+  assert.equal(await page.evaluate(() => oldHost.querySelectorAll('[data-aj-root]').length),0);
+  assert.equal(await page.locator('dialog[open]').count(),mode==='cleanup'?1:0);
+  if(mode==='cleanup') assert.equal(await page.locator('dialog').getAttribute('data-account-id'),'replacement-racer');
+  else assert.equal(await page.locator('.profile-customizer').count(),0);
+});
+
+test('cleanup is root-scoped and storage persists safely across account mounts',async t => {
+  const page = await pageFor(t);await mount(page);await open(page);
   await page.locator('[data-aj-filter="all"]').click();
+  await page.evaluate(() => {window.oldCleanup=cleanup;cleanup();});await mount(page,'hub-test','racer-b');await open(page);
+  await page.evaluate(() => oldCleanup());
+  assert.equal(await page.locator('dialog[open]').getAttribute('data-account-id'),'racer-b');
   assert.equal(await page.locator('[data-aj-filter="all"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
+  await page.evaluate(() => {cleanup();Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Blocked','SecurityError');},configurable:true});});
+  await mount(page,'blocked');await open(page);await page.locator('[data-aj-filter="earned"]').click();
+  assert.equal(await page.locator('[data-aj-filter="earned"]').getAttribute('aria-pressed'),'true');
 });
 
-test('missing customizer appends section; detached input safely does nothing',async t => {
-  const context = await browser.newContext(),page = await context.newPage();t.after(() => context.close());await page.goto(base);
-  await page.evaluate(() => document.querySelector('.profile-customizer').remove());await mount(page,'append');
-  assert.equal(await page.locator('#content>details').count(),1);
-  assert.equal(await page.evaluate(async () => {
-    const {mountProfileAchievements} = await import('/tools/profile-achievement-bridge.mjs');
-    const detached = document.createElement('div'); const dispose = mountProfileAchievements(detached,{accountId:'detached'});dispose();return detached.childElementCount;
-  }),0);
+test('native full-screen hub fits desktop, phone and landscape with usable reward navigation',{timeout:60000},async t => {
+  for (const [name,width,height] of [['desktop',1440,1000],['phone',390,844],['landscape',844,390],['narrow',320,640]]) {
+    const page = await pageFor(t,{width,height});await nativeFixture(page);
+    assert.equal(await page.locator('.profile-customizer').isVisible(),false);
+    if (name==='desktop'||name==='phone') await page.locator('.profile-achievement-journey').screenshot({path:path.join(evidence,`racer-hub-launcher-${name}.png`),animations:'disabled'});
+    await page.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();await page.evaluate(() => document.fonts.ready);
+    const bounds = await page.locator('dialog').boundingBox();assert.equal(Math.round(bounds.width),width);assert.equal(Math.round(bounds.height),height);
+    assert.equal(await page.locator('dialog').evaluate(el => el.scrollWidth <= el.clientWidth),true,name);
+    if (name!=='narrow') await page.screenshot({path:path.join(evidence,`racer-hub-achievements-${name}.png`),animations:'disabled'});
+    if (name==='phone') {
+      await page.locator('[data-aj-node]:visible [data-aj-select]').first().click();
+      assert.equal(await page.locator('[data-aj-node]>.aj-detail').count(),1);
+      await page.screenshot({path:path.join(evidence,'racer-hub-achievements-phone-reward.png'),animations:'disabled'});
+    }
+    await page.getByRole('tab',{name:'Racer Studio',exact:true}).click();
+    assert.equal(await page.locator('dialog').evaluate(el => el.scrollWidth <= el.clientWidth),true,name+' studio');
+    assert.equal(await page.locator('.ph-studio-panel').evaluate(el => el.scrollWidth <= el.clientWidth),true,name+' studio panel');
+    if (name!=='narrow') await page.screenshot({path:path.join(evidence,`racer-hub-studio-${name}.png`),animations:'disabled'});
+  }
 });
 
-
-test('actual profile hook mounts achievements and navigates rewards into the real Studio section',async t=>{
-  const context=await browser.newContext(),page=await context.newPage();t.after(()=>context.close());
-  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():route.abort());await page.goto(base);
-  await page.evaluate(()=>{document.querySelector('#content').innerHTML='<details class="profile-customizer"><summary>Customize</summary><button data-studio-tab="nameplate">Nameplate</button><div data-studio-panel="nameplate"><fieldset class="profile-cosmetic-group kind-theme"><legend>Theme</legend></fieldset></div></details>';Object.assign(window,{extraCatalogRevision:'real-profile-hook',eventsModuleUrl:new URL('/events/client.mjs',location.href),cleanUserId:String,readOverallSnapshotCache:()=>({entries:[{userId:'self',raceCount:3}]}),localExtraTrackCount:()=>0,currentPlaytimeMs:()=>0,PROFILE_COSMETIC_OPTIONS:{theme:[['ocean','Ocean',1]]}});});
-  const patch=await fs.readFile(path.join(root,'polytrack_062_patch.js'),'utf8'),start=patch.indexOf('  function setupProfileAchievements('),end=patch.indexOf('  function setupRacerStudio(',start);assert.ok(start>=0&&end>start);
+test('actual parent hook can still find moved Studio and focus reward without publication',async t => {
+  const page = await pageFor(t);await nativeFixture(page);await page.evaluate(() => cleanup());
+  await page.evaluate(() => Object.assign(window,{extraCatalogRevision:'real-hook',eventsModuleUrl:new URL('/events/client.mjs',location.href),readOverallSnapshotCache:()=>({entries:[nativeEntry]}),currentPlaytimeMs:()=>5400000}));
+  const start=patch.indexOf('  function setupProfileAchievements('),end=patch.indexOf('  function setupRacerStudio(',start);assert.ok(start>=0&&end>start);
   await page.addScriptTag({content:'let profileAchievementBridgeRequest=null;'+patch.slice(start,end)});
-  await page.evaluate(()=>setupProfileAchievements(document.querySelector('#content'),{userId:'self'},true));
-  await page.locator('.profile-achievement-journey>summary').click();await page.locator('[data-aj-root]').waitFor();
-  await page.getByRole('button',{name:'All tiers',exact:true}).click();await page.locator('[data-aj-select]').first().click();await page.getByRole('button',{name:'View reward: Ocean',exact:true}).click();
-  assert.equal(await page.locator('.profile-customizer').evaluate(el=>el.open),true);assert.equal(await page.locator('.kind-theme').evaluate(el=>el===document.activeElement),true);
+  await page.evaluate(() => setupProfileAchievements(document.querySelector('#content'),nativeEntry,true));
+  await page.locator('[data-ph-launch="achievements"]').click();await page.locator('[data-aj-root]').waitFor();
+  await page.locator('[data-aj-family="style"]').click();await page.locator('[data-aj-filter="all"]').click();await page.locator('[data-aj-select="style:1"]').click();
+  await page.getByRole('button',{name:'View reward: Deep ocean',exact:true}).click();
+  assert.equal(await page.getByRole('tab',{name:'Racer Studio',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('.kind-theme').evaluate(el => el===document.activeElement || el.contains(document.activeElement)),true);
+  assert.equal(await page.evaluate(() => window.published||0),0);
+});
+
+test('native hub body and rewards are explicitly sans serif while titles remain ForcedSquare',async t => {
+  const page=await pageFor(t);await nativeFixture(page);await open(page);await page.evaluate(()=>document.fonts.ready);
+  const typography=await page.evaluate(()=>{
+    const read=selector=>{const style=getComputedStyle(document.querySelector(selector));return {fontFamily:style.fontFamily,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight)};};
+    return {root:read('dialog.profile-hub'),notice:read('.aj-notice'),reward:read('.aj-reward-label'),hint:read('.ph-tab-hint'),heading:read('.ph-heading h2'),goal:read('.aj-detail h3')};
+  });
+  for(const key of ['root','notice','reward','hint']) {
+    assert.match(typography[key].fontFamily,/Trebuchet MS/);assert.match(typography[key].fontFamily,/sans-serif/);
+    assert.ok(typography[key].fontSize>=13&&typography[key].fontSize<=14,`${key} body size`);
+    assert.ok(typography[key].lineHeight/typography[key].fontSize>=1.35,`${key} body leading`);
+  }
+  for(const key of ['heading','goal']) assert.match(typography[key].fontFamily,/ForcedSquare/);
+  const cdp=await page.context().newCDPSession(page);await cdp.send('DOM.enable');await cdp.send('CSS.enable');
+  const documentNode=await cdp.send('DOM.getDocument');
+  const noticeNode=await cdp.send('DOM.querySelector',{nodeId:documentNode.root.nodeId,selector:'.aj-notice'});
+  typography.renderedNoticeFonts=(await cdp.send('CSS.getPlatformFontsForNode',{nodeId:noticeNode.nodeId})).fonts;
+  assert.ok(typography.renderedNoticeFonts.length>0);
+  assert.ok(typography.renderedNoticeFonts.every(font=>!/Times|Roman|Serif/i.test(font.familyName)), 'rendered prose must not fall back to a serif font');
+  await fs.writeFile(path.join(evidence,'racer-hub-typography.json'),JSON.stringify(typography,null,2));
+});
+
+test('1366x768 native sticky preview stays inside its panel and both design actions are reachable',{timeout:60000},async t=>{
+  const page=await pageFor(t,{width:1366,height:768});await nativeFixture(page);await open(page,'studio');await page.evaluate(()=>document.fonts.ready);
+  const panel=page.locator('.ph-studio-panel'),preview=page.locator('.profile-customizer-preview');
+  const check=async()=>{
+    const p=await panel.boundingBox(),v=await preview.boundingBox();
+    assert.ok(v.y+v.height<=p.y+p.height+1,'preview bottom fits actual Studio panel');
+    assert.equal(await preview.evaluate(el=>el.scrollWidth<=el.clientWidth),true,'no preview horizontal clipping');
+    assert.equal(await preview.evaluate(el=>getComputedStyle(el).position),'sticky');
+  };
+  await check();
+  await panel.evaluate(el=>{el.scrollTop=480;});await check();
+  for(const selector of ['[data-save-profile-cosmetics]','[data-discard-profile-cosmetics]']){
+    const button=page.locator(selector);await button.scrollIntoViewIfNeeded();await check();
+    const b=await button.boundingBox(),v=await preview.boundingBox();
+    assert.ok(b.y>=v.y-1&&b.y+b.height<=v.y+v.height+1,selector+' is vertically reachable');
+    assert.ok(b.x>=v.x&&b.x+b.width<=v.x+v.width,selector+' is not left/right cropped');
+  }
+  await page.screenshot({path:path.join(evidence,'racer-hub-studio-scrolled-1366x768.png'),animations:'disabled'});
+  await page.setViewportSize({width:1366,height:650});await page.waitForFunction(()=>Math.abs(parseFloat(document.querySelector('.ph-studio-panel').style.getPropertyValue('--ph-panel-height'))-document.querySelector('.ph-studio-panel').clientHeight)<1);
+  await check();
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await preview.evaluate(el=>getComputedStyle(el).position),'static');
+  assert.equal(await preview.evaluate(el=>getComputedStyle(el).maxHeight),'none');
 });

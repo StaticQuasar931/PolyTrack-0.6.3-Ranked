@@ -10,6 +10,7 @@ import {
 import {EXTRA_TRACK_IDS} from '../src/extra-track-ids.js';
 import {computeTrackEntries} from '../src/index.js';
 import {VERIFIER_ENGINE_DIGEST, VERIFIER_VERSION, verificationKey} from '../src/verification.js';
+import {COMPETITIVE_REVIEW_REASON} from '../src/competitive-review.js';
 
 const OFFICIAL = '5803f9e963625804e3de3246d043dc7dde847aa32e991f7f7326b0453f1fa038';
 const OTHER_OFFICIAL = '7eac4fee1111152cfba4d3737410264ca0f22c7f5a2211e79f0099589b8b48c0';
@@ -23,6 +24,88 @@ function board(trackId, entries, revision = 7) {
 function run(accountId, timeMs, extra = {}) {
   return { accountId, timeMs, pbAt: 1770000000000, integrityVerified: true, runVerified: true, weight: 1, ...extra };
 }
+
+const ownerOptions = {eligibleTrackIds: CATALOG, beatOwnerTrackIds: CATALOG, now: 1800000000000};
+
+test('exact trusted ties qualify any racer and the owner on three distinct tracks', () => {
+  const boards = CATALOG.map(trackId => board(trackId, [run(OWNER_PUBLIC_ID, 22000), run('racer', 22000)]));
+  const first = aggregateServerAchievements([{userId: 'racer'}, {userId: OWNER_PUBLIC_ID}], boards, new Map(), ownerOptions);
+  for (const entry of first.entries) {
+    assert.equal(entry.serverAchievements.beatOwner.count, 3);
+    assert.deepEqual(entry.cosmeticUnlocks, BEAT_OWNER_STAGES.map(stage => stage.cosmeticId));
+    for (const proof of entry.serverAchievements.beatOwner.unlocks) {
+      assert.equal(proof.playerTimeMs, proof.targetTimeMs);
+      assert.equal(proof.source, 'ranked-track-snapshot');
+    }
+  }
+  const later = aggregateServerAchievements(first.entries, [], new Map(first.entries.map(entry => [entry.userId, entry])),
+    {...ownerOptions, now: ownerOptions.now + 1000});
+  for (let i = 0; i < first.entries.length; i++) {
+    assert.deepEqual(later.entries[i].serverAchievements.beatOwner, first.entries[i].serverAchievements.beatOwner);
+  }
+});
+
+test('one millisecond slower fails, while repeated tied proofs count only one distinct track', () => {
+  const duplicate = board(OFFICIAL, [run(OWNER_PUBLIC_ID, 22000), run('tied', 22000), run('tied', 22000), run('slow', 22001)]);
+  const result = aggregateServerAchievements([{userId: 'tied'}, {userId: 'slow'}], [duplicate, duplicate], new Map(), ownerOptions);
+  assert.equal(result.entries[0].serverAchievements.beatOwner.count, 1);
+  assert.deepEqual(result.entries[0].cosmeticUnlocks, ['emblem:target']);
+  assert.equal(result.entries[1].serverAchievements.beatOwner.count, 0);
+  assert.deepEqual(result.entries[1].cosmeticUnlocks, []);
+});
+
+test('duplicate rows use the fastest verified owner target independent of row order', () => {
+  for (const ownerRows of [[run(OWNER_PUBLIC_ID, 24000), run(OWNER_PUBLIC_ID, 22000)],
+    [run(OWNER_PUBLIC_ID, 22000), run(OWNER_PUBLIC_ID, 24000)]]) {
+    const result = aggregateServerAchievements([{userId: 'slow'}], [board(OFFICIAL,
+      [...ownerRows, run('slow', 23000)])], new Map(), ownerOptions).entries[0];
+    assert.equal(result.serverAchievements.beatOwner.count, 0);
+  }
+});
+
+test('ties still require eligible tracks and immutable current snapshot evidence', () => {
+  for (const overrides of [{signature: ''}, {sourceRevision: 6}, {updatedAt: 0}, {revision: 0}]) {
+    const result = aggregateServerAchievements([{userId: 'racer'}], [{...board(OFFICIAL,
+      [run(OWNER_PUBLIC_ID, 22000), run('racer', 22000)]), ...overrides}], new Map(), ownerOptions).entries[0];
+    assert.deepEqual(result.cosmeticUnlocks, []);
+  }
+  const result = aggregateServerAchievements([{userId: 'racer'}], [board('f'.repeat(64),
+    [run(OWNER_PUBLIC_ID, 22000), run('racer', 22000)])], new Map(), ownerOptions).entries[0];
+  assert.equal(result.serverAchievements.beatOwner.count, 0);
+});
+
+for (const rejected of ['racer', OWNER_PUBLIC_ID]) {
+  for (const status of ['unavailable', 'waiting', 'mismatch', 'stale-key']) {
+    test(`trusted tie flow fails closed for ${rejected === 'racer' ? 'player' : 'owner'} ${status}`, () => {
+      const rows = ['racer', OWNER_PUBLIC_ID].map((accountId, index) => ({accountId, trackId: OFFICIAL,
+        timeMs: 22000, frames: 22000, raceTimeFrames: 22000, uploadId: index + 1,
+        integrityVerified: true, replayHash: String(index + 1).repeat(64), replay: 'fixture-replay'}));
+      const verdicts = Object.fromEntries(rows.map(row => [row.accountId, {status: 'verified',
+        key: verificationKey(row), verifierVersion: VERIFIER_VERSION, engineDigest: VERIFIER_ENGINE_DIGEST}]));
+      if (status === 'stale-key') verdicts[rejected].key += '-stale';
+      else verdicts[rejected] = {...verdicts[rejected], status,
+        ...(status === 'unavailable' ? {reason: COMPETITIVE_REVIEW_REASON, retryAt: Number.MAX_SAFE_INTEGER} : {})};
+      const trusted = computeTrackEntries(rows, OFFICIAL, {}, verdicts);
+      assert.equal(trusted.find(row => row.accountId === rejected).runVerified, false);
+      const result = aggregateServerAchievements([{userId: 'racer'}, {userId: OWNER_PUBLIC_ID}],
+        [board(OFFICIAL, trusted)], new Map(), ownerOptions);
+      assert.deepEqual(result.entries[0].cosmeticUnlocks, []);
+      if (rejected === OWNER_PUBLIC_ID) assert.deepEqual(result.entries[1].cosmeticUnlocks, []);
+    });
+  }
+}
+
+test('accepted exact-bound verifier proofs produce tied achievement evidence', () => {
+  const rows = ['racer', OWNER_PUBLIC_ID].map((accountId, index) => ({accountId, trackId: OFFICIAL,
+    timeMs: 22000, frames: 22000, raceTimeFrames: 22000, uploadId: index + 1,
+    integrityVerified: true, replayHash: String(index + 1).repeat(64), replay: 'fixture-replay'}));
+  const verdicts = Object.fromEntries(rows.map(row => [row.accountId, {status: 'verified', key: verificationKey(row),
+    verifierVersion: VERIFIER_VERSION, engineDigest: VERIFIER_ENGINE_DIGEST}]));
+  const trusted = computeTrackEntries(rows, OFFICIAL, {}, verdicts);
+  const result = aggregateServerAchievements([{userId: 'racer'}, {userId: OWNER_PUBLIC_ID}],
+    [board(OFFICIAL, trusted)], new Map(), ownerOptions);
+  for (const entry of result.entries) assert.deepEqual(entry.cosmeticUnlocks, ['emblem:target']);
+});
 
 test('server aggregation rejects integrity-only rows from every authoritative metric', () => {
   const result = aggregateServerAchievements([{userId: 'racer'}], [board(OFFICIAL, [

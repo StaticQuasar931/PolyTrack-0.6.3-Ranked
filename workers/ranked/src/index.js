@@ -6,6 +6,8 @@ import {enqueueCanonicalPublication} from './coalesced-pb-publication.js';
 import {CANONICAL_CLIENT_URL, CLIENT_REVISION_HEADER, clientAccessPolicy, admitWriteBurst} from './client-access-policy.js';
 import {recallPublicResponse, rememberPublicResponse, publicResponseCacheScope, clearPublicResponseMemory} from './public-response-memory.js';
 import {EVENT_COLLECTIONS} from './events.js';
+import {createEventFirestoreStore} from './events-store.js';
+import {handleCurrencyRequest} from './currency-wallet.js';
 import {PUBLIC_MANIFEST_COLLECTION,publicationManifestId,decodePublicationPage,PUBLIC_PAGE_COLLECTION, publicationPageId, preparePublicationPages, loadPublicationEntries} from './paged-publication.js';
 import {prepareShardedVerification, migrateVerificationChunk, verificationShardId, VERIFICATION_MIGRATION_BATCH} from './verification-shards.js';
 import {proofVersionAtOrBefore} from './proof-snapshot-reuse.js';
@@ -18,7 +20,7 @@ import {packPlannerResults, plannerDocumentBytes, PLANNER_BUNDLE_VERSION, PLANNE
 export {packPlannerResults} from './planner-results.js';
 import {compactOverallEntries, compactOverallSnapshot, unpackOverallDetails, OVERALL_DETAILS_VERSION} from './overall-details.js';
 import { VERIFICATION_BOOTSTRAP_ID, VERIFICATION_BOOTSTRAP_BATCH, bootstrapSlots, VERIFICATION_COLLECTION, EXTRA_VERIFICATION_COLLECTION, verificationCollectionForTrack, verificationSchedule, verificationKey, hasAcceptedVerifiedProof, verifiedVerdict, verifiedTargetMs, pendingSlot } from './verification.js';
-import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
+import { aggregateServerAchievements, BEAT_OWNER_STAGES, OWNER_PUBLIC_ID, OWNER_CHALLENGE_POLICY_VERSION, SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SPECIAL_ROLLING_HILLS_TRACK_ID } from './server-achievements.js';
 import { EXTRA_TRACK_IDS } from './extra-track-ids.js';
 import { createFirestoreAudit, recordFirestoreReads, recordFirestoreFailure, describeFirestoreOperation } from './firestore-read-cost.js';
 import {loadOverallSources, sourceCatalogAfterTrackWrite, sourceCatalogNeedsScan, sourceCatalogIsReady, SOURCE_CATALOG_RESCAN_MS} from './overall-source-cache.js';
@@ -1908,7 +1910,7 @@ async function loadOverallRebuild(env, force = false) {
     return {rebuilt: false, reason: 'failure_cooldown', retryAt,
       attempts: Number(meta.overallRebuildFailureAttempts || 0)};
   }
-  const metricsOutdated = Number(meta.plannerPublicationVersion || 0) < PLANNER_PUBLICATION_VERSION || Number(meta.plannerBundleVersion || 0) < PLANNER_BUNDLE_VERSION || Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION || Number(meta.averagePlacementVersion || 0) < AVERAGE_PLACEMENT_VERSION || Number(meta.derivedMetricsVersion || 0) < DERIVED_METRICS_VERSION;
+  const metricsOutdated = Number(meta.ownerChallengePolicyVersion || 0) < OWNER_CHALLENGE_POLICY_VERSION || Number(meta.plannerPublicationVersion || 0) < PLANNER_PUBLICATION_VERSION || Number(meta.plannerBundleVersion || 0) < PLANNER_BUNDLE_VERSION || Number(meta.cosmeticEntitlementVersion||0)<COSMETIC_ENTITLEMENT_VERSION || Number(meta.averagePlacementVersion || 0) < AVERAGE_PLACEMENT_VERSION || Number(meta.derivedMetricsVersion || 0) < DERIVED_METRICS_VERSION;
   const catalogScanDue = sourceCatalogNeedsScan(meta.sourceCatalog, {now,force});
   const lastBuild = Number(meta.lastOverallBuildAt || 0), age = now - lastBuild;
   const coolingDown = lastBuild > 0 && age >= 0 && age < REBUILD_COOLDOWN_MS &&
@@ -2200,7 +2202,7 @@ async function buildOverallSnapshot(env, metaDoc, meta, now, force = false, allo
     entitlementCacheWrites.length=0;successMeta.entitlementBundle={version:1,ready:false};
   }
   if (writeBytes(finalData())>8*1024*1024 || finalData().length>450) throw Error('OVERALL_COMMIT_CAP');
-  const publishedMeta = { ...successMeta, plannerPublicationVersion:PLANNER_PUBLICATION_VERSION, plannerBundleVersion:PLANNER_BUNDLE_VERSION, cosmeticEntitlementVersion:COSMETIC_ENTITLEMENT_VERSION, serverAchievementVersion:SERVER_ACHIEVEMENT_VERSION,
+  const publishedMeta = { ...successMeta, ownerChallengePolicyVersion:OWNER_CHALLENGE_POLICY_VERSION, plannerPublicationVersion:PLANNER_PUBLICATION_VERSION, plannerBundleVersion:PLANNER_BUNDLE_VERSION, cosmeticEntitlementVersion:COSMETIC_ENTITLEMENT_VERSION, serverAchievementVersion:SERVER_ACHIEVEMENT_VERSION,
     dirty: incompleteRetryPending, overallComplete: snapshot.complete, overallSourceComplete: sourceTracksComplete,
     overallIncompleteReason, overallIncompleteRevision: sourceIncomplete ? revision : 0,
     overallIncompleteObservations: incompleteObservations, overallRetryPending: incompleteRetryPending,
@@ -3006,6 +3008,20 @@ async function handleRequestInternal(request, env, context = {}) {
     }
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: responseHeaders(origin, env) });
+  if (path.startsWith('/v1/currency/') || path.startsWith('/v1/shop/')) {
+    // Private owner API, not a public capture/snapshot route. Default-off gate
+    // inside the handler runs before authentication or any storage operation.
+    return handleCurrencyRequest(request, {env, headers: responseHeaders(origin, env),
+      store: createEventFirestoreStore({request: (route, init) => firestoreRequest(env, route, init),
+        projectId: String(env.FIREBASE_PROJECT_ID || PROJECT_ID), retries: 2}),
+      authenticate: request => verifyFirebaseUser(request, env),
+      admit: async uid => {
+        const admission = await admitWriteBurst(request, env);
+        if (admission === 'limited') return rateLimited(origin, env);
+        if (admission === 'unavailable') return json(origin, env, 503, {error: 'write_limiter_unavailable'});
+        return userRateLimitResponse(origin, env, uid);
+      }});
+  }
   const ownEventRead = /^\/v1\/events\/[A-Za-z0-9_-]{1,64}\/(receipt|runs\/[A-Za-z0-9_-]{1,128})$/.test(path);
   const privateCaptureRead = request.method === 'GET' && env.PUBLIC_FIRESTORE_READ_MODE === 'capture-only' &&
     !path.startsWith('/v1/admin/') && !path.startsWith('/v1/events/admin/') &&

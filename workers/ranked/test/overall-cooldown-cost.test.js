@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {OWNER_CHALLENGE_POLICY_VERSION} from '../src/server-achievements.js';
 import {rebuildOverall} from '../src/index.js';
 import {eventEncode} from '../src/events-store.js';
 
-const modern = {plannerPublicationVersion:999, plannerBundleVersion:999, cosmeticEntitlementVersion:999,
+const modern = {ownerChallengePolicyVersion:OWNER_CHALLENGE_POLICY_VERSION, plannerPublicationVersion:999, plannerBundleVersion:999, cosmeticEntitlementVersion:999,
   averagePlacementVersion:999, derivedMetricsVersion:999, builtRevision:12};
 function fixture(meta) {
   const calls = [];

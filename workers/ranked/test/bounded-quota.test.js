@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {OWNER_CHALLENGE_POLICY_VERSION} from '../src/server-achievements.js';
 import {handleRequest, rebuildOverall} from '../src/index.js';
 import {eventEncode, eventDecode} from '../src/events-store.js';
 import {preparePublicationPages, publicationManifestId, PUBLIC_MANIFEST_COLLECTION, PUBLIC_PAGE_COLLECTION} from '../src/paged-publication.js';
@@ -9,7 +10,7 @@ const tags = '0.6.2_s1_group_tags';
 const overall = '0.6.2_s1_leaderboards_overall';
 const meta = '0.6.2_s1_release_meta/current';
 const account = 'quota-racer';
-const modern = {plannerPublicationVersion:999, plannerBundleVersion:999, cosmeticEntitlementVersion:999,
+const modern = {ownerChallengePolicyVersion:OWNER_CHALLENGE_POLICY_VERSION, plannerPublicationVersion:999, plannerBundleVersion:999, cosmeticEntitlementVersion:999,
   averagePlacementVersion:999, derivedMetricsVersion:999, builtRevision:12};
 
 function fixture() {

@@ -11,7 +11,7 @@ function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a
 function harness(disk=new Map()){
   const cloud=new Map();let serial=0,user={uid:'uid'};
   const h={disk,cloud,paused:true,account:'acct',uid:'uid',failStorage:false,dbGate:null,retry:false,
-    document:{querySelector:()=>null},isElementVisible:node=>node.visible!==false,
+    document:{querySelector:()=>null,getElementById:()=>null},isElementVisible:node=>node.visible!==false,
     lastMirrorSig:'',lastMirrorAt:0,guestAccountId:'acct',LAST_ACTIVE_NAME_KEY:'name',
     LOCAL_PB_RECONCILE_STATE_KEY:'receipts',OVERALL_PB_DIRTY_KEY:'dirty',FIREBASE_QUOTA_PAUSE_KEY:'quota',
     COLLECTIONS:{raceResults:'races',profilesPublic:'profiles'},legacyNameTransactions:new WeakSet(),
@@ -205,4 +205,9 @@ test('recording POST for a deferred PB persists locally without a cloud repair o
   const last=source.indexOf('      const rawIds =',first);
   const response=await vm.runInContext('(async()=>{'+source.slice(first,last)+'})()',h);
   assert.equal(response.success,true);assert.equal(localWrites,1);assert.equal(databases,0);
+});
+
+test('locked cosmetic preview blocks programmatic publish before storage or cloud work',async()=>{
+  const h=studio(),status={};h.document.getElementById=()=>({__cosmeticPreviewController:{canPublish:()=>false}});
+  assert.equal(await h.saveRankedProfileCosmetics('acct',status,{}),false);assert.match(status.textContent,/Exit the locked-item preview/);assert.equal(h.disk.size,0);assert.equal(h.cloud.size,0);
 });

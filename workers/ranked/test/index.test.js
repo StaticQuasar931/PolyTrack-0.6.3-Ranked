@@ -1,5 +1,6 @@
 import { verificationKey, verifiedVerdict, VERIFIER_VERSION, VERIFIER_ENGINE_DIGEST, VERIFICATION_COLLECTION } from '../src/verification.js';
 import assert from 'node:assert/strict';
+import {OWNER_CHALLENGE_POLICY_VERSION} from '../src/server-achievements.js';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -942,7 +943,7 @@ test('scheduled idle recovery scans canonical results every fifteen minutes with
       if(path.includes(VERIFICATION_BOOTSTRAP_ID))return {fields:wire({complete:true}).mapValue.fields};
       if(path.includes('/canonical_reconcile_v2'))return {fields:wire({backfillComplete:true,
         cursorIngestedAt:'2026-09-09T00:00:00.000000123Z',pendingTrackIds:[]}).mapValue.fields,updateTime:'job-v1'};
-      if(path.includes('/0.6.2_s1_release_meta/current'))return {fields:wire({dirty:false,
+      if(path.includes('/0.6.2_s1_release_meta/current'))return {fields:wire({dirty:false, ownerChallengePolicyVersion:OWNER_CHALLENGE_POLICY_VERSION,
         entitlementAuditedAt:Date.now(),
         sourceCatalog:{version:1,complete:true,scannedAt:Date.now(),count:0,tracks:{}},
         plannerPublicationVersion:Number.MAX_SAFE_INTEGER,plannerBundleVersion:Number.MAX_SAFE_INTEGER,

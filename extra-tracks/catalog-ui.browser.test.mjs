@@ -10,7 +10,7 @@ try { ({chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } c
 const browserSkip = !chromium && 'Set PLAYWRIGHT_MODULE to the bundled Playwright package to run this browser test.';
 const moduleSource = fs.readFileSync(new URL('./catalog-ui.mjs', import.meta.url), 'utf8');
 const reviewSource = fs.readFileSync(new URL('./review.mjs', import.meta.url), 'utf8');
-const reviewedModules = new Map(['reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'random-picker.mjs'].map(name => [name, fs.readFileSync(new URL('./' + name, import.meta.url), 'utf8')]));
+const reviewedModules = new Map(['builder-contact.mjs', 'reviewed.mjs', 'reviewed-data.mjs', 'snapshot-popularity.mjs', 'featured-picks.mjs', 'random-picker.mjs'].map(name => [name, fs.readFileSync(new URL('./' + name, import.meta.url), 'utf8')]));
 reviewedModules.set('tools/search-text.mjs', fs.readFileSync(new URL('../tools/search-text.mjs', import.meta.url), 'utf8'));
 const css = fs.readFileSync(new URL('./catalog.css', import.meta.url), 'utf8');
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
@@ -200,6 +200,7 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     await report.waitFor({state: 'hidden'});
     assert.equal(await report.isVisible(), false, 'closed report dialog stays hidden when catalog is reopened');
 
+    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
     await page.getByRole('button', {name: 'Submit a track'}).click();
     const submission = page.getByRole('dialog', {name: 'Submit an Extra Track'});
     await submission.waitFor({state: 'visible'});
@@ -210,6 +211,7 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     assert.equal(await submitClose.evaluate(el => el === document.activeElement), true, 'submission Tab wraps within the modal');
     await submitClose.click();
     assert.equal(await page.getByRole('button', {name: 'Submit a track'}).evaluate(el => el === document.activeElement), true, 'submission Close restores focus to its launcher');
+    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
     await page.getByRole('button', {name: 'Submit a track'}).click();
     await submission.waitFor({state: 'visible'});
     await page.keyboard.press('Escape');
@@ -315,7 +317,7 @@ test('track cards show full previews and keep feedback in an accessible three-do
     assert.equal(await more.evaluate(el => el === document.activeElement), true, 'Escape closes the disclosure and restores focus to its trigger');
     assert.equal(await page.getByRole('dialog', {name: 'Extra Tracks'}).isVisible(), true, 'Escape leaves the catalog open');
     await more.click();
-    await page.locator('.sq-extra-header h2').click();
+    await page.mouse.click(2, 2); // The floating review popup is inset at least 8px, so this is always outside it.
     assert.equal(await menu.isHidden(), true, 'outside click closes the floating dropdown');
 
     await more.click();
@@ -440,6 +442,7 @@ test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and
       assert.ok(bounds && bounds.x >= 0 && bounds.width <= width, `catalog overlay fits ${width}x${height}: ${JSON.stringify(bounds)}`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `catalog has no horizontal page overflow at ${width}x${height}`);
 
+      if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
       await page.getByRole('button', {name: 'Submit a track'}).click();
       const form = page.locator('.sq-extra-submission');
       const formBounds = await form.boundingBox();
@@ -579,6 +582,7 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
     });
     const submission = page.getByRole('dialog', {name: 'Submit an Extra Track'});
     for (const outcome of ['resolve', 'reject']) {
+      if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
       await page.getByRole('button', {name: 'Submit a track'}).click();
       await page.getByLabel('Track name').fill(`Race ${outcome}`);
       await page.getByLabel('Creator name').fill('Tester');
@@ -599,8 +603,9 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
         assert.equal(await page.getByRole('dialog', {name: 'Report a track'}).isVisible(), true, 'settling the submission does not close the other dialog');
         assert.equal(await page.locator('.sq-extra-report-status').isHidden(), true, 'cross-type wait message clears after completion');
         await page.getByRole('dialog', {name: 'Report a track'}).getByRole('button', {name: 'Close'}).click();
-        assert.equal(await page.getByRole('button', {name: 'Submit a track'}).isDisabled(), false, 'submission control is restored too');
+        assert.equal(await page.locator('.sq-extra-submit').isDisabled(), false, 'submission control is restored too');
       } else {
+        if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
         await page.getByRole('button', {name: 'Submit a track'}).click();
         await submission.waitFor({state: 'visible'});
         assert.equal(await page.getByRole('button', {name: 'Send for review'}).isDisabled(), true, 'in-flight submission stays locked after reopening');
@@ -841,7 +846,7 @@ test('native leaderboard filter label stays on one line', {skip: browserSkip}, a
   }
 });
 
-test('overhauled header, actual catalog spotlights and primary picker fit desktop, phone and short landscape offline', {skip:browserSkip}, async()=>{
+test('unlit catalog spotlights, compact random actions and nested contribution menu fit desktop, phone and short landscape offline', {skip:browserSkip}, async()=>{
  const browser=await chromium.launch({headless:true});
  try {
   const page=await browser.newPage({hasTouch:true});const external=[],errors=[];
@@ -869,27 +874,51 @@ test('overhauled header, actual catalog spotlights and primary picker fit deskto
   for(const [width,height] of [[1366,900],[390,844],[844,320]]){
    await page.setViewportSize({width,height});await page.evaluate(()=>document.querySelector('.sq-extra-menu').scrollTop=0);
    assert.equal(await page.locator('.sq-extra-export').isVisible(),false);
-   for(const control of [more,page.locator('.sq-extra-submit'),page.locator('.sq-extra-close')]){const box=await control.boundingBox();assert.ok(box&&box.height>=44&&box.x>=0&&box.x+box.width<=width);}
+   for(const control of [more,page.locator('.sq-extra-contribute > summary'),page.locator('.sq-extra-close')]){const box=await control.boundingBox();assert.ok(box&&box.height>=44&&box.x>=0&&box.x+box.width<=width);}
    assert.equal(await page.locator('.sq-extra-menu').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
    const visible=page.locator('.sq-extra-pick:visible').first();
    if(await visible.count()){
     assert.equal(await visible.locator('.sq-extra-pick-reason').count(),1);
     assert.equal(await visible.locator('.sq-extra-pick-highlight .sq-extra-pick-note').count(),1);
-    assert.match(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el,'::after').backgroundImage),/linear-gradient/);
+    assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el,'::after').content),'none');
+    assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el).backgroundImage),'none');
    }
-   await shot('overhaul-catalog-'+width+'x'+height);
+   assert.equal(await page.locator('.sq-extra-random-actions').evaluate(el=>el.parentElement.className),'sq-extra-summary');
+   assert.equal(await page.getByRole('button',{name:'Choose random track',exact:true}).textContent(),'Random');
+   await shot('contribute-catalog-'+width+'x'+height);
+   const contribute=page.locator('.sq-extra-contribute > summary');
+   await contribute.focus();await page.keyboard.press('Enter');
+   assert.equal(await page.locator('.sq-extra-submit').isVisible(),true);
+   await shot('contribute-menu-'+width+'x'+height);
+   const builder=page.locator('.sq-extra-builder-submenu > summary');
+   await builder.focus();await page.keyboard.press('Enter');
+   const contact=page.locator('.sq-extra-builder-submenu .sq-builder-contact');await contact.waitFor({state:'visible'});
+   assert.equal(await contact.locator('.sq-builder-checklist li').count(),5,'actual program guidance is inside the submenu');
+   const menu=page.locator('.sq-extra-contribute-actions');
+   const menuBounds=await menu.boundingBox();assert.ok(menuBounds.x>=0&&menuBounds.y>=0&&menuBounds.x+menuBounds.width<=width&&menuBounds.y+menuBounds.height<=height);
+   await shot('contribute-builder-'+width+'x'+height);
+   await contact.locator('.sq-builder-contact-actions').scrollIntoViewIfNeeded();
+   await shot('contribute-builder-actions-'+width+'x'+height);
+   await page.keyboard.press('Escape');assert.equal(await builder.evaluate(el=>el===document.activeElement),true);
+   assert.equal(await contact.isVisible(),false);assert.equal(await page.locator('.sq-extra-contribute').evaluate(el=>el.open),true);
+   await page.keyboard.press('Escape');assert.equal(await contribute.evaluate(el=>el===document.activeElement),true);
+   await contribute.click();await page.locator('.sq-extra-submit').click();
+   const submission=page.locator('.sq-extra-submission-modal');assert.equal(await submission.isVisible(),true);
+   await shot('contribute-submit-'+width+'x'+height);
+   await page.keyboard.press('Escape');assert.equal(await page.locator('.sq-extra-submit').evaluate(el=>el===document.activeElement),true);
+   await page.keyboard.press('Escape');
    await more.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.sq-extra-export').isVisible(),true);
-   await shot('overhaul-more-'+width+'x'+height);
+   await shot('contribute-more-'+width+'x'+height);
    await page.locator('.sq-extra-export').click();
    await page.keyboard.press('Escape');assert.equal(await more.evaluate(el=>el===document.activeElement),true);
    assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true,'Escape dismisses only More');
    await page.getByRole('button',{name:'Choose random track',exact:true}).click();
    const panel=page.locator('.sq-extra-picker');
    assert.equal(await panel.locator('details').evaluate(el=>el.open),false);
-   await shot('overhaul-picker-'+width+'x'+height);
+   await shot('contribute-picker-'+width+'x'+height);
    const bounds=await panel.boundingBox();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=width&&bounds.y+bounds.height<=height);
    await panel.locator('summary').click();await panel.getByRole('button',{name:'Back',exact:true}).scrollIntoViewIfNeeded();
-   await shot('overhaul-picker-advanced-'+width+'x'+height);
+   await shot('contribute-picker-advanced-'+width+'x'+height);
    await panel.getByRole('button',{name:'Back',exact:true}).click();
    await panel.locator('details').evaluate(el=>el.open=false);
   }

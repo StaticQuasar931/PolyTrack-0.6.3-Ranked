@@ -57,18 +57,18 @@ test('scope is mounted in footer-right, never the center; picker hides only lega
   assert.match(picker,/'field'/);assert.match(fn('setOverallCategory'),/selected==='field'.*loadFieldRpModule/);
   assert.match(source,/playtime:'Active playtime',veterans:'Account age'/);
 });
-test('actual row formats only Casual RP with commas and renders unknown Field as N/A',()=>{
+test('actual row groups RP values, keeps Casual whole, and renders unknown Field as N/A',()=>{
   const c=vm.createContext({Number,Date,Object,Math,MIN_RANKED_TRACKS:3,TOTAL_TRACKS:10,AVERAGE_PLACEMENT_VERSION:2,OVERALL_PAGE_SIZE:15,
     overallCategory:'casual',overallCompletionScope:'all',overallRankingScope:'total',escapeHtml:String,cleanUserId:String,safeDisplayName:v=>v,
     normalizeEntries:rows=>rows,normalizeCarColorId:()=>'',__pt062NormalizeStyle:()=>'',__pt062GetRememberedStyle:()=>'',categoryTrackMarkup:()=>'',
     activeRankedAccountId:()=>'',categoryContextMarkup:()=>'',completedTrackCount:()=>3,eligibleWinCount:()=>0,improvedRacerScore:()=>0,risingRacerScore:()=>0,
     rankingMetricFor:(_row,category)=>category==='field'?{known:false,value:null}:{known:true,value:12345.678},
-    formatRp:v=>Number(v).toFixed(3),rankedWeightTitle:()=>'',LEADERBOARD_INFO:{},preciseDurationLabel:()=>'',
+    rpDecimals:()=>3,rankedWeightTitle:()=>'',LEADERBOARD_INFO:{},preciseDurationLabel:()=>'',
     compactParticipationMeta:()=>'',medalSummaryMarkup:()=>'',cosmeticTitleText:()=>'',profileBadgeMarkup:()=>'',racerCosmeticClasses:()=>'',carModelPreview:()=>'',countryFlagMarkup:()=>''});
-  vm.runInContext(fn('renderEntryRow'),c);
+  vm.runInContext(fn('formatRp')+'\n'+fn('renderEntryRow'),c);
   const entry={rank:1,userId:'a',name:'A',score:12345.678,raceCount:3,casualRp:12345.678,casualCompletionCount:3};
   assert.match(c.renderEntryRow(entry,0),/<div class="overall-score">12,346<\/div>/);
-  c.overallCategory='overall';assert.match(c.renderEntryRow(entry,0),/<div class="overall-score">12345.678<\/div>/);
+  c.overallCategory='overall';assert.match(c.renderEntryRow(entry,0),/<div class="overall-score">12,345.678<\/div>/);
   c.overallCategory='field';const html=c.renderEntryRow(entry,0);assert.match(html,/<div class="overall-score">N\/A<\/div>/);
   assert.match(html,/FIELD RP \(EXPERIMENTAL\)/);assert.match(html,/>N\/A<\/span>/);
 });

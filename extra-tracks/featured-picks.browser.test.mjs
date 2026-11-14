@@ -224,8 +224,8 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.equal(moduleRequests.includes('builder-contact.mjs'),false,'contact code is not loaded before user action');
     const search=page.getByRole('searchbox',{name:'Search tracks'});await search.fill('Everlasting');
     const initialDialogs=await page.getByRole('dialog').count();
-    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
-    await page.getByRole('button',{name:'Builder program',exact:true}).click();
+    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    await page.locator('.sq-extra-builder-submenu > summary').click();
     const contact=page.locator('.sq-builder-contact');await contact.waitFor({state:'visible'});
     assert.equal(moduleRequests.filter(name=>name==='builder-contact.mjs').length,1);
     assert.equal(await page.getByRole('dialog').count(),initialDialogs,'contact uses the existing dialog');
@@ -247,8 +247,8 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.match(fs.readFileSync(await download.path(),'utf8'),/Permissions and original credits/);
     await page.getByRole('button',{name:'Back to tracks',exact:true}).click();
     assert.equal(await search.inputValue(),'Everlasting');assert.equal(await page.locator('.sq-extra-card').count(),1);
-    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
-    await page.getByRole('button',{name:'Builder program',exact:true}).click();await contact.waitFor({state:'visible'});
+    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    await page.locator('.sq-extra-builder-submenu > summary').click();await contact.waitFor({state:'visible'});
     await page.keyboard.press('Escape');assert.equal(await contact.isHidden(),true);assert.equal(await search.inputValue(),'Everlasting');
     assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true);
     assert.deepEqual(unexpected,[],'no contact, Firebase or other external fetch is made');assert.deepEqual(errors,[]);

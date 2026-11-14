@@ -1576,11 +1576,13 @@ test('spotlights use real preview images and creator credit, mobile tabs, and a 
 });
 
 
-test('Builder program opens in the same dialog, preserves track filters, and Escape returns to Tracks', async () => {
+test('Builder program is a nested contribution submenu, preserves track filters, and Escape returns to contribution choices', async () => {
   const {document,root,api}=fixture([entry(1),entry(2)]);api.open();
   const search=tag(cls(root,'sq-extra-search-field')[0],'input')[0];search.value='Track 02';await search.dispatch('input');
+  cls(root,'sq-extra-contribute')[0].open=true;
   const builder=cls(root,'sq-extra-builder-action')[0];const dialogs=walk(root).filter(n=>n.getAttribute('role')==='dialog').length;
-  await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,true);
+  await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);
+  assert.equal(cls(root,'sq-extra-builder-submenu')[0].contains(cls(root,'sq-extra-contact-host')[0]),true);
   assert.equal(walk(root).filter(n=>n.getAttribute('role')==='dialog').length,dialogs,'no second contact modal');
   document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('hidden pagination must not change');}});
   api.setSnapshotStatistics({generation:1,statistics:{schemaVersion:1,tracks:{}}});
@@ -1593,6 +1595,7 @@ test('Builder program opens in the same dialog, preserves track filters, and Esc
 test('closing Builder program restores the track view on reopen and Back preserves chosen sort', async () => {
   const {root,api}=fixture([entry(1),entry(2)]);api.open();
   const sort=tag(field(root,'Sort'),'select')[0];sort.value='name';await sort.dispatch('change');
+  cls(root,'sq-extra-contribute')[0].open=true;
   await click(cls(root,'sq-extra-builder-action')[0]);await click(cls(root,'sq-builder-back')[0]);assert.equal(sort.value,'name');
   await click(cls(root,'sq-extra-builder-action')[0]);api.close();api.open();
   assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);assert.equal(sort.value,'name');api.destroy();
@@ -1758,4 +1761,33 @@ test('picker preview bridge is single-flight and exposes a cancellation guard fo
  api.open(); assert.equal(context.isCurrent(),false);
  api.destroy(); request.resolve(); await pending;
  assert.equal(context.isCurrent(),false);
+});
+
+test('closing and reopening the Builder submenu during lazy import never leaves it empty or steals focus after close', async () => {
+ const {document,root,api}=fixture([entry(1)]);api.open();
+ const contribute=cls(root,'sq-extra-contribute')[0],builder=cls(root,'sq-extra-builder-action')[0];
+ contribute.open=true;
+ const first=click(builder);assert.equal(builder.getAttribute('aria-expanded'),'true');
+ await click(builder);assert.equal(builder.getAttribute('aria-expanded'),'false');
+ const reopened=click(builder);await Promise.all([first,reopened]);
+ assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);
+ assert.equal(cls(root,'sq-builder-contact').length,1);
+ await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
+ const pending=click(builder);api.close();await pending;
+ assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
+ assert.equal(cls(root,'sq-extra-overlay')[0].hidden,true);
+ assert.notEqual(document.activeElement,tag(cls(root,'sq-builder-contact')[0],'h3')[0]);
+ api.destroy();
+});
+
+test('dismissing contribution from a track click preserves the existing card target and isolates menu keys', async () => {
+ const {document,root,api}=fixture(Array.from({length:15},(_,i)=>entry(i+1)));api.open();
+ const contribute=cls(root,'sq-extra-contribute')[0];contribute.open=true;
+ document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('menu keys must not page the catalog');}});
+ await click(cls(root,'sq-extra-builder-action')[0]);
+ const card=cls(root,'sq-extra-card')[0];
+ document.listeners.get('click')({target:card});
+ assert.equal(contribute.open,false);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);
+ assert.equal(cls(root,'sq-extra-card')[0],card,'outside dismissal must not replace the clicked card');
+ api.destroy();
 });

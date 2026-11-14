@@ -20,7 +20,7 @@ before(async () => {
       res.setHeader('Content-Type','text/html');
       res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PolyTrack achievement journal fixture</title><link rel="stylesheet" href="/tools/achievement-journal.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#0e1934}main{max-width:1440px;margin:auto}</style><main id="host"></main></html>'); return;
     }
-    const allowed = {'/tools/achievement-journal.mjs':'text/javascript','/tools/achievement-journal.css':'text/css','/forced_square.woff2':'font/woff2'};
+    const allowed = {'/tools/achievement-journal.mjs':'text/javascript','/tools/achievement-model.mjs':'text/javascript','/tools/achievement-journal.css':'text/css','/forced_square.woff2':'font/woff2'};
     if (!allowed[pathname]) { res.writeHead(404).end(); return; }
     try { res.setHeader('Content-Type',allowed[pathname]); res.end(await fs.readFile(path.join(root,pathname.slice(1)))); } catch {res.writeHead(404).end();}
   });
@@ -29,7 +29,7 @@ before(async () => {
   browser = await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {})});
   await fs.mkdir(evidence,{recursive:true});
 });
-after(async () => { await browser?.close(); if (server) await new Promise(resolve => server.close(resolve)); });
+after(async () => { await browser?.close(); if (server) {server.closeAllConnections();await new Promise(resolve => server.close(resolve));} });
 
 async function fixture(page,extra = {}) {
   await page.goto(base);
@@ -41,7 +41,7 @@ async function fixture(page,extra = {}) {
     host.innerHTML = api.renderAchievementJournal(window.input);
     window.dispose = api.bindAchievementJournal(host,{onTryCosmetic:value => calls.try.push(value),onNavigate:value => calls.navigate.push(value),onClose:() => calls.closed++,storage:{getItem:() => null,setItem:(...args) => calls.storage.push(args)}});
     await document.fonts.ready;
-    return api.buildAchievementProgress(window.input).counts;
+    return api.buildAchievementJournalModel(window.input).counts;
   },{cosmetics,extra});
 }
 
@@ -51,20 +51,22 @@ test('desktop catalog, filters, reward callbacks, keyboard, disposal and no exte
   page.on('pageerror',error => errors.push(error.message));
   await page.route('**/*',route => route.request().url().startsWith(base + '/') ? route.continue() : (external++,route.abort()));
   const counts = await fixture(page);
-  assert.equal(await page.locator('.aj-branch').count(),5);
+  assert.equal(await page.locator('.aj-branch').count(),6);
   await page.screenshot({path:path.join(evidence,'achievement-journal-desktop.png'),fullPage:true,animations:'disabled'});
   await page.locator('[data-aj-filter="all"]').click();
+  await page.locator('[data-aj-family="discovery"]').click();
   const extra = page.locator('[data-aj-select="discovery:extra:1"]');
   await extra.click();
-  assert.match(await page.locator('[data-aj-detail]').innerText(),/Awaiting confirmation/);
+  assert.match(await page.locator('[data-aj-detail]').innerText(),/In progress/);
   assert.match(await page.locator('[data-aj-detail]').innerText(),/Saved on this device: 3/);
-  assert.match(await page.locator('[data-aj-detail] [data-aj-try]').first().innerText(),/^View reward:/);
+  assert.match(await page.locator('[data-aj-detail] [data-aj-try]').first().getAttribute('aria-label'),/^View reward:/);
   await page.locator('[data-aj-detail] [data-aj-try]').first().click();
   assert.equal(await page.evaluate(() => calls.try[0].confirmed),false);
   assert.equal(await page.evaluate(() => calls.try[0].previewOnly),true);
   assert.equal(await page.evaluate(() => calls.try[0].requirement),'extra:1');
   await page.locator('[data-aj-detail] [data-aj-navigate]').click();
   assert.deepEqual(await page.evaluate(() => calls.navigate),['discovery']);
+  await page.locator('[data-aj-family="all"]').click();
   await page.locator('[data-aj-filter="earned"]').click();
   assert.equal(await page.locator('[data-aj-node]:visible').count(),counts.earned);
   const first = page.locator('[data-aj-node]:visible [data-aj-select]').first();
@@ -89,15 +91,16 @@ test('portrait, narrow phone, zoom and reduced motion fit without horizontal ove
     const undersized = await page.locator('.aj button:visible').evaluateAll(elements => elements.filter(el => el.getBoundingClientRect().height < 44).length);
     assert.equal(undersized,0);
     if (width <= 660) {
-      assert.equal(await page.locator('[data-aj-node]>.aj-detail').count(),1);
-      await page.locator('[data-aj-select="local:eventParticipations:5"]').click();
-      assert.match(await page.locator('[data-aj-node="local:eventParticipations:5"] .aj-detail').innerText(),/Personal milestone/);
-      assert.match(await page.locator('[data-aj-node="local:eventParticipations:5"] .aj-detail').innerText(),/Saved on this device/);
+      assert.equal(await page.locator('[data-aj-node]>.aj-detail').count(),0);
+      await page.locator('[data-aj-family="events"]').click();
+      await page.locator('[data-aj-select="achievement:v1:event-participation:3"]').click();
+      assert.match(await page.locator('[data-aj-node="achievement:v1:event-participation:3"] .aj-detail').innerText(),/Personal milestone/);
+      assert.match(await page.locator('[data-aj-node="achievement:v1:event-participation:3"] .aj-detail').innerText(),/Saved on this device/);
     } else assert.equal(await page.locator('.aj-layout>.aj-detail').count(),1);
     if (width === 390) await page.screenshot({path:path.join(evidence,'achievement-journal-phone.png'),fullPage:true,animations:'disabled'});
   }
-  await page.setViewportSize({width:1280,height:900});
-  await page.evaluate(() => document.body.style.zoom = '2');
+  // A 1280x900 window at 200% zoom has a 640x450 CSS layout viewport.
+  await page.setViewportSize({width:640,height:450});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true);
 });
 
@@ -116,5 +119,27 @@ test('empty, zero counts, hostile labels and blocked preference storage remain u
   assert.equal(await page.locator('[data-aj-node]:visible').count(),0);
   assert.match(await page.locator('[data-aj-detail]').innerText(),/No milestones match/);
   await page.locator('[data-aj-filter="all"]').click();
-  assert.equal(await page.locator('[data-aj-node]:visible').count(),5);
+  await page.locator('[data-aj-family="all"]').click();
+  assert.equal(await page.locator('[data-aj-node]:visible').count(),await page.evaluate(async()=> (await import('/tools/achievement-journal.mjs')).buildAchievementJournalModel(input).counts.total));
+});
+
+test('known goals lead by default, unknowns stay under All tiers, and proposal points never appear',async t => {
+  const context=await browser.newContext(),page=await context.newPage();t.after(()=>context.close());
+  await fixture(page,{cosmetics:{},progress:{local:{practiceFinishes:5}}});
+  assert.equal(await page.locator('[data-aj-family="practice"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('[data-aj-node]:visible').count(),1);
+  assert.equal(await page.locator('[data-aj-node]:visible').getAttribute('data-aj-known'),'true');
+  assert.equal(await page.locator('[data-aj-node]:visible').getAttribute('data-aj-node'),'achievement:v1:practice-finishes:10');
+  assert.equal(await page.locator('[data-aj-family="daily"]').isVisible(),false);
+  await page.locator('[data-aj-filter="all"]').click();await page.locator('[data-aj-family="all"]').click();
+  assert.equal(await page.locator('[data-aj-family="daily"]').isVisible(),true);
+  assert.ok(await page.locator('[data-aj-known="false"]:visible').count()>0);
+  assert.equal(await page.locator('[data-aj-known="false"] progress').first().getAttribute('value'),null);
+  assert.match(await page.locator('[data-aj-known="false"]').first().innerText(),/Not tracked yet/);
+  assert.doesNotMatch(await page.locator('[data-aj-root]').innerText(),/wallet|planned coins|reward points|proposal|claim/i);
+  await page.locator('[data-aj-search-input]').fill('faster line');
+  assert.ok(await page.locator('[data-aj-node]:visible').count()>0);
+  await page.locator('[data-aj-node]:visible [data-aj-select]').first().click();
+  assert.equal(await page.locator('.aj-more').count(),1);
+  assert.equal(await page.locator('.aj-more').getAttribute('open'),null);
 });

@@ -4,7 +4,7 @@ import {rebuildOverall, handleRequest} from '../src/index.js';
 import {eventEncode, eventDecode} from '../src/events-store.js';
 import {unpackOverallDetails} from '../src/overall-details.js';
 import {prepareSourcePublication} from '../src/overall-source-publication.js';
-import {OWNER_PUBLIC_ID} from '../src/server-achievements.js';
+import {OWNER_PUBLIC_ID, OWNER_CHALLENGE_POLICY_VERSION} from '../src/server-achievements.js';
 import {ENTITLEMENT_COLLECTION as ENT, ENTITLEMENT_CACHE_COLLECTION as CACHE,
   ENTITLEMENT_AUDIT_MS, ENTITLEMENT_MAX_ACCOUNTS, ENTITLEMENT_JOURNAL_MAX_IDS, entitlementPolicyKey,
   invalidateEntitlements, entitlementMarkerValid, loadOverallEntitlements,
@@ -164,6 +164,73 @@ function reads(calls, collection) {
   return calls.flatMap(call => call.path === ':batchGet' ? call.body.documents : [])
     .filter(name => name.includes('/' + collection + '/')).length;
 }
+
+test('owner tie policy upgrade reuses 531 cached sources and entitlements without canonical/profile scans', async t => {
+  t.mock.method(Date, 'now', () => AT);
+  const f = fixture(531); await rebuildOverall(f.env, true);
+  const meta = f.data.get(META), oldKey = meta.entitlementPolicyKey;
+  f.mutate(META, {...meta, ownerChallengePolicyVersion: OWNER_CHALLENGE_POLICY_VERSION - 1});
+  const start = f.calls.length, commits = f.commits.length;
+  assert.equal((await rebuildOverall({...f.env})).rebuilt, true);
+  const added = f.calls.slice(start), writes = f.commits.slice(commits).flat();
+  assert.equal(reads(added, ENT), 0);
+  assert.equal(reads(added, '0.6.2_profiles_public'), 0);
+  assert.equal(reads(added, TRACKS), 0);
+  assert.equal(added.filter(call => call.path === ':runQuery').length, 0);
+  assert.equal(reads(added, CACHE), 1);
+  assert.equal(writes.filter(write => write.update.name.includes('/' + ENT + '/')).length, 0);
+  assert.equal(f.data.get(META).entitlementPolicyKey, oldKey);
+  assert.equal(f.data.get(META).ownerChallengePolicyVersion, OWNER_CHALLENGE_POLICY_VERSION);
+  const again = f.calls.length;
+  assert.equal((await rebuildOverall({...f.env})).rebuilt, false);
+  assert.equal(f.calls.length - again, 1, 'following clean invocation reads only metadata');
+  console.log('Owner policy upgrade measured', JSON.stringify({accounts: 531, requests: added.length,
+    canonicalEntitlementReads: 0, profileReads: 0, boardRootReads: 0, entitlementCompanionReads: 1,
+    canonicalEntitlementWrites: 0, publicationWrites: writes.length}));
+});
+
+test('owner tie upgrade fences only changed unlock documents, never all 531 accounts', async t => {
+  t.mock.method(Date, 'now', () => AT);
+  const f = fixture(531), root = f.data.get(TRACKS + '/' + TRACK);
+  root.entries.push({accountId: OWNER_PUBLIC_ID, timeMs: 10000, integrityVerified: true, runVerified: true, weight: 1});
+  root.totalEntries++;
+  f.mutate(TRACKS + '/' + TRACK, root);
+  await rebuildOverall(f.env, true);
+  const documents = new Map();
+  // Reconstruct a legacy companion: owner and r0000 had not earned a strict
+  // beat. The other 530 unchanged allowances retain their cached payloads.
+  for (const [key, original] of [...f.data]) {
+    if (!key.startsWith(ENT + '/')) continue;
+    const id = key.slice(ENT.length + 1), data = clone(original);
+    if ([OWNER_PUBLIC_ID, 'r0000'].includes(id)) {
+      data.emblem = data.emblem.filter(value => value !== 'target');
+      data.serverIssued.cosmeticUnlocks = [];
+      const challenge = data.serverIssued.achievements.beatOwner;
+      challenge.ledger = challenge.ledger.replace(/[0-9a-f]/gi, '0'); challenge.count = 0; challenge.unlocks = [];
+      f.mutate(key, data);
+    }
+    // Missing commit timestamps are the existing bounded refinement case.
+    documents.set(id, {id, data, updateTime: ''});
+  }
+  const meta = f.data.get(META), oldKey = meta.entitlementPolicyKey;
+  const publication = await prepareEntitlementPublication(documents, {scope: meta.entitlementBundle.scope,
+    policyKey: oldKey, epoch: meta.entitlementBundle.epoch, auditedAt: meta.entitlementAuditedAt});
+  for (const document of publication.documents) f.mutate(document.collection + '/' + document.id, document.data);
+  f.mutate(META, {...meta, entitlementBundle: publication.marker, ownerChallengePolicyVersion: 1});
+  const start = f.calls.length, commits = f.commits.length;
+  assert.equal((await rebuildOverall({...f.env})).rebuilt, true);
+  const added = f.calls.slice(start), writes = f.commits.slice(commits).flat();
+  assert.equal(reads(added, ENT), 2, 'only the owner and tied player need CAS timestamp refinement');
+  assert.equal(reads(added, TRACKS), 0);
+  assert.equal(reads(added, '0.6.2_profiles_public'), 0);
+  assert.equal(added.filter(call => call.path === ':runQuery').length, 0);
+  assert.equal(writes.filter(write => write.update.name.includes('/' + ENT + '/')).length, 2);
+  assert.equal(f.data.get(META).entitlementPolicyKey, oldKey);
+  for (const id of [OWNER_PUBLIC_ID, 'r0000']) assert.ok(f.data.get(ENT + '/' + id).emblem.includes('target'));
+  assert.equal((await rebuildOverall({...f.env})).rebuilt, false);
+  console.log('Changed owner policy upgrade measured', JSON.stringify({accounts: 532, requests: added.length,
+    canonicalEntitlementReads: 2, canonicalEntitlementWrites: 2, publicationWrites: writes.length}));
+});
 async function profileGrant(f, accountId = 'r0000') {
   const tasks = [];
   const response = await handleRequest(new Request('https://ranked.example/v1/profile/notify', {
