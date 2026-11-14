@@ -389,3 +389,5 @@ dialog.profile-hub { background:#1d2e61; }
 .aj-lane-head>div{min-width:0}
 
 .aj.aj [data-aj-source="currency"][data-aj-known="false"] .aj-progress progress{display:none}
+
+.aj-coin-bonus{display:grid;grid-template-columns:36px 1fr;gap:10px;padding:16px;margin-bottom:16px;border:2px solid #f6d47b;background:#182d50;color:#ffe29b}.aj-coin-bonus svg{width:32px;height:32px}.aj-coin-bonus strong{font-size:25px}.aj-coin-bonus span,.aj-coin-bonus button{grid-column:1/-1}.aj-coin-bonus button{min-height:44px;background:#ffe29b;color:#14274b;border:0;font:20px ForcedSquare,sans-serif}

@@ -1,5 +1,7 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
 const {renderProfileShopArt}=await import(new URL('./profile-shop-art.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {ACHIEVEMENT_COIN_CLAIM_ID,ACHIEVEMENT_COIN_SCHEDULE}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const achievementMaximum=ACHIEVEMENT_COIN_SCHEDULE.reduce((sum,row)=>sum+row.amount,0);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uint=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 export const formatShopPoints=value=>uint(value)?value.toLocaleString('en-US'):'Not available';
@@ -38,7 +40,8 @@ export function mountProfileShopUi(root,options={}) {
   };
   const owned=item=>inventory()?.ownedIds.includes(item.id)===true;
   const canBuy=item=>state.purchaseEnabled===true&&typeof state.actions?.onPurchase==='function'&&!!wallet()&&!!inventory()&&!owned(item)&&wallet().balance>=item.price&&!operation;
-  const canClaim=reward=>!(reward?.id==='login'&&state.dailyClaimed===true)&&state.claimsEnabled===true&&typeof state.actions?.onClaim==='function'&&!!wallet()&&!operation&&!confirmId;
+  const availableRewards=()=>state.achievementClaimsEnabled===true?[...rewards,{id:ACHIEVEMENT_COIN_CLAIM_ID,label:'Cosmetic achievement bonuses',points:null}]:rewards;
+  const canClaim=reward=>!(reward?.id===ACHIEVEMENT_COIN_CLAIM_ID&&state.achievementClaimsEnabled!==true)&&!(reward?.id==='login'&&state.dailyClaimed===true)&&state.claimsEnabled===true&&typeof state.actions?.onClaim==='function'&&!!wallet()&&!operation&&!confirmId;
   const canApply=item=>owned(item)&&typeof state.actions?.onApply==='function'&&!operation&&!confirmId;
   function restorePreview(){++previewGeneration;if(previewId){previewId=null;state.actions?.onRestorePreview?.();}}
   function render(focusKey) {
@@ -46,7 +49,7 @@ export function mountProfileShopUi(root,options={}) {
     host.innerHTML=`<header class="sp-head" ${state.embedded?'hidden':''}><div><p>PROFILE COLLECTION</p><h2 id="${prefix}-title">Style shop</h2></div>${state.actions?.onClose?'<button type="button" data-sp-action="close">Close</button>':''}</header>
       <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||(!balance?'Check your balance to load confirmed Style Coins.':'Original profile designs. No performance effects.'))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
       <div class="sp-summary"><div><span>Confirmed balance</span><strong>${balance?formatShopPoints(balance.balance)+' Style Coins':'Not available'}</strong></div>${typeof state.actions?.onRefresh==='function'?`<button type="button" data-sp-action="refresh" ${pending||state.refreshEnabled===false?'disabled':''}>${balance?'Refresh balance':'Check balance'}</button>`:'<p>Balance appears after a manual server check.</p>'}</div>
-      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Daily claim: 8 Style Coins / milestones</small></summary><div class="sp-claim-body"><p>Server checks eligibility. One-time milestones: 1 track +20 Style Coins / 5 tracks +30 Style Coins / 20 tracks +50 Style Coins / 35 tracks +30 Style Coins / 50 tracks +40 Style Coins / 70 tracks +50 Style Coins / 89 tracks +60 Style Coins.</p><div class="sp-claim-actions">${rewards.map(reward=>`<button type="button" data-sp-action="claim" data-sp-reward="${reward.id}" ${!canClaim(reward)?'disabled':''}><span>${reward.label}</span><strong>${reward.id==='login'&&state.dailyClaimed===true?'Claimed today':reward.points===null?'Claim milestones':'Claim '+formatShopPoints(reward.points)+' Style Coins'}</strong></button>`).join('')}</div></div></details>
+      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Daily claim: 8 Style Coins / milestones</small></summary><div class="sp-claim-body"><p>Server checks eligibility. One-time milestones: 1 track +20 Style Coins / 5 tracks +30 Style Coins / 20 tracks +50 Style Coins / 35 tracks +30 Style Coins / 50 tracks +40 Style Coins / 70 tracks +50 Style Coins / 89 tracks +60 Style Coins.</p>${state.achievementClaimsEnabled===true?`<p data-sp-achievement-policy>${ACHIEVEMENT_COIN_SCHEDULE.length} once-only cosmetic achievement bonuses, up to ${formatShopPoints(achievementMaximum)} Style Coins. Shared title/style conditions pay once. Current server evidence only; not all historical goals are covered.</p>`:''}<div class="sp-claim-actions">${availableRewards().map(reward=>`<button type="button" data-sp-action="claim" data-sp-reward="${reward.id}" ${!canClaim(reward)?'disabled':''}><span>${reward.label}</span><strong>${reward.id==='login'&&state.dailyClaimed===true?'Claimed today':reward.id===ACHIEVEMENT_COIN_CLAIM_ID?'Check &amp; claim bonuses':reward.points===null?'Claim milestones':'Claim '+formatShopPoints(reward.points)+' Style Coins'}</strong></button>`).join('')}</div></div></details>
       <p class="sp-note">Profile styles for your collection. Preview first, apply owned styles in Racer Studio.</p><div class="sp-grid">${list.map(item=>{
         const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
         const slot=item.grants[0].slot;
@@ -114,7 +117,7 @@ export function mountProfileShopUi(root,options={}) {
       [...host.querySelectorAll('[data-sp-action="preview"]')].find(node=>node.dataset.spId===item.id)?.focus({preventScroll:true});
       const previewEpoch=epoch,previewToken=++previewGeneration;
       try {Promise.resolve(state.actions.onPreview({...item})).catch(()=>{if(!disposed&&previewEpoch===epoch&&previewToken===previewGeneration){previewId=null;message='Preview unavailable. Nothing was purchased.';render();}});}catch{previewId=null;message='Preview unavailable. Nothing was purchased.';render();}
-    } else if(action==='claim'){const reward=rewards.find(row=>row.id===button.dataset.spReward);if(reward)void claim(reward);}
+    } else if(action==='claim'){const reward=availableRewards().find(row=>row.id===button.dataset.spReward);if(reward)void claim(reward);}
     else if(action==='apply'&&item)void apply(item);
     else if(action==='clear'){restorePreview();message='Preview closed.';render();}
     else if(action==='reconcile'&&typeof state.actions?.onReconcile==='function')state.actions.onReconcile();

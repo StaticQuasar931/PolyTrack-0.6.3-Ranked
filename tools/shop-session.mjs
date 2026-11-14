@@ -1,3 +1,4 @@
+import {validAchievementCoinReceipt} from './achievement-coin-schedule.mjs';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
 /** LOCAL DRAFT ONLY. Inject authenticated transport, synchronous Web Storage,
  * getAccountId, makeRequestId, and withAccountLock (createShopBrowserLock).
@@ -44,7 +45,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     let p;
     try { p = JSON.parse(raw); } catch { fail('invalid_pending'); }
     if(p?.schemaVersion===3){
-      if(p.accountId!==id||!request(p.requestId)||!['login','milestones'].includes(p.rewardId)||Object.keys(p).sort().join(',')!=='accountId,requestId,rewardId,schemaVersion')fail('invalid_pending');
+      if(p.accountId!==id||!request(p.requestId)||!['login','milestones','achievements'].includes(p.rewardId)||Object.keys(p).sort().join(',')!=='accountId,requestId,rewardId,schemaVersion')fail('invalid_pending');
       return p;
     }
     if (![1,2].includes(p?.schemaVersion) || p.accountId !== id || !request(p.requestId) || !item(p.itemId) ||
@@ -287,6 +288,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       const result=await transport({path:'/v1/currency/claim',method:'POST',body:{accountId:id,requestId:p.requestId,rewardId:p.rewardId},signal});
       if(result?.op!=='claim'||result.accountId!==id||result.requestId!==p.requestId||result.rewardId!==p.rewardId||result.outcomeOnly!==true||!uint(result.balanceAfter)||!uint(result.walletRevision)||typeof result.duplicate!=='boolean'||result.alreadyClaimed!==false||!uint(result.delta)||result.delta<1)fail('invalid_claim_response');
       if(p.rewardId==='login'&&result.delta!==8)fail('invalid_claim_response');
+      if(p.rewardId==='achievements'&&!validAchievementCoinReceipt(result))fail('invalid_claim_response');
       if(p.rewardId==='milestones'){
         const awards=MILESTONE_AWARDS,ids=result.claimedRewardIds;
         if(!Array.isArray(ids)||ids.length<1||ids.length>Object.keys(awards).length||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!Object.hasOwn(awards,id))||ids.reduce((n,id)=>n+awards[id],0)!==result.delta)fail('invalid_claim_response');
@@ -299,7 +301,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
   }
   async function claim(rewardId,{confirmed=false}={}){
     const id=requireOn(),g=epoch;
-    if(confirmed!==true)fail('confirmation_required');if(!['login','milestones'].includes(rewardId))fail('invalid_reward');
+    if(confirmed!==true)fail('confirmation_required');if(!['login','milestones','achievements'].includes(rewardId))fail('invalid_reward');
     if(busy)fail('purchase_in_flight');if(state.pending)fail('reconciliation_required');if(state.status!=='ready'||!state.wallet||reads.has(id+':'+g))fail('wallet_unknown');
     return locked(id,g,async signal=>{const old=pending(id);if(old){state.pending=old;fail('reconciliation_required');}const requestId=makeRequestId();if(!request(requestId))fail('invalid_request_id');const p={schemaVersion:3,accountId:id,requestId,rewardId};persist(p);state.pending=p;check(id,g);return sendClaim(p,id,g,signal,false);});
   }
