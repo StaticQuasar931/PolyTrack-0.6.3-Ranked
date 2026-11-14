@@ -49,7 +49,12 @@ test('Casual RP ranks known values high to low and leaves legacy values unranked
     { userId: 'leader', rank: 3, casualRp: 300, casualCompletionCount: 3 },
     { userId: 'fractional', rank: 4, casualRp: 300.125, casualCompletionCount: 3 }
   ];
-  const context = vm.createContext({ overallCategory: 'casual', overallEntriesCache: rows });
+  const context = vm.createContext({ overallCategory: 'casual', overallEntriesCache: rows,
+    attachLocalRankingSidecars: value => value,
+    rankingMetricFor: row => ({known: Number.isFinite(row.casualRp), value: row.casualRp}),
+    compareRankedMetrics: (a,b,left,right) => Number(right.known)-Number(left.known) ||
+      (left.known ? right.value-left.value : 0) || a.rank-b.rank
+  });
   vm.runInContext(`${extract('sortedOverallEntries')};`, context);
   const sorted = context.sortedOverallEntries();
   assert.deepEqual(Array.from(sorted, row => row.userId), ['fractional', 'leader', 'zero', 'legacy']);
@@ -116,16 +121,17 @@ test('Casual RP normalization rejects legacy model 1 and preserves fractional mo
   assert.equal(current.serverAchievements.casual.scoringVersion, 2);
 });
 
-test('fractional Casual RP uses the configured RP display precision', () => {
+test('Overall RP precision remains unchanged while Casual RP uses comma-separated whole numbers', () => {
   const context = vm.createContext({rpDecimals: () => 2});
   vm.runInContext(`${extract('formatRp')};`, context);
   assert.equal(context.formatRp(55.125), '55.13');
-  assert.match(source, /overallCategory==='casual'\?formatRp\(categoryValue\)/);
+  assert.match(source, /overallCategory==='casual'\?categoryValue\.toLocaleString\('en-US',\{maximumFractionDigits:0\}\)/);
+  assert.equal((12345.678).toLocaleString('en-US',{maximumFractionDigits:0}), '12,346');
 });
 
 test('source contract renders legacy Casual RP as unavailable and preserves exact metadata', () => {
   assert.match(source, /overallCategory==='casual'.*missingValue/s);
-  assert.match(source, /visibleRank=overallCategory==='casual'&&missingValue\?null:rank/);
+  assert.match(source, /const visibleRank=.*missingValue\?null:rank/);
   assert.match(source, /Number\.isFinite\(row\?\.casualRp\)/);
   assert.match(source, /totalEntriesExact:meta\.totalEntriesExact===true/);
   assert.match(source, /publishedEntries===entryCount/);

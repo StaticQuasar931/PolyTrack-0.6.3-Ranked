@@ -1668,7 +1668,8 @@ test('spotlight motivation reuses normalized cached PBs and imports, refreshing 
       assert.equal(cls(tile, 'sq-extra-play')[0].textContent, best ? 'Race again' : 'Play track');
       assert.ok(cls(tile, 'sq-extra-play')[0].getAttribute('aria-label').startsWith(cls(tile, 'sq-extra-play')[0].textContent + ': '));
       assert.ok(tile.getAttribute('aria-description').length < 50);
-      assert.equal(cls(tile, 'sq-extra-pick-reason').length, 0);
+      assert.equal(cls(tile, 'sq-extra-pick-reason').length, 1);
+      assert.ok(cls(tile, 'sq-extra-pick-highlight')[0].contains(cls(tile, 'sq-extra-pick-reason')[0]));
       assert.ok(cls(tile, 'sq-extra-pick-footer')[0].contains(cls(tile, 'sq-extra-pick-progress')[0]));
     }
   }

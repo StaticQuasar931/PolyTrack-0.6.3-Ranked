@@ -51,3 +51,22 @@ test('uniform selection covers every full-set index once per equal interval, wit
  assert.equal(chooseUniform(rows,()=>1-Number.EPSILON),rows.at(-1));
  for (const value of [-1,1,NaN,Infinity]) assert.throws(()=>chooseUniform(rows,()=>value),RangeError);
 });
+
+test('catalog range migrates exact legacy levels, normalizes safely and uses inclusive bounds', () => {
+ const defaults=normalizePickerPrefs(null);
+ assert.deepEqual(normalizePickerPrefs({level:'7'}),{...defaults,levelMin:'7',levelMax:'7'});
+ assert.deepEqual(normalizePickerPrefs({level:'7',levelMin:'',levelMax:''}),defaults,'explicit cleared bounds do not revive legacy exact level');
+ assert.equal(normalizePickerPrefs({difficulty:'7'}).difficulty,'7','published exact difficulty is a separate preference');
+ assert.deepEqual(normalizePickerPrefs({levelMin:'9',levelMax:'2'}),{...defaults,levelMin:'2',levelMax:'9'});
+ assert.deepEqual(normalizePickerPrefs({levelMin:-5,levelMax:90}),{...defaults,levelMin:'1',levelMax:'10'});
+ for(const value of [[],{},true,NaN,Infinity,'bad'])assert.deepEqual(normalizePickerPrefs({levelMin:value,levelMax:value}),defaults);
+ assert.deepEqual(normalizePickerPrefs(Object.create({levelMin:'5',levelMax:'5'})),defaults);
+ const rows=[record('low',{level:2}),record('mid',{level:4}),record('high',{level:6}),record('outside',{level:7}),record('unknown')];
+ assert.deepEqual(ids(eligibleRecords(rows,{levelMin:'2',levelMax:'6'})),['low','mid','high']);
+ assert.deepEqual(ids(eligibleRecords(rows,{levelMin:'6'})),['high','outside']);
+ assert.deepEqual(ids(eligibleRecords(rows,{levelMax:'2'})),['low']);
+ assert.deepEqual(ids(eligibleRecords(rows,{level:'unknown'})),['unknown']);
+ assert.equal(eligibleRecords(rows,{}).length,5);
+ const storage={getItem:()=>JSON.stringify({level:'6'})};
+ assert.deepEqual(ids(eligibleRecords(rows,readPickerPrefs(storage))),['high']);
+});

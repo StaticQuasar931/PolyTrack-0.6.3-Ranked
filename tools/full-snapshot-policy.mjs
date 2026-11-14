@@ -1,6 +1,6 @@
 export function fullSnapshotPolicy(receipt){
  const value=receipt?.fullSnapshotPolicy;
- if(value?.version!==1||value.authorized!==true||value.canonicalMode!=='full'||![10000,20000].includes(value.canonicalDocumentLimit)||value.profileDocumentLimit!==2000||value.trackCheckLimit!==512||value.eventReplayLimit!==256||!Number.isSafeInteger(value.publishedBaseline?.generation)||value.publishedBaseline.generation<1||!/^[a-f0-9]{64}$/.test(value.publishedBaseline.indexSha256||''))throw Error('Explicit tested full snapshot policy and published baseline pins required');
+ if(value?.version!==1||value.authorized!==true||value.canonicalMode!=='full'||![10000,20000,30000].includes(value.canonicalDocumentLimit)||![2000,5000].includes(value.profileDocumentLimit)||value.trackCheckLimit!==512||value.eventReplayLimit!==256||!Number.isSafeInteger(value.publishedBaseline?.generation)||value.publishedBaseline.generation<1||!/^[a-f0-9]{64}$/.test(value.publishedBaseline.indexSha256||''))throw Error('Explicit tested full snapshot policy and published baseline pins required');
  return structuredClone(value);
 }
 export function readOnlySnapshotQueryDb(db){

@@ -1,9 +1,10 @@
+import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 import {createLedgerEntry,ledgerBinding,ledgerKey} from './native-verification-ledger.mjs';
-import {createLocalCanonicalRetention,runLocalSnapshotBackup} from './local-capture-worker.mjs';
+import {createLocalCanonicalRetention,runLocalSnapshotBackup,captureLocalCompleteSources} from './local-capture-worker.mjs';
 import {createFirestoreCaller,encode} from './verifier/firestore.mjs';
 import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
 test.beforeEach(t=>t.mock.method(globalThis,'fetch',()=>assert.fail('No live network permitted')));
@@ -52,7 +53,7 @@ test('local helper retains 32-read sublimit and shares remaining transport reser
  const f=fixture(),tr=transport(f),helper=createLocalCanonicalRetention({ledger:f.ledger,serviceAccount:'synthetic-only',connectImpl:tr.connectImpl});
  for(let i=0;i<32;i++)await helper.reconcile(input(f));
  await assert.rejects(helper.reconcile(input(f)),/budget/);assert.equal(tr.calls(),32);assert.equal(tr.connects(),1);
- const capped=transport(f,{initialDirectReservations:25000}),denied=createLocalCanonicalRetention({ledger:f.ledger,serviceAccount:'synthetic-only',connectImpl:capped.connectImpl});
+ const capped=transport(f,{initialDirectReservations:40000}),denied=createLocalCanonicalRetention({ledger:f.ledger,serviceAccount:'synthetic-only',connectImpl:capped.connectImpl});
  await assert.rejects(denied.reconcile(input(f)),/budget/);assert.equal(capped.calls(),0);assert.equal(capped.fence.report().maxWorkerRequests,1024);
 });
 for(const kind of ['missing','wrong-name','extra','quota','auth','forbidden'])test('exact POST retention fails closed without retry: '+kind,async()=>{
@@ -71,4 +72,18 @@ test('invalid ledger and injected callback fail before backup or authentication'
  const connectImpl=()=>assert.fail('No authentication'),backup=()=>assert.fail('No backup');
  await assert.rejects(runLocalSnapshotBackup({},{connectImpl,backup}),/Invalid canonical/);
  await assert.rejects(runLocalSnapshotBackup({reconcileCanonicalTrack:()=>{}},{connectImpl,backup}),/locally bound/);
+});
+
+
+test('30000 canonical plus 5000 profile policy reaches local source capture with derived 35001 reads and zero retry/write allowance use',async t=>{
+ const directory='synthetic-source-directory',readTime='2026-11-14T08:00:00Z',calls=[];
+ t.mock.method(fs,'lstat',async()=>({isFile:()=>true,isSymbolicLink:()=>false,size:100}));
+ t.mock.method(fs,'readFile',async()=>JSON.stringify({profilesCapturedAt:'2026-11-01T00:00:00Z'}));
+ t.mock.method(fs,'writeFile',async()=>{});
+ const policy={version:1,authorized:true,canonicalMode:'full',canonicalDocumentLimit:30000,profileDocumentLimit:5000,trackCheckLimit:512,eventReplayLimit:256,publishedBaseline:{generation:81,indexSha256:'a'.repeat(64)}};
+ const result=await captureLocalCompleteSources({policy,directory,serviceAccount:'synthetic-only',
+  connectImpl:async(_credential,options)=>{calls.push(options);return {writeAttempts:()=>0,documentBudget:()=>({usedReads:0}),call:()=>assert.fail('No network or database query in consumer wiring fixture')};},
+  captureJob:async()=>({synthetic:true}),captureCanonical:async options=>{assert.equal(options.documentLimit,30000);return {complete:true,imported:true,scanInconsistency:false,fullScanReadPoint:readTime};},
+  captureProfiles:async options=>{assert.equal(options.maxDocuments,5000);assert.equal(options.readTime,readTime);return {complete:true,readTime};}});
+ assert.deepEqual(calls,[{env:{},mode:'scheduled',documentReadLimit:35001,documentWriteLimit:1,maxReadRetries:0}]);assert.equal(result.backendWrites,0);
 });

@@ -8,8 +8,8 @@ export async function boundedFirestoreResponse(response,{maxBytes=16*1024*1024}=
  return new Response(bytes,{status:response.status,statusText:response.statusText,headers:response.headers});
 }
 
-export function createFullSnapshotReadFence({fetchImpl=fetch,maxDirectReservations=25000,maxWorkerRequests=1024,initialDirectReservations=0,initialWorkerRequests=0}={}){
- if(maxDirectReservations!==25000||maxWorkerRequests!==1024)throw Error('Fixed full snapshot transport bounds required');
+export function createFullSnapshotReadFence({fetchImpl=fetch,maxDirectReservations=40000,maxWorkerRequests=1024,initialDirectReservations=0,initialWorkerRequests=0}={}){
+ if(maxDirectReservations!==40000||maxWorkerRequests!==1024)throw Error('Fixed full snapshot transport bounds required');
  if(!Number.isSafeInteger(initialDirectReservations)||initialDirectReservations<0||initialDirectReservations>maxDirectReservations||!Number.isSafeInteger(initialWorkerRequests)||initialWorkerRequests<0||initialWorkerRequests>maxWorkerRequests)throw Error('Invalid prior capture accounting');
  let directReservations=initialDirectReservations,workerRequests=initialWorkerRequests,oauthRequests=0,stopped=false;
  const report=()=>({directDocumentReadReservations:directReservations,workerRequests,priorDirectReservations:initialDirectReservations,priorWorkerRequests:initialWorkerRequests,oauthRequests,maxDirectReservations,maxWorkerRequests,stopped,documentWrites:0,scope:'Transport attempts and conservative direct reservations; Worker requests are not billed document counts.'});

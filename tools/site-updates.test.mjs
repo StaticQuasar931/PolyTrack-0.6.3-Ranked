@@ -1241,3 +1241,12 @@ test('boot-readiness upgrades are identity-bound and disposed with the original 
   const next=noticeHarness({document:h.document,revision:302,release:{number:358},isReady:()=>false,isIdle:()=>false});
   assert.equal(h.document.dialog,undefined,'disposal removes the previous boot callback');next.handle.dispose();
 });
+
+
+test('explicit menu checks bypass background cooldown while sharing in-flight work', async()=>{
+  const h=harness({response:{revision:43}});await h.handle.check();assert.equal(h.calls,1);
+  await h.handle.check();assert.equal(h.calls,1);
+  h.setResponse({revision:44});await Promise.all([h.handle.check({force:true}),h.handle.check({force:true})]);
+  assert.equal(h.calls,2);assert.ok(h.document.button);
+  await h.handle.check();assert.equal(h.calls,2);h.handle.dispose();
+});

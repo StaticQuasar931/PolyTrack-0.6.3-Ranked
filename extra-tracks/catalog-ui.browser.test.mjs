@@ -840,3 +840,59 @@ test('native leaderboard filter label stays on one line', {skip: browserSkip}, a
     await browser.close();
   }
 });
+
+test('overhauled header, actual catalog spotlights and primary picker fit desktop, phone and short landscape offline', {skip:browserSkip}, async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await browser.newPage({hasTouch:true});const external=[],errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  const thumbnails=new Map(catalog.filter(entry=>entry.thumbnailUrl?.startsWith('extra-tracks/thumbnails/')).map(entry=>[entry.thumbnailUrl,fs.readFileSync(new URL('../'+entry.thumbnailUrl,import.meta.url))]));
+  await page.route('**/*',route=>{
+   const url=new URL(route.request().url()),name=url.pathname.slice(1);
+   if(url.origin!=='http://overhaul.test'){external.push(url.href);return route.abort();}
+   if(reviewedModules.has(name))return route.fulfill({contentType:'text/javascript',body:reviewedModules.get(name)});
+   if(name==='catalog-ui.mjs')return route.fulfill({contentType:'text/javascript',body:moduleSource});
+   if(name==='review.mjs')return route.fulfill({contentType:'text/javascript',body:reviewSource});
+   if(thumbnails.has(name))return route.fulfill({contentType:'image/png',body:thumbnails.get(name)});
+   if(!name)return route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}</style><main id="root"></main>'});
+   return route.abort();
+  });
+  await page.goto('http://overhaul.test/');
+  await page.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+forcedSquareFont+')}'+css});
+  await page.evaluate(async entries=>{
+   const {mountExtraTracks}=await import('/catalog-ui.mjs');window.exports=0;
+   window.catalog=mountExtraTracks({document,root:document.querySelector('#root'),entries,onExportFeedback:()=>window.exports++,onSelect:()=>{},now:()=>Date.parse('2026-11-13T18:00:00Z')});catalog.open();
+  },catalog);
+  await page.evaluate(()=>document.fonts.ready);
+  const shot=async name=>{if(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR)await page.screenshot({animations:'disabled',path:process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR+'/'+name+'.png'});};
+  const more=page.locator('.sq-extra-header-more > summary');
+  for(const [width,height] of [[1366,900],[390,844],[844,320]]){
+   await page.setViewportSize({width,height});await page.evaluate(()=>document.querySelector('.sq-extra-menu').scrollTop=0);
+   assert.equal(await page.locator('.sq-extra-export').isVisible(),false);
+   for(const control of [more,page.locator('.sq-extra-submit'),page.locator('.sq-extra-close')]){const box=await control.boundingBox();assert.ok(box&&box.height>=44&&box.x>=0&&box.x+box.width<=width);}
+   assert.equal(await page.locator('.sq-extra-menu').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+   const visible=page.locator('.sq-extra-pick:visible').first();
+   if(await visible.count()){
+    assert.equal(await visible.locator('.sq-extra-pick-reason').count(),1);
+    assert.equal(await visible.locator('.sq-extra-pick-highlight .sq-extra-pick-note').count(),1);
+    assert.match(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el,'::after').backgroundImage),/linear-gradient/);
+   }
+   await shot('overhaul-catalog-'+width+'x'+height);
+   await more.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.sq-extra-export').isVisible(),true);
+   await shot('overhaul-more-'+width+'x'+height);
+   await page.locator('.sq-extra-export').click();
+   await page.keyboard.press('Escape');assert.equal(await more.evaluate(el=>el===document.activeElement),true);
+   assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true,'Escape dismisses only More');
+   await page.getByRole('button',{name:'Choose random track',exact:true}).click();
+   const panel=page.locator('.sq-extra-picker');
+   assert.equal(await panel.locator('details').evaluate(el=>el.open),false);
+   await shot('overhaul-picker-'+width+'x'+height);
+   const bounds=await panel.boundingBox();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=width&&bounds.y+bounds.height<=height);
+   await panel.locator('summary').click();await panel.getByRole('button',{name:'Back',exact:true}).scrollIntoViewIfNeeded();
+   await shot('overhaul-picker-advanced-'+width+'x'+height);
+   await panel.getByRole('button',{name:'Back',exact:true}).click();
+   await panel.locator('details').evaluate(el=>el.open=false);
+  }
+  assert.equal(await page.evaluate(()=>window.exports),3);assert.deepEqual(external,[]);assert.deepEqual(errors,[]);
+ } finally {await browser.close();}
+});

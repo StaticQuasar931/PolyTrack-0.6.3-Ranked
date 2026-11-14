@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {createKodubErpFixtureV1} from './native-kodub-erp-fixture-v1.mjs';
 const require=createRequire(import.meta.url);
-const {chromium}=createRequire(new URL('../tools/verifier/package.json',import.meta.url))('playwright');
+const {chromium}=createRequire(new URL('../tools/verifier/package.json',import.meta.url))(process.env.PLAYWRIGHT_MODULE||'playwright');
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const patch=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const start=patch.indexOf('  function decorateNativeLeaderboardCosmetics(){');
@@ -80,8 +80,8 @@ test('real native batch hydrates 18 exact and four separate synthetic v1 Kodub E
     const normal=normalBoard.entries.find(row=>row.accountId===saved.accountId);
     const same=normal.timeMs===saved.timeMs&&normal.replayHash===saved.replayHash;
     const label=labelFor(p,saved.accountId);
-    assert.equal(await label.innerText(),same?saved.rp+' ERP':'Event PB \u00b7 '+saved.rp+' ERP');
-    assert.equal(await label.getAttribute('data-verified'),'true');
+    assert.equal(await label.innerText(),same?saved.rp+' ERP':'Event PB '+saved.timeMs);
+    assert.equal(await label.getAttribute('data-verified'),String(same));
     assert.equal(await label.getAttribute('data-separate'),String(!same));
     if(!same){
       assert.ok((await label.getAttribute('title')).includes(String(saved.timeMs)));
@@ -150,7 +150,7 @@ test('published zero, confirmed absence, pending and unavailable ERP stay distin
     snapshotEpoch++;batch();
   },{accountId:outside.accountId,timeMs:pendingTime});
   await p.waitForFunction(account=>document.querySelector('[data-test-account="'+account+'"] .sq-normal-kodub-erp')?.dataset.status==='pending',outside.accountId);
-  assert.equal(await absent.textContent(),'Event PB \u00b7 ERP pending');assert.equal(await absent.getAttribute('data-verified'),'false');
+  assert.equal(await absent.textContent(),'Event PB pending');assert.equal(await absent.getAttribute('data-verified'),'false');
   assert.ok((await absent.getAttribute('title')).includes(String(pendingTime)));
   assert.doesNotMatch(await absent.textContent(),/\d+ ERP/);
   for(const mode of ['partial','count-mismatch']){
@@ -171,7 +171,9 @@ test('equal time with another replay stays a separate Event PB and never changes
   await p.evaluate(()=>{rows[0].replayHash='f'.repeat(64);render();resolveBoard(saved);});
   await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent.startsWith('Event PB '));
   const label=labelFor(p,eventBoard.entries[0].accountId);
-  assert.equal(await label.innerText(),'Event PB \u00b7 489 ERP');
+  assert.equal(await label.innerText(),'Event PB 51459');
+  assert.equal(await label.getAttribute('data-verified'),'false');
+  assert.doesNotMatch(await label.innerText(),/ERP/);
   assert.equal(await label.getAttribute('data-separate'),'true');
   assert.ok((await label.getAttribute('title')).includes('51459'));
   assert.equal(await p.evaluate(()=>rows[0].runVerified),true);
@@ -245,14 +247,14 @@ for(const [width,height] of [[430,932],[1366,768]])test('native Kodub ERP fits r
     const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
     return {row:rect(button),erp:rect(button.querySelector('.sq-normal-kodub-erp')),age:rect(button.querySelector('.verified-state')),name:rect(button.querySelector('.name')),time:rect(button.querySelector('.left p:not(.position)')),text:button.querySelector('.sq-normal-kodub-erp').textContent,clipped:button.querySelector('.sq-normal-kodub-erp').scrollWidth>button.querySelector('.sq-normal-kodub-erp').clientWidth};
   }));
-  const screenshot=path.join(os.tmpdir(),'polytrack-native-kodub-'+width+'.png');await p.screenshot({path:screenshot});
+  const screenshot=path.join(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR||os.tmpdir(),'polytrack-native-kodub-'+width+'.png');fs.mkdirSync(path.dirname(screenshot),{recursive:true});await p.screenshot({path:screenshot});
   const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.x,b.x)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y)>1;
   for(const [i,m] of measurements.entries()){
     assert.ok(m.erp.x>=m.age.x-1&&m.erp.right<=m.age.right+1&&m.erp.y>=m.age.y-1&&m.erp.bottom<=m.age.bottom+1,JSON.stringify({width,m,screenshot}));
     assert.ok(!overlaps(m.age,m.name)&&!overlaps(m.erp,m.name)&&!overlaps(m.erp,m.time),JSON.stringify({width,m,screenshot}));
     assert.ok(m.erp.x>=m.row.x&&m.erp.right<=m.row.right+1&&m.erp.y>=m.row.y&&m.erp.bottom<=m.row.bottom+1,JSON.stringify({width,m,screenshot}));
     assert.ok(m.age.x>=m.row.x&&m.age.right<=m.row.right+1&&m.age.y>=m.row.y&&m.age.bottom<=m.row.bottom+1,JSON.stringify({width,m,screenshot}));
-    assert.match(m.text,/Event PB .*ERP/);assert.equal(m.clipped,false,JSON.stringify({width,m}));
+    assert.match(m.text,/Event PB /);assert.doesNotMatch(m.text,/ERP/);assert.equal(m.clipped,false,JSON.stringify({width,m}));
   }
   assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[1,0]);
 });
@@ -277,4 +279,38 @@ test('persistent Kodub static failure stops after three attempts, without live f
  }
  await p.evaluate(at=>{Date.now=()=>at;for(let i=0;i<20;i++)batch();},publishedAt+1000000);
  assert.deepEqual(await p.evaluate(()=>[staticReads,liveReads]),[3,0]);
+});
+
+for(const [width,height] of [[320,568],[390,844],[1366,768]])test('pending event badges are compact, right aligned and proof-neutral '+width+'x'+height,async t=>{
+  const p=await fixture(t);await p.setViewportSize({width,height});
+  await p.addStyleTag({content:nativeCss+'\n'+rankedCss+'\n'+eventCss});
+  await p.addStyleTag({content:'@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,'+font+')}html,body{margin:0;background:#151c33;color:#fff;font-family:ForcedSquare}button{position:relative;border:0;background:#28346a;color:#fff;font-family:inherit}.track-info-ui{position:static!important;transform:none!important;display:block!important;width:100%!important;padding:0!important}.track-info-ui>.leaderboard-ui{position:static!important;transform:none!important;width:100%!important;max-width:600px!important;margin:0!important}.leaderboard-ui>.container{height:auto!important}'});
+  await p.evaluate(async({drawSource,timeSource,at})=>{
+    const {decorateEventRowPresentation}=await import('/events/client.mjs');
+    const board=document.querySelector('.leaderboard-ui');board.classList.add('sq-event-board');
+    const container=board.querySelector('.container');container.replaceChildren();
+    const Oo=new WeakMap(),$o=new WeakMap(),el=new WeakMap(),zo=new WeakMap(),Do=new WeakMap(),Io=new WeakMap(),Ro={},owner={};
+    const R={gn:(object,map,type,key)=>type==='m'?key:map.get(object),GG:(object,map,value)=>map.set(object,value)};
+    const Qe=String,Je=()=> 'th',He={A:{formatTimeString:eval('(function '+timeSource+')')}},ni={O:()=>[]},_o={Y:{Pending:0,Verified:1,InvalidDuplicate:3}},sl={u:()=> '1 hour ago'},kr={F:()=>{throw Error('No replay or car reads in badge presentation');}};
+    Io.set(owner,{get:value=>value});el.set(owner,[]);zo.set(owner,{playUIClick(){}});Do.set(owner,()=>{});Oo.set(owner,container);
+    const draw=eval('('+drawSource+')');window.badgeRows=[];
+    for(const [i,source] of ['pending-event-playback','submitted-event-recording','local-event-recording'].entries()){
+      const row={rank:i+1,timeMs:20000+i,source,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting',rp:999,pbAt:at-3600000};
+      const button=draw.call(owner,row.rank,'Pending racer '+(i+1),null,{numberOfFrames:row.timeMs},new Date(row.pbAt),null,0,false,'pending-'+i,new Date(),{isCancelled:false},{event:true});
+      decorateEventRowPresentation(button,row,at);decorateEventRowPresentation(button,row,at);
+      button.querySelector('.image-container img')?.remove();
+      window.badgeRows.push({button,row});
+    }
+  },{drawSource:nativeRow,timeSource:nativeTime,at:publishedAt});
+  await p.evaluate(()=>document.fonts.ready);
+  const states=await p.evaluate(()=>badgeRows.map(({button,row})=>{
+    const badge=button.querySelector('.verified-state'),r=badge.getBoundingClientRect(),parent=button.getBoundingClientRect();
+    return {source:row.source,text:badge.textContent,title:badge.title,aria:badge.getAttribute('aria-label'),labels:badge.querySelectorAll('.sq-event-status-label').length,verified:badge.classList.contains('verified'),icon:badge.querySelector('img').getAttribute('src'),right:parent.right-r.right,cssRight:getComputedStyle(badge).right,height:r.height,clipped:badge.scrollWidth>badge.clientWidth,within:r.left>=parent.left&&r.right<=parent.right&&r.top>=parent.top&&r.bottom<=parent.bottom};
+  }));
+  for(const state of states){
+    const message=JSON.stringify({width,state});assert.equal(state.verified,false,message);assert.equal(state.labels,1,message);
+    assert.match(state.text,state.source==='local-event-recording'?/Local PB/:/Pending/,message);assert.doesNotMatch(state.text,/ERP|Verified/i,message);
+    assert.equal(state.title,state.aria,message);assert.match(state.icon,/state_pending/);assert.ok(state.within&&!state.clipped,message);assert.ok(state.height<=32,message);assert.equal(state.cssRight,'12px',message);assert.ok(state.right>0&&state.right<=14,message);
+  }
+  if(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR){fs.mkdirSync(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR,{recursive:true});await p.screenshot({path:path.join(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR,'event-pending-'+width+'.png')});}
 });

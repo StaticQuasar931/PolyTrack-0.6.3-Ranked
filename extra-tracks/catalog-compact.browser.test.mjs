@@ -150,7 +150,9 @@ test('catalog header, filters and review controls fit small touch screens with e
    assert.ok(menuState.pagination.bottom<=height+1&&menuState.pagination.top>=0,'bottom pagination is reachable after scrolling at '+width+'x'+height);
    for(const control of menuState.controls)assert.ok(control.height>=43.99&&control.width>=43.99,'coarse-pointer target is at least 44px: '+control.name+' at '+width+'x'+height+' ('+control.width+'x'+control.height+')');
    if(width===390&&process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR)await page.screenshot({path:process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR+'/catalog-390.png'});
+   await page.locator('.sq-extra-header-more > summary').click();
    await page.locator('.sq-extra-export').click();
+   await page.locator('.sq-extra-header-more > summary').click();
    const more=page.locator('.sq-extra-more').first();await more.scrollIntoViewIfNeeded();await more.click();
    const menu=page.locator('.sq-extra-more-menu:not([hidden])');
    const bounds=await menu.boundingBox();

@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readRankingExplanations} from './ranking-introduction.mjs';
+test('ranking tips handle absent, blocked and invalid local storage',()=>{for(const getItem of [()=>null,()=>'{',()=>{throw Error('blocked')},()=>JSON.stringify({seen:['overall','<script>',null]})]){const p=readRankingExplanations({getItem});assert.equal(p.disabled,false);assert.ok(p.seen.every(x=>/^[a-zA-Z]{1,32}$/.test(x)));}});
+test('ranking tips preserve per-ranking and global opt out',()=>assert.deepEqual(readRankingExplanations({getItem:()=>JSON.stringify({disabled:true,seen:['casual','field']})}),{disabled:true,seen:['casual','field']}));

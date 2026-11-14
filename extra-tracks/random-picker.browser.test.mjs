@@ -13,6 +13,7 @@ async function setup(browser, viewport, options={}) {
  const page=await browser.newPage({viewport}); const requests=[];
  await page.route('**/*',route=>{
   const url=new URL(route.request().url()); requests.push(url.pathname);
+  if(url.origin !== 'http://picker.test')return route.abort();
   if(modules.has(url.pathname.slice(1)))return route.fulfill({contentType:'text/javascript',body:modules.get(url.pathname.slice(1))});
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><button id="launch">Tracks</button><main id="root"></main>'});
   return route.abort();
@@ -39,7 +40,7 @@ test('desktop picker traps focus, restores focus, saves filters and contextmenu 
   const pool=modal.getByLabel('Track pool'); assert.equal(await pool.evaluate(el=>el===document.activeElement),true);
   await page.keyboard.press('Shift+Tab'); assert.equal(await modal.getByRole('button',{name:'Reset picker options'}).evaluate(el=>el===document.activeElement),true);
   await page.keyboard.press('Tab'); assert.equal(await pool.evaluate(el=>el===document.activeElement),true);
-  await modal.locator('summary').click(); await modal.getByLabel('Catalog difficulty level',{exact:true}).selectOption('9');
+  await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).fill('9'); await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).press('Tab');
   assert.match(await modal.locator('[role=status]').textContent(),/1 matching track/);
   if(process.env.PICKER_SCREENSHOT_DIR)await page.screenshot({path:process.env.PICKER_SCREENSHOT_DIR+'/picker-desktop.png'});
   await page.keyboard.press('Escape'); assert.equal(await modal.isHidden(),true); assert.equal(await choose.evaluate(el=>el===document.activeElement),true);
@@ -57,23 +58,24 @@ test('phone and short landscape have touch-sized controls, no overflow and recov
   const {page}=await setup(browser,{width:320,height:640},{blockStorage:true});
   await page.getByRole('button',{name:'Choose random track',exact:true}).click();
   const modal=page.getByRole('dialog',{name:'Choose random track',exact:true}); await modal.locator('summary').click();
-  await modal.getByLabel('Catalog difficulty level',{exact:true}).selectOption('10');
+  await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).fill('10'); await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).press('Tab');
   assert.match(await modal.locator('[role=status]').textContent(),/No tracks match/);
   assert.equal(await modal.getByRole('button',{name:'Open random preview'}).isDisabled(),true);
   await modal.getByRole('button',{name:'Reset picker options'}).click();
-  await modal.getByLabel('Catalog difficulty level',{exact:true}).selectOption('9');
+  await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).fill('9'); await modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true}).press('Tab');
   await modal.getByRole('button',{name:'Back',exact:true}).click();
   await page.evaluate(()=>window.previewFails=true); await page.getByRole('button',{name:'Quick pick',exact:true}).click();
   assert.equal(await modal.isVisible(),true); assert.match(await modal.locator('[role=status]').textContent(),/could not open/);
   assert.equal(await modal.getByRole('button',{name:'Open random preview'}).isEnabled(),true);
   assert.deepEqual(await page.evaluate(()=>window.selected),['track-39'],'blocked storage preserves in-memory filters');
   if(process.env.PICKER_SCREENSHOT_DIR)await page.screenshot({path:process.env.PICKER_SCREENSHOT_DIR+'/picker-phone.png'});
-  for(const viewport of [{width:320,height:640},{width:844,height:390}]) {
+  for(const viewport of [{width:320,height:640},{width:844,height:320}]) {
    await page.setViewportSize(viewport);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    const panel=await modal.locator('.sq-extra-picker').boundingBox(); assert.ok(panel.x>=0 && panel.y>=0 && panel.width<=viewport.width && panel.height<=viewport.height);
    for(const button of await modal.getByRole('button').all())assert.ok((await button.boundingBox()).height>=44);
    await modal.getByRole('button',{name:'Back',exact:true}).scrollIntoViewIfNeeded();
+   if(process.env.PICKER_SCREENSHOT_DIR)await page.screenshot({path:process.env.PICKER_SCREENSHOT_DIR+'/picker-'+viewport.width+'x'+viewport.height+'.png'});
   }
   await page.evaluate(()=>window.previewFails=false); await modal.getByRole('button',{name:'Open random preview'}).click();
   assert.equal(await modal.isHidden(),true); assert.equal(await page.evaluate(()=>window.driveCalls),0);
@@ -88,5 +90,34 @@ test('missing preview hook fails closed with an explicit parent integration mess
   assert.match(await modal.locator('[role=status]').textContent(),/parent must connect onSelect/);
   assert.equal(await modal.getByRole('button',{name:'Open random preview'}).isDisabled(),true);
   assert.equal(await page.evaluate(()=>window.driveCalls),0);
+ } finally {await browser.close();}
+});
+
+test('typed bounds commit without interrupting two-digit entry, sliders synchronize, and legacy exact prefs migrate', {skip}, async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const {page}=await setup(browser,{width:1280,height:900});
+  await page.evaluate(()=>localStorage.setItem('sq-extra-tracks:random-picker:v1',JSON.stringify({level:'9'})));
+  await page.getByRole('button',{name:'Choose random track',exact:true}).click();
+  const modal=page.locator('.sq-extra-picker-modal');
+  const min=modal.getByRole('spinbutton',{name:'Minimum catalog difficulty',exact:true});
+  const max=modal.getByRole('spinbutton',{name:'Maximum catalog difficulty',exact:true});
+  const minSlider=modal.getByRole('slider',{name:'Minimum catalog difficulty slider'});
+  const maxSlider=modal.getByRole('slider',{name:'Maximum catalog difficulty slider'});
+  assert.equal(await min.inputValue(),'9');assert.equal(await max.inputValue(),'9');
+  assert.equal(await modal.locator('details').evaluate(el=>el.open),false,'primary range needs no advanced disclosure');
+  await min.fill('');await min.press('Tab');
+  await max.fill('');await max.pressSequentially('10');
+  assert.equal(await max.inputValue(),'10','typing 10 is not rewritten after the first digit');
+  assert.equal(await maxSlider.inputValue(),'10');await max.press('Tab');
+  assert.match(await modal.locator('[role=status]').textContent(),/40 matching tracks/);
+  await minSlider.fill('9');await minSlider.dispatchEvent('input');
+  assert.equal(await min.inputValue(),'9');assert.match(await modal.locator('[role=status]').textContent(),/1 matching track/);
+  await maxSlider.focus();await page.keyboard.press('Home');
+  assert.equal(await min.inputValue(),'1');assert.equal(await max.inputValue(),'9','crossed bounds sort inclusively');
+  await modal.getByRole('button',{name:'Reset picker options'}).click();
+  assert.equal(await min.inputValue(),'');assert.equal(await max.inputValue(),'');
+  assert.equal(await minSlider.inputValue(),'1');assert.equal(await maxSlider.inputValue(),'10');
+  assert.match(await modal.locator('[role=status]').textContent(),/40 matching tracks/);
  } finally {await browser.close();}
 });

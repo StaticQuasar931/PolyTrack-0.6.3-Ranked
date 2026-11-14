@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {startResponsiveServer} from './responsive-server.mjs';
+import {RELEASE_INFO} from './release-info.mjs';
 import {layoutMatrix,representativeSizes} from './responsive-matrix.mjs';
 const require=createRequire(new URL('./verifier/package.json',import.meta.url));
 const engines=require('playwright');
@@ -54,6 +55,7 @@ try{
     try{
       for(const profile of (process.env.POLYTRACK_AUDIT_FAST==='1'?[{deviceScaleFactor:1,hasTouch:false}]:[{deviceScaleFactor:1,hasTouch:false},{deviceScaleFactor:2,hasTouch:true},{deviceScaleFactor:3,hasTouch:true}])){
         const context=await browser.newContext({...profile,viewport:{width:1366,height:600}}),page=await context.newPage();
+        await page.addInitScript(number=>localStorage.setItem('polytrack-site-update-ack-release-v1:'+number,'acknowledged'),RELEASE_INFO.number);
         page.setDefaultTimeout(12000);page.on('pageerror',error=>report.errors.push({browser:engineName,error:String(error)}));
         await page.route('**/*',route=>new URL(route.request().url()).origin===server.url?route.continue():route.abort());
         try{
@@ -86,5 +88,6 @@ try{
   }
 }finally{
   await server.close();await fs.writeFile(path.join(output,'runtime-matrix.json'),JSON.stringify(report,null,2));
+  if(report.errors.length||report.cases.some(c=>c.status==='fail')||!report.cases.length)process.exitCode=1;
   console.log(JSON.stringify({cases:report.cases.length,failed:report.cases.filter(c=>c.status==='fail').length,errors:report.errors,unavailable:report.unavailable}));
 }

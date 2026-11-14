@@ -1354,7 +1354,7 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
 
 /* Published Kodub ERP shares the weekly verification badge, without changing proof. */
 .track-info-ui .leaderboard-ui button.main>.right:has(.sq-normal-kodub-erp:not([hidden])){position:relative!important}
-.track-info-ui .leaderboard-ui button.main .verified-state:has(.sq-normal-kodub-erp:not([hidden])){left:0!important;right:auto!important;box-sizing:border-box;flex-wrap:wrap;max-width:calc(100% - 12px)!important;height:auto;white-space:normal;line-height:16px!important;padding:2px 6px!important;margin-top:4px!important;gap:2px 4px!important}
+.track-info-ui .leaderboard-ui button.main .verified-state:has(.sq-normal-kodub-erp:not([hidden])){left:auto!important;right:12px!important;box-sizing:border-box;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 12px)!important;height:auto;white-space:normal;line-height:16px!important;padding:2px 6px!important;margin-top:4px!important;gap:2px 4px!important}
 .track-info-ui .leaderboard-ui button.main .verified-state>.sq-normal-kodub-erp{position:static!important;display:inline-block;flex:0 1 auto;max-width:100%;margin:0 10px 0 0;padding:0;border:0;background:transparent;color:#9ce7b3;font:inherit;white-space:normal;overflow-wrap:anywhere}
 .track-info-ui .leaderboard-ui button.main .verified-state>.sq-normal-kodub-erp[hidden]{display:none!important}
 .track-info-ui .leaderboard-ui button.main .verified-state>.sq-normal-kodub-erp[data-separate="true"]{flex-basis:100%;margin-right:0}
@@ -1363,3 +1363,8 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div>img{
 body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 auto;max-width:100%;white-space:normal;flex-wrap:wrap}
 .sq-event-record>.sq-record-placement{max-width:100%;box-sizing:border-box;white-space:normal;text-align:left;justify-content:flex-start}
 .sq-event-board button.main .left{text-align:left}
+
+/* Event statuses are owned here because the normal-row updater excludes event boards. */
+.sq-event-board button.main .verified-state{left:auto!important;right:12px!important;display:flex;align-items:center;justify-content:flex-end;gap:4px;max-width:calc(100% - 24px);box-sizing:border-box;white-space:nowrap}
+.sq-event-board .sq-event-status-label{font:inherit;white-space:nowrap}
+.sq-event-board .sq-event-status-label[hidden]{display:none}

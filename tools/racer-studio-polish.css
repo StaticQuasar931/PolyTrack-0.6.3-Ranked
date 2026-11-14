@@ -1,0 +1,192 @@
+/* Racer Studio chrome only. Load after the existing Ranked styles.
+   Leave showcase rows, car stages, sample paint, and journal content unchanged. */
+.profile-customizer {
+  --studio-muted: #bdd0e9;
+  --studio-cyan: #7ee7ff;
+  --studio-gold: #ffda83;
+  margin-top: 24px !important;
+  border: 1px solid #45659a !important;
+  border-left: 5px solid var(--studio-cyan) !important;
+  background: #14264c !important;
+  box-shadow: 0 12px 28px #050e242e;
+}
+.profile-customizer > summary {
+  min-height: 88px !important;
+  padding: 20px !important;
+  gap: 16px;
+  background: #203c70 !important;
+  border-bottom: 1px solid #48699b;
+  list-style: none;
+}
+.profile-customizer > summary::-webkit-details-marker { display: none; }
+.profile-customizer > summary > span { min-width: 0; gap: 7px; }
+.profile-customizer > summary b { font: 700 clamp(24px, 3vw, 32px)/1 ForcedSquare, sans-serif !important; letter-spacing: 1.5px; }
+.profile-customizer > summary small { color: #d2e4fa !important; font: 14px/1.45 'Trebuchet MS', sans-serif !important; }
+.profile-customizer > summary > .studio-open-label {
+  padding: 10px 18px;
+  background: var(--studio-cyan);
+  color: #102145;
+  font-style: normal;
+  flex-shrink: 0;
+  clip-path: polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+}
+.profile-customizer > .profile-customizer-body {
+  grid-template-columns: minmax(290px, .95fr) minmax(0, 1.3fr) !important;
+  align-items: start;
+  padding: 22px !important;
+  gap: 24px !important;
+  background: #101f40;
+}
+.profile-customizer .profile-customizer-preview {
+  padding: 18px !important;
+  gap: 16px !important;
+  background: #14294e;
+  border: 1px solid #496b9b;
+  border-top: 3px solid var(--studio-cyan);
+  top: 18px !important;
+}
+.profile-customizer .profile-customizer-preview > header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3a577d;
+}
+.profile-customizer .profile-customizer-preview > header b { color: var(--studio-cyan); font: 22px/1.1 ForcedSquare, sans-serif; letter-spacing: 1px; }
+.profile-customizer .profile-customizer-preview > header small { display: block !important; color: var(--studio-muted); font: 13px/1.4 'Trebuchet MS', sans-serif; }
+.profile-customizer .profile-customizer-controls { display: block; min-width: 0; }
+.profile-customizer .studio-tabs {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 6px !important;
+  padding: 6px;
+  background: #0b1935;
+  border: 1px solid #38547d;
+}
+.profile-customizer .studio-tabs > .studio-tab {
+  flex: 1 1 90px;
+  min-height: 48px !important;
+  padding: 10px 8px !important;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: #1c3258;
+  color: #d6e7ff;
+  font: 16px/1.2 ForcedSquare, sans-serif !important;
+  cursor: pointer;
+}
+.profile-customizer .studio-tabs > .studio-tab[aria-selected='true'] {
+  background: #335b91;
+  color: #fff;
+  border-bottom: 3px solid var(--studio-cyan);
+}
+.profile-customizer .studio-shortcut-hint { margin: 10px 0 22px; color: var(--studio-muted); font: 12px/1.5 'Trebuchet MS', sans-serif; }
+.profile-customizer .profile-cosmetic-group {
+  padding: 18px !important;
+  margin: 0 0 24px;
+  border: 1px solid #3a5782;
+  border-top: 2px solid #577bae;
+  background: #152c50 !important;
+}
+.profile-customizer .profile-cosmetic-group > legend { padding: 0 8px; color: var(--studio-cyan); font: 20px/1.2 ForcedSquare, sans-serif !important; letter-spacing: 1px; }
+.profile-customizer .profile-cosmetic-group > p { min-height: 0; margin: 4px 0 16px !important; color: #cbdcf0 !important; font: 14px/1.5 'Trebuchet MS', sans-serif !important; }
+.profile-customizer .profile-cosmetic-group > div:not(.profile-extras-grid) {
+  grid-template-columns: repeat(auto-fit, minmax(min(142px, 100%), 1fr)) !important;
+  gap: 10px !important;
+}
+.profile-customizer .profile-cosmetic-group .profile-cosmetic-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 110px !important;
+  padding: 12px !important;
+  gap: 9px !important;
+  border: 1px solid #54729a !important;
+  border-radius: 0;
+  background: #203b62 !important;
+  color: #fff !important;
+  text-align: left;
+  opacity: 1 !important;
+  filter: none;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.profile-customizer .profile-cosmetic-choice > .profile-cosmetic-preview { box-sizing: border-box; }
+.profile-customizer .profile-cosmetic-choice > .name-preview { width: 100% !important; }
+.profile-customizer .profile-cosmetic-choice > b { font: 700 14px/1.35 'Trebuchet MS', sans-serif !important; white-space: normal; overflow-wrap: anywhere; }
+.profile-customizer .profile-cosmetic-choice > small {
+  margin-top: auto;
+  color: var(--studio-gold) !important;
+  font: 13px/1.4 'Trebuchet MS', sans-serif !important;
+  white-space: normal;
+}
+.profile-customizer .profile-cosmetic-choice[data-cosmetic-locked='true'] { border-style: dashed !important; background: #172d4d !important; cursor: not-allowed; }
+.profile-customizer .profile-cosmetic-choice[data-cosmetic-locked='true'] > small::before { content: 'LOCKED / '; font-size: 10px; letter-spacing: .5px; }
+.profile-customizer .profile-cosmetic-choice[aria-pressed='true'] {
+  border: 2px solid var(--studio-cyan) !important;
+  background: #284c78 !important;
+  box-shadow: inset 4px 0 0 var(--studio-cyan);
+  outline: none;
+}
+.profile-customizer .profile-cosmetic-group.variant-text .profile-cosmetic-choice { min-height: 76px !important; }
+.profile-customizer .profile-customizer-actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding-top: 16px;
+  margin-top: 2px;
+  border-top: 1px solid #49658d;
+}
+.profile-customizer .profile-customizer-actions > [role='status'] { margin: 0 0 4px; color: #d3e6fa; font: 14px/1.5 'Trebuchet MS', sans-serif !important; }
+.profile-customizer .profile-customizer-actions > .button,
+.profile-customizer .studio-close-bottom {
+  min-width: 0 !important;
+  min-height: 48px !important;
+  width: 100%;
+  padding: 12px !important;
+  box-sizing: border-box;
+  white-space: normal;
+  font: 18px/1.25 ForcedSquare, sans-serif !important;
+  cursor: pointer;
+}
+.profile-customizer .profile-customizer-actions > [data-save-profile-cosmetics] { background: var(--studio-cyan) !important; color: #102145 !important; border: 1px solid #b8f3ff; }
+.profile-customizer .profile-customizer-actions > .studio-discard,
+.profile-customizer .studio-close-bottom { margin-top: 0 !important; background: #213758 !important; color: #d2e2f5 !important; border: 1px solid #6782a5 !important; }
+.profile-customizer .profile-extras-grid { gap: 18px; }
+.profile-customizer .profile-favorite-track input { min-width: 0; width: 100%; min-height: 48px; box-sizing: border-box; font-size: 16px; }
+.profile-customizer .profile-cosmetic-podium { gap: 12px; }
+.profile-customizer .profile-podium-choices { flex-wrap: wrap; gap: 8px; }
+.profile-customizer .profile-podium-choices > button { min-height: 48px; white-space: normal; }
+.profile-customizer .studio-track-options > button { min-height: 44px; white-space: normal; }
+.profile-customizer :is(summary, .studio-tab, .profile-cosmetic-choice, .button, input, [role='option']):focus-visible {
+  outline: 3px solid var(--studio-gold) !important;
+  outline-offset: 3px !important;
+  box-shadow: inset 0 0 0 3px var(--studio-gold) !important;
+}
+@media (hover: hover) {
+  .profile-customizer .profile-cosmetic-choice:not([data-cosmetic-locked='true']):hover { background: #2c4c78 !important; border-color: var(--studio-cyan) !important; }
+  .profile-customizer .studio-tab:hover { background: #2c4c78; }
+}
+@media (max-width: 1000px) {
+  .profile-customizer > .profile-customizer-body { grid-template-columns: minmax(0, 1fr) !important; }
+  .profile-customizer .profile-customizer-preview { position: static !important; }
+}
+@media (max-width: 600px) {
+  .profile-customizer > summary { min-height: 76px !important; padding: 16px 12px !important; gap: 10px; }
+  .profile-customizer > summary b { font-size: 24px !important; }
+  .profile-customizer > summary > .studio-open-label { padding: 9px; }
+  .profile-customizer > .profile-customizer-body { padding: 12px !important; gap: 20px !important; }
+  .profile-customizer .profile-customizer-preview { padding: 14px !important; }
+  .profile-customizer .profile-cosmetic-group { padding: 12px !important; margin-bottom: 22px; }
+  .profile-customizer .profile-cosmetic-group > div:not(.profile-extras-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .profile-customizer .studio-tabs > .studio-tab { flex-basis: calc(50% - 12px); font-size: 16px !important; }
+  .profile-customizer .profile-cosmetic-group .profile-cosmetic-choice { min-height: 112px !important; padding: 10px !important; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .profile-customizer .profile-customizer-preview { position: static !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-customizer .profile-cosmetic-choice { transition: none !important; }
+}
+.sq-reduced-effects .profile-customizer .profile-cosmetic-choice { transition: none !important; }

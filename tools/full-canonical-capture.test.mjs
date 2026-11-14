@@ -1015,7 +1015,7 @@ test('changed stage is detected before commit without overwriting the external c
 
 test('caps cannot be raised and oversized stage files defer before querying', async t => {
   const f = await fixture(t); let calls = 0; const db = {call() {calls++; assert.fail('must not query');}};
-  for (const options of [{documentLimit: 20001}, {pageSize: 101}, {documentLimit: 0}]) {
+  for (const options of [{documentLimit: 30001}, {pageSize: 101}, {documentLimit: 0}]) {
     await assert.rejects(f.run([], {db, ...options}), /invalid_limits/);
   }
   await fs.mkdir(path.join(f.root, 'tracks'));
@@ -1048,12 +1048,13 @@ test('checkpoint cannot be staging, a child, an ancestor, or a symlink; stage fi
   assert.deepEqual(await fs.readdir(target), []); assert.equal(calls, 0);
 });
 
-test('approved 20000-row catch-up imports a full 15302-row field under its explicit accounting bound',{skip:process.env.PT_SKIP_REPEATED_CAPACITY==='1'},async t=>{
- const f=await fixture(t),rows=Array.from({length:15302},(_,i)=>source(i+1,{trackId:id(10000+Math.floor(i/400)),name:'Synthetic Capacity Racer '+i}));
+test('approved 30000-row catch-up imports a full 24536-row field under its explicit accounting bound',{skip:process.env.PT_SKIP_REPEATED_CAPACITY==='1'},async t=>{
+ const f=await fixture(t),rows=Array.from({length:24536},(_,i)=>source(i+1,{trackId:id(10000+Math.floor(i/400)),name:'Synthetic Capacity Racer '+i}));
  await baseline(f,rows.map(row=>saved(row)));const db=transport(rows);
- const result=await captureFullCanonical({directory:f.root,checkpointDirectory:f.checkpoint,db,documentLimit:20000});
- assert.equal(result.complete,true);assert.equal(result.imported,true);assert.equal(result.rows,15302);assert.equal(result.priorRows,15302);assert.equal(result.scanInconsistency,false);assert.equal(result.documentWrites,0);
- assert.equal(db.calls.length,154);assert.ok(result.peakAccountedBytes<=FULL_CANONICAL_LIMITS.catchupMemoryBytes);
+ const result=await captureFullCanonical({directory:f.root,checkpointDirectory:f.checkpoint,db,documentLimit:30000});
+ assert.equal(result.complete,true);assert.equal(result.imported,true);assert.equal(result.rows,24536);assert.equal(result.priorRows,24536);assert.equal(result.scanInconsistency,false);assert.equal(result.documentWrites,0);
+ assert.equal(db.calls.length,246);assert.equal(result.documentLimit,30000);assert.equal(result.reservedDocumentReads,24600);assert.equal(result.verificationAttempts,0);assert.equal(result.fullScan,true);assert.equal(result.fullScanReadPoint,point);
+ const manifest=await f.read('manifest.json');assert.equal(manifest.fullCanonicalCapture.sourceRows,24536);assert.equal(manifest.fullCanonicalCapture.complete,true);assert.equal(manifest.fullCanonicalCapture.imported,true);assert.ok(result.peakAccountedBytes<=FULL_CANONICAL_LIMITS.catchupMemoryBytes);
 });
 
 test('normal board above 2 MiB is retained under the 4 MiB board-only limit without granting verification',async t=>{

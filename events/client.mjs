@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=312';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=312';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=313';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=313';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=312';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=312';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=312';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=313';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=313';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=313';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -101,6 +101,9 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
   state.classList?.toggle('verified',verified);state.classList?.toggle('pending',!verified);
   const icon=state.querySelector?.('img');
   if(icon){icon.src=verified?'images/state_verified.svg':'images/state_pending.svg';icon.alt=verified?'Verified replay':'Unverified recording';}
+  let statusLabel=state.querySelector?.('.sq-event-status-label');
+  if(!statusLabel&&state.append){statusLabel=button.ownerDocument.createElement('span');statusLabel.className='sq-event-status-label';state.append(statusLabel);}
+  if(statusLabel){statusLabel.textContent=verified?'':row.source==='local-event-recording'?'Local PB':'Pending';statusLabel.hidden=verified;}
   const exact=eventExactRunAt(row,at);
   if(exact)state.dataset.sqPbAt=String(exact);else delete state.dataset.sqPbAt;
   const label=eventVerificationLabel(row,!verified);
@@ -602,11 +605,13 @@ export function createNormalKodubErpDecorator(bridge){
       }
       const presentation=eventAwardPresentation({board,period,normalRow:binding.row,trackId,formatTime:bridge.formatTime});
       label.dataset.status=presentation.status;label.dataset.separate=String(presentation.separate);
-      label.dataset.verified=String(presentation.verified);label.title=presentation.title;
+      const matchingAward=presentation.verified&&presentation.relation==='exact';
+      label.dataset.verified=String(matchingAward);label.title=presentation.title;
       if(presentation.status==='unavailable'){label.textContent='';label.hidden=true;return;}
-      label.textContent=presentation.pairedText||presentation.text;
-      label.style.color=presentation.verified?'':'inherit';label.style.opacity=presentation.verified?'1':'.7';
-      label.setAttribute('aria-label',(presentation.verified?'Verified published event award: ':'')+label.textContent);
+      // A separate Event PB must not attribute its award to this normal PB badge.
+      label.textContent=matchingAward?presentation.text:presentation.status==='pending'?'Event PB pending':presentation.separate?presentation.eventPbText:presentation.status==='held'?'Event result held':presentation.text;
+      label.style.color=matchingAward?'':'inherit';label.style.opacity=matchingAward?'1':'.7';
+      label.setAttribute('aria-label',(matchingAward?'Verified published event award: ':'')+label.textContent);
       label.hidden=false;
     });
   }
@@ -1439,10 +1444,13 @@ export function installEvents(bridge){
       if(row.rank===null){const position=button.querySelector('.left .position');position.textContent='Rank unavailable';position.title='No rank was saved for this event result.';}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const points=document.createElement('span');points.className='sq-event-earned-rp';
-      const hasRp=Number.isSafeInteger(row.rp)&&row.rp>=0,isFinal=snapshot.archived===true;
-      points.textContent=hasRp?row.rp+' ERP'+(isFinal?'':' (saved)'):'ERP unavailable';
-      points.title=!hasRp?'No Event RP was saved for this result.':isFinal?'Event RP from saved final standings.':'Event RP from a non-final capture, not a final award.';
-      state.prepend(points);if(row.replayUnavailable===true)decorateArchivedReplayUnavailable(state,row);bridge.decorateRacer?.(button,row);
+      const hasRp=publishedEventAwardPresentation(row).status==='awarded',isFinal=snapshot.archived===true;
+      if(hasRp){
+        points.textContent=row.rp+' ERP'+(isFinal?'':' (saved)');
+        points.title=isFinal?'Event RP from saved final standings.':'Event RP from a non-final capture, not a final award.';
+        state.prepend(points);
+      }
+      if(row.replayUnavailable===true)decorateArchivedReplayUnavailable(state,row);bridge.decorateRacer?.(button,row);
     }
     if(!rows.length){const empty=document.createElement('p');empty.className='error-message';empty.textContent=!bound?description:state==='final'?'No verified results are present in the saved final standings.':'No verified results are present in this saved capture. Final results are not known.';container.append(empty);}
     renderEventPagination(view,rows.length,()=>syncNativeArchiveBoard(view));
@@ -1586,7 +1594,7 @@ export function installEvents(bridge){
       button.title=pending?'Loading and validating event replay...':row.pending?'Watch unverified recording. It earns no points until verified.':'Load this verified event PB replay. Older recordings may be unavailable.';
       button.querySelector('.left p:not(.position)').classList.add('event-time');
       const state=button.querySelector('.verified-state');decorateEventRowPresentation(button,row,now());
-      const rp=eventRpPresentation(row);if(rp?.available){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=rp.text;points.title=rp.title;state.prepend(points);}
+      const rp=publishedEventAwardPresentation(row).status==='awarded'?eventRpPresentation(row):null;if(rp?.available){const points=document.createElement('span');points.className='sq-event-earned-rp';points.textContent=rp.text;points.title=rp.title;state.prepend(points);}
       const actions=event=>{if(typeof bridge.racerActions!=='function')return;event.preventDefault();event.stopPropagation();const rect=button.getBoundingClientRect();bridge.racerActions(row,{clientX:event.clientX||rect.left+rect.width/2,clientY:event.clientY||rect.top+rect.height/2});};
       button.oncontextmenu=actions;button.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')actions(event);};
       const stateIcon=state.querySelector('img');stateIcon.classList.add('sq-event-verification-icon');stateIcon.alt=row.pending?'Unverified recording':'Verified replay';

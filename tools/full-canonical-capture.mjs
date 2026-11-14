@@ -9,7 +9,7 @@ import {rankTrustedTrackEntries} from '../workers/ranked/src/index.js';
 import {buildTrackStatistics} from './snapshot-package.mjs';
 import {ledgerBinding, ledgerKey} from './native-verification-ledger.mjs';
 
-export const FULL_CANONICAL_LIMITS = Object.freeze({documents: 20000, page: 100, catchupMemoryBytes:128 * 1024 * 1024,
+export const FULL_CANONICAL_LIMITS = Object.freeze({documents: 30000, page: 100, catchupMemoryBytes:128 * 1024 * 1024,
   memoryBytes: 64 * 1024 * 1024, normalBoardBytes:4 * 1024 * 1024, fileBytes: 2 * 1024 * 1024});
 const COLLECTION = '0.6.2_race_results';
 const HASH = /^[a-f0-9]{64}$/;

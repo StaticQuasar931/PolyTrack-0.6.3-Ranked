@@ -224,6 +224,7 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.equal(moduleRequests.includes('builder-contact.mjs'),false,'contact code is not loaded before user action');
     const search=page.getByRole('searchbox',{name:'Search tracks'});await search.fill('Everlasting');
     const initialDialogs=await page.getByRole('dialog').count();
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.getByRole('button',{name:'Builder program',exact:true}).click();
     const contact=page.locator('.sq-builder-contact');await contact.waitFor({state:'visible'});
     assert.equal(moduleRequests.filter(name=>name==='builder-contact.mjs').length,1);
@@ -246,6 +247,7 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.match(fs.readFileSync(await download.path(),'utf8'),/Permissions and original credits/);
     await page.getByRole('button',{name:'Back to tracks',exact:true}).click();
     assert.equal(await search.inputValue(),'Everlasting');assert.equal(await page.locator('.sq-extra-card').count(),1);
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.getByRole('button',{name:'Builder program',exact:true}).click();await contact.waitFor({state:'visible'});
     await page.keyboard.press('Escape');assert.equal(await contact.isHidden(),true);assert.equal(await search.inputValue(),'Everlasting');
     assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true);
@@ -300,16 +302,17 @@ test('actual four UTC picks preserve cached PBs, canonical play links and keyboa
       const cards = await page.locator('.sq-extra-featured>.sq-extra-pick:visible').evaluateAll(nodes => nodes.map(node => {
         const box = node.getBoundingClientRect(), image = node.querySelector('figure').getBoundingClientRect();
         const footer = node.querySelector('.sq-extra-pick-footer'), metrics = node.querySelector('.sq-extra-pick-note');
-        return {height:box.height,top:box.top,imageHeight:image.height,actionFirst:Boolean(footer.compareDocumentPosition(metrics)&Node.DOCUMENT_POSITION_FOLLOWING)};
+        return {height:box.height,top:box.top,imageHeight:image.height,highlightFirst:Boolean(metrics.compareDocumentPosition(footer)&Node.DOCUMENT_POSITION_FOLLOWING)};
       }));
       assert.equal(cards.length,width<=600?1:4);
-      assert.ok(cards.every(card=>card.actionFirst),'actions precede optional stats');
+      assert.ok(cards.every(card=>card.highlightFirst),'catalog evidence is grouped above the separate play action');
       if(width===1366) {
-        assert.ok(cards.every(card=>card.height<=310),'four desktop picks stay compact');
+        assert.ok(cards.every(card=>card.height<=350),'four desktop picks retain a bounded height with visible selection reasons');
         assert.ok(cards.every(card=>Math.abs(card.top-cards[0].top)<1),'all four desktop picks share one row');
       }
       layouts.push({width,height,cards});
-      assert.equal(await page.locator('.sq-extra-pick-reason').count(),0);
+      assert.equal(await page.locator('.sq-extra-pick-highlight .sq-extra-pick-reason').count(),4);
+      assert.equal(await page.locator('.sq-extra-pick-footer .sq-extra-pick-reason').count(),0);
       assert.equal(await page.locator('.sq-extra-featured-note').count(),1);
       assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Your best'}).count(),2);
       assert.equal(await page.locator('.sq-extra-pick-progress').filter({hasText:'Imported, no finish'}).count(),1);

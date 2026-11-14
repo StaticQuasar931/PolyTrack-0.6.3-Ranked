@@ -14,3 +14,10 @@ test('budget exhaustion is incomplete, not an advanced watermark',async t=>{cons
 test('foreign paths, duplicates, changed read time and future timestamps are rejected before writes',async t=>{for(const bad of [[{...row(1),document:{...row(1).document,name:'foreign/'+id(1)}}],[row(1),row(1)],[row(1),{...row(2),readTime:'2026-11-07T08:05:01.000Z'}],[row(1,{updatedAt:Date.parse(point)+1})]]){const f=await fixture(t,[bad]);await assert.rejects(captureProfileDelta({...f,since:1000}));assert.deepEqual(await fs.readdir(f.directory),[]);}});
 
 test('empty changed-profile result is complete and costs one minimum read',async t=>{const f=await fixture(t,[[{readTime:point}]]);const report=await captureProfileDelta({...f,since:1000});assert.equal(report.complete,true);assert.equal(report.profilesUpdated,0);assert.equal(report.estimatedDocumentReads,1);});
+
+
+test('approved 5000 profile ceiling is accepted but 5001 fails before any source query',async t=>{
+ const f=await fixture(t,[[{readTime:point}]]);const result=await captureProfileDelta({...f,since:1000,maxDocuments:5000});
+ assert.equal(result.complete,true);assert.equal(result.backendWrites,0);assert.equal(f.calls.length,1);assert.equal(f.calls[0].structuredQuery.limit,100);
+ await assert.rejects(captureProfileDelta({...f,since:1000,maxDocuments:5001}),/Invalid profile delta/);assert.equal(f.calls.length,1);
+});

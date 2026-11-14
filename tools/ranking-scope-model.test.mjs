@@ -28,8 +28,8 @@ test('all categories x scopes x complete/partial x group/public contexts remain 
     else if(category==='casual'||!complete)assert.equal(state.known,false);
     else assert.equal(state.value,group?1:2);
     const markup=rankingScopeMarkup(category,scope);
-    assert.equal(Boolean(markup),['wins','casual'].includes(category));
-    if(markup){assert.match(markup,/Total/);assert.match(markup,/Official only/);assert.equal((markup.match(/aria-pressed="true"/g)||[]).length,1);}
+    assert.equal(Boolean(markup),['wins','casual','average'].includes(category));
+    if(markup){assert.match(markup,category==='average'?/All/:/Total/);assert.match(markup,category==='average'?/Community/:/Official only/);assert.equal((markup.match(/aria-pressed="true"/g)||[]).length,1);}
     combinations++;
   }
   assert.equal(combinations,152);

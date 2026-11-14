@@ -4,7 +4,7 @@ const extract=name=>{const a=source.indexOf('  function '+name+'(');assert.ok(a>
 function fixture(){
   const rows=Array.from({length:200},(_,i)=>({userId:'racer-'+(i+1),name:'Driver '+(i+1),rank:i+1,score:i+0.5}));
   const c={overallRacerQuery:'',overallCategory:'overall',rankedFilterResult:null,sortedOverallEntries:()=>rows,sortedEventEntries:()=>rows,
-    loadedTrackRankingRows:()=>rows,personalTrackRankingRows:rows=>rows};
+    loadedTrackRankingRows:()=>rows,personalTrackRankingRows:rows=>rows,topTrackRowsForScope:()=>rows};
   vm.createContext(c);vm.runInContext(extract('searchRankingRows')+extract('currentLeaderboardCount'),c);return {c,rows};
 }
 test('search covers later pages and preserves real rank and score',()=>{

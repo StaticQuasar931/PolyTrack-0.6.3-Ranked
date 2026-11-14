@@ -178,6 +178,15 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   title.id = titleId;
   titleGroup.append(eyebrow, title);
   const closeButton = button('Close', 'sq-extra-close', close);
+  const headerMore = make('details', 'sq-extra-header-more');
+  const headerMoreSummary = make('summary', '', 'More');
+  const headerMoreActions = make('div', 'sq-extra-header-actions');
+  headerMore.append(headerMoreSummary, headerMoreActions);
+  headerMore.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && headerMore.open) {
+      event.preventDefault(); event.stopPropagation?.(); headerMore.open = false; headerMoreSummary.focus();
+    }
+  });
   header.append(titleGroup);
   if (typeof onExportFeedback === 'function') {
     let exportPending = false;
@@ -199,7 +208,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
         exportButton.removeAttribute('aria-busy');
       }
     });
-    header.append(exportButton);
+    headerMoreActions.append(exportButton);
   }
   header.append(closeButton);
   dialog.append(header);
@@ -214,9 +223,10 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     submitName.focus();
   });
   closeButton.remove();
-  const buildersButton = button('Builder program', 'sq-extra-builder-action', () => buildersView ? showTrackView() : openBuilderContact());
+  const buildersButton = button('Builder program', 'sq-extra-builder-action', () => { headerMore.open = false; return buildersView ? showTrackView() : openBuilderContact(); });
   buildersButton.setAttribute('aria-expanded', 'false');
-  header.append(buildersButton, submit, closeButton);
+  headerMoreActions.append(buildersButton);
+  header.append(submit, headerMore, closeButton);
   const contactHost = make('section', 'sq-extra-contact-host');
   contactHost.id = 'sq-extra-contact-' + mountNumber; contactHost.hidden = true;
   buildersButton.setAttribute('aria-controls', contactHost.id);
@@ -322,7 +332,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     field.count.remove();
     field.select.value = pickerPrefs[key];
     field.select.addEventListener('change', () => {
-      pickerPrefs = normalizePickerPrefs({...pickerPrefs, [key]: field.select.value});
+      pickerPrefs = normalizePickerPrefs({...pickerPrefs, ...(key === 'level' && field.select.value === 'unknown' ? {levelMin:'', levelMax:''} : {}), [key]: field.select.value});
       savePickerPrefs(pickerStorage(), pickerPrefs);
       syncPicker();
     });
@@ -331,17 +341,43 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     return field.select;
   }
   pickerField('pool', 'Track pool', [['catalog', 'Entire catalog'], ['filtered', 'Current catalog filters']]);
+  const pickerRange = make('fieldset', 'sq-extra-picker-range');
+  pickerRange.append(make('legend', '', 'Catalog difficulty / 10'));
+  const rangeHint = make('p', '', 'Set an inclusive range. Leave both bounds blank to include unknown levels.');
+  rangeHint.id = 'sq-extra-range-hint-' + mountNumber;
+  pickerRange.append(rangeHint);
+  const boundInputs = [];
+  for (const [key, caption, fallback] of [['levelMin', 'Minimum catalog difficulty', '1'], ['levelMax', 'Maximum catalog difficulty', '10']]) {
+    const group = make('div', 'sq-extra-picker-bound');
+    const label = make('label', 'sq-extra-field', caption);
+    const number = make('input'); number.type = 'number'; number.min = '1'; number.max = '10'; number.step = '1'; number.placeholder = fallback;
+    number.setAttribute('aria-label', caption); number.setAttribute('aria-describedby', rangeHint.id);
+    const slider = make('input'); slider.type = 'range'; slider.min = '1'; slider.max = '10'; slider.step = '1';
+    slider.setAttribute('aria-label', caption + ' slider'); slider.setAttribute('aria-describedby', rangeHint.id);
+    label.append(number); group.append(label, slider); pickerRange.append(group);
+    boundInputs.push([key, number, slider, fallback]);
+    const update = input => {
+      // Do not rewrite a partially typed number until the user commits it.
+      if (input === number && number.validity?.badInput) return;
+      pickerPrefs = normalizePickerPrefs({...pickerPrefs, level: '', [key]: input.value});
+      savePickerPrefs(pickerStorage(), pickerPrefs); syncPicker();
+    };
+    number.addEventListener('input', () => { slider.value = number.value || fallback; });
+    number.addEventListener('change', () => update(number));
+    slider.addEventListener('input', () => update(slider));
+  }
+  pickerPanel.append(pickerRange);
   const pickerAdvanced = make('details', 'sq-extra-picker-advanced');
   pickerAdvanced.append(make('summary', '', 'Advanced options'));
   pickerPanel.append(pickerAdvanced);
   const levels = [['', 'Any (includes unknown)'], ['unknown', 'Unknown only'], ...Array.from({length:10}, (_, i) => [String(i+1), String(i+1) + '/10'])];
-  pickerField('level', 'Catalog difficulty level', levels, pickerAdvanced);
+  pickerField('level', 'Catalog difficulty coverage', [['', 'Any known or unknown'], ['unknown', 'Unknown only']], pickerAdvanced);
   pickerField('difficulty', 'Published difficulty (rounded)', levels, pickerAdvanced);
   pickerField('rating', 'Published rating', [['', 'Any (includes unknown)'], ['unknown', 'Unknown only'], ...Array.from({length:10}, (_, i) => [String(i+1), 'At least ' + (i+1) + '/10'])], pickerAdvanced);
   pickerField('localRating', 'My rating on this device', levels, pickerAdvanced);
   const playedSelect = pickerField('played', 'Recorded finish (local / cached PB)', [['any', 'Any'], ['yes', 'Has a recorded finish'], ['no', 'No known recorded finish']], pickerAdvanced);
   const importedSelect = pickerField('imported', 'Import known on this device', [['any', 'Any'], ['yes', 'Known imported'], ['no', 'Not known imported']], pickerAdvanced);
-  pickerPanel.append(make('p', 'sq-extra-picker-note', 'Published grades, catalog levels and your ratings are separate. Unknown scores are not zero. No known finish is not proof a track was never played. Import knowledge covers only this device.'));
+  pickerAdvanced.append(make('p', 'sq-extra-picker-note', 'Published grades, catalog levels and your ratings are separate. Unknown scores are not zero. No known finish is not proof a track was never played. Import knowledge covers only this device.'));
   const pickerStatus = make('p', 'sq-extra-picker-status');
   pickerStatus.setAttribute('role', 'status');
   pickerStatus.setAttribute('aria-live', 'polite');
@@ -360,11 +396,15 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     try { return document.defaultView?.localStorage; } catch { return null; }
   }
   function syncPicker() {
+    for (const [key, select] of pickerFields) select.value = pickerPrefs[key];
+    for (const [key, number, slider, fallback] of boundInputs) {
+      number.value = pickerPrefs[key]; slider.value = pickerPrefs[key] || fallback;
+    }
     playedSelect.disabled = typeof getPersonalBest !== 'function';
     importedSelect.disabled = typeof isLoaded !== 'function';
     const matches = eligibleRecords(pickerPrefs.pool === 'filtered' ? pickerPool : cachedRecords || [], pickerPrefs);
     pickerStatus.textContent = matches.length ? matches.length + (matches.length === 1 ? ' matching track' : ' matching tracks') : 'No tracks match. Try broader options or reset catalog filters.';
-    if (playedSelect.disabled || importedSelect.disabled) pickerStatus.textContent += ' Some device history is unavailable; history filters require known data.';
+    if (playedSelect.disabled && pickerPrefs.played !== 'any' || importedSelect.disabled && pickerPrefs.imported !== 'any') pickerStatus.textContent += ' Some device history is unavailable; history filters require known data.';
     if (typeof onSelect !== 'function') pickerStatus.textContent += ' Track preview is unavailable: the parent must connect onSelect(entry).';
     pickerPick.disabled = pickerBusy || !matches.length || typeof onSelect !== 'function';
   }
@@ -1116,7 +1156,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
     hiddenTrackNodes.clear();
     buildersButton.textContent = 'Builder program'; buildersButton.setAttribute('aria-expanded', 'false');
     if (!destroyed && opened && refresh) {render();scheduleFeaturedRefresh();}
-    if (restoreFocus) buildersButton.focus({preventScroll: true});
+    if (restoreFocus) { headerMore.open = true; buildersButton.focus({preventScroll: true}); }
   }
 
   function renderFeatured(all = currentEntries()) {
@@ -1188,11 +1228,13 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       const name = make('h3', '', text(pick.entry.name, 'Untitled track')); name.title = name.textContent; content.append(name);
       const author = make('p', 'sq-extra-pick-creator', 'Created by ' + displayAuthor(pick.entry));
       author.title = author.textContent; content.append(author);
-      const reason = pick.kind === 'daily' ? 'Meet a new route each day.'
-        : pick.kind === 'weekly' ? (pick.underplayed ? 'Give a less-raced route a try.' : 'Explore an editorial pick this week.')
-        : pick.kind === 'critics' ? (pick.quality === null ? 'Try another editorial selection.' : 'Try a highly rated route.')
+      const reason = pick.kind === 'daily' ? (pick.pool === 'curated' ? 'Daily editorial catalog selection.' : 'Daily pick from published ratings.')
+        : pick.kind === 'weekly' ? (pick.underplayed ? 'Lowest known racer-count quarter.' : 'Weekly editorial selection.')
+        : pick.kind === 'critics' ? (pick.quality === null ? 'Editorial selection; rating unknown.' : 'Selected for its published rating.')
         : 'Take a different route today.';
       tile.setAttribute('aria-description', reason);
+      const highlight = make('div', 'sq-extra-pick-highlight');
+      highlight.append(make('p', 'sq-extra-pick-reason', reason));
       const progress = progressById.get(pick.entry.trackId);
       const best = progress?.best ?? null;
       const progressLabel = make('p', 'sq-extra-pick-progress', best !== null ? `Your best ${timeLabel(best)}`
@@ -1212,7 +1254,8 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
       period.setAttribute('datetime', new Date(pick.endsAt).toISOString());
       period.title = 'Next rotation: ' + new Date(pick.endsAt).toISOString();
       heading.append(period);
-      footer.append(play, progressLabel); content.append(footer, metrics);
+      highlight.append(metrics);
+      footer.append(play, progressLabel); content.append(highlight, footer);
       if (focusedKind === pick.kind) focusTarget = play;
       tile.append(artwork, content); tiles.push(tile);
     }
@@ -1549,6 +1592,7 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function close() {
+    headerMore.open = false;
     if (!opened || destroyed) return;
     contactGeneration++;
     if (buildersView) showTrackView(false, false);
@@ -1608,6 +1652,9 @@ export function mountExtraTracks({ document, root, entries = [], onSelect, onPla
   }
 
   function onKeydown(event) {
+    if (opened && event.key === 'Escape' && headerMore.open && pickerModal.hidden && submissionModal.hidden && reportModal.hidden) {
+      event.preventDefault(); headerMore.open = false; headerMoreSummary.focus(); return;
+    }
     if (!opened) return;
     if (event.key === 'Escape') {
       event.preventDefault();
