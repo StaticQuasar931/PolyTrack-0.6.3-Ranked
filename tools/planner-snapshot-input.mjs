@@ -34,7 +34,7 @@ export function buildPlannerSnapshotInput({
       row.totalEntriesExact !== false && dated(row) >= positive(snapshotUpdatedAt))]);
   const byTrack = new Map(finishes.map(row => [row.trackId, row]));
   const localPBs = new Map();
-  for (const row of rows(localResults).filter(row => positive(row.timeMs)).sort((a, b) =>
+  for (const row of rows(localResults).filter(row => Number.isSafeInteger(row.timeMs) && row.timeMs > 0).sort((a, b) =>
     a.timeMs - b.timeMs || positive(b.pbAt) - positive(a.pbAt) || canonical(a).localeCompare(canonical(b)))) {
     const prior = byTrack.get(row.trackId);
     if (localPBs.has(row.trackId) || positive(prior?.timeMs) && row.timeMs >= prior.timeMs) continue;
@@ -42,6 +42,8 @@ export function buildPlannerSnapshotInput({
       rank: null, fieldSize: null, weight: null, local: true, localPending: true});
   }
   const fields = rows(trackSummaries).filter(row =>
+    row.ranksExact !== false && row.sourceComplete !== false && row.totalEntriesExact !== false &&
+    row.local !== true && row.localPending !== true && row.pending !== true &&
     Number.isSafeInteger(row.fieldSize) && row.fieldSize >= 2 && positive(row.weight));
   for (const [trackId, row] of Object.entries(statistics || {})) {
     if (row?.complete !== true || !Number.isSafeInteger(row.players) || row.players < 2 ||

@@ -71,3 +71,22 @@ test('release280: rejected event replay status cannot authorize playback',async(
  for(const key of ['row','entry'])for(const verificationStatus of ['rejected','mismatch','deleted','unknown'])
   await assert.rejects(prepare({...options,[key]:{...options[key],verificationStatus}}),/eligible/);
 });
+
+test('high-work own replay requires a live branded engine after full structure and style validation',async()=>{
+ const {confirmPlaybackEngine,revokePlaybackEngine}=await import('../tools/playback-engine-session.mjs');
+ const {PLAYBACK_ENGINE_PIN:pin}=await import('../tools/playback-engine-pin.mjs');
+ const f=fixture(),lists={up:Array.from({length:200},(_,i)=>i),right:[],down:[],left:[],reset:[]};
+ const replay=new (f.require(1754).A)(lists).serialize();
+ const options={...f,best:{...f.best,timeMs:300000},row:{...f.row,timeMs:300000,frames:300000,replay}};
+ assert.throws(()=>prepareOwnEventGhost(options),error=>error.code==='EVENT_REPLAY_WORK_LIMIT');
+ assert.throws(()=>prepareOwnEventGhost({...options,playbackEngine:{lookupVersion:pin.lookupVersion}}),error=>error.code==='EVENT_REPLAY_WORK_LIMIT');
+ assert.throws(()=>prepareOwnEventGhost({...options,row:{...options.row,carStyle:'AAAA'}}),error=>!error.code);
+ class Worker extends EventTarget{postMessage(message){queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:{...message,lookupVersion:pin.lookupVersion,lookupDigest:pin.lookupDigest}})));}}
+ const playbackEngine=await confirmPlaybackEngine({worker:new Worker(),workerBytes:fs.readFileSync(new URL('../simulation_worker.bundle.js',import.meta.url)),mainBytes:fs.readFileSync(new URL('../main.bundle.js',import.meta.url))});
+ const ghost=prepareOwnEventGhost({...options,playbackEngine});
+ assert.ok(ghost.requiredPlaybackEngine);assert.equal(ghost.time.numberOfFrames,300000);assert.equal(ghost.verified,undefined);
+ for(const change of [{accountId:'c'.repeat(64)},{periodId:'other'},{trackId:'c'.repeat(64)},{attemptId:'old'},{source:'normal-recording'}])
+   assert.throws(()=>prepareOwnEventGhost({...options,playbackEngine,row:{...options.row,...change}}));
+ revokePlaybackEngine(playbackEngine);
+ assert.throws(()=>prepareOwnEventGhost({...options,playbackEngine}),error=>error.code==='EVENT_REPLAY_WORK_LIMIT');
+});

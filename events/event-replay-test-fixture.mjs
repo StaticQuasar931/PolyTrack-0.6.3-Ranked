@@ -18,25 +18,25 @@ export function harness(options={}){
   const button={disabled:false,addEventListener(_type,listener){this.listener=listener;},removeEventListener(){this.listener=null;},click(){this.listener?.();}};
   const root={isConnected:true,querySelector:()=>button,__pt062EventWatch:{version:1,trackId:period.trackId,open:ghosts=>watches.push(ghosts)}};
   const view={root,period,periodId:period.id,page:0,onlyVerified:false,visibleRows:rows,snapshot:{entries:rows}};
-  const bridge={accountId:()=>account,require:()=>({}),supportsEventGhost:()=>false,
+  const bridge={accountId:()=>account,require:()=>({}),supportsEventGhost:()=>!!options.own,
     readReplay:async(...args)=>{reads.push({archive:false,args});const row=rows.find(row=>row.accountId===args[1]);return options.read?options.read(row,args):{...row};},
     readArchivedReplay:async(...args)=>{reads.push({archive:true,args});const row=rows.find(row=>row.accountId===args[1]);return options.read?options.read(row,args):{...row};},
     startEventRace:async(value,invoke,current)=>{if(options.handoff)await options.handoff();assert(current());invoke();assert(current());launches.push(value);},
     watchEvent:(_session,ghosts)=>watches.push(ghosts)};
   const context=vm.createContext({bridge,sessions:{current:()=>session},archiveIntent:null,eventIntent:initial,nativeView:view,
-    knownPeriods:new Map([[period.id,period]]),catalog:{periods:[period]},bestRecords:{},
+    knownPeriods:new Map([[period.id,period]]),catalog:{periods:[period]},bestRecords:options.bestRecords||{},
     eventDisplayRows:()=>({rows}),archivePeriodCounts:()=>({verifiedEntries:rows}),
-    document:{querySelector:()=>root,activeElement:button},getOwnReplay:()=>null,
+    document:{querySelector:()=>root,activeElement:button},getOwnReplay:()=>options.own?.()||null,
     now:()=>clock,message:text=>messages.push(text),tick(){},syncNativeBoard(){},displayName:row=>row.name,
     eventAwardRowRestricted,eventRowVerified:row=>!!row&&!row.pending&&!eventAwardRowRestricted(row)&&row.verified!==false&&row.runVerified!==false&&row.eventRpEligible!==false,
-    prepareOwnEventGhost(){assert.fail('No local replay should be prepared in this fixture');},
+    prepareOwnEventGhost:options.prepareOwn||(()=>assert.fail('No local replay should be prepared in this fixture')),
     preparePublishedEventGhost:async({row,entry,viewer})=>{
       prepares++;if(options.prepare)await options.prepare(row,entry);
       if(!row||row.accountId!==entry.accountId||row.timeMs!==entry.timeMs||row.replayHash!==entry.replayHash)throw Error('Published replay hash does not match standings.');
       return {nickname:entry.name,racerId:entry.accountId,isSelf:entry.accountId===viewer,
         ...(options.indexed?{requiredPlaybackEngine:{fixture:true}}:{}),recording:{serialize:()=>entry.replayHash},time:{numberOfFrames:entry.timeMs}};
     },
-    getPlaybackWorkerBridge:()=>({prepareEventRecording:async()=>{handshakes++;if(options.handshake)await options.handshake();}}),
+    getPlaybackWorkerBridge:options.workerBridge||(()=>({prepareEventRecording:async()=>{handshakes++;if(options.handshake)await options.handshake();}})),
     confirmPartialReplaySelection:async offer=>{offers.push(offer);return options.confirm?options.confirm(offer):true;}});
   const start=clientSource.indexOf('  const replayContextActive='),end=clientSource.indexOf('  const ownReceipts=',start);
   assert(start>=0&&end>start);

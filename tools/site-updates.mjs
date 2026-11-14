@@ -602,9 +602,10 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       const location = document.defaultView?.location;
       if (typeof location?.reload !== 'function') throw Error('Reload unavailable');
       if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
+      document.defaultView?.__polytrackExitGuard?.allowReload();
       location.reload();
       return 'reloading';
-    } catch { event?.preventDefault(); restore(); return 'failed'; }
+    } catch { document.defaultView?.__polytrackExitGuard?.cancelReload();event?.preventDefault(); restore(); return 'failed'; }
   };
   const applyCompatibility = (data) => {
     // The optional manifest field is dormant when absent. No remote navigation URL is accepted.

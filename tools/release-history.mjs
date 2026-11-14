@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 385,
+    "number": 386,
     "version": "0.6.3",
-    "revision": 327,
+    "revision": 328,
     "notes": [
-      "Readable car workshop controls on phones and smaller screens.",
-      "Collapse the workshop while viewing your car; native Save dialogs stay clear."
+      "Protection against accidental closing, and smoother Garage navigation.",
+      "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
+      "More reliable local PB replays and snapshot-based route suggestions."
     ]
   },
   "entries": [
+    {
+      "number": 385,
+      "title": "Readable car workshop controls on phones",
+      "commit": "603fb3ea7e4092f09faac228a218f4d03ec0095d",
+      "committedAt": "2026-11-14T21:15:06.000Z",
+      "notes": [
+        "Readable car workshop controls on phones and smaller screens.",
+        "Collapse the workshop while viewing your car; native Save dialogs stay clear."
+      ]
+    },
     {
       "number": 384,
       "title": "Car workshop and expanded Studio style shop",
@@ -197,15 +208,6 @@ const historyData = {
       "notes": [
         "Fixes event badges hidden by an older display flag after successful replay checks.",
         "Fixes a hosted snapshot compatibility check."
-      ]
-    },
-    {
-      "number": 363,
-      "title": "Recheck stale snapshot sources without dropping saved racers",
-      "commit": "c296b7a618a3e1f4bfd334787bd2747932dbfe1e",
-      "committedAt": "2026-11-12T08:53:30.000Z",
-      "notes": [
-        "Improves snapshot updates without dropping saved racers."
       ]
     }
   ],

@@ -120,3 +120,76 @@ test('refresh drops a selected ghost when time, run ID or waiting status changes
   assert.equal(selectedGhosts.size,0);assert.equal(result.opponents.length,0);
  }
 });
+
+function ownHarness(options={}){
+ let replay={attemptId:'own-1',timeMs:10000,frames:10000,replay:'own-bytes',carStyle:'style'},calls=0;
+ const bestRecords={period_viewer:{attemptId:replay.attemptId,timeMs:replay.timeMs}};
+ const ghost={isSelf:true,recording:{serialize:()=>replay.replay},time:{numberOfFrames:replay.frames}};
+ const h=harness({...options,bestRecords,own:()=>replay&&Object.freeze({...replay}),prepareOwn:value=>{
+   calls++;
+   if(options.prepareOwn)return options.prepareOwn(value);
+   if(!value.playbackEngine)throw Object.assign(Error('requires worker'),{code:'EVENT_REPLAY_WORK_LIMIT'});
+   return {...ghost,requiredPlaybackEngine:{fixture:true}};
+ }});
+ return {...h,replace:(change={})=>{replay={...replay,...change};bestRecords.period_viewer={attemptId:replay.attemptId,timeMs:replay.timeMs};},
+   remove:()=>{replay=null;},ownCalls:()=>calls};
+}
+for(const mode of ['play','watch'])test(mode+' prepares a fresh high-work own PB alongside a selected opponent without reopening',async()=>{
+ let handshakes=0;
+ const h=ownHarness({workerBridge:()=>({prepareEventRecording:async()=>{handshakes++;return {fixture:true};}})});
+ await h.select(h.rows[0]);assert.equal(handshakes,0);
+ await h.action(mode);
+ assert.equal(mode==='play'?h.launches.length:h.watches.length,1);
+ const ghosts=mode==='play'?[h.launches[0].ownGhost,...h.launches[0].opponents]:h.watches[0];
+ assert.equal(ghosts.length,2);assert(ghosts.some(ghost=>ghost.isSelf));assert(ghosts.some(ghost=>!ghost.isSelf));
+ assert.ok(handshakes>=2,'prepare plus final worker reauthorization');assert.equal(h.reads.length,1);
+});
+for(const mode of ['play','watch'])for(const change of ['attempt','bytes','style','removed','account','session','track','navigation','expired'])
+ test(mode+' cancels own worker preparation after '+change+' changes',async()=>{
+  const gate=deferred();let handshakes=0;
+  const h=ownHarness({workerBridge:()=>({prepareEventRecording:async()=>{handshakes++;await gate.promise;return {fixture:true};}})});
+  await h.select(h.rows[0]);const work=h.action(mode);await until(()=>handshakes===1);
+  if(change==='attempt')h.replace({attemptId:'own-2',timeMs:9000,frames:9000});
+  else if(change==='bytes')h.replace({replay:'replacement-bytes'});
+  else if(change==='style')h.replace({carStyle:'replacement-style'});
+  else if(change==='removed')h.remove();
+  else if(change==='expired')h.clock(100001);
+  else h.change(change);
+  gate.resolve();await work;
+  assert.equal(h.launches.length,0);assert.equal(h.watches.length,0);
+ });
+for(const mode of ['play','watch'])test(mode+' never requests a worker for invalid own replay data',async()=>{
+ let handshakes=0;
+ const h=ownHarness({prepareOwn:()=>{throw Error('invalid own binding');},workerBridge:()=>({prepareEventRecording:async()=>{handshakes++;}})});
+ await h.action(mode);assert.equal(handshakes,0);assert.equal(h.launches.length,0);assert.equal(h.watches.length,0);
+});
+test('Play checks full own PB identity while remote preparation is in flight',async()=>{
+ const gate=deferred();let started=false;
+ const h=ownHarness({prepareOwn:()=>({isSelf:true,recording:{},time:{}}),prepare:async()=>{started=true;await gate.promise;}});
+ await h.select(h.rows[0]);const work=h.action('play');await until(()=>started);
+ h.replace({carStyle:'changed-with-same-time-and-attempt'});gate.resolve();await work;
+ assert.equal(h.launches.length,0);assert.equal(h.selected().length,1);
+});
+test('own replay lookup searches exact best within eight retained rows and never beyond the bound',()=>{
+ const start=source.indexOf('  function getOwnReplay('),end=source.indexOf('  function renderCachedCar(',start);
+ const best={attemptId:'new',timeMs:1000};
+ const exact={periodId:'period',trackId:period.trackId,accountId:'viewer',...best,frames:1000,replay:'AAAA',carStyle:''};
+ let rows=[{...exact,attemptId:'old'},exact];
+ const c=vm.createContext({knownPeriods:new Map([['period',period]]),bridge:{accountId:()=> 'viewer'},localBest:()=>best,
+   localReplayRows:()=>rows,eventDisplayRows:()=>({rows:[]}),nativeView:null,ownReceipts:new Map()});
+ vm.runInContext(source.slice(start,end),c);
+ assert.equal(c.getOwnReplay('period').attemptId,'new');
+ rows=[...Array.from({length:8},()=>({...exact,periodId:'other'})),exact];assert.equal(c.getOwnReplay('period'),null);
+});
+
+for(const mode of ['play','watch'])for(const kind of ['missing','rejected','unbranded'])test(mode+' fails closed when own worker is '+kind,async()=>{
+ const h=ownHarness({workerBridge:()=>kind==='missing'?null:{prepareEventRecording:async()=>{
+   if(kind==='rejected')throw Error('worker disposed');return null;
+ }}});
+ await h.action(mode);assert.equal(h.launches.length,0);assert.equal(h.watches.length,0);
+});
+test('resume redirects a high-work own PB to explicit Event Play',()=>{
+ const h=ownHarness();let resumed=0;
+ assert.equal(h.resumeRace(h.period.trackId,()=>resumed++),true);assert.equal(resumed,0);
+ assert.match(h.messages.at(-1),/Use Event Play/);assert.equal(h.reads.length,0);
+});

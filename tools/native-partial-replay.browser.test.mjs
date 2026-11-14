@@ -6,7 +6,7 @@ import {createRequire} from 'node:module';
 
 const root = path.resolve(import.meta.dirname, '..');
 const require = createRequire(new URL('./verifier/package.json', import.meta.url));
-const {chromium} = require('playwright');
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const patch = await fs.readFile(path.join(root, 'polytrack_062_patch.js'), 'utf8');
 const main = await fs.readFile(path.join(root, 'main.bundle.js'), 'utf8');
 function block(start, end) {
@@ -18,7 +18,7 @@ const helpers = block('  function invalidateNativePartialReplay(', '  async func
 const reader = block('  function cachedNativeRecording(', '  function invalidateNativePartialReplay(');
 const trackChange = block('  function selectCachedTrackState(', '  function setTrackLoadStateForGeneration(');
 const rowChange = block('  function chooseNativeRows(', '  function selectTopNativeRows(');
-const accountWrite = /invalidateNativePartialReplayAccount\(accountId\);\s*localStorage\.setItem\('polytrack-0\.6\.2-active-account-id', accountId\);/.exec(patch)?.[0];
+const accountWrite = /invalidateNativePartialReplayAccount\(accountId\);\s*(?:noteProfileShopAccountTransition\(accountId\);\s*)?localStorage\.setItem\('polytrack-0\.6\.2-active-account-id', accountId\);/.exec(patch)?.[0];
 const generationChange = /nativeRecordingEpoch\+\+;nativeRecordingMemory\.clear\(\);nativeRecordingRequests\.clear\(\);nativeRecordingRetryAt\.clear\(\);\s*invalidateNativePartialReplay\(true\);/.exec(patch)?.[0];
 assert.ok(accountWrite && generationChange);
 const factories = main.slice(main.indexOf('t={') + 2, main.lastIndexOf('},n={};function i(e)') + 1);
@@ -90,7 +90,7 @@ async function fixture(t, options = {}) {
       const TRACK_CACHE_KEY='track-cache',RECORDING_STORE_KEY='recording-cache',TRACK_REFRESH_MS=60000;
       let eventPending=options.eventPending===true,engineFailed=false;
       const eventUi={isEntered:()=>eventPending,isTrackNavigationCurrent:()=>eventPending};
-      const readLocalRaceRows=()=>[];
+      const readLocalRaceRows=()=>[];const noteProfileShopAccountTransition=()=>{};const safeRecordingId=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):null;const cleanUserId=value=>value;
       const activeRankedAccountId=()=>localStorage.getItem('polytrack-0.6.2-active-account-id');
       const isElementVisible=node=>!!node?.isConnected&&!node.hidden&&!node.classList.contains('hidden');
       const opponentShortcutBoard=()=>isElementVisible(board)?board:null;

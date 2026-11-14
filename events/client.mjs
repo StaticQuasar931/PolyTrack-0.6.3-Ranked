@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=327';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=327';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=328';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=328';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=327';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=327';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=327';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=328';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=328';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=328';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -1036,7 +1036,7 @@ export function installEvents(bridge){
   }
   function getOwnReplay(periodId){
     const period=knownPeriods.get(periodId)||(catalog.periods||[]).find(p=>p.id===periodId),accountId=bridge.accountId();if(!period)return null;
-    const best=localBest(period),row=localReplayRows().slice(0,8).find(row=>row&&typeof row==='object'&&row.periodId===periodId&&row.accountId===accountId&&row.trackId===period.trackId);
+    const best=localBest(period),row=localReplayRows().slice(0,8).find(row=>row&&typeof row==='object'&&row.periodId===periodId&&row.accountId===accountId&&row.trackId===period.trackId&&row.attemptId===best?.attemptId&&row.timeMs===best?.timeMs);
     if(!best||!row||typeof row.attemptId!=='string'||!row.attemptId.length||row.attemptId.length>128||row.attemptId!==best.attemptId||row.timeMs!==best.timeMs||row.frames!==row.timeMs||!Number.isSafeInteger(row.frames)||row.frames<1||row.frames>300000||typeof row.replay!=='string'||!row.replay.length||row.replay.length>65536||!/^[A-Za-z0-9_-]+$/.test(row.replay)||typeof row.carStyle!=='string'||row.carStyle.length>256)return null;
     const shown=eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(entry=>entry.accountId===accountId);if(shown&&shown.timeMs<row.timeMs)return null;
     const receipt=ownReceipts.get(periodId+'_'+accountId);if(receipt?.attemptId===row.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status))return null;
@@ -1173,6 +1173,23 @@ export function installEvents(bridge){
     if(mine&&!chosen.some(row=>row.accountId===mine.accountId))chosen.push(mine);else if(rows[9])chosen.push(rows[9]);
     return selectEventRows(1,10,true,chosen);
   }
+  async function prepareOwnEventGhostForAction(session,replay,current){
+    if(!current())throw Error('Event replay context changed.');
+    const best=bestRecords[session.periodId+'_'+session.accountId];
+    const options={require:bridge.require(),row:{...replay},session:{...session},best:best&&{...best}};
+    let ghost;
+    try{ghost=prepareOwnEventGhost(options);}
+    catch(error){
+      if(error.code!=='EVENT_REPLAY_WORK_LIMIT')throw error;
+      const workerBridge=getPlaybackWorkerBridge();
+      if(!workerBridge)throw Error('Indexed event playback unavailable');
+      const playbackEngine=await workerBridge.prepareEventRecording(options.row.replay,options.row.frames);
+      if(!current())throw Error('Event replay context changed.');
+      ghost=prepareOwnEventGhost({...options,playbackEngine});
+    }
+    if(!current())throw Error('Event replay context changed.');
+    return ghost;
+  }
   function raceGhosts(session,onlyVerified=false){
     const period=knownPeriods.get(session.periodId);
     if(period){const allowed=new Map(eventDisplayRows(period,{onlyVerified}).rows.map(row=>[row.accountId,row]));for(const [id,row] of selectedGhosts){const current=allowed.get(id);if(row.periodId===session.periodId&&(!current||row.targetTimeMs!==current.timeMs||row.targetRunId!==(current.runId||null)||row.targetPending!==!!current.pending||row.targetReplayHash!==(current.replayHash||null)))selectedGhosts.delete(id);}}
@@ -1195,7 +1212,9 @@ export function installEvents(bridge){
     const session=sessions.current();
     if(!session||session.trackId!==trackId||session.accountId!==bridge.accountId()){message('This event replay cannot start a race after its event closes or racer changes.');return true;}
     if([...selectedGhosts.values()].some(row=>row.periodId===session.periodId&&row.accountId===session.accountId&&!row.ghost)){message('Use Event Play to load the selected ghosts before resuming.');return true;}
-    try{bridge.startEventRace({...session,...raceGhosts(session,nativeView?.onlyVerified===true)},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
+    const ghosts=raceGhosts(session,nativeView?.onlyVerified===true);
+    if(getOwnReplay(session.periodId)&&!ghosts.ownGhost){message('Use Event Play to prepare your local event PB before resuming.');return true;}
+    try{bridge.startEventRace({...session,...ghosts},invokeNative,()=>sessions.current()===session&&bridge.accountId()===session.accountId);}catch{message('Event race could not resume safely. Reopen Events.');}
     return true;
   }
   function watchEvent(){
@@ -1215,7 +1234,7 @@ export function installEvents(bridge){
         const boardRows=()=>session.archive?view?.visibleRows||archivePeriodCounts(period,view?.snapshot||session.snapshot).verifiedEntries:eventDisplayRows(period,{onlyVerified:view?.onlyVerified===true}).rows;
         const binding=selectedEventRowBinding;
         const entries=new Map(boardRows().map(row=>[row.accountId,{...row}]));
-        const current=()=>watchEvent.pending===job&&replayContextActive(session)&&period.trackId===session.trackId&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
+        const current=()=>watchEvent.pending===job&&replayContextActive(session)&&(session.archive||now()<session.endsAt)&&period.id===session.periodId&&period.trackId===session.trackId&&root.isConnected&&document.querySelector('.track-info-ui')===root&&root.__pt062EventWatch===nativeWatch&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&replayRequest===token&&
           selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&selections.every(row=>selectedGhosts.get(row.targetAccountId)===row)&&
           selections.every(row=>binding(boardRows().find(entry=>entry.accountId===row.targetAccountId))===binding(entries.get(row.targetAccountId)))&&(!own||JSON.stringify(getOwnReplay(session.periodId))===JSON.stringify(own));
         job.isCurrent=current;
@@ -1223,7 +1242,7 @@ export function installEvents(bridge){
         if(own)candidates.unshift({own:true,row:{name:'Your event PB'},payload:own});
         if(!candidates.length){message(session.archive?'Select an archived replay first.':'Select an event replay first, or set a local event PB.');return;}
         const prepare=async item=>{
-          if(item.own)return prepareOwnEventGhost({require:bridge.require(),row:item.payload,session,best:bestRecords[session.periodId+'_'+session.accountId]});
+          if(item.own)return prepareOwnEventGhostForAction(session,item.payload,current);
           const {selection,row}=item;
           return prepareSelectedEventGhost(session,period,selection,row,current);
         };
@@ -1277,14 +1296,17 @@ export function installEvents(bridge){
     // Before dispatch, selections must stay exact. Native disposal may clear them after the click.
     let committed=false;
     const handoffCurrent=()=>sessions.current()===session&&bridge.accountId()===session.accountId&&now()<session.endsAt;
-    const current=()=>handoffCurrent()&&period?.trackId===session.trackId&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&nativeTrack()&&replayRequest===token&&
+    const current=()=>handoffCurrent()&&period?.id===session.periodId&&period.trackId===session.trackId&&nativeView===view&&view?.page===page&&view?.onlyVerified===filter&&nativeTrack()&&replayRequest===token&&
       selections.length===[...selectedGhosts.values()].filter(row=>row.periodId===session.periodId&&row.accountId===session.accountId).length&&
-      selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&(!ownGhost||[...selectedGhosts.values()].some(row=>row.ghost===ownGhost)||replay&&getOwnReplay(session.periodId)?.attemptId===replay.attemptId&&getOwnReplay(session.periodId)?.timeMs===replay.timeMs);
+      selections.every((selection,index)=>selectedGhosts.get(selection.targetAccountId)===selection&&binding(eventDisplayRows(period,{onlyVerified:nativeView?.onlyVerified===true}).rows.find(row=>row.accountId===selection.targetAccountId))===bindings[index])&&JSON.stringify(getOwnReplay(session.periodId))===JSON.stringify(replay);
     launching=true;message(opponents.length?`Starting with ${opponents.length} selected event ghost${opponents.length===1?'':'s'}...`:ownGhost?'Starting with your event PB ghost...':'Starting event race...');
     try{
       // A nested HTMLElement.click() is suppressed while its original click is dispatching.
       await Promise.resolve();
       if(!nativeTrack()||!current())throw Error('Event launch context changed');
+      if(replay&&!ownGhost&&!selections.some(selection=>selection.targetAccountId===session.accountId))
+        ownGhost=await prepareOwnEventGhostForAction(session,replay,current);
+      if(!current())return;
       const checked=await Promise.all(selections.map(async selection=>{
         const row=eventDisplayRows(period,{onlyVerified:filter===true}).rows.find(row=>row.accountId===selection.targetAccountId);
         try{return {selection,row,ghost:await prepareSelectedEventGhost(session,period,selection,row,current)};}

@@ -80,3 +80,21 @@ test('reference package profiles remain stable with reversed input and stale cac
   }
   assert.equal(checked,profiles.length);
 });
+
+test('invalid local times and explicitly untrusted field summaries are excluded',()=>{
+  for(const timeMs of [1.5,NaN,Infinity,-1,'11000'])
+    assert.deepEqual(build({localResults:[{trackId:'a',timeMs}]}).localPBs,[]);
+  for(const change of [{ranksExact:false},{sourceComplete:false},{totalEntriesExact:false},
+    {local:true},{localPending:true},{pending:true}])
+    assert.deepEqual(build({trackSummaries:[{...summary,...change}]}).fields,[]);
+});
+test('cold and warm track output stays identical while real local PB changes are observed',()=>{
+  const input={snapshotResults:[a,b],snapshotComplete:true,expectedCount:2,trackSummaries:[summary]};
+  const cold=build(input);
+  assert.deepEqual(build({...input,cachedResults:[{...a,rank:1,complete:true,cachedAt:999}]}),cold);
+  const improved=build({...input,localResults:[{trackId:'a',timeMs:11000,pbAt:200}]});
+  assert.deepEqual(improved.finishes,cold.finishes);
+  assert.equal(improved.localPBs[0].timeMs,11000);
+  assert.notDeepEqual(improved,cold);
+  assert.deepEqual(build({...input,localResults:[{trackId:'a',timeMs:13000,pbAt:300}]}),cold);
+});

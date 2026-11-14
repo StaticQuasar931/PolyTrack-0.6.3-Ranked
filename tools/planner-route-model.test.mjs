@@ -158,3 +158,17 @@ test('meaningful targets do not rank tracks by threshold rounding noise',()=>{
  assert.ok(result.estimatedGain>=result.maximumGain*.25);
  assert.equal(minimumBenefitTarget({fieldSize:12,baselineScore:100,scoreAt:()=>99,gainFraction:NaN}),null);
 });
+
+test('publication reference survives pre-order filtering in every metric and sort',()=>{
+  for(const metric of ['overall','skill','medals','wins','podiumRate','weight','events'])
+    for(const sort of ['impact','practice','ease','training','benefit-ease']){
+      const rows=[{...route('a',10,2),metric},{...route('b',100,3),metric}];
+      const all=orderPlannerRoutes([],rows,99,sort,{benefitReference:100});
+      const filtered=orderPlannerRoutes([],rows.slice(0,1),1,sort,{benefitReference:100});
+      assert.equal(filtered[0].benefitReference,all.find(r=>r.trackId==='a').benefitReference);
+      assert.equal(plannerBenefitEaseScore(filtered[0],filtered[0].benefitReference),
+        plannerBenefitEaseScore(rows[0],100));
+    }
+  for(const benefitReference of [NaN,Infinity,-1,9])
+    assert.throws(()=>orderPlannerRoutes([],[route('a',10,2)],8,'impact',{benefitReference}));
+});

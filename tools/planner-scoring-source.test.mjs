@@ -56,6 +56,30 @@ test('shipped package compact source matches all Overall pages offline',async()=
  const full=await buildPlannerScoringSource({...manifest.boardMetadata,entries},packed);
  assert.deepEqual(await buildPlannerScoringSourceFromManifest(manifest,packed),full);
  assert.equal(full.profiles.size,manifest.totalEntries);
+ const accountId='0aee36260699a9d9adc8ddedd367e7000eb6bfe573c57ac8b09b694c5b005b6e';
+ const finishes=full.profiles.get(accountId);assert.ok(finishes?.length,'requested profile is in the cached snapshot');
+ const {buildPlannerSnapshotInput}=await import('./planner-snapshot-input.mjs');
+ const {plannerEaseEstimate,orderPlannerRoutes}=await import('./planner-route-model.mjs');
+ const {buildFieldRpPlanner}=await import('./field-rp-planner.mjs');
+ const input={snapshotResults:finishes,snapshotComplete:true,expectedCount:finishes.length,trackSummaries:full.fields};
+ const cold=buildPlannerSnapshotInput(input);
+ const warm=buildPlannerSnapshotInput({...input,cachedResults:finishes.map(row=>({...row,rank:1,complete:true,cachedAt:9999999999999}))});
+ assert.deepEqual(warm,cold,'browsing every track cannot change this profile input');
+ const plan=buildFieldRpPlanner(cold.finishes,{complete:cold.complete,expectedCount:finishes.length,
+   fields:full.fields,fieldsComplete:true,expectedFieldCount:full.fields.length});
+ assert.equal(plan.known,true);assert.ok(plan.routes.length);
+ const routes=plan.routes.map(row=>({...row,ease:plannerEaseEstimate(row,full.boards.get(row.trackId),accountId)}));
+ for(const sort of ['impact','practice','ease','training','benefit-ease']){
+   const options={benefitReference:plan.benefitReference};
+   const a=orderPlannerRoutes([],routes,8,sort,options);
+   const b=orderPlannerRoutes([],[...routes].reverse(),8,sort,options);
+   assert.deepEqual(a,b,'route order does not depend on track load order: '+sort);
+ }
+ const finish=finishes.find(row=>row.timeMs>1);
+ const local=buildPlannerSnapshotInput({...input,localResults:[{trackId:finish.trackId,timeMs:finish.timeMs-1,pbAt:123}]});
+ assert.deepEqual(local.finishes,cold.finishes,'a local PB must not award a published rank');
+ assert.equal(local.localPBs.find(row=>row.trackId===finish.trackId).timeMs,finish.timeMs-1);
+
 });
 test('production cold loader requests only manifest and compact results, then reuses the index',async()=>{
  const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
@@ -66,4 +90,15 @@ test('production cold loader requests only manifest and compact results, then re
  module:{buildPlannerScoringSourceFromManifest},readPublicSnapshotBackup:async kind=>{requests.push(kind);return kind==='overall-manifest'?manifestFor(overall):pack();}});
  vm.runInContext(loader,c);const first=await c.loadPlannerScoringIndex();assert.equal(first.profiles.size,3);
  assert.deepEqual(requests,['overall-manifest','overall-results']);assert.equal(await c.loadPlannerScoringIndex(),first);assert.equal(requests.length,2);
+});
+
+test('contradictory metadata, timing and rank order cannot masquerade as a complete field',async()=>{
+  for(const change of [{weight:4},{competition:2},{timeMs:9000},{timeMs:11000.5}]){
+    const {overall,rows,pack}=fixture(),tuple=JSON.parse(rows[1].resultData)[0];
+    for(const [key,value] of Object.entries(change))tuple[{weight:3,competition:4,timeMs:5}[key]]=value;
+    rows[1].resultData=JSON.stringify([tuple]);
+    await assert.rejects(buildPlannerScoringSource(overall,pack()));
+  }
+  const {overall,pack}=fixture();
+  await assert.rejects(buildPlannerScoringSource({...overall,totalEntriesExact:false},pack()));
 });
