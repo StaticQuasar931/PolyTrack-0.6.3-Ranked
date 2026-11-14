@@ -191,7 +191,10 @@ test('worker uses preflight before admission/credentials and routes both callbac
   assert(body.includes('await checkpoint(input);'));assert(body.includes('proofCheckpoint:'));
   assert(body.includes('await retainLocalCaptureFailure'));assert(!body.includes('.catch(()=>{})'));
   assert(worker.includes("import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs'"));
-  assert(body.includes('nativePhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase})'));
+  assert(body.includes('nativePhase:captureOnly?runNativeSnapshotPhase:createLocalNativePhaseReceipt({root,directory,owner,testedCommit:receipt.testedCommit,nativePhase:runNativeSnapshotPhase})'));
+  assert(body.includes("verificationAuthority:captureOnly?'firestore':'snapshot-native'"));
+  assert(body.includes('...(captureOnly?{}:{nativeCompleted:createLocalNativeVerificationCompletion'));
+  assert(body.indexOf('await assertLocalStagingBase(')<body.indexOf('process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT='));
 });
 
 const owner='11111111-1111-1111-1111-111111111111';

@@ -1,15 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 373,
+    "number": 374,
     "version": "0.6.3",
-    "revision": 317,
+    "revision": 318,
     "notes": [
-      "Snapshot capture now starts with current personal bests before refreshing track boards.",
-      "Capture can publish using existing verification, with new replay verification running separately afterward."
+      "Improved snapshot readiness checks for capture-first publication."
     ]
   },
   "entries": [
+    {
+      "number": 373,
+      "title": "Capture current PBs before refreshing snapshot boards",
+      "commit": "8b02fb49a625dfda9760b28b09929a93d3c5d413",
+      "committedAt": "2026-11-14T08:31:50.000Z",
+      "notes": [
+        "Snapshot capture now starts with current personal bests before refreshing track boards.",
+        "Capture can publish using existing verification, with new replay verification running separately afterward."
+      ]
+    },
     {
       "number": 372,
       "title": "Keep locked previews clearly visible",
@@ -194,16 +203,6 @@
       "notes": [
         "Safer snapshot updates check that known racers have not disappeared.",
         "Replay checks reuse track evidence more efficiently without skipping verification."
-      ]
-    },
-    {
-      "number": 353,
-      "title": "Show update notes while the game loads",
-      "commit": "59321d1a4b7631ce2483fefdad5739844d30e64e",
-      "committedAt": "2026-11-09T05:50:59.000Z",
-      "notes": [
-        "Read update notes while the game loads, instead of waiting for the main menu.",
-        "Update notes stay out of the way during races."
       ]
     }
   ],
