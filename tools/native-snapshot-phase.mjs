@@ -445,6 +445,9 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       manifestHash:verification.ledgerManifestHash,publishPointer});
     compiled=true;
     return {schemaVersion:1,authority:reuseOnly?'stored-proof-overlay':'snapshot-native',backendReads:0,backendWrites:0,
+      // Compilation finished; package/cohort audits remain independent publication barriers.
+      compilationComplete:true,verificationCoverageComplete:verification.complete,sourceCoverageComplete:inputs.coverage.complete,
+      coverageComplete:verification.complete&&inputs.coverage.complete,
       complete:verification.complete&&inputs.coverage.complete,ledgerManifestHash:verification.ledgerManifestHash,
       sourceBinding:binding,counts:{...verification.counts,sourceJobs:inputs.jobs.length,targets:targets.length,serverAccepted:accepted.size},
       sourceCoverage:inputs.coverage,priority:priority.counts,scoringPreflight,timings,normal,events,overall,privateProofCheckpoint};

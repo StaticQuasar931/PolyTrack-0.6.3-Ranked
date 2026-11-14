@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {hydrateStaging} from './update-public-snapshot.mjs';
 import {readLedger} from './native-verification-ledger.mjs';
-import {nativeLedgerPublicationFiles} from './verifier/local-snapshot-verification.mjs';
+import {nativeLedgerPublicationFiles,withPublishedOfflineVerification} from './verifier/local-snapshot-verification.mjs';
 import {prepareNativeSnapshotCapture,runNativeSnapshotPhase,verifyNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {loadTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {cloneBounded} from './bounded-clone.mjs';
@@ -26,14 +27,21 @@ async function read(root,name,limit=16*1024*1024){
  * or automatic publication. Preparing does no physics. verify() is one-shot;
  * its returned live capability can retry compilation, but receipts cannot.
  * Generic callers must supply independently trusted publication pins.
+ * sourceCommit identifies tested implementation code, not the capture publication
+ * commit. Publication data is bound independently by publishedBaseline.
  */
 export async function preparePublishedOfflineVerification(options={},capabilities={}){
-  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs'];
+  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs','mode','finishDeadlineMs','packagingReserveMs'];
   demand(Object.keys(options).every(key=>allowed.includes(key)),'unknown option (no checkpoint or ledger override accepted)');
-  let {root,runDirectory,sourceCommit,publishedBaseline,maxJobs=512,maxRuntimeMs=480000}=options;
+  let {root,runDirectory,sourceCommit,publishedBaseline,maxJobs=512,maxRuntimeMs=480000,mode='capture-compatible',
+    finishDeadlineMs,packagingReserveMs=900000}=options;
+  demand(['capture-compatible','postpublication-offline'].includes(mode),'unknown verification mode');
+  const postpublication=mode==='postpublication-offline';
+  demand(postpublication?Number.isSafeInteger(finishDeadlineMs)&&finishDeadlineMs>0&&packagingReserveMs===900000:
+    !Object.hasOwn(options,'finishDeadlineMs')&&!Object.hasOwn(options,'packagingReserveMs'),'explicit postpublication deadline policy required');
   demand(path.isAbsolute(root||'')&&path.isAbsolute(runDirectory||'')&&/^[a-f0-9]{40}$/.test(sourceCommit||''),'absolute roots and tested commit required');
   demand(Number.isSafeInteger(maxJobs)&&maxJobs>0&&maxJobs<=10000&&Number.isSafeInteger(maxRuntimeMs)&&
-    maxRuntimeMs>60000&&maxRuntimeMs<=1500000,'bounded native budget required');
+    maxRuntimeMs>60000&&maxRuntimeMs<=(postpublication?5400000:1500000),'bounded native budget required');
   const pins=structuredClone(publishedBaseline);
   demand(pins&&Object.keys(pins).sort().join('|')==='generation|indexSha256|ledgerEntries|ledgerManifestHash'&&
     Number.isSafeInteger(pins.generation)&&pins.generation>0&&HASH.test(pins.indexSha256||'')&&
@@ -44,7 +52,8 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(!inside(root,runDirectory)&&!inside(runDirectory,root),'run directory must be disjoint from the publication root');
   const {hydrate=hydrateStaging,prepare=prepareNativeSnapshotCapture,preflightPhase=runNativeSnapshotPhase,
     verifyPhase=verifyNativeSnapshotPhase,loadTotals=loadTrustedPublishedEventTotalsBaseline,
-    validateRuntime=validateOfflineNativeRuntime}=capabilities;
+    validateRuntime=validateOfflineNativeRuntime,now=Date.now}=capabilities;
+  demand(typeof now==='function','invalid verification clock');
   const runtime=await validateRuntime({root});
   async function checkPins(){
     const pointer=JSON.parse(await read(root,'snapshot-current.json',2048));
@@ -78,7 +87,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(path.dirname(preflightDirectory)===runDirectory,'unsafe preflight cleanup');
   await fs.rm(preflightDirectory,{recursive:true,force:true});
   const receipt={schemaVersion:1,kind:'prepared-public-offline-verification',authority:false,sourceCommit,
-    publishedBaseline:pins,maxJobs,maxRuntimeMs,runtime,preflight,backendReads:0,backendWrites:0};
+    publishedBaseline:pins,maxJobs,maxRuntimeMs,mode,...(postpublication?{finishDeadlineMs,packagingReserveMs}:{}),runtime,preflight,backendReads:0,backendWrites:0};
   await fs.writeFile(path.join(runDirectory,'prepared.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600,flush:true});
   let started=false;
   return Object.freeze({receipt:structuredClone(receipt),directory,
@@ -98,11 +107,21 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
           await completionWrite;
         }catch(error){completionError=error;throw error;}
       };
-      let verified;
-      try{verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
-        publishedEventTotalsBaseline,maxJobs,maxRuntimeMs,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
-        expectedScoringSha256:preflight.scoringPreflight.sourceSha256,nativeCompleted});}
-      catch(error){await completionWrite?.catch(()=>{});throw error;}
+      let verified,terminal;
+      const effectiveRuntime=postpublication?Math.min(maxRuntimeMs,finishDeadlineMs-now()-packagingReserveMs):maxRuntimeMs;
+      demand(!postpublication||effectiveRuntime>60000,'no native time remains before packaging reserve');
+      const run=async()=>{verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
+        publishedEventTotalsBaseline,maxJobs,maxRuntimeMs:effectiveRuntime,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
+        expectedScoringSha256:preflight.scoringPreflight.sourceSha256,nativeCompleted});return verified;};
+      try{
+        if(postpublication){
+          const result=await withPublishedOfflineVerification({root,publishedBaseline:pins,sourceCommit,
+            captureSha256:preflight.sourceBinding.captureSha256,finishDeadlineMs,packagingReserveMs,now},run);
+          verified=result.value;terminal=result.terminal;
+        }else verified=await run();
+      }
+      catch(error){await completionWrite?.catch(()=>{});if(verified)await verified.dispose();throw error;}
+      let terminalReceipt=null,terminalBytes;
       try{
         if(completionWrite)await completionWrite;
         if(completionError)throw completionError;
@@ -110,9 +129,52 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
         // before phase rename/cleanup can fail, without granting recovery authority.
         if(completionCalls===0)await nativeCompleted(verified.receipt);
         demand(completionBytes===JSON.stringify(verified.receipt)+'\n','native completion receipt differs from returned receipt');
+        if(postpublication){
+          const returned=verified.receipt;
+          demand(returned.kind==='completed-in-process-native-verification'&&returned.authority===false&&
+            returned.verificationComplete===terminal.complete&&terminal.boundedTerminalPass===true,
+            'fresh bounded terminal phase receipt required');
+          for(const key of ['sourceBinding','previousLedgerManifestHash','ledgerManifestHash','counts','decisions',
+            'engineDigest','verifierFingerprint','policySha256'])
+            demand(isDeepStrictEqual(returned[key],terminal[key]),'terminal native receipt binding differs: '+key);
+          demand(returned.previousLedgerManifestHash===pins.ledgerManifestHash,'terminal public ledger binding changed');
+          demand(typeof returned.sourceCoverage?.complete==='boolean','terminal source coverage required');
+          terminalReceipt={schemaVersion:1,kind:'published-offline-bounded-terminal-pass',authority:false,
+            mode,publishedBaseline:pins,sourceCommit,sourceBinding:terminal.sourceBinding,
+            nativeReceiptSha256:sha(completionBytes),ledgerManifestHash:terminal.ledgerManifestHash,
+            boundedTerminalPass:true,verificationCoverageComplete:terminal.complete,
+            sourceCoverageComplete:returned.sourceCoverage.complete,
+            coverageComplete:terminal.complete&&returned.sourceCoverage.complete,compilationEligible:true,
+            ledgerProvenKeys:terminal.ledgerProvenKeys,counts:terminal.counts,
+            budget:terminal.budget,pendingRowsRetained:true,nativeNegativeOutcomesDurable:false};
+          terminalBytes=JSON.stringify(terminalReceipt)+'\n';
+          await fs.writeFile(path.join(runDirectory,'terminal-pass.json'),terminalBytes,{flag:'wx',mode:0o600,flush:true});
+        }
       }
       catch(error){await verified.dispose();throw error;}
-      return Object.freeze({...verified,compile:async()=>{await checkPins();return verified.compile();}});
+      return Object.freeze({...verified,...(postpublication?{compilationEligible:true,terminalReceipt:structuredClone(terminalReceipt)}:{}),
+        compile:async()=>{
+          await checkPins();
+          if(postpublication){
+            demand(now()<finishDeadlineMs,'absolute finish deadline reached before compilation');
+            demand((await read(runDirectory,'verified.json',Buffer.byteLength(completionBytes))).toString()===completionBytes&&
+              (await read(runDirectory,'terminal-pass.json',Buffer.byteLength(terminalBytes))).toString()===terminalBytes,
+              'fresh terminal receipt changed');
+          }
+          const compiled=await verified.compile();
+          if(postpublication){
+            demand(compiled?.compilationComplete===true&&compiled.backendReads===0&&compiled.backendWrites===0&&
+              isDeepStrictEqual(compiled.sourceBinding,terminalReceipt.sourceBinding)&&compiled.ledgerManifestHash===terminalReceipt.ledgerManifestHash,
+              'clean bound compilation completion required');
+            demand(compiled.verificationCoverageComplete===terminalReceipt.verificationCoverageComplete&&
+              compiled.sourceCoverageComplete===terminalReceipt.sourceCoverageComplete&&
+              compiled.sourceCoverage?.complete===terminalReceipt.sourceCoverageComplete&&
+              compiled.coverageComplete===terminalReceipt.coverageComplete&&compiled.complete===terminalReceipt.coverageComplete,
+              'compiled coverage differs from the bounded terminal receipt');
+            await checkPins();
+          }
+          return compiled;
+        }});
     }});
 }
 

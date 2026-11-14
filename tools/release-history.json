@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 376,
+    "number": 377,
     "version": "0.6.3",
-    "revision": 320,
+    "revision": 321,
     "notes": [
-      "Safer snapshot recovery without fetching saved runs again."
+      "Support larger track lists and preserve completed verification progress."
     ]
   },
   "entries": [
+    {
+      "number": 376,
+      "title": "Recover frozen snapshot data without repeating database reads",
+      "commit": "73d05e4de13b0867933f235bd38ecd2789b39b8a",
+      "committedAt": "2026-11-14T10:00:56.000Z",
+      "notes": [
+        "Safer snapshot recovery without fetching saved runs again."
+      ]
+    },
     {
       "number": 375,
       "title": "Confirm one-time snapshot admission before data access",
@@ -191,16 +200,6 @@
       "notes": [
         "Large leaderboard updates can finish without restarting.",
         "Reduces redundant cloud verification work."
-      ]
-    },
-    {
-      "number": 356,
-      "title": "Restore missing racers and verify 1024 more runs",
-      "commit": "b530a931c5c74f78f17dfaa4a4352406317dd95e",
-      "committedAt": "2026-11-09T07:48:01.000Z",
-      "notes": [
-        "Restored missing racers in the rankings, including the full Summer 1 field.",
-        "Added 1,024 newly verified runs while keeping previously verified results and replay checks."
       ]
     }
   ],

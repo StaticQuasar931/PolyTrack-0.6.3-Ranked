@@ -204,6 +204,72 @@ test('disposing a completed verification never advances the public ledger',async
   await assert.rejects(verified.compile(),/disposed/);
 });
 
+test('combined 520 registered 446 present 74 null tracks use the real reader and native compile',async t=>{
+ const f=await fixture(t),manifest=await read(f.directory,'manifest.json');
+ const metadata={algorithmVersion:'participation-v8-s1',schemaVersion:6,revision:1,sourceRevision:1,builtRevision:1,updatedAt:100};
+ const unavailable=[];
+ for(let i=1;i<520;i++){
+  const trackId=i.toString(16).padStart(64,'0');
+  if(i<=445){
+   const relative=`tracks/${trackId}.json`;
+   manifest.tracks[trackId]={path:relative,updatedAt:100,sourceUpdatedAt:100,revision:1,complete:true,sourceComplete:true};
+   await write(f.directory,relative,{...metadata,trackId,entries:[],totalEntries:0,complete:true,
+    sourceComplete:true,totalEntriesExact:true,ranksExact:true});
+  }else{
+   manifest.tracks[trackId]={path:null,missing:true,retainedBoardMissing:true,complete:false,sourceComplete:false};
+   unavailable.push(trackId);
+  }
+ }
+ Object.assign(manifest,{trackIdsKnown:520,trackBackupsPresent:446,trackBackupsMissing:74,tracksMissing:74});
+ await write(f.directory,'manifest.json',manifest);
+ const {readCapturedNormalLedgerRows}=await import('./public-snapshot-backup.mjs');
+ const rows=await readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true});
+ assert.equal(rows.length,1);assert.equal(rows[0].accountId,account);assert.equal(rows[0].trackId,track);
+ const verified=await verifyNativeSnapshotPhase(f.options);
+ try{
+  assert.equal(verified.receipt.sourceCoverage.unavailableBoards,74);
+  assert.equal(verified.receipt.sourceCoverage.complete,false);
+  const result=await verified.compile();
+  assert.equal(result.compilationComplete,true);assert.equal(result.verificationCoverageComplete,true);
+  assert.equal(result.sourceCoverageComplete,false);assert.equal(result.coverageComplete,false);assert.equal(result.complete,false);
+  assert.equal(result.counts.nativeDispatched,1);assert.equal(result.counts.verified,1);assert.equal(f.calls.length,1);
+  const saved=await read(f.directory,'manifest.json');
+  assert.equal(Object.keys(saved.tracks).length,520);
+  assert.equal(Object.values(saved.tracks).filter(row=>row.path).length,446);
+  assert.equal(Object.values(saved.tracks).filter(row=>row.path===null).length,74);
+  assert.equal((await fs.readdir(path.join(f.directory,'tracks'))).length,446);
+  for(const id of unavailable)assert.deepEqual(saved.tracks[id],manifest.tracks[id]);
+  const board=await read(f.directory,`tracks/${track}.json`);
+  assert.equal(board.entries.length,1);assert.equal(board.entries[0].runVerified,true);
+  assert.equal(board.entries[0].nativeLedgerManifestHash,result.ledgerManifestHash);
+  assert.equal(readLedger({root:path.join(f.root,'verification-ledger'),expectedManifestHash:result.ledgerManifestHash}).entries.length,1);
+  assert.equal((await readCapturedNormalLedgerRows({directory:f.directory,allowMissingCanonical:true})).length,1);
+ }finally{await verified.dispose();}
+});
+
+test('real phase partial compilation finishes while deferred and unavailable rows stay pending',async t=>{
+ const f=await fixture(t),rows=[f.row,...[2,3].map(n=>({...f.row,accountId:sha('partial '+n),uploadId:n}))];
+ await write(f.directory,`tracks/${track}.json`,{trackId:track,entries:rows,updatedAt:100,complete:true,totalEntries:rows.length});
+ for(const row of rows.slice(1)){
+  await write(f.directory,`canonical/${track}/${row.accountId}.json`,row);
+  await write(f.directory,`recordings/${row.uploadId}.json`,{...row,recording:replay});
+ }
+ const verified=await verifyNativeSnapshotPhase({...f.options,maxJobs:2,verify:async(...args)=>{
+  const results=await f.options.verify(...args);return results.map((row,i)=>i?{...row,status:'unavailable',reason:'fixture_unavailable'}:row);
+ }});
+ try{
+  assert.equal(verified.receipt.verificationComplete,false);
+  assert.equal(verified.receipt.counts.verified,1);assert.equal(verified.receipt.counts.unavailable,1);assert.equal(verified.receipt.counts.unprocessed,1);
+  const result=await verified.compile();
+  assert.equal(result.compilationComplete,true);assert.equal(result.coverageComplete,false);assert.equal(result.complete,false);
+  assert.equal(result.verificationCoverageComplete,false);assert.equal(result.sourceCoverageComplete,true);
+  const board=await read(f.directory,`tracks/${track}.json`);
+  assert.equal(board.entries.length,3);assert.equal(board.entries.filter(row=>row.runVerified).length,1);
+  assert.equal(board.entries.filter(row=>row.runVerified===false).length,2);
+  assert.equal(readLedger({root:path.join(f.root,'verification-ledger'),expectedManifestHash:result.ledgerManifestHash}).entries.length,1);
+ }finally{await verified.dispose();}
+});
+
 test('exact branded published event totals support a public-only offline rebase, not a private overlay',async t=>{
   const f=await fixture(t,{events:true});await runNativeSnapshotPhase(f.options);
   const totals=await read(f.directory,'event-totals.json');
@@ -240,6 +306,8 @@ test('unavailable canonical replay defers its row through native processing and 
   await fs.unlink(path.join(f.directory,`canonical/${track}/${account}.json`));
   const result=await runNativeSnapshotPhase({...f.options,captureContext});
   assert.equal(result.complete,false);assert.equal(result.counts.nativeDispatched,0);assert.equal(f.calls.length,0);
+  assert.equal(result.compilationComplete,true);assert.equal(result.coverageComplete,false);
+  assert.equal(result.verificationCoverageComplete,true);assert.equal(result.sourceCoverageComplete,false);
   assert.equal(result.privateProofCheckpoint,null);
   await assert.rejects(fs.stat(path.join(f.root,'local-reports/native-proof-checkpoints')),error=>error.code==='ENOENT');
   assert.equal(result.sourceCoverage.gaps.filter(g=>g.kind==='normal-replay-unavailable').length,1);

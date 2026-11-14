@@ -693,13 +693,48 @@ test('streamed overall uses sourceRevision fallback and ignores noninteger metad
   assert.equal(stats.revision, 7); assert.equal(stats.updatedAt, null);
 });
 
-test('read-only overall has a fixed 16 MiB cap with zero staging mutation', async t => {
+for (const sizeMiB of [17, 32]) test(`private Overall reader compatibility accepts exact ${sizeMiB} MiB streamed root input without database writes`, async t => {
   const f = await fixture(t), file = path.join(f.root, 'overall.json');
-  const handle = await fs.open(file, 'w'); await handle.truncate(16 * 1024 * 1024 + 1); await handle.close();
+  const head = '{"revision":19,"updatedAt":456,"entries":[{"padding":"', tail = '"}]}\n';
+  const text = head + 'x'.repeat(sizeMiB * 1024 * 1024 - Buffer.byteLength(head + tail)) + tail;
+  await fs.writeFile(file, text);
+  const originalRead = fs.readFile;
+  t.mock.method(fs, 'readFile', async (name, ...args) => {
+    assert.notEqual(path.resolve(String(name)), file, 'root Overall must be streamed');
+    return originalRead(name, ...args);
+  });
+  const db = transport([source(1)]);
+  const result = await f.run([], {db, checkpointDirectory: f.checkpoint});
+  assert.equal(result.complete, true); assert.equal(result.imported, true);
+  assert.equal(result.documentWrites, 0); assert.equal(db.calls.length, 1);
+  assert.ok(result.peakAccountedBytes < 20 * 1024 * 1024);
+  assert.equal((await f.read('track-statistics.json')).revision, 19);
+  assert.equal(sha(await originalRead(file)), sha(text));
+  assert.equal((await fs.stat(file)).size, sizeMiB * 1024 * 1024);
+});
+
+test('private Overall reader compatibility has a fixed 32 MiB cap with zero staging mutation or database writes', async t => {
+  const f = await fixture(t), file = path.join(f.root, 'overall.json');
+  const handle = await fs.open(file, 'w'); await handle.truncate(32 * 1024 * 1024 + 1); await handle.close();
   const result = await f.run([source(1)]);
   assert.equal(result.reason, 'overall_input_cap'); assert.equal(result.imported, false);
+  assert.equal(result.documentWrites, 0);
   assert.deepEqual(await fs.readdir(f.root), ['overall.json']);
-  assert.equal((await fs.stat(file)).size, 16 * 1024 * 1024 + 1);
+  assert.equal((await fs.stat(file)).size, 32 * 1024 * 1024 + 1);
+});
+
+test('private Overall reader compatibility preserves all ordinary capacity limits', async t => {
+  assert.deepEqual(FULL_CANONICAL_LIMITS, {documents:30000, page:100, catchupMemoryBytes:256*1024*1024,
+    memoryBytes:64*1024*1024, normalBoardBytes:4*1024*1024, fileBytes:2*1024*1024});
+  for (const [relative, limit, rows] of [['manifest.json',2,[]], [`tracks/${track}.json`,4,[]],
+    [`canonical/${track}/${id(1)}.json`,2,[source(1)]]]) {
+    const f = await fixture(t), file = path.join(f.root, relative);
+    await fs.mkdir(path.dirname(file), {recursive:true});
+    const handle = await fs.open(file, 'w'); await handle.truncate(limit*1024*1024+1); await handle.close();
+    const db = transport(rows), result = await f.run([], {db});
+    assert.equal(result.reason, 'file_cap'); assert.equal(result.imported, false); assert.equal(result.documentWrites, 0);
+    assert.equal((await fs.stat(file)).size, limit*1024*1024+1);
+  }
 });
 
 test('streamed overall dependency change is detected before any stage rename', async t => {

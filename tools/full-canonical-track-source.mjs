@@ -24,7 +24,7 @@ export async function openFullCanonicalTrackSource({directory,report}={}){
  for(const[id,r]of Object.entries(manifest.tracks||{})){
   if(!r.path)continue;
   demand(HASH.test(id)&&r.path==='tracks/'+id+'.json'&&HASH.test(r.sha256||'')&&Number.isSafeInteger(r.bytes)&&r.bytes>=1&&Number.isSafeInteger(r.count)&&r.count>=0&&r.count<=10000&&r.fullCanonicalCapture?.complete===true&&r.fullCanonicalCapture.fullScanReadPoint===report.fullScanReadPoint&&r.fullCanonicalCapture.sourceRows===r.count&&r.fullCanonicalCapture.retainedRows===0,'invalid track descriptor');
-  records.set(id,structuredClone(r));demand(records.size<=512,'track bound exceeded');validate(id,await read(r.path));rows+=r.count;
+  records.set(id,structuredClone(r));demand(records.size<=1024,'track bound exceeded');validate(id,await read(r.path));rows+=r.count;
  }
  demand(rows===report.rows,'source row total changed');
  const value=Object.freeze({has:id=>records.has(id),validate,readPoint:report.fullScanReadPoint,checkedAt:point,rows,tracks:records.size});sources.add(value);return value;

@@ -12,6 +12,27 @@ async function fixture(t,{held=false}={}){
 test('actual full capture brands current faster PB source without transferring old verification',async t=>{
  const f=await fixture(t);assert(isFullCanonicalTrackSource(f.source));assert.equal(isFullCanonicalTrackSource({...f.source}),false);assert.equal(f.source.rows,1);const b=f.source.validate(track,await fs.readFile(path.join(f.directory,'tracks',track+'.json')));assert.equal(b.entries[0].uploadId,2);assert.equal(b.entries[0].timeMs,1000);assert.equal(b.entries[0].runVerified,false);assert.equal(b.entries[0].pbAt,f.row.pbAt);assert.notEqual(b.entries[0].pbAt,'2026-11-10T08:00:00Z');
 });
+
+test('local frozen source accepts 513 and 1024 present boards but rejects 1025 without new queries',async t=>{
+ const f=await fixture(t),file=path.join(f.directory,'manifest.json'),manifest=JSON.parse(await fs.readFile(file));
+ for(let i=0;i<1023;i++){
+  const id=i.toString(16).padStart(64,'0'),name=`tracks/${id}.json`;
+  const bytes=Buffer.from(JSON.stringify({trackId:id,complete:true,sourceComplete:true,totalEntriesExact:true,ranksExact:true,totalEntries:0,updatedAt:123,entries:[]}));
+  await fs.writeFile(path.join(f.directory,name),bytes);
+  manifest.tracks[id]={path:name,sha256:sha(bytes),bytes:bytes.length,count:0,fullCanonicalCapture:{complete:true,fullScanReadPoint:point,sourceRows:0,retainedRows:0}};
+  if(i===511){
+   await fs.writeFile(file,JSON.stringify(manifest));
+   const source=await openFullCanonicalTrackSource({directory:f.directory,report:f.report});assert.equal(source.tracks,513);assert.equal(source.rows,1);
+  }
+ }
+ await fs.writeFile(file,JSON.stringify(manifest));
+ const source=await openFullCanonicalTrackSource({directory:f.directory,report:f.report});assert.equal(source.tracks,1024);assert.equal(source.rows,1);
+ const id=(1023).toString(16).padStart(64,'0'),name=`tracks/${id}.json`,bytes=Buffer.from(JSON.stringify({trackId:id,complete:true,sourceComplete:true,totalEntriesExact:true,ranksExact:true,totalEntries:0,updatedAt:123,entries:[]}));
+ await fs.writeFile(path.join(f.directory,name),bytes);
+ manifest.tracks[id]={path:name,sha256:sha(bytes),bytes:bytes.length,count:0,fullCanonicalCapture:{complete:true,fullScanReadPoint:point,sourceRows:0,retainedRows:0}};
+ await fs.writeFile(file,JSON.stringify(manifest));
+ await assert.rejects(openFullCanonicalTrackSource({directory:f.directory,report:f.report}),/track bound exceeded/);
+});
 test('complete current canonical boards do not request stale Worker tracks or retention reads',async t=>{
  const f=await fixture(t),calls=[];const result=await runPublicSnapshotBackup({directory:f.directory,now:Date.parse(point)+1000,trackIds:[track],trackConfirmationNotBefore:Date.parse(point)+500,trackFetchLimit:512,fullCanonicalSource:f.source,reconcileCanonicalTrack:()=>assert.fail('No duplicate canonical reads'),log:()=>{},fetchImpl:async input=>{
  const u=new URL(input);calls.push(u.pathname);if(u.pathname==='/v1/snapshot/overall')return Response.json({updatedAt:123,revision:1,sourceRevision:1,algorithmVersion:'v1',entries:[{userId:account,name:'Racer',score:10}],trackSummaries:[{trackId:track,updatedAt:123}]});if(u.pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});if(u.pathname==='/v1/events/permanent-rolling-hills/snapshot')return new Response('',{status:404});throw Error('Unexpected source '+u.pathname);

@@ -240,6 +240,13 @@ test('explicit extended policy works within unchanged limits and full-call plus 
   assert.equal(calls,1);assert.equal(passed.counts.verified,1);
 });
 
+test('ordinary lower-level callers cannot obtain a 90-minute budget without a pinned publication context',async t=>{
+ const {options}=await fixture(t);let calls=0;
+ for(const maxRuntimeMs of [1500001,5400000])
+  await assert.rejects(verifyLocalSnapshot({...options,maxRuntimeMs,verify:async()=>{calls++;return [];}}),/invalid native budget/);
+ assert.equal(calls,0);
+});
+
 test('packed selection cannot renew the absolute allowance for an interleaved extended job',async t=>{
  const {options}=await fixture(t);let elapsed=0;const calls=[];
  const currentPolicy={...policy,resourceProfiles:['standard','extended-local']};

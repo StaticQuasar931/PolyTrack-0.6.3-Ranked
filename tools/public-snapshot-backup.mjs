@@ -604,10 +604,22 @@ export async function readCapturedNormalLedgerRows({directory,allowMissingCanoni
   if(typeof allowMissingCanonical!=='boolean')throw Error('Explicit missing canonical policy required');
   const read = async relative => JSON.parse(await fs.readFile(path.join(directory, relative), 'utf8'));
   const manifest = await readManifest(directory), rows = [], seen = new Set();
-  if (Object.keys(manifest.tracks).length > 512) throw Error('Normal ledger source board limit');
-  for (const [trackId, record] of Object.entries(manifest.tracks)) {
-    if (!record?.path) continue;
-    if (record.path !== `tracks/${trackId}.json`) throw Error('Invalid normal ledger source path');
+  const registered = Object.entries(manifest.tracks);
+  if (registered.length > 1024) throw Error('Normal ledger source registry limit');
+  let present = 0;
+  // Registered unavailable tracks are not materialized boards or native jobs.
+  for (const [trackId, record] of registered) {
+    if (!record || typeof record !== 'object' || Array.isArray(record) ||
+        Object.hasOwn(record, 'retainedBoardMissing') && typeof record.retainedBoardMissing !== 'boolean' ||
+        Object.hasOwn(record, 'missing') && typeof record.missing !== 'boolean') throw Error('Invalid normal ledger source record');
+    if (record.path !== undefined && record.path !== null && record.path !== `tracks/${trackId}.json`)
+      throw Error('Invalid normal ledger source path');
+    if (record.retainedBoardMissing === true && (record.path !== null || record.missing !== true ||
+        record.complete === true || record.sourceComplete === true)) throw Error('Invalid normal ledger retained missing marker');
+    if (record.path && ++present > 1024) throw Error('Normal ledger source board limit');
+  }
+  for (const [trackId, record] of registered) {
+    if (!record.path) continue;
     const board = await read(record.path);
     if (board.trackId !== trackId || !Array.isArray(board.entries) || board.entries.length > 10000) throw Error('Invalid normal ledger source board');
     for (const entry of board.entries) {

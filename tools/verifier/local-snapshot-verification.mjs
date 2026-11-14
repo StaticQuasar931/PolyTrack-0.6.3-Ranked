@@ -4,6 +4,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {ledgerBinding, ledgerKey, createLedgerEntry, readLedger, writeLedger,
   applyLedgerToBoard, ledgerDisposition} from '../native-verification-ledger.mjs';
 import {buildNativeVerificationPolicy} from '../native-verification-policy.mjs';
@@ -17,6 +18,36 @@ const demand = (value,message) => {if (!value) throw Error('Local snapshot verif
 const positive = value => Number.isSafeInteger(value) && value > 0;
 const freeze = value => {if(value && typeof value === 'object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
 let active = false;
+const publishedBudget = new AsyncLocalStorage();
+
+/** Only a live, independently pinned public run can extend the aggregate budget.
+ * This context never changes resourceLimits or admits private proof checkpoints.
+ */
+export async function withPublishedOfflineVerification({root,publishedBaseline,sourceCommit,captureSha256,
+  finishDeadlineMs,packagingReserveMs=900000,now=Date.now},task) {
+  demand(typeof task==='function'&&!publishedBudget.getStore(),'invalid published verification context');
+  demand(path.isAbsolute(root||'')&&SHA.test(sourceCommit||'')&&HASH.test(captureSha256||''),'pinned published verification source required');
+  demand(positive(finishDeadlineMs)&&packagingReserveMs===900000&&typeof now==='function','absolute finish deadline and fifteen-minute packaging reserve required');
+  const pins=structuredClone(publishedBaseline);
+  demand(pins&&Object.keys(pins).sort().join('|')==='generation|indexSha256|ledgerEntries|ledgerManifestHash'&&
+    positive(pins.generation)&&HASH.test(pins.indexSha256||'')&&HASH.test(pins.ledgerManifestHash||'')&&
+    Number.isSafeInteger(pins.ledgerEntries)&&pins.ledgerEntries>=0,'independent publication pins required');
+  const read=async(name,limit)=>{
+    const file=path.join(root,name),stat=await fs.lstat(file);
+    demand(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=limit,'unsafe published budget input');
+    const bytes=await fs.readFile(file);demand(bytes.length===stat.size,'published budget input changed');return bytes;
+  };
+  demand(JSON.parse(await read('snapshot-current.json',2048)).currentdir==='public-snapshots'+pins.generation,'published budget generation changed');
+  demand(digest(await read('public-snapshots'+pins.generation+'/index.json',16*1024*1024))===pins.indexSha256,'published budget index changed');
+  const files=await nativeLedgerPublicationFiles(root);
+  demand(files.length>=2&&JSON.parse(await read('verification-ledger-current.json',2048)).manifestHash===pins.ledgerManifestHash,'published budget ledger changed');
+  const ledger=readLedger({root:path.join(root,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash});
+  demand(ledger.entries.length===pins.ledgerEntries,'published budget ledger count changed');
+  const context={root:await fs.realpath(root),sourceCommit,captureSha256,pins,finishDeadlineMs,packagingReserveMs,now,used:false,terminal:null};
+  const value=await publishedBudget.run(context,task);
+  demand(context.used&&context.terminal,'no clean terminal native verification return');
+  return {value,terminal:structuredClone(context.terminal)};
+}
 
 export function verificationAuthority(value) {
   const mode = value === undefined || value === '' ? 'firestore' : value;
@@ -205,10 +236,20 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     demand(Array.isArray(jobs) && jobs.length <= 100000,'bounded source jobs required');
     demand(typeof review === 'function','completed clone/review adapter required');
     demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
-    demand(positive(maxJobs) && maxJobs <= 100000 && positive(batchSize) && batchSize <= 16 &&
-      positive(maxRuntimeMs) && maxRuntimeMs <= 1500000 && Number.isSafeInteger(packReserveMs) &&
+    const publication=publishedBudget.getStore();
+    if(publication){
+      demand(!publication.used,'published native verification already requested');publication.used=true;
+      demand(await fs.realpath(root)===publication.root&&sourceBinding.sourceCommit===publication.sourceCommit&&
+        sourceBinding.captureSha256===publication.captureSha256&&expectedManifestHash===publication.pins.ledgerManifestHash,
+        'published native verification binding changed');
+      maxRuntimeMs=Math.min(maxRuntimeMs,publication.finishDeadlineMs-publication.now()-publication.packagingReserveMs);
+    }
+    demand(positive(maxJobs) && maxJobs <= (publication?10000:100000) && positive(batchSize) && batchSize <= 16 &&
+      positive(maxRuntimeMs) && maxRuntimeMs <= (publication?5400000:1500000) && Number.isSafeInteger(packReserveMs) &&
       packReserveMs >= 0 && packReserveMs < maxRuntimeMs,'invalid native budget');
     const startedAt=now(); demand(positive(startedAt),'invalid clock');
+    const remaining=()=>Math.min(maxRuntimeMs-(now()-startedAt),publication?
+      publication.finishDeadlineMs-publication.now()-publication.packagingReserveMs:Infinity);
     const current = freeze(structuredClone(jobs)), keys=new Set(), ids=new Set(),inputUnavailable=new Map();
     const field=allJobs===undefined?current:freeze(structuredClone(allJobs));
     demand(Array.isArray(field)&&field.length<=100000,'bounded complete review inventory required');
@@ -257,7 +298,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     operations.ledgerIndexVisits+=ledger.entries.length;
     const observed=[];
     let cursor=0;
-    while (cursor < current.length && now()-startedAt < maxRuntimeMs-packReserveMs) {
+    while (cursor < current.length && remaining() > packReserveMs) {
       const selected=current.slice(cursor,cursor+batchSize), native=[],raw=new Map();
       for (const job of selected) {
         if (Array.isArray(policy.knownTrackIds) && !policy.knownTrackIds.includes(job.trackId)) {
@@ -273,16 +314,16 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         const reused=restoredPhysics(entries.get(ledgerKey(ledgerBinding(job))),job,policy);
         if (reused) {raw.set(job.resultId,reused);counts.reusedPhysics++;}
         else if (allowNativeDispatch && counts.nativeDispatched+native.length < maxJobs &&
-          maxRuntimeMs-(now()-startedAt) >= resourceLimits(job.resourceProfile || 'standard').wallMs+10000+packReserveMs) native.push(job);
+          remaining() >= resourceLimits(job.resourceProfile || 'standard').wallMs+10000+packReserveMs) native.push(job);
       }
       for (const group of nativeGroups(native)) {
         const allowance=resourceLimits(group.profile).wallMs+10000+packReserveMs;
-        if (maxRuntimeMs-(now()-startedAt) < allowance) continue;
+        if (remaining() < allowance) continue;
         let results;
         const groupTracks=new Set(group.jobs.map(job=>job.trackId));
         const selectedTrustedTracks=trustedTracks.filter(track=>groupTracks.has(track.trackId));
         try {results=await verify(root,structuredClone(group.jobs),structuredClone(selectedTrustedTracks),
-          {profile:group.profile,deadline:performance.now()+maxRuntimeMs-(now()-startedAt)-packReserveMs});}
+          {profile:group.profile,deadline:performance.now()+remaining()-packReserveMs});}
         catch {
           results=group.jobs.map(job=>({resultId:job.resultId,trackId:job.trackId,timeMs:job.timeMs,
             replayHash:job.replayHash,status:'unavailable',reason:'native_adapter_unavailable'}));
@@ -407,6 +448,13 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       complete:counts.unprocessed === 0 && counts.unavailable === 0,counts,operations,decisions,
       eligibleKeys:decisions.filter(value=>value.status === 'verified').map(value=>value.key),ledger};
     demand(decisions.length === current.length,'source decision coverage');
+    if(publication){
+      const approved=new Set(ledger.entries.filter(entry=>ledgerDisposition(entry)==='verified').map(entry=>entry.key));
+      demand(result.eligibleKeys.every(key=>approved.has(key)),'terminal success lacks approved ledger proof');
+      const {ledger:privateLedger,...terminal}=result;
+      publication.terminal={...terminal,boundedTerminalPass:true,ledgerProvenKeys:[...result.eligibleKeys],
+        budget:{maxRuntimeMs,finishDeadlineMs:publication.finishDeadlineMs,packagingReserveMs:publication.packagingReserveMs}};
+    }
     return result;
   },{env});
 }

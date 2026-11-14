@@ -270,6 +270,8 @@ function overallMetadataParser() {
   }};
 }
 
+// Only the root private Overall monolith has this streaming input exception.
+const OVERALL_METADATA_BYTES = 32 * 1024 * 1024;
 async function readOverallMetadata(root, memory, parse = true) {
   const release = memory.claim(1024 * 1024);
   let handle;
@@ -278,7 +280,7 @@ async function readOverallMetadata(root, memory, parse = true) {
     try { handle = await fs.open(file, 'r'); } catch (error) { if (error.code === 'ENOENT') return {hash: null, value: null}; throw error; }
     const stat = await handle.stat();
     demand(stat.isFile() && stat.nlink === 1, 'unsafe_path');
-    if (stat.size > 16 * 1024 * 1024) fail('overall_input_cap', true);
+    if (stat.size > OVERALL_METADATA_BYTES) fail('overall_input_cap', true);
     const hash = createHash('sha256'), buffer = Buffer.alloc(64 * 1024);
     const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}), parser = parse ? overallMetadataParser() : null;
     let total = 0;
@@ -286,7 +288,7 @@ async function readOverallMetadata(root, memory, parse = true) {
       const {bytesRead} = await handle.read(buffer, 0, buffer.length, null);
       if (!bytesRead) break;
       total += bytesRead;
-      if (total > 16 * 1024 * 1024) fail('overall_input_cap', true);
+      if (total > OVERALL_METADATA_BYTES) fail('overall_input_cap', true);
       const chunk = buffer.subarray(0, bytesRead); hash.update(chunk);
       if (parser) {
         let text; try { text = decoder.decode(chunk, {stream: true}); } catch { fail('invalid_stage_json'); }

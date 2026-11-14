@@ -68,6 +68,69 @@ async function fixture(t,{approved=[0],disposition='approved',count=3}={}){
   return {directory,sources,jobs,board,ledger,options,manifest};
 }
 
+test('normal ledger registry accepts 520 registered tracks with 446 present and 74 unavailable',async t=>{
+  const f=await fixture(t),before=await fs.readFile(path.join(f.directory,'tracks',trackId+'.json'));
+  for(let i=1;i<520;i++){
+    const id=i.toString(16).padStart(64,'0');
+    if(i<446){
+      f.manifest.tracks[id]={path:`tracks/${id}.json`};
+      await write(f.directory,`tracks/${id}.json`,{trackId:id,entries:[]});
+    }else f.manifest.tracks[id]={path:null,missing:true,...(i===446?{retainedBoardMissing:true,complete:false,sourceComplete:false}:{})};
+  }
+  await write(f.directory,'manifest.json',f.manifest);
+  const rows=await readCapturedNormalLedgerRows({directory:f.directory});
+  assert.equal(Object.keys(f.manifest.tracks).length,520);assert.equal(rows.length,f.sources.length);
+  assert.deepEqual(rows.map(row=>row.accountId).sort(),f.sources.map(row=>row.accountId).sort());
+  assert.deepEqual(await fs.readFile(path.join(f.directory,'tracks',trackId+'.json')),before);
+  for(let i=446;i<512;i++){
+    const id=i.toString(16).padStart(64,'0');
+    f.manifest.tracks[id]={path:`tracks/${id}.json`};
+    await write(f.directory,`tracks/${id}.json`,{trackId:id,entries:[]});
+  }
+  await write(f.directory,'manifest.json',f.manifest);
+  assert.equal(Object.values(f.manifest.tracks).filter(record=>record.path).length,512);
+  assert.equal((await readCapturedNormalLedgerRows({directory:f.directory})).length,f.sources.length);
+});
+
+test('normal ledger registry accepts 513 and 1024 present boards and rejects 1025 registry or present boards',async t=>{
+  const f=await fixture(t);
+  const tracks=count=>Object.fromEntries(Array.from({length:count},(_,i)=>[i.toString(16).padStart(64,'0'),{path:null,missing:true}]));
+  f.manifest.tracks=tracks(1024);await write(f.directory,'manifest.json',f.manifest);
+  assert.deepEqual(await readCapturedNormalLedgerRows({directory:f.directory}),[]);
+  f.manifest.tracks=tracks(1025);await write(f.directory,'manifest.json',f.manifest);
+  await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory}),/registry limit/);
+  f.manifest.tracks=tracks(1024);
+  const ids=Object.keys(f.manifest.tracks);
+  for(let i=0;i<1024;i++){
+    const id=ids[i];f.manifest.tracks[id]={path:`tracks/${id}.json`};
+    await write(f.directory,`tracks/${id}.json`,{trackId:id,entries:[]});
+    if(i===512){
+      await write(f.directory,'manifest.json',f.manifest);
+      assert.deepEqual(await readCapturedNormalLedgerRows({directory:f.directory}),[]);
+    }
+  }
+  await write(f.directory,'manifest.json',f.manifest);
+  assert.deepEqual(await readCapturedNormalLedgerRows({directory:f.directory}),[]);
+  const extra=(1024).toString(16).padStart(64,'0');f.manifest.tracks[extra]={path:`tracks/${extra}.json`};
+  await write(f.directory,'manifest.json',f.manifest);
+  await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory}),/registry limit/);
+});
+
+test('normal ledger registry rejects malformed records paths and retained missing markers',async t=>{
+  const f=await fixture(t),id='0'.repeat(64);
+  for(const record of [null,[],false, {path:null,retainedBoardMissing:null},
+    {path:null,retainedBoardMissing:'true'},{path:null,missing:null},
+    {path:'',missing:true},{path:false},{path:'tracks/wrong.json'},
+    {retainedBoardMissing:true,missing:true},{path:null,retainedBoardMissing:true,missing:false},
+    {path:`tracks/${id}.json`,retainedBoardMissing:true,missing:true},
+    {path:null,retainedBoardMissing:true,missing:true,complete:true}]){
+    f.manifest.tracks={[id]:record};await write(f.directory,'manifest.json',f.manifest);
+    const before=await fs.readFile(path.join(f.directory,'manifest.json'));
+    await assert.rejects(readCapturedNormalLedgerRows({directory:f.directory}),/Invalid normal ledger/);
+    assert.deepEqual(await fs.readFile(path.join(f.directory,'manifest.json')),before);
+  }
+});
+
 test('exact ledger approval updates board, recording and derived canonical as distinct native authority',async t=>{
   const f=await fixture(t),before=structuredClone(f.sources),report=await applyNativeLedgerToCapturedTracks(f.options);
   assert.equal(report.verified,1);const row=(await read(f.directory,`tracks/${trackId}.json`)).entries[0];
