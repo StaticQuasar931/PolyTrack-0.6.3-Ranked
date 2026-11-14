@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=330';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=330';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=331';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=331';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=330';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=330';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=330';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=331';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=331';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=331';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -506,7 +506,7 @@ export function eventSidebarPlacementPresentation(place){
   const title=known?`${eventOrdinal(place.rank)} of ${size} loaded racers${place.provisional?' (provisional)':''}.`:eventPlacementPresentation(place).title;
   return {...presentation,title,ariaLabel:title,ordinal,percentile,text:ordinal+(percentile===null?'':' ('+percentile+'%)')};
 }
-export function renderEventPersonalBest(host,{timeText,placement,pending=false,local=false,unscored=false,hasRecord=true}){
+export function renderEventPersonalBest(host,{timeText,placement,pending=false,local=false,unscored=false,hasRecord=true,preview=false}){
   const doc=host.ownerDocument;
   host.replaceChildren();
   const timer=doc.createElement('div'),clock=doc.createElement('img'),time=doc.createElement('span');
@@ -517,9 +517,36 @@ export function renderEventPersonalBest(host,{timeText,placement,pending=false,l
     result.append(doc.createTextNode(placement.ordinal));
     if(placement.percentile!==null){const percent=doc.createElement('span');percent.className='faded';percent.textContent=' ('+placement.percentile+'%)';result.append(percent);}
   }else{
-    const unknown=doc.createElement('span');unknown.className='faded';unknown.textContent=pending?(unscored?'Not scored':local?'Local PB':'Waiting'):'---';result.append(unknown);
+    const unknown=doc.createElement('span');unknown.className='faded';unknown.textContent=pending?(unscored?'Not scored':preview?'Saved PB; standings loading':local?'Local PB':'Waiting'):'---';result.append(unknown);
   }
   host.append(timer,result);
+}
+export function createEventPbPreviews(){
+  const saved=new Map();
+  return {isBlocked:row=>eventAwardRowRestricted(row),get({period,accountId,epoch=0,board,local,blocked=false,receipt}={}){
+    if(!EVENT_RECORD_HASH.test(accountId||'')||!period?.id||!EVENT_RECORD_HASH.test(period.trackId||''))return null;
+    const key=JSON.stringify([epoch,accountId,period.id,period.trackId,period.kind,period.startsAt,period.endsAt]);
+    const bound=row=>row&&Number.isSafeInteger(row.timeMs)&&row.timeMs>0&&row.timeMs<=EVENT_TIME_LIMIT&&
+      row.accountId===accountId&&(row.periodId===undefined||row.periodId===period.id)&&
+      (row.trackId===undefined||row.trackId===period.trackId)&&!eventAwardRowRestricted(row);
+    const matching=board?.period?.id===period.id&&board.period.trackId===period.trackId&&board.period.kind===period.kind&&
+      ['startsAt','endsAt'].every(field=>period[field]===undefined||board.period[field]===period[field])&&
+      (board._eventSnapshotEpoch===undefined||board._eventSnapshotEpoch===epoch)&&Array.isArray(board.entries)&&
+      board.entries.length<=EVENT_RECORD_LIMIT&&Number.isSafeInteger(board.updatedAt)&&board.updatedAt>=0;
+    if(blocked||eventAwardRowRestricted(receipt)||matching&&board.entries.some(row=>row?.accountId===accountId&&eventAwardRowRestricted(row))){saved.delete(key);return null;}
+    const complete=matching&&board.entries.every(row=>EVENT_RECORD_HASH.test(row?.accountId||'')&&Number.isSafeInteger(row.timeMs)&&row.timeMs>0&&row.timeMs<=EVENT_TIME_LIMIT)&&new Set(board.entries.map(row=>row.accountId)).size===board.entries.length&&board.complete===true&&board.sourceComplete!==false&&board.publicationPending!==true&&
+      board.totalEntriesExact!==false&&(board.totalEntries===undefined||board.totalEntries===board.entries.length)&&board.pagination?.hasMore!==true;
+    const candidates=[local,...(matching?board.entries:[]),...(matching?eventPendingRows(board.pendingPlaybacks):[])].filter(bound);
+    let row=candidates.sort((a,b)=>a.timeMs-b.timeMs)[0];
+    if(!complete&&saved.has(key)&&(!row||saved.get(key).timeMs<row.timeMs))return saved.get(key);
+    if(!row&&!complete)return saved.get(key)||null;
+    if(!row){saved.delete(key);return null;}
+    // A preview has time provenance, never placement, replay or award authority.
+    row=Object.freeze({accountId,periodId:period.id,trackId:period.trackId,timeMs:row.timeMs,
+      source:'saved-event-preview',previewOnly:true,pending:true,verified:false,eventRpEligible:false,rank:null});
+    saved.delete(key);saved.set(key,row);if(saved.size>128)saved.delete(saved.keys().next().value);
+    return row;
+  }};
 }
 export function eventTrackName(period,lookup){
   const publicName=typeof period?.trackName==='string'?period.trackName.trim():'';
@@ -690,6 +717,7 @@ export function installEvents(bridge){
     permanentAcceptedSource=preferPermanentRollingSource(permanentAcceptedSource,preferPermanentRollingSource(permanent,totals));
     return permanentRollingReward(permanent,totals,permanentAcceptedSource);
   }
+  const pbPreviews=createEventPbPreviews();
   const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
   const activePeriods=()=>liveTimedEventPeriods(catalog.periods,now());
@@ -742,7 +770,9 @@ export function installEvents(bridge){
     return fetching;
   }
   async function snapshot(period,force=false){
-    const valid=value=>value&&Array.isArray(value.entries)&&value.period?.id===period.id&&value.period.trackId===period.trackId&&value.period.kind===period.kind&&Number.isSafeInteger(value.updatedAt)&&value.updatedAt>=0;
+    const epoch=bridge.normalEventSnapshotEpoch?.()??0,account=bridge.accountId?.(),identity=JSON.stringify([period.id,period.trackId,period.kind,period.startsAt,period.endsAt]);
+    const current=()=>epoch===(bridge.normalEventSnapshotEpoch?.()??0)&&account===bridge.accountId?.()&&identity===JSON.stringify([period.id,period.trackId,period.kind,period.startsAt,period.endsAt]);
+    const valid=value=>value&&(value._eventSnapshotEpoch===undefined||value._eventSnapshotEpoch===epoch)&&Array.isArray(value.entries)&&value.period?.id===period.id&&value.period.trackId===period.trackId&&value.period.kind===period.kind&&['startsAt','endsAt'].every(field=>period[field]===undefined||value.period[field]===period[field])&&Number.isSafeInteger(value.updatedAt)&&value.updatedAt>=0;
     const candidate=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null),saved=valid(candidate)?candidate:null;
     if(snapshotFetching.has(period.id))return snapshotFetching.get(period.id);
     if(period.archived===true||saved?.archived===true){
@@ -750,8 +780,9 @@ export function installEvents(bridge){
       if(typeof bridge.readArchivedSnapshot!=='function')throw Error('Saved final archive is unavailable');
       const pending=Promise.resolve().then(()=>bridge.readArchivedSnapshot(period.id)).then(archived=>{
         // An ended catalog period is not evidence that its saved board is final.
+        if(!current())throw Error('Event snapshot context changed');
         if(!valid(archived))throw Error('Invalid saved archive snapshot');
-        const final={...archived,fetchedAt:now(),saved:false};
+        const final={...archived,_eventSnapshotEpoch:epoch,fetchedAt:now(),saved:false};
         cache.set(period.id,final);cacheWrite(STORE+'-'+period.id,final);
         return final;
       }).finally(()=>snapshotFetching.delete(period.id));
@@ -759,7 +790,7 @@ export function installEvents(bridge){
       return pending;
     }
     // Browser storage can belong to an older package. Read this package once before reusing it.
-    if(!force&&saved&&cache.get(period.id)===saved)return saved;
+    if(!force&&saved&&!saved._eventRefreshNeeded&&cache.get(period.id)===saved)return saved;
     const attempt=snapshotAttempts.get(period.id);
     if(attempt&&now()<attempt.nextAt&&(!force||!bridge.snapshotOnly?.())){if(saved)return saved;if(attempt.error)throw attempt.error;}
     const state={nextAt:now()+60000,error:null};snapshotAttempts.set(period.id,state);
@@ -773,8 +804,9 @@ export function installEvents(bridge){
       cacheWrite(STORE,catalog);catalogAt=now();catalogFreshUntil=eventCatalogFreshUntil(catalog.periods,catalogAt);
     };
     let pending;pending=(async()=>{
-      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const current=cache.get(period.id)||saved;if(!bridge.snapshotOnly?.()&&valid(current)&&current.updatedAt>value.updatedAt)return current;const next={...retainEventSnapshotDates(value,current,now()),fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
-      catch(error){state.error=error;state.nextAt=now()+120000;if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
+      try{const value=await bridge.readSnapshot(period.id,{refresh:force});if(!current())throw Error('Event snapshot context changed');if(!valid(value))throw Error('Invalid event snapshot');if(value._eventRefreshFailed){state.error=Error('Event refresh failed');state.nextAt=now()+120000;}confirmSchedulePeriod(value);const prior=cache.get(period.id)||saved;if(valid(prior)&&prior.updatedAt>value.updatedAt)return prior;
+        if(account&&valid(prior)&&value.complete!==true&&[...prior.entries,...eventPendingRows(prior.pendingPlaybacks)].some(row=>row.accountId===account)&&![...value.entries,...eventPendingRows(value.pendingPlaybacks)].some(row=>row.accountId===account))return prior;const next={...retainEventSnapshotDates(value,prior,now()),_eventSnapshotEpoch:epoch,_eventRefreshNeeded:false,fetchedAt:now(),saved:false};cache.set(period.id,next);cacheWrite(STORE+'-'+period.id,next);return next;}
+      catch(error){if(!current())throw error;state.error=error;state.nextAt=now()+120000;if(saved){const fallback={...saved,saved:true};cache.set(period.id,fallback);return fallback;}throw error;}
       finally{if(snapshotFetching.get(period.id)===pending)snapshotFetching.delete(period.id);}
     })();
     snapshotFetching.set(period.id,pending);
@@ -807,7 +839,7 @@ export function installEvents(bridge){
         // submit was in flight. Retry-ledger cleanup cannot resurrect an upload.
         const remaining=read(QUEUE,[]).filter(row=>!sameEventSubmission(row,run));write(QUEUE,remaining);
         try{submissionRetry.acknowledged(run,remaining);}catch{/* Durable queue removal already records this acknowledgement. */}
-        message('Event PB submitted. Waiting for replay verification.');cache.delete(run.periodId);invalidateReceipt(run.periodId+'_'+run.accountId);
+        message('Event PB submitted. Waiting for replay verification.');const priorBoard=cache.get(run.periodId);if(priorBoard)cache.set(run.periodId,{...priorBoard,_eventRefreshNeeded:true});snapshotAttempts.delete(run.periodId);invalidateReceipt(run.periodId+'_'+run.accountId);
       }
     };
     try{
@@ -902,10 +934,10 @@ export function installEvents(bridge){
   }
   function recordMarkup(period){
     if(period?.scheduleOnly){const own=localBest(period);return own?'<time>'+time(own.timeMs)+'</time><small>Saved on this device</small>':'No event time';}
-    const {rows,board,filterResult,sourceOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn;
+    const {rows,board,filterResult,sourceOwn,previewOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn||previewOwn;
     if(!own)return 'No record';
-    const presentation=shown?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult,true)):null;
-    return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.pending?' <small>Pending</small>':'');
+    const presentation=shown&&!shown.previewOnly?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult,true)):null;
+    return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.previewOnly?' <small>Saved event PB; standings loading</small>':own.pending?' <small>Pending</small>':'');
   }
   function cardStandings(period){
     if(period.scheduleOnly)return '';
@@ -1477,7 +1509,7 @@ export function installEvents(bridge){
   function eventDisplayRows(period,{onlyVerified=false}={}){
     const accountId=bridge.accountId();
     const candidate=cache.get(period.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+period.id,null):null);
-    const board=candidate?.period?.id===period.id&&candidate.period.trackId===period.trackId&&candidate.period.kind===period.kind&&Array.isArray(candidate.entries)?candidate:null;
+    const board=(candidate?._eventSnapshotEpoch===undefined||candidate._eventSnapshotEpoch===(bridge.normalEventSnapshotEpoch?.()??0))&&candidate?.period?.id===period.id&&candidate.period.trackId===period.trackId&&candidate.period.kind===period.kind&&Array.isArray(candidate.entries)?candidate:null;
     const local=localBest(period),receipt=ownReceipts.get(period.id+'_'+accountId);
     const remote=receipt&&['waiting','verified'].includes(receipt.status)&&Number.isSafeInteger(receipt.timeMs)&&receipt.timeMs>0?receipt:null;
     const rejectedLocal=local?.attemptId&&receipt?.attemptId===local.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt.status);
@@ -1485,7 +1517,7 @@ export function installEvents(bridge){
     const published=board?.entries.find(row=>row.accountId===accountId);
     const bound=provisional&&(provisional.accountId===undefined||provisional.accountId===accountId)&&
       (provisional.trackId===undefined||provisional.trackId===period.trackId)&&(provisional.periodId===undefined||provisional.periodId===period.id);
-    const localRow=bound?{...provisional,accountId,name:published?.name||'You',pending:true,rank:null,
+    const localRow=bound&&!pbPreviews.isBlocked(receipt)?{...provisional,accountId,name:published?.name||'You',pending:true,rank:null,
       source:remote&&remote.timeMs===provisional.timeMs&&remote.attemptId===provisional.attemptId?'submitted-event-recording':'local-event-recording',
       ...(validEventTimestamp(provisional.at,now())?{runAt:provisional.at}:{}),
       unscored:receipt?.attemptId===provisional.attemptId&&['mismatch','unavailable_final','expired','rejected'].includes(receipt?.status)}:null;
@@ -1493,7 +1525,8 @@ export function installEvents(bridge){
       context:{trackId:period.trackId,event:true,maxRp:period.maxRp,complete:board?.complete===true}});
     const display=onlyVerified?fields.verified:fields.all;
     for(const row of display.rows)row.name=displayName(row);
-    return {...display,board,counts:fields.counts,sourceOwn:display.sourceRows.find(row=>row.accountId===accountId)};
+    const previewOwn=pbPreviews.get({period,accountId,epoch:bridge.normalEventSnapshotEpoch?.()??0,board,local:localRow,blocked:!!rejectedLocal,receipt});
+    return {...display,board,previewOwn,counts:fields.counts,sourceOwn:display.sourceRows.find(row=>row.accountId===accountId)};
   }
   function syncNativeArchiveBoard(view){
     const {period,snapshot}=view;
@@ -1640,12 +1673,12 @@ export function installEvents(bridge){
     const opponentsText=activeGhosts.length?`${activeGhosts.length} event ghost${activeGhosts.length===1?'':'s'} selected`:'Select racers to race their event runs.';
     if(view.opponentsNote.textContent!==opponentsText)view.opponentsNote.textContent=opponentsText;
 
-    const display=eventDisplayRows(period,{onlyVerified:view.onlyVerified}),{board,filterResult,rows}=display,loading=!board&&!snapshotAttempts.get(period.id)?.error,mine=rows.find(row=>row.accountId===accountId);
+    const display=eventDisplayRows(period,{onlyVerified:view.onlyVerified}),{board,filterResult,rows}=display,loading=!board&&!snapshotAttempts.get(period.id)?.error,mine=rows.find(row=>row.accountId===accountId)||display.previewOwn;
     const paging=eventPagination(rows.length,view.page);view.page=paging.page;
     if(filterResult?.active){const visible=new Set(rows.map(row=>row.accountId));for(const [id,row] of selectedGhosts)if(row.periodId===period.id&&!visible.has(id))selectedGhosts.delete(id);}
     let place=displayedRecordPlacement(period,mine,board);
     const placementSettings=readEventPlacementSettings();
-    if(mine?.pending&&place===null&&placementSettings.enabled&&placementSettings.policy!=='verified'&&!view.onlyVerified)
+    if(mine?.pending&&!mine.previewOnly&&place===null&&placementSettings.enabled&&placementSettings.policy!=='verified'&&!view.onlyVerified)
       place={rank:mine.rank,fieldSize:null,knownFieldSize:rows.length,provisional:true,policy:'all'};
     if(mine&&!mine.pending&&view.onlyVerified&&placementSettings.enabled)
       place={rank:mine.rank,fieldSize:rows.length,knownFieldSize:rows.length,provisional:false,policy:'verified',visibleField:true,originalRank:mine.originalRank};
@@ -1654,7 +1687,7 @@ export function installEvents(bridge){
     const statusDescription=receipt||localRecord?receiptText(receipt,localRecord,period,{board,accountId}):statusText;
     // Selection changes do not alter standings. Avoid revalidating every car
     // style and serializing whole result objects on each input/menu tick.
-    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,board?._publicBackup,board?.complete,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.runId,row.pending,row.rp,row.groupRp,row.name,row.carStyle,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
+    const signature=JSON.stringify([bridge.identityRevision?.(),bridge.filterRevision?.(),period.id,board?.updatedAt,board?.saved,board?._publicBackup,board?.complete,loading,Math.floor(now()/120000),view.page,view.onlyVerified,placement,display.previewOwn?.timeMs,rows.map(row=>[row.accountId,row.rank,row.originalRank,row.timeMs,row.runId,row.pending,row.rp,row.groupRp,row.name,row.carStyle,row.submittedAt,row.receivedAt,row.runAt,row.verifiedAt,row.pbAt,row.runCreatedAt,row.createdAt,row.uploadId])]);
     if(signature===view.signature){
       for(const button of view.board.querySelectorAll(':scope > .container > button.main')){
         const selectedRow=selectedGhosts.get(button.dataset.eventAccountId);
@@ -1707,7 +1740,7 @@ export function installEvents(bridge){
     bridge.filterNotice?.(view.board,filterResult);
     renderEventPagination(view,rows.length,()=>syncNativeBoard(session));
     renderEventPersonalBest(view.pb,{timeText:mine?time(mine.timeMs):'---',placement,pending:!!mine?.pending,
-      local:mine?.source==='local-event-recording',
+      local:mine?.source==='local-event-recording',preview:!!mine?.previewOnly,
       unscored:!!mine?.unscored,hasRecord:!!mine});
   }
 
