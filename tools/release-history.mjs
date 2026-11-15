@@ -2,17 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 395,
+    "number": 396,
     "version": "0.6.3",
-    "revision": 337,
+    "revision": 338,
     "notes": [
-      "Car finishes preserve both paint colors; accessories fit the car more closely.",
-      "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
-      "Live previews, Undo and Restore saved work more consistently.",
-      "Completed the saved-replay setup for the next offline event verification pass."
+      "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
+      "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
+      "Snapshot compression now stays consistent across Windows and Linux."
     ]
   },
   "entries": [
+    {
+      "number": 395,
+      "title": "Polish car workshop Studio previews and automatic rewards",
+      "commit": "b4c0d40479b8e33602dc58c1783c4d02a88a4752",
+      "committedAt": "2026-11-15T02:08:48.000Z",
+      "notes": [
+        "Car finishes preserve both paint colors; accessories fit the car more closely.",
+        "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
+        "Live previews, Undo and Restore saved work more consistently.",
+        "Completed the saved-replay setup for the next offline event verification pass."
+      ]
+    },
     {
       "number": 394,
       "title": "Enable source-bound offline Kodub and Rolling Hills verification",
@@ -205,16 +216,6 @@ const historyData = {
       "committedAt": "2026-11-14T08:46:04.000Z",
       "notes": [
         "Improved snapshot readiness checks for capture-first publication."
-      ]
-    },
-    {
-      "number": 373,
-      "title": "Capture current PBs before refreshing snapshot boards",
-      "commit": "8b02fb49a625dfda9760b28b09929a93d3c5d413",
-      "committedAt": "2026-11-14T08:31:50.000Z",
-      "notes": [
-        "Snapshot capture now starts with current personal bests before refreshing track boards.",
-        "Capture can publish using existing verification, with new replay verification running separately afterward."
       ]
     }
   ],

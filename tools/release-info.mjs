@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 395,
+  "number": 396,
   "version": "0.6.3",
-  "revision": 337,
+  "revision": 338,
   "notes": [
-    "Car finishes preserve both paint colors; accessories fit the car more closely.",
-    "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
-    "Live previews, Undo and Restore saved work more consistently.",
-    "Completed the saved-replay setup for the next offline event verification pass."
+    "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
+    "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
+    "Snapshot compression now stays consistent across Windows and Linux."
   ],
-  "preparedAt": "2026-11-15T02:07:37.239Z",
-  "committedAt": "2026-11-15T02:08:48.000Z"
+  "preparedAt": "2026-11-15T03:09:11.107Z",
+  "committedAt": "2026-11-15T03:12:59.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
