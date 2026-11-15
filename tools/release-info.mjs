@@ -1,15 +1,15 @@
 const releaseInfo = {
-  "number": 404,
+  "number": 405,
   "version": "0.6.3",
-  "revision": 346,
+  "revision": 347,
   "notes": [
-    "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
-    "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
-    "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
-    "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
+    "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
+    "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
+    "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
+    "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
   ],
-  "preparedAt": "2026-11-15T23:27:53.212Z",
-  "committedAt": "2026-11-15T23:29:52.000Z"
+  "preparedAt": "2026-11-15T23:31:22.275Z",
+  "committedAt": "2026-11-15T23:33:51.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

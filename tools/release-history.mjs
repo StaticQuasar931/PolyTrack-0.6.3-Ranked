@@ -2,17 +2,29 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 404,
+    "number": 405,
     "version": "0.6.3",
-    "revision": 346,
+    "revision": 347,
     "notes": [
-      "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
-      "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
-      "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
-      "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
+      "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
+      "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
+      "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
+      "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
     ]
   },
   "entries": [
+    {
+      "number": 404,
+      "title": "Clarify rank time and cache event card standings",
+      "commit": "1344eb2f81abe1deba886fcb9b1f9478f8442983",
+      "committedAt": "2026-11-15T23:29:52.000Z",
+      "notes": [
+        "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
+        "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
+        "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
+        "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
+      ]
+    },
     {
       "number": 403,
       "title": "Fit weekly artwork to the event card height",
@@ -221,17 +233,6 @@ const historyData = {
       "notes": [
         "Readable car workshop controls on phones and smaller screens.",
         "Collapse the workshop while viewing your car; native Save dialogs stay clear."
-      ]
-    },
-    {
-      "number": 384,
-      "title": "Car workshop and expanded Studio style shop",
-      "commit": "cbf4cb672be59c5df47cf2b1379c0a278d5fbf0b",
-      "committedAt": "2026-11-14T21:07:07.000Z",
-      "notes": [
-        "Customize your car in Garage with starter paint palettes and roof accessories.",
-        "Browse nine profile designs in the Style shop inside Racer Studio.",
-        "Clearer Token prices, more profile styles, and local car appearance saves."
       ]
     }
   ],
