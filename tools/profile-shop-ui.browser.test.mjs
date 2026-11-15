@@ -19,7 +19,7 @@ before(async()=>{
     const name=new URL(req.url,'http://localhost').pathname;
     if(name==='/tools/profile-shop-catalog.mjs'){res.setHeader('Content-Type','text/javascript');res.end('export const PROFILE_SHOP_CATALOG_VERSION='+PROFILE_SHOP_CATALOG_VERSION+';export const PROFILE_SHOP_CATALOG='+JSON.stringify(SHOP_CATALOG)+';');return;}
     if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local PolyTrack shop draft</title><link rel="stylesheet" href="/tools/profile-shop-ui.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#192b57}main{max-width:1366px;margin:auto;--sp-sticky-top:60px}.fixture-banner{position:sticky;top:0;z-index:99;box-sizing:border-box;height:60px;display:flex;align-items:center;padding:12px;background:#ffd185;color:#142449;font:13px/18px Trebuchet MS,sans-serif;border-bottom:2px solid #b98b39}</style><aside class="fixture-banner" role="note">Offline test preview &middot; Sample credits, not a live balance</aside><main></main></html>');return;}
-    const types={'/tools/achievement-coin-schedule.mjs':'text/javascript','/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
+    const types={'/tools/profile-shop-art.css':'text/css','/tools/achievement-coin-schedule.mjs':'text/javascript','/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
     if(!types[name]){res.writeHead(404).end();return;}
     try{res.setHeader('Content-Type',types[name]);res.end(await fs.readFile(path.join(root,name.slice(1))));}catch{res.writeHead(404).end();}
   });
@@ -29,10 +29,10 @@ before(async()=>{
 after(async()=>{await browser?.close();server?.closeAllConnections();if(server)await new Promise(resolve=>server.close(resolve));});
 async function fixture(t,extra={},viewport={width:1366,height:768}){
   const context=await browser.newContext({viewport}),page=await context.newPage();t.after(()=>context.close());
-  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():route.abort());await page.goto(base);assert.equal(await page.locator('.fixture-banner').innerText(),'Offline test preview \u00b7 Sample credits, not a live balance');
+  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():route.abort());await page.goto(base,{waitUntil:'domcontentloaded'});assert.equal(await page.locator('.fixture-banner').innerText(),'Offline test preview \u00b7 Sample credits, not a live balance');
   await page.evaluate(async({catalog,extra})=>{
     const {mountProfileShopUi}=await import('/tools/profile-shop-ui.mjs');window.calls={buy:[],claim:[],apply:[],preview:[],restore:0,refresh:0,studio:0};
-    window.options={accountId:'driver-a',catalog,wallet:{status:'confirmed',accountId:'driver-a',balance:100,revision:2},inventory:{status:'confirmed',accountId:'driver-a',ownedIds:[]},purchaseEnabled:true,claimsEnabled:true,...extra,
+    window.options={accountId:'driver-a',cloudSaveConnected:true,catalog,wallet:{status:'confirmed',accountId:'driver-a',balance:100,revision:2},inventory:{status:'confirmed',accountId:'driver-a',ownedIds:[]},purchaseEnabled:true,claimsEnabled:true,...extra,
       actions:{onPurchase:value=>{calls.buy.push(value);return new Promise((resolve,reject)=>{window.resolveBuy=resolve;window.rejectBuy=reject;});},onPreview:value=>calls.preview.push(value.id),onRestorePreview:()=>calls.restore++,onRefresh:()=>calls.refresh++,onClaim:value=>{calls.claim.push(value);return new Promise((resolve,reject)=>{window.resolveClaim=resolve;window.rejectClaim=reject;});},onApply:value=>{calls.apply.push({...value,isCurrent:value.isCurrent()});return {applied:true,draftOnly:true,accountId:value.accountId,itemId:value.itemId};},onStudio:()=>calls.studio++}};
     window.cleanup=mountProfileShopUi(document.querySelector('main'),options);await document.fonts.ready;
   },{catalog:SHOP_CATALOG,extra});return page;
@@ -41,9 +41,9 @@ async function fixture(t,extra={},viewport={width:1366,height:768}){
 test('all canonical and staged styles render with Style Coins, categories and no overflow on phone/laptop',async t=>{
  assert.ok(SHOP_CATALOG.length>=9);
  for(const [name,width,height]of[['laptop',1366,768],['phone',360,800]]){
-  const page=await fixture(t,{}, {width,height});assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length);assert.equal(await page.locator('.sp-art svg').count(),SHOP_CATALOG.length);
+  const page=await fixture(t,{}, {width,height});assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length);assert.equal(await page.locator('[data-sp-cosmetic-sample]').count(),SHOP_CATALOG.length);
   assert.doesNotMatch(await page.locator('.shop-preview').innerText(),/\bCP\b|Three original|undefined/);
-  assert.ok(await page.locator('.sp-art svg').evaluateAll(nodes=>nodes.every(node=>node.getAttribute('preserveAspectRatio')==='xMidYMid meet')));
+  assert.ok(await page.locator('.sp-style-sample').evaluateAll(nodes=>nodes.every(node=>node.getBoundingClientRect().width>0)));
   assert.equal(await page.locator('[data-sp-category],.sp-palette').count(),0);assert.doesNotMatch(await page.locator('.shop-preview').innerText(),/Car presets|native parts|saved style preset/);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.equal(await page.evaluate(()=>calls.buy.length+calls.claim.length+calls.refresh+calls.apply.length),0);
@@ -68,14 +68,19 @@ test('purchase requires confirmation, cancel restores focus, and pending never d
  assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');assert.equal(await page.locator('[data-sp-action="buy"]:enabled,[data-sp-action="claim"]:enabled').count(),0);
  await page.evaluate(()=>resolveBuy({status:'pending'}));assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');
 });
-test('daily 8 Style Coins and milestone claims are explicit; pending/error never invent points',async t=>{
- const page=await fixture(t);assert.equal(await page.evaluate(()=>calls.claim.length),0);assert.match(await page.locator('.sp-earn').innerText(),/1 track \+20 Style Coins.*5 tracks \+30 Style Coins.*20 tracks \+50 Style Coins.*35 tracks \+30 Style Coins.*50 tracks \+40 Style Coins.*70 tracks \+50 Style Coins.*89 tracks \+60 Style Coins/);
- await page.getByRole('button',{name:'Daily visit Claim 8 Style Coins',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[0].rewardId),'login');
- assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');assert.equal(await page.locator('[data-sp-action="claim"]:enabled').count(),0);
- await page.evaluate(()=>resolveClaim({confirmed:true,accountId:'driver-a',rewardId:'login',wallet:{status:'confirmed',accountId:'driver-a',balance:108,revision:3}}));await page.waitForFunction(()=>document.querySelector('.sp-summary strong').textContent==='108 Style Coins');
- await page.getByRole('button',{name:'1 / 5 / 20 / 35 / 50 / 70 / 89 ranked tracks Claim milestones',exact:true}).click();assert.equal(await page.evaluate(()=>calls.claim[1].rewardId),'milestones');
- await page.evaluate(()=>rejectClaim(Error('not confirmed')));await page.waitForFunction(()=>document.querySelector('.sp-status').textContent.includes('Could not confirm'));assert.equal(await page.locator('.sp-summary strong').innerText(),'108 Style Coins');
+test('balance and reward chores are absent; opening synchronization text does not invent money',async t=>{
+ const page=await fixture(t);assert.equal(await page.locator('[data-sp-action="claim"],[data-sp-action="refresh"]').count(),0);
+ assert.match(await page.locator('.sp-earn').innerText(),/synchronize automatically.*server checks/is);
+ assert.equal(await page.evaluate(()=>calls.claim.length+calls.refresh),0);
+ await page.evaluate(()=>cleanup.update({wallet:{status:'unknown'},loading:true}));
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'Synchronizing...');
+ await page.evaluate(()=>cleanup.update({loading:false,cloudSaveConnected:false,communityCodeState:{saved:true,formatValid:true}}));
+ assert.match(await page.locator('.sp-status').innerText(),/Connect Cloud Save/);
+ assert.match(await page.locator('[data-sp-community-local]').innerText(),/valid local format.*Cloud Save is separate.*Membership is not verified/);
+ await page.evaluate(()=>cleanup.update({cloudSaveConnected:true}));assert.doesNotMatch(await page.locator('.sp-status').innerText(),/Connect Cloud Save|Sign in/i);
+ await page.evaluate(()=>cleanup.update({error:'profile_not_owned'}));assert.match(await page.locator('.sp-status').innerText(),/first ranked run.*owning Cloud Save/);
 });
+
 test('Apply requires confirmed ownership and invokes draft-only callback, never purchase or publication',async t=>{
  const page=await fixture(t);assert.equal(await page.locator('[data-sp-action="apply"]').count(),0);
  await page.evaluate(()=>cleanup.update({inventory:{status:'confirmed',accountId:'other',ownedIds:['profile-pitlane-ticket']}}));assert.equal(await page.locator('[data-sp-action="apply"]').count(),0);
@@ -93,25 +98,22 @@ test('closed gates, legacy car catalogs, unsafe labels and late cross-account re
  await page.evaluate(()=>cleanup());assert.equal(await page.locator('.shop-preview').count(),0);
 });
 
-test('swatch text uses only host-provided racer identity, never invented generic identity or rank',async t=>{
- const page=await fixture(t);
- assert.equal(await page.locator('[data-profile-art-sample]').count(),0);
- assert.equal(await page.locator('.sp-art svg text').count(),0);
+test('faithful samples use existing cosmetic classes and detached renderer snapshots only',async t=>{
+ const page=await fixture(t);assert.equal(await page.locator('[data-profile-art-sample]').count(),0);
+ assert.equal(await page.locator('[data-sp-cosmetic-sample]').count(),SHOP_CATALOG.length);
  await page.evaluate(()=>cleanup.update({getRacerName:()=> 'Fixture Racer'}));
- const texts=await page.locator('.sp-art svg text').allTextContents();assert.ok(texts.length>0);assert.ok(texts.every(text=>text==='Fixture Racer'));
- assert.doesNotMatch(await page.locator('.shop-preview').innerText(),/\bTokens\b|\bCP\b/);
+ assert.ok((await page.locator('.sp-sample-name>b').allTextContents()).every(text=>text==='Fixture Racer'));
+ await page.evaluate(()=>cleanup.update({renderCosmeticPreview:({itemId})=>{const node=document.createElement('div');node.className='profile-cosmetic-choice';node.dataset.fixtureRenderer=itemId;node.textContent='Actual Studio snapshot';return node;}}));
+ assert.equal(await page.locator('[data-sp-existing-preview][data-fixture-renderer]').count(),SHOP_CATALOG.length);
+ assert.ok(await page.locator('[data-sp-existing-preview]').first().evaluate(node=>node.inert));
+ await page.evaluate(()=>{const live=document.createElement('div');live.id='live-source';document.body.append(live);cleanup.update({renderCosmeticPreview:()=>live});});
+ assert.equal(await page.locator('body>#live-source').count(),1);assert.equal(await page.locator('[data-sp-existing-preview]').count(),0);
 });
 
-test('achievement bonuses are absent by default and explicit capability uses the existing claim callback only',async t=>{
- const page=await fixture(t);assert.equal(await page.locator('[data-sp-reward="achievements"]').count(),0);
+test('achievement capability adds honest reward information, never a manual claim or a local award',async t=>{
+ const page=await fixture(t);assert.equal(await page.locator('[data-sp-achievement-policy]').count(),0);
  await page.evaluate(()=>cleanup.update({achievementClaimsEnabled:true}));
  assert.match(await page.locator('[data-sp-achievement-policy]').innerText(),/14 once-only.*222 Style Coins/);
- assert.match(await page.locator('[data-sp-achievement-policy]').innerText(),/Shared title\/style conditions pay once/);
- assert.equal(await page.evaluate(()=>calls.claim.length),0);
- await page.locator('[data-sp-reward="achievements"]').click();
- assert.deepEqual(await page.evaluate(()=>calls.claim),[{accountId:'driver-a',rewardId:'achievements',walletRevision:2}]);
+ assert.equal(await page.locator('[data-sp-action="claim"]').count(),0);assert.equal(await page.evaluate(()=>calls.claim.length),0);
  assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');
- assert.equal(await page.locator('[data-sp-reward="achievements"]').isDisabled(),true);
- await page.evaluate(()=>resolveClaim({delta:222,policyVersion:1}));
- assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins','raw receipt amounts never become current balance');
 });

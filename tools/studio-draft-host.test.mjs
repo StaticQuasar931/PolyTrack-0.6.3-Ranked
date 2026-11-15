@@ -13,7 +13,8 @@ test('invalid or stale host binding fails before reading account drafts',()=>{
 
 test('host imports only pure history and has no storage, network, grant or global storage hook',()=>{
  const source=fs.readFileSync(new URL('./studio-draft-host.mjs',import.meta.url),'utf8');
- assert.deepEqual([...source.matchAll(/^import .* from '([^']+)'/gm)].map(match=>match[1]),['./studio-edit-history.mjs']);
+ assert.deepEqual([...source.matchAll(/new URL\('([^']+)'/g)].map(match=>match[1]),['./studio-edit-history.mjs']);
+ assert.match(source,/new URL\(import\.meta\.url\)\.search/);
  assert.doesNotMatch(source,/\b(fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|firebase|grantReward)\b/);
  assert.doesNotMatch(source,/addEventListener\(['"]storage['"]/);
 });

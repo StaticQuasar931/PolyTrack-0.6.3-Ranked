@@ -1,13 +1,15 @@
 const releaseInfo = {
-  "number": 394,
+  "number": 395,
   "version": "0.6.3",
-  "revision": 336,
+  "revision": 337,
   "notes": [
-    "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
-    "Earlier published proofs stay intact; new runs still require their own replay checks."
+    "Car finishes preserve both paint colors; accessories fit the car more closely.",
+    "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
+    "Live previews, Undo and Restore saved work more consistently.",
+    "Completed the saved-replay setup for the next offline event verification pass."
   ],
-  "preparedAt": "2026-11-15T02:00:27.178Z",
-  "committedAt": "2026-11-15T02:01:33.000Z"
+  "preparedAt": "2026-11-15T02:07:37.239Z",
+  "committedAt": "2026-11-15T02:08:48.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

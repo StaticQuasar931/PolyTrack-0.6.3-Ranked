@@ -24,13 +24,13 @@ function snapshot(value,seen=new Set()){
 const accountValid=value=>typeof value==='string'&&value.trim().length>0;
 export function createStudioEditHistory({accountId,initial,limit=50}={}){
   if(!Number.isSafeInteger(limit)||limit<2||limit>1000)throw RangeError('History limit must be 2..1000');
-  let account=null,ring=[],clean=null,disposed=false;
+  let account=null,ring=[],clean=null,saved=null,disposed=false;
   const valid=id=>!disposed&&account!==null&&id===account;
   const key=value=>JSON.stringify(value);
   function reset(id,value){
     if(disposed)return false;
     if(!accountValid(id))throw TypeError('Explicit account ID required');
-    const next=snapshot(value);account=id;ring=[next];clean=key(next);return next;
+    const next=snapshot(value);account=id;ring=[next];saved=next;clean=key(next);return next;
   }
   function current(id){return valid(id)&&ring.length?ring.at(-1):null;}
   function record(id,value){
@@ -43,12 +43,14 @@ export function createStudioEditHistory({accountId,initial,limit=50}={}){
   function undo(id){if(!canUndo(id))return null;ring.pop();return ring.at(-1);}
   function markClean(id,value){
     if(!valid(id)||!ring.length)return false;
-    clean=key(value===undefined?ring.at(-1):snapshot(value));return true;
+    saved=value===undefined?ring.at(-1):snapshot(value);clean=key(saved);return true;
   }
-  function clear(){account=null;ring=[];clean=null;}
+  function clear(){account=null;ring=[];clean=null;saved=null;}
   function dispose(){clear();disposed=true;}
   if(accountId!==undefined)reset(accountId,initial);
   return Object.freeze({reset,current,record,undo,canUndo,markClean,
+    saved:id=>valid(id)?saved:null,
+    restoreSaved(id){if(!valid(id)||!ring.length)return null;record(id,saved);return saved;},
     isDirty:id=>valid(id)&&ring.length>0&&key(ring.at(-1))!==clean,
     size:id=>valid(id)?ring.length:0,clear,dispose});
 }

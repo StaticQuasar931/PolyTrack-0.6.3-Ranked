@@ -25,7 +25,7 @@ function fixture(overrides={}){
   records.set(key,result);if(postGate)await postGate.promise;if(mode==='lost')throw err('network',true);return result;
  };
  const storage={getItem:k=>local.get(k)??null,setItem:(k,v)=>local.set(k,v),removeItem:k=>local.delete(k)};
- const store=createShopControllerStore({transport,storage,
+ const store=createShopControllerStore({autoCollectRewards:false,transport,storage,
   getAccountId:()=>account,getAuthScope:()=>scope,makeRequestId:()=> 'controller-request-'+(++ids),withAccountLock:async(id,work)=>work(),now:()=>clock,enabled:true,...overrides});
  store.subscribe(s=>states.push(s));
  return {store,transport,storage,calls,states,local,records,wallet,postGate:value=>postGate=value,account:id=>account=id,auth:value=>scope=value,time:value=>clock=value,mode:value=>mode=value,gate:value=>readGate=value,ids:()=>ids};

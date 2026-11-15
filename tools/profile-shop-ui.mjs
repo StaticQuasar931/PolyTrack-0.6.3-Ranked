@@ -1,24 +1,25 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
-const {renderProfileShopArt}=await import(new URL('./profile-shop-art.mjs'+new URL(import.meta.url).search,import.meta.url).href);
-const {ACHIEVEMENT_COIN_CLAIM_ID,ACHIEVEMENT_COIN_SCHEDULE}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {renderProfileShopSwatch}=await import(new URL('./profile-shop-art.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const {ACHIEVEMENT_COIN_SCHEDULE}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const achievementMaximum=ACHIEVEMENT_COIN_SCHEDULE.reduce((sum,row)=>sum+row.amount,0);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uint=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 export const formatShopPoints=value=>uint(value)?value.toLocaleString('en-US'):'Not available';
-const rewards=[{id:'login',label:'Daily visit',points:8},{id:'milestones',label:'1 / 5 / 20 / 35 / 50 / 70 / 89 ranked tracks',points:null}];
 let serial=0;
 
 /** Profile-only presentation. No transport, persistence, awards or balance arithmetic.
  * Parent supplies the current catalog version (or its items array), same-account confirmed wallet and
  * inventory. purchaseEnabled and claimsEnabled default OFF. Mount never reads data.
  * onPurchase({accountId,itemId,price,walletRevision}) follows purchase confirmation.
- * onClaim({accountId,rewardId,walletRevision}) follows an explicit claim button.
+ * Controller opening settles configured rewards before the confirmed wallet GET.
+ * This presentation never claims or reads money on mount.
+ * renderCosmeticPreview returns an inert detached actual Studio preview element.
  * Confirmation results: {confirmed:true,accountId,itemId|rewardId,wallet?,inventory?}.
  * onApply({accountId,itemId,draftOnly:true,isCurrent}) requires confirmed ownership.
  * Host must honor isCurrent, change ONLY the existing Studio draft, and return
  * {applied:true,accountId,itemId,draftOnly:true} before UI reports it was applied.
  * Optional actions: onRefresh,onPreview,onRestorePreview,onStudio,onClose. getRacerName may read existing owner-scoped rendered data.
- * Parent owns manual fetch, authentication, all server validation and publication.
+ * Parent owns authentication, automatic opening synchronization and all server validation.
  * Returns cleanup() with .update(nextOptions); late results cannot cross accounts.
  */
 export function mountProfileShopUi(root,options={}) {
@@ -28,8 +29,8 @@ export function mountProfileShopUi(root,options={}) {
   let state={...options},confirmId=null,previewId=null,operation=null,message='',disposed=false,epoch=0,previewGeneration=0;
   let earnOpen=doc.defaultView.matchMedia('(min-width:801px)').matches;
   const scoped=()=>typeof state.accountId==='string'&&state.accountId.length>0;
-  const wallet=()=>scoped()&&state.wallet?.status==='confirmed'&&state.wallet.accountId===state.accountId&&uint(state.wallet.balance)&&uint(state.wallet.revision)?state.wallet:null;
-  const inventory=()=>scoped()&&state.inventory?.status==='confirmed'&&state.inventory.accountId===state.accountId&&Array.isArray(state.inventory.ownedIds)?state.inventory:null;
+  const wallet=()=>scoped()&&state.cloudSaveConnected!==false&&state.wallet?.status==='confirmed'&&state.wallet.accountId===state.accountId&&uint(state.wallet.balance)&&uint(state.wallet.revision)?state.wallet:null;
+  const inventory=()=>scoped()&&state.cloudSaveConnected!==false&&state.inventory?.status==='confirmed'&&state.inventory.accountId===state.accountId&&Array.isArray(state.inventory.ownedIds)?state.inventory:null;
   const items=()=>{
     if(!Array.isArray(state.catalog)&&state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION)return [];
     const input=Array.isArray(state.catalog)?state.catalog:state.catalog.items,seen=new Set();
@@ -39,31 +40,40 @@ export function mountProfileShopUi(root,options={}) {
     });
   };
   const owned=item=>inventory()?.ownedIds.includes(item.id)===true;
-  const canBuy=item=>state.purchaseEnabled===true&&typeof state.actions?.onPurchase==='function'&&!!wallet()&&!!inventory()&&!owned(item)&&wallet().balance>=item.price&&!operation;
-  const availableRewards=()=>state.achievementClaimsEnabled===true?[...rewards,{id:ACHIEVEMENT_COIN_CLAIM_ID,label:'Cosmetic achievement bonuses',points:null}]:rewards;
-  const canClaim=reward=>!(reward?.id===ACHIEVEMENT_COIN_CLAIM_ID&&state.achievementClaimsEnabled!==true)&&!(reward?.id==='login'&&state.dailyClaimed===true)&&state.claimsEnabled===true&&typeof state.actions?.onClaim==='function'&&!!wallet()&&!operation&&!confirmId;
-  const canApply=item=>owned(item)&&typeof state.actions?.onApply==='function'&&!operation&&!confirmId;
+  const canBuy=item=>state.purchaseEnabled===true&&typeof state.actions?.onPurchase==='function'&&!!wallet()&&!!inventory()&&!owned(item)&&wallet().balance>=item.price&&!operation&&!state.loading&&!state.busy;
+  const canApply=item=>owned(item)&&typeof state.actions?.onApply==='function'&&!operation&&!state.loading&&!state.busy&&!confirmId;
+  const balanceMessage=balance=>balance?'Original profile designs. No performance effects.':
+    state.cloudSaveConnected===false?'Connect Cloud Save to load your confirmed balance and purchases.':
+    state.error==='profile_not_owned'?'Complete your first ranked run to use the cloud shop. If you already have one, connect its owning Cloud Save.':
+    state.error==='authentication_required'?'Reconnect Cloud Save to confirm your balance.':
+    state.loading||state.busy?'Synchronizing eligible rewards and confirmed balance...':
+    'Confirmed balance is unavailable. Reopen Shop to retry; no points are estimated.';
   function restorePreview(){++previewGeneration;if(previewId){previewId=null;state.actions?.onRestorePreview?.();}}
+  const racerName=()=>{try{return state.getRacerName?.()||'';}catch{return '';}};
   function render(focusKey) {
     const list=items(),balance=wallet(),pending=!!operation,selected=list.find(item=>item.id===confirmId);
     host.innerHTML=`<header class="sp-head" ${state.embedded?'hidden':''}><div><p>PROFILE COLLECTION</p><h2 id="${prefix}-title">Style shop</h2></div>${state.actions?.onClose?'<button type="button" data-sp-action="close">Close</button>':''}</header>
-      <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||(!balance?'Check your balance to load confirmed Style Coins.':'Original profile designs. No performance effects.'))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
-      <div class="sp-summary"><div><span>Confirmed balance</span><strong>${balance?formatShopPoints(balance.balance)+' Style Coins':'Not available'}</strong></div>${typeof state.actions?.onRefresh==='function'?`<button type="button" data-sp-action="refresh" ${pending||state.refreshEnabled===false?'disabled':''}>${balance?'Refresh balance':'Check balance'}</button>`:'<p>Balance appears after a manual server check.</p>'}</div>
-      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Daily claim: 8 Style Coins / milestones</small></summary><div class="sp-claim-body"><p>Server checks eligibility. One-time milestones: 1 track +20 Style Coins / 5 tracks +30 Style Coins / 20 tracks +50 Style Coins / 35 tracks +30 Style Coins / 50 tracks +40 Style Coins / 70 tracks +50 Style Coins / 89 tracks +60 Style Coins.</p>${state.achievementClaimsEnabled===true?`<p data-sp-achievement-policy>${ACHIEVEMENT_COIN_SCHEDULE.length} once-only cosmetic achievement bonuses, up to ${formatShopPoints(achievementMaximum)} Style Coins. Shared title/style conditions pay once. Current server evidence only; not all historical goals are covered.</p>`:''}<div class="sp-claim-actions">${availableRewards().map(reward=>`<button type="button" data-sp-action="claim" data-sp-reward="${reward.id}" ${!canClaim(reward)?'disabled':''}><span>${reward.label}</span><strong>${reward.id==='login'&&state.dailyClaimed===true?'Claimed today':reward.id===ACHIEVEMENT_COIN_CLAIM_ID?'Check &amp; claim bonuses':reward.points===null?'Claim milestones':'Claim '+formatShopPoints(reward.points)+' Style Coins'}</strong></button>`).join('')}</div></div></details>
+      <p class="sp-status" role="status" aria-live="polite" ${pending?'aria-busy="true"':''}><strong class="sp-safety">Previewing never buys or applies.</strong><span>${esc(message||balanceMessage(balance))}</span>${previewId&&!state.hasLivePreview?'<button type="button" data-sp-action="clear">Exit preview</button>':''}</p>
+      <div class="sp-summary"><div><span>${balance&&(pending||state.loading||state.busy)?'Last confirmed balance':'Confirmed balance'}</span><strong>${balance?formatShopPoints(balance.balance)+' Style Coins':state.loading||state.busy?'Synchronizing...':'Not available'}</strong></div><p data-sp-cloud-status>${state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':balance&&(pending||state.loading||state.busy)?'Previous server confirmation; current balance is synchronizing.':balance?'Confirmed by the server.':'Balance synchronizes automatically when Shop opens.'}</p></div>
+      ${state.communityCodeState?.saved===true?'<p class="sp-community-local" data-sp-community-local>'+ (state.communityCodeState.formatValid===true?'Saved Community code has a valid local format.':'Saved Community code format needs attention.')+' Cloud Save is separate. Membership is not verified.</p>':''}
+      <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Eligible rewards sync on opening</small></summary><div class="sp-claim-body"><p>Eligible daily and track rewards synchronize automatically when Shop opens. The server checks eligibility and previous payouts. No claim button or estimated money.</p><p>Daily: 8 Style Coins. Recognized track milestones: 1 +20 / 5 +30 / 20 +50 / 35 +30 / 50 +40 / 70 +50 / 89 +60.</p>${state.achievementClaimsEnabled===true?'<p data-sp-achievement-policy>'+ACHIEVEMENT_COIN_SCHEDULE.length+' once-only cosmetic achievement bonuses, up to '+formatShopPoints(achievementMaximum)+' Style Coins. Shared title/style conditions pay once. Current server evidence only; not all historical goals are covered.</p>':''}${state.rewardSync==='unavailable'?'<p>Automatic reward synchronization is unavailable in this browser right now. Confirmed balance remains server-owned.</p>':''}</div></details>
       <p class="sp-note">Profile styles for your collection. Preview first, apply owned styles in Racer Studio.</p><div class="sp-grid">${list.map(item=>{
         const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
         const slot=item.grants[0].slot;
         const kind={theme:'COLOR THEME',baseSecondary:'SECONDARY COLOR',plate:'PLACE BLOCK',stage:'BACKDROP',stripe:'PATTERN',edge:'EDGE',nameFont:'NAME FONT',nameColor:'NAME COLOR'}[slot]||'PROFILE STYLE';
-        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch>${renderProfileShopArt(item.id,{density:state.density==='low'?'low':'normal'})}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions"><button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>${isOwned?`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
+        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch data-sp-item-preview="${esc(item.id)}">${renderProfileShopSwatch(item.id,{name:racerName(),density:state.density==='low'?'low':'normal'})}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions"><button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>${isOwned?`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
       }).join('')||'<p class="sp-empty">Profile styles are not available yet.</p>'}</div>
       ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Style Coins. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Style Coins':'not available'}.</p><p>Purchase adds this profile design to your collection. Applying is separate.</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
       <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?'<button type="button" data-sp-action="reconcile">Check pending transaction</button>':''}${typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':'<p>Owned styles can be applied in Racer Studio.</p>'}<span>Style Coins are earned in-game. No real-money purchases.</span></footer>`;
-    // Shop cards show the complete sample, even when the artwork uses native-row cropping.
-    let name='';try{const value=state.getRacerName?.();if(typeof value==='string')name=value.trim().slice(0,80);}catch{}
-    for(const svg of host.querySelectorAll('.sp-art svg')){
-      svg.setAttribute('preserveAspectRatio','xMidYMid meet');
-      svg.querySelector('[data-profile-art-sample]')?.remove();
-      for(const text of svg.querySelectorAll('text')){if(name)text.textContent=name;else text.remove();}
+    // Only detached host snapshots are accepted; never move or mutate the live renderer.
+    if(typeof state.renderCosmeticPreview==='function')for(const item of list){
+      const target=host.querySelector('[data-sp-item-preview="'+item.id+'"]');
+      try{
+        const snapshot=state.renderCosmeticPreview({accountId:state.accountId,itemId:item.id,grant:{...item.grants[0]},density:state.density==='low'?'low':'normal'});
+        if(snapshot?.nodeType===1&&snapshot.ownerDocument===doc&&!snapshot.isConnected){
+          snapshot.inert=true;snapshot.setAttribute('aria-hidden','true');snapshot.dataset.spExistingPreview='';target.replaceChildren(snapshot);
+        }
+      }catch{}
     }
     if(focusKey)host.querySelector(`[data-sp-action="${focusKey}"]`)?.focus({preventScroll:true});
     if(focusKey==='confirm')host.querySelector('.sp-confirm')?.scrollIntoView({block:'center',behavior:'instant'});
@@ -81,21 +91,7 @@ export function mountProfileShopUi(root,options={}) {
         if(result.inventory?.status==='confirmed'&&result.inventory.accountId===accountId&&Array.isArray(result.inventory.ownedIds))state.inventory=result.inventory;
         operation=null;message=owned(item)?'Purchase confirmed. Added to your collection.':'Purchase confirmed. Ownership refresh is needed.';
       } else {message='Waiting for server confirmation. Do not submit another purchase.';}
-    } catch {if(disposed||token!==epoch)return;message='Purchase could not be confirmed. Refresh server status before trying again.';operation={type:'purchase',itemId:item.id};}
-    if(!disposed&&token===epoch)render();
-  }
-  async function claim(reward){
-    if(!canClaim(reward))return;
-    const token=++epoch,accountId=state.accountId,revision=wallet().revision,callback=state.actions.onClaim;
-    restorePreview();operation={type:'claim',rewardId:reward.id};message='Waiting for server confirmation. Do not submit again.';render();
-    try{
-      const result=await callback({accountId,rewardId:reward.id,walletRevision:revision});
-      if(disposed||token!==epoch||state.accountId!==accountId)return;
-      if(result?.confirmed===true&&result.accountId===accountId&&result.rewardId===reward.id){
-        if(result.wallet?.status==='confirmed'&&result.wallet.accountId===accountId&&uint(result.wallet.balance)&&uint(result.wallet.revision)&&result.wallet.revision>=revision)state.wallet=result.wallet;
-        operation=null;message='Claim confirmed.';
-      }
-    }catch{if(disposed||token!==epoch)return;message='Could not confirm. Refresh server status before trying again.';}
+    } catch {if(disposed||token!==epoch)return;message='Purchase could not be confirmed. Reopen Shop to check server status before trying again.';operation={type:'purchase',itemId:item.id};}
     if(!disposed&&token===epoch)render();
   }
   async function apply(item){
@@ -117,11 +113,10 @@ export function mountProfileShopUi(root,options={}) {
       [...host.querySelectorAll('[data-sp-action="preview"]')].find(node=>node.dataset.spId===item.id)?.focus({preventScroll:true});
       const previewEpoch=epoch,previewToken=++previewGeneration;
       try {Promise.resolve(state.actions.onPreview({...item})).catch(()=>{if(!disposed&&previewEpoch===epoch&&previewToken===previewGeneration){previewId=null;message='Preview unavailable. Nothing was purchased.';render();}});}catch{previewId=null;message='Preview unavailable. Nothing was purchased.';render();}
-    } else if(action==='claim'){const reward=availableRewards().find(row=>row.id===button.dataset.spReward);if(reward)void claim(reward);}
+    }
     else if(action==='apply'&&item)void apply(item);
     else if(action==='clear'){restorePreview();message='Preview closed.';render();}
     else if(action==='reconcile'&&typeof state.actions?.onReconcile==='function')state.actions.onReconcile();
-    else if(action==='refresh'&&!operation&&typeof state.actions?.onRefresh==='function')state.actions.onRefresh();
     else if(action==='studio'){restorePreview();state.actions?.onStudio?.({category:'profile'});}
     else if(action==='close'){restorePreview();state.actions?.onClose?.();}
   };

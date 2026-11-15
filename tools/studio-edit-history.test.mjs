@@ -57,3 +57,10 @@ test('finite scalar snapshots remain exact, and sparse/decorated arrays fail clo
  for(const value of [sparse,decorated])assert.throws(()=>h.record('a',value),/Dense/);
  assert.equal(h.current('a'),0);
 });
+
+test('restore saved draft survives eviction and remains reversible without moving the saved baseline',()=>{
+ const h=createStudioEditHistory({accountId:'a',initial:{n:0},limit:2});h.record('a',{n:1});h.record('a',{n:2});
+ assert.deepEqual(h.saved('a'),{n:0});assert.deepEqual(h.restoreSaved('a'),{n:0});assert.equal(h.isDirty('a'),false);
+ assert.deepEqual(h.undo('a'),{n:2});assert.equal(h.isDirty('a'),true);h.markClean('a',{n:1});assert.deepEqual(h.restoreSaved('a'),{n:1});assert.deepEqual(h.saved('b'),null);assert.deepEqual(h.restoreSaved('b'),null);
+ h.reset('a',false);h.record('a',true);assert.equal(h.restoreSaved('a'),false);assert.equal(h.current('a'),false);
+});

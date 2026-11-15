@@ -22,12 +22,14 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else throw Error('Unknown roof visual');
  }else if(category==='emblem'){
-  if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
+  if(id==='crest'){add(box(.08,.009,.12,0,.0045,0),dark);add(convex([[0,.01,-.05],[.03,.01,0],[0,.01,.05],[-.03,.01,0],[0,.018,-.05],[.03,.018,0],[0,.018,.05],[-.03,.018,0]],boxFaces),gold);}
+  else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
   else throw Error('Unknown nose emblem');
  }else if(category==='front'){
-  if(id==='splitter'){add(box(.56,.035,.1,0,-.09,.05),dark);add(box(.52,.012,.035,0,-.105,.095),cyan);}
-  else if(id==='lamps'){add(box(.4,.025,.025,0,-.07,.025),dark);for(const x of [-.14,.14])add(box(.07,.07,.05,x,-.055,.06),0xffe7a5,.3);}
+  if(id==='rearbar'){add(box(.36,.045,.025,0,0,.0125),dark);add(box(.3,.016,.012,0,0,.031),cyan,.2);}
+  else if(id==='splitter'){add(box(.56,.025,.08,0,0,.035),dark);add(box(.52,.009,.025,0,-.009,.075),cyan);}
+  else if(id==='lamps'){add(box(.4,.025,.025,0,0,.0125),dark);for(const x of [-.14,.14])add(box(.07,.07,.04,x,.018,.035),0xffe7a5,.3);}
   else throw Error('Unknown front accessory');
  }else throw Error('Unknown attachment category');
  const result=Object.freeze(parts);cache.set(key,result);return result;
@@ -38,5 +40,14 @@ export function carAttachmentFrames(positions,indices){
  const faces=[],ix=indices||Array.from({length:positions.length/3},(_,i)=>i);
  for(let i=0;i+2<ix.length;i+=3){const p=[ix[i],ix[i+1],ix[i+2]].map(index=>{if(!Number.isInteger(index)||index<0||index*3+2>=positions.length)throw Error('Invalid native face');return Array.from(positions.slice(index*3,index*3+3));}),u=p[1].map((v,a)=>v-p[0][a]),v=p[2].map((v,a)=>v-p[0][a]),n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],area=Math.hypot(...n);if(area<1e-8)continue;faces.push({p,normal:n.map(v=>v/area),area,center:[0,1,2].map(a=>(p[0][a]+p[1][a]+p[2][a])/3)});}
  const frame=(axis,filter)=>{let selected=faces.filter(filter);if(!selected.length)throw Error('No safe native attachment surface');const top=Math.max(...selected.map(f=>f.center[axis]));selected=selected.filter(f=>f.center[axis]>=top-.015);const area=selected.reduce((n,f)=>n+f.area,0),point=[0,1,2].map(a=>selected.reduce((n,f)=>n+f.center[a]*f.area,0)/area),normal=[0,1,2].map(a=>selected.reduce((n,f)=>n+f.normal[a]*f.area,0)/area),length=Math.hypot(...normal);const vertices=selected.flatMap(f=>f.p);return Object.freeze({point,normal:normal.map(v=>v/length),width:Math.max(...vertices.map(p=>p[0]))-Math.min(...vertices.map(p=>p[0])),depth:Math.max(...vertices.map(p=>p[2]))-Math.min(...vertices.map(p=>p[2]))});};
- return Object.freeze({bounds:{min,max},roof:frame(1,f=>f.normal[1]>.65&&f.center[1]>=min[1]+(max[1]-min[1])*.55),front:frame(2,f=>f.normal[2]>.55&&f.center[2]>=max[2]-(max[2]-min[2])*.15)});
+ // Intersect triangles with the actual body centerline, independent of triangulation/face area.
+ const centerX=(min[0]+max[0])/2,centerline=filter=>{
+  const candidates=[];for(const f of faces.filter(filter)){const cut=[];for(let i=0;i<3;i++){const a=f.p[i],b=f.p[(i+1)%3];if(Math.abs(a[0]-centerX)<1e-6)cut.push(a);if((a[0]-centerX)*(b[0]-centerX)<0){const t=(centerX-a[0])/(b[0]-a[0]);cut.push([centerX,a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])]);}}if(cut.length>=2){const lo=Math.min(...cut.map(p=>p[2])),hi=Math.max(...cut.map(p=>p[2]));if(hi-lo>1e-5){const z=(lo+hi)/2,y=f.p[0][1]-(f.normal[0]*(centerX-f.p[0][0])+f.normal[2]*(z-f.p[0][2]))/f.normal[1];candidates.push({f,lo,hi,y});}}}
+  if(!candidates.length)return null;candidates.sort((a,b)=>b.y-a.y);const best=candidates[0],coplanar=candidates.filter(c=>c.f.normal.reduce((n,x,i)=>n+x*best.f.normal[i],0)>.999&&Math.abs(c.f.p[0].reduce((n,x,i)=>n+(x-best.f.p[0][i])*best.f.normal[i],0))<.002),z=(Math.min(...coplanar.map(c=>c.lo))+Math.max(...coplanar.map(c=>c.hi)))/2,n=best.f.normal,y=best.f.p[0][1]-(n[0]*(centerX-best.f.p[0][0])+n[2]*(z-best.f.p[0][2]))/n[1],vertices=coplanar.flatMap(c=>c.f.p);
+  return Object.freeze({point:[centerX,y,z],normal:[...n],width:Math.max(...vertices.map(p=>p[0]))-Math.min(...vertices.map(p=>p[0])),depth:Math.max(...coplanar.map(c=>c.hi))-Math.min(...coplanar.map(c=>c.lo))});
+ };
+ const roof=centerline(f=>f.normal[1]>.65&&f.center[1]>=min[1]+(max[1]-min[1])*.55);if(!roof)throw Error('No centered native roof surface');
+ const hood=centerline(f=>f.normal[1]>.65&&f.center[2]>(min[2]+max[2])/2+(max[2]-min[2])*.12);
+ const rearFaces=faces.filter(f=>f.normal[2]<-.7&&f.center[1]>min[1]+(max[1]-min[1])*.4);let rear=null;if(rearFaces.length){const f=rearFaces.sort((a,b)=>a.center[2]-b.center[2])[0];rear={point:[centerX,f.center[1],f.center[2]],normal:[...f.normal],width:Math.max(...f.p.map(p=>p[0]))-Math.min(...f.p.map(p=>p[0]))};}
+ return Object.freeze({bounds:{min,max},roof,hood,rear,front:frame(2,f=>f.normal[2]>.55&&f.center[2]>=max[2]-(max[2]-min[2])*.15)});
 }

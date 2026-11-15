@@ -669,7 +669,7 @@ export async function readCapturedNormalLedgerRows({directory,allowMissingCanoni
  * admission/totals remain the separate native-event-snapshot compiler's responsibility.
  */
 export async function applyNativeLedgerToCapturedTracks({directory, ledger, policy, canonicalRows,
-  ledgerRoot = path.join(directory, 'verification-ledger'), rebuildDerived = true, now = Date.now()} = {}) {
+  ledgerRoot = path.join(directory, 'verification-ledger'), rebuildDerived = true, now = Date.now(),targetTrackIds=null,preservePublishedKeys=null} = {}) {
   if (!path.isAbsolute(ledgerRoot) || typeof rebuildDerived !== 'boolean' || !Number.isSafeInteger(now) || now <= 0)
     throw Error('Invalid native ledger capture options');
   const pinned = readLedger({root:ledgerRoot, expectedManifestHash:ledger?.manifestHash});
@@ -690,6 +690,7 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
   const uploads = new Map(), report = {verified:0, held:0, excluded:0, skipped:0, recordings:0, canonical:0, tracks:0};
   const {rankTrustedTrackEntries} = await import('../workers/ranked/src/index.js');
   for (const [trackId, record] of Object.entries(manifest.tracks || {})) {
+    if(targetTrackIds&&!targetTrackIds.includes(trackId))continue;
     if (!record?.path) continue;
     if (!TRACK_ID.test(trackId) || record.path !== `tracks/${trackId}.json`) throw Error('Invalid ledger capture track path');
     const boardBytes = await fs.readFile(path.join(directory, record.path), 'utf8'), board = JSON.parse(boardBytes);
@@ -702,6 +703,7 @@ export async function applyNativeLedgerToCapturedTracks({directory, ledger, poli
           ['timeMs', 'uploadId', 'replayHash'].every(field => row[field] === identity[field])) row.frames = ledgerBinding(identity, 'normal').frames;
       let key;
       try {key = ledgerKey(ledgerBinding(row, 'normal'));} catch {prepared.push(row); continue;}
+      if(preservePublishedKeys?.has(key)){prepared.push({...original});continue;}
       const source = sources.get(key), witness = entries.get(key);
       if (row.nativeLedgerKey) {
         priorOverlays.add(key);

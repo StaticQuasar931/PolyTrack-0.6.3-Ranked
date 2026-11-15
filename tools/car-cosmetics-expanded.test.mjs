@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CAR_COSMETIC_CATALOG as C,normalizeCarSelection,authorizeCarSelection,carSelectionAllowed} from './car-cosmetics-catalog.mjs';
+import {CAR_COSMETIC_CATALOG as C,normalizeCarSelection,authorizeCarSelection,carSelectionAllowed,FREE_WORKSHOP_KEYS,carEarnedRequirement} from './car-cosmetics-catalog.mjs';
 import {carAttachmentParts,carAttachmentFrames} from './car-cosmetics-geometry.mjs';
-import {readCarCosmetic,saveCarCosmetic,saveCarVisuals} from './car-cosmetics.mjs';
+import {readCarCosmetic,saveCarCosmetic,saveCarVisuals,mergeCarVisualPreferences} from './car-cosmetics.mjs';
 import {createNativeCarAppearance} from './car-cosmetics-materials.mjs';
 const account='c'.repeat(64);
 test('catalog has frozen stable IDs and no invented purchases or prices',()=>{assert(Object.isFrozen(C.finishes[1]));assert.deepEqual(C.accessories.map(i=>i.id),['none','fin','beacon','aerial','roofbox','crown','halo']);assert(!/price|owned|purchase|firebase/i.test(JSON.stringify(C)));assert.deepEqual(normalizeCarSelection({finish:'alien'}),C.defaults);});
@@ -15,11 +15,16 @@ test('unsupported native models fail closed without material or scene mutations'
 test('real finish lifecycle clones only paint slots and cleans every owned resource once',()=>{
  const arrays=carAttachmentParts('accessory','roofbox','low')[4].positions;
  const matrix={elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],clone(){return {...this,clone:this.clone,invert(){return this;},multiply(){return this;}};}};
- const material=()=>({isMeshStandardMaterial:true,type:'MeshStandardMaterial',color:{getHex:()=>0x123456},roughness:.4,metalness:0,emissive:{copy(){}},clone(){const v=material();v.dispose=()=>disposed++;return v;}});
- let disposed=0,added=0,removed=0;const originals=[material(),material(),material(),material()];
+ const material=()=>({isMeshStandardMaterial:true,type:'MeshStandardMaterial',name:'Glass',onBeforeCompile(shader){shader.uniforms.carColorPattern={value:'native-pattern'};shader.uniforms.carColorSecondary={value:{toArray:()=>[1,.5,0]}};shader.fragmentShader='native-secondary-pattern '+shader.fragmentShader;},color:{getHex:()=>0x123456},roughness:.4,metalness:0,emissive:{copy(){}},clone(){const v=material();v.dispose=()=>disposed++;return v;}});
+ let disposed=0,added=0,removed=0;const originals=[material(),material(),material(),material()];originals[0].name='Main';
  const attribute={count:arrays.length/3,getX:i=>arrays[i*3],getY:i=>arrays[i*3+1],getZ:i=>arrays[i*3+2]};
  const body={name:'Body',material:originals,geometry:{attributes:{position:attribute},getAttribute:()=>attribute},matrixWorld:matrix,updateWorldMatrix(){}};
  const cap={chassis:{traverse:fn=>fn(body),matrixWorld:matrix,updateWorldMatrix(){},remove(){}},renderer:{addMaterial(){added++;},removeMaterial(){removed++;}}};
- for(const density of ['low','medium','high']){const appearance=createNativeCarAppearance(cap,{...C.defaults,finish:'satin'},density);assert.notEqual(body.material,originals);assert.notEqual(body.material[0],originals[0]);assert.equal(body.material[2],originals[2]);assert.equal(body.material[0].roughness,.76);assert.equal(originals[0].roughness,.4);appearance.clear();appearance.clear();assert.equal(body.material,originals);}
- assert.equal(added,6);assert.equal(removed,6);assert.equal(disposed,6);
+ for(const density of ['low','medium','high']){const appearance=createNativeCarAppearance(cap,{...C.defaults,finish:'satin'},density);assert.notEqual(body.material,originals);assert.notEqual(body.material[0],originals[0]);assert.equal(body.material[1],originals[1]);assert.equal(body.material[2],originals[2]);const shader={uniforms:{},fragmentShader:'diffuse #include <emissivemap_fragment>'};body.material[0].onBeforeCompile(shader);assert.equal(shader.uniforms.carColorPattern.value,'native-pattern');assert.deepEqual(shader.uniforms.carColorSecondary.value.toArray(),[1,.5,0]);assert.match(shader.fragmentShader,/native-secondary-pattern/);assert.equal(body.material[0].roughness,.76);assert.equal(originals[0].roughness,.4);appearance.clear();appearance.clear();assert.equal(body.material,originals);}
+ assert.equal(added,3);assert.equal(removed,3);assert.equal(disposed,3);
 });
+
+
+test('new physical items are earned-only with exact confirmed requirements, never grandfathered free',()=>{assert.equal(FREE_WORKSHOP_KEYS.length,17);for(const [category,id,kind,target]of [['front','rearbar','confirmed-ranked-tracks',5],['emblem','crest','confirmed-podiums',1]]){assert(!FREE_WORKSHOP_KEYS.includes(category+':'+id));assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account),false);assert.equal(carEarnedRequirement({category,id}).kind,kind);assert.equal(carEarnedRequirement({category,id}).target,target);const confirmed={accountId:account,tracks:5,podiums:1};const policy=q=>q.accountId===confirmed.accountId&&(q.category==='front'?confirmed.tracks>=5:confirmed.podiums>=1);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account,policy),true);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},'another-account',policy),false);}});
+test('unrelated local saves preserve locked preferences without equipping or deleting them',()=>{const stored={...C.defaults,front:'rearbar',emblem:'crest'},draft=authorizeCarSelection(stored,account);assert.equal(draft.front,'none');assert.equal(draft.emblem,'none');assert.deepEqual(mergeCarVisualPreferences(stored,{...draft,accessory:'fin'},['accessory']),{...stored,accessory:'fin'});assert.deepEqual(mergeCarVisualPreferences(stored,draft,[]),stored);assert.equal(mergeCarVisualPreferences(stored,draft,['front']).front,'none','explicit user clear is preserved');});
+test('roof centerline follows translated real bounds and is independent of triangle winding order',()=>{const geometry=carAttachmentParts('accessory','roofbox','low')[4].positions,translated=Float32Array.from(geometry,(v,i)=>v+[.37,.6,-.9][i%3]),a=carAttachmentFrames(translated),b=carAttachmentFrames(Float32Array.from([...translated].reduce((all,_,i,src)=>i%9===0?[...src.slice(i,i+9),...all]:all,[])));assert(Math.abs(a.roof.point[0]-.37)<1e-6);assert.deepEqual(a.roof,b.roof);});

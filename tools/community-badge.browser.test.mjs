@@ -17,19 +17,20 @@ before(async()=>{
   });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;browser=await chromium.launch({headless:true,args:['--disable-features=CalculateNativeWinOcclusion','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-gpu']});if(evidence)await fs.mkdir(evidence,{recursive:true});
 });
 after(async()=>{await browser?.close();server?.closeAllConnections();if(server)await new Promise(resolve=>server.close(resolve));});
-async function fixture(t,{width=390,height=844,hint=false,savedCode='',savedThrows=false,omitSavedGetter=false}={}){
+async function fixture(t,{width=390,height=844,hint=false,savedCode='',savedThrows=false,omitSavedGetter=false,prepareMode=null,holdRestore=false}={}){
   const context=await browser.newContext({viewport:{width,height}});t.after(()=>context.close());const page=await context.newPage();page.setDefaultTimeout(3000);let external=0;
   await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():(external++,route.abort()));await page.goto(base);await page.bringToFront();
-  await page.evaluate(async({A,hint,savedCode,savedThrows,omitSavedGetter})=>{
+  await page.evaluate(async({A,hint,savedCode,savedThrows,omitSavedGetter,prepareMode,holdRestore})=>{
     const {mountCommunityBadge}=await import('/community-badge.mjs');window.account=A;window.scope='scope-0';window.hint=hint;window.tokens=0;window.requests=[];window.claimed=[];window.used=[];window.holdToken=false;window.holdFetch=false;window.savedReads=0;window.useContexts=[];
     window.unhandled=[];window.addEventListener('unhandledrejection',event=>unhandled.push(String(event.reason)));
     window.user={uid:'owner-a',getIdToken:async()=>{tokens++;if(holdToken)await new Promise((resolve,reject)=>{window.releaseToken=resolve;window.rejectToken=reject;});return 'ephemeral-offline-token';}};
     window.auth={currentUser:user,listeners:new Set(),onAuthStateChanged(callback){this.listeners.add(callback);callback(this.currentUser);return()=>this.listeners.delete(callback);},emit(value){this.currentUser=value;for(const callback of [...this.listeners])callback(value);}};
+    window.prepares=0;if(prepareMode)auth.currentUser=null;
     Storage.prototype.setItem=()=>{throw Error('No persistence allowed');};window.fetch=()=>{throw Error('No real fetch allowed');};
-    window.dispose=mountCommunityBadge({document,root:document.querySelector('#root'),accountId:A,getAccountId:()=>account,getAuth:()=>auth,getAuthScope:()=>scope,revision:323,hasClaim:()=>window.hint,...(omitSavedGetter?{}:{getSavedCode:()=>{savedReads++;if(savedThrows)throw Error('offline getter unavailable');return savedCode;}}),
+    window.dispose=mountCommunityBadge({document,root:document.querySelector('#root'),accountId:A,getAccountId:()=>account,getAuth:()=>auth,getAuthScope:()=>scope,revision:323,...(prepareMode?{prepareAuth:async()=>{prepares++;if(holdRestore)await new Promise(resolve=>window.releaseRestore=resolve);if(prepareMode==='success')auth.emit(user);}}:{}),hasClaim:()=>window.hint,...(omitSavedGetter?{}:{getSavedCode:()=>{savedReads++;if(savedThrows)throw Error('offline getter unavailable');return savedCode;}}),
       fetch:async(url,options)=>{requests.push({url,options});if(holdFetch)await new Promise((resolve,reject)=>{window.releaseFetch=resolve;window.rejectFetch=reject;});return Response.json(window.result||{version:1,accepted:true,accountId:A,badgeId:'community',source:'relay-code',membershipVerified:false,alreadyClaimed:false},{status:window.responseStatus||200});},
       onClaimed:value=>{if(!Object.isFrozen(value))throw Error('Mutable claim');claimed.push(value);},onUse:value=>{useContexts.push(value);used.push({accountId:value.accountId,badgeId:value.badgeId,draftOnly:value.draftOnly,current:value.isCurrent()});}});
-  },{A,hint,savedCode,savedThrows,omitSavedGetter});page.noExternal=()=>assert.equal(external,0);return page;
+  },{A,hint,savedCode,savedThrows,omitSavedGetter,prepareMode,holdRestore});page.noExternal=()=>assert.equal(external,0);return page;
 }
 async function claim(page){await page.locator('input').fill('ABCDEFGHIJKLMNOP');await pointer(page,'[data-community-claim]');}
 // Windows headless can starve rAF stability checks. Keep real input plus hit tests.
@@ -139,4 +140,35 @@ test('same-UID and auth-object replacement also reject late relay responses',asy
   await page.evaluate(kind=>{if(kind==='sameUid'){auth.emit({...user});auth.emit(user);}else auth={...auth};releaseFetch();},kind);
   await page.waitForTimeout(25);assert.equal(await page.evaluate(()=>claimed.length+used.length),0);assert.equal(await page.evaluate(()=>requests.length),1);assert.equal(await page.locator('[data-community-use]').isDisabled(),true);page.noExternal();
  }
+});
+
+
+test('explicit code claim restores persisted auth without SDK or network work on mount',async t=>{
+ const page=await fixture(t,{savedCode:'ABCDEFGHIJKLMNOP',prepareMode:'success'});
+ assert.equal(await page.evaluate(()=>prepares+tokens+requests.length),0);assert.equal(await page.locator('input').inputValue(),'ABCDEFGHIJKLMNOP');
+ assert.doesNotMatch(await page.locator('[role=status]').innerText(),/Sign in/i);
+ await pointer(page,'[data-community-claim]');await until(page,()=>claimed.length===1);
+ assert.deepEqual(await page.evaluate(()=>({prepares,tokens,requests:requests.length,membershipVerified:claimed[0].membershipVerified})),
+  {prepares:1,tokens:1,requests:1,membershipVerified:false});page.noExternal();
+});
+
+test('saved code cannot create cloud ownership or membership when auth restoration has no user',async t=>{
+ const page=await fixture(t,{savedCode:'ABCDEFGHIJKLMNOP',prepareMode:'empty'});await pointer(page,'[data-community-claim]');
+ await until(page,()=>document.querySelector('[role=status]').textContent.includes('code alone'));
+ assert.equal(await page.evaluate(()=>prepares),1);assert.equal(await page.evaluate(()=>tokens+requests.length+claimed.length),0);
+ assert.equal(await page.locator('[data-community-use]').isDisabled(),true);page.noExternal();
+});
+
+test('restored auth with missing owned profile gives first-ranked-run guidance without a fake badge',async t=>{
+ const page=await fixture(t,{savedCode:'ABCDEFGHIJKLMNOP',prepareMode:'success'});
+ await page.evaluate(()=>{responseStatus=403;result={error:'profile_not_owned'};});await pointer(page,'[data-community-claim]');
+ await until(page,()=>document.querySelector('[role=status]').textContent.includes('first ranked run'));
+ assert.equal(await page.evaluate(()=>claimed.length),0);assert.equal(await page.locator('[data-community-use]').isDisabled(),true);page.noExternal();
+});
+
+test('dispose while auth-only restoration is pending prevents token retrieval and claim dispatch',async t=>{
+ const page=await fixture(t,{savedCode:'ABCDEFGHIJKLMNOP',prepareMode:'success',holdRestore:true});
+ await pointer(page,'[data-community-claim]');await until(page,()=>typeof releaseRestore==='function');
+ await page.evaluate(()=>{dispose();releaseRestore();});await page.waitForTimeout(30);
+ assert.equal(await page.evaluate(()=>tokens+requests.length+claimed.length),0);page.noExternal();
 });

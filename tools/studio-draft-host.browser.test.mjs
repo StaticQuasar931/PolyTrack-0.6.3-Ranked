@@ -21,11 +21,11 @@ async function fixture(t,{preview=false}={}){
  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():route.abort());await page.goto(base);
  await page.evaluate(async preview=>{
   const {bindStudioDraftHistory}=await import('/tools/studio-draft-host.mjs');window.bindHistory=bindStudioDraftHistory;
-  window.studio=document.querySelector('details');window.account='alpha';window.draft={theme:'blue'};window.saved={theme:'blue'};window.reads=0;window.restores=0;window.previewUndos=0;window.echoReads=0;
+  window.studio=document.querySelector('details');window.account='alpha';window.draft={theme:'blue'};window.saved={theme:'blue'};window.reads=0;window.restores=0;window.previewUndos=0;window.echoReads=0;window.previewLayers=preview?1:0;studio.classList.toggle('cosmetic-preview-active',preview);
   window.bind=()=>bindHistory(studio,{accountId:'alpha',getAccountId:()=>account,getDraft:()=>{reads++;return draft;},getSavedDraft:()=>saved,
    onRestore:value=>{restores++;draft={...value};document.querySelector('#choice').setAttribute('aria-pressed',String(restores%2===1));
     queueMicrotask(()=>{const before=reads;api.record();echoReads+=reads-before;});},
-   onUndoPreview:preview?()=>{previewUndos++;return true;}:undefined});
+   onUndoPreview:()=>{if(!previewLayers)return false;previewUndos++;previewLayers--;studio.classList.toggle('cosmetic-preview-active',previewLayers>0);return true;}});
   window.api=bind();window.edit=value=>{draft={theme:value};document.querySelector('#favorite').dispatchEvent(new Event('input',{bubbles:true}));};
   for(const key of ['localStorage','sessionStorage','indexedDB'])Object.defineProperty(window,key,{configurable:true,get(){throw Error('Unexpected storage I/O');}});
   window.fetch=()=>{throw Error('Unexpected network I/O');};
@@ -81,4 +81,18 @@ test('aria-pressed-only edits are recorded, initial unsaved drafts are undoable,
  await p.evaluate(()=>api.undo());assert.deepEqual(await p.evaluate(()=>draft),{theme:'red'});
  await p.evaluate(()=>{draft={theme:'pending'};api=bind();});assert.equal(await p.evaluate(()=>api.isDirty()),true);
  await p.evaluate(()=>api.undo());assert.deepEqual(await p.evaluate(()=>draft),{theme:'blue'});
+});
+
+test('empty preview callback cannot enable Undo; restore saved is reversible and never changes saved data',async t=>{
+ const p=await fixture(t);assert.equal(await p.locator('.studio-undo').isDisabled(),true);assert.equal(await p.locator('.studio-restore-saved').isDisabled(),true);
+ await p.evaluate(()=>edit('gold'));await p.locator('.studio-restore-saved').click();
+ assert.deepEqual(await p.evaluate(()=>({draft,saved,dirty:api.isDirty(),echoReads})),{draft:{theme:'blue'},saved:{theme:'blue'},dirty:false,echoReads:0});
+ await p.locator('.studio-undo').click();assert.deepEqual(await p.evaluate(()=>draft),{theme:'gold'});
+});
+
+test('restore saved clears every locked layer before restoring; Undo prioritizes only real preview layers',async t=>{
+ const p=await fixture(t,{preview:true});await p.evaluate(()=>{edit('gold');previewLayers=3;});await p.locator('.studio-undo').click();
+ assert.equal(await p.evaluate(()=>previewLayers),2);assert.deepEqual(await p.evaluate(()=>draft),{theme:'gold'});
+ await p.locator('.studio-restore-saved').click();assert.deepEqual(await p.evaluate(()=>({previewLayers,draft,saved,dirty:api.isDirty()})),{previewLayers:0,draft:{theme:'blue'},saved:{theme:'blue'},dirty:false});
+ await p.locator('.studio-undo').click();assert.deepEqual(await p.evaluate(()=>draft),{theme:'gold'});
 });

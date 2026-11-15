@@ -3,7 +3,7 @@ import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
 import {createShopTransport} from './shop-transport.mjs';
 import {createShopControllerStore,createShopController} from './shop-controller.mjs';
 const {mountProfileShopUi:mountShopPreview}=await import(new URL('./profile-shop-ui.mjs'+new URL(import.meta.url).search,import.meta.url).href);
-import {bindProfileShopPreview} from './profile-shop-preview.mjs';
+const {bindProfileShopPreview}=await import(new URL('./profile-shop-preview.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 
 /** Display price only, never ownership, an offer, or a wallet mutation. */
 export function priceForUi(slot,value){
@@ -46,6 +46,8 @@ async function loginMetadata(response){
  * achievementClaimsEnabled defaults false until the parent enables the server phase.
  * getAuth returns the already initialized Firebase auth object. Only an explicit
  * Shop open or refresh invokes transport; tokens remain request-local.
+ * prepareAuth is awaited only on explicit open, before any store load. It may
+ * restore the existing auth SDK, but must not create profiles or contact a database.
  * noteAccountTransition MUST precede all active-account writes, including A-B-A.
  * observeAuth MUST also be called whenever the host initializes/replaces auth.
  * bind accepts optional getPreviewIdentity:()=>({accountId,name}) from the parent.
@@ -54,25 +56,41 @@ async function loginMetadata(response){
  * __profileShopRefreshPreview refreshes existing renderer output after a frame/identity
  * update with no DOM mutation. It never starts a render, fetch, save or equip.
  */
-export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,achievementClaimsEnabled=false,fetch:fetcher,assertOnline=()=>{}}={}){
+export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,achievementClaimsEnabled=false,prepareAuth,fetch:fetcher,assertOnline=()=>{}}={}){
   if(!document||typeof getAccountId!=='function'||typeof getAuth!=='function')throw TypeError('Profile shop host adapters required');
+  if(prepareAuth!==undefined&&typeof prepareAuth!=='function')throw TypeError('prepareAuth must be a function');
   let disposed=false,auth=null,unsubscribe=null,ownedUnsubscribe=null,authEpoch=0,lastAccount=getAccountId(),store=null;
   const ownedCache=createProfileShopOwnedCache(storage);
   let loginMarker=null;
   const monotonic=()=>document.defaultView.performance.now();
   const loginClaimed=()=>!!(loginMarker&&loginMarker.accountId===getAccountId()&&loginMarker.uid===user()?.uid&&loginMarker.epoch===authEpoch&&monotonic()>=loginMarker.at&&monotonic()-loginMarker.at<loginMarker.remaining);
-  const mounts=new Set();
+  const mounts=new Set(),restorations=new Set();
   const currentAuth=()=>{try{return getAuth()||null;}catch{return null;}};
   const user=()=>currentAuth()?.currentUser||null;
   const scope=()=>{const current=user();return current?.uid?`${authEpoch}:${current.uid}`:null;};
   function notifyOwned(reason){for(const mount of mounts)mount.refresh(reason);}
-  function reset(){authEpoch++;loginMarker=null;for(const mount of mounts)mount.close(true);store?.reset();notifyOwned('auth');}
+  function resetViews(){authEpoch++;loginMarker=null;for(const mount of mounts)mount.close(true,true);store?.reset();notifyOwned('auth');}
+  function reset(){for(const ticket of restorations)ticket.invalid=true;resetViews();}
+  function acceptRestoration(ticket,nextAuth,nextUser){
+    if(ticket.invalid)return false;
+    const uid=nextUser?.uid||null;
+    if(ticket.auth&&ticket.auth!==nextAuth||ticket.uid&&ticket.uid!==uid){ticket.invalid=true;return false;}
+    ticket.auth=nextAuth;
+    if(uid)ticket.uid=uid;
+    return true;
+  }
+  function authChanged(nextAuth,nextUser){
+    // Only a pending explicit prepareAuth can adopt the first restored owner.
+    // Once adopted, sign-out, replacement UID or SDK replacement invalidates it.
+    for(const ticket of restorations)acceptRestoration(ticket,nextAuth,nextUser);
+    resetViews();
+  }
   function observeAuth(next){
     if(disposed||!next||next===auth)return;
-    unsubscribe?.();auth=next;reset();
+    unsubscribe?.();auth=next;authChanged(next,next.currentUser);
     if(typeof auth.onAuthStateChanged==='function'){
-      let initial=true;const initialUser=auth.currentUser;
-      unsubscribe=auth.onAuthStateChanged(next=>{if(initial&&next===initialUser){initial=false;return;}initial=false;reset();},()=>reset());
+      let initial=true;const watched=auth,initialUser=auth.currentUser;
+      unsubscribe=auth.onAuthStateChanged(next=>{if(auth!==watched)return;if(initial&&next===initialUser){initial=false;return;}initial=false;authChanged(watched,next);},()=>{if(auth===watched)reset();});
     }
   }
   const transport=createShopTransport({fetch:async(url,options)=>{
@@ -97,7 +115,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   function sharedStore(){
     observeAuth(currentAuth());
     if(!store){
-      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true});
+      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true,automaticRewardIds:['login','milestones',...(achievementClaimsEnabled===true?['achievements']:[])]});
       ownedUnsubscribe=store.subscribe(state=>{
         const ownerUid=user()?.uid,id=getAccountId(),wallet=state.wallet,inventory=state.inventory;
         if(!ownerUid||state.accountId!==id||state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION||wallet?.accountId!==id||wallet.inventoryComplete!==true||inventory?.accountId!==id||inventory.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION)return;
@@ -115,10 +133,10 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   function bind(content,{accountId,isSelf,openStudio,getPreviewController,applyDraft,onOwnedUiChange,getPreviewIdentity}={}){
     if(disposed||!content?.isConnected||isSelf!==true||accountId!==getAccountId()||!/^[a-f0-9]{64}$/.test(accountId||''))return ()=>{};
     const studio=content.querySelector('.profile-customizer');if(!studio)return ()=>{};ensureStyle();
-    const controls=studio.querySelector('.profile-customizer-actions')||studio;
+    const controls=studio.querySelector('.profile-customizer-controls')||studio;
     const button=document.createElement('button');button.type='button';button.className='button profile-shop-open';button.textContent='Style shop';button.setAttribute('aria-haspopup','dialog');
     controls.append(button);
-    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0;
+    let dialog=null,view=null,preview=null,mirrorObserver=null,mirrorSource=null,mirrorRoot=null,mirrorRow=null,mirrorQueued=false,mirrorFrame=0,opening=null,clearUiPreview=null,closed=false,focus=null,publicViewGeneration=0,closeGeneration=0;
     const previewScope=()=>`${authEpoch}:${user()?.uid||'signed-out'}`;
     const current=()=>!disposed&&!closed&&content.isConnected&&accountId===getAccountId()&&(!content.dataset.accountId||content.dataset.accountId===accountId);
     const goStudio=reward=>{if(!current())return false;dialog?.close();return openStudio?.(reward)===true;};
@@ -130,19 +148,58 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       }
       return studio.querySelector('.profile-preview-stage>span>b')?.textContent?.trim().slice(0,80)||'';
     };
+    function watchRenderer(){
+      if(mirrorFrame||!current()||!dialog?.open)return;
+      let last=0;
+      const tick=now=>{
+        mirrorFrame=0;if(!current()||!dialog?.open)return;
+        if(now-last>=100){
+          last=now;
+          if(dialog.querySelector('.sp-live-preview>header>strong')?.textContent!==(racerName()||'Profile preview'))syncMirror();
+          const originals=studio.querySelectorAll('.profile-preview-stage canvas');
+          for(const [index,canvas] of [...dialog.querySelectorAll('[data-sp-live-stage] canvas')].entries()){
+            const source=originals[index];if(!source?.width||!source.height)continue;
+            try{canvas.getContext('2d')?.drawImage(source,0,0,canvas.width,canvas.height);}catch{}
+          }
+        }
+        mirrorFrame=document.defaultView.requestAnimationFrame(tick);
+      };
+      mirrorFrame=document.defaultView.requestAnimationFrame(tick);
+    }
+    function renderCosmeticPreview(request){
+      if(!current()||request?.accountId!==accountId)return null;
+      const item=PROFILE_SHOP_CATALOG.find(row=>row.id===request.itemId),grant=item?.grants?.[0];
+      if(!grant||request.grant?.slot!==grant.slot||request.grant?.value!==grant.value)return null;
+      const source=studio.querySelector(grant.slot==='stage'?'.profile-preview-stage':'.profile-row-showcase');
+      if(!source||!racerName())return null;
+      const copy=source.cloneNode(true);copy.inert=true;
+      const wrapper=document.createElement('div');wrapper.className='sp-renderer-preview overall-profile-card';wrapper.dataset.spRendererPreview=grant.slot;
+      const prefix='cosmetic-'+grant.slot.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())+'-';
+      for(const name of content.closest('.overall-profile-card')?.classList||[])if(name.startsWith('cosmetic-')&&!name.startsWith(prefix))wrapper.classList.add(name);
+      wrapper.classList.add(prefix+grant.value);wrapper.inert=true;
+      const label=copy.querySelector('.showcase-row>span>b,:scope>span>b');if(label){for(const node of [...label.childNodes])if(node.nodeType===3){node.textContent=racerName();break;}}
+      wrapper.append(copy);
+      for(const node of [copy,...copy.querySelectorAll('*')]){
+        node.removeAttribute('id');node.removeAttribute('autofocus');node.removeAttribute('name');node.removeAttribute('data-account-id');node.tabIndex=-1;
+        for(const attr of [...node.attributes])if(attr.name.startsWith('on'))node.removeAttribute(attr.name);
+      }
+      for(const [index,canvas] of [...copy.querySelectorAll('canvas')].entries()){
+        try{canvas.getContext('2d')?.drawImage(source.querySelectorAll('canvas')[index],0,0);}catch{return null;}
+      }
+      return wrapper;
+    }
     function syncMirror(){
       if(!current()||!dialog?.open||!mirrorObserver)return;
       const target=dialog.querySelector('[data-sp-live-stage]'),source=studio.querySelector('.profile-preview-stage');
       if(!target)return;
       const heading=dialog.querySelector('.sp-live-preview>header>strong');if(heading)heading.textContent=racerName()||'Profile preview';
-      const garageTrigger=studio.querySelector('[data-car-workshop-open]');
-      dialog.querySelector('[data-sp-live-garage]').hidden=!garageTrigger||garageTrigger.disabled;
+
       const locked=getPreviewController?.()?.isActive?.()===true;
       dialog.querySelector('[data-sp-live-note]').textContent=locked?'Preview only. Not applied or unlocked.':'Your current racer. Try a style to preview it here.';
       dialog.querySelector('[data-sp-live-clear]').hidden=!locked;
       if(!source){target.textContent='Open Racer Studio to load your preview.';return;}
       if(typeof getPreviewIdentity==='function'&&!racerName()){target.textContent='Your racer preview is unavailable.';return;}
-      const copy=source.cloneNode(true);copy.inert=true;
+      const copy=source.cloneNode(true);
       // cloneNode does not copy rendered pixels; reuse only the real renderer output.
       const sourceCanvases=source.querySelectorAll('canvas');
       for(const [index,canvas] of [...copy.querySelectorAll('canvas')].entries()){
@@ -152,13 +209,16 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
           context.drawImage(original,0,0);
         }catch{const note=document.createElement('span');note.textContent='Renderer preview unavailable.';note.dataset.spRendererUnavailable='';canvas.replaceWith(note);}
       }
+      for(const [selector,kind,label] of [['.overall-car-model','stage','Edit car backdrop'],['[data-studio-preview-part="nameFont"]','nameFont','Edit name typography']]){
+        const part=copy.querySelector(selector);if(part){part.dataset.studioPreviewPart=kind;part.setAttribute('role','button');part.setAttribute('aria-label',label);part.tabIndex=0;}
+      }
       const name=copy.querySelector(':scope>span>b');if(name&&racerName())name.textContent=racerName();
       for(const node of [copy,...copy.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){
         node.removeAttribute('id');node.removeAttribute('autofocus');
-        if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');
+        if(node.matches('button,input,select,textarea,a,[tabindex]')&&!node.hasAttribute('data-studio-preview-part'))node.setAttribute('tabindex','-1');
       }
       const sourceRow=studio.querySelector('.profile-row-showcase'),row=sourceRow?.cloneNode(true);
-      if(row){row.inert=true;for(const node of [row,...row.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){node.removeAttribute('id');node.removeAttribute('autofocus');if(node.matches('button,input,select,textarea,a,[tabindex]'))node.setAttribute('tabindex','-1');}target.replaceChildren(copy,row);}else target.replaceChildren(copy);
+      if(row){row.dataset.studioPreviewPart='theme';row.setAttribute('role','button');row.tabIndex=0;row.setAttribute('aria-label','Edit nameplate');for(const node of [row,...row.querySelectorAll('[id],[tabindex],button,input,select,textarea,a')]){node.removeAttribute('id');node.removeAttribute('autofocus');if(node.matches('button,input,select,textarea,a,[tabindex]')&&!node.hasAttribute('data-studio-preview-part'))node.setAttribute('tabindex','-1');}target.replaceChildren(copy,row);}else target.replaceChildren(copy);
       const sourceRoot=source.closest('.profile-customizer-preview')||studio;
       if(source!==mirrorSource||sourceRoot!==mirrorRoot||sourceRow!==mirrorRow){
         mirrorSource=source;mirrorRoot=sourceRoot;mirrorRow=sourceRow;mirrorObserver.disconnect();
@@ -168,13 +228,14 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mirrorObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true});
         if(sourceRow)mirrorObserver.observe(sourceRow,{subtree:true,childList:true,characterData:true,attributes:true});
         const actions=studio.querySelector('.profile-customizer-actions');if(actions)mirrorObserver.observe(actions,{childList:true});
-        if(garageTrigger)mirrorObserver.observe(garageTrigger,{attributes:true,attributeFilter:['disabled']});
+
         const card=content.closest('.overall-profile-card');if(card)mirrorObserver.observe(card,{attributes:true,attributeFilter:['class','style']});
       }
     }
     const keepShopPreview=reward=>{if(!current()||openStudio?.(reward)!==true)return false;syncMirror();return true;};
-    function close(invalidate=false){
-      publicViewGeneration++;
+    function close(invalidate=false,authReset=false){
+      publicViewGeneration++;if(!authReset)closeGeneration++;
+      document.defaultView.cancelAnimationFrame(mirrorFrame);mirrorFrame=0;
       mirrorObserver?.disconnect();mirrorObserver=null;mirrorSource=null;mirrorRoot=null;mirrorRow=null;
       preview?.dispose();preview=null;view?.dispose();view=null;clearUiPreview=null;dialog?.close();dialog?.remove();dialog=null;
       if(!invalidate&&focus?.isConnected)focus.focus({preventScroll:true});
@@ -185,15 +246,17 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
       const grid=document.createElement('div');grid.className='sp-live-layout';
       const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
-      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><div class="sp-live-actions"><button type="button" data-sp-live-clear hidden>Exit preview</button><button type="button" data-sp-live-garage hidden>Car workshop</button></div>';
+      live.innerHTML='<header><strong>Your racer</strong><span>LIVE PREVIEW</span></header><div data-sp-live-stage></div><p data-sp-live-note role="status"></p><div class="sp-live-actions"><button type="button" data-sp-live-clear hidden>Exit preview</button></div>';
       const body=dialog.querySelector('.sp-host-body');body.before(grid);grid.append(live,body);
       mirrorObserver=new document.defaultView.MutationObserver(()=>{if(mirrorQueued)return;mirrorQueued=true;queueMicrotask(()=>{mirrorQueued=false;syncMirror();});});
-      live.querySelector('[data-sp-live-garage]').addEventListener('click',()=>{
-        const trigger=studio.querySelector('[data-car-workshop-open]');
-        if(!current()||!trigger?.isConnected||trigger.disabled)return;
-        close();if(!current())return;content.__profileHubClose?.();
-        if(current()&&trigger.isConnected&&!trigger.disabled)trigger.click();
-      });
+      const navigate=event=>{
+        const part=event.target.closest?.('[data-studio-preview-part]');
+        if(!part||!live.contains(part)||event.type==='keydown'&&!['Enter',' '].includes(event.key))return;
+        event.preventDefault();event.stopPropagation();
+        const kind=part.dataset.studioPreviewPart;if(!studio.querySelector('.kind-'+kind))return;
+        close(true);if(current())openStudio?.({kind});
+      };
+      live.addEventListener('click',navigate);live.addEventListener('keydown',navigate);
       live.querySelector('[data-sp-live-clear]').addEventListener('click',()=>{if(clearUiPreview)clearUiPreview();else preview?.clear();syncMirror();});
       content.append(dialog);dialog.querySelector('[data-shop-host-close]').addEventListener('click',()=>close());
       dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
@@ -207,7 +270,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         mountShopPreview:(root,options)=>{
           const decorate=options=>{
             const generation=++publicViewGeneration,before=previewScope();
-            return {...options,getRacerName:racerName,hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
+            return {...options,getRacerName:racerName,renderCosmeticPreview,cloudSaveConnected:!!user(),hasLivePreview:true,achievementClaimsEnabled:enabled===true&&achievementClaimsEnabled===true,dailyClaimed:loginClaimed(),embedded:true,catalog:options.catalog?.items?.length?options.catalog:{version:PROFILE_SHOP_CATALOG_VERSION,items:PROFILE_SHOP_CATALOG},actions:{...options.actions,...(preview?{
               onPreview:item=>{
                 const isCurrent=()=>current()&&generation===publicViewGeneration&&before===previewScope();
                 if(!isCurrent())throw Error('stale_profile_preview');
@@ -231,11 +294,23 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
         }:undefined
       });
     }
-    async function open(){
-      if(!current())return false;focus=document.activeElement;observeAuth(currentAuth());
+    function open(){
+      if(opening)return opening;
+      opening=performOpen().finally(()=>{opening=null;});return opening;
+    }
+    async function performOpen(){
+      if(!current())return false;
+      const beforeClose=closeGeneration;
+      focus=document.activeElement;
+      if(enabled&&typeof prepareAuth==='function'){
+        const ticket={auth:currentAuth(),uid:user()?.uid||null,invalid:false};restorations.add(ticket);
+        try{await prepareAuth();}catch{return false;}finally{restorations.delete(ticket);}
+        if(!current()||closeGeneration!==beforeClose||!acceptRestoration(ticket,currentAuth(),user()))return false;
+      }
+      observeAuth(currentAuth());if(!current())return false;
       openStudio?.();if(!current())return false;
-      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();
-      if(enabled&&user()){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Server status could not be confirmed. Refresh explicitly to try again.';}}}
+      if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();watchRenderer();
+      if(enabled&&user()){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Server status could not be confirmed. Close and reopen Shop to retry.';}}}
       return current();
     }
     const launchShop=()=>{if(!current())return false;void open();return true;};

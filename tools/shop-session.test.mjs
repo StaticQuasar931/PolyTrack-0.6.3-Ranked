@@ -246,3 +246,17 @@ test('invalid new policy receipts keep durable original request; no unknown rewa
   await assert.rejects(f.session.claim('achievements',{confirmed:true}),{code:'reconciliation_required'});
  }
 });
+
+
+test('automatic read-only opening without browser locks fetches balance but cannot grant rewards',async()=>{
+ const f=fixture({withAccountLock:undefined});await f.session.load({collectRewards:true});
+ assert.equal(posts(f).length,0);assert.equal(f.session.state().wallet.balance,100);assert.equal(f.session.state().rewardSync,'unavailable');
+ assert.throws(()=>f.session.preparePurchase('mint-rally'),{code:'shop_locks_unavailable'});
+});
+
+
+test('wallet freshness cannot shrink the separate minimum15min reward collection cooldown',()=>{
+ for(const collectionCooldownMs of [0,30000,899999,NaN,Infinity,'900000'])
+  assert.throws(()=>fixture({collectionCooldownMs}),{code:'invalid_dependencies'});
+ assert.doesNotThrow(()=>fixture({cacheMs:30000,collectionCooldownMs:900000}));
+});

@@ -2,12 +2,14 @@
 const freeze=value=>{if(value&&typeof value==='object'){for(const item of Object.values(value))freeze(item);Object.freeze(value);}return value;};
 export const CAR_COSMETIC_CATALOG=freeze({version:1,defaults:{accessory:'none',finish:'original',emblem:'none',front:'none'},
  finishes:[{id:'original',label:'Original',roughness:null,metalness:null,emissive:0},{id:'satin',label:'Satin',roughness:.76,metalness:.06,emissive:0},{id:'metallic',label:'Brushed metal',roughness:.24,metalness:.48,emissive:0},{id:'neon',label:'Neon paint',roughness:.4,metalness:.05,emissive:.34}],
- emblems:[{id:'none',label:'None'},{id:'chevron',label:'Nose chevron'},{id:'diamond',label:'Nose diamond'}],
- fronts:[{id:'none',label:'None'},{id:'splitter',label:'Front blade'},{id:'lamps',label:'Rally lamps'}],
+ emblems:[{id:'none',label:'None'},{id:'chevron',label:'Nose chevron'},{id:'diamond',label:'Nose diamond'},{id:'crest',label:'Hood crest'}],
+ fronts:[{id:'none',label:'None'},{id:'splitter',label:'Front blade'},{id:'lamps',label:'Rally lamps'},{id:'rearbar',label:'Rear reflector'}],
  accessories:[{id:'none',label:'None'},{id:'fin',label:'Aero fin'},{id:'beacon',label:'Rally beacon'},{id:'aerial',label:'Radio aerial'},{id:'roofbox',label:'Touring box'},{id:'crown',label:'Podium crown'},{id:'halo',label:'Neon rail'}],
  paints:[{id:'mint',name:'Mint Rally',colors:[0x167d70,0xeafff7,0x171d23,0xc6e6d8]},{id:'ember',name:'Ember Circuit',colors:[0xa63f27,0xffdf9a,0x25201e,0xe8a742]},{id:'night',name:'Night Signal',colors:[0x17334e,0x7ee7ff,0x151e2b,0xd7e6ed]}]
 });
 export const FREE_WORKSHOP_KEYS=Object.freeze(['accessory:none','accessory:fin','accessory:beacon','accessory:aerial','accessory:roofbox','accessory:crown','accessory:halo','finish:original','finish:satin','finish:metallic','finish:neon','emblem:none','emblem:chevron','emblem:diamond','front:none','front:splitter','front:lamps']);
+export const CAR_EARNED_REQUIREMENTS=freeze({'front:rearbar':{kind:'confirmed-ranked-tracks',target:5,label:'Requires 5 confirmed Ranked tracks'},'emblem:crest':{kind:'confirmed-podiums',target:1,label:'Requires 1 confirmed podium'}});
+export const carEarnedRequirement=({category,id})=>CAR_EARNED_REQUIREMENTS[category+':'+id]??null;
 export const isFreeWorkshopChoice=({category,id})=>FREE_WORKSHOP_KEYS.includes(category+':'+id);
 const groups={accessory:'accessories',finish:'finishes',emblem:'emblems',front:'fronts'};
 export const validCarSelection=value=>!!value&&Object.entries(groups).every(([key,list])=>CAR_COSMETIC_CATALOG[list].some(item=>item.id===value[key]));

@@ -63,6 +63,18 @@ export function renderProfileShopArt(itemId, {density='normal'}={}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" class="profile-shop-art profile-shop-art-${item.slot}" viewBox="0 0 320 88" preserveAspectRatio="xMidYMid ${item.slot==='plate'?'meet':'slice'}" aria-hidden="true" focusable="false" data-profile-art-density="${density}">${art.base}${sample}${density==='normal'?art.detail:''}</svg>`;
 }
 
+/** Honest fallback sample composed from the exact existing cosmetic class/art.
+ * The host can replace it with a detached real Studio preview; no car/rank is invented.
+ */
+export function renderProfileShopSwatch(itemId,{density='normal',name=''}={}) {
+  const item=PROFILE_SHOP_ART.find(item=>item.itemId===itemId);if(!item)return '';
+  const text=typeof name==='string'?name.trim().slice(0,80):'';
+  const escape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const artwork=['stage','stripe'].includes(item.slot)?renderProfileShopArt(itemId,{density}):'';
+  return '<div class="sp-style-sample showcase-row '+item.className+'" data-sp-cosmetic-sample="'+item.slot+'">'+
+    '<div class="sp-sample-art">'+artwork+'</div><span class="sp-sample-name"><b>'+escape(text||'Aa')+'</b><small>'+ (text?'Style sample':'Type sample')+'</small></span></div>';
+}
+
 const image = (itemId, density='normal') => `url("data:image/svg+xml,${encodeURIComponent(renderProfileShopArt(itemId,{density}))}")`;
 // Native 200px thumbnail ends at y=160; its existing 1.08 scale meets this plane.
 // The ground shares the native square thumbnail's contain frame, not the wide scene crop.

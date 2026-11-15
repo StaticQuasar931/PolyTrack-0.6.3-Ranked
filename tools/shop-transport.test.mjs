@@ -39,3 +39,16 @@ test('request identity is frozen before asynchronous sign-in completes',async()=
 });
 
 test("caller must supply the current client revision",()=>{assert.throws(()=>createShopTransport({getToken:async()=>"token"}));});
+
+
+test('only certified login409 responses expose a validated authoritative UTC window',async()=>{
+ const accountId='a'.repeat(64),serverNow=Date.UTC(2026,10,14),claimDay=Math.floor(serverNow/86400000),dayEndsAt=(claimDay+1)*86400000;
+ for(const change of [{},{rewardId:'milestones'},{code:'profile_not_owned'},{notCommitted:false},
+  {clock:{claimDay:claimDay+1}},{clock:{serverNow:dayEndsAt}},{clock:{claimDay:String(claimDay)}}]){
+  const value={error:change.code||'reward_already_claimed',notCommitted:change.notCommitted!==false,claimDay,serverNow,dayEndsAt,...change.clock};
+  const transport=createShopTransport({revision:393,getToken:async()=> 'offline-token',fetch:async()=>Response.json(value,{status:409})});
+  let caught;try{await transport({path:'/v1/currency/claim',method:'POST',body:{accountId,requestId:'login-clock-fixture',rewardId:change.rewardId||'login'}});}catch(error){caught=error;}
+  assert.ok(caught);if(Object.keys(change).length===0){assert.deepEqual(caught.loginClaimWindow,{claimDay,serverNow,dayEndsAt});assert.ok(Object.isFrozen(caught.loginClaimWindow));}
+  else assert.equal(caught.loginClaimWindow,undefined);
+ }
+});

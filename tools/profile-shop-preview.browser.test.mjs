@@ -29,7 +29,7 @@ before(async()=>{
 });
 after(async()=>{await browser?.close();server?.closeAllConnections();if(server)await new Promise(resolve=>server.close(resolve));});
 async function fixture(t,width=390,height=844){
- const context=await browser.newContext({viewport:{width,height},reducedMotion:'reduce'});t.after(()=>context.close());const page=await context.newPage();let external=0;
+ const context=await browser.newContext({viewport:{width,height},reducedMotion:'reduce'});t.after(()=>context.close());const page=await context.newPage();page.setDefaultTimeout(5000);let external=0;
  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():(external++,route.abort()));await page.goto(base);await nativeFixture(page);
  await page.addStyleTag({url:base+'/tools/cosmetic-preview.css'});
  await page.evaluate(async account=>{
@@ -82,7 +82,7 @@ test('all nine designs preview through actual Studio classes on phone/laptop, ne
    const state=await page.evaluate(()=>readState());assert.equal(state.draft,await page.evaluate(()=>originalDraft));assert.equal(state.writes,0);assert.equal(state.publishes,0);assert.equal(state.canPublish,false);assert.equal(state.unlocks,await page.evaluate(()=>originalUnlocks),'preview never grants ownership');
    await page.locator('[data-save-profile-cosmetics]').dispatchEvent('click');assert.equal(await page.evaluate(()=>window.published||0),0);
    await page.locator('dialog').waitFor({state:'visible'});await page.locator('.profile-customizer-preview').scrollIntoViewIfNeeded();
-   await page.screenshot({path:path.join(evidence,`${item.id}-${name}.png`),timeout:5000});
+   await page.screenshot({path:path.join(evidence,`${item.id}-${name}.png`),animations:'disabled',timeout:5000});
    await page.evaluate(()=>shopPreview.clear());assert.equal(await page.evaluate(()=>readState().unlocks),await page.evaluate(()=>originalUnlocks),'clearing preview never grants ownership');assert.equal(await page.locator('.cosmetic-preview-banner').count(),0);assert.equal(await page.evaluate(()=>readState().active),false);
    assert.equal(await page.locator('.overall-profile-card').evaluate((node,cls)=>node.classList.contains(cls),cosmeticClass(grant)),false);
   }
@@ -114,4 +114,13 @@ test('abort, stale auth/account, invalid catalog and detach cannot preview; abor
   return {errors,abortedCleared,newerSurvives,state:readState()};
  });
  assert.ok(result.errors.every(code=>['stale_profile_preview','profile_preview_unavailable'].includes(code)));assert.equal(result.errors.length,5);assert.equal(result.abortedCleared,true);assert.equal(result.newerSurvives,true);assert.equal(result.state.writes,0);assert.equal(result.state.publishes,0);page.noExternal();
+});
+
+test('shop preview toggles off and restores earlier layers without mutating the draft',async t=>{
+ const page=await fixture(t);await page.evaluate(()=>cleanup.open('studio'));
+ const state=await page.evaluate(()=>{
+  nativePreview.preview({kind:'theme',id:'cyan'});tryDesign('profile-pitlane-ticket');const stacked=nativePreview.currentOptions().map(o=>o.kind+':'+o.id);
+  shopPreview.clear();const restored=nativePreview.currentOptions().map(o=>o.kind+':'+o.id);
+  tryDesign('profile-pitlane-ticket');tryDesign('profile-pitlane-ticket');return {stacked,restored,after:nativePreview.currentOptions().map(o=>o.kind+':'+o.id),writes:draftWrites};
+ });assert.deepEqual(state,{stacked:['theme:cyan','plate:pitlane-ticket'],restored:['theme:cyan'],after:['theme:cyan'],writes:0});page.noExternal();
 });

@@ -22,6 +22,7 @@ function between(start, end) {
 const options = between('  const PROFILE_COSMETIC_OPTIONS=', '\n  const profileCosmeticDrafts=');
 const defaults = source.match(/  const COSMETIC_DEFAULTS=Object\.freeze\((\{[^\n]+\})\);/)[1];
 const renderer = between('  function profileCustomizerMarkup(entry)', '\n\n  function noteDeveloperEvent(');
+const favoriteRenderer = between('  function renderStudioFavorite(', '\n\n  function setupRacerStudio(');
 const setup = between('  function setupRacerStudio(content)', '\n\n  function profileCustomizerMarkup(');
 const tabHandler = between("      const studioTab=event.target.closest?.('[data-studio-tab]');", '\n      const podiumChoice=');
 const baseCSS = [...source.matchAll(/(?:style|rankedPolish)\.textContent\s*(?:\+=|=)\s*("(?:\\.|[^"\\])*?"|`(?:\\.|[^`\\])*?`)/g)]
@@ -47,8 +48,8 @@ async function fixture(page, withPolish = true) {
   await page.setContent(`<style>@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{margin:0;background:#0b1730;color:#fff;font-family:ForcedSquare,sans-serif}main{max-width:1260px;margin:auto;padding:16px;box-sizing:border-box}</style><main>${markup}</main><button id="outside">Outside studio</button>`);
   await page.addStyleTag({ content: baseCSS });
   if (withPolish) await page.addStyleTag({ content: polish });
-  await page.addScriptTag({ content: `${setup}\nsetupRacerStudio(document);\ndocument.addEventListener('click',event=>{${tabHandler}});` });
-  await page.locator('.profile-customizer').evaluate(node => { node.open = true; });
+  await page.addScriptTag({ content: `const profileCosmeticDrafts=new Map(),cleanUserId=String,TRACK_CATALOG=new Map();const trackInfo=()=>({name:'Fixture track'}),trackThumbnailMarkup=()=>'';${favoriteRenderer}\n${setup}\nsetupRacerStudio(document);\ndocument.addEventListener('click',event=>{${tabHandler}});` });
+  await page.locator('.profile-customizer').evaluate(node => { node.hidden = false; node.open = true; });
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -122,10 +123,19 @@ test('studio polish does not repaint saved designs, change plate geometry, or st
     const snapshot = () => page.evaluate(() => {
       const properties = ['backgroundImage', 'backgroundColor', 'color', 'clipPath', 'transform', 'fontFamily', 'fontSize', 'borderRadius'];
       const read = selector => [...document.querySelectorAll(selector)].map(el => Object.fromEntries(properties.map(key => [key, getComputedStyle(el)[key]])));
-      return { plates: read('.showcase-row,.profile-preview-stage,.profile-preview-stage>span,.profile-preview-stage>span>b,.profile-cosmetic-preview'), journal: read('.achievement-journal'), outside: read('#outside') };
+      return { plates: read('.showcase-row,.profile-preview-stage,.profile-preview-stage>span,.profile-preview-stage>span>b'), journal: read('.achievement-journal'), outside: read('#outside') };
     });
     const before = await snapshot();
     await page.addStyleTag({ content: polish });
-    assert.deepEqual(await snapshot(), before, 'Saved preview paint, plate shape, samples and unrelated content stay unchanged');
+    assert.deepEqual(await snapshot(), before, 'Saved preview paint, plate shape and unrelated content stay unchanged; picker samples are deliberately improved');
   } finally { await browser.close(); }
+});
+
+test('picker colors are distinct, pattern samples use the actual renderer recipe, and Apex retains car geometry',async()=>{
+ const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();await fixture(page);
+ const colors=await page.locator('.kind-theme .profile-cosmetic-preview').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n).backgroundImage));assert.equal(new Set(colors).size,colors.length,'Every first-base color is visually distinct');
+ const pattern=await page.locator('.kind-stripe .cosmetic-stripe-cyan .profile-cosmetic-preview i').evaluate(n=>getComputedStyle(n).backgroundImage);assert.match(pattern,/46px/,'Use the real Speed lines renderer scale, not the former abstract chip');
+ await page.locator('[data-studio-tab="car"]').click();const stage=await page.locator('.cosmetic-stage-garage.profile-cosmetic-choice .profile-cosmetic-preview').evaluate(n=>getComputedStyle(n).backgroundImage);assert.match(stage,/33, 46, 92/);
+ const car=page.locator('.profile-preview-stage>.overall-car-model'),before=await car.boundingBox();await page.locator('main').evaluate(n=>n.classList.add('cosmetic-stage-apex-observatory'));assert.deepEqual(await car.boundingBox(),before);
+ }finally{await browser.close();}
 });

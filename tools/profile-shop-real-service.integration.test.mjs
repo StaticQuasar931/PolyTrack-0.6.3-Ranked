@@ -24,9 +24,9 @@ beforeEach(t => t.mock.method(globalThis, 'fetch', () => assert.fail('external n
 
 // Real client/session/transport + HTTP handler + service + REST transaction adapter.
 // Only REST document I/O is simulated. No wallet is seeded and no SDK is loaded.
-function fixture({enabled = true, uidLimit = 0} = {}) {
+function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false} = {}) {
   const docs = new Map(), snapshots = new Map(), databaseCalls = [], commits = [], requests = [], local = new Map(), admissions = new Map();
-  let sequence = 0, accountId = A, uid = OWNER_A, scope = 'auth-a-1', ids = 0, lose = null, delay = null, failDatabase = false;
+  let sequence = 0, clock = AT, accountId = A, uid = OWNER_A, scope = 'auth-a-1', ids = 0, lose = null, delay = null, failDatabase = false;
   const put = (path, data) => docs.set(path, {data: clone(data), version: ++sequence});
   put('0.6.2_profiles_public/' + A, {accountId: A, ownerUid: OWNER_A, name: 'Fixture Racer',
     nickname: 'Fixture Racer', carStyle: 'fixture-native-style', isVerifier: false, updatedAt: AT});
@@ -97,9 +97,9 @@ function fixture({enabled = true, uidLimit = 0} = {}) {
       return response;
     }});
   const dependencies = {transport, storage, getAccountId: () => accountId, makeRequestId: () => 'client-request-' + ++ids,
-    withAccountLock, now: () => AT, enabled: true};
+    withAccountLock, now: () => clock, monotonicNow: () => clock, enabled: true};
   const createSession = () => createShopSession(dependencies);
-  const createStore = () => createShopControllerStore({...dependencies, getAuthScope: () => scope});
+  const createStore = () => createShopControllerStore({...dependencies, autoCollectRewards, getAuthScope: () => scope});
   function checkpoint() {return {calls: databaseCalls.length, commits: commits.length, requests: requests.length};}
   function cost(since) {
     const calls = databaseCalls.slice(since.calls);
@@ -107,7 +107,8 @@ function fixture({enabled = true, uidLimit = 0} = {}) {
       writes: commits.slice(since.commits).reduce((sum, commit) => sum + commit.writes.length, 0),
       transport: calls.length};
   }
-  return {docs, databaseCalls, commits, requests, local, storage, service, transport, createSession, createStore, checkpoint, cost,
+  return {docs, databaseCalls, commits, requests, local, storage, service, transport, createSession, createStore, checkpoint, cost, put,
+    time: value => {clock=value;},
     resetAdmissions() {admissions.clear();},
     identity(id, owner, authScope) {accountId = id; uid = owner; scope = authScope;},
     loseNext(path) {lose = path;},
@@ -436,4 +437,64 @@ test('completion 429 after real committed purchase requires explicit later refre
   assert.deepEqual(f.requests.slice(recovery.requests).map(row => row.path), ['/v1/shop/catalog', '/v1/currency/wallet']);
   assert.equal(posts(f, '/v1/shop/purchase').length, 1); assert.equal(ui.store.state().wallet.balance, 80);
   assert.deepEqual(ui.store.state().inventory.ownedItemIds, [ITEMS[0]]); assert.equal(f.cost(recovery).writes, 0); ui.dispose();
+});
+
+
+test('automatic Shop opening coalesces concurrent views, settles exact rewards and reads one wallet, then reuses non-sliding cache',async()=>{
+ const f=fixture({autoCollectRewards:true}),one=mount(f),two=mount({...f,createStore:()=>one.store}),before=f.checkpoint();
+ const first=one.controller.open(),second=two.controller.open();assert.equal(first,second);await first;
+ assert.deepEqual(f.cost(before),{reads:19,writes:6,transport:25});
+ assert.deepEqual(f.requests.map(row=>row.path),['/v1/currency/claim','/v1/currency/claim','/v1/shop/catalog','/v1/currency/wallet']);
+ assert.deepEqual(posts(f,'/v1/currency/claim').map(row=>row.body.rewardId),['login','milestones']);
+ assert.equal(one.store.state().wallet.balance,108);assert.equal(one.store.state().inventory.ownedItemIds.length,0);assert.equal(f.local.size,0);
+ let warm=f.checkpoint();await two.controller.open();assert.deepEqual(f.cost(warm),{reads:0,writes:0,transport:0});assert.equal(f.requests.length-warm.requests,0);
+ f.time(AT+20000);await one.controller.open();assert.equal(f.requests.length-warm.requests,0);
+ f.time(AT+31000);warm=f.checkpoint();await one.controller.open();assert.deepEqual(f.cost(warm),{reads:7,writes:0,transport:9});
+ assert.equal(f.requests.length-warm.requests,1);assert.equal(posts(f,'/v1/currency/claim').length,2);
+ f.time(AT+900001);warm=f.checkpoint();await one.controller.open();assert.deepEqual(f.cost(warm),{reads:15,writes:0,transport:19});
+ assert.equal(f.requests.length-warm.requests,2);assert.equal(posts(f,'/v1/currency/claim').filter(row=>row.body.rewardId==='login').length,1);assert.equal(one.store.state().wallet.balance,108);assert.equal(f.commits.length,2);
+ one.dispose();two.dispose();
+});
+
+test('automatic opening without proof mints only the server daily grant and never trusts client claim counts',async()=>{
+ const f=fixture({autoCollectRewards:true});f.put('0.6.2_s1_cosmetic_entitlements/'+A,{serverIssued:{achievements:{version:1,catalog:SERVER_ACHIEVEMENT_CATALOG,casual:{count:0,ledger:'00'.repeat(12)}}}});
+ const ui=mount(f),before=f.checkpoint();await ui.controller.open();assert.equal(ui.store.state().wallet.balance,8);
+ assert.deepEqual(f.cost(before),{reads:19,writes:3,transport:25});assert.equal(f.commits.length,1);assert.equal(f.local.size,0);
+ assert.equal(posts(f,'/v1/currency/claim')[1].status,403);ui.dispose();
+});
+
+test('automatic open requires real auth scope and account changes discard all opening caches',async()=>{
+ const f=fixture({autoCollectRewards:true});f.identity(A,OWNER_A,null);const ui=mount(f);await ui.controller.open();
+ assert.equal(f.requests.length,0);assert.equal(ui.store.state().wallet,null);assert.equal(ui.view().cloudSaveConnected,false);
+ f.identity(A,OWNER_A,'scope-a');await ui.controller.open();assert.equal(ui.store.state().wallet.balance,108);
+ f.identity(B,OWNER_B,'scope-b');assert.equal(ui.store.state().wallet,null);await ui.controller.open();
+ assert.equal(ui.store.state().wallet.accountId,B);assert.equal(ui.store.state().wallet.balance,8);ui.dispose();
+});
+
+test('ambiguous opening stops at durable original request and reopening never automatically retries it',async()=>{
+ const f=fixture({autoCollectRewards:true}),ui=mount(f);f.loseNext('/v1/currency/claim');
+ await assert.rejects(ui.controller.open());assert.equal(f.commits.length,1);assert.equal(posts(f,'/v1/currency/claim').length,1);
+ const original=clone(posts(f,'/v1/currency/claim')[0].body);assert.equal(f.local.size,1);assert.equal(ui.store.state().wallet,null);
+ const before=f.checkpoint();await ui.controller.open();assert.equal(posts(f,'/v1/currency/claim').length,1);
+ assert.deepEqual(f.cost(before),{reads:7,writes:0,transport:9});assert.equal(ui.store.state().wallet.balance,8);assert.equal(ui.store.state().pending.requestId,original.requestId);
+ await ui.store.reconcile({confirmed:true});assert.deepEqual(posts(f,'/v1/currency/claim')[1].body,original);
+ assert.equal(f.commits.length,1);assert.equal(f.local.size,0);assert.equal(ui.store.state().wallet.balance,8);ui.dispose();
+});
+
+
+test('certified negative reward checks cool down for15min independently of30s wallet freshness',async()=>{
+ const f=fixture({autoCollectRewards:true});f.put('0.6.2_s1_cosmetic_entitlements/'+A,{serverIssued:{achievements:{version:1,catalog:SERVER_ACHIEVEMENT_CATALOG,casual:{count:0,ledger:'00'.repeat(12)}}}});
+ const ui=mount(f);await ui.controller.open();const firstPosts=posts(f,'/v1/currency/claim').length;
+ for(const elapsed of [31000,62000,300000,899999]){f.time(AT+elapsed);const before=f.checkpoint();await ui.controller.open();
+  assert.equal(posts(f,'/v1/currency/claim').length,firstPosts);assert.equal(f.cost(before).writes,0);}
+ f.time(AT+900001);await ui.controller.open();assert.equal(posts(f,'/v1/currency/claim').length,firstPosts+1);
+ assert.equal(f.commits.length,1);ui.dispose();
+});
+
+test('server-certified already-claimed daily UTC window suppresses login probes after later reward cooldowns',async()=>{
+ const f=fixture({autoCollectRewards:true});await f.service.execute(OWNER_A,{op:'claim',accountId:A,requestId:'existing-server-login',rewardId:'login'});
+ const ui=mount(f);await ui.controller.open();assert.equal(posts(f,'/v1/currency/claim').filter(row=>row.body.rewardId==='login').length,1);
+ f.time(AT+900001);await ui.controller.open();
+ assert.equal(posts(f,'/v1/currency/claim').filter(row=>row.body.rewardId==='login').length,1);
+ assert.equal(f.commits.length,2);ui.dispose();
 });

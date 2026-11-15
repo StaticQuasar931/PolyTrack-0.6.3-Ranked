@@ -19,29 +19,33 @@ export function validateCommunityBadgeResponse(value,accountId){
 }
 
 async function readResponse(response){
-  if(response.status!==200)throw Error('claim_rejected');
   const reader=response.body?.getReader();if(!reader)throw Error('invalid_response');
   const chunks=[];let length=0;
   try{
     for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>4096)throw Error('invalid_response');chunks.push(value);}
     const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-    return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    const value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    if(response.status!==200)throw Object.assign(Error('claim_rejected'),{code:value?.error==='profile_not_owned'?'profile_not_owned':'claim_rejected'});
+    return value;
   }finally{void reader.cancel().catch(()=>{});}
 }
 
 /** No mount I/O or SDK initialization. getAuth returns an already initialized auth.
+ * Optional prepareAuth restores the auth-only SDK on explicit claim, never mount.
+ * It must preserve the caller's account/owner binding and reject stale restoration.
  * getAuthScope MUST include a monotonic account/auth generation, including A-B-A.
  * hasClaim is a boolean or current owner-scoped getter, never a balance/grant source.
  * onClaimed(frozenValidatedResponse); onUse({accountId,badgeId,draftOnly,isCurrent}).
  * onUse must check isCurrent before editing only the draft; this module never saves.
  * Dispose before root replacement, profile close, or account/auth transitions.
  */
-export function mountCommunityBadge({document,root,accountId,getAccountId,getAuth,getAuthScope,fetch:fetcher=globalThis.fetch,revision,onClaimed,onUse,hasClaim=false,getSavedCode=()=>''}={}){
+export function mountCommunityBadge({document,root,accountId,getAccountId,getAuth,getAuthScope,fetch:fetcher=globalThis.fetch,revision,onClaimed,onUse,hasClaim=false,getSavedCode=()=>'',prepareAuth}={}){
   const version=Number(revision);
   if(!document||root?.ownerDocument!==document||!ACCOUNT.test(accountId||'')||
     [getAccountId,getAuth,getAuthScope,fetcher].some(fn=>typeof fn!=='function')||
     !Number.isSafeInteger(version)||version<1||version>1000000)throw TypeError('Invalid community badge adapters');
-  const safe=fn=>{try{return fn();}catch{return null;}},auth=safe(getAuth),owner=auth?.currentUser||null,scope=safe(getAuthScope);
+  const safe=fn=>{try{return fn();}catch{return null;}};
+  let auth=safe(getAuth),owner=auth?.currentUser||null,scope=safe(getAuthScope),restoring=false,restorationUser=null;
   let disposed=false,epoch=0,pending=null,claimed=false,unsubscribe=null;
   const section=document.createElement('section'),id='community-badge-'+(++serial);
   section.className='community-badge';section.setAttribute('aria-labelledby',id+'-title');
@@ -59,17 +63,28 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
   </style><h3 id="${id}-title">Community badge</h3><p>Claim with the community relay code</p><p id="${id}-help">Membership is not checked.</p><form novalidate><label for="${id}-code">Community code</label><input id="${id}-code" data-community-input type="password" maxlength="16" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}-help ${id}-status"><button type="submit" data-community-claim>Claim</button></form><div class="cb-actions"><a href="${INVITE}" target="_blank" rel="noopener noreferrer">Join Discord</a><button type="button" data-community-use>Use badge</button></div><p id="${id}-status" role="status" aria-live="polite"></p>`;
   root.append(section);
   const form=section.querySelector('form'),input=section.querySelector('input'),claimButton=section.querySelector('[data-community-claim]'),useButton=section.querySelector('[data-community-use]'),status=section.querySelector('[role=status]');
-  const current=()=>!disposed&&root.isConnected&&section.isConnected&&safe(getAccountId)===accountId&&
+  const bound=()=>!disposed&&root.isConnected&&section.isConnected&&safe(getAccountId)===accountId;
+  const current=()=>bound()&&
     safe(getAuth)===auth&&auth?.currentUser===owner&&!!owner?.uid&&typeof scope==='string'&&!!scope&&safe(getAuthScope)===scope;
   const hasBadge=()=>current()&&(claimed||(typeof hasClaim==='function'?safe(hasClaim)===true:hasClaim===true));
-  function render(){if(disposed)return;const available=current();claimButton.disabled=!available||!!pending||hasBadge();input.disabled=!!pending;useButton.disabled=!hasBadge()||!!pending||typeof onUse!=='function';section.setAttribute('aria-busy',String(!!pending));}
+  function render(){if(disposed)return;const available=current();claimButton.disabled=!(available||!owner&&bound()&&typeof prepareAuth==='function')||!!pending||hasBadge();input.disabled=!!pending;useButton.disabled=!hasBadge()||!!pending||typeof onUse!=='function';section.setAttribute('aria-busy',String(!!pending));}
   function invalidate(){epoch++;claimed=false;pending?.abort();pending=null;if(!disposed){status.textContent='Account changed. Reopen Studio to continue.';render();}}
-  if(typeof auth?.onAuthStateChanged==='function'){
-    let initial=true;
-    unsubscribe=auth.onAuthStateChanged(user=>{if(initial&&user===owner){initial=false;return;}initial=false;invalidate();},invalidate);
+  function observeAuth(){
+    unsubscribe?.();unsubscribe=null;
+    if(typeof auth?.onAuthStateChanged==='function'){
+      let initial=true;
+      unsubscribe=auth.onAuthStateChanged(user=>{
+        if(initial&&user===owner){initial=false;return;}initial=false;
+        if(restoring&&!owner&&user?.uid&&(!restorationUser||restorationUser===user)){restorationUser=user;return;}
+        invalidate();
+      },invalidate);
+    }
   }
+  observeAuth();
   async function claim(event){
-    event.preventDefault();if(pending||!current()||hasBadge())return;
+    event.preventDefault();if(pending||!bound()||hasBadge())return;
+    if(owner&&!current()){status.textContent='Account changed. Reopen Studio to continue.';return;}
+    if(!current()&&typeof prepareAuth!=='function'){status.textContent='Connect Cloud Save to claim this badge.';return;}
     const communityCode=normalizeCommunityCode(input.value);
     if(!communityCode){input.setAttribute('aria-invalid','true');status.textContent='Enter the 16-character community relay code.';input.focus();return;}
     input.removeAttribute('aria-invalid');const generation=epoch,controller=new AbortController();pending=controller;status.textContent='Waiting for confirmation...';render();
@@ -77,6 +92,19 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
     const valid=()=>sameContext()&&!controller.signal.aborted;
     const timer=setTimeout(()=>controller.abort(),15000);
     try{
+      if(!current()){
+        restoring=true;status.textContent='Restoring Cloud Save...';
+        await new Promise((resolve,reject)=>{
+          const abort=()=>reject(Error('cancelled'));controller.signal.addEventListener('abort',abort,{once:true});
+          Promise.resolve().then(()=>{if(!bound()||epoch!==generation||controller.signal.aborted)throw Error('cancelled');return prepareAuth({accountId,signal:controller.signal});})
+            .then(resolve,reject).finally(()=>controller.signal.removeEventListener('abort',abort));
+        });
+        if(!bound()||epoch!==generation||controller.signal.aborted)return;
+        const nextAuth=safe(getAuth),nextOwner=nextAuth?.currentUser;
+        if(!nextOwner?.uid||typeof nextOwner.getIdToken!=='function')throw Object.assign(Error('cloud_save_required'),{code:'cloud_save_required'});
+        auth=nextAuth;owner=nextOwner;scope=safe(getAuthScope);restoring=false;observeAuth();
+        if(!valid())throw Error('cancelled');
+      }
       // Race token acquisition against disposal without persisting or logging it.
       const token=await new Promise((resolve,reject)=>{
         const abort=()=>reject(Error('cancelled'));controller.signal.addEventListener('abort',abort,{once:true});
@@ -88,8 +116,8 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
       const result=validateCommunityBadgeResponse(await readResponse(response),accountId);if(!valid())return;if(!result)throw Error('invalid_response');
       claimed=true;status.textContent=result.alreadyClaimed?'Community badge already claimed.':'Community badge claimed.';render();
       if(valid()){try{onClaimed?.(result);}catch{if(valid())status.textContent='Badge claimed. Reopen Studio to use it.';}}
-    }catch{if(sameContext())status.textContent='Claim could not be confirmed. Check the community code or reopen Studio before trying again.';}
-    finally{clearTimeout(timer);if(pending===controller){pending=null;render();}}
+    }catch(error){if(bound()&&epoch===generation)status.textContent=error.code==='profile_not_owned'?'Cloud ownership is not confirmed. Complete your first ranked run, or reopen Studio with the Cloud Save that owns this profile.':error.code==='cloud_save_required'?'Connect Cloud Save to claim this badge. Your saved code alone does not establish ownership.':'Claim could not be confirmed. Check the community code or reopen Studio before trying again.';}
+    finally{restoring=false;restorationUser=null;clearTimeout(timer);if(pending===controller){pending=null;render();}}
   }
   function use(){
     if(pending||!hasBadge()||typeof onUse!=='function')return;
@@ -99,6 +127,6 @@ export function mountCommunityBadge({document,root,accountId,getAccountId,getAut
   }
   const savedCode=normalizeCommunityCode(safe(getSavedCode));if(savedCode)input.value=savedCode;
   form.addEventListener('submit',claim);useButton.addEventListener('click',use);render();
-  status.textContent=hasBadge()?'Community badge already claimed.':!current()?'Sign in to claim this badge.':savedCode?'Your saved relay code is ready. Claim to confirm the badge.':'';
+  status.textContent=hasBadge()?'Community badge already claimed.':current()?savedCode?'Your saved Community code is ready. Claim to confirm the badge.':'':savedCode?'Your saved Community code has a valid format. Cloud Save will be checked when you claim.':typeof prepareAuth==='function'?'Cloud Save will be restored when you claim.':'Connect Cloud Save to claim this badge.';
   return function dispose(){if(disposed)return;disposed=true;epoch++;pending?.abort();pending=null;unsubscribe?.();form.removeEventListener('submit',claim);useButton.removeEventListener('click',use);section.remove();};
 }

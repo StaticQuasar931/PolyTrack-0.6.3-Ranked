@@ -62,7 +62,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock named styles\. Style Coins require an explicit Shop check and claim\. Device observations do not award Style Coins\./);
+  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock styles\. Eligible Style Coins sync when Shop opens\. Device-only stats do not award coins\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -98,7 +98,7 @@ test('purchased shop designs are not racing goals or spendable achievement award
 
 test('journal caption distinguishes listed cosmetic goals from personal tiers without extending Style Coins rewards',()=>{
  const html=renderAchievementJournal({progress:{local:{pbCount:1}},cosmetics:{}});
- assert.match(html,/Cosmetic goals unlock named styles\. Style Coins require an explicit Shop check and claim\. Device observations do not award Style Coins\./);
+ assert.match(html,/Cosmetic goals unlock styles\. Eligible Style Coins sync when Shop opens\. Device-only stats do not award coins\./);
  assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });
 
@@ -142,7 +142,7 @@ test('seven actual currency rows use confirmed casual completions, never infer c
  const rows=model.milestones.filter(x=>x.source==='currency');assert.equal(rows.length,7);assert.equal(model.counts.earned,0);
  assert.ok(rows.every(x=>!x.earned&&x.value===20&&x.reward.currency==='Style Coins'));
  const html=renderAchievementJournal({model,family:'currency',filter:'all'});
- assert.match(html,/Eligible to check/);assert.match(html,/Open Shop to check &amp; claim/);assert.match(html,/Claim history is not supplied here/);
+ assert.match(html,/Eligible to check/);assert.match(html,/Open Shop/);assert.match(html,/Eligible rewards are collected when Shop opens/);
  assert.doesNotMatch(html,/already claimed|CLAIMED|coins earned|balanceAfter|wallet balance/i);
  assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,20]);
 });
