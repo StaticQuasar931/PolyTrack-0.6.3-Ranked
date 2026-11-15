@@ -1,15 +1,12 @@
 const releaseInfo = {
-  "number": 390,
+  "number": 391,
   "version": "0.6.3",
-  "revision": 332,
+  "revision": 333,
   "notes": [
-    "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
-    "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
-    "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
-    "Offline event replay verification now builds an audited update from saved files."
+    "Fixed a Windows-only test path that blocked offline verification on GitHub."
   ],
-  "preparedAt": "2026-11-14T23:47:45.324Z",
-  "committedAt": "2026-11-14T23:56:19.000Z"
+  "preparedAt": "2026-11-15T00:01:00.343Z",
+  "committedAt": "2026-11-15T00:02:44.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
