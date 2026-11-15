@@ -176,3 +176,5 @@ test('early notice entry advances on every release and retains async module boot
     assert.ok(!next.index.includes('early-update-notice.mjs?v=45'));
   }
 });
+
+test('first-paint hub stylesheet cache revisions advance with client updates',()=>{const patch="installSiteUpdates({revision:334";const index="<script src='polytrack_062_patch.js?v=334'></script><link href='tools/achievement-journal.css?v=334'><link href='tools/racer-studio-polish.css?v=334'>";const next=stampClientRelease(patch,index,335).index;assert.ok(next.includes('tools/achievement-journal.css?v=335'));assert.ok(next.includes('tools/racer-studio-polish.css?v=335'))});

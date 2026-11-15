@@ -17,7 +17,7 @@ export function stampClientRelease(patch, index, revision) {
   index = index.replace(/polytrack_062_patch\.js\?v=\d+/, `polytrack_062_patch.js?v=${revision}`)
     .replace(/(main\.bundle\.js)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(public-name-policy\.js)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
-    .replace(/((?:home-ui|responsive-ui|practice-responsive|help-controls)\.css)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
+    .replace(/((?:home-ui|responsive-ui|practice-responsive|help-controls|tools\/achievement-journal|tools\/racer-studio-polish)\.css)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(tools\/(?:responsive-ui|early-update-notice|exit-guard)\.mjs)(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`)
     .replace(/(events\/(?:events\.css|client\.mjs))(?:\?v=\d+)?(['"])/g, `$1?v=${revision}$2`);
   return {patch, index};

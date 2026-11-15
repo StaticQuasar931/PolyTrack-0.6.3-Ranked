@@ -110,7 +110,7 @@ test('native dialog is lazy, revision pinned, inline to event ancestry, and rest
   assert.equal(await page.locator('.profile-achievements').count(),0);
   assert.equal(await page.locator('link[data-profile-achievements-css]').count(),1);
   assert.equal(await page.locator('[data-aj-root]').count(),0);
-  assert.equal(await page.locator('[data-ph-launch]:not([hidden])').count(),2);
+  assert.equal(await page.locator('[data-ph-launch]:not([hidden])').count(),3);
   assert.equal(await page.locator('.profile-customizer').isVisible(),false);
   assert.ok(!requests.some(url => url.includes('/achievement-journal.mjs')));
   await page.evaluate(() => {window.original = document.querySelector('.profile-customizer');original.addEventListener('input',()=>window.draftEvents=(window.draftEvents||0)+1);});
@@ -256,12 +256,14 @@ test('native full-screen hub fits desktop, phone and landscape with usable rewar
   }
 });
 
-test('joined launcher has two native destinations with distinct recognizable SVG marks',async t=>{
+test('joined launcher has three stable destinations with recognizable SVG marks',async t=>{
   const page=await pageFor(t,{width:390,height:844});await nativeFixture(page);
-  const launcher=page.locator('.profile-achievement-journey');assert.equal(await launcher.locator('button:not([hidden])').count(),2);
+  const launcher=page.locator('.profile-achievement-journey');assert.equal(await launcher.locator('button:not([hidden])').count(),3);
   await page.locator('link[data-profile-achievements-css]').evaluate(link=>link.sheet?undefined:new Promise(resolve=>link.addEventListener('load',resolve,{once:true})));
   assert.equal(await launcher.locator('[data-ph-launch="achievements"] svg[data-ph-icon="achievements"]').count(),1);
   assert.equal(await launcher.locator('[data-ph-launch="studio"] svg[data-ph-icon="studio"]').count(),1);
+  assert.equal(await launcher.locator('[data-ph-launch="shop"] svg[data-ph-icon="shop"]').count(),1);
+  assert.equal(await launcher.locator('[data-ph-launch="shop"]').isDisabled(),true);
   assert.equal(await launcher.locator('svg:not([aria-hidden="true"])').count(),0);
   assert.doesNotMatch(await launcher.innerText(),/\/\//);
   const bounds=await launcher.locator('button').evaluateAll(buttons=>buttons.map(button=>button.getBoundingClientRect().toJSON()));
@@ -391,14 +393,14 @@ test('owned hub close hook releases its top layer, restores Studio and never res
  assert.deepEqual(result,{removed:true,stale:false});
 });
 
-test('shop bridge exposes third navigation only when a scoped shop callback is registered',async t=>{
+test('shop destination keeps its place while a scoped callback loads',async t=>{
  const page=await pageFor(t);await nativeFixture(page);
- assert.equal(await page.locator('[data-ph-launch="shop"]').isVisible(),false);
+ assert.equal(await page.locator('[data-ph-launch="shop"]').isVisible(),true);assert.equal(await page.locator('[data-ph-launch="shop"]').isDisabled(),true);
  await page.evaluate(()=>{window.shopOpens=0;const root=document.querySelector('#content');root.__profileShopOpen=()=>shopOpens++;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
  await page.locator('[data-ph-launch="shop"]').click();assert.equal(await page.evaluate(()=>shopOpens),1);
  await page.evaluate(()=>cleanup.open('studio'));await page.locator('[data-ph-shop]').click();assert.equal(await page.evaluate(()=>shopOpens),2);
  await page.evaluate(()=>{const root=document.querySelector('#content');delete root.__profileShopOpen;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
- assert.equal(await page.locator('[data-ph-shop]').isVisible(),false);
+ assert.equal(await page.locator('[data-ph-shop]').isVisible(),true);assert.equal(await page.locator('[data-ph-shop]').isDisabled(),true);
 });
 
 test('favorite list consumes first Escape, hub consumes second, outer profile stays open',async t=>{

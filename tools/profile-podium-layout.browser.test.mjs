@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {profilePodiumProgress} from './profile-podium-progress.mjs';
 import {compactProfileAchievementMarkup} from './profile-compact-presentation.mjs';
-const {chromium}=createRequire(new URL('./verifier/package.json',import.meta.url))('playwright');
+const {chromium}=createRequire(new URL('./verifier/package.json',import.meta.url))(process.env.PLAYWRIGHT_MODULE||'playwright');
 const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 const start=source.indexOf('content.innerHTML='+String.fromCharCode(96)+'<div class="profile-hero">');
 assert.ok(start>0);const at=start+'content.innerHTML='.length;

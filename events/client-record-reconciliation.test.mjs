@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {Socket} from 'node:net';
 import {eventVerifiedPendingMatch,eventLocalReplayBinding,eventPublishedPbCoversReceipt,eventSnapshotFields,
-  eventSnapshotRows,eventOwnPlacementPresentation,eventCompleteFieldSize,createEventPbPreviews} from './client.mjs';
+  eventSnapshotRows,eventOwnPlacementPresentation,eventCompleteFieldSize,createEventPbPreviews,eventPreviewPlacementPresentation} from './client.mjs';
 
 globalThis.fetch=()=>{throw Error('No network in event record reconciliation tests');};
 Socket.prototype.connect=globalThis.fetch;
@@ -23,7 +23,7 @@ function render(saved,{local=null,receipt=null,policy='all',enabled=true,filterR
   const accountId=hash(4),context={pbPreviews:createEventPbPreviews(),cache:new Map([[period.id,saved]]),localBest:()=>local,
     ownReceipts:new Map(receipt?[[period.id+'_'+accountId,receipt]]:[]),
     bridge:{accountId:()=>accountId,snapshotOnly:()=>true,filterRows},
-    eventSnapshotFields,eventOwnPlacementPresentation,eventCompleteFieldSize,readEventPlacementSettings:()=>({enabled,policy}),
+    eventSnapshotFields,eventOwnPlacementPresentation,eventPreviewPlacementPresentation,eventCompleteFieldSize,readEventPlacementSettings:()=>({enabled,policy}),
     validEventTimestamp:()=>false,now:()=>Date.now(),displayName:r=>r.name||'You',time:String};
   return vm.runInNewContext(section('  function eventDisplayRows(', '  function syncNativeArchiveBoard(')+
     section('  function displayedRecordPlacement(', '  function cardStandings(')+

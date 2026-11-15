@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {Socket} from 'node:net';
-import {createEventPbPreviews,eventSnapshotFields,eventPendingRows,eventOwnPlacementPresentation} from './client.mjs';
+import {createEventPbPreviews,eventSnapshotFields,eventPendingRows,eventOwnPlacementPresentation,eventPreviewPlacementPresentation} from './client.mjs';
 globalThis.fetch=()=>assert.fail('No network or replay prefetch');
 Socket.prototype.connect=globalThis.fetch;
 const source=fs.readFileSync(new URL('./client.mjs',import.meta.url),'utf8');
@@ -16,7 +16,7 @@ function harness(period){
  const cache=new Map([[period.id,board(period)]]);let account=accountId,epoch=1,receipt=null,local=null;
  const c={cache,pbPreviews:createEventPbPreviews(),bridge:{accountId:()=>account,snapshotOnly:()=>true,normalEventSnapshotEpoch:()=>epoch},
   ownReceipts:new Map(),localBest:()=>local,read:()=>null,STORE:'events',eventSnapshotFields,eventPendingRows,
-  displayName:r=>r.name||'You',now:()=>1000,validEventTimestamp:()=>false,eventOwnPlacementPresentation,displayedRecordPlacement:()=>null,time:String};
+  displayName:r=>r.name||'You',now:()=>1000,validEventTimestamp:()=>false,eventOwnPlacementPresentation,eventPreviewPlacementPresentation,displayedRecordPlacement:()=>null,time:String};
  vm.createContext(c);
  const a=source.indexOf('  function eventDisplayRows('),b=source.indexOf('  function syncNativeArchiveBoard(',a);
  const r=source.indexOf('  function recordMarkup('),end=source.indexOf('  function cardStandings(',r);
@@ -30,7 +30,7 @@ for(const kind of ['daily','weekly','kodub'])test(kind+' PB survives leave/reope
  const reopened=h.rows();assert.equal(reopened.rows.length,0);assert.equal(reopened.previewOwn.timeMs,2000);
  assert.equal(reopened.previewOwn.previewOnly,true);assert.equal(reopened.previewOwn.verified,false);assert.equal(reopened.previewOwn.eventRpEligible,false);
  for(const field of ['rp','replay','replayHash','runId'])assert.equal(reopened.previewOwn[field],undefined);
- assert.equal(reopened.previewOwn.rank,null);assert.match(h.markup(),/Saved event PB; standings loading/);
+ assert.equal(reopened.previewOwn.rank,null);assert.match(h.markup(),/Loading standings[.][.][.]/);
  h.cache.set(period.id,board(period,{entries:[],complete:false,totalEntries:20,updatedAt:2000}));assert.equal(h.rows().previewOwn.timeMs,2000);
  h.cache.set(period.id,board(period,{entries:[own(period,{timeMs:1900})],updatedAt:3000}));assert.equal(h.rows().previewOwn.timeMs,1900);
  h.cache.set(period.id,board(period,{entries:[],totalEntries:0,updatedAt:4000}));assert.equal(h.rows().previewOwn,null);

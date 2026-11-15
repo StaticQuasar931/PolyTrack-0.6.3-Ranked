@@ -38,8 +38,8 @@ test('badge ERP text is supplemental and cannot change verification classes or p
  assert.equal(state.dataset.sqEventErpStatus,'estimated');assert.match(icon.title,/Would earn approximately/);assert.match(points[0].textContent,/Estimated/);assert.deepEqual(r,before);
 });
 test('Weekly labels use track names, never reset dates as names',()=>{
- assert.equal(eventPeriodDisplayName(period()),'Weekly - Exact Track');
- assert.equal(eventPeriodDisplayName(period('weekly',{trackName:undefined,label:'Weekly 2026-11-14'}),()=>({name:'Catalog Track'})),'Weekly - Catalog Track');
+ assert.equal(eventPeriodDisplayName(period()),'Weekly Exact Track');
+ assert.equal(eventPeriodDisplayName(period('weekly',{trackName:undefined,label:'Weekly 2026-11-14'}),()=>({name:'Catalog Track'})),'Weekly Catalog Track');
 });
 const totals={complete:true,entries:[row(1,{rp:1100,finiteEventRp:600,permanentRollingHillsRp:500,rollingHillsEventRpContribution:500,rollingHillsTimeMs:12000,events:3}),row(2,{rp:200,finiteEventRp:200,permanentRollingHillsRp:0,events:2})]};
 test('All counts Rolling Hills exactly once and Seasonal excludes only its published component',()=>{

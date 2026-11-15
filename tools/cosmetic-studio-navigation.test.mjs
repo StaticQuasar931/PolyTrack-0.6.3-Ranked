@@ -17,8 +17,8 @@ function studioHarness() {
     click: () => { state.active = index; },
     focus: () => { state.focused = index; }
   }));
-  const input = { addEventListener() {} };
-  const list = { addEventListener() {} };
+  const input = { dataset:{}, addEventListener() {} };
+  const list = { dataset:{}, addEventListener() {} };
   const studio = {
     querySelector: selector => selector === '[data-cosmetic-favorite]' ? input : list,
     querySelectorAll: () => tabs,
@@ -27,6 +27,8 @@ function studioHarness() {
   const content = { querySelector: () => studio };
   const context = vm.createContext({
     Array,
+    cleanUserId: value => String(value || ''),
+    renderStudioFavorite() {},
     TRACK_CATALOG: new Map(),
     profileCosmeticDrafts: new Map(),
     sanitizeProfileCosmetics: value => value || {},

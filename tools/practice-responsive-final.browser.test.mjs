@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import vm from 'node:vm';import{createRequire}from'node:module';
 import{profilePodiumProgress}from'./profile-podium-progress.mjs';
-const{chromium}=createRequire(new URL('./verifier/package.json',import.meta.url))('playwright');
+const{chromium}=createRequire(new URL('./verifier/package.json',import.meta.url))(process.env.PLAYWRIGHT_MODULE||'playwright');
 const viewports=[[320,568],[430,800],[844,390],[768,1024],[1366,768],[2560,1440]];
 
 test('final responsive badge/podium/practice matrix across six requested sizes',{timeout:90000,skip:process.env.BADGE_PODIUM_ONLY==='1'},async t=>{
