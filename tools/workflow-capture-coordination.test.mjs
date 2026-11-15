@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import vm from 'node:vm';
-import {checkCapture, recordCapture, requestedAfter} from './workflow-capture-coordination.mjs';
+import {captureBinding,checkCapture, recordCapture, requestedAfter} from './workflow-capture-coordination.mjs';
 import {publishSnapshot, encodeSnapshot, decodeSnapshot, buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex} from './track-snapshot-paging.mjs';
 import {publicEventTotals,capturePublicEventTotals} from './public-event-totals-backup.mjs';
@@ -140,6 +140,15 @@ test('native overlay admission retains strict metadata and public totals field v
     await assert.rejects(checkCapture({root:f.root,requestedAt:String(now-2000),now}),/Invalid native|Invalid projected|Non-public/);
     assert.equal(await fs.readFile(path.join(f.root,statePath),'utf8'),before);
   }
+});
+
+test('consumer audit is read-only and creates no receipt hydration tree',async t=>{
+ const f=await fixture(t);let result;
+ try{
+  for(const key of ['mkdir','mkdtemp','writeFile','rm','unlink'])t.mock.method(fs,key,()=>assert.fail('consumer audit attempted '+key));
+  result=await captureBinding(f.root);
+ }finally{t.mock.restoreAll();}
+ assert.equal(result.reusable,true);assert.equal(result.coherenceReason,'source_bound');
 });
 
 test('native overlay rejects unbound boards, invalid authority and mismatched or unsafe root cohorts',async t=>{

@@ -2,9 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import os from 'node:os';
 import {isDeepStrictEqual} from 'node:util';
-import {hydrateStaging} from './update-public-snapshot.mjs';
+import {readValidatedSnapshot} from './update-public-snapshot.mjs';
 import {buildSnapshotLookupShards} from './snapshot-package.mjs';
 import {buildSnapshotBootstrapIndex, buildSnapshotFastIndex, buildTrackSnapshotPaging,
   buildOverallSnapshotPaging, buildBoardPageManifest} from './track-snapshot-paging.mjs';
@@ -156,7 +155,7 @@ function validateTrackArtifact(value, id) {
   }
 }
 
-async function validateConsumerPackage(root, directory, index) {
+async function validateConsumerPackage(root, directory, index, indexSha256) {
   const equal = async (relative, expected) => {
     if (!isDeepStrictEqual(await json(root, directory + '/' + relative), expected)) throw Error('Invalid consumer artifact: ' + relative);
   };
@@ -167,12 +166,17 @@ async function validateConsumerPackage(root, directory, index) {
   for (const required of ['manifest.json', 'coverage.json', 'public-export-summary.json', 'event-totals.json',
     'track-statistics.json', 'snapshot-paging.json', 'overall-manifest.json', 'overall-preview.json'])
     if (!Object.hasOwn(index.files, required)) throw Error('Missing consumer artifact: ' + required);
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-receipt-'));
-  try {
+  {
     // Existing hydration validates logical paths, hashes, codec, decoded JSON/lengths,
-    // paging descriptors and omitted-board reconstruction. Never hydrate into the checkout.
-    await hydrateStaging(root, temporary);
-    const read = relative => json(temporary, relative);
+    // paging descriptors and omitted-board reconstruction, without writing a temporary tree.
+    const snapshot = await readValidatedSnapshot(root, {expectedDirectory: directory, expectedIndexSha256: indexSha256});
+    const read = async relative => {
+      const entry = snapshot.files.get(relative);
+      if (!entry) throw Object.assign(Error('Missing capture file: ' + relative), {code: 'ENOENT'});
+      if (entry.decoded.length > FILE_LIMIT) throw Error('Invalid capture file: ' + relative);
+      // Match disk hydration's fresh parse on every consumer access.
+      return JSON.parse(entry.decoded.toString('utf8'));
+    };
     const overall = await read('overall.json');
     validateOverallArtifact(overall);
     const totals = await read('event-totals.json');
@@ -278,9 +282,6 @@ async function validateConsumerPackage(root, directory, index) {
         return {reusable: false, coherenceReason: 'result_binding_mismatch'};
     }
     return {reusable: true, coherenceReason: 'source_bound'};
-  } finally {
-    if (path.dirname(temporary) !== path.resolve(os.tmpdir())) throw Error('Unsafe temporary cleanup path');
-    await fs.rm(temporary, {recursive: true, force: true});
   }
 }
 
@@ -316,7 +317,7 @@ export async function captureBinding(root) {
   }
   const catalogBytes = await bytes(root, 'events/public-catalog.json');
   validateCatalog(JSON.parse(catalogBytes.toString('utf8')));
-  const validity = await validateConsumerPackage(root, directory, index);
+  const validity = await validateConsumerPackage(root, directory, index, hash(indexBytes));
   return {directory, pointerSha256: hash(pointer), indexSha256: hash(indexBytes),
     catalogSha256: hash(catalogBytes), ...validity};
 }

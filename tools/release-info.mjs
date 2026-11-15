@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 399,
+  "number": 400,
   "version": "0.6.3",
-  "revision": 341,
+  "revision": 342,
   "notes": [
-    "Offline normal-track verification can retain published event results instead of reprocessing unrelated historical events.",
-    "The new scope admits only normal-run proofs, preserving event data, previous witnesses and review checks.",
-    "No Firebase calls or automatic retries are added."
+    "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
+    "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
+    "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
+    "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
   ],
-  "preparedAt": "2026-11-15T05:21:41.915Z",
-  "committedAt": "2026-11-15T05:22:43.000Z"
+  "preparedAt": "2026-11-15T05:35:48.642Z",
+  "committedAt": "2026-11-15T05:51:10.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

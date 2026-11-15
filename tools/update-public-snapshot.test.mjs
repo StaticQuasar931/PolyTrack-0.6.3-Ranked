@@ -11,6 +11,8 @@ const exportAuth = {serviceAccount:{type:'service_account',project_id:'polytrack
 
 import { decodeSnapshot } from './snapshot-package.mjs';
 import { updatePublicSnapshot, reportCaptureOutcome } from './update-public-snapshot.mjs';
+import {readValidatedSnapshot,hydrateStaging,mapSnapshotReads16} from './update-public-snapshot.mjs';
+import fs from 'node:fs/promises';
 
 const fixtureReplay = deflateSync(Buffer.alloc(15)).toString('base64url');
 const fixtureReplayHash = createHash('sha256').update(fixtureReplay).digest('hex');
@@ -33,6 +35,50 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
+
+test('read-only hydration matches disk bytes without writing, removing or registering a staging tree',async t=>{
+ const root=await fixture(t),staging=path.join(root,'local-reports','snapshot-staging');
+ await writeFile(path.join(staging,'sample.json'),JSON.stringify({nested:{value:7}}));
+ const {publishSnapshot}=await import('./snapshot-package.mjs');await publishSnapshot({root,stagingDirectory:staging});
+ const before=await readdir(root);let snapshot;
+ try{
+  for(const key of ['mkdir','mkdtemp','writeFile','rm','unlink'])t.mock.method(fs,key,()=>assert.fail('read-only hydration attempted '+key));
+  snapshot=await readValidatedSnapshot(root);
+ }finally{t.mock.restoreAll();}
+ assert.deepEqual(await readdir(root),before);
+ const output=path.join(root,'disk-parity');const hydrated=await hydrateStaging(root,output);
+ assert.equal(hydrated.directory,snapshot.directory);assert.equal(hydrated.files,snapshot.files.size);
+ for(const [name,entry]of snapshot.files)assert.deepEqual(await readFile(path.join(output,name)),entry.decoded);
+ snapshot.files.get('sample.json').value.nested.value=99;
+ assert.equal(JSON.parse(snapshot.files.get('sample.json').decoded.toString()).nested.value,7);
+ await assert.rejects(readValidatedSnapshot(root,{expectedDirectory:'public-snapshots999'}),/changed before/);
+ await assert.rejects(readValidatedSnapshot(root,{expectedIndexSha256:'0'.repeat(64)}),/changed before/);
+});
+
+test('read-only hydration rejects the same case and parent/file namespace collisions as disk writing',async t=>{
+ const root=await fixture(t),staging=path.join(root,'local-reports','snapshot-staging');
+ await writeFile(path.join(staging,'sample.json'),'{}');const {publishSnapshot}=await import('./snapshot-package.mjs');
+ const published=await publishSnapshot({root,stagingDirectory:staging}),file=path.join(root,published.directory,'index.json');
+ const original=JSON.parse(await readFile(file,'utf8')),record=original.files['sample.json'];
+ for(const aliases of [['Case/a.json','case/b.json'],['parent.json','parent.json/child.json'],['dir/./bad.json']]){
+  const changed=structuredClone(original);for(const name of aliases)changed.files[name]=record;
+  await writeFile(file,JSON.stringify(changed));await assert.rejects(readValidatedSnapshot(root),/conflicting|Unsafe/);
+ }
+});
+
+test('snapshot read pool caps sixteen, preserves order and drains on the earliest source-order error',async()=>{
+ let active=0,peak=0;
+ const output=await mapSnapshotReads16(Array.from({length:40},(_,i)=>i),async i=>{
+  peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,(i%3)+1));active--;return i;
+ });
+ assert.equal(peak,16);assert.equal(active,0);assert.deepEqual(output,Array.from({length:40},(_,i)=>i));
+ let admitted=0;const first=Error('earliest');
+ await assert.rejects(mapSnapshotReads16(Array.from({length:40},(_,i)=>i),async i=>{
+  active++;admitted++;try{if(i===1)throw Error('later');await new Promise(resolve=>setTimeout(resolve,5));if(i===0)throw first;}
+  finally{active--;}
+ }),error=>error===first);
+ assert.equal(active,0);assert.equal(admitted,16);
+});
 
 test('replay-only refresh has a 100-document cap and does not restart profile scans',async t=>{
  const root=await fixture(t);let options;

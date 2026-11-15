@@ -179,24 +179,53 @@ export function reconstructOmittedBoards(index, hydrated) {
     decoded: Buffer.from(`${JSON.stringify(reconstructPagedBoard(board, hydrated))}\n`, 'utf8') }));
 }
 
-export async function hydrateStaging(root, stagingDirectory) {
-  const pointer = JSON.parse(await fs.readFile(path.join(root, 'snapshot-current.json'), 'utf8'));
+export async function mapSnapshotReads16(values, task) {
+  const results = new Array(values.length), failures = new Map();
+  let next = 0, stopped = false;
+  await Promise.all(Array.from({length: Math.min(16, values.length)}, async () => {
+    while (!stopped && next < values.length) {
+      const index = next++;
+      try { results[index] = await task(values[index], index); }
+      catch (error) { failures.set(index, error); stopped = true; }
+    }
+  }));
+  if (failures.size) throw failures.get(Math.min(...failures.keys()));
+  return results;
+}
+
+// Read-only validation grants no native hydration/cache authority.
+export async function readValidatedSnapshot(root, {expectedDirectory = null, expectedIndexSha256 = null} = {}) {
+  const pointerBytes = await fs.readFile(path.join(root, 'snapshot-current.json'));
+  const pointer = JSON.parse(pointerBytes);
   if (typeof pointer.currentdir !== 'string' || !/^public-snapshots[1-9]\d*$/.test(pointer.currentdir)) {
     throw new Error('Current snapshot pointer is invalid');
   }
   const generationDirectory = containedChild(root, pointer.currentdir);
   const indexBytes = await readPrivateSnapshotIndex(path.join(generationDirectory, 'index.json'));
+  if (expectedDirectory !== null && pointer.currentdir !== expectedDirectory ||
+      expectedIndexSha256 !== null && sha256(indexBytes) !== expectedIndexSha256)
+    throw new Error('Snapshot changed before read-only hydration');
   const index = JSON.parse(indexBytes.toString('utf8'));
   const pointerGeneration = Number(pointer.currentdir.replace('public-snapshots', ''));
   if (index.schemaVersion !== 1 || index.encoding !== 'gzip-xor-a7-v1' || index.generation !== pointerGeneration ||
       !index.files || typeof index.files !== 'object' || Array.isArray(index.files)) {
     throw new Error('Current snapshot index is invalid');
   }
-  const hydrated = [];
-  for (const [logicalPath, item] of Object.entries(index.files)) {
+  const names = new Map();
+  const checkName = logicalPath => {
     if (logicalPath === 'export-progress.json' || !LOGICAL_PATH.test(logicalPath) || logicalPath.split('/').some(part => !part || part === '.' || part === '..')) {
       throw new Error(`Unsafe logical snapshot path: ${logicalPath}`);
     }
+    const parts = logicalPath.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const name = parts.slice(0, i).join('/'), key = name.toLowerCase(), file = i === parts.length, prior = names.get(key);
+      if (prior && (file || prior.file || prior.name !== name)) throw new Error('Duplicate or conflicting snapshot path: ' + logicalPath);
+      names.set(key, {name, file});
+    }
+  };
+  const records = Object.entries(index.files);
+  for (const [logicalPath] of records) checkName(logicalPath);
+  const hydrated = await mapSnapshotReads16(records, async ([logicalPath, item]) => {
     if (!item || typeof item.path !== 'string' || item.path !== `${item.sha256}.bin` || !HASH.test(item.sha256) ||
         !Number.isSafeInteger(item.decodedBytes) || item.decodedBytes < 0 || item.decodedBytes > MAX_DECODED_BYTES) {
       throw new Error(`Invalid snapshot index entry: ${logicalPath}`);
@@ -207,14 +236,23 @@ export async function hydrateStaging(root, stagingDirectory) {
     if (sha256(encoded) !== item.sha256) throw new Error(`Snapshot payload hash mismatch: ${logicalPath}`);
     const decoded = Buffer.from(await decodeSnapshot(encoded));
     if (decoded.byteLength !== item.decodedBytes || decoded.byteLength > MAX_DECODED_BYTES) throw new Error(`Snapshot decoded size mismatch: ${logicalPath}`);
-    JSON.parse(decoded.toString('utf8'));
-    hydrated.push({ logicalPath, decoded, value: JSON.parse(decoded.toString('utf8')) });
-  }
+    return { logicalPath, decoded, value: JSON.parse(decoded.toString('utf8')) };
+  });
   const hydratedByPath = new Map(hydrated.map(item => [item.logicalPath, item]));
-  hydrated.push(...reconstructOmittedBoards(index, hydratedByPath));
+  for (const reconstructed of reconstructOmittedBoards(index, hydratedByPath)) {
+    checkName(reconstructed.logicalPath); hydrated.push(reconstructed); hydratedByPath.set(reconstructed.logicalPath, reconstructed);
+  }
+  if (!(await fs.readFile(path.join(root, 'snapshot-current.json'))).equals(pointerBytes) ||
+      !(await readPrivateSnapshotIndex(path.join(generationDirectory, 'index.json'))).equals(indexBytes))
+    throw new Error('Snapshot changed during read-only hydration');
+  return {directory: pointer.currentdir, index, indexSha256: sha256(indexBytes), files: hydratedByPath};
+}
+
+export async function hydrateStaging(root, stagingDirectory) {
+  const snapshot = await readValidatedSnapshot(root), hydrated = [...snapshot.files.values()];
   await writeHydratedFiles(stagingDirectory, hydrated);
-  rememberPublishedHydration(root,hydrated,pointer.currentdir);
-  return { directory: pointer.currentdir, files: hydrated.length };
+  rememberPublishedHydration(root,hydrated,snapshot.directory);
+  return { directory: snapshot.directory, files: hydrated.length };
 }
 
 async function readJsonIfPresent(filePath) {
