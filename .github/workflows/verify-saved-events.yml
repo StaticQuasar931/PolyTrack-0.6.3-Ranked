@@ -14,7 +14,6 @@ on:
       snapshot_generation:
         required: true
         type: string
-        default: '84'
       snapshot_index_sha256:
         required: true
         type: string
@@ -24,13 +23,28 @@ on:
       ledger_entries:
         required: true
         type: string
-        default: '19391'
       native_job_limit:
         description: One bounded pass; reruns cannot reset this budget
         required: true
         type: choice
-        options: ['16', '64', '128', '256', '512']
-        default: '64'
+        options: ['256']
+        default: '256'
+      target_track_ids:
+        description: Exact target track IDs as a nonempty unique JSON array; no capture or proof imports
+        required: true
+        type: string
+        default: '["b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f","fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d7e8c7903d4f0778"]'
+      target_scope:
+        description: Existing executor lane scope; all includes both event and normal jobs on target tracks
+        required: true
+        type: choice
+        options: ['events', 'all']
+        default: 'all'
+      warmup_first:
+        description: Gate the remaining same-process pass on one fresh completed proof
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -42,7 +56,7 @@ jobs:
       group: polytrack-saved-event-offline-verification
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
@@ -61,16 +75,25 @@ jobs:
           LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
+          TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
+          NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
+          WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}
         run: |
+          case "$WARMUP_FIRST_INPUT" in
+            true) export WARMUP_FIRST_PROOF=1 ;;
+            false) unset WARMUP_FIRST_PROOF ;;
+            *) echo 'Invalid warmup_first input' >&2; exit 1 ;;
+          esac
           node --input-type=module <<'PLAN'
           import {execFileSync} from 'node:child_process';
           import {savedEventWorkflowConfig} from './tools/verifier/verify-saved-events.mjs';
           const config=savedEventWorkflowConfig();
+          if(config.plan.maxJobs!==256||config.plan.maxRuntimeMs!==480000)throw Error('Hosted pass requires 256 jobs and eight native minutes');
           if(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==config.testedCommit)throw Error('Tested implementation changed');
           console.log(JSON.stringify(config));
           PLAN
       - name: Test offline authority and saved-event scope before native setup
-        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs tools/verifier/saved-event-offline.test.mjs tools/verifier/native-verification-priority.test.mjs tools/public-offline-verification.test.mjs
+        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs tools/verifier/saved-event-offline.test.mjs tools/verifier/saved-event-hosted-workflow.test.mjs tools/published-target-retention.test.mjs tools/verifier/native-verification-priority.test.mjs tools/public-offline-verification.test.mjs
       - name: Install pinned native dependencies
         run: npm ci --prefix tools/verifier --ignore-scripts
       - name: Install pinned sandboxed browser
@@ -81,7 +104,7 @@ jobs:
           printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Verify and live-compile an audited private candidate without capture or Git publication
-        timeout-minutes: 18
+        timeout-minutes: 50
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
@@ -90,7 +113,16 @@ jobs:
           LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
-        run: node tools/verifier/verify-saved-events.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/saved-event-verification"
+          TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
+          NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
+          WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}
+        run: |
+          case "$WARMUP_FIRST_INPUT" in
+            true) export WARMUP_FIRST_PROOF=1 ;;
+            false) unset WARMUP_FIRST_PROOF ;;
+            *) echo 'Invalid warmup_first input' >&2; exit 1 ;;
+          esac
+          node tools/verifier/verify-saved-events.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/saved-event-verification"
       - name: Retain nonpublishable results and completed proof checkpoints
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -109,6 +141,7 @@ jobs:
             ${{ runner.temp }}/saved-event-verification/events/public-catalog.json
             ${{ runner.temp }}/saved-event-verification/verification-ledger-current.json
             ${{ runner.temp }}/saved-event-verification/verification-ledger/
+            ${{ runner.temp }}/saved-event-verification/first-proof-pass-*.json
             ${{ runner.temp }}/saved-event-verification/progress-*.json
             ${{ runner.temp }}/saved-event-verification/failure-checkpoint-*.json
             ${{ runner.temp }}/saved-event-verification/local-reports/native-proof-checkpoints/

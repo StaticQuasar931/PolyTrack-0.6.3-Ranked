@@ -109,10 +109,19 @@ function jsonBytes(value) {
   return Buffer.from(json, 'utf8');
 }
 
+// Preserve the established Linux gzip container header across packaging hosts.
+// This affects no decoded data or gzip checksum, and old snapshots remain readable.
+export function normalizeSnapshotGzip(bytes) {
+  const result = Buffer.from(bytes);
+  if (result.length < 10 || result[0] !== 31 || result[1] !== 139 || result[2] !== 8 || result[3] !== 0) throw Error('Unexpected snapshot gzip header');
+  result[9] = 3;
+  return result;
+}
+
 export async function encodeSnapshot(value) {
   const decoded = jsonBytes(value);
   if (decoded.byteLength > MAX_DECODED_BYTES) throw new RangeError(`Decoded snapshot exceeds ${MAX_DECODED_BYTES} bytes`);
-  const encoded = xorBytes(await gzipAsync(decoded, { level: 9, mtime: 0 }));
+  const encoded = xorBytes(normalizeSnapshotGzip(await gzipAsync(decoded, { level: 9, mtime: 0 })));
   if (encoded.byteLength > MAX_FILE_BYTES) throw new RangeError(`Encoded snapshot exceeds ${MAX_FILE_BYTES} bytes`);
   return new Uint8Array(encoded);
 }
@@ -239,11 +248,12 @@ async function matchesPublished(entries, index, directory) {
   for (const { logicalPath, bytes } of entries) {
     const item = index.files[logicalPath];
     if (!item || item.decodedBytes !== bytes.byteLength) return false;
-    const expectedHash = sha256(xorBytes(await gzipAsync(bytes, { level: 9, mtime: 0 })));
-    if (item.sha256 !== expectedHash || item.path !== `${expectedHash}.bin`) return false;
+    const expectedHash = sha256(xorBytes(normalizeSnapshotGzip(await gzipAsync(bytes, { level: 9, mtime: 0 }))));
+    if (!/^[a-f0-9]{64}$/.test(item.sha256 || '') || item.path !== `${item.sha256}.bin`) return false;
     try {
       const published = await fs.readFile(path.join(directory, item.path));
       if (sha256(published) !== item.sha256) return false;
+      if (sha256(xorBytes(normalizeSnapshotGzip(xorBytes(published)))) !== expectedHash) return false;
     } catch { return false; }
   }
   if (entries.some(entry => entry.logicalPath === 'snapshot-paging.json')) {
@@ -410,7 +420,7 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
     for (let i = 0; i < entries.length; i += 1) {
       const { logicalPath, bytes } = entries[i];
       const payload = `snapshot-${String(i + 1).padStart(4, '0')}.bin`;
-      const encoded = xorBytes(await gzipAsync(bytes, { level: 9, mtime: 0 }));
+      const encoded = xorBytes(normalizeSnapshotGzip(await gzipAsync(bytes, { level: 9, mtime: 0 })));
       if (encoded.byteLength > MAX_FILE_BYTES) throw new RangeError(`${logicalPath} encoded file exceeds ${MAX_FILE_BYTES} bytes`);
       await fs.writeFile(path.join(stagingPublish, payload), encoded, { flag: 'wx' });
       const payloadHash = sha256(encoded);
