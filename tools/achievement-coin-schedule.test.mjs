@@ -32,3 +32,5 @@ test('pure receipt validation accepts immutable sums only, not unknown IDs or le
   {policyVersion:1,claimedRewardIds:[schedule[0].id,schedule[0].id],delta:4},
   {policyVersion:1,claimedRewardIds:[],delta:0}])assert.equal(valid(receipt),false);
 });
+
+test('deployment configuration retains the reviewed achievement feature without changing currency policy',async()=>{const fs=await import('node:fs/promises');const config=JSON.parse(await fs.readFile(new URL('../workers/ranked/wrangler.jsonc',import.meta.url),'utf8'));assert.equal(config.vars.CURRENCY_ACHIEVEMENTS_ENABLED,'true');assert.equal(config.vars.CURRENCY_RULES_VERSION,'currency-server-only-v1');assert.equal(config.vars.PUBLIC_FIRESTORE_READ_MODE,'capture-only');});

@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 391,
+  "number": 392,
   "version": "0.6.3",
-  "revision": 333,
+  "revision": 334,
   "notes": [
-    "Fixed a Windows-only test path that blocked offline verification on GitHub."
+    "Added verification for 66 saved event runs without another cloud capture.",
+    "Preserved all existing normal-track results and earlier verification proofs."
   ],
-  "preparedAt": "2026-11-15T00:01:00.343Z",
-  "committedAt": "2026-11-15T00:02:44.000Z"
+  "preparedAt": "2026-11-15T00:42:26.615Z",
+  "committedAt": "2026-11-15T00:49:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

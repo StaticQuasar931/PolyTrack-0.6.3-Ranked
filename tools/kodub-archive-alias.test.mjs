@@ -45,6 +45,23 @@ test('catalog rejects mismatched paths, hashes, flags, identities and sources wi
   assert.equal((await c.loadExtraTracksCatalog()).length,0);assert.equal(c.unrankedExtraTrackIds.size,0);
 });
 
+function stubStorageImport(body){
+  const imports=body.match(/await import\(new URL\('\.\.\/tools\/track-import-storage\.mjs\?v=\d+',eventsModuleUrl\)\.href\)/g)||[];
+  assert.equal(imports.length,1,'exactly one local track storage import must be stubbed');
+  return body.replace(imports[0],'await Promise.resolve(storageModule)');
+}
+
+test('archive import harness accepts cache revision changes but rejects missing, duplicate and foreign imports',()=>{
+  for(const revision of [133,332,9999]){
+    const body=`const storage=await import(new URL('../tools/track-import-storage.mjs?v=${revision}',eventsModuleUrl).href);`;
+    assert.equal(stubStorageImport(body),'const storage=await Promise.resolve(storageModule);');
+    assert.throws(()=>stubStorageImport(body+body),/exactly one/);
+  }
+  for(const body of ['',"await import(new URL('https://foreign.test/track-import-storage.mjs?v=332',eventsModuleUrl).href)",
+    "await import(new URL('../tools/other.mjs?v=332',eventsModuleUrl).href)"])
+    assert.throws(()=>stubStorageImport(body),/exactly one/);
+});
+
 function importFixture(entry=aliases[0],{raw,decodedId=entry.trackId,historyHash=entry.codeHash}={}){
   const events=[],writes=[],known={};let current=true,closed=0;
   const code=raw??fs.readFileSync(new URL('../'+entry.trackPath,import.meta.url),'utf8');
@@ -53,6 +70,7 @@ function importFixture(entry=aliases[0],{raw,decodedId=entry.trackId,historyHash
   const confirm={querySelector:()=>({}),click:()=>{events.push('confirm');dialog.isConnected=false;}};
   const button={querySelector:()=>({}),click:()=>events.push('native-import')};
   const c=vm.createContext({URL,AbortSignal,Headers,Event,TextEncoder,crypto:webcrypto,
+    window:{__ptRankedDataStorageReady:Promise.resolve(),__ptRankedDataStorage:{flush:async()=>events.push('storage-flush')}},
     extraTracksBaseUrl:new URL('https://offline.test/project/extra-tracks/'),kodubTrackHistory:new Map(),
     loadKodubTrackHistory:async()=>{events.push('history');c.kodubTrackHistory.set(entry.trackId,{codeHash:historyHash});},
     fetch:async(url,options)=>{events.push('GET '+url);assert.equal(options.method,undefined);return{ok:true,headers:new Headers(),text:async()=>code};},
@@ -60,9 +78,8 @@ function importFixture(entry=aliases[0],{raw,decodedId=entry.trackId,historyHash
     extraTrackIds:()=>known,extraTrackIdsKey:'known',extraTrackKnownIds:{},localStorage:{setItem:(...args)=>writes.push(args)},
     extraTracksUi:{close:()=>closed++},volatileLeaderboardCache:new Map(),jsonStorageCache:new Map(),
     storageModule:{reserveTrackSpace:()=>events.push('reserve')},document:{querySelector:selector=>selector.includes('track-export-ui')?dialog:null,querySelectorAll:selector=>selector.includes('track-title')?[]:[button]}});
-  const anchor="await import(new URL('../tools/track-import-storage.mjs?v=133',eventsModuleUrl).href)";
-  const body=extract('importExtraTrack');assert.equal(body.split(anchor).length,2);
-  vm.runInContext(extract('sha256Hex')+'\n'+body.replace(anchor,'await Promise.resolve(storageModule)'),c);
+  const body=stubStorageImport(extract('importExtraTrack'));
+  vm.runInContext(extract('sha256Hex')+'\n'+body,c);
   return {c,events,writes,known,field,closed:()=>closed,options:{isCurrent:()=>current},cancel:()=>current=false};
 }
 
@@ -71,6 +88,8 @@ test('archive native import validates raw asset hash and decoded canonical ID be
   const f=importFixture(alias);await f.c.importExtraTrack(alias,f.options);
   assert.deepEqual(f.events.slice(0,3),['history','GET https://offline.test/project/'+alias.trackPath,'decode']);
   assert.ok(f.events.includes('native-import'));assert.ok(f.events.includes('confirm'));assert.equal(f.known[alias.id],alias.trackId);
+  assert.equal(f.events.filter(event=>event==='storage-flush').length,1);
+  assert.ok(f.events.indexOf('storage-flush')<f.events.indexOf('reserve'),'storage is flushed before track-space eviction');
   assert.equal(f.writes.length,1);assert.equal(f.closed(),1);
   assert.equal(f.field.value,fs.readFileSync(new URL('../'+alias.trackPath,import.meta.url),'utf8').trim());
 });

@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 391,
+    "number": 392,
     "version": "0.6.3",
-    "revision": 333,
+    "revision": 334,
     "notes": [
-      "Fixed a Windows-only test path that blocked offline verification on GitHub."
+      "Added verification for 66 saved event runs without another cloud capture.",
+      "Preserved all existing normal-track results and earlier verification proofs."
     ]
   },
   "entries": [
+    {
+      "number": 391,
+      "title": "Make native verification test fixtures portable on GitHub",
+      "commit": "1c515ef2bb54df5756d77fed366f9ca099a6e129",
+      "committedAt": "2026-11-15T00:02:44.000Z",
+      "notes": [
+        "Fixed a Windows-only test path that blocked offline verification on GitHub."
+      ]
+    },
     {
       "number": 390,
       "title": "Real car workshop achievement bonuses and offline event verification",
@@ -206,13 +216,6 @@
         "Help checks for updates when opened. Event badges and track menus are more consistent.",
         "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
       ]
-    },
-    {
-      "number": null,
-      "title": "Polish achievements, track discovery and rankings; prepare bounded full catch-up",
-      "commit": "4e9327c1bd70c1c7ab300c79dc8563d64f7178f5",
-      "committedAt": "2026-11-14T05:28:48.000Z",
-      "notes": []
     }
   ],
   "coverage": {

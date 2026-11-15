@@ -43,3 +43,7 @@ Use bounded, resumable canonical processing and sharded verification, then publi
 4. Set all required secrets.
 5. Run `npm run deploy`.
 6. Set `window.POLYTRACK_RANKED_BROKER_URL` to the Worker origin in the release loader.
+
+### Achievement Style Coins
+
+`CURRENCY_ACHIEVEMENTS_ENABLED=true` enables the explicit, server-validated achievement bonus claim. The shared fixed schedule deduplicates matching title/style requirements and permits historical eligibility still supported by canonical earned entitlements. Opening menus does not grant coins. Claims use an idempotent receipt and never trust client counters, previews, or purchased allowances as earned proof. Preserve live variables and rate limits when deploying.
