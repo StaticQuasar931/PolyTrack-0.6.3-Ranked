@@ -2,18 +2,29 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 401,
+    "number": 402,
     "version": "0.6.3",
-    "revision": 343,
+    "revision": 344,
     "notes": [
-      "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
-      "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
-      "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
-      "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
-      "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
+      "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
+      "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
+      "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
     ]
   },
   "entries": [
+    {
+      "number": 401,
+      "title": "Fix observed rank history and event card sizing",
+      "commit": "6f27e4fac65bf518c6157fb969812680a8882f31",
+      "committedAt": "2026-11-15T22:30:20.000Z",
+      "notes": [
+        "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
+        "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
+        "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
+        "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
+        "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
+      ]
+    },
     {
       "number": 400,
       "title": "Publish completed priority proofs and remove audit staging I/O",
@@ -220,17 +231,6 @@ const historyData = {
         "Claim a Community badge with the Discord invite code.",
         "Shop designs stay visible during local recalculation.",
         "Clearer achievement goals and cosmetic previews."
-      ]
-    },
-    {
-      "number": 381,
-      "title": "Achievements and profile shop",
-      "commit": "e5b5969fa2f7128887130b306c1a09c9475231ad",
-      "committedAt": "2026-11-14T16:34:37.000Z",
-      "notes": [
-        "A clearer full-screen Achievements and Racer Studio hub.",
-        "Claim cosmetic points and collect original profile designs.",
-        "Clearer route advice, previews and cosmetic details."
       ]
     }
   ],

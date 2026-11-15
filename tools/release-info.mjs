@@ -1,16 +1,14 @@
 const releaseInfo = {
-  "number": 401,
+  "number": 402,
   "version": "0.6.3",
-  "revision": 343,
+  "revision": 344,
   "notes": [
-    "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
-    "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
-    "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
-    "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
-    "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
+    "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
+    "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
+    "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
   ],
-  "preparedAt": "2026-11-15T22:24:38.670Z",
-  "committedAt": "2026-11-15T22:30:20.000Z"
+  "preparedAt": "2026-11-15T22:42:22.962Z",
+  "committedAt": "2026-11-15T22:43:22.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
