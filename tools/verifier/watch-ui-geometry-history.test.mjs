@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import{readFileSync}from'node:fs';
+import{reviewedHistoricalGeometry,reviewedWatchUiBaseline}from'./watch-ui-review.mjs';
+const geometry=JSON.parse(readFileSync(new URL('./track-geometry.json',import.meta.url)));
+const manifest=JSON.parse(readFileSync(new URL('./engine-manifest.json',import.meta.url)));
+const clone=()=>structuredClone(geometry);
+test('current reviewed geometry restores unchanged historical audit chain without editing policy',()=>{const original=JSON.stringify(geometry);const result=reviewedWatchUiBaseline(manifest);assert.equal(result.geometry.tracks.length,geometry.tracks.length-1);assert.equal(JSON.stringify(geometry),original);});
+test('historical geometry is also accepted without the extension',()=>{const historical=reviewedHistoricalGeometry(geometry);assert.deepEqual(reviewedHistoricalGeometry(historical),historical);});
+test('modified extension and duplicate extension fail closed',()=>{for(const mutate of [g=>g.tracks[0].parts++,g=>g.tracks[0].hash='a'.repeat(64),g=>g.tracks.push({...g.tracks[0]})]){const g=clone();mutate(g);assert.throws(()=>reviewedHistoricalGeometry(g));}});
+test('changed, missing or unknown historical geometry rows fail closed',()=>{for(const mutate of [g=>g.tracks[1].parts++,g=>g.tracks.splice(1,1),g=>g.tracks.push({id:'f'.repeat(64)})]){const g=clone();mutate(g);assert.throws(()=>reviewedHistoricalGeometry(g));}});

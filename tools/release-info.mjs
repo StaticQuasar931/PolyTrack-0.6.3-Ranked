@@ -1,15 +1,16 @@
 const releaseInfo = {
-  "number": 400,
+  "number": 401,
   "version": "0.6.3",
-  "revision": 342,
+  "revision": 343,
   "notes": [
-    "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
-    "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
-    "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
-    "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
+    "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
+    "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
+    "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
+    "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
+    "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
   ],
-  "preparedAt": "2026-11-15T05:35:48.642Z",
-  "committedAt": "2026-11-15T05:51:10.000Z"
+  "preparedAt": "2026-11-15T22:24:38.670Z",
+  "committedAt": "2026-11-15T22:30:20.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

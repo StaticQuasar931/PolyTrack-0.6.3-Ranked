@@ -1,0 +1,2 @@
+# Installed dependencies are local build tools, not source files.
+node_modules/

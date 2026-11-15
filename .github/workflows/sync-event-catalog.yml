@@ -163,6 +163,8 @@ jobs:
             git add -- tools/workflow-capture-state.json
           fi
           if [ -f snapshot-current.json ]; then
+            node tools/build-overall-rank-history.mjs
+            git add -- tools/overall-rank-history.json
             git add -- index.html snapshot-current.json
             git add -A -- ':(glob)public-snapshots[0-9]*/**'
           fi

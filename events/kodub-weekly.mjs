@@ -73,9 +73,22 @@ async function fetchKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.now()}
 }
 
 const coverBindings=new WeakMap();
+const heightBindings=new WeakMap();
 export function fitKodubCover(card){
   const button=card?.querySelector(':scope > button'),image=button?.querySelector('img.cover:not(.environment),img.thumbnail:not(.environment)');
   if(!button||!image)return;
+  const rail=card.closest('.sq-featured-events');
+  if(rail&&!heightBindings.has(card)){
+    const siblings=[...rail.querySelectorAll('.sq-event-card[data-event-kind="daily"],.sq-event-card[data-event-kind="weekly"]')];
+    const sync=()=>{
+      const height=Math.max(0,...siblings.map(node=>node.getBoundingClientRect().height));
+      const value=height+'px';
+      if(height>0&&card.style.getPropertyValue('--kodub-card-height')!==value)card.style.setProperty('--kodub-card-height',value);
+    };
+    const Observer=card.ownerDocument?.defaultView?.ResizeObserver;
+    if(Observer){const observer=new Observer(sync);siblings.forEach(node=>observer.observe(node));heightBindings.set(card,observer);}
+    sync();
+  }
   const apply=()=>{
     const ratio=image.naturalWidth/image.naturalHeight;
     if(Number.isFinite(ratio)&&ratio>0&&button.style.getPropertyValue('--kodub-cover-ratio')!==String(ratio))

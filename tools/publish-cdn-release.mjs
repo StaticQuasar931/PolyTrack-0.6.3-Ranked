@@ -29,7 +29,7 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
   const current = JSON.parse(await read('snapshot-current.json'));
   if (current.currentdir !== directory) throw Error('Snapshot pointer and entry point disagree');
   const probes = new Set(['index.html', 'site-version.json', 'simulation_worker.bundle.js', 'polytrack_physics.wasm', 'snapshot-current.json', directory + '/index.json', directory + '/bootstrap-fast.json']);
-  for (const file of ['tools/public-snapshot-client.mjs','tools/snapshot-metadata-recovery.mjs','tools/unique-profile-name.mjs','tools/overall-local-controller.mjs','tools/overall-local-projection.mjs','tools/practice-profile.mjs','events/client.mjs']) probes.add(file);
+  for (const file of ['tools/overall-rank-history.json','tools/public-snapshot-client.mjs','tools/snapshot-metadata-recovery.mjs','tools/unique-profile-name.mjs','tools/overall-local-controller.mjs','tools/overall-local-projection.mjs','tools/practice-profile.mjs','events/client.mjs']) probes.add(file);
   for (const match of html.matchAll(/\b(?:src|href)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
     if (!/^[a-zA-Z0-9_./-]+$/.test(match[1]) || match[1].split('/').includes('..')) throw Error('Unsafe entry asset path');
     probes.add(match[1]);

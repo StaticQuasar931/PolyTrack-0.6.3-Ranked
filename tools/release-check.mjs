@@ -57,7 +57,7 @@ try {
  for(const [file,hash]of Object.entries(historical.unchangedPhysicsAssets))assert.equal(pin.files[file],hash);
  assert.equal(sha(JSON.stringify(Object.entries(pin.tracks).sort(([a],[b])=>a<b?-1:a>b?1:0))),indexed.trackPinsSha256);
  assert.equal(indexed.trackPinsSha256,opponent.trackPinsSha256);
- const geometry=json('tools/verifier/track-geometry.json'),spite=json('docs/events/spite-geometry-review.json');
+ const geometry=baseline.geometry,spite=json('docs/events/spite-geometry-review.json');
  assert.equal(geometry.engineDigest,VERIFIER_ENGINE_DIGEST);
  assert.equal(spite.engineDigest,indexed.previousEngine);assert.equal(spite.previousReview,indexed.previousReview);assert.equal(spite.previousReviewSha256,indexed.previousReviewSha256);
  assert.equal(sha(JSON.stringify(geometry.tracks)),indexed.geometryRowsSha256);assert.equal(indexed.geometryRowsSha256,spite.currentGeometryRowsSha256);

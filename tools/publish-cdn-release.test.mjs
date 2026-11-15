@@ -24,6 +24,7 @@ function fixture(){
   const payload=Buffer.from('rankings fixture'),id=hash(payload);
   const files=new Map(Object.entries({
     'index.html':'<head><meta name="polytrack-snapshot" content="./public-snapshots1/"><script src="./main.bundle.js"></script><script src="./polytrack_062_patch.js"></script></head>',
+    'tools/overall-rank-history.json':JSON.stringify({schemaVersion:1,directory:'public-snapshots1',observedAt:1000,rows:{}}),
     'snapshot-current.json':JSON.stringify({currentdir:'public-snapshots1'}),
     'public-snapshots1/index.json':JSON.stringify({schemaVersion:1,generation:1,encoding:'gzip-xor-a7-v1',files:Object.fromEntries(['overall-manifest.json','overall-preview.json','overall-pages/1.json'].map(name=>[name,{path:id+'.bin',sha256:id,decodedBytes:payload.length}]))}),
     'public-snapshots1/bootstrap-fast.json':JSON.stringify({schemaVersion:1,generation:1,encoding:'gzip-xor-a7-v1',compactIndexVersion:1,partial:true,fallbackIndex:'index.json',files:Object.fromEntries(['overall-manifest.json','overall-preview.json','overall-pages/1.json'].map(name=>[name,[id,payload.length]]))}),
