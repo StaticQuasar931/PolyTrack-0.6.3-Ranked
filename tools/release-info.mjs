@@ -1,15 +1,15 @@
 const releaseInfo = {
-  "number": 397,
+  "number": 398,
   "version": "0.6.3",
-  "revision": 339,
+  "revision": 340,
   "notes": [
-    "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
-    "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
-    "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
-    "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
+    "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
+    "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
+    "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
+    "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
   ],
-  "preparedAt": "2026-11-15T04:44:30.761Z",
-  "committedAt": "2026-11-15T04:51:56.000Z"
+  "preparedAt": "2026-11-15T05:09:58.460Z",
+  "committedAt": "2026-11-15T05:13:15.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

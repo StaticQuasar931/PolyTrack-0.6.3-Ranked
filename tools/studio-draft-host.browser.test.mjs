@@ -96,3 +96,22 @@ test('restore saved clears every locked layer before restoring; Undo prioritizes
  await p.locator('.studio-restore-saved').click();assert.deepEqual(await p.evaluate(()=>({previewLayers,draft,saved,dirty:api.isDirty()})),{previewLayers:0,draft:{theme:'blue'},saved:{theme:'blue'},dirty:false});
  await p.locator('.studio-undo').click();assert.deepEqual(await p.evaluate(()=>draft),{theme:'gold'});
 });
+
+test('history cannot steal the actual parent save/error status and confirmed local save is visible',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{api.dispose();document.querySelector('.profile-customizer-actions').innerHTML='<span role="status" id="actual-save-status">Preview changes here.</span>';api=bind();});
+ assert.equal(await p.evaluate(()=>studio.querySelector('[role="status"]').id),'actual-save-status');
+ await p.evaluate(()=>{edit('gold');api.markSaved({theme:'gold'});});assert.equal(await p.locator('.studio-save-state').innerText(),'Saved on this device.');
+ await p.evaluate(()=>edit('red'));assert.equal(await p.locator('.studio-dirty-marker').isVisible(),true);assert.equal(await p.locator('.studio-save-state').isVisible(),false);
+});
+
+test('late Shop launcher is moved beside Studio tabs without losing its real handler',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{const controls=document.createElement('div');controls.className='profile-customizer-controls';controls.innerHTML='<div class="studio-tabs" role="tablist"></div>';studio.append(controls);window.shopClicks=0;const b=document.createElement('button');b.type='button';b.className='profile-shop-open';b.textContent='Style shop';b.addEventListener('click',()=>shopClicks++);controls.append(b);});
+ await p.locator('.studio-tabs>.profile-shop-open').waitFor({state:'attached',timeout:2000});await p.locator('.studio-tabs>.profile-shop-open').click();assert.equal(await p.evaluate(()=>shopClicks),1);assert.equal(await p.locator('.profile-shop-open').count(),1);
+ await p.evaluate(()=>{document.querySelector('.profile-shop-open').remove();api.dispose();});assert.equal(await p.locator('.profile-shop-open').count(),0,'history cleanup must not resurrect a disposed Shop launcher');
+});
+
+test('invalid favorite selection has a specific accessible error and blocks only publishing',async t=>{
+ const p=await fixture(t);await p.evaluate(()=>{const input=document.querySelector('#favorite');input.dataset.cosmeticFavorite='';input.setAttribute('aria-invalid','true');const save=document.createElement('button');save.type='button';save.dataset.saveProfileCosmetics='';save.textContent='Publish';window.published=0;save.addEventListener('click',()=>published++);studio.append(save);});
+ await p.locator('[data-save-profile-cosmetics]').click();assert.equal(await p.evaluate(()=>published),0);assert.match(await p.locator('.studio-selection-error').innerText(),/Choose a favorite track from the list/);assert.equal(await p.locator('#favorite').getAttribute('aria-invalid'),'true');
+ await p.evaluate(()=>document.querySelector('#favorite').setAttribute('aria-invalid','false'));await p.locator('[data-save-profile-cosmetics]').click();assert.equal(await p.evaluate(()=>published),1);assert.equal(await p.locator('.studio-selection-error').isVisible(),false);
+});

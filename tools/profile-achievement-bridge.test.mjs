@@ -399,6 +399,7 @@ test('shop destination keeps its place while a scoped callback loads',async t=>{
  await page.evaluate(()=>{window.shopOpens=0;const root=document.querySelector('#content');root.__profileShopOpen=()=>shopOpens++;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
  await page.locator('[data-ph-launch="shop"]').click();assert.equal(await page.evaluate(()=>shopOpens),1);
  await page.evaluate(()=>cleanup.open('studio'));await page.locator('[data-ph-shop]').click();assert.equal(await page.evaluate(()=>shopOpens),2);
+ assert.equal(await page.locator('.ph-tabbar').evaluate(node=>[...node.children].findIndex(e=>e.hasAttribute('data-ph-shop'))<[...node.children].findIndex(e=>e.classList.contains('ph-tab-hint'))),true);assert.equal(await page.locator('[data-ph-shop] svg[data-ph-icon=shop]').count(),1);
  await page.evaluate(()=>{const root=document.querySelector('#content');delete root.__profileShopOpen;root.dispatchEvent(new CustomEvent('profile-shop-ready'));});
  assert.equal(await page.locator('[data-ph-shop]').isVisible(),true);assert.equal(await page.locator('[data-ph-shop]').isDisabled(),true);
 });

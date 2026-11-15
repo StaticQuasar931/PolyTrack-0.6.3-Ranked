@@ -1,17 +1,29 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 397,
+    "number": 398,
     "version": "0.6.3",
-    "revision": 339,
+    "revision": 340,
     "notes": [
-      "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
-      "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
-      "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
-      "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
+      "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
+      "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
+      "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
+      "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
     ]
   },
   "entries": [
+    {
+      "number": 397,
+      "title": "Publish Kodub event proofs and streamline offline verification",
+      "commit": "f107fcc97bf79de5e6bf72d008eac795d7d228ba",
+      "committedAt": "2026-11-15T04:51:56.000Z",
+      "notes": [
+        "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
+        "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
+        "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
+        "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
+      ]
+    },
     {
       "number": 396,
       "title": "Publish saved replay proofs and prepare offline Linux verification",
@@ -209,15 +221,6 @@
       "committedAt": "2026-11-14T10:00:56.000Z",
       "notes": [
         "Safer snapshot recovery without fetching saved runs again."
-      ]
-    },
-    {
-      "number": 375,
-      "title": "Confirm one-time snapshot admission before data access",
-      "commit": "5dba2db0eb73555d3103b51a570e2d19d452a7ad",
-      "committedAt": "2026-11-14T09:12:52.000Z",
-      "notes": [
-        "More reliable snapshot coordination checks before data capture begins."
       ]
     }
   ],

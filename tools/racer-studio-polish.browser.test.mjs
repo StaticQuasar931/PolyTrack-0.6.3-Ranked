@@ -139,3 +139,10 @@ test('picker colors are distinct, pattern samples use the actual renderer recipe
  const car=page.locator('.profile-preview-stage>.overall-car-model'),before=await car.boundingBox();await page.locator('main').evaluate(n=>n.classList.add('cosmetic-stage-apex-observatory'));assert.deepEqual(await car.boundingBox(),before);
  }finally{await browser.close();}
 });
+
+test('reduced-effects Studio keeps the chosen saved backdrop instead of flattening every scene to blue',async()=>{
+ const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();await fixture(page);await page.locator('main').evaluate(node=>node.classList.add('overall-profile-card','cosmetic-stage-aqua'));
+ const normal=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>getComputedStyle(node).backgroundImage);assert.match(normal,/gradient/);
+ await page.addStyleTag({content:baseCSS});await page.locator('html').evaluate(node=>node.classList.add('sq-plain-racer-themes'));const reduced=await page.locator('.profile-preview-stage>.overall-car-model').evaluate(node=>getComputedStyle(node).backgroundImage);assert.equal(reduced,normal,'Reduced effects may remove motion but must preserve the saved Studio backdrop');
+ }finally{await browser.close();}
+});

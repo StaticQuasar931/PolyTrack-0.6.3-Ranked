@@ -8,10 +8,10 @@ function convex(points,faces){
 const boxFaces=[[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[3,2,6],[3,6,7],[1,5,6],[1,6,2],[0,3,7],[0,7,4]];
 const box=(w,h,d,x=0,y=h/2,z=0)=>convex([[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]].map(p=>[x+p[0]*w/2,y+p[1]*h/2,z+p[2]*d/2]),boxFaces);
 function cylinder(radius,height,y,segments){const p=[],f=[];for(const h of [y,y+height])for(let i=0;i<segments;i++)p.push([Math.cos(i/segments*Math.PI*2)*radius,h,Math.sin(i/segments*Math.PI*2)*radius]);p.push([0,y,0],[0,y+height,0]);for(let i=0;i<segments;i++){const n=(i+1)%segments;f.push([segments*2,i,n],[segments*2+1,n+segments,i+segments],[i,i+segments,n+segments],[i,n+segments,n]);}return convex(p,f);}
-const part=(positions,color,emissive=0)=>Object.freeze({positions,color,emissive,triangles:positions.length/9});
+const part=(positions,color,emissive=0,decal=false)=>Object.freeze({positions,color,emissive,decal,triangles:positions.length/9});
 export function carAttachmentParts(category,id,density='low'){
  const key=category+':'+id+':'+density;if(cache.has(key))return cache.get(key);if(!['low','medium','high'].includes(density))throw Error('Invalid visual density');
- const dark=0x243545,metal=0xb5ccd3,cyan=0x7ee7ff,gold=0xe5b862,parts=[];const add=(g,c,e=0)=>parts.push(part(g,c,e));
+ const dark=0x243545,metal=0xb5ccd3,cyan=0x7ee7ff,gold=0xe5b862,parts=[];const add=(g,c,e=0,decal=false)=>parts.push(part(g,c,e,decal));
  if(id==='none')return [];
  if(category==='accessory'){
   if(id==='fin'){add(box(.09,.02,.36),dark);add(convex([[-.012,.02,-.22],[.012,.02,-.22],[-.012,.02,.22],[.012,.02,.22],[-.008,.19,-.13],[.008,.19,-.13],[-.008,.07,.16],[.008,.07,.16]],[[0,2,3],[0,3,1],[4,5,7],[4,7,6],[0,1,5],[0,5,4],[2,6,7],[2,7,3],[1,3,7],[1,7,5],[0,4,6],[0,6,2]]),cyan);}
@@ -22,7 +22,7 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else throw Error('Unknown roof visual');
  }else if(category==='emblem'){
-  if(id==='crest'){add(box(.08,.009,.12,0,.0045,0),dark);add(convex([[0,.01,-.05],[.03,.01,0],[0,.01,.05],[-.03,.01,0],[0,.018,-.05],[.03,.018,0],[0,.018,.05],[-.03,.018,0]],boxFaces),gold);}
+  if(id==='crest'){for(const [w,d,y,color]of [[.045,.06,.002,dark],[.032,.047,.0025,gold]])add(new Float32Array([0,y,-d,-w,y,0,0,y,d,0,y,-d,0,y,d,w,y,0]),color,0,true);}
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);
   else if(id==='chevron'){add(convex([[-.1,.035,0],[0,-.035,0],[.1,.035,0],[-.1,.035,.014],[0,-.035,.014],[.1,.035,.014]],[[0,2,1],[3,4,5],[0,1,4],[0,4,3],[1,2,5],[1,5,4],[2,0,3],[2,3,5]]),cyan);}
   else throw Error('Unknown nose emblem');
