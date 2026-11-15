@@ -83,7 +83,7 @@ test('actual commit scripts mark no-op false, successful bot push true, and neve
     const commit=step(workflows[name],name==='sync-kodub-weekly.yml'?'Commit changed capture':'Commit changed assignments');
     // Execute the real YAML shell body. Both network-capable commands are shell mocks.
     const mock=`git(){ printf 'git %s\\n' "$*" >> calls; if [ "$1" = diff ]; then [ "$TEST_CHANGED" = false ]; else return 0; fi; }
-node(){ printf 'node %s\\n' "$*" >> calls; if [ "$1" = tools/build-overall-rank-history.mjs ]; then return 0; fi; return "$TEST_PUSH_EXIT"; }
+node(){ printf 'node %s\\n' "$*" >> calls; if [ "$1" = tools/build-overall-rank-history.mjs ] || [ "$1" = tools/build-event-standings-preview.mjs ]; then return 0; fi; return "$TEST_PUSH_EXIT"; }
 `;
     await fs.writeFile(path.join(root,'calls'),'');await fs.writeFile(path.join(root,'output'),'');
     const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',mock+script(commit)],{
@@ -95,18 +95,18 @@ node(){ printf 'node %s\\n' "$*" >> calls; if [ "$1" = tools/build-overall-rank-
   }
 });
 
-test('rank-history build failure prevents commit, push and changed-success output',async t=>{
+test('rank-history and event-preview build failures prevent commit, push and changed-success output',async t=>{
   const root=await fixture(t);await fs.writeFile(path.join(root,'snapshot-current.json'),'{}');
-  for(const name of captures.slice(0,2)){
+  for(const name of captures.slice(0,2))for(const builder of ['tools/build-overall-rank-history.mjs','tools/build-event-standings-preview.mjs']){
     const commit=step(workflows[name],'Commit changed assignments');
     const mock=`git(){ printf 'git %s\\n' "$*" >> calls; return 0; }
-node(){ printf 'node %s\\n' "$*" >> calls; if [ "$1" = tools/build-overall-rank-history.mjs ]; then return 7; fi; return 0; }
+node(){ printf 'node %s\\n' "$*" >> calls; if [ "$1" = "$TEST_FAIL_BUILDER" ]; then return 7; fi; return 0; }
 `;
     await fs.writeFile(path.join(root,'calls'),'');await fs.writeFile(path.join(root,'output'),'');
-    const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',mock+script(commit)],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_OUTPUT:'output'}});
+    const result=spawnSync(bash,['--noprofile','--norc','-e','-o','pipefail','-c',mock+script(commit)],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_OUTPUT:'output',TEST_FAIL_BUILDER:builder}});
     assert.ifError(result.error);assert.equal(result.status,7,result.stderr);
     const calls=await fs.readFile(path.join(root,'calls'),'utf8');
-    assert.match(calls,/node tools\/build-overall-rank-history.mjs/);
+    assert.ok(calls.includes('node '+builder),builder);
     assert.doesNotMatch(calls,/git commit|node tools\/push-public-capture.mjs/);
     assert.equal(await fs.readFile(path.join(root,'output'),'utf8'),'');
   }

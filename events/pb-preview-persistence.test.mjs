@@ -30,7 +30,7 @@ for(const kind of ['daily','weekly','kodub'])test(kind+' PB survives leave/reope
  const reopened=h.rows();assert.equal(reopened.rows.length,0);assert.equal(reopened.previewOwn.timeMs,2000);
  assert.equal(reopened.previewOwn.previewOnly,true);assert.equal(reopened.previewOwn.verified,false);assert.equal(reopened.previewOwn.eventRpEligible,false);
  for(const field of ['rp','replay','replayHash','runId'])assert.equal(reopened.previewOwn[field],undefined);
- assert.equal(reopened.previewOwn.rank,null);assert.match(h.markup(),/Loading standings[.][.][.]/);
+ assert.equal(reopened.previewOwn.rank,null);assert.doesNotMatch(h.markup(),/Loading standings|Placement unavailable/);
  h.cache.set(period.id,board(period,{entries:[],complete:false,totalEntries:20,updatedAt:2000}));assert.equal(h.rows().previewOwn.timeMs,2000);
  h.cache.set(period.id,board(period,{entries:[own(period,{timeMs:1900})],updatedAt:3000}));assert.equal(h.rows().previewOwn.timeMs,1900);
  h.cache.set(period.id,board(period,{entries:[],totalEntries:0,updatedAt:4000}));assert.equal(h.rows().previewOwn,null);

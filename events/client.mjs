@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=345';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=345';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=346';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=346';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=345';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=345';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=345';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=346';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=346';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=346';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -553,7 +553,7 @@ export function renderEventPersonalBest(host,{timeText,placement,pending=false,l
     result.append(doc.createTextNode(placement.ordinal));
     if(placement.percentile!==null){const percent=doc.createElement('span');percent.className='faded';percent.textContent=' ('+placement.percentile+'%)';result.append(percent);}
   }else{
-    const unknown=doc.createElement('span');unknown.className=preview?'faded sq-event-preview-loading':'faded';if(preview){unknown.setAttribute('role','status');unknown.title='Saved event PB retained. Current standings are loading.';}unknown.textContent=pending?(unscored?'Not scored':preview?'Loading standings...':local?'Local PB':'Waiting'):'---';result.append(unknown);
+    const unknown=doc.createElement('span');unknown.className='faded';if(preview){unknown.title='Saved event PB. No matching published placement is available.';}unknown.textContent=pending?(unscored?'Not scored':preview?'---':local?'Local PB':'Waiting'):'---';result.append(unknown);
   }
   host.append(timer,result);
 }
@@ -562,7 +562,43 @@ export function eventPreviewPlacementPresentation(preview){
   if(!placement||!Number.isSafeInteger(placement.rank)||placement.rank<1||!Number.isSafeInteger(placement.fieldSize)||placement.fieldSize<placement.rank)return null;
   const text=placement.rank+'/'+placement.fieldSize;
   return {text,ordinal:text,percentile:null,className:'sq-record-placement is-cached',ariaLabel:'Cached event placement '+text,
-    title:'Cached event placement '+text+' from the saved complete standings. Current standings are loading; no new placement or verification is inferred.'};
+    title:'Cached event placement '+text+' from the saved complete standings. No new placement or verification is inferred.'};
+}
+// Display-only rows: never feed these into replay, verification, or ERP decisions.
+export function createStaticStandingsPreview({fetcher=fetch,directory,onChange=()=>{}}){
+  let state=null,pending=null,key='';const validated=new WeakMap();
+  return {load(){
+    const current=directory();
+    if(!/^public-snapshots[1-9][0-9]*$/.test(current||''))return Promise.resolve();
+    if(key===current&&pending)return pending;
+    key=current;state=null;
+    const url=new URL('./standings-preview.json',import.meta.url);url.search=new URL(import.meta.url).search;url.searchParams.set('snapshot',current);
+    pending=Promise.resolve().then(()=>fetcher(url.href,{cache:'force-cache',credentials:'same-origin'})).then(async response=>{
+      if(!response.ok)throw Error('Preview unavailable');
+      const text=await response.text();if(text.length>1048576)throw Error('Preview oversized');
+      const value=JSON.parse(text);
+      if(value?.schemaVersion!==1||value.directory!==current||!Array.isArray(value.boards)||value.boards.length>256)throw Error('Preview mismatch');
+      if(directory()===current)state=value;
+    }).catch(()=>{}).finally(()=>{if(directory()===current)onChange();});
+    return pending;
+  },get(period,accountId,timeMs){
+    if(state?.directory!==directory()||!EVENT_RECORD_HASH.test(accountId||''))return null;
+    const board=state.boards.find(board=>['id','kind','trackId','startsAt','endsAt'].every(key=>board?.period?.[key]===period?.[key]));
+    if(!board||!Array.isArray(board.rows)||board.rows.length>EVENT_RECORD_LIMIT||board.fieldSize!==board.rows.length||!Number.isSafeInteger(board.updatedAt)||board.updatedAt<0)return null;
+    if(!validated.has(board)){
+      const ids=new Set();
+      const invalid=board.rows.some(row=>{
+        if(!Array.isArray(row)||!EVENT_RECORD_HASH.test(row[0]||'')||ids.has(row[0])||!Number.isSafeInteger(row[1])||row[1]<1||row[1]>EVENT_TIME_LIMIT||!Number.isSafeInteger(row[2])||row[2]<1||row[2]>board.fieldSize)return true;
+        ids.add(row[0]);return false;
+      });
+      const sorted=invalid?[]:[...board.rows].sort((a,b)=>a[1]-b[1]);let rank=0;
+      const badRanks=sorted.some((row,index)=>{if(!index||row[1]!==sorted[index-1][1])rank=index+1;return row[2]!==rank;});
+      validated.set(board,invalid||badRanks?null:new Map(board.rows.map(row=>[row[0],row])));
+    }
+    const found=validated.get(board)?.get(accountId),row=found&&(timeMs===undefined||found[1]===timeMs)?found:null;
+    return row?{accountId,periodId:period.id,trackId:period.trackId,timeMs:row[1],rank:null,previewOnly:true,pending:true,verified:false,eventRpEligible:false,
+      source:'static-event-preview',cachedPlacement:{rank:row[2],fieldSize:board.fieldSize,updatedAt:board.updatedAt}}:null;
+  }};
 }
 export function createEventPbPreviews(){
   const saved=new Map();
@@ -868,6 +904,10 @@ export function installEvents(bridge){
   }
   let totalsMemo=null;const totalsBoardRequests=new Map();
   const pbPreviews=createEventPbPreviews();
+  const standingsPreview=createStaticStandingsPreview({directory:()=>document.querySelector('meta[name="polytrack-snapshot"]')?.content?.match(/(?:^|\/)(public-snapshots[1-9][0-9]*)\/?$/)?.[1]||'',onChange:()=>{
+    tick({cachedOnly:true});
+    for(const card of dialog?.querySelectorAll('[data-event-id]')||[]){const period=knownPeriods.get(card.dataset.eventId);const record=card.querySelector('.sq-event-record');if(period&&record)record.innerHTML=recordMarkup(period);}
+  }});
   const cache=new Map(),snapshotFetching=new Map(),snapshotAttempts=new Map(),knownPeriods=new Map();let lastInline='';let bestRecords=read(BEST,{}),hasPending=read(QUEUE,[]).length>0;
   const now=()=>Date.now();
   const activePeriods=()=>liveTimedEventPeriods(catalog.periods,now());
@@ -1090,7 +1130,7 @@ export function installEvents(bridge){
     const {rows,board,filterResult,sourceOwn,previewOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn||previewOwn;
     if(!own)return 'No record';
     const presentation=own.previewOnly?eventPreviewPlacementPresentation(own):shown?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult,true)):null;
-    return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.previewOnly?' <small class="sq-event-preview-loading" role="status" title="Saved event PB retained. Current standings are loading.">Loading standings...</small>':own.pending?' <small>Pending</small>':'');
+    return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.previewOnly?' <span class="faded" title="No matching published placement is available.">---</span>':own.pending?' <small>Pending</small>':'');
   }
   function cardStandings(period){
     if(period.scheduleOnly)return '';
@@ -1120,7 +1160,7 @@ export function installEvents(bridge){
     return `<button type="button" class="sq-event-card sq-event-permanent" data-event-permanent><span class="sq-event-thumb">${bridge.thumbnail(ROLLING_TRACK_ID)}</span><div class="sq-event-record">${record}${pendingMarkup}</div><span><small>PERMANENT EVENT</small><strong>Rolling Hills Racer</strong><span class="sq-event-reward" title="${escape(reward.title)}">${escape(reward.text)}</span>${count}<small>No reset</small></span></button>`;
   }
   function selectView(view){dialog?.__sqArchiveReplayLabels?.disconnect();entryRequest++;message('');for(const button of dialog.querySelectorAll('nav button'))button.setAttribute('aria-pressed',String(button.hasAttribute('data-event-'+view)));}
-  async function open(){shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<div class="sq-event-browser-heading"><h3>Live events</h3><p>Choose a track for standings, replays, or your next PB.</p></div><div class="sq-event-cards">'+cards(livePeriods().filter(p=>p.kind==='kodub'),{details:true})+permanentCard(true)+cards(livePeriods().filter(p=>p.kind!=='kodub').sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind)),{details:true})+'</div>');message(['Event RP is separate from Overall RP.',bridge.dataNotice?.()||''].filter(Boolean).join(' '));void loadPermanent().then(()=>{if(!dialog||token!==requestId||!dialog.querySelector('[data-event-permanent]'))return;const active=document.activeElement;if(active?.closest('[data-event-permanent]'))return;const holder=document.createElement('div');holder.innerHTML=permanentCard(false);dialog.querySelector('[data-event-permanent]')?.replaceWith(holder.firstElementChild);}).catch(()=>{});}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
+  async function open(){void standingsPreview.load();shell();selectView('home');selected=null;const token=++requestId;body('<p>Loading events...</p>');try{await loadCatalog();if(!dialog||token!==requestId)return;body('<div class="sq-event-browser-heading"><h3>Live events</h3><p>Choose a track for standings, replays, or your next PB.</p></div><div class="sq-event-cards">'+cards(livePeriods().filter(p=>p.kind==='kodub'),{details:true})+permanentCard(true)+cards(livePeriods().filter(p=>p.kind!=='kodub').sort((a,b)=>['weekly','daily'].indexOf(a.kind)-['weekly','daily'].indexOf(b.kind)),{details:true})+'</div>');message(['Event RP is separate from Overall RP.',bridge.dataNotice?.()||''].filter(Boolean).join(' '));void loadPermanent().then(()=>{if(!dialog||token!==requestId||!dialog.querySelector('[data-event-permanent]'))return;const active=document.activeElement;if(active?.closest('[data-event-permanent]'))return;const holder=document.createElement('div');holder.innerHTML=permanentCard(false);dialog.querySelector('[data-event-permanent]')?.replaceWith(holder.firstElementChild);}).catch(()=>{});}catch{if(token===requestId){body('<p>Events are unavailable. Normal racing and your saved PBs still work.</p>');}}}
   function receiptText(receipt,local,period,published){
     if(published&&eventPublishedPbCoversReceipt(receipt,local,period,published))return '';
     if(period&&Date.now()>=period.endsAt+(period.graceMs||0)&&receipt?.status==='waiting')return 'This event closed before the run could be scored.';
@@ -1731,7 +1771,8 @@ export function installEvents(bridge){
     const display=onlyVerified?fields.verified:fields.all;
     for(const row of display.rows)row.name=displayName(row);
     const previewOwn=pbPreviews.get({period,accountId,epoch:bridge.normalEventSnapshotEpoch?.()??0,board,local:localRow,blocked:!!rejectedLocal,receipt});
-    return {...display,board,previewOwn,counts:fields.counts,sourceOwn:display.sourceRows.find(row=>row.accountId===accountId)};
+    const staticOwn=typeof standingsPreview!=='undefined'&&(!board||board.complete!==true||board.entries.some(row=>row.accountId===accountId))&&!rejectedLocal&&!pbPreviews.isBlocked(receipt)&&!board?.entries.some(row=>row.accountId===accountId&&pbPreviews.isBlocked(row))?standingsPreview.get(period,accountId,(previewOwn||localRow)?.timeMs):null;
+    return {...display,board,previewOwn:previewOwn?.cachedPlacement?previewOwn:staticOwn||previewOwn,counts:fields.counts,sourceOwn:display.sourceRows.find(row=>row.accountId===accountId)};
   }
   function syncNativeArchiveBoard(view){
     const {period,snapshot}=view;
@@ -2007,7 +2048,7 @@ export function installEvents(bridge){
         // Leave the native normal PB intact; an event PB is a different record.
       }
     }
-    if(!cachedOnly&&group?.getClientRects().length){void loadCatalog().catch(()=>{});void loadPermanent();}
+    if(!cachedOnly&&group?.getClientRects().length){void standingsPreview.load();void loadCatalog().catch(()=>{});void loadPermanent();}
     const permanentNote=group?.querySelector('.sq-permanent-note');
     if(permanentNote){
       const reward=permanentReward();
@@ -2177,5 +2218,5 @@ export function installEvents(bridge){
     ensureCapture();
     tick({cachedOnly:true});
   }
-  return {prepareCapture,decorateNormalLeaderboardRow:(button,row,trackId)=>{normalKodubErp.decorate(button,row,trackId);normalRollingErp.decorate(button,row,trackId);},invalidateNormalLeaderboardERP:normalKodubErp.invalidate,captureReady:()=>!!capture,finishPositions,isTrackNavigationCurrent,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:selection=>{if(selection?.matches?.('.track-selection-ui'))featuredSelection=selection;return ensureFeaturedSection(document,selection);},open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
+  return {prepareCapture,decorateNormalLeaderboardRow:(button,row,trackId)=>{normalKodubErp.decorate(button,row,trackId);normalRollingErp.decorate(button,row,trackId);},invalidateNormalLeaderboardERP:normalKodubErp.invalidate,captureReady:()=>!!capture,finishPositions,isTrackNavigationCurrent,isEntered:trackId=>sessions.current()?.trackId===trackId,featuredSection:selection=>{void standingsPreview.load();if(selection?.matches?.('.track-selection-ui'))featuredSelection=selection;return ensureFeaturedSection(document,selection);},open,openEvent,totals,tick,flush,getOwnReplay,resumeRace,refreshCatalog:loadCatalog,leave(){entryRequest++;sessions.leave();eventIntent=null;archiveIntent=null;tick();}};
 }

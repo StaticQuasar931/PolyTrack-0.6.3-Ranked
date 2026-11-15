@@ -2,16 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 403,
+    "number": 404,
     "version": "0.6.3",
-    "revision": 345,
+    "revision": 346,
     "notes": [
-      "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
-      "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
-      "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+      "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
+      "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
+      "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
+      "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
     ]
   },
   "entries": [
+    {
+      "number": 403,
+      "title": "Fit weekly artwork to the event card height",
+      "commit": "a3fae75427c6a49631c6641b1e79d7b4c4b06635",
+      "committedAt": "2026-11-15T22:59:09.000Z",
+      "notes": [
+        "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
+        "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
+        "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+      ]
+    },
     {
       "number": 402,
       "title": "Fix offline history publication contract tests",
@@ -220,17 +232,6 @@ const historyData = {
         "Customize your car in Garage with starter paint palettes and roof accessories.",
         "Browse nine profile designs in the Style shop inside Racer Studio.",
         "Clearer Token prices, more profile styles, and local car appearance saves."
-      ]
-    },
-    {
-      "number": 383,
-      "title": "Clearer achievements and reversible Studio previews",
-      "commit": "a45906a9d2deaa0564dbbc8bb5132bcbdaf39f10",
-      "committedAt": "2026-11-14T20:11:07.000Z",
-      "notes": [
-        "Clearer, larger achievement goals without profile patterns.",
-        "Combine cosmetic previews, undo changes, and see unsaved edits.",
-        "Cleaner profile layout and a redesigned Apex Observatory backdrop."
       ]
     }
   ],

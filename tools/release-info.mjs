@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 403,
+  "number": 404,
   "version": "0.6.3",
-  "revision": 345,
+  "revision": 346,
   "notes": [
-    "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
-    "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
-    "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+    "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
+    "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
+    "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
+    "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
   ],
-  "preparedAt": "2026-11-15T22:58:08.728Z",
-  "committedAt": "2026-11-15T22:59:09.000Z"
+  "preparedAt": "2026-11-15T23:27:53.212Z",
+  "committedAt": "2026-11-15T23:29:52.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
