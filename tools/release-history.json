@@ -1,17 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 390,
+    "number": 391,
     "version": "0.6.3",
-    "revision": 332,
+    "revision": 333,
     "notes": [
-      "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
-      "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
-      "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
-      "Offline event replay verification now builds an audited update from saved files."
+      "Fixed a Windows-only test path that blocked offline verification on GitHub."
     ]
   },
   "entries": [
+    {
+      "number": 390,
+      "title": "Real car workshop achievement bonuses and offline event verification",
+      "commit": "ff504eeab1276dda9893901363e2d0cfeede3ddc",
+      "committedAt": "2026-11-14T23:56:19.000Z",
+      "notes": [
+        "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
+        "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
+        "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
+        "Offline event replay verification now builds an audited update from saved files."
+      ]
+    },
     {
       "number": 389,
       "title": "Fix coalesced PB uploads milestone claims and event PB previews",
@@ -204,15 +213,6 @@
       "commit": "4e9327c1bd70c1c7ab300c79dc8563d64f7178f5",
       "committedAt": "2026-11-14T05:28:48.000Z",
       "notes": []
-    },
-    {
-      "number": 368,
-      "title": "Complete compact snapshot recovery contract coverage",
-      "commit": "27bea27ccee08fcfe98e471dd767c6a570089e98",
-      "committedAt": "2026-11-14T04:03:21.000Z",
-      "notes": [
-        "Completes snapshot recovery checks while keeping saved replay files and retry history intact."
-      ]
     }
   ],
   "coverage": {

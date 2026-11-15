@@ -68,7 +68,8 @@ test('retained preparation is byte-equivalent to legacy scans with one binding h
  for(const text of [indexLine,getLine,presenceLine])assert.ok(optimized.includes(text),text);
  const legacy=optimized.replace(indexLine,'').replace(getLine,'const entry=ledger.entries.find(value=>value.key===ledgerKey(ledgerBinding(job)));')
   .replace(presenceLine,"const hasNative=previousRows.some(({row})=>ledger.entries.some(entry=>entry.binding.lane==='event'&&entry.binding.periodId===id&&entry.binding.accountId===row.accountId&&entry.binding.timeMs===row.timeMs&&(row.runId===undefined||entry.binding.runId===row.runId)));");
- const root='C:/synthetic-public',directory=root+'/candidate',manifestHash='9'.repeat(64),files=new Map();
+ const root=path.resolve(os.tmpdir(),'polytrack-synthetic-public').replace(/\\/g,'/'),directory=root+'/candidate',manifestHash='9'.repeat(64),files=new Map();
+ assert.ok(path.isAbsolute(root)&&path.isAbsolute(directory),'fixture paths follow the actual runner platform');
  const norm=file=>String(file).replace(/\\/g,'/'),put=(file,value)=>files.set(norm(file),Buffer.from(JSON.stringify(value)));
  const board={id:'day1',period:{id:'day1',trackId:track},entries:[],pendingPlaybacks:[],nativeEventOverlay:{version:1}};
  const entries=Array.from({length:100},(_,i)=>({key:sha('unrelated'+i),disposition:'verified',
