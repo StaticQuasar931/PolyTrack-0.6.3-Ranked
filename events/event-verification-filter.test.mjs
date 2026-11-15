@@ -170,3 +170,21 @@ test('snapshot-only client ignores previous-package browser boards and never inv
   const unavailable=vm.runInNewContext(`${code};snapshot;`,emptyContext);
   await assert.rejects(unavailable(period),/Current package unavailable/);assert.equal(emptyContext.cache.size,0);
 });
+
+
+test('snapshot 87 slower waiting attempts are superseded by verified event bests without rewriting proof',()=>{
+  const times=[[43362,42578],[48700,48595],[75317,58249],[111118,54661],[140507,100487]];
+  const saved=board(times.map(([,best],i)=>({...row(i+1,best),physicsVerified:true,replayIntegrityVerified:true,runId:hash(i+2000),replayHash:hash(i+3000)})),
+    times.map(([old],i)=>({...waiting(i+1,old),periodId:period.id,trackId:period.trackId,replayHash:hash(i+4000)})));
+  const before=structuredClone(saved),display=eventSnapshotRows(saved).rows;
+  assert.equal(display.length,5);
+  assert(display.every(r=>r.pending===false&&r.physicsVerified===true));
+  assert.deepEqual(display.map(r=>r.timeMs),[42578,48595,54661,58249,100487]);
+  assert.deepEqual(saved,before,'presentation must not promote or mutate superseded source attempts');
+  const tied=eventSnapshotRows(board([row(1,1000)],[waiting(1,1000)])).rows;
+  assert.equal(tied.length,1);assert.equal(tied[0].pending,false);
+  const faster=eventSnapshotRows(board([row(1,1000)],[waiting(1,999)])).rows;
+  assert.equal(faster[0].pending,true);assert.equal(faster[0].timeMs,999);
+  const wrongPeriod=eventSnapshotRows({...saved,pendingPlaybacks:[{...waiting(6,1),periodId:'other'}]}).rows;
+  assert.equal(wrongPeriod.length,5);
+});

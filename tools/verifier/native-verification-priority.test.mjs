@@ -38,3 +38,12 @@ test('explicit event-only scheduling puts current Kodub before weekly proof hits
  assert.deepEqual(result.jobs,[kodub,weekly,daily]);assert.deepEqual(jobs,[daily,weekly,kodub]);
  assert.equal(kodub.verified,undefined,'scheduling confers no proof');
 });
+
+test('known normal tracks use published weight then best time, not recent loading or PB order',()=>{
+ const low={...normal(1,999),trackId:id(90),timeMs:100},slow={...normal(2,100),trackId:id(91),timeMs:1000},fast={...normal(3,50),trackId:id(91),timeMs:900};const jobs=[low,slow,fast];
+ const result=prioritizeNativeTargets({jobs,normalBoards:[{trackId:id(90),entries:[{weight:2}]},{trackId:id(91),entries:[{weight:10}]}],policy:{knownTrackIds:[id(90),id(91)]},now:1000});assert.deepEqual(result.jobs,[fast,slow,low]);assert.deepEqual(jobs,[low,slow,fast]);
+});
+test('explicit Rolling Hills priority follows live event proofs without changing verification authority',()=>{
+ const hill={...normal(1,1),trackId:id(90)},busy={...normal(2,999),trackId:id(91)},live=event(3,'kodub');const result=prioritizeNativeTargets({jobs:[busy,hill,live],preferredTrackIds:[id(90)],eventBoards:[board('kodub')],normalBoards:[{trackId:id(91),weight:10}],policy:{knownTrackIds:[track,id(90),id(91)]},now:1000,eventFirst:true});assert.deepEqual(result.jobs,[live,hill,busy]);assert.equal(hill.verified,undefined);
+ assert.throws(()=>prioritizeNativeTargets({jobs:[],preferredTrackIds:['not-a-track'],now:1000}));
+});

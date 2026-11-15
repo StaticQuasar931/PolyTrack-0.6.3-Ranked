@@ -154,3 +154,26 @@ test('eligible historical cosmetic achievements show exact coin bonuses without 
  const html=renderAchievementJournal({model,filter:'all',family:'style'});assert.match(html,/4 Style Coins/);assert.match(html,/eligible past achievements/);assert.match(html,/Check rewards in Shop/);
  assert.doesNotMatch(html,/coins claimed|balanceAfter|wallet balance|CLAIMED/);
 });
+
+test('all real tiers are discoverable by default and goals never masquerade as unlock counts',()=>{
+ const model=buildAchievementJournalModel({cosmetics});
+ const goals=model.milestones.filter(row=>row.source==='catalog');
+ assert.equal(goals.length,24);
+ assert.equal(goals.reduce((sum,row)=>sum+row.rewards.length,0),112);
+ assert.equal(model.milestones.filter(row=>row.source==='currency').length,7);
+ const ids=goals.flatMap(row=>row.rewards.map(reward=>reward.kind+':'+reward.id));
+ assert.equal(new Set(ids).size,112);
+ const html=renderAchievementJournal({cosmetics});
+ assert.match(html,/24 cosmetic goals reached; 112 cosmetic unlocks across these goals; 7 coin milestones/);
+ assert.match(html,/data-aj-active-family="all"/);
+ assert.match(html,/data-aj-filter="all" aria-pressed="true"/);
+ assert.equal((html.match(/data-aj-node="/g)||[]).length,31);
+});
+test('shared title and style bonuses remain one payment condition, not coins per cosmetic',()=>{
+ const model=buildAchievementJournalModel({cosmetics,progress:{confirmed:{raceCount:5}}});
+ const shared=model.milestones.filter(row=>row.coinReward?.id==='achievement-ranked-5');
+ assert.equal(shared.length,2);assert.equal(new Set(shared.map(row=>row.coinReward.id)).size,1);
+ const html=renderAchievementJournal({model});
+ assert.match(html,/shared bonus/);assert.match(html,/Shared title[/]style bonus, paid once/);
+ assert.match(html,/Cosmetic unlocked does not mean coins paid/);
+});

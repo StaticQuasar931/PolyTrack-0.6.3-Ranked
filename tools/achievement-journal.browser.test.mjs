@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 const {chromium}=createRequire(import.meta.url)('C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
 const root=fileURLToPath(new URL('../',import.meta.url));
-const evidence='C:/Users/Static/Documents/Codexstorage/PolyTrack/Projects/Ranked-0.6.3/2026-11-14/cosmetics-phase2';
+const evidence=process.env.ACHIEVEMENT_EVIDENCE_DIR||'C:/Users/Static/Documents/Codexstorage/PolyTrack/Projects/Ranked-0.6.3/2026-11-14/ui-followup';
 let server,browser,base,cosmetics;
 before(async()=>{
  const patch=await fs.readFile(path.join(root,'polytrack_062_patch.js'),'utf8');
@@ -87,7 +87,7 @@ test('blue surfaces, balanced goal rows, readable type and safe navigation fit d
   await mouse(page,'.aj-local-tools>summary');
   for(const name of ['practice','discovery','events'])await mouse(page,'.aj-next-steps [data-aj-navigate="'+name+'"]');
   assert.deepEqual(await page.evaluate(()=>calls.navigation),['practice','discovery','events']);await mouse(page,'.aj-local-tools>summary');
-  await mouse(page,'[data-aj-node]:not([hidden]) [data-aj-select]');
+  await mouse(page,'[data-aj-node][data-aj-source="catalog"]:not([hidden]) [data-aj-select]');
   assert.equal(await page.locator('.aj-more').getAttribute('open'),'');
   if(width<=660)assert.ok(await page.locator('[data-aj-select][aria-expanded="true"]').evaluate(el=>el.getBoundingClientRect().height<350),'expanded phone goal must not stretch to inspector height');
   if(width===1440||width===390){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(evidence,'achievement-blue-overview-'+width+'.png'),timeout:5000,animations:'disabled'});await page.locator('.aj-detail').evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}));await page.screenshot({path:path.join(evidence,'achievement-blue-unlocks-'+width+'.png'),timeout:5000,animations:'disabled'});}
@@ -135,7 +135,7 @@ test('recommendations cap at five, render text safely and reject stale selection
  const page=await fixture(t);await mouse(page,'[data-aj-filter="all"]');await mouse(page,'[data-aj-family="style"]');
  await page.evaluate(()=>{dispose();window.pending=[];window.previewIds=[];dispose=api.bindAchievementJournal(document.querySelector('#host'),{getRecommendations:item=>new Promise((resolve,reject)=>pending.push({item,resolve,reject})),onRecommendedTrack:id=>previewIds.push(id)});});
  assert.equal(await page.evaluate(()=>pending.length),0,'no recommendation work before explicit expansion');
- const goals=page.locator('[data-aj-node]:visible [data-aj-select]');
+ const goals=page.locator('[data-aj-node][data-aj-earned="false"]:visible [data-aj-select]');
  await goals.nth(0).focus();await page.keyboard.press('Enter');
  assert.match(await page.locator('.aj-recommendations [role=status]').innerText(),/Finding tracks/);
  await goals.nth(1).focus();await page.keyboard.press('Enter');
@@ -151,7 +151,7 @@ test('recommendations cap at five, render text safely and reject stale selection
  await goals.nth(2).focus();await page.keyboard.press('Enter');
  await mouse(page,'[data-aj-filter="earned"]');await page.evaluate(()=>pending[2].resolve([{trackId:'filtered',name:'FILTERED'}]));
  assert.equal(await page.locator('.aj-recommendations').count(),0);
- await mouse(page,'[data-aj-filter="all"]');const next=page.locator('[data-aj-node]:visible [data-aj-select]').first();await next.focus();await page.keyboard.press('Enter');
+ await mouse(page,'[data-aj-filter="all"]');const next=page.locator('[data-aj-node][data-aj-earned="false"]:visible [data-aj-select]').first();await next.focus();await page.keyboard.press('Enter');
  await page.evaluate(()=>{dispose();pending.at(-1).resolve([{trackId:'disposed',name:'DISPOSED'}]);});
  assert.equal(await page.locator('.aj-recommendations').count(),0);assert.deepEqual(await page.evaluate(()=>previewIds),['track-0']);
  page.checkClean();
@@ -179,6 +179,7 @@ test('detached or replaced journal DOM cannot receive late recommendations',{tim
 
 test('missing casual completion count still exposes Style Coins and the first Shop-check tier under Next',{timeout:15000},async t=>{
  const page=await fixture(t,{progress:{confirmed:{raceCount:28},local:{casualCompletionCount:89}}});
+ await mouse(page,'[data-aj-filter="next"]');
  assert.equal(await page.locator('[data-aj-filter="next"]').getAttribute('aria-pressed'),'true');
  const currencyPath=page.locator('[data-aj-family="currency"]');assert.equal(await currencyPath.isVisible(),true);
  assert.equal(await currencyPath.getAttribute('data-aj-path-known'),'false');assert.equal(await currencyPath.getAttribute('data-aj-path-navigable'),'true');
@@ -194,4 +195,26 @@ test('missing casual completion count still exposes Style Coins and the first Sh
  assert.equal(await node.evaluate(el=>JSON.parse(el.dataset.ajSortItem).value),null);
  await page.screenshot({path:path.join(evidence,'achievement-style-coins-unknown-next.png'),timeout:5000});
  await mouse(page,'[data-aj-detail] [data-aj-navigate="shop"]');assert.deepEqual(await page.evaluate(()=>calls.navigation),['shop']);assert.deepEqual(await page.evaluate(()=>calls.rewards),[]);page.checkClean();
+});
+
+test('default journal exposes every goal tier with separate unlock counts', {timeout:20000},async t=>{
+ const page=await fixture(t);
+ assert.equal(await page.locator('[data-aj-node]:visible').count(),31);
+ assert.match(await page.locator('.aj-summary').innerText(),/112 cosmetic unlocks across these goals/);
+ assert.equal(await page.locator('[data-aj-family="all"]').getAttribute('aria-pressed'),'true');
+ await mouse(page,'[data-aj-select="style:5"]');
+ assert.match(await page.locator('[data-aj-detail]').innerText(),/Shared title[/]style bonus, paid once/);
+ const background=await page.locator('.aj-coin-bonus button').evaluate(el=>getComputedStyle(el).backgroundColor);
+ assert.equal(background,'rgb(41, 68, 117)');
+ page.checkClean();
+});
+
+test('completed cosmetic goals do not request track suggestions', {timeout:15000},async t=>{
+ const page=await fixture(t);
+ await page.evaluate(()=>{dispose();window.recommendationCalls=0;dispose=api.bindAchievementJournal(document.querySelector('#host'),{getRecommendations:()=>{recommendationCalls++;return [];}});});
+ await mouse(page,'[data-aj-select="style:5"]');
+ assert.equal(await page.locator('[data-aj-node="style:5"]').getAttribute('data-aj-earned'),'true');
+ assert.equal(await page.evaluate(()=>recommendationCalls),0);
+ assert.equal(await page.locator('.aj-recommendations').count(),0);
+ page.checkClean();
 });

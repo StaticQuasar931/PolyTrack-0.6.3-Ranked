@@ -49,8 +49,16 @@ test('existing normal-row callback can decorate and safely clear RHR hover witho
  board=null;decorator.decorate(button,null,trackId);assert.equal(icon.title,'Verified icon');assert.equal(state.title,'Verified');
 });
 test('initial native and promoted TOTW containment is defined in owned CSS, before any layout resize hook',()=>{
- const css=fs.readFileSync(new URL('./events.css',import.meta.url),'utf8'),last=css.slice(css.lastIndexOf('/* First layout:'));
- assert.match(last,/track.track-of-the-week>.button/);assert.match(last,/object-fit:contain!important/);assert.match(last,/height:auto!important/);assert.match(last,/position:static!important/);
+ const css=fs.readFileSync(new URL('./events.css',import.meta.url),'utf8'),last=css.slice(css.lastIndexOf('/* Full-height weekly cover:'));
+ assert.match(last,/track.track-of-the-week>.button/);assert.match(last,/object-fit:contain!important/);assert.match(last,/height:var[(]--event-card-height,300px[)]!important/);assert.match(last,/position:static!important/);
  assert.doesNotMatch(source,/Saved event PB; standings loading|Saved PB; standings loading/);
  assert.match(css,/.sq-event-preview-loading{[^}]*text-align:center!important/);
+});
+
+test('footer titles omit the category without changing ERP ranking labels',()=>{
+ assert.equal(eventPeriodDisplayName(p,null,'footer'),'Summer1');
+ assert.equal(eventPeriodDisplayName({...p,kind:'daily'},null,'footer'),'Summer1');
+ assert.equal(eventPeriodDisplayName(p),'Weekly Summer1');
+ const tick=source.slice(source.indexOf('  function tick('),source.indexOf("    const group=ensureFeaturedSection",source.indexOf('  function tick(')));
+ assert.ok(tick.includes("eventPeriodDisplayName(period,info,'footer')"));
 });

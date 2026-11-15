@@ -30,11 +30,15 @@ test('boolean warmup uses one or an absent variable, never an invalid empty/fals
  for(const value of ['false','', 'true'])assert.throws(()=>savedEventWorkflowConfig({...environment(),WARMUP_FIRST_PROOF:value}));
 });
 
-test('hosted I/O timeouts do not expand the 256-job eight-minute native budget',()=>{
+test('hosted runtime choices preserve the legacy default and stay inside the existing twenty-five-minute core cap',()=>{
  assert.match(workflow,/^    timeout-minutes: 60$/m);assert.match(workflow,/^        timeout-minutes: 50$/m);
- assert.match(workflow,/options: \['256'\]/);assert.match(workflow,/default: '256'/);
- assert(workflow.includes('config.plan.maxJobs!==256||config.plan.maxRuntimeMs!==480000'));
+ assert.match(workflow,/options: \['256', '512', '1024'\]/);assert.match(workflow,/default: '256'/);
+ assert.match(workflow,/options: \['8', '25'\]/);assert.match(workflow,/default: '8'/);
+ assert.equal(workflow.split('NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}').length-1,2);
+ assert(workflow.includes('![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs)'));
  const {plan}=savedEventWorkflowConfig(environment());assert.equal(plan.maxJobs,256);assert.equal(plan.maxRuntimeMs,480000);
+ const long=savedEventWorkflowConfig({...environment(),NATIVE_JOB_LIMIT:'1024',NATIVE_RUNTIME_MINUTES:'25'}).plan;
+ assert.equal(long.maxJobs,1024);assert.equal(long.maxRuntimeMs,1500000);
 });
 
 test('existing commit/source pins, first-attempt guard and malformed-target rejection remain mandatory',()=>{

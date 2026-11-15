@@ -395,7 +395,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));
       if(trackTargets&&(!trackTargets.includes(job.trackId)||publishedRetention&&(entries.has(key)||job.lane==='normal'&&accepted.has(key))))return false;
       return targetScope==='events'?job.lane==='event':trackTargets?true:!accepted.has(key)||entries.has(key);}),
-      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'||!!trackTargets});
+      eventBoards:inputs.eventBoards,normalBoards:inputs.normalBoards,preferredTrackIds:trackTargets?.includes(PERMANENT_ROLLING_HILLS.trackId)?[PERMANENT_ROLLING_HILLS.trackId]:[],canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'||!!trackTargets});
     const targets=publishedRetention?priority.jobs.sort((a,b)=>Number(b.lane==='event')-Number(a.lane==='event')):priority.jobs;
     if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;

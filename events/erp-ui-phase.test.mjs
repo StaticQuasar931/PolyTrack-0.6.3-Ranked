@@ -29,7 +29,7 @@ test('unscored, held, wrong-period, inactive, unknown and schedule-only previews
 });
 test('actual per-run ERP uses the saved award, not a formula, lifetime total or cap',()=>{
  const p=period();const r=row(1,{rp:4321}),before=structuredClone(r);
- assert.equal(eventRunErpPresentation(r,{period:p},p,5000).text,'4,321 ERP');assert.deepEqual(r,before);
+ assert.equal(eventRunErpPresentation(r,{period:p,entries:[r]},p,5000).text,'4,321 ERP');assert.deepEqual(r,before);
 });
 test('badge ERP text is supplemental and cannot change verification classes or proof',()=>{
  const attrs={},icon={},points=[],state={dataset:{},title:'date',querySelector:()=>icon,setAttribute:(k,v)=>attrs[k]=v,prepend:node=>points.push(node)};
@@ -102,4 +102,13 @@ for(const change of ['account','epoch'])test('ERP filter publication discards de
  const h=totalsHarness({delay:true}),work=h.run('daily');
  for(let i=0;i<30&&!h.requests.length;i++)await new Promise(resolve=>setImmediate(resolve));assert.equal(h.requests.length,1);
  h.change(change);h.resolve();await work;assert.equal(h.output.filter(html=>html.includes('sq-event-totals-results')).length,0);
+});
+
+test('actual earned ERP requires exact eligible published source identity, time, score and period',()=>{
+ const p=period(),r=row(1,{rp:4321,replayHash:hash(100)}),board={period:p,entries:[r]};
+ assert.equal(eventRunErpPresentation(r,board,p,5000).status,'awarded');
+ for(const changed of [{...board,period:{...p,id:'other'}},{...board,entries:[{...r,rp:4000}]},{...board,entries:[{...r,timeMs:r.timeMs-1}]},
+  {...board,entries:[{...r,replayHash:hash(101)}]},{...board,entries:[{...r,reviewHold:true}]}])
+ assert.equal(eventRunErpPresentation(r,changed,p,5000).status,'unavailable');
+ assert.equal(eventRunErpPresentation(r,null,p,5000).status,'unavailable');
 });

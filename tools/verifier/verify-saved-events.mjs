@@ -18,6 +18,10 @@ export function savedEventWorkflowConfig(env=process.env){
  const pins={sourceCommit:env.SNAPSHOT_SOURCE_COMMIT,generation:Number(env.SNAPSHOT_GENERATION),indexSha256:env.SNAPSHOT_INDEX_SHA256,
   ledgerManifestHash:env.LEDGER_MANIFEST_SHA256,ledgerEntries:Number(env.LEDGER_ENTRIES),maxJobs:Number(env.NATIVE_JOB_LIMIT),runAttempt:Number(env.GITHUB_RUN_ATTEMPT)};
  if(env.TARGET_TRACK_IDS!==undefined)pins.targetTrackIds=JSON.parse(env.TARGET_TRACK_IDS);
+ if(env.NATIVE_RUNTIME_MINUTES!==undefined){
+  demand(typeof env.NATIVE_RUNTIME_MINUTES==='string'&&/^(8|25)$/.test(env.NATIVE_RUNTIME_MINUTES),'invalid bounded native runtime minutes');
+  pins.maxRuntimeMs=Number(env.NATIVE_RUNTIME_MINUTES)*60000;
+ }
  if(env.NATIVE_TARGET_SCOPE!==undefined)pins.targetScope=env.NATIVE_TARGET_SCOPE;
  demand(env.WARMUP_FIRST_PROOF===undefined||env.WARMUP_FIRST_PROOF==='1','invalid first-proof warmup mode');
  const plan=savedEventDispatchPlan(pins);

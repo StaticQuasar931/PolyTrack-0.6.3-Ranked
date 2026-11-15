@@ -1258,3 +1258,18 @@ test('permanent reminder preference never suppresses minimum-revision compatibil
   const h=harness({document,response:{revision:44,minimumSupportedRevision:44}});await h.handle.check();
   assert.equal(h.handle.getCompatibility().onlineAllowed,false);assert.ok(document.dialog);h.handle.dispose();
 });
+
+test('update-click attribution waits for safety and rolls back if reload fails',async()=>{
+ for(const fails of [false,true]){
+  const document=new FakeDocument();document.baseURI=UPDATED_GAME_URL;document.defaultView=new EventTarget();
+  const original=UPDATED_GAME_URL+'?mode=ranked#garage';let idle=false,reloads=0,writes=0;
+  document.defaultView.location={href:original,reload(){reloads++;if(fails)throw Error('reload failed');}};
+  document.defaultView.history={state:{fixture:true},replaceState(state,unused,url){writes++;document.defaultView.location.href=url;}};
+  const h=harness({document,endpoint:CANONICAL_SITE_VERSION_URL,isIdle:()=>true,canReload:()=>idle,fetch:async()=>jsonResponse({revision:44})});
+  await h.handle.check();document.button.listeners.click({preventDefault(){}});assert.equal(writes,0);assert.equal(reloads,0);
+  idle=true;document.button.listeners.click({preventDefault(){}});assert.equal(reloads,1);
+  const href=document.defaultView.location.href;
+  if(fails){assert.equal(href,original);assert.equal(writes,2);}else{const url=new URL(href);assert.equal(url.searchParams.get('utm_campaign'),'client_44');assert.equal(url.searchParams.get('mode'),'ranked');assert.equal(url.hash,'#garage');}
+  h.handle.dispose();
+ }
+});

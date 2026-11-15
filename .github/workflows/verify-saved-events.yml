@@ -27,8 +27,14 @@ on:
         description: One bounded pass; reruns cannot reset this budget
         required: true
         type: choice
-        options: ['256']
+        options: ['256', '512', '1024']
         default: '256'
+      native_runtime_minutes:
+        description: Aggregate native allowance only; original per-job CPU and geometry limits remain unchanged
+        required: true
+        type: choice
+        options: ['8', '25']
+        default: '8'
       target_track_ids:
         description: Exact target track IDs as a nonempty unique JSON array; no capture or proof imports
         required: true
@@ -75,6 +81,7 @@ jobs:
           LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
+          NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}
           TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
           NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
           WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}
@@ -88,7 +95,7 @@ jobs:
           import {execFileSync} from 'node:child_process';
           import {savedEventWorkflowConfig} from './tools/verifier/verify-saved-events.mjs';
           const config=savedEventWorkflowConfig();
-          if(config.plan.maxJobs!==256||config.plan.maxRuntimeMs!==480000)throw Error('Hosted pass requires 256 jobs and eight native minutes');
+          if(![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs))throw Error('Hosted pass requires an explicit bounded native allowance');
           if(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==config.testedCommit)throw Error('Tested implementation changed');
           console.log(JSON.stringify(config));
           PLAN
@@ -113,6 +120,7 @@ jobs:
           LEDGER_MANIFEST_SHA256: ${{ inputs.ledger_manifest_sha256 }}
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
+          NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}
           TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
           NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
           WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}

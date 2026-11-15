@@ -1,16 +1,28 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 396,
+    "number": 397,
     "version": "0.6.3",
-    "revision": 338,
+    "revision": 339,
     "notes": [
-      "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
-      "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
-      "Snapshot compression now stays consistent across Windows and Linux."
+      "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
+      "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
+      "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
+      "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
     ]
   },
   "entries": [
+    {
+      "number": 396,
+      "title": "Publish saved replay proofs and prepare offline Linux verification",
+      "commit": "f099e5e6d259bfaeb5da4c6e099c11b03587defc",
+      "committedAt": "2026-11-15T03:12:59.000Z",
+      "notes": [
+        "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
+        "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
+        "Snapshot compression now stays consistent across Windows and Linux."
+      ]
+    },
     {
       "number": 395,
       "title": "Polish car workshop Studio previews and automatic rewards",
@@ -206,15 +218,6 @@
       "committedAt": "2026-11-14T09:12:52.000Z",
       "notes": [
         "More reliable snapshot coordination checks before data capture begins."
-      ]
-    },
-    {
-      "number": 374,
-      "title": "Align snapshot preparation checks with capture-first mode",
-      "commit": "6bb2820834936592a1124171224d4b220498a182",
-      "committedAt": "2026-11-14T08:46:04.000Z",
-      "notes": [
-        "Improved snapshot readiness checks for capture-first publication."
       ]
     }
   ],

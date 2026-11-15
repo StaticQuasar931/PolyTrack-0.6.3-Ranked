@@ -72,6 +72,19 @@ async function fetchKodubWeekly({baseUrl,brokerUrl,fetcher=fetch,now=Date.now()}
   return {serverTime:new Date(now).toISOString(),current:local};
 }
 
+const coverBindings=new WeakMap();
+export function fitKodubCover(card){
+  const button=card?.querySelector(':scope > button'),image=button?.querySelector('img.cover:not(.environment),img.thumbnail:not(.environment)');
+  if(!button||!image)return;
+  const apply=()=>{
+    const ratio=image.naturalWidth/image.naturalHeight;
+    if(Number.isFinite(ratio)&&ratio>0&&button.style.getPropertyValue('--kodub-cover-ratio')!==String(ratio))
+      button.style.setProperty('--kodub-cover-ratio',String(ratio));
+  };
+  if(coverBindings.get(image)!==button){coverBindings.set(image,button);image.addEventListener('load',apply);}
+  apply();
+}
+
 export function combineKodubCard(document, group, selection, now=Date.now()) {
   if(!group)return;
   const menu=group.closest('.track-selection-ui');
@@ -96,6 +109,7 @@ export function combineKodubCard(document, group, selection, now=Date.now()) {
     if (section.querySelector('.group-title')) section.hidden=true;
   }
   if(!card.classList.contains('sq-kodub-weekly'))card.classList.add('sq-kodub-weekly');
+  if(typeof fitKodubCover==='function')fitKodubCover(card);
   const button=card.querySelector(':scope > button');
   if (button && !button.querySelector('.sq-kodub-label')) {
     const label=document.createElement('small');label.className='sq-kodub-label';label.textContent='WEEKLY SPOTLIGHT';

@@ -21,3 +21,14 @@ test('Style Coins presentation has no I/O or legacy CP labels, and leaves generi
  assert.match(host,/profile-shop-ui\.mjs.*new URL\(import\.meta\.url\)\.search/);assert.match(source,/profile-shop-art\.mjs.*new URL\(import\.meta\.url\)\.search/);assert.match(host,/profile-shop-ui\.css/);
  assert.doesNotMatch(host,/profile-achievement-journey|version:2,items:PROFILE_SHOP_CATALOG/);
 });
+
+test('Shop sorting is stable and never mutates products, prices or ownership',async()=>{
+ const {sortProfileShopItems}=await import('./profile-shop-ui.mjs');
+ const items=[{id:'a',label:'Zulu',price:30},{id:'b',label:'Alpha',price:20},{id:'c',label:'Beta',price:20}];
+ const before=JSON.stringify(items);
+ assert.deepEqual(sortProfileShopItems(items,'price').map(x=>x.id),['b','c','a']);
+ assert.deepEqual(sortProfileShopItems(items,'name').map(x=>x.id),['b','c','a']);
+ assert.deepEqual(sortProfileShopItems(items,'unowned',['a']).map(x=>x.id),['b','c','a']);
+ assert.deepEqual(sortProfileShopItems(items,'unknown').map(x=>x.id),['a','b','c']);
+ assert.equal(JSON.stringify(items),before);
+});

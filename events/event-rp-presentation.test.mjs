@@ -61,6 +61,6 @@ test('fallback event list uses the same zero and unavailable rules as native row
   assert.ok(start>=0&&end>start);
   const render=vm.runInNewContext(source.slice(start,end)+';rows;',{eventRpPresentation,eventRunErpPresentation,eventRowVerified,now:()=>Date.now(),displayName:()=> 'Racer',escape:value=>value,time:String,bridge:{accountId:()=> 'viewer'}});
   for(const [row,label] of [[{rp:0},'0 ERP'],[{},'ERP unavailable'],[{rp:'84'},'84 ERP'],[{rp:10,groupRp:0},'10 ERP · 0 Group ERP'],[{rp:99,pending:true},'ERP pending']]){
-    assert.ok(render([{timeMs:100,rank:1,...row}]).includes('<strong>'+label+'</strong>'));
+    assert.ok(render([{accountId:hash(1),timeMs:100,rank:1,...row}],{period:{id:'fixture',kind:'weekly',trackId:hash(99)},entries:[{accountId:hash(1),timeMs:100,rank:1,...row}]}).includes('<strong>'+label+'</strong>'));
   }
 });

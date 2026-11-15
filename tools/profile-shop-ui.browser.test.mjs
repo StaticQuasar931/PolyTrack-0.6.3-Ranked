@@ -117,3 +117,15 @@ test('achievement capability adds honest reward information, never a manual clai
  assert.equal(await page.locator('[data-sp-action="claim"]').count(),0);assert.equal(await page.evaluate(()=>calls.claim.length),0);
  assert.equal(await page.locator('.sp-summary strong').innerText(),'100 Style Coins');
 });
+
+test('sorting stays presentation-only and lists only purchasable designs',async t=>{
+ const page=await fixture(t);
+ assert.match(await page.locator('.sp-note').innerText(),/Only the designs listed here can be bought/);
+ await page.locator('[data-sp-sort]').selectOption('price');
+ const expected=[...SHOP_CATALOG].sort((a,b)=>a.price-b.price).map(x=>x.id);
+ assert.deepEqual(await page.locator('[data-sp-item-preview]').evaluateAll(nodes=>nodes.map(node=>node.dataset.spItemPreview)),expected);
+ await page.locator('[data-sp-sort]').selectOption('name');
+ assert.equal(await page.locator('[data-sp-action="buy"]').count(),SHOP_CATALOG.length);
+ assert.deepEqual(await page.evaluate(()=>({buy:calls.buy,claim:calls.claim,refresh:calls.refresh})),{buy:[],claim:[],refresh:0});
+ assert.ok(await page.locator('.sp-price .sp-coin').count()>0);
+});
