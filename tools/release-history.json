@@ -1,16 +1,26 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 393,
+    "number": 394,
     "version": "0.6.3",
-    "revision": 335,
+    "revision": 336,
     "notes": [
-      "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
-      "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
-      "Local PBs can show a podium target without claiming confirmed medals."
+      "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
+      "Earlier published proofs stay intact; new runs still require their own replay checks."
     ]
   },
   "entries": [
+    {
+      "number": 393,
+      "title": "Clarify event previews and stabilize profile navigation",
+      "commit": "75649ddd74448b0fe0fb6b258dc56af0043eaf82",
+      "committedAt": "2026-11-15T01:40:51.000Z",
+      "notes": [
+        "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
+        "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
+        "Local PBs can show a podium target without claiming confirmed medals."
+      ]
+    },
     {
       "number": 392,
       "title": "Publish 66 offline event verifications and preserve prior results",
@@ -202,18 +212,6 @@
       "notes": [
         "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
         "Keyboard focus returns to your selected item when you exit a preview."
-      ]
-    },
-    {
-      "number": 371,
-      "title": "Racer hub, local friends and Field RP routes",
-      "commit": "3e6888ba97990fdbba6712e6fe737fb57fe9f5f7",
-      "committedAt": "2026-11-14T06:55:14.000Z",
-      "notes": [
-        "Achievements and Racer Studio share a full-screen hub, with more goals and locked-item previews.",
-        "Save local friends and find friendly PB challenges using saved snapshot data.",
-        "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
-        "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
       ]
     }
   ],

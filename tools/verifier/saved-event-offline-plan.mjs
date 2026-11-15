@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {nativeTargetTrackIds} from '../native-target-filter.mjs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
@@ -15,12 +16,14 @@ const adverse=row=>row?.needsReview===true||row?.reviewHold===true||row?.exclude
   /held|review|rejected|mismatch|excluded/.test(String(row?.verificationStatus||row?.status||''));
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 
-export function savedEventDispatchPlan({sourceCommit,generation,indexSha256,ledgerManifestHash,ledgerEntries,maxJobs=64,runAttempt=1}={}){
+export function savedEventDispatchPlan({sourceCommit,generation,indexSha256,ledgerManifestHash,ledgerEntries,maxJobs=64,runAttempt=1,targetTrackIds,targetScope='events'}={}){
  demand(/^[a-f0-9]{40}$/.test(sourceCommit||'')&&Number.isSafeInteger(generation)&&generation>0&&HASH.test(indexSha256||'')&&
   HASH.test(ledgerManifestHash||'')&&Number.isSafeInteger(ledgerEntries)&&ledgerEntries>=0,'independent public source pins required');
- demand([16,64,128,256,512].includes(maxJobs)&&runAttempt===1,'bounded first attempt only; reruns cannot reset native budgets');
+ demand([1,16,64,128,256,512].includes(maxJobs)&&runAttempt===1,'bounded first attempt only; reruns cannot reset native budgets');
+ demand(targetScope==='events'||targetScope==='all'&&targetTrackIds!==undefined,'explicit targets required for combined saved pass');
+ const targets=nativeTargetTrackIds(targetScope,targetTrackIds);
  return {workflow:'verify-saved-events.yml',ref:'main',sourceCommit,publishedBaseline:{generation,indexSha256,ledgerManifestHash,ledgerEntries},
-  targetScope:'events',maxJobs,maxRuntimeMs:480000,batchSize:16,standard:resourceLimits('standard'),extended:resourceLimits('extended-local'),
+  targetScope,...(targets?{targetTrackIds:targets}:{}),maxJobs,maxRuntimeMs:480000,batchSize:16,standard:resourceLimits('standard'),extended:resourceLimits('extended-local'),
   checkpointPolicy:'artifact-only; receipts are not resumable proof authority; no automatic retry',
   backendReads:0,backendWrites:0,capture:false,compile:true,publish:false};
 }

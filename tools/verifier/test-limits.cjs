@@ -26,8 +26,8 @@ function recording(channels) {
 
 test('reviewed geometry matches committed track bytes and the pinned native engine', () => {
   assert.equal(reviewed.engineDigest, manifest.engineDigest);
-  assert.equal(reviewed.tracks.length,93);
-  assert.equal(new Set(reviewed.tracks.map(t=>t.id)).size,93);
+  assert.equal(reviewed.tracks.length,94);
+  assert.equal(new Set(reviewed.tracks.map(t=>t.id)).size,94);
   for (const t of reviewed.tracks) {
     const trusted=t.name.startsWith('trusted/');
     const assetPath=trusted?path.join(root,'events/kodub/assets',t.hash+'.track'):path.join(root,t.name);
@@ -37,7 +37,7 @@ test('reviewed geometry matches committed track bytes and the pinned native engi
   }
 });
 
-test('17 official tracks fit defaults; 28 community and four trusted assets use exact exceptions', () => {
+test('17 official tracks fit defaults; 28 community and five trusted assets use exact exceptions', () => {
   let exceptions=0,official=0;
   for (const t of reviewed.tracks) {
     const decision=geometryDecision({...t,geometry:t},reviewed.engineDigest);
@@ -45,9 +45,9 @@ test('17 official tracks fit defaults; 28 community and four trusted assets use 
     if(t.name.startsWith('tracks/official/')) {official++;assert.equal(decision.geometryPolicy,'default');}
     if(t.parts>LIMITS.trackParts) {exceptions++;assert.equal(decision.geometryPolicy,'reviewed-pinned');}
   }
-  assert.equal(official,17);assert.equal(exceptions,32);
+  assert.equal(official,17);assert.equal(exceptions,33);
   assert.equal(reviewed.tracks.filter(t=>t.parts>LIMITS.trackParts&&t.name.startsWith('tracks/community/')).length,28);
-  assert.equal(reviewed.tracks.filter(t=>t.name.startsWith('trusted/')).length,4);
+  assert.equal(reviewed.tracks.filter(t=>t.name.startsWith('trusted/')).length,5);
   assert.equal(Math.max(...reviewed.tracks.map(t=>t.parts)),74711);
   assert.equal(Math.max(...reviewed.tracks.flatMap(t=>[t.spanX,t.spanZ])),1264);
   assert.equal(LIMITS.trackParts,20000);assert.equal(LIMITS.trackSpan,2048);

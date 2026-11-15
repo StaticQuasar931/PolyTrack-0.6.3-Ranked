@@ -198,6 +198,24 @@ test('public offline event scope is explicit and reaches only the one-shot verif
  await assert.rejects(preparePublishedOfflineVerification(invalid.options,invalid.capabilities),/target scope/);
 });
 
+test('exact track selection is copied into preflight, native input and prepared receipt',async t=>{
+ const f=await fixture(t),ids=['a'.repeat(64)];Object.assign(f.options,{targetScope:'events',targetTrackIds:ids});
+ const token=Object.freeze({fixture:true});f.capabilities.loadRetention=async input=>{
+  assert.deepEqual(input.targetTrackIds,ids);return token;
+ };
+ for(const name of ['preflightPhase','verifyPhase']){
+  const original=f.capabilities[name];f.capabilities[name]=async input=>{
+   assert.equal(input.targetScope,'events');assert.deepEqual(input.targetTrackIds,['a'.repeat(64)]);assert.equal(input.publishedRetention,token);return original(input);
+  };
+ }
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);ids[0]='b'.repeat(64);
+ assert.deepEqual(prepared.receipt.targetTrackIds,['a'.repeat(64)]);
+ const verified=await prepared.verify();await verified.dispose();
+ for(const value of [[],null,['bad'],['a'.repeat(64),'a'.repeat(64)]])
+  await assert.rejects(preparePublishedOfflineVerification({...f.options,targetTrackIds:value},f.capabilities),/exact event track IDs/);
+ await assert.rejects(preparePublishedOfflineVerification({...f.options,targetScope:'unknown'},f.capabilities),/target scope/);
+});
+
 test('public 76 wrapper fixes the exact 4358-entry public ledger pins',async()=>{
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.ledgerEntries,4358);
   assert.equal(PUBLIC_76_VERIFICATION_BASELINE.generation,76);

@@ -1,4 +1,6 @@
 import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
+import {nativeTargetTrackIds} from './native-target-filter.mjs';
+import {loadPublishedTargetRetention} from './published-target-retention.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -32,11 +34,13 @@ async function read(root,name,limit=16*1024*1024){
  * commit. Publication data is bound independently by publishedBaseline.
  */
 export async function preparePublishedOfflineVerification(options={},capabilities={}){
-  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs','mode','finishDeadlineMs','packagingReserveMs','targetScope'];
+  const allowed=['root','runDirectory','sourceCommit','publishedBaseline','maxJobs','maxRuntimeMs','mode','finishDeadlineMs','packagingReserveMs','targetScope','targetTrackIds'];
   demand(Object.keys(options).every(key=>allowed.includes(key)),'unknown option (no checkpoint or ledger override accepted)');
   let {root,runDirectory,sourceCommit,publishedBaseline,maxJobs=512,maxRuntimeMs=480000,mode='capture-compatible',
     finishDeadlineMs,packagingReserveMs=900000,targetScope='all'}=options;
   demand(['all','events'].includes(targetScope),'unknown target scope');
+  const targetTrackIds=nativeTargetTrackIds(targetScope,options.targetTrackIds);
+  const targeting=targetTrackIds?{targetTrackIds}:{};
   demand(['capture-compatible','postpublication-offline'].includes(mode),'unknown verification mode');
   const postpublication=mode==='postpublication-offline';
   demand(postpublication?Number.isSafeInteger(finishDeadlineMs)&&finishDeadlineMs>0&&packagingReserveMs===900000:
@@ -54,7 +58,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(!inside(root,runDirectory)&&!inside(runDirectory,root),'run directory must be disjoint from the publication root');
   const {hydrate=hydrateStaging,prepare=prepareNativeSnapshotCapture,preflightPhase=runNativeSnapshotPhase,
     verifyPhase=verifyNativeSnapshotPhase,loadTotals=loadTrustedPublishedEventTotalsBaseline,
-    validateRuntime=validateOfflineNativeRuntime,now=Date.now}=capabilities;
+    validateRuntime=validateOfflineNativeRuntime,loadRetention=loadPublishedTargetRetention,now=Date.now}=capabilities;
   demand(typeof now==='function','invalid verification clock');
   const runtime=await validateRuntime({root});
   async function checkPins(){
@@ -75,13 +79,14 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   for(const file of files){const target=path.join(runDirectory,file);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(path.join(root,file),target,fs.constants.COPYFILE_EXCL);}
   readLedger({root:path.join(runDirectory,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash});
   const publishedEventTotalsBaseline=await loadTotals({root,expectedGeneration:pins.generation,expectedIndexSha256:pins.indexSha256});
+  const publishedRetention=targetTrackIds?await loadRetention({root,directory,pins,targetTrackIds,targetScope,publishedBaseline:publishedEventTotalsBaseline}):null;
   const captureContext=await prepare({root,directory});
   // Exercise scoring, events, profiles and local CAS using ONLY old public
   // proofs before asking for any new native work. Never publish to source root.
   const preflightDirectory=path.join(runDirectory,'preflight-candidate');
   await cloneBounded({source:directory,destination:preflightDirectory});
   const preflight=await preflightPhase({root,publicationRoot:runDirectory,directory:preflightDirectory,sourceCommit,captureContext,
-    publishedEventTotalsBaseline,reuseOnly:true});
+    publishedEventTotalsBaseline,...(targetTrackIds?{targetScope,...targeting,publishedRetention}:{}),reuseOnly:true});
   demand(preflight.backendReads===0&&preflight.backendWrites===0&&preflight.counts?.nativeDispatched===0&&
     preflight.ledgerManifestHash===pins.ledgerManifestHash&&HASH.test(preflight.sourceBinding?.captureSha256||'')&&
     HASH.test(preflight.scoringPreflight?.sourceSha256||''),'stored-public preflight changed proof authority or omitted source pins');
@@ -89,7 +94,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(path.dirname(preflightDirectory)===runDirectory,'unsafe preflight cleanup');
   await fs.rm(preflightDirectory,{recursive:true,force:true});
   const receipt={schemaVersion:1,kind:'prepared-public-offline-verification',authority:false,sourceCommit,
-    publishedBaseline:pins,maxJobs,maxRuntimeMs,mode,targetScope,...(postpublication?{finishDeadlineMs,packagingReserveMs}:{}),runtime,preflight,backendReads:0,backendWrites:0};
+    publishedBaseline:pins,maxJobs,maxRuntimeMs,mode,targetScope,...targeting,...(postpublication?{finishDeadlineMs,packagingReserveMs}:{}),runtime,preflight,backendReads:0,backendWrites:0};
   await fs.writeFile(path.join(runDirectory,'prepared.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600,flush:true});
   let started=false;
   return Object.freeze({receipt:structuredClone(receipt),directory,
@@ -113,7 +118,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
       const effectiveRuntime=postpublication?Math.min(maxRuntimeMs,finishDeadlineMs-now()-packagingReserveMs):maxRuntimeMs;
       demand(!postpublication||effectiveRuntime>60000,'no native time remains before packaging reserve');
       const run=async()=>{verified=await verifyPhase({root,publicationRoot:runDirectory,directory,sourceCommit,captureContext,
-        publishedEventTotalsBaseline,maxJobs,maxRuntimeMs:effectiveRuntime,targetScope,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
+        publishedEventTotalsBaseline,...(publishedRetention?{publishedRetention}:{}),maxJobs,maxRuntimeMs:effectiveRuntime,targetScope,...targeting,expectedCaptureSha256:preflight.sourceBinding.captureSha256,
         expectedScoringSha256:preflight.scoringPreflight.sourceSha256,nativeCompleted});return verified;};
       try{
         if(postpublication){
@@ -142,7 +147,7 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
           demand(returned.previousLedgerManifestHash===pins.ledgerManifestHash,'terminal public ledger binding changed');
           demand(typeof returned.sourceCoverage?.complete==='boolean','terminal source coverage required');
           terminalReceipt={schemaVersion:1,kind:'published-offline-bounded-terminal-pass',authority:false,
-            mode,publishedBaseline:pins,sourceCommit,sourceBinding:terminal.sourceBinding,
+            mode,...targeting,publishedBaseline:pins,sourceCommit,sourceBinding:terminal.sourceBinding,
             nativeReceiptSha256:sha(completionBytes),ledgerManifestHash:terminal.ledgerManifestHash,
             boundedTerminalPass:true,verificationCoverageComplete:terminal.complete,
             sourceCoverageComplete:returned.sourceCoverage.complete,

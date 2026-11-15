@@ -3,6 +3,15 @@
   "engineDigest": "7203ead74e290932abafe7f45ae5d121b5e1488b788f7dbe9ea95c8eb30d1ed1",
   "tracks": [
     {
+      "id": "b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f",
+      "name": "trusted/b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f.track",
+      "hash": "ed47c43960ef37255a30ab43fce6e44a9ad9f8c534482ca083090a3eb7a03fcd",
+      "parts": 51029,
+      "spanX": 828,
+      "spanZ": 860,
+      "displayName": "Magician's Residence"
+    },
+    {
       "id": "60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48",
       "name": "trusted/60e247f90d43ecaa8b56a4677307094ab0259f36151af23e09fdc824741d3e48.track",
       "hash": "a6ccd78cc443cd848a41da11d94904d2fffb7647d0ecafca64562eb53480ea2b",

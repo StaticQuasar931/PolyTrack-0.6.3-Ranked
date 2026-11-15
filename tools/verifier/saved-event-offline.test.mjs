@@ -16,19 +16,36 @@ test('saved dispatch plan pins existing public artifacts and never creates an un
  assert.equal(p.extended.wallMs,120000);assert.equal(p.batchSize,16);
  assert.equal(savedEventDispatchPlan({...pins,maxJobs:512}).maxRuntimeMs,480000);
  assert.equal(savedEventDispatchPlan({...pins,maxJobs:512}).maxJobs,512);
+ assert.equal(savedEventDispatchPlan({...pins,maxJobs:1}).maxJobs,1);
  for(const change of [{sourceCommit:'main'},{indexSha256:'bad'},{ledgerManifestHash:'bad'},{maxJobs:100000},{runAttempt:2}])
   assert.throws(()=>savedEventDispatchPlan({...pins,...change}));
  assert.throws(()=>savedEventWorkflowConfig({...environment(),GITHUB_RUN_ATTEMPT:'2'}),/first attempt/);
 });
+
+test('saved executor admits only an explicit unique exact track list and preserves defaults',()=>{
+ const ids=['b'.repeat(64),'a'.repeat(64)],env=environment();
+ assert.equal(Object.hasOwn(savedEventWorkflowConfig(env).plan,'targetTrackIds'),false);
+ const configured=savedEventWorkflowConfig({...env,TARGET_TRACK_IDS:JSON.stringify(ids)});
+ assert.deepEqual(configured.plan.targetTrackIds,[...ids].sort());
+ assert.deepEqual(ids,['b'.repeat(64),'a'.repeat(64)]);
+ for(const value of [[],null,'all',['main'],[ids[0],ids[0]],Array(513).fill(ids[0])])
+  assert.throws(()=>savedEventWorkflowConfig({...env,TARGET_TRACK_IDS:JSON.stringify(value)}),/exact event track IDs/);
+ assert.throws(()=>savedEventWorkflowConfig({...env,TARGET_TRACK_IDS:''}),SyntaxError);
+ const combined=savedEventWorkflowConfig({...env,TARGET_TRACK_IDS:JSON.stringify(ids),NATIVE_TARGET_SCOPE:'all',WARMUP_FIRST_PROOF:'1'});
+ assert.equal(combined.plan.targetScope,'all');assert.equal(combined.warmupFirst,true);
+ assert.throws(()=>savedEventWorkflowConfig({...env,NATIVE_TARGET_SCOPE:'all'}),/explicit targets/);
+ assert.throws(()=>savedEventWorkflowConfig({...env,WARMUP_FIRST_PROOF:'yes'}),/warmup mode/);
+});
 test('sidecar verifies once, live-compiles completed proofs, audits a private package, and preserves negative results',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'saved-event-sidecar-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const env=environment();let verified=0,disposed=0,compiled=0;
+ const env={...environment(),TARGET_TRACK_IDS:JSON.stringify(['a'.repeat(64)])};let verified=0,disposed=0,compiled=0;
  await fs.mkdir(path.join(root,'stage'));await fs.writeFile(path.join(root,'stage/manifest.json'),'{}');
  await fs.mkdir(path.join(root,'events'));await fs.writeFile(path.join(root,'events/public-catalog.json'),'{}');
  await fs.writeFile(path.join(root,'index.html'),'<meta name="polytrack-snapshot" content="./public-snapshots84/">');
  const git=args=>Buffer.from(args[0]==='rev-parse'?env.EXPECTED_SOURCE_COMMIT:args[1].endsWith('/index.json')?'index':'ledger');
  const result=await runSavedEventVerification({root,runDirectory:root,env},{git,prepare:async(options,capabilities)=>{
   assert.equal(options.targetScope,'events');assert.equal(options.maxJobs,64);assert.equal(options.maxRuntimeMs,480000);
+  assert.deepEqual(options.targetTrackIds,['a'.repeat(64)]);
   assert.deepEqual(options.publishedBaseline,{generation:84,indexSha256:pins.indexSha256,ledgerManifestHash:pins.ledgerManifestHash,ledgerEntries:19391});
   assert.equal(typeof capabilities.verifyPhase,'function');
   return {directory:path.join(root,'stage'),receipt:{backendReads:0,backendWrites:0},verify:async()=>{verified++;return {
@@ -66,4 +83,11 @@ test('offline workflow cannot capture, mutate backend, automatically retry, or p
  for(const contract of ['native-verification-ledger.test.mjs','native-verification-policy.test.mjs','native-event-snapshot.test.mjs',
   'verifier/local-snapshot-verification.test.mjs','native-snapshot-phase.test.mjs','snapshot-native-workflow.test.mjs'])
   assert(source.includes(contract),'the original authority gate remains mandatory: '+contract);
+});
+
+test('local launch pins source85 and original budgets, requires committed code and gates first fresh proof',async()=>{
+ const source=await fs.readFile(new URL('./run-saved-kodub-rhr.ps1',import.meta.url),'utf8');
+ for(const text of ["$env:SNAPSHOT_GENERATION = '85'","$env:LEDGER_ENTRIES = '19457'","$env:NATIVE_JOB_LIMIT = '128'",
+  "$env:WARMUP_FIRST_PROOF = '1'","$env:NATIVE_TARGET_SCOPE = 'all'",'git status --porcelain','Test-Path -LiteralPath $RunDirectory'])assert(source.includes(text));
+ assert.doesNotMatch(source,/FIREBASE_|git push|Remove-Item|Start-Process|while\s*\(/);
 });

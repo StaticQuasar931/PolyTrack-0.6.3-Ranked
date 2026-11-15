@@ -1,4 +1,5 @@
 import {pinRetainedNativeBoards,retainedNativeBoardMatches} from './retained-native-board-cache.mjs';
+import {loadPublishedTargetRetention,assertPublishedTargetRetention} from './published-target-retention.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -286,6 +287,117 @@ test('events-only verification excludes normal native targets but retains comple
   assert.equal(verified.receipt.counts.nativeDispatched,1);assert.deepEqual(await inventory(f.directory),before);
  }finally{await verified.dispose();}
  await assert.rejects(verifyNativeSnapshotPhase({...f.options,targetScope:'unknown'}),/target scope/);
+});
+
+test('source-bound retention admits only target new fingerprint proofs and preserves previous published bytes and ledger',async t=>{
+ const f=await fixture(t,{events:true}),initialRh=PERMANENT_ROLLING_HILLS.trackId;
+ const originalNormal=await read(f.directory,'tracks/'+initialRh+'.json');
+ const acceptedControl={...originalNormal.entries[0],accountId:sha('accepted RHR control'),uploadId:3,timeMs:1000,frames:1000};
+ originalNormal.entries.push(acceptedControl);originalNormal.totalEntries=2;
+ await write(f.directory,'canonical/'+initialRh+'/'+acceptedControl.accountId+'.json',acceptedControl);
+ await write(f.directory,'recordings/3.json',{...acceptedControl,recording:replay});
+ originalNormal.entries[0].runVerified=false;originalNormal.entries[0].verified=false;
+ await write(f.directory,'tracks/'+initialRh+'.json',originalNormal);
+ const initialPolicy=structuredClone(policy);initialPolicy.trackContentHashes[initialRh]=content;initialPolicy.trackGeometries[initialRh]=initialPolicy.trackGeometries[track];
+ f.options.buildPolicy=async()=>initialPolicy;await runNativeSnapshotPhase(f.options);
+ const oldBoard=await fs.readFile(path.join(f.directory,'events/day1.json'));
+ const oldReplay=await fs.readFile(path.join(f.directory,`event-replays/day1/${account}.json`));
+ const pointer=await read(f.root,'verification-ledger-current.json');
+ const previous=readLedger({root:path.join(f.root,'verification-ledger'),expectedManifestHash:pointer.manifestHash});
+ const other='9'.repeat(64),board=await read(f.directory,'events/day1.json');
+ const pending={accountId:account,runId,timeMs:900,submittedAt:2000,replayHash,pending:true,verified:false,
+  eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'};
+ await write(f.directory,'events/day2.json',{id:'day2',period:{...board.period,id:'day2',trackId:other},entries:[],
+  pendingPlaybacks:[pending],complete:true,sourceComplete:true,totalEntries:0,updatedAt:2500});
+ await write(f.directory,`event-playbacks/day2/${runId}.json`,{...pending,periodId:'day2',trackId:other,
+  frames:900,replay,source:'pending-event-recording'});
+ const manifest=await read(f.directory,'manifest.json');manifest.events.day2={path:'events/day2.json'};
+ const rh=PERMANENT_ROLLING_HILLS.trackId,rhr=await read(f.directory,'tracks/'+rh+'.json'),oldRhr=structuredClone(rhr.entries[0]);
+ const pendingNormal={...f.row,trackId:rh,accountId:sha('pending RHR'),uploadId:2,timeMs:950,frames:950};
+ rhr.entries.push(pendingNormal);rhr.totalEntries=rhr.entries.length;await write(f.directory,'tracks/'+rh+'.json',rhr);
+ await write(f.directory,'canonical/'+rh+'/'+pendingNormal.accountId+'.json',pendingNormal);
+ await write(f.directory,'recordings/2.json',{...pendingNormal,recording:replay});
+ const pagedId='6'.repeat(64),pagedPath='tracks/'+pagedId+'.json';
+ manifest.tracks[pagedId]={path:pagedPath,updatedAt:100};
+ await write(f.directory,pagedPath,{trackId:pagedId,updatedAt:100,complete:true,totalEntries:351,
+  entries:Array.from({length:351},(_,i)=>({...f.row,accountId:sha('paged '+i),trackId:pagedId,timeMs:1000+i,name:'x'.repeat(9000)}))});
+ await write(f.directory,'manifest.json',manifest);
+ await publishSnapshot({root:f.root,stagingDirectory:f.directory});
+ const hydrated=path.join(f.root,'hydrated-retention');await hydrateStaging(f.root,hydrated);f.directory=hydrated;f.options.directory=hydrated;
+ const published=await read(f.root,'snapshot-current.json');
+ const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root:f.root,
+  expectedGeneration:Number(published.currentdir.replace('public-snapshots','')),
+  expectedIndexSha256:sha(await fs.readFile(path.join(f.root,published.currentdir,'index.json')))});
+ const pins={generation:Number(published.currentdir.replace('public-snapshots','')),indexSha256:publishedEventTotalsBaseline.provenance.indexSha256,
+  ledgerManifestHash:previous.manifestHash,ledgerEntries:previous.entries.length};
+ const ids=[other,rh],publishedRetention=await loadPublishedTargetRetention({root:f.root,directory:f.directory,pins,targetScope:'all',targetTrackIds:ids,publishedBaseline:publishedEventTotalsBaseline});
+ const check=(token=publishedRetention,ledger=previous,targets=ids)=>assertPublishedTargetRetention(token,{directory:f.directory,ledger,targetTrackIds:targets,publishedBaseline:publishedEventTotalsBaseline});
+ await assert.rejects(check({...publishedRetention}),/live retention capability/);
+ await assert.rejects(check(publishedRetention,{entries:[]}),/changed or deleted/);
+ const altered=structuredClone(previous);altered.entries[0].witnesses[0].verifierFingerprint='0'.repeat(64);
+ await assert.rejects(check(publishedRetention,altered),/changed or deleted/);
+ await assert.rejects(check(publishedRetention,previous,[track]),/scope mismatch/);
+ const foreign=structuredClone(previous.entries[0]);foreign.key='8'.repeat(64);foreign.binding.trackId='8'.repeat(64);
+ await assert.rejects(check(publishedRetention,{entries:[...previous.entries,foreign]}),/out-of-target/);
+ await fs.appendFile(path.join(f.directory,'events/day1.json'),' ');
+ await assert.rejects(check(),/retained bytes changed/);await fs.writeFile(path.join(f.directory,'events/day1.json'),oldBoard);
+ await assert.rejects(loadPublishedTargetRetention({root:f.root,directory:f.directory,pins:{...pins,indexSha256:'0'.repeat(64)},targetTrackIds:[other],publishedBaseline:publishedEventTotalsBaseline}),/cohort mismatch/);
+ const pagedBytes=await fs.readFile(path.join(f.directory,pagedPath));
+ assert.equal(JSON.parse(pagedBytes)._reconstructedFromPages,true);
+ const changedPages=JSON.parse(pagedBytes);changedPages.entries.reverse();await write(f.directory,pagedPath,changedPages);
+ await assert.rejects(loadPublishedTargetRetention({root:f.root,directory:f.directory,pins,targetTrackIds:[other],publishedBaseline:publishedEventTotalsBaseline}),/page-bound normal reconstruction mismatch/);
+ await fs.writeFile(path.join(f.directory,pagedPath),pagedBytes);
+ const extended=structuredClone(policy);extended.trackContentHashes[other]=content;extended.trackGeometries[other]=extended.trackGeometries[track];
+ extended.trackContentHashes[rh]=content;extended.trackGeometries[rh]=extended.trackGeometries[track];
+ extended.verifierFingerprint='7'.repeat(64);
+ f.calls.length=0;let fullInventory=0;
+ const verified=await verifyNativeSnapshotPhase({...f.options,targetScope:'all',targetTrackIds:ids,
+  publishedEventTotalsBaseline,publishedRetention,
+  verify:async(...args)=>(await f.options.verify(...args)).map(result=>{
+   result.binding.verifierFingerprint=extended.verifierFingerprint;result.boundInputFingerprint=sha(JSON.stringify(result.binding));return result;
+  }),
+  buildPolicy:async()=>extended,reviewFactory:async input=>{fullInventory=input.jobs.length;return f.options.reviewFactory(input);}});
+ try{
+  assert.equal(fullInventory,5);assert.equal(f.calls.flat().length,2);assert.equal(f.calls[0][0].trackId,other);
+  assert.deepEqual(verified.receipt.targetTrackIds,[...ids].sort());assert.equal(verified.receipt.counts.known,2);
+  const compiled=await verified.compile();assert.equal(compiled.counts.sourceJobs,5);assert.equal(compiled.counts.targets,2);
+  const next=readLedger({root:path.join(f.root,'verification-ledger'),expectedManifestHash:compiled.ledgerManifestHash});
+  for(const entry of previous.entries)assert.deepEqual(next.entries.find(row=>row.key===entry.key),entry);
+  assert.equal(next.entries.length,previous.entries.length+2);
+  assert.equal(next.entries.find(row=>row.binding.trackId===other).witnesses[0].verifierFingerprint,extended.verifierFingerprint);
+  assert.equal(next.entries.find(row=>row.binding.trackId===track).witnesses[0].verifierFingerprint,fingerprint);
+  assert.deepEqual(await fs.readFile(path.join(f.directory,'events/day1.json')),oldBoard);
+  assert.deepEqual(await fs.readFile(path.join(f.directory,`event-replays/day1/${account}.json`)),oldReplay);
+  assert.deepEqual(await fs.readFile(path.join(f.directory,pagedPath)),pagedBytes);
+  const resultRhr=await read(f.directory,'tracks/'+rh+'.json');
+  assert.equal(resultRhr.entries.find(row=>row.accountId===pendingNormal.accountId).runVerified,true);
+  const retained=resultRhr.entries.find(row=>row.accountId===oldRhr.accountId);
+  for(const field of ['verified','runVerified','integrityVerified','timeMs','replayHash'])assert.equal(retained[field],oldRhr[field]);
+  assert.equal(retained.nativeLedgerKey,oldRhr.nativeLedgerKey);assert.equal(retained.nativeLedgerManifestHash,oldRhr.nativeLedgerManifestHash);
+ }finally{await verified.dispose();}
+});
+
+test('unknown or invalid exact track filters reject before native dispatch',async t=>{
+ const f=await fixture(t,{events:true});const before=await inventory(f.root);
+ for(const targetTrackIds of [[],null,['bad'],[track,track]])
+  await assert.rejects(verifyNativeSnapshotPhase({...f.options,targetScope:'events',targetTrackIds}),/exact event track IDs/);
+ await assert.rejects(verifyNativeSnapshotPhase({...f.options,targetScope:'events',targetTrackIds:['9'.repeat(64)]}),/no captured event jobs/);
+ await assert.rejects(verifyNativeSnapshotPhase({...f.options,targetScope:'unknown',targetTrackIds:[track]}),/target scope/);
+ assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
+});
+
+test('track filtering cannot forge old fingerprint compatibility or bypass stored-public preflight',async t=>{
+ const f=await fixture(t,{events:true});await runNativeSnapshotPhase(f.options);
+ await publishSnapshot({root:f.root,stagingDirectory:f.directory});
+ const pointer=await read(f.root,'snapshot-current.json');
+ const publishedEventTotalsBaseline=await loadTrustedPublishedEventTotalsBaseline({root:f.root,
+  expectedGeneration:Number(pointer.currentdir.replace('public-snapshots','')),
+  expectedIndexSha256:sha(await fs.readFile(path.join(f.root,pointer.currentdir,'index.json')))});
+ const changed={...structuredClone(policy),verifierFingerprint:'0'.repeat(64)},before=await inventory(f.root);
+ f.calls.length=0;
+ await assert.rejects(runNativeSnapshotPhase({...f.options,targetScope:'events',targetTrackIds:[track],
+  publishedEventTotalsBaseline,reuseOnly:true,buildPolicy:async()=>changed}),/approved event payload unavailable/);
+ assert.equal(f.calls.length,0);assert.deepEqual(await inventory(f.root),before);
 });
 
 test('prepared capture and scoring pins fail before spending any native budget',async t=>{

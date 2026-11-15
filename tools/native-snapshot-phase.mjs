@@ -1,4 +1,6 @@
 import {pinRetainedNativeBoards} from './retained-native-board-cache.mjs';
+import {nativeTargetTrackIds} from './native-target-filter.mjs';
+import {assertPublishedTargetRetention,publishedNormalRetentionSelection,assertPublishedTargetJobs} from './published-target-retention.mjs';
 import {restoreRetainedPendingPlaybacks} from './restore-retained-pending-playbacks.mjs';
 import {assertTrustedPublishedEventTotalsBaseline} from './published-event-totals-baseline.mjs';
 import {publishedEventPairingTotals} from './published-event-pairing.mjs';
@@ -10,7 +12,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {readLedger,writeLedger,ledgerBinding,ledgerKey,ledgerDisposition,applyLedgerToBoard} from './native-verification-ledger.mjs';
+import {readLedger,writeLedger,ledgerBinding,ledgerKey,ledgerDisposition,applyLedgerToBoard,nativePolicyFingerprint} from './native-verification-ledger.mjs';
 import {buildNativeVerificationPolicy} from './native-verification-policy.mjs';
 import {readCapturedNormalLedgerRows,applyNativeLedgerToCapturedTracks,publicEventBackup} from './public-snapshot-backup.mjs';
 import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeEventSnapshot,projectRetainedEventVerifications,projectNativeEventTotals,reconcileNativeEventTotalsFromPublished,deriveCapturedNativeRollingHills,nativeEventSourceHash} from './native-event-snapshot.mjs';
@@ -237,7 +239,7 @@ export async function prepareNativeSnapshotCapture({root,directory,buildPolicy=b
   await progress('native-prepare-complete',{retainedJobs:retainedJobs.length});return context;
 }
 
-async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null,validateOnly=false}){
+async function compileEvents({root,directory,inputs,ledger,policy,captureContext,publishedEventTotalsBaseline=null,publishedRetention=null,validateOnly=false}){
   const manifest=await read(directory,'manifest.json'),serverTotals=await optional(directory,'event-totals.json');
   const periods=inputs.eventBoards.filter(board=>board.id!=='permanent-rolling-hills');
   if(!serverTotals){demand(periods.length===0,'event totals source unavailable');return {periods:0,ready:true};}
@@ -249,6 +251,11 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   const pairingTotals=exactPublished?publishedEventPairingTotals(baseline,serverTotals):serverTotals;
   const projections=[],pins={},cache=path.join(directory,'native-event-source');
   for(const captured of periods){
+    if(publishedRetention&&!publishedRetention.targetTrackIds.includes(captured.period.trackId)){
+      projections.push({board:captured,promotedReplays:[],totalsEligible:false,ready:true});
+      const pin=captureContext.eventSourcePins?.[captured.id];if(pin)pins[captured.id]=pin;
+      continue;
+    }
     if(LEGACY_ARCHIVE_REPLAY_EXCEPTIONS.some(pin=>pin.periodId===captured.id)){
       const board=annotateLegacyArchiveReplayBoard({sourcePath:'events/'+captured.id+'.json',board:captured});
       demand(board.entries.some(row=>row.replayUnavailable===true),'legacy archive source changed');
@@ -328,16 +335,18 @@ export async function verifyNativeSnapshotPhase(options={}){
 }
 
 async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=512,maxRuntimeMs=480000,allowNativeDispatch=true,reuseOnly=false,publicationRoot=root,targetScope='all',
+  targetTrackIds,publishedRetention=null,
   expectedCaptureSha256=null,expectedScoringSha256=null,
   verify,now=Date.now,captureContext,publishedEventTotalsBaseline=null,buildPolicy=buildNativeVerificationPolicy,reviewFactory=defaultCapturedReviewFactory,
   validateEngine,applyNormal=applyNativeLedgerToCapturedTracks,eventCompiler=compileEvents,
-  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,progressCheckpoint=null,nativeCompleted=null,
+  rebuild=rebuildSnapshotOverall,preflight=rebuildSnapshotOverall,buildProfiles=buildProfileSnapshotResults,proofCheckpoint=null,progressCheckpoint=null,nativeCompleted=null,firstProofCheckpoint=null,
   publishPointer=({root,pointer})=>json(root,'verification-ledger-current.json',pointer)}={},verificationOnly=false){
   demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||'')&&SHA.test(sourceCommit||''),'pinned absolute phase source required');
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
   demand(['all','events'].includes(targetScope),'invalid native target scope');
+  const trackTargets=nativeTargetTrackIds(targetScope,targetTrackIds);
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
   demand(progressCheckpoint===null||typeof progressCheckpoint==='function','invalid progress checkpoint capability');
   demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
@@ -354,12 +363,15 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     demand(expectedScoringSha256===null||scoringPreflight.sourceSha256===expectedScoringSha256,'scoring inputs changed since preparation');
     await copyLedger(context.ledgerRoot,ledgerRoot,context.ledger.manifestHash);
     const inputs=await timed('hydrateMs',()=>loadCapturedNativeJobs({directory:candidate,allowExtendedLocal:true}));
+    const assertRetention=(ledger,initial=false)=>assertPublishedTargetRetention(publishedRetention,{directory:candidate,ledger,
+      targetTrackIds:trackTargets,publishedBaseline:publishedEventTotalsBaseline,initial});
+    if(publishedRetention){demand(trackTargets,'retention requires explicit track targets');await assertRetention(context.ledger,true);}
     const totalsInput=await optional(candidate,'event-totals.json');
     if(totalsInput?.nativeEventOverlay){
       const published=publishedEventTotalsBaseline&&assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
       demand(published&&isDeepStrictEqual(totalsInput,published.totals),'exact trusted published totals required before native work');
     }
-    await timed('eventPreflightMs',()=>compileEvents({root,directory:candidate,inputs,ledger:context.ledger,policy:context.policy,captureContext:context,publishedEventTotalsBaseline,validateOnly:true,now}));
+    await timed('eventPreflightMs',()=>compileEvents({root,directory:candidate,inputs,ledger:context.ledger,policy:context.policy,captureContext:context,publishedEventTotalsBaseline,publishedRetention,validateOnly:true,now}));
     const freshJobs=inputs.jobs.slice(),knownKeys=new Set(freshJobs.map(job=>ledgerKey(ledgerBinding(job))));
     for(const job of context.retainedJobs||[])if(!knownKeys.has(ledgerKey(ledgerBinding(job)))){
       inputs.jobs.push(job);inputs.canonicalRows.push({...job});inputs.recordings.push({...job});knownKeys.add(ledgerKey(ledgerBinding(job)));
@@ -378,9 +390,14 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       }else if(inputs.eventBoards.some(board=>board.id===job.periodId&&board.entries.some(row=>row.accountId===job.accountId&&row.timeMs===job.timeMs&&
         (row.runId===undefined||row.runId===job.runId)&&row.needsReview!==true&&row.reviewHold!==true)))accepted.add(key);
     }
-    const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));return targetScope==='events'?job.lane==='event':!accepted.has(key)||entries.has(key);}),
-      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'});
-    const targets=priority.jobs;
+    if(trackTargets)demand(trackTargets.every(id=>inputs.jobs.some(job=>(targetScope==='all'||job.lane==='event')&&job.trackId===id)),
+      'target track has no captured event jobs');
+    const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));
+      if(trackTargets&&(!trackTargets.includes(job.trackId)||publishedRetention&&(entries.has(key)||job.lane==='normal'&&accepted.has(key))))return false;
+      return targetScope==='events'?job.lane==='event':trackTargets?true:!accepted.has(key)||entries.has(key);}),
+      eventBoards:inputs.eventBoards,canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'||!!trackTargets});
+    const targets=publishedRetention?priority.jobs.sort((a,b)=>Number(b.lane==='event')-Number(a.lane==='event')):priority.jobs;
+    if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;
     const review=async value=>{
       reviewer||=await reviewFactory({jobs:value.allJobs,sourceBinding:binding,policy:value.policy,
@@ -410,7 +427,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
         complete:true,decisions:[],counts:{storedProofs:context.ledger.entries.length,nativeDispatched:0,newProofs:0}}
         :await timed('verificationMs',()=>verifyLocalSnapshot({root,jobs:targets,allJobs:inputs.jobs,sourceBinding:binding,ledgerRoot,
         expectedManifestHash:context.ledger.manifestHash,buildPolicy,review,verify,validateEngine,
-        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,allowNativeDispatch,now,onProgress:saveProgress}));
+        trustedTracks:loadWeeklyTrustedTrack(root,inputs.jobs),maxJobs,maxRuntimeMs,allowNativeDispatch,now,onProgress:saveProgress,firstProofCheckpoint}));
     }catch(error){
       // Only completed, validated batches reach this private ledger. Its hash
       // identifies recovery evidence, never a new publication trust anchor.
@@ -436,6 +453,8 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
           sourceCoverage:inputs.coverage,timings}});
     }
     const receipt={schemaVersion:1,authority:false,kind:'completed-in-process-native-verification',
+      ...(trackTargets?{targetTrackIds:trackTargets}:{}),
+      ...(publishedRetention?{publishedRetention}:{}),
       sourceBinding:binding,ledgerManifestHash:verification.ledgerManifestHash,
       previousLedgerManifestHash:context.rootManifestHash,counts:verification.counts,
       decisions:verification.decisions,engineDigest:verification.engineDigest,verifierFingerprint:verification.verifierFingerprint,
@@ -459,10 +478,19 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       .map(value=>value.binding.trackId));
     const publicationPolicy=structuredClone(policy);
     for(const trackId of deferred){delete publicationPolicy.trackContentHashes[trackId];delete publicationPolicy.trackGeometries[trackId];}
-    const normal=await applyNormal({directory:candidate,ledger:verification.ledger,ledgerRoot,policy:publicationPolicy,
-      canonicalRows,rebuildDerived:false,now:now()});
-    const events=await eventCompiler({root,directory:candidate,inputs,ledger:verification.ledger,policy:publicationPolicy,captureContext:context,publishedEventTotalsBaseline,now});
+    if(publishedRetention)await assertRetention(verification.ledger);
+    const normalSelection=publishedRetention?publishedNormalRetentionSelection(publishedRetention):null;
+    const normal=normalSelection&&!normalSelection.targetTrackIds.length?{retainedPublishedBytes:true,newNormalApprovals:0}:await applyNormal({directory:candidate,ledger:verification.ledger,ledgerRoot,policy:publicationPolicy,
+      canonicalRows,rebuildDerived:false,now:now(),...(normalSelection||{})});
+    const events=await eventCompiler({root,directory:candidate,inputs,ledger:verification.ledger,policy:publicationPolicy,captureContext:context,publishedEventTotalsBaseline,publishedRetention,now});
+    if(publishedRetention){
+      const manifest=await read(candidate,'manifest.json');
+      manifest.publishedProofRetention={...publishedRetention,previousPolicyFingerprint:publishedRetention.sourcePolicyFingerprint};
+      manifest.nativeVerificationLedger={...manifest.nativeVerificationLedger,manifestHash:verification.ledgerManifestHash,policyFingerprint:nativePolicyFingerprint(publicationPolicy)};
+      await json(candidate,'manifest.json',manifest);
+    }
     const overall=await rebuild({directory:candidate,now});await buildProfiles(candidate);
+    if(publishedRetention)await assertRetention(verification.ledger);
     demand(events.ready!==false,'event compilation incomplete');
     // Confirm local root authority did not change while the private phase ran.
     const current=await optional(publicationRoot,'verification-ledger-current.json');
@@ -473,6 +501,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     return {schemaVersion:1,authority:reuseOnly?'stored-proof-overlay':'snapshot-native',backendReads:0,backendWrites:0,
       // Compilation finished; package/cohort audits remain independent publication barriers.
       compilationComplete:true,verificationCoverageComplete:verification.complete,sourceCoverageComplete:inputs.coverage.complete,
+      ...(trackTargets?{targetTrackIds:trackTargets}:{}),
       coverageComplete:verification.complete&&inputs.coverage.complete,
       complete:verification.complete&&inputs.coverage.complete,ledgerManifestHash:verification.ledgerManifestHash,
       sourceBinding:binding,counts:{...verification.counts,sourceJobs:inputs.jobs.length,targets:targets.length,serverAccepted:accepted.size},

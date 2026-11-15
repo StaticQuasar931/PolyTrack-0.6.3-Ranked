@@ -227,8 +227,9 @@ export async function verifyLocalNativeBatch(root,jobs,tracks,{deadline=Infinity
 export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, ledgerRoot, expectedManifestHash,
   policy:providedPolicy, buildPolicy=buildNativeVerificationPolicy, review, verify=verifyLocalNativeBatch, validateEngine=defaultEngine, trustedTracks=[],
   maxJobs=512, batchSize=16, maxRuntimeMs=480000, allowNativeDispatch=true, packReserveMs=60000, now=Date.now, env=process.env,
-  onProgress=()=>{}}={}) {
+  onProgress=()=>{},firstProofCheckpoint=null}={}) {
   return withOfflineVerification(async()=>{
+    demand(firstProofCheckpoint===null||typeof firstProofCheckpoint==='function','invalid first-proof checkpoint capability');
     demand(typeof root === 'string' && path.isAbsolute(root),'absolute repository root required');
     demand(typeof ledgerRoot === 'string' && path.isAbsolute(ledgerRoot),'absolute ledger root required');
     demand(sourceBinding && SHA.test(sourceBinding.sourceCommit || '') && HASH.test(sourceBinding.captureSha256 || ''),'pinned capture/source binding required');
@@ -298,9 +299,21 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
     const entries=new Map(ledger.entries.map(entry=>[entry.key,entry]));
     operations.ledgerIndexVisits+=ledger.entries.length;
     const observed=[];
+    let warmupComplete=false;
+    const reportProgress=async progress=>{
+      if(firstProofCheckpoint&&!warmupComplete){
+        demand(progress.processed===1&&counts.nativeDispatched===1&&counts.verified===1&&counts.reusedPhysics===0&&
+          decisions.length===1&&decisions[0].status==='verified','first native proof did not pass; remainder blocked');
+        await firstProofCheckpoint({kind:'native-first-proof-complete',authority:false,sourceBinding:structuredClone(sourceBinding),
+          ledgerManifestHash:ledger.manifestHash,decision:structuredClone(decisions[0]),counts:{...counts},
+          engineDigest:policy.engineDigest,verifierFingerprint:policy.verifierFingerprint});
+        warmupComplete=true;
+      }
+      await onProgress(progress);
+    };
     let cursor=0;
     while (cursor < current.length && remaining() > packReserveMs) {
-      const selected=current.slice(cursor,cursor+batchSize), native=[],raw=new Map();
+      const selected=current.slice(cursor,cursor+(firstProofCheckpoint&&!warmupComplete?1:batchSize)), native=[],raw=new Map();
       for (const job of selected) {
         if (Array.isArray(policy.knownTrackIds) && !policy.knownTrackIds.includes(job.trackId)) {
           raw.set(job.resultId,{resultId:job.resultId,trackId:job.trackId,timeMs:job.timeMs,replayHash:job.replayHash,
@@ -346,7 +359,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
           decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
         }
         cursor+=selected.length;
-        await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
+        await reportProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
         continue;
       }
       const nativeResults=ready.map(job=>structuredClone(raw.get(job.resultId)));
@@ -377,7 +390,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
             counts.unprocessed++;decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
           }
           cursor+=selected.length;
-          await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
+          await reportProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,ledgerManifestHash:ledger.manifestHash});
           continue;
         }
       }
@@ -435,13 +448,14 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
         decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
       }
       cursor+=selected.length;
-      await onProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,
+      await reportProgress({processed:cursor,total:current.length,nativeDispatched:counts.nativeDispatched,
         ledgerManifestHash:ledger.manifestHash});
     }
     for (const job of current.slice(cursor)) {
       counts.unprocessed++;
       decisions.push({key:ledgerKey(ledgerBinding(job)),binding:ledgerBinding(job),status:'unprocessed',reason:allowNativeDispatch?'native_budget':'proof_only'});
     }
+    demand(!firstProofCheckpoint||warmupComplete,'first native proof did not pass; remainder blocked');
     const result={schemaVersion:1,authority:'snapshot-native',offlineOnly:true,sourceBinding:structuredClone(sourceBinding),
       engineDigest:policy.engineDigest,verifierFingerprint:policy.verifierFingerprint,
       policySha256:digest(JSON.stringify(policy)),

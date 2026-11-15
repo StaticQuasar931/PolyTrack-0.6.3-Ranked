@@ -167,7 +167,7 @@ function reconstructPagedBoard(board, hydrated) {
     ranksExact: manifest.ranksExact, capturedAt: manifest.capturedAt, _reconstructedFromPages: true };
 }
 
-function reconstructOmittedBoards(index, hydrated) {
+export function reconstructOmittedBoards(index, hydrated) {
   const boards = validatePagingCatalog(index, hydrated);
   const pageCount = boards.reduce((total, board) => total + board.manifest.pageCount, 0);
   const pageBytes = boards.reduce((total, board) => total + board.manifest.pageBounds.reduce((sum, bound) =>

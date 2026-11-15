@@ -51,6 +51,26 @@ async function fixture(t) {
   return {root,options};
 }
 
+test('first proof is ledger-complete and checkpointed before the same live budget continues without replaying it',async t=>{
+ const {options}=await fixture(t),jobs=[job(1),job(2),job(3)],sizes=[];let passed=false;
+ const result=await verifyLocalSnapshot({...options,jobs,maxJobs:3,firstProofCheckpoint:async receipt=>{
+  assert.deepEqual(sizes,[1]);assert.equal(receipt.counts.nativeDispatched,1);assert.equal(receipt.decision.status,'verified');
+  const ledger=readLedger({root:options.ledgerRoot,expectedManifestHash:receipt.ledgerManifestHash});assert.equal(ledger.entries.length,1);passed=true;
+ },verify:async(_root,batch)=>{if(sizes.length)assert(passed);sizes.push(batch.length);return batch.map(row=>native(row));}});
+ assert.deepEqual(sizes,[1,2]);assert.equal(result.counts.nativeDispatched,3);assert.equal(result.counts.verified,3);
+});
+
+for(const outcome of ['mismatch','unavailable','held','checkpoint-error'])test('first-proof gate stops all remainder on '+outcome,async t=>{
+ const {options}=await fixture(t);let calls=0,checkpoints=0;
+ await assert.rejects(verifyLocalSnapshot({...options,jobs:[job(1),job(2)],firstProofCheckpoint:async()=>{
+  checkpoints++;throw Error('checkpoint write failed');
+ },review:review(outcome==='held'?'held':'approved'),verify:async(_root,batch)=>{
+  calls++;assert.equal(batch.length,1);return batch.map(row=>outcome==='mismatch'||outcome==='unavailable'?
+   {resultId:row.resultId,trackId:row.trackId,timeMs:row.timeMs,replayHash:row.replayHash,status:outcome,reason:'fixture'}:native(row));
+ }}),outcome==='checkpoint-error'?/checkpoint write failed/:/first native proof did not pass/);
+ assert.equal(calls,1);assert.equal(checkpoints,outcome==='checkpoint-error'?1:0);
+});
+
 test('each native batch receives only its own independently trusted track data',async t=>{
  const {root,options}=await fixture(t),other='f'.repeat(64),seen=[];
  const second={...job(2),trackId:other};second.resultId=second.accountId+'_'+other;
