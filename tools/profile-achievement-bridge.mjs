@@ -67,7 +67,7 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   const profileName=content.querySelector('.profile-preview-stage>span>b')?.textContent?.trim();
   dialog.querySelector('.ph-heading>p').textContent=profileName||confirmed?.name||'Racer profile';
   content.append(dialog);
-  const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.textContent='Shop';dialog.querySelector('.ph-tabbar').append(shopNav);
+  const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.innerHTML=hubIcon('shop')+'<span>Shop</span>';dialog.querySelector('.ph-tab-hint').before(shopNav);
   const shopReady=()=>{const available=typeof content.__profileShopOpen==='function';shopButton.disabled=!available;shopNav.disabled=!available;shopButton.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');shopNav.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');entry.classList.toggle('ph-has-shop',available);};
   content.addEventListener('profile-shop-ready',shopReady);shopReady();
   const journalHost = dialog.querySelector('[data-ph-journal]'), studioHost = dialog.querySelector('[data-ph-studio]');

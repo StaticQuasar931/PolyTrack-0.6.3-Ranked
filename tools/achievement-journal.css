@@ -402,3 +402,10 @@ dialog.profile-hub { background:#1d2e61; }
 .aj.aj .aj-coin-bonus strong{font-size:21px}
 .aj.aj .aj-coin-bonus button,.aj.aj .aj-explore{background:#294475;color:#f5f7fa;border:1px solid #7596bd;box-shadow:none}
 .aj.aj .aj-coin-bonus button:hover,.aj.aj .aj-explore:hover{background:#354f85}
+
+/* Keep all three destinations together; the hint consumes only remaining space. */
+dialog.profile-hub .ph-tabbar>[data-ph-shop]{display:flex;align-items:center;justify-content:center;gap:12px;min-width:170px;min-height:56px;margin:0;padding:12px 24px;border:0;border-bottom:4px solid transparent;background:transparent;color:#b9cfea;font:21px ForcedSquare,sans-serif;cursor:pointer}
+dialog.profile-hub .ph-tabbar>[data-ph-shop] svg{width:24px;height:24px;color:#7ee7ff;flex:none}
+dialog.profile-hub .ph-tabbar>[data-ph-shop]:hover{background:#263d70;color:#fff}
+dialog.profile-hub .ph-tabbar>[data-ph-shop]:disabled{opacity:.6;cursor:wait}
+@media(max-width:660px){dialog.profile-hub .ph-tabbar>[data-ph-shop]{flex:1;min-width:0;min-height:50px;padding:10px 12px;font-size:19px;gap:6px}}

@@ -234,3 +234,16 @@
 .profile-customizer .kind-stripe .cosmetic-stripe-circuit{--studio-pattern:radial-gradient(circle at 72% 30%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 40%,transparent) 0 4px,transparent 5px),linear-gradient(155deg,transparent 72%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 18%,transparent) 73% 74%,transparent 75%)}
 .profile-customizer .kind-stripe .cosmetic-stripe-scan{--studio-pattern:repeating-linear-gradient(0deg,transparent 0 7px,color-mix(in srgb,var(--profile-accent,#7ee7ff) 10%,transparent) 8px 9px)}
 .profile-customizer .kind-stripe .cosmetic-stripe-blocks{--studio-pattern:linear-gradient(90deg,transparent 0 52%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 15%,transparent) 53% 65%,transparent 66% 70%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 22%,transparent) 71% 84%,transparent 85%)}
+
+/* Reduced effects keep the selected static scene, never repainting the saved car. */
+.sq-plain-racer-themes .profile-customizer .profile-customizer-preview .profile-preview-stage>.overall-car-model{background:var(--stage-bg,linear-gradient(145deg,#1d2a55,#111c3c))!important}
+.sq-plain-racer-themes .profile-customizer .profile-customizer-preview .profile-preview-stage>.overall-car-model::after{animation:none!important;background:var(--stage-fx,none)}
+.profile-customizer .studio-tabs>.studio-shop-link{flex:0 1 auto;min-height:48px;padding:10px 14px;border:1px solid #628bb7;background:#274d7b;color:#edf7ff;font:16px/1.2 ForcedSquare,sans-serif;cursor:pointer}
+.profile-customizer .studio-tabs>.studio-shop-link:focus-visible{outline:3px solid var(--studio-gold);outline-offset:2px}
+.profile-customizer .profile-customizer-actions:has(.studio-restore-saved)>[data-discard-profile-cosmetics]{display:none!important}
+.profile-customizer .studio-save-state{color:#a9e3cd;font:14px/1.4 ForcedSquare,sans-serif}
+.profile-customizer .studio-selection-error{color:#ffd5a9;border-left:3px solid #e6ad72;padding:8px 10px;font:14px/1.45 ForcedSquare,sans-serif}
+.profile-customizer .studio-selection-error[hidden],.profile-customizer .studio-save-state[hidden]{display:none!important}
+
+.profile-customizer .profile-customizer-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.profile-customizer .profile-customizer-actions>:is([role="status"],.studio-dirty-marker,.studio-save-state,.studio-selection-error,[data-save-profile-cosmetics]){grid-column:1/-1}
