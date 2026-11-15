@@ -22,25 +22,30 @@ test('Kodub matches shipped sibling heights across aspect changes and preserves 
  const output=process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR;
  try{
   const page=await browser.newPage();let requests=0;await page.route('**/*',route=>{requests++;return route.abort();});
-  await page.setContent(`<style>@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{font-family:ForcedSquare,sans-serif;margin:0;background:#17234f;color:white}button{font:inherit}.wrapper{display:grid;width:100%}</style><style>${native}</style><div id="ui"><main class="track-selection-ui"><section id="native">${weekly.replace(/<small class="sq-kodub-reward">.*?<\/small>/,'')}</section><div class="tracks-container open"><div class="wrapper"><section class="sq-featured-events"><h2 class="sq-featured-heading">Events</h2>${weekly.replace('track-of-the-week"','track-of-the-week sq-kodub-weekly"')}<div class="sq-event-track-buttons">${sibling('daily')}${sibling('weekly')}</div></section></div></div></main></div>`);
+  await page.setContent(`<style>@font-face{font-family:ForcedSquare;src:url(data:font/woff2;base64,${font})}body{font-family:ForcedSquare,sans-serif;margin:0;background:#17234f;color:white}button{font:inherit}.wrapper{display:grid;width:100%}#native{position:absolute;left:-10000px;top:0;width:100%}</style><style>${native}</style><div id="ui"><main class="track-selection-ui"><section id="native">${weekly.replace(/<small class="sq-kodub-reward">.*?<\/small>/,'')}</section><div class="tracks-container open"><div class="wrapper"><section class="sq-featured-events"><h2 class="sq-featured-heading">Events</h2>${weekly.replace('track-of-the-week"','track-of-the-week sq-kodub-weekly"')}<div class="sq-event-track-buttons">${sibling('daily')}${sibling('weekly')}</div></section></div></div></main></div>`);
   await page.locator('#native img').evaluate(async image=>{await image.decode();await document.fonts.ready;});
   const nativeHeight=await page.locator('#native .button').evaluate(node=>node.getBoundingClientRect().height);
   await page.addStyleTag({content:css});
   await page.evaluate(async source=>{const mod=await import('data:text/javascript;base64,'+btoa(source));window.fit=mod.fitKodubCover;},'const coverBindings=new WeakMap();const heightBindings=new WeakMap();export '+fitKodubCover.toString());
-  for(const [width,height]of [[1920,1080],[1366,768],[768,1024],[390,844],[320,568],[844,390]]){
+  for(const [width,height]of [[2543,415],[1920,1080],[1366,768],[768,1024],[390,844],[320,568],[844,390]]){
    await page.setViewportSize({width,height});
    const reference=await page.locator('[data-event-kind="daily"]').evaluate(node=>node.getBoundingClientRect().height);
    assert.ok(reference>=44,`visible sibling at ${width}x${height}: ${reference}`);
-   for(const [w,h]of [[900,240],[240,900],[256,256]]){
+   for(const [w,h]of [[900,240],[512,256],[240,900],[256,256]]){
     await page.locator('.sq-kodub-weekly .cover').evaluate(async(node,src)=>{node.src=src;await node.decode();},svg(w,h));
     await page.evaluate(()=>window.fit(document.querySelector('.sq-kodub-weekly')));
     await page.waitForTimeout(60);
     const metrics=await page.evaluate(()=>{
      const card=document.querySelector('.sq-kodub-weekly'),button=card.querySelector('button'),image=button.querySelector('img'),info=button.querySelector('.track-of-the-week-info');
      const box=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-     return {card:box(card),button:box(button),image:box(image),info:box(info),fit:getComputedStyle(image).objectFit,details:[...info.children].map(node=>({...box(node),text:node.textContent,overflow:node.scrollWidth>node.clientWidth+1||node.scrollHeight>node.clientHeight+1}))};
+     return {card:box(card),button:box(button),image:box(image),info:box(info),fit:getComputedStyle(image).objectFit,position:getComputedStyle(image).objectPosition,details:[...info.children].map(node=>({...box(node),text:node.textContent,overflow:node.scrollWidth>node.clientWidth+1||node.scrollHeight>node.clientHeight+1}))};
     });
     assert.ok(metrics.image.width>0&&metrics.image.height>0,'visible artwork');
+    assert.equal(metrics.position,'50% 50%','letterboxed artwork is centered, never pinned to the bottom');
+    const available=Math.max(0,metrics.button.width-Math.min(220,metrics.button.width*.4));
+    const expectedWidth=Math.min(metrics.button.height*w/h,available);
+    assert.ok(Math.abs(metrics.image.width-expectedWidth)<2,'image width follows artwork ratio, not a fixed45% cap');
+    if(w/h===2&&available>=metrics.button.height*2)assert.ok(Math.abs(metrics.image.width/2-metrics.button.height)<2,'normal weekly artwork fills the card height when there is enough horizontal room');
     const weeklyHeight=await page.locator('[data-event-kind="weekly"]').evaluate(node=>node.getBoundingClientRect().height);
     assert.ok(Math.abs(weeklyHeight-reference)<1,'daily and weekly references agree');
     const label=JSON.stringify({width,height,w,h,reference,metrics});
@@ -49,6 +54,7 @@ test('Kodub matches shipped sibling heights across aspect changes and preserves 
     for(const node of metrics.details)assert.ok(!node.overflow&&node.y>=metrics.button.y-1&&node.bottom<=metrics.button.bottom+1&&node.right<=metrics.button.right+1,label);
     assert.equal(await page.locator('[data-event-kind="daily"]').evaluate(node=>node.getBoundingClientRect().height),reference,'sibling remains unchanged');
     results.push({width,height,w,h,reference,metrics});
+    if(output&&width===2543&&w/h===2)await page.locator('.sq-featured-events').screenshot({path:output+'/wide-weekly-card.png'});
    }
    if(output){await fs.mkdir(output,{recursive:true});await page.screenshot({path:output+`/height-${width}x${height}.png`,fullPage:true});}
   }

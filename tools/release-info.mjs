@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 402,
+  "number": 403,
   "version": "0.6.3",
-  "revision": 344,
+  "revision": 345,
   "notes": [
-    "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
-    "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
-    "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
+    "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
+    "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
+    "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
   ],
-  "preparedAt": "2026-11-15T22:42:22.962Z",
-  "committedAt": "2026-11-15T22:43:22.000Z"
+  "preparedAt": "2026-11-15T22:58:08.728Z",
+  "committedAt": "2026-11-15T22:59:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

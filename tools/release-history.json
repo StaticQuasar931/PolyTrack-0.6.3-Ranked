@@ -1,16 +1,27 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 402,
+    "number": 403,
     "version": "0.6.3",
-    "revision": 344,
+    "revision": 345,
     "notes": [
-      "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
-      "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
-      "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
+      "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
+      "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
+      "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
     ]
   },
   "entries": [
+    {
+      "number": 402,
+      "title": "Fix offline history publication contract tests",
+      "commit": "1cf396bc54495fef6ba07c4c470cd5e1c086134f",
+      "committedAt": "2026-11-15T22:43:22.000Z",
+      "notes": [
+        "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
+        "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
+        "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
+      ]
+    },
     {
       "number": 401,
       "title": "Fix observed rank history and event card sizing",
@@ -219,17 +230,6 @@
         "Clearer, larger achievement goals without profile patterns.",
         "Combine cosmetic previews, undo changes, and see unsaved edits.",
         "Cleaner profile layout and a redesigned Apex Observatory backdrop."
-      ]
-    },
-    {
-      "number": 382,
-      "title": "Community badge and cosmetic consistency",
-      "commit": "a570e00a4228798b552433bb85fc8ff157fbdc98",
-      "committedAt": "2026-11-14T19:18:40.000Z",
-      "notes": [
-        "Claim a Community badge with the Discord invite code.",
-        "Shop designs stay visible during local recalculation.",
-        "Clearer achievement goals and cosmetic previews."
       ]
     }
   ],
