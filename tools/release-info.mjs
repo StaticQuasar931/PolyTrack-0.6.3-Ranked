@@ -1,13 +1,14 @@
 const releaseInfo = {
-  "number": 392,
+  "number": 393,
   "version": "0.6.3",
-  "revision": 334,
+  "revision": 335,
   "notes": [
-    "Added verification for 66 saved event runs without another cloud capture.",
-    "Preserved all existing normal-track results and earlier verification proofs."
+    "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
+    "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
+    "Local PBs can show a podium target without claiming confirmed medals."
   ],
-  "preparedAt": "2026-11-15T00:42:26.615Z",
-  "committedAt": "2026-11-15T00:49:08.000Z"
+  "preparedAt": "2026-11-15T01:30:40.569Z",
+  "committedAt": "2026-11-15T01:40:51.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

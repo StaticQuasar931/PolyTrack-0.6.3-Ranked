@@ -1390,3 +1390,26 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 
 .sq-event-verified-results li{grid-template-columns:22px 52px minmax(100px,1fr) auto auto}
 .sq-event-verified-results li img{width:20px;height:20px}
 @media(max-width:650px){.sq-event-verified-results li{grid-template-columns:20px 36px minmax(0,1fr);gap:7px}.sq-event-verified-results li time{grid-column:2/4}.sq-event-verified-results li>strong{grid-column:2/4;text-align:left}.sq-event-totals-results li{grid-template-columns:38px minmax(0,1fr)}.sq-event-totals-results li>strong,.sq-event-totals-results li>span:last-of-type{grid-column:2}}
+
+/* First layout: contained artwork uses the card's real width, never an overflowing fixed-height rail. */
+#ui .track-selection-ui .sq-featured-events>.track.sq-kodub-weekly{height:auto!important;min-height:0!important;max-height:none!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{display:grid!important;grid-template-columns:minmax(0,3fr) minmax(0,2fr)!important;align-items:center!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment),
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){position:static!important;inset:auto!important;grid-column:1!important;grid-row:1!important;display:block!important;width:100%!important;height:auto!important;min-height:0!important;max-width:100%!important;max-height:none!important;object-fit:contain!important;object-position:center!important;align-self:center!important;transform:none!important;margin:0!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{grid-column:2!important;grid-row:1!important;min-width:0!important;max-width:100%!important;align-self:center!important}
+#ui .track-selection-ui .community-track-group .track>.button>img.thumbnail:not(.environment){object-fit:contain!important;object-position:center!important;max-width:100%!important;transform:none!important}
+.sq-event-card .sq-event-record{display:flex;flex-direction:column;align-items:center!important;justify-content:center;text-align:center!important;min-width:0}
+.sq-event-preview-loading{display:block;max-width:100%;text-align:center!important;white-space:normal;line-height:1.35}
+body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>div{justify-content:center!important;text-align:center!important}
+.sq-event-record>.sq-record-placement.is-cached{justify-content:center!important;text-align:center!important;color:#d8e9fc}
+@media(max-width:700px) and (orientation:portrait){
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{grid-template-columns:minmax(0,1fr)!important}
+ #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{grid-column:1!important;grid-row:2!important}
+}
+
+/* The native TOTW exists before promotion into Events; apply the same containment immediately. */
+#ui .track-selection-ui .track.track-of-the-week{height:auto!important;min-height:0!important;max-height:none!important}
+#ui .track-selection-ui .track.track-of-the-week>.button{display:grid!important;grid-template-columns:minmax(0,3fr) minmax(0,2fr)!important;align-items:center!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}
+#ui .track-selection-ui .track.track-of-the-week>.button>img:not(.environment){position:static!important;inset:auto!important;display:block!important;grid-column:1!important;grid-row:1!important;width:100%!important;height:auto!important;max-width:100%!important;max-height:none!important;min-height:0!important;object-fit:contain!important;object-position:center!important;transform:none!important;align-self:center!important;margin:0!important}
+#ui .track-selection-ui .track.track-of-the-week>.button>.track-of-the-week-info{grid-column:2!important;grid-row:1!important;min-width:0!important;max-width:100%!important}
+@media(max-width:700px) and (orientation:portrait){#ui .track-selection-ui .track.track-of-the-week>.button{grid-template-columns:minmax(0,1fr)!important}#ui .track-selection-ui .track.track-of-the-week>.button>.track-of-the-week-info{grid-column:1!important;grid-row:2!important}}

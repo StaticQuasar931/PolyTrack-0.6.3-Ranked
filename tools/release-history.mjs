@@ -2,15 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 392,
+    "number": 393,
     "version": "0.6.3",
-    "revision": 334,
+    "revision": 335,
     "notes": [
-      "Added verification for 66 saved event runs without another cloud capture.",
-      "Preserved all existing normal-track results and earlier verification proofs."
+      "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
+      "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
+      "Local PBs can show a podium target without claiming confirmed medals."
     ]
   },
   "entries": [
+    {
+      "number": 392,
+      "title": "Publish 66 offline event verifications and preserve prior results",
+      "commit": "60922970ed7d31bbf2866e179a1c0374ae43a51b",
+      "committedAt": "2026-11-15T00:49:08.000Z",
+      "notes": [
+        "Added verification for 66 saved event runs without another cloud capture.",
+        "Preserved all existing normal-track results and earlier verification proofs."
+      ]
+    },
     {
       "number": 391,
       "title": "Make native verification test fixtures portable on GitHub",
@@ -204,18 +215,6 @@ const historyData = {
         "Save local friends and find friendly PB challenges using saved snapshot data.",
         "Field RP now includes track contributions and next-move advice. Profiles have clearer track filters and counts.",
         "Right-click Update available to snooze reminders. Extra Tracks picks and menus are clearer."
-      ]
-    },
-    {
-      "number": 370,
-      "title": "Achievements, track discovery and full snapshot preparation",
-      "commit": "7cd4e5a09305f777f09b2f0aa99dabf21e2c416a",
-      "committedAt": "2026-11-14T05:29:57.000Z",
-      "notes": [
-        "Explore Achievements to find your next cosmetic unlock, with a clearer Racer Studio.",
-        "Extra Tracks has simpler controls, featured picks and easier random-track filters.",
-        "Help checks for updates when opened. Event badges and track menus are more consistent.",
-        "Try Field RP, an experimental ranking where busier tracks count more, and filter Average place by track type."
       ]
     }
   ],

@@ -3,6 +3,7 @@ const hubIcon = name => {
   const paths = {
     achievements:'M8 3h8v7a4 4 0 0 1-8 0V3ZM8 5H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4m-4 2v5m-4 2h8m-6-2h4',
     studio:'M4 10l2-5h12l2 5M3 10h18v9H3v-9Zm2 9v2m14-2v2M6 14h2m8 0h2M8 5l-1 5m9-5 1 5',
+    shop:'M4 7h16l-1 14H5L4 7Zm4 0V5a4 4 0 0 1 8 0v2',
     flag:'M5 22V2h15v12H5m0-6h15M10 2v12m5-12v12'
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-ph-icon="${name}"><path d="${paths[name]}"/>${name === 'flag' ? '<path fill="currentColor" stroke="none" d="M5 2h5v6H5zM15 2h5v6h-5zM10 8h5v6h-5z"/>' : ''}</svg>`;
@@ -51,10 +52,11 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   entry.className = 'profile-achievement-journey'; entry.setAttribute('role','group'); entry.setAttribute('aria-label','Racer progress and design');
   entry.innerHTML = `<button type="button" data-ph-launch="achievements" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('achievements')}</span><span><strong>Achievements</strong><small>Goals &amp; rewards</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button><button type="button" data-ph-launch="studio" aria-haspopup="dialog" aria-controls="${id}"><span class="ph-entry-mark">${hubIcon('studio')}</span><span><strong>Racer Studio</strong><small>Design your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span></button>`;
   const shopButton=doc.createElement('button');shopButton.type='button';shopButton.dataset.phLaunch='shop';shopButton.setAttribute('aria-haspopup','dialog');
-  shopButton.innerHTML='<span class="ph-entry-mark">'+hubIcon('flag')+'</span><span><strong>Style shop</strong><small>Try styles on your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span>';entry.append(shopButton);
+  shopButton.innerHTML='<span class="ph-entry-mark">'+hubIcon('shop')+'</span><span><strong>Shop</strong><small>Try styles on your racer</small></span><span class="ph-entry-chevron" aria-hidden="true">&rsaquo;</span>';entry.append(shopButton);
   const initialStudio = content.querySelector('.profile-customizer');
   const initialHidden = initialStudio?.hidden;
   if (initialStudio) initialStudio.hidden = true;
+  content.querySelector('[data-profile-hub-pending]')?.remove();
   if (launcher) { if (initialStudio) initialStudio.before(entry); else content.append(entry); }
 
   // Keep both dialog and moved Studio inside the native delegated event ancestry.
@@ -65,8 +67,8 @@ export function mountProfileAchievements(content, {accountId,confirmed,local,cos
   const profileName=content.querySelector('.profile-preview-stage>span>b')?.textContent?.trim();
   dialog.querySelector('.ph-heading>p').textContent=profileName||confirmed?.name||'Racer profile';
   content.append(dialog);
-  const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.textContent='Style shop';dialog.querySelector('.ph-tabbar').append(shopNav);
-  const shopReady=()=>{const available=typeof content.__profileShopOpen==='function';shopButton.hidden=!available;shopNav.hidden=!available;shopButton.style.display=available?'':'none';shopNav.style.display=available?'':'none';entry.classList.toggle('ph-has-shop',available);};
+  const shopNav=doc.createElement('button');shopNav.type='button';shopNav.dataset.phShop='';shopNav.setAttribute('aria-haspopup','dialog');shopNav.textContent='Shop';dialog.querySelector('.ph-tabbar').append(shopNav);
+  const shopReady=()=>{const available=typeof content.__profileShopOpen==='function';shopButton.disabled=!available;shopNav.disabled=!available;shopButton.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');shopNav.setAttribute('aria-label',available?'Open Style shop':'Style shop is loading');entry.classList.toggle('ph-has-shop',available);};
   content.addEventListener('profile-shop-ready',shopReady);shopReady();
   const journalHost = dialog.querySelector('[data-ph-journal]'), studioHost = dialog.querySelector('[data-ph-studio]');
   const studioPanel = dialog.querySelector('.ph-studio-panel');
