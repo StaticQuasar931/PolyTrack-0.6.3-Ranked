@@ -2,17 +2,41 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 400,
+    "number": 402,
     "version": "0.6.3",
-    "revision": 342,
+    "revision": 344,
     "notes": [
-      "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
-      "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
-      "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
-      "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
+      "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
+      "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
+      "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
     ]
   },
   "entries": [
+    {
+      "number": 401,
+      "title": "Fix observed rank history and event card sizing",
+      "commit": "6f27e4fac65bf518c6157fb969812680a8882f31",
+      "committedAt": "2026-11-15T22:30:20.000Z",
+      "notes": [
+        "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
+        "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
+        "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
+        "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
+        "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
+      ]
+    },
+    {
+      "number": 400,
+      "title": "Publish completed priority proofs and remove audit staging I/O",
+      "commit": "4dff530e9ab1bd8c95e1d451c9e4ebdaf87ddd28",
+      "committedAt": "2026-11-15T05:51:10.000Z",
+      "notes": [
+        "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
+        "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
+        "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
+        "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
+      ]
+    },
     {
       "number": 399,
       "title": "Decouple offline normal verification from historical event reprojection",
@@ -207,26 +231,6 @@ const historyData = {
         "Claim a Community badge with the Discord invite code.",
         "Shop designs stay visible during local recalculation.",
         "Clearer achievement goals and cosmetic previews."
-      ]
-    },
-    {
-      "number": 381,
-      "title": "Achievements and profile shop",
-      "commit": "e5b5969fa2f7128887130b306c1a09c9475231ad",
-      "committedAt": "2026-11-14T16:34:37.000Z",
-      "notes": [
-        "A clearer full-screen Achievements and Racer Studio hub.",
-        "Claim cosmetic points and collect original profile designs.",
-        "Clearer route advice, previews and cosmetic details."
-      ]
-    },
-    {
-      "number": 379,
-      "title": "Faster offline verification",
-      "commit": "bbb8c2dff758c635d3a0ff4b78a896dc762f2b13",
-      "committedAt": "2026-11-14T13:31:10.000Z",
-      "notes": [
-        "Faster offline replay checks and safer handling of larger snapshots."
       ]
     }
   ],

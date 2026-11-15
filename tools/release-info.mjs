@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 400,
+  "number": 402,
   "version": "0.6.3",
-  "revision": 342,
+  "revision": 344,
   "notes": [
-    "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
-    "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
-    "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
-    "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
+    "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
+    "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
+    "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
   ],
-  "preparedAt": "2026-11-15T05:35:48.642Z",
-  "committedAt": "2026-11-15T05:51:10.000Z"
+  "preparedAt": "2026-11-15T22:42:22.962Z",
+  "committedAt": "2026-11-15T22:43:22.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
