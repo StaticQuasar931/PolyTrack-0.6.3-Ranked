@@ -34,6 +34,8 @@ test('saved executor admits only an explicit unique exact track list and preserv
  const combined=savedEventWorkflowConfig({...env,TARGET_TRACK_IDS:JSON.stringify(ids),NATIVE_TARGET_SCOPE:'all',WARMUP_FIRST_PROOF:'1'});
  assert.equal(combined.plan.targetScope,'all');assert.equal(combined.warmupFirst,true);
  assert.throws(()=>savedEventWorkflowConfig({...env,NATIVE_TARGET_SCOPE:'all'}),/explicit targets/);
+ assert.throws(()=>savedEventWorkflowConfig({...env,NATIVE_TARGET_SCOPE:'normal'}),/explicit targets/);
+ assert.equal(savedEventWorkflowConfig({...env,NATIVE_TARGET_SCOPE:'normal',TARGET_TRACK_IDS:JSON.stringify(ids)}).plan.targetScope,'normal');
  assert.throws(()=>savedEventWorkflowConfig({...env,WARMUP_FIRST_PROOF:'yes'}),/warmup mode/);
 });
 

@@ -248,10 +248,15 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   // published totals. Never strip an overlay or pretend it is a Worker capture.
   const exactPublished=baseline!==null&&isDeepStrictEqual(serverTotals,baseline.totals);
   demand(!serverTotals.nativeEventOverlay||exactPublished,'fresh pristine or exact trusted published totals required');
+  if(publishedRetention?.targetScope==='normal'){
+    demand(exactPublished,'normal scope requires exact trusted published event totals');
+    if(!publishedRetention.normalTargetTrackIds.includes(PERMANENT_ROLLING_HILLS.trackId))
+      return {periods:periods.length,ready:true,retainedPublishedEvents:true,retainedPublishedTotals:true};
+  }
   const pairingTotals=exactPublished?publishedEventPairingTotals(baseline,serverTotals):serverTotals;
   const projections=[],pins={},cache=path.join(directory,'native-event-source');
   for(const captured of periods){
-    if(publishedRetention&&!publishedRetention.targetTrackIds.includes(captured.period.trackId)){
+    if(publishedRetention&&(publishedRetention.targetScope==='normal'||!publishedRetention.targetTrackIds.includes(captured.period.trackId))){
       projections.push({board:captured,promotedReplays:[],totalsEligible:false,ready:true});
       const pin=captureContext.eventSourcePins?.[captured.id];if(pin)pins[captured.id]=pin;
       continue;
@@ -345,8 +350,9 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
   demand(path.isAbsolute(publicationRoot||''),'absolute local publication root required');
   demand(typeof reuseOnly==='boolean','explicit stored-proof mode required');
   demand(typeof allowNativeDispatch==='boolean','explicit native-dispatch policy required');
-  demand(['all','events'].includes(targetScope),'invalid native target scope');
+  demand(['all','events','normal'].includes(targetScope),'invalid native target scope');
   const trackTargets=nativeTargetTrackIds(targetScope,targetTrackIds);
+  demand(targetScope!=='normal'||trackTargets&&publishedRetention?.targetScope==='normal','normal scope requires explicit published retention');
   demand(proofCheckpoint===null||typeof proofCheckpoint==='function','invalid proof checkpoint capability');
   demand(progressCheckpoint===null||typeof progressCheckpoint==='function','invalid progress checkpoint capability');
   demand(nativeCompleted===null||typeof nativeCompleted==='function'&&!reuseOnly,'invalid native completion capability');
@@ -364,7 +370,7 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
     await copyLedger(context.ledgerRoot,ledgerRoot,context.ledger.manifestHash);
     const inputs=await timed('hydrateMs',()=>loadCapturedNativeJobs({directory:candidate,allowExtendedLocal:true}));
     const assertRetention=(ledger,initial=false)=>assertPublishedTargetRetention(publishedRetention,{directory:candidate,ledger,
-      targetTrackIds:trackTargets,publishedBaseline:publishedEventTotalsBaseline,initial});
+      targetTrackIds:trackTargets,publishedBaseline:publishedEventTotalsBaseline,targetScope,initial});
     if(publishedRetention){demand(trackTargets,'retention requires explicit track targets');await assertRetention(context.ledger,true);}
     const totalsInput=await optional(candidate,'event-totals.json');
     if(totalsInput?.nativeEventOverlay){
@@ -390,9 +396,10 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       }else if(inputs.eventBoards.some(board=>board.id===job.periodId&&board.entries.some(row=>row.accountId===job.accountId&&row.timeMs===job.timeMs&&
         (row.runId===undefined||row.runId===job.runId)&&row.needsReview!==true&&row.reviewHold!==true)))accepted.add(key);
     }
-    if(trackTargets)demand(trackTargets.every(id=>inputs.jobs.some(job=>(targetScope==='all'||job.lane==='event')&&job.trackId===id)),
+    if(trackTargets)demand(trackTargets.every(id=>inputs.jobs.some(job=>(targetScope==='all'||job.lane===(targetScope==='normal'?'normal':'event'))&&job.trackId===id)),
       'target track has no captured event jobs');
     const priority=prioritizeNativeTargets({jobs:inputs.jobs.filter(job=>{const key=ledgerKey(ledgerBinding(job));
+      if(targetScope==='normal'&&job.lane!=='normal')return false;
       if(trackTargets&&(!trackTargets.includes(job.trackId)||publishedRetention&&(entries.has(key)||job.lane==='normal'&&accepted.has(key))))return false;
       return targetScope==='events'?job.lane==='event':trackTargets?true:!accepted.has(key)||entries.has(key);}),
       eventBoards:inputs.eventBoards,normalBoards:inputs.normalBoards,preferredTrackIds:trackTargets?.includes(PERMANENT_ROLLING_HILLS.trackId)?[PERMANENT_ROLLING_HILLS.trackId]:[],canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'||!!trackTargets});

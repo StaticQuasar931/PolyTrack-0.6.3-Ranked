@@ -9,6 +9,7 @@ import {assertTrustedPublishedEventTotalsBaseline} from './published-event-total
 import {nativeTargetTrackIds} from './native-target-filter.mjs';
 import {reconstructOmittedBoards} from './update-public-snapshot.mjs';
 import {readCapturedNormalLedgerRows} from './public-snapshot-backup.mjs';
+import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
 
 const live=new WeakMap(),hash=b=>createHash('sha256').update(b).digest('hex');
 const demand=(ok,message)=>{if(!ok)throw Error('Published target retention: '+message);};
@@ -43,16 +44,17 @@ async function sourcePins(data){
  */
 export async function loadPublishedTargetRetention({root,directory,pins,targetTrackIds,publishedBaseline,targetScope='events'}={}){
  const baseline=assertTrustedPublishedEventTotalsBaseline(publishedBaseline);
- const tracks=nativeTargetTrackIds('events',targetTrackIds);demand(tracks,'explicit target tracks required');
+ const tracks=nativeTargetTrackIds(targetScope,targetTrackIds);demand(tracks,'explicit target tracks required');
+ const normalOnly=targetScope==='normal',retainRolling=normalOnly&&!tracks.includes(PERMANENT_ROLLING_HILLS.trackId);
  demand(path.isAbsolute(root||'')&&path.isAbsolute(directory||''),'absolute source paths required');
  demand(pins?.generation===baseline.provenance.generation&&pins.indexSha256===baseline.provenance.indexSha256,'baseline cohort mismatch');
- const data={root,currentdir:baseline.provenance.currentdir,pins:structuredClone(pins),baseline,tracks,
+ const data={root,currentdir:baseline.provenance.currentdir,pins:structuredClone(pins),baseline,tracks,targetScope,
   protected:new Map(),initial:new Map(),allowed:new Set(),periods:new Set(),manifest:null,normalTracks:new Set(),preserveKeys:new Set(),oldNormalRows:new Map()};
  await sourcePins(data);
  const ledger=readLedger({root:path.join(root,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash});
  demand(ledger.entries.length===pins.ledgerEntries,'source ledger count mismatch');
  data.entries=structuredClone(ledger.entries);
- for(const {board}of baseline.boards)if(tracks.includes(board.period.trackId))data.periods.add(board.id);
+ for(const {board}of baseline.boards)if(!normalOnly&&tracks.includes(board.period.trackId))data.periods.add(board.id);
  const index=JSON.parse(await readPrivateSnapshotIndex(path.join(root,data.currentdir,'index.json'))),paging=new Map();
  const isPagingPath=name=>/^(?:snapshot-paging\.json|overall-manifest\.json|(?:track-manifests|track-pages|overall-pages)\/)/.test(name);
  // Proof files are not rehydrated as authority. Each selected payload is independently authenticated.
@@ -71,7 +73,8 @@ export async function loadPublishedTargetRetention({root,directory,pins,targetTr
   }
   return {name,pin:hash(decoded),paging:isPagingPath(name)?{decoded,value:JSON.parse(decoded)}:null,
    manifest:name==='manifest.json'?JSON.parse(decoded):null,targetKey,
-   protect:name!=='manifest.json'&&name!=='event-totals.json'&&!target&&name!=='events/permanent-rolling-hills.json'};
+   protect:name!=='manifest.json'&&!target&&
+    (name==='event-totals.json'||name==='events/permanent-rolling-hills.json'?retainRolling:true)};
  });
  for(const item of checked){
   data.initial.set(item.name,item.pin);
@@ -87,8 +90,8 @@ export async function loadPublishedTargetRetention({root,directory,pins,targetTr
   data.protected.set(reconstructed.logicalPath,hash(reconstructed.decoded));data.initial.set(reconstructed.logicalPath,hash(reconstructed.decoded));
  }
  for(const record of Object.values(data.manifest.tracks||{}))if(record.path)demand(data.protected.has(record.path),'unindexed normal board requires separate retention review');
- if(targetScope==='all')for(const id of tracks)if(data.manifest.tracks?.[id]?.path)data.normalTracks.add(id);
- demand(tracks.every(id=>baseline.boards.some(({board})=>board.period.trackId===id)||data.normalTracks.has(id)),'unpublished target track');
+ if(['all','normal'].includes(targetScope))for(const id of tracks)if(data.manifest.tracks?.[id]?.path)data.normalTracks.add(id);
+ demand(tracks.every(id=>(!normalOnly&&baseline.boards.some(({board})=>board.period.trackId===id))||data.normalTracks.has(id)),'unpublished target track');
  if(data.normalTracks.size){
   const sources=await readCapturedNormalLedgerRows({directory,allowMissingCanonical:true}),old=new Set(data.entries.map(row=>row.key));
   for(const id of data.normalTracks){
@@ -111,20 +114,23 @@ export async function loadPublishedTargetRetention({root,directory,pins,targetTr
  demand(data.allowed.size>0,'no exact target media');
  await sourcePins(data);
  const receipt=Object.freeze({kind:'published-target-byte-retention-v1',publishedBaseline:Object.freeze({...pins}),
+  ...(normalOnly?{targetScope:'normal',retainsPublishedEvents:true}:{}),
   targetTrackIds:tracks,targetPeriodIds:Object.freeze([...data.periods].sort()),normalTargetTrackIds:Object.freeze([...data.normalTracks].sort()),allowedNewKeys:data.allowed.size,
   retainedFiles:data.protected.size,retainedLedgerEntries:ledger.entries.length,
   sourcePolicyFingerprint:data.manifest.nativeVerificationLedger.policyFingerprint,oldWitnessCompatibilityGranted:false});
  live.set(receipt,data);return receipt;
 }
 
-export async function assertPublishedTargetRetention(token,{directory,ledger,targetTrackIds,publishedBaseline,initial=false}={}){
+export async function assertPublishedTargetRetention(token,{directory,ledger,targetTrackIds,publishedBaseline,targetScope,initial=false}={}){
  const data=live.get(token);demand(data,'live retention capability required');
  demand(publishedBaseline===data.baseline&&isDeepStrictEqual(nativeTargetTrackIds('events',targetTrackIds),data.tracks),'retention scope mismatch');
+ demand(data.targetScope!=='normal'||targetScope==='normal','normal retention cannot authorize a different scope');
  await sourcePins(data);
  const current=new Map(ledger.entries.map(entry=>[entry.key,entry]));demand(current.size===ledger.entries.length,'duplicate ledger entries');
  for(const entry of data.entries)demand(isDeepStrictEqual(current.get(entry.key),entry),'previous ledger entry changed or deleted');
  const old=new Set(data.entries.map(entry=>entry.key));
- for(const entry of ledger.entries)if(!old.has(entry.key))demand(data.allowed.has(entry.key)&&data.tracks.includes(entry.binding.trackId),'out-of-target ledger admission');
+ for(const entry of ledger.entries)if(!old.has(entry.key))demand(data.allowed.has(entry.key)&&data.tracks.includes(entry.binding.trackId)&&
+  (data.targetScope!=='normal'||entry.binding.lane==='normal'),'out-of-target ledger admission');
  await retentionMap16([...(initial?data.initial:data.protected)],async([name,pin])=>{
   demand(hash(await bytes(directory,name,name.startsWith('tracks/')?128*1024*1024:MAX_DECODED_BYTES))===pin,'retained bytes changed: '+name);
  });

@@ -21,7 +21,7 @@ export function savedEventDispatchPlan({sourceCommit,generation,indexSha256,ledg
   HASH.test(ledgerManifestHash||'')&&Number.isSafeInteger(ledgerEntries)&&ledgerEntries>=0,'independent public source pins required');
  demand([1,16,64,128,256,512,1024].includes(maxJobs)&&runAttempt===1,'bounded first attempt only; reruns cannot reset native budgets');
  demand([480000,1500000].includes(maxRuntimeMs),'native runtime must be exactly eight or twenty-five minutes');
- demand(targetScope==='events'||targetScope==='all'&&targetTrackIds!==undefined,'explicit targets required for combined saved pass');
+ demand(targetScope==='events'||['all','normal'].includes(targetScope)&&targetTrackIds!==undefined,'explicit targets required for combined or normal saved pass');
  const targets=nativeTargetTrackIds(targetScope,targetTrackIds);
  return {workflow:'verify-saved-events.yml',ref:'main',sourceCommit,publishedBaseline:{generation,indexSha256,ledgerManifestHash,ledgerEntries},
   targetScope,...(targets?{targetTrackIds:targets}:{}),maxJobs,maxRuntimeMs,batchSize:16,standard:resourceLimits('standard'),extended:resourceLimits('extended-local'),

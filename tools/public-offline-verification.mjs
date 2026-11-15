@@ -38,8 +38,9 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   demand(Object.keys(options).every(key=>allowed.includes(key)),'unknown option (no checkpoint or ledger override accepted)');
   let {root,runDirectory,sourceCommit,publishedBaseline,maxJobs=512,maxRuntimeMs=480000,mode='capture-compatible',
     finishDeadlineMs,packagingReserveMs=900000,targetScope='all'}=options;
-  demand(['all','events'].includes(targetScope),'unknown target scope');
+  demand(['all','events','normal'].includes(targetScope),'unknown target scope');
   const targetTrackIds=nativeTargetTrackIds(targetScope,options.targetTrackIds);
+  demand(targetScope!=='normal'||targetTrackIds,'normal scope requires explicit track targets');
   const targeting=targetTrackIds?{targetTrackIds}:{};
   demand(['capture-compatible','postpublication-offline'].includes(mode),'unknown verification mode');
   const postpublication=mode==='postpublication-offline';

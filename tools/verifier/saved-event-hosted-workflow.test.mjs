@@ -17,7 +17,7 @@ test('dispatch maps exact target JSON and scope into both existing source-admiss
  for(const name of ['target_track_ids','target_scope','warmup_first'])assert.match(workflow,new RegExp('^      '+name+':','m'));
  for(const line of ['TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}','NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}',
   'WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}'])assert.equal(workflow.split(line).length-1,2);
- assert.match(workflow,/options: \['events', 'all'\]/);
+ assert.match(workflow,/options: \['events', 'all', 'normal'\]/);
  assert.match(workflow,/target_track_ids:[\s\S]*?required: true[\s\S]*?type: string/);
 });
 
@@ -42,7 +42,7 @@ test('hosted runtime choices preserve the legacy default and stay inside the exi
 });
 
 test('existing commit/source pins, first-attempt guard and malformed-target rejection remain mandatory',()=>{
- for(const scope of ['events','all'])assert.equal(savedEventWorkflowConfig({...environment(),NATIVE_TARGET_SCOPE:scope}).plan.targetScope,scope);
+ for(const scope of ['events','all','normal'])assert.equal(savedEventWorkflowConfig({...environment(),NATIVE_TARGET_SCOPE:scope}).plan.targetScope,scope);
  for(const change of [{GITHUB_RUN_ATTEMPT:'2'},{EXPECTED_SOURCE_COMMIT:'main'},{SNAPSHOT_SOURCE_COMMIT:'main'},
   {SNAPSHOT_INDEX_SHA256:'bad'},{LEDGER_MANIFEST_SHA256:'bad'},{TARGET_TRACK_IDS:'[]'},
   {TARGET_TRACK_IDS:JSON.stringify(['e'.repeat(64),'e'.repeat(64)])},{NATIVE_TARGET_SCOPE:'unknown'}])

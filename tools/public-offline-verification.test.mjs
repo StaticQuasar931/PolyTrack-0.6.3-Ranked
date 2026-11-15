@@ -198,6 +198,20 @@ test('public offline event scope is explicit and reaches only the one-shot verif
  await assert.rejects(preparePublishedOfflineVerification(invalid.options,invalid.capabilities),/target scope/);
 });
 
+test('normal-only public preparation requires explicit targets and forwards scope to retention and both phases',async t=>{
+ const f=await fixture(t);f.options.targetScope='normal';
+ await assert.rejects(preparePublishedOfflineVerification(f.options,f.capabilities),/normal scope requires explicit/);
+ f.options.targetTrackIds=['a'.repeat(64)];const token=Object.freeze({fixture:true});
+ f.capabilities.loadRetention=async input=>{assert.equal(input.targetScope,'normal');return token;};
+ for(const name of ['preflightPhase','verifyPhase']){
+  const original=f.capabilities[name];f.capabilities[name]=async input=>{
+   assert.equal(input.targetScope,'normal');assert.equal(input.publishedRetention,token);return original(input);
+  };
+ }
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities);
+ assert.equal(prepared.receipt.targetScope,'normal');const verified=await prepared.verify();await verified.dispose();
+});
+
 test('exact track selection is copied into preflight, native input and prepared receipt',async t=>{
  const f=await fixture(t),ids=['a'.repeat(64)];Object.assign(f.options,{targetScope:'events',targetTrackIds:ids});
  const token=Object.freeze({fixture:true});f.capabilities.loadRetention=async input=>{

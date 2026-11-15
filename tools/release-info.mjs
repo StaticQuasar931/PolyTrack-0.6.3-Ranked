@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 398,
+  "number": 399,
   "version": "0.6.3",
-  "revision": 340,
+  "revision": 341,
   "notes": [
-    "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
-    "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
-    "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
-    "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
+    "Offline normal-track verification can retain published event results instead of reprocessing unrelated historical events.",
+    "The new scope admits only normal-run proofs, preserving event data, previous witnesses and review checks.",
+    "No Firebase calls or automatic retries are added."
   ],
-  "preparedAt": "2026-11-15T05:09:58.460Z",
-  "committedAt": "2026-11-15T05:13:15.000Z"
+  "preparedAt": "2026-11-15T05:21:41.915Z",
+  "committedAt": "2026-11-15T05:22:43.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
