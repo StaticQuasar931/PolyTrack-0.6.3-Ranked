@@ -2,17 +2,28 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 398,
+    "number": 399,
     "version": "0.6.3",
-    "revision": 340,
+    "revision": 341,
     "notes": [
-      "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
-      "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
-      "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
-      "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
+      "Offline normal-track verification can retain published event results instead of reprocessing unrelated historical events.",
+      "The new scope admits only normal-run proofs, preserving event data, previous witnesses and review checks.",
+      "No Firebase calls or automatic retries are added."
     ]
   },
   "entries": [
+    {
+      "number": 398,
+      "title": "Fix Studio preview saves and clarify car cosmetic choices",
+      "commit": "36b45bbe6913f90738f64d01e94ddf8abd484527",
+      "committedAt": "2026-11-15T05:13:15.000Z",
+      "notes": [
+        "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
+        "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
+        "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
+        "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
+      ]
+    },
     {
       "number": 397,
       "title": "Publish Kodub event proofs and streamline offline verification",
@@ -213,15 +224,6 @@ const historyData = {
       "committedAt": "2026-11-14T11:27:26.000Z",
       "notes": [
         "Support larger track lists and preserve completed verification progress."
-      ]
-    },
-    {
-      "number": 376,
-      "title": "Recover frozen snapshot data without repeating database reads",
-      "commit": "73d05e4de13b0867933f235bd38ecd2789b39b8a",
-      "committedAt": "2026-11-14T10:00:56.000Z",
-      "notes": [
-        "Safer snapshot recovery without fetching saved runs again."
       ]
     }
   ],
