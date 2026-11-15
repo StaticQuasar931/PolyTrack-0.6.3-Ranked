@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=338';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=338';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=339';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=339';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=338';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=338';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=338';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=339';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=339';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=339';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -597,7 +597,12 @@ export function eventRunErpPresentation(row,board,period=board?.period,at=Date.n
   const award=publishedEventAwardPresentation(row),actual=eventRpPresentation(row);
   if(row?.unscored)return {status:'unscored',text:'Unscored',title:'This run is unscored. It has no awarded ERP or confirmed eligibility.',estimated:false};
   if(award.status==='held')return {status:'held',text:'ERP held',title:award.title,estimated:false};
-  if(!row?.pending&&actual?.available)return {status:'awarded',text:actual.score.toLocaleString('en-US')+' ERP'+(actual.groupText?' · '+actual.groupText:''),title:actual.title,estimated:false};
+  const sourcePeriod=board?.period||board;
+  const sourceBound=board&&period&&EVENT_RECORD_HASH.test(row?.accountId||'')&&['id','kind','trackId','startsAt','endsAt'].every(key=>sourcePeriod?.[key]===period[key])&&
+    Array.isArray(board.entries)&&board.entries.length<=10000&&board.entries.some(entry=>
+      entry.accountId===row?.accountId&&entry.timeMs===row?.timeMs&&entry.rp===row?.rp&&eventRowVerified(entry)&&
+      (entry.replayHash===undefined&&row.replayHash===undefined||entry.replayHash===row.replayHash));
+  if(!row?.pending&&actual?.available&&sourceBound)return {status:'awarded',text:actual.score.toLocaleString('en-US')+' ERP'+(actual.groupText?' · '+actual.groupText:''),title:actual.title,estimated:false};
   if(!row?.pending)return {status:'unavailable',text:'ERP unavailable',title:actual?.title||award.title,estimated:false};
   const pending={status:'pending',text:row?.unscored?'Unscored':'ERP pending',title:'No ERP has been awarded for this unverified run.',estimated:false};
   const bound=period&&board?.period&&['id','kind','trackId','startsAt','endsAt'].every(key=>board.period[key]===period[key])&&
@@ -1977,7 +1982,7 @@ export function installEvents(bridge){
       button.dataset.eventKind=kind;button.dataset.eventId=period?.id||'';button.removeAttribute('data-track-id');
       const kicker=kind==='weekly'?'WEEKLY EVENT':'DAILY EVENT';card.setAttribute('aria-label',kicker);button.setAttribute('aria-label',period?'Open '+kicker+': '+info(period.trackId).name:'Browse events: '+kicker+' unavailable');
       const put=(selector,text)=>{const node=button.querySelector(selector);if(node)node.textContent=text;};
-      put('.competition-kicker',kicker);put('.competition-track-name',period?eventPeriodDisplayName(period,info,'ranking'):'No active event');put('.competition-result',period?eventRewardLabel(period):'Browse Events for availability');
+      put('.competition-kicker',kicker);put('.competition-track-name',period?eventPeriodDisplayName(period,info,'footer'):'No active event');put('.competition-result',period?eventRewardLabel(period):'Browse Events for availability');
       const result=button.querySelector('.competition-result');if(result){result.title=period?.scheduleOnly?'Practice follows the saved schedule. The server has not confirmed this event or its scoring. Event RP is not guaranteed.':'';result.setAttribute('aria-label',result.textContent+(result.title?'. '+result.title:''));}
       if(period?.scheduleOnly)button.setAttribute('aria-label','Practice '+kicker+': '+info(period.trackId).name+'. '+eventRewardLabel(period)+'. '+(result?.title||'Event RP is not guaranteed.'));
       const image=button.querySelector('.competition-feature-image');if(image)image.innerHTML=period?bridge.thumbnail(period.trackId):'';
@@ -2143,7 +2148,7 @@ export function installEvents(bridge){
   window.addEventListener('pt-personal-filters-changed',()=>{
     if(nativeView){nativeView.page=0;nativeView.signature='';nativeView.quickSignature='';syncNativeBoard(sessions.current()||eventIntent||archiveIntent);}
     const list=dialog?.querySelector('.sq-event-results');
-    if(selected&&list){const board=cache.get(selected.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+selected.id,null):null);if(board){const display=eventSnapshotRows(board,{onlyVerified:true,filterRows:bridge.filterRows,context:{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true}});list.innerHTML=rows(display.rows)||'<li>No racers match these filters.</li>';message(display.filterResult?.active?'Personal filters are active.':'Published standings.');}}
+    if(selected&&list){const board=cache.get(selected.id)||(!bridge.snapshotOnly?.()?read(STORE+'-'+selected.id,null):null);if(board){const display=eventSnapshotRows(board,{onlyVerified:true,filterRows:bridge.filterRows,context:{trackId:selected.trackId,event:true,maxRp:selected.maxRp,complete:board.complete===true}});list.innerHTML=rows(display.rows,board,selected)||'<li>No racers match these filters.</li>';message(display.filterResult?.active?'Personal filters are active.':'Published standings.');}}
   });
   function finishPlace(run){
     const board=cache.get(run.periodId)||(!bridge.snapshotOnly?.()?read(STORE+'-'+run.periodId,null):null);

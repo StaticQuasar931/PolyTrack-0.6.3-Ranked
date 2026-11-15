@@ -58,6 +58,19 @@ const CDN_REPOSITORY = 'StaticQuasar931/PolyTrack-0.6.3-Ranked';
 const CDN_BASE = `https://cdn.jsdelivr.net/gh/${CDN_REPOSITORY}@`;
 export const CANONICAL_RELEASE_POINTER_URL = `${CDN_BASE}cdn-release/release.json`;
 
+/** Same-page attribution only: preserve saves, existing query parameters and anchors. */
+export function updateTrackingUrl(href, revision) {
+  if (!Number.isSafeInteger(revision) || revision < 0) return null;
+  try {
+    const url = new URL(href);
+    if (!['https:', 'http:'].includes(url.protocol)) return null;
+    url.searchParams.set('utm_source', 'update');
+    url.searchParams.set('utm_medium', 'in_game');
+    url.searchParams.set('utm_campaign', 'client_' + revision);
+    return url.href;
+  } catch { return null; }
+}
+
 function releaseVersionUrl(pointer) {
   if (pointer?.schemaVersion !== 1 || pointer.repository !== CDN_REPOSITORY ||
       !/^[a-f0-9]{40}$/.test(pointer.commit || '') || !/^[a-f0-9]{64}$/.test(pointer.indexSha256 || '') ||
@@ -591,7 +604,8 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     offlineMinimum = null;
     publish({ onlineAllowed: true, revision, latestRevision: null, minimumSupportedRevision: null, reason }, recover);
   };
-  const reloadInPlace = (event, launcherCommit, ownDialog = null) => {
+  const reloadInPlace = (event, launcherCommit, ownDialog = null, targetRevision = latestManifest?.revision) => {
+    let previousUrl = null;
     const restore = () => {
       try { if (ownDialog?.isConnected) { ownDialog.showModal(); ownDialog.querySelector?.('button')?.focus(); } } catch { /* Keep the current session. */ }
     };
@@ -603,9 +617,20 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       if (typeof location?.reload !== 'function') throw Error('Reload unavailable');
       if (launcherCommit) expireLauncherDiscovery(document, launcherCommit);
       document.defaultView?.__polytrackExitGuard?.allowReload();
+      // Attribution is optional and must never bypass reload safety or change host/path.
+      const tracked = updateTrackingUrl(location.href, targetRevision);
+      if (tracked && typeof document.defaultView?.history?.replaceState === 'function') {
+        try {
+          previousUrl = location.href;
+          document.defaultView.history.replaceState(document.defaultView.history.state, '', tracked);
+        } catch { previousUrl = null; }
+      }
       location.reload();
       return 'reloading';
-    } catch { document.defaultView?.__polytrackExitGuard?.cancelReload();event?.preventDefault(); restore(); return 'failed'; }
+    } catch {
+      if (previousUrl) { try { document.defaultView.history.replaceState(document.defaultView.history.state, '', previousUrl); } catch {} }
+      document.defaultView?.__polytrackExitGuard?.cancelReload();event?.preventDefault(); restore(); return 'failed';
+    }
   };
   const applyCompatibility = (data) => {
     // The optional manifest field is dormant when absent. No remote navigation URL is accepted.
@@ -652,7 +677,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       if (reloadHere) {
         open.type = 'button'; open.textContent = 'Reload to update';
         open.addEventListener('click', event => {
-          const result = reloadInPlace(event, launcherCommit, node);
+          const result = reloadInPlace(event, launcherCommit, node, data.revision);
           if (result !== 'reloading') { feedback.hidden = false; feedback.style.display = 'block'; feedback.textContent = reloadMessage(result); }
         });
       } else {
@@ -737,7 +762,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       button.addEventListener('click', event => {
         try {
           if (reloadHere) {
-            const result = reloadInPlace(event, launcherCommit);
+            const result = reloadInPlace(event, launcherCommit, null, data.revision);
             if (result === 'blocked') blockedFeedback();
             else if (result === 'failed') failedReloadFeedback();
             return;

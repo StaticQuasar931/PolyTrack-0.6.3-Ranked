@@ -1,14 +1,15 @@
 const releaseInfo = {
-  "number": 396,
+  "number": 397,
   "version": "0.6.3",
-  "revision": 338,
+  "revision": 339,
   "notes": [
-    "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
-    "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
-    "Snapshot compression now stays consistent across Windows and Linux."
+    "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
+    "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
+    "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
+    "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
   ],
-  "preparedAt": "2026-11-15T03:09:11.107Z",
-  "committedAt": "2026-11-15T03:12:59.000Z"
+  "preparedAt": "2026-11-15T04:44:30.761Z",
+  "committedAt": "2026-11-15T04:51:56.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

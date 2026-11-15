@@ -45,3 +45,7 @@
 .sp-sample-name>small{display:block;margin-top:4px;color:#c8d8ed;font:12px ForcedSquare,sans-serif}
 .sp-style-sample.cosmetic-plate-pitlane-ticket .sp-sample-name{background:var(--plate-bg);box-shadow:var(--plate-shadow);clip-path:var(--plate-clip)}
 .sp-summary>p,.sp-community-local{margin:0;max-width:48ch;font:15px/1.4 ForcedSquare,sans-serif;color:#c7d9f2}.sp-community-local{padding:10px 14px;border:1px solid #577796;background:#1c3553}
+
+.shop-preview .sp-coin{width:24px;height:24px;display:inline-block;vertical-align:middle;margin-right:6px;flex:none}
+.shop-preview .sp-sort{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0;color:#d1dce8}
+.shop-preview .sp-sort select{min-height:44px;max-width:100%;padding:8px;background:#192e58;color:#f5f7fa;border:1px solid #7596bd;font:inherit}

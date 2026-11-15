@@ -396,3 +396,9 @@ dialog.profile-hub { background:#1d2e61; }
 .profile-achievement-journey>button:disabled{cursor:wait;color:#c0cce1;opacity:.65}
 .profile-achievement-journey>button[data-ph-launch=shop]{border-bottom-color:#7ee7ff}
 @media(max-width:520px){.profile-achievement-journey{grid-template-columns:repeat(3,minmax(0,1fr));font-size:17px}.profile-achievement-journey>button{flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:12px 4px}.profile-achievement-journey small,.profile-achievement-journey .ph-entry-chevron{display:none}.profile-achievement-journey .ph-entry-mark{display:flex}}
+
+/* Expanded actions stay on the same quiet surface as the goal cards. */
+.aj.aj .aj-coin-bonus{border:1px solid #7596bd;color:#e6effb;padding:12px;gap:8px}
+.aj.aj .aj-coin-bonus strong{font-size:21px}
+.aj.aj .aj-coin-bonus button,.aj.aj .aj-explore{background:#294475;color:#f5f7fa;border:1px solid #7596bd;box-shadow:none}
+.aj.aj .aj-coin-bonus button:hover,.aj.aj .aj-explore:hover{background:#354f85}
