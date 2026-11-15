@@ -1,4 +1,5 @@
 @import url('./shop-preview.css');
+@import url('./profile-shop-art.css');
 /* Dedicated Studio-facing presentation. Transport and wallet state stay unchanged. */
 .profile-customizer .profile-customizer-actions .profile-shop-open{min-height:44px;margin:0;flex:0 1 auto}
 .profile-shop-dialog .sp-summary strong{overflow-wrap:anywhere}
@@ -33,3 +34,14 @@
 .profile-shop-dialog .sp-live-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .profile-shop-dialog .sp-live-preview canvas{display:block;max-width:100%;height:auto}
 .profile-shop-dialog [data-sp-renderer-unavailable]{display:block;padding:10px;color:#c3d5ee;font:15px/1.4 ForcedSquare,sans-serif}
+
+/* Real Studio snapshots take precedence over the CSS-accurate fallback samples. */
+.sp-art[data-sp-swatch]{height:112px;min-width:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box}
+.sp-art [data-sp-existing-preview]{pointer-events:none!important;max-width:100%;max-height:100%;margin:0!important;box-sizing:border-box;min-width:0;position:relative!important;inset:auto!important;transform:none!important}
+.sp-art [data-sp-existing-preview] canvas,.sp-art [data-sp-existing-preview] img{max-width:100%;max-height:90px;object-fit:contain}
+.sp-art .sp-style-sample{position:relative;isolation:isolate;display:flex;align-items:center;width:100%;min-width:0;height:88px;overflow:hidden;padding:14px 18px;box-sizing:border-box;background:linear-gradient(135deg,var(--cosmetic-a,#253f69) 0 65%,var(--cosmetic-b,#182b4e) 65% 100%);border-left:var(--edge-width,3px) var(--edge-style,solid) var(--profile-accent,#a7cbe2);box-shadow:none}
+.sp-sample-art{position:absolute;inset:0;z-index:-1;pointer-events:none}.sp-sample-art svg{width:100%;height:100%}
+.sp-sample-name{display:block;max-width:100%;padding:7px 10px}.sp-sample-name>b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--name-ink,#edf5ff);font:24px ForcedSquare,sans-serif}
+.sp-sample-name>small{display:block;margin-top:4px;color:#c8d8ed;font:12px ForcedSquare,sans-serif}
+.sp-style-sample.cosmetic-plate-pitlane-ticket .sp-sample-name{background:var(--plate-bg);box-shadow:var(--plate-shadow);clip-path:var(--plate-clip)}
+.sp-summary>p,.sp-community-local{margin:0;max-width:48ch;font:15px/1.4 ForcedSquare,sans-serif;color:#c7d9f2}.sp-community-local{padding:10px 14px;border:1px solid #577796;background:#1c3553}

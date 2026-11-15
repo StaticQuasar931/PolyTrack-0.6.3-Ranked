@@ -3,8 +3,14 @@ const ORIGIN='https://polytrack-ranked-worker.staticquasar931.workers.dev';
 const ACCOUNT=/^[a-f0-9]{64}$/;
 const REQUEST=/^[A-Za-z0-9_-]{8,80}$/;
 const POSTS=Object.freeze({'/v1/currency/claim':'rewardId','/v1/shop/purchase':'itemId','/v1/shop/equip':'itemId'});
+function loginWindow(value){
+  const {claimDay,serverNow,dayEndsAt}=value||{};
+  if(![claimDay,serverNow,dayEndsAt].every(n=>Number.isSafeInteger(n)&&n>=0)||serverNow<1||
+      claimDay!==Math.floor(serverNow/86400000)||dayEndsAt!==(claimDay+1)*86400000||serverNow>=dayEndsAt)return null;
+  return Object.freeze({claimDay,serverNow,dayEndsAt});
+}
 export class ShopTransportError extends Error {
-  constructor(code,{status=0,ambiguous=false,notCommitted=false}={}){super(code);this.name='ShopTransportError';this.code=code;this.status=status;this.ambiguous=ambiguous;this.notCommitted=notCommitted===true;}
+  constructor(code,{status=0,ambiguous=false,notCommitted=false,loginClaimWindow}={}){super(code);this.name='ShopTransportError';this.code=code;this.status=status;this.ambiguous=ambiguous;this.notCommitted=notCommitted===true;const window=loginWindow(loginClaimWindow);if(window)this.loginClaimWindow=window;}
 }
 function validate(path,method,body){
   if(typeof path!=='string')throw new ShopTransportError('invalid_shop_request');
@@ -56,7 +62,8 @@ export function createShopTransport({fetch:fetcher=globalThis.fetch,getToken,rev
       sent=true;
       const response=await fetcher(url.href,{method,headers,body:encodedBody,signal:controller.signal,credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer'});
       let value;try{value=await readJSON(response);}catch{throw new ShopTransportError('invalid_shop_response',{status:response.status,ambiguous:method==='POST'});}
-      if(!response.ok){const code=typeof value.error==='string'&&/^[a-z0-9_]{1,80}$/.test(value.error)?value.error:'shop_unavailable';throw new ShopTransportError(code,{status:response.status,ambiguous:method==='POST'&&response.status>=500&&code!=='currency_disabled',notCommitted:value.notCommitted===true&&response.status>=400&&response.status<500});}
+      if(!response.ok){const code=typeof value.error==='string'&&/^[a-z0-9_]{1,80}$/.test(value.error)?value.error:'shop_unavailable';throw new ShopTransportError(code,{status:response.status,ambiguous:method==='POST'&&response.status>=500&&code!=='currency_disabled',notCommitted:value.notCommitted===true&&response.status>=400&&response.status<500,
+        loginClaimWindow:path==='/v1/currency/claim'&&body?.rewardId==='login'&&response.status===409&&value.error==='reward_already_claimed'&&value.notCommitted===true?value:null});}
       return value;
     }catch(error){
       if(error instanceof ShopTransportError)throw error;

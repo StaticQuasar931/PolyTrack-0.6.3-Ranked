@@ -22,6 +22,13 @@ export function bindProfileShopPreview(content,{accountId,getAccountId,getAuthSc
     const previous=active;active=null;
     if(!previous)return false;
     previous.signal?.removeEventListener('abort',previous.abort);
+    const choices=previous.controller.currentOptions?.();
+    if(Array.isArray(choices)){
+      if(!choices.includes(previous.option))return false;
+      previous.controller.preview(previous.option);
+      if(previous.replaced)previous.controller.preview(previous.replaced);
+      return true;
+    }
     if(previous.controller.currentOption?.()!==previous.option)return false;
     return previous.controller.clear(reason);
   }
@@ -33,6 +40,7 @@ export function bindProfileShopPreview(content,{accountId,getAccountId,getAuthSc
     const catalog=getCatalog(),matches=catalog?.items?.filter(row=>own(row,'id')===item?.id);
     const supplied=matches?.length===1?matches[0]:null,grant=own(supplied,'grants');
     if(!item||catalog?.version!==PROFILE_SHOP_CATALOG_VERSION||own(supplied,'kind')!==item.kind||own(supplied,'price')!==item.price||!Array.isArray(grant)||grant.length!==1||own(grant[0],'slot')!==item.grants[0].slot||own(grant[0],'value')!==item.grants[0].value)fail('profile_preview_unavailable');
+    if(active?.itemId===item.id){clear('shop-toggle');return true;}
     clear();
     const reward=Object.freeze({kind:item.grants[0].slot,id:item.grants[0].value});
     if(openStudio(reward)!==true||!current()||!isCurrent()||signal?.aborted)fail('stale_profile_preview');
@@ -43,9 +51,11 @@ export function bindProfileShopPreview(content,{accountId,getAccountId,getAuthSc
     if(![...document.querySelectorAll('link[data-profile-shop-art-css]')].some(link=>link.href===url.href)){
       const link=document.createElement('link');link.rel='stylesheet';link.href=url.href;link.dataset.profileShopArtCss='';document.head.append(link);
     }
+    const replaced=controller.currentOptions?.().find(option=>option.kind===reward.kind);
     if(controller.preview(reward)!==true)fail('profile_preview_unavailable');
-    const option=controller.currentOption();
-    active={controller,option,signal,abort:()=>clear('shop-abort')};
+    const option=controller.currentOptions?.().find(option=>option.kind===reward.kind&&option.id===reward.id)||(!controller.currentOptions?controller.currentOption():null);
+    if(!option)return true;
+    active={controller,option,replaced,itemId:item.id,signal,abort:()=>clear('shop-abort')};
     signal?.addEventListener('abort',active.abort,{once:true});
     if(!current()||!isCurrent()||signal?.aborted){clear('shop-stale');fail('stale_profile_preview');}
     // An owned item can also be tried without applying it: never imply loss of ownership.

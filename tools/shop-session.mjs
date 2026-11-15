@@ -22,22 +22,37 @@ const copy = value => structuredClone(value);
 const fail = code => { throw new ShopSessionError(code); };
 
 export function createShopSession({transport, storage, getAccountId, makeRequestId,
-  withAccountLock, now = Date.now, cacheMs = 30000, enabled = false} = {}) {
+  withAccountLock, now = Date.now, cacheMs = 30000, enabled = false,
+  monotonicNow = () => globalThis.performance?.now?.() ?? Date.now(), collectionCooldownMs = 900000} = {}) {
   if (typeof transport !== 'function' || typeof getAccountId !== 'function' ||
-      typeof makeRequestId !== 'function' || !uint(cacheMs) || typeof now !== 'function' ||
+      typeof makeRequestId !== 'function' || !uint(cacheMs) || typeof now !== 'function' || typeof monotonicNow !== 'function' ||
+      !uint(collectionCooldownMs) || collectionCooldownMs < 900000 || collectionCooldownMs > 86400000 ||
       (withAccountLock !== undefined && typeof withAccountLock !== 'function')) fail('invalid_dependencies');
   let active = null, epoch = 0, on = enabled === true, busy = false;
   let confirmation = null, sequence = 0, disposed = false, controller = new AbortController();
   let catalogMemory = null;
-  const caches = new Map(), reads = new Map(), purchases = new Map();
+  const caches = new Map(), reads = new Map(), purchases = new Map(), collections = new Map(), loginWindows = new Map();
   const blank = id => ({status: on ? (id ? 'idle' : 'signed-out') : 'disabled',
-    accountId: id, catalog: null, wallet: null, inventory: null, pending: null, error: null, result: null});
+    accountId: id, catalog: null, wallet: null, inventory: null, pending: null, error: null, result: null, rewardSync: 'idle'});
   let state = blank(null);
   const key = id => 'polytrack-shop-pending-v1:' + id;
   const fresh = entry => {
     const at = now();
     return entry && uint(at) && at >= entry.at && at - entry.at < cacheMs;
   };
+  const elapsedSince = entry => {
+    const at = monotonicNow();
+    return entry && Number.isFinite(at) && at >= entry.at ? at - entry.at : Infinity;
+  };
+  const collectionFresh = entry => elapsedSince(entry) < collectionCooldownMs;
+  const loginKnownForWindow = id => elapsedSince(loginWindows.get(id)) < (loginWindows.get(id)?.remaining ?? 0);
+  function rememberLoginWindow(value, id, sentAt) {
+    const {claimDay,serverNow,dayEndsAt}=value||{};
+    if (![claimDay,serverNow,dayEndsAt].every(uint) || serverNow < 1 || claimDay !== Math.floor(serverNow/86400000) ||
+        dayEndsAt !== (claimDay+1)*86400000 || serverNow >= dayEndsAt || !Number.isFinite(sentAt)) return;
+    // Request-start anchoring is conservative across response latency. This only suppresses probes, never grants money.
+    loginWindows.set(id,{at:sentAt,remaining:dayEndsAt-serverNow});
+  }
   function pending(id) {
     let raw;
     try { raw = storage.getItem(key(id)); } catch { fail('storage_unavailable'); }
@@ -57,7 +72,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
   }
   function invalidate(id) {
     controller.abort(); controller = new AbortController(); epoch++; confirmation = null; catalogMemory = null;
-    caches.clear(); purchases.clear(); active = id; state = blank(id);
+    caches.clear(); purchases.clear(); collections.clear(); loginWindows.clear(); active = id; state = blank(id);
   }
   function sync() {
     if (disposed) return null;
@@ -143,7 +158,37 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     return copy({...state, enabled: on, busy, ownedStatus: state.inventory ? 'confirmed' : 'unknown',
       confirmedPurchases: purchases.get(active) || [], confirmation});
   }
-  function load({refresh = false, completion = false} = {}) {
+  async function collectOpeningRewards(id, g, rewardIds) {
+    if (state.pending) { state.rewardSync = 'pending'; return; }
+    if (!withAccountLock) { state.rewardSync = 'unavailable'; return; }
+    state.rewardSync = 'checking';
+    try {
+      await locked(id, g, async signal => {
+        const saved = pending(id);
+        if (saved) { state.pending = saved; state.rewardSync = 'pending'; return snapshot(); }
+        for (const rewardId of rewardIds) {
+          check(id, g);
+          if (rewardId === 'login' && loginKnownForWindow(id)) continue;
+          const requestId = makeRequestId(); if (!request(requestId)) fail('invalid_request_id');
+          const p = {schemaVersion:3,accountId:id,requestId,rewardId};
+          persist(p); state.pending = p;
+          try { await sendClaim(p, id, g, signal, false); }
+          catch (error) {
+            // Only explicit server-certified no-write denials may continue the bounded batch.
+            if (!(error.ambiguous === false && error.notCommitted === true && !state.pending &&
+                ['reward_already_claimed','server_milestone_required','server_achievement_required','achievement_coins_disabled'].includes(error.code))) throw error;
+          }
+        }
+        state.rewardSync = 'settled'; return snapshot();
+      });
+    } catch (error) {
+      if (!['shop_busy','shop_locks_unavailable','shop_lock_cancelled'].includes(error.code)) throw error;
+      check(id, g); state.rewardSync = 'unavailable';
+    }
+  }
+  function load({refresh = false, completion = false, collectRewards = false, rewardIds = ['login','milestones']} = {}) {
+    if (collectRewards && (!Array.isArray(rewardIds) || rewardIds.length > 3 || new Set(rewardIds).size !== rewardIds.length ||
+        rewardIds.some(id => !['login','milestones','achievements'].includes(id)))) fail('invalid_reward');
     const id = requireOn(), g = epoch, readKey = id + ':' + g, signal = controller.signal;
     if (busy) fail('purchase_in_flight'); if (reads.has(readKey)) return reads.get(readKey);
     state.status = state.pending ? 'reconciliation-required' : 'loading'; state.error = null;
@@ -153,11 +198,16 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       try {
         check(id, g);
         const cached = caches.get(id);
-        const reused = !refresh && completion !== true && fresh(cached);
+        const collectionDue = collectRewards === true && !collectionFresh(collections.get(id));
+        const reused = !refresh && completion !== true && fresh(cached) && !collectionDue;
         // A versioned catalog is presentation/quote input, never ownership proof.
         // Only mutation completion may reuse it; wallet/inventory are always read.
-        const reusedCatalog = completion === true && catalogMemory?.accountId === id && catalogMemory.epoch === g &&
+        const reusedCatalog = (completion === true || collectRewards === true && !refresh) && catalogMemory?.accountId === id && catalogMemory.epoch === g &&
           catalogMemory.value.version === PROFILE_SHOP_CATALOG_VERSION ? catalogMemory.value : null;
+        if (!reused && collectionDue) {
+          await collectOpeningRewards(id, g, rewardIds); check(id, g);
+          collections.set(id, {at:monotonicNow()});
+        }
         const next = reused ? copy(cached.value) : await serverState(id, signal, reusedCatalog);
         check(id, g);
         if (!reused) {
@@ -165,7 +215,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
           if (!reusedCatalog) catalogMemory = next.catalog.version === PROFILE_SHOP_CATALOG_VERSION
             ? {accountId: id, epoch: g, value: copy(next.catalog)} : null;
         }
-        Object.assign(state, next); state.status = state.pending ? 'reconciliation-required' : 'ready';
+        Object.assign(state, next); state.error = null; state.status = state.pending ? 'reconciliation-required' : 'ready';
         return snapshot();
       } catch (error) {
         if (current(id, g)) {
@@ -283,6 +333,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     });
   }
   async function sendClaim(p,id,g,signal,reconciling){
+    const sentAt=monotonicNow();
     state.status='claiming';state.pending=p;state.error=null;
     try{
       const result=await transport({path:'/v1/currency/claim',method:'POST',body:{accountId:id,requestId:p.requestId,rewardId:p.rewardId},signal});
@@ -293,9 +344,9 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
         const awards=MILESTONE_AWARDS,ids=result.claimedRewardIds;
         if(!Array.isArray(ids)||ids.length<1||ids.length>Object.keys(awards).length||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!Object.hasOwn(awards,id))||ids.reduce((n,id)=>n+awards[id],0)!==result.delta)fail('invalid_claim_response');
       }
-      check(id,g);const cleaned=remove(p);state.pending=cleaned?null:p;state.result=copy(result);state.wallet=null;state.inventory=null;caches.delete(id);state.status=cleaned?'claimed':'reconciliation-required';return snapshot();
+      check(id,g);if(p.rewardId==='login'&&result.duplicate===false)rememberLoginWindow(result,id,sentAt);const cleaned=remove(p);state.pending=cleaned?null:p;state.result=copy(result);state.wallet=null;state.inventory=null;caches.delete(id);state.status=cleaned?'claimed':'reconciliation-required';return snapshot();
     }catch(error){
-      if(current(id,g)){const cleaned=!reconciling&&error.ambiguous===false&&error.notCommitted===true&&remove(p);state.pending=cleaned?null:p;state.status=cleaned?'error':'reconciliation-required';state.error=error.code||'claim_ambiguous';state.wallet=null;state.inventory=null;caches.delete(id);if(error.code==='currency_disabled')disabled();}
+      if(current(id,g)){if(p.rewardId==='login'&&error.code==='reward_already_claimed'&&error.ambiguous===false&&error.notCommitted===true)rememberLoginWindow(error.loginClaimWindow,id,sentAt);const cleaned=!reconciling&&error.ambiguous===false&&error.notCommitted===true&&remove(p);state.pending=cleaned?null:p;state.status=cleaned?'error':'reconciliation-required';state.error=error.code||'claim_ambiguous';state.wallet=null;state.inventory=null;caches.delete(id);if(error.code==='currency_disabled')disabled();}
       throw error;
     }
   }

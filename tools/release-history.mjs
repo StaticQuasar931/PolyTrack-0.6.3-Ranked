@@ -2,15 +2,27 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 394,
+    "number": 395,
     "version": "0.6.3",
-    "revision": 336,
+    "revision": 337,
     "notes": [
-      "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
-      "Earlier published proofs stay intact; new runs still require their own replay checks."
+      "Car finishes preserve both paint colors; accessories fit the car more closely.",
+      "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
+      "Live previews, Undo and Restore saved work more consistently.",
+      "Completed the saved-replay setup for the next offline event verification pass."
     ]
   },
   "entries": [
+    {
+      "number": 394,
+      "title": "Enable source-bound offline Kodub and Rolling Hills verification",
+      "commit": "7685e42f93986d59adc3cfbf7e3270d13a82450b",
+      "committedAt": "2026-11-15T02:01:33.000Z",
+      "notes": [
+        "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
+        "Earlier published proofs stay intact; new runs still require their own replay checks."
+      ]
+    },
     {
       "number": 393,
       "title": "Clarify event previews and stabilize profile navigation",
@@ -203,16 +215,6 @@ const historyData = {
       "notes": [
         "Snapshot capture now starts with current personal bests before refreshing track boards.",
         "Capture can publish using existing verification, with new replay verification running separately afterward."
-      ]
-    },
-    {
-      "number": 372,
-      "title": "Keep locked previews clearly visible",
-      "commit": "84c96100853a10002036d0fbba75c21fe999d40a",
-      "committedAt": "2026-11-14T07:15:57.000Z",
-      "notes": [
-        "Locked cosmetic previews now keep their preview-only warning and Exit preview button visible.",
-        "Keyboard focus returns to your selected item when you exit a preview."
       ]
     }
   ],

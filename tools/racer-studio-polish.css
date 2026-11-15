@@ -212,3 +212,25 @@
 
 .profile-customizer .profile-cosmetic-group.kind-nameColor{scroll-margin-top:76px}
 @media(max-width:600px){.profile-customizer .profile-cosmetic-group.kind-nameColor{scroll-margin-top:128px}}
+
+/* Empty history is unavailable, not a second active primary action. */
+.profile-customizer .profile-customizer-actions>.button:disabled{background:#29384d!important;color:#91a0b2!important;border:1px solid #4c5e74!important;box-shadow:none!important;cursor:default;opacity:.72}
+.profile-customizer .studio-restore-saved{background:#233e62;color:#d9e9fa;border:1px solid #597ca5}
+.profile-customizer [data-studio-preview-part],.sp-live-preview [data-studio-preview-part]{cursor:pointer}
+.sp-live-preview [data-studio-preview-part]:focus-visible{outline:3px solid #ffda83;outline-offset:2px}
+.profile-customizer .kind-theme .cosmetic-theme-cyan .profile-cosmetic-preview{background:linear-gradient(105deg,#116b87,#283778)!important}
+.profile-customizer .kind-baseSecondary .profile-cosmetic-preview{background:linear-gradient(90deg,#2d3b68 0 20%,var(--cosmetic-b,#1a2958) 20% 100%)!important}
+.profile-customizer .kind-stage .profile-cosmetic-preview{background:var(--stage-bg)!important}
+.profile-customizer .kind-stage .profile-cosmetic-preview i{position:absolute;inset:0;width:100%;height:100%;background:var(--stage-fx,none)!important}
+.profile-customizer .kind-stripe .profile-cosmetic-preview i{background:var(--studio-pattern,var(--profile-pattern,none))!important;background-size:var(--profile-pattern-size,auto)!important;inset:0;width:100%;height:100%}
+.profile-customizer .kind-stripe .cosmetic-stripe-standard{--studio-pattern:none}
+/* Align the two existing Apex layers to the car floor without moving the car. */
+.cosmetic-stage-apex-observatory .profile-preview-stage>.overall-car-model,
+.profile-customizer .kind-stage .cosmetic-stage-apex-observatory .profile-cosmetic-preview{background-position:center bottom,center center!important;background-size:auto 100%,cover!important}
+.profile-customizer .kind-stripe .cosmetic-stripe-cyan{--studio-pattern:repeating-linear-gradient(112deg,transparent 0 46px,color-mix(in srgb,var(--profile-accent,#7ee7ff) 15%,transparent) 47px 52px,transparent 53px 82px)}
+.profile-customizer .kind-stripe .cosmetic-stripe-apex{--studio-pattern:linear-gradient(118deg,transparent 0 68%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 24%,transparent) 69% 72%,transparent 73%)}
+.profile-customizer .kind-stripe .cosmetic-stripe-chevron{--studio-pattern:repeating-linear-gradient(135deg,transparent 0 38px,color-mix(in srgb,var(--profile-accent,#7ee7ff) 14%,transparent) 39px 52px,transparent 53px 78px)}
+.profile-customizer .kind-stripe .cosmetic-stripe-grid{--studio-pattern:linear-gradient(color-mix(in srgb,var(--profile-accent,#7ee7ff) 10%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--profile-accent,#7ee7ff) 10%,transparent) 1px,transparent 1px)}
+.profile-customizer .kind-stripe .cosmetic-stripe-circuit{--studio-pattern:radial-gradient(circle at 72% 30%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 40%,transparent) 0 4px,transparent 5px),linear-gradient(155deg,transparent 72%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 18%,transparent) 73% 74%,transparent 75%)}
+.profile-customizer .kind-stripe .cosmetic-stripe-scan{--studio-pattern:repeating-linear-gradient(0deg,transparent 0 7px,color-mix(in srgb,var(--profile-accent,#7ee7ff) 10%,transparent) 8px 9px)}
+.profile-customizer .kind-stripe .cosmetic-stripe-blocks{--studio-pattern:linear-gradient(90deg,transparent 0 52%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 15%,transparent) 53% 65%,transparent 66% 70%,color-mix(in srgb,var(--profile-accent,#7ee7ff) 22%,transparent) 71% 84%,transparent 85%)}

@@ -14,11 +14,12 @@ const fail = code => { throw new ShopControllerError(code); };
 const copy = value => structuredClone(value);
 const validAccount = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export function createShopControllerStore({transport, storage, getAccountId, getAuthScope,
-  makeRequestId, withAccountLock = createShopBrowserLock(), now, cacheMs, enabled = false} = {}) {
+  makeRequestId, withAccountLock = createShopBrowserLock(), now, cacheMs, enabled = false,
+  autoCollectRewards = true, automaticRewardIds = ['login','milestones'], monotonicNow, collectionCooldownMs} = {}) {
   if (typeof getAuthScope !== 'function' || typeof getAccountId !== 'function') fail('invalid_auth_adapter');
   const session = createShopSession({transport, storage,
     getAccountId: () => { const id = getAccountId(); return validAccount(id) ? id : null; }, makeRequestId,
-    withAccountLock, now, cacheMs, enabled});
+    withAccountLock, now, cacheMs, enabled, monotonicNow, collectionCooldownMs});
   let gate = enabled === true, disposed = false, generation = 0, identity = null;
   let read = null, operation = null, phase = gate ? 'idle' : 'disabled', error = null, outcome = null;
   const listeners = new Set();
@@ -67,12 +68,12 @@ export function createShopControllerStore({transport, storage, getAccountId, get
     synchronize();
     if (disposed || generation !== context.generation || identity?.accountId !== context.accountId) fail('stale_response');
   }
-  function performRead(context, refresh, completion = false) {
+  function performRead(context, refresh, completion = false, collectRewards = false) {
     if (read) return read.promise;
     const token = {}; read = token; phase = completion ? 'refreshing' : 'loading'; error = null;
     token.promise = Promise.resolve().then(async () => {
       try {
-        check(context); await session.load({refresh,completion}); check(context); phase = 'ready'; return snapshot();
+        check(context); await session.load({refresh,completion,collectRewards:collectRewards && autoCollectRewards === true,rewardIds:automaticRewardIds}); check(context); phase = 'ready'; return snapshot();
       } catch (caught) {
         if (!disposed && generation === context.generation) { phase = completion ? 'refresh-required' : 'error'; error = caught.code || 'read_failed'; }
         throw caught;
@@ -82,11 +83,11 @@ export function createShopControllerStore({transport, storage, getAccountId, get
     }).then(() => { check(context); return snapshot(); });
     emit(); return token.promise;
   }
-  function load({refresh = false} = {}) {
+  function load({refresh = false, collectRewards = false} = {}) {
     if (disposed) fail('disposed'); synchronize();
     if (!identity?.accountId || !identity.scope) return Promise.resolve(snapshot());
     const context = requireReady(); if (operation) fail('purchase_in_flight');
-    return performRead(context, refresh);
+    return performRead(context, refresh, false, collectRewards);
   }
   async function transact(kind, intent, confirmed) {
     const context = requireReady();
@@ -195,7 +196,7 @@ export function createShopController({root, mountShopPreview, store, onCarPrevie
       onStudio: typeof onStudio === 'function' ? () => { guard(); restore(); return onStudio(); } : undefined,
       onClose: () => { guard(); controller.dispose(); onClose?.(); }
     };
-    return {accountId: state.accountId, catalog: state.catalog || {version:2,items:[]},
+    return {accountId: state.accountId, cloudSaveConnected: !!state.accountId && state.enabled, loading: state.loading, busy: state.busy, rewardSync: state.rewardSync, error: state.error, catalog: state.catalog || {version:2,items:[]},
       wallet: walletView(state), inventory: inventoryView(state),
       purchaseEnabled: state.enabled && !state.busy && !state.loading && !state.pending,
       refreshEnabled: state.enabled && !state.busy && !state.loading,
@@ -210,7 +211,7 @@ export function createShopController({root, mountShopPreview, store, onCarPrevie
     if (cleanup) cleanup.update(next); else cleanup = mountShopPreview(root, next);
   });
   const controller = {
-    open: () => { requireView(); return store.load(); },
+    open: () => { requireView(); return store.load({collectRewards:true}); },
     refresh: () => { requireView(); return store.load({refresh: true}); },
     reconcile: options => { requireView(); return store.reconcile(options); }, state: () => store.state(),
     reset() { requireView(); restore(); store.reset(); },
