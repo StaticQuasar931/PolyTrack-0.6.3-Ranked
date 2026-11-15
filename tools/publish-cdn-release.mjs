@@ -76,8 +76,9 @@ export async function releasePlan({root, commit, read = file => readFile(path.jo
     seen.add(file);
     const source = (await read(file)).toString('utf8');
     // Browser modules preserve the parent's cache revision through new URL().
+    // Match complete extensions: .json must never be shortened to a phantom .js.
     const dependencies=[...source.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)['"](\.[^'"]+)['"]/g),
-      ...source.matchAll(/\bnew\s+URL\s*\(\s*['"`]((?:\.\.?\/)?[a-zA-Z0-9_./-]+\.(?:mjs|js|css|json))[^'"`\n]*['"`](?:\s*\+\s*new\s+URL\s*\(\s*import\.meta\.url\s*\)\.search)?\s*,\s*import\.meta\.url\s*\)/g)];
+      ...source.matchAll(/\bnew\s+URL\s*\(\s*['"`]((?:\.\.?\/)?[a-zA-Z0-9_./-]+\.(?:json|mjs|js|css))(?=[?#\x27\x22\x60$])[^'"`\n]*['"`](?:\s*\+\s*new\s+URL\s*\(\s*import\.meta\.url\s*\)\.search)?\s*,\s*import\.meta\.url\s*\)/g)];
     for (const match of dependencies) {
       const relative = match[1].split(/[?#]/)[0];
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(file),relative));

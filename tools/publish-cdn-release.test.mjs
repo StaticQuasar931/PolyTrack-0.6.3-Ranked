@@ -676,3 +676,13 @@ test('a real snapshot tar over 49 MB fits four disjoint payload archives without
   assert.ok(sizes.reduce((sum,n)=>sum+n,0)>49000000,'this is not an aggregate-budget shortcut');
   t.diagnostic('Growth fixture package bytes: '+sizes.join(', '));
 });
+
+test('new URL JSON assets retain their complete extension and never become script modules',async()=>{
+ const f=fixture();
+ f.files.set('events/client.mjs',Buffer.from(`new URL('./standings-preview.json',import.meta.url);new URL('./data.json?v=2',import.meta.url);new URL('./versioned.json'+new URL(import.meta.url).search,import.meta.url);new URL('./skip.jsontxt',import.meta.url);`));
+ f.files.set('events/data.json',Buffer.from(JSON.stringify({text:"new URL('./not-a-module.mjs',import.meta.url)"})));
+ f.files.set('events/versioned.json',Buffer.from('{}'));
+ const plan=await releasePlan({commit:sha,...f}),names=new Set(plan.files.map(file=>file.path));
+ for(const name of ['events/standings-preview.json','events/data.json','events/versioned.json'])assert.ok(names.has(name),name);
+ for(const name of ['events/standings-preview.js','events/data.js','events/versioned.js','events/not-a-module.mjs','events/skip.js','events/skip.json'])assert.equal(names.has(name),false,name);
+});

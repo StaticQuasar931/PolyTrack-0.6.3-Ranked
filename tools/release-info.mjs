@@ -1,15 +1,14 @@
 const releaseInfo = {
-  "number": 405,
+  "number": 406,
   "version": "0.6.3",
-  "revision": 347,
+  "revision": 348,
   "notes": [
-    "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
-    "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
-    "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
-    "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
+    "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
+    "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
+    "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
   ],
-  "preparedAt": "2026-11-15T23:31:22.275Z",
-  "committedAt": "2026-11-15T23:33:51.000Z"
+  "preparedAt": "2026-11-15T23:41:59.649Z",
+  "committedAt": "2026-11-15T23:42:12.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

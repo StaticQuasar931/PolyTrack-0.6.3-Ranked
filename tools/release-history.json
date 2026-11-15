@@ -1,17 +1,28 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 405,
+    "number": 406,
     "version": "0.6.3",
-    "revision": 347,
+    "revision": 348,
     "notes": [
-      "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
-      "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
-      "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
-      "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
+      "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
+      "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
+      "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
     ]
   },
   "entries": [
+    {
+      "number": 405,
+      "title": "Bound local snapshot publication hashing",
+      "commit": "5ebaf33eb160939e60f3b6b08feb061916039836",
+      "committedAt": "2026-11-15T23:33:51.000Z",
+      "notes": [
+        "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
+        "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
+        "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
+        "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
+      ]
+    },
     {
       "number": 404,
       "title": "Clarify rank time and cache event card standings",
@@ -222,16 +233,6 @@
         "Protection against accidental closing, and smoother Garage navigation.",
         "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
         "More reliable local PB replays and snapshot-based route suggestions."
-      ]
-    },
-    {
-      "number": 385,
-      "title": "Readable car workshop controls on phones",
-      "commit": "603fb3ea7e4092f09faac228a218f4d03ec0095d",
-      "committedAt": "2026-11-14T21:15:06.000Z",
-      "notes": [
-        "Readable car workshop controls on phones and smaller screens.",
-        "Collapse the workshop while viewing your car; native Save dialogs stay clear."
       ]
     }
   ],
