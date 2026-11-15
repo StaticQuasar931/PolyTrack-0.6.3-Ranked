@@ -1,14 +1,13 @@
 const releaseInfo = {
-  "number": 393,
+  "number": 394,
   "version": "0.6.3",
-  "revision": 335,
+  "revision": 336,
   "notes": [
-    "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
-    "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
-    "Local PBs can show a podium target without claiming confirmed medals."
+    "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
+    "Earlier published proofs stay intact; new runs still require their own replay checks."
   ],
-  "preparedAt": "2026-11-15T01:30:40.569Z",
-  "committedAt": "2026-11-15T01:40:51.000Z"
+  "preparedAt": "2026-11-15T02:00:27.178Z",
+  "committedAt": "2026-11-15T02:01:33.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
