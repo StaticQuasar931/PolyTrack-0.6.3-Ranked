@@ -1393,7 +1393,7 @@ body.sq-event-active .track-info-ui .side-panel>.sq-event-personal>div{flex:0 1 
 
 /* Promoted Kodub follows rendered sibling height; native weekly geometry is untouched. */
 #ui .track-selection-ui .sq-featured-events>.track.sq-kodub-weekly{height:var(--kodub-card-height,var(--event-card-height))!important;min-height:0!important;max-height:var(--kodub-card-height,var(--event-card-height))!important}
-#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{display:grid!important;grid-template-columns:minmax(0,min(calc(var(--kodub-card-height,var(--event-card-height)) * var(--kodub-cover-ratio,2)),calc(100% - min(220px,40%)))) minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;align-items:stretch!important;height:100%!important;min-height:0!important;max-height:100%!important;box-sizing:border-box!important;overflow:visible!important;gap:0!important;padding:0!important}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button{display:grid!important;grid-template-columns:minmax(0,min(calc(var(--kodub-card-height,var(--event-card-height)) * var(--kodub-cover-ratio,2)),calc(100% - min(300px,70%)))) minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;align-items:stretch!important;height:100%!important;min-height:0!important;max-height:100%!important;box-sizing:border-box!important;overflow:visible!important;gap:0!important;padding:0!important}
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img:not(.environment),
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>img.cover:not(.environment){position:static!important;inset:auto!important;display:block!important;grid-column:1!important;grid-row:1!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important;object-position:center!important;align-self:stretch!important;transform:none!important;margin:0!important;padding:0!important}
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{grid-column:2!important;grid-row:1!important;min-width:0!important;min-height:0!important;width:100%!important;max-width:100%!important;align-self:stretch!important;justify-content:center!important;box-sizing:border-box!important;padding:8px!important;gap:3px!important}
@@ -1409,3 +1409,15 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
 
 /* Keep the native PB icon proportional to the compact weekly-card text. */
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div>img{width:1.15em!important;height:1.15em!important;margin:0 .3em 0 0!important;vertical-align:middle!important}
+
+/* PB time and published placement are one balanced row, not a loading panel. */
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record{flex-direction:row!important;flex-wrap:nowrap!important;justify-content:space-between!important;align-items:center!important;gap:8px!important;font-size:clamp(14px,1.3vw,20px)!important;line-height:1.2!important}
+#ui .track-selection-ui .sq-featured-events .sq-event-card .sq-event-record>*{white-space:nowrap!important;min-width:0}
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{padding:8px 10px!important;gap:4px!important}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{font-size:clamp(17px,1.6vw,24px)!important;line-height:1.1!important}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best{flex-direction:row!important;flex-wrap:nowrap!important;justify-content:space-between!important;gap:6px!important}
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{flex-wrap:nowrap!important;white-space:nowrap!important;font-size:clamp(13px,1.2vw,16px)!important}
+
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>:not(.title){font-size:clamp(14px,1.15vw,16px)!important;line-height:1.15!important}
+
+#ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{width:auto!important;flex:0 0 auto!important;max-width:100%!important}

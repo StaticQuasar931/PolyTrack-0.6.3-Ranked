@@ -2,16 +2,51 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 403,
+    "number": 406,
     "version": "0.6.3",
-    "revision": 345,
+    "revision": 348,
     "notes": [
-      "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
-      "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
-      "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+      "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
+      "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
+      "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
     ]
   },
   "entries": [
+    {
+      "number": 405,
+      "title": "Bound local snapshot publication hashing",
+      "commit": "5ebaf33eb160939e60f3b6b08feb061916039836",
+      "committedAt": "2026-11-15T23:33:51.000Z",
+      "notes": [
+        "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
+        "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
+        "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
+        "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
+      ]
+    },
+    {
+      "number": 404,
+      "title": "Clarify rank time and cache event card standings",
+      "commit": "1344eb2f81abe1deba886fcb9b1f9478f8442983",
+      "committedAt": "2026-11-15T23:29:52.000Z",
+      "notes": [
+        "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
+        "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
+        "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
+        "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
+      ]
+    },
+    {
+      "number": 403,
+      "title": "Fit weekly artwork to the event card height",
+      "commit": "a3fae75427c6a49631c6641b1e79d7b4c4b06635",
+      "committedAt": "2026-11-15T22:59:09.000Z",
+      "notes": [
+        "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
+        "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
+        "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+      ]
+    },
     {
       "number": 402,
       "title": "Fix offline history publication contract tests",
@@ -199,38 +234,6 @@ const historyData = {
         "Protection against accidental closing, and smoother Garage navigation.",
         "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
         "More reliable local PB replays and snapshot-based route suggestions."
-      ]
-    },
-    {
-      "number": 385,
-      "title": "Readable car workshop controls on phones",
-      "commit": "603fb3ea7e4092f09faac228a218f4d03ec0095d",
-      "committedAt": "2026-11-14T21:15:06.000Z",
-      "notes": [
-        "Readable car workshop controls on phones and smaller screens.",
-        "Collapse the workshop while viewing your car; native Save dialogs stay clear."
-      ]
-    },
-    {
-      "number": 384,
-      "title": "Car workshop and expanded Studio style shop",
-      "commit": "cbf4cb672be59c5df47cf2b1379c0a278d5fbf0b",
-      "committedAt": "2026-11-14T21:07:07.000Z",
-      "notes": [
-        "Customize your car in Garage with starter paint palettes and roof accessories.",
-        "Browse nine profile designs in the Style shop inside Racer Studio.",
-        "Clearer Token prices, more profile styles, and local car appearance saves."
-      ]
-    },
-    {
-      "number": 383,
-      "title": "Clearer achievements and reversible Studio previews",
-      "commit": "a45906a9d2deaa0564dbbc8bb5132bcbdaf39f10",
-      "committedAt": "2026-11-14T20:11:07.000Z",
-      "notes": [
-        "Clearer, larger achievement goals without profile patterns.",
-        "Combine cosmetic previews, undo changes, and see unsaved edits.",
-        "Cleaner profile layout and a redesigned Apex Observatory backdrop."
       ]
     }
   ],

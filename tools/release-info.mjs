@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 403,
+  "number": 406,
   "version": "0.6.3",
-  "revision": 345,
+  "revision": 348,
   "notes": [
-    "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
-    "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
-    "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+    "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
+    "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
+    "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
   ],
-  "preparedAt": "2026-11-15T22:58:08.728Z",
-  "committedAt": "2026-11-15T22:59:09.000Z"
+  "preparedAt": "2026-11-15T23:41:59.649Z",
+  "committedAt": "2026-11-15T23:42:12.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
