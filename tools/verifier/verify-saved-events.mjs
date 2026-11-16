@@ -19,21 +19,31 @@ export function savedEventWorkflowConfig(env=process.env){
   ledgerManifestHash:env.LEDGER_MANIFEST_SHA256,ledgerEntries:Number(env.LEDGER_ENTRIES),maxJobs:Number(env.NATIVE_JOB_LIMIT),runAttempt:Number(env.GITHUB_RUN_ATTEMPT)};
  if(env.TARGET_TRACK_IDS!==undefined)pins.targetTrackIds=JSON.parse(env.TARGET_TRACK_IDS);
  if(env.NATIVE_RUNTIME_MINUTES!==undefined){
-  demand(typeof env.NATIVE_RUNTIME_MINUTES==='string'&&/^(8|25)$/.test(env.NATIVE_RUNTIME_MINUTES),'invalid bounded native runtime minutes');
+  demand(typeof env.NATIVE_RUNTIME_MINUTES==='string'&&/^(8|25|90)$/.test(env.NATIVE_RUNTIME_MINUTES),'invalid bounded native runtime minutes');
   pins.maxRuntimeMs=Number(env.NATIVE_RUNTIME_MINUTES)*60000;
  }
  if(env.NATIVE_TARGET_SCOPE!==undefined)pins.targetScope=env.NATIVE_TARGET_SCOPE;
+ pins.budgetPreset=env.SAVED_VERIFICATION_PRESET??'standard';
  demand(env.WARMUP_FIRST_PROOF===undefined||env.WARMUP_FIRST_PROOF==='1','invalid first-proof warmup mode');
  const plan=savedEventDispatchPlan(pins);
+ demand(plan.budgetPreset!=='extended-all'||env.WARMUP_FIRST_PROOF==='1','extended preset requires the fresh first-proof gate');
  demand(/^[a-f0-9]{40}$/.test(env.EXPECTED_SOURCE_COMMIT||''),'exact tested implementation commit required');
  return {plan,testedCommit:env.EXPECTED_SOURCE_COMMIT,warmupFirst:env.WARMUP_FIRST_PROOF==='1'};
+}
+
+export function savedEventSnapshotSparsePatterns(generation){
+ demand(Number.isSafeInteger(generation)&&generation>0,'validated snapshot generation required before Git paths');
+ return `/*\n!/public-snapshots*/\n/public-snapshots${generation}/\n`;
 }
 
 export async function runSavedEventVerification({root,runDirectory,env=process.env},{
  git=(args)=>execFileSync('git',args,{cwd:root,maxBuffer:20*1024*1024}),
  prepare=preparePublishedOfflineVerification,verifyPhase=verifyNativeSnapshotPhase,
- replayAudit=assertSnapshotReplayCompleteness,publishPackage=publishSnapshot,auditPackage=captureBinding}={}){
+ replayAudit=assertSnapshotReplayCompleteness,publishPackage=publishSnapshot,auditPackage=captureBinding,now=Date.now}={}){
  const {plan,testedCommit,warmupFirst}=savedEventWorkflowConfig(env);
+ // One absolute deadline includes preparation; it cannot be renewed by verify/compile.
+ const deadlineOptions=plan.budgetPreset==='extended-all'?{mode:plan.mode,
+  finishDeadlineMs:now()+plan.finishWindowMs,packagingReserveMs:plan.packagingReserveMs}:{};
  demand(git(['rev-parse','HEAD']).toString().trim()===testedCommit,'checkout differs from tested implementation');
  const source=plan.sourceCommit,pins=plan.publishedBaseline;
  demand(sha(git(['show',source+':public-snapshots'+pins.generation+'/index.json']))===pins.indexSha256,'committed public artifact pin differs');
@@ -44,7 +54,8 @@ export async function runSavedEventVerification({root,runDirectory,env=process.e
   await fs.writeFile(file,JSON.stringify({authority:false,resumeAuthority:false,...value})+'\n',{flag:'wx',mode:0o600,flush:true});
  };
  const prepared=await prepare({root,runDirectory,sourceCommit:testedCommit,publishedBaseline:pins,
-  targetScope:plan.targetScope,...(plan.targetTrackIds?{targetTrackIds:plan.targetTrackIds}:{}),maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs},{verifyPhase:input=>verifyPhase({...input,
+  targetScope:plan.targetScope,...(plan.targetTrackIds?{targetTrackIds:plan.targetTrackIds}:{}),maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
+  ...deadlineOptions},{verifyPhase:input=>verifyPhase({...input,
    ...(warmupFirst?{firstProofCheckpoint:record=>save('first-proof-pass',record)}:{}),
    progressCheckpoint:record=>save('progress',record),proofCheckpoint:record=>save('failure-checkpoint',record)})});
  // Verify once, then consume its live compile capability. Serialized evidence is never imported.

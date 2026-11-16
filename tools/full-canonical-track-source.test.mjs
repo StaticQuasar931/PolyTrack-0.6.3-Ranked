@@ -50,3 +50,41 @@ test('missing board and row-total mismatch cannot create a source capability',as
 });
 
 test('a held prior result remains held after faster replacement; source PB dates stay exact',async t=>{const f=await fixture(t,{held:true});const b=f.source.validate(track,await fs.readFile(path.join(f.directory,'tracks',track+'.json')));assert.equal(b.entries[0].reviewHold,true);assert.equal(b.entries[0].runVerified,false);assert.equal(b.entries[0].pbAt,f.row.pbAt);assert.equal(b.entries[0].updatedAt,f.row.updatedAt);});
+
+
+test('complete branded frozen source skips 62 absent track probes without fabricating empty boards',async t=>{
+ const f=await fixture(t),missing=Array.from({length:62},(_,i)=>(i+1).toString(16).padStart(64,'0')),calls=[];
+ assert.equal(f.report.missingPriorCount,0);for(const id of missing)assert.equal(f.source.has(id),false);
+ const now=Date.parse(point)+1000;
+ const fetchImpl=async input=>{
+  const url=new URL(input);calls.push(url.pathname);
+  if(url.pathname==='/v1/snapshot/track')return assert.fail('Frozen complete absence must not probe live Worker');
+  if(url.pathname==='/v1/snapshot/overall')return Response.json({updatedAt:123,revision:1,sourceRevision:1,algorithmVersion:'v1',entries:[{userId:account,name:'Racer',score:10}],trackSummaries:[{trackId:track,updatedAt:123},...missing.map(trackId=>({trackId,updatedAt:123}))]});
+  if(url.pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+  if(url.pathname==='/v1/events/permanent-rolling-hills/snapshot')return new Response('',{status:404});
+  throw Error('Unexpected source '+url.pathname);
+ };
+ const result=await runPublicSnapshotBackup({directory:f.directory,now,trackIds:[track,...missing],trackConfirmationNotBefore:Date.parse(point)+500,trackFetchLimit:512,fullCanonicalSource:f.source,reconcileCanonicalTrack:()=>assert.fail('No canonical rereads'),fetchImpl,log:()=>{}});
+ assert.notEqual(result.deferred,true);assert.equal(calls.includes('/v1/snapshot/track'),false);
+ const manifest=JSON.parse(await fs.readFile(path.join(f.directory,'manifest.json'),'utf8'));
+ for(const id of missing){
+  assert.equal(manifest.tracks[id].path,null);assert.equal(manifest.tracks[id].missing,true);assert.equal(manifest.tracks[id].checkedAt,now);
+  await assert.rejects(fs.access(path.join(f.directory,'tracks',id+'.json')),error=>error.code==='ENOENT');
+ }
+ assert.equal(manifest.trackBackupsPresent,1);assert.equal(manifest.trackBackupsMissing,62);
+ const known=JSON.parse(await fs.readFile(path.join(f.directory,'tracks',track+'.json'),'utf8'));assert.equal(known.entries.length,1);assert.equal(known.entries[0].timeMs,1000);assert.equal(known.entries[0].runVerified,false);
+});
+test('ordinary missing tracks still use the Worker 404 path and cloned capabilities cannot bypass it',async t=>{
+ const f=await fixture(t),missing='d'.repeat(64),directory=path.join(f.directory,'ordinary');let trackCalls=0;
+ const options={directory,now:Date.parse(point)+1000,trackIds:[missing],trackConfirmationNotBefore:Date.parse(point)+500,trackFetchLimit:512,log:()=>{},fetchImpl:async input=>{
+  const url=new URL(input);
+  if(url.pathname==='/v1/snapshot/track'){trackCalls++;return new Response('',{status:404});}
+  if(url.pathname==='/v1/snapshot/overall')return Response.json({updatedAt:123,revision:1,sourceRevision:1,algorithmVersion:'v1',entries:[{userId:account,name:'Racer',score:10}],trackSummaries:[{trackId:missing,updatedAt:123}]});
+  if(url.pathname==='/v1/events/catalog')return Response.json({periods:[],archives:[]});
+  if(url.pathname==='/v1/events/permanent-rolling-hills/snapshot')return new Response('',{status:404});
+  throw Error('Unexpected source '+url.pathname);
+ }};
+ await assert.rejects(runPublicSnapshotBackup({...options,fullCanonicalSource:{...f.source}}),/Opaque full canonical source/);assert.equal(trackCalls,0);
+ const result=await runPublicSnapshotBackup(options);assert.notEqual(result.deferred,true);assert.equal(trackCalls,1);
+ const manifest=JSON.parse(await fs.readFile(path.join(directory,'manifest.json'),'utf8'));assert.equal(manifest.tracks[missing].path,null);assert.equal(manifest.tracks[missing].missing,true);
+});

@@ -53,15 +53,17 @@ test('runtime selection preserves eight minutes by default and admits only expli
  assert.throws(()=>savedEventDispatchPlan({...pins,maxJobs:1025}),/bounded first attempt/);
  assert.throws(()=>savedEventWorkflowConfig({...environment(),NATIVE_RUNTIME_MINUTES:'25',GITHUB_RUN_ATTEMPT:'2'}),/first attempt/);
 });
-test('sidecar verifies once, live-compiles completed proofs, audits a private package, and preserves negative results',async t=>{
+test('extended sidecar passes one fixed publication budget, verifies once and preserves negative results',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'saved-event-sidecar-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const env={...environment(),TARGET_TRACK_IDS:JSON.stringify(['a'.repeat(64)]),NATIVE_RUNTIME_MINUTES:'25',NATIVE_JOB_LIMIT:'1024'};let verified=0,disposed=0,compiled=0;
+ const env={...environment(),TARGET_TRACK_IDS:JSON.stringify(['a'.repeat(64)]),NATIVE_TARGET_SCOPE:'all',SAVED_VERIFICATION_PRESET:'extended-all',
+  NATIVE_RUNTIME_MINUTES:'90',NATIVE_JOB_LIMIT:'10000',WARMUP_FIRST_PROOF:'1'};let verified=0,disposed=0,compiled=0;
  await fs.mkdir(path.join(root,'stage'));await fs.writeFile(path.join(root,'stage/manifest.json'),'{}');
  await fs.mkdir(path.join(root,'events'));await fs.writeFile(path.join(root,'events/public-catalog.json'),'{}');
  await fs.writeFile(path.join(root,'index.html'),'<meta name="polytrack-snapshot" content="./public-snapshots84/">');
  const git=args=>Buffer.from(args[0]==='rev-parse'?env.EXPECTED_SOURCE_COMMIT:args[1].endsWith('/index.json')?'index':'ledger');
- const result=await runSavedEventVerification({root,runDirectory:root,env},{git,prepare:async(options,capabilities)=>{
-  assert.equal(options.targetScope,'events');assert.equal(options.maxJobs,1024);assert.equal(options.maxRuntimeMs,1500000);
+ const result=await runSavedEventVerification({root,runDirectory:root,env},{git,now:()=>1000000,prepare:async(options,capabilities)=>{
+  assert.equal(options.targetScope,'all');assert.equal(options.maxJobs,10000);assert.equal(options.maxRuntimeMs,5400000);
+  assert.equal(options.mode,'postpublication-offline');assert.equal(options.finishDeadlineMs,10000000);assert.equal(options.packagingReserveMs,900000);
   assert.deepEqual(options.targetTrackIds,['a'.repeat(64)]);
   assert.deepEqual(options.publishedBaseline,{generation:84,indexSha256:pins.indexSha256,ledgerManifestHash:pins.ledgerManifestHash,ledgerEntries:19391});
   assert.equal(typeof capabilities.verifyPhase,'function');

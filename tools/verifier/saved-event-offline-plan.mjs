@@ -16,15 +16,20 @@ const adverse=row=>row?.needsReview===true||row?.reviewHold===true||row?.exclude
   /held|review|rejected|mismatch|excluded/.test(String(row?.verificationStatus||row?.status||''));
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 
-export function savedEventDispatchPlan({sourceCommit,generation,indexSha256,ledgerManifestHash,ledgerEntries,maxJobs=64,maxRuntimeMs=480000,runAttempt=1,targetTrackIds,targetScope='events'}={}){
+export function savedEventDispatchPlan({sourceCommit,generation,indexSha256,ledgerManifestHash,ledgerEntries,maxJobs=64,maxRuntimeMs=480000,runAttempt=1,targetTrackIds,targetScope='events',budgetPreset='standard'}={}){
  demand(/^[a-f0-9]{40}$/.test(sourceCommit||'')&&Number.isSafeInteger(generation)&&generation>0&&HASH.test(indexSha256||'')&&
   HASH.test(ledgerManifestHash||'')&&Number.isSafeInteger(ledgerEntries)&&ledgerEntries>=0,'independent public source pins required');
- demand([1,16,64,128,256,512,1024].includes(maxJobs)&&runAttempt===1,'bounded first attempt only; reruns cannot reset native budgets');
- demand([480000,1500000].includes(maxRuntimeMs),'native runtime must be exactly eight or twenty-five minutes');
+ demand(['standard','extended-all'].includes(budgetPreset),'unknown aggregate budget preset');
+ const extended=budgetPreset==='extended-all';
+ demand((extended?maxJobs===10000:[1,16,64,128,256,512,1024].includes(maxJobs))&&runAttempt===1,'bounded first attempt only; reruns cannot reset native budgets');
+ demand(extended?maxRuntimeMs===5400000:[480000,1500000].includes(maxRuntimeMs),'native runtime must match the explicit aggregate preset');
+ demand(!extended||targetScope==='all'&&targetTrackIds!==undefined,'extended preset requires explicit all-lane targets');
  demand(targetScope==='events'||['all','normal'].includes(targetScope)&&targetTrackIds!==undefined,'explicit targets required for combined or normal saved pass');
  const targets=nativeTargetTrackIds(targetScope,targetTrackIds);
  return {workflow:'verify-saved-events.yml',ref:'main',sourceCommit,publishedBaseline:{generation,indexSha256,ledgerManifestHash,ledgerEntries},
-  targetScope,...(targets?{targetTrackIds:targets}:{}),maxJobs,maxRuntimeMs,batchSize:16,standard:resourceLimits('standard'),extended:resourceLimits('extended-local'),
+  targetScope,...(targets?{targetTrackIds:targets}:{}),maxJobs,maxRuntimeMs,
+  ...(extended?{budgetPreset,mode:'postpublication-offline',finishWindowMs:150*60000,packagingReserveMs:900000}:{}),
+  batchSize:16,standard:resourceLimits('standard'),extended:resourceLimits('extended-local'),
   checkpointPolicy:'artifact-only; receipts are not resumable proof authority; no automatic retry',
   backendReads:0,backendWrites:0,capture:false,compile:true,publish:false};
 }

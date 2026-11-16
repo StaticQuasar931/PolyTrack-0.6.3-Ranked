@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 408,
+    "number": 409,
     "version": "0.6.3",
-    "revision": 350,
+    "revision": 351,
     "notes": [
-      "Improved compatibility for updated Event RP totals and standings."
+      "Maintenance for verified leaderboards and event standings."
     ]
   },
   "entries": [
+    {
+      "number": 408,
+      "title": "Bounded snapshot reads and compatible event totals",
+      "commit": "50376d208e2a5e68528c4e00b41ab61fd06d19ce",
+      "committedAt": "2026-11-16T00:48:06.000Z",
+      "notes": [
+        "Improved compatibility for updated Event RP totals and standings."
+      ]
+    },
     {
       "number": 407,
       "title": "Clearer event cards, rank times and update notes",
@@ -199,15 +208,6 @@ const historyData = {
         "Fixed personal-best uploads when you set several records on one track in a session.",
         "Fixed reward claims that could get stuck after earning a newer milestone.",
         "Event personal-best times remain visible when you return to Daily, Weekly, or Kodub tracks."
-      ]
-    },
-    {
-      "number": 388,
-      "title": "More reliable update downloads",
-      "commit": "8aa96636bbbba17260771086c75691195365f8ce",
-      "committedAt": "2026-11-14T22:46:45.000Z",
-      "notes": [
-        "Improved delivery of the latest game update and snapshot files."
       ]
     }
   ],

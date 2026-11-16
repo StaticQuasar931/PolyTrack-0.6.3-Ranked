@@ -1009,6 +1009,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   // Required source rechecks consume the existing budget before ordinary refreshes.
   const selectedTracks = [...sourceRechecks.keys(), ...plannedTracks.filter(id => !sourceRechecks.has(id))].slice(0, trackFetchLimit);
   const trackRows = await mapLimit(selectedTracks, PUBLIC_SNAPSHOT_LIMITS.concurrency, async id => {
+    // The branded complete frozen DB point proves absence; retain the existing 404 result path.
+    if(fullCanonicalSource&&!fullCanonicalSource.has(id))return {id,value:null};
     const value = await fetchJson(fetchImpl, `${WORKER}/v1/snapshot/track?trackId=${encodeURIComponent(id)}`, {optional: true});
     const full = value ? await assemble(value, `/v1/snapshot/track/page?trackId=${encodeURIComponent(id)}`) : null;
     let board = full ? publicTrackBackup(full, id) : null;

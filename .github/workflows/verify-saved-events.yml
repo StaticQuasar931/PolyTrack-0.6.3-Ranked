@@ -23,17 +23,23 @@ on:
       ledger_entries:
         required: true
         type: string
+      budget_preset:
+        description: Extended-all requires explicit 10000 jobs, 90 minutes, all scope and fresh-proof warmup; no per-job limit changes
+        required: true
+        type: choice
+        options: ['standard', 'extended-all']
+        default: 'standard'
       native_job_limit:
         description: One bounded pass; reruns cannot reset this budget
         required: true
         type: choice
-        options: ['256', '512', '1024']
+        options: ['256', '512', '1024', '10000']
         default: '256'
       native_runtime_minutes:
         description: Aggregate native allowance only; original per-job CPU and geometry limits remain unchanged
         required: true
         type: choice
-        options: ['8', '25']
+        options: ['8', '25', '90']
         default: '8'
       target_track_ids:
         description: Exact target track IDs as a nonempty unique JSON array; no capture or proof imports
@@ -62,12 +68,16 @@ jobs:
       group: polytrack-saved-event-offline-verification
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 180 || 60 }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
           persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/public-snapshots*/
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '24'
@@ -82,6 +92,7 @@ jobs:
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
           NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}
+          SAVED_VERIFICATION_PRESET: ${{ inputs.budget_preset }}
           TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
           NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
           WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}
@@ -93,10 +104,13 @@ jobs:
           esac
           node --input-type=module <<'PLAN'
           import {execFileSync} from 'node:child_process';
-          import {savedEventWorkflowConfig} from './tools/verifier/verify-saved-events.mjs';
+          import {savedEventWorkflowConfig,savedEventSnapshotSparsePatterns} from './tools/verifier/verify-saved-events.mjs';
           const config=savedEventWorkflowConfig();
-          if(![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs))throw Error('Hosted pass requires an explicit bounded native allowance');
+          if(config.plan.budgetPreset!=='extended-all'&&(![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs)))throw Error('Hosted pass requires an explicit bounded native allowance');
           if(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==config.testedCommit)throw Error('Tested implementation changed');
+          const generation=config.plan.publishedBaseline.generation;
+          execFileSync('git',['cat-file','-e',`HEAD:public-snapshots${generation}/index.json`]);
+          execFileSync('git',['sparse-checkout','set','--no-cone','--stdin'],{input:savedEventSnapshotSparsePatterns(generation)});
           console.log(JSON.stringify(config));
           PLAN
       - name: Test offline authority and saved-event scope before native setup
@@ -111,7 +125,7 @@ jobs:
           printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Verify and live-compile an audited private candidate without capture or Git publication
-        timeout-minutes: 50
+        timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 165 || 50 }}
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
@@ -121,6 +135,7 @@ jobs:
           LEDGER_ENTRIES: ${{ inputs.ledger_entries }}
           NATIVE_JOB_LIMIT: ${{ inputs.native_job_limit }}
           NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}
+          SAVED_VERIFICATION_PRESET: ${{ inputs.budget_preset }}
           TARGET_TRACK_IDS: ${{ inputs.target_track_ids }}
           NATIVE_TARGET_SCOPE: ${{ inputs.target_scope }}
           WARMUP_FIRST_INPUT: ${{ inputs.warmup_first }}

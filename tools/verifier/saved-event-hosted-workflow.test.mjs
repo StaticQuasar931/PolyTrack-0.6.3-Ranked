@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 // Run from the repository root. The override reviews an external proposal without applying it.
 const root=process.cwd();
 const workflow=await fs.readFile(process.env.PROPOSED_SAVED_WORKFLOW||path.join(root,'.github/workflows/verify-saved-events.yml'),'utf8');
-const {savedEventWorkflowConfig}=await import(pathToFileURL(path.join(root,'tools/verifier/verify-saved-events.mjs')));
+const {savedEventWorkflowConfig,savedEventSnapshotSparsePatterns}=await import(pathToFileURL(path.join(root,'tools/verifier/verify-saved-events.mjs')));
 const environment=()=>({EXPECTED_SOURCE_COMMIT:'a'.repeat(40),SNAPSHOT_SOURCE_COMMIT:'b'.repeat(40),
  SNAPSHOT_GENERATION:'86',SNAPSHOT_INDEX_SHA256:'c'.repeat(64),LEDGER_MANIFEST_SHA256:'d'.repeat(64),
  LEDGER_ENTRIES:'19476',NATIVE_JOB_LIMIT:'256',GITHUB_RUN_ATTEMPT:'1',
@@ -30,15 +30,43 @@ test('boolean warmup uses one or an absent variable, never an invalid empty/fals
  for(const value of ['false','', 'true'])assert.throws(()=>savedEventWorkflowConfig({...environment(),WARMUP_FIRST_PROOF:value}));
 });
 
-test('hosted runtime choices preserve the legacy default and stay inside the existing twenty-five-minute core cap',()=>{
- assert.match(workflow,/^    timeout-minutes: 60$/m);assert.match(workflow,/^        timeout-minutes: 50$/m);
- assert.match(workflow,/options: \['256', '512', '1024'\]/);assert.match(workflow,/default: '256'/);
- assert.match(workflow,/options: \['8', '25'\]/);assert.match(workflow,/default: '8'/);
+test('hosted standard runtime/defaults are unchanged and extended timeouts remain explicitly bounded',()=>{
+ assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 180 || 60 }}"));
+ assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 165 || 50 }}"));
+ assert.match(workflow,/options: \['256', '512', '1024', '10000'\]/);assert.match(workflow,/default: '256'/);
+ assert.match(workflow,/options: \['8', '25', '90'\]/);assert.match(workflow,/default: '8'/);
  assert.equal(workflow.split('NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}').length-1,2);
  assert(workflow.includes('![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs)'));
  const {plan}=savedEventWorkflowConfig(environment());assert.equal(plan.maxJobs,256);assert.equal(plan.maxRuntimeMs,480000);
  const long=savedEventWorkflowConfig({...environment(),NATIVE_JOB_LIMIT:'1024',NATIVE_RUNTIME_MINUTES:'25'}).plan;
  assert.equal(long.maxJobs,1024);assert.equal(long.maxRuntimeMs,1500000);
+});
+
+test('extended-all is exact 10000/90 with all lanes, fresh warmup and at most512 exact targets',()=>{
+ const env={...environment(),SAVED_VERIFICATION_PRESET:'extended-all',NATIVE_JOB_LIMIT:'10000',NATIVE_RUNTIME_MINUTES:'90',WARMUP_FIRST_PROOF:'1',
+  TARGET_TRACK_IDS:JSON.stringify(Array.from({length:512},(_,i)=>i.toString(16).padStart(64,'0')))};
+ const plan=savedEventWorkflowConfig(env).plan,standard=savedEventWorkflowConfig(environment()).plan;
+ assert.equal(plan.maxJobs,10000);assert.equal(plan.maxRuntimeMs,5400000);assert.equal(plan.targetScope,'all');
+ assert.equal(plan.targetTrackIds.length,512);assert.equal(plan.mode,'postpublication-offline');
+ assert.equal(plan.packagingReserveMs,900000);assert.equal(plan.finishWindowMs,150*60000);
+ assert.deepEqual(plan.standard,standard.standard);assert.deepEqual(plan.extended,standard.extended);
+ for(const patch of [{SAVED_VERIFICATION_PRESET:'standard'},{SAVED_VERIFICATION_PRESET:'unknown'},{NATIVE_JOB_LIMIT:'1024'},
+  {NATIVE_RUNTIME_MINUTES:'25'},{NATIVE_TARGET_SCOPE:'events'},{NATIVE_TARGET_SCOPE:'normal'},{GITHUB_RUN_ATTEMPT:'2'},
+  {WARMUP_FIRST_PROOF:undefined},{TARGET_TRACK_IDS:JSON.stringify(Array.from({length:513},(_,i)=>i.toString(16).padStart(64,'0')))}])
+  assert.throws(()=>savedEventWorkflowConfig({...env,...patch}));
+ assert.equal(workflow.split('SAVED_VERIFICATION_PRESET: ${{ inputs.budget_preset }}').length-1,2);
+});
+
+test('checkout excludes historical packages then adds only the validated requested generation after source admission',()=>{
+ assert.match(workflow,/sparse-checkout-cone-mode: false\s+sparse-checkout: \|\s+\/\*\s+!\/public-snapshots\*\//);
+ assert.deepEqual(savedEventSnapshotSparsePatterns(91),'/*\n!/public-snapshots*/\n/public-snapshots91/\n');
+ for(const value of ['91','../91','91\n/foreign/',0,-1,Infinity,1.5])assert.throws(()=>savedEventSnapshotSparsePatterns(value));
+ const config=workflow.indexOf('const config=savedEventWorkflowConfig()'),pin=workflow.indexOf("!==config.testedCommit)throw"),
+  existence=workflow.indexOf("['cat-file','-e',`HEAD:public-snapshots${generation}/index.json`]"),
+  sparse=workflow.indexOf("['sparse-checkout','set','--no-cone','--stdin']");
+ assert(config>=0&&pin>config&&existence>pin&&sparse>existence);
+ assert.doesNotMatch(workflow,/ref:\s*\$\{\{\s*inputs\./);
+ assert.equal(workflow.split('uses: actions/checkout@').length-1,1);
 });
 
 test('existing commit/source pins, first-attempt guard and malformed-target rejection remain mandatory',()=>{

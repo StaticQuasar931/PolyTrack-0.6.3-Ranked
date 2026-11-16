@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 408,
+  "number": 409,
   "version": "0.6.3",
-  "revision": 350,
+  "revision": 351,
   "notes": [
-    "Improved compatibility for updated Event RP totals and standings."
+    "Maintenance for verified leaderboards and event standings."
   ],
-  "preparedAt": "2026-11-16T00:46:16.000Z",
-  "committedAt": "2026-11-16T00:48:06.000Z"
+  "preparedAt": "2026-11-16T01:56:06.000Z",
+  "committedAt": "2026-11-16T01:56:19.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
