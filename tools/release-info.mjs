@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 411,
+  "number": 413,
   "version": "0.6.3",
-  "revision": 353,
+  "revision": 354,
   "notes": [
-    "Event previews stay consistent when snapshot captures take longer."
+    "Rank durations now say at rank, and replay verification prioritizes more visible results."
   ],
-  "preparedAt": "2026-11-16T03:13:33.012Z",
-  "committedAt": "2026-11-16T03:13:34.000Z"
+  "preparedAt": "2026-11-16T04:33:47.503Z",
+  "committedAt": "2026-11-16T04:33:49.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

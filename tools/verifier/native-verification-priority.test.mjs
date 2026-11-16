@@ -47,3 +47,22 @@ test('explicit Rolling Hills priority follows live event proofs without changing
  const hill={...normal(1,1),trackId:id(90)},busy={...normal(2,999),trackId:id(91)},live=event(3,'kodub');const result=prioritizeNativeTargets({jobs:[busy,hill,live],preferredTrackIds:[id(90)],eventBoards:[board('kodub')],normalBoards:[{trackId:id(91),weight:10}],policy:{knownTrackIds:[track,id(90),id(91)]},now:1000,eventFirst:true});assert.deepEqual(result.jobs,[live,hill,busy]);assert.equal(hill.verified,undefined);
  assert.throws(()=>prioritizeNativeTargets({jobs:[],preferredTrackIds:['not-a-track'],now:1000}));
 });
+
+test('front-page exposure outranks a deep run on a slightly heavier track',()=>{
+ const popular=id(90),other=id(91),first={...normal(1,5),trackId:popular,timeMs:900},
+  deep={...normal(2,999),trackId:popular,timeMs:2000},second={...normal(3,1),trackId:other,timeMs:1000};
+ const jobs=[deep,second,first],normalBoards=[{trackId:popular,weight:10,entries:[
+  {accountId:first.accountId,rank:1},{accountId:deep.accountId,rank:3012}]},
+  {trackId:other,weight:9,entries:[{accountId:second.accountId,rank:2}]}];
+ const result=prioritizeNativeTargets({jobs,normalBoards,policy:{knownTrackIds:[popular,other]},now:1000});
+ assert.deepEqual(result.jobs,[first,second,deep]);assert.deepEqual(jobs,[deep,second,first]);
+ assert.deepEqual(prioritizeNativeTargets({jobs:jobs.toReversed(),normalBoards,policy:{knownTrackIds:[popular,other]},now:1000}).jobs,result.jobs);
+});
+
+test('Rolling Hills preference applies to first place, not every run on that board',()=>{
+ const hill=id(90),busy=id(91),top={...normal(1,1),trackId:hill},deep={...normal(2,999),trackId:hill},front={...normal(3,2),trackId:busy};
+ const result=prioritizeNativeTargets({jobs:[deep,front,top],preferredTrackIds:[hill],normalBoards:[
+  {trackId:hill,weight:2,entries:[{accountId:top.accountId,rank:1},{accountId:deep.accountId,rank:500}]},
+  {trackId:busy,weight:10,entries:[{accountId:front.accountId,rank:2}]}],policy:{knownTrackIds:[hill,busy]},now:1000});
+ assert.deepEqual(result.jobs,[top,front,deep]);
+});

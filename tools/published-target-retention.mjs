@@ -54,7 +54,12 @@ export async function loadPublishedTargetRetention({root,directory,pins,targetTr
  const ledger=readLedger({root:path.join(root,'verification-ledger'),expectedManifestHash:pins.ledgerManifestHash});
  demand(ledger.entries.length===pins.ledgerEntries,'source ledger count mismatch');
  data.entries=structuredClone(ledger.entries);
- for(const {board}of baseline.boards)if(!normalOnly&&tracks.includes(board.period.trackId))data.periods.add(board.id);
+ const referencedEventMedia=new Set();
+ for(const {board}of baseline.boards)if(!normalOnly&&tracks.includes(board.period.trackId)){
+  data.periods.add(board.id);
+  for(const row of board.entries)referencedEventMedia.add(`event-replays/${board.id}/${row.accountId}.json`);
+  for(const row of board.pendingPlaybacks||[])referencedEventMedia.add(`event-playbacks/${board.id}/${row.runId}.json`);
+ }
  const index=JSON.parse(await readPrivateSnapshotIndex(path.join(root,data.currentdir,'index.json'))),paging=new Map();
  const isPagingPath=name=>/^(?:snapshot-paging\.json|overall-manifest\.json|(?:track-manifests|track-pages|overall-pages)\/)/.test(name);
  // Proof files are not rehydrated as authority. Each selected payload is independently authenticated.
@@ -68,12 +73,15 @@ export async function loadPublishedTargetRetention({root,directory,pins,targetTr
   demand((await bytes(directory,name)).equals(decoded),'staging differs from published source: '+name);
   const event=/^(?:events|event-replays|event-playbacks)\/([^/.]+)/.exec(name),target=event&&data.periods.has(event[1]);
   let targetKey;
-  if(target&&/^event-(?:replays|playbacks)\//.test(name)){
+  const eventMedia=/^event-(?:replays|playbacks)\//.test(name);
+  const referencedTargetMedia=target&&eventMedia&&referencedEventMedia.has(name);
+  if(referencedTargetMedia){
    const raw=JSON.parse(decoded);targetKey=ledgerKey(ledgerBinding({...raw,lane:'event',frames:raw.frames??raw.timeMs,uploadId:raw.uploadId??null}));
   }
   return {name,pin:hash(decoded),paging:isPagingPath(name)?{decoded,value:JSON.parse(decoded)}:null,
    manifest:name==='manifest.json'?JSON.parse(decoded):null,targetKey,
-   protect:name!=='manifest.json'&&!target&&
+   // Archived orphan media remains immutable, not an invented verification target.
+   protect:name!=='manifest.json'&&(!target||eventMedia&&!referencedTargetMedia)&&
     (name==='event-totals.json'||name==='events/permanent-rolling-hills.json'?retainRolling:true)};
  });
  for(const item of checked){
@@ -158,5 +166,5 @@ export function assertPublishedTargetJobs(token,jobs){
  const old=new Set(data.entries.map(row=>row.key)),expected=new Set([...data.allowed].filter(key=>!old.has(key)));
  const actual=new Set(jobs.map(job=>ledgerKey(ledgerBinding(job))));
  demand(actual.size===jobs.length&&actual.size===expected.size&&[...actual].every(key=>expected.has(key)),
-  'native target inventory differs from exact published pending bindings');
+  `native target inventory differs from exact published pending bindings (${expected.size} expected, ${actual.size} scheduled)`);
 }
