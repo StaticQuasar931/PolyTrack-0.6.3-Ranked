@@ -2,14 +2,51 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 414,
+    "number": 418,
     "version": "0.6.3",
-    "revision": 355,
+    "revision": 358,
     "notes": [
-      "The current Kodub weekly track is up to date and ready for replay verification."
+      "Update history now matches the installed game version."
     ]
   },
   "entries": [
+    {
+      "number": null,
+      "title": "Synchronize generated release-history module",
+      "commit": "1bbcf1a9b6f7fb4a93186943c1a08c68f8186b5e",
+      "committedAt": "2026-11-16T05:24:27.000Z",
+      "notes": []
+    },
+    {
+      "number": 416,
+      "title": "Sync release archive and test native Garage startup readiness",
+      "commit": "25342283b51390fa076d2b6cc88c592b5a48ba0b",
+      "committedAt": "2026-11-16T05:23:09.000Z",
+      "notes": [
+        "Earlier update notes now stay in sync with the current release."
+      ]
+    },
+    {
+      "number": 415,
+      "title": "Clarify rankings and event cards and preserve offline verification sources",
+      "commit": "0d504b8072349ef8af7242cf8ab7ee0f03503dbd",
+      "committedAt": "2026-11-16T05:21:58.000Z",
+      "notes": [
+        "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
+        "Top Tracks adds a Non-official view for community and extra tracks.",
+        "Event cards have clearer spacing and uncropped weekly artwork.",
+        "New snapshot data can now appear through Update available."
+      ]
+    },
+    {
+      "number": 414,
+      "title": "Enable reviewed Uplink replay verification and refresh weekly fallback",
+      "commit": "5cc13313ac7c8e965ca25b7b1bd32cfe012644c0",
+      "committedAt": "2026-11-16T04:44:50.000Z",
+      "notes": [
+        "The current Kodub weekly track is up to date and ready for replay verification."
+      ]
+    },
     {
       "number": 413,
       "title": "Fix saved verification targets and clarify rank duration",
@@ -164,46 +201,6 @@ const historyData = {
         "Weekly spotlight artwork now fits its card without being cropped.",
         "Achievement goals, cosmetic unlocks, and coin milestones are easier to tell apart.",
         "The Shop adds sorting, and playtime is shown more precisely."
-      ]
-    },
-    {
-      "number": 396,
-      "title": "Maintenance update",
-      "commit": "f099e5e6d259bfaeb5da4c6e099c11b03587defc",
-      "committedAt": "2026-11-15T03:12:59.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 395,
-      "title": "More reliable car previews and saved designs",
-      "commit": "b4c0d40479b8e33602dc58c1783c4d02a88a4752",
-      "committedAt": "2026-11-15T02:08:48.000Z",
-      "notes": [
-        "Car finishes keep both paint colors, and accessories fit the car more closely.",
-        "Eligible rewards sync automatically, with checks to limit repeat claims.",
-        "Live previews, Undo, and Restore keep your saved work more reliably."
-      ]
-    },
-    {
-      "number": 394,
-      "title": "Maintenance update",
-      "commit": "7685e42f93986d59adc3cfbf7e3270d13a82450b",
-      "committedAt": "2026-11-15T02:01:33.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 393,
-      "title": "Clearer event details and profile shortcuts",
-      "commit": "75649ddd74448b0fe0fb6b258dc56af0043eaf82",
-      "committedAt": "2026-11-15T01:40:51.000Z",
-      "notes": [
-        "Event names, cached placements, and Rolling Hills RP run details are clearer.",
-        "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
-        "Local personal bests can show a podium target without being presented as confirmed medals."
       ]
     }
   ],

@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 414,
+  "number": 418,
   "version": "0.6.3",
-  "revision": 355,
+  "revision": 358,
   "notes": [
-    "The current Kodub weekly track is up to date and ready for replay verification."
+    "Update history now matches the installed game version."
   ],
-  "preparedAt": "2026-11-16T04:44:48.144Z",
-  "committedAt": "2026-11-16T04:44:50.000Z"
+  "preparedAt": "2026-11-16T05:24:58.514Z",
+  "committedAt": "2026-11-16T05:25:41.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
