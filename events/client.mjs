@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=365';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=365';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=366';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=366';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=365';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=365';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=365';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=366';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=366';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=366';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -49,7 +49,7 @@ export function permanentRollingReward(board,totals,accepted=null){
 }
 export function permanentRollingRunPresentation(row,board){
   const award=publishedEventAwardPresentation(row);
-  if(award.status==='awarded')return {text:award.score.toLocaleString('en-US')+' ERP',title:'Published earned ERP for this verified run: '+award.score.toLocaleString('en-US')+' ERP. Not the reward cap or lifetime total.',estimated:false};
+  if(award.status==='awarded')return {text:award.score.toLocaleString('en-US')+' ERP',title:'ERP: '+award.score.toLocaleString('en-US'),estimated:false};
   const policy=permanentRollingPolicy(board);
   if(award.status==='pending'&&policy?.scoreVersion==='rolling-hills-pace-placement-v2'&&
     board.totalEntries===board.entries.length&&board.entries.length>0&&board.entries.length<=10000&&board.ranksExact!==false&&board.totalEntriesExact!==false&&
@@ -69,7 +69,7 @@ export function permanentRollingRunPresentation(row,board){
       return {text:award.text,title:'ERP pending. Consistent published target, time and competition rank metadata is required for an estimate.',estimated:false};
     const estimate=Math.floor(10101*(board.targetMs/row.timeMs)**2/rank**.75);
     return {text:'Estimated '+estimate.toLocaleString('en-US')+' ERP if verified',
-      title:'Unverified estimate only: floor(10,101 * (targetMs / timeMs)^2 / rank^0.75), using target '+board.targetMs+' ms, run '+row.timeMs+' ms and competition rank '+rank+' against the complete saved hybrid v2 field. No ERP has been awarded; the field and verification outcome may change.',estimated:true};
+      title:'Estimated ERP: '+estimate.toLocaleString('en-US')+' if verified. Not awarded yet.',estimated:true};
   }
   return {text:award.text||'ERP unavailable',title:award.title,estimated:false};
 }
@@ -86,13 +86,13 @@ export function rollingEventBadgePresentation(normalRow,board,trackId=normalRow?
     const actual=publishedEventAwardPresentation(entry);
     if(actual.status!=='awarded')return null;
     return {text:actual.score.toLocaleString('en-US')+' ERP',estimated:false,
-      title:'Published Rolling Hills earned ERP for this exact PB: '+actual.score.toLocaleString('en-US')+' ERP. Not the cap or lifetime total.'};
+      title:'ERP: '+actual.score.toLocaleString('en-US')};
   }
   if(normalRow.local===true||normalRow.localPending===true||!eventRowVerified(normalRow)||
     normalRow.physicsVerified!==true||normalRow.replayIntegrityVerified!==true)return null;
   const provisional=permanentRollingRunPresentation({...normalRow,accountId,timeMs,rank:undefined,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting'},board);
   if(!provisional.estimated)return null;
-  return {...provisional,title:'Eligible estimate only, not published earned ERP. '+provisional.title};
+  return provisional;
 }
 export function createRollingEventErpDecorator(bridge,getBoard){
   const bindings=new WeakMap();
@@ -210,7 +210,7 @@ export function decorateEventRowPresentation(button,row,at=Date.now()){
     if(text)text.textContent='Date unavailable';
   }
   const earned=publishedEventAwardPresentation(row);
-  const tooltip=earned.status==='awarded'?label.replace(/ - Verified$/, '')+' · Published earned ERP: '+earned.score.toLocaleString('en-US')+' ERP. Not the reward cap or lifetime total. - Verified':label;
+  const tooltip=earned.status==='awarded'?label.replace(/ - Verified$/, ' - Run verified')+' | ERP: '+earned.score.toLocaleString('en-US'):label;
   if(earned.status==='awarded'&&icon)icon.title=tooltip;
   else if(icon)icon.removeAttribute?.('title');
   state.title=tooltip;state.setAttribute('aria-label',tooltip);
@@ -329,7 +329,7 @@ export function eventRpPresentation(row){
   const groupScore=typeof row.groupRp==='number'?row.groupRp:typeof row.groupRp==='string'&&/^\d+$/.test(row.groupRp)?Number(row.groupRp):null;
   const groupText=group?(Number.isSafeInteger(groupScore)&&groupScore>=0?groupScore+' Group ERP':'Group ERP unavailable'):null;
   return {available,score:available?score:null,groupText,text:(available?score+' ERP':'ERP unavailable')+(groupText?' · '+groupText:''),
-    title:(available?'Published earned ERP for this verified event run: '+score.toLocaleString('en-US')+' ERP. Not the maximum reward or lifetime total.':'No valid published Event RP is available for this result.')+(group?' Filtered group ERP is separate and does not replace this earned award.':'')};
+    title:(available?'ERP: '+score.toLocaleString('en-US'):'ERP unavailable.')+(group?' Group ERP is separate.':'')};
 }
 export function eventVerifiedPendingMatch(board,candidate){
   const period=board?.period;
