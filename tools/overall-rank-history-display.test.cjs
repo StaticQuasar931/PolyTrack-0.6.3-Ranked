@@ -17,9 +17,27 @@ test('a failed static request cannot leave newly rendered rows loading forever',
 
 test('a new snapshot has a distinct history cache key even without a site revision',()=>{assert.match(source,/overall-rank-history\.json\?v='\+extraCatalogRevision\+'&snapshot='\+directory/);});
 
-test('unchanged rank is one clear duration with an explicit at-rank label',()=>{const state={since:1000,until:9000,count:5};assert.equal(context.rankTenureText({rank:8,movement:0},state,true,1000+2*86400000),'2 days at rank');});
-test('single saved rank still shows elapsed time, never first observation',()=>{assert.equal(context.rankTenureText({rank:27},{since:1000,until:1000,count:1},true,1000+16*3600000),'16 hours at rank');});
-test('movement and rank time share one line and advance with the clock',()=>{const state={since:1000,until:9000,count:1};assert.equal(context.rankTenureText({rank:2,movement:3},state,true,1000+3600000),'\u25b2 3 · 1 hour at rank');assert.equal(context.rankTenureText({rank:2,movement:-1},state,true,1000+2*3600000),'\u25bc 1 · 2 hours at rank');});
-test('newly dated rank uses a real short duration rather than a first-observation label',()=>{assert.equal(context.rankTenureText({rank:1},{since:1000},false,1100),'Under a minute at rank');});
+test('unchanged rank is one clear duration with an explicit at-rank label',()=>{const state={since:1000,until:9000,count:5};assert.equal(context.rankTenureText({rank:8,movement:0},state,true,1000+2*86400000),'2d at rank');});
+test('single saved rank still shows elapsed time, never first observation',()=>{assert.equal(context.rankTenureText({rank:27},{since:1000,until:1000,count:1},true,1000+16*3600000),'16h at rank');});
+test('movement and rank time share one line and advance with the clock',()=>{const state={since:1000,until:9000,count:1};assert.equal(context.rankTenureText({rank:2,movement:3},state,true,1000+3600000),'\u25b2 3 · 1h at rank');assert.equal(context.rankTenureText({rank:2,movement:-1},state,true,1000+2*3600000),'\u25bc 1 · 2h at rank');});
+test('newly dated rank uses a real short duration rather than a first-observation label',()=>{assert.equal(context.rankTenureText({rank:1},{since:1000},false,1100),'<1m at rank');});
 test('missing dates never borrow signup time or invent tenure',()=>{assert.equal(context.rankTenureText({rank:1,accountCreatedAt:1},null,false,10000),'');});
+
+test('movement expires after three days, with no guessed movement date',()=>{
+  const entry={rank:2,movement:4},state={since:1000};
+  assert.equal(context.rankTenureText(entry,state,true,1000+3*86400000),'\u25b2 4 · 3d at rank');
+  assert.equal(context.rankTenureText(entry,state,true,1001+3*86400000),'3d at rank');
+  assert.equal(context.rankTenureText(entry,state,true,1000+8*86400000),'8d at rank');
+  assert.equal(context.rankTenureText(entry,null,true,10000),'');
+  assert.equal(context.recentRankMovement(entry,state,999),0);
+});
+
+test('rank duration is compact, gray and aligned with the best-track text',()=>{
+  const markup=source.slice(source.indexOf('  function observedRankMarkup('),source.indexOf('  function movementMarkup('));
+  assert.match(markup,/align-self:flex-start;justify-content:flex-start;text-align:left;font-size:12px!important/);
+  assert.match(markup,/color:#aeb8cc/);
+  const refresh=source.slice(source.indexOf('  function refreshObservedRankLabels('),source.indexOf('  function loadOverallRankHistory('));
+  assert.match(refresh,/recentRankMovement\(entry,state\)/);
+  assert.match(refresh,/toggle\('flat',movement===0\)/);
+});
 test('overall category emits only the combined label, and profile uses a plain rank heading',()=>{const section=source.slice(source.indexOf('  function categoryContextMarkup('),source.indexOf('  function categoryTrackMarkup('));assert.match(section,/overallCategory==='overall'\)return observedRankMarkup\(entry,true\)/);assert.doesNotMatch(section,/movementMarkup\(entry\?\.movement/);assert.match(source,/'At current rank','Elapsed time/);});

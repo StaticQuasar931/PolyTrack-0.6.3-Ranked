@@ -91,8 +91,9 @@ export function fitKodubCover(card){
   }
   const apply=()=>{
     const ratio=image.naturalWidth/image.naturalHeight;
-    if(Number.isFinite(ratio)&&ratio>0&&button.style.getPropertyValue('--kodub-cover-ratio')!==String(ratio))
-      button.style.setProperty('--kodub-cover-ratio',String(ratio));
+    if(!Number.isFinite(ratio)||ratio<=0)return;
+    for(const node of [button,card,rail])if(node&&node.style.getPropertyValue('--kodub-cover-ratio')!==String(ratio))
+      node.style.setProperty('--kodub-cover-ratio',String(ratio));
   };
   if(coverBindings.get(image)!==button){coverBindings.set(image,button);image.addEventListener('load',apply);}
   apply();

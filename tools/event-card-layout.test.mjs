@@ -37,10 +37,10 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
     await call('Network.enable');await call('Network.setBlockedURLs',{urls:['http://*','https://*']});
     await call('Page.navigate',{url:'data:text/html;base64,'+Buffer.from(html).toString('base64')});
     await evaluate('Promise.all([...document.images].map(i=>i.decode())).then(()=>document.fonts.ready).then(()=>true)');
-    for(const [width,height] of [[320,568],[390,844],[700,900],[701,900],[844,390],[1366,768],[1920,1080]]) {
+    for(const [width,height] of [[320,568],[390,844],[701,900],[1280,800],[844,390],[1366,768],[1920,1080]]) {
       await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
       await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
-      const g=await evaluate(`(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}};const wrapper=document.querySelector('.sq-kodub-weekly'),card=wrapper.firstElementChild,img=card.querySelector('img'),info=card.querySelector('.track-of-the-week-info');const cards=[...document.querySelectorAll('.sq-featured-events>.track>.button,.sq-event-card')];const feet=[...document.querySelectorAll('.sq-permanent-note,.sq-event-card-details')];return {card:rect(card),wrapper:rect(wrapper),img:rect(img),ratio:img.naturalWidth/img.naturalHeight,fit:getComputedStyle(img).objectFit,info:rect(info),align:getComputedStyle(info).textAlign,cards:cards.map(rect),feet:feet.map(e=>({rect:rect(e),card:rect(e.closest('button')),align:getComputedStyle(e).textAlign})),pb:[...card.querySelectorAll('.personal-best>div')].map(rect),panelOverflow:wrapper.scrollWidth>wrapper.clientWidth+1,contents:[...info.children].map(rect),overflow:document.documentElement.scrollWidth>innerWidth+1}})()`);
+      const g=await evaluate(`(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}};const wrapper=document.querySelector('.sq-kodub-weekly'),card=wrapper.firstElementChild,img=card.querySelector('img'),info=card.querySelector('.track-of-the-week-info');const cards=[...document.querySelectorAll('.sq-featured-events>.track>.button,.sq-event-card')];const feet=[...document.querySelectorAll('.sq-permanent-note,.sq-event-card-details')];return {card:rect(card),wrapper:rect(wrapper),img:rect(img),ratio:img.naturalWidth/img.naturalHeight,fit:getComputedStyle(img).objectFit,info:rect(info),align:getComputedStyle(info).textAlign,cards:cards.map(rect),order:cards.map(e=>({id:e.closest('.sq-kodub-weekly')?'kodub':e.closest('.sq-permanent-track')?'rhr':e.dataset.eventKind,...rect(e)})),reward:{...rect(info.querySelector('.sq-kodub-reward')),position:getComputedStyle(info.querySelector('.sq-kodub-reward')).position},records:[...document.querySelectorAll('.sq-permanent-track .record,.sq-event-card>.sq-event-record')].map(e=>({top:getComputedStyle(e).borderTopWidth,bottom:getComputedStyle(e).borderBottomWidth})),feet:feet.map(e=>({rect:rect(e),card:rect(e.closest('button')),align:getComputedStyle(e).textAlign})),pb:[...card.querySelectorAll('.personal-best>div')].map(rect),panelOverflow:wrapper.scrollWidth>wrapper.clientWidth+1,contents:[...info.children].map(rect),overflow:document.documentElement.scrollWidth>innerWidth+1}})()`);
       const label=width+'x'+height;
       const compact=width<=900||width<=1200&&height<=500;
       for(const c of g.cards.slice(compact?1:0))assert.ok(Math.abs(c.height-(compact?g.cards[1].height:g.card.height))<1,label+' same outer height');
@@ -58,6 +58,14 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
       assert.ok(g.img.y>=g.wrapper.y-1&&g.img.bottom<=g.wrapper.bottom+1,label+' art not clipped vertically');
       assert.ok(g.info.right<=g.card.right+1,label+' complete details remain inside scrollable button '+JSON.stringify(g));
       if(width>=1201)assert.ok(g.card.width<=g.wrapper.width+1,label+' desktop details visible without scrolling');
+      assert.equal(g.reward.position,'static',label+' reward in normal flow');
+      assert.ok(Math.abs((g.reward.x+g.reward.right)/2-(g.info.x+g.info.right)/2)<1,label+' reward centered in details');
+      assert.ok(g.records.every(r=>r.top==='0px'&&r.bottom==='0px'),label+' no double record divider');
+      if(width>=1201){
+        const order=[...g.order].sort((a,b)=>Math.abs(a.y-b.y)>1?a.y-b.y:a.x-b.x).map(r=>r.id);
+        assert.deepEqual(order,width>=1701?['kodub','rhr','daily','weekly']:['kodub','daily','rhr','weekly'],label+' requested visual order');
+        if(width<1701){assert.ok(g.wrapper.width-g.img.width<=345,label+' bounded details width');assert.ok(Math.abs((g.wrapper.x+g.wrapper.right)/2-width/2)<10,label+' centered full-row card');}
+      }
       assert.equal(g.align,'center');assert.ok(Math.abs(g.pb[0].height-g.pb[1].height)<1,label+' equal PB heights');
       const offsets=g.feet.map(f=>f.card.bottom-f.rect.bottom);
       assert.ok(Math.max(...offsets)-Math.min(...offsets)<1,label+' footer baseline');
