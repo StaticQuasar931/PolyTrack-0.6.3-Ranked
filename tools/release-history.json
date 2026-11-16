@@ -1,14 +1,35 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 414,
+    "number": 416,
     "version": "0.6.3",
-    "revision": 355,
+    "revision": 357,
     "notes": [
-      "The current Kodub weekly track is up to date and ready for replay verification."
+      "Earlier update notes now stay in sync with the current release."
     ]
   },
   "entries": [
+    {
+      "number": 415,
+      "title": "Clarify rankings and event cards and preserve offline verification sources",
+      "commit": "0d504b8072349ef8af7242cf8ab7ee0f03503dbd",
+      "committedAt": "2026-11-16T05:21:58.000Z",
+      "notes": [
+        "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
+        "Top Tracks adds a Non-official view for community and extra tracks.",
+        "Event cards have clearer spacing and uncropped weekly artwork.",
+        "New snapshot data can now appear through Update available."
+      ]
+    },
+    {
+      "number": 414,
+      "title": "Enable reviewed Uplink replay verification and refresh weekly fallback",
+      "commit": "5cc13313ac7c8e965ca25b7b1bd32cfe012644c0",
+      "committedAt": "2026-11-16T04:44:50.000Z",
+      "notes": [
+        "The current Kodub weekly track is up to date and ready for replay verification."
+      ]
+    },
     {
       "number": 413,
       "title": "Fix saved verification targets and clarify rank duration",
@@ -183,26 +204,6 @@
         "Car finishes keep both paint colors, and accessories fit the car more closely.",
         "Eligible rewards sync automatically, with checks to limit repeat claims.",
         "Live previews, Undo, and Restore keep your saved work more reliably."
-      ]
-    },
-    {
-      "number": 394,
-      "title": "Maintenance update",
-      "commit": "7685e42f93986d59adc3cfbf7e3270d13a82450b",
-      "committedAt": "2026-11-15T02:01:33.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 393,
-      "title": "Clearer event details and profile shortcuts",
-      "commit": "75649ddd74448b0fe0fb6b258dc56af0043eaf82",
-      "committedAt": "2026-11-15T01:40:51.000Z",
-      "notes": [
-        "Event names, cached placements, and Rolling Hills RP run details are clearer.",
-        "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
-        "Local personal bests can show a podium target without being presented as confirmed medals."
       ]
     }
   ],

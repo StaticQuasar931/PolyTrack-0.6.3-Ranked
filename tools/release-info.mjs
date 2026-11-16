@@ -1,15 +1,12 @@
 const releaseInfo = {
-  "number": 415,
+  "number": 416,
   "version": "0.6.3",
-  "revision": 356,
+  "revision": 357,
   "notes": [
-    "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
-    "Top Tracks adds a Non-official view for community and extra tracks.",
-    "Event cards have clearer spacing and uncropped weekly artwork.",
-    "New snapshot data can now appear through Update available."
+    "Earlier update notes now stay in sync with the current release."
   ],
-  "preparedAt": "2026-11-16T05:15:51.544Z",
-  "committedAt": "2026-11-16T05:21:58.000Z"
+  "preparedAt": "2026-11-16T05:23:08.078Z",
+  "committedAt": "2026-11-16T05:23:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
