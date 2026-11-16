@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 411,
+    "number": 413,
     "version": "0.6.3",
-    "revision": 353,
+    "revision": 354,
     "notes": [
-      "Event previews stay consistent when snapshot captures take longer."
+      "Rank durations now say at rank, and replay verification prioritizes more visible results."
     ]
   },
   "entries": [
+    {
+      "number": 411,
+      "title": "Keep captured event observation times accurate",
+      "commit": "e9008e8f6446550292bf95f8a49c141acd5d26f7",
+      "committedAt": "2026-11-16T03:13:34.000Z",
+      "notes": [
+        "Event previews stay consistent when snapshot captures take longer."
+      ]
+    },
     {
       "number": 410,
       "title": "Preserve audited verification proofs after catalog updates",
@@ -193,15 +202,6 @@ const historyData = {
       "title": "Maintenance update",
       "commit": "60922970ed7d31bbf2866e179a1c0374ae43a51b",
       "committedAt": "2026-11-15T00:49:08.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 391,
-      "title": "Maintenance update",
-      "commit": "1c515ef2bb54df5756d77fed366f9ca099a6e129",
-      "committedAt": "2026-11-15T00:02:44.000Z",
       "notes": [
         "No gameplay changes in this update."
       ]
