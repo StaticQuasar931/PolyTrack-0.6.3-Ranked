@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 425,
+  "number": 426,
   "version": "0.6.3",
-  "revision": 364,
+  "revision": 365,
   "notes": [
-    "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
-    "Made the Rolling Hills Racer reward and no-reset message easier to read."
+    "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
+    "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
   ],
-  "preparedAt": "2026-11-16T07:45:24.968Z",
-  "committedAt": "2026-11-16T07:48:40.000Z"
+  "preparedAt": "2026-11-16T08:27:00.266Z",
+  "committedAt": "2026-11-16T08:27:34.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
