@@ -2,14 +2,68 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 428,
+    "number": 435,
     "version": "0.6.3",
-    "revision": 367,
+    "revision": 373,
     "notes": [
-      "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
+      "Fixed a release packaging check so the latest update can reach CDN players."
     ]
   },
   "entries": [
+    {
+      "number": 434,
+      "title": "Batch saved snapshot checkout for offline benchmarks",
+      "commit": "d81a005893138422118a6474c9d0ed3c2f962e7d",
+      "committedAt": "2026-11-16T11:07:08.000Z",
+      "notes": [
+        "Reduced snapshot download overhead for background replay checks."
+      ]
+    },
+    {
+      "number": 433,
+      "title": "Align cleanup test with sandboxed native browser",
+      "commit": "28431ad14a917cae8d6a99b5f2d4bfe4153b1975",
+      "committedAt": "2026-11-16T11:03:32.000Z",
+      "notes": [
+        "Fixed a background replay-check startup issue so saved-run verification can proceed."
+      ]
+    },
+    {
+      "number": 432,
+      "title": "Add offline replay benchmark and consistency audit",
+      "commit": "38b8c989de127e4683220d1d0d4ffa409c98905e",
+      "committedAt": "2026-11-16T10:59:06.000Z",
+      "notes": [
+        "Expanded saved-replay checks to help keep race results and leaderboards fair."
+      ]
+    },
+    {
+      "number": 431,
+      "title": "Add bounded two-engine offline verification option",
+      "commit": "126a97c902f1c6ff0b6f015d7f7b33464d7c168b",
+      "committedAt": "2026-11-16T10:43:32.000Z",
+      "notes": [
+        "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
+      ]
+    },
+    {
+      "number": 429,
+      "title": "Reuse native replay validators and remove idle rendering",
+      "commit": "0b93d557512180ae324b6a97f7506a8e5b6720df",
+      "committedAt": "2026-11-16T10:19:58.000Z",
+      "notes": [
+        "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
+      ]
+    },
+    {
+      "number": 428,
+      "title": "Speed up snapshot packaging and verification checkpoints",
+      "commit": "c8c04331a3a8431467f74a84e401d5ae4d149058",
+      "committedAt": "2026-11-16T09:30:50.000Z",
+      "notes": [
+        "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
+      ]
+    },
     {
       "number": 427,
       "title": "Simplify event points and verification tooltips",
@@ -140,63 +194,6 @@ const historyData = {
       "committedAt": "2026-11-16T04:33:49.000Z",
       "notes": [
         "Rank durations now say at rank, and replay verification prioritizes more visible results."
-      ]
-    },
-    {
-      "number": 411,
-      "title": "Keep captured event observation times accurate",
-      "commit": "e9008e8f6446550292bf95f8a49c141acd5d26f7",
-      "committedAt": "2026-11-16T03:13:34.000Z",
-      "notes": [
-        "Event previews stay consistent when snapshot captures take longer."
-      ]
-    },
-    {
-      "number": 410,
-      "title": "Preserve audited verification proofs after catalog updates",
-      "commit": "bf565987d28a2862d740288dc4fb80b060bf51e7",
-      "committedAt": "2026-11-16T02:59:07.000Z",
-      "notes": [
-        "Previously verified runs stay recognized after track catalog updates."
-      ]
-    },
-    {
-      "number": 409,
-      "title": "Faster snapshot completion and extended offline verification",
-      "commit": "7b820d1709ead569b18d5f0dc8d30c98117e5d40",
-      "committedAt": "2026-11-16T01:56:19.000Z",
-      "notes": [
-        "Maintenance for verified leaderboards and event standings."
-      ]
-    },
-    {
-      "number": 408,
-      "title": "Bounded snapshot reads and compatible event totals",
-      "commit": "50376d208e2a5e68528c4e00b41ab61fd06d19ce",
-      "committedAt": "2026-11-16T00:48:06.000Z",
-      "notes": [
-        "Improved compatibility for updated Event RP totals and standings."
-      ]
-    },
-    {
-      "number": 407,
-      "title": "Clearer event cards, rank times and update notes",
-      "commit": "0dc26d48ea36afa0ddda9e29ca1af5824597e31c",
-      "committedAt": "2026-11-16T00:30:11.000Z",
-      "notes": [
-        "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
-        "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
-        "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
-      ]
-    },
-    {
-      "number": 406,
-      "title": "More reliable event previews",
-      "commit": "c13219ef15495ab502267d00a682f4d5297b2c96",
-      "committedAt": "2026-11-15T23:42:12.000Z",
-      "notes": [
-        "Fixed update packaging so event preview data is delivered in the correct format.",
-        "Keeps rank times clear, event standings matched to the event and personal-best time, and weekly personal-best details together."
       ]
     }
   ],

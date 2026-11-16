@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 428,
+  "number": 435,
   "version": "0.6.3",
-  "revision": 367,
+  "revision": 373,
   "notes": [
-    "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
+    "Fixed a release packaging check so the latest update can reach CDN players."
   ],
-  "preparedAt": "2026-11-16T09:29:18.983Z",
-  "committedAt": "2026-11-16T09:30:50.000Z"
+  "preparedAt": "2026-11-16T11:17:45.401Z",
+  "committedAt": "2026-11-16T11:21:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
