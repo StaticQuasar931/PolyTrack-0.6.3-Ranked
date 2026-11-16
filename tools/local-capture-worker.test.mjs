@@ -50,6 +50,26 @@ import {captureLocalCompleteSources} from './local-capture-worker.mjs';
 const fullPolicy={version:1,authorized:true,canonicalMode:'full',canonicalDocumentLimit:10000,profileDocumentLimit:2000,trackCheckLimit:512,eventReplayLimit:256,publishedBaseline:{generation:75,indexSha256:'a'.repeat(64)}};
 async function sourceFixture(t){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'local-full-source-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));const summaryFile=path.join(directory,'public-export-summary.json');await fs.writeFile(summaryFile,JSON.stringify({profilesCapturedAt:'2026-11-06T13:46:56.523Z',keep:true}));const calls=[],point='2026-11-07T08:05:00.000Z';let transportCalls=0;return {directory,summaryFile,calls,transportCalls:()=>transportCalls,options:{policy:fullPolicy,directory,checkpointDirectory:directory,serviceAccount:'synthetic-only',captureJob:async()=>({status:'synthetic'}),connectImpl:async(_credential,options)=>{calls.push('connect');assert.deepEqual(options,{env:{},mode:'scheduled',documentReadLimit:12001,documentWriteLimit:1,maxReadRetries:0});return {call:async()=>transportCalls++,writeAttempts:()=>0,documentBudget:()=>({usedReads:1,usedWrites:0})};},captureCanonical:async({db,documentLimit})=>{calls.push('canonical');assert.equal(documentLimit,10000);await db.call(':runQuery',{structuredQuery:{from:[{collectionId:'0.6.2_race_results'}],limit:1}});return {complete:true,imported:true,scanInconsistency:false,fullScanReadPoint:point};},captureProfiles:async({since,readTime,maxDocuments})=>{calls.push('profiles');assert.equal(since,Date.parse('2026-11-06T13:46:56.523Z'));assert.equal(readTime,point);assert.equal(maxDocuments,2000);return {complete:true,readTime:point};}}};}
 test('full local source capture freezes profiles at the canonical point and advances watermark only after both complete',async t=>{const f=await sourceFixture(t);const report=await captureLocalCompleteSources(f.options);assert.deepEqual(f.calls,['connect','canonical','profiles']);assert.equal(report.backendWrites,0);const summary=JSON.parse(await fs.readFile(f.summaryFile,'utf8'));assert.equal(summary.keep,true);assert.equal(summary.profilesCapturedAt,'2026-11-07T08:05:00.000Z');});
+
+test('fresh count point including microseconds is passed unchanged and both complete counts are checked',async t=>{
+ const f=await sourceFixture(t),point='2026-11-07T08:05:00.395983Z';
+ const before=await fs.readFile(f.summaryFile);
+ const quote={readTime:point,canonicalCount:25131,profileCount:185,profileSince:Date.parse('2026-11-06T13:46:56.523Z')};
+ const options={...f.options,frozenCountQuote:quote,captureCanonical:async args=>{
+  assert.equal(args.readTime,point);assert.equal(args.documentLimit,10000);
+  return {complete:true,imported:true,scanInconsistency:false,rows:25131,fullScanReadPoint:point};
+ },captureProfiles:async args=>{assert.equal(args.readTime,point);return {complete:true,profilesUpdated:185,readTime:point};}};
+ assert.equal((await captureLocalCompleteSources(options)).backendWrites,0);
+ await fs.writeFile(f.summaryFile,before);
+ await assert.rejects(captureLocalCompleteSources({...options,captureCanonical:async()=>({complete:true,imported:true,rows:25130,fullScanReadPoint:point})}),/differs/);
+ await assert.rejects(captureLocalCompleteSources({...options,captureProfiles:async()=>({complete:true,profilesUpdated:185,readTime:'2026-11-07T08:05:00.675147Z'})}),/differs/);
+});
+
+test('fresh quote watermark mismatch fails before connecting',async t=>{
+ const f=await sourceFixture(t);await assert.rejects(captureLocalCompleteSources({...f.options,
+  frozenCountQuote:{profileSince:1,readTime:'2026-11-07T08:05:00.395983Z'}}),/watermark mismatch/);
+ assert.deepEqual(f.calls,[]);
+});
 test('invalid saved profile watermark fails before credentials or database access',async t=>{const f=await sourceFixture(t);await fs.writeFile(f.summaryFile,'{}');await assert.rejects(captureLocalCompleteSources(f.options),/watermark/);assert.deepEqual(f.calls,[]);});
 test('incomplete canonical scan never starts profiles or advances any watermark',async t=>{const f=await sourceFixture(t),before=await fs.readFile(f.summaryFile,'utf8');await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async()=>({complete:false,imported:false})}),/incomplete/);assert.deepEqual(f.calls,['connect']);assert.equal(await fs.readFile(f.summaryFile,'utf8'),before);});
 test('the connected full-source capability cannot write to Firebase',async t=>{const f=await sourceFixture(t);await assert.rejects(captureLocalCompleteSources({...f.options,captureCanonical:async({db})=>db.call(':commit',{writes:[]})}),/forbids/);assert.equal(f.transportCalls(),0);});

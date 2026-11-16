@@ -3041,7 +3041,11 @@ async function handleRequestInternal(request, env, context = {}) {
     !path.startsWith('/v1/kodub-weekly') && path !== '/v1/profile/group-code' && !ownEventRead;
   if (path === '/v1/capture-auth' || privateCaptureRead) {
     if (!await verifyCaptureRead(request, env)) return json(origin, env, 403, {error:'snapshot_capture_required', canonicalUrl:CANONICAL_CLIENT_URL});
-    if (path === '/v1/capture-auth') return new Response(null, {status:204, headers:responseHeaders(origin, env)});
+    if (path === '/v1/capture-auth') {
+      const headers=responseHeaders(origin,env);
+      headers.set('X-PolyTrack-Capture-Read-Guard','combined-v1');
+      return new Response(null,{status:204,headers});
+    }
   }
   if (path.startsWith('/v1/events/')) {
     const response = await eventWorkerHandler(env, {

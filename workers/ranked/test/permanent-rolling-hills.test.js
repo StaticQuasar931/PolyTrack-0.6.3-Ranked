@@ -5,6 +5,14 @@ import { eventEncode } from '../src/events-store.js';
 import { PERMANENT_ROLLING_HILLS as R, PermanentRollingHillsError, derivePermanentRollingHills,
   readPermanentRollingHills, mergePermanentRollingIntoTotals, permanentRollingHillsRp } from '../src/permanent-rolling-hills.js';
 
+test('Rolling Hills rejects oversized/invalid page counts before any page read',async()=>{
+ for(const pageCount of [101,-1,1.5,'100']){
+  let reads=0;await assert.rejects(readPermanentRollingHills(async()=>{reads++;
+   return {fields:{pagination:eventEncode({pageCount})}};
+  }),/page_budget/);assert.equal(reads,1);
+ }
+});
+
 const entry = (accountId, timeMs, extra = {}) => ({ accountId, trackId: R.trackId, timeMs, frames: timeMs,
   raceTimeFrames: timeMs, runVerified: true, integrityVerified: true, replayHash: 'a'.repeat(64),
   pbAt: 100, name: accountId, carStyle: 'recorded-style', ...extra });

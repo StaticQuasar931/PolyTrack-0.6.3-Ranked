@@ -1,16 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 407,
+    "number": 408,
     "version": "0.6.3",
-    "revision": 349,
+    "revision": 350,
     "notes": [
-      "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
-      "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
-      "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
+      "Improved compatibility for updated Event RP totals and standings."
     ]
   },
   "entries": [
+    {
+      "number": 407,
+      "title": "Clearer event cards, rank times and update notes",
+      "commit": "0dc26d48ea36afa0ddda9e29ca1af5824597e31c",
+      "committedAt": "2026-11-16T00:30:11.000Z",
+      "notes": [
+        "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
+        "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
+        "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
+      ]
+    },
     {
       "number": 406,
       "title": "More reliable event previews",
@@ -198,17 +207,6 @@
       "committedAt": "2026-11-14T22:46:45.000Z",
       "notes": [
         "Improved delivery of the latest game update and snapshot files."
-      ]
-    },
-    {
-      "number": 387,
-      "title": "More rewarding milestones and event scoring",
-      "commit": "91c54039a2ac23adf5b05e5bd4a84d23f9fde895",
-      "committedAt": "2026-11-14T22:38:32.000Z",
-      "notes": [
-        "Achievement rewards, Style Coin milestones, and your shop preview are clearer.",
-        "Rolling Hills Event RP rewards both placement and pace, including results from earlier runs.",
-        "Track previews, Racer Studio controls, and recent replay loading are improved."
       ]
     }
   ],

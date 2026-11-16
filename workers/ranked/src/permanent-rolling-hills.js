@@ -129,6 +129,8 @@ export async function readPermanentRollingHills(request) {
   const raw = await request(`/${PERMANENT_ROLLING_HILLS.collection}/${PERMANENT_ROLLING_HILLS.trackId}`);
   if (!raw?.fields) fail('permanent_rolling_hills_snapshot_missing');
   const snapshot=eventDecode({mapValue:{fields:raw.fields}});
+  if(snapshot.pagination&&(!Number.isSafeInteger(snapshot.pagination.pageCount)||snapshot.pagination.pageCount<0||snapshot.pagination.pageCount>100))
+    fail('permanent_rolling_hills_page_budget');
   if(snapshot.pagination)snapshot.entries=await loadPublicationEntries(snapshot,'track',PERMANENT_ROLLING_HILLS.trackId,async(c,id)=>{const doc=await request('/'+c+'/'+id);return doc?{data:eventDecode({mapValue:{fields:doc.fields||{}}})}:null;});
   return derivePermanentRollingHills(snapshot);
 }

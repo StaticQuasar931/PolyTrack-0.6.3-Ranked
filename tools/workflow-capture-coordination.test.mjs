@@ -631,3 +631,26 @@ test('published rebase metadata remains strictly shaped and bound to an earlier 
   await mutatePayload(f,'event-totals.json',()=>({...valid,nativeEventOverlay:{...overlay,...patch}}));await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}),/Invalid native/);
  }
 });
+
+
+test('strict native totals consumer preserves validated v2 counts and rejects stripped or contradictory markers',async t=>{
+ forbidNetwork(t);const f=await nativeTotalsFixture(t),clean=structuredClone(f.totals);
+ assert.equal(clean.eventCountVersion,2);assert.equal(clean.entries[0].finiteEvents,0);assert.equal(clean.entries[0].permanentEvents,1);assert.equal(clean.entries[0].events,1);
+ assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true);
+ for(const change of [
+  value=>{value.eventCountVersion=3;},
+  value=>{delete value.entries[0].finiteEvents;},
+  value=>{delete value.entries[0].permanentEvents;},
+  value=>{value.entries[0].events=2;},
+  value=>{value.entries[0].permanentEvents=2;value.entries[0].events=2;},
+  value=>{value.unapprovedMetadata=true;},
+  value=>{value.nativeEventOverlay.totalsBaselineDigest='not-a-hash';},
+ ]){
+  const invalid=structuredClone(clean);change(invalid);await mutatePayload(f,'event-totals.json',()=>invalid);
+  await assert.rejects(recordCapture({root:f.root,startedAt:String(now-1000),now}));
+ }
+ const legacy=structuredClone(clean);delete legacy.eventCountVersion;
+ for(const row of legacy.entries){row.events=row.finiteEvents;delete row.finiteEvents;delete row.permanentEvents;}
+ await mutatePayload(f,'event-totals.json',()=>legacy);
+ assert.equal((await recordCapture({root:f.root,startedAt:String(now-1000),now})).reusable,true,'old finite-only count artifacts remain compatible without invented RHR history');
+});

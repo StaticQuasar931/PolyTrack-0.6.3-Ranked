@@ -1,5 +1,37 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
 const base='https://firestore.googleapis.com/v1/projects/polytrack-052/databases/(default)/documents';
+
+import {workerCaptureReadCharge} from './full-snapshot-read-fence.mjs';
+const worker='https://polytrack-ranked-worker.staticquasar931.workers.dev';
+test('combined cap reserves direct/query-index and Worker costs before concurrent dispatch',async()=>{
+ let calls=0;const f=createFullSnapshotReadFence({combinedReadLimit:110,initialCombinedReservations:27,fetchImpl:async()=>{
+  calls++;return new Response('[]');}});
+ await Promise.all([f.fetch(base+':runQuery',{method:'POST',body:'{"structuredQuery":{"limit":80}}'}),f.fetch(worker+'/v1/events/catalog')]);
+ assert.equal(f.report().combinedReadReservations,110);assert.equal(f.report().queryIndexReservations,1);
+ assert.equal(f.report().workerReadReservations,2);assert.equal(calls,2);
+ await assert.rejects(f.fetch(worker+'/v1/snapshot/track?trackId=x'),/Combined/);assert.equal(calls,2);
+ await assert.rejects(f.fetch(base+':batchGet',{method:'POST',body:'{"documents":["one"]}'}),/stopped/);
+});
+test('combined mode has explicit cold-cache charges including long pending run IDs',()=>{
+ for(const [p,cost] of [['/v1/capture-auth',0],['/v1/events/catalog',2],['/v1/events/totals',103],
+  ['/v1/events/permanent-rolling-hills/snapshot',101],['/v1/snapshot/track',1],['/v1/snapshot/track/page',2],
+  ['/v1/events/totals/page',2],['/v1/events/kodub_test/snapshot',4],['/v1/events/kodub_test/snapshot/page',2],
+  ['/v1/events/kodub_test/replays/'+'a'.repeat(64),5],['/v1/events/kodub_test/playbacks/'+'Z_'.repeat(64),2]])
+  assert.equal(workerCaptureReadCharge(worker+p),cost,p);
+ assert.throws(()=>workerCaptureReadCharge(worker+'/v1/status'),/Unknown/);
+});
+test('combined failures and unknown routes latch without refunds or further transport',async()=>{
+ for(const action of ['failed','unknown','origin','write']){
+  let calls=0;const f=createFullSnapshotReadFence({combinedReadLimit:33000,initialCombinedReservations:27,fetchImpl:async()=>{calls++;throw Error('transport');}});
+  if(action==='failed'){await assert.rejects(f.fetch(worker+'/v1/events/totals'),/transport/);assert.equal(f.report().combinedReadReservations,130);}
+  if(action==='unknown')await assert.rejects(f.fetch(worker+'/v1/status'),/Unknown/);
+  if(action==='origin')await assert.rejects(f.fetch('https://foreign.invalid/'),/Unknown/);
+  if(action==='write')await assert.rejects(f.fetch(base+':commit',{method:'POST',body:'{}'}),/forbids/);
+  await assert.rejects(f.fetch(worker+'/v1/events/catalog'),/stopped/);assert.equal(calls,action==='failed'?1:0);
+ }
+ for(const options of [{combinedReadLimit:33001},{combinedReadLimit:33000,initialDirectReservations:1},
+  {combinedReadLimit:33000,initialCombinedReservations:33001}])assert.throws(()=>createFullSnapshotReadFence(options));
+});
 test('the fence reserves before transport and forbids all database writes',async()=>{let calls=0;const fence=createFullSnapshotReadFence({fetchImpl:async()=>{calls++;return new Response('[]');}});await fence.fetch(base+':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{limit:100}})});assert.equal(fence.report().directDocumentReadReservations,100);await assert.rejects(fence.fetch(base+':commit',{method:'POST',body:'{}'}),/forbids/);assert.equal(calls,1);await assert.rejects(fence.fetch(base+':runQuery',{method:'POST',body:'{}'}),/stopped/);});
 test('direct bound is fixed and cap exhaustion sends no extra request',async()=>{let calls=0;const fence=createFullSnapshotReadFence({fetchImpl:async()=>{calls++;return new Response('[]');}});for(let i=0;i<400;i++)await fence.fetch(base+':runQuery',{method:'POST',body:'{"structuredQuery":{"limit":100}}'});await assert.rejects(fence.fetch(base+':runQuery',{method:'POST',body:'{"structuredQuery":{"limit":1}}'}),/budget/);assert.equal(calls,400);assert.throws(()=>createFullSnapshotReadFence({maxDirectReservations:50000}));});
 test('quota and auth errors latch the whole source transport without retry',async()=>{for(const status of [401,403,429]){let calls=0;const fence=createFullSnapshotReadFence({fetchImpl:async()=>{calls++;return new Response('',{status});}});await fence.fetch('https://polytrack-ranked-worker.staticquasar931.workers.dev/v1/events/catalog');await assert.rejects(fence.fetch(base+':runQuery',{method:'POST',body:'{"structuredQuery":{"limit":1}}'}),/stopped/);assert.equal(calls,1);}});

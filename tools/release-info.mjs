@@ -1,14 +1,12 @@
 const releaseInfo = {
-  "number": 407,
+  "number": 408,
   "version": "0.6.3",
-  "revision": 349,
+  "revision": 350,
   "notes": [
-    "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
-    "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
-    "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
+    "Improved compatibility for updated Event RP totals and standings."
   ],
-  "preparedAt": "2026-11-16T00:29:01.000Z",
-  "committedAt": "2026-11-16T00:30:11.000Z"
+  "preparedAt": "2026-11-16T00:46:16.000Z",
+  "committedAt": "2026-11-16T00:48:06.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

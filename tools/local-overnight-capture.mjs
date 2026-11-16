@@ -5,6 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
+import {isDeepStrictEqual} from 'node:util';
 import {localOvernightCapturePlan,resolveLocalCaptureContext,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
 import {snapshotPublicationFiles} from './local-capture-publication.mjs';
@@ -193,6 +194,13 @@ export async function validateReplacementContext(receipt,{directory,plan=N}={}){
     const bytes=await fs.readFile(evidence.file);
     if(bytes.length>1024*1024||createHash('sha256').update(bytes).digest('hex')!==evidence.sha256)
       throw Error('Quota admission evidence changed');
+    const countEvidence=receipt.sourceCountQuote.evidence;
+    if(!path.isAbsolute(countEvidence.file||''))throw Error('Absolute count evidence required');
+    const countStat=await fs.lstat(countEvidence.file);
+    if(!countStat.isFile()||countStat.isSymbolicLink()||countStat.size>1024*1024)throw Error('Unsafe count evidence');
+    const countBytes=await fs.readFile(countEvidence.file),inline={...receipt.sourceCountQuote};delete inline.evidence;
+    if(countBytes.length>1024*1024||createHash('sha256').update(countBytes).digest('hex')!==countEvidence.sha256||
+      !isDeepStrictEqual(JSON.parse(countBytes),inline))throw Error('Count evidence changed or mismatched');
     return {priorDirectReservations:0,priorWorkerRequests:0};
   }
   if(plan.frozenContinuation)return validateFrozenCaptureContext(receipt,{directory});
@@ -282,7 +290,8 @@ async function main(){
     authenticate:async()=>{
       const {checkWorkerCaptureAccess}=await import('./check-worker-capture-access.mjs');
       const {createWorkerCaptureFetch}=await import('./worker-capture-fetch.mjs');
-      await checkWorkerCaptureAccess({fetchImpl:createWorkerCaptureFetch({serviceAccount:await fs.readFile(receipt.credentialFile,'utf8')})});
+      await checkWorkerCaptureAccess({fetchImpl:createWorkerCaptureFetch({serviceAccount:await fs.readFile(receipt.credentialFile,'utf8')}),
+        ...(N.fresh?{requiredReadGuard:N.requiredReadGuard}:{})});
     },
     capture:async()=>{
       const log=await fs.open(path.join(directory,'capture.log'),'wx',0o600);

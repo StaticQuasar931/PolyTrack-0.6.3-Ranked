@@ -41,7 +41,12 @@ test('real signed capture probe validates without Firestore; browser preflight s
     const transport=createWorkerCaptureFetch({serviceAccount:{type:'service_account',client_email:email,
       private_key_id:'capture-test',private_key:keys.privateKey.export({format:'pem',type:'pkcs8'})},
       fetchImpl:(url,init)=>handleRequest(new Request(url,init),env)});
-    assert.equal((await transport(base+'/v1/capture-auth',{headers:{Origin:origin}})).status,204);
+    const probe=await transport(base+'/v1/capture-auth',{headers:{Origin:origin}});
+    assert.equal(probe.status,204);
+    assert.equal(probe.headers.get('Access-Control-Allow-Origin'),origin);
+    assert.match(probe.headers.get('Cache-Control'),/no-store/);
+    assert.equal(probe.headers.get('X-Content-Type-Options'),'nosniff');
+    assert.equal(probe.headers.get('X-PolyTrack-Capture-Read-Guard'),'combined-v1');
     assert.equal(lookups,1);assert.equal(db,0);
     const localTransport=createWorkerCaptureFetch({serviceAccount:{type:'service_account',client_email:localEmail,
       private_key_id:'capture-test',private_key:localKeys.privateKey.export({format:'pem',type:'pkcs8'})},

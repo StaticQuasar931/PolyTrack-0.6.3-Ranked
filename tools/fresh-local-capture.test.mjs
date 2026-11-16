@@ -8,6 +8,7 @@ import {resolveLocalCaptureContext,localOvernightCapturePlan,OVERNIGHT_SNAPSHOT 
 import {runLocalOvernightCapture,validateReplacementContext} from './local-overnight-capture.mjs';
 import {acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
 import {createFullSnapshotReadFence} from './full-snapshot-read-fence.mjs';
+import {aggregationCount,freshCountQuote} from './fresh-capture-count-quote.mjs';
 
 const NOW=Date.now(),source='a'.repeat(40),runId='12345678-1234-4123-8123-123456789abc';
 function receipt(){
@@ -18,18 +19,39 @@ function receipt(){
     freshAuthorization:{id:runId,requestedBy:'user',sourceCommit:source,authorizedAt:NOW-2000,
       publicationMode:'capture-first',automaticRetry:false,baseline},
     priorAccounting:{directDocumentReadReservations:0,workerRequests:0},
-    fullSnapshotPolicy:{publishedBaseline:baseline},
+    fullSnapshotPolicy:{canonicalDocumentLimit:30000,profileDocumentLimit:5000,publishedBaseline:baseline},
+    sourceCountQuote:{version:1,sourceCommit:source,baseline,canonicalCollection:'0.6.2_race_results',profileCollection:'0.6.2_profiles_public',
+      profileSince:1794648142767,profileQueryReadTime:new Date(NOW-10000).toISOString(),preflightReadReservations:27,
+      canonicalResponse:[{result:{readTime:new Date(NOW-10000).toISOString(),aggregateFields:{n:{integerValue:'25131'}}}}],
+      profileResponse:[{result:{readTime:new Date(NOW-10000).toISOString(),aggregateFields:{n:{integerValue:'185'}}}}],evidence:{sha256:'d'.repeat(64)}},
     quotaAdmission:{approvedBy:'user',sourceCommit:source,runId,checkedAt:NOW-500,expiresAt:NOW+1800000,
-      remainingDirectReservations:40000,remainingWorkerRequests:1024,documentWriteLimit:0,evidence:{sha256:'c'.repeat(64)}}};
+      remainingDirectReservations:35973,remainingWorkerRequests:1024,playerReadReserve:3000,perRunReadLimit:33000,
+      documentWriteLimit:0,evidence:{sha256:'c'.repeat(64)}}};
 }
 
 test('fresh plan resolves new date/source/baseline/claim with zero carried usage',()=>{
   const r=receipt(),p=resolveLocalCaptureContext({receipt:r,now:NOW});
   assert.equal(p.fresh,true);assert.equal(p.priorDirectReservations,0);assert.equal(p.priorWorkerRequests,0);
   assert.notEqual(p.claimTag,OLD.claimTag);assert.equal(p.deadline,r.freshCapturePlan.deadline);
+  assert.equal(p.combinedReadLimit,33000);assert.equal(p.frozenCountQuote.plannedReadReservations,28711);
   assert.equal(p.jobTimeoutMinutes,50);assert.equal(localOvernightCapturePlan({receipt:r,now:NOW}).mode,'firestore');
   const fence=createFullSnapshotReadFence({initialDirectReservations:p.priorDirectReservations,initialWorkerRequests:p.priorWorkerRequests,
     fetchImpl:()=>assert.fail('No real I/O')});assert.equal(fence.report().directDocumentReadReservations,0);
+});
+
+test('count quote preserves exact result timestamp and rejects separate profile point',()=>{
+ const r=receipt(),t=r.sourceCountQuote.profileQueryReadTime;
+ assert.equal(aggregationCount(r.sourceCountQuote.canonicalResponse).readTime,t);
+ r.sourceCountQuote.profileResponse[0].result.readTime=new Date(NOW-9000).toISOString();
+ assert.throws(()=>freshCountQuote({receipt:r,now:NOW}),/exact canonical/);
+ const q=receipt();q.sourceCountQuote.canonicalResponse[0].readTime='2026-11-16T00:23:43.675147Z';
+ assert.throws(()=>freshCountQuote({receipt:q,now:NOW}),/conflicting/);
+ for(const mutate of [r=>r.sourceCountQuote.profileQueryReadTime='bad',r=>r.sourceCountQuote.profileSince=0,
+  r=>r.sourceCountQuote.canonicalResponse[0].result.aggregateFields.n.integerValue='30000',
+  r=>r.quotaAdmission.perRunReadLimit=28710,r=>r.quotaAdmission.perRunReadLimit=33001,
+  r=>r.quotaAdmission.playerReadReserve=2999,r=>r.quotaAdmission.remainingDirectReservations=35972]){
+  const r=receipt();mutate(r);assert.throws(()=>resolveLocalCaptureContext({receipt:r,now:NOW}));
+ }
 });
 
 test('fresh window/source/auth/quota failures reject without capabilities',()=>{
@@ -37,7 +59,7 @@ test('fresh window/source/auth/quota failures reject without capabilities',()=>{
     r=>r.freshAuthorization.automaticRetry=true,r=>r.freshAuthorization.sourceCommit='d'.repeat(40),
     r=>r.freshAuthorization.baseline={generation:81,indexSha256:'b'.repeat(64)},r=>r.claimTag=OLD.claimTag,
     r=>r.priorAccounting.directDocumentReadReservations=26338,r=>r.priorAccounting.workerRequests=89,
-    r=>r.quotaAdmission.remainingDirectReservations=39999,r=>r.quotaAdmission.remainingWorkerRequests=1023,
+    r=>r.quotaAdmission.remainingDirectReservations=29999,r=>r.quotaAdmission.remainingWorkerRequests=1023,
     r=>r.quotaAdmission.documentWriteLimit=1,r=>r.quotaAdmission.expiresAt=NOW,
     r=>r.quotaAdmission.sourceCommit='d'.repeat(40),r=>r.quotaAdmission.runId=randomUUID(),
     r=>r.freshCapturePlan.deadline=NOW+1000,r=>r.targetDate='2026-11-14'];
@@ -86,6 +108,9 @@ test('fresh namespace and hash-pinned quota evidence verified locally before lau
   r.replacementDirectory=path.resolve(directory).replace(/\\/g,'/');
   const file=path.join(root,'quota-evidence.json'),bytes=Buffer.from('operator-approved remaining budget evidence');
   await fs.writeFile(file,bytes);r.quotaAdmission.evidence={file,sha256:createHash('sha256').update(bytes).digest('hex')};
+  const countFile=path.join(root,'count-evidence.json'),inline={...r.sourceCountQuote};delete inline.evidence;
+  const countBytes=Buffer.from(JSON.stringify(inline));await fs.writeFile(countFile,countBytes);
+  r.sourceCountQuote.evidence={file:countFile,sha256:createHash('sha256').update(countBytes).digest('hex')};
   assert.deepEqual(await validateReplacementContext(r,{directory}),{priorDirectReservations:0,priorWorkerRequests:0});
   await fs.writeFile(file,'changed');await assert.rejects(validateReplacementContext(r,{directory}),/changed/);
   await assert.rejects(validateReplacementContext(r,{directory:root}),/distinct/);

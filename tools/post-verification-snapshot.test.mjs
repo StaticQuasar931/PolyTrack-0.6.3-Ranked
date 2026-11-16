@@ -200,7 +200,13 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   for(const name of ['Restore private replay retry ledger','Save private replay retry ledger'])
     assert.deepEqual([...step(publisher,name).matchAll(/^          path: (.+)$/gm)].map(match=>match[1]),['${{ runner.temp }}/polytrack-replay-retries/history.json']);
   assert.match(publisher,/replay-retries-v1-\$\{\{ github.repository_id \}\}-\$\{\{ github.event.repository.default_branch \}\}/);
-  assert.doesNotMatch(publisher,/git add[^\n]*(?:local-reports|export-progress|history\.json)/);
+  // The public overall-rank-history.json is not the private retry history.json.
+  const privateStaging=/git add[^\n]*(?:local-reports|export-progress|(?:[/\s'\"])history\.json(?:[\s'\"]|$))/m;
+  assert.doesNotMatch(publisher,privateStaging);
+  assert.doesNotMatch('git add -- tools/overall-rank-history.json',privateStaging);
+  for(const command of ['git add -- local-reports/snapshot-staging','git add -- export-progress.json',
+    'git add -- history.json','git add -- /tmp/retries/history.json','git add -- "retries/history.json"'])
+    assert.match(command,privateStaging);
   assert.match(step(publisher,'Retain validated private replay retry ledger'),/steps.snapshot.outcome == 'failure'/);
 });
 

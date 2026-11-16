@@ -64,20 +64,24 @@ export async function runLocalSnapshotBackup(options,{serviceAccount=process.env
   finally{log(JSON.stringify({localCanonicalRetention:retention.report(),replayDocumentLimit:N.replayDocumentLimit}));}
 }
 
-export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,capturedCanonical=null,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
+export async function captureLocalCompleteSources({policy,directory,checkpointDirectory,serviceAccount,capturedCanonical=null,frozenCountQuote=null,connectImpl=connect,captureCanonical=captureFullCanonical,captureProfiles=captureProfileDelta,captureJob=captureBackendQueueDiagnostic}={}){
   fullSnapshotPolicy({fullSnapshotPolicy:policy});
   const summaryFile=path.join(directory,'public-export-summary.json'),stat=await fs.lstat(summaryFile);
   if(!stat.isFile()||stat.isSymbolicLink()||stat.size>2*1024*1024)throw Error('Safe saved profile watermark required before capture');
   const summary=JSON.parse(await fs.readFile(summaryFile,'utf8')),since=Date.parse(summary.profilesCapturedAt||summary.capturedAt);
   if(!Number.isSafeInteger(since)||since<1||since>Date.now())throw Error('Known profile watermark required before database access');
+  if(frozenCountQuote&&(capturedCanonical||since!==frozenCountQuote.profileSince))throw Error('Frozen count profile watermark mismatch');
   const db=await connectImpl(serviceAccount,{env:{},mode:'scheduled',documentReadLimit:policy.canonicalDocumentLimit+policy.profileDocumentLimit+1,documentWriteLimit:1,maxReadRetries:0});
   const backendQueue=await captureJob(db);
   const query=readOnlySnapshotQueryDb(db);
-  const canonical=await captureCanonical({db:capturedCanonical?.db||query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory});
+  const canonical=await captureCanonical({db:capturedCanonical?.db||query,directory,documentLimit:policy.canonicalDocumentLimit,checkpointDirectory,
+    ...(frozenCountQuote?{readTime:frozenCountQuote.readTime}:{})});
   if(!canonical.complete||!canonical.imported||canonical.scanInconsistency){console.error(JSON.stringify({canonicalCaptureFailure:canonical}));throw Error('Full canonical catch-up incomplete; retain previous public snapshot');}
+  if(frozenCountQuote&&(canonical.rows!==frozenCountQuote.canonicalCount||canonical.fullScanReadPoint!==frozenCountQuote.readTime))throw Error('Canonical scan differs from frozen count quote');
   if(capturedCanonical){canonical.sourceAcquisition='retained-frozen-query-pages';canonical.backendDocumentReadsThisRun=0;canonical.reusedDocumentReservations=capturedCanonical.originalReservations;await fs.writeFile(path.join(directory,'full-canonical-capture.json'),JSON.stringify(canonical)+'\n');}
   const profiles=await captureProfiles({db:query,directory,since,readTime:canonical.fullScanReadPoint,maxDocuments:policy.profileDocumentLimit});
   if(!profiles.complete)throw Error('Profile capture incomplete');
+  if(frozenCountQuote&&(profiles.profilesUpdated!==frozenCountQuote.profileCount||profiles.readTime!==frozenCountQuote.readTime))throw Error('Profile scan differs from frozen count quote');
   if(db.writeAttempts()!==0)throw Error('Full snapshot attempted a database write');
   await fs.writeFile(summaryFile,JSON.stringify({...summary,profilesCapturedAt:profiles.readTime,profileDelta:profiles})+'\n');
   return {canonical,profiles,backendQueue,documentBudget:db.documentBudget(),backendWrites:0};
@@ -140,7 +144,8 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   const head=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   if(head!==receipt.testedCommit)throw Error('Capture child source changed');
   const transport=globalThis.fetch,controllers=new Set();let aborted=false;
-  const sourceFence=createFullSnapshotReadFence({fetchImpl:transport,initialDirectReservations:N.priorDirectReservations,initialWorkerRequests:N.priorWorkerRequests});
+  const sourceFence=createFullSnapshotReadFence({fetchImpl:transport,initialDirectReservations:N.priorDirectReservations,initialWorkerRequests:N.priorWorkerRequests,
+    ...(N.fresh?{combinedReadLimit:N.combinedReadLimit,initialCombinedReservations:N.frozenCountQuote.preflightReadReservations}:{})});
   const abort=()=>{aborted=true;for(const controller of controllers)controller.abort();};
   const onMessage=value=>{if(value?.type==='abort')abort();};
   process.on('message',onMessage);process.on('disconnect',abort);
@@ -167,7 +172,8 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
     if(catalog.deferred)throw Error('Catalog deferred; no source capture follows');
     // Prepare prior proof authority before current canonical rows replace old bindings.
     const priorContext=await prepareNativeSnapshotCapture({root,directory:staging});
-    const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
+    const full=await captureLocalCompleteSources({policy:fullPolicy,directory:staging,checkpointDirectory:directory,capturedCanonical,
+      ...(N.fresh?{frozenCountQuote:N.frozenCountQuote}:{}),...(capturedProfiles?{captureProfiles:options=>capturedProfiles.apply(options)}:{}),serviceAccount:process.env.FIREBASE_VERIFIER_SERVICE_ACCOUNT});
     console.log(JSON.stringify({fullSnapshotCapture:full}));
     const fullCanonicalSource=await openFullCanonicalTrackSource({directory:staging,report:full.canonical});
     const captureOnly=receipt.captureOnly===true;

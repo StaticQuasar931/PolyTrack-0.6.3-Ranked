@@ -87,7 +87,7 @@ function validateTotalsArtifact(value, capturedBoards = [], nativeOverlayValidat
   }
   if (!object(value) || !Array.isArray(value.entries) || value.entries.length > 10000 ||
       value.entries.length > 200 && (value.complete !== true || value.totalEntries !== value.entries.length) ||
-      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries','capturedAt',
+      Object.keys(value).some(key => !['updatedAt','entries','complete','totalEntries','capturedAt','eventCountVersion',
         ...(nativeOverlayValidated ? ['nativeEventOverlay'] : [])].includes(key))) throw Error('Invalid projected event totals artifact');
   const {nativeEventOverlay, ...publicValue} = value;
   // Reuse the producer projection for public metadata, including its highlight allowlist/budgets.
@@ -95,7 +95,7 @@ function validateTotalsArtifact(value, capturedBoards = [], nativeOverlayValidat
   const rows=[], seen=new Set();
   for(let offset=0;offset<value.entries.length;offset+=200){
     const source=value.entries.slice(offset,offset+200);
-    const projected=publicEventTotals({updatedAt:value.updatedAt,entries:source},{capturedBoards}).entries;
+    const projected=publicEventTotals({updatedAt:value.updatedAt,entries:source,...(Object.hasOwn(value,'eventCountVersion')?{eventCountVersion:value.eventCountVersion}:{})},{capturedBoards}).entries;
     for(let index=0;index<source.length;index++){
       if(!Object.hasOwn(source[index],'eventHighlights'))delete projected[index].eventHighlights;
       if(Object.hasOwn(source[index],'nickname')){
