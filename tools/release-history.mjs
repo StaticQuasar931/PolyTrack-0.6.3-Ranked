@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 429,
+    "number": 431,
     "version": "0.6.3",
-    "revision": 368,
+    "revision": 369,
     "notes": [
-      "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
+      "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
     ]
   },
   "entries": [
+    {
+      "number": 429,
+      "title": "Reuse native replay validators and remove idle rendering",
+      "commit": "0b93d557512180ae324b6a97f7506a8e5b6720df",
+      "committedAt": "2026-11-16T10:19:58.000Z",
+      "notes": [
+        "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
+      ]
+    },
     {
       "number": 428,
       "title": "Speed up snapshot packaging and verification checkpoints",
@@ -185,17 +194,6 @@ const historyData = {
       "committedAt": "2026-11-16T00:48:06.000Z",
       "notes": [
         "Improved compatibility for updated Event RP totals and standings."
-      ]
-    },
-    {
-      "number": 407,
-      "title": "Clearer event cards, rank times and update notes",
-      "commit": "0dc26d48ea36afa0ddda9e29ca1af5824597e31c",
-      "committedAt": "2026-11-16T00:30:11.000Z",
-      "notes": [
-        "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
-        "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
-        "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
       ]
     }
   ],

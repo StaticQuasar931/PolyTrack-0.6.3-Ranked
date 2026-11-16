@@ -89,3 +89,10 @@ test('workflow remains read-only and artifact-only, retaining first-proof and co
  assert.equal(workflow.split('run: node tools/verifier/verify-saved-events.mjs').length-1,0);
  assert.equal(workflow.split('          node tools/verifier/verify-saved-events.mjs').length-1,1);
 });
+
+
+test('native concurrency is explicitly bounded and affects only the native execution step',()=>{
+ assert.match(workflow,/native_workers:[\s\S]*?options: \['1', '2'\][\s\S]*?default: '1'/);
+ assert.equal(workflow.split('VERIFIER_NATIVE_WORKERS:').length-1,1);
+ assert(workflow.indexOf('VERIFIER_NATIVE_WORKERS:')>workflow.indexOf('name: Verify and live-compile'));
+});

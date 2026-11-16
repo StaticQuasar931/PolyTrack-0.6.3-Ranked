@@ -112,3 +112,25 @@ priority, batch size, capture inputs and native-dispatch budgets are unchanged.
 Physics calls remain sequential inside each engine. This follow-up does not claim
 300-way concurrency or measured whole-workflow savings. A bounded, separately
 measured pool would be needed before enabling safe multi-engine execution.
+
+
+## Optional Two-Engine Execution
+
+The offline saved-replay workflow offers one or two native engines. Two splits
+each admitted standard group of sixteen into two contiguous groups of eight.
+It preserves priority, exact replay bindings, per-run limits and one shared
+absolute deadline. Both browser calls must settle and finish cleanup before
+results escape. Extended jobs and the one-run proof warmup remain single-engine.
+No retries, Firebase access, extra admissions or native fingerprint changes are
+introduced. The default remains one: local real-replay measurements did not
+establish a consistent two-engine speed advantage. This is an explicit option,
+not a claim of twofold or whole-workflow acceleration.
+
+The same sixteen replays (8 Summer 1, 4 Rolling Hills, 4 current Kodub) were
+compared six times in 1/2/2/1/1/2 order with identical verdicts and bindings.
+Complete-batch medians were 58.821 s for one engine and
+70.809 s for two, including startup and cleanup. Two was
+20.4% slower at the median on this Windows host during publication IO.
+This does not predict Ubuntu runner throughput. Both modes retain every native
+check; 96 sample verification outcomes matched. No default change or claimed
+whole-workflow savings follows from this measurement.

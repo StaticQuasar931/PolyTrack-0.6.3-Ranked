@@ -17,6 +17,127 @@ const policy={engineDigest:engine,compatibleEngines:[],verifierVersion:'polytrac
   verifierFingerprint:fingerprint,resourceProfiles:['standard'],reviewPolicyVersions:['snapshot-controls-v1'],
   trackContentHashes:{[track]:content},trackGeometries:{[track]:{geometryPolicy:'default',trackGeometry:{parts:20,spanX:100,spanZ:120}}}};
 const sourceBinding={sourceCommit:'a'.repeat(40),captureSha256:'e'.repeat(64)};
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+
+test('bounded adapter leaves current native fingerprint and resource limits unchanged',()=>{
+  const require=createRequire(import.meta.url);
+  assert.equal(require('./verify.cjs').verifierFingerprint,'c4afb33f1a05816cfd54cd45a19094925f75a10daa393bc9945fcc31e1708375');
+  const {resourceLimits}=require('./replay.cjs');
+  assert.deepEqual(['standard','extended-local'].map(profile=>{
+    const {jobs,wallMs,cpuMs}=resourceLimits(profile);return {jobs,wallMs,cpuMs};
+  }),[{jobs:16,wallMs:45000,cpuMs:20000},{jobs:1,wallMs:120000,cpuMs:90000}]);
+});
+
+test('native worker setting rejects every value except exact 1 or 2 before dispatch',async()=>{
+  for(const value of ['',0,1,2,'0','3','02',' 2','2 ','true',null]) {
+    await assert.rejects(verifyLocalNativeBatch('fixture',[job()],[],{
+      env:{VERIFIER_NATIVE_WORKERS:value},verifyBatch:()=>assert.fail('invalid env dispatched')
+    }),/invalid VERIFIER_NATIVE_WORKERS/);
+  }
+});
+
+test('two native calls preserve bindings, per-call track selection and absolute deadline despite reverse completion',async()=>{
+  const jobs=Array.from({length:16},(_,i)=>job(i+1)),other='f'.repeat(64);
+  for(const value of jobs.slice(8)){value.trackId=other;value.resultId=value.accountId+'_'+other;}
+  const before=structuredClone(jobs),gates=[deferred(),deferred()],started=deferred(),calls=[];
+  let returned=false;
+  const run=verifyLocalNativeBatch('fixture',jobs,[{trackId:track},{trackId:other}],{
+    deadline:123456,env:{VERIFIER_NATIVE_WORKERS:'2'},verifyBatch:async(root,batch,tracks,options)=>{
+      const index=calls.length;calls.push({root,batch,tracks,options});if(calls.length===2)started.resolve();
+      await gates[index].promise;
+      return batch.map(value=>({...value,status:'verified',binding:{exact:value.resultId}})).reverse();
+    }
+  }).then(value=>{returned=true;return value;});
+  await started.promise;
+  assert.deepEqual(calls.map(call=>call.batch.length),[8,8]);
+  assert.deepEqual(calls.map(call=>call.tracks.map(value=>value.trackId)),[[track],[other]]);
+  assert(calls.every(call=>call.options.deadline===123456&&call.options.profile==='standard'));
+  gates[1].resolve();await new Promise(setImmediate);assert.equal(returned,false);
+  gates[0].resolve();const results=await run;
+  assert.deepEqual(results.map(value=>value.resultId),jobs.map(value=>value.resultId));
+  assert.deepEqual(results.map(value=>value.binding.exact),jobs.map(value=>value.resultId));
+  assert.deepEqual(jobs,before);
+});
+
+test('native failure drains the other engine and never retries or starts a later group',async()=>{
+  for(const synchronous of [false,true]) {
+    const failure=Error('engine startup failed'),gate=deferred(),started=deferred();let calls=0,closed=false,returned=false;
+    const run=verifyLocalNativeBatch('fixture',Array.from({length:32},(_,i)=>job(i+1)),[],{
+      env:{VERIFIER_NATIVE_WORKERS:'2'},verifyBatch:(_root,batch)=>{
+        calls++;
+        if(calls===1){if(synchronous)throw failure;return Promise.reject(failure);}
+        started.resolve();return gate.promise.then(()=>{closed=true;return batch.map(value=>native(value));});
+      }
+    });
+    const rejection=assert.rejects(run,error=>{returned=true;assert.equal(closed,true);return error===failure;});
+    await started.promise;await new Promise(setImmediate);assert.equal(returned,false);assert.equal(calls,2);
+    gate.resolve();await rejection;assert.equal(calls,2);
+  }
+});
+
+test('default and explicit single worker retain sixteen-job calls and match two-worker results',async()=>{
+  const jobs=Array.from({length:33},(_,i)=>job(i+1)),outputs=[];
+  for(const env of [{},{VERIFIER_NATIVE_WORKERS:'1'},{VERIFIER_NATIVE_WORKERS:'2'}]) {
+    const sizes=[];let active=0,peak=0;
+    outputs.push(await verifyLocalNativeBatch('fixture',jobs,[],{env,verifyBatch:async(_root,batch)=>{
+      active++;peak=Math.max(peak,active);sizes.push(batch.length);await new Promise(setImmediate);active--;return batch.map(value=>native(value));
+    }}));
+    assert.deepEqual(sizes,env.VERIFIER_NATIVE_WORKERS==='2'?[8,8,8,8,1]:[16,16,1]);
+    assert.equal(peak,env.VERIFIER_NATIVE_WORKERS==='2'?2:1);
+  }
+  assert.deepEqual(outputs[0],outputs[1]);assert.deepEqual(outputs[0],outputs[2]);
+});
+
+test('two-worker mode keeps extended jobs serialized and singleton warmup single',async()=>{
+  const long=n=>({...job(n),resourceProfile:'extended-local'}),calls=[];let active=0;
+  const verifyBatch=async(_root,batch,_tracks,{profile,deadline})=>{
+    if(profile!=='standard')assert.equal(active,0);
+    active++;calls.push([profile,batch.length,deadline]);await new Promise(setImmediate);active--;
+    return batch.map(value=>({...value,status:'unavailable',reason:'fixture'}));
+  };
+  const env={VERIFIER_NATIVE_WORKERS:'2'};
+  await verifyLocalNativeBatch('fixture',[job()],[],{env,verifyBatch,deadline:100});
+  await verifyLocalNativeBatch('fixture',[long(40),...Array.from({length:16},(_,i)=>job(i+1)),long(41),long(42)],[],{env,verifyBatch,deadline:100});
+  assert.deepEqual(calls,[['standard',1,100],['extended-local',1,100],['standard',8,100],['standard',8,100],['extended-local',1,100],['extended-local',1,100]]);
+  assert.equal(active,0);
+});
+
+test('incomplete peer result is rejected only after both engines drain',async()=>{
+  const gate=deferred(),started=deferred();let calls=0,closed=false;
+  const run=verifyLocalNativeBatch('fixture',Array.from({length:16},(_,i)=>job(i+1)),[],{
+    env:{VERIFIER_NATIVE_WORKERS:'2'},verifyBatch:async(_root,batch)=>{
+      if(++calls===1)return [];
+      started.resolve();await gate.promise;closed=true;return batch.map(value=>native(value));
+    }
+  });
+  const rejection=assert.rejects(run,/incomplete native adapter result set/);
+  await started.promise;assert.equal(closed,false);gate.resolve();await rejection;assert.equal(closed,true);
+});
+
+test('native unavailable jobs are not retried and priority is contiguous within each sixteen',async()=>{
+  const jobs=Array.from({length:32},(_,i)=>job(i+1)),calls=[];
+  const results=await verifyLocalNativeBatch('fixture',jobs,[],{deadline:987654,
+    env:{VERIFIER_NATIVE_WORKERS:'2'},verifyBatch:async(_root,batch,_tracks,options)=>{
+      assert.equal(options.deadline,987654);calls.push(batch.map(value=>value.resultId));
+      return batch.map(value=>({...value,status:'unavailable',reason:'cpu_deadline'}));
+    }
+  });
+  assert.deepEqual(calls,Array.from({length:4},(_,i)=>jobs.slice(i*8,i*8+8).map(value=>value.resultId)));
+  assert(results.every(value=>value.status==='unavailable'&&value.reason==='cpu_deadline'));
+  assert.deepEqual(results.map(value=>value.resultId),jobs.map(value=>value.resultId));
+});
+
+test('both engine failures retain input-priority error rather than rejection timing',async()=>{
+  const gate=deferred(),started=deferred(),first=Error('first priority engine'),second=Error('second engine');let calls=0;
+  const run=verifyLocalNativeBatch('fixture',Array.from({length:16},(_,i)=>job(i+1)),[],{
+    env:{VERIFIER_NATIVE_WORKERS:'2'},verifyBatch:async()=>{
+      if(++calls===1){await gate.promise;throw first;}
+      started.resolve();throw second;
+    }
+  });
+  const rejection=assert.rejects(run,error=>error===first);
+  await started.promise;gate.resolve();await rejection;assert.equal(calls,2);
+});
 function job(number=1,lane='normal') {
   const replay=deflateSync(Buffer.alloc(15)).toString('base64url');
   const value={lane,accountId:sha('account'+number),trackId:track,timeMs:900+number,frames:900+number,

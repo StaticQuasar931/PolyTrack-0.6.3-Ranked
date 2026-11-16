@@ -52,6 +52,12 @@ on:
         type: choice
         options: ['events', 'all', 'normal']
         default: 'all'
+      native_workers:
+        description: Native engines in parallel; original per-run limits and aggregate budget still apply
+        required: true
+        type: choice
+        options: ['1', '2']
+        default: '1'
       warmup_first:
         description: Gate the remaining same-process pass on one fresh completed proof
         required: true
@@ -129,6 +135,7 @@ jobs:
       - name: Verify and live-compile an audited private candidate without capture or Git publication
         timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 260 || 50 }}
         env:
+          VERIFIER_NATIVE_WORKERS: ${{ inputs.native_workers }}
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
           SNAPSHOT_GENERATION: ${{ inputs.snapshot_generation }}

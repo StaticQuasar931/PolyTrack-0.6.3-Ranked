@@ -199,11 +199,25 @@ function nativeGroups(jobs) {
   }
   return groups;
 }
-export async function verifyLocalNativeBatch(root,jobs,tracks,{deadline=Infinity,verifyBatch}={}) {
+export async function verifyLocalNativeBatch(root,jobs,tracks,{deadline=Infinity,verifyBatch,env=process.env}={}) {
+  const workers=env.VERIFIER_NATIVE_WORKERS === undefined ? '1' : env.VERIFIER_NATIVE_WORKERS;
+  demand(workers==='1'||workers==='2','invalid VERIFIER_NATIVE_WORKERS (expected 1 or 2)');
   const verify=verifyBatch || require('./verify.cjs').verifyBatch,output=new Map();
   for (const group of nativeGroups(jobs)) {
-    const ids=new Set(group.jobs.map(job=>job.trackId));
-    const results=await verify(root,group.jobs,tracks.filter(track=>ids.has(track.trackId)),{profile:group.profile,deadline});
+    const batches=workers==='2'&&group.profile==='standard'
+      ? [group.jobs.slice(0,8),group.jobs.slice(8)].filter(batch=>batch.length)
+      : [group.jobs];
+    // verifyBatch owns browser cleanup. Drain both calls, including startup or
+    // cleanup rejection, before exposing results or starting the next group.
+    const settled=await Promise.allSettled(batches.map(async batch=>{
+      const ids=new Set(batch.map(job=>job.trackId));
+      return verify(root,batch,tracks.filter(track=>ids.has(track.trackId)),{profile:group.profile,deadline});
+    }));
+    const failure=settled.find(result=>result.status==='rejected');
+    if(failure)throw failure.reason;
+    for(const [index,batch] of batches.entries())
+      demand(Array.isArray(settled[index].value)&&settled[index].value.length===batch.length,'incomplete native adapter result set');
+    const results=settled.flatMap(result=>result.value);
     demand(Array.isArray(results) && results.length === group.jobs.length,'incomplete native adapter result set');
     const mapped=new Map(results.map(value=>[value?.resultId,value]));
     for (const [index,job] of group.jobs.entries()) {
