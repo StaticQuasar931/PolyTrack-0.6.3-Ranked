@@ -1459,17 +1459,17 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
  object-position:left top!important;align-self:start!important;
 }
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
- container-type:normal!important;min-width:var(--kodub-details-width)!important;
- width:100%!important;padding:20px clamp(18px,2vw,34px)!important;gap:7px!important;
+ container-type:inline-size!important;min-width:var(--kodub-details-width)!important;
+ width:100%!important;padding:20px clamp(18px,2vw,34px)!important;gap:8px!important;
  align-items:center!important;justify-content:center!important;text-align:center!important;
 }
-/* Separate identity, event timing and results without enlarging the card. */
+/* Keep group spacing bounded instead of stretching gaps to fill the card. */
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info>.time-remaining,
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info>.personal-best{
- margin-top:auto!important;
+ margin-top:6px!important;
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
- font-size:clamp(24px,2vw,32px)!important;line-height:1.1!important;
+ font-size:clamp(24px,9cqw,36px)!important;line-height:1.1!important;
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>:not(.title){
  font-size:18px!important;line-height:1.2!important;text-align:center!important;
@@ -1485,7 +1485,7 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .personal-best>div{
  display:inline-flex!important;align-items:center!important;justify-content:center!important;
- font-size:22px!important;line-height:28px!important;min-height:28px!important;text-align:center!important;
+ font-size:24px!important;line-height:30px!important;min-height:30px!important;text-align:center!important;
 }
 /* A shared five-row grid gives supporting cards the same record/footer baseline. */
 #ui .track-selection-ui .sq-featured-events>.sq-permanent-track>.button,

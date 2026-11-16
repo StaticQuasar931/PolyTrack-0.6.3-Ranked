@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 422,
+  "number": 423,
   "version": "0.6.3",
-  "revision": 362,
+  "revision": 363,
   "notes": [
-    "The Kodub weekly card has balanced spacing and clearer groups for track details, timing and rewards."
+    "Fixed oversized gaps in the Kodub weekly card and improved title wrapping without resizing the artwork."
   ],
-  "preparedAt": "2026-11-16T06:37:52.053Z",
-  "committedAt": "2026-11-16T06:37:53.000Z"
+  "preparedAt": "2026-11-16T07:02:25.616Z",
+  "committedAt": "2026-11-16T07:02:27.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

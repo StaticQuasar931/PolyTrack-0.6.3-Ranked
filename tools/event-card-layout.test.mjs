@@ -57,7 +57,8 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
         const spacing=await evaluate(`(()=>{const p=document.querySelector('.track-of-the-week-info'),style=getComputedStyle(p),title=p.querySelector('.title').getBoundingClientRect(),reward=p.querySelector('.sq-kodub-reward').getBoundingClientRect();return {edge:parseFloat(style.paddingLeft),top:parseFloat(style.paddingTop),contentHeight:reward.bottom-title.top,height:p.getBoundingClientRect().height};})()`);
         assert.ok(spacing.edge>=24,label+' comfortable horizontal edge padding');
         assert.equal(spacing.top,20,label+' consistent vertical edge padding');
-        assert.ok(spacing.contentHeight>=spacing.height*.8,label+' identity, timing and results use the available height');
+        const gaps=await evaluate(`(()=>{const rows=[...document.querySelector('.track-of-the-week-info').children].map(e=>e.getBoundingClientRect());return rows.slice(1).map((r,i)=>r.top-rows[i].bottom);})()`);
+        assert.ok(gaps.every(gap=>gap>=6&&gap<=16),label+' text groups use bounded, consistent spacing');
       }
       const compact=width<=900||width<=1200&&height<=500;
       for(const c of g.cards.slice(compact?1:0))assert.ok(Math.abs(c.height-(compact?g.cards[1].height:g.card.height))<1,label+' same outer height');
