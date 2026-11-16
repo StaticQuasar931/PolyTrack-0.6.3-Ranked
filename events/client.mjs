@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=363';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=363';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=364';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=364';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=363';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=363';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=363';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=364';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=364';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=364';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -766,7 +766,7 @@ export function ensureFeaturedSection(document,selection=null){
     section.__sqPermanentSourceGroup=featured.parentElement;
     section.append(featured);
     const note=document.createElement('small');note.className='sq-permanent-note';
-    note.textContent='Normal RP + up to 1,001 Event RP / No reset';featuredButton?.append(note);
+    note.textContent='Normal RP + up to 1,001 Event RP\nPermanent event · no reset';featuredButton?.append(note);
   }
   const source=section.__sqPermanentSourceGroup;
   if(source?.parentElement===nav.parentElement&&source.matches('.community-track-group')){
@@ -2055,7 +2055,7 @@ export function installEvents(bridge){
     const permanentNote=group?.querySelector('.sq-permanent-note');
     if(permanentNote){
       const reward=permanentReward();
-      const text=reward.text+' / No reset';
+      const text=reward.text+'\nPermanent event · no reset';
       if(permanentNote.textContent!==text)permanentNote.textContent=text;
       const title=reward.title;
       if(permanentNote.title!==title)permanentNote.title=title;
