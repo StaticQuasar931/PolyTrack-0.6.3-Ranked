@@ -10,12 +10,13 @@ const rolling=(entries=[entry(1,900)])=>({id:rollingId,kind:'permanent',trackId:
 const totals=(...ids)=>ids.map(n=>({accountId:hash(n),rp:2000,finiteEventRp:1100}));
 const highlights=(boards,totalsRows=totals(1))=>buildEventRpHighlights({boards,totalsRows}).get(hash(1));
 
-test('top two contain bound Rolling Hills and highest finite saved ERP, with no totals mutation',()=>{
+test('top three contain bound Rolling Hills and two finite saved awards, with no totals mutation',()=>{
  const boards=[finite('daily','daily',[entry(1,80)]),rolling(),finite('weekly','weekly',[entry(1,100)])],totalsRows=totals(1);
  const before=structuredClone({boards,totalsRows});
  const result=buildEventRpHighlights({boards,totalsRows}).get(hash(1));
  assert.deepEqual(result,[{kind:'permanent',periodId:rollingId,trackId:rollingTrack,name:'Rolling Hills Racer',eventRp:900,rank:1,fieldSize:1},
-  {kind:'weekly',periodId:'weekly',trackId:hash(999),name:'weekly track',eventRp:100,rank:1,fieldSize:1}]);
+  {kind:'weekly',periodId:'weekly',trackId:hash(999),name:'weekly track',eventRp:100,rank:1,fieldSize:1},
+  {kind:'daily',periodId:'daily',trackId:hash(999),name:'daily track',eventRp:80,rank:1,fieldSize:1}]);
  assert.deepEqual({boards,totalsRows},before);
  assert.deepEqual(Object.keys(result[0]).sort(),['kind','periodId','trackId','name','eventRp','rank','fieldSize'].sort());
  assert.equal(Object.isFrozen(result),true);assert.equal(Object.isFrozen(result[0]),true);
@@ -24,7 +25,7 @@ test('top two contain bound Rolling Hills and highest finite saved ERP, with no 
 test('Kodub wins equal finite points only, and absent Rolling Hills permits the best two finite events',()=>{
  const boards=[finite('a','weekly',[entry(1,100)]),finite('z','kodub',[entry(1,100)]),finite('daily','daily',[entry(1,101)])];
  assert.deepEqual(highlights(boards).map(row=>[row.periodId,row.eventRp]),[['daily',101],['z',100]]);
- assert.deepEqual(highlights([...boards,rolling()]).map(row=>row.periodId),[rollingId,'daily']);
+ assert.deepEqual(highlights([...boards,rolling()]).map(row=>row.periodId),[rollingId,'daily','z']);
  assert.deepEqual(highlights(boards.slice(0,2)).map(row=>row.periodId),['z','a']);
 });
 
@@ -151,7 +152,7 @@ test('selected metadata always stays within aggregate and finite budgets across 
   const total={accountId:hash(1),rp,permanentRollingHillsRp:knownRolling,...(finiteEventRp!==undefined?{finiteEventRp}:{})};
   for(const captured of [boards,boards.slice(1)]){
    const result=highlights(captured,[total]),finiteSum=result.filter(row=>row.kind!=='permanent').reduce((sum,row)=>sum+row.eventRp,0);
-   assert.ok(result.length<=2);assert.ok(result.reduce((sum,row)=>sum+row.eventRp,0)<=rp);
+   assert.ok(result.length<=(result.some(row=>row.kind==='permanent')?3:2));assert.ok(result.reduce((sum,row)=>sum+row.eventRp,0)<=rp);
    if(knownRolling<=rp)assert.ok(finiteSum<=rp-knownRolling);
    if(finiteEventRp!==undefined)assert.ok(finiteSum<=finiteEventRp);
    if(knownRolling>rp||finiteEventRp!==undefined&&finiteEventRp>rp-knownRolling)assert.deepEqual(result,[]);

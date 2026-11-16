@@ -6,11 +6,14 @@ const account=value=>typeof value==='string'&&/^[A-Za-z0-9_.:-]{1,128}$/.test(va
 const carStyle=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(value)?value:'';
 export function publicEventTotal(row) {
   if(!row||!account(row.accountId)||!int(row.rp))throw Error('EVENT_PUBLIC_TOTAL_INVALID');
+  const counted=row.finiteEvents!==undefined||row.permanentEvents!==undefined;
+  if(counted&&(!int(row.finiteEvents)||!int(row.permanentEvents)||row.permanentEvents>1||
+    !int(row.events)||row.events!==row.finiteEvents+row.permanentEvents))throw Error('EVENT_PUBLIC_TOTAL_COUNTS_INVALID');
   const output={accountId:row.accountId,name:safePublicName(row.name||'Racer',row.accountId),rp:row.rp,events:int(row.events)?row.events:0};
   if(int(row.rank)&&row.rank>0)output.rank=row.rank;
   if(carStyle(row.carStyle))output.carStyle=carStyle(row.carStyle);
   if(row.countryCode)output.countryCode=string(row.countryCode,8).toUpperCase();
-  for(const field of ['finiteEventRp','permanentRollingHillsRp','dynamicEventRp','rollingHillsTimeMs','rollingHillsRunAgeMs','rollingHillsEventRpContribution'])if(int(row[field]))output[field]=row[field];
+  for(const field of ['finiteEvents','permanentEvents','finiteEventRp','permanentRollingHillsRp','dynamicEventRp','rollingHillsTimeMs','rollingHillsRunAgeMs','rollingHillsEventRpContribution'])if(int(row[field]))output[field]=row[field];
   return output;
 }
 export function publicEventFinishMetadata(row) {
@@ -34,6 +37,10 @@ export function publicEventPage(data,kind) {
   if(!data||!Array.isArray(data.entries))throw Error('EVENT_PUBLIC_PAGE_INVALID');
   const output={};
   for(const field of ['version','generation','pageSize','pageCount','totalEntries','complete','page','sourceRevision','sourceReadTime','sourceComplete','eventRpComplete'])if(data[field]!==undefined)output[field]=data[field];
+  if(kind==='event_totals'&&data.eventCountVersion!==undefined){
+    if(data.eventCountVersion!==2||data.entries.some(row=>!int(row?.finiteEvents)||!int(row?.permanentEvents)))throw Error('EVENT_PUBLIC_TOTAL_COUNTS_INVALID');
+    output.eventCountVersion=2;
+  }
   const rolling=data.dynamicComponents?.permanentRollingHills;
   if(rolling){
     const component={status:rolling.status==='complete'?'complete':'unavailable'};

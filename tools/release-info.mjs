@@ -1,14 +1,14 @@
 const releaseInfo = {
-  "number": 406,
+  "number": 407,
   "version": "0.6.3",
-  "revision": 348,
+  "revision": 349,
   "notes": [
-    "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
-    "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
-    "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
+    "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
+    "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
+    "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
   ],
-  "preparedAt": "2026-11-15T23:41:59.649Z",
-  "committedAt": "2026-11-15T23:42:12.000Z"
+  "preparedAt": "2026-11-16T00:29:01.000Z",
+  "committedAt": "2026-11-16T00:30:11.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

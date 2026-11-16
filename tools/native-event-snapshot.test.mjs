@@ -180,7 +180,7 @@ for (const disposition of ['held', 'excluded']) test('an exact ledger ' + dispos
   const first = projectNativeEventTotals(args), second = projectNativeEventTotals(args);
   assert.deepEqual(second.totals, first.totals);
   assert.equal(first.totals.entries[0].finiteEventRp, 77);
-  assert.equal(first.totals.entries[0].events, 3);
+  assert.equal(first.totals.entries[0].finiteEvents, 3);
   assert.equal(first.totals.entries[0].rp, 77 + 10101);
 });
 
@@ -280,7 +280,8 @@ test('totals apply exact old-to-new finite delta once and replace Rolling Hills 
   assert.equal(result.finiteEventRp, 1000 + 77, 'unknown archived contributions remain untouched');
   assert.equal(result.permanentRollingHillsRp, derivePermanentRollingHills(rolling()).entries[0].rp);
   assert.equal(result.rp, 1077 + 10101);
-  assert.equal(result.events, 4, 'improving an existing event is not another event');
+  assert.equal(result.finiteEvents, 4, 'improving an existing event is not another finite event');
+  assert.equal(result.events,5);assert.equal(result.permanentEvents,1);
   assert.equal(result.name, 'Profile Name');
   assert.equal(result.identityUpdatedAt, 1000);
   assert.throws(() => projectNativeEventTotals({...args, serverTotals: first.totals}), /pristine/);
@@ -303,7 +304,7 @@ test('new entrant adds one finite event, not any unknown historical periods', as
   const serverTotals = totals({entries: []});
   const projection = await projectNativeEventSnapshot(setup(t, {serverBoard: board({rows: []}), serverTotals}));
   const result = projectNativeEventTotals({serverTotals, projections: [projection], rollingNormalBoard: rolling()});
-  assert.equal(result.totals.entries[0].events, 1);
+  assert.equal(result.totals.entries[0].finiteEvents, 1);
   assert.equal(result.totals.entries[0].finiteEventRp, 1000);
 });
 
@@ -464,7 +465,7 @@ test('empty raw server archive retains old native approval, replay and original 
   assert.equal(projection.adjustments[0].deltaRp, 1000);
   const output = projectNativeEventTotals({serverTotals: freshTotals, projections: [projection], rollingNormalBoard: rolling()});
   assert.equal(output.totals.entries[0].finiteEventRp, 1077);
-  assert.equal(output.totals.entries[0].events, 4);
+  assert.equal(output.totals.entries[0].finiteEvents, 4);assert.equal(output.totals.entries[0].events,5);
 });
 
 test('a protected prior pending source can prove admission after raw archive cleanup without prior overlay', async t => {
@@ -1001,7 +1002,7 @@ test('published rebase ignores stale backend deltas and preserves historical res
   const row = result.totals.entries[0];
   assert.equal(row.finiteEventRp, 1077);
   assert.equal(row.rp, 1077 + 10101);
-  assert.equal(row.events, 4);
+  assert.equal(row.finiteEvents, 4);
   assert.equal(row.accountCreatedAt, 500);
   assert.equal(row.identityUpdatedAt, 1000);
   assert.deepEqual(result.boards[0], projection.board);
@@ -1133,7 +1134,7 @@ test('exact held prior contribution is removed once without changing remaining h
   const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
     projections: [projection], rollingNormalBoard: rolling()});
   assert.equal(result.totals.entries[0].finiteEventRp, 77);
-  assert.equal(result.totals.entries[0].events, 3);
+  assert.equal(result.totals.entries[0].finiteEvents, 3);
   assert.deepEqual(result.boards[0], projection.board);
 });
 
@@ -1179,7 +1180,7 @@ test('all known prior periods are subtracted before replacements and untouched a
     const result = rebaseNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(),
       projections: [projection], rollingNormalBoard: rolling()});
     assert.equal(result.totals.entries[0].finiteEventRp, 77 + 1000 + 50);
-    assert.equal(result.totals.entries[0].events, 5);
+    assert.equal(result.totals.entries[0].finiteEvents, 5);
     assert.deepEqual(result.boards.find(b => b.id === 'archive'), archive);
     assert.deepEqual(result.report.retainedPeriodIds, ['archive']);
     assert.deepEqual(published.residuals, [{accountId, rp: 77, events: 3}]);
@@ -1223,7 +1224,7 @@ test('recovery integration retains 56 stable partial archives including 12 uncha
   const before = JSON.stringify(projections);
   const result = reconcileNativeEventTotalsFromPublished({publishedBaseline: published, serverTotals: totals(), projections, rollingNormalBoard: rolling()});
   assert.equal(result.totals.entries[0].finiteEventRp, prior.priorTotals.entries[0].finiteEventRp);
-  assert.equal(result.totals.entries[0].events, 59);
+  assert.equal(result.totals.entries[0].finiteEvents, 59);
   assert.equal(result.report.retainedCurrentPeriodIds.length, 56);
   assert.deepEqual(result.report.projectedPeriodIds, []);
   assert.equal(result.boards.filter(board => board.entries[0].replayUnavailable === true).length, 12);
@@ -1321,4 +1322,17 @@ test('recovery integration rejects unknown partial periods, duplicates, frozen c
     projections: [{board: {...current, period: {...current.period, targetMs: 999}}, totalsEligible: false}]}), /frozen period policy/);
   assert.throws(() => reconcileNativeEventTotalsFromPublished({...args, projections: [{board: current, ready: true}]}), /ledger-compiled/);
   assert.throws(() => reconcileNativeEventTotalsFromPublished({...args, publishedBaseline: structuredClone(published)}), /Branded trusted/);
+});
+
+test('chunked totals retain explicit v2 counts and repeated native merge does not invent finite participation',()=>{
+ const source=totals({eventCountVersion:2});Object.assign(source.entries[0],{finiteEvents:4,permanentEvents:1,events:5,rollingHillsTimeMs:1200});
+ const first=projectNativeEventTotals({serverTotals:source,projections:[],rollingNormalBoard:rolling()});
+ assert.equal(first.totals.eventCountVersion,2);assert.deepEqual([first.totals.entries[0].finiteEvents,first.totals.entries[0].permanentEvents,first.totals.entries[0].events],[4,1,5]);
+ const second=projectNativeEventTotals({serverTotals:source,projections:[],rollingNormalBoard:rolling()});
+ assert.deepEqual(second.totals.entries,first.totals.entries);
+ const legacy=projectNativeEventTotals({serverTotals:totals(),projections:[],rollingNormalBoard:rolling()});
+ assert.equal(legacy.totals.entries[0].finiteEvents,4,'legacy finite count is unchanged, not decremented by assumed RHR history');
+ const entries=Array.from({length:251},(_,i)=>({...source.entries[0],accountId:sha('chunk-count-'+i)}));
+ const chunked=projectAssembledEventTotals({...source,entries,totalEntries:entries.length});
+ assert.equal(chunked.eventCountVersion,2);assert.ok(chunked.entries.every(row=>row.events===5&&row.finiteEvents===4&&row.permanentEvents===1));
 });

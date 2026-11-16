@@ -93,6 +93,33 @@ test('builder uses actual commit identities, timestamps and central notes and bo
   for(const limit of [0,21,1.5,NaN])await assert.rejects(buildReleaseHistory({...f.options,limit}),/limit/);
 });
 
+test('player-facing release-note overrides are explicit, preserve Git metadata, and fall back when absent',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'polytrack-release-note-overrides-'));
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));await fs.mkdir(path.join(root,'tools'));
+  const f=gitFixture({numbers:[266,265,264]});
+  await fs.writeFile(path.join(root,'tools/release-note-overrides.json'),JSON.stringify({
+    '265':{title:'Clearer player controls',notes:['Controls are easier to understand.']}
+  }));
+  const overridden=await buildReleaseHistory({...f.options,root});
+  assert.equal(overridden.entries[0].title,'Clearer player controls');
+  assert.deepEqual(overridden.entries[0].notes,['Controls are easier to understand.']);
+  assert.equal(overridden.entries[0].commit,f.rows[1].commit);
+  assert.equal(overridden.entries[0].committedAt,new Date(f.rows[1].date).toISOString());
+  assert.equal(overridden.entries[1].title,'Clearer controls');
+  assert.deepEqual(overridden.entries[1].notes,release(264).notes);
+  await fs.rm(path.join(root,'tools/release-note-overrides.json'));
+  const fallback=await buildReleaseHistory({...f.options,root});
+  assert.equal(fallback.entries[0].title,'Clearer controls');
+  assert.deepEqual(fallback.entries[0].notes,release(265).notes);
+});
+
+test('invalid release-note overrides fail closed',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'polytrack-invalid-release-note-overrides-'));
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));await fs.mkdir(path.join(root,'tools'));
+  await fs.writeFile(path.join(root,'tools/release-note-overrides.json'),JSON.stringify({'265':{title:'',notes:['A valid note.']}}));
+  await assert.rejects(buildReleaseHistory({...gitFixture().options,root}),/Invalid release-note overrides/);
+});
+
 test('capture exclusion requires both exact bot identity and exact capture title',async()=>{
   const bot={commit:sha(900),name:'github-actions[bot]',email:'41898282+github-actions[bot]@users.noreply.github.com',title:'Sync public ranked snapshots',date:iso};
   const bots=[bot,{...bot,commit:sha(901),title:'Sync Kodub weekly fallback'},{...bot,commit:sha(902),email:'someone@example.test'},

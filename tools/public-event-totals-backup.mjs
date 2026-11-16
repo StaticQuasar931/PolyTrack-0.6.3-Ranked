@@ -1,3 +1,4 @@
+import {finiteEventCount} from '../workers/ranked/src/permanent-rolling-hills.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {publicDisplayName} from './public-display-name.mjs';
@@ -10,22 +11,24 @@ import {buildEventRpHighlights,EVENT_HIGHLIGHT_LIMITS} from './event-rp-highligh
 
 export function publicEventTotals(value,{capturedBoards=[]}={}){
   if(!Number.isSafeInteger(value?.updatedAt)||value.updatedAt<0||!Array.isArray(value.entries)||value.entries.length>10000||value.entries.length>200&&!(value.paginatedSource===true&&value.complete===true&&value.totalEntries===value.entries.length))throw Error('Invalid public event totals');
+  if(value.eventCountVersion!==undefined&&value.eventCountVersion!==2)throw Error('Invalid event count version');
   const seen=new Set();
   const entries=value.entries.map(row=>{
     const accountId=row.accountId||row.userId;
     if(!/^[a-f0-9]{64}$/.test(accountId)||seen.has(accountId))throw Error('Invalid event total identity');
     seen.add(accountId);
     const identity=publicOverallBackup({updatedAt:0,entries:[{...row,userId:accountId}],trackSummaries:[]}).snapshot.entries[0];
+    if(value.eventCountVersion===2||row.finiteEvents!==undefined||row.permanentEvents!==undefined)finiteEventCount(row,value.eventCountVersion);
     const result={accountId,name:publicDisplayName(row.name)};
     for(const key of ['countryCode','carStyle','carId','carColors','profileCosmetics','identityUpdatedAt','accountCreatedAt','badges'])if(identity[key]!==undefined)result[key]=identity[key];
-    for(const key of ['rank','rp','events','finiteEventRp','rollingHillsRunAgeMs','rollingHillsEventRpContribution','permanentRollingHillsRp','rollingHillsTimeMs']){
+    for(const key of ['rank','rp','events','finiteEvents','permanentEvents','finiteEventRp','rollingHillsRunAgeMs','rollingHillsEventRpContribution','permanentRollingHillsRp','rollingHillsTimeMs']){
       if(row[key]!=null){if(!Number.isFinite(row[key])||row[key]<0)throw Error('Invalid public event metric');result[key]=row[key];}
     }
     return result;
   });
   const highlights=buildEventRpHighlights({totalsRows:entries,boards:capturedBoards});
   for(const row of entries)if(highlights.get(row.accountId)?.length)row.eventHighlights=highlights.get(row.accountId);
-  return {updatedAt:value.updatedAt,entries,...(typeof value.complete==='boolean'?{complete:value.complete}:{}),...(Number.isSafeInteger(value.totalEntries)?{totalEntries:value.totalEntries}:{})};
+  return {updatedAt:value.updatedAt,entries,...(value.eventCountVersion===2?{eventCountVersion:2}:{}),...(typeof value.complete==='boolean'?{complete:value.complete}:{}),...(Number.isSafeInteger(value.totalEntries)?{totalEntries:value.totalEntries}:{})};
 }
 
 // Only already-captured local board files are eligible; never fetch missing boards.

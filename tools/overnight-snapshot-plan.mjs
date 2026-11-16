@@ -45,6 +45,11 @@ export function overnightSnapshotPlan({eventName,schedule,now,runAttempt=1,confi
 }
 
 export function localOvernightCapturePlan({now=Date.now(),receipt}={}){
+  if(Object.hasOwn(receipt||{},'freshCapturePlan')){
+    const n=freshLocalCaptureContext({now,receipt});
+    return {mode:'firestore',maxJobs:n.maxJobs,maxRuntimeMs:n.maxRuntimeMs,
+      replayDocumentLimit:n.replayDocumentLimit,deadline:n.deadline};
+  }
   const n=OVERNIGHT_SNAPSHOT;
   if(receipt?.replacementAuthorization?.id!==n.authorizationId||receipt.replacementAuthorization.requestedBy!=='user'||
     receipt.replacementAuthorization.publicationMode!==n.publicationMode||receipt.replacementAuthorization.automaticRetry!==false||
@@ -57,6 +62,46 @@ export function localOvernightCapturePlan({now=Date.now(),receipt}={}){
     throw Error('Local overnight capture requires exact tested readiness and the authorized time window');
   return {mode:'firestore',maxJobs:n.maxJobs,maxRuntimeMs:n.maxRuntimeMs,
     replayDocumentLimit:n.replayDocumentLimit,deadline:n.deadline};
+}
+
+export function freshLocalCaptureContext({now=Date.now(),receipt}={}){
+  const p=receipt?.freshCapturePlan,a=receipt?.freshAuthorization,q=receipt?.quotaAdmission;
+  const positive=value=>Number.isSafeInteger(value)&&value>0;
+  const sha=value=>/^[a-f0-9]{40}$/.test(value||'');
+  if(!p||p.version!==1||! /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(p.runId||'')||
+    !positive(now)||!positive(p.start)||!positive(p.latestCaptureStart)||!positive(p.deadline)||
+    p.start>=p.latestCaptureStart||p.latestCaptureStart+50*60000>p.deadline||p.deadline-p.start>3*3600000||
+    now<p.start||now>=p.latestCaptureStart||receipt.targetDate!==new Date(p.start).toISOString().slice(0,10))
+    throw Error('Explicit fresh capture date/window and unique run identity required');
+  const claimTag='polytrack-fresh-'+receipt.targetDate+'-'+p.runId;
+  if(receipt.ready!==true||receipt.execution!=='local'||receipt.captureOnly!==true||receipt.oneOffAuthority!=='firestore'||
+    !sha(receipt.testedCommit)||receipt.claimTag!==claimTag||receipt.scheduledCaptureAt!==new Date(p.start).toISOString()||
+    receipt.replayDocumentLimit!==1000||a?.requestedBy!=='user'||a.id!==p.runId||a.sourceCommit!==receipt.testedCommit||
+    a.publicationMode!=='capture-first'||a.automaticRetry!==false||!positive(a.authorizedAt)||
+    a.authorizedAt>p.start||now-a.authorizedAt>86400000||
+    receipt.priorAccounting?.directDocumentReadReservations!==0||receipt.priorAccounting?.workerRequests!==0)
+    throw Error('Fresh user authorization, source binding and zero per-run counters required');
+  if(['replacementAuthorization','priorFailure','priorCompletion','capturedCanonicalPages','capturedProfiles','reuseWorkerBackup']
+    .some(key=>Object.hasOwn(receipt,key)))throw Error('Fresh capture cannot inherit historical recovery authority or frozen sources');
+  const baseline=receipt.fullSnapshotPolicy?.publishedBaseline;
+  if(!Number.isSafeInteger(baseline?.generation)||baseline.generation<1||! /^[a-f0-9]{64}$/.test(baseline.indexSha256||'')||
+    a.baseline?.generation!==baseline.generation||a.baseline?.indexSha256!==baseline.indexSha256)
+    throw Error('Fresh authorization must pin the current published baseline');
+  if(q?.approvedBy!=='user'||q.sourceCommit!==receipt.testedCommit||q.runId!==p.runId||!positive(q.checkedAt)||
+    !positive(q.expiresAt)||q.checkedAt>now||q.checkedAt<a.authorizedAt||q.expiresAt<=now||
+    q.expiresAt-q.checkedAt>3600000||q.remainingDirectReservations<40000||q.remainingWorkerRequests<1024||
+    !Number.isSafeInteger(q.remainingDirectReservations)||!Number.isSafeInteger(q.remainingWorkerRequests)||q.documentWriteLimit!==0||
+    ! /^[a-f0-9]{64}$/.test(q.evidence?.sha256||''))
+    throw Error('Fresh source-bound, unexpired quota admission evidence required; per-run zero is not daily quota');
+  return {fresh:true,date:receipt.targetDate,execution:'local',claimTag,authorizationId:p.runId,
+    privateDirectorySuffix:receipt.targetDate+'/fresh-capture-'+p.runId,
+    priorDirectReservations:0,priorWorkerRequests:0,start:p.start,latestCaptureStart:p.latestCaptureStart,deadline:p.deadline,
+    maxJobs:10000,maxRuntimeMs:1500000,packReserveMs:60000,jobTimeoutMinutes:50,replayDocumentLimit:1000};
+}
+
+export function resolveLocalCaptureContext({receipt,now=Date.now()}={}){
+  if(Object.hasOwn(receipt||{},'freshCapturePlan'))return freshLocalCaptureContext({receipt,now});
+  localOvernightCapturePlan({receipt,now});return OVERNIGHT_SNAPSHOT;
 }
 
 export function assertOvernightCapture({mode,now,runAttempt,previousCaptureStartedAt}={}){

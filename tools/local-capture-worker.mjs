@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {localOvernightCapturePlan,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
+import {localOvernightCapturePlan,resolveLocalCaptureContext,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {updatePublicSnapshot} from './update-public-snapshot.mjs';
 import {captureOverallProjection} from './capture-overall-projection.mjs';
 import {capturePublicEventTotals} from './public-event-totals-backup.mjs';
@@ -30,7 +30,7 @@ import {prepareLocalArchiveReplayRepair,repairLocalArchiveReplays,ARCHIVE_REPAIR
 import {runNativeSnapshotPhase} from './native-snapshot-phase.mjs';
 import {createLocalNativeVerificationCompletion} from './local-native-verification-completion.mjs';
 import {assertLocalSource} from './local-capture-publication.mjs';
-import {validateLocalEvidence} from './local-overnight-capture.mjs';
+import {validateLocalEvidence,validateReplacementContext} from './local-overnight-capture.mjs';
 
 // A wrapped backup must not disable the updater's default source stages.
 export function localCaptureSourceStages({captureOverall=captureOverallProjection,captureTotals=capturePublicEventTotals,calculateOverall=rebuildSnapshotOverall}={}){
@@ -127,6 +127,8 @@ export async function assertLocalStagingBase({root,publishedBaseline}={}){
 }
 
 export async function captureLocalSource({receipt,receiptFile,owner}={}){
+  const N=resolveLocalCaptureContext({receipt});
+  if(N.fresh)await validateReplacementContext(receipt,{directory:path.dirname(receiptFile)});
   const fullPolicy=fullSnapshotPolicy(receipt);
   await validateLocalEvidence(receipt);
   await assertLocalSource({workspace:receipt.workspace,sourceCommit:receipt.testedCommit,

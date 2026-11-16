@@ -100,6 +100,9 @@ for(const mode of ['continuous','coordinated'])test('completed-part staging fail
     async(collection,id)=>({data:f.data.get(collection+'/'+id)}));
   assert.equal(all.length,10001);assert.equal(all[0].accountId,'rolling');
   assert.equal(all[0].permanentRollingHillsRp,10101);
+  assert.equal(f.data.get(C.public+'/totals_full').eventCountVersion,2);
+  assert.deepEqual([all[0].finiteEvents,all[0].permanentEvents,all[0].events],[0,1,1]);
+  assert.ok([...f.data.values()].filter(value=>value?.entries?.some(row=>row.permanentEvents===1)&&value?.generation).every(value=>value.eventCountVersion===2));
   assert.equal(f.data.get(cursor).retries,undefined);
 });
 

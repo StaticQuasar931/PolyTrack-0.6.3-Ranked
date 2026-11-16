@@ -1,0 +1,149 @@
+{
+  "386": {
+    "title": "Safer Garage and better replay suggestions",
+    "notes": [
+      "Garage navigation is safer, and roof accessories now sit on the car. Choose from six accessories in the workshop's bottom tabs.",
+      "Local personal-best replays load more reliably, and route suggestions use your saved snapshots."
+    ]
+  },
+  "387": {
+    "title": "More rewarding milestones and event scoring",
+    "notes": [
+      "Achievement rewards, Style Coin milestones, and your shop preview are clearer.",
+      "Rolling Hills Event RP rewards both placement and pace, including results from earlier runs.",
+      "Track previews, Racer Studio controls, and recent replay loading are improved."
+    ]
+  },
+  "388": {
+    "title": "More reliable update downloads",
+    "notes": [
+      "Improved delivery of the latest game update and snapshot files."
+    ]
+  },
+  "389": {
+    "title": "Personal-best uploads and event results",
+    "notes": [
+      "Fixed personal-best uploads when you set several records on one track in a session.",
+      "Fixed reward claims that could get stuck after earning a newer milestone.",
+      "Event personal-best times remain visible when you return to Daily, Weekly, or Kodub tracks."
+    ]
+  },
+  "390": {
+    "title": "More car choices and clearer event menus",
+    "notes": [
+      "Car finishes, front emblems, and accessories are available with a clearer Garage workshop.",
+      "Eligible cosmetic achievements have claimable bonuses, and shop previews are sharper.",
+      "Event RP filters, run details, and the rankings menu are easier to understand."
+    ]
+  },
+  "391": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "392": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "393": {
+    "title": "Clearer event details and profile shortcuts",
+    "notes": [
+      "Event names, cached placements, and Rolling Hills RP run details are clearer.",
+      "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
+      "Local personal bests can show a podium target without being presented as confirmed medals."
+    ]
+  },
+  "394": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "395": {
+    "title": "More reliable car previews and saved designs",
+    "notes": [
+      "Car finishes keep both paint colors, and accessories fit the car more closely.",
+      "Eligible rewards sync automatically, with checks to limit repeat claims.",
+      "Live previews, Undo, and Restore keep your saved work more reliably."
+    ]
+  },
+  "396": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "397": {
+    "title": "More achievements, shop options, and weekly artwork",
+    "notes": [
+      "Weekly spotlight artwork now fits its card without being cropped.",
+      "Achievement goals, cosmetic unlocks, and coin milestones are easier to tell apart.",
+      "The Shop adds sorting, and playtime is shown more precisely."
+    ]
+  },
+  "398": {
+    "title": "More ways to customize and save your car",
+    "notes": [
+      "Studio keeps your selected backdrop and car preview, and saved drafts survive delayed controls.",
+      "Combine front and rear accessories. Two-color neon and metal finishes are clearer.",
+      "Locked workshop choices show their requirements, and the Podium crown requires a confirmed podium."
+    ]
+  },
+  "399": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "400": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "401": {
+    "title": "Clearer rank history and weekly event cards",
+    "notes": [
+      "Overall RP rank duration is based on consecutive saved observations, so rebuilds do not reset the displayed time.",
+      "Rank history is shared between rankings and racer profiles. A local projected rank does not inherit time from an earlier rank.",
+      "Kodub weekly artwork fits its card while remaining fully visible."
+    ]
+  },
+  "402": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "403": {
+    "title": "Weekly artwork fits event cards better",
+    "notes": [
+      "Kodub weekly artwork now fits the card height while keeping its original image uncropped.",
+      "The weekly personal-best icon is sized to match its text."
+    ]
+  },
+  "404": {
+    "title": "Clearer rank times and event standings",
+    "notes": [
+      "Rank time is shown in one line, such as 2 days at #8 or Up 3 with the time at that rank.",
+      "Event cards show a cached standings preview matched to the event period and personal-best time, rather than reusing a stale rank.",
+      "Weekly personal-best time and placement share a row, and event previews do not grant verification or Event RP."
+    ]
+  },
+  "405": {
+    "title": "Maintenance update",
+    "notes": [
+      "No gameplay changes in this update."
+    ]
+  },
+  "406": {
+    "title": "More reliable event previews",
+    "notes": [
+      "Fixed update packaging so event preview data is delivered in the correct format.",
+      "Keeps rank times clear, event standings matched to the event and personal-best time, and weekly personal-best details together."
+    ]
+  }
+}

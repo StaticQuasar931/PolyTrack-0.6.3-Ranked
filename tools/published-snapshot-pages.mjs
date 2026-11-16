@@ -62,6 +62,8 @@ export async function assemblePublishedSnapshotPages(value, {
   const entries = [];
   const identities = new Set();
   let sourceRevision;
+  let eventCountVersion=value.eventCountVersion,pageCountVersion,seenCountVersion=false;
+  if(eventCountVersion!==undefined&&eventCountVersion!==2)throw Error('Invalid published event count version');
   let sourceCoverage = typeof value.sourceComplete === 'boolean' ? value.sourceComplete : undefined;
   for (let page = 0; page < pagination.pageCount; page++) {
     onRequest?.(page, pagination.generation);
@@ -84,6 +86,9 @@ export async function assemblePublishedSnapshotPages(value, {
       throw new Error('Published snapshot pages have mixed source revisions');
     }
 
+    if(result.eventCountVersion!==undefined&&result.eventCountVersion!==2||seenCountVersion&&result.eventCountVersion!==pageCountVersion||eventCountVersion!==undefined&&result.eventCountVersion!==eventCountVersion)throw Error('Published snapshot pages have conflicting event count versions');
+    pageCountVersion=result.eventCountVersion;seenCountVersion=true;
+    if(eventCountVersion===undefined)eventCountVersion=pageCountVersion;
     if (Object.hasOwn(result, 'sourceComplete')) {
       if (typeof result.sourceComplete !== 'boolean' || sourceCoverage !== undefined && result.sourceComplete !== sourceCoverage) {
         throw new Error('Published snapshot pages have conflicting source coverage');
@@ -103,6 +108,7 @@ export async function assemblePublishedSnapshotPages(value, {
   const sourceComplete = sourceCoverage !== false;
   return {
     ...value,
+    ...(eventCountVersion===undefined?{}:{eventCountVersion}),
     pagination: {
       version: pagination.version,
       generation: pagination.generation,

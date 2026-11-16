@@ -143,7 +143,7 @@ export function buildEventRpHighlights({totalsRows=[],boards=[]}={}){
       let remaining=budget.finiteLimit;
       if(remaining!==null)for(const highlight of finite.sort(finiteOrder)){
         if(highlight.eventRp>remaining)continue;
-        selected.push(highlight);remaining-=highlight.eventRp;if(selected.length===2)break;
+        selected.push(highlight);remaining-=highlight.eventRp;if(selected.length===(rolling?3:2))break;
       }
     }
     return [accountId,Object.freeze(selected)];

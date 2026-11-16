@@ -136,3 +136,20 @@ test('receipt authentication failures and non-page replay 404s never enter the p
   }
   assert.equal(f.counts.reads,4);
 });
+
+test('v2 public counts preserve root/row markers and remain idempotent without private data',()=>{
+ const row={accountId:'rhr-only',name:'Racer',rp:9000,events:1,finiteEvents:0,permanentEvents:1,finiteEventRp:0,permanentRollingHillsRp:9000,rollingHillsTimeMs:12000,ownerUid:'PRIVATE_CANARY'};
+ const page=publicEventPage({eventCountVersion:2,entries:[row],privateNotes:'PRIVATE_CANARY'},'event_totals');
+ assert.equal(page.eventCountVersion,2);
+ assert.deepEqual([page.entries[0].events,page.entries[0].finiteEvents,page.entries[0].permanentEvents],[1,0,1]);
+ assert.equal(page.entries[0].permanentRollingHillsRp,9000);assert.equal(JSON.stringify(page).includes('PRIVATE_CANARY'),false);
+ assert.deepEqual(publicEventPage(page,'event_totals'),page);
+ const zero=publicEventTotal({...row,rp:0,permanentRollingHillsRp:0});assert.equal(zero.events,1);assert.equal(zero.permanentEvents,1);
+ assert.equal(publicEventTotal({accountId:'legacy',rp:0,events:0}).finiteEvents,undefined);
+});
+test('v2 public counts reject contradictory or partially stripped markers',()=>{
+ const row={accountId:'counted',rp:0,events:1,finiteEvents:0,permanentEvents:1};
+ for(const change of [{finiteEvents:-1},{finiteEvents:0.5},{permanentEvents:2},{permanentEvents:undefined},{events:0}])assert.throws(()=>publicEventTotal({...row,...change}),/COUNTS_INVALID/);
+ assert.throws(()=>publicEventPage({eventCountVersion:2,entries:[{accountId:'stripped',rp:0,events:1}]},'event_totals'),/COUNTS_INVALID/);
+ assert.throws(()=>publicEventPage({eventCountVersion:3,entries:[row]},'event_totals'),/COUNTS_INVALID/);
+});

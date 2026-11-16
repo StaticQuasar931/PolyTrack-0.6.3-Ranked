@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {capturedEventLeaderboard, capturedEventRp, eventRp} from '../workers/ranked/src/events.js';
 import {derivePermanentRollingHills, mergePermanentRollingIntoTotals, PERMANENT_ROLLING_HILLS,
-  permanentRollingHillsRp, permanentResultEligible} from '../workers/ranked/src/permanent-rolling-hills.js';
+  permanentRollingHillsRp, permanentResultEligible, finiteEventCount} from '../workers/ranked/src/permanent-rolling-hills.js';
 import {publicEventBackup, publicEventReplayBackup} from './public-snapshot-backup.mjs';
 import {publicEventPlaybackForPublication} from './public-event-playback.mjs';
 import {validatePublicReplayForPublication} from './public-replay-playback.mjs';
@@ -66,9 +66,10 @@ function totalsDigest(serverTotals) {
 export function projectAssembledEventTotals(value, {capturedBoards = []} = {}) {
   complete(value);
   demand(integer(value.updatedAt), 'Invalid assembled event totals timestamp');
+  demand(value.eventCountVersion===undefined||value.eventCountVersion===2,'Invalid assembled event count version');
   const seen = new Set(), entries = [];
   for (let offset = 0; offset < value.entries.length; offset += 200) {
-    const chunk = publicEventTotals({updatedAt: value.updatedAt, entries: value.entries.slice(offset, offset + 200)});
+    const chunk = publicEventTotals({updatedAt: value.updatedAt, entries: value.entries.slice(offset, offset + 200),...(value.eventCountVersion===undefined?{}:{eventCountVersion:value.eventCountVersion})});
     for (const row of chunk.entries) {
       demand(!seen.has(row.accountId), 'Duplicate event total identity across chunks');
       seen.add(row.accountId); entries.push(row);
@@ -76,7 +77,7 @@ export function projectAssembledEventTotals(value, {capturedBoards = []} = {}) {
   }
   const highlights = buildEventRpHighlights({totalsRows: entries, boards: capturedBoards});
   for (const row of entries) if (highlights.get(row.accountId)?.length) row.eventHighlights = highlights.get(row.accountId);
-  return {updatedAt: value.updatedAt, entries, complete: value.complete, totalEntries: value.totalEntries};
+  return {updatedAt: value.updatedAt, entries,...(value.eventCountVersion===2?{eventCountVersion:2}:{}), complete: value.complete, totalEntries: value.totalEntries};
 }
 
 function validLane(rows, period) {
@@ -585,7 +586,7 @@ export function projectNativeEventTotals({serverTotals, projections = [], rollin
     demand(integer(rolling) && row.rp === row.finiteEventRp + rolling &&
       (row.permanentRollingHillsRp === undefined || row.permanentRollingHillsRp === rolling) &&
       (row.rollingHillsEventRpContribution === undefined || row.rollingHillsEventRpContribution === rolling), 'Conflicting totals component baseline');
-    rows.set(row.accountId, {...clone(row), rp: row.finiteEventRp});
+    rows.set(row.accountId, {...clone(row), rp: row.finiteEventRp,events:finiteEventCount(row,serverTotals.eventCountVersion)});
   }
   const periods = new Set();
   const knownContributions = new Map();
@@ -617,12 +618,12 @@ export function projectNativeEventTotals({serverTotals, projections = [], rollin
   const original = new Map(serverTotals.entries.map(row => [row.accountId, row]));
   for (const [accountId, known] of knownContributions) {
     demand(original.has(accountId) && original.get(accountId).finiteEventRp >= known.rp &&
-      original.get(accountId).events >= known.events, 'Captured period contributions exceed server totals baseline');
+      finiteEventCount(original.get(accountId),serverTotals.eventCountVersion) >= known.events, 'Captured period contributions exceed server totals baseline');
   }
   const finite = {...clone(serverTotals), entries: [...rows.values()], complete: true, totalEntries: rows.size};
-  delete finite.pagination; delete finite.paginatedSource;
+  delete finite.pagination; delete finite.paginatedSource;delete finite.eventCountVersion;
   // Drop old dynamic component metadata before the shared policy replaces it.
-  for (const row of finite.entries) for (const key of ['finiteEventRp', 'permanentRollingHillsRp', 'dynamicEventRp',
+  for (const row of finite.entries) for (const key of ['finiteEvents','permanentEvents','finiteEventRp', 'permanentRollingHillsRp', 'dynamicEventRp',
     'rollingHillsTimeMs', 'rollingHillsRunAgeMs', 'rollingHillsEventRpContribution', 'eventHighlights']) delete row[key];
   demand(capturedRollingBoard === undefined || rollingNormalBoard === undefined, 'Choose one explicit Rolling Hills source');
   if (capturedRollingBoard !== undefined) demand(capturedRollingBoards.has(capturedRollingBoard), 'Pinned captured-native Rolling Hills result required');
@@ -695,7 +696,7 @@ export function rebaseNativeEventTotalsFromPublished({publishedBaseline, serverT
   }
   demand(rows.size <= 10000, 'Rebased totals account limit exceeded');
   const finite = {updatedAt, entries: [...rows.values()], complete: true, totalEntries: rows.size};
-  for (const row of finite.entries) for (const key of ['finiteEventRp', 'permanentRollingHillsRp', 'dynamicEventRp',
+  for (const row of finite.entries) for (const key of ['finiteEvents','permanentEvents','finiteEventRp', 'permanentRollingHillsRp', 'dynamicEventRp',
     'rollingHillsTimeMs', 'rollingHillsRunAgeMs', 'rollingHillsEventRpContribution', 'eventHighlights']) delete row[key];
   demand(capturedRollingBoard === undefined || rollingNormalBoard === undefined, 'Choose one explicit Rolling Hills source');
   if (capturedRollingBoard !== undefined) demand(capturedRollingBoards.has(capturedRollingBoard), 'Pinned captured-native Rolling Hills result required');

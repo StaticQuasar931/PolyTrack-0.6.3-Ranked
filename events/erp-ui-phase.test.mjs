@@ -112,3 +112,25 @@ test('actual earned ERP requires exact eligible published source identity, time,
  assert.equal(eventRunErpPresentation(r,changed,p,5000).status,'unavailable');
  assert.equal(eventRunErpPresentation(r,null,p,5000).status,'unavailable');
 });
+
+test('RHR-only racer with finite count zero displays one event without changing published ERP',()=>{
+ const raw={entries:[row(7,{rp:7299,finiteEventRp:0,permanentRollingHillsRp:7299,rollingHillsEventRpContribution:7299,rollingHillsTimeMs:24531,events:0})]};
+ const before=structuredClone(raw);
+ const all=eventRpFilterRows(raw,'all').entries[0],rolling=eventRpFilterRows(raw,'rolling').entries[0];
+ assert.equal(all.events,1);assert.equal(rolling.events,1);assert.equal(all.rp,7299);assert.equal(rolling.rp,7299);
+ assert.equal(eventRpFilterRows(raw,'seasonal').entries[0].events,0);assert.deepEqual(raw,before);
+});
+for(const kind of ['daily','weekly'])test(kind+' ERP title uses actual track name rather than numeric calendar label',()=>{
+ const p={kind,trackId:hash(99),label:kind+' 2026-11-09'};
+ assert.equal(eventPeriodDisplayName(p,()=>({name:'Full Track Name'})),(kind==='daily'?'Daily':'Weekly')+' Full Track Name');
+ assert.doesNotMatch(eventPeriodDisplayName(p,()=>({name:'Full Track Name'})),/2026|11-09/);
+});
+
+test('v2 published event counts are consumed without adding RHR twice',()=>{
+ const data={eventCountVersion:2,entries:[row(7,{rp:7299,finiteEventRp:0,permanentRollingHillsRp:7299,rollingHillsEventRpContribution:7299,rollingHillsTimeMs:24531,events:1,finiteEvents:0,permanentEvents:1})]};
+ assert.equal(eventRpFilterRows(data,'all').entries[0].events,1);
+ assert.equal(eventRpFilterRows(data,'seasonal').entries[0].events,0);
+ assert.equal(eventRpFilterRows(data,'rolling').entries[0].events,1);
+ const bad={...data,entries:[{...data.entries[0],events:0}]};
+ assert.equal(eventRpFilterRows(bad).entries[0].events,null,'invalid v2 counts never fall back to legacy increment');
+});

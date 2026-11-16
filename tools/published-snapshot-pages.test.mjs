@@ -150,3 +150,11 @@ test('malformed pagination and page budgets fail before any page request', async
   await assert.rejects(assemblePublishedSnapshotPages(value, { fetchPage: async () => { requests++; } }), /page budget/);
   assert.equal(requests, 0);
 });
+
+test('assembled pages preserve v2 root/counts and reject mixed or stripped page versions',async()=>{
+ const {value,pages}=fixture(101,{eventCountVersion:2});
+ for(const page of pages){page.eventCountVersion=2;page.entries=page.entries.map(row=>({...row,events:1,finiteEvents:0,permanentEvents:1}));}
+ const result=await assemblePublishedSnapshotPages(value,{fetchPage:async i=>pages[i]});
+ assert.equal(result.eventCountVersion,2);assert.ok(result.entries.every(row=>row.events===1&&row.finiteEvents===0&&row.permanentEvents===1));
+ for(const version of [undefined,3])await assert.rejects(assemblePublishedSnapshotPages(value,{fetchPage:async i=>i?{...pages[i],eventCountVersion:version}:pages[i]}),/event count versions/);
+});

@@ -220,3 +220,12 @@ test('projection reserves unloaded RH contribution and does not treat unknown RH
  delete source.entries[0].rollingHillsEventRpContribution;
  assert.equal(publicEventTotals(source,{capturedBoards:[finite]}).entries[0].eventHighlights,undefined);
 });
+
+test('v2 totals serializer preserves canonical component counts/root marker and legacy omission',()=>{
+ const value={updatedAt:1,eventCountVersion:2,entries:[{accountId:'a'.repeat(64),rp:9000,events:1,finiteEvents:0,permanentEvents:1,finiteEventRp:0,permanentRollingHillsRp:9000,rollingHillsTimeMs:12000}]};
+ const result=publicEventTotals(value);assert.equal(result.eventCountVersion,2);assert.equal(result.entries[0].finiteEvents,0);assert.equal(result.entries[0].permanentEvents,1);assert.equal(result.entries[0].events,1);
+ assert.deepEqual(publicEventTotals(result),result);
+ const legacy=publicEventTotals({updatedAt:1,entries:[{accountId:'b'.repeat(64),rp:7,events:0}]});
+ assert.equal(legacy.eventCountVersion,undefined);assert.equal(legacy.entries[0].finiteEvents,undefined);assert.equal(legacy.entries[0].events,0);
+ for(const patch of [{events:0},{finiteEvents:undefined},{permanentEvents:2}])assert.throws(()=>publicEventTotals({...value,entries:[{...value.entries[0],...patch}]}),/event_counts/);
+});

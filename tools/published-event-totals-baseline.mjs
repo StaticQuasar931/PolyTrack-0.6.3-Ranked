@@ -1,3 +1,4 @@
+import {finiteEventCount} from '../workers/ranked/src/permanent-rolling-hills.js';
 import {PRIVATE_SNAPSHOT_INDEX_BYTES} from './private-snapshot-index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -96,7 +97,7 @@ export async function loadTrustedPublishedEventTotalsBaseline({root, expectedGen
       (row.permanentRollingHillsRp === undefined || row.permanentRollingHillsRp === rolling) &&
       (row.rollingHillsEventRpContribution === undefined || row.rollingHillsEventRpContribution === rolling),
     'Inconsistent prior totals components');
-    residuals.set(row.accountId, {accountId: row.accountId, rp: row.finiteEventRp, events: row.events});
+    residuals.set(row.accountId, {accountId: row.accountId, rp: row.finiteEventRp, events: finiteEventCount(row,totals.eventCountVersion)});
   }
   const logicalBoards = Object.keys(index.files).filter(key => key.startsWith('events/') && key !== 'events/permanent-rolling-hills.json').sort();
   demand(logicalBoards.length <= 1024, 'Prior event board limit exceeded');
@@ -175,7 +176,7 @@ export async function selectPublishedEventTotalsBaseline({root, directory} = {})
       (row.permanentRollingHillsRp === undefined || row.permanentRollingHillsRp === rolling) &&
       (row.rollingHillsEventRpContribution === undefined || row.rollingHillsEventRpContribution === rolling),
     'Inconsistent prior totals components');
-    totals.set(row.accountId, row);
+    totals.set(row.accountId, {...row,events:finiteEventCount(row,previous.eventCountVersion)});
   }
   const boards = new Map(), known = new Map();
   for (const logical of Object.keys(index.files).filter(key => key.startsWith('events/')).sort()) {

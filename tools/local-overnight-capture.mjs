@@ -5,7 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {localOvernightCapturePlan,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
+import {localOvernightCapturePlan,resolveLocalCaptureContext,OVERNIGHT_SNAPSHOT as N} from './overnight-snapshot-plan.mjs';
 import {acquireOvernightCaptureClaim} from './overnight-capture-claim.mjs';
 import {snapshotPublicationFiles} from './local-capture-publication.mjs';
 import {publicationAddArgvBatches} from './local-publication-argv.mjs';
@@ -49,6 +49,7 @@ export async function confirmClaimedLocalAdmission({inspect,sourceCommit,deadlin
 }
 
 export async function runLocalOvernightCapture({receipt,now=Date.now,inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record,reconcilePublication,revalidateAdmission}={}){
+  const N=resolveLocalCaptureContext({receipt,now:now()});
   localOvernightCapturePlan({now:now(),receipt});
   for(const fn of [inspect,preflight,acquireGuard,claim,authenticate,capture,publish,record])if(typeof fn!=='function')throw Error('Local capture capability missing');
   if(reconcilePublication!==undefined&&typeof reconcilePublication!=='function')throw Error('Invalid read-only reconciliation capability');
@@ -177,6 +178,23 @@ export async function validateLocalEvidence(receipt){
 
 /** Offline receipt/namespace/accounting check before any admission or credential access. */
 export async function validateReplacementContext(receipt,{directory,plan=N}={}){
+  if(Object.hasOwn(receipt||{},'freshCapturePlan')){
+    const fresh=resolveLocalCaptureContext({receipt});
+    const normalized=value=>path.resolve(value).replace(/\\/g,'/');
+    if(!path.isAbsolute(directory||'')||!normalized(directory).endsWith('/'+fresh.privateDirectorySuffix)||
+      receipt.replacementDirectory!==normalized(directory))throw Error('Fresh capture requires a distinct dated private directory');
+    const workspace=await fs.realpath(receipt.workspace),target=await fs.realpath(directory),relative=path.relative(workspace,target);
+    if(relative===''||!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep))
+      throw Error('Fresh private receipts must be outside the source workspace');
+    const evidence=receipt.quotaAdmission.evidence;
+    if(!path.isAbsolute(evidence.file||''))throw Error('Absolute quota evidence required');
+    const stat=await fs.lstat(evidence.file);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1024*1024)throw Error('Unsafe quota admission evidence');
+    const bytes=await fs.readFile(evidence.file);
+    if(bytes.length>1024*1024||createHash('sha256').update(bytes).digest('hex')!==evidence.sha256)
+      throw Error('Quota admission evidence changed');
+    return {priorDirectReservations:0,priorWorkerRequests:0};
+  }
   if(plan.frozenContinuation)return validateFrozenCaptureContext(receipt,{directory});
   const N=plan;
   const normalized=value=>path.resolve(value).replace(/\\/g,'/');
@@ -207,6 +225,7 @@ async function main(){
   const args=process.argv.slice(2);
   if(args.length!==2||args[0]!=='--receipt'||!path.isAbsolute(args[1]))throw Error('Usage: node tools/local-overnight-capture.mjs --receipt ABSOLUTE_READY_JSON');
   const receipt=JSON.parse(await fs.readFile(args[1],'utf8')),directory=path.dirname(args[1]),owner=randomUUID();
+  const N=resolveLocalCaptureContext({receipt});
   localOvernightCapturePlan({receipt});fullSnapshotPolicy(receipt);await validateLocalEvidence(receipt);
   await validateReplacementContext(receipt,{directory});
   const workspace=receipt.workspace;
@@ -214,6 +233,10 @@ async function main(){
     !path.isAbsolute(receipt.verifierNodeModules||''))throw Error('Explicit private workspace, dependencies and credential paths required');
   const git=createLocalCaptureGit({workspace,deadline:N.deadline});
   await assertBoundedLocalSource({workspace,sourceCommit:receipt.testedCommit,runnerFile:fileURLToPath(import.meta.url),deadline:N.deadline});
+  if(N.fresh){
+    const {assertLocalStagingBase}=await import('./local-capture-worker.mjs');
+    await assertLocalStagingBase({root:workspace,publishedBaseline:receipt.fullSnapshotPolicy.publishedBaseline});
+  }
   const require=createRequire(import.meta.url),modulePath=path.join(receipt.verifierNodeModules,'playwright');
   const installed=JSON.parse(await fs.readFile(path.join(modulePath,'package.json'),'utf8'));
   const declared=JSON.parse(await fs.readFile(path.join(workspace,'tools/verifier/package.json'),'utf8'));
@@ -230,8 +253,8 @@ async function main(){
   const record=value=>writeLocalCaptureReceipt({directory,owner,value});
   const inspectAdmission=async(options={})=>{
       const head=await read('/git/ref/heads/main',options),claimed=await read('/git/ref/tags/'+(N.claimTag||'polytrack-oneoff-'+N.date),options);
-      const previous=await read('/git/ref/tags/'+N.priorClaimTag,options);
-      if(previous?.object?.sha!==N.priorSource)throw Error('Original claim changed; preserve and inspect');
+      if(!N.fresh){const previous=await read('/git/ref/tags/'+N.priorClaimTag,options);
+        if(previous?.object?.sha!==N.priorSource)throw Error('Original claim changed; preserve and inspect');}
       for(const status of ['in_progress','queued','waiting','pending','requested']){
         const rows=await read('/actions/runs?status='+status+'&per_page=100',options);
         if(!Array.isArray(rows?.workflow_runs)||rows.workflow_runs.length>=100)return {complete:false};
@@ -255,7 +278,7 @@ async function main(){
       try{await fs.writeFile(path.join(directory,'running.json'),JSON.stringify({owner,testedCommit:receipt.testedCommit,startedAt:new Date().toISOString()})+'\n',{flag:'wx',mode:0o600});return true;}
       catch(e){if(e.code==='EEXIST')return false;throw e;}
     },
-    claim:async()=>(await acquireOvernightCaptureClaim({repository:REPO,sourceCommit:receipt.testedCommit,token})).acquired,
+    claim:async()=>(await acquireOvernightCaptureClaim({repository:REPO,sourceCommit:receipt.testedCommit,token,...(N.fresh?{receipt}:{})})).acquired,
     authenticate:async()=>{
       const {checkWorkerCaptureAccess}=await import('./check-worker-capture-access.mjs');
       const {createWorkerCaptureFetch}=await import('./worker-capture-fetch.mjs');

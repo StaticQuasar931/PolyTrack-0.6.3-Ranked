@@ -73,7 +73,7 @@ test('combined EventRP preserves earned finite RP and labels the moving permanen
   const second = combined.entries.find(row => row.accountId === 'second');
   assert.equal(second.finiteEventRp, 900); assert.equal(second.permanentRollingHillsRp, 1501); assert.equal(second.rp, 2401);
   assert.equal(second.rollingHillsRunAgeMs, 100); assert.equal(second.rollingHillsEventRpContribution, 1501);
-  assert.equal(second.events, 3); assert.equal(combined.eventRpComplete, true);
+  assert.equal(second.events, 4); assert.equal(second.finiteEvents,3); assert.equal(second.permanentEvents,1); assert.equal(combined.eventCountVersion,2); assert.equal(combined.eventRpComplete, true);
   assert.equal(combined.dynamicComponents.permanentRollingHills.targetPolicy, 'live-fastest-physics-verified');
   assert.throws(() => mergePermanentRollingIntoTotals({ entries: finiteEntries, updatedAt: 150 }, rolling),
     /merge_incomplete/);
@@ -97,7 +97,7 @@ test('merged totals preserve the full field before publication paging',()=>{
  const rolling=derivePermanentRollingHills(snapshot());
  const small=mergePermanentRollingIntoTotals({entries:[],complete:true,totalEntries:0},rolling);
  assert.equal(small.totalEntries,2);assert.equal(small.complete,true);
- const entries=Array.from({length:199},(_,i)=>({accountId:'finite-'+i,rp:10}));
+ const entries=Array.from({length:199},(_,i)=>({accountId:'finite-'+i,rp:10,events:0}));
  const large=mergePermanentRollingIntoTotals({entries,complete:true,totalEntries:199},rolling);
  assert.equal(large.entries.length,201);assert.equal(large.totalEntries,201);assert.equal(large.complete,true);
 });
@@ -143,4 +143,31 @@ test('negative proof and pending/review states never enter ranking or establish 
     ...patches.map((patch,i) => entry('excluded-'+i,10000,patch))]));
   assert.equal(result.targetMs,20000);
   assert.deepEqual(result.entries.map(row => [row.accountId,row.rp]), [['valid',10101]]);
+});
+
+
+test('event count v2 merge is idempotent and RHR-only verified zero awards still count once',()=>{
+ const rolling=derivePermanentRollingHills(snapshot([entry('fast',1),entry('zero',300000)]));
+ assert.equal(rolling.entries.find(row=>row.accountId==='zero').rp,0);
+ const finite={entries:[{accountId:'fast',rp:900,events:3},{accountId:'finite-only',rp:0,events:0}],complete:true,totalEntries:2,updatedAt:150};
+ const before=structuredClone(finite),first=mergePermanentRollingIntoTotals(finite,rolling);
+ assert.deepEqual(mergePermanentRollingIntoTotals(first,rolling),first,'scores and event counts do not stack on remerge');
+ assert.deepEqual(finite,before,'finite baseline unchanged');
+ const zero=first.entries.find(row=>row.accountId==='zero');
+ assert.deepEqual([zero.rp,zero.finiteEventRp,zero.finiteEvents,zero.permanentEvents,zero.events],[0,0,0,1,1]);
+ const finiteOnly=first.entries.find(row=>row.accountId==='finite-only');
+ assert.deepEqual([finiteOnly.rp,finiteOnly.finiteEvents,finiteOnly.permanentEvents,finiteOnly.events],[0,0,0,0]);
+ const empty={...rolling,entries:[],totalEntries:0};
+ const removed=mergePermanentRollingIntoTotals(first,empty);
+ assert.ok(removed.entries.every(row=>row.permanentEvents===0&&row.events===row.finiteEvents));
+});
+test('contradictory v2 count components fail closed without creating ERP or participation',()=>{
+ const rolling=derivePermanentRollingHills(snapshot());
+ const total=mergePermanentRollingIntoTotals({entries:[{accountId:'second',rp:900,events:3}],complete:true,totalEntries:1,updatedAt:150},rolling);
+ for(const change of [{finiteEvents:-1},{permanentEvents:2},{events:99},{finiteEventRp:999999}]){
+  const bad={...total,entries:total.entries.map(row=>row.accountId==='second'?{...row,...change}:row)};
+  assert.throws(()=>mergePermanentRollingIntoTotals(bad,rolling),/invalid_event_counts/);
+ }
+ const pending={...rolling,entries:rolling.entries.map(row=>({...row,pending:true}))};
+ assert.throws(()=>mergePermanentRollingIntoTotals({entries:[],complete:true,totalEntries:0},pending),/invalid_event_counts/);
 });

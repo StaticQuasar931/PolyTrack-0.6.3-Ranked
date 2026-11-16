@@ -133,6 +133,19 @@ export async function readPermanentRollingHills(request) {
   return derivePermanentRollingHills(snapshot);
 }
 
+// Legacy counts are finite-only. Never infer historical participation from ERP.
+export function finiteEventCount(row,version){
+  if(version!==undefined&&version!==2)fail('permanent_rolling_hills_invalid_event_counts');
+  const counted=version===2||row.finiteEvents!==undefined||row.permanentEvents!==undefined;
+  if(counted){
+    if(!integer(row.finiteEvents)||!integer(row.permanentEvents)||row.permanentEvents>1||
+      !integer(row.events)||row.events!==row.finiteEvents+row.permanentEvents)fail('permanent_rolling_hills_invalid_event_counts');
+    return row.finiteEvents;
+  }
+  if(!integer(row.events))fail('permanent_rolling_hills_invalid_event_counts');
+  return row.events;
+}
+
 export function mergePermanentRollingIntoTotals(finite, rolling) {
   if (!finite || !Array.isArray(finite.entries) || finite.complete !== true || finite.totalEntries !== finite.entries.length ||
     rolling?.complete !== true || !Array.isArray(rolling.entries))
@@ -141,12 +154,24 @@ export function mergePermanentRollingIntoTotals(finite, rolling) {
   for (const row of finite.entries) {
     const accountId = string(row.accountId, 128);
     if (!accountId || !integer(row.rp)) continue;
-    merged.set(accountId, { ...row, accountId, finiteEventRp: row.rp, permanentRollingHillsRp: 0 });
+    const counted=finite.eventCountVersion===2||row.finiteEvents!==undefined||row.permanentEvents!==undefined;
+    if(counted&&(!integer(row.finiteEvents)||!integer(row.permanentEvents)||row.permanentEvents>1||
+      row.events!==row.finiteEvents+row.permanentEvents||!integer(row.finiteEventRp)||
+      !integer(row.permanentRollingHillsRp)||row.rp!==row.finiteEventRp+row.permanentRollingHillsRp))
+      fail('permanent_rolling_hills_invalid_event_counts');
+    const finiteEvents=finiteEventCount(row,finite.eventCountVersion);
+    if(!integer(finiteEvents))fail('permanent_rolling_hills_invalid_event_counts');
+    merged.set(accountId, { ...row, accountId, finiteEventRp: counted?row.finiteEventRp:row.rp,
+      finiteEvents, permanentEvents:0, events:finiteEvents, permanentRollingHillsRp:0,
+      rollingHillsEventRpContribution:0, rollingHillsTimeMs:undefined, rollingHillsRunAgeMs:undefined });
   }
   for (const row of rolling.entries) {
-    const prior = merged.get(row.accountId) || { accountId: row.accountId, name: row.name, events: 0, finiteEventRp: 0 };
+    if(!integer(row.rp)||!integer(row.timeMs,1)||row.timeMs>300000||!permanentResultEligible(row))
+      fail('permanent_rolling_hills_invalid_event_counts');
+    const prior = merged.get(row.accountId) || { accountId: row.accountId, name: row.name, events: 0, finiteEvents:0, finiteEventRp: 0 };
+    if(!integer(prior.finiteEvents+1))fail('permanent_rolling_hills_invalid_event_counts');
     merged.set(row.accountId, { ...prior, name: prior.name || row.name, carStyle: prior.carStyle || row.carStyle,
-      permanentRollingHillsRp: row.rp, rollingHillsTimeMs: row.timeMs,
+      permanentEvents:1, events:prior.finiteEvents+1, permanentRollingHillsRp: row.rp, rollingHillsTimeMs: row.timeMs,
       rollingHillsRunAgeMs: row.runAgeMs, rollingHillsEventRpContribution: row.eventRpContribution });
   }
   const sorted = [...merged.values()].map(row => ({ ...row,
@@ -158,7 +183,7 @@ export function mergePermanentRollingIntoTotals(finite, rolling) {
     if (!index || row.rp !== sorted[index - 1].rp) rank = index + 1;
     return { ...row, rank };
   });
-  return { ...finite, entries, complete: true, totalEntries: merged.size, updatedAt: Math.max(Number(finite.updatedAt || 0), rolling.updatedAt), eventRpComplete: true,
+  return { ...finite, eventCountVersion:2, entries, complete: true, totalEntries: merged.size, updatedAt: Math.max(Number(finite.updatedAt || 0), rolling.updatedAt), eventRpComplete: true,
     dynamicComponents: { permanentRollingHills: { status: 'complete', id: rolling.id, trackId: rolling.trackId,
       scoreVersion: rolling.scoreVersion, targetPolicy: rolling.targetPolicy, targetMs: rolling.targetMs,
       maxRp: rolling.maxRp, sourceRevision: rolling.sourceRevision, updatedAt: rolling.updatedAt } } };

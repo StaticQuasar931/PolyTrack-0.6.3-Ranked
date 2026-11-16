@@ -2,238 +2,214 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 406,
+    "number": 407,
     "version": "0.6.3",
-    "revision": 348,
+    "revision": 349,
     "notes": [
-      "Fixed CDN dependency discovery so JSON previews are packaged as JSON, not mistaken for missing JavaScript modules.",
-      "Retains the clear single-line rank duration, cached event standings previews and aligned event PB placement.",
-      "Snapshot preparation retains bounded local hashing and an isolated current-generation workspace. No capture or Firebase work has started."
+      "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
+      "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
+      "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
     ]
   },
   "entries": [
     {
+      "number": 406,
+      "title": "More reliable event previews",
+      "commit": "c13219ef15495ab502267d00a682f4d5297b2c96",
+      "committedAt": "2026-11-15T23:42:12.000Z",
+      "notes": [
+        "Fixed update packaging so event preview data is delivered in the correct format.",
+        "Keeps rank times clear, event standings matched to the event and personal-best time, and weekly personal-best details together."
+      ]
+    },
+    {
       "number": 405,
-      "title": "Bound local snapshot publication hashing",
+      "title": "Maintenance update",
       "commit": "5ebaf33eb160939e60f3b6b08feb061916039836",
       "committedAt": "2026-11-15T23:33:51.000Z",
       "notes": [
-        "Snapshot publication validates payload hashes with eight bounded local readers instead of serial reads, preserving complete inventory and corruption checks.",
-        "Failed reads stop new work and wait for all in-flight readers to finish. Identical payload bindings are checked once.",
-        "This is preparation only: no snapshot acquisition, Firebase calls or replay verification was started.",
-        "Retains the clear rank-duration line, cached event standings previews and same-row PB placement from release404."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 404,
-      "title": "Clarify rank time and cache event card standings",
+      "title": "Clearer rank times and event standings",
       "commit": "1344eb2f81abe1deba886fcb9b1f9478f8442983",
       "committedAt": "2026-11-15T23:29:52.000Z",
       "notes": [
-        "Rank time is now one clear line, such as 2 days at #8 or Up 3 with the time at that rank. Removed first-observation and duplicate movement filler.",
-        "Event cards load a small cached standings preview matched to the exact event period and PB. No stale rank is borrowed for a newer local time.",
-        "Weekly PB time and placement share a row. Kodub details and typography remain readable across artwork shapes.",
-        "Event previews regenerate with snapshot publication, retain recent complete boards within a bounded file, and never grant verification or Event RP."
+        "Rank time is shown in one line, such as 2 days at #8 or Up 3 with the time at that rank.",
+        "Event cards show a cached standings preview matched to the event period and personal-best time, rather than reusing a stale rank.",
+        "Weekly personal-best time and placement share a row, and event previews do not grant verification or Event RP."
       ]
     },
     {
       "number": 403,
-      "title": "Fit weekly artwork to the event card height",
+      "title": "Weekly artwork fits event cards better",
       "commit": "a3fae75427c6a49631c6641b1e79d7b4c4b06635",
       "committedAt": "2026-11-15T22:59:09.000Z",
       "notes": [
-        "Fixed the empty strip above Kodub weekly artwork: its width now follows the image ratio while reserving room for the details.",
-        "Weekly cards retain the same height as other event cards. Artwork stays uncropped, with centered letterboxing when needed.",
-        "The compact weekly personal-best icon now matches its text size. Browser checks cover seven screen sizes and four image ratios."
+        "Kodub weekly artwork now fits the card height while keeping its original image uncropped.",
+        "The weekly personal-best icon is sized to match its text."
       ]
     },
     {
       "number": 402,
-      "title": "Fix offline history publication contract tests",
+      "title": "Maintenance update",
       "commit": "1cf396bc54495fef6ba07c4c470cd5e1c086134f",
       "committedAt": "2026-11-15T22:43:22.000Z",
       "notes": [
-        "Corrected the publication test harness to distinguish offline rank-history building from push failures.",
-        "Added a fail-closed test proving that a failed rank-history build cannot commit, push or report publication success.",
-        "Retains release 401 rank-history, Kodub card-height and dependency-ignore fixes. No snapshot capture, physics or Firebase changes."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 401,
-      "title": "Fix observed rank history and event card sizing",
+      "title": "Clearer rank history and weekly event cards",
       "commit": "6f27e4fac65bf518c6157fb969812680a8882f31",
       "committedAt": "2026-11-15T22:30:20.000Z",
       "notes": [
-        "Overall RP rank durations now use consecutive saved snapshot observations instead of reset rebuild timestamps.",
-        "Rank history is compact, cached per snapshot and shared by rankings and racer profiles; local projected rank changes do not inherit old tenure.",
-        "Kodub Track of the Week matches the other event card heights while fitting the full artwork horizontally.",
-        "Installed dependencies are excluded from source changes. Existing snapshots, replay proofs and player saves are preserved.",
-        "Release auditing now validates the exact release-394 geometry addition separately from the unchanged historical proof-review chain."
+        "Overall RP rank duration is based on consecutive saved observations, so rebuilds do not reset the displayed time.",
+        "Rank history is shared between rankings and racer profiles. A local projected rank does not inherit time from an earlier rank.",
+        "Kodub weekly artwork fits its card while remaining fully visible."
       ]
     },
     {
       "number": 400,
-      "title": "Publish completed priority proofs and remove audit staging I/O",
+      "title": "Maintenance update",
       "commit": "4dff530e9ab1bd8c95e1d451c9e4ebdaf87ddd28",
       "committedAt": "2026-11-15T05:51:10.000Z",
       "notes": [
-        "Published 63 further completed replay proofs: 34 Rolling Hills and29 Magician's Residence normal runs.",
-        "The selected Rolling Hills backlog is complete for this saved capture; three slow Magician's Residence replays remain unverified after CPU deadlines.",
-        "Previously published proofs and event results are preserved;offline verification uses no Firebase calls.",
-        "Publication audits validate in memory with bounded reads, avoiding temporary replay-file trees."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 399,
-      "title": "Decouple offline normal verification from historical event reprojection",
+      "title": "Maintenance update",
       "commit": "21e6be555d14794e40e50b4a65980d0e54c2cc53",
       "committedAt": "2026-11-15T05:22:43.000Z",
       "notes": [
-        "Offline normal-track verification can retain published event results instead of reprocessing unrelated historical events.",
-        "The new scope admits only normal-run proofs, preserving event data, previous witnesses and review checks.",
-        "No Firebase calls or automatic retries are added."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 398,
-      "title": "Fix Studio preview saves and clarify car cosmetic choices",
+      "title": "More ways to customize and save your car",
       "commit": "36b45bbe6913f90738f64d01e94ddf8abd484527",
       "committedAt": "2026-11-15T05:13:15.000Z",
       "notes": [
-        "Studio keeps the selected backdrop and real car preview; saved drafts survive delayed controls.",
-        "Shop sits beside Achievements and Racer Studio; favorite text no longer enters the car renderer.",
-        "Front and rear accessories can be combined; Podium crown requires a confirmed podium.",
-        "Workshop names locked selections and their requirements; two-color neon and metal finishes are clearer."
+        "Studio keeps your selected backdrop and car preview, and saved drafts survive delayed controls.",
+        "Combine front and rear accessories. Two-color neon and metal finishes are clearer.",
+        "Locked workshop choices show their requirements, and the Podium crown requires a confirmed podium."
       ]
     },
     {
       "number": 397,
-      "title": "Publish Kodub event proofs and streamline offline verification",
+      "title": "More achievements, shop options, and weekly artwork",
       "commit": "f107fcc97bf79de5e6bf72d008eac795d7d228ba",
       "committedAt": "2026-11-15T04:51:56.000Z",
       "notes": [
-        "Published 93 additional native replay proofs, including the remaining selected Kodub event runs.",
-        "Weekly spotlight artwork uses the card height and flexible horizontal space without cropping.",
-        "Achievements distinguish goal groups, cosmetic unlocks and coin milestones; Shop adds sorting.",
-        "Clearer playtime precision and update-click attribution; longer read-only GitHub verification is available."
+        "Weekly spotlight artwork now fits its card without being cropped.",
+        "Achievement goals, cosmetic unlocks, and coin milestones are easier to tell apart.",
+        "The Shop adds sorting, and playtime is shown more precisely."
       ]
     },
     {
       "number": 396,
-      "title": "Publish saved replay proofs and prepare offline Linux verification",
+      "title": "Maintenance update",
       "commit": "f099e5e6d259bfaeb5da4c6e099c11b03587defc",
       "committedAt": "2026-11-15T03:12:59.000Z",
       "notes": [
-        "Published 19 additional saved-replay verifications; earlier proofs are preserved.",
-        "Prepared read-only GitHub verification for the remaining selected Kodub and Rolling Hills runs.",
-        "Snapshot compression now stays consistent across Windows and Linux."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 395,
-      "title": "Polish car workshop Studio previews and automatic rewards",
+      "title": "More reliable car previews and saved designs",
       "commit": "b4c0d40479b8e33602dc58c1783c4d02a88a4752",
       "committedAt": "2026-11-15T02:08:48.000Z",
       "notes": [
-        "Car finishes preserve both paint colors; accessories fit the car more closely.",
-        "Shop synchronizes eligible rewards automatically, with limited repeat checks.",
-        "Live previews, Undo and Restore saved work more consistently.",
-        "Completed the saved-replay setup for the next offline event verification pass."
+        "Car finishes keep both paint colors, and accessories fit the car more closely.",
+        "Eligible rewards sync automatically, with checks to limit repeat claims.",
+        "Live previews, Undo, and Restore keep your saved work more reliably."
       ]
     },
     {
       "number": 394,
-      "title": "Enable source-bound offline Kodub and Rolling Hills verification",
+      "title": "Maintenance update",
       "commit": "7685e42f93986d59adc3cfbf7e3270d13a82450b",
       "committedAt": "2026-11-15T02:01:33.000Z",
       "notes": [
-        "Prepared targeted offline checks for Magician's Residence and Rolling Hills Racer.",
-        "Earlier published proofs stay intact; new runs still require their own replay checks."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 393,
-      "title": "Clarify event previews and stabilize profile navigation",
+      "title": "Clearer event details and profile shortcuts",
       "commit": "75649ddd74448b0fe0fb6b258dc56af0043eaf82",
       "committedAt": "2026-11-15T01:40:51.000Z",
       "notes": [
-        "Clearer event names, cached placements and Rolling Hills ERP tooltips.",
-        "Stable Achievements, Racer Studio and Shop shortcuts while menus load.",
-        "Local PBs can show a podium target without claiming confirmed medals."
+        "Event names, cached placements, and Rolling Hills RP run details are clearer.",
+        "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
+        "Local personal bests can show a podium target without being presented as confirmed medals."
       ]
     },
     {
       "number": 392,
-      "title": "Publish 66 offline event verifications and preserve prior results",
+      "title": "Maintenance update",
       "commit": "60922970ed7d31bbf2866e179a1c0374ae43a51b",
       "committedAt": "2026-11-15T00:49:08.000Z",
       "notes": [
-        "Added verification for 66 saved event runs without another cloud capture.",
-        "Preserved all existing normal-track results and earlier verification proofs."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 391,
-      "title": "Make native verification test fixtures portable on GitHub",
+      "title": "Maintenance update",
       "commit": "1c515ef2bb54df5756d77fed366f9ca099a6e129",
       "committedAt": "2026-11-15T00:02:44.000Z",
       "notes": [
-        "Fixed a Windows-only test path that blocked offline verification on GitHub."
+        "No gameplay changes in this update."
       ]
     },
     {
       "number": 390,
-      "title": "Real car workshop achievement bonuses and offline event verification",
+      "title": "More car choices and clearer event menus",
       "commit": "ff504eeab1276dda9893901363e2d0cfeede3ddc",
       "committedAt": "2026-11-14T23:56:19.000Z",
       "notes": [
-        "Real car finishes, front emblems and accessories, with a clearer Garage workshop.",
-        "Sharper shop previews and claimable bonuses for eligible cosmetic achievements.",
-        "Clearer Event RP filters, run tooltips and a simpler rankings menu.",
-        "Offline event replay verification now builds an audited update from saved files."
+        "Car finishes, front emblems, and accessories are available with a clearer Garage workshop.",
+        "Eligible cosmetic achievements have claimable bonuses, and shop previews are sharper.",
+        "Event RP filters, run details, and the rankings menu are easier to understand."
       ]
     },
     {
       "number": 389,
-      "title": "Fix coalesced PB uploads milestone claims and event PB previews",
+      "title": "Personal-best uploads and event results",
       "commit": "8cb1f3338690a5d46621b0213094efbd9e58373b",
       "committedAt": "2026-11-14T23:25:08.000Z",
       "notes": [
-        "Fixed uploads after several personal bests in one track session.",
-        "Fixed milestone claims getting stuck after earning newer rewards.",
-        "Event personal-best times stay visible when returning to Daily, Weekly, or Kodub tracks."
+        "Fixed personal-best uploads when you set several records on one track in a session.",
+        "Fixed reward claims that could get stuck after earning a newer milestone.",
+        "Event personal-best times remain visible when you return to Daily, Weekly, or Kodub tracks."
       ]
     },
     {
       "number": 388,
-      "title": "Scope CDN publication to current snapshot files",
+      "title": "More reliable update downloads",
       "commit": "8aa96636bbbba17260771086c75691195365f8ce",
       "committedAt": "2026-11-14T22:46:45.000Z",
       "notes": [
-        "More reliable delivery of the latest update and snapshot files."
+        "Improved delivery of the latest game update and snapshot files."
       ]
     },
     {
       "number": 387,
-      "title": "Style Coins rewards and pace-based Rolling Hills scoring",
+      "title": "More rewarding milestones and event scoring",
       "commit": "91c54039a2ac23adf5b05e5bd4a84d23f9fde895",
       "committedAt": "2026-11-14T22:38:32.000Z",
       "notes": [
-        "Clearer achievement rewards, Style Coins milestones, and a personalized shop preview.",
-        "Favorite-track previews and cleaner Racer Studio controls.",
-        "Rolling Hills Event RP now rewards both placement and pace, including past results.",
-        "Safer loading for your recent local replays."
-      ]
-    },
-    {
-      "number": 386,
-      "title": "Garage safety and reliable local replay loading",
-      "commit": "5e47f1ef8805f183b418e1c0c6d5b890ed465f87",
-      "committedAt": "2026-11-14T21:50:20.000Z",
-      "notes": [
-        "Protection against accidental closing, and smoother Garage navigation.",
-        "Roof accessories now sit on the car, with six choices in the bottom-tab workshop.",
-        "More reliable local PB replays and snapshot-based route suggestions."
+        "Achievement rewards, Style Coin milestones, and your shop preview are clearer.",
+        "Rolling Hills Event RP rewards both placement and pace, including results from earlier runs.",
+        "Track previews, Racer Studio controls, and recent replay loading are improved."
       ]
     }
   ],
@@ -383,6 +359,17 @@ export async function buildReleaseHistory({root, limit = 20, precommit = false, 
   root ||= fileURLToPath(new URL('../',import.meta.url));
   const git = runGit || ((...args) => { const result = spawnSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024}); if (result.status !== 0) throw Error('Local history Git read failed: '+args.join(' ')); return result.stdout; });
   read ||= file => readFileSync(resolve(root,file),'utf8');
+  let noteOverrides = {};
+  try {
+    noteOverrides = JSON.parse(readFileSync(resolve(root,'tools/release-note-overrides.json'),'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw Error('Could not load release-note overrides: '+error.message);
+  }
+  if (!noteOverrides || typeof noteOverrides !== 'object' || Array.isArray(noteOverrides) ||
+      Object.entries(noteOverrides).some(([number, override]) => !/^[1-9]\d*$/.test(number) ||
+        !override || typeof override !== 'object' || Array.isArray(override) ||
+        typeof override.title !== 'string' || !override.title.trim() || override.title.length > 500 ||
+        !finishedNotes(override.notes))) throw Error('Invalid release-note overrides.');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw Error('History limit must be between 1 and 20.');
   const parseInfo = text => { const match = /const releaseInfo = (\{[\s\S]*?\});/.exec(text); if (!match) throw Error('Missing central release info.'); return JSON.parse(match[1]); };
   const current = currentReference(parseInfo(read('tools/release-info.mjs')));
@@ -405,7 +392,8 @@ export async function buildReleaseHistory({root, limit = 20, precommit = false, 
       const info = parseInfo(git('show',row.commit+':tools/release-info.mjs'));
       if (info.number === row.number && finishedNotes(info.notes)) notes = [...info.notes];
     }
-    return {number:row.number, title:row.number === null ? row.title : row.title.replace(/^\d+\s*[-:]\s*/,''), commit:row.commit, committedAt:new Date(row.date).toISOString(), notes};
+    const override = row.number === null ? null : noteOverrides[String(row.number)];
+    return {number:row.number, title:override?.title ?? (row.number === null ? row.title : row.title.replace(/^\d+\s*[-:]\s*/,'')), commit:row.commit, committedAt:new Date(row.date).toISOString(), notes:override ? [...override.notes] : notes};
   });
   return {schemaVersion:1,current,entries,coverage:{limit,olderOmitted:earlier.length>limit}};
 }

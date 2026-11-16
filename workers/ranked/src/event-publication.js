@@ -193,7 +193,7 @@ export async function advanceEventPublication(runtime,periodId=null,knownRoot=un
      if(!rolling)rolling=await readPermanentRollingHills(runtime.request);
      rollingSource={revision:rolling.sourceRevision,signature:rolling.sourceSignature};
      const merged=mergePermanentRollingIntoTotals({entries,totalEntries:entries.length,complete:true,updatedAt:root.updatedAt||0},rolling);
-     entries=merged.entries;dynamic={dynamicComponents:merged.dynamicComponents,eventRpComplete:true};
+     entries=merged.entries;dynamic={dynamicComponents:merged.dynamicComponents,eventRpComplete:true,eventCountVersion:merged.eventCountVersion};
    }catch{
      if(priorCombined)return {pending:true,deferred:true,reason:'permanent_source_unavailable',kind,id};
      dynamic={eventRpComplete:false,dynamicComponents:{permanentRollingHills:{status:'unavailable'}}};

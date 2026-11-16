@@ -297,3 +297,19 @@ test('both published baseline index readers accept above16MiB, reject above20MiB
  const trusted=await loadTrustedPublishedEventTotalsBaseline({root:f.root,expectedGeneration:72,expectedIndexSha256:indexSha256});assert.equal(assertTrustedPublishedEventTotalsBaseline(trusted),trusted);
  const h=await fs.open(file,'r+');await h.truncate(20*1024*1024+1);await h.close();await assert.rejects(f.select(),/too large/);await assert.rejects(loadTrustedPublishedEventTotalsBaseline({root:f.root,expectedGeneration:72,expectedIndexSha256:indexSha256}),/too large/);
 });
+
+test('v2 pinned baseline subtracts only finite participation and preserves legacy residuals exactly',async t=>{
+ const previous=previousTotals();previous.eventCountVersion=2;
+ for(const row of previous.entries){row.finiteEvents=row.events;row.permanentEvents=1;row.events++;row.rollingHillsTimeMs=12000;}
+ const f=await fixture(t,{generation:75,previous,prior:exactBoard(board())});
+ const baseline=await loadTrustedPublishedEventTotalsBaseline(await pinned(f));
+ assert.equal(baseline.totals.eventCountVersion,2);
+ assert.deepEqual(baseline.residuals,[{accountId:account,rp:23,events:1},{accountId:other,rp:0,events:0}]);
+ assert.deepEqual(baseline.totals,previous);
+});
+test('v2 baseline selector retains combined count markers without treating RHR as historical residual',async t=>{
+ const previous=previousTotals();previous.eventCountVersion=2;
+ for(const row of previous.entries){row.finiteEvents=row.events;row.permanentEvents=1;row.events++;}
+ const f=await fixture(t,{previous});const selected=await f.select();assert.equal(selected.totals.eventCountVersion,2);
+ assert.deepEqual(selected.totals.entries,previous.entries);assert.equal(selected.report.exactAccounts,1);
+});
