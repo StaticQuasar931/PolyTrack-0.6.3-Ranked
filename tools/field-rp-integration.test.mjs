@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {scoreFieldRp} from './field-rp.mjs';
+import * as rankingDisplayPolicy from './ranking-display-policy.mjs';
 const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 function fn(name){const start=source.indexOf('  function '+name+'(');assert.ok(start>=0,name);return source.slice(start,source.indexOf('\n  }',start)+4);}
 const finish={trackId:'track',rank:1,fieldSize:250,weight:4,competition:1,timeMs:100,pbAt:0};
 function harness(){
-  const c=vm.createContext({fieldRpModule:{scoreFieldRp},overallCategory:'field',overallRankingScope:'total',
+  const c=vm.createContext({rankingDisplayPolicy,fieldRpModule:{scoreFieldRp},overallCategory:'field',overallRankingScope:'total',
     overallEntriesCache:[],attachLocalRankingSidecars:rows=>rows,personalFilterRuntime:null,
     trackSnapshotStore(){throw Error('Normal-board access forbidden');},
     TRACK_CATALOG:new Map(),LEGACY_TRACK_CATALOG:new Map(),ROLLING_HILLS_ID:'rhr',rankedMetricState:()=>({known:false,value:null})});
-  vm.runInContext(fn('rankingMetricFor')+'\n'+fn('sortedOverallEntries'),c);return c;
+  vm.runInContext(['rankingMetricFor','rankingDisplayMetricState','filterRankingDisplayRows','sortedOverallEntries'].map(fn).join('\n'),c);return c;
 }
 test('actual patch uses complete scoring tuples, not normal boards, sidecars, summaries or grouped data',()=>{
   const c=harness(),entry={raceCount:1,resultSamples:[finish]};
@@ -30,7 +31,8 @@ test('actual category sort is descending, stable ties share rank, missing scores
     {userId:'a',rank:3,raceCount:1,resultSamples:[finish]},
     {userId:'last',rank:4,raceCount:1,resultSamples:[{...finish,rank:250}]}];
   const rows=c.sortedOverallEntries();
-  assert.deepEqual(Array.from(rows,r=>[r.userId,r.categoryRank]),[['a',1],['b',1],['last',3],['missing',null]]);
+  assert.deepEqual(Array.from(rows,r=>[r.userId,r.categoryRank]),[['a',1],['b',1],['last',3]]);
+  assert(!rows.some(row=>row.userId==='missing'),'unknown Field scores are filtered before ranking');
   assert.equal(rows[0].globalRank,3);assert.equal(c.overallEntriesCache[0].rank,1);
 });
 test('lazy import coalesces and does not repaint a different current category',async()=>{
@@ -55,20 +57,20 @@ test('scope is mounted in footer-right, never the center; picker hides only lega
     assert.match(source,new RegExp('<option value="'+key+'" hidden>'));
   }
   assert.match(picker,/'field'/);assert.match(fn('setOverallCategory'),/selected==='field'.*loadFieldRpModule/);
-  assert.match(source,/playtime:'Active playtime',veterans:'Account age'/);
+  assert.match(source,/playtime:'Active playtime',veterans:'Racing longest'/);
 });
 test('actual row groups RP values, keeps Casual whole, and renders unknown Field as N/A',()=>{
-  const c=vm.createContext({Number,Date,Object,Math,MIN_RANKED_TRACKS:3,TOTAL_TRACKS:10,AVERAGE_PLACEMENT_VERSION:2,OVERALL_PAGE_SIZE:15,
+  const c=vm.createContext({rankingDisplayPolicy,Number,Date,Object,Math,MIN_RANKED_TRACKS:3,TOTAL_TRACKS:10,AVERAGE_PLACEMENT_VERSION:2,OVERALL_PAGE_SIZE:15,
     overallCategory:'casual',overallCompletionScope:'all',overallRankingScope:'total',escapeHtml:String,cleanUserId:String,safeDisplayName:v=>v,
     normalizeEntries:rows=>rows,normalizeCarColorId:()=>'',__pt062NormalizeStyle:()=>'',__pt062GetRememberedStyle:()=>'',categoryTrackMarkup:()=>'',
     activeRankedAccountId:()=>'',categoryContextMarkup:()=>'',completedTrackCount:()=>3,eligibleWinCount:()=>0,improvedRacerScore:()=>0,risingRacerScore:()=>0,
     rankingMetricFor:(_row,category)=>category==='field'?{known:false,value:null}:{known:true,value:12345.678},
     rpDecimals:()=>3,rankedWeightTitle:()=>'',LEADERBOARD_INFO:{},preciseDurationLabel:()=>'',
     compactParticipationMeta:()=>'',medalSummaryMarkup:()=>'',cosmeticTitleText:()=>'',profileBadgeMarkup:()=>'',racerCosmeticClasses:()=>'',carModelPreview:()=>'',countryFlagMarkup:()=>''});
-  vm.runInContext(fn('formatRp')+'\n'+fn('renderEntryRow'),c);
+  vm.runInContext(['rankingCostValue','formatRankingFieldRp','formatRp','renderEntryRow'].map(fn).join('\n'),c);
   const entry={rank:1,userId:'a',name:'A',score:12345.678,raceCount:3,casualRp:12345.678,casualCompletionCount:3};
   assert.match(c.renderEntryRow(entry,0),/<div class="overall-score">12,346<\/div>/);
   c.overallCategory='overall';assert.match(c.renderEntryRow(entry,0),/<div class="overall-score">12,345.678<\/div>/);
   c.overallCategory='field';const html=c.renderEntryRow(entry,0);assert.match(html,/<div class="overall-score">N\/A<\/div>/);
-  assert.match(html,/FIELD RP \(EXPERIMENTAL\)/);assert.match(html,/>N\/A<\/span>/);
+  assert.match(html,/>FIELD RP<\/div>/);assert.match(html,/Experimental Field RP\./);assert.match(html,/>N\/A<\/span>/);
 });

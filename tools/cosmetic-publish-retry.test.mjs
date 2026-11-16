@@ -1,4 +1,5 @@
 import test from 'node:test';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -40,8 +41,7 @@ test('cosmetic publication uses its saved queue instead of transaction retry sto
   const body=source.slice(source.indexOf('async function flushPendingCosmeticPublishes('),source.indexOf('async function saveRankedProfileCosmetics('));
   assert.match(body,/runFirebaseTransaction\(fire,/);
   assert.match(body,/noteFirebaseQuota\(error\)/);
-  const scheduler=source.slice(source.indexOf('function scheduleCosmeticPublishRetry('),source.indexOf('async function flushPendingCosmeticPublishes('));
-  assert.match(scheduler,/Math\.max\(0,quotaDelay,Number\(item.nextAttemptAt/);
+
 });
 
 test('publish identity requires both the active account and bound auth UID', () => {
@@ -75,4 +75,34 @@ test('pending drafts remain account-scoped and storage is bounded to newest acco
   assert.deepEqual(Object.keys(state.entries).sort(), ['account-b', 'account-c']);
   assert.equal(state.entries['account-b'].ownerUid, 'uid-b');
   assert.equal(state.entries['account-c'].ownerUid, 'uid-c');
+});
+
+
+test('actual scheduler honors quota/draft delays, exact committed receipts, identity and pause gates', () => {
+  function scheduled({quotaAt=31000,nextAttemptAt=46000,receipt=false,retryAt=5000,
+    staleDraft=false,foreignUser=false,offline=false,hidden=false,foreignOwner=false}={}) {
+    const user={uid:'uid-a'},pending=item('account-a','uid-a','draft-a',1);pending.nextAttemptAt=nextAttemptAt;
+    if(foreignOwner)pending.ownerUid='other';
+    const flush=async()=>{},delays=[],cleared=[];
+    flush.receipts=new Map(receipt?[['account-a',{user:foreignUser?{uid:'uid-a'}:user,ownerUid:'uid-a',
+      draftId:staleDraft?'old-draft':pending.draftId,cosmetics:JSON.stringify(pending.cosmetics),retryAt}]]:[]);
+    const context=vm.createContext({Date:{now:()=>1000},navigator:{onLine:!offline},
+      document:{visibilityState:hidden?'hidden':'visible'},window:{firebase:{auth:()=>({currentUser:user})}},
+      cosmeticPublishTimer:7,clearTimeout:id=>cleared.push(id),setTimeout:(_fn,delay)=>{delays.push(delay);return 8;},
+      activeRankedAccountId:()=> 'account-a',readCosmeticPublishQueue:()=>({entries:{'account-a':pending}}),
+      firebaseQuotaPaused:()=>quotaAt>1000,readJsonStorage:()=>quotaAt,FIREBASE_QUOTA_PAUSE_KEY:'quota',
+      flushPendingCosmeticPublishes:flush});
+    vm.runInContext([sourceFunction('cosmeticPublishIdentityMatches'),sourceFunction('matchingCosmeticCommitReceipt'),
+      sourceFunction('scheduleCosmeticPublishRetry')].map(fn=>fn.toString()).join('\n')+';scheduleCosmeticPublishRetry();',context);
+    assert.deepEqual(cleared,[7]);return delays;
+  }
+  assert.deepEqual(scheduled(),[45000],'uncommitted draft honors the longer quota/draft delay');
+  assert.deepEqual(scheduled({quotaAt:61000}),[60000],'quota pause dominates earlier draft retry');
+  assert.deepEqual(scheduled({quotaAt:0,nextAttemptAt:0}),[0],'ready uncommitted draft schedules immediately');
+  assert.deepEqual(scheduled({quotaAt:9000000,nextAttemptAt:9000000}),[3600000],'delay capped at one hour');
+  assert.deepEqual(scheduled({receipt:true}),[4000],'exact live commit receipt retries propagation without quota/draft delay');
+  assert.deepEqual(scheduled({receipt:true,retryAt:0}),[0],'expired receipt retries immediately');
+  assert.deepEqual(scheduled({receipt:true,staleDraft:true}),[45000],'receipt from another draft grants no bypass');
+  assert.deepEqual(scheduled({receipt:true,foreignUser:true}),[45000],'same UID on a different user object grants no bypass');
+  for(const state of [{offline:true},{hidden:true},{foreignOwner:true}])assert.deepEqual(scheduled(state),[]);
 });

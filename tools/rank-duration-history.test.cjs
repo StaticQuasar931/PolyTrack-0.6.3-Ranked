@@ -115,10 +115,11 @@ test('top-track timing is labeled as observation evidence, not time at rank', ()
     movementMarkup: movement => `<span>${movement > 0 ? `Up ${movement}` : 'No recent movement'}</span>`
   });
   vm.runInContext(sourceBlock('  function categoryTrackObservationMarkup(', '  function racerAgeDays('), context);
-  const observed = context.categoryTrackObservationMarkup({ categorySince: 6_000, categoryMovement: 0 }, 1);
-  assert.match(observed, /Observed since board snapshot 4s ago/);
+  const observed = context.categoryTrackObservationMarkup({ snapshotCapturedAt: 6_000, categoryMovement: 0 }, 1);
+  assert.match(observed, /Snapshot age: 4s ago/);
   assert.doesNotMatch(observed, /at rank/);
   const unknown = context.categoryTrackObservationMarkup({ categorySince: 0, categoryMovement: 0 }, 1);
-  assert.match(unknown, /Rank observation time unknown/);
+  assert.equal(unknown, '');
+  assert.equal(context.categoryTrackObservationMarkup({ categorySince: 6_000, categoryMovement: 0 }, 1), '');
   assert.doesNotMatch(unknown, /at rank/);
 });

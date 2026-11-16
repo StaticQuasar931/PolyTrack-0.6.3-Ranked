@@ -100,6 +100,18 @@ async function readManifest(response) {
   } finally { void reader.cancel().catch(() => {}); }
 }
 
+const snapshotGeneration = value => {
+  const match = /^public-snapshots([1-9][0-9]{0,8})$/.exec(value || '');
+  return match ? Number(match[1]) : null;
+};
+function installedSnapshotGeneration(document) {
+  try {
+    const meta=document.querySelector?.('meta[name="polytrack-snapshot"]');
+    const value=meta?.getAttribute?.('content') || meta?.content;
+    return typeof value==='string' ? snapshotGeneration(value.match(/(?:^|\/)(public-snapshots[1-9][0-9]{0,8})\/?$/)?.[1]) : null;
+  } catch { return null; }
+}
+
 const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 function themeControl(element) {
   element.className = 'button';
@@ -493,6 +505,9 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   let lastCheckedAt = -Infinity, inFlight = null, timer = null, disposed = false, button = null;
   let dialog = null, offlineMinimum = null, controller = null, cancelRequest = null;
   let compatibility = null, pendingManifest = null, latestManifest = null;
+  const loadedSnapshotGeneration=installedSnapshotGeneration(document);
+  let latestSnapshotGeneration=null;
+  const snapshotUpdate=()=>latestManifest?.revision===revision && loadedSnapshotGeneration!==null && latestSnapshotGeneration>loadedSnapshotGeneration;
   const reminder = updateReminderPreference(document);
   let dismissalMenu = null, explicitOffer = false;
   const criticalUpdate = () => validRevision(latestManifest?.minimumSupportedRevision) && revision < latestManifest.minimumSupportedRevision;
@@ -737,12 +752,12 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       // Invalid policy must not suppress an otherwise valid optional update offer.
       try { applyCompatibility(data); } catch { failOpen(); }
       oldCopyConfirmed = false;
-      if (data.revision <= revision) { clearOldCopyNotice(); stopBlockedWatch(); blockedUpdate = false; dismissalMenu?.dispose(); dismissalMenu=null; button?.remove(); button = null; return; }
+      if (data.revision <= revision && !snapshotUpdate()) { clearOldCopyNotice(); stopBlockedWatch(); blockedUpdate = false; dismissalMenu?.dispose(); dismissalMenu=null; button?.remove(); button = null; return; }
       if (suppressReminder()) { dismissalMenu?.close(); if (button) { button.hidden = true; button.style.display='none'; } clearOldCopyNotice(); return; }
       const launcherCommit = automaticLauncherCommit(document);
       const reloadHere = launcherCommit !== null || canUpdateHere(document, endpoint);
       const minimum = data.minimumSupportedRevision;
-      if (!reloadHere && (minimum === undefined || validRevision(minimum) && minimum <= data.revision)) {
+      if (!reloadHere && data.revision > revision && (minimum === undefined || validRevision(minimum) && minimum <= data.revision)) {
         oldCopyCount = confirmedOldCopyBoot(document, revision, now); oldCopyConfirmed = true;
       }
       if (button?.isConnected) { refreshOldCopyNotice(); return; }
@@ -825,12 +840,13 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
             (!sameOrigin && url.href !== CANONICAL_SITE_VERSION_URL)) throw new Error('Disallowed update endpoint');
         const canonical = url.href === CANONICAL_SITE_VERSION_URL;
         url.searchParams.set('_updateCheck', String(startedAt));
-        let data;
+        let data, discoveredSnapshot=null;
         try { data = await version(url); }
         catch (error) {
           if (disposed || !canonical) throw error;
           const pointer = await read(new URL(CANONICAL_RELEASE_POINTER_URL));
           data = await version(releaseVersionUrl(pointer));
+          discoveredSnapshot=snapshotGeneration(pointer.snapshotDirectory);
           if (!disposed && pointer.commit === automaticLauncherCommit(document)) {
             // Reuse the existing credential-free check, never fetch just for age.
             verifiedPointers.set(document, Object.freeze({...pointer}));
@@ -838,6 +854,19 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
           }
         }
         if (disposed) return;
+        // Reuse this check cadence and bounded static reader; no independent polling.
+        if(loadedSnapshotGeneration!==null && data.revision===revision){
+          discoveredSnapshot ??= snapshotGeneration(data.snapshotDirectory);
+          if(discoveredSnapshot===null){
+            try {
+              const pointerUrl=new URL('snapshot-current.json',url);
+              pointerUrl.searchParams.set('_updateCheck',String(startedAt));
+              discoveredSnapshot=snapshotGeneration((await read(pointerUrl))?.currentdir);
+            } catch { /* Optional data freshness never changes client compatibility. */ }
+          }
+        }
+        if(disposed)return;
+        latestSnapshotGeneration=discoveredSnapshot;
         // A run/menu may start during fetch. Retain the result, independently of
         // the network cooldown, until the parent reports a safe UI transition.
         pendingManifest = latestManifest = data;

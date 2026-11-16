@@ -14,7 +14,7 @@ before(async()=>{
  server=http.createServer((request,response)=>{
   const name=new URL(request.url,'http://localhost').pathname;
   if(name==='/'){response.setHeader('Content-Type','text/html');response.end('<!doctype html><title>Actual cosmetic preview hook</title>');return;}
-  if(!['/tools/cosmetic-preview.mjs','/tools/cosmetic-preview.css'].includes(name)){response.writeHead(404).end();return;}
+  if(!['/tools/cosmetic-preview.mjs','/tools/cosmetic-preview.css','/tools/studio-draft-host.mjs','/tools/studio-edit-history.mjs'].includes(name)){response.writeHead(404).end();return;}
   response.setHeader('Content-Type',name.endsWith('.mjs')?'text/javascript':'text/css');response.end(fs.readFileSync(new URL('..'+name,import.meta.url)));
  });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;browser=await chromium.launch({headless:true});
 });

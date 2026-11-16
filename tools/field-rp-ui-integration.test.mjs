@@ -1,3 +1,4 @@
+import * as rankingDisplayPolicy from './ranking-display-policy.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +10,7 @@ function fn(name){const a=source.search(new RegExp('^  (?:async )?function '+nam
 const finish=(trackId,fieldSize,weight)=>({trackId,rank:4,fieldSize,weight,timeMs:10000,competition:1,pbAt:0});
 function harness(){
   const finishes=[finish('large',2000,10),finish('small',10,1)],index={epoch:0,fields:finishes,profiles:new Map([['me',finishes]]),boards:new Map(finishes.map(row=>[row.trackId,{trackId:row.trackId,fromScoring:true}]))};
-  const c=vm.createContext({fieldRpPlannerModule:field,plannerScoringIndex:index,profileSnapshotEpoch:0,localRaceGeneration:0,
+  const c=vm.createContext({rankingDisplayPolicy,fieldRpPlannerModule:field,plannerScoringIndex:index,profileSnapshotEpoch:0,localRaceGeneration:0,
     activeRankedAccountId:()=> 'me',cleanUserId:String,overallCategory:'field',plannerMetric:'field',plannerSort:'impact',plannerCurrentTracksOnly:false,plannerOfficialOnly:false,
     PLANNER_METRICS:{overall:'Overall RP',field:'Field RP (experimental)',events:'Event RP'},personalFilterRuntime:null,
     loadFieldRpPlannerModule:async()=>field,loadPlannerScoringIndex:async()=>index,
@@ -21,7 +22,7 @@ function harness(){
     trackSnapshotStore(){throw Error('Normal-board access forbidden');},cachedProfileFinishes(){throw Error('Display cache forbidden');},
     trackInfo:trackId=>({name:trackId}),escapeHtml:String,trackThumbnailMarkup:()=>'',ageLabel:()=>'',rankedWeightTitle:()=>'',
     compactPlannerTargetLabel:row=>'#'+row.currentRank+' to #'+row.targetRank,rpDecimals:()=>3});
-  vm.runInContext(['formatRp','fieldRpProfileSummary','categoryTrackMarkup','fieldRpPlannerControls',
+  vm.runInContext(['formatRankingFieldRp','formatRp','fieldRpProfileSummary','categoryTrackMarkup','fieldRpPlannerControls',
     'routeBenefitPercent','guideTrackCard','fieldRpGuideMarkup','profileGuideMarkup'].map(fn).join('\n'),c);
   return {c,index,finishes,entry:{userId:'me',name:'Me',raceCount:2,resultSamples:finishes}};
 }
@@ -49,8 +50,11 @@ test('viewing rivals never fabricates a Field margin; group, partial and late re
 });
 test('Field ranking details remain while the three unwanted profile cards are absent',()=>{
  const {c,entry}=harness(),middle=c.categoryTrackMarkup(entry);
- assert.match(middle,/Strongest Field/);assert.match(middle,/Field boost/);assert.match(middle,/Field reduction/);
- assert.match(middle,/<em>\+/);assert.match(middle,/<em>-/);
+ assert.match(middle,/Strongest Field/);
+ const ids=[...middle.matchAll(/data-track-id="([^"]+)"/g)].map(match=>match[1]);
+ assert.ok(ids.length<=2);assert.equal(new Set(ids).size,ids.length);
+ assert.match(middle,/Field (boost|reduction)/);assert.match(middle,/Not historical movement/);
+ assert.match(middle,/<em>[+-][0-9,]+<\/em>/);
  assert.doesNotMatch(source,/data-profile-field-results|function profileFieldRpCards|function ensureProfileFieldRp/);
  assert.match(source,/fieldRpGuideMarkup/);
 });
@@ -77,8 +81,8 @@ test('browser popup groups preserve requested order and arrow-key traversal',{ti
   await page.route('**/*',route=>route.abort());await page.setContent('<button id="trigger">Rankings</button>');
   await page.addScriptTag({content:`let closeRankedCategoryMenu=null,overallCategory='overall';const LEADERBOARD_LABELS={},LEADERBOARD_INFO={};function setOverallCategory(){}${fn('openRankedCategoryMenu')};openRankedCategoryMenu(document.getElementById('trigger'));`});
   assert.deepEqual(await page.locator('.sq-category-popup > [role="presentation"]').evaluateAll(groups=>groups.map(group=>[...group.querySelectorAll('button')].map(b=>b.dataset.category))),
-    [['overall','field','events','casual'],['topTracks','tracks','average','medals','wins']]);
-  for(const category of ['field','events','casual','topTracks','tracks','average','medals','wins']){
+    [['overall','events','field','casual'],['topTracks','tracks','average','medals']]);
+  for(const category of ['events','field','casual','topTracks','tracks','average','medals']){
     await page.keyboard.press('ArrowDown');assert.equal(await page.evaluate(()=>document.activeElement.dataset.category),category);
   }
   await page.keyboard.press('Home');assert.equal(await page.evaluate(()=>document.activeElement.dataset.category),'overall');

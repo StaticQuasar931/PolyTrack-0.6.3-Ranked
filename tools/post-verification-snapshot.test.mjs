@@ -186,7 +186,7 @@ test('publisher and other capture workflows share a non-cancelling serialization
   assert.match(verifier,/group: polytrack-run-verifier/);
 });
 
-test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw private checkpoint', () => {
+test('publisher reuses the tested retry sanitizer and scopes private staging checks to its commit step', () => {
   const embedded=source=>source.match(/<<'NODE'\n([\s\S]*?)^          NODE$/m)?.[1];
   assert.ok(embedded(publisher));assert.equal(embedded(publisher),embedded(catalog));
   const paths=[...publisher.matchAll(/^          path: (.+)$/gm)].map(match=>match[1]);
@@ -202,11 +202,16 @@ test('publisher reuses the tested retry sanitizer byte-for-byte, never the raw p
   assert.match(publisher,/replay-retries-v1-\$\{\{ github.repository_id \}\}-\$\{\{ github.event.repository.default_branch \}\}/);
   // The public overall-rank-history.json is not the private retry history.json.
   const privateStaging=/git add[^\n]*(?:local-reports|export-progress|(?:[/\s'\"])history\.json(?:[\s'\"]|$))/m;
-  assert.doesNotMatch(publisher,privateStaging);
+  const commitStep=step(publisher,'Commit changed assignments');
+  assert.doesNotMatch(commitStep,privateStaging);
+  const unrelatedMention='      - name: Document forbidden staging paths\n        run: echo "git add -- local-reports/history.json"\n'+
+    '      - name: Commit changed assignments\n        run: git add -- public-snapshots89/index.json\n';
+  assert.match(unrelatedMention,privateStaging);
+  assert.doesNotMatch(step(unrelatedMention,'Commit changed assignments'),privateStaging);
   assert.doesNotMatch('git add -- tools/overall-rank-history.json',privateStaging);
   for(const command of ['git add -- local-reports/snapshot-staging','git add -- export-progress.json',
     'git add -- history.json','git add -- /tmp/retries/history.json','git add -- "retries/history.json"'])
-    assert.match(command,privateStaging);
+    assert.match(step('      - name: Commit changed assignments\n        run: '+command+'\n','Commit changed assignments'),privateStaging);
   assert.match(step(publisher,'Retain validated private replay retry ledger'),/steps.snapshot.outcome == 'failure'/);
 });
 

@@ -686,3 +686,20 @@ test('new URL JSON assets retain their complete extension and never become scrip
  for(const name of ['events/standings-preview.json','events/data.json','events/versioned.json'])assert.ok(names.has(name),name);
  for(const name of ['events/standings-preview.js','events/data.js','events/versioned.js','events/not-a-module.mjs','events/skip.js','events/skip.json'])assert.equal(names.has(name),false,name);
 });
+
+test('historical CDN source packages the tracked JSON standings preview, not a phantom JS path',async()=>{
+ const root=fileURLToPath(new URL('../',import.meta.url));
+ const commit='5ebaf33eb160939e60f3b6b08feb061916039836';
+ const git=(args,encoding='utf8')=>execFileSync('git',['-c','safe.directory='+root,...args],{cwd:root,encoding,maxBuffer:20000000});
+ const paths=git(['ls-tree','-r','--name-only',commit,'--','events/standings-preview.json','events/standings-preview.js'])
+  .trim().split(/\r?\n/).filter(Boolean);
+ assert.deepEqual(paths,['events/standings-preview.json']);
+ const historicalClient=git(['show',commit+':events/client.mjs']);
+ assert.match(historicalClient,/new URL\(['"`]\.\/standings-preview\.json['"`],\s*import\.meta\.url\)/);
+ const f=fixture();
+ f.files.set('events/client.mjs',Buffer.from("new URL('./standings-preview.json',import.meta.url);"));
+ const plan=await releasePlan({commit:sha,...f});
+ const assets=new Set(plan.files.map(file=>file.path));
+ assert.ok(assets.has('events/standings-preview.json'));
+ assert.equal(assets.has('events/standings-preview.js'),false);
+});

@@ -2,14 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 414,
+    "number": 415,
     "version": "0.6.3",
-    "revision": 355,
+    "revision": 356,
     "notes": [
-      "The current Kodub weekly track is up to date and ready for replay verification."
+      "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
+      "Top Tracks adds a Non-official view for community and extra tracks.",
+      "Event cards have clearer spacing and uncropped weekly artwork.",
+      "New snapshot data can now appear through Update available."
     ]
   },
   "entries": [
+    {
+      "number": 414,
+      "title": "Enable reviewed Uplink replay verification and refresh weekly fallback",
+      "commit": "5cc13313ac7c8e965ca25b7b1bd32cfe012644c0",
+      "committedAt": "2026-11-16T04:44:50.000Z",
+      "notes": [
+        "The current Kodub weekly track is up to date and ready for replay verification."
+      ]
+    },
     {
       "number": 413,
       "title": "Fix saved verification targets and clarify rank duration",
@@ -193,17 +205,6 @@ const historyData = {
       "committedAt": "2026-11-15T02:01:33.000Z",
       "notes": [
         "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 393,
-      "title": "Clearer event details and profile shortcuts",
-      "commit": "75649ddd74448b0fe0fb6b258dc56af0043eaf82",
-      "committedAt": "2026-11-15T01:40:51.000Z",
-      "notes": [
-        "Event names, cached placements, and Rolling Hills RP run details are clearer.",
-        "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
-        "Local personal bests can show a podium target without being presented as confirmed medals."
       ]
     }
   ],

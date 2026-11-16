@@ -2,10 +2,10 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(require('node:path').join(__dirname,'../polytrack_062_patch.js'),'utf8');
 const extract=name=>{const a=source.indexOf('  function '+name+'(');assert.ok(a>0);return source.slice(a,source.indexOf('\n  }',a)+4);};
 function fixture(){
-  const rows=Array.from({length:200},(_,i)=>({userId:'racer-'+(i+1),name:'Driver '+(i+1),rank:i+1,score:i+0.5}));
-  const c={overallRacerQuery:'',overallCategory:'overall',rankedFilterResult:null,sortedOverallEntries:()=>rows,sortedEventEntries:()=>rows,
+  const rows=Array.from({length:200},(_,i)=>({userId:'racer-'+(i+1),name:'Driver '+(i+1),rank:i+1,raceCount:3,score:i+0.5}));
+  const c={rankingDisplayPolicy,overallRacerQuery:'',overallCategory:'overall',rankedFilterResult:null,sortedOverallEntries:()=>rows,sortedEventEntries:()=>rows,
     loadedTrackRankingRows:()=>rows,personalTrackRankingRows:rows=>rows,topTrackRowsForScope:()=>rows};
-  vm.createContext(c);vm.runInContext(extract('searchRankingRows')+extract('currentLeaderboardCount'),c);return {c,rows};
+  vm.createContext(c);vm.runInContext(extract('rankingDisplayMetricState')+extract('filterRankingDisplayRows')+extract('searchRankingRows')+extract('currentLeaderboardCount'),c);return {c,rows};
 }
 test('search covers later pages and preserves real rank and score',()=>{
   const {c,rows}=fixture();c.overallRacerQuery='Driver 191';
@@ -63,3 +63,5 @@ test('invalid filters report concise guidance, are bounded and never execute exp
   }
   c.overallRacerQuery='';assert.equal(c.searchRankingRows(rows),rows);assert.equal(c.searchRankingRows.error,'');
 });
+
+let rankingDisplayPolicy;test.before(async()=>{rankingDisplayPolicy=await import('./ranking-display-policy.mjs');});

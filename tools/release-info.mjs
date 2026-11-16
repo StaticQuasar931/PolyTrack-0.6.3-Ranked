@@ -1,12 +1,15 @@
 const releaseInfo = {
-  "number": 414,
+  "number": 415,
   "version": "0.6.3",
-  "revision": 355,
+  "revision": 356,
   "notes": [
-    "The current Kodub weekly track is up to date and ready for replay verification."
+    "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
+    "Top Tracks adds a Non-official view for community and extra tracks.",
+    "Event cards have clearer spacing and uncropped weekly artwork.",
+    "New snapshot data can now appear through Update available."
   ],
-  "preparedAt": "2026-11-16T04:44:48.144Z",
-  "committedAt": "2026-11-16T04:44:50.000Z"
+  "preparedAt": "2026-11-16T05:15:51.544Z",
+  "committedAt": "2026-11-16T05:21:58.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

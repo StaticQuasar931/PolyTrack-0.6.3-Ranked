@@ -1,3 +1,4 @@
+import * as rankingDisplayPolicy from './ranking-display-policy.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,20 +29,20 @@ test('scoped model validates coverage, unique tracks and eligible populations; A
   assert.deepEqual(new Set(SCOPED_AVERAGE_EXTRA_TRACK_IDS),EXTRA_TRACK_IDS);
 });
 function harness(){
-  const c=vm.createContext({overallCategory:'average',overallRankingScope:'official',averageScopeExtraIds:['x'],
+  const c=vm.createContext({rankingDisplayPolicy,overallCategory:'average',overallRankingScope:'official',averageScopeExtraIds:['x'],
     TRACK_CATALOG:new Map([['o',{id:'o',type:'official'}],['c',{id:'c',type:'community'}]]),
     LEGACY_TRACK_CATALOG:new Map(),ROLLING_HILLS_ID:'rhr',rankedMetricState,
     overallEntriesCache:[],attachLocalRankingSidecars:rows=>rows,personalFilterRuntime:null,MIN_RANKED_TRACKS:3,
     AVERAGE_PLACEMENT_VERSION:2,annotateCategoryRanks:rows=>rows,
     trackSnapshotStore(){throw Error('No normal boards');},overallRacerQuery:'',rankedFilterResult:null});
-  vm.runInContext(fn('rankingMetricFor')+'\n'+fn('sortedOverallEntries')+'\n'+fn('searchRankingRows'),c);return c;
+  vm.runInContext(['rankingMetricFor','rankingDisplayMetricState','filterRankingDisplayRows','sortedOverallEntries'].map(fn).join('\n')+'\n'+fn('searchRankingRows'),c);return c;
 }
 test('actual patch scopes only complete resultSamples, sorts ascending with missing last, and searches selected metric',()=>{
   const c=harness();
   c.overallEntriesCache=[{userId:'missing',rank:1,raceCount:2,resultSamples:[finish('o')],averagePlacement:1},
     {userId:'slow',rank:2,raceCount:1,resultSamples:[finish('o',4)],averagePlacement:1},
     {userId:'fast',rank:3,raceCount:1,resultSamples:[finish('o',2)],averagePlacement:90}];
-  assert.deepEqual(Array.from(c.sortedOverallEntries(),r=>[r.userId,r.categoryRank]),[['fast',1],['slow',2],['missing',null]]);
+  assert.deepEqual(Array.from(c.sortedOverallEntries(),r=>[r.userId,r.categoryRank]),[['fast',1],['slow',2]]);
   c.overallRacerQuery='<3';assert.deepEqual(Array.from(c.searchRankingRows(c.overallEntriesCache),r=>r.userId),['fast']);
   c.averageScopeExtraIds=null;assert.equal(c.rankingMetricFor(c.overallEntriesCache[1]).known,false);
   c.overallRankingScope='total';assert.equal(c.rankingMetricFor({...c.overallEntriesCache[1],averagePlacementVersion:2}).value,1);

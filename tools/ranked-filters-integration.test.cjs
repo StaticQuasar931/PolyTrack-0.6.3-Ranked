@@ -49,17 +49,17 @@ test('Casual RP ranks known values high to low and leaves legacy values unranked
     { userId: 'leader', rank: 3, casualRp: 300, casualCompletionCount: 3 },
     { userId: 'fractional', rank: 4, casualRp: 300.125, casualCompletionCount: 3 }
   ];
-  const context = vm.createContext({ overallCategory: 'casual', overallEntriesCache: rows,
+  const context = vm.createContext({ rankingDisplayPolicy, overallCategory: 'casual', overallEntriesCache: rows,
     attachLocalRankingSidecars: value => value,
     rankingMetricFor: row => ({known: Number.isFinite(row.casualRp), value: row.casualRp}),
     compareRankedMetrics: (a,b,left,right) => Number(right.known)-Number(left.known) ||
       (left.known ? right.value-left.value : 0) || a.rank-b.rank
   });
-  vm.runInContext(`${extract('sortedOverallEntries')};`, context);
+  vm.runInContext(`${extract('rankingDisplayMetricState')};${extract('filterRankingDisplayRows')};${extract('sortedOverallEntries')};`, context);
   const sorted = context.sortedOverallEntries();
-  assert.deepEqual(Array.from(sorted, row => row.userId), ['fractional', 'leader', 'zero', 'legacy']);
-  assert.deepEqual(Array.from(sorted, row => row.categoryRank), [1, 2, 3, null]);
-  assert.deepEqual(Array.from(sorted, row => row.globalRank), [4, 3, 2, 1]);
+  assert.deepEqual(Array.from(sorted, row => row.userId), ['fractional', 'leader']);
+  assert.deepEqual(Array.from(sorted, row => row.categoryRank), [1, 2]);
+  assert.deepEqual(Array.from(sorted, row => row.globalRank), [4, 3]);
 });
 
 test('server achievement normalization keeps only bounded allowlisted proof summaries', () => {
@@ -103,7 +103,7 @@ test('Casual RP normalization rejects legacy model 1 and preserves fractional mo
     MIN_RANKED_TRACKS: 3,
     TOTAL_TRACKS: 100
   });
-  vm.runInContext(`${extract('safeServerInteger')};${extract('safeServerNumber')};${extract('sanitizeServerAchievementProof')};${extract('sanitizeServerAchievements')};${extract('normalizeEntries')};`, context);
+  vm.runInContext(`${extract('safeServerInteger')};${extract('rankingCostValue')};${extract('safeServerNumber')};${extract('sanitizeServerAchievementProof')};${extract('sanitizeServerAchievements')};${extract('normalizeEntries')};`, context);
   const [legacy, oldModel, current] = context.normalizeEntries([
     {userId: 'legacy', casualRp: 100, casualCompletionCount: 1,
       serverAchievements: {casual: {count: 1, rp: 100, pointsPerTrack: 100}}},
@@ -138,3 +138,5 @@ test('source contract renders legacy Casual RP as unavailable and preserves exac
   assert.match(source, /totalPlaytimeMs: Number\.isFinite\(entry\.totalPlaytimeMs\).*\?entry\.totalPlaytimeMs:null/);
   assert.doesNotMatch(source, /\.casualScore|\.casualRank/);
 });
+
+let rankingDisplayPolicy;test.before(async()=>{rankingDisplayPolicy=await import('./ranking-display-policy.mjs');});

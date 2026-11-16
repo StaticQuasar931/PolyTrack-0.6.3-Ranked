@@ -174,6 +174,8 @@ async function nativeArtSetup(page) {
     ${extract('applyProfileCosmetics')}
     ${extract('ensureStyles')}
     ${extract('profileCustomizerMarkup')}
+    ${extract('trackThumbnailMarkup')}
+    ${extract('renderStudioFavorite')}
     ${extract('setupRacerStudio')}
     ensureStyles();
     const fixtureEntry=window.publicFixture;

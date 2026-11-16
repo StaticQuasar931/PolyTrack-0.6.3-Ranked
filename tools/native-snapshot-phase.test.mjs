@@ -350,6 +350,11 @@ test('source-bound retention admits only target new fingerprint proofs and prese
  await write(f.directory,'tracks/'+initialRh+'.json',originalNormal);
  const initialPolicy=structuredClone(policy);initialPolicy.trackContentHashes[initialRh]=content;initialPolicy.trackGeometries[initialRh]=initialPolicy.trackGeometries[track];
  f.options.buildPolicy=async()=>initialPolicy;await runNativeSnapshotPhase(f.options);
+ // This original companion is authenticated by the published index, but no longer an active pin.
+ const originalManifest=await read(f.directory,'manifest.json'),activePin=originalManifest.nativeEventSources.day1;
+ const originalCompanion=JSON.parse(await fs.readFile(path.join(f.directory,'native-event-source/'+activePin+'.json')));
+ const orphanBytes=Buffer.from(JSON.stringify(originalCompanion,null,2)+'\n'),orphanPath='native-event-source/'+sha(orphanBytes)+'.json';
+ await fs.writeFile(path.join(f.directory,orphanPath),orphanBytes);
  const oldBoard=await fs.readFile(path.join(f.directory,'events/day1.json'));
  const oldReplay=await fs.readFile(path.join(f.directory,`event-replays/day1/${account}.json`));
  const pointer=await read(f.root,'verification-ledger-current.json');
@@ -382,6 +387,8 @@ test('source-bound retention admits only target new fingerprint proofs and prese
   ledgerManifestHash:previous.manifestHash,ledgerEntries:previous.entries.length};
  const ids=[other,rh],publishedRetention=await loadPublishedTargetRetention({root:f.root,directory:f.directory,pins,targetScope:'all',targetTrackIds:ids,publishedBaseline:publishedEventTotalsBaseline});
  const check=(token=publishedRetention,ledger=previous,targets=ids)=>assertPublishedTargetRetention(token,{directory:f.directory,ledger,targetTrackIds:targets,publishedBaseline:publishedEventTotalsBaseline});
+ await fs.appendFile(path.join(f.directory,orphanPath),' ');
+ await assert.rejects(check(),/retained bytes changed/);await fs.writeFile(path.join(f.directory,orphanPath),orphanBytes);
  await assert.rejects(check({...publishedRetention}),/live retention capability/);
  await assert.rejects(check(publishedRetention,{entries:[]}),/changed or deleted/);
  const altered=structuredClone(previous);altered.entries[0].witnesses[0].verifierFingerprint='0'.repeat(64);
@@ -400,6 +407,8 @@ test('source-bound retention admits only target new fingerprint proofs and prese
  const extended=structuredClone(policy);extended.trackContentHashes[other]=content;extended.trackGeometries[other]=extended.trackGeometries[track];
  extended.trackContentHashes[rh]=content;extended.trackGeometries[rh]=extended.trackGeometries[track];
  extended.verifierFingerprint='7'.repeat(64);
+  const unindexedBytes=Buffer.from(JSON.stringify(originalCompanion)+'\n '),unindexedPath='native-event-source/'+sha(unindexedBytes)+'.json';
+  await fs.writeFile(path.join(f.directory,unindexedPath),unindexedBytes);
  f.calls.length=0;let fullInventory=0;
  const verified=await verifyNativeSnapshotPhase({...f.options,targetScope:'all',targetTrackIds:ids,
   publishedEventTotalsBaseline,publishedRetention,
@@ -416,6 +425,8 @@ test('source-bound retention admits only target new fingerprint proofs and prese
   assert.equal(next.entries.length,previous.entries.length+2);
   assert.equal(next.entries.find(row=>row.binding.trackId===other).witnesses[0].verifierFingerprint,extended.verifierFingerprint);
   assert.equal(next.entries.find(row=>row.binding.trackId===track).witnesses[0].verifierFingerprint,fingerprint);
+  assert.deepEqual(await fs.readFile(path.join(f.directory,orphanPath)),orphanBytes,'authenticated original companion survives active-pin GC byte-for-byte');
+  await assert.rejects(fs.access(path.join(f.directory,unindexedPath)),error=>error.code==='ENOENT','unindexed orphan is still collected');
   assert.deepEqual(await fs.readFile(path.join(f.directory,'events/day1.json')),oldBoard);
   assert.deepEqual(await fs.readFile(path.join(f.directory,`event-replays/day1/${account}.json`)),oldReplay);
   assert.deepEqual(await fs.readFile(path.join(f.directory,pagedPath)),pagedBytes);

@@ -1,3 +1,4 @@
+import {readPrivateSnapshotIndex} from './private-snapshot-index.mjs';
 import {pinRetainedNativeBoards} from './retained-native-board-cache.mjs';
 import {nativeTargetTrackIds} from './native-target-filter.mjs';
 import {assertPublishedTargetRetention,publishedNormalRetentionSelection,assertPublishedTargetJobs} from './published-target-retention.mjs';
@@ -314,9 +315,17 @@ async function compileEvents({root,directory,inputs,ledger,policy,captureContext
   manifest.nativeEventSources=pins;await json(directory,'manifest.json',manifest);
   await restoreRetainedPendingPlaybacks({root,directory});
   await refreshCapturedEventHighlights(directory);
+  const retainedSources=new Set();
+  if(publishedRetention){
+    const prior=assertTrustedPublishedEventTotalsBaseline(publishedEventTotalsBaseline);
+    const indexBytes=await readPrivateSnapshotIndex(path.join(root,prior.provenance.currentdir,'index.json'));
+    demand(sha(indexBytes)===prior.provenance.indexSha256,'published companion index changed');
+    for(const name of Object.keys(JSON.parse(indexBytes).files))
+      if(/^native-event-source\/[a-f0-9]{64}\.json$/.test(name))retainedSources.add(name.slice('native-event-source/'.length));
+  }
   for(const file of await fs.readdir(cache)){
     demand(/^[a-f0-9]{64}\.json$/.test(file),'unknown file in public event-source namespace');
-    if(!Object.values(pins).includes(file.slice(0,-5)))await fs.unlink(path.join(cache,file));
+    if(!Object.values(pins).includes(file.slice(0,-5))&&!retainedSources.has(file))await fs.unlink(path.join(cache,file));
   }
   return {periods:projections.length,ready:true};
 }

@@ -1273,3 +1273,53 @@ test('update-click attribution waits for safety and rolls back if reload fails',
   h.handle.dispose();
  }
 });
+
+function snapshotDocument(generation=89){const document=new FakeDocument();document.querySelector=selector=>selector==='meta[name="polytrack-snapshot"]'?{content:'./public-snapshots'+generation+'/'}:null;return document;}
+test('same-client snapshot publication uses the existing check cadence and exact static pointer',async()=>{
+ const requested=[],document=snapshotDocument();const h=harness({document,revision:355,fetch:async(url,options)=>{
+  requested.push(url);assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');
+  const target=new URL(url);assert.equal(target.origin,'https://game.example');
+  if(target.pathname==='/path/site-version.json')return jsonResponse({revision:355,minimumSupportedRevision:172});
+  assert.equal(target.pathname,'/path/snapshot-current.json');return jsonResponse({currentdir:'public-snapshots90'});
+ }});
+ await Promise.all([h.handle.check(),h.handle.check()]);assert.equal(requested.length,2);assert.equal(document.button.textContent,'Update available');
+ assert.equal(h.reloadChecks,0);assert.equal(h.handle.getCompatibility().latestRevision,355);assert.equal(h.handle.getCompatibility().onlineAllowed,true);
+ await h.handle.check();assert.equal(requested.length,2);h.handle.dispose();assert.equal(h.timers.size,0);
+});
+test('snapshot update defers throughout a race, rechecks click safety and never auto reloads',async()=>{
+ let safe=false,reloads=0;const document=snapshotDocument();document.defaultView=Object.assign(new EventTarget(),{location:{href:document.baseURI,reload(){reloads++;}}});
+ const h=harness({document,revision:355,isIdle:()=>safe,canReload:()=>safe,fetch:async url=>jsonResponse(new URL(url).pathname.endsWith('site-version.json')?{revision:355}:{currentdir:'public-snapshots90'})});
+ await h.handle.check();assert.equal(document.button,undefined);assert.equal(reloads,0);safe=true;h.handle.resume();assert.equal(document.button.textContent,'Update available');assert.equal(reloads,0);
+ safe=false;document.button.listeners.click({preventDefault(){}});assert.equal(reloads,0);safe=true;h.handle.resume();document.button.listeners.click({preventDefault(){}});assert.equal(reloads,1);h.handle.dispose();
+});
+test('same-generation, older, malformed and missing snapshot identities never invent an update',async()=>{
+ for(const currentdir of ['public-snapshots89','public-snapshots88','public-snapshots090','public-snapshots1/../90','https://evil.invalid/public-snapshots90',null]){
+  const h=harness({document:snapshotDocument(),revision:355,fetch:async url=>jsonResponse(new URL(url).pathname.endsWith('site-version.json')?{revision:355}:{currentdir})});
+  await h.handle.check();assert.equal(h.document.button,undefined,currentdir);h.handle.dispose();
+ }
+});
+test('snapshot updates cannot downgrade the client and unknown installed generation adds no requests',async()=>{
+ for(const [revision,document,response]of [[355,snapshotDocument(),{revision:354,snapshotDirectory:'public-snapshots999'}],[355,new FakeDocument(),{revision:355,snapshotDirectory:'public-snapshots90'}]]){
+  let calls=0;const h=harness({revision,document,fetch:async()=>{calls++;return jsonResponse(response);}});await h.handle.check();assert.equal(calls,1);assert.equal(document.button,undefined);h.handle.dispose();
+ }
+});
+test('snapshot metadata can piggyback the version response without an additional request',async()=>{
+ let calls=0;const h=harness({document:snapshotDocument(),revision:355,fetch:async()=>{calls++;return jsonResponse({revision:355,snapshotDirectory:'public-snapshots90'});}});
+ await h.handle.check();assert.equal(calls,1);assert.equal(h.document.button.textContent,'Update available');h.handle.dispose();
+});
+test('snapshot pointer failure preserves compatibility and a failed optional request cannot fetch arbitrary URLs',async()=>{
+ let calls=0;const h=harness({document:snapshotDocument(),revision:355,fetch:async url=>{
+  calls++;if(new URL(url).pathname.endsWith('site-version.json'))return jsonResponse({revision:355,minimumSupportedRevision:172});
+  assert.equal(new URL(url).pathname,'/path/snapshot-current.json');throw Error('offline');
+ }});await h.handle.check();assert.equal(calls,2);assert.equal(h.document.button,undefined);assert.equal(h.handle.getCompatibility().reason,'supported');h.handle.dispose();
+});
+test('CDN fallback reuses its validated pointer for same-client newer snapshot without another request',async()=>{
+ const requested=[],pointer={...cdnPointer,snapshotDirectory:'public-snapshots90'};const h=harness({document:snapshotDocument(),revision:355,endpoint:CANONICAL_SITE_VERSION_URL,fetch:async url=>{
+  requested.push(url);if(url.startsWith(CANONICAL_SITE_VERSION_URL))throw Error('Pages blocked');if(url===CANONICAL_RELEASE_POINTER_URL)return jsonResponse(pointer);assert.equal(url,cdnVersionUrl);return jsonResponse({revision:355,minimumSupportedRevision:172});
+ }});await h.handle.check();assert.equal(requested.length,3);assert.equal(h.document.button.textContent,'Update available');assert.equal(h.handle.getCompatibility().latestRevision,355);h.handle.dispose();
+});
+test('snapshot-only update preserves session dismissal and explicit menu-check override',async()=>{
+ const document=snapshotDocument();const h=harness({document,revision:355,fetch:async()=>jsonResponse({revision:355,snapshotDirectory:'public-snapshots90'})});await h.handle.check();
+ document.button.listeners.contextmenu({preventDefault(){},stopPropagation(){}});const menu=document.body.children.at(-1);menu.children[0].listeners.click({stopPropagation(){}});assert.equal(document.button.hidden,true);
+ h.handle.resume();assert.equal(document.button.hidden,true);await h.handle.check({force:true});assert.equal(document.button.hidden,false);h.handle.dispose();
+});
