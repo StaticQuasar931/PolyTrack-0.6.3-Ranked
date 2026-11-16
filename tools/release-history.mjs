@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 434,
+    "number": 435,
     "version": "0.6.3",
-    "revision": 372,
+    "revision": 373,
     "notes": [
-      "Reduced snapshot download overhead for background replay checks."
+      "Fixed a release packaging check so the latest update can reach CDN players."
     ]
   },
   "entries": [
+    {
+      "number": 434,
+      "title": "Batch saved snapshot checkout for offline benchmarks",
+      "commit": "d81a005893138422118a6474c9d0ed3c2f962e7d",
+      "committedAt": "2026-11-16T11:07:08.000Z",
+      "notes": [
+        "Reduced snapshot download overhead for background replay checks."
+      ]
+    },
     {
       "number": 433,
       "title": "Align cleanup test with sandboxed native browser",
@@ -185,15 +194,6 @@ const historyData = {
       "committedAt": "2026-11-16T04:33:49.000Z",
       "notes": [
         "Rank durations now say at rank, and replay verification prioritizes more visible results."
-      ]
-    },
-    {
-      "number": 411,
-      "title": "Keep captured event observation times accurate",
-      "commit": "e9008e8f6446550292bf95f8a49c141acd5d26f7",
-      "committedAt": "2026-11-16T03:13:34.000Z",
-      "notes": [
-        "Event previews stay consistent when snapshot captures take longer."
       ]
     }
   ],
