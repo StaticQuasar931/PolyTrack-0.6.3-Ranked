@@ -65,14 +65,14 @@ test('only explicit complete v2 totals metadata may advertise the new cap; hybri
 test('verified actual ERP is never recalculated from rank, field, cap or totals',()=>{
  const row={...board().entries[1],rp:1234,rank:1};
  const result=permanentRollingRunPresentation(row,board());
- assert.equal(result.text,'1,234 ERP');assert.equal(result.estimated,false);assert.match(result.title,/Published earned/);
+ assert.equal(result.text,'1,234 ERP');assert.equal(result.estimated,false);assert.equal(result.title,'ERP: 1,234');
  assert.equal(permanentRollingRunPresentation({...row,rp:0},board()).text,'0 ERP');
 });
 test('pending preview uses hybrid pace and competition rank only against complete explicit v2 and is never a verified award',()=>{
  const pending={accountId:'pending',timeMs:11000,pending:true,verified:false,eventRpEligible:false,verificationStatus:'waiting'};
  const before=structuredClone(pending),result=permanentRollingRunPresentation(pending,board());
  assert.equal(result.text,'Estimated '+Math.floor(10101*(10000/11000)**2/2**.75).toLocaleString('en-US')+' ERP if verified');
- assert.match(result.title,/target 10000 ms, run 11000 ms and competition rank 2/);assert.equal(result.estimated,true);assert.match(result.title,/No ERP has been awarded/);
+ assert.match(result.title,/^Estimated ERP: 4,963 if verified/);assert.equal(result.estimated,true);assert.match(result.title,/Not awarded yet/);
  assert.deepEqual(pending,before);
  for(const value of [null,board({scoreVersion:V1,maxRp:1001}),board({totalEntries:3}),board({ranksExact:false}),board({sourceComplete:false})]){
   const presentation=permanentRollingRunPresentation(pending,value);assert.equal(presentation.estimated,false);assert.equal(presentation.text,'ERP pending');
@@ -89,7 +89,7 @@ test('permanent card uses published policy, earned run score and explicitly esti
    archivePeriodCounts,bridge:{accountId:()=> 'a',thumbnail:()=> ''},time:String,escape:String,read:()=>null,STORE:'events',ROLLING_TRACK_ID:trackId});
   const html=render();assert.match(html,value.scoreVersion===V2?/up to 10,101/:/up to 1,001/);
   assert.match(html,/10,101 ERP/,'actual published award is retained even if it differs from the cap');
-  assert.match(html,/Published earned ERP/);
+  assert.match(html,/ERP: 10,101/);
   if(value.scoreVersion===V2)assert.match(html,/Estimated 10,101 ERP if verified/);else assert.doesNotMatch(html,/Estimated/);
  }
 });

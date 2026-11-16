@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 426,
+    "number": 427,
     "version": "0.6.3",
-    "revision": 365,
+    "revision": 366,
     "notes": [
-      "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
-      "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
+      "Simplified event verification tooltips: run date, verification status and ERP earned.",
+      "Kept unverified ERP estimates clearly separate from awarded points."
     ]
   },
   "entries": [
+    {
+      "number": 426,
+      "title": "Align weekly details and keep Rolling Hills points in tooltips",
+      "commit": "e8762bf6bb027f14566cf147dfc3a96265030aca",
+      "committedAt": "2026-11-16T08:27:34.000Z",
+      "notes": [
+        "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
+        "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
+      ]
+    },
     {
       "number": 425,
       "title": "Restore the weekly card and extend offline verification",
@@ -187,17 +197,6 @@ const historyData = {
       "committedAt": "2026-11-15T23:33:51.000Z",
       "notes": [
         "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 404,
-      "title": "Clearer rank times and event standings",
-      "commit": "1344eb2f81abe1deba886fcb9b1f9478f8442983",
-      "committedAt": "2026-11-15T23:29:52.000Z",
-      "notes": [
-        "Rank time is shown in one line, such as 2 days at #8 or Up 3 with the time at that rank.",
-        "Event cards show a cached standings preview matched to the event period and personal-best time, rather than reusing a stale rank.",
-        "Weekly personal-best time and placement share a row, and event previews do not grant verification or Event RP."
       ]
     }
   ],

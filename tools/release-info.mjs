@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 426,
+  "number": 427,
   "version": "0.6.3",
-  "revision": 365,
+  "revision": 366,
   "notes": [
-    "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
-    "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
+    "Simplified event verification tooltips: run date, verification status and ERP earned.",
+    "Kept unverified ERP estimates clearly separate from awarded points."
   ],
-  "preparedAt": "2026-11-16T08:27:00.266Z",
-  "committedAt": "2026-11-16T08:27:34.000Z"
+  "preparedAt": "2026-11-16T08:40:43.382Z",
+  "committedAt": "2026-11-16T08:41:09.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

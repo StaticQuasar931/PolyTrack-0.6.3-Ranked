@@ -30,14 +30,14 @@ const rolling=()=>({id:'permanent-rolling-hills',kind:'permanent',trackId,comple
  scoreVersion:'rolling-hills-pace-placement-v2',maxRp:10101,targetMs:10000,entries:[entry(1,10000,1,4321),entry(2,11000,2,5050)]});
 test('normal RHR badge attributes only the exact published PB award, never the cap or a same-time hash mismatch',()=>{
  const board=rolling(),normal={...board.entries[0],trackId};
- const actual=rollingEventBadgePresentation(normal,board,trackId);assert.equal(actual.text,'4,321 ERP');assert.equal(actual.estimated,false);assert.match(actual.title,/exact PB/);
+ const actual=rollingEventBadgePresentation(normal,board,trackId);assert.equal(actual.text,'4,321 ERP');assert.equal(actual.estimated,false);assert.equal(actual.title,'ERP: 4,321');
  assert.equal(rollingEventBadgePresentation({...normal,replayHash:hash(88),physicsVerified:false},board,trackId),null);
  assert.equal(rollingEventBadgePresentation({...normal,reviewHold:true},board,trackId),null);
  assert.equal(rollingEventBadgePresentation(normal,board,hash(99)),null);
 });
 test('eligible normal RHR estimate is explicitly not an award and requires complete consistent hybrid metadata',()=>{
  const board=rolling(),normal={...entry(3,12000,90,99999),trackId};
- const estimate=rollingEventBadgePresentation(normal,board,trackId);assert.equal(estimate.estimated,true);assert.match(estimate.text,/Estimated .* ERP if verified/);assert.match(estimate.title,/not published earned ERP/);
+ const estimate=rollingEventBadgePresentation(normal,board,trackId);assert.equal(estimate.estimated,true);assert.match(estimate.text,/Estimated .* ERP if verified/);assert.match(estimate.title,/Not awarded yet/);
  for(const value of [{...board,complete:false},{...board,targetMs:9000},{...board,totalEntries:3}])assert.equal(rollingEventBadgePresentation(normal,value,trackId),null);
  assert.equal(rollingEventBadgePresentation({...normal,localPending:true},board,trackId),null);
 });
@@ -45,7 +45,7 @@ test('existing normal-row callback can decorate and safely clear RHR hover witho
  let board=rolling();const icon={title:'Verified icon'},state={title:'Verified',dataset:{},setAttribute(){},querySelector:()=>icon};
  const button={closest:()=>({classList:{contains:()=>false}}),querySelector:()=>state};
  const decorator=createRollingEventErpDecorator({currentTrackId:()=>trackId},()=>board);
- decorator.decorate(button,{...board.entries[0],trackId},trackId);assert.match(icon.title,/4,321 ERP/);
+ decorator.decorate(button,{...board.entries[0],trackId},trackId);assert.match(icon.title,/ERP: 4,321/);
  board=null;decorator.decorate(button,null,trackId);assert.equal(icon.title,'Verified icon');assert.equal(state.title,'Verified');
 });
 test('RHR date, verification and exact ERP survive repeated native status redraws without duplication',()=>{
@@ -60,7 +60,7 @@ test('RHR date, verification and exact ERP survive repeated native status redraw
  vm.runInContext(patch.slice(start,end),context);context.syncIntegrityStateLabels();
  const base=state.title,decorator=createRollingEventErpDecorator({currentTrackId:()=>trackId},()=>board);
  for(let i=0;i<3;i++){decorator.decorate(button,{...board.entries[0],trackId},trackId);context.syncIntegrityStateLabels();
-  assert.ok(state.title.startsWith(base+' | '));assert.equal(state.title.split('4,321 ERP').length,2);
+  assert.ok(state.title.startsWith(base+' | '));assert.equal(state.title.split('ERP: 4,321').length,2);
   assert.equal(icon.title,state.title);assert.equal(state.attributes['aria-label'],state.title);}
  board=null;decorator.decorate(button,null,trackId);context.syncIntegrityStateLabels();
  assert.equal(state.title,base);assert.equal(state.dataset.sqRollingErpTitle,undefined);
