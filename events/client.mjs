@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=348';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=348';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=349';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=349';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=348';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=348';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=348';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=349';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=349';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=349';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -711,12 +711,15 @@ export function eventRpFilterRows(data,filter='all',boards=[]){
     const rolling=aliases.length&&aliases.every(value=>integer(value)&&value===aliases[0])?aliases[0]:null;
     const split=integer(row.finiteEventRp)&&rolling!==null&&row.finiteEventRp+rolling===row.rp;
     const hasRolling=split&&(rolling>0||Number.isSafeInteger(row.rollingHillsTimeMs)&&row.rollingHillsTimeMs>0);
-    let score=row.rp,events=integer(row.events)?row.events:null;
+    const counted=data.eventCountVersion===2||row.finiteEvents!==undefined||row.permanentEvents!==undefined;
+    const countValid=counted&&integer(row.finiteEvents)&&integer(row.permanentEvents)&&row.permanentEvents<=1&&
+      row.events===row.finiteEvents+row.permanentEvents&&split&&row.permanentEvents===(hasRolling?1:0);
+    let score=row.rp,events=counted?(countValid?row.events:null):integer(row.events)?row.events:null;
     if(aliases.length&&!split)events=null;
-    if(filter==='seasonal'){if(!split){unavailable++;continue;}score=row.finiteEventRp;}
-    else if(filter==='rolling'){if(!split){unavailable++;continue;}if(!hasRolling)continue;score=rolling;events=1;}
+    if(filter==='seasonal'){if(!split){unavailable++;continue;}score=row.finiteEventRp;if(counted)events=countValid?row.finiteEvents:null;}
+    else if(filter==='rolling'){if(!split){unavailable++;continue;}if(!hasRolling)continue;score=rolling;events=counted&&!countValid?null:1;}
     else if(kindView){const own=awards.get(row.accountId);if(!own)continue;if(own.rp>(split?row.finiteEventRp:row.rp)){unavailable++;continue;}score=own.rp;events=own.events;}
-    else if(hasRolling&&events!==null)events++;
+    else if(!counted&&hasRolling&&events!==null)events++;
     if(!integer(score)||events!==null&&!integer(events)){unavailable++;continue;}
     entries.push({...row,rp:score,events,publishedTotalRp:row.rp,rollingEventCount:hasRolling?1:0});
   }
@@ -1126,9 +1129,9 @@ export function installEvents(bridge){
       policy:settings.policy,visibleField:!preview,originalRank:mine.originalRank}:null;
   }
   function recordMarkup(period){
-    if(period?.scheduleOnly){const own=localBest(period);return own?'<time>'+time(own.timeMs)+'</time><small>Saved on this device</small>':'No event time';}
+    if(period?.scheduleOnly){const own=localBest(period);return own?'<time>'+time(own.timeMs)+'</time><small>Saved on this device</small>':'<span class="sq-event-empty">No event time</span>';}
     const {rows,board,filterResult,sourceOwn,previewOwn}=eventDisplayRows(period),shown=rows.find(row=>row.accountId===bridge.accountId()),own=shown||sourceOwn||previewOwn;
-    if(!own)return 'No record';
+    if(!own)return '<span class="sq-event-empty">No event time</span>';
     const presentation=own.previewOnly?eventPreviewPlacementPresentation(own):shown?eventOwnPlacementPresentation(displayedRecordPlacement(period,own,board,filterResult,true)):null;
     return '<time>'+time(own.timeMs)+'</time>'+(presentation?'<span class="'+presentation.className+'" title="'+presentation.title+'" aria-label="'+presentation.ariaLabel+'">'+presentation.text+'</span>':own.previewOnly?' <span class="faded" title="No matching published placement is available.">---</span>':own.pending?' <small>Pending</small>':'');
   }
