@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 431,
+    "number": 432,
     "version": "0.6.3",
-    "revision": 369,
+    "revision": 370,
     "notes": [
-      "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
+      "Expanded saved-replay checks to help keep race results and leaderboards fair."
     ]
   },
   "entries": [
+    {
+      "number": 431,
+      "title": "Add bounded two-engine offline verification option",
+      "commit": "126a97c902f1c6ff0b6f015d7f7b33464d7c168b",
+      "committedAt": "2026-11-16T10:43:32.000Z",
+      "notes": [
+        "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
+      ]
+    },
     {
       "number": 429,
       "title": "Reuse native replay validators and remove idle rendering",
@@ -184,15 +193,6 @@
       "committedAt": "2026-11-16T01:56:19.000Z",
       "notes": [
         "Maintenance for verified leaderboards and event standings."
-      ]
-    },
-    {
-      "number": 408,
-      "title": "Bounded snapshot reads and compatible event totals",
-      "commit": "50376d208e2a5e68528c4e00b41ab61fd06d19ce",
-      "committedAt": "2026-11-16T00:48:06.000Z",
-      "notes": [
-        "Improved compatibility for updated Event RP totals and standings."
       ]
     }
   ],

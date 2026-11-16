@@ -1,0 +1,110 @@
+name: Overnight native comparison and saved controls audit
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        required: true
+        type: string
+      snapshot_source_commit:
+        required: true
+        type: string
+      snapshot_index_sha256:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  offline:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - {mode: benchmark, workers: '1', artifact: native-1}
+          - {mode: benchmark, workers: '2', artifact: native-2}
+          - {mode: audit, workers: '1', artifact: controls-audit}
+    env:
+      EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+      SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}
+      SNAPSHOT_INDEX_SHA256: ${{ inputs.snapshot_index_sha256 }}
+      SNAPSHOT_GENERATION: '91'
+      SAMPLE_SEED: polytrack-overnight-v1
+      VERIFIER_NATIVE_WORKERS: ${{ matrix.workers }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/public-snapshots*/
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate exact source and materialize pinned saved data only
+        run: |
+          mkdir -p "$RUNNER_TEMP/overnight-reports"
+          node --input-type=module <<'CHECK'
+          import {config} from './tools/verifier/overnight-offline.mjs';
+          import {execFileSync} from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const c=config();assert.equal(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),c.implementation);
+          CHECK
+          git archive "$SNAPSHOT_SOURCE_COMMIT" public-snapshots91 snapshot-current.json verification-ledger-current.json verification-ledger | tar -x
+      - name: Test offline benchmark contracts
+        run: node --test tools/verifier/overnight-offline.test.mjs
+      - name: Install pinned native dependencies
+        if: matrix.mode == 'benchmark'
+        run: npm ci --prefix tools/verifier --ignore-scripts
+      - name: Install sandboxed browser using existing native pattern
+        if: matrix.mode == 'benchmark'
+        working-directory: tools/verifier
+        run: |
+          npx playwright install --with-deps chromium
+          BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
+      - name: Run bounded saved-data-only comparison or review
+        env:
+          OFFLINE_MODE: ${{ matrix.mode }}
+        run: node tools/verifier/overnight-offline.mjs "$OFFLINE_MODE" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/overnight-reports"
+      - name: Always retain findings and completed batch progress
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.artifact }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/overnight-reports/*.json
+  compare:
+    needs: offline
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+          sparse-checkout: tools
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: native-*
+          path: ${{ runner.temp }}/comparison-input
+      - name: Compare exact sample and ordered outcomes, without authority
+        run: node tools/verifier/overnight-offline.mjs compare "$RUNNER_TEMP/comparison-input" "$RUNNER_TEMP/comparison-report"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: native-comparison
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/comparison-report/*.json

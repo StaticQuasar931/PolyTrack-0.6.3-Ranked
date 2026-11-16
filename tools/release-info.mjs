@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 431,
+  "number": 432,
   "version": "0.6.3",
-  "revision": 369,
+  "revision": 370,
   "notes": [
-    "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
+    "Expanded saved-replay checks to help keep race results and leaderboards fair."
   ],
-  "preparedAt": "2026-11-16T10:42:14.569Z",
-  "committedAt": "2026-11-16T10:43:32.000Z"
+  "preparedAt": "2026-11-16T10:58:23.717Z",
+  "committedAt": "2026-11-16T10:59:06.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
