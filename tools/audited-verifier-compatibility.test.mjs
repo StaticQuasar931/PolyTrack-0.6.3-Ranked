@@ -9,7 +9,7 @@ import compatibility from './audited-verifier-compatibility.cjs';
 import {buildNativeVerificationPolicy} from './native-verification-policy.mjs';
 import {createLedgerEntry,ledgerBinding,ledgerKey,writeLedger,applyLedgerToBoard} from './native-verification-ledger.mjs';
 
-const OLD='4a52404b07cb6a78944c5073de19a46cefc7f73efd82bb56490abe1b2f35d79f',MID='22dee8233571960694a09ff1f6934454cacbee1e2010aff81a02de369a91f5f3',CURRENT='3fd07e5bdf54fec2e699e88e6e507c9cff77eb4f152ce4afd429e0e728625553';
+const OLD='4a52404b07cb6a78944c5073de19a46cefc7f73efd82bb56490abe1b2f35d79f',MID='22dee8233571960694a09ff1f6934454cacbee1e2010aff81a02de369a91f5f3',PREVIOUS='3fd07e5bdf54fec2e699e88e6e507c9cff77eb4f152ce4afd429e0e728625553',CURRENT='c4afb33f1a05816cfd54cd45a19094925f75a10daa393bc9945fcc31e1708375';
 const ENGINE='7203ead74e290932abafe7f45ae5d121b5e1488b788f7dbe9ea95c8eb30d1ed1',VERSION='polytrack-native-bounded-v1';
 const ADDED='b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f',DYNAMIC='7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7';
 const UPLINK='99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37';
@@ -21,6 +21,10 @@ function temporary(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'audited-c
 test('exact directional audited relation admits unchanged dynamic trusted tracks, not the added exception',()=>{
  assert.equal(compatible(OLD,CURRENT,context),true);assert.equal(compatible(CURRENT,CURRENT,context),true);
  assert.equal(compatible(MID,CURRENT,context),true);
+ assert.equal(compatible(PREVIOUS,CURRENT,context),true);
+ assert.equal(compatible(PREVIOUS,CURRENT,{...context,trackId:UPLINK}),true,'existing Uplink proofs remain valid');
+ assert.equal(compatible(PREVIOUS,CURRENT,{...context,trackId:ADDED}),true);
+ assert.equal(compatible(CURRENT,PREVIOUS,context),false,'compatibility is directional');
  assert.equal(compatible(MID,CURRENT,{...context,trackId:ADDED}),true,'Magician approval predates only the Uplink addition');
  for(const witness of [OLD,MID])assert.equal(compatible(witness,CURRENT,{...context,trackId:UPLINK}),false,'old witnesses cannot authorize the new exception');
  for(const [from,to,c] of [[CURRENT,OLD,context],[OLD,'f'.repeat(64),context],['f'.repeat(64),CURRENT,context],
@@ -32,15 +36,15 @@ test('exact directional audited relation admits unchanged dynamic trusted tracks
  assert.equal(module.exports.verifierFingerprintsCompatible(OLD,CURRENT,context),false,'a future actual verifier cannot inherit the old pair');
 });
 
-function fixture(t,lane='normal',disposition='approved',id=DYNAMIC){
+function fixture(t,lane='normal',disposition='approved',id=DYNAMIC,predecessor=OLD){
  const replay='fixture-replay',job={lane,accountId:sha('account'),trackId:id,timeMs:20001,frames:20001,
   uploadId:lane==='normal'?1:null,replayHash:sha(replay),replay};
  if(lane==='event')Object.assign(job,{periodId:'kodub_fixture',runId:sha('event-run')});
  job.resultId=lane==='event'?job.runId:job.accountId+'_'+id;
- const policy={engineDigest:ENGINE,compatibleEngines:[],verifierVersion:VERSION,verifierFingerprint:OLD,
+ const policy={engineDigest:ENGINE,compatibleEngines:[],verifierVersion:VERSION,verifierFingerprint:predecessor,
   resourceProfiles:['standard'],reviewPolicyVersions:['snapshot-controls-v1'],trackContentHashes:{[id]:content},
   trackGeometries:{[id]:{geometryPolicy:'default',trackGeometry:geometry}}};
- const binding={verifierVersion:VERSION,verifierFingerprint:OLD,resourceProfile:'standard',resultId:job.resultId,
+ const binding={verifierVersion:VERSION,verifierFingerprint:predecessor,resourceProfile:'standard',resultId:job.resultId,
   trackId:id,timeMs:job.timeMs,replayHash:job.replayHash,actualReplayHash:sha(replay),nativeTrackId:id,trackContentHash:content,engineDigest:ENGINE};
  const nativeResult={...binding,binding,status:'verified',reason:'native_exact_finish',deterministic:true,
   trackGeometry:geometry,geometryPolicy:'default',boundInputFingerprint:sha(JSON.stringify(binding))};
@@ -51,6 +55,15 @@ function fixture(t,lane='normal',disposition='approved',id=DYNAMIC){
  const current={...policy,verifierFingerprint:CURRENT},board={trackId:id,...(lane==='event'?{periodId:job.periodId}:{}),entries:[{...job}]};
  return {entry,ledger,job,policy:current,apply:extra=>applyLedgerToBoard({board,ledger,canonicalRows:[job],recordings:[job],policy:current,lane,...extra})};
 }
+
+for(const lane of ['normal','event'])test('previous lifecycle proofs retain Uplink approval and historical metadata: '+lane,t=>{
+ const f=fixture(t,lane,'approved',UPLINK,PREVIOUS),before=structuredClone(f.entry);
+ assert.equal(f.apply().report.verified,1);assert.deepEqual(f.entry,before);
+ assert.equal(f.entry.witnesses[0].verifierFingerprint,PREVIOUS);
+ assert.equal(f.apply({recordings:[{...f.job,replay:'changed'}]}).report.verified,0);
+ for(const patch of [{engineDigest:'f'.repeat(64)}, {reviewPolicyVersions:['changed-policy']}, {trackContentHashes:{[UPLINK]:'f'.repeat(64)}}])
+  assert.equal(f.apply({policy:{...f.policy,...patch}}).report.verified,0);
+});
 
 for(const lane of ['normal','event'])test('old '+lane+' witness is admitted without rewriting historical fingerprint',t=>{
  const f=fixture(t,lane);assert.equal(f.apply().report.verified,1);assert.equal(f.entry.witnesses[0].verifierFingerprint,OLD);

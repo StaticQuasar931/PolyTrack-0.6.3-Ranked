@@ -9,6 +9,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {ledgerBinding, ledgerKey, createLedgerEntry, readLedger, writeLedger,
   applyLedgerToBoard, ledgerDisposition} from '../native-verification-ledger.mjs';
 import {buildNativeVerificationPolicy} from '../native-verification-policy.mjs';
+import auditedCompatibility from '../audited-verifier-compatibility.cjs';
 
 const require = createRequire(import.meta.url);
 const {checkJob,resourceLimits} = require('./replay.cjs');
@@ -135,7 +136,9 @@ function restoredPhysics(entry, job, policy) {
   // This only chooses a reuse candidate. Kepler validates the full native and
   // current review witness again before it can become authority or be applied.
   const witness = entry.witnesses.find(w=>w.engineDigest === policy.engineDigest &&
-    w.verifierVersion === policy.verifierVersion && w.verifierFingerprint === policy.verifierFingerprint &&
+    w.verifierVersion === policy.verifierVersion && auditedCompatibility.verifierFingerprintsCompatible(w.verifierFingerprint,policy.verifierFingerprint,{
+      witnessEngineDigest:w.engineDigest,currentEngineDigest:policy.engineDigest,
+      witnessVerifierVersion:w.verifierVersion,currentVerifierVersion:policy.verifierVersion,trackId:job.trackId}) &&
     w.resourceProfile === (job.resourceProfile || 'standard') &&
     policy.resourceProfiles.includes(w.resourceProfile) && policy.trackContentHashes[job.trackId] === w.trackContentHash &&
     isDeepStrictEqual(policy.trackGeometries[job.trackId],{geometryPolicy:w.geometryPolicy,trackGeometry:w.trackGeometry}));

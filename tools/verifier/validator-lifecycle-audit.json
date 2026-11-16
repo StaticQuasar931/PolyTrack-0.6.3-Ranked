@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "kind": "native-validator-lifecycle-audit",
+  "baselineCommit": "c8c04331a3a8431467f74a84e401d5ae4d149058",
+  "previousFingerprint": "3fd07e5bdf54fec2e699e88e6e507c9cff77eb4f152ce4afd429e0e728625553",
+  "currentFingerprint": "c4afb33f1a05816cfd54cd45a19094925f75a10daa393bc9945fcc31e1708375",
+  "engineDigest": "7203ead74e290932abafe7f45ae5d121b5e1488b788f7dbe9ea95c8eb30d1ed1",
+  "changedInputs": [
+    "verify.cjs"
+  ],
+  "before": {
+    "verify.cjs": "d0fe0df10f6b6fbd1cdb8eaf2e7ef3a7de6bf0f50d8141872220f86bdb6b165e",
+    "engine-pin.cjs": "214fe765ba3abef472e2b7244ed19344120481021ed75c621439f0bb27215905",
+    "assets.cjs": "718047f69136267cf82d7f5bc603f8646da494cb49ec87b1a62b7c8967c017ff",
+    "replay.cjs": "af051875c67ff13d5b07781b3592b8d08bd90969f8b782ade9cebe27f1a32e95",
+    "geometry.cjs": "045a7d9897a8083e806c7517222bae3f812e6510371b009620b30a986f8295b1",
+    "kodub-track.cjs": "3e21f69d5aac9a782d100828502d0b76985b7f3b4a35e9ee60ab6d91c316cfaf",
+    "track-geometry.json": "50015e066a244242aa1ab7eb60bb683b85ebca95489e01068f7df7c2732454d1",
+    "track-selection.cjs": "6f023cc82d78d26a6b063003e36abcd57e3d2307d9ac9ce7a7a7931a77a75a3b"
+  },
+  "after": {
+    "verify.cjs": "f98978eb2a2dd667ce0f019a19abae350c2c71e0e569596f6909fd84f0608b9b",
+    "engine-pin.cjs": "214fe765ba3abef472e2b7244ed19344120481021ed75c621439f0bb27215905",
+    "assets.cjs": "718047f69136267cf82d7f5bc603f8646da494cb49ec87b1a62b7c8967c017ff",
+    "replay.cjs": "af051875c67ff13d5b07781b3592b8d08bd90969f8b782ade9cebe27f1a32e95",
+    "geometry.cjs": "045a7d9897a8083e806c7517222bae3f812e6510371b009620b30a986f8295b1",
+    "kodub-track.cjs": "3e21f69d5aac9a782d100828502d0b76985b7f3b4a35e9ee60ab6d91c316cfaf",
+    "track-geometry.json": "50015e066a244242aa1ab7eb60bb683b85ebca95489e01068f7df7c2732454d1",
+    "track-selection.cjs": "6f023cc82d78d26a6b063003e36abcd57e3d2307d9ac9ce7a7a7931a77a75a3b"
+  },
+  "changes": [
+    "One native Validator reused inside each bounded browser batch.",
+    "Unrelated main-thread animation stops only after trusted initialization.",
+    "Every replay executes original native validate and pre/post determinism checks.",
+    "Worker errors invalidate the instance; original process cleanup still gates returned proofs."
+  ],
+  "unchanged": [
+    "native game and WASM bytes",
+    "input/geometry/resource limits",
+    "exact-time and replay-hash checks",
+    "full inventory clone/cheat review",
+    "native-dispatch count and priority",
+    "first-proof gate and durable checkpoints"
+  ],
+  "backendReads": 0,
+  "backendWrites": 0
+}

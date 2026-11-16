@@ -114,7 +114,7 @@ jobs:
           console.log(JSON.stringify(config));
           PLAN
       - name: Test offline authority and saved-event scope before native setup
-        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs tools/verifier/saved-event-offline.test.mjs tools/verifier/saved-event-hosted-workflow.test.mjs tools/published-target-retention.test.mjs tools/verifier/native-verification-priority.test.mjs tools/public-offline-verification.test.mjs tools/audited-verifier-compatibility.test.mjs tools/verifier/uplink-reviewed-geometry.test.cjs
+        run: node --test --test-concurrency=1 tools/native-verification-ledger.test.mjs tools/native-verification-policy.test.mjs tools/native-event-snapshot.test.mjs tools/verifier/local-snapshot-verification.test.mjs tools/native-snapshot-phase.test.mjs tools/snapshot-native-workflow.test.mjs tools/verifier/saved-event-offline.test.mjs tools/verifier/saved-event-hosted-workflow.test.mjs tools/published-target-retention.test.mjs tools/verifier/native-verification-priority.test.mjs tools/public-offline-verification.test.mjs tools/audited-verifier-compatibility.test.mjs tools/verifier/uplink-reviewed-geometry.test.cjs tools/verifier/validator-lifecycle.test.cjs
       - name: Install pinned native dependencies
         run: npm ci --prefix tools/verifier --ignore-scripts
       - name: Install pinned sandboxed browser
@@ -124,6 +124,8 @@ jobs:
           BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
           printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
+      - name: Check native worker cleanup after browser setup
+        run: node --test tools/verifier/validator-cleanup.browser.test.mjs
       - name: Verify and live-compile an audited private candidate without capture or Git publication
         timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 260 || 50 }}
         env:

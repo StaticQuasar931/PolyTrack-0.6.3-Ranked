@@ -206,12 +206,17 @@ async function initialize(session, engine, origin, trustedTracks = []) {
   page.on('pageerror', error => { trace(`page error: ${error.message.slice(0, 300)}`); if (session.pageErrors.length < 10) session.pageErrors.push(error.message.slice(0, 200)); });
   await page.addInitScript(() => {
     globalThis.__workers = [];
+    globalThis.__nativeWorkerError = false;
     globalThis.__trustedInit = null;
     const Native = Worker;
     globalThis.Worker = class extends Native {
       constructor(...args) {
         super(...args);
-        if (String(args[0]).includes('simulation_worker')) __workers.push(this);
+        if (String(args[0]).includes('simulation_worker')) {
+          __workers.push(this);
+          this.addEventListener('error', () => { globalThis.__nativeWorkerError = true; });
+          this.addEventListener('messageerror', () => { globalThis.__nativeWorkerError = true; });
+        }
       }
       postMessage(message, ...args) {
         if (message?.messageType === 0 && !globalThis.__trustedInit) globalThis.__trustedInit = message;
@@ -223,7 +228,8 @@ async function initialize(session, engine, origin, trustedTracks = []) {
   trace('page loaded; awaiting trusted Init');
   await page.waitForFunction(() => globalThis.__trustedInit && globalThis.__vrRequire, null,
     {timeout: session.resourceProfile === 'extended-local' ? 120000 : 30000});
-  await page.evaluate(() => { for (const worker of __workers) worker.terminate(); __workers.length = 0; });
+  // Native validation uses worker messages, not the unrelated menu render loop.
+  await page.evaluate(() => { globalThis.requestAnimationFrame = () => 0; for (const worker of __workers) worker.terminate(); __workers.length = 0; });
   // Explicit trusted tracks precede static artifacts so a matching native ID
   // remains bound to the server-captured event bytes and expected hash.
   const tracks = [...trustedTracks, ...[...engine.files]
@@ -282,14 +288,29 @@ async function simulate(session, job) {
     // Original bytes only reach the native decoder after strict, bounded Node validation.
     const recording = Recording.deserialize(replay);
     if (!recording) return { status: 'unavailable', reason: 'native_decoder_disagreement' };
-    const validator = new Validator(false, { getPhysicsParts: () => __trustedInit.trackParts }, { hasLoaded: () => true });
+    // Match the game's persistent validator, bounded to this private browser batch.
+    // Replay simulation and both determinism checks still execute for every job.
+    const validator = globalThis.__batchValidator || (globalThis.__batchValidator =
+      new Validator(false, { getPhysicsParts: () => __trustedInit.trackParts }, { hasLoaded: () => true }));
     try {
       const deterministic = await validator.testDeterminism();
-      if (deterministic !== true) return { status: 'unavailable', reason: 'determinism_failed' };
+      if (deterministic !== true) {
+        globalThis.__batchValidator = null;
+        try { validator.dispose(); } finally { __workers.length = 0; }
+        return { status: 'unavailable', reason: 'determinism_failed' };
+      }
       const valid = await validator.validate(track, recording, new Time(timeMs));
-      if (typeof valid !== 'boolean') return { status: 'unavailable', reason: 'invalid_native_response' };
+      if (typeof valid !== 'boolean') throw Error('invalid_native_response');
+      // Native Verify posts its result before deleting the car. This reply is
+      // queued after that cleanup, so a premature result cannot become proof.
+      const clean = await validator.testDeterminism();
+      if (clean !== true || globalThis.__nativeWorkerError) throw Error('native_worker_not_clean');
       return { status: valid ? 'verified' : 'mismatch', reason: valid ? 'native_exact_finish' : 'native_finish_mismatch', deterministic };
-    } finally { validator.dispose(); __workers.length = 0; }
+    } catch (error) {
+      globalThis.__batchValidator = null;
+      try { validator.dispose(); } finally { __workers.length = 0; }
+      throw error;
+    }
   }, { trackId: job.trackId, replay: job.replay, timeMs: job.timeMs });
 }
 

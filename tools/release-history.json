@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 428,
+    "number": 429,
     "version": "0.6.3",
-    "revision": 367,
+    "revision": 368,
     "notes": [
-      "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
+      "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
     ]
   },
   "entries": [
+    {
+      "number": 428,
+      "title": "Speed up snapshot packaging and verification checkpoints",
+      "commit": "c8c04331a3a8431467f74a84e401d5ae4d149058",
+      "committedAt": "2026-11-16T09:30:50.000Z",
+      "notes": [
+        "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
+      ]
+    },
     {
       "number": 427,
       "title": "Simplify event points and verification tooltips",
@@ -186,16 +195,6 @@
         "Event personal-best times and placements line up, and Kodub weekly details are easier to read.",
         "Rolling Hills Racer counts as an event, and Event RP highlights show more of your strongest results.",
         "Rank changes use arrows and simple time labels. Earlier update notes are shorter and clearer."
-      ]
-    },
-    {
-      "number": 406,
-      "title": "More reliable event previews",
-      "commit": "c13219ef15495ab502267d00a682f4d5297b2c96",
-      "committedAt": "2026-11-15T23:42:12.000Z",
-      "notes": [
-        "Fixed update packaging so event preview data is delivered in the correct format.",
-        "Keeps rank times clear, event standings matched to the event and personal-best time, and weekly personal-best details together."
       ]
     }
   ],

@@ -51,6 +51,17 @@ async function fixture(t) {
   return {root,options};
 }
 
+test('audited predecessor physics is re-reviewed without rerunning or relabeling historical witnesses',async t=>{
+ const {options}=await fixture(t),previous='3fd07e5bdf54fec2e699e88e6e507c9cff77eb4f152ce4afd429e0e728625553';
+ const current=createRequire(import.meta.url)('./verify.cjs').verifierFingerprint;
+ const oldPolicy={...policy,engineDigest:VERIFIER_ENGINE_DIGEST,verifierFingerprint:previous};
+ const first=await verifyLocalSnapshot({...options,policy:oldPolicy,verify:async(_root,jobs)=>jobs.map(row=>native(row,oldPolicy))});
+ const next=await verifyLocalSnapshot({...options,policy:{...oldPolicy,verifierFingerprint:current},expectedManifestHash:first.ledgerManifestHash,
+  verify:()=>assert.fail('historical native proof must not be rerun'),allowNativeDispatch:false});
+ assert.equal(next.counts.nativeDispatched,0);assert.equal(next.counts.reusedPhysics,1);assert.equal(next.counts.verified,1);
+ assert.equal(next.ledger.entries[0].witnesses[0].verifierFingerprint,previous);
+});
+
 test('first proof is ledger-complete and checkpointed before the same live budget continues without replaying it',async t=>{
  const {options}=await fixture(t),jobs=[job(1),job(2),job(3)],sizes=[];let passed=false;
  const result=await verifyLocalSnapshot({...options,jobs,maxJobs:3,firstProofCheckpoint:async receipt=>{

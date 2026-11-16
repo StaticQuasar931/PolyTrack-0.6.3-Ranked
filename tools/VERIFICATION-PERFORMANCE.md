@@ -64,3 +64,51 @@ changes neither cancel it nor alter its inputs, progress, receipts or proofs.
 Future captures and offline passes use these shared helpers. End-to-end duration
 must be measured on a later comparable hosted run; the three stage percentages
 cannot be added together or applied to total runtime.
+
+## Native validation lifecycle follow-up
+
+The game already contains the native verifier. Module 5220 in main.bundle.js
+creates a persistent simulation worker. Its validate method posts Verify to that
+worker. simulation_worker.bundle.js advances frames in a synchronous loop, checks
+the exact finish frame, posts the result, then deletes the car and recording.
+It does not wait for replay-length wall time or use main-window animation frames.
+
+Our wrapper previously created and disposed a Validator for every replay. The
+follow-up reuses one Validator inside each existing batch, retaining per-replay
+native validation and determinism checks. A second determinism reply provides a
+barrier after the Verify handler exits; worker errors also prevent approval.
+Failures discard the instance. Original browser termination and cleanup checks
+still run before returning the batch. Unrelated menu RAF rendering is stopped
+only after trusted initialization is available. Physics/WASM bytes are unchanged.
+
+The final implementation was compared against release 428 using the same 16
+saved valid replays: eight Summer 1, four Rolling Hills and four current Kodub
+Uplink replays. Two observations per version, alternating/reversed order:
+
+| Measurement | Before | After | Less time |
+| --- | ---: | ---: | ---: |
+| Complete verifyBatch median, including browser initialization and cleanup | 18.648 s | 15.406 s | 17.4% |
+| Median per-replay verification path, pooled 32 observations per version | 0.702 s | 0.377 s | 46.3% |
+
+Raw batch times (ms): before 20410, 16886; after 15046, 15766. Verdicts, native
+track identity/content, geometry, engine digest and determinism outcomes matched.
+A valid-A / valid-B / mistimed-A / weekly / valid-A / valid-B sequence also matched
+the original verifier, including rejecting the mistimed replay.
+
+Earlier trials of the same lifecycle design measured complete-batch reductions
+of 25-29%. The table uses the final source, not the fastest trial. Host load and
+warmup varied. Individual warm native-handler measurements were around 0.16-0.24 s
+for Summer 1 and 0.48-0.56 s for the weekly track in one instrumented run; those
+are not complete-batch or universal per-track timings. The reported 0.333 s result
+on a Ryzen 5 7640U has not been independently reproduced on this machine.
+
+The proof implementation fingerprint changes, with an explicit one-way audited
+compatibility relation preserving eligible existing proofs, including Uplink.
+Older catalog-specific exclusions remain. Historical witness fingerprints and
+timestamps are not rewritten. The seven other fingerprint inputs are unchanged;
+validator-lifecycle-audit.json records their hashes. CPU/wall/geometry limits,
+priority, batch size, capture inputs and native-dispatch budgets are unchanged.
+
+Physics calls remain sequential inside each engine. This follow-up does not claim
+300-way concurrency or measured whole-workflow savings. A bounded, separately
+measured pool would be needed before enabling safe multi-engine execution.
