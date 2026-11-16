@@ -1,14 +1,30 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 416,
+    "number": 418,
     "version": "0.6.3",
-    "revision": 357,
+    "revision": 358,
     "notes": [
-      "Earlier update notes now stay in sync with the current release."
+      "Update history now matches the installed game version."
     ]
   },
   "entries": [
+    {
+      "number": null,
+      "title": "Synchronize generated release-history module",
+      "commit": "1bbcf1a9b6f7fb4a93186943c1a08c68f8186b5e",
+      "committedAt": "2026-11-16T05:24:27.000Z",
+      "notes": []
+    },
+    {
+      "number": 416,
+      "title": "Sync release archive and test native Garage startup readiness",
+      "commit": "25342283b51390fa076d2b6cc88c592b5a48ba0b",
+      "committedAt": "2026-11-16T05:23:09.000Z",
+      "notes": [
+        "Earlier update notes now stay in sync with the current release."
+      ]
+    },
     {
       "number": 415,
       "title": "Clarify rankings and event cards and preserve offline verification sources",
@@ -184,26 +200,6 @@
         "Weekly spotlight artwork now fits its card without being cropped.",
         "Achievement goals, cosmetic unlocks, and coin milestones are easier to tell apart.",
         "The Shop adds sorting, and playtime is shown more precisely."
-      ]
-    },
-    {
-      "number": 396,
-      "title": "Maintenance update",
-      "commit": "f099e5e6d259bfaeb5da4c6e099c11b03587defc",
-      "committedAt": "2026-11-15T03:12:59.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 395,
-      "title": "More reliable car previews and saved designs",
-      "commit": "b4c0d40479b8e33602dc58c1783c4d02a88a4752",
-      "committedAt": "2026-11-15T02:08:48.000Z",
-      "notes": [
-        "Car finishes keep both paint colors, and accessories fit the car more closely.",
-        "Eligible rewards sync automatically, with checks to limit repeat claims.",
-        "Live previews, Undo, and Restore keep your saved work more reliably."
       ]
     }
   ],

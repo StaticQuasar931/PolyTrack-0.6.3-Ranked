@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 416,
+  "number": 418,
   "version": "0.6.3",
-  "revision": 357,
+  "revision": 358,
   "notes": [
-    "Earlier update notes now stay in sync with the current release."
+    "Update history now matches the installed game version."
   ],
-  "preparedAt": "2026-11-16T05:23:08.078Z",
-  "committedAt": "2026-11-16T05:23:09.000Z"
+  "preparedAt": "2026-11-16T05:24:58.514Z",
+  "committedAt": "2026-11-16T05:25:41.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
