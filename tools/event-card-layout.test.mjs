@@ -81,7 +81,7 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
         assert.deepEqual(order,width>=1701?['kodub','rhr','daily','weekly']:['kodub','daily','rhr','weekly'],label+' requested visual order');
         if(width<1701){assert.ok(g.wrapper.width-g.img.width<=361,label+' bounded details width');assert.ok(Math.abs((g.wrapper.x+g.wrapper.right)/2-width/2)<10,label+' centered full-row card');}
       }
-      assert.equal(g.align,'center');assert.ok(g.pb.length===1&&g.pb[0].height>=30,label+' native PB row remains legible');
+      assert.equal(g.align,'left');assert.ok(g.pb.length===1&&g.pb[0].height>=30,label+' native PB row remains legible');
       const offsets=g.feet.map(f=>f.card.bottom-f.rect.bottom);
       assert.ok(Math.max(...offsets)-Math.min(...offsets)<1,label+' footer baseline');
       assert.ok(g.feet.every(f=>f.align==='center'),label+' centered footers');

@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=364';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=364';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=365';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=365';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=364';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=364';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=364';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=365';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=365';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=365';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -98,14 +98,15 @@ export function createRollingEventErpDecorator(bridge,getBoard){
   const bindings=new WeakMap();
   function decorate(button,row,trackId){
     const prior=bindings.get(button),host=button?.closest?.('.leaderboard-ui'),state=button?.querySelector?.('.verified-state'),icon=state?.querySelector?.('img');
-    const clear=()=>{if(prior){if(prior.state.title?.endsWith(prior.suffix))prior.state.title=prior.state.title.slice(0,-prior.suffix.length);if(prior.icon?.title===prior.title)prior.icon.title=prior.baseIconTitle;bindings.delete(button);}};
+    const clear=()=>{if(prior){if(prior.state.dataset.sqRollingErpTitle===prior.title)delete prior.state.dataset.sqRollingErpTitle;if(prior.state.title?.endsWith(prior.suffix))prior.state.title=prior.state.title.slice(0,-prior.suffix.length);prior.state.setAttribute('aria-label',prior.state.title);if(prior.icon?.title===prior.iconTitle)prior.icon.title=prior.baseIconTitle;bindings.delete(button);}};
     if(!host||host.classList.contains('sq-event-board')||!state||!row||bridge.currentTrackId?.()!==trackId){clear();return;}
     const presentation=rollingEventBadgePresentation(row,getBoard(),trackId);if(!presentation){clear();return;}
     if(prior&&prior.state!==state)clear();
     const suffix=' | '+presentation.title,base=prior&&state.title?.endsWith(prior.suffix)?state.title.slice(0,-prior.suffix.length):state.title||'';
     const baseIconTitle=prior?.baseIconTitle??icon?.title??'';
-    state.title=base+suffix;if(icon)icon.title=presentation.title;
-    bindings.set(button,{state,icon,suffix,title:presentation.title,baseIconTitle});
+    state.dataset.sqRollingErpTitle=presentation.title;
+    state.title=base+suffix;state.setAttribute('aria-label',state.title);if(icon)icon.title=state.title;
+    bindings.set(button,{state,icon,suffix,title:presentation.title,iconTitle:state.title,baseIconTitle});
   }
   return {decorate};
 }

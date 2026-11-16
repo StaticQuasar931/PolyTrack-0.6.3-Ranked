@@ -42,11 +42,28 @@ test('eligible normal RHR estimate is explicitly not an award and requires compl
  assert.equal(rollingEventBadgePresentation({...normal,localPending:true},board,trackId),null);
 });
 test('existing normal-row callback can decorate and safely clear RHR hover without any fetch',()=>{
- let board=rolling();const icon={title:'Verified icon'},state={title:'Verified',querySelector:()=>icon};
+ let board=rolling();const icon={title:'Verified icon'},state={title:'Verified',dataset:{},setAttribute(){},querySelector:()=>icon};
  const button={closest:()=>({classList:{contains:()=>false}}),querySelector:()=>state};
  const decorator=createRollingEventErpDecorator({currentTrackId:()=>trackId},()=>board);
  decorator.decorate(button,{...board.entries[0],trackId},trackId);assert.match(icon.title,/4,321 ERP/);
  board=null;decorator.decorate(button,null,trackId);assert.equal(icon.title,'Verified icon');assert.equal(state.title,'Verified');
+});
+test('RHR date, verification and exact ERP survive repeated native status redraws without duplication',()=>{
+ let board=rolling();const icon={title:'Verified icon',hidden:false,getAttribute:()=> 'images/state_verified.svg'};
+ const at=1794800000000,state={title:'',dataset:{sqRunStatus:'verified',sqPbAt:String(at)},childNodes:[],attributes:{},
+  classList:{contains:()=>false,toggle(){}},querySelector:selector=>selector==='img'?icon:{textContent:''},
+  setAttribute(key,value){this.attributes[key]=value;},getAttribute(key){return this.attributes[key];}};
+ const button={closest:()=>({classList:{contains:()=>false}}),querySelector:()=>state};
+ const patch=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
+ const start=patch.indexOf('  function syncIntegrityStateLabels('),end=patch.indexOf('\n  let nativeDecorationLookupCache',start);
+ const context=vm.createContext({document:{querySelectorAll:()=>[state]},Node:{TEXT_NODE:3},Date});
+ vm.runInContext(patch.slice(start,end),context);context.syncIntegrityStateLabels();
+ const base=state.title,decorator=createRollingEventErpDecorator({currentTrackId:()=>trackId},()=>board);
+ for(let i=0;i<3;i++){decorator.decorate(button,{...board.entries[0],trackId},trackId);context.syncIntegrityStateLabels();
+  assert.ok(state.title.startsWith(base+' | '));assert.equal(state.title.split('4,321 ERP').length,2);
+  assert.equal(icon.title,state.title);assert.equal(state.attributes['aria-label'],state.title);}
+ board=null;decorator.decorate(button,null,trackId);context.syncIntegrityStateLabels();
+ assert.equal(state.title,base);assert.equal(state.dataset.sqRollingErpTitle,undefined);
 });
 test('promoted TOTW uses sibling height and uncropped centered artwork without modifying native geometry',()=>{
  const css=fs.readFileSync(new URL('./events.css',import.meta.url),'utf8'),last=css.slice(css.lastIndexOf('/* Promoted Kodub follows'));

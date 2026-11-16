@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 425,
+    "number": 426,
     "version": "0.6.3",
-    "revision": 364,
+    "revision": 365,
     "notes": [
-      "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
-      "Made the Rolling Hills Racer reward and no-reset message easier to read."
+      "Left-aligned the Kodub weekly card and added breathing room between your time and placement.",
+      "Rolling Hills verification tooltips now keep the run date, verification status and earned Event RP together."
     ]
   },
   "entries": [
+    {
+      "number": 425,
+      "title": "Restore the weekly card and extend offline verification",
+      "commit": "1598fdd1bbde28c9496b6ff11ce7fb7c2241ad16",
+      "committedAt": "2026-11-16T07:48:40.000Z",
+      "notes": [
+        "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
+        "Made the Rolling Hills Racer reward and no-reset message easier to read."
+      ]
+    },
     {
       "number": 423,
       "title": "Fix live Kodub card spacing and title wrapping",
@@ -187,16 +197,6 @@
         "Rank time is shown in one line, such as 2 days at #8 or Up 3 with the time at that rank.",
         "Event cards show a cached standings preview matched to the event period and personal-best time, rather than reusing a stale rank.",
         "Weekly personal-best time and placement share a row, and event previews do not grant verification or Event RP."
-      ]
-    },
-    {
-      "number": 403,
-      "title": "Weekly artwork fits event cards better",
-      "commit": "a3fae75427c6a49631c6641b1e79d7b4c4b06635",
-      "committedAt": "2026-11-15T22:59:09.000Z",
-      "notes": [
-        "Kodub weekly artwork now fits the card height while keeping its original image uncropped.",
-        "The weekly personal-best icon is sized to match its text."
       ]
     }
   ],
