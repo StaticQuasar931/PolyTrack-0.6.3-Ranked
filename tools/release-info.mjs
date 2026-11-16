@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 423,
+  "number": 425,
   "version": "0.6.3",
-  "revision": 363,
+  "revision": 364,
   "notes": [
-    "Fixed oversized gaps in the Kodub weekly card and improved title wrapping without resizing the artwork."
+    "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
+    "Made the Rolling Hills Racer reward and no-reset message easier to read."
   ],
-  "preparedAt": "2026-11-16T07:02:25.616Z",
-  "committedAt": "2026-11-16T07:02:27.000Z"
+  "preparedAt": "2026-11-16T07:45:24.968Z",
+  "committedAt": "2026-11-16T07:48:40.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

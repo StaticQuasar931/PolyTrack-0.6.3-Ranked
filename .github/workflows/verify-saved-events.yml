@@ -24,7 +24,7 @@ on:
         required: true
         type: string
       budget_preset:
-        description: Extended-all requires explicit 10000 jobs, 90 minutes, all scope and fresh-proof warmup; no per-job limit changes
+        description: Extended-all requires explicit 10000 jobs, 180 minutes, all scope and fresh-proof warmup; no per-job limit changes
         required: true
         type: choice
         options: ['standard', 'extended-all']
@@ -39,7 +39,7 @@ on:
         description: Aggregate native allowance only; original per-job CPU and geometry limits remain unchanged
         required: true
         type: choice
-        options: ['8', '25', '90']
+        options: ['8', '25', '90', '180']
         default: '8'
       target_track_ids:
         description: Exact target track IDs as a nonempty unique JSON array; no capture or proof imports
@@ -68,7 +68,7 @@ jobs:
       group: polytrack-saved-event-offline-verification
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 180 || 60 }}
+    timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 270 || 60 }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
@@ -125,7 +125,7 @@ jobs:
           printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
           sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
       - name: Verify and live-compile an audited private candidate without capture or Git publication
-        timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 165 || 50 }}
+        timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 260 || 50 }}
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
           SNAPSHOT_SOURCE_COMMIT: ${{ inputs.snapshot_source_commit }}

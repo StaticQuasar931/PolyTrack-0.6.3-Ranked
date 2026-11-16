@@ -19,7 +19,7 @@ export function savedEventWorkflowConfig(env=process.env){
   ledgerManifestHash:env.LEDGER_MANIFEST_SHA256,ledgerEntries:Number(env.LEDGER_ENTRIES),maxJobs:Number(env.NATIVE_JOB_LIMIT),runAttempt:Number(env.GITHUB_RUN_ATTEMPT)};
  if(env.TARGET_TRACK_IDS!==undefined)pins.targetTrackIds=JSON.parse(env.TARGET_TRACK_IDS);
  if(env.NATIVE_RUNTIME_MINUTES!==undefined){
-  demand(typeof env.NATIVE_RUNTIME_MINUTES==='string'&&/^(8|25|90)$/.test(env.NATIVE_RUNTIME_MINUTES),'invalid bounded native runtime minutes');
+  demand(typeof env.NATIVE_RUNTIME_MINUTES==='string'&&/^(8|25|90|180)$/.test(env.NATIVE_RUNTIME_MINUTES),'invalid bounded native runtime minutes');
   pins.maxRuntimeMs=Number(env.NATIVE_RUNTIME_MINUTES)*60000;
  }
  if(env.NATIVE_TARGET_SCOPE!==undefined)pins.targetScope=env.NATIVE_TARGET_SCOPE;

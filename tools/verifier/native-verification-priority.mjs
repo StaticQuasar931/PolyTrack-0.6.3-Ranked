@@ -45,3 +45,15 @@ export function prioritizeNativeTargets({jobs,eventBoards=[],canonicalRows=[],po
   return {jobs:ranked.map(row=>row.job),counts:Object.fromEntries([0,1,2,3,4].map(priority=>[
     ['exactPublicBinding','liveEventPending','unverifiedKnownNormal','otherEventPending','other'][priority],ranked.filter(row=>row.priority===priority).length]))};
 }
+
+
+/** Scheduling only: move one bounded warmup; keep every other target in order. */
+export function prioritizeFirstProofWarmup({jobs,policy,firstProofCheckpoint}={}){
+  if(!Array.isArray(jobs)||jobs.length>100000)throw Error('Invalid native warmup inventory');
+  if(typeof firstProofCheckpoint!=='function'||jobs[0]?.lane==='event')return jobs;
+  const known=new Set([...(Array.isArray(policy?.knownTrackIds)?policy.knownTrackIds:[]),...Object.keys(policy?.trackContentHashes||{})]);
+  const blocked=job=>job.reviewHold===true||job.needsReview===true||job.excluded===true||
+    [job.disposition,job.status,job.verificationStatus,job.review?.disposition].some(value=>['held','excluded','rejected','mismatch','private_hold'].includes(value));
+  const index=jobs.findIndex(job=>job&&known.has(job.trackId)&&Number.isSafeInteger(job.timeMs)&&job.timeMs>0&&job.timeMs<=45000&&!blocked(job));
+  return index<=0?jobs:[jobs[index],...jobs.slice(0,index),...jobs.slice(index+1)];
+}

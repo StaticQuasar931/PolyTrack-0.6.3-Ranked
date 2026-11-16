@@ -44,11 +44,11 @@ export async function preparePublishedOfflineVerification(options={},capabilitie
   const targeting=targetTrackIds?{targetTrackIds}:{};
   demand(['capture-compatible','postpublication-offline'].includes(mode),'unknown verification mode');
   const postpublication=mode==='postpublication-offline';
-  demand(postpublication?Number.isSafeInteger(finishDeadlineMs)&&finishDeadlineMs>0&&packagingReserveMs===900000:
+  demand(postpublication?Number.isSafeInteger(finishDeadlineMs)&&finishDeadlineMs>0&&[900000,1200000].includes(packagingReserveMs):
     !Object.hasOwn(options,'finishDeadlineMs')&&!Object.hasOwn(options,'packagingReserveMs'),'explicit postpublication deadline policy required');
   demand(path.isAbsolute(root||'')&&path.isAbsolute(runDirectory||'')&&/^[a-f0-9]{40}$/.test(sourceCommit||''),'absolute roots and tested commit required');
   demand(Number.isSafeInteger(maxJobs)&&maxJobs>0&&maxJobs<=10000&&Number.isSafeInteger(maxRuntimeMs)&&
-    maxRuntimeMs>60000&&maxRuntimeMs<=(postpublication?5400000:1500000),'bounded native budget required');
+    maxRuntimeMs>60000&&maxRuntimeMs<=(postpublication?10800000:1500000),'bounded native budget required');
   const pins=structuredClone(publishedBaseline);
   demand(pins&&Object.keys(pins).sort().join('|')==='generation|indexSha256|ledgerEntries|ledgerManifestHash'&&
     Number.isSafeInteger(pins.generation)&&pins.generation>0&&HASH.test(pins.indexSha256||'')&&

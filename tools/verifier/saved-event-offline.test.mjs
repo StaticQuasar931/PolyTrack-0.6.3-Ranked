@@ -56,7 +56,7 @@ test('runtime selection preserves eight minutes by default and admits only expli
 test('extended sidecar passes one fixed publication budget, verifies once and preserves negative results',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'saved-event-sidecar-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const env={...environment(),TARGET_TRACK_IDS:JSON.stringify(['a'.repeat(64)]),NATIVE_TARGET_SCOPE:'all',SAVED_VERIFICATION_PRESET:'extended-all',
-  NATIVE_RUNTIME_MINUTES:'90',NATIVE_JOB_LIMIT:'10000',WARMUP_FIRST_PROOF:'1'};let verified=0,disposed=0,compiled=0;
+  NATIVE_RUNTIME_MINUTES:'180',NATIVE_JOB_LIMIT:'10000',WARMUP_FIRST_PROOF:'1'};let verified=0,disposed=0,compiled=0;
  await fs.mkdir(path.join(root,'stage'));await fs.writeFile(path.join(root,'stage/manifest.json'),'{}');
  await fs.mkdir(path.join(root,'events'));await fs.writeFile(path.join(root,'events/public-catalog.json'),'{}');
  await fs.writeFile(path.join(root,'index.html'),'<meta name="polytrack-snapshot" content="./public-snapshots84/">');
@@ -66,8 +66,8 @@ test('extended sidecar passes one fixed publication budget, verifies once and pr
   checkpointLog:async record=>{await fs.access(path.join(root,record.kind+'-'+record.sequence+'.json'));checkpoints.push(record);},
   verifyPhase:async input=>{await input.firstProofCheckpoint({privateEvidence:'must-not-appear-in-notice'});await input.progressCheckpoint({privateEvidence:'must-not-appear-in-notice'});},
   prepare:async(options,capabilities)=>{
-  assert.equal(options.targetScope,'all');assert.equal(options.maxJobs,10000);assert.equal(options.maxRuntimeMs,5400000);
-  assert.equal(options.mode,'postpublication-offline');assert.equal(options.finishDeadlineMs,10000000);assert.equal(options.packagingReserveMs,900000);
+  assert.equal(options.targetScope,'all');assert.equal(options.maxJobs,10000);assert.equal(options.maxRuntimeMs,10800000);
+  assert.equal(options.mode,'postpublication-offline');assert.equal(options.finishDeadlineMs,15400000);assert.equal(options.packagingReserveMs,1200000);
   assert.deepEqual(options.targetTrackIds,['a'.repeat(64)]);
   assert.deepEqual(options.publishedBaseline,{generation:84,indexSha256:pins.indexSha256,ledgerManifestHash:pins.ledgerManifestHash,ledgerEntries:19391});
   assert.equal(typeof capabilities.verifyPhase,'function');

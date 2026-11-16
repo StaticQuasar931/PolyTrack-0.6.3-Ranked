@@ -8,8 +8,8 @@ import {deflateSync} from 'node:zlib';
 import {createRequire} from 'node:module';
 import {buildNativeVerificationPolicy} from '../native-verification-policy.mjs';
 import {VERIFIER_ENGINE_DIGEST} from '../../workers/ranked/src/verification.js';
-import {verifyLocalSnapshot,verifyLocalNativeBatch,verificationAuthority,readRepositoryVerificationAuthority,withOfflineVerification,writeLocalVerificationReceipt} from './local-snapshot-verification.mjs';
-import {ledgerBinding,ledgerKey,applyLedgerToBoard,readLedger} from '../native-verification-ledger.mjs';
+import {verifyLocalSnapshot,verifyLocalNativeBatch,verificationAuthority,readRepositoryVerificationAuthority,withOfflineVerification,withPublishedOfflineVerification,writeLocalVerificationReceipt} from './local-snapshot-verification.mjs';
+import {ledgerBinding,ledgerKey,applyLedgerToBoard,readLedger,writeLedger} from '../native-verification-ledger.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const track='a'.repeat(64),engine='b'.repeat(64),fingerprint='c'.repeat(64),content='d'.repeat(64);
@@ -260,11 +260,30 @@ test('explicit extended policy works within unchanged limits and full-call plus 
   assert.equal(calls,1);assert.equal(passed.counts.verified,1);
 });
 
-test('ordinary lower-level callers cannot obtain a 90-minute budget without a pinned publication context',async t=>{
+test('ordinary lower-level callers cannot obtain a published budget without a pinned publication context',async t=>{
  const {options}=await fixture(t);let calls=0;
- for(const maxRuntimeMs of [1500001,5400000])
+ for(const maxRuntimeMs of [1500001,5400000,10800000])
   await assert.rejects(verifyLocalSnapshot({...options,maxRuntimeMs,verify:async()=>{calls++;return [];}}),/invalid native budget/);
  assert.equal(calls,0);
+});
+
+test('pinned published context permits 180 minutes with a 20-minute reserve through real snapshot verification',async t=>{
+ const {root,options}=await fixture(t),generation=77,start=2000000;
+ const indexBytes=Buffer.from(JSON.stringify({generation,files:{}}));
+ const ledger=writeLedger({root:options.ledgerRoot,entries:[],expectedManifestHash:null});
+ await fs.mkdir(path.join(root,'public-snapshots'+generation),{recursive:true});
+ await fs.writeFile(path.join(root,'snapshot-current.json'),JSON.stringify({currentdir:'public-snapshots'+generation}));
+ await fs.writeFile(path.join(root,'public-snapshots'+generation,'index.json'),indexBytes);
+ await fs.writeFile(path.join(root,'verification-ledger-current.json'),JSON.stringify({schemaVersion:1,directory:'verification-ledger',manifestHash:ledger.manifestHash}));
+ const publishedBaseline={generation,indexSha256:sha(indexBytes),ledgerManifestHash:ledger.manifestHash,ledgerEntries:0};
+ const run=maxRuntimeMs=>withPublishedOfflineVerification({root,publishedBaseline,sourceCommit:sourceBinding.sourceCommit,
+  captureSha256:sourceBinding.captureSha256,finishDeadlineMs:start+240*60000,packagingReserveMs:1200000,now:()=>start},
+  ()=>verifyLocalSnapshot({...options,expectedManifestHash:ledger.manifestHash,maxJobs:10000,maxRuntimeMs,now:()=>start}));
+ await assert.rejects(run(10800001),/invalid native budget/);
+ const completed=await run(10800000);
+ assert.equal(completed.value.counts.nativeDispatched,1);assert.equal(completed.value.counts.verified,1);
+ assert.equal(completed.terminal.boundedTerminalPass,true);assert.equal(completed.terminal.budget.maxRuntimeMs,10800000);
+ assert.equal(completed.terminal.budget.packagingReserveMs,1200000);
 });
 
 test('packed selection cannot renew the absolute allowance for an interleaved extended job',async t=>{

@@ -31,10 +31,10 @@ test('boolean warmup uses one or an absent variable, never an invalid empty/fals
 });
 
 test('hosted standard runtime/defaults are unchanged and extended timeouts remain explicitly bounded',()=>{
- assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 180 || 60 }}"));
- assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 165 || 50 }}"));
+ assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 270 || 60 }}"));
+ assert(workflow.includes("timeout-minutes: ${{ inputs.budget_preset == 'extended-all' && 260 || 50 }}"));
  assert.match(workflow,/options: \['256', '512', '1024', '10000'\]/);assert.match(workflow,/default: '256'/);
- assert.match(workflow,/options: \['8', '25', '90'\]/);assert.match(workflow,/default: '8'/);
+ assert.match(workflow,/options: \['8', '25', '90', '180'\]/);assert.match(workflow,/default: '8'/);
  assert.equal(workflow.split('NATIVE_RUNTIME_MINUTES: ${{ inputs.native_runtime_minutes }}').length-1,2);
  assert(workflow.includes('![256,512,1024].includes(config.plan.maxJobs)||![480000,1500000].includes(config.plan.maxRuntimeMs)'));
  const {plan}=savedEventWorkflowConfig(environment());assert.equal(plan.maxJobs,256);assert.equal(plan.maxRuntimeMs,480000);
@@ -42,16 +42,16 @@ test('hosted standard runtime/defaults are unchanged and extended timeouts remai
  assert.equal(long.maxJobs,1024);assert.equal(long.maxRuntimeMs,1500000);
 });
 
-test('extended-all is exact 10000/90 with all lanes, fresh warmup and at most512 exact targets',()=>{
- const env={...environment(),SAVED_VERIFICATION_PRESET:'extended-all',NATIVE_JOB_LIMIT:'10000',NATIVE_RUNTIME_MINUTES:'90',WARMUP_FIRST_PROOF:'1',
+test('extended-all is exact 10000/180 with all lanes, fresh warmup and at most512 exact targets',()=>{
+ const env={...environment(),SAVED_VERIFICATION_PRESET:'extended-all',NATIVE_JOB_LIMIT:'10000',NATIVE_RUNTIME_MINUTES:'180',WARMUP_FIRST_PROOF:'1',
   TARGET_TRACK_IDS:JSON.stringify(Array.from({length:512},(_,i)=>i.toString(16).padStart(64,'0')))};
  const plan=savedEventWorkflowConfig(env).plan,standard=savedEventWorkflowConfig(environment()).plan;
- assert.equal(plan.maxJobs,10000);assert.equal(plan.maxRuntimeMs,5400000);assert.equal(plan.targetScope,'all');
+ assert.equal(plan.maxJobs,10000);assert.equal(plan.maxRuntimeMs,10800000);assert.equal(plan.targetScope,'all');
  assert.equal(plan.targetTrackIds.length,512);assert.equal(plan.mode,'postpublication-offline');
- assert.equal(plan.packagingReserveMs,900000);assert.equal(plan.finishWindowMs,150*60000);
+ assert.equal(plan.packagingReserveMs,1200000);assert.equal(plan.finishWindowMs,240*60000);
  assert.deepEqual(plan.standard,standard.standard);assert.deepEqual(plan.extended,standard.extended);
  for(const patch of [{SAVED_VERIFICATION_PRESET:'standard'},{SAVED_VERIFICATION_PRESET:'unknown'},{NATIVE_JOB_LIMIT:'1024'},
-  {NATIVE_RUNTIME_MINUTES:'25'},{NATIVE_TARGET_SCOPE:'events'},{NATIVE_TARGET_SCOPE:'normal'},{GITHUB_RUN_ATTEMPT:'2'},
+  {NATIVE_RUNTIME_MINUTES:'25'},{NATIVE_RUNTIME_MINUTES:'90'},{NATIVE_TARGET_SCOPE:'events'},{NATIVE_TARGET_SCOPE:'normal'},{GITHUB_RUN_ATTEMPT:'2'},
   {WARMUP_FIRST_PROOF:undefined},{TARGET_TRACK_IDS:JSON.stringify(Array.from({length:513},(_,i)=>i.toString(16).padStart(64,'0')))}])
   assert.throws(()=>savedEventWorkflowConfig({...env,...patch}));
  assert.equal(workflow.split('SAVED_VERIFICATION_PRESET: ${{ inputs.budget_preset }}').length-1,2);

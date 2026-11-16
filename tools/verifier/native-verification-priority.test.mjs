@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prioritizeNativeTargets} from './native-verification-priority.mjs';
+import {prioritizeNativeTargets,prioritizeFirstProofWarmup} from './native-verification-priority.mjs';
 import {ledgerBinding,ledgerKey} from '../native-verification-ledger.mjs';
 const id=n=>n.toString(16).padStart(64,'0'),track=id(99);
 const normal=(n,ingestedAt)=>({lane:'normal',kind:'normal',accountId:id(n),trackId:track,uploadId:n,
@@ -65,4 +65,35 @@ test('Rolling Hills preference applies to first place, not every run on that boa
   {trackId:hill,weight:2,entries:[{accountId:top.accountId,rank:1},{accountId:deep.accountId,rank:500}]},
   {trackId:busy,weight:10,entries:[{accountId:front.accountId,rank:2}]}],policy:{knownTrackIds:[hill,busy]},now:1000});
  assert.deepEqual(result.jobs,[top,front,deep]);
+});
+
+
+test('first-proof warmup moves the first known short candidate only, preserving all timed-out target order',()=>{
+ const times=[81959,83529,126665,3634748,45001,45000,900];
+ const jobs=times.map((timeMs,i)=>({...normal(i+1,100),timeMs})),before=structuredClone(jobs);
+ const output=prioritizeFirstProofWarmup({jobs,policy:{knownTrackIds:[track]},firstProofCheckpoint:()=>{}});
+ assert.equal(output[0],jobs[5]);assert.deepEqual(output.slice(1),[...jobs.slice(0,5),jobs[6]]);
+ assert.equal(output.length,jobs.length);assert.equal(new Set(output).size,jobs.length);assert.deepEqual(jobs,before);
+ assert.deepEqual(prioritizeFirstProofWarmup({jobs,policy:{knownTrackIds:[track]},firstProofCheckpoint:()=>{}}),output);
+ assert.ok(output.every(job=>job.verified===undefined),'scheduling grants no verification');
+});
+test('warmup is disabled without the existing gate and never displaces an event-first target',()=>{
+ const jobs=[{...normal(1,0),timeMs:81959},normal(2,0)];
+ assert.equal(prioritizeFirstProofWarmup({jobs,policy:{knownTrackIds:[track]}}),jobs);
+ const events=[{...event(3,'current'),timeMs:90000},...jobs];
+ assert.equal(prioritizeFirstProofWarmup({jobs:events,policy:{knownTrackIds:[track]},firstProofCheckpoint:()=>{}}),events);
+});
+test('warmup requires exact known policy/time and skips explicit holds or exclusions without removing them',()=>{
+ const patches=[{trackId:id(88)},{timeMs:0},{timeMs:45001},{timeMs:'900'},{timeMs:NaN},{reviewHold:true},{needsReview:true},{excluded:true},{disposition:'held'},{status:'rejected'},{verificationStatus:'mismatch'},{review:{disposition:'excluded'}}];
+ const jobs=[...patches.map((patch,i)=>({...normal(i+1,0),...patch})),normal(90,0)];
+ const output=prioritizeFirstProofWarmup({jobs,policy:{trackContentHashes:{[track]:id(1)}},firstProofCheckpoint:()=>{}});
+ assert.equal(output[0],jobs.at(-1));assert.deepEqual(output.slice(1),jobs.slice(0,-1));
+ assert.equal(prioritizeFirstProofWarmup({jobs:jobs.slice(0,-1),policy:{trackContentHashes:{[track]:id(1)}},firstProofCheckpoint:()=>{}})[0],jobs[0]);
+ const none=[{...normal(1,0),timeMs:81959}];assert.equal(prioritizeFirstProofWarmup({jobs:none,policy:{knownTrackIds:[track]},firstProofCheckpoint:()=>{}}),none);
+});
+test('phase warmup hook follows retention event sort and preserves the exact inventory assertion and full review',async()=>{
+ const fs=await import('node:fs/promises');const source=await fs.readFile(new URL('../native-snapshot-phase.mjs',import.meta.url),'utf8');
+ const sort=source.indexOf('const orderedTargets=publishedRetention?priority.jobs.sort('),hook=source.indexOf('const targets=prioritizeFirstProofWarmup({jobs:orderedTargets,policy:context.policy,firstProofCheckpoint});');
+ const assertion=source.indexOf('if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);',hook);
+ assert.ok(sort>=0&&hook>sort&&assertion>hook);assert.match(source,/allJobs:inputs.jobs/);assert.match(source,/reviewFactory\(\{jobs:value.allJobs/);
 });

@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 423,
+    "number": 425,
     "version": "0.6.3",
-    "revision": 363,
+    "revision": 364,
     "notes": [
-      "Fixed oversized gaps in the Kodub weekly card and improved title wrapping without resizing the artwork."
+      "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
+      "Made the Rolling Hills Racer reward and no-reset message easier to read."
     ]
   },
   "entries": [
+    {
+      "number": 423,
+      "title": "Fix live Kodub card spacing and title wrapping",
+      "commit": "59228252ce017ea0b313354db1a23032781a8754",
+      "committedAt": "2026-11-16T07:02:27.000Z",
+      "notes": [
+        "Fixed oversized gaps in the Kodub weekly card and improved title wrapping without resizing the artwork."
+      ]
+    },
     {
       "number": 422,
       "title": "Balance weekly card spacing without changing its size",
@@ -187,15 +197,6 @@
       "notes": [
         "Kodub weekly artwork now fits the card height while keeping its original image uncropped.",
         "The weekly personal-best icon is sized to match its text."
-      ]
-    },
-    {
-      "number": 402,
-      "title": "Maintenance update",
-      "commit": "1cf396bc54495fef6ba07c4c470cd5e1c086134f",
-      "committedAt": "2026-11-15T22:43:22.000Z",
-      "notes": [
-        "No gameplay changes in this update."
       ]
     }
   ],

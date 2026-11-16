@@ -20,7 +20,7 @@ import {createNativeEventBaseline,completeCapturedEmptyEventBoard,projectNativeE
 import {rebuildSnapshotOverall} from './rebuild-snapshot-overall.mjs';
 import {buildProfileSnapshotResults} from './build-profile-snapshot-results.mjs';
 import {loadCapturedNativeJobs,defaultCapturedReviewFactory} from './verifier/local-snapshot-capture.mjs';
-import {prioritizeNativeTargets} from './verifier/native-verification-priority.mjs';
+import {prioritizeNativeTargets,prioritizeFirstProofWarmup} from './verifier/native-verification-priority.mjs';
 import {verifyLocalSnapshot,nativeLedgerPublicationFiles,withOfflineVerification} from './verifier/local-snapshot-verification.mjs';
 import {loadWeeklyTrustedTrack} from './verifier/weekly-track.mjs';
 import {PERMANENT_ROLLING_HILLS} from '../workers/ranked/src/permanent-rolling-hills.js';
@@ -412,7 +412,8 @@ async function runNativeSnapshotPhaseImpl({root,directory,sourceCommit,maxJobs=5
       if(trackTargets&&(!trackTargets.includes(job.trackId)||publishedRetention&&(entries.has(key)||job.lane==='normal'&&accepted.has(key))))return false;
       return targetScope==='events'?job.lane==='event':trackTargets?true:!accepted.has(key)||entries.has(key);}),
       eventBoards:inputs.eventBoards,normalBoards:inputs.normalBoards,preferredTrackIds:trackTargets?.includes(PERMANENT_ROLLING_HILLS.trackId)?[PERMANENT_ROLLING_HILLS.trackId]:[],canonicalRows,policy:context.policy,entries:context.ledger.entries,now:now(),eventFirst:targetScope==='events'||!!trackTargets});
-    const targets=publishedRetention?priority.jobs.sort((a,b)=>Number(b.lane==='event')-Number(a.lane==='event')):priority.jobs;
+    const orderedTargets=publishedRetention?priority.jobs.sort((a,b)=>Number(b.lane==='event')-Number(a.lane==='event')):priority.jobs;
+    const targets=prioritizeFirstProofWarmup({jobs:orderedTargets,policy:context.policy,firstProofCheckpoint});
     if(publishedRetention)assertPublishedTargetJobs(publishedRetention,targets);
     const binding={sourceCommit,captureSha256:inputs.captureSha256};let reviewer;
     const review=async value=>{

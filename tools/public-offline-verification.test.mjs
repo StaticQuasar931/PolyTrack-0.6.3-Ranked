@@ -96,12 +96,20 @@ test('postpublication 90-minute clean partial return compiles only ledger-proven
  assert.equal(JSON.parse(await fs.readFile(path.join(f.options.runDirectory,'terminal-pass.json'))).compilationEligible,true);
 });
 
-test('preparation time is outside physics budget and deadline clamp reserves fifteen minutes',async t=>{
+test('preparation time is outside physics budget and deadline clamp honors the configured packaging reserve',async t=>{
  const f=await publishedFixture(t),preflight=f.capabilities.preflightPhase;
  f.capabilities.preflightPhase=async input=>{f.setClock(f.getClock()+3000000);return preflight(input);};
  const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities),verified=await prepared.verify();
  assert.equal(f.runtime(),3100000);assert.equal(verified.terminalReceipt.budget.maxRuntimeMs,3100000);
  assert.equal(verified.terminalReceipt.budget.packagingReserveMs,900000);await verified.dispose();
+});
+
+test('extended postpublication allows the explicit twenty-minute packaging reserve and 180-minute native ceiling',async t=>{
+ const f=await publishedFixture(t);f.options.packagingReserveMs=1200000;f.options.maxRuntimeMs=10800000;
+ f.options.finishDeadlineMs=f.getClock()+240*60000;
+ const prepared=await preparePublishedOfflineVerification(f.options,f.capabilities),verified=await prepared.verify();
+ assert.equal(f.runtime(),10800000);assert.equal(verified.terminalReceipt.budget.packagingReserveMs,1200000);
+ await verified.dispose();
 });
 
 test('native entry reclamps after phase preparation, not only after public preparation',async t=>{
@@ -163,7 +171,7 @@ test('partial compile rejects changed fresh receipt and changed public pins',asy
 test('ordinary capture budgets stay at 25 minutes and postpublication policy is explicit and bounded',async t=>{
  const f=await fixture(t);
  for(const patch of [{maxRuntimeMs:5400000},{mode:'unknown'},
-  {mode:'postpublication-offline',maxRuntimeMs:5400001,finishDeadlineMs:Date.now()+10000000},
+  {mode:'postpublication-offline',maxRuntimeMs:10800001,finishDeadlineMs:Date.now()+10000000},
   {mode:'postpublication-offline',maxJobs:10001,finishDeadlineMs:Date.now()+10000000},
   {mode:'postpublication-offline'},{mode:'postpublication-offline',finishDeadlineMs:Date.now()+10000000,packagingReserveMs:0}])
   await assert.rejects(preparePublishedOfflineVerification({...f.options,...patch},f.capabilities));

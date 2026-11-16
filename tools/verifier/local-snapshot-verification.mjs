@@ -28,7 +28,7 @@ export async function withPublishedOfflineVerification({root,publishedBaseline,s
   finishDeadlineMs,packagingReserveMs=900000,now=Date.now},task) {
   demand(typeof task==='function'&&!publishedBudget.getStore(),'invalid published verification context');
   demand(path.isAbsolute(root||'')&&SHA.test(sourceCommit||'')&&HASH.test(captureSha256||''),'pinned published verification source required');
-  demand(positive(finishDeadlineMs)&&packagingReserveMs===900000&&typeof now==='function','absolute finish deadline and fifteen-minute packaging reserve required');
+  demand(positive(finishDeadlineMs)&&[900000,1200000].includes(packagingReserveMs)&&typeof now==='function','absolute finish deadline and bounded packaging reserve required');
   const pins=structuredClone(publishedBaseline);
   demand(pins&&Object.keys(pins).sort().join('|')==='generation|indexSha256|ledgerEntries|ledgerManifestHash'&&
     positive(pins.generation)&&HASH.test(pins.indexSha256||'')&&HASH.test(pins.ledgerManifestHash||'')&&
@@ -247,7 +247,7 @@ export async function verifyLocalSnapshot({root, jobs, allJobs, sourceBinding, l
       maxRuntimeMs=Math.min(maxRuntimeMs,publication.finishDeadlineMs-publication.now()-publication.packagingReserveMs);
     }
     demand(positive(maxJobs) && maxJobs <= (publication?10000:100000) && positive(batchSize) && batchSize <= 16 &&
-      positive(maxRuntimeMs) && maxRuntimeMs <= (publication?5400000:1500000) && Number.isSafeInteger(packReserveMs) &&
+      positive(maxRuntimeMs) && maxRuntimeMs <= (publication?10800000:1500000) && Number.isSafeInteger(packReserveMs) &&
       packReserveMs >= 0 && packReserveMs < maxRuntimeMs,'invalid native budget');
     const startedAt=now(); demand(positive(startedAt),'invalid clock');
     const remaining=()=>Math.min(maxRuntimeMs-(now()-startedAt),publication?
