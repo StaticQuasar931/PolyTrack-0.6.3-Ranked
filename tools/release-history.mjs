@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 413,
+    "number": 414,
     "version": "0.6.3",
-    "revision": 354,
+    "revision": 355,
     "notes": [
-      "Rank durations now say at rank, and replay verification prioritizes more visible results."
+      "The current Kodub weekly track is up to date and ready for replay verification."
     ]
   },
   "entries": [
+    {
+      "number": 413,
+      "title": "Fix saved verification targets and clarify rank duration",
+      "commit": "6aad63fda0334db0c58e0b8bdf6f149f355753b8",
+      "committedAt": "2026-11-16T04:33:49.000Z",
+      "notes": [
+        "Rank durations now say at rank, and replay verification prioritizes more visible results."
+      ]
+    },
     {
       "number": 411,
       "title": "Keep captured event observation times accurate",
@@ -195,15 +204,6 @@ const historyData = {
         "Event names, cached placements, and Rolling Hills RP run details are clearer.",
         "Achievements, Racer Studio, and Shop shortcuts stay stable while menus load.",
         "Local personal bests can show a podium target without being presented as confirmed medals."
-      ]
-    },
-    {
-      "number": 392,
-      "title": "Maintenance update",
-      "commit": "60922970ed7d31bbf2866e179a1c0374ae43a51b",
-      "committedAt": "2026-11-15T00:49:08.000Z",
-      "notes": [
-        "No gameplay changes in this update."
       ]
     }
   ],

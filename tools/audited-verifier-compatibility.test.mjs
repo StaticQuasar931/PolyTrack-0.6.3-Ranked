@@ -9,9 +9,10 @@ import compatibility from './audited-verifier-compatibility.cjs';
 import {buildNativeVerificationPolicy} from './native-verification-policy.mjs';
 import {createLedgerEntry,ledgerBinding,ledgerKey,writeLedger,applyLedgerToBoard} from './native-verification-ledger.mjs';
 
-const OLD='4a52404b07cb6a78944c5073de19a46cefc7f73efd82bb56490abe1b2f35d79f',CURRENT='22dee8233571960694a09ff1f6934454cacbee1e2010aff81a02de369a91f5f3';
+const OLD='4a52404b07cb6a78944c5073de19a46cefc7f73efd82bb56490abe1b2f35d79f',MID='22dee8233571960694a09ff1f6934454cacbee1e2010aff81a02de369a91f5f3',CURRENT='3fd07e5bdf54fec2e699e88e6e507c9cff77eb4f152ce4afd429e0e728625553';
 const ENGINE='7203ead74e290932abafe7f45ae5d121b5e1488b788f7dbe9ea95c8eb30d1ed1',VERSION='polytrack-native-bounded-v1';
 const ADDED='b978a8ebb3d822bfcafa592234bfe65d6f09181038a07230ef9acfc17151a22f',DYNAMIC='7febc1003fa4afd5a79b917619abf8771a6caad0ad16a0383582a6a364544fb7';
+const UPLINK='99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37';
 const sha=x=>createHash('sha256').update(x).digest('hex'),geometry={parts:20,spanX:100,spanZ:120},content=sha('independent fixture code');
 const context={witnessEngineDigest:ENGINE,currentEngineDigest:ENGINE,witnessVerifierVersion:VERSION,currentVerifierVersion:VERSION,trackId:DYNAMIC};
 const {verifierFingerprintsCompatible:compatible}=compatibility;
@@ -19,6 +20,9 @@ function temporary(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'audited-c
 
 test('exact directional audited relation admits unchanged dynamic trusted tracks, not the added exception',()=>{
  assert.equal(compatible(OLD,CURRENT,context),true);assert.equal(compatible(CURRENT,CURRENT,context),true);
+ assert.equal(compatible(MID,CURRENT,context),true);
+ assert.equal(compatible(MID,CURRENT,{...context,trackId:ADDED}),true,'Magician approval predates only the Uplink addition');
+ for(const witness of [OLD,MID])assert.equal(compatible(witness,CURRENT,{...context,trackId:UPLINK}),false,'old witnesses cannot authorize the new exception');
  for(const [from,to,c] of [[CURRENT,OLD,context],[OLD,'f'.repeat(64),context],['f'.repeat(64),CURRENT,context],
   [OLD,CURRENT,{...context,trackId:ADDED}],[OLD,CURRENT,{...context,trackId:'invalid'}]])assert.equal(compatible(from,to,c),false);
  for(const key of ['witnessEngineDigest','currentEngineDigest','witnessVerifierVersion','currentVerifierVersion'])

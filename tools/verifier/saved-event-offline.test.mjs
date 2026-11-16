@@ -61,12 +61,17 @@ test('extended sidecar passes one fixed publication budget, verifies once and pr
  await fs.mkdir(path.join(root,'events'));await fs.writeFile(path.join(root,'events/public-catalog.json'),'{}');
  await fs.writeFile(path.join(root,'index.html'),'<meta name="polytrack-snapshot" content="./public-snapshots84/">');
  const git=args=>Buffer.from(args[0]==='rev-parse'?env.EXPECTED_SOURCE_COMMIT:args[1].endsWith('/index.json')?'index':'ledger');
- const result=await runSavedEventVerification({root,runDirectory:root,env},{git,now:()=>1000000,prepare:async(options,capabilities)=>{
+ const checkpoints=[];
+ const result=await runSavedEventVerification({root,runDirectory:root,env},{git,now:()=>1000000,
+  checkpointLog:async record=>{await fs.access(path.join(root,record.kind+'-'+record.sequence+'.json'));checkpoints.push(record);},
+  verifyPhase:async input=>{await input.firstProofCheckpoint({privateEvidence:'must-not-appear-in-notice'});await input.progressCheckpoint({privateEvidence:'must-not-appear-in-notice'});},
+  prepare:async(options,capabilities)=>{
   assert.equal(options.targetScope,'all');assert.equal(options.maxJobs,10000);assert.equal(options.maxRuntimeMs,5400000);
   assert.equal(options.mode,'postpublication-offline');assert.equal(options.finishDeadlineMs,10000000);assert.equal(options.packagingReserveMs,900000);
   assert.deepEqual(options.targetTrackIds,['a'.repeat(64)]);
   assert.deepEqual(options.publishedBaseline,{generation:84,indexSha256:pins.indexSha256,ledgerManifestHash:pins.ledgerManifestHash,ledgerEntries:19391});
   assert.equal(typeof capabilities.verifyPhase,'function');
+  await capabilities.verifyPhase({});
   return {directory:path.join(root,'stage'),receipt:{backendReads:0,backendWrites:0},verify:async()=>{verified++;return {
    receipt:{authority:false,kind:'completed-in-process-native-verification',sourceBinding:{sourceCommit:env.EXPECTED_SOURCE_COMMIT},
     counts:{nativeDispatched:1,mismatch:1},decisions:[{status:'mismatch',reason:'exact_finish_mismatch'}]},
@@ -76,6 +81,8 @@ test('extended sidecar passes one fixed publication budget, verifies once and pr
   auditPackage:async directory=>{assert.equal(directory,root);return {indexSha256:sha('candidate')};}});
  assert.equal(verified,1);assert.equal(compiled,1);assert.equal(disposed,1);assert.equal(result.nativeReceipt.decisions[0].status,'mismatch');
  assert.equal(result.publicationPerformed,false);assert.equal(result.compilePerformed,true);
+ assert.deepEqual(checkpoints,[{kind:'first-proof-pass',sequence:1},{kind:'progress',sequence:2}]);
+ assert.ok(!JSON.stringify(checkpoints).includes('privateEvidence'));
  const saved=JSON.parse(await fs.readFile(path.join(root,'event-candidate-complete.json')));assert.equal(saved.authority,false);
  await assert.rejects(runSavedEventVerification({root,runDirectory:root,env:{...env,SNAPSHOT_INDEX_SHA256:'0'.repeat(64)}},{git,prepare:()=>assert.fail('bad source cannot spend physics')}),/artifact pin/);
 });

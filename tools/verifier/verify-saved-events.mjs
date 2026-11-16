@@ -39,7 +39,8 @@ export function savedEventSnapshotSparsePatterns(generation){
 export async function runSavedEventVerification({root,runDirectory,env=process.env},{
  git=(args)=>execFileSync('git',args,{cwd:root,maxBuffer:20*1024*1024}),
  prepare=preparePublishedOfflineVerification,verifyPhase=verifyNativeSnapshotPhase,
- replayAudit=assertSnapshotReplayCompleteness,publishPackage=publishSnapshot,auditPackage=captureBinding,now=Date.now}={}){
+ replayAudit=assertSnapshotReplayCompleteness,publishPackage=publishSnapshot,auditPackage=captureBinding,now=Date.now,checkpointLog=()=>{}}={}){
+ demand(typeof checkpointLog==='function','checkpoint logger required');
  const {plan,testedCommit,warmupFirst}=savedEventWorkflowConfig(env);
  // One absolute deadline includes preparation; it cannot be renewed by verify/compile.
  const deadlineOptions=plan.budgetPreset==='extended-all'?{mode:plan.mode,
@@ -52,6 +53,7 @@ export async function runSavedEventVerification({root,runDirectory,env=process.e
  const save=async(kind,value)=>{
   const file=path.join(runDirectory,kind+'-'+(++checkpointSequence)+'.json');
   await fs.writeFile(file,JSON.stringify({authority:false,resumeAuthority:false,...value})+'\n',{flag:'wx',mode:0o600,flush:true});
+  await checkpointLog({kind,sequence:checkpointSequence});
  };
  const prepared=await prepare({root,runDirectory,sourceCommit:testedCommit,publishedBaseline:pins,
   targetScope:plan.targetScope,...(plan.targetTrackIds?{targetTrackIds:plan.targetTrackIds}:{}),maxJobs:plan.maxJobs,maxRuntimeMs:plan.maxRuntimeMs,
@@ -108,7 +110,11 @@ export async function runSavedEventVerification({root,runDirectory,env=process.e
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const [root,runDirectory]=process.argv.slice(2);
  demand(root&&runDirectory,'usage ROOT NEW_PRIVATE_RUN_DIRECTORY');
- let receipt=await runSavedEventVerification({root:path.resolve(root),runDirectory:path.resolve(runDirectory)});
+ let receipt=await runSavedEventVerification({root:path.resolve(root),runDirectory:path.resolve(runDirectory)},{checkpointLog:record=>{
+  console.log(JSON.stringify({verificationCheckpoint:record}));
+  if(record.kind==='first-proof-pass'&&process.env.GITHUB_ACTIONS==='true')
+   console.log('::notice title=First replay verified::A fresh replay passed native physics and integrity checks. Remaining saved runs are processing offline.');
+ }});
  const report=()=>console.log(JSON.stringify({kind:receipt.kind,status:receipt.status,message:receipt.message,
   plan:receipt.plan,counts:receipt.nativeReceipt.counts,packaged:receipt.packaged,publicationPerformed:false}));
  report();
