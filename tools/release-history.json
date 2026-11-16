@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 433,
+    "number": 434,
     "version": "0.6.3",
-    "revision": 371,
+    "revision": 372,
     "notes": [
-      "Fixed a background replay-check startup issue so saved-run verification can proceed."
+      "Reduced snapshot download overhead for background replay checks."
     ]
   },
   "entries": [
+    {
+      "number": 433,
+      "title": "Align cleanup test with sandboxed native browser",
+      "commit": "28431ad14a917cae8d6a99b5f2d4bfe4153b1975",
+      "committedAt": "2026-11-16T11:03:32.000Z",
+      "notes": [
+        "Fixed a background replay-check startup issue so saved-run verification can proceed."
+      ]
+    },
     {
       "number": 432,
       "title": "Add offline replay benchmark and consistency audit",
@@ -184,15 +193,6 @@
       "committedAt": "2026-11-16T03:13:34.000Z",
       "notes": [
         "Event previews stay consistent when snapshot captures take longer."
-      ]
-    },
-    {
-      "number": 410,
-      "title": "Preserve audited verification proofs after catalog updates",
-      "commit": "bf565987d28a2862d740288dc4fb80b060bf51e7",
-      "committedAt": "2026-11-16T02:59:07.000Z",
-      "notes": [
-        "Previously verified runs stay recognized after track catalog updates."
       ]
     }
   ],

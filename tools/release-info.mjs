@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 433,
+  "number": 434,
   "version": "0.6.3",
-  "revision": 371,
+  "revision": 372,
   "notes": [
-    "Fixed a background replay-check startup issue so saved-run verification can proceed."
+    "Reduced snapshot download overhead for background replay checks."
   ],
-  "preparedAt": "2026-11-16T11:02:52.753Z",
-  "committedAt": "2026-11-16T11:03:32.000Z"
+  "preparedAt": "2026-11-16T11:06:39.167Z",
+  "committedAt": "2026-11-16T11:07:08.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

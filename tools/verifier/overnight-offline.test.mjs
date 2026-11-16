@@ -51,3 +51,11 @@ test('event admission supplies each exact period to the existing ledger overlay'
   const eligible=ledgerEligible(jobs,{}, {},({board,lane})=>{seen.push([lane,board.periodId]);for(const row of board.entries)if(lane==='event')assert.equal(board.periodId,row.periodId);return {board:{entries:board.entries.map(row=>({...row,integrityVerified:true,nativeLedgerKey:row.resultId}))}};});
   assert.equal(eligible.size,3);assert.deepEqual(seen,[['event','weekly'],['normal',undefined],['event','archived']]);
 });
+
+
+test('saved package checkout fetches missing blobs together rather than per-file archive requests',()=>{
+ const text=fs.readFileSync(new URL('../../.github/workflows/overnight-offline.yml',import.meta.url),'utf8');
+ assert(text.includes('git sparse-checkout set --no-cone --stdin'));
+ assert(text.includes('git restore --source="$SNAPSHOT_SOURCE_COMMIT" --worktree -- snapshot-current.json verification-ledger-current.json verification-ledger'));
+ assert(!text.includes('git archive'));
+});

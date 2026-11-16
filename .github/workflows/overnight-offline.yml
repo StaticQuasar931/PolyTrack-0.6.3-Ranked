@@ -55,7 +55,8 @@ jobs:
           import assert from 'node:assert/strict';
           const c=config();assert.equal(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),c.implementation);
           CHECK
-          git archive "$SNAPSHOT_SOURCE_COMMIT" public-snapshots91 snapshot-current.json verification-ledger-current.json verification-ledger | tar -x
+          printf '/*\n!/public-snapshots*/\n/public-snapshots91/\n' | git sparse-checkout set --no-cone --stdin
+          git restore --source="$SNAPSHOT_SOURCE_COMMIT" --worktree -- snapshot-current.json verification-ledger-current.json verification-ledger
       - name: Test offline benchmark contracts
         run: node --test tools/verifier/overnight-offline.test.mjs
       - name: Install pinned native dependencies
