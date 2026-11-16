@@ -1460,8 +1460,13 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
 }
 #ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info{
  container-type:normal!important;min-width:var(--kodub-details-width)!important;
- width:100%!important;padding:12px 16px!important;gap:7px!important;
+ width:100%!important;padding:20px clamp(18px,2vw,34px)!important;gap:7px!important;
  align-items:center!important;justify-content:center!important;text-align:center!important;
+}
+/* Separate identity, event timing and results without enlarging the card. */
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info>.time-remaining,
+#ui .track-selection-ui .sq-featured-events .track.sq-kodub-weekly>.button>.track-of-the-week-info>.personal-best{
+ margin-top:auto!important;
 }
 #ui .track-selection-ui .sq-featured-events .sq-kodub-weekly .track-of-the-week-info>.title{
  font-size:clamp(24px,2vw,32px)!important;line-height:1.1!important;

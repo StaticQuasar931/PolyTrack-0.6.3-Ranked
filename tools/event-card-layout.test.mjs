@@ -53,6 +53,12 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
         console.log(width+' comparison420',JSON.stringify({before,after:{outer:g.wrapper.width,art:g.img.width}}));
       }
       const label=width+'x'+height;
+      if(width>=1201){
+        const spacing=await evaluate(`(()=>{const p=document.querySelector('.track-of-the-week-info'),style=getComputedStyle(p),title=p.querySelector('.title').getBoundingClientRect(),reward=p.querySelector('.sq-kodub-reward').getBoundingClientRect();return {edge:parseFloat(style.paddingLeft),top:parseFloat(style.paddingTop),contentHeight:reward.bottom-title.top,height:p.getBoundingClientRect().height};})()`);
+        assert.ok(spacing.edge>=24,label+' comfortable horizontal edge padding');
+        assert.equal(spacing.top,20,label+' consistent vertical edge padding');
+        assert.ok(spacing.contentHeight>=spacing.height*.8,label+' identity, timing and results use the available height');
+      }
       const compact=width<=900||width<=1200&&height<=500;
       for(const c of g.cards.slice(compact?1:0))assert.ok(Math.abs(c.height-(compact?g.cards[1].height:g.card.height))<1,label+' same outer height');
       assert.equal(g.fit,'contain');assert.ok(Math.abs(g.img.width/g.img.height-g.ratio)<.01,label+' no letterbox or crop');

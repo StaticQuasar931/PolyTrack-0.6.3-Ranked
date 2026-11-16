@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 421,
+    "number": 422,
     "version": "0.6.3",
-    "revision": 361,
+    "revision": 362,
     "notes": [
-      "Restored the wider Kodub weekly card so the title and event details have room to fit."
+      "The Kodub weekly card has balanced spacing and clearer groups for track details, timing and rewards."
     ]
   },
   "entries": [
+    {
+      "number": 421,
+      "title": "Restore wider Kodub card and verify text fits",
+      "commit": "4c13ab627886bae81aa696722743004506ec6648",
+      "committedAt": "2026-11-16T06:12:34.000Z",
+      "notes": [
+        "Restored the wider Kodub weekly card so the title and event details have room to fit."
+      ]
+    },
     {
       "number": 420,
       "title": "Highlight recent movement and restore weekly card proportions",
@@ -189,15 +198,6 @@
         "Overall RP rank duration is based on consecutive saved observations, so rebuilds do not reset the displayed time.",
         "Rank history is shared between rankings and racer profiles. A local projected rank does not inherit time from an earlier rank.",
         "Kodub weekly artwork fits its card while remaining fully visible."
-      ]
-    },
-    {
-      "number": 400,
-      "title": "Maintenance update",
-      "commit": "4dff530e9ab1bd8c95e1d451c9e4ebdaf87ddd28",
-      "committedAt": "2026-11-15T05:51:10.000Z",
-      "notes": [
-        "No gameplay changes in this update."
       ]
     }
   ],
