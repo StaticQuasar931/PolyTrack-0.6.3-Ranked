@@ -2,14 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 418,
+    "number": 419,
     "version": "0.6.3",
-    "revision": 358,
+    "revision": 359,
     "notes": [
-      "Update history now matches the installed game version."
+      "Rank time is smaller and clearer; movement arrows disappear after three days.",
+      "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
     ]
   },
   "entries": [
+    {
+      "number": 418,
+      "title": "Keep installed update history consistent",
+      "commit": "db12d95c493c58644c59f34680c98b42319a8b06",
+      "committedAt": "2026-11-16T05:25:41.000Z",
+      "notes": [
+        "Update history now matches the installed game version."
+      ]
+    },
     {
       "number": null,
       "title": "Synchronize generated release-history module",
@@ -190,17 +200,6 @@ const historyData = {
         "Studio keeps your selected backdrop and car preview, and saved drafts survive delayed controls.",
         "Combine front and rear accessories. Two-color neon and metal finishes are clearer.",
         "Locked workshop choices show their requirements, and the Podium crown requires a confirmed podium."
-      ]
-    },
-    {
-      "number": 397,
-      "title": "More achievements, shop options, and weekly artwork",
-      "commit": "f107fcc97bf79de5e6bf72d008eac795d7d228ba",
-      "committedAt": "2026-11-15T04:51:56.000Z",
-      "notes": [
-        "Weekly spotlight artwork now fits its card without being cropped.",
-        "Achievement goals, cosmetic unlocks, and coin milestones are easier to tell apart.",
-        "The Shop adds sorting, and playtime is shown more precisely."
       ]
     }
   ],

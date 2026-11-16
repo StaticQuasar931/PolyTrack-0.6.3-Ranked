@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 418,
+  "number": 419,
   "version": "0.6.3",
-  "revision": 358,
+  "revision": 359,
   "notes": [
-    "Update history now matches the installed game version."
+    "Rank time is smaller and clearer; movement arrows disappear after three days.",
+    "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
   ],
-  "preparedAt": "2026-11-16T05:24:58.514Z",
-  "committedAt": "2026-11-16T05:25:41.000Z"
+  "preparedAt": "2026-11-16T05:43:11.032Z",
+  "committedAt": "2026-11-16T05:43:12.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
