@@ -905,6 +905,38 @@ test('workflow stages first-run untracked snapshots before checking for changes'
     {cwd: catalogOnly}).status, 1);
 });
 
+test('event checkedAt uses response completion clock while explicit now remains deterministic', async t => {
+  let clock = 1000;
+  t.mock.method(Date, 'now', () => clock);
+  for (const explicitNow of [undefined, 1000]) {
+    clock = 1000;
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'event-completion-clock-'));
+    t.after(() => fs.rm(directory, {recursive: true, force: true}));
+    const source = {id: period.id, period: livePeriod, updatedAt: 1500,
+      archived: false, state: 'open', racerCount: 3, entries: []};
+    const manifest = await runPublicSnapshotBackup({directory, trackIds: [], trackFetchLimit: 0,
+      capturedOverall: {...overall, trackSummaries: []},
+      ...(explicitNow === undefined ? {} : {now: explicitNow}), log: () => {}, fetchImpl: async input => {
+        const pathname = new URL(input).pathname;
+        if (pathname === '/v1/events/catalog') return Response.json({periods: [livePeriod], archives: []});
+        if (pathname === `/v1/events/${period.id}/snapshot`) {
+          await Promise.resolve();
+          clock = 2000;
+          return Response.json(source);
+        }
+        assert.equal(pathname, '/v1/events/permanent-rolling-hills/snapshot');
+        return new Response('', {status: 404});
+      }});
+    assert.equal(manifest.events[period.id].checkedAt, explicitNow ?? 2000);
+    assert.equal(manifest.events[period.id].updatedAt, 1500);
+    const saved = JSON.parse(await fs.readFile(path.join(directory, `events/${period.id}.json`), 'utf8'));
+    assert.deepEqual(saved.entries, []);
+    assert.equal(saved.complete, undefined);
+    assert.equal(saved.sourceComplete, undefined);
+    assert.equal(saved.racerCount, 3);
+  }
+});
+
 test('bounded export keeps prior tracks, exports permanent event, and continues boards without a sidecar', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'polytrack-public-snapshots-'));
   t.after(() => fs.rm(directory, {recursive: true, force: true}));

@@ -1081,7 +1081,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       : `${WORKER}/v1/events/${encodeURIComponent(id)}/snapshot`;
     const value = await fetchJson(fetchImpl, url, {optional: true});
     const full = value ? await assemble(value, url + '/page') : null;
-    return {id, value: full ? publicEventBackup(full, id) : null};
+    const projected = full ? publicEventBackup(full, id) : null;
+    return {id, value: projected, checkedAt: handoffNow()};
   });
 
   const eventValues = new Map();
@@ -1199,11 +1200,11 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     nextTracks[id] = {path: relative, revision: Number(value.revision || value.sourceRevision || 0),
       sourceUpdatedAt: value.updatedAt, updatedAt: value.updatedAt, checkedAt: now};
   }
-  for (const {id, value} of eventRows) {
+  for (const {id, value, checkedAt} of eventRows) {
     if (!value) { missingEvents++; continue; }
     const relative = `events/${id}.json`;
     pendingWrites.set(relative, value);
-    nextEvents[id] = {path: relative, updatedAt: value.updatedAt, checkedAt: now};
+    nextEvents[id] = {path: relative, updatedAt: value.updatedAt, checkedAt};
   }
   const eventReplays = {...retainedReplays};
   const eventPlaybacks = {...retainedPlaybacks};

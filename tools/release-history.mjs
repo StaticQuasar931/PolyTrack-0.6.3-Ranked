@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 410,
+    "number": 411,
     "version": "0.6.3",
-    "revision": 352,
+    "revision": 353,
     "notes": [
-      "Previously verified runs stay recognized after track catalog updates."
+      "Event previews stay consistent when snapshot captures take longer."
     ]
   },
   "entries": [
+    {
+      "number": 410,
+      "title": "Preserve audited verification proofs after catalog updates",
+      "commit": "bf565987d28a2862d740288dc4fb80b060bf51e7",
+      "committedAt": "2026-11-16T02:59:07.000Z",
+      "notes": [
+        "Previously verified runs stay recognized after track catalog updates."
+      ]
+    },
     {
       "number": 409,
       "title": "Faster snapshot completion and extended offline verification",
@@ -195,17 +204,6 @@ const historyData = {
       "committedAt": "2026-11-15T00:02:44.000Z",
       "notes": [
         "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 390,
-      "title": "More car choices and clearer event menus",
-      "commit": "ff504eeab1276dda9893901363e2d0cfeede3ddc",
-      "committedAt": "2026-11-14T23:56:19.000Z",
-      "notes": [
-        "Car finishes, front emblems, and accessories are available with a clearer Garage workshop.",
-        "Eligible cosmetic achievements have claimable bonuses, and shop previews are sharper.",
-        "Event RP filters, run details, and the rankings menu are easier to understand."
       ]
     }
   ],
