@@ -2,17 +2,26 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 415,
+    "number": 416,
     "version": "0.6.3",
-    "revision": 356,
+    "revision": 357,
     "notes": [
-      "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
-      "Top Tracks adds a Non-official view for community and extra tracks.",
-      "Event cards have clearer spacing and uncropped weekly artwork.",
-      "New snapshot data can now appear through Update available."
+      "Earlier update notes now stay in sync with the current release."
     ]
   },
   "entries": [
+    {
+      "number": 415,
+      "title": "Clarify rankings and event cards and preserve offline verification sources",
+      "commit": "0d504b8072349ef8af7242cf8ab7ee0f03503dbd",
+      "committedAt": "2026-11-16T05:21:58.000Z",
+      "notes": [
+        "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
+        "Top Tracks adds a Non-official view for community and extra tracks.",
+        "Event cards have clearer spacing and uncropped weekly artwork.",
+        "New snapshot data can now appear through Update available."
+      ]
+    },
     {
       "number": 414,
       "title": "Enable reviewed Uplink replay verification and refresh weekly fallback",
@@ -196,15 +205,6 @@ const historyData = {
         "Car finishes keep both paint colors, and accessories fit the car more closely.",
         "Eligible rewards sync automatically, with checks to limit repeat claims.",
         "Live previews, Undo, and Restore keep your saved work more reliably."
-      ]
-    },
-    {
-      "number": 394,
-      "title": "Maintenance update",
-      "commit": "7685e42f93986d59adc3cfbf7e3270d13a82450b",
-      "committedAt": "2026-11-15T02:01:33.000Z",
-      "notes": [
-        "No gameplay changes in this update."
       ]
     }
   ],
