@@ -8,6 +8,7 @@ import {loadWeeklyTrustedTrack} from './verifier/weekly-track.mjs';
 const require = createRequire(import.meta.url);
 const {verifierFingerprint} = require('./verifier/verify.cjs');
 const {geometryDecision} = require('./verifier/geometry.cjs');
+const {verifierFingerprintsCompatible} = require('./audited-verifier-compatibility.cjs');
 const HASH = /^[a-f0-9]{64}$/;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -49,11 +50,13 @@ export function buildNativeVerificationPolicy({root, jobs = [], results = [], en
   const witnesses = [...results.filter(row => row?.status === 'verified').map(row => ({
     trackId: row.trackId, trackContentHash: row.trackContentHash, trackGeometry: row.trackGeometry,
     geometryPolicy: row.geometryPolicy, engineDigest: row.engineDigest,
-    verifierFingerprint: row.binding?.verifierFingerprint
+    verifierFingerprint: row.binding?.verifierFingerprint, verifierVersion: row.binding?.verifierVersion
   })), ...entries.flatMap(entry => (entry.witnesses || []).map(witness => ({...witness, trackId: entry.binding?.trackId})))];
   for (const witness of witnesses) {
     // Incompatible historical approvals remain stored, but cannot authorize this build.
-    if (witness.engineDigest !== VERIFIER_ENGINE_DIGEST || witness.verifierFingerprint !== verifierFingerprint) continue;
+    if (witness.engineDigest !== VERIFIER_ENGINE_DIGEST || !verifierFingerprintsCompatible(witness.verifierFingerprint,verifierFingerprint,{
+      witnessEngineDigest:witness.engineDigest,currentEngineDigest:VERIFIER_ENGINE_DIGEST,
+      witnessVerifierVersion:witness.verifierVersion,currentVerifierVersion:VERIFIER_VERSION,trackId:witness.trackId})) continue;
     const artifact = artifacts.get(witness.trackId)?.find(row => row.hash === witness.trackContentHash);
     if (!artifact) fail('native content has no independent asset pin');
     const decision = geometryDecision({...artifact, geometry: witness.trackGeometry || {}}, VERIFIER_ENGINE_DIGEST);

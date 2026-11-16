@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 409,
+    "number": 410,
     "version": "0.6.3",
-    "revision": 351,
+    "revision": 352,
     "notes": [
-      "Maintenance for verified leaderboards and event standings."
+      "Previously verified runs stay recognized after track catalog updates."
     ]
   },
   "entries": [
+    {
+      "number": 409,
+      "title": "Faster snapshot completion and extended offline verification",
+      "commit": "7b820d1709ead569b18d5f0dc8d30c98117e5d40",
+      "committedAt": "2026-11-16T01:56:19.000Z",
+      "notes": [
+        "Maintenance for verified leaderboards and event standings."
+      ]
+    },
     {
       "number": 408,
       "title": "Bounded snapshot reads and compatible event totals",
@@ -196,17 +205,6 @@
         "Car finishes, front emblems, and accessories are available with a clearer Garage workshop.",
         "Eligible cosmetic achievements have claimable bonuses, and shop previews are sharper.",
         "Event RP filters, run details, and the rankings menu are easier to understand."
-      ]
-    },
-    {
-      "number": 389,
-      "title": "Personal-best uploads and event results",
-      "commit": "8cb1f3338690a5d46621b0213094efbd9e58373b",
-      "committedAt": "2026-11-14T23:25:08.000Z",
-      "notes": [
-        "Fixed personal-best uploads when you set several records on one track in a session.",
-        "Fixed reward claims that could get stuck after earning a newer milestone.",
-        "Event personal-best times remain visible when you return to Daily, Weekly, or Kodub tracks."
       ]
     }
   ],

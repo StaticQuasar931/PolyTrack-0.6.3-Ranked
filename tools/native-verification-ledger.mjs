@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
+import auditedCompatibility from './audited-verifier-compatibility.cjs';
+const {verifierFingerprintsCompatible}=auditedCompatibility;
 
 /**
  * Node-only offline authority format. This module never contacts a service or runs physics.
@@ -147,7 +149,9 @@ export function nativePolicyFingerprint(policy) {
 }
 function compatible(w, binding, policy) {
   return [policy.engineDigest, ...policy.compatibleEngines].includes(w.engineDigest) &&
-    w.verifierVersion === policy.verifierVersion && w.verifierFingerprint === policy.verifierFingerprint &&
+    w.verifierVersion === policy.verifierVersion && verifierFingerprintsCompatible(w.verifierFingerprint,policy.verifierFingerprint,{
+      witnessEngineDigest:w.engineDigest,currentEngineDigest:policy.engineDigest,
+      witnessVerifierVersion:w.verifierVersion,currentVerifierVersion:policy.verifierVersion,trackId:binding.trackId}) &&
     policy.resourceProfiles.includes(w.resourceProfile) && policy.reviewPolicyVersions.includes(w.review.policyVersion) &&
     policy.trackContentHashes[binding.trackId] === w.trackContentHash &&
     canonical(policy.trackGeometries[binding.trackId] ?? null) === canonical({geometryPolicy:w.geometryPolicy, trackGeometry:w.trackGeometry});
