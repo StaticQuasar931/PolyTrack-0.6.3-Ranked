@@ -8,7 +8,7 @@ const start=source.indexOf('async function simulate('),end=source.indexOf('\nasy
 const simulate=Function(source.slice(start,end)+';return simulate;')();
 
 test('real Worker cleanup errors after VerifyResult cannot produce a positive verdict',{timeout:30000},async()=>{
- const browser=await chromium.launch({headless:true,chromiumSandbox:process.platform==='linux'});
+ const browser=await chromium.launch({headless:true,executablePath:chromium.executablePath(),chromiumSandbox:process.platform==='linux'});
  try{
   const page=await browser.newPage();await page.route('**/*',route=>route.abort());await page.setContent('<title>Offline cleanup regression</title>');
   await page.evaluate(()=>{

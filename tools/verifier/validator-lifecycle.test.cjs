@@ -69,3 +69,11 @@ test('the lifecycle audit pins the actual code and leaves the seven other verifi
   assert.equal(actual,hash);if(file!=='verify.cjs')assert.equal(hash,audit.before[file]);
  }
 });
+
+
+test('cleanup regression uses the sandbox-approved full browser, not the headless-shell fallback',()=>{
+ const fixture=fs.readFileSync(path.join(__dirname,'validator-cleanup.browser.test.mjs'),'utf8');
+ assert.match(fixture,/executablePath:chromium\.executablePath\(\)/);
+ assert.match(fixture,/chromiumSandbox:process\.platform==='linux'/);
+ assert.doesNotMatch(fixture,/--no-sandbox|chromiumSandbox:\s*false/);
+});

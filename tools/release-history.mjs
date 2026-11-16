@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 432,
+    "number": 433,
     "version": "0.6.3",
-    "revision": 370,
+    "revision": 371,
     "notes": [
-      "Expanded saved-replay checks to help keep race results and leaderboards fair."
+      "Fixed a background replay-check startup issue so saved-run verification can proceed."
     ]
   },
   "entries": [
+    {
+      "number": 432,
+      "title": "Add offline replay benchmark and consistency audit",
+      "commit": "38b8c989de127e4683220d1d0d4ffa409c98905e",
+      "committedAt": "2026-11-16T10:59:06.000Z",
+      "notes": [
+        "Expanded saved-replay checks to help keep race results and leaderboards fair."
+      ]
+    },
     {
       "number": 431,
       "title": "Add bounded two-engine offline verification option",
@@ -185,15 +194,6 @@ const historyData = {
       "committedAt": "2026-11-16T02:59:07.000Z",
       "notes": [
         "Previously verified runs stay recognized after track catalog updates."
-      ]
-    },
-    {
-      "number": 409,
-      "title": "Faster snapshot completion and extended offline verification",
-      "commit": "7b820d1709ead569b18d5f0dc8d30c98117e5d40",
-      "committedAt": "2026-11-16T01:56:19.000Z",
-      "notes": [
-        "Maintenance for verified leaderboards and event standings."
       ]
     }
   ],
