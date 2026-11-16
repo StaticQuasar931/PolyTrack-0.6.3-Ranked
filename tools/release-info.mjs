@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 419,
+  "number": 420,
   "version": "0.6.3",
-  "revision": 359,
+  "revision": 360,
   "notes": [
-    "Rank time is smaller and clearer; movement arrows disappear after three days.",
-    "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
+    "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
+    "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
   ],
-  "preparedAt": "2026-11-16T05:43:11.032Z",
-  "committedAt": "2026-11-16T05:43:12.000Z"
+  "preparedAt": "2026-11-16T05:58:32.193Z",
+  "committedAt": "2026-11-16T05:58:34.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

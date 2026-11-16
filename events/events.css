@@ -1441,7 +1441,7 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
  min-width:0!important;max-width:none!important;
 }
 #ui .track-selection-ui .sq-featured-events>.track.sq-kodub-weekly{
- --kodub-details-width:clamp(240px,22vw,340px);
+ --kodub-details-width:clamp(180px,14vw,240px);
  height:var(--event-card-height)!important;min-height:var(--event-card-height)!important;
  max-height:var(--event-card-height)!important;overflow-x:auto!important;overflow-y:hidden!important;
  scrollbar-width:none;box-sizing:border-box;
@@ -1524,7 +1524,7 @@ body.sq-event-active .sq-event-personal,body.sq-event-active .sq-event-personal>
 }
 @media(min-width:1701px){
  #ui .track-selection-ui .sq-featured-events{
-  grid-template-columns:minmax(calc(var(--event-card-height) * var(--kodub-cover-ratio,2) + clamp(240px,22vw,340px)),2.4fr) repeat(3,minmax(180px,1fr))!important;
+  grid-template-columns:minmax(calc(var(--event-card-height) * var(--kodub-cover-ratio,2) + clamp(180px,14vw,240px)),1.6fr) repeat(3,minmax(180px,1fr))!important;
  }
  #ui .track-selection-ui .sq-featured-events>.track.sq-kodub-weekly{grid-column:1!important;grid-row:2!important;width:100%!important}
  #ui .track-selection-ui .sq-featured-events>.sq-permanent-track{grid-column:2!important;grid-row:2!important}

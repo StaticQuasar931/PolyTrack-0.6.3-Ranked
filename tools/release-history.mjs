@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 419,
+    "number": 420,
     "version": "0.6.3",
-    "revision": 359,
+    "revision": 360,
     "notes": [
-      "Rank time is smaller and clearer; movement arrows disappear after three days.",
-      "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
+      "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
+      "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
     ]
   },
   "entries": [
+    {
+      "number": 419,
+      "title": "Refine rank duration and restore event card layout",
+      "commit": "227c2f5550f21af557b24ac987e2eded79db97ba",
+      "committedAt": "2026-11-16T05:43:12.000Z",
+      "notes": [
+        "Rank time is smaller and clearer; movement arrows disappear after three days.",
+        "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
+      ]
+    },
     {
       "number": 418,
       "title": "Keep installed update history consistent",
@@ -189,17 +199,6 @@ const historyData = {
       "committedAt": "2026-11-15T05:22:43.000Z",
       "notes": [
         "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 398,
-      "title": "More ways to customize and save your car",
-      "commit": "36b45bbe6913f90738f64d01e94ddf8abd484527",
-      "committedAt": "2026-11-15T05:13:15.000Z",
-      "notes": [
-        "Studio keeps your selected backdrop and car preview, and saved drafts survive delayed controls.",
-        "Combine front and rear accessories. Two-color neon and metal finishes are clearer.",
-        "Locked workshop choices show their requirements, and the Podium crown requires a confirmed podium."
       ]
     }
   ],
