@@ -1,15 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 420,
+    "number": 421,
     "version": "0.6.3",
-    "revision": 360,
+    "revision": 361,
     "notes": [
-      "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
-      "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
+      "Restored the wider Kodub weekly card so the title and event details have room to fit."
     ]
   },
   "entries": [
+    {
+      "number": 420,
+      "title": "Highlight recent movement and restore weekly card proportions",
+      "commit": "fccb3dcd229ef0dd9647dfcc4d9778e3738b58d6",
+      "committedAt": "2026-11-16T05:58:34.000Z",
+      "notes": [
+        "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
+        "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
+      ]
+    },
     {
       "number": 419,
       "title": "Refine rank duration and restore event card layout",
@@ -187,15 +196,6 @@
       "title": "Maintenance update",
       "commit": "4dff530e9ab1bd8c95e1d451c9e4ebdaf87ddd28",
       "committedAt": "2026-11-15T05:51:10.000Z",
-      "notes": [
-        "No gameplay changes in this update."
-      ]
-    },
-    {
-      "number": 399,
-      "title": "Maintenance update",
-      "commit": "21e6be555d14794e40e50b4a65980d0e54c2cc53",
-      "committedAt": "2026-11-15T05:22:43.000Z",
       "notes": [
         "No gameplay changes in this update."
       ]

@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 420,
+  "number": 421,
   "version": "0.6.3",
-  "revision": 360,
+  "revision": 361,
   "notes": [
-    "Recent rank movements stand out in color for 24 hours; rank duration stays small and gray.",
-    "The Kodub weekly card uses its earlier width proportions without shrinking or cropping the artwork."
+    "Restored the wider Kodub weekly card so the title and event details have room to fit."
   ],
-  "preparedAt": "2026-11-16T05:58:32.193Z",
-  "committedAt": "2026-11-16T05:58:34.000Z"
+  "preparedAt": "2026-11-16T06:12:32.501Z",
+  "committedAt": "2026-11-16T06:12:34.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
