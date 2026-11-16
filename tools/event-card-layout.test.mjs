@@ -8,6 +8,7 @@ import {spawn} from 'node:child_process';
 test('featured card geometry: full-height artwork, shared footers, centered equal-height PBs', {skip: !process.env.CHROME_PATH, timeout: 30000}, async () => {
   const root = process.env.SOURCE_ROOT || process.cwd();
   const css = await fs.readFile(process.env.CARD_CSS || path.join(root, 'events/events.css'), 'utf8');
+  const baseline419 = process.env.CARD_BASELINE_CSS ? await fs.readFile(process.env.CARD_BASELINE_CSS, 'utf8') : css.replaceAll('clamp(180px,14vw,240px)','clamp(240px,22vw,340px)').replace(',1.6fr) repeat(3',',2.4fr) repeat(3');
   const other = await Promise.all(['home-ui.css', 'responsive-ui.css', 'practice-responsive.css'].map(f => fs.readFile(path.join(root, f), 'utf8')));
   const font = (await fs.readFile(path.join(root, 'forced_square.woff2'))).toString('base64');
   const weekly = JSON.parse(await fs.readFile(path.join(root, 'events/kodub/current.json'), 'utf8')).current;
@@ -37,10 +38,21 @@ test('featured card geometry: full-height artwork, shared footers, centered equa
     await call('Network.enable');await call('Network.setBlockedURLs',{urls:['http://*','https://*']});
     await call('Page.navigate',{url:'data:text/html;base64,'+Buffer.from(html).toString('base64')});
     await evaluate('Promise.all([...document.images].map(i=>i.decode())).then(()=>document.fonts.ready).then(()=>true)');
-    for(const [width,height] of [[320,568],[390,844],[701,900],[1280,800],[844,390],[1366,768],[1920,1080]]) {
+    for(const [width,height] of [[320,568],[390,844],[701,900],[1280,800],[844,390],[1366,768],[1920,1080],[2543,1440]]) {
       await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
       await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
       const g=await evaluate(`(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}};const wrapper=document.querySelector('.sq-kodub-weekly'),card=wrapper.firstElementChild,img=card.querySelector('img'),info=card.querySelector('.track-of-the-week-info');const cards=[...document.querySelectorAll('.sq-featured-events>.track>.button,.sq-event-card')];const feet=[...document.querySelectorAll('.sq-permanent-note,.sq-event-card-details')];return {card:rect(card),wrapper:rect(wrapper),img:rect(img),ratio:img.naturalWidth/img.naturalHeight,fit:getComputedStyle(img).objectFit,info:rect(info),align:getComputedStyle(info).textAlign,cards:cards.map(rect),order:cards.map(e=>({id:e.closest('.sq-kodub-weekly')?'kodub':e.closest('.sq-permanent-track')?'rhr':e.dataset.eventKind,...rect(e)})),reward:{...rect(info.querySelector('.sq-kodub-reward')),position:getComputedStyle(info.querySelector('.sq-kodub-reward')).position},records:[...document.querySelectorAll('.sq-permanent-track .record,.sq-event-card>.sq-event-record')].map(e=>({top:getComputedStyle(e).borderTopWidth,bottom:getComputedStyle(e).borderBottomWidth})),feet:feet.map(e=>({rect:rect(e),card:rect(e.closest('button')),align:getComputedStyle(e).textAlign})),pb:[...card.querySelectorAll('.personal-best>div')].map(rect),panelOverflow:wrapper.scrollWidth>wrapper.clientWidth+1,contents:[...info.children].map(rect),overflow:document.documentElement.scrollWidth>innerWidth+1}})()`);
+      if(width===1920||width===2543){
+        await evaluate('document.querySelector("style").textContent='+JSON.stringify(html.slice(7,html.indexOf('</style>')).replace(css,baseline419)));
+        await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+        const before=await evaluate('(()=>{const c=document.querySelector(".sq-kodub-weekly"),i=c.querySelector("img");return {outer:c.getBoundingClientRect().width,art:i.getBoundingClientRect().width}})()');
+        await evaluate('document.querySelector("style").textContent='+JSON.stringify(html.slice(7,html.indexOf('</style>'))));
+        await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+        assert.ok(Math.abs(g.img.width-before.art)<1,width+' artwork pixel width unchanged from419');
+        assert.ok(g.wrapper.width<=before.outer+1,width+' outer card no wider than419');
+        assert.ok(g.img.width/g.wrapper.width>before.art/before.outer,width+' larger artwork fraction');
+        console.log(width+' comparison419',JSON.stringify({before,after:{outer:g.wrapper.width,art:g.img.width}}));
+      }
       const label=width+'x'+height;
       const compact=width<=900||width<=1200&&height<=500;
       for(const c of g.cards.slice(compact?1:0))assert.ok(Math.abs(c.height-(compact?g.cards[1].height:g.card.height))<1,label+' same outer height');
