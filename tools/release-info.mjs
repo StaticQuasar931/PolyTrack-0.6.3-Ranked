@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 409,
+  "number": 410,
   "version": "0.6.3",
-  "revision": 351,
+  "revision": 352,
   "notes": [
-    "Maintenance for verified leaderboards and event standings."
+    "Previously verified runs stay recognized after track catalog updates."
   ],
-  "preparedAt": "2026-11-16T01:56:06.000Z",
-  "committedAt": "2026-11-16T01:56:19.000Z"
+  "preparedAt": "2026-11-16T02:58:24.719Z",
+  "committedAt": "2026-11-16T02:59:07.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
