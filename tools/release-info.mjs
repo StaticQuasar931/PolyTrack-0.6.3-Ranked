@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 427,
+  "number": 428,
   "version": "0.6.3",
-  "revision": 366,
+  "revision": 367,
   "notes": [
-    "Simplified event verification tooltips: run date, verification status and ERP earned.",
-    "Kept unverified ERP estimates clearly separate from awarded points."
+    "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
   ],
-  "preparedAt": "2026-11-16T08:40:43.382Z",
-  "committedAt": "2026-11-16T08:41:09.000Z"
+  "preparedAt": "2026-11-16T09:29:18.983Z",
+  "committedAt": "2026-11-16T09:30:50.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

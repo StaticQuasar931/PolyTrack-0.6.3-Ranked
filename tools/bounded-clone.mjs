@@ -24,12 +24,23 @@ async function directoryChain(directory){
 async function inventory(root,limits){
  const files=[],directories=[],names=new Set();let bytes=0;
  async function visit(relative=''){
-  for(const item of (await fs.readdir(path.join(root,relative),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)){
+  const items=(await fs.readdir(path.join(root,relative),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+  for(let offset=0;offset<items.length;offset+=limits.concurrency){
+   const batch=items.slice(offset,offset+limits.concurrency);
+   // Drain bounded metadata reads before recursion; validate in original traversal order.
+   const stats=await Promise.allSettled(batch.map(item=>{
+    const logical=relative?relative+'/'+item.name:item.name;
+    if(logical.length>limits.pathLength||!/^[A-Za-z0-9._/-]+$/.test(logical)||
+     !logical.split('/').every(part=>part&&part!=='.'&&part!=='..'))return null;
+    return fs.lstat(path.join(root,...logical.split('/')),{bigint:true});
+   }));
+   for(const [index,item] of batch.entries()){
    const logical=relative?relative+'/'+item.name:item.name;
    demand(logical.length<=limits.pathLength&&/^[A-Za-z0-9._/-]+$/.test(logical)&&
     logical.split('/').every(part=>part&&part!=='.'&&part!=='..'),'unsafe or oversized relative path');
    demand(!names.has(logical.toLowerCase()),'case-insensitive path collision');names.add(logical.toLowerCase());
-   const stat=await fs.lstat(path.join(root,...logical.split('/')),{bigint:true});
+   if(stats[index].status==='rejected')throw stats[index].reason;
+   const stat=stats[index].value;
    demand(!stat.isSymbolicLink(),'source link');
    if(stat.isDirectory()){
     demand(directories.length<limits.directories,'directory count bound');directories.push(logical);await visit(logical);
@@ -40,6 +51,7 @@ async function inventory(root,limits){
      logical==='overall.json'?32*1024*1024:logical==='index.json'?PRIVATE_SNAPSHOT_INDEX_BYTES:limits.fileBytes;
     demand(Number.isSafeInteger(size)&&size>=0&&size<=fileLimit&&files.length<limits.files&&bytes+size<=limits.bytes,'file or byte bound');
     bytes+=size;files.push({path:logical,bytes:size,version:version(stat),identity:identity(stat),links:Number(stat.nlink)});
+   }
    }
   }
  }

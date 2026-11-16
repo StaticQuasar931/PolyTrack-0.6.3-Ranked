@@ -53,6 +53,11 @@ const TOKEN = /^[A-Za-z0-9_.:-]{1,128}$/;
 const MAX_ENTRIES = 100000;
 const MAX_REPLAY_BYTES = 8 * 1024 * 1024;
 const trusted = new WeakMap();
+// Cache semantic validation of immutable bytes, not proof authority. Every read
+// still checks the real file, SHA-256, manifest bounds and current timestamps.
+const validatedShards = new Map();
+const VALIDATED_SHARD_BYTE_LIMIT = 32 * 1024 * 1024;
+let validatedShardBytes = 0;
 const fail = message => {throw new Error('Native ledger: ' + message);};
 const demand = (ok, message) => {if (!ok) fail(message);};
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) &&
@@ -210,6 +215,20 @@ export function mergeLedgerEntries(...groups) {
   return freeze([...entries.values()].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
+// Only the fresh, fully validated read inside the writer lock may supply old
+// entries. Additions and collisions still use the complete public validator.
+function mergeValidatedLedger(previous, additions) {
+  const validated = trusted.get(previous);
+  demand(validated, 'validated previous ledger required');
+  const entries = new Map(validated);
+  for (const next of mergeLedgerEntries(additions)) {
+    const old = entries.get(next.key);
+    entries.set(next.key, old ? mergeLedgerEntries([old, next])[0] : next);
+    demand(entries.size <= MAX_ENTRIES, 'ledger entry limit');
+  }
+  return freeze([...entries.values()].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
 export function ledgerDisposition(entry) {
   const reviews = entryValue(entry).witnesses.map(w => w.review.disposition);
   return reviews.includes('excluded') ? 'excluded' : reviews.includes('held') ? 'held' : 'verified';
@@ -265,12 +284,30 @@ export function readLedger({root, expectedManifestHash} = {}) {
   for (const descriptor of manifest.shards) {
     const data = fileBytes(path.join(dir, descriptor.hash + '.json'));
     demand(data.length === descriptor.bytes && hash(data) === descriptor.hash, 'shard hash');
-    const shard = parse(data);
-    exactKeys(shard, ['schemaVersion', 'entries']);
-    demand(shard.schemaVersion === 1 && Array.isArray(shard.entries), 'shard schema');
-    const checked = mergeLedgerEntries(shard.entries);
-    demand(canonical(checked) === canonical(shard.entries) && checked.length === descriptor.entries &&
+    let cached=validatedShards.get(descriptor.hash),checked;
+    if(cached){
+      demand(decisionTime(cached.maxVerifiedAt),'actual final review timestamp required');
+      checked=cached.entries;
+      validatedShards.delete(descriptor.hash);validatedShards.set(descriptor.hash,cached);
+    }else{
+      const shard = parse(data);
+      exactKeys(shard, ['schemaVersion', 'entries']);
+      demand(shard.schemaVersion === 1 && Array.isArray(shard.entries), 'shard schema');
+      checked = mergeLedgerEntries(shard.entries);
+      demand(canonical(checked) === canonical(shard.entries),'shard ordering/count');
+      let maxVerifiedAt=0;
+      for(const entry of checked)for(const witness of entry.witnesses)maxVerifiedAt=Math.max(maxVerifiedAt,witness.verifiedAt);
+      cached={entries:checked,maxVerifiedAt,bytes:data.length};
+    }
+    demand(checked.length === descriptor.entries &&
       checked[0]?.key === descriptor.firstKey && checked.at(-1)?.key === descriptor.lastKey, 'shard ordering/count');
+    if(!validatedShards.has(descriptor.hash)){
+      while(validatedShardBytes+cached.bytes>VALIDATED_SHARD_BYTE_LIMIT&&validatedShards.size){
+        const oldest=validatedShards.keys().next().value;
+        validatedShardBytes-=validatedShards.get(oldest).bytes;validatedShards.delete(oldest);
+      }
+      if(cached.bytes<=VALIDATED_SHARD_BYTE_LIMIT){validatedShards.set(descriptor.hash,cached);validatedShardBytes+=cached.bytes;}
+    }
     entries.push(...checked);
   }
   demand(entries.length === manifest.entries, 'ledger completeness');
@@ -295,8 +332,8 @@ export function writeLedger({root, entries, expectedManifestHash, maxFileBytes =
     const current = path.join(root, 'manifest.json');
     const exists = fs.existsSync(current);
     demand(exists ? HASH.test(expectedManifestHash) : expectedManifestHash === null, 'manifest CAS required');
-    const previous = exists ? readLedger({root, expectedManifestHash}).entries : [];
-    const merged = mergeLedgerEntries(previous, entries);
+    const previous = exists ? readLedger({root, expectedManifestHash}) : null;
+    const merged = previous ? mergeValidatedLedger(previous, entries) : mergeLedgerEntries(entries);
     const dir = path.join(root, 'shards'); fs.mkdirSync(dir, {recursive:true}); safeDirectory(dir);
     const groups = []; let group = [], groupBytes = encode({schemaVersion:1, entries:[]}).length;
     for (const entry of merged) {

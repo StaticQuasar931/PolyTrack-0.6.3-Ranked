@@ -1,4 +1,5 @@
 import {deriveEventRecordings} from './snapshot-event-recordings.mjs';
+import {writeSnapshotPayloads} from './snapshot-payload-writer.mjs';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -417,17 +418,11 @@ export async function publishSnapshot({ root, stagingDirectory, historyDirectory
   try {
     await fs.mkdir(stagingPublish, { recursive: false });
     candidateIdentity = await fs.lstat(stagingPublish);
-    for (let i = 0; i < entries.length; i += 1) {
-      const { logicalPath, bytes } = entries[i];
-      const payload = `snapshot-${String(i + 1).padStart(4, '0')}.bin`;
-      const encoded = xorBytes(normalizeSnapshotGzip(await gzipAsync(bytes, { level: 9, mtime: 0 })));
-      if (encoded.byteLength > MAX_FILE_BYTES) throw new RangeError(`${logicalPath} encoded file exceeds ${MAX_FILE_BYTES} bytes`);
-      await fs.writeFile(path.join(stagingPublish, payload), encoded, { flag: 'wx' });
-      const payloadHash = sha256(encoded);
-      const payloadName = `${payloadHash}.bin`;
-      await fs.rename(path.join(stagingPublish, payload), path.join(stagingPublish, payloadName));
-      expected.set(payloadName, {bytes: encoded.byteLength, sha256: payloadHash});
-      files[logicalPath] = { path: payloadName, sha256: payloadHash, decodedBytes: bytes.byteLength };
+    const payloads=await writeSnapshotPayloads({entries,directory:stagingPublish,maxEncodedBytes:MAX_FILE_BYTES,
+      encode:async bytes=>xorBytes(normalizeSnapshotGzip(await gzipAsync(bytes,{level:9,mtime:0})))});
+    for (const {logicalPath,path:payloadName,sha256:payloadHash,decodedBytes,encodedBytes} of payloads) {
+      expected.set(payloadName, {bytes: encodedBytes, sha256: payloadHash});
+      files[logicalPath] = { path: payloadName, sha256: payloadHash, decodedBytes };
     }
     const publishedAt=now();if(!Number.isSafeInteger(publishedAt)||publishedAt<=0||publishedAt>8640000000000000)throw Error('Invalid snapshot package publication time');
     const index = { schemaVersion: 1, generation, publishedAt, encoding: 'gzip-xor-a7-v1', lookupShardsVersion: 1, files };

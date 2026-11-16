@@ -1,15 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 427,
+    "number": 428,
     "version": "0.6.3",
-    "revision": 366,
+    "revision": 367,
     "notes": [
-      "Simplified event verification tooltips: run date, verification status and ERP earned.",
-      "Kept unverified ERP estimates clearly separate from awarded points."
+      "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
     ]
   },
   "entries": [
+    {
+      "number": 427,
+      "title": "Simplify event points and verification tooltips",
+      "commit": "3815ee4738be55222aa0212ce3b19efb21b92ebd",
+      "committedAt": "2026-11-16T08:41:09.000Z",
+      "notes": [
+        "Simplified event verification tooltips: run date, verification status and ERP earned.",
+        "Kept unverified ERP estimates clearly separate from awarded points."
+      ]
+    },
     {
       "number": 426,
       "title": "Align weekly details and keep Rolling Hills points in tooltips",
@@ -187,15 +196,6 @@
       "notes": [
         "Fixed update packaging so event preview data is delivered in the correct format.",
         "Keeps rank times clear, event standings matched to the event and personal-best time, and weekly personal-best details together."
-      ]
-    },
-    {
-      "number": 405,
-      "title": "Maintenance update",
-      "commit": "5ebaf33eb160939e60f3b6b08feb061916039836",
-      "committedAt": "2026-11-15T23:33:51.000Z",
-      "notes": [
-        "No gameplay changes in this update."
       ]
     }
   ],

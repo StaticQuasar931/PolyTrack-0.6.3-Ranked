@@ -50,6 +50,94 @@ function temporary(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'native-ledger-'));
   t.after(() => fs.rmSync(root, {recursive:true, force:true})); return root;
 }
+
+test('warm semantic validation still rereads and hashes every actual shard', t => {
+  const root=temporary(t),entry=createLedgerEntry(fixture({number:12345}));
+  const ledger=writeLedger({root,entries:[entry],expectedManifestHash:null});
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'))),read=fs.readFileSync,parse=JSON.parse;
+  let shardReads=0,parses=0;
+  t.mock.method(fs,'readFileSync',(file,...args)=>{if(String(file).includes(path.sep+'shards'+path.sep))shardReads++;return read(file,...args);});
+  t.mock.method(JSON,'parse',(...args)=>{parses++;return parse(...args);});
+  const again=readLedger({root,expectedManifestHash:ledger.manifestHash});
+  assert.equal(shardReads,manifest.shards.length);assert.equal(parses,1,'only identical, already-validated shard JSON is reused');
+  assert(Object.isFrozen(again.entries[0].witnesses[0]));
+  fs.appendFileSync(path.join(root,'shards',manifest.shards[0].hash+'.json'),' ');
+  assert.throws(()=>readLedger({root,expectedManifestHash:ledger.manifestHash}),/shard hash/);
+});
+
+test('warm shard validation does not bypass independently pinned manifest counts', t => {
+  const root=temporary(t),entry=createLedgerEntry(fixture({number:12346}));
+  writeLedger({root,entries:[entry],expectedManifestHash:null});
+  const file=path.join(root,'manifest.json'),manifest=JSON.parse(fs.readFileSync(file));
+  manifest.entries++;manifest.shards[0].entries++;
+  const bytes=Buffer.from(JSON.stringify(manifest)+'\n');fs.writeFileSync(file,bytes);
+  assert.throws(()=>readLedger({root,expectedManifestHash:sha(bytes)}),/shard ordering\/count/);
+});
+
+test('validated checkpoint union matches full merge bytes for additions, collisions and sticky holds', t => {
+  const old=Array.from({length:40},(_,i)=>createLedgerEntry(fixture({number:i+1})));
+  const additions=[createLedgerEntry(fixture({number:41})),createLedgerEntry(fixture({number:2,disposition:'held'})),
+    createLedgerEntry(fixture({number:3,disposition:'excluded'})),old[0],old[0]];
+  const root=temporary(t),initial=writeLedger({root,entries:old,expectedManifestHash:null,maxFileBytes:8192});
+  const checkpoint=writeLedger({root,entries:additions,expectedManifestHash:initial.manifestHash,maxFileBytes:8192});
+  const referenceRoot=temporary(t),reference=writeLedger({root:referenceRoot,entries:mergeLedgerEntries(old,additions),expectedManifestHash:null,maxFileBytes:8192});
+  assert.equal(checkpoint.manifestHash,reference.manifestHash);
+  assert.deepEqual(checkpoint.entries,reference.entries);
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));
+  for(const name of ['manifest.json',...manifest.shards.map(s=>'shards/'+s.hash+'.json')]) {
+    assert.deepEqual(fs.readFileSync(path.join(root,name)),fs.readFileSync(path.join(referenceRoot,name)));
+  }
+  assert.equal(ledgerDisposition(checkpoint.entries.find(e=>e.key===additions[1].key)),'held');
+  assert.equal(ledgerDisposition(checkpoint.entries.find(e=>e.key===additions[2].key)),'excluded');
+});
+
+test('checkpoint rejects malformed additions, future timestamps and witness overflow without replacing manifest', t => {
+  const entry=createLedgerEntry(fixture()),root=temporary(t);
+  const initial=writeLedger({root,entries:[entry],expectedManifestHash:null});
+  const invalids=[{...structuredClone(entry),key:'f'.repeat(64)},
+    {...structuredClone(entry),witnesses:[{...structuredClone(entry.witnesses[0]),verifiedAt:Date.now()+60000}]},
+    {...structuredClone(entry),witnesses:[{...structuredClone(entry.witnesses[0]),review:{...entry.witnesses[0].review,bindingKey:'f'.repeat(64)}}]}];
+  const overflow=Array.from({length:65},(_,i)=>({...structuredClone(entry),witnesses:[{...structuredClone(entry.witnesses[0]),
+    review:{...entry.witnesses[0].review,attestationHash:sha('overflow'+i)}}]}));
+  for(const additions of [...invalids.map(e=>[e]),overflow]) {
+    assert.throws(()=>writeLedger({root,entries:additions,expectedManifestHash:initial.manifestHash}));
+    assert.equal(readLedger({root,expectedManifestHash:initial.manifestHash}).entries.length,1);
+    assert(!fs.existsSync(path.join(root,'.writer.lock')));
+  }
+});
+
+test('checkpoint rereads old shard hashes and final semantic timestamps rather than trusting prior returned objects', t => {
+  const entry=createLedgerEntry(fixture()),root=temporary(t);
+  const initial=writeLedger({root,entries:[entry],expectedManifestHash:null});
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));
+  const file=path.join(root,'shards',manifest.shards[0].hash+'.json'),original=fs.readFileSync(file);
+  fs.appendFileSync(file,' ');
+  assert.throws(()=>writeLedger({root,entries:[],expectedManifestHash:initial.manifestHash}),/shard hash/);
+  fs.writeFileSync(file,original);
+  const originalNow=Date.now;
+  try {
+    Date.now=()=>finalReviewAt-1;
+    assert.throws(()=>writeLedger({root,entries:[],expectedManifestHash:initial.manifestHash}),/final review timestamp/);
+  } finally {Date.now=originalNow;}
+  assert.equal(readLedger({root,expectedManifestHash:initial.manifestHash}).manifestHash,initial.manifestHash);
+});
+
+test('checkpoint final read still rejects timestamps invalidated after manifest rename', t => {
+  const entry=createLedgerEntry(fixture()),root=temporary(t);
+  const initial=writeLedger({root,entries:[entry],expectedManifestHash:null});
+  const originalNow=Date.now,originalRename=fs.renameSync;let renamed=false;
+  try {
+    fs.renameSync=(from,to)=>{
+      const result=originalRename(from,to);
+      if(to===path.join(root,'manifest.json')){renamed=true;Date.now=()=>finalReviewAt-1;}
+      return result;
+    };
+    assert.throws(()=>writeLedger({root,entries:[entry],expectedManifestHash:initial.manifestHash}),/final review timestamp/);
+    assert(renamed,'failure must occur in final read, not initial read');
+  } finally {Date.now=originalNow;fs.renameSync=originalRename;}
+  assert(!fs.existsSync(path.join(root,'.writer.lock')));
+  assert.equal(readLedger({root,expectedManifestHash:initial.manifestHash}).manifestHash,initial.manifestHash);
+});
 function overlay(f, ledger, extra = {}) {
   const row = {...f.job, name:'Private Racer', integrityVerified:false, runVerified:false}; delete row.replay;
   const board = {trackId:track, ...(f.lane === 'event' ? {periodId:f.job.periodId} : {}), entries:[row]};
