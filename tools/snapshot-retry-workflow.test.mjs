@@ -43,7 +43,10 @@ test('workflow caches one runner-temp ledger only on trusted default-branch capt
  assert.match(workflow,/steps\.snapshot\.outcome == 'failure'/);assert.match(workflow,/steps\.retry_checkpoint\.outputs\.ready == 'true'/);
  assert.ok(workflow.indexOf('Prepare validated private replay retry checkpoint')<workflow.indexOf('name: Capture bounded public snapshots'));
  assert.ok(workflow.indexOf('Save private replay retry ledger')<workflow.indexOf('name: Commit changed assignments'));
- assert.doesNotMatch(workflow,/git add[^\n]*(?:local-reports|history\.json|export-progress)/);
+ const stagesPrivate=/git add[^\n]*(?:local-reports|export-progress|(?:[\s/"']|\\)history\.json\b)/;
+ assert.doesNotMatch(workflow,stagesPrivate);
+ assert.match('git add -- "$RUNNER_TEMP/polytrack-replay-retries/history.json"',stagesPrivate);
+ assert.doesNotMatch('git add -- tools/overall-rank-history.json',stagesPrivate);
 });
 
 test('allowlist strips credentials, replay data and all success/completion claims',()=>{

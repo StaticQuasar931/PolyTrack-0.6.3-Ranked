@@ -1,12 +1,13 @@
 const releaseInfo = {
-  "number": 435,
+  "number": 436,
   "version": "0.6.3",
-  "revision": 373,
+  "revision": 374,
   "notes": [
-    "Fixed a release packaging check so the latest update can reach CDN players."
+    "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
+    "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
   ],
-  "preparedAt": "2026-11-16T11:17:45.401Z",
-  "committedAt": "2026-11-16T11:21:08.000Z"
+  "preparedAt": "2026-11-18T01:47:14.964Z",
+  "committedAt": "2026-11-18T01:47:19.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

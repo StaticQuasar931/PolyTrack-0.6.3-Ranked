@@ -67,7 +67,7 @@ test('Pitlane Ticket card shows a fixed native sample but real plate CSS never c
 });
 
 test('CSS artifact matches exported renderer and preserves existing geometry and public hooks', async () => {
-  assert.equal(await fs.readFile(new URL('./profile-shop-art.css',import.meta.url),'utf8'),PROFILE_SHOP_ART_CSS);
+  assert.equal((await fs.readFile(new URL('./profile-shop-art.css',import.meta.url),'utf8')).replace(/\r\n/g,'\n'),PROFILE_SHOP_ART_CSS);
   for (const item of PROFILE_SHOP_ART) assert(PROFILE_SHOP_ART_CSS.includes('.'+item.className));
   for (const variable of ['--plate-bg','--plate-shadow','--plate-clip','--stage-bg','--stage-fx','--sq-stripe-art','--sq-stripe-size','--profile-pattern','--profile-pattern-size']) assert(PROFILE_SHOP_ART_CSS.includes(variable));
   assert(PROFILE_SHOP_ART_CSS.includes('.sq-plain-racer-themes'));

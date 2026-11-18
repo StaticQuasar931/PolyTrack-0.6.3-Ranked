@@ -72,7 +72,7 @@ export function renderProfileShopSwatch(itemId,{density='normal',name=''}={}) {
   const escape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const artwork=['stage','stripe'].includes(item.slot)?renderProfileShopArt(itemId,{density}):'';
   return '<div class="sp-style-sample showcase-row '+item.className+'" data-sp-cosmetic-sample="'+item.slot+'">'+
-    '<div class="sp-sample-art">'+artwork+'</div><span class="sp-sample-name"><b>'+escape(text||'Aa')+'</b><small>'+ (text?'Style sample':'Type sample')+'</small></span></div>';
+    '<div class="sp-sample-art">'+artwork+'</div>'+(item.slot==='plate'?'<span class="sp-sample-rank">7th</span>':'')+'<span class="sp-sample-name"><b>'+escape(text||'Aa')+'</b></span></div>';
 }
 
 const image = (itemId, density='normal') => `url("data:image/svg+xml,${encodeURIComponent(renderProfileShopArt(itemId,{density}))}")`;

@@ -9,6 +9,13 @@ const boxFaces=[[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[3,2,6],[3,6,7],
 const box=(w,h,d,x=0,y=h/2,z=0)=>convex([[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]].map(p=>[x+p[0]*w/2,y+p[1]*h/2,z+p[2]*d/2]),boxFaces);
 function cylinder(radius,height,y,segments){const p=[],f=[];for(const h of [y,y+height])for(let i=0;i<segments;i++)p.push([Math.cos(i/segments*Math.PI*2)*radius,h,Math.sin(i/segments*Math.PI*2)*radius]);p.push([0,y,0],[0,y+height,0]);for(let i=0;i<segments;i++){const n=(i+1)%segments;f.push([segments*2,i,n],[segments*2+1,n+segments,i+segments],[i,i+segments,n+segments],[i,n+segments,n]);}return convex(p,f);}
 const part=(positions,color,emissive=0,decal=false)=>Object.freeze({positions,color,emissive,decal,triangles:positions.length/9});
+const stickerShapes={
+ apex:[[0xe0f7ff,[[5,25],[12,7],[17,7],[10,25]]],[0x31d5ec,[[14,25],[21,7],[26,7],[19,25]]]],
+ checker:[...[0,1,2,3,4,5,6,7].map(i=>{const x=4+i%4*6,y=10+Math.floor(i/4)*6;return [(i+Math.floor(i/4))%2?0x233451:0xf2f7ff,[[x,y],[x+6,y],[x+6,y+6],[x,y+6]]];})],
+ bolt:[[0x191f38,[[12,4],[26,4],[20,13],[27,13],[9,29],[12,19],[5,19]]],[0xffd45e,[[13,6],[22,6],[16,15],[22,15],[12,24],[15,17],[8,17]]]],
+ laurel:[[0xecd28a,[[15,25],[8,22],[4,14],[5,6],[9,16],[15,22]]],[0xecd28a,[[17,25],[24,22],[28,14],[27,6],[23,16],[17,22]]],[0xf7e7b6,[[16,5],[21,12],[16,19],[11,12]]]]
+};
+export function carStickerIcon(id){return (stickerShapes[id]||[]).map(([color,points])=>'<polygon fill="#'+color.toString(16).padStart(6,'0')+'" stroke="none" points="'+points.map(p=>p.join(',')).join(' ')+'"/>').join('');}
 export function carAttachmentParts(category,id,density='low'){
  const key=category+':'+id+':'+density;if(cache.has(key))return cache.get(key);if(!['low','medium','high'].includes(density))throw Error('Invalid visual density');
  const dark=0x243545,metal=0xb5ccd3,cyan=0x7ee7ff,gold=0xe5b862,parts=[];const add=(g,c,e=0,decal=false)=>parts.push(part(g,c,e,decal));
@@ -21,6 +28,19 @@ export function carAttachmentParts(category,id,density='low'){
   else if(id==='crown'){for(const x of [-.13,.13])add(box(.03,.035,.22,x),gold);for(const z of [-.1,.1])add(box(.28,.035,.03,0,.0175,z),gold);for(const x of [-.1,0,.1])add(box(.035,x===0?.16:.12,.035,x,.035+(x===0?.16:.12)/2,.1),gold);}
   else if(id==='halo'){for(const x of [-.15,.15])for(const z of [-.18,.18])add(box(.023,.035,.023,x,.0175,z),dark);for(const x of [-.15,.15])add(box(.025,.025,.39,x,.0475),cyan,.55);for(const z of [-.185,.185])add(box(.29,.025,.025,0,.0475,z),cyan,.55);}
   else throw Error('Unknown roof visual');
+ }else if(category==='sticker'){
+  const shapes=stickerShapes[id];if(!shapes)throw Error('Unknown sticker');
+  for(const [layer,[color,points]] of shapes.entries()){
+   const y=.002+layer*.0001,vertices=points.map(([x,z])=>[(x-16)/136,y,(z-16)/136]),out=[];
+   // Fan triangulation is only used for convex shapes; concave stickers use an SVG-style outline triangulated below.
+   const remaining=vertices.map((_,i)=>i),cross=(a,b,c)=>(b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]);
+   const sign=Math.sign(vertices.reduce((n,a,i)=>{const b=vertices[(i+1)%vertices.length];return n+a[0]*b[2]-a[2]*b[0];},0));
+   while(remaining.length>2){let found=false;for(let i=0;i<remaining.length;i++){const a=vertices[remaining[(i+remaining.length-1)%remaining.length]],b=vertices[remaining[i]],c=vertices[remaining[(i+1)%remaining.length]];
+    if(cross(a,b,c)*sign<=0||remaining.some(j=>{const p=vertices[j];return p!==a&&p!==b&&p!==c&&[cross(a,b,p),cross(b,c,p),cross(c,a,p)].every(v=>v*sign>=0);}))continue;
+    out.push(...a,...(sign>0?c:b),...(sign>0?b:c));remaining.splice(i,1);found=true;break;
+   }if(!found)throw Error('Invalid sticker polygon');}
+   add(new Float32Array(out),color,0,true);
+  }
  }else if(category==='emblem'){
   if(id==='crest'){for(const [w,d,y,color]of [[.045,.06,.002,dark],[.032,.047,.0025,gold]])add(new Float32Array([0,y,-d,-w,y,0,0,y,d,0,y,-d,0,y,d,w,y,0]),color,0,true);}
   else if(id==='diamond')add(convex([[0,.07,0],[.065,0,0],[0,-.07,0],[-.065,0,0],[0,.07,.012],[.065,0,.012],[0,-.07,.012],[-.065,0,.012]],boxFaces),gold);

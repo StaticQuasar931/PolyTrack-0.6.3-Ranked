@@ -4,7 +4,7 @@ export function createCarEquipPolicy({getAccountId,getPublishedProfile,isFree}={
  return choice=>{
   if(!choice||!/^[a-f0-9]{64}$/.test(choice.accountId||'')||choice.accountId!==getAccountId())return false;
   const reflector=(choice.category==='front'||choice.category==='rear')&&choice.id==='rearbar';
-  const podium=choice.category==='emblem'&&choice.id==='crest'||choice.category==='accessory'&&choice.id==='crown';
+  const podium=choice.category==='emblem'&&choice.id==='crest'||choice.category==='accessory'&&choice.id==='crown'||choice.category==='sticker'&&choice.id==='laurel';
   if(!reflector&&!podium&&isFree(choice)===true)return true;
   const row=getPublishedProfile(choice.accountId);
   if(!row||row.localOnly===true||row.localPending===true||row.local===true||row.localEstimateOrigin||

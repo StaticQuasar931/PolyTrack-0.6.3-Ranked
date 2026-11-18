@@ -1,14 +1,24 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 435,
+    "number": 436,
     "version": "0.6.3",
-    "revision": 373,
+    "revision": 374,
     "notes": [
-      "Fixed a release packaging check so the latest update can reach CDN players."
+      "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
+      "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
     ]
   },
   "entries": [
+    {
+      "number": 435,
+      "title": "Fix CDN deployment relocation test dependencies",
+      "commit": "a826c81488f819abee78cb769d746f83be5a898c",
+      "committedAt": "2026-11-16T11:21:08.000Z",
+      "notes": [
+        "Fixed a release packaging check so the latest update can reach CDN players."
+      ]
+    },
     {
       "number": 434,
       "title": "Batch saved snapshot checkout for offline benchmarks",
@@ -184,15 +194,6 @@
       "committedAt": "2026-11-16T04:44:50.000Z",
       "notes": [
         "The current Kodub weekly track is up to date and ready for replay verification."
-      ]
-    },
-    {
-      "number": 413,
-      "title": "Fix saved verification targets and clarify rank duration",
-      "commit": "6aad63fda0334db0c58e0b8bdf6f149f355753b8",
-      "committedAt": "2026-11-16T04:33:49.000Z",
-      "notes": [
-        "Rank durations now say at rank, and replay verification prioritizes more visible results."
       ]
     }
   ],
