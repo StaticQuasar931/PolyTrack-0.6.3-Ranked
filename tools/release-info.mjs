@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 436,
+  "number": 439,
   "version": "0.6.3",
-  "revision": 374,
+  "revision": 375,
   "notes": [
-    "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
-    "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
+    "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
+    "Browse the Style Shop offline, open podium details, and see cleaner event badges."
   ],
-  "preparedAt": "2026-11-18T01:47:14.964Z",
-  "committedAt": "2026-11-18T01:47:19.000Z"
+  "preparedAt": "2026-11-18T02:43:36.797Z",
+  "committedAt": "2026-11-18T02:43:40.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

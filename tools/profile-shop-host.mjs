@@ -302,15 +302,15 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
       if(!current())return false;
       const beforeClose=closeGeneration;
       focus=document.activeElement;
-      if(enabled&&typeof prepareAuth==='function'){
+      if(enabled&&document.defaultView.navigator.onLine!==false&&typeof prepareAuth==='function'){
         const ticket={auth:currentAuth(),uid:user()?.uid||null,invalid:false};restorations.add(ticket);
-        try{await prepareAuth();}catch{return false;}finally{restorations.delete(ticket);}
+        try{await prepareAuth();}catch{/* Keep the catalog and previews usable without cloud access. */}finally{restorations.delete(ticket);}
         if(!current()||closeGeneration!==beforeClose||!acceptRestoration(ticket,currentAuth(),user()))return false;
       }
       observeAuth(currentAuth());if(!current())return false;
       openStudio?.();if(!current())return false;
       if(!dialog)createDialog();if(!dialog.open)dialog.showModal();syncMirror();watchRenderer();
-      if(enabled&&user()){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Server status could not be confirmed. Close and reopen Shop to retry.';}}}
+      if(enabled&&user()&&document.defaultView.navigator.onLine!==false){try{await view.open();}catch{if(current()&&dialog){const notice=dialog.querySelector('.sp-host-gate');notice.hidden=false;notice.textContent='Connection could not be confirmed. You can still browse and preview; purchases are unavailable.';}}}
       return current();
     }
     const launchShop=()=>{if(!current())return false;void open();return true;};

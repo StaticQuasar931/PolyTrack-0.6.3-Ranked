@@ -46,7 +46,7 @@ function pair(award,row,normalRow,formatTime,pendingRows=[]){
   if(!exact&&typeof formatTime==='function'){
     try{const value=formatTime(row.timeMs);if(typeof value==='string'&&value.trim())formatted=value;}catch{}
   }
-  const eventPbText=exact?null:formatted?'Event PB '+formatted:'Separate Event PB';
+  const eventPbText=exact?null:formatted&&normalTime!==row.timeMs?'Event PB '+formatted:'Separate Event PB';
   const title=award.status==='awarded'?(exact?'Published Event RP matches this PB by account, track, event, time and replay hash.':
     'Published Event RP belongs to the separate Event PB'+(formatted?' '+formatted:'')+', not to the ordinary leaderboard run.'):
     award.title+(exact?'':' This is a separate Event PB'+(formatted?' '+formatted:'')+', not the ordinary leaderboard time.');
