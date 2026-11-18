@@ -1,4 +1,7 @@
 import {playbackEngineMetadata,indexedForwardWork} from '../tools/playback-engine-session.mjs';
+// Only recordings admitted by the local or published event replay parser are tagged.
+const eventReplayOwners=new WeakMap();
+export const preparedEventReplayOwner=recording=>eventReplayOwners.get(recording);
 // Existing limits. Indexed parsing requires a branded live worker session.
 export const EVENT_REPLAY_LIMITS=Object.freeze({replayCharacters:65536,compressedBytes:49152,inflatedBytes:30015,transitionsPerChannel:4096,transitions:10000,frames:300000,scanWork:30000000});
 export function prepareOwnEventGhost({require,row,session,best,playbackEngine}){
@@ -29,5 +32,7 @@ export function prepareOwnEventGhost({require,row,session,best,playbackEngine}){
   // Finish structural/style validation before requesting any worker capability.
   if(!engine&&work>EVENT_REPLAY_LIMITS.scanWork)
     throw Object.assign(Error('Local event replay requires indexed playback'),{code:'EVENT_REPLAY_WORK_LIMIT'});
-  return Object.freeze({recording:new (require(1754).A)(lists),carStyle,time:new (require(6146).A)(row.frames),nickname:'Your event PB (local)',isSelf:true,...(engine?{requiredPlaybackEngine:engine}:{})});
+  const recording=new (require(1754).A)(lists);
+  eventReplayOwners.set(recording,row.accountId);
+  return Object.freeze({recording,carStyle,time:new (require(6146).A)(row.frames),nickname:'Your event PB (local)',isSelf:true,...(engine?{requiredPlaybackEngine:engine}:{})});
 }

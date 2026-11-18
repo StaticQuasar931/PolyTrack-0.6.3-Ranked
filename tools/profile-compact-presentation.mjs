@@ -40,9 +40,16 @@ export function compactProfileAchievementMarkup(medals, { escapeHtml = escapeAtt
     const detail = unknown ? 'Podium counts unavailable.' : 'Top 3 on recognized tracks with 5+ racers.';
     return `<p class="profile-no-medals" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${label}. ${detail}`)}">${label}</p>`;
   }
-  return (showEmpty && rows.every(([, , count]) => count !== null) ? rows : earned).map(([kind, label, count]) => {
+  const allKnown = rows.every(([, , count]) => count !== null);
+  const single = allKnown && earned.length === 1;
+  return (showEmpty && allKnown && !single ? rows : earned).map(([kind, label, count]) => {
     const url = typeof medalIcon === 'function' ? medalIcon(kind) : '';
     const image = typeof url === 'string' && url ? `<img src="${escapeHtml(url)}" alt="">` : '';
+    if (single) {
+      const caption = `${label} ${count === 1 ? 'podium' : 'podiums'}`;
+      const detail = `The only podium type earned. ${label}: top 3 on recognized tracks with 5+ racers.`;
+      return `<span class="profile-achievements profile-medal-card ${kind} profile-medal-card--single" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${count} ${caption.toLowerCase()}`)}" aria-description="${escapeHtml(detail)}">${image}<b>${count}</b><small>${caption}</small></span>`;
+    }
     return `<span class="profile-achievements profile-medal-card ${kind}" title="${escapeHtml(`${label}: top 3 on recognized tracks with 5+ racers.`)}" aria-label="${escapeHtml(`${label} podiums: ${count}`)}">${image}<b>${count}</b><small>${label}</small></span>`;
   }).join('');
 }

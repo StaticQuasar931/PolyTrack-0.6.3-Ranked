@@ -1,5 +1,7 @@
 import {validAchievementCoinReceipt} from './achievement-coin-schedule.mjs';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
+const currentItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG];
 /** LOCAL DRAFT ONLY. Inject authenticated transport, synchronous Web Storage,
  * getAccountId, makeRequestId, and withAccountLock (createShopBrowserLock).
  * Wallet GET must include account-bound complete current-catalog inventory.
@@ -22,7 +24,7 @@ const copy = value => structuredClone(value);
 const fail = code => { throw new ShopSessionError(code); };
 
 export function createShopSession({transport, storage, getAccountId, makeRequestId,
-  withAccountLock, now = Date.now, cacheMs = 30000, enabled = false,
+  withAccountLock, now = Date.now, cacheMs = 30000, enabled = false, workshopStickers = false,
   monotonicNow = () => globalThis.performance?.now?.() ?? Date.now(), collectionCooldownMs = 900000} = {}) {
   if (typeof transport !== 'function' || typeof getAccountId !== 'function' ||
       typeof makeRequestId !== 'function' || !uint(cacheMs) || typeof now !== 'function' || typeof monotonicNow !== 'function' ||
@@ -99,10 +101,11 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       if (!item(row?.id) || seen.has(row.id) || typeof row.label !== 'string' ||
           row.label.length > 200 || !uint(row.price)) fail('invalid_catalog');
       seen.add(row.id);
+      if(value.version===1&&WORKSHOP_STICKER_SHOP_CATALOG.some(item=>item.id===row.id))fail('invalid_catalog');
       if(value.version===PROFILE_SHOP_CATALOG_VERSION){
-        const fixed=PROFILE_SHOP_CATALOG.find(item=>item.id===row.id);
-        if(!fixed||row.kind!==fixed.kind||row.price!==fixed.price||JSON.stringify(row.grants)!==JSON.stringify(fixed.grants))fail('invalid_catalog');
-        return {...copy(fixed),label:row.label,category:'profile'};
+        const fixed=currentItems.find(item=>item.id===row.id);
+        if(!fixed||(fixed.kind==='workshop-sticker'&&workshopStickers!==true)||row.kind!==fixed.kind||row.price!==fixed.price||JSON.stringify(row.grants)!==JSON.stringify(fixed.grants))fail('invalid_catalog');
+        return {...copy(fixed),label:row.label,category:fixed.kind==='workshop-sticker'?'workshop':'profile'};
       }
       return {id: row.id, label: row.label, price: row.price};
     });
@@ -132,10 +135,13 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     return {accountId: id, catalogVersion: c.version, ownedItemIds: [...seen]};
   }
   async function serverState(id, signal, reusedCatalog = null) {
-    const [c, w] = await Promise.all([
-      reusedCatalog ? Promise.resolve(copy(reusedCatalog)) : transport({path: '/v1/shop/catalog', method: 'GET', signal}).then(catalog),
-      transport({path: '/v1/currency/wallet?accountId=' + id, method: 'GET', signal})
-    ]);
+    const walletPath = '/v1/currency/wallet?accountId=' + id;
+    const catalogPath = '/v1/shop/catalog' + (workshopStickers === true ? '?workshop=1' : '');
+    const readCatalog = reusedCatalog ? Promise.resolve(copy(reusedCatalog)) : transport({path: catalogPath, method: 'GET', signal}).then(catalog);
+    // The old Worker ignores the catalog opt-in but rejects unknown wallet parameters.
+    const [c, w] = await Promise.all([readCatalog, workshopStickers === true
+      ? readCatalog.then(c => transport({path: walletPath + (c.items.some(row => row.kind === 'workshop-sticker') ? '&workshop=1' : ''), method: 'GET', signal}))
+      : transport({path: walletPath, method: 'GET', signal})]);
     const nextWallet = wallet(w, id, c);
     return {catalog: c, wallet: nextWallet, inventory: inventory(nextWallet, id, c)};
   }
@@ -244,16 +250,17 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     return copy(confirmation);
   }
   function receipt(result, p) {
-    const profile=p.catalogVersion===PROFILE_SHOP_CATALOG_VERSION;
+    const quoted=p.catalogVersion===PROFILE_SHOP_CATALOG_VERSION;
+    const kind=quoted?currentItems.find(row=>row.id===p.itemId)?.kind:null;
     if (result?.op !== 'purchase' || result.accountId !== p.accountId || result.itemId !== p.itemId ||
         !uint(result.balanceAfter) || !uint(result.walletRevision) || typeof result.alreadyOwned !== 'boolean' ||
         typeof result.duplicate !== 'boolean' || result.delta !== (result.alreadyOwned ? 0 : -p.price) ||
-        (profile?(result.itemKind!=='profile-cosmetic'||result.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION):(typeof result.carStyle !== 'string' || result.carStyle.length > 2048)) ||
+        (quoted?(!kind||result.itemKind!==kind||result.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION):(typeof result.carStyle !== 'string' || result.carStyle.length > 2048)) ||
         (result.requestId !== undefined && result.requestId !== p.requestId) ||
         (result.outcomeOnly !== undefined && result.outcomeOnly !== true)) fail('invalid_purchase_response');
     return {op: 'purchase', accountId: p.accountId, itemId: p.itemId, requestId: p.requestId,
       balanceAfter: result.balanceAfter, walletRevision: result.walletRevision,
-      alreadyOwned: result.alreadyOwned, duplicate: result.duplicate, delta: result.delta, ...(profile?{itemKind:'profile-cosmetic',catalogVersion:PROFILE_SHOP_CATALOG_VERSION}:{carStyle: result.carStyle})};
+      alreadyOwned: result.alreadyOwned, duplicate: result.duplicate, delta: result.delta, ...(quoted?{itemKind:kind,catalogVersion:PROFILE_SHOP_CATALOG_VERSION}:{carStyle: result.carStyle})};
   }
   async function send(p, id, g, signal, reconciling) {
     if(p.schemaVersion===3)return sendClaim(p,id,g,signal,reconciling);

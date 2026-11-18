@@ -18,8 +18,9 @@ function validate(path,method,body){
   if(url.origin!==ORIGIN||url.hash||!path.startsWith('/v1/')||path.includes('\\'))throw new ShopTransportError('invalid_shop_request');
   if(method==='GET'){
     if(body!==undefined)throw new ShopTransportError('invalid_shop_request');
-    if(path==='/v1/shop/catalog')return url;
-    if(url.pathname==='/v1/currency/wallet'&&[...url.searchParams].length===1&&ACCOUNT.test(url.searchParams.get('accountId')||''))return url;
+    if(path==='/v1/shop/catalog'||path==='/v1/shop/catalog?workshop=1')return url;
+    if(url.pathname==='/v1/currency/wallet'&&ACCOUNT.test(url.searchParams.get('accountId')||'')&&
+      (url.search===('?accountId='+url.searchParams.get('accountId'))||url.search===('?accountId='+url.searchParams.get('accountId')+'&workshop=1')))return url;
   }else if(method==='POST'&&Object.hasOwn(POSTS,path)){
     const field=POSTS[path];
     const quoted=path==='/v1/shop/purchase'&&body?.catalogVersion===2;

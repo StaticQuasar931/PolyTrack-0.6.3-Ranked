@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 439,
+  "number": 440,
   "version": "0.6.3",
-  "revision": 375,
+  "revision": 376,
   "notes": [
-    "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
-    "Browse the Style Shop offline, open podium details, and see cleaner event badges."
+    "Your older event replays now show your current car paint, stickers, and accessories.",
+    "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
   ],
-  "preparedAt": "2026-11-18T02:43:36.797Z",
-  "committedAt": "2026-11-18T02:43:40.000Z"
+  "preparedAt": "2026-11-18T02:50:46.619Z",
+  "committedAt": "2026-11-18T02:51:22.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

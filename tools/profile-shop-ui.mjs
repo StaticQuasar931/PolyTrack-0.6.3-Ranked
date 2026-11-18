@@ -1,4 +1,8 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
+import {carStickerIcon} from './car-cosmetics-geometry.mjs';
+const shopItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG];
+const sticker=item=>item.kind==='workshop-sticker';
 const {renderProfileShopSwatch}=await import(new URL('./profile-shop-art.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const {ACHIEVEMENT_COIN_SCHEDULE}=await import(new URL('./achievement-coin-schedule.mjs'+new URL(import.meta.url).search,import.meta.url).href);
 const achievementMaximum=ACHIEVEMENT_COIN_SCHEDULE.reduce((sum,row)=>sum+row.amount,0);
@@ -14,7 +18,7 @@ export function sortProfileShopItems(items,mode='catalog',ownedIds=[]) {
 }
 let serial=0;
 
-/** Profile-only presentation. No transport, persistence, awards or balance arithmetic.
+/** Style Shop presentation. No transport, persistence, awards or balance arithmetic.
  * Parent supplies the current catalog version (or its items array), same-account confirmed wallet and
  * inventory. purchaseEnabled and claimsEnabled default OFF. Mount never reads data.
  * onPurchase({accountId,itemId,price,walletRevision}) follows purchase confirmation.
@@ -43,15 +47,15 @@ export function mountProfileShopUi(root,options={}) {
     if(!Array.isArray(state.catalog)&&state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION)return [];
     const input=Array.isArray(state.catalog)?state.catalog:state.catalog.items,seen=new Set();
     return (Array.isArray(input)?input:[]).filter(item=>{
-      const known=PROFILE_SHOP_CATALOG.find(row=>row.id===item?.id),grant=item?.grants;
-      return known&&item.price===known.price&&item.kind==='profile-cosmetic'&&typeof item.label==='string'&&uint(item.price)&&Array.isArray(grant)&&grant.length===1&&grant[0]?.slot===known.grants[0].slot&&grant[0]?.value===known.grants[0].value&&!seen.has(item.id)&&seen.add(item.id);
+      const known=shopItems.find(row=>row.id===item?.id),grant=item?.grants;
+      return known&&item.price===known.price&&item.kind===known.kind&&typeof item.label==='string'&&uint(item.price)&&Array.isArray(grant)&&grant.length===1&&grant[0]?.slot===known.grants[0].slot&&grant[0]?.value===known.grants[0].value&&!seen.has(item.id)&&seen.add(item.id);
     });
   };
   const owned=item=>inventory()?.ownedIds.includes(item.id)===true;
   const online=()=>doc.defaultView?.navigator?.onLine!==false;
   const canBuy=item=>online()&&state.purchaseEnabled===true&&typeof state.actions?.onPurchase==='function'&&!!wallet()&&!!inventory()&&!owned(item)&&wallet().balance>=item.price&&!operation&&!state.loading&&!state.busy;
-  const canApply=item=>owned(item)&&typeof state.actions?.onApply==='function'&&!operation&&!state.loading&&!state.busy&&!confirmId;
-  const balanceMessage=balance=>!online()?'Browse and preview offline. Purchases resume when connected.':balance?'Original profile designs. No performance effects.':
+  const canApply=item=>!sticker(item)&&owned(item)&&typeof state.actions?.onApply==='function'&&!operation&&!state.loading&&!state.busy&&!confirmId;
+  const balanceMessage=balance=>!online()?'Browse and preview offline. Purchases resume when connected.':balance?'Original cosmetic designs. No performance effects.':
     state.cloudSaveConnected===false?'Connect Cloud Save to load your confirmed balance and purchases.':
     state.error==='profile_not_owned'?'Complete your first ranked run to use the cloud shop. If you already have one, connect its owning Cloud Save.':
     state.error==='authentication_required'?'Reconnect Cloud Save to confirm your balance.':
@@ -66,16 +70,20 @@ export function mountProfileShopUi(root,options={}) {
       <div class="sp-summary"><div><span>${balance&&(!online()||pending||state.loading||state.busy)?'Last confirmed balance':'Confirmed balance'}</span><strong>${balance?coinIcon+formatShopPoints(balance.balance)+' Style Coins':state.loading||state.busy?'Synchronizing...':'Not available'}</strong></div><p data-sp-cloud-status>${!online()?'Offline. Only previous confirmations are shown.':state.cloudSaveConnected===false?'Connect Cloud Save to synchronize.':balance&&(pending||state.loading||state.busy)?'Previous server confirmation; current balance is synchronizing.':balance?'Confirmed by the server.':'Balance synchronizes automatically when Shop opens.'}</p></div>
       ${state.communityCodeState?.saved===true?'<p class="sp-community-local" data-sp-community-local>'+ (state.communityCodeState.formatValid===true?'Saved Community code has a valid local format.':'Saved Community code format needs attention.')+' Cloud Save is separate. Membership is not verified.</p>':''}
       <details class="sp-earn" ${earnOpen?'open':''}><summary><span class="sp-earn-label">Earn Style Coins</span><small>Eligible rewards sync on opening</small></summary><div class="sp-claim-body"><p>Eligible daily and track rewards synchronize automatically when Shop opens. The server checks eligibility and previous payouts. No claim button or estimated money.</p><p>Daily: 8 Style Coins. Recognized track milestones: 1 +20 / 5 +30 / 20 +50 / 35 +30 / 50 +40 / 70 +50 / 89 +60.</p>${state.achievementClaimsEnabled===true?'<p data-sp-achievement-policy>'+ACHIEVEMENT_COIN_SCHEDULE.length+' once-only cosmetic achievement bonuses, up to '+formatShopPoints(achievementMaximum)+' Style Coins. Shared title/style conditions pay once. Current server evidence only; not all historical goals are covered.</p>':''}${state.rewardSync==='unavailable'?'<p>Automatic reward synchronization is unavailable in this browser right now. Confirmed balance remains server-owned.</p>':''}</div></details>
-      <p class="sp-note">Only the designs listed here can be bought with Style Coins. Other cosmetics are earned separately. Preview first; apply owned styles in Racer Studio.</p><label class="sp-sort">Sort designs <select data-sp-sort aria-label="Sort designs">${[['catalog','Catalog order'],['price','Price: low to high'],['name','Name'],['unowned','Not owned first']].map(([value,label])=>`<option value="${value}" ${sortMode===value?'selected':''}>${label}</option>`).join('')}</select></label><div class="sp-grid">${list.map(item=>{
+      <p class="sp-note">Only the designs listed here can be bought with Style Coins. Other cosmetics are earned separately. Preview first; apply owned profile styles in Racer Studio and equip owned stickers in Garage.</p><label class="sp-sort">Sort designs <select data-sp-sort aria-label="Sort designs">${[['catalog','Catalog order'],['price','Price: low to high'],['name','Name'],['unowned','Not owned first']].map(([value,label])=>`<option value="${value}" ${sortMode===value?'selected':''}>${label}</option>`).join('')}</select></label><div class="sp-grid">${list.map(item=>{
         const isOwned=owned(item),reason=isOwned?'Owned':!inventory()?'Ownership not confirmed':balance&&balance.balance<item.price?'More Style Coins needed':'Not owned';
         const slot=item.grants[0].slot;
-        const kind={theme:'COLOR THEME',baseSecondary:'SECONDARY COLOR',plate:'PLACE BLOCK',stage:'BACKDROP',stripe:'PATTERN',edge:'EDGE',nameFont:'NAME FONT',nameColor:'NAME COLOR'}[slot]||'PROFILE STYLE';
-        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch data-sp-item-preview="${esc(item.id)}">${renderProfileShopSwatch(item.id,{name:racerName(),density:state.density==='low'?'low':'normal'})}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${coinIcon}${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions"><button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>${isOwned?`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
+        const swatch=sticker(item)?'<svg class="sp-sticker-swatch" viewBox="0 0 32 32">'+carStickerIcon(item.grants[0].value)+'</svg>':renderProfileShopSwatch(item.id,{name:racerName(),density:state.density==='low'?'low':'normal'});
+        const tryStyle=sticker(item)?'<span>'+(isOwned?'Equip':'Preview')+' in Garage &rsaquo; Workshop &rsaquo; Sticker</span>':`<button type="button" data-sp-action="preview" data-sp-id="${esc(item.id)}" ${typeof state.actions?.onPreview!=='function'||pending?'disabled':''}>${previewId===item.id?'Selected':'Try style'}</button>`;
+        const applyStyle=sticker(item)?'':`<button type="button" data-sp-action="apply" data-sp-id="${esc(item.id)}" ${!canApply(item)?'disabled':''}>Apply to draft</button>`;
+        const kind={sticker:'WORKSHOP STICKER',theme:'COLOR THEME',baseSecondary:'SECONDARY COLOR',plate:'PLACE BLOCK',stage:'BACKDROP',stripe:'PATTERN',edge:'EDGE',nameFont:'NAME FONT',nameColor:'NAME COLOR'}[slot]||'PROFILE STYLE';
+        return `<article class="sp-item ${previewId===item.id?'is-preview':''}"><div class="sp-art" aria-hidden="true" data-sp-swatch data-sp-item-preview="${esc(item.id)}">${swatch}</div><div class="sp-item-meta"><span>${kind}</span><span>${reason}</span></div><h3>${esc(item.label)}</h3><p class="sp-price">${isOwned?'In your collection':`<strong>${coinIcon}${formatShopPoints(item.price)} Style Coins</strong>`}</p><div class="sp-item-actions">${tryStyle}${isOwned?applyStyle:`<button type="button" data-sp-action="buy" data-sp-id="${esc(item.id)}" ${!canBuy(item)||confirmId?'disabled':''} aria-label="Buy ${esc(item.label)} for ${formatShopPoints(item.price)} Style Coins">Buy</button>`}</div></article>`;
       }).join('')||'<p class="sp-empty">Profile styles are not available yet.</p>'}</div>
-      ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Style Coins. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Style Coins':'not available'}.</p><p>Purchase adds this profile design to your collection. Applying is separate.</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
+      ${selected?`<div class="sp-confirm" role="group" aria-labelledby="${prefix}-confirm"><h3 id="${prefix}-confirm">Buy ${esc(selected.label)}?</h3><p>Price ${formatShopPoints(selected.price)} Style Coins. Confirmed balance ${balance?formatShopPoints(balance.balance)+' Style Coins':'not available'}.</p><p>Purchase adds this ${sticker(selected)?'Workshop sticker':'profile design'} to your collection. ${sticker(selected)?'Equip it separately in Garage.':'Applying is separate.'}</p><div><button type="button" data-sp-action="cancel">Cancel</button><button type="button" data-sp-action="confirm" ${!canBuy(selected)?'disabled':''}>Confirm purchase</button></div></div>`:''}
       <footer>${state.reconciliationRequired&&typeof state.actions?.onReconcile==='function'?'<button type="button" data-sp-action="reconcile">Check pending transaction</button>':''}${typeof state.actions?.onStudio==='function'?'<button type="button" data-sp-action="studio">Open Racer Studio <span aria-hidden="true">&rsaquo;</span></button>':'<p>Owned styles can be applied in Racer Studio.</p>'}<span>Style Coins are earned in-game. No real-money purchases.</span></footer>`;
     // Only detached host snapshots are accepted; never move or mutate the live renderer.
     if(typeof state.renderCosmeticPreview==='function')for(const item of list){
+      if(sticker(item))continue;
       const target=host.querySelector('[data-sp-item-preview="'+item.id+'"]');
       try{
         const snapshot=state.renderCosmeticPreview({accountId:state.accountId,itemId:item.id,grant:{...item.grants[0]},density:state.density==='low'?'low':'normal'});

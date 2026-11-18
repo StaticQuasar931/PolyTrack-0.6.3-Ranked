@@ -1,8 +1,12 @@
-/** Local visual eligibility from an account-matched published profile, never a wallet grant. */
-export function createCarEquipPolicy({getAccountId,getPublishedProfile,isFree}={}){
+import {workshopStickerOffer} from './workshop-sticker-shop-catalog.mjs';
+
+/** Local visual eligibility from owner-scoped Shop UI state or published earned progress. */
+export function createCarEquipPolicy({getAccountId,getPublishedProfile,isFree,ownsForUi}={}){
  if([getAccountId,getPublishedProfile,isFree].some(fn=>typeof fn!=='function'))throw TypeError('Car policy adapters required');
  return choice=>{
   if(!choice||!/^[a-f0-9]{64}$/.test(choice.accountId||'')||choice.accountId!==getAccountId())return false;
+  const offer=workshopStickerOffer(choice);
+  if(offer)return ownsForUi?.(choice.accountId,'sticker:'+choice.id)===true;
   const reflector=(choice.category==='front'||choice.category==='rear')&&choice.id==='rearbar';
   const podium=choice.category==='emblem'&&choice.id==='crest'||choice.category==='accessory'&&choice.id==='crown'||choice.category==='sticker'&&choice.id==='laurel';
   if(!reflector&&!podium&&isFree(choice)===true)return true;

@@ -1,3 +1,5 @@
+import {preparedEventReplayOwner} from '../events/native-replay.mjs';
+
 // Keep replay ownership scoped to one native response. Conflicting or unknown
 // ownership for identical bytes must never style an opponent with local choices.
 export function replayOwnerScope(rows){
@@ -53,7 +55,7 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   const Recording=load(1754).A;
   wrap(Recording,'deserialize',(_type,args,recording)=>{const owner=responseOwners?.get(args[0]);if(owner&&recording)replayOwners.set(recording,owner);});
   wrap(Renderer.prototype,'addMaterial',renderer=>register(renderer));
-  wrap(Car.prototype,'setCarStyle',car=>{const owner=replayOwners.get(car.getRecording()),entry=owner&&exact(car);if(entry&&!replayCars.has(car)){
+  wrap(Car.prototype,'setCarStyle',car=>{const recording=car.getRecording(),owner=preparedEventReplayOwner(recording)??replayOwners.get(recording),entry=owner&&exact(car);if(entry&&!replayCars.has(car)){
       replayCars.add(car);parked.add(car);runtime.created({car,chassis:entry.node,renderer:entry.renderer,three,replayOwner:owner,getReplayStyle:()=>profileStore?.getCurrentUserProfile()?.carStyle});
     }const root=document.querySelector('.customization-ui');if(root){let list=candidates.get(root);if(!list)candidates.set(root,list=new Set());list.add(car);schedule();}});
   wrap(Car.prototype,'setVisible',car=>{parked.add(car);schedule();});
