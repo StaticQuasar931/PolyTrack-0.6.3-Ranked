@@ -1,15 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 436,
+    "number": 439,
     "version": "0.6.3",
-    "revision": 374,
+    "revision": 375,
     "notes": [
-      "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
-      "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
+      "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
+      "Browse the Style Shop offline, open podium details, and see cleaner event badges."
     ]
   },
   "entries": [
+    {
+      "number": 436,
+      "title": "Add Workshop stickers and restore offline workflow checks",
+      "commit": "49bf8ccf70020857d45d941f00f03cb31e0cd303",
+      "committedAt": "2026-11-18T01:47:19.000Z",
+      "notes": [
+        "Added body stickers, clearer Workshop unlocks and Shop previews, plus physical cosmetics on eligible personal replays.",
+        "Track Wins now starts with the easiest routes, and Uplink Error is available in Extra Tracks."
+      ]
+    },
     {
       "number": 435,
       "title": "Fix CDN deployment relocation test dependencies",
@@ -185,15 +195,6 @@
         "Top Tracks adds a Non-official view for community and extra tracks.",
         "Event cards have clearer spacing and uncropped weekly artwork.",
         "New snapshot data can now appear through Update available."
-      ]
-    },
-    {
-      "number": 414,
-      "title": "Enable reviewed Uplink replay verification and refresh weekly fallback",
-      "commit": "5cc13313ac7c8e965ca25b7b1bd32cfe012644c0",
-      "committedAt": "2026-11-16T04:44:50.000Z",
-      "notes": [
-        "The current Kodub weekly track is up to date and ready for replay verification."
       ]
     }
   ],

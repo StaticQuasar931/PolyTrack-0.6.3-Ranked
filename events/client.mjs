@@ -1,5 +1,5 @@
-import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=374';
-import {readSavedArchiveTrack} from './archive-track.mjs?v=374';
+import {archivePeriodCounts,archiveSnapshotState,catalogArchivePeriods,mountArchiveView} from './archive-view.mjs?v=375';
+import {readSavedArchiveTrack} from './archive-track.mjs?v=375';
 import {preparePublishedEventGhost} from './public-replay.mjs';
 import {getPlaybackWorkerBridge} from '../tools/playback-worker-bridge.mjs';
 import {eventFinishPlace} from './placement.mjs';
@@ -7,9 +7,9 @@ import {createEventSession,keepEventBest,matchingEventRuns} from './session.mjs'
 import {installNativeLocalBinding} from './native-binding.mjs?v=153';
 import {installFinishCapture} from './native-finish.mjs';
 import {prepareOwnEventGhost} from './native-replay.mjs';
-import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=374';
-import {finishOrdinal} from '../tools/finish-presentation.mjs?v=374';
-import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=374';
+import {confirmPartialReplaySelection} from '../tools/partial-replay-selection.mjs?v=375';
+import {finishOrdinal} from '../tools/finish-presentation.mjs?v=375';
+import {eventAwardPresentation,publishedEventAwardPresentation} from '../tools/event-award-presentation.mjs?v=375';
 const eventAwardRowRestricted=row=>publishedEventAwardPresentation(row).status==='held';
 const STORE='polytrack-062-events-v1',QUEUE=STORE+'-queue',BEST=STORE+'-best';
 const SUBMISSION_RETRY=STORE+'-submission-retry-v1';
@@ -883,7 +883,7 @@ export function createNormalKodubErpDecorator(bridge){
       label.dataset.status=presentation.status;label.dataset.separate=String(presentation.separate);
       const matchingAward=presentation.verified&&presentation.relation==='exact';
       label.dataset.verified=String(matchingAward);label.title=presentation.title;
-      if(presentation.status==='unavailable'){label.textContent='';label.hidden=true;return;}
+      if(presentation.status==='unavailable'||presentation.status==='none'){label.textContent='';label.hidden=true;return;}
       // A separate Event PB must not attribute its award to this normal PB badge.
       label.textContent=matchingAward?presentation.text:presentation.status==='pending'?'Event PB pending':presentation.separate?presentation.eventPbText:presentation.status==='held'?'Event result held':presentation.text;
       label.style.color=matchingAward?'':'inherit';label.style.opacity=matchingAward?'1':'.7';

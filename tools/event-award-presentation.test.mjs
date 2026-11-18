@@ -38,6 +38,7 @@ test('snapshot77 separate Event PB pairs its own time, never the faster normal P
 test('equal times with different or missing replay hashes remain separate Event PBs',()=>{
   for(const replayHash of [undefined,'',hash(9)])assert.equal(show({normalRow:normal({replayHash})}).relation,'separate');
   assert.equal(show({board:board([award({replayHash:undefined})])}).relation,'separate');
+  assert.equal(show({normalRow:normal({replayHash:hash(9)})}).eventPbText,'Separate Event PB');
   assert.equal(show({formatTime:()=>{throw Error('formatter failed');},normalRow:normal({replayHash:hash(9)})}).eventPbText,'Separate Event PB');
 });
 

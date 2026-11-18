@@ -129,3 +129,14 @@ test('sorting stays presentation-only and lists only purchasable designs',async 
  assert.deepEqual(await page.evaluate(()=>({buy:calls.buy,claim:calls.claim,refresh:calls.refresh})),{buy:[],claim:[],refresh:0});
  assert.ok(await page.locator('.sp-price .sp-coin').count()>0);
 });
+test('offline shop keeps catalog and last confirmation visible but disables purchases',async t=>{
+ const page=await fixture(t,{wallet:{status:'confirmed',accountId:'driver-a',balance:100000,revision:2}});
+ await page.context().setOffline(true);
+ await page.evaluate(()=>cleanup.update(options));
+ assert.match(await page.locator('.sp-summary').innerText(),/Last confirmed balance/);
+ assert.match(await page.locator('.sp-status').innerText(),/preview offline/);
+ const buttons=page.locator('[data-sp-action=buy]');assert((await buttons.count())>0);
+ assert(await buttons.evaluateAll(items=>items.every(item=>item.disabled)));
+ await page.locator('[data-sp-action=preview]').first().click();
+ assert.deepEqual(await page.evaluate(()=>[calls.preview.length,calls.buy.length,calls.claim.length]),[1,0,0]);
+});

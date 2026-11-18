@@ -28,9 +28,9 @@ function fixture(t,{snapshot=board(),deferred=false,eventHost=false}={}){
     label:()=>state.children.find(value=>value!==originalIcon),counts:()=>({staticReads,liveReads}),nextEpoch:()=>{epoch++;}};
 }
 
-test('normal decorator shows known no-award distinctly without rewriting normal verification',async t=>{
+test('normal decorator hides the no-award badge without rewriting normal verification',async t=>{
   const f=fixture(t),before=structuredClone(f.normal);f.decorate();await settle();
-  assert.equal(f.label().textContent,'No event result');assert.equal(f.label().hidden,false);
+  assert.equal(f.label().textContent,'');assert.equal(f.label().hidden,true);
   assert.equal(f.label().dataset.status,'none');assert.equal(f.label().dataset.verified,'false');
   assert.equal(f.label().style.backgroundImage,undefined);assert(f.state.children.includes(f.originalIcon));
   assert.deepEqual(f.normal,before);f.decorate();await settle();assert.deepEqual(f.counts(),{staticReads:1,liveReads:0});
@@ -40,16 +40,16 @@ test('normal decorator displays the waiting Event PB time, not the ordinary PB t
   const pending={accountId,runId:hash(5),replayHash:hash(6),timeMs:51000,submittedAt:2100,pending:true,verified:false,
     eventRpEligible:false,verificationStatus:'waiting',source:'pending-event-playback'};
   const f=fixture(t,{snapshot:board([],{pendingPlaybacks:[pending]})});f.decorate();await settle();
-  assert.equal(f.label().textContent,'Event PB \u00b7 ERP pending');assert.equal(f.label().dataset.verified,'false');
+  assert.equal(f.label().textContent,'Event PB pending');assert.equal(f.label().dataset.verified,'false');
   assert.match(f.label().title,/time-51000/);assert.equal(f.label().style.backgroundImage,undefined);assert.equal(f.normal.timeMs,51459);
 });
 
 test('published separate ERP is compact and leaves the native verification icon alone',async t=>{
   const f=fixture(t,{snapshot:board([award({timeMs:52423,replayHash:hash(8),rp:465})])}),before=structuredClone(f.normal);
-  f.decorate();await settle();assert.equal(f.label().textContent,'Event PB \u00b7 465 ERP');assert.match(f.label().title,/time-52423/);
-  assert.equal(f.label().dataset.separate,'true');assert.equal(f.label().dataset.verified,'true');
+  f.decorate();await settle();assert.equal(f.label().textContent,'Event PB time-52423');assert.match(f.label().title,/time-52423/);
+  assert.equal(f.label().dataset.separate,'true');assert.equal(f.label().dataset.verified,'false');
   assert.equal(f.label().style.backgroundImage,undefined);assert.equal(f.state.children.length,2);
-  assert.equal(f.state.children[1],f.originalIcon);assert.match(f.label().attributes['aria-label'],/^Verified published event award:/);
+  assert.equal(f.state.children[1],f.originalIcon);assert.match(f.label().attributes['aria-label'],/^Event PB time-52423$/);
   assert.deepEqual(f.normal,before);assert.deepEqual(f.counts(),{staticReads:1,liveReads:0});
 });
 
@@ -71,7 +71,7 @@ test('snapshot replacement cannot paint a late award onto an old row binding',as
   const f=fixture(t,{deferred:true});f.decorate();await settle();const old=f.label();
   f.nextEpoch();f.decorator.invalidate();f.decorate();await settle();
   f.resolves[0](board([award()]));await settle();assert.equal(old.isConnected,false);assert.equal(f.label().hidden,true);
-  f.resolves[1](board([]));await settle();assert.equal(f.label().textContent,'No event result');assert.deepEqual(f.counts(),{staticReads:2,liveReads:0});
+  f.resolves[1](board([]));await settle();assert.equal(f.label().textContent,'');assert.equal(f.label().hidden,true);assert.deepEqual(f.counts(),{staticReads:2,liveReads:0});
 });
 
 test('normal decorator does not decorate event-owned leaderboard rows',async t=>{

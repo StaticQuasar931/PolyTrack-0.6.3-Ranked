@@ -25,7 +25,7 @@ test('real finish lifecycle clones only paint slots and cleans every owned resou
 });
 
 
-test('new physical items are earned-only with exact confirmed requirements, never grandfathered free',()=>{assert.equal(FREE_WORKSHOP_KEYS.length,19);for(const [category,id,kind,target]of [['accessory','crown','confirmed-podiums',1],['front','rearbar','confirmed-ranked-tracks',5],['emblem','crest','confirmed-podiums',1],['sticker','laurel','confirmed-podiums',1]]){assert(!FREE_WORKSHOP_KEYS.includes(category+':'+id));assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account),false);assert.equal(carEarnedRequirement({category,id}).kind,kind);assert.equal(carEarnedRequirement({category,id}).target,target);const confirmed={accountId:account,tracks:5,podiums:1};const policy=q=>q.accountId===confirmed.accountId&&(q.category==='front'?confirmed.tracks>=5:confirmed.podiums>=1);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account,policy),true);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},'another-account',policy),false);}});
+test('new physical items are earned-only with exact confirmed requirements, never grandfathered free',()=>{assert.equal(FREE_WORKSHOP_KEYS.length,22);for(const [category,id,kind,target]of [['accessory','crown','confirmed-podiums',1],['front','rearbar','confirmed-ranked-tracks',5],['emblem','crest','confirmed-podiums',1],['sticker','laurel','confirmed-podiums',1]]){assert(!FREE_WORKSHOP_KEYS.includes(category+':'+id));assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account),false);assert.equal(carEarnedRequirement({category,id}).kind,kind);assert.equal(carEarnedRequirement({category,id}).target,target);const confirmed={accountId:account,tracks:5,podiums:1};const policy=q=>q.accountId===confirmed.accountId&&(q.category==='front'?confirmed.tracks>=5:confirmed.podiums>=1);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},account,policy),true);assert.equal(carSelectionAllowed({...C.defaults,[category]:id},'another-account',policy),false);}});
 test('unrelated local saves preserve locked legacy preferences without equipping or deleting them',()=>{const stored={accessory:'crown',finish:'original',front:'rearbar',emblem:'crest'},draft=authorizeCarSelection(stored,account),expected=normalizeCarSelection(stored);assert.equal(draft.rear,'none');assert.equal(draft.accessory,'none');assert.equal(draft.emblem,'none');assert.deepEqual(mergeCarVisualPreferences(stored,{...draft,finish:'satin'},['finish']),{...expected,finish:'satin'});assert.deepEqual(mergeCarVisualPreferences(stored,draft,[]),expected);assert.equal(mergeCarVisualPreferences(stored,draft,['rear']).rear,'none');assert(carChangedSelectionAllowed({...expected,finish:'satin'},['finish'],account));assert(!carChangedSelectionAllowed(expected,['accessory'],account));});
 test('roof centerline follows translated real bounds and is independent of triangle winding order',()=>{const geometry=carAttachmentParts('accessory','roofbox','low')[4].positions,translated=Float32Array.from(geometry,(v,i)=>v+[.37,.6,-.9][i%3]),a=carAttachmentFrames(translated),b=carAttachmentFrames(Float32Array.from([...translated].reduce((all,_,i,src)=>i%9===0?[...src.slice(i,i+9),...all]:all,[])));assert(Math.abs(a.roof.point[0]-.37)<1e-6);assert.deepEqual(a.roof,b.roof);});
 
@@ -83,4 +83,30 @@ test('native replay parsing attaches only scoped recording objects and restores 
   assert.equal(seen.length,1);assert.equal(seen[0].car,ownCar);assert.equal(seen[0].replayOwner,account);
  }finally{adapter.dispose();}
  assert.equal(Recording.deserialize,original);
+});
+
+test('six sticker positions and three sizes round-trip without changing legacy or another profile',async()=>{
+ const {STICKER_POSITIONS,STICKER_SIZES,normalizeStickerLayout}=await import('./car-cosmetics-catalog.mjs');
+ assert.equal(Object.keys(STICKER_POSITIONS).length,7);assert.equal(Object.keys(STICKER_SIZES).length,3);
+ const values=new Map(),s={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ for(const position of Object.keys(STICKER_POSITIONS)){
+  const stickerLayout={position,size:'large'};
+  assert(saveCarVisuals(s,account,{...C.defaults,sticker:'roundel',stickerLayout}));
+  assert.deepEqual(readCarCosmetic(s,account).stickerLayout,stickerLayout);
+  assert.equal(readCarCosmetic(s,'d'.repeat(64)).stickerLayout,undefined);
+  assert(!('stickerLayout' in JSON.parse(values.get('polytrack-car-cosmetics-v1:'+account))));
+ }
+ assert.deepEqual(normalizeStickerLayout({position:'constructor',size:'bad'}),{position:'center',size:'standard'});
+});
+test('Workshop preview restores only the camera it owns',async()=>{
+ const {createWorkshopView}=await import('./car-cosmetics.mjs');
+ class V{constructor(...v){this.v=v;}copy(other){this.v=other.v;}}
+ const camera={clone:()=>({position:new V(),lookAt(){},updateMatrixWorld(){}})};
+ const renderer={camera,setCamera(next){this.camera=next;}};
+ const view=createWorkshopView({renderer,chassis:{localToWorld:v=>v}});
+ view.focus('sticker');const preview=renderer.camera;assert.notEqual(preview,camera);
+ view.focus('rear');assert.equal(renderer.camera,preview);assert(preview.position.v[2]<0);
+ view.reset();assert.equal(renderer.camera,camera);
+ view.focus('finish');renderer.camera={};const native=renderer.camera;
+ view.reset();assert.equal(renderer.camera,native);
 });

@@ -8,3 +8,5 @@
 
 .profile-track-history>header{display:flex;flex-wrap:wrap;gap:12px}.profile-track-history>header>.profile-track-type-nav{margin:0 0 0 auto}.studio-dirty-marker{font:14px/1.3 ForcedSquare,sans-serif;color:#ffda83}.studio-dirty-marker[hidden]{display:none!important}.studio-undo{font-size:16px!important;min-height:36px!important}
 @media(max-width:700px){.profile-track-history>header>.profile-track-type-nav{flex:1 1 100%;margin:0}}
+
+.profile-track-history>header>span{text-align:center;margin-inline:auto}.profile-track-type-nav button:disabled{opacity:.46;cursor:not-allowed}.profile-medal-card[role=button]{cursor:pointer}.profile-podium-details{max-width:min(620px,90vw);max-height:78vh;border:1px solid #7ab6d9;background:#172951;color:#e4f6ff;padding:18px;font:16px ForcedSquare,sans-serif}.profile-podium-details::backdrop{background:#081324bb}.profile-podium-details ul{list-style:none;margin:12px 0 0;padding:0}.profile-podium-details button{font:inherit;color:inherit;background:#243d65;border:1px solid #6789ae;padding:8px;margin-bottom:4px;cursor:pointer}.profile-podium-details li[data-large-field] button{border-left:4px solid #f4cc78}

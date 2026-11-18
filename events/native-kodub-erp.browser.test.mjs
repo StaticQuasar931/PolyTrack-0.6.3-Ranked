@@ -141,7 +141,7 @@ test('published zero, confirmed absence, pending and unavailable ERP stay distin
   assert.equal(await unknown.getAttribute('data-status'),'unavailable');
   const outside=normalBoard.entries.find(row=>!board.entries.some(entry=>entry.accountId===row.accountId));
   const absent=labelFor(p,outside.accountId);
-  assert.equal(await absent.textContent(),'No event result');assert.equal(await absent.isHidden(),false);
+  assert.equal(await absent.textContent(),'');assert.equal(await absent.isHidden(),true);
   assert.equal(await absent.getAttribute('data-status'),'none');assert.equal(await absent.getAttribute('data-verified'),'false');
   const pendingTime=outside.timeMs+500;
   await p.evaluate(({accountId,timeMs})=>{
@@ -169,9 +169,9 @@ test('published zero, confirmed absence, pending and unavailable ERP stay distin
 test('equal time with another replay stays a separate Event PB and never changes ordinary proof',async t=>{
   const p=await fixture(t,{deferred:true});await p.waitForFunction(()=>!!window.resolveBoard);
   await p.evaluate(()=>{rows[0].replayHash='f'.repeat(64);render();resolveBoard(saved);});
-  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent.startsWith('Event PB '));
+  await p.waitForFunction(()=>document.querySelector('.sq-normal-kodub-erp')?.textContent==='Separate Event PB');
   const label=labelFor(p,eventBoard.entries[0].accountId);
-  assert.equal(await label.innerText(),'Event PB 51459');
+  assert.equal(await label.innerText(),'Separate Event PB');
   assert.equal(await label.getAttribute('data-verified'),'false');
   assert.doesNotMatch(await label.innerText(),/ERP/);
   assert.equal(await label.getAttribute('data-separate'),'true');
