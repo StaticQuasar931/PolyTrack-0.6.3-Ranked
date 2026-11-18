@@ -56,7 +56,7 @@ async function loginMetadata(response){
  * __profileShopRefreshPreview refreshes existing renderer output after a frame/identity
  * update with no DOM mutation. It never starts a render, fetch, save or equip.
  */
-export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,achievementClaimsEnabled=false,prepareAuth,fetch:fetcher,assertOnline=()=>{}}={}){
+export function createProfileShopHost({document,getAccountId,getAuth,storage,revision,enabled=false,achievementClaimsEnabled=false,workshopStickers=false,onOwnershipChange,prepareAuth,fetch:fetcher,assertOnline=()=>{}}={}){
   if(!document||typeof getAccountId!=='function'||typeof getAuth!=='function')throw TypeError('Profile shop host adapters required');
   if(prepareAuth!==undefined&&typeof prepareAuth!=='function')throw TypeError('prepareAuth must be a function');
   let disposed=false,auth=null,unsubscribe=null,ownedUnsubscribe=null,authEpoch=0,lastAccount=getAccountId(),store=null;
@@ -68,7 +68,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   const currentAuth=()=>{try{return getAuth()||null;}catch{return null;}};
   const user=()=>currentAuth()?.currentUser||null;
   const scope=()=>{const current=user();return current?.uid?`${authEpoch}:${current.uid}`:null;};
-  function notifyOwned(reason){for(const mount of mounts)mount.refresh(reason);}
+  function notifyOwned(reason){onOwnershipChange?.(reason);for(const mount of mounts)mount.refresh(reason);}
   function resetViews(){authEpoch++;loginMarker=null;for(const mount of mounts)mount.close(true,true);store?.reset();notifyOwned('auth');}
   function reset(){for(const ticket of restorations)ticket.invalid=true;resetViews();}
   function acceptRestoration(ticket,nextAuth,nextUser){
@@ -115,7 +115,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
   function sharedStore(){
     observeAuth(currentAuth());
     if(!store){
-      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true,automaticRewardIds:['login','milestones',...(achievementClaimsEnabled===true?['achievements']:[])]});
+      store=createShopControllerStore({transport,storage,getAccountId,getAuthScope:scope,makeRequestId:()=>document.defaultView.crypto.randomUUID(),enabled:enabled===true,workshopStickers,automaticRewardIds:['login','milestones',...(achievementClaimsEnabled===true?['achievements']:[])]});
       ownedUnsubscribe=store.subscribe(state=>{
         const ownerUid=user()?.uid,id=getAccountId(),wallet=state.wallet,inventory=state.inventory;
         if(!ownerUid||state.accountId!==id||state.catalog?.version!==PROFILE_SHOP_CATALOG_VERSION||wallet?.accountId!==id||wallet.inventoryComplete!==true||inventory?.accountId!==id||inventory.catalogVersion!==PROFILE_SHOP_CATALOG_VERSION)return;

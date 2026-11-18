@@ -100,3 +100,31 @@ test('profile podium tiles retain all three known counts without inventing missi
  const html=achievements({gold:2,silver:0,bronze:1},{showEmpty:true});assert.equal((html.match(/class="profile-achievements/g)||[]).length,3);assert.match(html,/Silver podiums: 0/);
  assert.doesNotMatch(achievements({gold:2},{showEmpty:true}),/Silver podiums: 0/);
 });
+
+test('a single known positive type renders one accessible podium card in either display mode', () => {
+  for (const [kind, label, count] of [['gold', 'Gold', 1], ['silver', 'Silver', 4], ['bronze', 'Bronze', 9]]) {
+    for (const showEmpty of [false, true]) {
+      const calls = [];
+      const html = achievements({ gold: 0, silver: 0, bronze: 0, [kind]: count }, {
+        showEmpty, medalIcon: icon => { calls.push(icon); return `images/${icon}.svg`; }
+      });
+      const caption = `${label} ${count === 1 ? 'podium' : 'podiums'}`;
+      assert.deepEqual(calls, [kind]);
+      assert.equal((html.match(/profile-medal-card /g) || []).length, 1);
+      assert.ok(html.includes(`profile-medal-card ${kind} profile-medal-card--single`));
+      assert.ok(html.includes(`aria-label="${count} ${caption.toLowerCase()}"`));
+      assert.match(html, /aria-description="The only podium type earned\..*recognized tracks with 5\+ racers\."/);
+      assert.ok(html.endsWith(`alt=""><b>${count}</b><small>${caption}</small></span>`));
+    }
+  }
+});
+
+test('an earned podium with an unknown count elsewhere retains the existing medal tile', () => {
+  for (const bronze of [undefined, null, -1, '0', 1.5]) {
+    const html = achievements({ gold: 1, silver: 0, bronze }, { showEmpty: true });
+    assert.equal((html.match(/profile-medal-card /g) || []).length, 1);
+    assert.match(html, /profile-medal-card gold"[^>]+aria-label="Gold podiums: 1"><b>1<\/b><small>Gold<\/small>/);
+  }
+  assert.doesNotMatch(achievements({ gold: 0, silver: 0, bronze: 0 }, { showEmpty: true }), /profile-medal-card--single/);
+  assert.doesNotMatch(achievements({ gold: 1, silver: 1, bronze: 0 }, { showEmpty: true }), /profile-medal-card--single/);
+});

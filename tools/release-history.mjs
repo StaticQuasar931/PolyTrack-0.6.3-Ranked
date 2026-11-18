@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 439,
+    "number": 440,
     "version": "0.6.3",
-    "revision": 375,
+    "revision": 376,
     "notes": [
-      "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
-      "Browse the Style Shop offline, open podium details, and see cleaner event badges."
+      "Your older event replays now show your current car paint, stickers, and accessories.",
+      "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
     ]
   },
   "entries": [
+    {
+      "number": 439,
+      "title": "Improve Workshop placement and offline browsing",
+      "commit": "57a44696de9ac63222f9d406dbad8e5c80e9fdeb",
+      "committedAt": "2026-11-18T02:43:40.000Z",
+      "notes": [
+        "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
+        "Browse the Style Shop offline, open podium details, and see cleaner event badges."
+      ]
+    },
     {
       "number": 436,
       "title": "Add Workshop stickers and restore offline workflow checks",
@@ -184,18 +194,6 @@ const historyData = {
       "committedAt": "2026-11-16T05:23:09.000Z",
       "notes": [
         "Earlier update notes now stay in sync with the current release."
-      ]
-    },
-    {
-      "number": 415,
-      "title": "Clarify rankings and event cards and preserve offline verification sources",
-      "commit": "0d504b8072349ef8af7242cf8ab7ee0f03503dbd",
-      "committedAt": "2026-11-16T05:21:58.000Z",
-      "notes": [
-        "Rankings now skip empty scores, use clearer rank-time labels, and make Field RP easier to read.",
-        "Top Tracks adds a Non-official view for community and extra tracks.",
-        "Event cards have clearer spacing and uncropped weekly artwork.",
-        "New snapshot data can now appear through Update available."
       ]
     }
   ],

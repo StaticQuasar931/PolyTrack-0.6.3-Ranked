@@ -1,6 +1,8 @@
 import {readCommunityClaim, projectCommunityClaim, COMMUNITY_CAMPAIGN} from './community-badge.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
 
+import {WORKSHOP_STICKER_SHOP_CATALOG} from '../../../tools/workshop-sticker-shop-catalog.mjs';
+
 export const SHOP_PROFILE_CATALOG = PROFILE_SHOP_CATALOG;
 const plain = value => value !== null && typeof value === 'object' &&
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -19,6 +21,8 @@ const starter = Object.freeze({theme: ['classic', 'cyan'], accent: ['cyan', 'whi
   nameWeight: ['regular'], nameColor: ['default'], baseSecondary: ['auto'], title: ['auto'], badge: ['auto', 'none']});
 
 function itemFor(id) {
+  const sticker = WORKSHOP_STICKER_SHOP_CATALOG.find(item => item.id === id);
+  if (sticker) return sticker;
   const item = PROFILE_SHOP_CATALOG.find(item => item.id === id);
   requireValid(item && item.kind === 'profile-cosmetic' && item.grants.length === 1 &&
     ['plate', 'stage', 'stripe', 'theme', 'baseSecondary', 'edge', 'nameFont', 'nameColor'].includes(item.grants[0].slot));
@@ -34,7 +38,7 @@ export function readPurchasedCosmetics(prior, {accountId, ownerUid} = {}) {
   requireValid(exactKeys(value, ['version', 'accountId', 'ownerUid', 'items']) && value.version === 1 &&
     account(accountId) && value.accountId === accountId && owner(value.ownerUid) &&
     (ownerUid === undefined || owner(ownerUid) && value.ownerUid === ownerUid) && plain(value.items) &&
-    Object.keys(value.items).length > 0 && Object.keys(value.items).length <= PROFILE_SHOP_CATALOG.length);
+    Object.keys(value.items).length > 0 && Object.keys(value.items).length <= PROFILE_SHOP_CATALOG.length + WORKSHOP_STICKER_SHOP_CATALOG.length);
   for (const [id, record] of Object.entries(value.items)) {
     itemFor(id);
     requireValid(exactKeys(record, ['catalogVersion', 'acquiredAt']) &&

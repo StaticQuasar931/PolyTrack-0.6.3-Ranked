@@ -6,6 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
 import {PROFILE_SHOP_EXPANDED_DESIGNS} from './profile-shop-expanded-designs.mjs';
 // Offline projection of Franklin's staged additions; never writes the live catalog.
 const SHOP_CATALOG=[...PROFILE_SHOP_CATALOG,...PROFILE_SHOP_EXPANDED_DESIGNS.filter(design=>!PROFILE_SHOP_CATALOG.some(item=>item.id===design.itemId)).map(design=>({id:design.itemId,label:design.label,price:design.price,kind:'profile-cosmetic',grants:[{slot:design.slot,value:design.value}]}))];
@@ -19,7 +20,7 @@ before(async()=>{
     const name=new URL(req.url,'http://localhost').pathname;
     if(name==='/tools/profile-shop-catalog.mjs'){res.setHeader('Content-Type','text/javascript');res.end('export const PROFILE_SHOP_CATALOG_VERSION='+PROFILE_SHOP_CATALOG_VERSION+';export const PROFILE_SHOP_CATALOG='+JSON.stringify(SHOP_CATALOG)+';');return;}
     if(name==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local PolyTrack shop draft</title><link rel="stylesheet" href="/tools/profile-shop-ui.css"><style>@font-face{font-family:ForcedSquare;src:url(/forced_square.woff2)}body{margin:0;background:#192b57}main{max-width:1366px;margin:auto;--sp-sticky-top:60px}.fixture-banner{position:sticky;top:0;z-index:99;box-sizing:border-box;height:60px;display:flex;align-items:center;padding:12px;background:#ffd185;color:#142449;font:13px/18px Trebuchet MS,sans-serif;border-bottom:2px solid #b98b39}</style><aside class="fixture-banner" role="note">Offline test preview &middot; Sample credits, not a live balance</aside><main></main></html>');return;}
-    const types={'/tools/profile-shop-art.css':'text/css','/tools/achievement-coin-schedule.mjs':'text/javascript','/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
+    const types={'/tools/workshop-sticker-shop-catalog.mjs':'text/javascript','/tools/car-cosmetics-geometry.mjs':'text/javascript','/tools/profile-shop-art.css':'text/css','/tools/achievement-coin-schedule.mjs':'text/javascript','/tools/shop-preview.css':'text/css','/tools/profile-shop-expanded-designs.mjs':'text/javascript','/tools/profile-shop-ui.mjs':'text/javascript','/tools/profile-shop-ui.css':'text/css','/tools/profile-shop-art.mjs':'text/javascript','/tools/profile-shop-catalog.mjs':'text/javascript','/forced_square.woff2':'font/woff2'};
     if(!types[name]){res.writeHead(404).end();return;}
     try{res.setHeader('Content-Type',types[name]);res.end(await fs.readFile(path.join(root,name.slice(1))));}catch{res.writeHead(404).end();}
   });
@@ -139,4 +140,24 @@ test('offline shop keeps catalog and last confirmation visible but disables purc
  assert(await buttons.evaluateAll(items=>items.every(item=>item.disabled)));
  await page.locator('[data-sp-action=preview]').first().click();
  assert.deepEqual(await page.evaluate(()=>[calls.preview.length,calls.buy.length,calls.claim.length]),[1,0,0]);
+});
+
+test('sticker cards show the actual art, quote confirmation, and local equip instructions',async t=>{
+ const page=await fixture(t,{catalog:[...SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG]},{width:360,height:800});
+ assert.equal(await page.locator('.sp-sticker-swatch polygon').count(),6);
+ for(const item of WORKSHOP_STICKER_SHOP_CATALOG){
+  const card=page.locator('.sp-item').filter({has:page.getByRole('heading',{name:item.label,exact:true})});
+  assert.match(await card.innerText(),/WORKSHOP STICKER/);
+  assert.match(await card.innerText(),/Preview in Garage/);
+  assert.equal(await card.locator('[data-sp-action=preview]').count(),0);
+  await card.getByRole('button',{name:'Buy '+item.label+' for '+item.price+' Style Coins'}).click();
+  assert.equal(await page.getByRole('heading',{name:'Buy '+item.label+'?'}).count(),1);
+  assert.equal(await page.evaluate(()=>calls.buy.length),0);
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ }
+ await page.evaluate(ids=>cleanup.update({inventory:{status:'confirmed',accountId:'driver-a',ownedIds:ids}}),WORKSHOP_STICKER_SHOP_CATALOG.map(item=>item.id));
+ const owned=page.locator('.sp-item').filter({hasText:'WORKSHOP STICKER'});
+ assert.equal(await owned.getByText(/Equip in Garage/).count(),2);
+ assert.equal(await owned.locator('[data-sp-action=apply], [data-sp-action=buy]').count(),0);
+ assert.deepEqual(await page.evaluate(()=>[calls.buy.length,calls.apply.length,calls.preview.length]),[0,0,0]);
 });

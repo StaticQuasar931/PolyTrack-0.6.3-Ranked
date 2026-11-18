@@ -4,6 +4,7 @@
 import {ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchievementCoinReceipt} from '../../../tools/achievement-coin-schedule.mjs';
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from '../../../tools/workshop-sticker-shop-catalog.mjs';
 import {addPurchase, readPurchasedCosmetics} from './purchased-cosmetic-entitlements.js';
 import {invalidateEntitlements} from './overall-entitlement-cache.js';
 import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT, OWNER_PUBLIC_ID, BEAT_OWNER_STAGES} from './server-achievements.js';
@@ -25,8 +26,10 @@ const LEGACY_SHOP_CATALOG = Object.freeze([
   Object.freeze({id: 'ice-apex', label: 'Ice Apex preset', price: 240,
     style: recipe(11, 6, 7, 0x183e66, 0xd6f4ff, 0x172635, 0x91bedc)})
 ]);
+// Keep the existing response for clients that do not opt into Workshop offers.
 export const SHOP_CATALOG = PROFILE_SHOP_CATALOG;
 export const SHOP_CATALOG_VERSION = PROFILE_SHOP_CATALOG_VERSION;
+const ALL_SHOP_ITEMS = Object.freeze([...SHOP_CATALOG, ...WORKSHOP_STICKER_SHOP_CATALOG]);
 const ENTITLEMENT_PATH = '0.6.2_s1_cosmetic_entitlements/';
 const META_PATH = '0.6.2_s1_release_meta/current';
 // Historical amounts/IDs are immutable. Only these three have separate legacy grant documents.
@@ -72,8 +75,8 @@ function validateWallet(wallet, accountId, uid) {
   'wallet_invalid_or_owner_changed', 409);
 }
 function owned(value, accountId, uid, item) {
-  return value?.accountId === accountId && value.ownerUid === uid && value.itemId === item.id && value.catalogVersion === (item.kind === 'profile-cosmetic' ? SHOP_CATALOG_VERSION : 1) &&
-    (item.kind !== 'profile-cosmetic' || value.kind === item.kind);
+  return value?.accountId === accountId && value.ownerUid === uid && value.itemId === item.id && value.catalogVersion === (item.kind ? SHOP_CATALOG_VERSION : 1) &&
+    (!item.kind || value.kind === item.kind);
 }
 function checkedEquip(equipped, accountId, uid, knownRevision = null) {
   if (!equipped) return {item: null, revision: knownRevision ?? 0, projection: null};
@@ -154,10 +157,10 @@ function checkedAchievementGrant(grant, accountId, uid) {
   demand(validAchievementCoinReceipt(grant), 'grant_invalid', 409);
 }
 
-export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false}) {
+export function createCurrencyService({store, now = Date.now, achievementCoinsEnabled = false, workshopStickersEnabled = false, includeWorkshopStickers = false}) {
   demand(typeof store?.transaction === 'function' && typeof now === 'function', 'transaction_store_required', 503);
   demand(SHOP_CATALOG_VERSION === 2 && SHOP_CATALOG.length >= ORIGINAL_PROFILE_INVENTORY_IDS.length &&
-    SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(SHOP_CATALOG.map(item => item.id)).size === SHOP_CATALOG.length &&
+    SHOP_CATALOG.length <= PROFILE_CATALOG_LIMIT && new Set(ALL_SHOP_ITEMS.map(item => item.id)).size === ALL_SHOP_ITEMS.length &&
     ORIGINAL_PROFILE_INVENTORY_IDS.every(id => SHOP_CATALOG.some(item => item.id === id && item.kind === 'profile-cosmetic')),
   'inventory_catalog_limit', 503);
   return Object.freeze({
@@ -177,7 +180,7 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
       if (op !== 'wallet') demand(requestKey(requestId), 'invalid_request_id');
       const at = now(); demand(uint(at) && at > 0, 'server_clock_required', 503);
       const day = Math.floor(at / 86400000);
-      const item = ['purchase', 'equip'].includes(op) ? SHOP_CATALOG.find(value => value.id === itemId) : null;
+      const item = ['purchase', 'equip'].includes(op) ? ALL_SHOP_ITEMS.find(value => value.id === itemId) : null;
       const legacyItem = ['purchase', 'equip'].includes(op) ? LEGACY_SHOP_CATALOG.find(value => value.id === itemId) : null;
       if (['purchase', 'equip'].includes(op)) demand(item || legacyItem, 'unknown_item');
       if (op === 'claim') demand(typeof rewardId === 'string' &&
@@ -218,7 +221,7 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
           }
           // Canonical purchases cover all new items; only the original three need fallback reads.
           // This read-only union neither repairs legacy provenance nor exposes retired native recipes.
-          const ownedItemIds = SHOP_CATALOG.filter(item => ownedIds.has(item.id)).map(item => item.id);
+          const ownedItemIds = (includeWorkshopStickers ? ALL_SHOP_ITEMS : SHOP_CATALOG).filter(item => ownedIds.has(item.id)).map(item => item.id);
           return {accountId, catalogVersion: SHOP_CATALOG_VERSION, balance, revision, ownedItemIds, inventoryComplete: true,
             equipRevision: equipped.revision, equipped: null};
         }
@@ -233,9 +236,10 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
           }
           return {...receipt.result, duplicate: true};
         }
-        if (op === 'equip') throw domainRejection(item ? 'profile_apply_via_studio' : 'item_retired', 409);
+        if (op === 'equip') throw domainRejection(item?.kind === 'workshop-sticker' ? 'workshop_equip_local' : item ? 'profile_apply_via_studio' : 'item_retired', 409);
         if (op === 'purchase') {
-          demand(item?.kind === 'profile-cosmetic' && !legacyPurchase, 'item_retired', 409);
+          demand(item && !legacyPurchase, 'item_retired', 409);
+          if (item.kind === 'workshop-sticker') demand(workshopStickersEnabled === true, 'workshop_stickers_disabled', 409);
           // Receipt identity wins over a now-stale quote on exact recovery retries.
           demand(catalogVersion === SHOP_CATALOG_VERSION && expectedPrice === item.price &&
             expectedWalletRevision === revision, 'quote_stale', 409);
@@ -355,12 +359,17 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
     let uid; try {uid = await authenticate(request);} catch {throw domainRejection('authentication_required', 401);}
     const denial = await admit(uid); if (denial) return denial;
     const url = new URL(request.url), pathname = url.pathname.replace(/\/+$/, '');
+    const workshopStickersEnabled = env.CURRENCY_WORKSHOP_STICKERS_ENABLED === 'true';
+    const workshop = url.searchParams.getAll('workshop');
+    const includeWorkshopStickers = workshop.length === 1 && workshop[0] === '1';
     if (request.method === 'GET' && pathname === '/v1/shop/catalog') {
-      return respond(200, {version: SHOP_CATALOG_VERSION, kind: 'profile-cosmetic', items: SHOP_CATALOG});
+      return respond(200, {version: SHOP_CATALOG_VERSION, kind: 'profile-cosmetic',
+        items: workshopStickersEnabled && includeWorkshopStickers ? ALL_SHOP_ITEMS : SHOP_CATALOG});
     }
     let command;
     if (request.method === 'GET' && pathname === '/v1/currency/wallet') {
-      demand([...url.searchParams.keys()].every(key => key === 'accountId') && url.searchParams.getAll('accountId').length === 1,
+      demand([...url.searchParams.keys()].every(key => key === 'accountId' || key === 'workshop') && url.searchParams.getAll('accountId').length === 1 &&
+        (workshop.length === 0 || workshop.length === 1 && workshop[0] === '1'),
         'invalid_command');
       command = {op: 'wallet', accountId: url.searchParams.get('accountId')};
     } else {
@@ -377,7 +386,8 @@ export async function handleCurrencyRequest(request, {env, store, authenticate, 
       demand(body && typeof body === 'object' && !Array.isArray(body) && !Object.hasOwn(body, 'op'), 'invalid_body');
       command = {op: ops[pathname], ...body};
     }
-    const outcome = await createCurrencyService({store, now, achievementCoinsEnabled: env.CURRENCY_ACHIEVEMENTS_ENABLED === 'true'}).execute(uid, command);
+    const outcome = await createCurrencyService({store, now, achievementCoinsEnabled: env.CURRENCY_ACHIEVEMENTS_ENABLED === 'true',
+      workshopStickersEnabled, includeWorkshopStickers}).execute(uid, command);
     return respond(200, {...outcome,
       ...(command.op === 'claim' && command.rewardId === 'login' && outcome.duplicate === false ?
         successfulLoginClocks.get(outcome) : {})});

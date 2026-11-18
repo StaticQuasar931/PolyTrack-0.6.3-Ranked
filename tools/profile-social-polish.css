@@ -10,3 +10,60 @@
 @media(max-width:700px){.profile-track-history>header>.profile-track-type-nav{flex:1 1 100%;margin:0}}
 
 .profile-track-history>header>span{text-align:center;margin-inline:auto}.profile-track-type-nav button:disabled{opacity:.46;cursor:not-allowed}.profile-medal-card[role=button]{cursor:pointer}.profile-podium-details{max-width:min(620px,90vw);max-height:78vh;border:1px solid #7ab6d9;background:#172951;color:#e4f6ff;padding:18px;font:16px ForcedSquare,sans-serif}.profile-podium-details::backdrop{background:#081324bb}.profile-podium-details ul{list-style:none;margin:12px 0 0;padding:0}.profile-podium-details button{font:inherit;color:inherit;background:#243d65;border:1px solid #6789ae;padding:8px;margin-bottom:4px;cursor:pointer}.profile-podium-details li[data-large-field] button{border-left:4px solid #f4cc78}
+
+/* A confirmed single medal type fills the rail instead of leaving two empty columns. */
+html body #overallProfilePopup .profile-car-column > .profile-podium-wide:has(.profile-medal-card--single) {
+  aspect-ratio:auto;
+  min-height:0;
+}
+html body #overallProfilePopup .profile-car-column .profile-podium-wide[data-podium-kind="earned"] .profile-achievement-medals:has(> .profile-medal-card--single) {
+  grid-template-columns:minmax(0,1fr) !important;
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card.profile-medal-card--single {
+  grid-template-columns:minmax(0,1fr) !important;
+  grid-template-rows:auto auto;
+  grid-template-areas:"count" "caption";
+  justify-items:start;
+  align-content:center;
+  gap:4px clamp(8px,2vw,16px) !important;
+  min-height:64px !important;
+  padding:8px clamp(8px,2vw,16px) !important;
+  text-align:start;
+  background:linear-gradient(110deg,var(--podium-wash),#14244c 72%);
+  border:1px solid var(--podium-edge);
+  border-inline-start:3px solid var(--podium-accent);
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card.profile-medal-card--single:has(> img) {
+  grid-template-columns:auto minmax(0,1fr) !important;
+  grid-template-areas:"icon count" "icon caption";
+}
+.profile-medal-card--single.gold { --podium-accent:#ffe381; --podium-edge:#917642; --podium-wash:#3e3443; }
+.profile-medal-card--single.silver { --podium-accent:#e5efff; --podium-edge:#758fb7; --podium-wash:#2c405f; }
+.profile-medal-card--single.bronze { --podium-accent:#ffb786; --podium-edge:#9f6a57; --podium-wash:#453040; }
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card.profile-medal-card--single > img {
+  grid-area:icon;
+  width:clamp(26px,4vw,38px) !important;
+  height:clamp(26px,4vw,38px) !important;
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card.profile-medal-card--single > b {
+  grid-area:count;
+  min-width:0;
+  overflow-wrap:anywhere;
+  font-size:clamp(21px,3vw,30px) !important;
+  color:var(--podium-accent);
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card.profile-medal-card--single > small {
+  grid-area:caption;
+  font-size:12px !important;
+  line-height:1.2;
+  white-space:normal !important;
+  overflow-wrap:anywhere;
+  color:#d9ebff;
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card--single[role="button"]:is(:hover,:focus-visible) {
+  border-color:var(--podium-accent);
+}
+html body #overallProfilePopup .profile-podium-wide .profile-medal-card--single[role="button"]:focus-visible {
+  outline:2px solid var(--podium-accent);
+  outline-offset:2px;
+}

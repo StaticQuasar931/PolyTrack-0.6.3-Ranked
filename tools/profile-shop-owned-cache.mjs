@@ -1,6 +1,8 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
+const catalog=[...PROFILE_SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG];
 const prefix='polytrack-profile-shop-owned-ui-v1:';
-const ids=new Set(PROFILE_SHOP_CATALOG.map(item=>item.id));
+const ids=new Set(catalog.map(item=>item.id));
 const account=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const owner=value=>typeof value==='string'&&value.length>0&&value.length<=128&&!/[\u0000-\u001f\u007f]/.test(value);
 const uint=value=>Number.isSafeInteger(value)&&value>=0;
@@ -27,10 +29,10 @@ export function createProfileShopOwnedCache(storage){
     const previous=read(accountId,ownerUid);if(previous&&previous.revision>revision)return false;
     // These fixed purchased designs are permanent. Reconciliation adds confirmed
     // items; a stale/missing projection must not silently relock a prior purchase.
-    if(previous)record.ownedItemIds=PROFILE_SHOP_CATALOG.map(item=>item.id).filter(id=>previous.ownedItemIds.includes(id)||ownedItemIds.includes(id));
+    if(previous)record.ownedItemIds=catalog.map(item=>item.id).filter(id=>previous.ownedItemIds.includes(id)||ownedItemIds.includes(id));
     try{const raw=JSON.stringify(record);storage.setItem(key(accountId,ownerUid),raw);return storage.getItem(key(accountId,ownerUid))===raw;}catch{return false;}
   }
   return {read,remember,owns(accountId,ownerUid,unlockId){
-    const record=read(accountId,ownerUid);return !!record&&PROFILE_SHOP_CATALOG.some(item=>record.ownedItemIds.includes(item.id)&&item.grants.some(grant=>grant.slot+':'+grant.value===unlockId));
+    const record=read(accountId,ownerUid);return !!record&&catalog.some(item=>record.ownedItemIds.includes(item.id)&&item.grants.some(grant=>grant.slot+':'+grant.value===unlockId));
   }};
 }

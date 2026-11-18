@@ -9,6 +9,11 @@ import {createShopSession} from './shop-session.mjs';
 import {createShopControllerStore, createShopController} from './shop-controller.mjs';
 import {createShopTransport} from './shop-transport.mjs';
 import {createShopBrowserLock} from './shop-browser-lock.mjs';
+import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
+import {createProfileShopOwnedCache} from './profile-shop-owned-cache.mjs';
+import {createCarEquipPolicy} from './car-earned-policy.mjs';
+import {authorizeCarSelection,isFreeWorkshopChoice} from './car-cosmetics-catalog.mjs';
+import {mergeEarnedAndPurchasedEntitlements} from '../workers/ranked/src/purchased-cosmetic-entitlements.js';
 import {PROFILE_SHOP_CATALOG} from './profile-shop-catalog.mjs';
 import {createCurrencyService, handleCurrencyRequest, CURRENCY_COLLECTIONS as C,
   CURRENCY_RULES_VERSION} from '../workers/ranked/src/currency-wallet.js';
@@ -24,7 +29,7 @@ beforeEach(t => t.mock.method(globalThis, 'fetch', () => assert.fail('external n
 
 // Real client/session/transport + HTTP handler + service + REST transaction adapter.
 // Only REST document I/O is simulated. No wallet is seeded and no SDK is loaded.
-function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false} = {}) {
+function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false, workshopStickers = false, stickerSales = false} = {}) {
   const docs = new Map(), snapshots = new Map(), databaseCalls = [], commits = [], requests = [], local = new Map(), admissions = new Map();
   let sequence = 0, clock = AT, accountId = A, uid = OWNER_A, scope = 'auth-a-1', ids = 0, lose = null, delay = null, failDatabase = false;
   const put = (path, data) => docs.set(path, {data: clone(data), version: ++sequence});
@@ -67,14 +72,14 @@ function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false} = {}
     return document ? {fields: eventEncode(document.data).mapValue.fields, updateTime: String(document.version)} : null;
   }
   const database = createEventFirestoreStore({request, projectId: 'polytrack-052', retries: 2, pause: async () => {}});
-  const service = createCurrencyService({store: database, now: () => AT});
+  const service = createCurrencyService({store: database, now: () => AT, workshopStickersEnabled: stickerSales});
   const storage = {getItem: key => local.get(key) ?? null, setItem: (key, value) => local.set(key, value), removeItem: key => local.delete(key)};
   const withAccountLock = createShopBrowserLock({locks: {request: async (name, options, work) => {
     assert.equal(options.mode, 'exclusive'); assert.equal(options.ifAvailable, true); return work({name});
   }}});
   const transport = createShopTransport({revision: 320, getToken: async () => 'fixture-token:' + uid,
     fetch: async (url, init) => {
-      const body = init.body ? JSON.parse(init.body) : null, row = {path: new URL(url).pathname, method: init.method, body};
+      const body = init.body ? JSON.parse(init.body) : null, row = {path: new URL(url).pathname, search: new URL(url).search, method: init.method, body};
       requests.push(row);
       if (init.method === 'POST') {
         const saved = JSON.parse(local.get(pendingKey(body.accountId)) || 'null');
@@ -82,7 +87,8 @@ function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false} = {}
         if (body.requestId.startsWith('client-request-')) assert.equal(saved?.requestId, body.requestId, 'durable intent precedes dispatch');
       }
       const response = await handleCurrencyRequest(new Request(url, init), {env: {
-        CURRENCY_ENABLED: enabled ? 'true' : 'false', CURRENCY_RULES_VERSION}, store: database, now: () => AT,
+        CURRENCY_ENABLED: enabled ? 'true' : 'false', CURRENCY_RULES_VERSION,
+        CURRENCY_WORKSHOP_STICKERS_ENABLED: stickerSales ? 'true' : 'false'}, store: database, now: () => AT,
         authenticate: async input => {
           const token = input.headers.get('Authorization');
           assert.ok(token?.startsWith('Bearer fixture-token:')); return token.slice('Bearer fixture-token:'.length);
@@ -97,7 +103,7 @@ function fixture({enabled = true, uidLimit = 0, autoCollectRewards = false} = {}
       return response;
     }});
   const dependencies = {transport, storage, getAccountId: () => accountId, makeRequestId: () => 'client-request-' + ++ids,
-    withAccountLock, now: () => clock, monotonicNow: () => clock, enabled: true};
+    withAccountLock, now: () => clock, monotonicNow: () => clock, enabled: true, workshopStickers};
   const createSession = () => createShopSession(dependencies);
   const createStore = () => createShopControllerStore({...dependencies, autoCollectRewards, getAuthScope: () => scope});
   function checkpoint() {return {calls: databaseCalls.length, commits: commits.length, requests: requests.length};}
@@ -128,7 +134,7 @@ function mount(f, callbacks = {}) {
   return {store, controller, states, view: () => rendered.at(-1), dispose() {controller.dispose(); unsubscribe(); store.dispose();}};
 }
 const purchaseIntent = (ui, itemId) => ({accountId: ui.store.state().accountId, itemId,
-  price: PROFILE_SHOP_CATALOG.find(item => item.id === itemId).price, walletRevision: ui.store.state().wallet.revision});
+  price: [...PROFILE_SHOP_CATALOG, ...WORKSHOP_STICKER_SHOP_CATALOG].find(item => item.id === itemId).price, walletRevision: ui.store.state().wallet.revision});
 async function claimMilestones(ui) {
   return ui.view().actions.onClaim({accountId: A, rewardId: 'milestones', walletRevision: ui.store.state().wallet.revision});
 }
@@ -257,7 +263,7 @@ test('disabled actual service rejects client load before auth or any document re
   assert.equal(f.databaseCalls.length, 0); assert.equal(f.commits.length, 0); assert.equal(ui.store.state().enabled, false); ui.dispose();
 });
 
-const SAVED_RULES = fileURLToPath(new URL('../../../2026-11-13/late-update/live-firestore.rules', import.meta.url));
+const SAVED_RULES = process.env.SHOP_SAVED_RULES || fileURLToPath(new URL('../../../2026-11-13/late-update/live-firestore.rules', import.meta.url));
 const SAVED_RULES_SHA256 = 'd335b44eaff7406cb4972738527ce8519f76cd35f1b4815a396cbf88dce23f7d';
 function rulesFunction(source, name) {
   const start = source.indexOf('function ' + name + '('); assert.ok(start >= 0, 'actual saved rules function ' + name);
@@ -497,4 +503,82 @@ test('server-certified already-claimed daily UTC window suppresses login probes 
  f.time(AT+900001);await ui.controller.open();
  assert.equal(posts(f,'/v1/currency/claim').filter(row=>row.body.rewardId==='login').length,1);
  assert.equal(f.commits.length,2);ui.dispose();
+});
+
+test('both Workshop stickers use atomic v2 purchases, canonical grants and scoped local equip', async () => {
+  const f = fixture({workshopStickers: true, stickerSales: true}), ui = mount(f);
+  await ui.controller.open();
+  assert.equal(ui.view().wallet.balance, 0);
+  await claimMilestones(ui);
+  let balance = 100, owner = OWNER_A, account = A;
+  const owned = createProfileShopOwnedCache(f.storage);
+  const equip = createCarEquipPolicy({getAccountId: () => account, getPublishedProfile: () => null,
+    isFree: isFreeWorkshopChoice, ownsForUi: (id, key) => owned.owns(id, owner, key)});
+  const entPath = '0.6.2_s1_cosmetic_entitlements/' + A, metaPath = '0.6.2_s1_release_meta/current';
+  const grants = [];
+  for (const item of WORKSHOP_STICKER_SHOP_CATALOG) {
+    const sticker = item.grants[0].value;
+    assert.equal(authorizeCarSelection({sticker}, A, equip).sticker, 'none');
+    const before = f.checkpoint(), intent = purchaseIntent(ui, item.id);
+    await assert.rejects(ui.store.purchase(intent), /confirmation_required/);
+    const result = await ui.view().actions.onPurchase(intent);
+    assert.equal(result.outcome.itemKind, 'workshop-sticker');
+    assert.equal(result.outcome.delta, -item.price);
+    assert.equal(result.wallet.balance, balance -= item.price);
+    assert.deepEqual(f.cost(before), {reads: 13, writes: 5, transport: 17});
+    assert.equal(f.requests.at(-1).search, '?accountId=' + A + '&workshop=1');
+    assert.equal(authorizeCarSelection({sticker}, A, equip).sticker, 'none', 'no optimistic local grant');
+    const state = ui.store.state();
+    assert.equal(owned.remember({accountId: A, ownerUid: OWNER_A, catalogVersion: state.inventory.catalogVersion,
+      revision: state.wallet.revision, ownedItemIds: state.inventory.ownedItemIds, complete: state.wallet.inventoryComplete}), true);
+    grants.push(sticker);
+    const entitlement = f.docs.get(entPath).data;
+    assert.deepEqual(entitlement.sticker, grants);
+    assert.deepEqual(entitlement.purchased.items[item.id], {catalogVersion: 2, acquiredAt: AT});
+    assert.deepEqual(mergeEarnedAndPurchasedEntitlements({}, entitlement, {accountId: A, ownerUid: OWNER_A}).sticker, grants);
+    assert.throws(() => mergeEarnedAndPurchasedEntitlements({}, entitlement, {accountId: A, ownerUid: OWNER_B}), /ENTITLEMENT_INVALID/);
+    assert.equal(f.docs.get(metaPath).data.entitlementEpoch, grants.length);
+    const writes = f.commits.at(-1).writes.map(row => row.update.name.slice(BASE.length));
+    const inventory = f.docs.get(writes.find(path => path.startsWith(C.inventory + '/'))).data;
+    assert.equal(inventory.kind, 'workshop-sticker');
+    assert.equal(inventory.itemId, item.id);
+    const count = f.requests.length;
+    assert.equal(authorizeCarSelection({sticker}, A, equip).sticker, sticker);
+    owner = OWNER_B;
+    assert.equal(authorizeCarSelection({sticker}, A, equip).sticker, 'none');
+    owner = OWNER_A; account = B;
+    assert.equal(authorizeCarSelection({sticker}, A, equip).sticker, 'none');
+    account = A;
+    assert.equal(f.requests.length, count, 'local ownership and equip make no network requests');
+    const posted = f.requests[before.requests].body;
+    const duplicate = await f.service.execute(OWNER_A, {op: 'purchase', ...posted});
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(f.commits.length, before.commits + 1);
+  }
+  const oldCatalog = await f.transport({path: '/v1/shop/catalog'});
+  const oldWallet = await f.transport({path: '/v1/currency/wallet?accountId=' + A});
+  assert.deepEqual(oldCatalog.items, PROFILE_SHOP_CATALOG);
+  assert.deepEqual(oldWallet.ownedItemIds, []);
+  assert.equal(oldWallet.balance, balance);
+  ui.dispose();
+});
+
+test('undisclosed Workshop stickers fail closed while the existing Shop remains usable', async () => {
+  const f = fixture({workshopStickers: true}), ui = mount(f), item = WORKSHOP_STICKER_SHOP_CATALOG[0];
+  await ui.controller.open();
+  await claimMilestones(ui);
+  assert.equal(f.requests[0].search, '?workshop=1');
+  assert.equal(f.requests.at(-1).search, '?accountId=' + A);
+  assert.equal(ui.store.state().catalog.items.some(row => row.id === item.id), false);
+  const intent = purchaseIntent(ui, item.id), before = f.checkpoint();
+  await assert.rejects(ui.store.purchase(intent, {confirmed: true}), /confirmation_stale/);
+  assert.equal(f.requests.length, before.requests);
+  await assert.rejects(f.transport({path: '/v1/shop/purchase', method: 'POST',
+    body: {accountId: A, itemId: item.id, requestId: 'disabled-workshop', catalogVersion: 2,
+      expectedPrice: item.price, expectedWalletRevision: intent.walletRevision}}), /workshop_stickers_disabled/);
+  assert.equal(f.commits.length, before.commits);
+  assert.equal(f.docs.get(C.wallet + '/' + A).data.balance, 100);
+  const bought = await ui.view().actions.onPurchase(purchaseIntent(ui, ITEMS[0]));
+  assert.equal(bought.wallet.balance, 80);
+  ui.dispose();
 });

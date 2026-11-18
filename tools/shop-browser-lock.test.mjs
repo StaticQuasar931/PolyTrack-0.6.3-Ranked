@@ -47,7 +47,7 @@ test('native browser locks exclude tabs and release on reload; durable request r
   const {createServer}=await import('node:http');
   const {readFile}=await import('node:fs/promises');
   const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE);
-  const sources=new Map(await Promise.all(['shop-session.mjs','shop-browser-lock.mjs','profile-shop-catalog.mjs'].map(async name=>['/'+name,await readFile(new URL(name,import.meta.url),'utf8')])));
+  const sources=new Map(await Promise.all(['shop-session.mjs','shop-browser-lock.mjs','profile-shop-catalog.mjs','workshop-sticker-shop-catalog.mjs'].map(async name=>['/'+name,await readFile(new URL(name,import.meta.url),'utf8')])));
   const server=createServer((req,res)=>{
     if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Offline shop lock regression</title>');}
     else if(sources.has(req.url)){res.setHeader('Content-Type','text/javascript');res.end(sources.get(req.url));}

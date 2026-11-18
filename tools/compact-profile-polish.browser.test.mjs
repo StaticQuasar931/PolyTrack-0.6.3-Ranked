@@ -73,3 +73,60 @@ test('Ranked help and loading decoration respect reduced motion',{skip:!chromium
     }
   }finally{await browser.close();}
 });
+
+test('a confirmed single podium fills its rail at phone and desktop sizes',{skip:!chromium},async()=>{
+  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',route=>route.abort());
+    const socialCss=fs.readFileSync(new URL('./profile-social-polish.css',import.meta.url),'utf8');
+    const medalIcon=kind=>'data:image/svg+xml,'+encodeURIComponent(fs.readFileSync(resolve(root,'images',
+      {gold:'ranked-trophy.svg',silver:'ranked-award.svg',bronze:'ranked-star.svg'}[kind]),'utf8'));
+    const scenarios=[
+      [{gold:1,silver:0,bronze:0},'gold','rgb(255, 227, 129)',1,true],
+      [{gold:0,silver:1200,bronze:0},'silver','rgb(229, 239, 255)',1,true],
+      [{gold:0,silver:0,bronze:Number.MAX_SAFE_INTEGER},'bronze','rgb(255, 183, 134)',1,false],
+      [{gold:1,silver:0,bronze:3},null,null,3,true],
+      [{gold:1,silver:0},null,null,1,true],
+    ];
+    for(const [width,height] of [[320,740],[768,1024],[1366,768]]){
+      await page.setViewportSize({width,height});
+      for(const [medals,kind,color,tileCount,useIcon] of scenarios){
+        const tiles=compactProfileAchievementMarkup(medals,{showEmpty:true,medalIcon:useIcon?medalIcon:undefined});
+        await page.setContent('<style>body{margin:0}'+css+'\n'+socialCss+'</style><div id="overallProfilePopup" style="display:flex"><article class="overall-profile-card" style="--sq-ui-scale:1.25"><div id="overallProfileContent"><div class="profile-hero"><div class="profile-car-column"><div class="overall-car-model"></div><div class="profile-achievement-row profile-podium-wide" data-podium-kind="earned"><span class="profile-achievement-label">Eligible podiums</span><div class="profile-achievement-medals">'+tiles+'</div><span class="profile-ranked-count">28 ranked tracks</span></div></div><div class="profile-identity">Racer profile</div></div></div></article></div>');
+        const cards=page.locator('.profile-medal-card');
+        assert.equal(await cards.count(),tileCount);
+        const rail=page.locator('.profile-achievement-medals');
+        const columns=await rail.evaluate(el=>getComputedStyle(el).gridTemplateColumns);
+        assert.equal(columns.split(' ').length,kind?1:width===320?2:3,`${width}px: ${columns}`);
+        if(!kind){
+          assert.equal(await page.locator('.profile-medal-card--single').count(),0);
+          continue;
+        }
+        const card=cards.first();
+        await card.evaluate(el=>{
+          el.tabIndex=0;
+          el.setAttribute('role','button');
+          el.title='View podium tracks';
+        });
+        await page.keyboard.press('Tab');
+        assert.equal(await card.evaluate(el=>el.matches(':focus-visible')),true);
+        const count=medals[kind];
+        const name=count+' '+kind+(count===1?' podium':' podiums');
+        assert.equal(await page.getByRole('button',{name,exact:true}).count(),1);
+        const layout=await card.evaluate(el=>{
+          const b=el.querySelector(':scope > b'),img=el.querySelector(':scope > img');
+          const style=getComputedStyle(el),rail=el.parentElement;
+          return {fill:Math.abs(el.getBoundingClientRect().width-rail.getBoundingClientRect().width),
+            overflow:el.scrollWidth-el.clientWidth,color:style.borderInlineStartColor,focus:style.outlineStyle,
+            count:Number(b.textContent),iconAlongside:!img||img.getBoundingClientRect().right<b.getBoundingClientRect().left};
+        });
+        assert.ok(layout.fill<=1&&layout.overflow<=1,kind+' podium fits at '+width+': '+JSON.stringify(layout));
+        assert.equal(layout.count,count);
+        assert.equal(layout.color,color);
+        assert.equal(layout.focus,'solid');
+        assert.equal(layout.iconAlongside,true);
+      }
+    }
+  }finally{await browser.close();}
+});

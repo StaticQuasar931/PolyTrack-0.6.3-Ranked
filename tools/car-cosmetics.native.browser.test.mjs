@@ -6,7 +6,7 @@ import {startResponsiveServer} from './responsive-server.mjs';
 import {RELEASE_INFO} from './release-info.mjs';
 const {chromium}=createRequire(import.meta.url)('C:/Users/Static/Documents/GitHub/PolyTrack 0.6.3 Ranked/tools/verifier/node_modules/playwright');
 const evidence=process.env.COSMETIC_EVIDENCE_DIR||'C:/Users/Static/Documents/Codexstorage/PolyTrack/Projects/Ranked-0.6.3/2026-11-14/ui-followup';
-test('native secondary paint, centered attachments, compact workshop, save/reload and driving',{timeout:180000},async()=>{
+test('native secondary paint, centered attachments, compact workshop, save/reload and driving',{timeout:240000},async()=>{
  await fs.mkdir(evidence,{recursive:true});const server=await startResponsiveServer();let browser,page;const report={release:{number:RELEASE_INFO.number,revision:RELEASE_INFO.revision},errors:[],external:[],checks:[],failedRequests:[],httpErrors:[],consoleErrors:[]};
  const observePage=(target,phase)=>{target.on('requestfailed',request=>report.failedRequests.push({phase,url:request.url(),method:request.method(),failure:request.failure()?.errorText}));target.on('response',response=>{if(response.status()>=400)report.httpErrors.push({phase,url:response.url(),status:response.status()});});target.on('pageerror',error=>report.errors.push(error.message));target.on('console',message=>{if(message.type()!=='error')return;report.consoleErrors.push({phase,text:message.text(),location:message.location()});if(/shader|THREE|WebGL/i.test(message.text()))report.errors.push(message.text());});};
  try{
@@ -55,6 +55,31 @@ test('native secondary paint, centered attachments, compact workshop, save/reloa
   await page.screenshot({path:evidence+'/car-correctness-driving.png',timeout:5000}).catch(error=>{report.optionalCaptureWarnings=[{capture:'driving',message:error.message}];});
   await page.close();page=await context.newPage();await page.bringToFront();page.setDefaultTimeout(5000);await page.route('**/*',route=>route.request().url().startsWith(server.url+'/')?route.continue():(report.external.push(route.request().url()),route.abort()));observePage(page,'reopen');await page.goto(server.url,{waitUntil:'commit',timeout:20000});await enterGarage(true);await poll(async()=>await page.locator('select[data-category=rear]').inputValue()==='rearbar','stored rear preference restored');await page.evaluate(id=>{window.__carProofAccountId=id;},await page.evaluate(()=>Object.keys(localStorage).find(k=>k.startsWith('polytrack-car-cosmetics-rear-v1:'))?.split(':')[1]));await confirmFixture();await poll(async()=>(await inspect()).garages[0]?.selection.finish==='neon');report.reloaded=(await inspect()).garages[0];assert.deepEqual(report.reloaded.selection,report.saved.selection);assert.deepEqual(report.reloaded.style,report.saved.style);await mouse(page.getByRole('button',{name:'Open car workshop',exact:true}));assert.equal(await page.locator('.car-cosmetic-workshop').getAttribute('data-dirty'),'false');
   for(const density of ['low','medium']){await page.evaluate(low=>document.documentElement.classList.toggle('sq-plain-racer-themes',low),density==='low');await poll(async()=>(await inspect()).garages[0].density===density);await choice('accessory','beacon');report[density]=(await inspect()).garages[0];}
+  if(process.env.ARCHIVED_EVENT_CAR_FIXTURE){
+   const fixture=JSON.parse(await fs.readFile(process.env.ARCHIVED_EVENT_CAR_FIXTURE,'utf8'));
+   await mouse(page.getByRole('button',{name:'Close car workshop',exact:true}));
+   await mouse(page.getByRole('button',{name:'Exit',exact:true}));
+   await mouse(page.getByRole('button',{name:'Play',exact:true}));
+   await mouse(page.locator('.track-selection-ui .track').filter({has:page.getByText('Summer 1',{exact:true})}).first());
+   await poll(()=>page.evaluate(()=>!!document.querySelector('.track-info-ui')?.__pt062EventWatch),'native archive watch capability');
+   await page.evaluate(async fixture=>{
+    const accountId=window.__carProofAccountId,require=window.__polytrackWebpackRequire062;
+    const {preparePublishedEventGhost}=await import('/events/public-replay.mjs');
+    const watch=document.querySelector('.track-info-ui').__pt062EventWatch;
+    if(watch.trackId!==fixture.period.trackId)throw Error('Wrong archived track');
+    // The isolated browser uses a fixture account. Keep the published bytes,
+    // time, period, run ID and hash; bind them to the synthetic viewer for this test.
+    const own=await preparePublishedEventGhost({require,period:fixture.period,viewer:accountId,row:{...fixture.row,accountId},entry:{...fixture.entry,accountId}});
+    const other=await preparePublishedEventGhost({require,period:fixture.period,viewer:accountId,row:fixture.row,entry:fixture.entry});
+    window.archivedCarTest={seconds:fixture.row.timeMs/1000,wasSelf:own.isSelf,opponentSelf:other.isSelf,oldStyle:own.carStyle.serialize()};
+    watch.open([own,other]);
+   },fixture);
+   await poll(async()=>(await inspect()).cars.some(car=>car.selection?.sticker==='bolt' && car.paint[0]?.patternPreserved),'archived replay current sticker and rendered paint');
+   const cars=(await inspect()).cars;assert.equal(cars.length,1,'only the owned replay receives local cosmetics');
+   const [owned]=cars;assert.deepEqual(owned.selection,report.saved.selection);assert.deepEqual(owned.style,report.saved.style);assert.equal(owned.paint[0].secondaryGlow,true);
+   assert(owned.mounts.some(m=>m.name==='PolyTrackVisual-sticker-bolt'));
+   report.archivedReplay={...(await page.evaluate(()=>window.archivedCarTest)),style:owned.style,selection:owned.selection};
+  }
   assert.deepEqual(report.errors,[]);assert.deepEqual(report.external,[]);
  }catch(error){report.failure=error.message;report.failureState=await page?.evaluate(()=>({stats:window.__polytrackCarCosmetics?.stats(),native:window.__polytrackCarCosmetics?.inspect(),text:document.body.innerText.slice(-1800)})).catch(()=>null);await page?.screenshot({path:evidence+'/car-correctness-failure.png',timeout:5000}).catch(()=>{});throw error;}finally{await fs.writeFile(evidence+'/car-correctness-proof.json',JSON.stringify(report,null,2));await browser?.close();await server.close();}
 });

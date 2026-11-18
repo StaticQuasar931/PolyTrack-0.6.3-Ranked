@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {deflateSync} from 'node:zlib';
-import {prepareOwnEventGhost,EVENT_REPLAY_LIMITS} from './native-replay.mjs';
+import {prepareOwnEventGhost,preparedEventReplayOwner,EVENT_REPLAY_LIMITS} from './native-replay.mjs';
 function runtime(){
  const source=fs.readFileSync(new URL('../main.bundle.js',import.meta.url),'utf8'),end=source.lastIndexOf('},n={};function i(e)');assert(end>0);
  const context=vm.createContext({console,TextEncoder,TextDecoder,Uint8Array,Uint16Array,Int32Array,ArrayBuffer,DataView,atob,btoa,setTimeout,clearTimeout});
@@ -13,7 +13,7 @@ function runtime(){
 }
 function fixture(){const require=runtime(),session={accountId:'a'.repeat(64),trackId:'b'.repeat(64),periodId:'daily-fixture'},best={attemptId:'event-attempt',timeMs:20000};const recording=new (require(1754).A)();recording.recordFrame(0,{up:true,right:false,down:false,left:false,reset:false});recording.recordFrame(1500,{up:true,right:true,down:false,left:false,reset:false});const row={...session,...best,frames:best.timeMs,replay:recording.serialize(),carStyle:require(8724).A.default().serialize(),source:'local-event-recording'};return {require,session,best,row,recording};}
 test('own event ghost constructs real native recording, style and time without verification claims',()=>{
- const f=fixture(),ghost=prepareOwnEventGhost(f);assert(ghost.recording instanceof f.require(1754).A);assert(ghost.carStyle instanceof f.require(8724).A);assert.equal(ghost.time.numberOfFrames,20000);assert.equal(ghost.recording.serialize(),f.row.replay);assert.equal(ghost.nickname,'Your event PB (local)');assert.equal(ghost.isSelf,true);assert.equal(ghost.verified,undefined);
+ const f=fixture(),ghost=prepareOwnEventGhost(f);assert(ghost.recording instanceof f.require(1754).A);assert(ghost.carStyle instanceof f.require(8724).A);assert.equal(ghost.time.numberOfFrames,20000);assert.equal(ghost.recording.serialize(),f.row.replay);assert.equal(ghost.nickname,'Your event PB (local)');assert.equal(ghost.isSelf,true);assert.equal(ghost.verified,undefined);assert.equal(preparedEventReplayOwner(ghost.recording),f.row.accountId);assert.equal(preparedEventReplayOwner(new (f.require(1754).A)()),undefined);
 });
 test('ghost rejects another account, period, track, attempt, PB time or normal source',()=>{
  for(const edit of [{accountId:'c'.repeat(64)},{periodId:'weekly-fixture'},{trackId:'d'.repeat(64)},{attemptId:'old'},{timeMs:19000,frames:19000},{source:'normal-recording'}]){const f=fixture();assert.throws(()=>prepareOwnEventGhost({...f,row:{...f.row,...edit}}));}
@@ -84,7 +84,7 @@ test('high-work own replay requires a live branded engine after full structure a
  class Worker extends EventTarget{postMessage(message){queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:{...message,lookupVersion:pin.lookupVersion,lookupDigest:pin.lookupDigest}})));}}
  const playbackEngine=await confirmPlaybackEngine({worker:new Worker(),workerBytes:fs.readFileSync(new URL('../simulation_worker.bundle.js',import.meta.url)),mainBytes:fs.readFileSync(new URL('../main.bundle.js',import.meta.url))});
  const ghost=prepareOwnEventGhost({...options,playbackEngine});
- assert.ok(ghost.requiredPlaybackEngine);assert.equal(ghost.time.numberOfFrames,300000);assert.equal(ghost.verified,undefined);
+ assert.ok(ghost.requiredPlaybackEngine);assert.equal(ghost.time.numberOfFrames,300000);assert.equal(ghost.verified,undefined);assert.equal(preparedEventReplayOwner(ghost.recording),f.row.accountId);assert.equal(preparedEventReplayOwner(new (f.require(1754).A)()),undefined);
  for(const change of [{accountId:'c'.repeat(64)},{periodId:'other'},{trackId:'c'.repeat(64)},{attemptId:'old'},{source:'normal-recording'}])
    assert.throws(()=>prepareOwnEventGhost({...options,playbackEngine,row:{...options.row,...change}}));
  revokePlaybackEngine(playbackEngine);

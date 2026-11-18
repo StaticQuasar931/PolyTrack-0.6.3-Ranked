@@ -143,7 +143,7 @@ test('real mounted preview confirms once and rerenders only authoritative GET da
  {skip:!process.env.PLAYWRIGHT_MODULE,timeout:45000},async()=>{
  const {createRequire}=await import('node:module'),{createServer}=await import('node:http'),{readFile}=await import('node:fs/promises');
  const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE);
- const names=['shop-controller.mjs','shop-session.mjs','shop-browser-lock.mjs','shop-preview.mjs','shop-preview.css','profile-shop-catalog.mjs','profile-shop-art.mjs'];
+ const names=['workshop-sticker-shop-catalog.mjs','shop-controller.mjs','shop-session.mjs','shop-browser-lock.mjs','shop-preview.mjs','shop-preview.css','profile-shop-catalog.mjs','profile-shop-art.mjs'];
  const sources=new Map(await Promise.all(names.map(async name=>['/'+name,await readFile(new URL(name,import.meta.url),'utf8')])));
  const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><link rel="stylesheet" href="/shop-preview.css"><main></main>');}
