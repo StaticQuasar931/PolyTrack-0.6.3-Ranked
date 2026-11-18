@@ -1,3 +1,11 @@
+// Keep replay ownership scoped to one native response. Conflicting or unknown
+// ownership for identical bytes must never style an opponent with local choices.
+export function replayOwnerScope(rows){
+ const owners=new Map();
+ for(const row of rows){if(!row?.recording)continue;const owner=/^[a-f0-9]{64}$/.test(row.owner||'')?row.owner:null;
+  owners.set(row.recording,owners.has(row.recording)&&owners.get(row.recording)!==owner?null:owner);}
+ return owners;
+}
 // External visual hooks only. The stock game and verifier-pinned bundles stay unchanged.
 export function installNativeCarHooks({window,require:load,runtime}={}){
   if(window?.__polytrackNativeCarVisualHooks)return window.__polytrackNativeCarVisualHooks;
@@ -9,6 +17,7 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   }
   const metrics={styleWrites:0,saveEvents:0,authorizedSaves:0};
   const matrixOwners=new WeakMap(),renderers=new WeakSet(),parked=new WeakSet(),candidates=new Map(),restores=[];
+  const replayOwners=new WeakMap(),replayCars=new WeakSet();let responseOwners=null;
   let profileStore=null,boundRoot=null,queued=false,dead=false,lastToken=null,identityChanged=false;
   const safe=fn=>{try{return fn();}catch{return null;}};
   const wrap=(target,key,after)=>{
@@ -41,8 +50,12 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
         for(let i=0;i<4;i++){inputs[i].value='#'+colors[i].toString(16).padStart(6,'0');inputs[i].dispatchEvent(new window.Event('input',{bubbles:true}));}
       },save:()=>{}});
   }
+  const Recording=load(1754).A;
+  wrap(Recording,'deserialize',(_type,args,recording)=>{const owner=responseOwners?.get(args[0]);if(owner&&recording)replayOwners.set(recording,owner);});
   wrap(Renderer.prototype,'addMaterial',renderer=>register(renderer));
-  wrap(Car.prototype,'setCarStyle',car=>{const root=document.querySelector('.customization-ui');if(root){let list=candidates.get(root);if(!list)candidates.set(root,list=new Set());list.add(car);schedule();}});
+  wrap(Car.prototype,'setCarStyle',car=>{const owner=replayOwners.get(car.getRecording()),entry=owner&&exact(car);if(entry&&!replayCars.has(car)){
+      replayCars.add(car);parked.add(car);runtime.created({car,chassis:entry.node,renderer:entry.renderer,three,replayOwner:owner});
+    }const root=document.querySelector('.customization-ui');if(root){let list=candidates.get(root);if(!list)candidates.set(root,list=new Set());list.add(car);schedule();}});
   wrap(Car.prototype,'setVisible',car=>{parked.add(car);schedule();});
   wrap(Car.prototype,'addFinishCallback',car=>{const entry=exact(car);if(entry)runtime.created({car,chassis:entry.node,renderer:entry.renderer,three,controlled:true});});
   wrap(Car.prototype,'dispose',car=>{runtime.carDisposed(car);for(const list of candidates.values())list.delete(car);});
@@ -58,6 +71,6 @@ export function installNativeCarHooks({window,require:load,runtime}={}){
   const explicitSave=event=>{if(isExplicitSave(event))metrics.saveEvents++;};
   document.addEventListener('click',explicitSave,true);document.addEventListener('keydown',explicitSave,true);
   const observer=new window.MutationObserver(schedule);observer.observe(document.body,{childList:true,subtree:true});
-  const api=Object.freeze({stats:()=>({...metrics}),dispose(){if(dead)return;dead=true;observer.disconnect();document.removeEventListener('click',explicitSave,true);document.removeEventListener('keydown',explicitSave,true);if(boundRoot)runtime.close(boundRoot);for(const restore of restores.reverse())restore();candidates.clear();profileStore=null;lastToken=null;if(window.__polytrackNativeCarVisualHooks===api)delete window.__polytrackNativeCarVisualHooks;}});
+  const api=Object.freeze({withReplayOwners(rows,callback){const prior=responseOwners;responseOwners=replayOwnerScope(rows);try{return callback();}finally{responseOwners=prior;}},stats:()=>({...metrics}),dispose(){if(dead)return;dead=true;observer.disconnect();document.removeEventListener('click',explicitSave,true);document.removeEventListener('keydown',explicitSave,true);if(boundRoot)runtime.close(boundRoot);for(const restore of restores.reverse())restore();candidates.clear();profileStore=null;lastToken=null;if(window.__polytrackNativeCarVisualHooks===api)delete window.__polytrackNativeCarVisualHooks;}});
   window.__polytrackNativeCarVisualHooks=api;return api;
 }

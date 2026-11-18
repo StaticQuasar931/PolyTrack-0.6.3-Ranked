@@ -6013,5 +6013,29 @@
     "codeModifiedAt": "2026-11-06T17:56:55.000Z",
     "sizeBytes": 93502,
     "category": "Kodub weekly"
+  },
+  {
+    "id": "kodub-99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37",
+    "trackId": "99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37",
+    "name": "Uplink⛐Error",
+    "author": "dice🌹, Kaiser-Burn",
+    "source": "Kodub weekly",
+    "sourceUrl": "https://www.kodub.com/apps/polytrack",
+    "tags": [
+      "kodub-weekly"
+    ],
+    "tier": "Community",
+    "archiveImport": true,
+    "trackPath": "events/kodub/assets/9a4fbc02e4cf8416fc7fd6fc6691072b8b349be5f7f02aab5a7b2990ada6019a.track",
+    "thumbnailUrl": "events/kodub/assets/83f20bb6bd85690eeb247c83d60e1bd2280b8ee187a6863ab61d8607195b5e05.webp",
+    "description": "Official Kodub weekly selection. Captured weekly end: 2026-11-22T20:00:00.000Z. Start date not asserted.",
+    "weeklyEndsAt": "2026-11-22T20:00:00.000Z",
+    "dateProvenance": "events/kodub/selections.json",
+    "codeHash": "9a4fbc02e4cf8416fc7fd6fc6691072b8b349be5f7f02aab5a7b2990ada6019a",
+    "codeName": "Uplink⛐Error",
+    "codeAuthor": "dice🌹, Kaiser-Burn",
+    "codeModifiedAt": "2026-11-03T23:05:21.000Z",
+    "sizeBytes": 99587,
+    "category": "Kodub weekly"
   }
 ]
