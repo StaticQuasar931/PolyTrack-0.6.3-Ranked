@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 471,
+    "number": 472,
     "version": "0.6.3",
-    "revision": 399,
+    "revision": 400,
     "notes": [
-      "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
+      "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
     ]
   },
   "entries": [
+    {
+      "number": 471,
+      "title": "Clarify snapshot updates and Workshop placement",
+      "commit": "af594bb425c00cc081ade831bb225c6a04298a2d",
+      "committedAt": "2026-11-22T23:43:34.000Z",
+      "notes": [
+        "The update button now pops into view, and snapshot notices tell you how many racers, tracks, and race times are new. Selecting Center or Flat rear for a sticker now turns the Workshop camera to that area."
+      ]
+    },
     {
       "number": 470,
       "title": "Show new results in snapshot updates",
@@ -179,17 +188,6 @@ const historyData = {
       "committedAt": "2026-11-22T03:45:22.000Z",
       "notes": [
         "Hazard Band and Vector Wing join the Style Shop. Older game tabs can still use the Shop before updating."
-      ]
-    },
-    {
-      "number": 449,
-      "title": "Add mesh previews, sticker placement, and event PB recovery",
-      "commit": "6532b51039250fba103df0375a9e119fa539587c",
-      "committedAt": "2026-11-22T03:34:10.000Z",
-      "notes": [
-        "See real part previews in the Workshop and place larger stickers, including a custom race number, on more sides of the car.",
-        "Try new paint finishes and fitted parts. Podium crowns match your best confirmed medal.",
-        "Event personal bests can recover from a full browser cache without removing pending runs or saved replays."
       ]
     }
   ],
