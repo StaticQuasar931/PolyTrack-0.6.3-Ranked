@@ -112,3 +112,13 @@ html body #overallProfilePopup .profile-podium-wide .profile-medal-card--single[
   outline:2px solid var(--podium-accent);
   outline-offset:2px;
 }
+
+.profile-podium-details{inline-size:min(520px,calc(100% - 24px));--podium-tint:#e5efff;border-color:#5e799d;border-top:3px solid var(--podium-tint)}
+.profile-podium-details[data-medal=gold]{--podium-tint:#ffe381}
+.profile-podium-details[data-medal=bronze]{--podium-tint:#ffbb91}
+.profile-podium-details>header{padding-bottom:8px;border-bottom:1px solid #48618b}
+.profile-podium-details h3{color:var(--podium-tint)}
+.profile-podium-details p,.profile-podium-details li small{font:13px/1.35 sans-serif}
+.profile-podium-details li+li{margin-top:0}
+.profile-podium-details li button,.profile-podium-details li[data-large-field] button{border:0;border-bottom:1px solid #466287;background:transparent;padding:8px 6px}
+.profile-podium-details li button:is(:hover,:focus-visible){background:#2e507e}

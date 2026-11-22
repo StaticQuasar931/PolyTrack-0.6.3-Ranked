@@ -2,15 +2,25 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 445,
+    "number": 446,
     "version": "0.6.3",
-    "revision": 378,
+    "revision": 379,
     "notes": [
-      "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
-      "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
+      "Equip two stickers in different spots and save them with Garage Save.",
+      "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
     ]
   },
   "entries": [
+    {
+      "number": 445,
+      "title": "Match the native Garage rail and streamline Style Shop",
+      "commit": "9eafec9a1fe63106cb753f9aae16cf68b57656de",
+      "committedAt": "2026-11-22T01:40:47.000Z",
+      "notes": [
+        "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
+        "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
+      ]
+    },
     {
       "number": 444,
       "title": "Improve Workshop controls and responsive Community Events",
@@ -189,15 +199,6 @@ const historyData = {
       "notes": [
         "Rank time is smaller and clearer; movement arrows disappear after three days.",
         "Event cards restore Rolling Hills to the middle, improve weekly artwork spacing, and remove duplicate dividers."
-      ]
-    },
-    {
-      "number": 418,
-      "title": "Keep installed update history consistent",
-      "commit": "db12d95c493c58644c59f34680c98b42319a8b06",
-      "committedAt": "2026-11-16T05:25:41.000Z",
-      "notes": [
-        "Update history now matches the installed game version."
       ]
     }
   ],

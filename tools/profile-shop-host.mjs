@@ -265,14 +265,7 @@ export function createProfileShopHost({document,getAccountId,getAuth,storage,rev
     function createDialog(){
       ensureStyle();
       dialog=document.createElement('dialog');dialog.className='profile-shop-dialog';dialog.setAttribute('aria-label','Style shop');
-      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><div class="sp-host-actions"><button type="button" data-shop-wallet-sync>Sync wallet</button><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></div><nav class="sp-host-back" aria-label="Return to Racer Hub"><button type="button" data-shop-back="studio">Back to Studio</button><button type="button" data-shop-back="achievements">Back to Achievements</button></nav></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
-      const back=dialog.querySelector('.sp-host-back');
-      for(const button of back.querySelectorAll('button')){
-        const tab=button.dataset.shopBack,callback=tab==='studio'?openStudio:openAchievements;
-        button.hidden=typeof callback!=='function'&&typeof content.__profileHubOpen!=='function';
-        button.onclick=()=>returnTo(tab,false);
-      }
-      back.hidden=[...back.children].every(button=>button.hidden);
+      dialog.innerHTML='<header class="sp-host-head"><strong>Style shop</strong><div class="sp-host-actions"><button type="button" data-shop-wallet-sync>Sync wallet</button><button type="button" data-shop-host-close aria-label="Close style shop">Close</button></div></header><p class="sp-host-gate" role="status"></p><div class="sp-host-body"></div>';
       const grid=document.createElement('div');grid.className='sp-live-layout';
       const live=document.createElement('aside');live.className='sp-live-preview profile-customizer-preview';live.setAttribute('aria-label','Your racer preview');
       live.innerHTML='<header><strong>Your racer</strong><span data-sp-live-mode>CURRENT DESIGN</span></header><div class="sp-live-actions"><p data-sp-live-note role="status"></p><button type="button" data-sp-live-clear hidden>Exit preview</button></div><div data-sp-live-stage></div>';
