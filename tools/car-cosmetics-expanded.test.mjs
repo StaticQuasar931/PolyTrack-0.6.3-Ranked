@@ -110,3 +110,19 @@ test('Workshop preview restores only the camera it owns',async()=>{
  view.focus('finish');renderer.camera={};const native=renderer.camera;
  view.reset();assert.equal(renderer.camera,native);
 });
+
+test('second decal saves in an isolated key, rejects overlap and preserves existing users',()=>{
+ const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ assert(saveCarVisuals(storage,account,{...C.defaults,sticker:'bolt',stickerLayout:{position:'nose-right',size:'small'}}));
+ const before=readCarCosmetic(storage,account),second={id:'night-grid',layout:{position:'cockpit-center',size:'standard'}};
+ assert(saveCarVisuals(storage,account,{...normalizeCarSelection(before),extraSticker:second}));
+ assert.deepEqual(readCarCosmetic(storage,account).extraSticker,second);
+ assert.equal(JSON.parse(values.get('polytrack-car-cosmetics-v1:'+account)).extraSticker,undefined);
+ assert.equal(readCarCosmetic(storage,'f'.repeat(64)).extraSticker,undefined);
+ assert.equal(saveCarVisuals(storage,account,{...normalizeCarSelection(before),extraSticker:{...second,layout:before.stickerLayout}}),false);
+ assert.equal(carChangedSelectionAllowed({...normalizeCarSelection(before),extraSticker:{...second,id:'solar-flare'}},['sticker'],account),false);
+ assert(saveCarCosmetic(storage,account,'none',[1,2,3,4],123));
+ assert.deepEqual(readCarCosmetic(storage,account).extraSticker,second);
+ assert(saveCarVisuals(storage,account,normalizeCarSelection(before)));
+ assert.equal(readCarCosmetic(storage,account).extraSticker,undefined);
+});

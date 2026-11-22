@@ -150,3 +150,16 @@ test('the current eight-row catalog uses only canonical trusted archive aliases'
   const {c}=catalogFixture(catalog),loaded=await c.loadExtraTracksCatalog();
   for(const row of weekly){assert.ok(loaded.some(entry=>entry.trackId===row.trackId));assert.equal(c.extraTrackInfoById.has(row.trackId),false);assert.equal(c.unrankedExtraTrackIds.has(row.trackId),false);}
 });
+
+test('weekly downloads retry transient connection errors only and stay within two retries',async()=>{
+ const {downloadWeeklyAsset}=await import('./sync-kodub-weekly.mjs');
+ let calls=0;const waited=[];
+ const bytes=await downloadWeeklyAsset('https://example.test/fixture',16,{wait:async ms=>waited.push(ms),fetchImpl:async()=>{
+   if(++calls===1)throw new TypeError('fetch failed',{cause:new AggregateError([{code:'ECONNREFUSED'}])});
+   if(calls===2)return new Response('busy',{status:503});
+   return new Response('asset');
+ }});
+ assert.equal(new TextDecoder().decode(bytes),'asset');assert.deepEqual(waited,[1000,3000]);
+ calls=0;await assert.rejects(downloadWeeklyAsset('https://example.test/fixture',16,{wait:async()=>assert.fail('permanent errors do not retry'),fetchImpl:async()=>{calls++;return new Response('',{status:403});}}));assert.equal(calls,1);
+ calls=0;await assert.rejects(downloadWeeklyAsset('https://example.test/fixture',16,{wait:async()=>{},fetchImpl:async()=>{calls++;return new Response('',{status:503});}}));assert.equal(calls,3);
+});

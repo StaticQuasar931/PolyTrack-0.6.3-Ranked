@@ -253,7 +253,7 @@ test('duplicate and malformed fresh receipts never fabricate a balance or author
  for(const change of [{duplicate:true},{dayEndsAt:1},{requestId:'wrong-request-123'},{delta:16}]){
   const page=await fixture(t);await installClock(page);await page.evaluate(change=>{window.freshLoginClock={claimDay:20000,serverNow:20000*86400000+1000,dayEndsAt:20001*86400000};window.claimSuccessOverride=change;},change);
   await openShop(page);await settleShop(page);const before=await page.evaluate(()=>({claims:claims.length,walletReads:network.filter(r=>r.path==='/v1/currency/wallet').length,pending:Object.entries(localStorage).some(([k,v])=>k.startsWith('polytrack-shop')&&v.includes('requestId'))}));
-  if(before.walletReads)await assertConfirmedBalance(page);else {const labels=await page.locator('.sp-summary strong').allTextContents();assert.ok(labels.every(text=>/^(Not available|Synchronizing\.\.\.)$/.test(text)),'unconfirmed claim balance is not a wallet: '+JSON.stringify(labels));}
+  if(before.walletReads)await assertConfirmedBalance(page);else {const labels=await page.locator('.sp-summary strong').allTextContents();assert.ok(labels.every(text=>/^(Not synced|Synchronizing\.\.\.)$/.test(text)),'unconfirmed claim balance is not a wallet: '+JSON.stringify(labels));}
   await page.evaluate(()=>shopElapsed=900001);await reopenShop(page);
   if(before.pending)assert.equal(await page.evaluate(()=>claims.length),before.claims,'pending request is never auto-replayed');else assert.equal(await page.evaluate(()=>claims.filter(id=>id==='login').length),2,'untrusted fresh/duplicate clock does not suppress future probes');
   assert.equal(await page.evaluate(()=>draftWrites+dbCalls),0);page.noExternal();
@@ -421,8 +421,7 @@ test('Shop returns focus to the originating tab or explicit Racer Hub destinatio
  await page.keyboard.press('Escape');
  assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true');
  assert.equal(await page.locator('[data-ph-shop]').evaluate(node=>node===document.activeElement),true);
- await page.locator('[data-ph-shop]').click();
- await page.getByRole('button',{name:'Back to Studio'}).click();
+ await page.locator('[data-ph-tab=studio]').click();
  assert.equal(await page.locator('[data-ph-tab="studio"]').evaluate(node=>node===document.activeElement&&node.getAttribute('aria-selected')==='true'),true);
  await page.locator('.profile-shop-open').click();
  const item=page.locator('[data-sp-action="preview"][data-sp-id="profile-petrol"]');
@@ -432,14 +431,14 @@ test('Shop returns focus to the originating tab or explicit Racer Hub destinatio
  await page.locator('[data-sp-live-clear]').click();
  assert.equal(await item.evaluate(node=>node===document.activeElement&&node.getAttribute('aria-pressed')==='false'),true);
  await item.click();
- await page.getByRole('button',{name:'Back to Achievements'}).click();
- assert.equal(await page.locator('[data-ph-tab="achievements"]').evaluate(node=>node===document.activeElement&&node.getAttribute('aria-selected')==='true'),true);
+ await page.getByRole('button',{name:'Close style shop'}).click();
+ assert.equal(await page.locator('[data-ph-tab="studio"]').getAttribute('aria-selected'),'true');
  assert.equal(await page.locator('.profile-shop-dialog').count(),0);
  assert.equal(await page.evaluate(()=>document.querySelector('#content').__cosmeticPreviewController.canPublish()),true);
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls+draftWrites),0);page.noExternal();
 });
 
-test('Back to Achievements uses the optional Shop host callback',async t=>{
+test('Close from Achievements uses the optional Shop host callback',async t=>{
  const page=await fixture(t,{enabled:false});
  await page.evaluate(()=>{
   const root=document.querySelector('#content');
@@ -447,10 +446,10 @@ test('Back to Achievements uses the optional Shop host callback',async t=>{
   root.__shopCleanup=actualShopHost().bind(root,{accountId:activeAccount,isSelf:true,openStudio:()=>cleanup.open('studio'),
     openAchievements:()=>{achievementReturns++;return cleanup.open('achievements');}});
  });
- await openShop(page,{sync:false});
- await page.getByRole('button',{name:'Back to Achievements'}).click();
+ await page.locator('[data-ph-launch=achievements]').click();await page.locator('[data-ph-shop]').click();
+ assert.equal(await page.locator('.sp-host-back').count(),0);await page.getByRole('button',{name:'Close style shop'}).click();
  assert.equal(await page.evaluate(()=>achievementReturns),1);
- assert.equal(await page.locator('[data-ph-tab="achievements"]').evaluate(node=>node===document.activeElement),true);
+ assert.equal(await page.locator('[data-ph-tab="achievements"]').getAttribute('aria-selected'),'true'); assert.equal(await page.locator('[data-ph-shop]').evaluate(node=>node===document.activeElement),true);
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);page.noExternal();
 });
 
@@ -469,12 +468,12 @@ test('offline after remount shows a display-only balance for the same owner; pur
   await page.evaluate(uid=>fixtureAuth.emit(uid===null?null:{...fixtureUser,uid}),owner);
   assert.equal(await page.locator('.profile-shop-dialog').count(),0);
   await openShop(page,{sync:false});
-  assert.equal(await page.locator('.sp-summary strong').innerText(),owner==='offline-owner'?previous:'Not available');
+  assert.equal(await page.locator('.sp-summary strong').innerText(),owner==='offline-owner'?previous:'Not synced');
  }
  assert.equal(await page.evaluate(()=>network.length+tokenCalls+dbCalls),0);
  await page.context().setOffline(false);
  await page.locator('[data-shop-wallet-sync]:enabled').waitFor();
- assert.equal(await page.locator('.sp-summary strong').innerText(),'Not available');
+ assert.equal(await page.locator('.sp-summary strong').innerText(),'Not synced');
  assert.equal(await page.locator('[data-sp-action="buy"]:enabled').count(),0);
  await page.locator('[data-shop-wallet-sync]').click();await settleShop(page);await assertConfirmedBalance(page);
  const cachedBalance=()=>page.evaluate(()=>JSON.parse(Object.entries(localStorage).find(([key])=>key.startsWith('polytrack-profile-shop-balance-ui-v1:'))[1]).balance);

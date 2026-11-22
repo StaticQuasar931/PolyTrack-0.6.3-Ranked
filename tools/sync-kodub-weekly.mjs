@@ -32,11 +32,26 @@ export async function mergeTrustedTrackHistory(history,candidates,readAsset) {
   return [...records.values()].slice(-TRUSTED_LIMIT);
 }
 
-async function download(url,limit) {
-  return boundedBytes(await fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(15000)}),limit);
+const transientCodes=new Set(['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET']);
+const transientDownloadError=(error,depth=0)=>depth<3&&!!error&&(error.name==='TimeoutError'||transientCodes.has(error.code)||
+  transientDownloadError(error.cause,depth+1)||Array.isArray(error.errors)&&error.errors.some(child=>transientDownloadError(child,depth+1)));
+export async function downloadWeeklyAsset(url,limit,{fetchImpl=fetch,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+  const delays=[1000,3000];
+  for(let attempt=0;;attempt++){
+    try{
+      const response=await fetchImpl(url,{headers,redirect:'error',signal:AbortSignal.timeout(15000)});
+      if(attempt<delays.length&&[502,503,504].includes(response.status)){
+        await response.body?.cancel();await wait(delays[attempt]);continue;
+      }
+      return await boundedBytes(response,limit);
+    }catch(error){
+      if(attempt>=delays.length||!transientDownloadError(error))throw error;
+      await wait(delays[attempt]);
+    }
+  }
 }
 async function syncKodubWeekly() {
-const metadata = JSON.parse(new TextDecoder().decode(await download(KODUB_ROOT+'?version=0.6.3',16384)));
+const metadata = JSON.parse(new TextDecoder().decode(await downloadWeeklyAsset(KODUB_ROOT+'?version=0.6.3',16384)));
 const current = validateWeekly(metadata);
 if (!current) throw Error('No unexpired Kodub selection; previous capture left intact');
 const readJson=async name=>{try{return JSON.parse(await readFile(new URL(name,directory),'utf8'));}catch(error){if(error.code==='ENOENT')return null;throw error;}};
@@ -45,7 +60,7 @@ const assets = [];
 for (const [field,type] of [['trackUrl','track'],['thumbnailUrl','image'],['coverUrl','image']]) {
   if (field === 'coverUrl' && current[field] === null) continue;
   assetPath(current[field],type);
-  const bytes=validateAsset(await download(current[field]+'?version=0.6.3',2*1024*1024),type);
+  const bytes=validateAsset(await downloadWeeklyAsset(current[field]+'?version=0.6.3',2*1024*1024),type);
   const digest=createHash('sha256').update(bytes).digest('hex');
   const name='assets/'+digest+(type==='track'?'.track':'.webp');
   assets.push([name,bytes]);current[field]=name;

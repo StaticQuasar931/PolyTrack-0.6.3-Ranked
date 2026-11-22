@@ -57,8 +57,8 @@ test('all canonical and staged styles render with Style Coins, categories and no
 test('points are comma formatted; only confirmed same-account wallet data is shown',async t=>{
  const page=await fixture(t,{wallet:{status:'confirmed',accountId:'driver-a',balance:12345,revision:2},catalog:SHOP_CATALOG.map((item,index)=>index?item:{...item,price:1234})});
  assert.equal(await page.locator('.sp-summary strong').innerText(),'12,345 Style Coins');assert.equal(await page.getByRole('button',{name:'Buy for 1,234 Style Coins'}).count(),0);assert.equal(await page.locator('.sp-item').count(),SHOP_CATALOG.length-1);
- await page.evaluate(()=>cleanup.update({wallet:{status:'pending',accountId:'driver-a',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not available');
- await page.evaluate(()=>cleanup.update({wallet:{status:'confirmed',accountId:'other',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not available');
+ await page.evaluate(()=>cleanup.update({wallet:{status:'pending',accountId:'driver-a',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not synced');
+ await page.evaluate(()=>cleanup.update({wallet:{status:'confirmed',accountId:'other',balance:99999,revision:3}}));assert.equal(await page.locator('.sp-summary strong').innerText(),'Not synced');
  assert.equal(await page.locator('[data-sp-action="claim"]:enabled,[data-sp-action="buy"]:enabled').count(),0);
 });
 test('purchase requires confirmation, cancel restores focus, and pending never double submits or deducts',async t=>{

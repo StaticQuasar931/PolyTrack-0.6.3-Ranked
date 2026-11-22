@@ -1,6 +1,5 @@
 .car-workshop-tabs{display:flex!important;flex-wrap:nowrap!important;align-items:stretch;overflow-x:auto;gap:6px}
 .car-workshop-tabs>.car-workshop-launcher{margin-inline-start:3px;white-space:nowrap}
-.car-workshop-launcher:not(.selected)::after{content:'';position:absolute;inset:auto 12px 0;height:2px;background:#7ee7ff;opacity:.72;pointer-events:none}
 .car-workshop-launcher svg.button-icon{width:1em;height:1em;vertical-align:middle}
 .customization-panel-ui>.car-cosmetic-workshop.panel.options-panel{
  display:block;top:64px;right:0;bottom:auto;left:auto;z-index:5;
@@ -49,3 +48,8 @@
  .car-sticker-layout{grid-template-columns:minmax(0,1fr)}
  .car-sticker-layout label{padding-top:1px}
 }
+
+.car-sticker-slots{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:2px 0 7px}
+.car-sticker-slots button{font:600 13px/1.2 sans-serif}
+.car-sticker-slots [aria-pressed=true]{background:#334b77;border-color:#e1f6ff}
+.car-workshop-swatches>button[data-option-category=sticker] svg{background:#2f436a;width:52px;height:48px;padding:3px;box-sizing:border-box;border:1px solid #516b91}

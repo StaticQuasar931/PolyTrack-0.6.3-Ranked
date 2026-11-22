@@ -89,6 +89,13 @@ test('deduplicates installations and throttles interval and visibility-resume ch
   h.setTime(1000 + 30 * 60 * 1000); await h.handle.check(); assert.equal(h.calls, 2); h.handle.dispose();
 });
 
+test('menu activity checks at two minutes, without increasing interval or overlapping requests', async () => {
+  const h=harness();await h.handle.check();
+  assert.ok([...h.timers.values()].some(timer=>timer.delay===600000));
+  h.setTime(120999);await h.handle.check({menu:true});assert.equal(h.calls,1);
+  h.setTime(121000);await Promise.all([h.handle.check({menu:true}),h.handle.check({menu:true})]);assert.equal(h.calls,2);
+  assert.equal(h.reloadChecks,0);h.document.visibilityState='hidden';h.setTime(241000);await h.handle.check({menu:true});assert.equal(h.calls,2);h.handle.dispose();
+});
 test('checks static update data during a race but defers prompts and skips hidden tabs', async () => {
   let idle = false; const h = harness({ isIdle: () => idle }); await h.handle.check();
   assert.equal(h.calls,1); assert.equal(h.document.button,undefined); assert.equal(h.reloadChecks,0);

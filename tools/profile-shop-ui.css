@@ -12,9 +12,7 @@
 /* Blue UI chrome is independent of the racer's cosmetic colors. */
 .profile-shop-dialog .shop-preview{--sp-cyan:#bed7ff;--sp-amber:#c7d7ed;--sp-line:#4b6c9e;background:#203762}
 .profile-shop-dialog .sp-host-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;background:#28477c}
-.profile-shop-dialog .sp-host-back{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
 .profile-shop-dialog .sp-host-head [hidden]{display:none}
-.profile-shop-dialog .sp-host-back button{min-height:40px;padding:6px 12px;background:#28477c}
 .profile-shop-dialog .sp-host-head button:focus-visible,.profile-shop-dialog [data-sp-live-clear]:focus-visible{outline:2px solid #ffe1a0;outline-offset:2px}
 .profile-shop-dialog .sp-item{background:#233e6b;border-color:#4b6c9e;border-top-color:#6d8fb9}
 .profile-shop-dialog .sp-item-actions>button:last-child:not(:disabled){background:#4269a7;color:#fff;border-color:#7fa0d2}

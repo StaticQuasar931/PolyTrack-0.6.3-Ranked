@@ -1,13 +1,13 @@
 const releaseInfo = {
-  "number": 445,
+  "number": 446,
   "version": "0.6.3",
-  "revision": 378,
+  "revision": 379,
   "notes": [
-    "Workshop now uses the Garage options rail. Try larger sticker previews, Double Apex, and Pit Stripe.",
-    "Move between the Style Shop, Racer Studio, and Achievements. The Shop shows your last confirmed balance, and podium details close cleanly."
+    "Equip two stickers in different spots and save them with Garage Save.",
+    "Update checks happen sooner as you move through menus. The Style Shop and podium details have simpler layouts."
   ],
-  "preparedAt": "2026-11-22T01:40:45.647Z",
-  "committedAt": "2026-11-22T01:40:47.000Z"
+  "preparedAt": "2026-11-22T02:01:12.693Z",
+  "committedAt": "2026-11-22T02:01:15.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

@@ -25,7 +25,9 @@ function confirmedOldCopyBoot(document, revision, now) {
   } catch { return 0; } // Optional local storage must never affect updates or compatibility.
 }
 
-const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+const CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const MENU_CHECK_MIN_MS = 2 * 60 * 1000;
+const UPDATE_MENU_ACTIONS = '#injectedRankingsBtn,.menu-ui .main-buttons-container button,.settings-menu-ui button,.track-selection-ui .image-button-container button,.track-selection-ui > .bar button,#overallLeaderboardPanel button[data-ranking-category],.sq-events-entry';
 const REQUEST_TIMEOUT_MS = 8000;
 const installations = new WeakMap();
 // Explicit menu opens bypass only the background cooldown, never reload safety.
@@ -793,17 +795,17 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
       refreshOldCopyNotice();
     } catch { /* Keep gameplay independent of notification UI. */ }
   };
-  const check = async ({force = false} = {}) => {
+  const check = async ({force = false, menu = false} = {}) => {
     if (disposed) return;
     if (force === true) explicitOffer = true;
     resume();
     // Discovery is safe during a race; displaying prompts and reloading remain idle-only.
-    try { if (!isVisible(document)) return; }
+    try { if (!isVisible(document) || document.defaultView?.navigator?.onLine === false) return; }
     catch { failOpen(); return; }
     if (inFlight) return inFlight;
     let startedAt;
     try { startedAt = now(); } catch { failOpen(); return; }
-    if (force !== true && startedAt - lastCheckedAt < intervalMs) return;
+    if (force !== true && startedAt - lastCheckedAt < (menu ? Math.min(MENU_CHECK_MIN_MS, intervalMs) : intervalMs)) return;
     lastCheckedAt = startedAt;
     inFlight = Promise.resolve().then(async () => {
       const read = async url => {
@@ -883,11 +885,18 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
   };
   const scheduleNext = () => {
     if (disposed) return;
-    try { timer = schedule(async () => { await check(); scheduleNext(); }, intervalMs); }
+    try {
+      const remaining=isVisible(document)&&document.defaultView?.navigator?.onLine!==false?Math.max(1000,intervalMs-(now()-lastCheckedAt)):intervalMs;
+      timer = schedule(async () => { await check(); scheduleNext(); }, Math.min(intervalMs,remaining));
+    }
     catch { failOpen(); }
   };
   const onVisibilityChange = () => { if (isVisible(document)) void check(); };
   const onResume = () => { resume(); void check(); };
+  const onMenuAction = event => {
+    if (event.defaultPrevented || !event.target?.closest?.(UPDATE_MENU_ACTIONS)) return;
+    void check({menu:true});
+  };
   // Match the installed notice: modal keys and their dismissal keyup must not
   // reach the game's document-level shortcuts. Native button defaults remain.
   const held = new Set();
@@ -899,6 +908,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     }
     if (event.type === 'keyup') held.delete(code);
   };
+  document.addEventListener('click', onMenuAction, true);
   document.addEventListener('visibilitychange', onVisibilityChange);
   for (const type of ['keydown', 'keyup']) document.defaultView?.addEventListener(type, guardDialogKey, true);
   document.defaultView?.addEventListener('focus', onResume);
@@ -909,6 +919,7 @@ export function installSiteUpdates({ revision, document = globalThis.document, f
     held.clear();
     stopBlockedWatch();
     clearOldCopyNotice();
+    document.removeEventListener('click', onMenuAction, true);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     for (const type of ['keydown', 'keyup']) document.defaultView?.removeEventListener(type, guardDialogKey, true);
     document.defaultView?.removeEventListener('focus', onResume);
