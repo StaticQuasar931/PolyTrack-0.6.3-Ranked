@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 472,
+    "number": 473,
     "version": "0.6.3",
-    "revision": 400,
+    "revision": 401,
     "notes": [
-      "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
+      "Improved name filtering for event standings. A filtered name does not remove a race time or change their event points."
     ]
   },
   "entries": [
+    {
+      "number": 472,
+      "title": "Group Beat the Owner under Style",
+      "commit": "3048b7d8df99e0cf7e318fa420e6835cfaeafd04",
+      "committedAt": "2026-11-22T23:49:03.000Z",
+      "notes": [
+        "Beat the Owner is now a challenge in the Style path. The goal details are shorter, and you can still open previews of eligible tracks."
+      ]
+    },
     {
       "number": 471,
       "title": "Clarify snapshot updates and Workshop placement",
@@ -179,15 +188,6 @@ const historyData = {
         "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
         "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
         "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
-      ]
-    },
-    {
-      "number": 450,
-      "title": "Keep the Style Shop compatible across game versions",
-      "commit": "df26f867c65737c64bc06d732cc4416618887383",
-      "committedAt": "2026-11-22T03:45:22.000Z",
-      "notes": [
-        "Hazard Band and Vector Wing join the Style Shop. Older game tabs can still use the Shop before updating."
       ]
     }
   ],
