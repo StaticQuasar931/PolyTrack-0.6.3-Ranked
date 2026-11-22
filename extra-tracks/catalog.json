@@ -6037,5 +6037,29 @@
     "codeModifiedAt": "2026-11-03T23:05:21.000Z",
     "sizeBytes": 99587,
     "category": "Kodub weekly"
+  },
+  {
+    "id": "kodub-01c22a52c55af8b7efc1a72583d8fe6220dc7800d32518be04f11f8ea565a3ca",
+    "trackId": "01c22a52c55af8b7efc1a72583d8fe6220dc7800d32518be04f11f8ea565a3ca",
+    "name": "Phantom Imperium",
+    "author": "Karpin_, dice🌹, Mask",
+    "source": "Kodub weekly",
+    "sourceUrl": "https://www.kodub.com/apps/polytrack",
+    "tags": [
+      "kodub-weekly"
+    ],
+    "tier": "Community",
+    "archiveImport": true,
+    "trackPath": "events/kodub/assets/f84a3a7a5ba31a2b98befbab73ea13c86069fcee9dba17c183a2faac3da2756b.track",
+    "thumbnailUrl": "events/kodub/assets/d619dfe2271fbcf3682f96417f67750ec5221765fe9b57449bc8b9a34d38eae4.webp",
+    "description": "Official Kodub weekly selection. Captured weekly end: 2026-11-29T20:00:00.000Z. Start date not asserted.",
+    "weeklyEndsAt": "2026-11-29T20:00:00.000Z",
+    "dateProvenance": "events/kodub/selections.json",
+    "codeHash": "f84a3a7a5ba31a2b98befbab73ea13c86069fcee9dba17c183a2faac3da2756b",
+    "codeName": "Phantom Imperium",
+    "codeAuthor": "Karpin_, dice🌹, Mask",
+    "codeModifiedAt": "2026-11-07T22:46:51.000Z",
+    "sizeBytes": 160656,
+    "category": "Kodub weekly"
   }
 ]

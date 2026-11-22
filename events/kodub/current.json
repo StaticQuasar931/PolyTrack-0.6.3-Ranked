@@ -1,14 +1,14 @@
 {
-  "serverTime": "2026-11-22T00:09:12.753Z",
+  "serverTime": "2026-11-22T20:43:09.041Z",
   "current": {
-    "trackId": "99fe53184c661a29a6b9125af16897c54c6ce228df05b22b8f3cd504ff9e8b37",
-    "name": "Uplink⛐Error",
-    "author": "dice🌹, Kaiser-Burn",
-    "lastModified": "2026-11-03T23:05:21.000Z",
+    "trackId": "01c22a52c55af8b7efc1a72583d8fe6220dc7800d32518be04f11f8ea565a3ca",
+    "name": "Phantom Imperium",
+    "author": "Karpin_, dice🌹, Mask",
+    "lastModified": "2026-11-07T22:46:51.000Z",
     "environment": 0,
-    "endTime": "2026-11-22T20:00:00.000Z",
-    "trackUrl": "assets/9a4fbc02e4cf8416fc7fd6fc6691072b8b349be5f7f02aab5a7b2990ada6019a.track",
-    "thumbnailUrl": "assets/83f20bb6bd85690eeb247c83d60e1bd2280b8ee187a6863ab61d8607195b5e05.webp",
-    "coverUrl": "assets/31696398531026a43f18877d687e9a6f47d154b503dba3c02d9ac8775bcfb436.webp"
+    "endTime": "2026-11-29T20:00:00.000Z",
+    "trackUrl": "assets/f84a3a7a5ba31a2b98befbab73ea13c86069fcee9dba17c183a2faac3da2756b.track",
+    "thumbnailUrl": "assets/d619dfe2271fbcf3682f96417f67750ec5221765fe9b57449bc8b9a34d38eae4.webp",
+    "coverUrl": "assets/deb22a9b025985efed19f38f98b997322481ababe6ceef08190a3da327b22927.webp"
   }
 }
