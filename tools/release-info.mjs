@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 464,
+  "number": 465,
   "version": "0.6.3",
-  "revision": 393,
+  "revision": 394,
   "notes": [
-    "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
+    "Ranking updates keep the last published track results visible while a newer board is being checked."
   ],
-  "preparedAt": "2026-11-22T21:30:11.716Z",
-  "committedAt": "2026-11-22T21:30:13.000Z"
+  "preparedAt": "2026-11-22T21:43:53.287Z",
+  "committedAt": "2026-11-22T21:43:55.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
