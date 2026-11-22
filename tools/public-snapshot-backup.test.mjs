@@ -1581,6 +1581,20 @@ test('same-racer recording changes retain the old board without blocking event c
   }
 });
 
+test('recording conflict omits an invalidated track without repackaging its old bytes', async t => {
+  const {CanonicalRunChangedError} = await import('./canonical-retained-track.mjs');
+  const prior = coverageBoard(), incoming = nextCoverageBoard(prior, prior.entries.slice(1));
+  const f = await accountCoverageFixture(t, prior);
+  const manifest = JSON.parse(f.before['manifest.json']);
+  manifest.tracks[trackId].nativeLedgerOverlay = {};
+  await fs.writeFile(path.join(f.directory,'manifest.json'), JSON.stringify(manifest));
+  const result = await f.capture(incoming, {reconcileCanonicalTrack:() => {throw new CanonicalRunChangedError(trackId,['replay']);}});
+  assert.deepEqual(result.deferredCanonicalTracks,[trackId]);
+  assert.equal(result.tracks[trackId].path,null);
+  assert.equal(result.tracks[trackId].retainedBoardMissing,true);
+  await assert.rejects(fs.access(path.join(f.directory,f.relative)),{code:'ENOENT'});
+});
+
 test('canonical callback is not called for normal, incomplete, ambiguous or unsafe prior sources', async t => {
   for (const mode of ['normal','incoming-partial','prior-partial','prior-inexact','ambiguous','prior-ambiguous','unsafe-path','missing-prior']) {
     const prior=coverageBoard();

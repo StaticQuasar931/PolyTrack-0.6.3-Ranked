@@ -1058,15 +1058,15 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
       try { result = await reconcileCanonicalTrack({trackId:id, prior:structuredClone(prior), board:structuredClone(board)}); }
       catch (conflict) {
         // Never mix a changed recording with old proof or claim a fresh board.
-        // Keep an intact prior publication only in a routine, non-full capture.
+        // A routine capture can retain a reusable board, or omit an unsafe one.
         const saved = previous.tracks[id];
         if (!(conflict instanceof CanonicalRunChangedError) || conflict.trackId !== id ||
-            fullCanonicalSource || trackConfirmationNotBefore !== null ||
-            cachedTracks[id]?.path !== relative || !Number.isSafeInteger(saved.checkedAt) || saved.checkedAt <= 0) throw conflict;
-        cachedTracks[id] = saved;
+            fullCanonicalSource || trackConfirmationNotBefore !== null) throw conflict;
+        const keep = cachedTracks[id]?.path === relative && Number.isSafeInteger(saved.checkedAt) && saved.checkedAt > 0;
+        cachedTracks[id] = keep ? saved : {path:null, missing:true, complete:false, sourceComplete:false, retainedBoardMissing:true};
         deferredCanonicalTracks.add(id);
-        log(JSON.stringify({deferredCanonicalTrack:id, checkedAt:saved.checkedAt, reason:conflict.message}));
-        return {id, deferred:true};
+        log(JSON.stringify({deferredCanonicalTrack:id, retainedPriorBoard:keep, reason:conflict.message}));
+        return {id, deferred:true, omit:!keep};
       }
       const reconciled = authenticatedOverallTrackBackup(result?.board, id);
       if (reconciled.updatedAt < original.updatedAt ||
@@ -1220,8 +1220,8 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
   const pendingWrites = new Map([['overall.json', overall], ...promotedReplays, ...sourceRepairs]);
   let missingTracks = 0, missingEvents = 0;
   const trackSummaryMismatches = [];
-  for (const {id, value, deferred} of trackRows) {
-    if (deferred) continue;
+  for (const {id, value, deferred, omit} of trackRows) {
+    if (deferred) { if (omit) missingTracks++; continue; }
     if (!value) {
       missingTracks++;
       // A failed fetch must not freshen a retained board or resurrect an invalid path.
@@ -1331,6 +1331,11 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     try { await fs.unlink(path.join(directory, 'overall-results.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 
+  // The packager scans staging files, so an omitted board must not remain there.
+  // This does not touch the previous generation or its canonical recording files.
+  for (const {id, omit} of trackRows) if (omit) {
+    await fs.unlink(path.join(directory,'tracks',id+'.json')).catch(error => {if(error.code !== 'ENOENT') throw error;});
+  }
   const replayPaths = new Set(Object.keys(eventReplays));
   for (const record of Object.values(previous.eventPlaybacks || {})) {
     if (typeof record?.path === 'string' && /^event-playbacks\/[A-Za-z0-9_-]{1,64}\/[a-f0-9]{64}\.json$/.test(record.path) && !Object.hasOwn(eventPlaybacks,record.path)) {
@@ -1353,7 +1358,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     events: nextEvents, eventFetchLimit: PUBLIC_SNAPSHOT_LIMITS.eventFetches, eventIdsFetched: eventRows.length,
     eventsMissing: missingEvents + archivedEventsUnavailable + eventsDeferred, archivedEventsUnavailable, eventReplays, eventPlaybacks, eventReplayLimit: 30,
     pendingPlaybackCoverage, replayCoverage,
-    trackSummaryMismatches, canonicalTrackRetention,
+    trackSummaryMismatches, canonicalTrackRetention, deferredCanonicalTracks:[...deferredCanonicalTracks].sort(),
     permanentRollingHills: nextEvents['permanent-rolling-hills'] || null,
     ...(previous.nativeVerificationLedger ? {nativeVerificationLedger:previous.nativeVerificationLedger} : {})};
   await writeJsonIfChanged(directory, 'manifest.json', manifest);
