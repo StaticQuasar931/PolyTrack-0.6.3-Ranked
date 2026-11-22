@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 454,
+  "number": 456,
   "version": "0.6.3",
-  "revision": 387,
+  "revision": 389,
   "notes": [
-    "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
+    "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
   ],
-  "preparedAt": "2026-11-22T19:51:08.242Z",
-  "committedAt": "2026-11-22T19:51:59.000Z"
+  "preparedAt": "2026-11-22T20:11:35.963Z",
+  "committedAt": "2026-11-22T20:12:13.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

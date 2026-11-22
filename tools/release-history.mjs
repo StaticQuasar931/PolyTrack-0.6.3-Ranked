@@ -2,14 +2,32 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 454,
+    "number": 456,
     "version": "0.6.3",
-    "revision": 387,
+    "revision": 389,
     "notes": [
-      "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
+      "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
     ]
   },
   "entries": [
+    {
+      "number": 455,
+      "title": "Preserve newer canonical leaderboard coverage",
+      "commit": "c9652de45c8d9fbf374ae4ab3f43b9973b9f5717",
+      "committedAt": "2026-11-22T20:03:28.000Z",
+      "notes": [
+        "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
+      ]
+    },
+    {
+      "number": 454,
+      "title": "Revalidate exact retained snapshot proofs",
+      "commit": "3e4ed7a0df26608587a954d57ae6f5dd03b6f85f",
+      "committedAt": "2026-11-22T19:51:59.000Z",
+      "notes": [
+        "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
+      ]
+    },
     {
       "number": 453,
       "title": "Compact event estimates and add Workshop sticker placements",
@@ -185,24 +203,6 @@ const historyData = {
       "committedAt": "2026-11-16T10:43:32.000Z",
       "notes": [
         "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
-      ]
-    },
-    {
-      "number": 429,
-      "title": "Reuse native replay validators and remove idle rendering",
-      "commit": "0b93d557512180ae324b6a97f7506a8e5b6720df",
-      "committedAt": "2026-11-16T10:19:58.000Z",
-      "notes": [
-        "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
-      ]
-    },
-    {
-      "number": 428,
-      "title": "Speed up snapshot packaging and verification checkpoints",
-      "commit": "c8c04331a3a8431467f74a84e401d5ae4d149058",
-      "committedAt": "2026-11-16T09:30:50.000Z",
-      "notes": [
-        "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
       ]
     }
   ],
