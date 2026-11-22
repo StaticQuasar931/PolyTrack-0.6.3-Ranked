@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 463,
+    "number": 464,
     "version": "0.6.3",
-    "revision": 392,
+    "revision": 393,
     "notes": [
-      "Rankings updates prioritize the track boards needed for Overall rankings."
+      "Ranking snapshots can reconcile track results in batches, so changed replays take less time to process."
     ]
   },
   "entries": [
+    {
+      "number": 463,
+      "title": "Prioritize required boards for ranking updates",
+      "commit": "ea9df45304641f0057ec34a20807a29116caf165",
+      "committedAt": "2026-11-22T21:22:25.000Z",
+      "notes": [
+        "Rankings updates prioritize the track boards needed for Overall rankings."
+      ]
+    },
     {
       "number": 462,
       "title": "Keep saved Workshop styles on personal replays",
@@ -186,16 +195,6 @@
       "notes": [
         "Your older event replays now show your current car paint, stickers, and accessories.",
         "Racer profiles with only one medal type now give it a dedicated display. Preview Solar Flare and Tide Mark in the Workshop."
-      ]
-    },
-    {
-      "number": 439,
-      "title": "Improve Workshop placement and offline browsing",
-      "commit": "57a44696de9ac63222f9d406dbad8e5c80e9fdeb",
-      "committedAt": "2026-11-18T02:43:40.000Z",
-      "notes": [
-        "The Garage Workshop now has a side panel, live angles, and more sticker designs with adjustable placement and size.",
-        "Browse the Style Shop offline, open podium details, and see cleaner event badges."
       ]
     }
   ],

@@ -272,3 +272,22 @@ test('routine quarantine charges the changed binding and keeps the unaffected re
   assert.deepEqual(result.retained,[]);
   assert.deepEqual(result.board.entries,rankTrustedTrackEntries([current],trackId));
 });
+
+test('manual canonical batches remain bounded, counted and order-bound', async () => {
+  const calls = [];
+  const f = fixture({manualRecovery:true,quarantineChanged:true,maxDocuments:80,proofAllowed:()=>true,
+    readCanonical:()=>assert.fail('uses the batch reader'),
+    readCanonicalBatch:async (accounts,id)=>{
+      calls.push(accounts.length);assert.equal(id,trackId);
+      return accounts.map(account=>({data:{...old,accountId:account,timeMs:old.timeMs+1}}));
+    }});
+  Object.assign(f.board,boardOf([]));
+  Object.assign(f.prior,boardOf(Array.from({length:65},(_,i)=>({...old,accountId:(i+1).toString(16).padStart(64,'0')}))));
+  const result = await f.run();
+  assert.deepEqual(calls,[32,32,1]);
+  assert.equal(result.quarantined.length,65);
+  assert.equal(f.helper.usedDocuments(),65);
+  assert.equal(result.readDocuments,65);
+  await assert.rejects(f.run(),/document budget/);
+  assert.deepEqual(calls,[32,32,1]);
+});

@@ -6,6 +6,7 @@ import {hasPlayablePublicReplayStatus, validatePublicReplayForPublication} from 
 const quarantineResults = new WeakSet();
 export const hasCanonicalQuarantine = result => quarantineResults.has(result);
 
+export const MANUAL_CANONICAL_READ_LIMIT = 875;
 const HASH = /^[a-f0-9]{64}$/;
 export class CanonicalRunChangedError extends Error {
   constructor(trackId, fields) {
@@ -38,9 +39,10 @@ function validateBoard(board, trackId) {
   return accounts;
 }
 
-export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32, manualRecovery = false, quarantineChanged = false} = {}) {
+export function createCanonicalRetainedTrack({readCanonical, readCanonicalBatch, proofAllowed, confirmProof = () => true, maxDocuments = 32, manualRecovery = false, quarantineChanged = false} = {}) {
   demand(typeof readCanonical === 'function' && typeof proofAllowed === 'function' && typeof confirmProof === 'function', 'callbacks required');
-  demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && typeof manualRecovery === 'boolean' && maxDocuments <= (manualRecovery ? 512 : 32), 'invalid document budget');
+  demand(readCanonicalBatch === undefined || typeof readCanonicalBatch === 'function', 'invalid batch reader');
+  demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && typeof manualRecovery === 'boolean' && maxDocuments <= (manualRecovery ? MANUAL_CANONICAL_READ_LIMIT : 32), 'invalid document budget');
   let used = 0, reserved = 0;
   const published = [];
 
@@ -64,33 +66,41 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
     let unread = missing.length;
     const retained = [], quarantined = [];
     try {
-      for (const row of missing) {
-        reserved--; unread--; used++;
-        const doc = structuredClone(await readCanonical(row.accountId, trackId));
-        const source = doc?.data, id = `${row.accountId}_${trackId}`;
-        demand(source && doc.exists !== false && !doc.missing, 'missing canonical document');
-        demand((doc.id === undefined || doc.id === id) &&
-          (doc.name === undefined || doc.name === id || typeof doc.name === 'string' &&
-            /^projects\/[^/]+\/databases\/[^/]+\/documents\/0\.6\.2_race_results\/[^/]+$/.test(doc.name) &&
-            doc.name.endsWith(`/${id}`)), 'canonical document identity mismatch');
-        const sourceBinding=canonicalBindingSignature(source),priorBinding=canonicalBindingSignature(row);
-        if(sourceBinding!==priorBinding||source.timeMs!==row.timeMs){
-          const live=JSON.parse(sourceBinding),saved=JSON.parse(priorBinding);
-          const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
-          if(source.timeMs!==row.timeMs)fields.push('time');
-          if(fields.includes('account') || fields.includes('track')) throw Error('Canonical retained track: canonical document identity mismatch');
-          if (!quarantineChanged) throw new CanonicalRunChangedError(trackId,fields);
-          quarantined.push(row.accountId);
-          continue;
+      const batchSize = readCanonicalBatch ? 32 : 1;
+      for (let offset = 0; offset < missing.length; offset += batchSize) {
+        const rows = missing.slice(offset, offset + batchSize);
+        reserved -= rows.length; unread -= rows.length; used += rows.length;
+        const docs = readCanonicalBatch
+          ? await readCanonicalBatch(rows.map(row=>row.accountId), trackId)
+          : [await readCanonical(rows[0].accountId, trackId)];
+        demand(Array.isArray(docs) && docs.length === rows.length, 'invalid canonical batch response');
+        for (const [index,row] of rows.entries()) {
+          const doc = structuredClone(docs[index]);
+          const source = doc?.data, id = `${row.accountId}_${trackId}`;
+          demand(source && doc.exists !== false && !doc.missing, 'missing canonical document');
+          demand((doc.id === undefined || doc.id === id) &&
+            (doc.name === undefined || doc.name === id || typeof doc.name === 'string' &&
+              /^projects\/[^/]+\/databases\/[^/]+\/documents\/0\.6\.2_race_results\/[^/]+$/.test(doc.name) &&
+              doc.name.endsWith(`/${id}`)), 'canonical document identity mismatch');
+          const sourceBinding=canonicalBindingSignature(source),priorBinding=canonicalBindingSignature(row);
+          if(sourceBinding!==priorBinding||source.timeMs!==row.timeMs){
+            const live=JSON.parse(sourceBinding),saved=JSON.parse(priorBinding);
+            const fields=['account','track','upload','frames','replay'].filter((_,index)=>live[index]!==saved[index]);
+            if(source.timeMs!==row.timeMs)fields.push('time');
+            if(fields.includes('account') || fields.includes('track')) throw Error('Canonical retained track: canonical document identity mismatch');
+            if (!quarantineChanged) throw new CanonicalRunChangedError(trackId,fields);
+            quarantined.push(row.accountId);
+            continue;
+          }
+          demand(playable(source), 'canonical status held or unavailable');
+          demand(typeof source.replay === 'string' &&
+            createHash('sha256').update(source.replay).digest('hex') === row.replayHash, 'replay SHA256 mismatch');
+          const replay = await validatePublicReplayForPublication(source.replay, row.frames ?? row.raceTimeFrames);
+          demand(replay.indexedPlaybackWithinBudget === true, 'replay indexed playback budget exceeded');
+          demand(confirmProof(structuredClone(row),structuredClone(source)) === true, 'current native proof or policy did not match');
+          retained.push({accountId: row.accountId, trackId, uploadId: row.uploadId, replayHash: row.replayHash,
+            canonicalUpdateTime: doc.updateTime || null});
         }
-        demand(playable(source), 'canonical status held or unavailable');
-        demand(typeof source.replay === 'string' &&
-          createHash('sha256').update(source.replay).digest('hex') === row.replayHash, 'replay SHA256 mismatch');
-        const replay = await validatePublicReplayForPublication(source.replay, row.frames ?? row.raceTimeFrames);
-        demand(replay.indexedPlaybackWithinBudget === true, 'replay indexed playback budget exceeded');
-        demand(confirmProof(structuredClone(row),structuredClone(source)) === true, 'current native proof or policy did not match');
-        retained.push({accountId: row.accountId, trackId, uploadId: row.uploadId, replayHash: row.replayHash,
-          canonicalUpdateTime: doc.updateTime || null});
       }
       const excluded = new Set(quarantined);
       const entries = rankTrustedTrackEntries([...board.entries, ...missing.filter(row => !excluded.has(row.accountId))], trackId);
