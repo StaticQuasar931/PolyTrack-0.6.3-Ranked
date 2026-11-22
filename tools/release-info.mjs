@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 467,
+  "number": 469,
   "version": "0.6.3",
-  "revision": 396,
+  "revision": 397,
   "notes": [
-    "Rankings keep playable results and no longer wait for new runs whose replay files are missing."
+    "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
   ],
-  "preparedAt": "2026-11-22T22:30:32.020Z",
-  "committedAt": "2026-11-22T22:30:33.000Z"
+  "preparedAt": "2026-11-22T22:59:12.699Z",
+  "committedAt": "2026-11-22T22:59:14.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

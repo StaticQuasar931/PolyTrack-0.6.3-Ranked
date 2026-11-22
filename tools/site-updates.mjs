@@ -114,6 +114,19 @@ function installedSnapshotGeneration(document) {
   } catch { return null; }
 }
 
+function installedSnapshotSummary(document,generation) {
+  try {
+    const meta=document.querySelector?.('meta[name="polytrack-snapshot-stats"]');
+    const raw=meta?.getAttribute?.('content') || meta?.content;
+    if(typeof raw!=='string'||raw.length>300)return '';
+    const data=JSON.parse(raw);
+    if(data?.generation!==generation)return '';
+    const counts=[[data.racers,'racer','racers'],[data.boards,'track board','track boards'],[data.results,'playable result','playable results']];
+    if(!counts.every(([value])=>Number.isSafeInteger(value)&&value>=0&&value<=1000000))return '';
+    return counts.map(([value,one,many])=>value.toLocaleString()+' '+(value===1?one:many)).join(', ')+'.';
+  }catch{return '';}
+}
+
 const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 function themeControl(element) {
   element.className = 'button';
@@ -342,6 +355,8 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   }
   const view = document.defaultView;
   const key = validRevision(release.number) ? `polytrack-site-update-ack-release-v1:${release.number}` : `polytrack-site-update-ack-v1:${revision}`;
+  const generation=installedSnapshotGeneration(document);
+  const snapshotKey=generation===null?null:'polytrack-site-update-ack-snapshot-v1:'+generation;
   let remembered = acknowledgedRevisions.get(document);
   if (!remembered) acknowledgedRevisions.set(document, remembered = new Set());
   const stores = () => {
@@ -351,10 +366,10 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     }
     return result;
   };
-  const acknowledged = () => {
-    if (remembered.has(key)) return true;
+  const acknowledged = (id=key) => {
+    if (remembered.has(id)) return true;
     for (const store of stores()) {
-      try { if (store.getItem(key) === 'acknowledged') { remembered.add(key); return true; } } catch { /* Try next store. */ }
+      try { if (store.getItem(id) === 'acknowledged') { remembered.add(id); return true; } } catch { /* Try next store. */ }
     }
     return false;
   };
@@ -371,14 +386,19 @@ export function installInstalledRevisionNotice({revision, release = {}, document
   };
   const acknowledge = () => {
     if (disposed || !dialog?.isConnected) return;
-    remembered.add(key);
-    for (const store of stores()) { try { store.setItem(key, 'acknowledged'); } catch { /* Keep the in-page acknowledgement. */ }
-      if(validRevision(release.number))try{store.setItem(LAST_RELEASE_ACK_KEY,JSON.stringify({number:release.number,commit:/^[a-f0-9]{40}$/.test(release.commit||'')?release.commit:null}));}catch{} }
+    const manual=dialog.dataset.siteManualNotes==='true';
+    const ids=[...(manual?[key]:[]),...(dialog.dataset.siteInstalledSnapshot && snapshotKey?[snapshotKey]:[])];
+    for(const id of ids)remembered.add(id);
+    for (const store of stores()) {
+      for(const id of ids)try{store.setItem(id,'acknowledged');}catch{}
+      if(manual&&validRevision(release.number))try{store.setItem(LAST_RELEASE_ACK_KEY,JSON.stringify({number:release.number,commit:/^[a-f0-9]{40}$/.test(release.commit||'')?release.commit:null}));}catch{}
+    }
     close(true);
   };
   const resume = () => {
     if (disposed) return;
-    if (acknowledged()) { close(); return; }
+    const manual=!acknowledged(), snapshot=!!snapshotKey&&!acknowledged(snapshotKey);
+    if(!manual&&!snapshot){close();return;}
     let safe = false;
     try {
       const boot = initialNoticeReadiness.get(document);
@@ -390,20 +410,29 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     close();
     const node = document.createElement('dialog');
     dialog = node; previousFocus = document.activeElement;
-    void requestSiteUpdateCheck(document);
+    if(manual)void requestSiteUpdateCheck(document);
     node.dataset.siteInstalledRevision = String(revision);
-    if (validRevision(release.number)) node.dataset.siteInstalledRelease = String(release.number);
+    if(manual)node.dataset.siteManualNotes='true';
+    if(manual&&validRevision(release.number))node.dataset.siteInstalledRelease=String(release.number);
+    if(snapshot)node.dataset.siteInstalledSnapshot=String(generation);
     node.setAttribute('aria-labelledby', 'pt-installed-update-title');
     node.setAttribute('aria-describedby', 'pt-installed-update-description');
     const title = document.createElement('h2'); title.id = 'pt-installed-update-title';
-    title.textContent = validRevision(release.number) ? `PolyTrack Ranked - Update ${release.number}` : 'PolyTrack Ranked - Updated';
+    title.textContent = !manual ? 'New snapshot '+generation : validRevision(release.number) ? `PolyTrack Ranked - Update ${release.number}` : 'PolyTrack Ranked - Updated';
     const description = document.createElement('p'); description.id = 'pt-installed-update-description';
     const ageNode = document.createElement('time');
     ageNode.dataset.siteUpdateAge = '';
     Object.assign(ageNode.style, {display: 'block', marginTop: '8px', color: '#a7d5ff', fontSize: '0.85em'});
-    description.append(ageNode);
-    if(previousAcknowledgement===undefined)previousAcknowledgement=readReleaseAcknowledgement(release,{document,storage,sessionStorage,history:releaseHistory});
-    const updates=missedReleaseUpdates(release,previousAcknowledgement,releaseHistory).count;
+    if(manual)description.append(ageNode);
+    if(snapshot){
+      const summary=document.createElement('span');
+      summary.dataset.siteSnapshotSummary='';
+      summary.textContent=(manual?'New snapshot '+generation+'. ':'')+(installedSnapshotSummary(document,generation)||'Rankings and event standings refreshed.');
+      Object.assign(summary.style,{display:'block',marginTop:manual?'10px':'0'});
+      description.append(summary);
+    }
+    if(manual&&previousAcknowledgement===undefined)previousAcknowledgement=readReleaseAcknowledgement(release,{document,storage,sessionStorage,history:releaseHistory});
+    const updates=manual?missedReleaseUpdates(release,previousAcknowledgement,releaseHistory).count:null;
     if(updates>1){
       const count=document.createElement('small');count.dataset.siteUpdatesSinceAck='';
       count.textContent=updates+' update'+(updates===1?'':'s')+' since you last checked';
@@ -412,14 +441,14 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     themeDialog(node, title, description);
     const notes = document.createElement('ul');
     Object.assign(notes.style, {margin: '0 0 18px', paddingLeft: '24px'});
-    for (const text of (Array.isArray(release.notes) ? release.notes : []).slice(0, 8).filter(text => typeof text === 'string' && text.slice(0, 1024).trim()).slice(0, 4)) {
+    if(manual)for (const text of (Array.isArray(release.notes) ? release.notes : []).slice(0, 8).filter(text => typeof text === 'string' && text.slice(0, 1024).trim()).slice(0, 4)) {
       const item = document.createElement('li');
       const compact = text.slice(0, 1024).trim().replace(/\s+/g, ' ');
       item.textContent = compact.length > 220 ? `${compact.slice(0, 217).trimEnd()}...` : compact;
       Object.assign(item.style, {marginBottom: '8px', overflowWrap: 'anywhere'});
       notes.append(item);
     }
-    const archive = createReleaseHistory(document, {release,history:releaseHistory,now:now(),acknowledgedRelease:previousAcknowledgement});
+    const archive = manual?createReleaseHistory(document, {release,history:releaseHistory,now:now(),acknowledgedRelease:previousAcknowledgement}):null;
     if (archive) historyBinding = bindReleaseHistory(archive);
     const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK'; themeControl(ok);
     Object.assign(ok.style, {display: 'block', marginLeft: 'auto', minWidth: '88px'});
@@ -439,11 +468,12 @@ export function installInstalledRevisionNotice({revision, release = {}, document
       if (event.key === 'Tab') trapTab(event);
     });
     if (archive) node.append(title, description, notes, archive, ok);
-    else node.append(title, description, notes, ok);
+    else if(manual)node.append(title,description,notes,ok);
+    else node.append(title,description,ok);
     document.body.append(node);
     try {
       node.showModal(); ok.focus();
-      ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
+      if(manual)ageBinding = bindReleaseUpdateAge(ageNode, {document, release, verifiedReleasePointer, verifiedSiteCommitMetadata, verifiedReleaseCommitAt, installedReleaseCommittedAt, installedCommit,
         now, setTimeout: schedule, clearTimeout: unschedule});
     } catch { close(); }
   };
@@ -459,7 +489,7 @@ export function installInstalledRevisionNotice({revision, release = {}, document
     }
     if (event.type === 'keyup') held.delete(code);
   };
-  const storageChanged = event => { if (event.key === key || event.key === null) resume(); };
+  const storageChanged = event => { if (event.key === key || event.key === snapshotKey || event.key === null) resume(); };
   document.addEventListener('visibilitychange', resume);
   for (const type of ['focus', 'pageshow']) view?.addEventListener(type, resume);
   const suspend = () => close();
