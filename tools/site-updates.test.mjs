@@ -1335,10 +1335,10 @@ test('a bot-published snapshot gets its own one-time notice without a client rel
   const d=new FakeDocument(),state=new Map([['polytrack-site-update-ack-release-v1:467','acknowledged']]);
   const storage={getItem:key=>state.get(key),setItem:(key,value)=>state.set(key,value)};
   d.querySelector=sel=>sel==='meta[name="polytrack-snapshot"]'?{content:'./public-snapshots93/'}:
-    sel==='meta[name="polytrack-snapshot-stats"]'?{content:JSON.stringify({generation:93,racers:4424,boards:450,results:25599})}:null;
+    sel==='meta[name="polytrack-snapshot-stats"]'?{content:JSON.stringify({generation:93,baseGeneration:92,racers:108,boards:1,results:649})}:null;
   const notice=installInstalledRevisionNotice({document:d,storage,revision:396,release:{number:467,notes:['Manual-only notes.']},isReady:()=>true});
   assert.equal(d.dialog.children[0].textContent,'New snapshot 93');
-  assert.match(d.dialog.children[1].children[0].textContent,/4,424 racers, 450 track boards, 25,599 playable results/);
+  assert.match(d.dialog.children[1].children[0].textContent,/108 new racers, 1 new track board, 649 new playable results/);
   assert.equal(d.dialog.dataset.siteInstalledRelease,undefined);
   d.dialog.children.at(-1).listeners.click();
   assert.equal(state.get('polytrack-site-update-ack-snapshot-v1:93'),'acknowledged');

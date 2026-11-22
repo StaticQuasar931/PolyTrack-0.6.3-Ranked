@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 469,
+  "number": 470,
   "version": "0.6.3",
-  "revision": 397,
+  "revision": 398,
   "notes": [
-    "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
+    "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
   ],
-  "preparedAt": "2026-11-22T22:59:12.699Z",
-  "committedAt": "2026-11-22T22:59:14.000Z"
+  "preparedAt": "2026-11-22T23:13:37.804Z",
+  "committedAt": "2026-11-22T23:13:39.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

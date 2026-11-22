@@ -120,10 +120,10 @@ function installedSnapshotSummary(document,generation) {
     const raw=meta?.getAttribute?.('content') || meta?.content;
     if(typeof raw!=='string'||raw.length>300)return '';
     const data=JSON.parse(raw);
-    if(data?.generation!==generation)return '';
+    if(data?.generation!==generation||!Number.isSafeInteger(data.baseGeneration)||data.baseGeneration<1||data.baseGeneration>=generation)return '';
     const counts=[[data.racers,'racer','racers'],[data.boards,'track board','track boards'],[data.results,'playable result','playable results']];
     if(!counts.every(([value])=>Number.isSafeInteger(value)&&value>=0&&value<=1000000))return '';
-    return counts.map(([value,one,many])=>value.toLocaleString()+' '+(value===1?one:many)).join(', ')+'.';
+    return counts.map(([value,one,many])=>value.toLocaleString()+' new '+(value===1?one:many)).join(', ')+'.';
   }catch{return '';}
 }
 

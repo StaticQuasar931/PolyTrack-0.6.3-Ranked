@@ -1,4 +1,5 @@
 import {freshCountQuote} from './fresh-capture-count-quote.mjs';
+import {EXPANDED_FULL_CANONICAL_LIMIT,EXPANDED_FULL_READ_CAP} from './full-snapshot-policy.mjs';
 
 export const ORIGINAL_OVERNIGHT_SNAPSHOT = Object.freeze({
   priorDirectReservations:0,priorWorkerRequests:0,
@@ -90,16 +91,17 @@ export function freshLocalCaptureContext({now=Date.now(),receipt}={}){
     a.baseline?.generation!==baseline.generation||a.baseline?.indexSha256!==baseline.indexSha256)
     throw Error('Fresh authorization must pin the current published baseline');
   const frozenCountQuote=freshCountQuote({receipt,now});
+  const expandedFullCapture=receipt.fullSnapshotPolicy.canonicalDocumentLimit===EXPANDED_FULL_CANONICAL_LIMIT;
   if(q?.approvedBy!=='user'||q.sourceCommit!==receipt.testedCommit||q.runId!==p.runId||!positive(q.checkedAt)||
     !positive(q.expiresAt)||q.checkedAt>now||q.checkedAt<a.authorizedAt||q.expiresAt<=now||
     q.expiresAt-q.checkedAt>3600000||q.remainingWorkerRequests<1024||
     !Number.isSafeInteger(q.playerReadReserve)||q.playerReadReserve<3000||!Number.isSafeInteger(q.perRunReadLimit)||
-    q.perRunReadLimit>33000||q.perRunReadLimit<frozenCountQuote.plannedReadReservations||
+    q.perRunReadLimit>(expandedFullCapture?EXPANDED_FULL_READ_CAP:33000)||q.perRunReadLimit<frozenCountQuote.plannedReadReservations||
     q.perRunReadLimit-frozenCountQuote.preflightReadReservations>q.remainingDirectReservations-q.playerReadReserve||
     !Number.isSafeInteger(q.remainingDirectReservations)||!Number.isSafeInteger(q.remainingWorkerRequests)||q.documentWriteLimit!==0||
     ! /^[a-f0-9]{64}$/.test(q.evidence?.sha256||''))
     throw Error('Fresh source-bound, unexpired quota admission evidence required; per-run zero is not daily quota');
-  return {fresh:true,frozenCountQuote,combinedReadLimit:q.perRunReadLimit,requiredReadGuard:'combined-v1',date:receipt.targetDate,execution:'local',claimTag,authorizationId:p.runId,
+  return {fresh:true,frozenCountQuote,expandedFullCapture,combinedReadLimit:q.perRunReadLimit,requiredReadGuard:'combined-v1',date:receipt.targetDate,execution:'local',claimTag,authorizationId:p.runId,
     privateDirectorySuffix:receipt.targetDate+'/fresh-capture-'+p.runId,
     priorDirectReservations:0,priorWorkerRequests:0,start:p.start,latestCaptureStart:p.latestCaptureStart,deadline:p.deadline,
     maxJobs:10000,maxRuntimeMs:1500000,packReserveMs:60000,jobTimeoutMinutes:50,replayDocumentLimit:1000};

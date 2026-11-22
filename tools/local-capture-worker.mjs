@@ -145,7 +145,7 @@ export async function captureLocalSource({receipt,receiptFile,owner}={}){
   if(head!==receipt.testedCommit)throw Error('Capture child source changed');
   const transport=globalThis.fetch,controllers=new Set();let aborted=false;
   const sourceFence=createFullSnapshotReadFence({fetchImpl:transport,initialDirectReservations:N.priorDirectReservations,initialWorkerRequests:N.priorWorkerRequests,
-    ...(N.fresh?{combinedReadLimit:N.combinedReadLimit,initialCombinedReservations:N.frozenCountQuote.preflightReadReservations}:{})});
+    ...(N.fresh?{combinedReadLimit:N.combinedReadLimit,expandedFullCapture:N.expandedFullCapture,initialCombinedReservations:N.frozenCountQuote.preflightReadReservations}:{})});
   const abort=()=>{aborted=true;for(const controller of controllers)controller.abort();};
   const onMessage=value=>{if(value?.type==='abort')abort();};
   process.on('message',onMessage);process.on('disconnect',abort);

@@ -27,10 +27,10 @@ export function workerCaptureReadCharge(input){
 }
 
 export function createFullSnapshotReadFence({fetchImpl=fetch,maxDirectReservations=40000,maxWorkerRequests=1024,initialDirectReservations=0,initialWorkerRequests=0,
- combinedReadLimit=null,initialCombinedReservations=0}={}){
+ combinedReadLimit=null,initialCombinedReservations=0,expandedFullCapture=false}={}){
  if(maxDirectReservations!==40000||maxWorkerRequests!==1024)throw Error('Fixed full snapshot transport bounds required');
  if(!Number.isSafeInteger(initialDirectReservations)||initialDirectReservations<0||initialDirectReservations>maxDirectReservations||!Number.isSafeInteger(initialWorkerRequests)||initialWorkerRequests<0||initialWorkerRequests>maxWorkerRequests)throw Error('Invalid prior capture accounting');
- if(combinedReadLimit!==null&&(!Number.isSafeInteger(combinedReadLimit)||combinedReadLimit<1||combinedReadLimit>33000||initialDirectReservations!==0||initialWorkerRequests!==0||
+ if(combinedReadLimit!==null&&(!Number.isSafeInteger(combinedReadLimit)||combinedReadLimit<1||combinedReadLimit>(expandedFullCapture===true?40000:33000)||initialDirectReservations!==0||initialWorkerRequests!==0||
    !Number.isSafeInteger(initialCombinedReservations)||initialCombinedReservations<0||initialCombinedReservations>combinedReadLimit))throw Error('Invalid fresh combined read budget');
  let directReservations=initialDirectReservations,workerRequests=initialWorkerRequests,oauthRequests=0,stopped=false,
    combinedReservations=initialCombinedReservations,workerReadReservations=0,queryIndexReservations=0;

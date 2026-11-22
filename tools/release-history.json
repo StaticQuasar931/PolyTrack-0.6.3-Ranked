@@ -1,14 +1,23 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 469,
+    "number": 470,
     "version": "0.6.3",
-    "revision": 397,
+    "revision": 398,
     "notes": [
-      "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
+      "Snapshot notices show the new racers, track boards, and playable results since the previous snapshot."
     ]
   },
   "entries": [
+    {
+      "number": 469,
+      "title": "Announce new ranking snapshots in game",
+      "commit": "318b85f721a635cfe51154702750dc30fe57b6d7",
+      "committedAt": "2026-11-22T22:59:14.000Z",
+      "notes": [
+        "Ranking snapshots now have their own update screen with the racer, track board, and playable result counts."
+      ]
+    },
     {
       "number": 467,
       "title": "Restore published replays before ranking updates",
@@ -181,16 +190,6 @@
       "notes": [
         "The Garage Workshop now has larger controls, clearer part art, and sticker slots that show which decal is fitted.",
         "The car stays in view beside the Workshop, including on narrow screens."
-      ]
-    },
-    {
-      "number": 447,
-      "title": "Update garage layers independently and streamline Shop sync",
-      "commit": "2b01a46f300ae37ef2338511b7ac24884cfc91ac",
-      "committedAt": "2026-11-22T02:27:21.000Z",
-      "notes": [
-        "Stickers are front and center in the Workshop. Pick a noticeably different size, or try a new nose badge, tow plate, roof vent, or rear fog lamp.",
-        "Car edits update only the parts that change. The Shop remembers your last confirmed balance, and Racer Studio previews show more of your ranking row."
       ]
     }
   ],

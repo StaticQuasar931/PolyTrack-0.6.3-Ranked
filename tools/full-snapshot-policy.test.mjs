@@ -6,7 +6,7 @@ test('query capability rejects writes, foreign collections, group scans, offsets
 
 test('30000 canonical rows require the same exact authorization, sublimits and baseline pins',()=>{
  const approved={...policy,canonicalDocumentLimit:30000};const result=fullSnapshotPolicy({fullSnapshotPolicy:approved});assert.deepEqual(result,approved);result.publishedBaseline.generation++;assert.equal(approved.publishedBaseline.generation,75);
- for(const canonicalDocumentLimit of [24536,29999,30001,35000])assert.throws(()=>fullSnapshotPolicy({fullSnapshotPolicy:{...approved,canonicalDocumentLimit}}));
+ for(const canonicalDocumentLimit of [24536,29999,30001,35001])assert.throws(()=>fullSnapshotPolicy({fullSnapshotPolicy:{...approved,canonicalDocumentLimit}}));
  for(const patch of [{authorized:false},{profileDocumentLimit:2001},{trackCheckLimit:513},{eventReplayLimit:257},{publishedBaseline:{generation:75,indexSha256:'bad'}}])assert.throws(()=>fullSnapshotPolicy({fullSnapshotPolicy:{...approved,...patch}}));
  for(const canonicalDocumentLimit of [10000,20000])assert.equal(fullSnapshotPolicy({fullSnapshotPolicy:{...policy,canonicalDocumentLimit}}).canonicalDocumentLimit,canonicalDocumentLimit);
 });

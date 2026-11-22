@@ -22,6 +22,7 @@ import {createCanonicalRetentionCapture} from './canonical-retention-capture.mjs
 import {assertSnapshotReplayCompleteness} from './snapshot-replay-completeness.mjs';
 import {eventCatalogHandoffFromEnvironment} from './capture-event-catalog.mjs';
 import {writeHydratedFiles} from './hydrated-file-writer.mjs';
+import {comparePublishedSnapshotAdditions} from './snapshot-update-additions.mjs';
 
 const moduleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGICAL_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/;
@@ -408,7 +409,7 @@ function makeCoverage(overall, manifest, exportResult, previousCoverage, savedEx
   };
 }
 
-async function updateMeta(root, generationDirectory, coverage) {
+async function updateMeta(root, generationDirectory, previousDirectory) {
   const indexPath = path.join(root, 'index.html');
   let html = await fs.readFile(indexPath, 'utf8');
   const meta = `<meta name="polytrack-snapshot" content="./${generationDirectory}/">`;
@@ -429,13 +430,13 @@ async function updateMeta(root, generationDirectory, coverage) {
   }
 
   const statsTag=/<meta\s+name=["']polytrack-snapshot-stats["'][^>]*>/i;
-  const totals={generation:packageIndex?.generation,racers:coverage?.backup?.overallEntries,
-    boards:coverage?.backup?.tracksPresent,results:coverage?.currentStaging?.counts?.normalReplayValidatedBindings};
-  if(Number.isSafeInteger(totals.generation)&&totals.generation>0&&
-      [totals.racers,totals.boards,totals.results].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1000000)){
-    const tag='<meta name="polytrack-snapshot-stats" content='+String.fromCharCode(39)+JSON.stringify(totals)+String.fromCharCode(39)+'>';
-    html=statsTag.test(html)?html.replace(statsTag,tag):html.replace(meta,meta+'\n    '+tag);
-  }else html=html.replace(statsTag,'');
+  if(previousDirectory && previousDirectory!==generationDirectory){
+    const additions=await comparePublishedSnapshotAdditions(root,previousDirectory,generationDirectory).catch(()=>null);
+    if(additions){
+      const tag='<meta name="polytrack-snapshot-stats" content='+String.fromCharCode(39)+JSON.stringify(additions)+String.fromCharCode(39)+'>';
+      html=statsTag.test(html)?html.replace(statsTag,tag):html.replace(meta,meta+'\n    '+tag);
+    }else html=html.replace(statsTag,'');
+  }else if(!previousDirectory) html=html.replace(statsTag,'');
   const temporary = `${indexPath}.${process.pid}.tmp`;
   await fs.writeFile(temporary, html, { flag: 'wx' });
   await fs.rename(temporary, indexPath);
@@ -701,7 +702,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   } catch {}
   const result = await publishSnapshot({ root: absoluteRoot, stagingDirectory, historyDirectory });
   await writeStagingBase(absoluteRoot, result.generation);
-  await updateMeta(absoluteRoot, result.directory, coverage);
+  await updateMeta(absoluteRoot, result.directory, oldCurrent);
 
   if (oldCurrent && oldCurrent !== result.directory && result.archivePath) {
     const generation = Number(/^public-snapshots([1-9]\d*)$/.exec(oldCurrent)?.[1]);

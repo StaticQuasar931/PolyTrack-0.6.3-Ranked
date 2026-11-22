@@ -12,7 +12,7 @@ export async function openFullCanonicalTrackSource({directory,report}={}){
  const saved=JSON.parse(await read('full-canonical-capture.json')),manifest=JSON.parse(await read('manifest.json'));
  demand(JSON.stringify(saved)===JSON.stringify(report),'report changed');
  const point=Date.parse(report?.fullScanReadPoint),f=manifest.fullCanonicalCapture;
- demand(report.complete===true&&report.imported===true&&report.fullScan===true&&report.scanInconsistency===false&&report.missingPriorCount===0&&Array.isArray(report.missingBoards)&&report.missingBoards.length===0&&Number.isSafeInteger(report.rows)&&report.rows>=0&&report.rows<=30000&&Number.isFinite(point),'incomplete capture');
+ demand(report.complete===true&&report.imported===true&&report.fullScan===true&&report.scanInconsistency===false&&report.missingPriorCount===0&&Array.isArray(report.missingBoards)&&report.missingBoards.length===0&&Number.isSafeInteger(report.rows)&&report.rows>=0&&report.rows<=35000&&Number.isFinite(point),'incomplete capture');
  demand(f?.complete===true&&f.imported===true&&f.scanInconsistency===false&&f.fullScanReadPoint===report.fullScanReadPoint&&f.sourceRows===report.rows,'manifest/capture mismatch');
  const records=new Map();let rows=0;
  function validate(id,bytes){

@@ -134,3 +134,20 @@ test('both runtime entry points resolve fresh authority and check local prerequi
   assert.ok(capture.indexOf('await validateReplacementContext')<capture.indexOf('await assertLocalCaptureOwner'));
   assert.ok(capture.includes('initialDirectReservations:N.priorDirectReservations,initialWorkerRequests:N.priorWorkerRequests'));
 });
+
+test('expanded full scan still rejects today’s budget and leaves ordinary limits unchanged',()=>{
+  const r=receipt();
+  r.fullSnapshotPolicy.canonicalDocumentLimit=35000;
+  r.sourceCountQuote.canonicalResponse[0].result.aggregateFields.n.integerValue='32366';
+  r.sourceCountQuote.profileResponse[0].result.aggregateFields.n.integerValue='1703';
+  r.sourceCountQuote.preflightReadReservations=35;
+  r.quotaAdmission.perRunReadLimit=37607;
+  r.quotaAdmission.remainingDirectReservations=32000;
+  assert.throws(()=>resolveLocalCaptureContext({receipt:r,now:NOW}),/quota admission/);
+  r.quotaAdmission.remainingDirectReservations=45000;
+  const plan=resolveLocalCaptureContext({receipt:r,now:NOW});
+  assert.equal(plan.expandedFullCapture,true);
+  assert.equal(plan.frozenCountQuote.plannedReadReservations,37607);
+  assert.throws(()=>createFullSnapshotReadFence({combinedReadLimit:plan.combinedReadLimit}));
+  assert.equal(createFullSnapshotReadFence({combinedReadLimit:plan.combinedReadLimit,expandedFullCapture:plan.expandedFullCapture}).report().combinedReadLimit,37607);
+});
