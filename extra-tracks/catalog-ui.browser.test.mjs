@@ -55,7 +55,8 @@ test('phone filter disclosure stays accessible and preserves state across rerend
     const collapsedChevron = await toggle.evaluate(el => getComputedStyle(el, '::after').transform);
     assert.notEqual(await toggle.evaluate(el => getComputedStyle(el, '::after').content), 'none', 'disclosure has a visible chevron');
     assert.equal(await toggle.evaluate(el => getComputedStyle(el, '::after').width), '8px', 'chevron stays compact within the 44px control');
-    await page.keyboard.press('Tab');await page.keyboard.press('Tab');
+    await search.focus();
+    await page.keyboard.press('Tab');
     assert.equal(await toggle.evaluate(el => el === document.activeElement), true, 'keyboard reaches the disclosure directly after search');
     await page.keyboard.press('Enter');
     assert.equal(await advanced.isVisible(), true);
@@ -200,7 +201,7 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     await report.waitFor({state: 'hidden'});
     assert.equal(await report.isVisible(), false, 'closed report dialog stays hidden when catalog is reopened');
 
-    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.getByRole('button', {name: 'Submit a track'}).click();
     const submission = page.getByRole('dialog', {name: 'Submit an Extra Track'});
     await submission.waitFor({state: 'visible'});
@@ -211,7 +212,7 @@ test('Extra Tracks nested dialogs contain focus, close correctly, and restore th
     assert.equal(await submitClose.evaluate(el => el === document.activeElement), true, 'submission Tab wraps within the modal');
     await submitClose.click();
     assert.equal(await page.getByRole('button', {name: 'Submit a track'}).evaluate(el => el === document.activeElement), true, 'submission Close restores focus to its launcher');
-    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.getByRole('button', {name: 'Submit a track'}).click();
     await submission.waitFor({state: 'visible'});
     await page.keyboard.press('Escape');
@@ -442,7 +443,7 @@ test('Extra Tracks dialogs fit narrow portrait and short landscape viewports and
       assert.ok(bounds && bounds.x >= 0 && bounds.width <= width, `catalog overlay fits ${width}x${height}: ${JSON.stringify(bounds)}`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `catalog has no horizontal page overflow at ${width}x${height}`);
 
-      if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+      if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
       await page.getByRole('button', {name: 'Submit a track'}).click();
       const form = page.locator('.sq-extra-submission');
       const formBounds = await form.boundingBox();
@@ -582,7 +583,7 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
     });
     const submission = page.getByRole('dialog', {name: 'Submit an Extra Track'});
     for (const outcome of ['resolve', 'reject']) {
-      if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+      if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
       await page.getByRole('button', {name: 'Submit a track'}).click();
       await page.getByLabel('Track name').fill(`Race ${outcome}`);
       await page.getByLabel('Creator name').fill('Tester');
@@ -605,7 +606,7 @@ test('delayed dialog requests cannot mutate a newer close/reopen session', {skip
         await page.getByRole('dialog', {name: 'Report a track'}).getByRole('button', {name: 'Close'}).click();
         assert.equal(await page.locator('.sq-extra-submit').isDisabled(), false, 'submission control is restored too');
       } else {
-        if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+        if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
         await page.getByRole('button', {name: 'Submit a track'}).click();
         await submission.waitFor({state: 'visible'});
         assert.equal(await page.getByRole('button', {name: 'Send for review'}).isDisabled(), true, 'in-flight submission stays locked after reopening');
@@ -846,7 +847,7 @@ test('native leaderboard filter label stays on one line', {skip: browserSkip}, a
   }
 });
 
-test('unlit catalog spotlights, compact random actions and nested contribution menu fit desktop, phone and short landscape offline', {skip:browserSkip}, async()=>{
+test('featured picks, visible random actions and a single More disclosure fit desktop, phone and short landscape offline', {skip:browserSkip}, async()=>{
  const browser=await chromium.launch({headless:true});
  try {
   const page=await browser.newPage({hasTouch:true});const external=[],errors=[];
@@ -871,10 +872,10 @@ test('unlit catalog spotlights, compact random actions and nested contribution m
   await page.evaluate(()=>document.fonts.ready);
   const shot=async name=>{if(process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR)await page.screenshot({animations:'disabled',path:process.env.POLYTRACK_AUDIT_SCREENSHOT_DIR+'/'+name+'.png'});};
   const more=page.locator('.sq-extra-header-more > summary');
-  for(const [width,height] of [[1366,900],[390,844],[844,320]]){
+  for(const [width,height] of [[1366,900],[390,844],[280,653],[844,320]]){
    await page.setViewportSize({width,height});await page.evaluate(()=>document.querySelector('.sq-extra-menu').scrollTop=0);
    assert.equal(await page.locator('.sq-extra-export').isVisible(),false);
-   for(const control of [more,page.locator('.sq-extra-contribute > summary'),page.locator('.sq-extra-close')]){const box=await control.boundingBox();assert.ok(box&&box.height>=44&&box.x>=0&&box.x+box.width<=width);}
+   for(const control of [more,page.locator('.sq-extra-close'),page.getByRole('button',{name:'Choose random track'}),page.getByRole('button',{name:'Quick pick',exact:true})]){const box=await control.boundingBox();assert.ok(box&&box.height>=44&&box.x>=0&&box.x+box.width<=width);}
    assert.equal(await page.locator('.sq-extra-menu').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
    const visible=page.locator('.sq-extra-pick:visible').first();
    if(await visible.count()){
@@ -883,26 +884,26 @@ test('unlit catalog spotlights, compact random actions and nested contribution m
     assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el,'::after').content),'none');
     assert.equal(await visible.locator('.sq-extra-pick-art').evaluate(el=>getComputedStyle(el).backgroundImage),'none');
    }
-   assert.equal(await page.locator('.sq-extra-random-actions').evaluate(el=>el.parentElement.className),'sq-extra-summary');
+   assert.equal(await page.locator('.sq-extra-random-actions').evaluate(el=>el.parentElement.className),'sq-extra-controls');
    assert.equal(await page.getByRole('button',{name:'Choose random track',exact:true}).textContent(),'Random');
    await shot('contribute-catalog-'+width+'x'+height);
-   const contribute=page.locator('.sq-extra-contribute > summary');
-   await contribute.focus();await page.keyboard.press('Enter');
-   assert.equal(await page.locator('.sq-extra-submit').isVisible(),true);
+   assert.equal(await page.locator('.sq-extra-header > details').count(),1);
+   await more.focus();await page.keyboard.press('Enter');
+   assert.deepEqual(await page.locator('.sq-extra-header-actions > button, .sq-extra-builder-submenu > summary').allTextContents(),['Submit a track','Builder program','Export my picks']);
    await shot('contribute-menu-'+width+'x'+height);
    const builder=page.locator('.sq-extra-builder-submenu > summary');
    await builder.focus();await page.keyboard.press('Enter');
    const contact=page.locator('.sq-extra-builder-submenu .sq-builder-contact');await contact.waitFor({state:'visible'});
    assert.equal(await contact.locator('.sq-builder-checklist li').count(),5,'actual program guidance is inside the submenu');
-   const menu=page.locator('.sq-extra-contribute-actions');
+   const menu=page.locator('.sq-extra-header-actions');
    const menuBounds=await menu.boundingBox();assert.ok(menuBounds.x>=0&&menuBounds.y>=0&&menuBounds.x+menuBounds.width<=width&&menuBounds.y+menuBounds.height<=height);
    await shot('contribute-builder-'+width+'x'+height);
    await contact.locator('.sq-builder-contact-actions').scrollIntoViewIfNeeded();
    await shot('contribute-builder-actions-'+width+'x'+height);
    await page.keyboard.press('Escape');assert.equal(await builder.evaluate(el=>el===document.activeElement),true);
-   assert.equal(await contact.isVisible(),false);assert.equal(await page.locator('.sq-extra-contribute').evaluate(el=>el.open),true);
-   await page.keyboard.press('Escape');assert.equal(await contribute.evaluate(el=>el===document.activeElement),true);
-   await contribute.click();await page.locator('.sq-extra-submit').click();
+   assert.equal(await contact.isVisible(),false);assert.equal(await page.locator('.sq-extra-header-more').evaluate(el=>el.open),true);
+   await page.keyboard.press('Escape');assert.equal(await more.evaluate(el=>el===document.activeElement),true);
+   await more.click();await page.locator('.sq-extra-submit').click();
    const submission=page.locator('.sq-extra-submission-modal');assert.equal(await submission.isVisible(),true);
    await shot('contribute-submit-'+width+'x'+height);
    await page.keyboard.press('Escape');assert.equal(await page.locator('.sq-extra-submit').evaluate(el=>el===document.activeElement),true);
@@ -912,7 +913,14 @@ test('unlit catalog spotlights, compact random actions and nested contribution m
    await page.locator('.sq-extra-export').click();
    await page.keyboard.press('Escape');assert.equal(await more.evaluate(el=>el===document.activeElement),true);
    assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true,'Escape dismisses only More');
-   await page.getByRole('button',{name:'Choose random track',exact:true}).click();
+   await more.click();
+   await page.getByRole('searchbox',{name:'Search tracks'}).click({position:{x:5,y:10}});
+   assert.equal(await more.evaluate(el=>el.parentElement.open),false);
+   const random=page.getByRole('button',{name:'Choose random track',exact:true});
+   await random.focus();
+   await page.keyboard.press('Tab');
+   assert.equal(await page.getByRole('button',{name:'Quick pick',exact:true}).evaluate(el=>el===document.activeElement),true);
+   await random.press('Enter');
    const panel=page.locator('.sq-extra-picker');
    assert.equal(await panel.locator('details').evaluate(el=>el.open),false);
    await shot('contribute-picker-'+width+'x'+height);
@@ -922,6 +930,6 @@ test('unlit catalog spotlights, compact random actions and nested contribution m
    await panel.getByRole('button',{name:'Back',exact:true}).click();
    await panel.locator('details').evaluate(el=>el.open=false);
   }
-  assert.equal(await page.evaluate(()=>window.exports),3);assert.deepEqual(external,[]);assert.deepEqual(errors,[]);
+  assert.equal(await page.evaluate(()=>window.exports),4);assert.deepEqual(external,[]);assert.deepEqual(errors,[]);
  } finally {await browser.close();}
 });

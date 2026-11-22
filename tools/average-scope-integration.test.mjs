@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
-import {rankedMetricState,rankingScopeMarkup,SCOPED_AVERAGE_EXTRA_TRACK_IDS} from './ranking-scope-model.mjs';
+import {rankedMetricState,rankingScopeChoices,rankingScopeMarkup,SCOPED_AVERAGE_EXTRA_TRACK_IDS} from './ranking-scope-model.mjs';
 import {EXTRA_TRACK_IDS} from '../workers/ranked/src/extra-track-ids.js';
 const source=fs.readFileSync(new URL('../polytrack_062_patch.js',import.meta.url),'utf8');
 function fn(name){const a=source.indexOf('  function '+name+'(');assert.ok(a>=0,name);return source.slice(a,source.indexOf('\n  }',a)+4);}
@@ -30,12 +30,12 @@ test('scoped model validates coverage, unique tracks and eligible populations; A
 });
 function harness(){
   const c=vm.createContext({rankingDisplayPolicy,overallCategory:'average',overallRankingScope:'official',averageScopeExtraIds:['x'],
-    TRACK_CATALOG:new Map([['o',{id:'o',type:'official'}],['c',{id:'c',type:'community'}]]),
+    TRACK_CATALOG:new Map([['o',{id:'o',type:'official'}],['c',{id:'c',type:'community'}],['rhr',{id:'rhr',type:'community'}]]),
     LEGACY_TRACK_CATALOG:new Map(),ROLLING_HILLS_ID:'rhr',rankedMetricState,
     overallEntriesCache:[],attachLocalRankingSidecars:rows=>rows,personalFilterRuntime:null,MIN_RANKED_TRACKS:3,
     AVERAGE_PLACEMENT_VERSION:2,annotateCategoryRanks:rows=>rows,
     trackSnapshotStore(){throw Error('No normal boards');},overallRacerQuery:'',rankedFilterResult:null});
-  vm.runInContext(['rankingMetricFor','rankingDisplayMetricState','filterRankingDisplayRows','sortedOverallEntries'].map(fn).join('\n')+'\n'+fn('searchRankingRows'),c);return c;
+  vm.runInContext(['scopedPodiumCategory','rankingTrackInScope','rankingMetricFor','scopedAverageDetails','rankingDisplayMetricState','filterRankingDisplayRows','sortedOverallEntries'].map(fn).join('\n')+'\n'+fn('searchRankingRows'),c);return c;
 }
 test('actual patch scopes only complete resultSamples, sorts ascending with missing last, and searches selected metric',()=>{
   const c=harness();
@@ -47,26 +47,32 @@ test('actual patch scopes only complete resultSamples, sorts ascending with miss
   c.averageScopeExtraIds=null;assert.equal(c.rankingMetricFor(c.overallEntriesCache[1]).known,false);
   c.overallRankingScope='total';assert.equal(c.rankingMetricFor({...c.overallEntriesCache[1],averagePlacementVersion:2}).value,1);
 });
+test('scoped average details exclude Rolling Hills from Official and include it in Community',()=>{
+  const c=harness();const row={raceCount:3,resultSamples:[finish('o',2),finish('rhr',1),finish('c',4)]};
+  assert.deepEqual(Array.from(c.scopedAverageDetails(row),f=>f.trackId),['o']);
+  c.overallRankingScope='community';
+  assert.deepEqual(Array.from(c.scopedAverageDetails(row),f=>f.trackId),['rhr','c']);
+});
 test('inline model functions stay byte-equivalent to the module',()=>{
   for(const fn of [rankedMetricState,rankingScopeMarkup])assert.ok(source.includes(fn.toString()),fn.name);
 });
 test('actual category change resets incompatible average scope without altering the introduction hook',()=>{
   const c=vm.createContext({overallCategory:'average',overallRankingScope:'extra',document:{getElementById:()=>({})},
-    recordLeaderboardUse(){},refreshLeaderboardArcade(){},syncOverallTrackScope(){},syncCategorySelect(){},renderEntries(){},
+    rankingScopeChoices,recordLeaderboardUse(){},refreshLeaderboardArcade(){},syncOverallTrackScope(){},syncCategorySelect(){},renderEntries(){},
     updateRankedFreshness(){},overallEntriesCache:[{}],overallPage:2});
   vm.runInContext(fn('setOverallCategory').replace(/    if\(\['field','casual','skill','competitiveAverage','medals'\].*\n/,''),c);
   c.setOverallCategory('wins');assert.equal(c.overallRankingScope,'total');
   c.overallCategory='average';c.overallRankingScope='community';c.setOverallCategory('casual');assert.equal(c.overallRankingScope,'total');
 });
-test('browser selector uses four scopes only for Average and mounts footer-right',{timeout:30000},async t=>{
+test('browser selector mounts Average and podium scopes in the footer',{timeout:30000},async t=>{
   const require=createRequire(new URL('./verifier/package.json',import.meta.url));
-  const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true});t.after(()=>browser.close());
+  const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});t.after(()=>browser.close());
   const page=await browser.newPage();await page.route('**/*',route=>route.abort());
   await page.setContent('<section id="panel"><div class="overall-center-tools"></div><div class="overall-footer-right"></div></section>');
   const start=source.indexOf("      const rankingScope=event.target.closest?.('[data-ranking-scope]');"),end=source.indexOf("      const scope=event.target.closest?.('[data-track-scope]');",start);
   await page.addScriptTag({content:`let overallCategory='average',overallRankingScope='total',overallPage=1;
     const panel=document.getElementById('panel');function renderEntries(){}function syncLocalOverallProjection(){}function loadAverageScopeSource(){}
-    ${rankingScopeMarkup.toString()}\n${fn('syncOverallRankingScope')}
+    ${rankingScopeChoices.toString()}\n${rankingScopeMarkup.toString()}\n${fn('syncOverallRankingScope')}
     panel.addEventListener('click',event=>{${source.slice(start,end)}});syncOverallRankingScope(panel,'average');`});
   assert.equal(await page.locator('.overall-footer-right [data-ranking-scope]').count(),4);
   assert.equal(await page.locator('.overall-center-tools [data-ranking-scope]').count(),0);
@@ -76,4 +82,35 @@ test('browser selector uses four scopes only for Average and mounts footer-right
   }
   await page.evaluate(()=>syncOverallRankingScope(document.getElementById('panel'),'wins'));
   assert.equal(await page.locator('[data-ranking-scope]').count(),2);
+  for(const category of ['medals','podiumRate']){
+    await page.evaluate(category=>{overallCategory=category;syncOverallRankingScope(document.getElementById('panel'),category);},category);
+    assert.deepEqual(await page.locator('[data-ranking-scope]').allTextContents(),['All','Official','Community']);
+    await page.locator('[data-ranking-scope="community"]').click();
+    assert.equal(await page.locator('[data-ranking-scope="community"]').getAttribute('aria-pressed'),'true');
+  }
+});
+
+test('a delayed Casual intro does not open after Ranked closes',async()=>{
+  const panel={visible:true};
+  let resolve,shown=0;
+  const pending=new Promise(r=>resolve=r);
+  const c=vm.createContext({overallCategory:'overall',overallRankingScope:'total',overallPage:0,
+    rankingScopeChoices,document:{getElementById:()=>panel},isElementVisible:p=>p.visible,loadIntro:()=>pending,
+    LEADERBOARD_LABELS:{casual:'Casual RP'},LEADERBOARD_INFO:{casual:'Explanation'},recordLeaderboardUse(){},
+    refreshLeaderboardArcade(){},syncOverallTrackScope(){},syncCategorySelect(){},renderEntries(){},updateRankedFreshness(){},
+    overallEntriesCache:[{}]});
+  const action=fn('setOverallCategory'),start=action.indexOf('import(new URL('),end=action.indexOf('.href)',start)+6;
+  assert.ok(start>=0&&end>start);
+  const categoryChange=action.slice(0,start)+'loadIntro()'+action.slice(end);
+  vm.runInContext(categoryChange,c);
+  c.setOverallCategory('casual');
+  panel.visible=false;
+  resolve({showRankingIntroduction:()=>shown++});
+  await pending;
+  assert.equal(shown,0);
+  panel.visible=true;
+  c.setOverallCategory('overall');
+  c.setOverallCategory('casual');
+  await pending;
+  assert.equal(shown,1);
 });

@@ -62,7 +62,7 @@ test('pure builder leaves inputs unchanged and rendering escapes untrusted text'
   const html = renderAchievementJournal({...input,idPrefix:'" onmouseover="bad'});
   assert.equal(JSON.stringify(input),before);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock styles\. Eligible Style Coins sync when Shop opens\. Device-only stats do not award coins\./);
+  assert.match(html,/Your progress/); assert.match(html,/Cosmetic goals unlock styles\. Use Sync wallet in the Shop to collect eligible Style Coins\. Device-only stats do not award coins\./);
   assert.ok(!html.includes('JOURNAL ONLY')); assert.ok(!html.includes('Existing server rules'));
 });
 
@@ -98,7 +98,7 @@ test('purchased shop designs are not racing goals or spendable achievement award
 
 test('journal caption distinguishes listed cosmetic goals from personal tiers without extending Style Coins rewards',()=>{
  const html=renderAchievementJournal({progress:{local:{pbCount:1}},cosmetics:{}});
- assert.match(html,/Cosmetic goals unlock styles\. Eligible Style Coins sync when Shop opens\. Device-only stats do not award coins\./);
+ assert.match(html,/Cosmetic goals unlock styles\. Use Sync wallet in the Shop to collect eligible Style Coins\. Device-only stats do not award coins\./);
  assert.doesNotMatch(html,/Cosmetics become available when your progress is confirmed\./);
 });
 
@@ -142,7 +142,7 @@ test('seven actual currency rows use confirmed casual completions, never infer c
  const rows=model.milestones.filter(x=>x.source==='currency');assert.equal(rows.length,7);assert.equal(model.counts.earned,0);
  assert.ok(rows.every(x=>!x.earned&&x.value===20&&x.reward.currency==='Style Coins'));
  const html=renderAchievementJournal({model,family:'currency',filter:'all'});
- assert.match(html,/Eligible to check/);assert.match(html,/Open Shop/);assert.match(html,/Eligible rewards are collected when Shop opens/);
+ assert.match(html,/Goal reached/);assert.match(html,/Open Shop/);assert.match(html,/Use Sync wallet in the Shop to collect eligible rewards/);
  assert.doesNotMatch(html,/already claimed|CLAIMED|coins earned|balanceAfter|wallet balance/i);
  assert.deepEqual(sortAchievementJournalItems(rows,'coins').map(x=>x.reward.amount),[60,50,50,40,30,30,20]);
 });
@@ -158,16 +158,17 @@ test('eligible historical cosmetic achievements show exact coin bonuses without 
 test('all real tiers are discoverable by default and goals never masquerade as unlock counts',()=>{
  const model=buildAchievementJournalModel({cosmetics});
  const goals=model.milestones.filter(row=>row.source==='catalog');
- assert.equal(goals.length,24);
- assert.equal(goals.reduce((sum,row)=>sum+row.rewards.length,0),112);
+ assert.equal(goals.length,22);
+ assert.ok(goals.every(row=>row.metric!=='beta'));
+ const unlocked=goals.reduce((sum,row)=>sum+row.rewards.length,0);
  assert.equal(model.milestones.filter(row=>row.source==='currency').length,7);
  const ids=goals.flatMap(row=>row.rewards.map(reward=>reward.kind+':'+reward.id));
- assert.equal(new Set(ids).size,112);
+ assert.equal(new Set(ids).size,unlocked);
  const html=renderAchievementJournal({cosmetics});
- assert.match(html,/24 cosmetic goals reached; 112 cosmetic unlocks across these goals; 7 coin milestones/);
+ assert.ok(html.includes('22 cosmetic goals reached; '+unlocked+' cosmetic unlocks across these goals; 7 coin milestones'));
  assert.match(html,/data-aj-active-family="all"/);
  assert.match(html,/data-aj-filter="all" aria-pressed="true"/);
- assert.equal((html.match(/data-aj-node="/g)||[]).length,31);
+ assert.equal((html.match(/data-aj-node="/g)||[]).length,29);
 });
 test('shared title and style bonuses remain one payment condition, not coins per cosmetic',()=>{
  const model=buildAchievementJournalModel({cosmetics,progress:{confirmed:{raceCount:5}}});

@@ -400,7 +400,7 @@ export function projectScopedSnapshot({accountId,generation,overall,tracks}={}) 
   const population=new Set([...prior.keys(),...boards.flatMap(board=>board.entries.map(idOf))]);
   const extraCap=extraWeightCap(boards);
   const eligible=[...OFFICIAL_IDS,...COMMUNITY_IDS,...LEGACY_COMMUNITY_IDS];
-  const official=[...OFFICIAL_IDS,SPECIAL_ROLLING_HILLS_TRACK_ID];
+  const official=[...OFFICIAL_IDS];
   const casualRacers=[];
   for(const userId of population){
     const casualProjection=projectCasualRp({accountId:userId,boards,eligibleTrackIds:eligible,
@@ -476,7 +476,7 @@ export function projectLocalOverall({accountId, generation, overall, results, tr
   })) return fail('baseline_mismatch');
 
   const casualOptions={eligibleTrackIds:[...OFFICIAL_IDS,...COMMUNITY_IDS,...LEGACY_COMMUNITY_IDS],
-    officialTrackIds:[...OFFICIAL_IDS,SPECIAL_ROLLING_HILLS_TRACK_ID],extraTrackIds:[...EXTRA_TRACK_IDS],sourceComplete:true};
+    officialTrackIds:[...OFFICIAL_IDS],extraTrackIds:[...EXTRA_TRACK_IDS],sourceComplete:true};
   const casualBaseline=includeCasual?new Map(baseline.map(row=>{
     const prior=publicById.get(row.userId);
     const state=projectCasualRp({...casualOptions,accountId:row.userId,boards,priorEntry:prior});

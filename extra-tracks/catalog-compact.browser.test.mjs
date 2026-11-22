@@ -242,7 +242,7 @@ test('desktop and compact discovery keep filters accessible with optional Static
    assert.equal(await toggle.textContent(),'Filters','Sort is not counted as a hidden filter');
    const rect=await toggle.boundingBox();assert.ok(rect&&rect.y>=0&&rect.y+rect.height<=height&&rect.height>=44);
    await shot('catalog-collapsed-'+width);
-   await search.focus();await page.keyboard.press('Tab');await page.keyboard.press('Tab');await page.keyboard.press('Tab');assert.equal(await toggle.evaluate(node=>node===document.activeElement),true);
+   await search.focus();await page.keyboard.press('Tab');assert.equal(await toggle.evaluate(node=>node===document.activeElement),true);
    await page.keyboard.press('Enter');
    for(const label of ['Source','Tag','Catalog level','Progress','Review status','Sort','Rating','Difficulty','Votes'])assert.equal(await page.getByLabel(label,{exact:true}).isVisible(),true,label+' is exposed');
    await page.getByLabel('Rating',{exact:true}).selectOption('6');
@@ -271,7 +271,7 @@ test('desktop and compact discovery keep filters accessible with optional Static
   await shot('review-confirm-844x320');await confirm.click();
   const done=menu.getByRole('button',{name:'Done',exact:true});await reachable(done);await shot('review-close-844x320');await done.click();
   assert.equal(await more.evaluate(node=>node===document.activeElement),true);
-  if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+  if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
   await page.locator('.sq-extra-submit').click();
   await reachable(page.locator('.sq-extra-send'));await shot('submission-send-844x320');
   await reachable(page.locator('.sq-extra-submission-modal .sq-extra-submission-close'));await shot('submission-close-844x320');await page.locator('.sq-extra-submission-modal .sq-extra-submission-close').click();

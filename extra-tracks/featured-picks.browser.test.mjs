@@ -85,7 +85,7 @@ test('featured discovery fits desktop and phone, uses existing callback and neve
           const bounds = await tile.evaluate(node => {
             const rect = node.getBoundingClientRect(), art = node.querySelector('figure').getBoundingClientRect();
             return {left: rect.left, right: rect.right, height: rect.height, imageHeight: art.height,
-              overflow: [...node.querySelectorAll('h3,p,button,time')].some(child => child.scrollWidth > child.clientWidth + 1)};
+              overflow: [...node.querySelectorAll('h4,p,button,time')].some(child => child.scrollWidth > child.clientWidth + 1)};
           });
           assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.height <= height, kind + ' selected card fits ' + width + 'x' + height);
           assert.ok(bounds.imageHeight >= 96 && bounds.imageHeight <= 100, kind + ' has a compact contained phone preview');
@@ -224,7 +224,7 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.equal(moduleRequests.includes('builder-contact.mjs'),false,'contact code is not loaded before user action');
     const search=page.getByRole('searchbox',{name:'Search tracks'});await search.fill('Everlasting');
     const initialDialogs=await page.getByRole('dialog').count();
-    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.locator('.sq-extra-builder-submenu > summary').click();
     const contact=page.locator('.sq-builder-contact');await contact.waitFor({state:'visible'});
     assert.equal(moduleRequests.filter(name=>name==='builder-contact.mjs').length,1);
@@ -247,7 +247,7 @@ test('Builder contact stays local until a user chooses a link, fits phones and p
     assert.match(fs.readFileSync(await download.path(),'utf8'),/Permissions and original credits/);
     await page.getByRole('button',{name:'Back to tracks',exact:true}).click();
     assert.equal(await search.inputValue(),'Everlasting');assert.equal(await page.locator('.sq-extra-card').count(),1);
-    if(!await page.locator('.sq-extra-contribute').evaluate(el=>el.open))await page.locator('.sq-extra-contribute > summary').click();
+    if(!await page.locator('.sq-extra-header-more').evaluate(el=>el.open))await page.locator('.sq-extra-header-more > summary').click();
     await page.locator('.sq-extra-builder-submenu > summary').click();await contact.waitFor({state:'visible'});
     await page.keyboard.press('Escape');assert.equal(await contact.isHidden(),true);assert.equal(await search.inputValue(),'Everlasting');
     assert.equal(await page.locator('.sq-extra-overlay').isVisible(),true);

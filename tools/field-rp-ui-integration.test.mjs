@@ -22,7 +22,7 @@ function harness(){
     trackSnapshotStore(){throw Error('Normal-board access forbidden');},cachedProfileFinishes(){throw Error('Display cache forbidden');},
     trackInfo:trackId=>({name:trackId}),escapeHtml:String,trackThumbnailMarkup:()=>'',ageLabel:()=>'',rankedWeightTitle:()=>'',
     compactPlannerTargetLabel:row=>'#'+row.currentRank+' to #'+row.targetRank,rpDecimals:()=>3});
-  vm.runInContext(['formatRankingFieldRp','formatRp','fieldRpProfileSummary','categoryTrackMarkup','fieldRpPlannerControls',
+  vm.runInContext(['formatRankingFieldRp','formatRp','fieldRpProfileSummary','scopedPodiumCategory','categoryTrackMarkup','fieldRpPlannerControls',
     'routeBenefitPercent','guideTrackCard','fieldRpGuideMarkup','profileGuideMarkup'].map(fn).join('\n'),c);
   return {c,index,finishes,entry:{userId:'me',name:'Me',raceCount:2,resultSamples:finishes}};
 }
@@ -77,7 +77,7 @@ test('owner tie sanitizer retains every proof requirement while allowing exact t
 });
 test('browser popup groups preserve requested order and arrow-key traversal',{timeout:30000},async t=>{
   const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
-  const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();
+  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});t.after(()=>browser.close());const page=await browser.newPage();
   await page.route('**/*',route=>route.abort());await page.setContent('<button id="trigger">Rankings</button>');
   await page.addScriptTag({content:`let closeRankedCategoryMenu=null,overallCategory='overall';const LEADERBOARD_LABELS={},LEADERBOARD_INFO={};function setOverallCategory(){}${fn('openRankedCategoryMenu')};openRankedCategoryMenu(document.getElementById('trigger'));`});
   assert.deepEqual(await page.locator('.sq-category-popup > [role="presentation"]').evaluateAll(groups=>groups.map(group=>[...group.querySelectorAll('button')].map(b=>b.dataset.category))),

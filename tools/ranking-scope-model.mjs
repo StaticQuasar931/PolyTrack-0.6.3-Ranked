@@ -6,6 +6,22 @@ export const ROLLING_HILLS_ID='fb769ac2ea77e8f19a21a9dd3071742f2342bd49c41e4748d
 export function rankedMetricState(entry,{category,scope='total',finishes=[],complete=false,
   officialTrackIds=[],recognizedTrackIds=[],communityTrackIds=[],extraTrackIds=[],casualProjection=null}={}){
   const unknown={known:false,value:null,reason:'complete_scoped_data_unavailable'};
+  if(['medals','podiumRate'].includes(category)){
+    if(!['official','community'].includes(scope)||complete!==true||Array.isArray(entry?.groupResults)||entry?.localOnly||entry?.sourceComplete===false||
+      !Array.isArray(finishes)||!Number.isSafeInteger(entry?.raceCount)||entry.raceCount!==finishes.length||new Set(finishes.map(f=>f?.trackId)).size!==finishes.length||
+      finishes.some(f=>!f?.trackId||!Number.isSafeInteger(f.rank)||f.rank<1||!Number.isSafeInteger(f.fieldSize)||f.fieldSize<Math.max(2,f.rank)||
+        ['local','localPending','pending'].some(key=>f[key]===true)||
+        ['sourceComplete','complete','ranksExact','totalEntriesExact','runVerified','integrityVerified'].some(key=>f[key]===false)))return unknown;
+    const ids=new Set(scope==='official'?officialTrackIds:communityTrackIds);
+    const eligible=finishes.filter(f=>f.fieldSize>=5&&ids.has(f.trackId));
+    const medals={gold:0,silver:0,bronze:0};
+    for(const f of eligible){if(f.rank<=3)medals[['gold','silver','bronze'][f.rank-1]]++;}
+    const count=eligible.length;
+    if(category==='podiumRate'&&count<3)return {...unknown,count,reason:'insufficient_eligible_scoped_results'};
+    const value=category==='medals'?medals.gold*9+medals.silver*3+medals.bronze:
+      Number(((medals.gold+medals.silver+medals.bronze)/count*100).toFixed(1));
+    return {known:true,value,count,medals,reason:'complete_scoped_podiums'};
+  }
   if(category==='average'){
     if(!['total','official','community','extra'].includes(scope))return unknown;
     if(scope==='total')return Number(entry?.averagePlacementVersion)>=2&&Number.isFinite(entry?.averagePlacement)&&entry.averagePlacement>0
@@ -47,9 +63,16 @@ export function compareRankedMetrics(left,right,leftState,rightState){
   return (Number(left.rank)||Infinity)-(Number(right.rank)||Infinity)||String(left.userId||left.accountId||'').localeCompare(String(right.userId||right.accountId||''));
 }
 
+export function rankingScopeChoices(category){
+  if(category==='average')return [['total','All'],['official','Official'],['community','Community'],['extra','Extra']];
+  if(['medals','podiumRate'].includes(category))return [['total','All'],['official','Official'],['community','Community']];
+  if(['wins','casual'].includes(category))return [['total','Total'],['official','Official only']];
+  return [];
+}
+
 export function rankingScopeMarkup(category,scope='total'){
-  if(!['wins','casual','average'].includes(category))return '';
-  const choices=category==='average'?[['total','All'],['official','Official'],['community','Community'],['extra','Extra']]:[['total','Total'],['official','Official only']];
+  const choices=rankingScopeChoices(category);
+  if(!choices.length)return '';
   return '<div id="overallRankingScope" class="overall-track-scope" role="group" aria-label="Ranking track scope">'+
     choices.map(([key,label])=>'<button type="button" data-ranking-scope="'+key+
       '" aria-pressed="'+String(scope===key)+'" class="'+(scope===key?'active':'')+'">'+label+'</button>').join('')+'</div>';

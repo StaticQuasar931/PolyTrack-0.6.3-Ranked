@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {rankedMetricState,compareRankedMetrics,rankingScopeMarkup,ROLLING_HILLS_ID} from './ranking-scope-model.mjs';
-const options={officialTrackIds:['official',ROLLING_HILLS_ID],recognizedTrackIds:['official',ROLLING_HILLS_ID,'community']};
+const options={officialTrackIds:['official'],communityTrackIds:[ROLLING_HILLS_ID,'community'],recognizedTrackIds:['official',ROLLING_HILLS_ID,'community']};
 const finishes=[{trackId:'official',rank:1,fieldSize:5},{trackId:ROLLING_HILLS_ID,rank:1,fieldSize:5},
   {trackId:'community',rank:1,fieldSize:5},{trackId:'custom',rank:1,fieldSize:100},{trackId:'small',rank:1,fieldSize:4}];
 
-test('Total versus Official-only wins preserve eligibility, including established RHR official scope',()=>{
+test('Total versus Official-only wins preserve eligibility, counting Rolling Hills only in Total',()=>{
   assert.equal(rankedMetricState({}, {...options,category:'wins',scope:'total',finishes,complete:true}).value,3);
-  assert.equal(rankedMetricState({}, {...options,category:'wins',scope:'official',finishes,complete:true}).value,2);
+  assert.equal(rankedMetricState({}, {...options,category:'wins',scope:'official',finishes,complete:true}).value,1);
   assert.equal(rankedMetricState({trackWins:5},{...options,category:'wins',scope:'total'}).value,5);
   assert.equal(rankedMetricState({trackWins:5},{...options,category:'wins',scope:'official'}).value,null);
 });
@@ -26,10 +26,10 @@ test('all categories x scopes x complete/partial x group/public contexts remain 
     else if(group&&category==='casual')assert.equal(state.known,false);
     else if(scope==='total'&&(!group||complete))assert.equal(state.known,true);
     else if(category==='casual'||!complete)assert.equal(state.known,false);
-    else assert.equal(state.value,group?1:2);
+    else assert.equal(state.value,1);
     const markup=rankingScopeMarkup(category,scope);
-    assert.equal(Boolean(markup),['wins','casual','average'].includes(category));
-    if(markup){assert.match(markup,category==='average'?/All/:/Total/);assert.match(markup,category==='average'?/Community/:/Official only/);assert.equal((markup.match(/aria-pressed="true"/g)||[]).length,1);}
+    assert.equal(Boolean(markup),['wins','casual','average','medals','podiumRate'].includes(category));
+    if(markup){assert.match(markup,['average','medals','podiumRate'].includes(category)?/All/:/Total/);assert.match(markup,['average','medals','podiumRate'].includes(category)?/Community/:/Official only/);assert.equal((markup.match(/aria-pressed="true"/g)||[]).length,1);}
     combinations++;
   }
   assert.equal(combinations,152);
@@ -40,4 +40,16 @@ test('official Casual RP uses only complete scoped projection; zero and missing 
   assert.equal(state.value,0);assert.equal(state.localPending,true);
   assert.ok(compareRankedMetrics({rank:50},{rank:1},state,{known:false,value:null})<0);
   assert.equal(compareRankedMetrics({rank:1},{rank:2},{known:true,value:5},{known:true,value:10}),5);
+});
+
+test('scoped podiums include Rolling Hills exactly once and reject incomplete samples',()=>{
+  const samples=[...finishes,{trackId:'legacy',rank:4,fieldSize:5}];
+  const entry={raceCount:samples.length};
+  const metric=(category,scope,overrides={})=>rankedMetricState(entry,{...options,category,scope,finishes:samples,complete:true,communityTrackIds:[ROLLING_HILLS_ID,'community','legacy'],...overrides});
+  assert.equal(metric('medals','official').value,9);
+  assert.equal(metric('medals','community').value,18);
+  assert.equal(metric('podiumRate','community').value,66.7);
+  assert.equal(metric('podiumRate','official').known,false);
+  assert.equal(metric('medals','community',{complete:false}).known,false);
+  assert.equal(metric('medals','community',{finishes:[...samples.slice(0,-1),samples[1]]}).known,false);
 });

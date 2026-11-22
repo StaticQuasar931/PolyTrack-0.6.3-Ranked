@@ -1,14 +1,25 @@
 {
   "schemaVersion": 1,
   "current": {
-    "number": 450,
+    "number": 451,
     "version": "0.6.3",
-    "revision": 383,
+    "revision": 384,
     "notes": [
-      "Hazard Band and Vector Wing join the Style Shop. Older game tabs can still use the Shop before updating."
+      "Fit a custom race number or a Total RP rank plate. Neon is brighter, and the hood, front, rear, and underside have improved sticker options.",
+      "Find six new Workshop styles in the Shop and browse before syncing your wallet.",
+      "Filter podium rankings by track type, find upcoming Achievement goals, and browse a cleaner Extra Tracks menu."
     ]
   },
   "entries": [
+    {
+      "number": 450,
+      "title": "Keep the Style Shop compatible across game versions",
+      "commit": "df26f867c65737c64bc06d732cc4416618887383",
+      "committedAt": "2026-11-22T03:45:22.000Z",
+      "notes": [
+        "Hazard Band and Vector Wing join the Style Shop. Older game tabs can still use the Shop before updating."
+      ]
+    },
     {
       "number": 449,
       "title": "Add mesh previews, sticker placement, and event PB recovery",
@@ -191,15 +202,6 @@
       "notes": [
         "Restored the Kodub weekly card with a full uncropped image, larger countdown and clearer personal-best spacing.",
         "Made the Rolling Hills Racer reward and no-reset message easier to read."
-      ]
-    },
-    {
-      "number": 423,
-      "title": "Fix live Kodub card spacing and title wrapping",
-      "commit": "59228252ce017ea0b313354db1a23032781a8754",
-      "committedAt": "2026-11-16T07:02:27.000Z",
-      "notes": [
-        "Fixed oversized gaps in the Kodub weekly card and improved title wrapping without resizing the artwork."
       ]
     }
   ],

@@ -1614,12 +1614,26 @@ test('live HTTP catalog and wallet never return Workshop IDs unknown to older cl
  for(const [i,[itemId,expectedPrice]] of [['workshop-sticker-hazard-band',18],['workshop-sticker-vector-wing',48]].entries())await service.execute(UID,f.command('purchase',{itemId,catalogVersion:2,expectedPrice,expectedWalletRevision:i+1}));
  const options={env,store:f.store,authenticate:async()=>UID,admit:async()=>null,now:()=>AT};
  const get=(path,rev)=>handleCurrencyRequest(new Request('https://test.invalid'+path,{headers:rev?{'X-PolyTrack-Revision':String(rev)}:{}}),options).then(r=>r.json());
- for(const [revision,expected] of [[null,0],[375,0],[376,2],[381,2],[382,4],[999,4]]){
+ for(const [revision,expected] of [[null,0],[375,0],[376,2],[381,2],[382,4],[383,4],[384,10],[999,10]]){
   const start=f.calls.length;
   const catalog=await get('/v1/shop/catalog?workshop=1',revision);
-  assert.equal(catalog.items.filter(i=>i.kind==='workshop-sticker').length,expected);
+  assert.equal(catalog.items.filter(i=>i.kind.startsWith('workshop-')).length,expected);
   assert.equal(f.calls.length,start,'catalog does not touch Firestore');
   const wallet=await get('/v1/currency/wallet?accountId='+ACCOUNT+'&workshop=1',revision);
-  assert.equal(wallet.ownedItemIds.length,expected===4?2:0);
+  assert.equal(wallet.ownedItemIds.length,expected>=4?2:0);
  }
+});
+
+test('all six new Workshop designs buy and project exactly their fixed slots at unchanged wallet read cost',async()=>{
+ const {WORKSHOP_SHOP_CATALOG}=await import('../../../tools/workshop-sticker-shop-catalog.mjs');
+ const offers=WORKSHOP_SHOP_CATALOG.slice(-6),f=fixture(),service=createCurrencyService({store:f.store,now:()=>AT,workshopStickersEnabled:true,includeWorkshopStickers:true});
+ f.funds(offers.reduce((sum,item)=>sum+item.price,0));
+ for(const [i,item] of offers.entries()){
+  const receipt=await service.execute(UID,f.command('purchase',{itemId:item.id,catalogVersion:2,expectedPrice:item.price,expectedWalletRevision:i+1}));
+  assert.equal(receipt.delta,-item.price);
+  const {slot,value}=item.grants[0];assert.ok(f.docs.get(ENT).data[slot].includes(value));
+ }
+ const start=f.calls.length,wallet=await service.execute(UID,f.command('wallet'));
+ assert.equal(wallet.balance,0);assert.deepEqual(wallet.ownedItemIds,offers.map(item=>item.id));
+ assert.equal(f.calls.slice(start).filter(call=>call.route.includes('?transaction=')).length,7);
 });

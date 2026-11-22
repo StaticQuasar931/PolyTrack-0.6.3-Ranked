@@ -766,6 +766,7 @@ test('report dialog Escape restores focus and catalog close clears nested dialog
   assert.equal(document.activeElement, launch);
 
   api.open();
+  cls(root, 'sq-extra-header-more')[0].open = true;
   const submissionTrigger = cls(root, 'sq-extra-submit')[0];
   submissionTrigger.focus();
   await click(submissionTrigger);
@@ -1410,7 +1411,7 @@ test('featured discovery uses canonical callbacks, snapshot-only coverage and hi
   assert.equal(cls(root, 'sq-extra-featured')[0].hidden, true);
   search.value = ''; await search.dispatch('input');
   const pick = cls(root, 'sq-extra-pick')[0];
-  const name = tag(pick, 'h3')[0].textContent;
+  const name = tag(pick, 'h4')[0].textContent;
   await click(tag(pick, 'button')[0]);
   assert.equal(played[0], items.find(item => item.name === name));
   api.destroy();
@@ -1576,10 +1577,10 @@ test('spotlights use real preview images and creator credit, mobile tabs, and a 
 });
 
 
-test('Builder program is a nested contribution submenu, preserves track filters, and Escape returns to contribution choices', async () => {
+test('Builder program is a nested More submenu, preserves track filters, and Escape returns to More actions', async () => {
   const {document,root,api}=fixture([entry(1),entry(2)]);api.open();
   const search=tag(cls(root,'sq-extra-search-field')[0],'input')[0];search.value='Track 02';await search.dispatch('input');
-  cls(root,'sq-extra-contribute')[0].open=true;
+  cls(root,'sq-extra-header-more')[0].open=true;
   const builder=cls(root,'sq-extra-builder-action')[0];const dialogs=walk(root).filter(n=>n.getAttribute('role')==='dialog').length;
   await click(builder);assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,false);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);
   assert.equal(cls(root,'sq-extra-builder-submenu')[0].contains(cls(root,'sq-extra-contact-host')[0]),true);
@@ -1595,7 +1596,7 @@ test('Builder program is a nested contribution submenu, preserves track filters,
 test('closing Builder program restores the track view on reopen and Back preserves chosen sort', async () => {
   const {root,api}=fixture([entry(1),entry(2)]);api.open();
   const sort=tag(field(root,'Sort'),'select')[0];sort.value='name';await sort.dispatch('change');
-  cls(root,'sq-extra-contribute')[0].open=true;
+  cls(root,'sq-extra-header-more')[0].open=true;
   await click(cls(root,'sq-extra-builder-action')[0]);await click(cls(root,'sq-builder-back')[0]);assert.equal(sort.value,'name');
   await click(cls(root,'sq-extra-builder-action')[0]);api.close();api.open();
   assert.equal(cls(root,'sq-extra-contact-host')[0].hidden,true);assert.equal(cls(root,'sq-extra-grid')[0].hidden,false);assert.equal(sort.value,'name');api.destroy();
@@ -1604,9 +1605,10 @@ test('closing Builder program restores the track view on reopen and Back preserv
 
 test('short landscape toolbar uses one bounded row and short portrait retains optional spotlights', () => {
   const css=fs.readFileSync(new URL('catalog.css',import.meta.url),'utf8');
-  const landscape=css.split('/* Short landscape windows keep the primary toolbar on one row. */')[1];
-  assert.match(landscape, /min-width:601px.*max-height:700px/);
-  assert.match(landscape, /sort-controls\{grid-column:3;grid-row:1;max-width:240px/);
+  const toolbar=css.split('/* Keep preview actions in the same keyboard and visual order. */')[1];
+  assert.match(toolbar, /random-actions\{grid-area:1\/3/);
+  assert.match(toolbar, /sort-controls\{grid-area:1\/4/);
+  assert.match(toolbar, /min-width:601px.*max-height:700px/);
   assert.match(css, /@media\(max-height:700px\)/);
 });
 
@@ -1649,7 +1651,7 @@ test('all four discovery previews fail honestly and each lane plays only its can
     assert.doesNotMatch(tile.textContent, /Player count unknown|Rating unknown/);
     assert.doesNotMatch(tile.textContent, /0 players|Rating 0/);
     await click(cls(tile, 'sq-extra-play')[0]);
-    assert.equal(selected.at(-1), items.find(item => item.name === tag(tile, 'h3')[0].textContent));
+    assert.equal(selected.at(-1), items.find(item => item.name === tag(tile, 'h4')[0].textContent));
   }
   assert.equal(new Set(selected.map(item => item.trackId)).size, 4);
   api.destroy();
@@ -1665,7 +1667,7 @@ test('spotlight motivation reuses normalized cached PBs and imports, refreshing 
   function check() {
     const cards = cls(root, 'sq-extra-card');
     for (const tile of cls(root, 'sq-extra-featured')[0].children.filter(node => node.getAttribute('data-pick-kind'))) {
-      const card = cards.find(card => tag(card, 'h3')[0].textContent === tag(tile, 'h3')[0].textContent);
+      const card = cards.find(card => tag(card, 'h3')[0].textContent === tag(tile, 'h4')[0].textContent);
       const best = cls(card, 'sq-extra-best')[0];
       assert.equal(cls(tile, 'sq-extra-pick-progress')[0].textContent, best ? 'Your best ' + best.textContent.slice(5) : 'Imported, no finish');
       assert.equal(cls(tile, 'sq-extra-play')[0].textContent, best ? 'Race again' : 'Play track');
@@ -1765,7 +1767,7 @@ test('picker preview bridge is single-flight and exposes a cancellation guard fo
 
 test('closing and reopening the Builder submenu during lazy import never leaves it empty or steals focus after close', async () => {
  const {document,root,api}=fixture([entry(1)]);api.open();
- const contribute=cls(root,'sq-extra-contribute')[0],builder=cls(root,'sq-extra-builder-action')[0];
+ const contribute=cls(root,'sq-extra-header-more')[0],builder=cls(root,'sq-extra-builder-action')[0];
  contribute.open=true;
  const first=click(builder);assert.equal(builder.getAttribute('aria-expanded'),'true');
  await click(builder);assert.equal(builder.getAttribute('aria-expanded'),'false');
@@ -1782,7 +1784,7 @@ test('closing and reopening the Builder submenu during lazy import never leaves 
 
 test('dismissing contribution from a track click preserves the existing card target and isolates menu keys', async () => {
  const {document,root,api}=fixture(Array.from({length:15},(_,i)=>entry(i+1)));api.open();
- const contribute=cls(root,'sq-extra-contribute')[0];contribute.open=true;
+ const contribute=cls(root,'sq-extra-header-more')[0];contribute.open=true;
  document.listeners.get('keydown')({key:'ArrowRight',preventDefault(){throw Error('menu keys must not page the catalog');}});
  await click(cls(root,'sq-extra-builder-action')[0]);
  const card=cls(root,'sq-extra-card')[0];

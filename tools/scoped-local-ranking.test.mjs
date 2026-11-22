@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {gzipSync} from 'node:zlib';
 import {projectScopedSnapshot} from './overall-local-projection.mjs';
 import {createLocalOverallController} from './overall-local-controller.mjs';
-import {rankedMetricState} from './ranking-scope-model.mjs';
+import {rankedMetricState,ROLLING_HILLS_ID} from './ranking-scope-model.mjs';
 import {computeOverall,trackWeightParts} from '../workers/ranked/src/index.js';
 
 const source=(await fs.readFile(new URL('../polytrack_062_patch.js',import.meta.url),'utf8')).replace(/\r/g,'');
@@ -24,14 +24,14 @@ const originalFetch=globalThis.fetch;
 test.before(()=>{globalThis.fetch=()=>{throw Error('Network forbidden in scoped ranking unit tests');};});
 test.after(()=>{globalThis.fetch=originalFetch;});
 
-function dataset(){
+function dataset(trackId=id){
   const metadata={algorithmVersion:'participation-v8-s1',schemaVersion:6,sourceRevision:10,builtRevision:10,updatedAt:100000};
-  const weight=Number(trackWeightParts(id,2,1).finalWeight.toFixed(3));
-  const board={...metadata,trackId:id,complete:true,totalEntries:2,entries:[['a',10000],['b',12000]].map(([accountId,timeMs])=>
-    ({accountId,userId:accountId,trackId:id,timeMs,pbAt:100,weight,runVerified:true,integrityVerified:true}))};
+  const weight=Number(trackWeightParts(trackId,2,1).finalWeight.toFixed(3));
+  const board={...metadata,trackId,complete:true,totalEntries:2,entries:[['a',10000],['b',12000]].map(([accountId,timeMs])=>
+    ({accountId,userId:accountId,trackId,timeMs,pbAt:100,weight,runVerified:true,integrityVerified:true}))};
   const entries=computeOverall([board],[],new Set(),{includePlannerResults:true});
-  const overall={...metadata,entries,complete:true,totalEntries:entries.length,trackCatalog:[{trackId:id,updatedAt:board.updatedAt}]};
-  const encoded={entries:entries.map(row=>({userId:row.userId,resultSamples:row.resultSamples})),resultTracks:[id]};
+  const overall={...metadata,entries,complete:true,totalEntries:entries.length,trackCatalog:[{trackId,updatedAt:board.updatedAt}]};
+  const encoded={entries:entries.map(row=>({userId:row.userId,resultSamples:row.resultSamples})),resultTracks:[trackId]};
   const results={...metadata,resultBundleVersion:1,resultBundleEncoding:'gzip-base64-json-v1',resultBundleComplete:true,
     resultBoardCount:1,resultBoardLimitReached:false,resultBundle:gzipSync(JSON.stringify(encoded)).toString('base64')};
   return {overall,results,board};
@@ -177,4 +177,15 @@ test('scoped source rejects invalid Overall directory metadata without requiring
  const data=dataset(),base={accountId:'a',generation:57,overall:{...data.overall,generation:57},tracks:[{...data.board,generation:57}]};
  for(const patch of [{sourceRevision:0},{updatedAt:-1}])assert.equal(projectScopedSnapshot({...base,overall:{...base.overall,...patch}}).status,'unavailable');
  assert.equal(projectScopedSnapshot({...base,overall:{...base.overall,updatedAt:data.overall.updatedAt+1}}).status,'scoped-snapshot');
+});
+
+test('Rolling Hills is counted once in Total Casual and never in Official Casual',()=>{
+  const {overall,board}=dataset(ROLLING_HILLS_ID),generation=57;
+  const result=projectScopedSnapshot({generation,accountId:'a',overall:{...overall,generation},tracks:[{...board,generation}]});
+  assert.equal(result.status,'scoped-snapshot',result.reason);
+  const row=result.casualRacers.find(r=>r.userId==='a');
+  assert.equal(row.casualProjection.casualCompletionCount,1);
+  assert.ok(row.casualProjection.casualRp>0);
+  assert.equal(row.casualProjection.officialCasualRp,0);
+  assert.equal(row.casualProjection.officialCasualCompletionCount,0);
 });

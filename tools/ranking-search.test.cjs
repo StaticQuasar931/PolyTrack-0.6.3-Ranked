@@ -5,7 +5,7 @@ function fixture(){
   const rows=Array.from({length:200},(_,i)=>({userId:'racer-'+(i+1),name:'Driver '+(i+1),rank:i+1,raceCount:3,score:i+0.5}));
   const c={rankingDisplayPolicy,overallRacerQuery:'',overallCategory:'overall',rankedFilterResult:null,sortedOverallEntries:()=>rows,sortedEventEntries:()=>rows,
     loadedTrackRankingRows:()=>rows,personalTrackRankingRows:rows=>rows,topTrackRowsForScope:()=>rows};
-  vm.createContext(c);vm.runInContext(extract('rankingDisplayMetricState')+extract('filterRankingDisplayRows')+extract('searchRankingRows')+extract('currentLeaderboardCount'),c);return {c,rows};
+  vm.createContext(c);vm.runInContext(extract('scopedPodiumCategory')+extract('rankingDisplayMetricState')+extract('filterRankingDisplayRows')+extract('searchRankingRows')+extract('currentLeaderboardCount'),c);return {c,rows};
 }
 test('search covers later pages and preserves real rank and score',()=>{
   const {c,rows}=fixture();c.overallRacerQuery='Driver 191';

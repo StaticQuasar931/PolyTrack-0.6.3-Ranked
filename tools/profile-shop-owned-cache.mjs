@@ -1,6 +1,6 @@
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
-import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
-const catalog=[...PROFILE_SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG];
+const {WORKSHOP_SHOP_CATALOG}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const catalog=[...PROFILE_SHOP_CATALOG,...WORKSHOP_SHOP_CATALOG];
 const prefix='polytrack-profile-shop-owned-ui-v1:';
 const ids=new Set(catalog.map(item=>item.id));
 const account=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);

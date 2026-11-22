@@ -72,3 +72,5 @@
 .car-cosmetic-workshop [data-number-editor] input{min-height:42px;width:4ch;box-sizing:content-box;padding:0 8px;background:#15234f;border:1px solid #a5e2f1;color:#f4f9ff;text-align:center;font:inherit;font-variant-numeric:tabular-nums}
 .car-workshop-swatches [data-tier=silver] svg path{fill:#7f9bb7;stroke:#e0efff}
 .car-workshop-swatches [data-tier=bronze] svg path{fill:#a86b40;stroke:#ffd0a3}
+
+.car-cosmetic-workshop [data-rank-note]{margin:0 0 12px;padding:9px 10px;background:#153e49;border-left:3px solid #66dfc8;color:#e4fffb}

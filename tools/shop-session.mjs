@@ -1,7 +1,7 @@
 import {validAchievementCoinReceipt} from './achievement-coin-schedule.mjs';
 import {PROFILE_SHOP_CATALOG,PROFILE_SHOP_CATALOG_VERSION} from './profile-shop-catalog.mjs';
-import {WORKSHOP_STICKER_SHOP_CATALOG} from './workshop-sticker-shop-catalog.mjs';
-const currentItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_STICKER_SHOP_CATALOG];
+const {WORKSHOP_SHOP_CATALOG, isWorkshopShopItem}=await import(new URL('./workshop-sticker-shop-catalog.mjs'+new URL(import.meta.url).search,import.meta.url).href);
+const currentItems=[...PROFILE_SHOP_CATALOG,...WORKSHOP_SHOP_CATALOG];
 /** LOCAL DRAFT ONLY. Inject authenticated transport, synchronous Web Storage,
  * getAccountId, makeRequestId, and withAccountLock (createShopBrowserLock).
  * Wallet GET must include account-bound complete current-catalog inventory.
@@ -118,11 +118,11 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
       if (!item(row?.id) || seen.has(row.id) || typeof row.label !== 'string' ||
           row.label.length > 200 || !uint(row.price)) fail('invalid_catalog');
       seen.add(row.id);
-      if(value.version===1&&WORKSHOP_STICKER_SHOP_CATALOG.some(item=>item.id===row.id))fail('invalid_catalog');
+      if(value.version===1&&WORKSHOP_SHOP_CATALOG.some(item=>item.id===row.id))fail('invalid_catalog');
       if(value.version===PROFILE_SHOP_CATALOG_VERSION){
         const fixed=currentItems.find(item=>item.id===row.id);
-        if(!fixed||(fixed.kind==='workshop-sticker'&&workshopStickers!==true)||row.kind!==fixed.kind||row.price!==fixed.price||JSON.stringify(row.grants)!==JSON.stringify(fixed.grants))fail('invalid_catalog');
-        return {...copy(fixed),label:row.label,category:fixed.kind==='workshop-sticker'?'workshop':'profile'};
+        if(!fixed||(isWorkshopShopItem(fixed)&&workshopStickers!==true)||row.kind!==fixed.kind||row.price!==fixed.price||JSON.stringify(row.grants)!==JSON.stringify(fixed.grants))fail('invalid_catalog');
+        return {...copy(fixed),label:row.label,category:isWorkshopShopItem(fixed)?'workshop':'profile'};
       }
       return {id: row.id, label: row.label, price: row.price};
     });
@@ -157,7 +157,7 @@ export function createShopSession({transport, storage, getAccountId, makeRequest
     const readCatalog = reusedCatalog ? Promise.resolve(copy(reusedCatalog)) : transport({path: catalogPath, method: 'GET', signal}).then(catalog);
     // The old Worker ignores the catalog opt-in but rejects unknown wallet parameters.
     const [c, w] = await Promise.all([readCatalog, workshopStickers === true
-      ? readCatalog.then(c => transport({path: walletPath + (c.items.some(row => row.kind === 'workshop-sticker') ? '&workshop=1' : ''), method: 'GET', signal}))
+      ? readCatalog.then(c => transport({path: walletPath + (c.items.some(row => isWorkshopShopItem(row)) ? '&workshop=1' : ''), method: 'GET', signal}))
       : transport({path: walletPath, method: 'GET', signal})]);
     const nextWallet = wallet(w, id, c);
     return {catalog: c, wallet: nextWallet, inventory: inventory(nextWallet, id, c)};

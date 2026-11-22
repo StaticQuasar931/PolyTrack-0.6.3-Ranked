@@ -415,4 +415,4 @@ dialog.profile-hub .ph-tabbar>[data-ph-shop]:disabled{opacity:.6;cursor:wait}
 .aj.aj .aj-node-reward [data-aj-reward-icon] { width:20px;height:20px;color:#ffda83; }
 .aj.aj .aj-goal-count { font-variant-numeric:tabular-nums; }
 .aj.aj .aj-branch .aj-tier-list>li>button[aria-pressed=true] { border-left-color:#b9e9f7; }
-@media(max-width:480px){.aj.aj .aj-branch .aj-tier-list>li>button{gap:8px;padding:12px}.aj.aj .aj-branch .aj-tier-list>li>button>strong{font-size:21px}}
+@media(max-width:480px){.aj.aj .aj-branch .aj-tier-list>li>button{gap:8px;padding:12px}.aj.aj .aj-branch .aj-tier-list>li>button>strong{font-size:24px}}

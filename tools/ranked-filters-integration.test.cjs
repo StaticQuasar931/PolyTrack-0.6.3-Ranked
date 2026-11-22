@@ -49,13 +49,13 @@ test('Casual RP ranks known values high to low and leaves legacy values unranked
     { userId: 'leader', rank: 3, casualRp: 300, casualCompletionCount: 3 },
     { userId: 'fractional', rank: 4, casualRp: 300.125, casualCompletionCount: 3 }
   ];
-  const context = vm.createContext({ rankingDisplayPolicy, overallCategory: 'casual', overallEntriesCache: rows,
+  const context = vm.createContext({ rankingDisplayPolicy, overallCategory: 'casual', overallRankingScope: 'total', overallEntriesCache: rows,
     attachLocalRankingSidecars: value => value,
     rankingMetricFor: row => ({known: Number.isFinite(row.casualRp), value: row.casualRp}),
     compareRankedMetrics: (a,b,left,right) => Number(right.known)-Number(left.known) ||
       (left.known ? right.value-left.value : 0) || a.rank-b.rank
   });
-  vm.runInContext(`${extract('rankingDisplayMetricState')};${extract('filterRankingDisplayRows')};${extract('sortedOverallEntries')};`, context);
+  vm.runInContext(`${extract('scopedPodiumCategory')};${extract('rankingDisplayMetricState')};${extract('filterRankingDisplayRows')};${extract('sortedOverallEntries')};`, context);
   const sorted = context.sortedOverallEntries();
   assert.deepEqual(Array.from(sorted, row => row.userId), ['fractional', 'leader']);
   assert.deepEqual(Array.from(sorted, row => row.categoryRank), [1, 2]);

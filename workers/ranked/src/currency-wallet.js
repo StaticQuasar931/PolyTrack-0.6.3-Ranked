@@ -5,7 +5,7 @@ import {ACHIEVEMENT_COIN_POLICY_VERSION, ACHIEVEMENT_COIN_SCHEDULE, validAchieve
 import {CLIENT_REVISION_HEADER} from './client-access-policy.js';
 import {encodeNativeCarStyle} from './native-car-style.js';
 import {PROFILE_SHOP_CATALOG, PROFILE_SHOP_CATALOG_VERSION} from '../../../tools/profile-shop-catalog.mjs';
-import {WORKSHOP_STICKER_SHOP_CATALOG} from '../../../tools/workshop-sticker-shop-catalog.mjs';
+import {WORKSHOP_SHOP_CATALOG, isWorkshopShopItem} from '../../../tools/workshop-sticker-shop-catalog.mjs';
 import {addPurchase, readPurchasedCosmetics} from './purchased-cosmetic-entitlements.js';
 import {invalidateEntitlements} from './overall-entitlement-cache.js';
 import {SERVER_ACHIEVEMENT_VERSION, SERVER_ACHIEVEMENT_CATALOG, SERVER_ACHIEVEMENT_RECOGNIZED_TRACK_COUNT, OWNER_PUBLIC_ID, BEAT_OWNER_STAGES} from './server-achievements.js';
@@ -30,13 +30,14 @@ const LEGACY_SHOP_CATALOG = Object.freeze([
 // Keep the existing response for clients that do not opt into Workshop offers.
 export const SHOP_CATALOG = PROFILE_SHOP_CATALOG;
 export const SHOP_CATALOG_VERSION = PROFILE_SHOP_CATALOG_VERSION;
-const ALL_SHOP_ITEMS = Object.freeze([...SHOP_CATALOG, ...WORKSHOP_STICKER_SHOP_CATALOG]);
-const ORIGINAL_WORKSHOP_ITEMS = Object.freeze(ALL_SHOP_ITEMS.filter(item=>item.kind!=='workshop-sticker'||['workshop-sticker-solar-flare','workshop-sticker-tide-mark'].includes(item.id)));
+const ALL_SHOP_ITEMS = Object.freeze([...SHOP_CATALOG, ...WORKSHOP_SHOP_CATALOG]);
+const PREVIOUS_WORKSHOP_ITEMS=Object.freeze(ALL_SHOP_ITEMS.filter(item=>!isWorkshopShopItem(item)||['workshop-sticker-solar-flare','workshop-sticker-tide-mark','workshop-sticker-hazard-band','workshop-sticker-vector-wing'].includes(item.id)));
+const ORIGINAL_WORKSHOP_ITEMS = Object.freeze(ALL_SHOP_ITEMS.filter(item=>!isWorkshopShopItem(item)||['workshop-sticker-solar-flare','workshop-sticker-tide-mark'].includes(item.id)));
 // Browsers validate each catalog ID against their own immutable client bundle.
 function compatibleWorkshopItems(request,requested){
  const raw=request.headers.get(CLIENT_REVISION_HEADER),revision=Number(raw);
  if(!requested||!/^\d+$/.test(raw||'')||!Number.isSafeInteger(revision)||revision<376)return SHOP_CATALOG;
- return revision>=382?ALL_SHOP_ITEMS:ORIGINAL_WORKSHOP_ITEMS;
+ return revision>=384?ALL_SHOP_ITEMS:revision>=382?PREVIOUS_WORKSHOP_ITEMS:ORIGINAL_WORKSHOP_ITEMS;
 }
 const ENTITLEMENT_PATH = '0.6.2_s1_cosmetic_entitlements/';
 const META_PATH = '0.6.2_s1_release_meta/current';
@@ -244,10 +245,10 @@ export function createCurrencyService({store, now = Date.now, achievementCoinsEn
           }
           return {...receipt.result, duplicate: true};
         }
-        if (op === 'equip') throw domainRejection(item?.kind === 'workshop-sticker' ? 'workshop_equip_local' : item ? 'profile_apply_via_studio' : 'item_retired', 409);
+        if (op === 'equip') throw domainRejection(isWorkshopShopItem(item) ? 'workshop_equip_local' : item ? 'profile_apply_via_studio' : 'item_retired', 409);
         if (op === 'purchase') {
           demand(item && !legacyPurchase, 'item_retired', 409);
-          if (item.kind === 'workshop-sticker') demand(workshopStickersEnabled === true, 'workshop_stickers_disabled', 409);
+          if (isWorkshopShopItem(item)) demand(workshopStickersEnabled === true, 'workshop_stickers_disabled', 409);
           // Receipt identity wins over a now-stale quote on exact recovery retries.
           demand(catalogVersion === SHOP_CATALOG_VERSION && expectedPrice === item.price &&
             expectedWalletRevision === revision, 'quote_stale', 409);

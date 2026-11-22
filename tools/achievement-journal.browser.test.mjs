@@ -27,7 +27,7 @@ async function fixture(t,{width=1366,height=900,...extra}={}){
  const context=await browser.newContext({viewport:{width,height},reducedMotion:'reduce'});t.after(()=>context.close());const page=await context.newPage();page.setDefaultTimeout(5000);
  const errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',route=>route.request().url().startsWith(base+'/')?route.continue():(external.push(route.request().url()),route.abort()));
- await page.goto(base);await page.evaluate(async({cosmetics,extra})=>{
+ await page.goto(base,{waitUntil:"domcontentloaded",timeout:10000});await page.evaluate(async({cosmetics,extra})=>{
   const api=await import('/tools/achievement-journal.mjs');window.api=api;
   window.input={cosmetics,progress:{confirmed:{raceCount:8,pbCount:10,extraCount:0,totalPlaytimeMs:3600000,trackWins:0,rank:18,badges:{betaTester:false},cosmeticUnlocks:[]},local:{practiceFinishes:17,extraCount:3,totalPlaytimeMs:5400000}},...extra};
   calls={rewards:[],navigation:[],closed:0,storage:[]};
@@ -119,9 +119,9 @@ test('currency shows real amounts and eligible-to-check status; action only navi
  await page.locator('[data-aj-sort]').selectOption('coins');
  assert.deepEqual(await page.locator('[data-aj-node]:visible').evaluateAll(nodes=>nodes.map(el=>JSON.parse(el.dataset.ajSortItem).reward.amount)),[60,50,50,40,30,30,20]);
  await mouse(page,'[data-aj-select="currency:tracks-20"]');
- assert.match(await page.locator('[data-aj-detail]').innerText(),/Eligible to check/);assert.match(await page.locator('[data-aj-detail]').innerText(),/50 Style Coins/);
- assert.match(await page.locator('[data-aj-detail]').innerText(),/Shop checks eligibility and previous receipts/);
- assert.match(await page.locator('.aj-lane-count:visible').innerText(),/3 eligible to check/);
+ assert.match(await page.locator('[data-aj-detail]').innerText(),/Goal reached/);assert.match(await page.locator('[data-aj-detail]').innerText(),/50 Style Coins/);
+ assert.match(await page.locator('[data-aj-detail]').innerText(),/Reaching a goal does not mean the coins have already been credited/);
+ assert.match(await page.locator('.aj-lane-count:visible').innerText(),/3 goals reached/);
  await page.screenshot({path:path.join(evidence,'achievement-style-coins-desktop.png'),timeout:5000});
  await page.setViewportSize({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -187,11 +187,11 @@ test('missing casual completion count still exposes Style Coins and the first Sh
  const node=page.locator('[data-aj-node="currency:tracks-1"]');assert.equal(await node.isVisible(),true);
  assert.equal(await node.getAttribute('data-aj-known'),'false');assert.equal(await node.getAttribute('data-aj-navigable'),'true');assert.equal(await node.getAttribute('data-aj-earned'),'false');
  assert.equal(await node.locator('progress').getAttribute('value'),null);
- assert.equal(await node.locator('.aj-progress').innerText(),'Shop checks eligibility');
+ assert.equal(await node.locator('.aj-progress').innerText(),'Awaiting server progress');
  assert.match(await node.innerText(),/20 Style Coins/);assert.doesNotMatch(await node.innerText(),/Not tracked|0 \/ 1/);
  assert.equal(await page.locator('[data-aj-family-id="currency"]:visible').count(),1,'Next shows exactly the first unknown check tier');
- assert.equal(await page.locator('.aj-lane-count:visible').innerText(),'Shop checks eligibility');
- await mouse(page,'[data-aj-select="currency:tracks-1"]');assert.match(await page.locator('[data-aj-detail]').innerText(),/Claim history is not supplied here/);
+ assert.equal(await page.locator('.aj-lane-count:visible').innerText(),'Awaiting server progress');
+ await mouse(page,'[data-aj-select="currency:tracks-1"]');assert.match(await page.locator('[data-aj-detail]').innerText(),/Reaching a goal does not mean the coins have already been credited/);
  assert.equal(await node.evaluate(el=>JSON.parse(el.dataset.ajSortItem).value),null);
  await page.screenshot({path:path.join(evidence,'achievement-style-coins-unknown-next.png'),timeout:5000});
  await mouse(page,'[data-aj-detail] [data-aj-navigate="shop"]');assert.deepEqual(await page.evaluate(()=>calls.navigation),['shop']);assert.deepEqual(await page.evaluate(()=>calls.rewards),[]);page.checkClean();
@@ -199,8 +199,8 @@ test('missing casual completion count still exposes Style Coins and the first Sh
 
 test('default journal exposes every goal tier with separate unlock counts', {timeout:20000},async t=>{
  const page=await fixture(t);
- assert.equal(await page.locator('[data-aj-node]:visible').count(),31);
- assert.match(await page.locator('.aj-summary').innerText(),/112 cosmetic unlocks across these goals/);
+ assert.equal(await page.locator('[data-aj-node]:visible').count(),29);
+ assert.match(await page.locator('.aj-summary').innerText(),/cosmetic unlocks across these goals; 7 coin milestones/);
  assert.equal(await page.locator('[data-aj-family="all"]').getAttribute('aria-pressed'),'true');
  await mouse(page,'[data-aj-select="style:5"]');
  assert.match(await page.locator('[data-aj-detail]').innerText(),/Shared title[/]style bonus, paid once/);
