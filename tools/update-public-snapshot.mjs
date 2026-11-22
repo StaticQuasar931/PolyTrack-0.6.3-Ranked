@@ -474,7 +474,7 @@ export async function reportCaptureOutcome(result, {env = process.env, log = con
   if (result.deferred) {
     const message = 'Public capture deferred. Repository publication skipped; the prior published package and private retry ledger are retained. No immediate retry was started.';
     log('::warning::' + message);
-    const coverage = /^Track account coverage regressed for [a-f0-9]{64}: ([1-9][0-9]*) prior accounts missing; reviewed removal or replacement evidence required$/.exec(result.reason || '');
+    const coverage = /^Track account coverage regressed for [a-f0-9]{64}: ([1-9][0-9]*) prior accounts missing; reviewed removal or replacement evidence required(?: \(direct recheck (?:missing|incomplete|older)\))?$/.exec(result.reason || '');
     const detail = coverage ? ' A track source omitted ' + coverage[1] + ' previously published racers. Capture stopped before offline verification.' : '';
     if (env.GITHUB_STEP_SUMMARY) await fs.appendFile(env.GITHUB_STEP_SUMMARY, '## Public capture deferred\n' + message + detail + '\n');
   }
@@ -567,7 +567,7 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const replayReadLimit=fullPublic?2000:(replayDocumentLimit??100);
   const canonicalRetention=!offline&&authority==='snapshot-native'&&capture===runPublicSnapshotBackup&&
     replayReadLimit>1&&env.FIREBASE_VERIFIER_SERVICE_ACCOUNT?createCanonicalRetentionCapture({
-      ledger:nativeCapture.ledger,credential:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,readLimit:replayReadLimit}):null;
+      ledger:nativeCapture.ledger,policy:nativeCapture.policy,credential:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,readLimit:replayReadLimit}):null;
   if (!offline) {
     let latest=null;
     if(captureOverall){

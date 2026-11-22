@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-import {createLedgerEntry,ledgerBinding,ledgerKey} from './native-verification-ledger.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createLedgerEntry,ledgerBinding,ledgerKey,writeLedger} from './native-verification-ledger.mjs';
 import {createCanonicalRetentionCapture} from './canonical-retention-capture.mjs';
 const sha=value=>createHash('sha256').update(value).digest('hex'),track='b'.repeat(64),account='a'.repeat(64),engine='c'.repeat(64),content='d'.repeat(64),fingerprint='e'.repeat(64),manifestHash='f'.repeat(64);
 function fixture(){
@@ -15,7 +18,7 @@ function fixture(){
  const proof=createLedgerEntry({job,result:nativeResult,nativeResult,review,verifiedAt:100,lane:'normal',policy});
  const row={...job,runVerified:true,verified:true,verifiedState:1,nativeLedgerKey:proof.key,nativeLedgerManifestHash:manifestHash};delete row.replay;
  const board={trackId:track,complete:true,sourceComplete:true,totalEntriesExact:true,ranksExact:true,totalEntries:1,updatedAt:1,revision:1,entries:[row]},current={...board,totalEntries:0,entries:[]};
- return {ledger:{manifestHash,entries:[proof]},row,prior:board,board:current,canonical:{...job,verified:false,verifiedState:0}};
+ return {policy,ledger:{manifestHash,entries:[proof]},row,prior:board,board:current,canonical:{...job,verified:false,verifiedState:0}};
 }
 test('current exact proof gates retention and the shared budget leaves replay allowance',async()=>{
  const f=fixture();let reads=0;const capture=createCanonicalRetentionCapture({ledger:f.ledger,readLimit:2,readCanonical:async()=>{reads++;return{data:f.canonical};}});
@@ -31,4 +34,18 @@ test('stale ledger stamps or altered bindings never issue a canonical read',asyn
 });
 test('invalid shared budgets are rejected without credentials or transport',()=>{
  const f=fixture();for(const readLimit of [0,1,-1,2001,Infinity,NaN])assert.throws(()=>createCanonicalRetentionCapture({ledger:f.ledger,readLimit,readCanonical:async()=>null}),/Invalid/);
+});
+
+test('older published stamp is rechecked against the live canonical replay and current approved policy',async t=>{
+ const f=fixture(),root=mkdtempSync(path.join(tmpdir(),'canonical-retention-'));
+ t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const ledger=writeLedger({root,entries:f.ledger.entries,expectedManifestHash:null});
+ assert.notEqual(f.row.nativeLedgerManifestHash,ledger.manifestHash);
+ const readCanonical=async()=>({id:f.canonical.resultId,updateTime:'2026-11-22T19:00:00Z',data:f.canonical});
+ const good=createCanonicalRetentionCapture({ledger,policy:f.policy,readLimit:100,readCanonical});
+ assert.equal((await good.reconcile({trackId:track,prior:f.prior,board:f.board})).retained.length,1);
+ const incompatible=createCanonicalRetentionCapture({ledger,policy:{...f.policy,resourceProfiles:['extended-local']},readLimit:100,readCanonical});
+ await assert.rejects(incompatible.reconcile({trackId:track,prior:f.prior,board:f.board}),/current native proof or policy/);
+ const held=createCanonicalRetentionCapture({ledger,policy:f.policy,readLimit:100,readCanonical:async()=>({data:{...f.canonical,reviewHold:true}})});
+ await assert.rejects(held.reconcile({trackId:track,prior:f.prior,board:f.board}),/canonical status held/);
 });

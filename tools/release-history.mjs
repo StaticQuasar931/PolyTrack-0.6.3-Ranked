@@ -2,15 +2,24 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 453,
+    "number": 454,
     "version": "0.6.3",
-    "revision": 386,
+    "revision": 387,
     "notes": [
-      "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
-      "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
+      "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
     ]
   },
   "entries": [
+    {
+      "number": 453,
+      "title": "Compact event estimates and add Workshop sticker placements",
+      "commit": "457607d815d59b9b6356b1260ae3d4e7397d5b46",
+      "committedAt": "2026-11-22T19:44:09.000Z",
+      "notes": [
+        "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
+        "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
+      ]
+    },
     {
       "number": 452,
       "title": "Add verified Owner Challenge targets and rewards",
@@ -194,16 +203,6 @@ const historyData = {
       "committedAt": "2026-11-16T09:30:50.000Z",
       "notes": [
         "Reduced snapshot preparation, packaging and verification checkpoint overhead while keeping replay checks unchanged."
-      ]
-    },
-    {
-      "number": 427,
-      "title": "Simplify event points and verification tooltips",
-      "commit": "3815ee4738be55222aa0212ce3b19efb21b92ebd",
-      "committedAt": "2026-11-16T08:41:09.000Z",
-      "notes": [
-        "Simplified event verification tooltips: run date, verification status and ERP earned.",
-        "Kept unverified ERP estimates clearly separate from awarded points."
       ]
     }
   ],

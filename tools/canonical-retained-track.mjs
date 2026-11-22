@@ -28,8 +28,8 @@ function validateBoard(board, trackId) {
   return accounts;
 }
 
-export function createCanonicalRetainedTrack({readCanonical, proofAllowed, maxDocuments = 32} = {}) {
-  demand(typeof readCanonical === 'function' && typeof proofAllowed === 'function', 'callbacks required');
+export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32} = {}) {
+  demand(typeof readCanonical === 'function' && typeof proofAllowed === 'function' && typeof confirmProof === 'function', 'callbacks required');
   demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && maxDocuments <= 32, 'invalid document budget');
   let used = 0, reserved = 0;
   const published = [];
@@ -70,6 +70,7 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, maxDo
           createHash('sha256').update(source.replay).digest('hex') === row.replayHash, 'replay SHA256 mismatch');
         const replay = await validatePublicReplayForPublication(source.replay, row.frames ?? row.raceTimeFrames);
         demand(replay.indexedPlaybackWithinBudget === true, 'replay indexed playback budget exceeded');
+        demand(confirmProof(structuredClone(row),structuredClone(source)) === true, 'current native proof or policy did not match');
         retained.push({accountId: row.accountId, trackId, uploadId: row.uploadId, replayHash: row.replayHash,
           canonicalUpdateTime: doc.updateTime || null});
       }

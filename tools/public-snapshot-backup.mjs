@@ -1018,7 +1018,7 @@ async function capturePublicSnapshotBackup({fetchImpl, directory = outputDirecto
     if (recheck && (!hasCompleteTrackCoverage(board) || board.updatedAt < recheck.board.updatedAt ||
         board.algorithmVersion === recheck.board.algorithmVersion &&
         Number(board.revision || board.sourceRevision || 0) < Number(recheck.board.revision || recheck.board.sourceRevision || 0))) {
-      throw recheck.error;
+      throw new PublicBackupDeferredError(recheck.error.message+' (direct recheck '+(!board?'missing':!hasCompleteTrackCoverage(board)?'incomplete':'older')+')');
     }
     if (board) try { await assertSavedTrackCoverage(board, id); }
     catch (error) {

@@ -1,13 +1,12 @@
 const releaseInfo = {
-  "number": 453,
+  "number": 454,
   "version": "0.6.3",
-  "revision": 386,
+  "revision": 387,
   "notes": [
-    "Event score estimates now use a compact tilde, and estimated placements keep their color without the extra label.",
-    "Garage Workshop adds Center and Flat rear sticker placements, and Standard top stickers are larger."
+    "Snapshot recovery can retain an older verified result when its exact current run and replay still match the approved proof."
   ],
-  "preparedAt": "2026-11-22T19:42:42.876Z",
-  "committedAt": "2026-11-22T19:44:09.000Z"
+  "preparedAt": "2026-11-22T19:51:08.242Z",
+  "committedAt": "2026-11-22T19:51:59.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);
