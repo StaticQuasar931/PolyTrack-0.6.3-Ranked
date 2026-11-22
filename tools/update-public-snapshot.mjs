@@ -567,7 +567,8 @@ export async function updatePublicSnapshot({ root = moduleRoot, offline = false,
   const replayReadLimit=fullPublic?2000:(replayDocumentLimit??100);
   const canonicalRetention=!offline&&authority==='snapshot-native'&&capture===runPublicSnapshotBackup&&
     replayReadLimit>1&&env.FIREBASE_VERIFIER_SERVICE_ACCOUNT?createCanonicalRetentionCapture({
-      ledger:nativeCapture.ledger,policy:nativeCapture.policy,credential:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,readLimit:replayReadLimit}):null;
+      ledger:nativeCapture.ledger,policy:nativeCapture.policy,credential:env.FIREBASE_VERIFIER_SERVICE_ACCOUNT,readLimit:replayReadLimit,
+      manualRecovery:env.GITHUB_EVENT_NAME==='workflow_dispatch'&&replayDocumentLimit===1000&&!fullPublic}):null;
   if (!offline) {
     let latest=null;
     if(captureOverall){

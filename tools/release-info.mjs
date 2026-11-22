@@ -1,12 +1,12 @@
 const releaseInfo = {
-  "number": 455,
+  "number": 456,
   "version": "0.6.3",
-  "revision": 388,
+  "revision": 389,
   "notes": [
-    "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
+    "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
   ],
-  "preparedAt": "2026-11-22T20:02:14.383Z",
-  "committedAt": "2026-11-22T20:03:28.000Z"
+  "preparedAt": "2026-11-22T20:11:35.963Z",
+  "committedAt": "2026-11-22T20:12:13.000Z"
 };
 Object.freeze(releaseInfo.notes);
 export const RELEASE_INFO = Object.freeze(releaseInfo);

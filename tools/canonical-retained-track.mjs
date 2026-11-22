@@ -28,9 +28,9 @@ function validateBoard(board, trackId) {
   return accounts;
 }
 
-export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32} = {}) {
+export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confirmProof = () => true, maxDocuments = 32, manualRecovery = false} = {}) {
   demand(typeof readCanonical === 'function' && typeof proofAllowed === 'function' && typeof confirmProof === 'function', 'callbacks required');
-  demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && maxDocuments <= 32, 'invalid document budget');
+  demand(Number.isSafeInteger(maxDocuments) && maxDocuments >= 1 && typeof manualRecovery === 'boolean' && maxDocuments <= (manualRecovery ? 512 : 32), 'invalid document budget');
   let used = 0, reserved = 0;
   const published = [];
 
@@ -42,7 +42,7 @@ export function createCanonicalRetainedTrack({readCanonical, proofAllowed, confi
     const accounts = validateBoard(board, trackId);
     const missing = prior.entries.filter(row => !accounts.has(row.accountId));
     demand(board.entries.length + missing.length <= 10000, 'combined board limit');
-    demand(missing.length <= maxDocuments - used - reserved, 'document budget exceeded');
+    demand(missing.length <= maxDocuments - used - reserved, 'document budget exceeded (needed '+missing.length+', left '+(maxDocuments-used-reserved)+')');
     for (const row of missing) {
       canonicalBindingSignature(row);
       demand(playable(row) && row.runVerified === true && typeof row.nativeLedgerKey === 'string' &&

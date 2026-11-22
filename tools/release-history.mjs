@@ -2,14 +2,23 @@
 const historyData = {
   "schemaVersion": 1,
   "current": {
-    "number": 455,
+    "number": 456,
     "version": "0.6.3",
-    "revision": 388,
+    "revision": 389,
     "notes": [
-      "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
+      "Manual snapshot recovery can reconcile more previously published runs without raising scheduled read limits."
     ]
   },
   "entries": [
+    {
+      "number": 455,
+      "title": "Preserve newer canonical leaderboard coverage",
+      "commit": "c9652de45c8d9fbf374ae4ab3f43b9973b9f5717",
+      "committedAt": "2026-11-22T20:03:28.000Z",
+      "notes": [
+        "A verified full-scan leaderboard is preserved when an older source only repeats part of it. Newer and changed results still go through the existing checks."
+      ]
+    },
     {
       "number": 454,
       "title": "Revalidate exact retained snapshot proofs",
@@ -194,15 +203,6 @@ const historyData = {
       "committedAt": "2026-11-16T10:43:32.000Z",
       "notes": [
         "Published more verified race results and added an optional two-at-a-time replay check for future verification runs."
-      ]
-    },
-    {
-      "number": 429,
-      "title": "Reuse native replay validators and remove idle rendering",
-      "commit": "0b93d557512180ae324b6a97f7506a8e5b6720df",
-      "committedAt": "2026-11-16T10:19:58.000Z",
-      "notes": [
-        "Reduced repeated replay-verifier startup work while preserving exact physics checks and existing verified results."
       ]
     }
   ],

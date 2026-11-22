@@ -49,3 +49,12 @@ test('older published stamp is rechecked against the live canonical replay and c
  const held=createCanonicalRetentionCapture({ledger,policy:f.policy,readLimit:100,readCanonical:async()=>({data:{...f.canonical,reviewHold:true}})});
  await assert.rejects(held.reconcile({trackId:track,prior:f.prior,board:f.board}),/canonical status held/);
 });
+
+test('only explicit 1,000-read manual recovery raises the canonical subcap and preserves replay reserve',()=>{
+ const f=fixture();
+ const capture=createCanonicalRetentionCapture({ledger:f.ledger,readLimit:1000,manualRecovery:true,readCanonical:()=>assert.fail('no reads')});
+ assert.equal(capture.report().maxDocuments,512);
+ assert.equal(1000-capture.report().maxDocuments,488);
+ assert.throws(()=>createCanonicalRetentionCapture({ledger:f.ledger,readLimit:100,manualRecovery:true}),/Invalid/);
+ assert.throws(()=>createCanonicalRetentionCapture({ledger:f.ledger,readLimit:2000,manualRecovery:true}),/Invalid/);
+});
